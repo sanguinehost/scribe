@@ -17,7 +17,7 @@ A task is considered **Done** **only** when the following criteria are met:
 *   The core logic for the task has been implemented.
 *   Comprehensive test coverage (unit, integration, API, component, etc., as applicable) has been written **and** confirmed to pass for the implemented logic (covering both Backend and Frontend components involved).
 *   The task's functionality works correctly with integrated components, including actual backend databases (PostgreSQL, Qdrant) and relevant APIs, not just mocks (unless specifically testing isolated units).
-*   Any related documentation (e.g., API changes, architecture updates) has been updated.
+*   Any related documentation (e.g., API changes, architecture updates, **especially `AUTH_DESIGN.md`**) has been updated.
 
 Only mark a task checkbox (`- [x]`) when all these conditions are satisfied.
 
@@ -31,7 +31,8 @@ Only mark a task checkbox (`- [x]`) when all these conditions are satisfied.
 
 - [ ] **Task 0.1: Backend Project Setup (BE)**
     *   Initialize Rust project (`cargo new --lib scribe-backend`) using the Axum web framework.
-    *   Add core dependencies (Axum, `tokio`, `serde`, `diesel` [with relevant features like `postgres`, `chrono`, etc.], `qdrant-client`, `jsonwebtoken`, logging, error handling). *(Partially complete: missing qdrant-client, jsonwebtoken, advanced logging/error middleware)*
+    *   Add core dependencies (Axum, `tokio`, `serde`, `diesel` [with relevant features like `postgres`, `chrono`, etc.], `qdrant-client`, logging, error handling). *(Partially complete: missing qdrant-client, advanced logging/error middleware)*
+    *   *Add Authentication Dependencies:* Add `axum-login` and `bcrypt` to `Cargo.toml`.
     *   Configure basic logging and error handling middleware.
     *   *TDD:* Implement `/api/health` endpoint and corresponding test. *(Endpoint exists, test status unconfirmed)*
 - [ ] **Task 0.2: Frontend Project Setup (FE)**
@@ -44,17 +45,20 @@ Only mark a task checkbox (`- [x]`) when all these conditions are satisfied.
     *   Configure initial database connection strings/environment variables for the backend.
 - [ ] **Task 0.4: PostgreSQL Schema & Migrations (BE)**
     *   Define initial schema using `diesel_cli` and Diesel migrations for: `users`, `characters` (metadata only), `chat_sessions`, `chat_messages`.
+    *   *(Optional: Add session table migration if using DB session store)*
     *   Setup `diesel.toml` configuration.
     *   Implement migration runner integrated with Diesel.
     *   *TDD:* Write tests to verify migrations apply correctly and schema matches expectations using Diesel's testing features. *(Migrations exist, schema generated, test status unconfirmed)*
-- [ ] **Task 0.5: Authentication (BE & FE)**
-    *   (BE) Implement JWT generation/validation logic.
-    *   (BE) API endpoints: `/api/auth/register`, `/api/auth/login`. (Store hashed passwords in `users` table).
-    *   (BE) Implement authentication middleware to protect private API routes.
-    *   (FE) Create Login/Register page components.
-    *   (FE) Implement API calls for login/register, store JWT securely (e.g., HttpOnly cookie or secure local storage).
-    *   (FE) Implement routing guards/logic to handle authenticated state.
-    *   *TDD:* (BE) Unit tests for JWT logic, API tests for auth endpoints. (FE) Component tests for login/register forms.
+- [ ] **Task 0.5: Authentication (BE & FE)** - ***See `docs/AUTH_DESIGN.md` for details***
+    *   **(BE) Implement `AuthUser` Trait:** Implement `axum_login::AuthUser` for the `User` model.
+    *   **(BE) Implement User Store Logic:** Create functions to get user by ID, get user by username, and verify credentials (using `bcrypt`).
+    *   **(BE) Implement Session Store:** Set up a persistent session store for `axum-login` (e.g., database-backed, potentially requiring a Diesel adapter).
+    *   **(BE) Implement API Endpoints:** Create `/api/auth/register`, `/api/auth/login`, `/api/auth/logout`, and optionally `/api/auth/me` handlers using `axum-login`'s `AuthSession`.
+    *   **(BE) Configure Axum Layers:** Integrate `AuthManagerLayer` and session store layer into the main Axum router.
+    *   **(FE) Create Login/Register Pages:** Implement Svelte components for login/register forms.
+    *   **(FE) Implement API Calls:** Call backend auth endpoints from the frontend.
+    *   **(FE) Handle Auth State:** Manage user authentication state in the frontend (e.g., using Svelte stores, handling redirects based on login status).
+    *   *TDD:* (BE) Unit tests for hashing, user store logic, API tests for auth endpoints. (FE) Component tests for login/register forms, potentially E2E tests for login flow.
 
 ---
 
@@ -65,15 +69,15 @@ Only mark a task checkbox (`- [x]`) when all these conditions are satisfied.
 - [x] **Task 1.1: Character Card Parser (BE)**
     *   Implement Rust logic to parse JSON data from PNG `tEXt` chunks (`ccv3` priority, `chara` fallback, Base64 decode) based on V3 spec. Reads V2/V3 fields.
     *   *TDD:* Unit tests with various valid/invalid card PNGs/JSONs (using test helpers).
-- [ ] **Task 1.2: Character API Endpoints (BE)**
-    *   `POST /api/characters/upload`: Accepts PNG data (via base64 JSON payload), uses parser (Task 1.1), returns parsed card. *(Initial implementation done, **DB save pending**)*.
-    *   `GET /api/characters`: Retrieves list of characters (metadata) for the authenticated user from PostgreSQL. *(**Pending DB/Auth filter implementation**)*
-    *   `GET /api/characters/{id}`: Retrieves full details for a selected character (potentially reading card file on demand or storing more in DB). *(**Pending DB/Auth filter implementation**)*
-    *   *TDD:* API integration tests for upload endpoint (mocking DB). List/get endpoint tests pending DB/Auth.
-- [ ] **Task 1.3: Character UI (FE)**
-    *   Create `CharacterList` Svelte component: Fetches characters via API (Task 1.2), displays them (name, avatar preview).
-    *   Implement character selection logic (update application state/store).
-    *   Create `CharacterUploader` Svelte component: Handles file input and calls upload API (Task 1.2).
+- [ ] **Task 1.2: Character API Endpoints (BE)** - ***Requires Task 0.5 Completion***
+    *   `POST /api/characters/upload`: Accepts PNG data, uses parser, **saves character metadata to DB associated with the authenticated user**.
+    *   `GET /api/characters`: **Retrieves list of characters owned by the authenticated user** from PostgreSQL.
+    *   `GET /api/characters/{id}`: **Retrieves details for a character if owned by the authenticated user**.
+    *   *TDD:* API integration tests verifying functionality *and* ownership checks.
+- [ ] **Task 1.3: Character UI (FE)** - ***Requires Task 1.2 Completion***
+    *   Create `CharacterList` Svelte component: Fetches characters via API, displays them.
+    *   Implement character selection logic.
+    *   Create `CharacterUploader` Svelte component: Handles file input and calls upload API.
     *   *TDD:* Component tests for list rendering, selection, and upload interaction.
 
 ---
@@ -82,40 +86,31 @@ Only mark a task checkbox (`- [x]`) when all these conditions are satisfied.
 
 *Goal: Enable basic chat functionality: creating sessions, sending/receiving messages, basic prompt assembly.*
 
-- [ ] **Task 2.1: Chat Session & History API (BE)**
-    *   `POST /api/chats`: Creates a new chat session linked to a user and character ID in PostgreSQL `chat_sessions`.
-    *   `GET /api/chats`: Lists chat sessions for the user.
-    *   `GET /api/chats/{id}/messages`: Retrieves message history for a session from PostgreSQL `chat_messages`, implementing pagination.
-    *   *TDD:* API tests for session CRUD and message retrieval.
-- [ ] **Task 2.2: Save Message API (BE)**
-    *   `POST /api/chats/{id}/messages`: Endpoint to receive and save user or AI messages to the `chat_messages` table (content, speaker, timestamp, session ID).
-    *   *TDD:* API tests for message saving.
+- [ ] **Task 2.1: Chat Session & History API (BE)** - ***Requires Task 0.5 Completion***
+    *   `POST /api/chats`: Creates a new chat session linked to the **authenticated user** and a character ID.
+    *   `GET /api/chats`: Lists chat sessions for the **authenticated user**.
+    *   `GET /api/chats/{id}/messages`: Retrieves messages for a session **owned by the authenticated user**.
+    *   *TDD:* API tests verifying functionality *and* ownership checks.
+- [ ] **Task 2.2: Save Message API (BE)** - ***Requires Task 2.1 Completion***
+    *   `POST /api/chats/{id}/messages`: Saves user/AI messages to a session **owned by the authenticated user**.
+    *   *TDD:* API tests for message saving, including ownership checks.
 - [ ] **Task 2.3: Gemini Generation Client (BE)**
-    *   Implement Rust module to interact with the Google Gemini Generation API (handling API key, request formatting, response parsing, basic error handling).
+    *   Implement Rust module to interact with the Google Gemini Generation API.
     *   *TDD:* Unit tests mocking the Gemini API client interface.
-- [ ] **Task 2.4: Basic Prompt Assembly (BE)**
-    *   Implement initial logic to retrieve character data (from DB/card), system prompt (from settings - see Epic 4), and recent chat history (from DB - Task 2.1).
-    *   Combine these into a basic prompt string suitable for Gemini.
-    *   *TDD:* Unit tests for prompt assembly logic with different inputs.
-- [ ] **Task 2.5: Generation API Endpoint (BE)**
-    *   `POST /api/chats/{id}/generate`:
-        *   Receives trigger (e.g., user message ID or just session ID).
-        *   Calls prompt assembly logic (Task 2.4).
-        *   Sends prompt to Gemini client (Task 2.3).
-        *   Handles response (streaming preferred via SSE or WebSockets, fallback to simple response).
-        *   Saves AI response via Save Message API (Task 2.2).
-        *   Returns AI response to frontend.
-    *   *TDD:* API integration tests for the generation flow (mocking Gemini).
+- [ ] **Task 2.4: Basic Prompt Assembly (BE)** - ***Requires Task 1.2 & Task 4.2 Completion***
+    *   Implement logic to retrieve character data, system prompt, and recent chat history.
+    *   Combine into a basic prompt string.
+    *   *TDD:* Unit tests for prompt assembly logic.
+- [ ] **Task 2.5: Generation API Endpoint (BE)** - ***Requires Task 2.2, 2.3, 2.4 Completion***
+    *   `POST /api/chats/{id}/generate`: Orchestrates prompt assembly, Gemini call, response saving for a session **owned by the authenticated user**.
+    *   *TDD:* API integration tests for the generation flow (mocking Gemini), including ownership checks.
 - [ ] **Task 2.6: Chat UI Components (FE)**
-    *   Create `ChatWindow` Svelte component: Displays messages fetched from API (Task 2.1). Handles scrolling.
-    *   Create `MessageBubble` component for rendering individual messages.
-    *   Create `MessageInput` component for user text entry and send button.
-    *   *TDD:* Component tests for rendering messages and input handling.
-- [ ] **Task 2.7: Frontend Chat Logic (FE)**
-    *   Implement Svelte store/state management for current chat session and messages.
-    *   Logic to call API for sending user messages (Task 2.2) and triggering generation (Task 2.5).
-    *   Handle receiving and displaying streamed/complete AI responses.
-    *   Logic to fetch initial message history (Task 2.1).
+    *   Create `ChatWindow`, `MessageBubble`, `MessageInput` Svelte components.
+    *   *TDD:* Component tests.
+- [ ] **Task 2.7: Frontend Chat Logic (FE)** - ***Requires BE APIs (Task 2.1, 2.2, 2.5) Completion***
+    *   Implement Svelte store/state management for chat.
+    *   Logic to call APIs for sending/generating messages.
+    *   Handle receiving and displaying responses.
 
 ---
 
@@ -127,21 +122,21 @@ Only mark a task checkbox (`- [x]`) when all these conditions are satisfied.
     *   Implement Rust module to interact with the Google Gemini Embedding API.
     *   *TDD:* Unit tests mocking the Gemini Embedding API client.
 - [ ] **Task 3.2: Qdrant Client Service (BE)**
-    *   Implement Rust service to interact with Qdrant (create collection, add points, search points) using the `qdrant-client` crate.
-    *   *TDD:* Integration tests against a local Qdrant instance (via Docker).
+    *   *(Dependency: Add `qdrant-client` crate to `Cargo.toml` - Ref Task 0.1)*
+    *   Implement Rust service to interact with Qdrant.
+    *   *TDD:* Integration tests against a local Qdrant instance.
 - [ ] **Task 3.3: Chat History Chunking (BE)**
-    *   Implement logic to divide chat messages into meaningful chunks (e.g., by message pairs, fixed token count, sentence boundaries - requires experimentation).
-    *   *TDD:* Unit tests for various chunking strategies.
-- [ ] **Task 3.4: Embedding & Storage Pipeline (BE)**
-    *   Implement an asynchronous mechanism (e.g., background job queue like `tokio::spawn` or a dedicated queue system if scaling needed later) triggered after a message is saved (Task 2.2).
-    *   This task takes message chunks (Task 3.3), gets embeddings via Gemini client (Task 3.1), and stores vectors + metadata in Qdrant via the Qdrant service (Task 3.2).
+    *   Implement logic to divide chat messages into chunks.
+    *   *TDD:* Unit tests for chunking strategies.
+- [ ] **Task 3.4: Embedding & Storage Pipeline (BE)** - ***Requires Task 2.2, 3.1, 3.2, 3.3 Completion***
+    *   Implement asynchronous mechanism triggered after message saving.
+    *   Gets chunks, embeds them, stores vectors in Qdrant.
     *   *TDD:* Integration test for the end-to-end embedding pipeline.
-- [ ] **Task 3.5: RAG Query Logic (BE)**
-    *   Modify Core Logic (from Epic 2): Before prompt assembly, take recent context, get its embedding (Task 3.1).
-    *   Query Qdrant service (Task 3.2) using this embedding to find top K similar historical chunks.
+- [ ] **Task 3.5: RAG Query Logic (BE)** - ***Requires Task 3.1, 3.2 Completion***
+    *   Modify Core Logic: Embed recent context, query Qdrant for similar chunks.
     *   *TDD:* Unit/Integration tests for the RAG query process.
-- [ ] **Task 3.6: RAG Context Injection (BE)**
-    *   Modify Prompt Assembly (Task 2.4): Integrate the retrieved chunks (Task 3.5) into the final prompt string (e.g., add a specific section like `[Retrieved Memories] ... snippets ... [/Retrieved Memories]`). Determine optimal formatting and placement.
+- [ ] **Task 3.6: RAG Context Injection (BE)** - ***Requires Task 2.4, 3.5 Completion***
+    *   Modify Prompt Assembly: Integrate retrieved chunks into the final prompt.
     *   *TDD:* Unit tests verifying correct injection formatting.
 
 ---
@@ -151,18 +146,17 @@ Only mark a task checkbox (`- [x]`) when all these conditions are satisfied.
 *Goal: Allow users to set basic generation parameters and a system prompt.*
 
 - [ ] **Task 4.1: Database Schema Update (BE)**
-    *   Add columns to `characters` or `chat_sessions` table for `system_prompt` (text), `temperature` (float), `max_output_tokens` (integer).
+    *   Add columns to `characters` or `chat_sessions` for `system_prompt`, `temperature`, `max_output_tokens`.
     *   Update migrations (Task 0.4).
-- [ ] **Task 4.2: API & Logic for Settings (BE)**
-    *   API endpoints (e.g., `PUT /api/chats/{id}/settings`, `GET /api/chats/{id}/settings`) to update/retrieve these settings from PostgreSQL.
-    *   Modify Prompt Assembly (Task 2.4) to use the stored `system_prompt`.
-    *   Modify Gemini Client call (Task 2.3 / Task 2.5) to pass `temperature` and `max_output_tokens`.
-    *   *TDD:* API tests for settings endpoints, Unit tests for parameter application.
-- [ ] **Task 4.3: Settings UI (FE)**
-    *   Create basic `SettingsPanel` Svelte component.
-    *   Add inputs for System Prompt, Temperature, Max Tokens.
-    *   Implement logic to fetch current settings (Task 4.2) and save changes via API.
-    *   *TDD:* Component tests for settings display and input.
+- [ ] **Task 4.2: API & Logic for Settings (BE)** - ***Requires Task 0.5 Completion***
+    *   API endpoints (e.g., `PUT /api/chats/{id}/settings`) to update/retrieve settings for sessions/characters **owned by the authenticated user**.
+    *   Modify Prompt Assembly (Task 2.4) to use the stored settings.
+    *   Modify Gemini Client call (Task 2.3 / Task 2.5) to pass parameters.
+    *   *TDD:* API tests for settings endpoints (including ownership), Unit tests for parameter application.
+- [ ] **Task 4.3: Settings UI (FE)** - ***Requires Task 4.2 Completion***
+    *   Create `SettingsPanel` Svelte component.
+    *   Implement logic to fetch/save settings via API.
+    *   *TDD:* Component tests.
 
 ---
 
@@ -202,12 +196,12 @@ Only mark a task checkbox (`- [x]`) when all these conditions are satisfied.
 
 The MVP is complete when a user can:
 
-1.  Register and log in.
-2.  Upload a V2 character card PNG.
-3.  Select a character and start a chat session.
-4.  Send messages and receive AI responses generated by Google Gemini.
-5.  Experience basic long-term context recall via the background RAG system (Qdrant search results are injected into prompts).
-6.  View and modify a basic System Prompt, Temperature, and Max Output Tokens for the current chat.
+1.  **Register and log in.**
+2.  Upload a V2 character card PNG **(associated with their account)**.
+3.  Select **their** character and start a chat session.
+4.  Send messages and receive AI responses generated by Google Gemini **within their session**.
+5.  Experience basic long-term context recall via the background RAG system **for their chat**.
+6.  View and modify a basic System Prompt, Temperature, and Max Output Tokens for **their** current chat.
 
 ## Post-MVP Considerations
 
@@ -220,3 +214,4 @@ The MVP is complete when a user can:
 *   Group Chats, World Info (Static).
 *   Streaming improvements/alternatives (WebSockets).
 *   More robust error handling and user feedback.
+*   **Security Enhancements:** Separate User DB, Advanced Microsegmentation, Refresh Tokens, Rate Limiting, Account Lockout, MFA, External IdP Integration, Audit Logging.
