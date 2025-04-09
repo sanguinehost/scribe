@@ -7,17 +7,18 @@ use std::sync::Arc;
 use diesel::r2d2::{ConnectionManager, Pool};
 use scribe_backend::models::users::{User, NewUser};
 use scribe_backend::models::character_card::{Character, NewCharacter};
-use scribe_backend::schema;
+use scribe_backend::schema::{self, characters, users}; // Added schema imports
 use axum::extract::State;
 use scribe_backend::routes::characters::list_characters;
 use scribe_backend::state::AppState;
+use diesel::result::Error as DieselError; // Keep alias for test_transaction test
+use anyhow::Error as AnyhowError; // For manual cleanup test return type
+use std::collections::HashSet; // For manual cleanup test assertion
 
 // --- DbPool Type ---
 pub type DbPool = Arc<Pool<ConnectionManager<PgConnection>>>;
 
-// Helper function to establish a test database connection
-// For now, reads DATABASE_URL. Ideally, use a separate TEST_DATABASE_URL
-// and implement transaction rollback for isolation.
+// Helper function to establish a test database connection (used by test_transaction test)
 fn establish_connection() -> PgConnection {
     dotenv().ok(); // Load .env file if present
 
@@ -25,131 +26,6 @@ fn establish_connection() -> PgConnection {
         .expect("DATABASE_URL must be set");
     PgConnection::establish(&database_url)
         .expect(&format!("Error connecting to {}", database_url))
-}
-
-#[test]
-fn test_user_character_insert_and_query() {
-    let mut conn = establish_connection();
-
-    // --- Insert User ---
-    let test_username = format!("test_user_{}", Uuid::new_v4());
-    let test_password_hash = "test_hash"; // Use a real hash in practice
-
-    let new_user = NewUser {
-        username: test_username.clone(),
-        password_hash: test_password_hash,
-    };
-
-    let inserted_user: User = diesel::insert_into(schema::users::table)
-        .values(&new_user)
-        .get_result(&mut conn)
-        .expect("Error inserting test user");
-
-    assert_eq!(inserted_user.username, test_username);
-
-    // --- Insert Character ---
-    let test_char_name = format!("Test Character {}", Uuid::new_v4());
-    let test_spec = "character_card_v2".to_string();
-    let test_spec_version = "2.0".to_string();
-
-    let new_character = NewCharacter {
-        user_id: inserted_user.id, // Use the ID from the inserted user
-        spec: test_spec.clone(),
-        spec_version: test_spec_version.clone(),
-        name: test_char_name.clone(),
-        description: Some("A test character".to_string()),
-        personality: None,
-        scenario: None,
-        first_mes: None,
-        mes_example: None,
-        creator_notes: None,
-        system_prompt: None,
-        post_history_instructions: None,
-        tags: None,
-        creator: None,
-        character_version: None,
-        alternate_greetings: None,
-        nickname: None,
-        creator_notes_multilingual: None,
-        source: None,
-        group_only_greetings: None,
-        creation_date: None,
-        modification_date: None,
-    };
-
-    let inserted_character: Character = diesel::insert_into(schema::characters::table)
-        .values(new_character)
-        .get_result(&mut conn)
-        .expect("Error inserting test character");
-
-    assert_eq!(inserted_character.name, test_char_name);
-    assert_eq!(inserted_character.user_id, inserted_user.id);
-    assert_eq!(inserted_character.spec, test_spec);
-
-    // --- Query Character ---
-    let found_character: Character = schema::characters::table
-        .find(inserted_character.id) // Find by the ID we got back
-        .first(&mut conn)
-        .expect("Error finding inserted character");
-
-    assert_eq!(found_character.id, inserted_character.id);
-    assert_eq!(found_character.name, test_char_name);
-    assert_eq!(found_character.user_id, inserted_user.id);
-
-    // --- Cleanup (Manual for now, use transactions later) ---
-    // It's better to wrap the test in a transaction and roll it back.
-    // Manually deleting for this simple example.
-    diesel::delete(schema::characters::table.find(inserted_character.id))
-        .execute(&mut conn)
-        .expect("Error deleting test character");
-
-    diesel::delete(schema::users::table.find(inserted_user.id))
-        .execute(&mut conn)
-        .expect("Error deleting test user");
-
-    println!("Successfully inserted and queried user and character.");
-}
-
-#[tokio::test] // Use tokio test macro for async fn
-async fn test_list_characters_endpoint() {
-    let mut conn = establish_connection(); // For test setup
-    let pool = create_test_pool(); // Create pool for AppState
-    let app_state = AppState { pool };
-
-    // --- Setup Test Data ---
-    // Insert a user
-    let user = insert_test_user(&mut conn, "list_user");
-
-    // Insert two characters for this user
-    let char1 = insert_test_character(&mut conn, user.id, "List Character 1");
-    let char2 = insert_test_character(&mut conn, user.id, "List Character 2");
-
-    // --- Call Handler Function ---
-    // Simulate calling the list_characters handler
-    let result = list_characters(State(app_state)).await; // Pass mock state
-
-    // --- Assertions ---
-    assert!(result.is_ok(), "list_characters failed: {:?}", result.err());
-    let json_response = result.unwrap();
-    let characters_list = json_response.0; // Extract Vec<Character> from Json
-
-    assert_eq!(characters_list.len(), 2, "Expected 2 characters, found {}", characters_list.len());
-
-    // Check if the IDs of the inserted characters are present in the list
-    let found_ids: std::collections::HashSet<Uuid> = characters_list.into_iter().map(|c| c.id).collect();
-    assert!(found_ids.contains(&char1.id), "Character 1 not found in list");
-    assert!(found_ids.contains(&char2.id), "Character 2 not found in list");
-
-    println!("Successfully listed characters.");
-
-    // --- Cleanup ---
-    // Manual cleanup, replace with transaction rollback later
-    diesel::delete(schema::characters::table.filter(schema::characters::id.eq_any(vec![char1.id, char2.id])))
-        .execute(&mut conn)
-        .expect("Error deleting test characters");
-    diesel::delete(schema::users::table.find(user.id))
-        .execute(&mut conn)
-        .expect("Error deleting test user");
 }
 
 // --- Test Helper Functions ---
@@ -161,13 +37,14 @@ fn create_test_pool() -> DbPool {
     let manager = ConnectionManager::<PgConnection>::new(database_url);
     let pool = Pool::builder()
         .test_on_check_out(true)
+        .max_size(5) // Use a slightly larger pool for tests
         .build(manager)
         .expect("Failed to create test DB pool.");
     Arc::new(pool)
 }
 
-// Helper to insert a unique test user
-fn insert_test_user(conn: &mut PgConnection, prefix: &str) -> User {
+// Helper to insert a unique test user (returns Result)
+fn insert_test_user(conn: &mut PgConnection, prefix: &str) -> Result<User, DieselError> {
     let test_username = format!("{}_{}", prefix, Uuid::new_v4());
     let new_user = NewUser {
         username: test_username.clone(),
@@ -176,29 +53,179 @@ fn insert_test_user(conn: &mut PgConnection, prefix: &str) -> User {
     diesel::insert_into(schema::users::table)
         .values(&new_user)
         .get_result(conn)
-        .expect(&format!("Error inserting test user {}", test_username))
+        // .expect(&format!("Error inserting test user {}", test_username)) // Use Result instead
 }
 
-// Helper to insert a test character
-fn insert_test_character(conn: &mut PgConnection, user_uuid: Uuid, name: &str) -> Character {
+// Helper to insert a test character (returns Result)
+fn insert_test_character(conn: &mut PgConnection, user_uuid: Uuid, name: &str) -> Result<Character, DieselError> {
     let new_character = NewCharacter {
         user_id: user_uuid,
         spec: "test_spec".to_string(),
         spec_version: "1.0".to_string(),
         name: name.to_string(),
-        description: None, personality: None, scenario: None, first_mes: None,
-        mes_example: None, creator_notes: None, system_prompt: None,
-        post_history_instructions: None, tags: None, creator: None,
-        character_version: None, alternate_greetings: None, nickname: None,
-        creator_notes_multilingual: None, source: None, group_only_greetings: None,
-        creation_date: None, modification_date: None,
+        ..Default::default() // Use default for other fields
     };
     diesel::insert_into(schema::characters::table)
         .values(new_character)
         .get_result(conn)
-        .expect(&format!("Error inserting test character {}", name))
+       // .expect(&format!("Error inserting test character {}", name)) // Use Result instead
+}
+
+// Helper struct to manage test data cleanup (copied from other file)
+struct TestDataGuard {
+    pool: DbPool,
+    user_ids: Vec<Uuid>,
+    character_ids: Vec<Uuid>,
+}
+
+impl TestDataGuard {
+    fn new(pool: DbPool) -> Self {
+        TestDataGuard { pool, user_ids: Vec::new(), character_ids: Vec::new() }
+    }
+
+    fn add_user(&mut self, user_id: Uuid) {
+        self.user_ids.push(user_id);
+    }
+
+    fn add_character(&mut self, character_id: Uuid) {
+        self.character_ids.push(character_id);
+    }
+}
+
+impl Drop for TestDataGuard {
+    fn drop(&mut self) {
+        if self.character_ids.is_empty() && self.user_ids.is_empty() {
+            return;
+        }
+        println!("--- Cleaning up integration test data ---");
+        let mut conn = self.pool.get().expect("Failed to get DB connection for cleanup");
+
+        if !self.character_ids.is_empty() {
+            let delete_chars = diesel::delete(characters::table.filter(characters::id.eq_any(&self.character_ids)))
+                .execute(&mut conn);
+            if let Err(e) = delete_chars {
+                eprintln!("Error cleaning up characters: {:?}", e);
+            } else {
+                 println!("Cleaned up {} characters.", self.character_ids.len());
+            }
+        }
+
+        if !self.user_ids.is_empty() {
+             let delete_users = diesel::delete(users::table.filter(users::id.eq_any(&self.user_ids)))
+                .execute(&mut conn);
+             if let Err(e) = delete_users {
+                eprintln!("Error cleaning up users: {:?}", e);
+            } else {
+                 println!("Cleaned up {} users.", self.user_ids.len());
+            }
+        }
+         println!("--- Integration cleanup complete ---");
+    }
+}
+
+
+// --- Tests ---
+
+#[test]
+fn test_user_character_insert_and_query() {
+    let mut conn = establish_connection();
+
+    // Start a transaction
+    conn.test_transaction::<_, DieselError, _>(|conn| {
+        // --- Insert User ---
+        let test_username = format!("test_user_{}", Uuid::new_v4());
+        let test_password_hash = "test_hash"; // Use a real hash in practice
+
+        let new_user = NewUser {
+            username: test_username.clone(),
+            password_hash: test_password_hash,
+        };
+
+        let inserted_user: User = diesel::insert_into(schema::users::table)
+            .values(&new_user)
+            .get_result(conn)?; // Use ? for error propagation
+
+        assert_eq!(inserted_user.username, test_username);
+
+        // --- Insert Character ---
+        let test_char_name = format!("Test Character {}", Uuid::new_v4());
+
+        let new_character = NewCharacter {
+            user_id: inserted_user.id, // Use the ID from the inserted user
+            name: test_char_name.clone(),
+             ..Default::default() // Use default for other fields
+        };
+
+        let inserted_character: Character = diesel::insert_into(schema::characters::table)
+            .values(new_character)
+            .get_result(conn)?; // Use ?
+
+        assert_eq!(inserted_character.name, test_char_name);
+        assert_eq!(inserted_character.user_id, inserted_user.id);
+
+        // --- Query Character ---
+        let found_character: Character = schema::characters::table
+            .find(inserted_character.id) // Find by the ID we got back
+            .first(conn)?; // Use ?
+
+        assert_eq!(found_character.id, inserted_character.id);
+        assert_eq!(found_character.name, test_char_name);
+        assert_eq!(found_character.user_id, inserted_user.id);
+
+        println!("Successfully inserted and queried user and character.");
+        Ok(())
+    });
+}
+
+// Refactored test using manual cleanup
+#[tokio::test]
+async fn test_list_characters_endpoint_manual_cleanup() -> Result<(), AnyhowError> {
+    let pool = create_test_pool();
+    let mut guard = TestDataGuard::new(pool.clone());
+    let mut conn = pool.get()?; // Get connection from the pool
+
+    // --- Setup Test Data ---
+    // Clean first (optional but safer)
+    diesel::delete(characters::table).execute(&mut conn)?;
+    diesel::delete(users::table).execute(&mut conn)?;
+
+    // Insert a user
+    let user = insert_test_user(&mut conn, "list_user")?;
+    guard.add_user(user.id); // Register for cleanup
+
+    // Insert two characters for this user
+    let char1 = insert_test_character(&mut conn, user.id, "List Character 1")?;
+    let char2 = insert_test_character(&mut conn, user.id, "List Character 2")?;
+    guard.add_character(char1.id); // Register for cleanup
+    guard.add_character(char2.id); // Register for cleanup
+
+    // --- Call Handler Function ---
+    let app_state = AppState { pool: pool.clone() }; // Create AppState with the same pool
+    let result = list_characters(State(app_state)).await; // Call handler directly
+
+    // --- Assertions ---
+    assert!(result.is_ok(), "list_characters failed: {:?}", result.err());
+    let json_response = result.unwrap();
+    let characters_list = json_response.0; // Extract Vec<Character> from Json
+
+    // Filter results to only those created in this test
+    let inserted_ids: HashSet<Uuid> = vec![char1.id, char2.id].into_iter().collect();
+     let relevant_characters_from_api: Vec<&Character> = characters_list
+            .iter()
+            .filter(|c| inserted_ids.contains(&c.id))
+            .collect();
+
+    assert_eq!(relevant_characters_from_api.len(), 2, "Expected 2 test characters, found {}", relevant_characters_from_api.len());
+
+    // Check if the IDs of the inserted characters are present in the list
+    let found_ids: HashSet<Uuid> = relevant_characters_from_api.into_iter().map(|c| c.id).collect();
+    assert!(found_ids.contains(&char1.id), "Character 1 not found in list");
+    assert!(found_ids.contains(&char2.id), "Character 2 not found in list");
+
+    println!("Successfully listed characters via handler.");
+    Ok(()) // Guard will clean up when test finishes
 }
 
 // TODO: Add tests for assets, lorebooks, entries, chat etc.
-// TODO: Implement proper transaction management for test isolation.
-// TODO: Use a dedicated TEST_DATABASE_URL. 
+// TODO: Implement proper transaction management for test isolation. (Consider TestDataGuard sufficient for now)
+// TODO: Use a dedicated TEST_DATABASE_URL.

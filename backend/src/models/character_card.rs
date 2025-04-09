@@ -155,14 +155,14 @@ mod tests;
 // --- Diesel Database Models ---
 
 use diesel::prelude::*;
-use crate::schema::{characters, character_assets, lorebooks, lorebook_entries};
-use crate::models::users::User; // Assuming User model exists here
+use crate::schema::{character_assets, lorebooks, lorebook_entries}; // Removed unused: characters
+// use crate::models::users::User; // Unused import
 use chrono::{DateTime, Utc};
 use serde_json::Value as JsonValue; // Alias to avoid conflict with serde_json::Value
 
-#[derive(Queryable, Selectable, Identifiable, Associations, Debug, Serialize)]
-#[diesel(table_name = characters)]
-#[diesel(belongs_to(User))] // Foreign key user_id -> users(id)
+#[derive(Debug, Queryable, Selectable, Serialize, Deserialize, Clone)]
+#[diesel(table_name = crate::schema::characters)]
+#[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct Character {
     #[diesel(deserialize_as = Uuid)] // Specify type if needed, though Diesel might infer
     pub id: Uuid, // Changed from i32
@@ -195,11 +195,12 @@ pub struct Character {
 
 // Note: For Insertable, we might need a separate struct `NewCharacter`
 // if some fields (like id, created_at, updated_at) are not set manually during insertion.
-#[derive(Insertable, Debug)]
-#[diesel(table_name = characters)]
+#[derive(Default)] // Added Default derive
+#[derive(Debug, Insertable, Clone)]
+#[diesel(table_name = crate::schema::characters)]
+#[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct NewCharacter {
-    #[diesel(serialize_as = Uuid)] // Specify type if needed
-    pub user_id: Uuid, // Changed from i32
+    pub user_id: Uuid,
     pub spec: String,
     pub spec_version: String,
     pub name: String,
@@ -221,7 +222,6 @@ pub struct NewCharacter {
     pub group_only_greetings: Option<Vec<Option<String>>>,
     pub creation_date: Option<DateTime<Utc>>,
     pub modification_date: Option<DateTime<Utc>>,
-    // created_at and updated_at are usually handled by the database default
 }
 
 

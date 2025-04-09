@@ -26,3 +26,4 @@ crc32fast = "1.4"
 mime = "0.3" # For setting Content-Type header
 http-body-util = "0.1" # For collecting response body
 cargo-tarpaulin = "0.25.2" # Added for code coverage
+anyhow = "1.0" # For easier error handling in tests
