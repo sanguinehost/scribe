@@ -6,36 +6,32 @@ use axum::{
     Json,
 };
 use serde::Deserialize;
-use std::sync::Arc;
 use base64::{engine::general_purpose::STANDARD as base64_standard, Engine as _};
+use diesel::prelude::*;
+use diesel::r2d2;
+use uuid::Uuid;
 
-use crate::models::character_card::CharacterCardV3;
+use crate::models::character_card::{Character, CharacterCardV3};
 use crate::services::character_parser::{parse_character_card_png, ParserError};
-
-// Shared application state (if needed later, e.g., for DB pool)
-// type AppState = Arc<()>; // Placeholder
+use crate::state::{AppState};
 
 // --- Upload Handler --- 
 #[derive(Deserialize, Debug)]
 pub struct UploadPayload {
-    // How will the PNG data be sent? Base64 string? Raw bytes?
-    // Let's assume raw bytes for now via axum::body::Bytes
-    // Or potentially multipart form data using axum::extract::Multipart
-    // For simplicity in this step, let's assume base64 string in JSON
     png_base64: String,
 }
 
 pub async fn upload_character(
-    // State(state): State<AppState>, // Uncomment when state is needed
+    State(_state): State<AppState>,
     Json(payload): Json<UploadPayload>,
-) -> Result<Json<CharacterCardV3>, UploadError> {
+) -> Result<Json<CharacterCardV3>, ApiError> {
     // 1. Decode base64
-    let png_bytes = base64_standard.decode(&payload.png_base64)?;
+    let png_bytes = base64_standard.decode(&payload.png_base64).map_err(ApiError::from)?;
 
     // 2. Call parser
-    let card_data = parse_character_card_png(&png_bytes)?;
+    let card_data = parse_character_card_png(&png_bytes).map_err(ApiError::from)?;
 
-    // 3. (Later) Save metadata to DB
+    // 3. TODO: Save metadata to DB using _state.pool
     println!("Successfully parsed character: {}", card_data.data.name.as_deref().unwrap_or("Unnamed"));
 
     // 4. Return parsed card data
@@ -44,76 +40,127 @@ pub async fn upload_character(
 
 // --- List Handler --- 
 pub async fn list_characters(
-    // State(state): State<AppState>, // Uncomment when state is needed
-) -> Result<Json<Vec<()>>, UploadError> { // Return type is placeholder
-    // 1. (Later) Get user ID from auth
-    // 2. (Later) Query DB for characters associated with user
-    // 3. Return list (metadata only initially)
-    unimplemented!("List logic not implemented")
+    State(state): State<AppState>, // Use the pool from state
+) -> Result<Json<Vec<Character>>, ApiError> { // Return Vec of Character model
+    // TODO: Get user ID from auth later
+    // let user_id = ...; 
+
+    let mut conn = state.pool.get().map_err(|e| ApiError::Internal(e.to_string()))?;
+
+    // Query DB for all characters for now
+    use crate::schema::characters::dsl::*;
+    
+    let results = characters
+        // .filter(user_id.eq(user_id)) // TODO: Add filter when auth is ready
+        .select(Character::as_select())
+        .load(&mut conn)
+        .map_err(|e| ApiError::Internal(e.to_string()))?;
+
+    Ok(Json(results))
 }
 
 // --- Get Handler --- 
 pub async fn get_character(
-    // State(state): State<AppState>, // Uncomment when state is needed
-    Path(character_id): Path<i32>, // Assuming i32 is the ID type
-) -> Result<Json<()>, UploadError> { // Return type is placeholder
-     // 1. (Later) Get user ID from auth
-     // 2. (Later) Query DB for character with ID, ensuring ownership/access rights
-     // 3. Return full character details
-    unimplemented!("Get logic not implemented")
+    State(state): State<AppState>, // Use the pool from state
+    Path(character_uuid): Path<Uuid>, // Use Uuid based on schema/model
+) -> Result<Json<Character>, ApiError> { // Return single Character model
+    // TODO: Get user ID from auth later
+    // let user_id = ...;
+
+    let mut conn = state.pool.get().map_err(|e| ApiError::Internal(e.to_string()))?;
+    
+    use crate::schema::characters::dsl::*;
+    
+    let result = characters
+        .filter(id.eq(character_uuid))
+        // .filter(user_id.eq(user_id)) // TODO: Add filter for ownership check
+        .select(Character::as_select())
+        .first(&mut conn)
+        // Handle not found specifically
+        .optional()
+        .map_err(|e| ApiError::Internal(e.to_string()))?;
+
+    match result {
+        Some(character) => Ok(Json(character)),
+        None => Err(ApiError::NotFound("Character not found".to_string())),
+    }
 }
 
-// --- Error Handling for Routes --- 
+// --- Error Handling for Routes (Consolidated) --- 
 #[derive(Debug)]
-pub enum UploadError {
+pub enum ApiError {
     Base64Decode(base64::DecodeError),
     Parse(ParserError),
-    // DatabaseError(sqlx::Error), // Example for later
+    Internal(String), // Generic internal error (DB connection, query, etc.)
+    NotFound(String),
     // Unauthorized,
-    // NotFound,
 }
 
-impl From<base64::DecodeError> for UploadError {
+impl From<base64::DecodeError> for ApiError {
     fn from(err: base64::DecodeError) -> Self {
-        UploadError::Base64Decode(err)
+        ApiError::Base64Decode(err)
     }
 }
 
-impl From<ParserError> for UploadError {
+impl From<ParserError> for ApiError {
     fn from(err: ParserError) -> Self {
-        UploadError::Parse(err)
+        ApiError::Parse(err)
     }
 }
 
-impl IntoResponse for UploadError {
+// Generic way to handle R2D2 pool errors
+impl From<r2d2::Error> for ApiError {
+    fn from(err: r2d2::Error) -> Self {
+        ApiError::Internal(format!("DB Pool Error: {}", err))
+    }
+}
+
+// Generic way to handle Diesel query errors
+impl From<diesel::result::Error> for ApiError {
+    fn from(err: diesel::result::Error) -> Self {
+        match err {
+            diesel::result::Error::NotFound => ApiError::NotFound("Record not found".to_string()),
+            _ => ApiError::Internal(format!("DB Query Error: {}", err)),
+        }
+    }
+}
+
+impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
         let (status, error_message) = match self {
-            UploadError::Base64Decode(e) => {
+            ApiError::Base64Decode(e) => {
                 println!("Base64 decode error: {}", e);
-                (StatusCode::BAD_REQUEST, "Invalid base64 data for PNG".to_string())
+                (StatusCode::BAD_REQUEST, "Invalid base64 data".to_string())
             }
-            UploadError::Parse(ParserError::ChunkNotFound) => {
+            ApiError::Parse(ParserError::ChunkNotFound) => {
                  println!("Parser error: Chunk not found");
                 (StatusCode::BAD_REQUEST, "Character data not found in PNG".to_string())
             }
-             UploadError::Parse(ParserError::InvalidTextChunkFormat) => {
+             ApiError::Parse(ParserError::InvalidTextChunkFormat) => {
                  println!("Parser error: Invalid tEXt chunk");
                 (StatusCode::BAD_REQUEST, "Malformed character data chunk in PNG".to_string())
             }
-            UploadError::Parse(ParserError::JsonError(e)) => {
+            ApiError::Parse(ParserError::JsonError(e)) => {
                 println!("Parser error: JSON - {}", e);
                  (StatusCode::BAD_REQUEST, "Invalid JSON data in character card".to_string())
             }
-             UploadError::Parse(ParserError::Base64Error(e)) => {
-                 // This might duplicate the top-level Base64Decode, but keeps concerns separated
+             ApiError::Parse(ParserError::Base64Error(e)) => {
                  println!("Parser error: Base64 - {}", e);
                  (StatusCode::BAD_REQUEST, "Invalid base64 encoding within character data".to_string())
             }
-            UploadError::Parse(e) => { // Catch other parser errors (IO, PNG format)
+            ApiError::Parse(e) => { // Catch other parser errors (IO, PNG format)
                  println!("Parser error: Other - {:?}", e);
                 (StatusCode::BAD_REQUEST, "Failed to parse PNG file".to_string())
             }
-            // Add cases for DB errors, NotFound, Unauthorized etc. later
+            ApiError::NotFound(msg) => {
+                println!("Not Found: {}", msg);
+                (StatusCode::NOT_FOUND, msg)
+            }
+            ApiError::Internal(msg) => {
+                println!("Internal Server Error: {}", msg);
+                (StatusCode::INTERNAL_SERVER_ERROR, "An internal error occurred".to_string())
+            }
+            // Add cases for Unauthorized etc. later
         };
 
         (status, Json(serde_json::json!({ "error": error_message }))).into_response()

@@ -1,0 +1,9 @@
+# See the documentation for more options:
+# https://docs.diesel.rs/2.0.x/diesel_cli/config/index.html
+
+[print_schema]
+file = "src/schema.rs"
+import_types = ["diesel::sql_types::*", "diesel_derive_enum::DbEnum"]
+
+[migrations_directory]
+dir = "migrations" 

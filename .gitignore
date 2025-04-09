@@ -24,3 +24,6 @@ dist/
 *.njsproj
 *.sln
 *.sw?
+
+# Specific backend environment file
+/backend/.env

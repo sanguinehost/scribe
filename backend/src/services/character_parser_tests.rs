@@ -2,7 +2,7 @@
 
 // This file contains tests for character_parser.rs
 use super::*; // Import items from parent module (character_parser.rs)
-use base64::{engine::general_purpose::STANDARD as base64_standard, Engine as _};
+use base64::{engine::general_purpose::STANDARD as base64_standard};
 use crc32fast; // Needed for test helpers
 
 // --- Tests ---

@@ -11,8 +11,12 @@ serde_json = "1.0"
 png = "0.17" # For reading PNG chunks
 base64 = "0.22" # For decoding base64 data in chara chunk
 thiserror = "2.0.12" # For defining custom error types
-diesel = { version = "2.2.1", features = ["postgres", "chrono"] }
+diesel = { version = "2.2.9", features = ["postgres", "chrono", "uuid", "serde_json", "r2d2"] }
 dotenvy = "0.15"
+chrono = { version = "0.4.40", features = ["serde"] } # Updated to latest version
+diesel-derive-enum = { version = "2.1.0", features = ["postgres"] } # Added for custom SQL ENUM types
+uuid = { version = "1.8", features = ["v4", "serde"] } # Add UUID generation and serde support
+tower = { version = "0.4", features = ["util"] } # Core dependency for Axum services, enable util for ServiceExt
 
 [dev-dependencies]
 reqwest = "0.12"
@@ -21,4 +25,4 @@ serde_json = "1.0.116"
 crc32fast = "1.4"
 mime = "0.3" # For setting Content-Type header
 http-body-util = "0.1" # For collecting response body
-tower = { version = "0.5", features = ["util"] } # For ServiceExt
+cargo-tarpaulin = "0.25.2" # Added for code coverage

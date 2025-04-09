@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value; // Using Value for flexibility in extensions and mixed types like id
 use std::collections::HashMap;
+use uuid::Uuid; // <-- Add Uuid import
 
 // Main Character Card Structure (V3)
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
@@ -150,3 +151,175 @@ pub struct StandaloneLorebook {
 mod tests;
 
 // Test module removed from here 
+
+// --- Diesel Database Models ---
+
+use diesel::prelude::*;
+use crate::schema::{characters, character_assets, lorebooks, lorebook_entries};
+use crate::models::users::User; // Assuming User model exists here
+use chrono::{DateTime, Utc};
+use serde_json::Value as JsonValue; // Alias to avoid conflict with serde_json::Value
+
+#[derive(Queryable, Selectable, Identifiable, Associations, Debug, Serialize)]
+#[diesel(table_name = characters)]
+#[diesel(belongs_to(User))] // Foreign key user_id -> users(id)
+pub struct Character {
+    #[diesel(deserialize_as = Uuid)] // Specify type if needed, though Diesel might infer
+    pub id: Uuid, // Changed from i32
+    #[diesel(deserialize_as = Uuid)]
+    pub user_id: Uuid, // Changed from i32
+    pub spec: String,
+    pub spec_version: String,
+    pub name: String,
+    pub description: Option<String>,
+    pub personality: Option<String>,
+    pub scenario: Option<String>,
+    pub first_mes: Option<String>,
+    pub mes_example: Option<String>,
+    pub creator_notes: Option<String>,
+    pub system_prompt: Option<String>,
+    pub post_history_instructions: Option<String>,
+    pub tags: Option<Vec<Option<String>>>, // Assuming TEXT[] maps to Vec<Option<String>>
+    pub creator: Option<String>,
+    pub character_version: Option<String>,
+    pub alternate_greetings: Option<Vec<Option<String>>>,
+    pub nickname: Option<String>,
+    pub creator_notes_multilingual: Option<JsonValue>, // JSONB
+    pub source: Option<Vec<Option<String>>>,
+    pub group_only_greetings: Option<Vec<Option<String>>>,
+    pub creation_date: Option<DateTime<Utc>>, // TIMESTAMP WITH TIME ZONE
+    pub modification_date: Option<DateTime<Utc>>, // TIMESTAMP WITH TIME ZONE
+    pub created_at: DateTime<Utc>, // Changed from Option<DateTime<Utc>>
+    pub updated_at: DateTime<Utc>, // Changed from Option<DateTime<Utc>>
+}
+
+// Note: For Insertable, we might need a separate struct `NewCharacter`
+// if some fields (like id, created_at, updated_at) are not set manually during insertion.
+#[derive(Insertable, Debug)]
+#[diesel(table_name = characters)]
+pub struct NewCharacter {
+    #[diesel(serialize_as = Uuid)] // Specify type if needed
+    pub user_id: Uuid, // Changed from i32
+    pub spec: String,
+    pub spec_version: String,
+    pub name: String,
+    pub description: Option<String>,
+    pub personality: Option<String>,
+    pub scenario: Option<String>,
+    pub first_mes: Option<String>,
+    pub mes_example: Option<String>,
+    pub creator_notes: Option<String>,
+    pub system_prompt: Option<String>,
+    pub post_history_instructions: Option<String>,
+    pub tags: Option<Vec<Option<String>>>,
+    pub creator: Option<String>,
+    pub character_version: Option<String>,
+    pub alternate_greetings: Option<Vec<Option<String>>>,
+    pub nickname: Option<String>,
+    pub creator_notes_multilingual: Option<JsonValue>,
+    pub source: Option<Vec<Option<String>>>,
+    pub group_only_greetings: Option<Vec<Option<String>>>,
+    pub creation_date: Option<DateTime<Utc>>,
+    pub modification_date: Option<DateTime<Utc>>,
+    // created_at and updated_at are usually handled by the database default
+}
+
+
+#[derive(Queryable, Selectable, Identifiable, Associations, Debug, Serialize)]
+#[diesel(table_name = character_assets)]
+#[diesel(belongs_to(Character))] // Foreign key character_id -> characters(id)
+pub struct CharacterAsset {
+    pub id: i32,
+    #[diesel(deserialize_as = Uuid)]
+    pub character_id: Uuid, // Changed from i32
+    #[serde(rename = "type")] // Match JSON spec, handle Rust keyword
+    pub asset_type: String, // Renamed from `type_` to match DB column
+    pub uri: String,
+    pub name: String,
+    pub ext: String,
+}
+
+#[derive(Insertable, Debug)]
+#[diesel(table_name = character_assets)]
+pub struct NewCharacterAsset {
+    #[diesel(serialize_as = Uuid)]
+    pub character_id: Uuid, // Changed from i32
+    pub asset_type: String, // Renamed from `type_`
+    pub uri: String,
+    pub name: String,
+    pub ext: String,
+}
+
+
+#[derive(Queryable, Selectable, Identifiable, Associations, Debug, Serialize)]
+#[diesel(table_name = lorebooks)]
+#[diesel(belongs_to(Character))] // Foreign key character_id -> characters(id)
+pub struct DbLorebook {
+    pub id: i32,
+    #[diesel(deserialize_as = Uuid)]
+    pub character_id: Uuid, // Changed from i32
+    pub name: Option<String>,
+    pub description: Option<String>,
+    pub scan_depth: Option<i32>,
+    pub token_budget: Option<i32>,
+    pub recursive_scanning: Option<bool>,
+    pub extensions: Option<JsonValue>, // JSONB
+}
+
+#[derive(Insertable, Debug)]
+#[diesel(table_name = lorebooks)]
+pub struct NewDbLorebook {
+    #[diesel(serialize_as = Uuid)]
+    pub character_id: Uuid, // Changed from i32
+    pub name: Option<String>,
+    pub description: Option<String>,
+    pub scan_depth: Option<i32>,
+    pub token_budget: Option<i32>,
+    pub recursive_scanning: Option<bool>,
+    pub extensions: Option<JsonValue>,
+}
+
+
+#[derive(Queryable, Selectable, Identifiable, Associations, Debug, Serialize)]
+#[diesel(table_name = lorebook_entries)]
+#[diesel(belongs_to(DbLorebook, foreign_key = lorebook_id))] // Explicitly set foreign key
+pub struct DbLorebookEntry {
+    pub id: i32,
+    pub lorebook_id: i32,
+    pub keys: Vec<Option<String>>, // TEXT[]
+    pub content: String,
+    pub extensions: Option<JsonValue>, // JSONB
+    pub enabled: bool,
+    pub insertion_order: i32,
+    pub case_sensitive: Option<bool>,
+    pub use_regex: bool,
+    pub constant: Option<bool>,
+    pub name: Option<String>,
+    pub priority: Option<i32>,
+    pub entry_id: Option<String>,
+    pub comment: Option<String>,
+    pub selective: Option<bool>,
+    pub secondary_keys: Option<Vec<Option<String>>>, // TEXT[]
+    pub position: Option<String>,
+}
+
+#[derive(Insertable, Debug)]
+#[diesel(table_name = lorebook_entries)]
+pub struct NewDbLorebookEntry {
+    pub lorebook_id: i32,
+    pub keys: Vec<Option<String>>,
+    pub content: String,
+    pub extensions: Option<JsonValue>,
+    pub enabled: bool,
+    pub insertion_order: i32,
+    pub case_sensitive: Option<bool>,
+    pub use_regex: bool,
+    pub constant: Option<bool>,
+    pub name: Option<String>,
+    pub priority: Option<i32>,
+    pub entry_id: Option<String>,
+    pub comment: Option<String>,
+    pub selective: Option<bool>,
+    pub secondary_keys: Option<Vec<Option<String>>>,
+    pub position: Option<String>,
+} 
