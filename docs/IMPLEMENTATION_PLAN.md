@@ -31,22 +31,22 @@ Only mark a task checkbox (`- [x]`) when all these conditions are satisfied.
 
 - [ ] **Task 0.1: Backend Project Setup (BE)**
     *   Initialize Rust project (`cargo new --lib scribe-backend`) using the Axum web framework.
-    *   Add core dependencies (Axum, `tokio`, `serde`, `diesel` [with relevant features like `postgres`, `chrono`, etc.], `qdrant-client`, `jsonwebtoken`, logging, error handling).
+    *   Add core dependencies (Axum, `tokio`, `serde`, `diesel` [with relevant features like `postgres`, `chrono`, etc.], `qdrant-client`, `jsonwebtoken`, logging, error handling). *(Partially complete: missing qdrant-client, jsonwebtoken, advanced logging/error middleware)*
     *   Configure basic logging and error handling middleware.
-    *   *TDD:* Implement `/api/health` endpoint and corresponding test.
+    *   *TDD:* Implement `/api/health` endpoint and corresponding test. *(Endpoint exists, test status unconfirmed)*
 - [ ] **Task 0.2: Frontend Project Setup (FE)**
     *   Initialize SvelteKit project (`npm create svelte@latest scribe-frontend`). Choose Skeleton project with TypeScript.
     *   Setup basic project structure (routes, components, stores, lib).
     *   Configure basic styling (e.g., TailwindCSS or basic CSS).
     *   *TDD:* Basic component rendering tests (e.g., using Vitest).
-- [ ] **Task 0.3: Database Setup (DevOps/BE)**
+- [x] **Task 0.3: Database Setup (DevOps/BE)**
     *   Create `docker-compose.yml` for PostgreSQL and Qdrant services.
     *   Configure initial database connection strings/environment variables for the backend.
 - [ ] **Task 0.4: PostgreSQL Schema & Migrations (BE)**
     *   Define initial schema using `diesel_cli` and Diesel migrations for: `users`, `characters` (metadata only), `chat_sessions`, `chat_messages`.
     *   Setup `diesel.toml` configuration.
     *   Implement migration runner integrated with Diesel.
-    *   *TDD:* Write tests to verify migrations apply correctly and schema matches expectations using Diesel's testing features.
+    *   *TDD:* Write tests to verify migrations apply correctly and schema matches expectations using Diesel's testing features. *(Migrations exist, schema generated, test status unconfirmed)*
 - [ ] **Task 0.5: Authentication (BE & FE)**
     *   (BE) Implement JWT generation/validation logic.
     *   (BE) API endpoints: `/api/auth/register`, `/api/auth/login`. (Store hashed passwords in `users` table).
@@ -66,9 +66,9 @@ Only mark a task checkbox (`- [x]`) when all these conditions are satisfied.
     *   Implement Rust logic to parse JSON data from PNG `tEXt` chunks (`ccv3` priority, `chara` fallback, Base64 decode) based on V3 spec. Reads V2/V3 fields.
     *   *TDD:* Unit tests with various valid/invalid card PNGs/JSONs (using test helpers).
 - [ ] **Task 1.2: Character API Endpoints (BE)**
-    *   `POST /api/characters/upload`: Accepts PNG data (via base64 JSON payload), uses parser (Task 1.1), returns parsed card. *(Initial implementation done, DB save pending)*.
-    *   `GET /api/characters`: Retrieves list of characters (metadata) for the authenticated user from PostgreSQL. *(Pending DB/Auth)*
-    *   `GET /api/characters/{id}`: Retrieves full details for a selected character (potentially reading card file on demand or storing more in DB). *(Pending DB/Auth)*
+    *   `POST /api/characters/upload`: Accepts PNG data (via base64 JSON payload), uses parser (Task 1.1), returns parsed card. *(Initial implementation done, **DB save pending**)*.
+    *   `GET /api/characters`: Retrieves list of characters (metadata) for the authenticated user from PostgreSQL. *(**Pending DB/Auth filter implementation**)*
+    *   `GET /api/characters/{id}`: Retrieves full details for a selected character (potentially reading card file on demand or storing more in DB). *(**Pending DB/Auth filter implementation**)*
     *   *TDD:* API integration tests for upload endpoint (mocking DB). List/get endpoint tests pending DB/Auth.
 - [ ] **Task 1.3: Character UI (FE)**
     *   Create `CharacterList` Svelte component: Fetches characters via API (Task 1.2), displays them (name, avatar preview).
