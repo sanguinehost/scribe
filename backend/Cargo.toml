@@ -4,12 +4,21 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-axum = "0.8"
-tokio = { version = "1.37", features = ["full"] }
-serde = { version = "1.0.200", features = ["derive"] }
-serde_json = "1.0.116"
+axum = "0.7.5"
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+png = "0.17" # For reading PNG chunks
+base64 = "0.22" # For decoding base64 data in chara chunk
+thiserror = "2.0.12" # For defining custom error types
+diesel = { version = "2.2.1", features = ["postgres", "chrono"] }
+dotenvy = "0.15"
 
 [dev-dependencies]
 reqwest = "0.12"
-tokio = { version = "1.37", features = ["rt", "macros"] } # Minimal features needed for testing
+tokio = { version = "1.37", features = ["rt", "macros"] }
 serde_json = "1.0.116"
+crc32fast = "1.4"
+mime = "0.3" # For setting Content-Type header
+http-body-util = "0.1" # For collecting response body
+tower = { version = "0.5", features = ["util"] } # For ServiceExt

@@ -62,14 +62,14 @@ Only mark a task checkbox (`- [x]`) when all these conditions are satisfied.
 
 *Goal: Allow users to upload, view, and select V2 character cards.*
 
-- [ ] **Task 1.1: Character Card Parser (BE)**
-    *   Implement Rust logic to parse JSON data from PNG `tEXt` chunks (`chara` keyword, Base64 decode) based on `src/character-card-parser.js`. Focus on reading V2 spec fields (`name`, `description`, `personality`, `first_mes`, `mes_example`, `scenario`).
-    *   *TDD:* Unit tests with various valid and invalid V2 card PNGs/JSONs.
+- [x] **Task 1.1: Character Card Parser (BE)**
+    *   Implement Rust logic to parse JSON data from PNG `tEXt` chunks (`ccv3` priority, `chara` fallback, Base64 decode) based on V3 spec. Reads V2/V3 fields.
+    *   *TDD:* Unit tests with various valid/invalid card PNGs/JSONs (using test helpers).
 - [ ] **Task 1.2: Character API Endpoints (BE)**
-    *   `POST /api/characters/upload`: Accepts PNG file, uses parser (Task 1.1), saves essential metadata (`name`, `creator`, file reference, user ID) to PostgreSQL `characters` table. Store the original card file (or relevant data) for later use.
-    *   `GET /api/characters`: Retrieves list of characters (metadata) for the authenticated user from PostgreSQL.
-    *   `GET /api/characters/{id}`: Retrieves full details for a selected character (potentially reading card file on demand or storing more in DB).
-    *   *TDD:* API integration tests for upload, list, and get endpoints.
+    *   `POST /api/characters/upload`: Accepts PNG data (via base64 JSON payload), uses parser (Task 1.1), returns parsed card. *(Initial implementation done, DB save pending)*.
+    *   `GET /api/characters`: Retrieves list of characters (metadata) for the authenticated user from PostgreSQL. *(Pending DB/Auth)*
+    *   `GET /api/characters/{id}`: Retrieves full details for a selected character (potentially reading card file on demand or storing more in DB). *(Pending DB/Auth)*
+    *   *TDD:* API integration tests for upload endpoint (mocking DB). List/get endpoint tests pending DB/Auth.
 - [ ] **Task 1.3: Character UI (FE)**
     *   Create `CharacterList` Svelte component: Fetches characters via API (Task 1.2), displays them (name, avatar preview).
     *   Implement character selection logic (update application state/store).
