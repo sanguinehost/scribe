@@ -10,8 +10,9 @@
     pkgs.nodePackages.pnpm # Add pnpm
     pkgs.pkg-config # Needed by build scripts
     pkgs.openssl.dev # Needed for openssl-sys
-    pkgs.postgresql # Keep the main package for runtime/tools/service
-    pkgs.libpq      # Use the dedicated libpq package
+    pkgs.postgresql # Keep the main package for runtime/tools/service (needed for psql command)
+    pkgs.libpq      # Use the dedicated libpq package (client library)
+    pkgs.diesel-cli # Add diesel-cli directly
     pkgs.docker-compose # Add Docker Compose CLI
     pkgs.docker     # We also need the main docker package for the daemon/client interaction
     # pkgs.go
@@ -45,11 +46,13 @@
           # Use 'cwd' instead of 'workingDirectory'
           cwd = "backend";
           # Use 'command' (a list of strings) instead of 'start'
-          command = [ "sh" "-c" "DATABASE_URL=postgres://postgres:password@localhost:5432/postgres RUST_LOG=info cargo run" ];
+          # Use the dev DB credentials from docker-compose
+          command = [ "sh" "-c" "DATABASE_URL=postgres://devuser:devpassword@localhost:5432/sanguine_scribe_dev RUST_LOG=info cargo run" ];
           env = {
              # Example: Set RUST_LOG level specifically for this preview
              RUST_LOG = "info,sqlx=warn"; # Adjust log levels as needed
-             DATABASE_URL = "postgres://postgres:password@localhost:5432/postgres"; # Updated DB name to default 'postgres'
+             # Use the dev DB credentials from docker-compose
+             DATABASE_URL = "postgres://devuser:devpassword@localhost:5432/sanguine_scribe_dev";
            };
         };
         frontend = {
@@ -76,13 +79,7 @@
       # Runs when the workspace is stopped or closed
     };
   };
-  # Use services to start your database or other services
-  services.postgres = {
-    enable = true;
-    package = pkgs.postgresql; # Ensure this matches the version in 'packages' if specified differently
-    # Other postgres options can be configured here
-    # extensions = [ "pgvector" ]; # Example: Enable extensions like pgvector
-  };
+
   # Enable the Docker daemon service
   services.docker = {
     enable = true;
