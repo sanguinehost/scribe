@@ -24,6 +24,7 @@ dist/
 *.njsproj
 *.sln
 *.sw?
+.idx/.data
 
 # Specific backend environment file
 /backend/.env
