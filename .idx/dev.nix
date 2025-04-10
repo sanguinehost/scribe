@@ -12,6 +12,8 @@
     pkgs.openssl.dev # Needed for openssl-sys
     pkgs.postgresql # Keep the main package for runtime/tools/service
     pkgs.libpq      # Use the dedicated libpq package
+    pkgs.docker-compose # Add Docker Compose CLI
+    pkgs.docker     # We also need the main docker package for the daemon/client interaction
     # pkgs.go
     # pkgs.python311
     # pkgs.python311Packages.pip
@@ -80,6 +82,10 @@
     package = pkgs.postgresql; # Ensure this matches the version in 'packages' if specified differently
     # Other postgres options can be configured here
     # extensions = [ "pgvector" ]; # Example: Enable extensions like pgvector
+  };
+  # Enable the Docker daemon service
+  services.docker = {
+    enable = true;
   };
   # services.redis.enable = true;
 }
