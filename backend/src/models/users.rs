@@ -3,7 +3,7 @@ use crate::schema::users;
 use serde::{Serialize, Deserialize};
 use uuid::Uuid;
 use axum_login::AuthUser;
-use secrecy::{Secret, ExposeSecret};
+use secrecy::{Secret}; // Removed unused ExposeSecret
 
 #[derive(Queryable, Selectable, Identifiable, Debug, Serialize, Deserialize, Clone)] // Added Deserialize and Clone
 #[diesel(table_name = users)]

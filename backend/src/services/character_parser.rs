@@ -26,9 +26,17 @@ pub enum ParserError {
     InvalidTextChunkFormat,
 }
 
+// Define the structure to represent the parsed result
+#[derive(Debug)]
+pub enum ParsedCharacterCard {
+    V3(CharacterCardV3), // Represents a card parsed from 'ccv3' or a full V3 structure
+    V2Fallback(CharacterCardDataV3), // Represents data parsed from 'chara' (V2)
+}
+
+
 // --- Main Parsing Function ---
 
-pub fn parse_character_card_png(png_data: &[u8]) -> Result<CharacterCardV3, ParserError> {
+pub fn parse_character_card_png(png_data: &[u8]) -> Result<ParsedCharacterCard, ParserError> {
     let cursor = Cursor::new(png_data);
     let decoder = Decoder::new(cursor);
     // Note: We only read info here. IDAT chunks are not needed for text data.
@@ -42,8 +50,6 @@ pub fn parse_character_card_png(png_data: &[u8]) -> Result<CharacterCardV3, Pars
     let mut chara_data_base64: Option<String> = None;
 
     // Iterate over text chunks found in the PNG info
-    // Note: The png crate gives these as Latin-1 strings by default for tEXt.
-    // We assume the base64 content itself will be ASCII-compatible.
     for text_chunk in &info.uncompressed_latin1_text {
         if text_chunk.keyword == ccv3_keyword {
             ccv3_data_base64 = Some(text_chunk.text.clone());
@@ -52,53 +58,54 @@ pub fn parse_character_card_png(png_data: &[u8]) -> Result<CharacterCardV3, Pars
         }
     }
 
-    // --- Prioritize ccv3 --- 
+    // --- Prioritize ccv3 ---
     if let Some(base64_str) = ccv3_data_base64 {
         match base64_standard.decode(&base64_str) {
             Ok(decoded_bytes) => {
                 match serde_json::from_slice::<CharacterCardV3>(&decoded_bytes) {
                     Ok(card) => {
-                        if card.spec == "chara_card_v3" {
-                            return Ok(card); // Successfully parsed V3
-                        } else {
-                             println!("Warning: Found 'ccv3' chunk but 'spec' field is not 'chara_card_v3'. Falling back to 'chara' if possible.");
-                        }
+                        // Accept if spec is explicitly V3 or if spec is missing/different
+                        // but the structure matches CharacterCardV3 based on the 'ccv3' chunk.
+                        // We wrap it in ParsedCharacterCard::V3
+                        return Ok(ParsedCharacterCard::V3(card));
                     }
                     Err(e) => {
-                         println!("Warning: Failed to parse JSON from 'ccv3' chunk: {}. Falling back to 'chara' if possible.", e);
+                         println!("Warning: Failed to parse JSON from 'ccv3' chunk as CharacterCardV3: {}. Falling back to 'chara' if possible.", e);
+                         // Don't return error yet, try fallback
                     }
                 }
             }
             Err(e) => {
                  println!("Warning: Failed to decode base64 from 'ccv3' chunk: {}. Falling back to 'chara' if possible.", e);
+                 // Don't return error yet, try fallback
             }
         }
     }
 
-    // --- Fallback to chara --- 
+    // --- Fallback to chara ---
     if let Some(base64_str) = chara_data_base64 {
         match base64_standard.decode(&base64_str) {
             Ok(decoded_bytes) => {
                  match serde_json::from_slice::<CharacterCardDataV3>(&decoded_bytes) {
                      Ok(data_v2) => {
                          println!("Info: Loaded character from V2 'chara' chunk.");
-                        return Ok(CharacterCardV3 {
-                            spec: "chara_card_v2_fallback".to_string(), // Indicate it's a fallback
-                            spec_version: "2.0".to_string(), // Indicate V2 origin
-                            data: data_v2,
-                        });
+                         // Return the V2 data wrapped in the V2Fallback variant
+                        return Ok(ParsedCharacterCard::V2Fallback(data_v2));
                     }
                     Err(e) => {
+                         // If 'chara' JSON parsing fails, this is a hard error for the fallback
                          return Err(ParserError::JsonError(e));
                     }
                  }
             }
              Err(e) => {
+                 // If 'chara' base64 decoding fails, this is a hard error for the fallback
                  return Err(ParserError::Base64Error(e));
              }
         }
     }
 
+    // If neither 'ccv3' nor 'chara' yielded a valid result
     Err(ParserError::ChunkNotFound)
 }
 
@@ -107,4 +114,4 @@ pub fn parse_character_card_png(png_data: &[u8]) -> Result<CharacterCardV3, Pars
 #[path = "character_parser_tests.rs"]
 mod tests;
 
-// Test module removed from here 
+// Test module removed from here

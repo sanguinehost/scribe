@@ -9,57 +9,60 @@ use serde::Serialize;
 use std::env;
 use std::net::SocketAddr;
 use std::sync::Arc;
+use tower_http::trace::{DefaultMakeSpan, TraceLayer}; // Import TraceLayer
 
 // Use modules from the library crate
+use scribe_backend::logging::init_subscriber; // Import the new function
 use scribe_backend::routes::characters::{get_character, list_characters, upload_character};
 use scribe_backend::state::{AppState};
 // We might not need direct access to models/schema/services in main.rs itself,
 // but if we do, they would be imported like:
-// use scribe_backend::models; 
+// use scribe_backend::models;
 // use scribe_backend::schema;
 // use scribe_backend::services;
-
-// No longer need these pub mod declarations here
-// pub mod models;
-// pub mod routes;
-// pub mod services;
-// pub mod schema;
-
-// --- DB Connection Pool Type ---
-// type DbPool = Arc<Pool<ConnectionManager<PgConnection>>>;
-
-// --- Shared application state ---
-// #[derive(Clone)] // Axum requires state to be Clone
-// struct AppState {
-//     pool: DbPool,
-// }
 
 #[tokio::main]
 async fn main() {
     // Load .env file
     dotenvy::dotenv().ok();
 
+    // Initialize tracing subscriber using the new function
+    init_subscriber(); // Call the function from the logging module
+
+    tracing::info!("Starting Scribe backend server..."); // Log startup
+
     // Set up database connection pool
     let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+    tracing::info!("Connecting to database..."); // Log DB connection attempt
     let manager = ConnectionManager::<PgConnection>::new(database_url);
     let pool = Pool::builder()
         .test_on_check_out(true)
         .build(manager)
         .expect("Failed to create DB pool.");
+    tracing::info!("Database connection pool established."); // Log DB success
 
     let app_state = AppState { pool: Arc::new(pool) };
 
-    // Build our application with routes and state
+    // Build our application with routes, state, and tracing layer
     let app = Router::new()
         .route("/api/health", get(health_check)) // health_check is local to main.rs
         // Character routes
         .route("/api/characters", get(list_characters).post(upload_character))
         .route("/api/characters/:id", get(get_character))
-        .with_state(app_state); // Pass state to the router
+        .with_state(app_state) // Pass state to the router
+        // Add TraceLayer for request logging
+        .layer(
+            TraceLayer::new_for_http()
+                .make_span_with(DefaultMakeSpan::default().include_headers(true))
+        );
+
 
     // Run our application
-    let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
-    println!("listening on {}", addr);
+    let port = env::var("PORT").unwrap_or_else(|_| "3000".to_string());
+    let addr_str = format!("0.0.0.0:{}", port); // Listen on 0.0.0.0 for container compatibility
+    let addr: SocketAddr = addr_str.parse().expect("Invalid address format");
+
+    tracing::info!("Listening on {}", addr); // Use tracing::info instead of println!
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
     axum::serve(listener, app).await.unwrap();
 }
@@ -71,5 +74,6 @@ struct HealthStatus {
 
 // health_check remains defined locally in main.rs
 async fn health_check() -> Json<HealthStatus> {
+    tracing::debug!("Health check endpoint called"); // Add a debug log
     Json(HealthStatus { status: "ok".to_string() })
-} 
+}

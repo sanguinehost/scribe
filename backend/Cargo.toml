@@ -1,32 +1,41 @@
 [package]
 name = "scribe-backend"
 version = "0.1.0"
-edition = "2024" # Use 2021 edition for broader compatibility or if specific 2024 features aren't needed yet
+edition = "2024"
 
 [dependencies]
-axum = "0.7.5"
+axum = { version = "0.7.5", features = ["multipart"] } # <-- Added multipart feature
 tokio = { version = "1", features = ["full"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-png = "0.17" # For reading PNG chunks
-base64 = "0.22" # For decoding base64 data in chara chunk
-thiserror = "1.0" # Updated to 1.0 for common practice
+png = "0.17"
+base64 = "0.22"
+thiserror = "1.0"
 diesel = { version = "2.2.9", features = ["postgres", "chrono", "uuid", "serde_json", "r2d2"] }
 dotenvy = "0.15"
-chrono = { version = "0.4", features = ["serde"] } # Keep version compatible with diesel/others if needed
-diesel-derive-enum = { version = "2.1.0", features = ["postgres"] } # Added for custom SQL ENUM types
-uuid = { version = "1.8", features = ["v4", "serde"] } # Add UUID generation and serde support
-tower = { version = "0.4", features = ["util"] } # Core dependency for Axum services, enable util for ServiceExt
-axum-login = "0.15" # Added for authentication
-bcrypt = "0.15" # Added for password hashing
-secrecy = { version = "0.8", features = ["serde"] } # Added for AuthUser password hash type
+chrono = { version = "0.4", features = ["serde"] }
+diesel-derive-enum = { version = "2.1.0", features = ["postgres"] }
+uuid = { version = "1.8", features = ["v4", "serde"] }
+tower = { version = "0.4", features = ["util", "timeout"] }
+tower-http = { version = "0.5.0", features = ["fs", "trace", "cors"] }
+axum-login = "0.15"
+bcrypt = "0.15"
+secrecy = { version = "0.8", features = ["serde"] }
+
+# Logging dependencies
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+
+# Added for error handling and multipart
+anyhow = "1.0" # <-- Added for AppError::InternalServerError
+futures-util = "0.3" # <-- Added for multipart stream processing
 
 [dev-dependencies]
 reqwest = "0.12"
-# tokio in dev-dependencies is likely redundant if it's already in main dependencies with "full" features
-serde_json = "1.0" # Redundant if in main deps
+serde_json = "1.0"
 crc32fast = "1.4"
-mime = "0.3" # For setting Content-Type header
-http-body-util = "0.1" # For collecting response body
-cargo-tarpaulin = "0.25.2" # Added for code coverage
-anyhow = "1.0" # For easier error handling in tests
+mime = "0.3"
+http-body-util = "0.1"
+cargo-tarpaulin = "0.25.2"
+anyhow = "1.0"
+once_cell = "1.19" # Added based on test error E0433

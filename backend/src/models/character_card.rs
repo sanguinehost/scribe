@@ -150,7 +150,7 @@ pub struct StandaloneLorebook {
 #[path = "character_card_tests.rs"]
 mod tests;
 
-// Test module removed from here 
+// Test module removed from here
 
 // --- Diesel Database Models ---
 
@@ -222,6 +222,125 @@ pub struct NewCharacter {
     pub group_only_greetings: Option<Vec<Option<String>>>,
     pub creation_date: Option<DateTime<Utc>>,
     pub modification_date: Option<DateTime<Utc>>,
+}
+
+// --- Conversion from Parsed Card to NewCharacter ---
+use crate::services::character_parser::ParsedCharacterCard;
+
+impl NewCharacter {
+    // Add user_id parameter
+    pub fn from_parsed_card(parsed: &ParsedCharacterCard, user_id: Uuid) -> Self {
+         match parsed {
+            ParsedCharacterCard::V3(card_v3) => {
+                // --- Handling V3 Card ---
+                let data = &card_v3.data; // Borrow data to avoid repeated card_v3.data
+
+                // Ensure spec and spec_version are handled correctly
+                let spec = card_v3.spec.clone();
+                let spec_version = card_v3.spec_version.clone();
+
+                // Convert tags if necessary (Vec<String> -> Option<Vec<Option<String>>>)
+                let tags = if data.tags.is_empty() {
+                    None
+                } else {
+                    Some(data.tags.clone().into_iter().map(Some).collect())
+                };
+                let alternate_greetings = if data.alternate_greetings.is_empty() {
+                    None
+                } else {
+                    Some(data.alternate_greetings.clone().into_iter().map(Some).collect())
+                };
+                let group_only_greetings = if data.group_only_greetings.is_empty() {
+                    None
+                } else {
+                    Some(data.group_only_greetings.clone().into_iter().map(Some).collect())
+                };
+                let source = data.source.as_ref().and_then(|s| {
+                    if s.is_empty() { None } else { Some(s.clone().into_iter().map(Some).collect()) }
+                });
+
+                // Convert optional timestamps (Option<i64> -> Option<DateTime<Utc>>)
+                let creation_date_ts = data.creation_date.and_then(|ts| DateTime::from_timestamp(ts, 0));
+                let modification_date_ts = data.modification_date.and_then(|ts| DateTime::from_timestamp(ts, 0));
+
+                let creator_notes_multilingual_json = data.creator_notes_multilingual.as_ref()
+                    .and_then(|m| serde_json::to_value(m).ok()) // Convert HashMap to JsonValue
+                    .filter(|v| !v.is_null()); // Ensure it's not null before storing
+
+
+                NewCharacter {
+                    user_id, // Use passed user_id
+                    name: data.name.clone().unwrap_or_default(), // V3 name is Option<String>, DB needs String
+                    // Wrap non-optional V3 strings in Some() for DB Option<String>, filter empty
+                    description: Some(data.description.clone()).filter(|s| !s.is_empty()),
+                    personality: Some(data.personality.clone()).filter(|s| !s.is_empty()),
+                    scenario: Some(data.scenario.clone()).filter(|s| !s.is_empty()),
+                    first_mes: Some(data.first_mes.clone()).filter(|s| !s.is_empty()),
+                    mes_example: Some(data.mes_example.clone()).filter(|s| !s.is_empty()),
+                    creator_notes: Some(data.creator_notes.clone()).filter(|s| !s.is_empty()),
+                    system_prompt: Some(data.system_prompt.clone()).filter(|s| !s.is_empty()),
+                    post_history_instructions: Some(data.post_history_instructions.clone()).filter(|s| !s.is_empty()),
+                    creator: Some(data.creator.clone()).filter(|s| !s.is_empty()),
+                    character_version: Some(data.character_version.clone()).filter(|s| !s.is_empty()),
+                    // Use converted vecs
+                    alternate_greetings,
+                    tags,
+                    spec, // Use extracted spec
+                    spec_version, // Use extracted spec_version
+                    // character_book: data.character_book.clone(), // DB has separate table, handle later if needed
+                    nickname: data.nickname.clone(), // Already Option<String>
+                    creator_notes_multilingual: creator_notes_multilingual_json, // Already Option<JsonValue>
+                    source, // Already Option<Vec<Option<String>>>
+                    group_only_greetings, // Already Option<Vec<Option<String>>>
+                    creation_date: creation_date_ts, // Already Option<DateTime<Utc>>
+                    modification_date: modification_date_ts, // Already Option<DateTime<Utc>>
+                }
+            }
+            ParsedCharacterCard::V2Fallback(data_v2) => {
+                // --- Handling V2 Fallback Card ---
+                // Map relevant V2 fields, set spec/version for fallback
+
+                // V2 tags/greetings are Vec<String>, DB wants Option<Vec<Option<String>>>
+                let tags = if data_v2.tags.is_empty() {
+                     None
+                } else {
+                     Some(data_v2.tags.clone().into_iter().map(Some).collect())
+                };
+                let alternate_greetings = if data_v2.alternate_greetings.is_empty() {
+                     None
+                } else {
+                     Some(data_v2.alternate_greetings.clone().into_iter().map(Some).collect())
+                };
+
+                // Most V2 fields are String, DB wants Option<String>. Wrap in Some() and filter empty.
+                NewCharacter {
+                    user_id, // Use passed user_id
+                    name: data_v2.name.clone().unwrap_or_default(), // V2 name is Option<String>, DB needs String
+                    description: Some(data_v2.description.clone()).filter(|s| !s.is_empty()),
+                    personality: Some(data_v2.personality.clone()).filter(|s| !s.is_empty()),
+                    scenario: Some(data_v2.scenario.clone()).filter(|s| !s.is_empty()),
+                    first_mes: Some(data_v2.first_mes.clone()).filter(|s| !s.is_empty()),
+                    mes_example: Some(data_v2.mes_example.clone()).filter(|s| !s.is_empty()),
+                    creator_notes: Some(data_v2.creator_notes.clone()).filter(|s| !s.is_empty()),
+                    system_prompt: Some(data_v2.system_prompt.clone()).filter(|s| !s.is_empty()),
+                    post_history_instructions: Some(data_v2.post_history_instructions.clone()).filter(|s| !s.is_empty()),
+                    tags, // Use converted tags
+                    creator: Some(data_v2.creator.clone()).filter(|s| !s.is_empty()),
+                    character_version: Some(data_v2.character_version.clone()).filter(|s| !s.is_empty()),
+                    alternate_greetings, // Use converted greetings
+                    spec: "chara_card_v2_fallback".to_string(), // Indicate fallback
+                    spec_version: "2.0".to_string(), // Indicate V2 origin
+                    // V3 specific fields are left None or default
+                    nickname: None,
+                    creator_notes_multilingual: None,
+                    source: None,
+                    group_only_greetings: None,
+                    creation_date: None,
+                    modification_date: None,
+                }
+            }
+        }
+    }
 }
 
 
@@ -322,4 +441,4 @@ pub struct NewDbLorebookEntry {
     pub selective: Option<bool>,
     pub secondary_keys: Option<Vec<Option<String>>>,
     pub position: Option<String>,
-} 
+}
