@@ -173,31 +173,49 @@ impl Drop for TestDataGuard {
 }
 
 // Helper to create a multipart form request using write! macro for reliability
-fn create_multipart_request(uri: &str, filename: &str, content_type: &str, body_bytes: Vec<u8>) -> Request<Body> {
+// Updated to optionally include extra text fields
+fn create_multipart_request(
+    uri: &str,
+    filename: &str,
+    content_type: &str,
+    body_bytes: Vec<u8>,
+    extra_fields: Option<Vec<(&str, &str)>>,
+) -> Request<Body> {
     let boundary = "------------------------boundary";
     let mut request_body = Vec::new();
 
-    // Construct Content-Disposition string separately using raw strings
-    let content_disposition = format!(
+    // Add the main file field
+    let file_content_disposition = format!(
         r#"Content-Disposition: form-data; name="character_card"; filename="{}"#,
         filename
     );
-
-    // Use write! macro to ensure proper CRLF line endings
     write!(request_body, "--{}\r\n", boundary).unwrap();
-    write!(request_body, "{}\r\n", content_disposition).unwrap(); // Write the pre-formatted string
+    write!(request_body, "{}\r\n", file_content_disposition).unwrap();
     write!(request_body, "Content-Type: {}\r\n", content_type).unwrap();
-    write!(request_body, "\r\n").unwrap(); // Extra CRLF before body
+    write!(request_body, "\r\n").unwrap();
     request_body.extend_from_slice(&body_bytes);
-    // Corrected: Add CRLF *before* the final boundary marker
-    write!(request_body, "\r\n--{}--\r\n", boundary).unwrap();
+    write!(request_body, "\r\n").unwrap(); // Add CRLF after file content
+
+    // Add extra text fields if provided
+    if let Some(fields) = extra_fields {
+        for (name, value) in fields {
+            let field_content_disposition = format!(r#"Content-Disposition: form-data; name="{}""#, name);
+            write!(request_body, "--{}\r\n", boundary).unwrap();
+            write!(request_body, "{}\r\n", field_content_disposition).unwrap();
+            write!(request_body, "\r\n").unwrap(); // Extra CRLF before field value
+            write!(request_body, "{}", value).unwrap();
+            write!(request_body, "\r\n").unwrap(); // Add CRLF after field value
+        }
+    }
+
+    // Final boundary marker
+    write!(request_body, "--{}--\r\n", boundary).unwrap();
 
     Request::builder()
         .method(http::Method::POST)
         .uri(uri)
         .header(
             http::header::CONTENT_TYPE,
-            // Corrected: Quote the boundary value in the Content-Type header
             format!("multipart/form-data; boundary=\"{}\"", boundary),
         )
         .body(Body::from(request_body))
@@ -235,7 +253,7 @@ mod tests {
             }
         }"#;
         let png_bytes = create_test_png_with_text_chunk(b"ccv3", v3_json);
-        let request = create_multipart_request("/api/characters", "test_v3.png", "image/png", png_bytes);
+        let request = create_multipart_request("/api/characters", "test_v3.png", "image/png", png_bytes, None);
         let response = app.oneshot(request).await?;
         assert_eq!(response.status(), StatusCode::OK, "Expected OK status");
 
@@ -264,7 +282,7 @@ mod tests {
             "first_mes": "Hello from V2!"
         }"#;
         let png_bytes = create_test_png_with_text_chunk(b"chara", v2_json);
-        let request = create_multipart_request("/api/characters", "test_v2.png", "image/png", png_bytes);
+        let request = create_multipart_request("/api/characters", "test_v2.png", "image/png", png_bytes, None);
         let response = app.oneshot(request).await?;
         assert_eq!(response.status(), StatusCode::OK, "Expected OK status");
 
@@ -285,7 +303,7 @@ mod tests {
         let app = test_app_router();
         let not_png_bytes = b"definitely not a png".to_vec();
         // Use the helper even for incorrect content type to ensure boundary format is correct
-        let request = create_multipart_request("/api/characters", "not_png.txt", "text/plain", not_png_bytes);
+        let request = create_multipart_request("/api/characters", "not_png.txt", "text/plain", not_png_bytes, None);
         let response = app.oneshot(request).await?;
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 
@@ -314,7 +332,7 @@ mod tests {
         png_bytes.extend_from_slice(b"IEND");
         png_bytes.extend_from_slice(&[174, 66, 96, 130]); // CRC of IEND
 
-        let request = create_multipart_request("/api/characters", "no_data.png", "image/png", png_bytes);
+        let request = create_multipart_request("/api/characters", "no_data.png", "image/png", png_bytes, None);
         let response = app.oneshot(request).await?;
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 
@@ -358,6 +376,41 @@ mod tests {
         let body = response.into_body().collect().await?.to_bytes();
         let error: Value = serde_json::from_slice(&body)?;
         assert_eq!(error["error"], "Missing 'character_card' PNG file in upload form data.");
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_upload_with_extra_field() -> AnyhowResult<()> {
+        let app = test_app_router();
+        let pool = create_test_pool();
+        let mut guard = TestDataGuard::new(pool.clone());
+
+        let v3_json = r#"{
+            "spec": "chara_card_v3",
+            "spec_version": "3.0",
+            "data": { "name": "Extra Field Test" }
+        }"#;
+        let png_bytes = create_test_png_with_text_chunk(b"ccv3", v3_json);
+
+        // Create request with an extra text field
+        let extra_fields = vec![("extra_info", "some_value")];
+        let request = create_multipart_request(
+            "/api/characters",
+            "extra_field.png",
+            "image/png",
+            png_bytes,
+            Some(extra_fields), // Pass the extra field
+        );
+
+        let response = app.oneshot(request).await?;
+        assert_eq!(response.status(), StatusCode::OK, "Expected OK status even with extra field");
+
+        let body = response.into_body().collect().await?.to_bytes();
+        let character: Character = serde_json::from_slice(&body)?;
+        guard.add_character(character.id);
+
+        assert_eq!(character.name, "Extra Field Test");
+        assert_eq!(character.spec, "chara_card_v3");
         Ok(())
     }
 

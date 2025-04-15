@@ -11,3 +11,8 @@ pub fn init_subscriber() {
 
     tracing::info!("Tracing subscriber initialized.");
 }
+
+// Declare the test module (it lives in a separate file)
+#[cfg(test)]
+#[path = "logging_tests.rs"]
+mod tests;

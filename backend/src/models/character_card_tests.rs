@@ -281,3 +281,139 @@ fn test_parse_decorators_fallback_without_main() {
      assert!(decorators.is_empty()); // Fallback without main is treated as content
      assert_eq!(processed_content, content);
 }
+
+#[test]
+fn test_parse_decorators_edge_cases() {
+    // Test @@ followed by nothing or whitespace
+    let content1 = "@@\nContent";
+    let (decorators1, processed_content1) = parse_decorators_from_content(content1);
+    assert!(decorators1.is_empty());
+    assert_eq!(processed_content1, "@@\nContent"); // Should be treated as content
+
+    let content2 = "@@ \nContent";
+    let (decorators2, processed_content2) = parse_decorators_from_content(content2);
+    assert!(decorators2.is_empty());
+    assert_eq!(processed_content2, "@@ \nContent"); // Should be treated as content
+
+    // Test @@@ followed by nothing or whitespace
+    let content3 = "@@main val\n@@@\nContent";
+    let (decorators3, processed_content3) = parse_decorators_from_content(content3);
+    assert_eq!(decorators3.len(), 1);
+    assert!(decorators3[0].fallbacks.is_empty());
+    assert_eq!(processed_content3, "@@@\nContent"); // @@@ treated as content
+
+    let content4 = "@@main val\n@@@ \nContent";
+    let (decorators4, processed_content4) = parse_decorators_from_content(content4);
+     assert_eq!(decorators4.len(), 1);
+    assert!(decorators4[0].fallbacks.is_empty());
+    assert_eq!(processed_content4, "@@@ \nContent"); // @@@ treated as content
+
+    // Test @@@ fallback_name (no value) with leading whitespace
+    let content5 = "@@main val\n  @@@fallback_no_val\nContent";
+    let (decorators5, processed_content5) = parse_decorators_from_content(content5);
+    assert_eq!(decorators5.len(), 1);
+    assert!(decorators5[0].fallbacks.is_empty()); // Fallback treated as content due to whitespace + no value
+    assert_eq!(processed_content5, "  @@@fallback_no_val\nContent");
+
+     // Test @@@ with empty name
+    let content6 = "@@main val\n@@@ \nContent"; // Already tested by content4, but re-verify logic
+    let (decorators6, processed_content6) = parse_decorators_from_content(content6);
+    assert_eq!(decorators6.len(), 1);
+    assert!(decorators6[0].fallbacks.is_empty());
+    assert_eq!(processed_content6, "@@@ \nContent");
+
+    // Test @@ with empty name
+    let content7 = "@@ \nContent"; // Already tested by content2, but re-verify logic
+    let (decorators7, processed_content7) = parse_decorators_from_content(content7);
+    assert!(decorators7.is_empty());
+    assert_eq!(processed_content7, "@@ \nContent");
+}
+
+// --- Tests for NewCharacter::from_parsed_card ---
+
+// Helper function to create a minimal ParsedCharacterCard::V2Fallback
+// Need to import ParsedCharacterCard and CharacterCardDataV3 from the parent module if not already done
+use crate::services::character_parser::ParsedCharacterCard; // Assuming this path is correct
+use crate::models::character_card::CharacterCardDataV3; // Assuming this path is correct
+use uuid::Uuid; // Need Uuid for user_id
+
+fn create_minimal_v2_fallback(name: &str) -> ParsedCharacterCard {
+    ParsedCharacterCard::V2Fallback(CharacterCardDataV3 {
+        name: Some(name.to_string()),
+        ..Default::default()
+    })
+}
+
+#[test]
+fn test_from_parsed_card_v2_empty_collections() {
+    let user_id = Uuid::new_v4();
+    let parsed_v2 = create_minimal_v2_fallback("V2 Empty Collections");
+
+    let new_char = NewCharacter::from_parsed_card(&parsed_v2, user_id);
+
+    assert_eq!(new_char.user_id, user_id);
+    assert_eq!(new_char.name, "V2 Empty Collections");
+    assert_eq!(new_char.spec, "chara_card_v2_fallback");
+    assert_eq!(new_char.spec_version, "2.0");
+    assert!(new_char.tags.is_none()); // Should be None when empty
+    assert!(new_char.alternate_greetings.is_none()); // Should be None when empty
+    assert!(new_char.description.is_none()); // Default empty string becomes None
+}
+
+#[test]
+fn test_from_parsed_card_v2_with_collections() {
+     let user_id = Uuid::new_v4();
+     let data_v2 = CharacterCardDataV3 { // Removed mut, not needed
+        name: Some("V2 With Collections".to_string()),
+        tags: vec!["tag1".to_string(), "tag2".to_string()],
+        alternate_greetings: vec!["hi".to_string()],
+        description: "A description".to_string(),
+        ..Default::default()
+     };
+     let parsed_v2 = ParsedCharacterCard::V2Fallback(data_v2);
+
+     let new_char = NewCharacter::from_parsed_card(&parsed_v2, user_id);
+
+     assert_eq!(new_char.user_id, user_id);
+     assert_eq!(new_char.name, "V2 With Collections");
+     assert_eq!(new_char.spec, "chara_card_v2_fallback");
+     assert_eq!(new_char.spec_version, "2.0");
+     assert_eq!(new_char.tags, Some(vec![Some("tag1".to_string()), Some("tag2".to_string())]));
+     assert_eq!(new_char.alternate_greetings, Some(vec![Some("hi".to_string())]));
+     assert_eq!(new_char.description, Some("A description".to_string()));
+}
+
+// Add a test for V3 conversion as well for completeness
+#[test]
+fn test_from_parsed_card_v3() {
+    let user_id = Uuid::new_v4();
+    let card_v3 = CharacterCardV3 {
+        spec: "chara_card_v3".to_string(),
+        spec_version: "3.0".to_string(),
+        data: CharacterCardDataV3 {
+            name: Some("V3 Test Convert".to_string()),
+            description: "V3 Desc".to_string(),
+            tags: vec!["v3tag".to_string()],
+            alternate_greetings: vec![], // Empty greetings
+            creation_date: Some(1700000000),
+            modification_date: None,
+            creator_notes_multilingual: Some([("es".to_string(), "nota".to_string())].iter().cloned().collect()),
+            ..Default::default()
+        }
+    };
+    let parsed_v3 = ParsedCharacterCard::V3(card_v3);
+    let new_char = NewCharacter::from_parsed_card(&parsed_v3, user_id);
+
+    assert_eq!(new_char.user_id, user_id);
+    assert_eq!(new_char.name, "V3 Test Convert");
+    assert_eq!(new_char.spec, "chara_card_v3");
+    assert_eq!(new_char.spec_version, "3.0");
+    assert_eq!(new_char.description, Some("V3 Desc".to_string()));
+    assert_eq!(new_char.tags, Some(vec![Some("v3tag".to_string())]));
+    assert!(new_char.alternate_greetings.is_none()); // Empty vec becomes None
+    assert!(new_char.creation_date.is_some());
+    assert!(new_char.modification_date.is_none());
+    assert!(new_char.creator_notes_multilingual.is_some());
+    let notes_json = new_char.creator_notes_multilingual.unwrap();
+    assert_eq!(notes_json.get("es").unwrap().as_str().unwrap(), "nota");
+}
