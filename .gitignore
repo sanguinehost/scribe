@@ -28,3 +28,6 @@ dist/
 
 # Specific backend environment file
 /backend/.env
+
+# Cargo Tarpaulin
+tarpaulin-report.json

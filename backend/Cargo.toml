@@ -21,7 +21,7 @@ tower-http = { version = "0.5.0", features = ["fs", "trace", "cors"] }
 axum-login = "0.15"
 bcrypt = "0.15"
 secrecy = { version = "0.8", features = ["serde"] }
-
+zip = "1.1.0" # Added for CHARX parsing
 # Logging dependencies
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }

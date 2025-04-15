@@ -1,4 +1,4 @@
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize}; // Added Deserializer
 use serde_json::Value; // Using Value for flexibility in extensions and mixed types like id
 use std::collections::HashMap;
 use uuid::Uuid; // <-- Add Uuid import
@@ -90,12 +90,128 @@ pub struct Lorebook {
     pub entries: Vec<LorebookEntry>,
 }
 
+// --- Lorebook Decorator Definitions ---
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum DecoratorRole {
+    Assistant,
+    System,
+    User,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum DecoratorPosition {
+    AfterDesc,
+    BeforeDesc,
+    Personality,
+    Scenario,
+    // Application specific positions could be added here if needed
+    #[serde(other)] // Catch-all for unknown positions
+    Unknown,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum DecoratorUiPromptType {
+    PostHistoryInstructions,
+    SystemPrompt,
+    #[serde(other)]
+    Unknown,
+}
+
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Decorator {
+    pub name: String,
+    pub value: Option<String>, // Store raw value string for flexibility
+    pub fallbacks: Vec<Decorator>, // For @@@ fallback mechanism
+}
+
+// --- End Lorebook Decorator Definitions ---
+
+
+// Helper function to parse decorators from content string
+fn parse_decorators_from_content(raw_content: &str) -> (Vec<Decorator>, String) {
+    let mut decorators = Vec::new();
+    let mut content_lines = Vec::new();
+    let mut lines = raw_content.lines().peekable();
+
+    while let Some(line) = lines.next() {
+        let trimmed_line = line.trim(); // Trim leading/trailing whitespace
+
+        if trimmed_line.starts_with("@@") && !trimmed_line.starts_with("@@@") {
+            // Found a potential main decorator line
+            let parts: Vec<&str> = trimmed_line[2..].splitn(2, |c: char| c.is_whitespace()).collect();
+            let name = parts.get(0).unwrap_or(&"").trim().to_string();
+
+            if name.is_empty() {
+                 // Invalid decorator line, treat as content
+                 content_lines.push(line);
+                 continue;
+            }
+
+            let value = parts.get(1).map(|v| v.trim().to_string());
+
+            let mut fallbacks = Vec::new();
+            // Check subsequent lines for fallbacks (@@@)
+            while let Some(next_line) = lines.peek() {
+                let trimmed_next = next_line.trim();
+                if trimmed_next.starts_with("@@@") {
+                    // Consume the fallback line
+                    lines.next();
+
+                    let fallback_parts: Vec<&str> = trimmed_next[3..].splitn(2, |c: char| c.is_whitespace()).collect();
+                    let fallback_name = fallback_parts.get(0).unwrap_or(&"").trim().to_string();
+
+                    if fallback_name.is_empty() {
+                        // Invalid fallback line, ignore it
+                        continue;
+                    }
+
+                    let fallback_value = fallback_parts.get(1).map(|v| v.trim().to_string());
+                    // Fallbacks don't have their own fallbacks according to spec example
+                    fallbacks.push(Decorator {
+                        name: fallback_name,
+                        value: fallback_value,
+                        fallbacks: Vec::new(), // Fallbacks don't have fallbacks
+                    });
+                } else {
+                    // Next line is not a fallback, stop checking
+                    break;
+                }
+            }
+
+            decorators.push(Decorator { name, value, fallbacks });
+
+        } else if trimmed_line.starts_with("@@@") {
+             // Found a fallback line without a preceding main decorator, treat as content
+             content_lines.push(line);
+        }
+        else {
+            // Not a decorator line, add to content
+            content_lines.push(line);
+        }
+    }
+
+    // Reconstruct content, trimming leading/trailing empty lines that might result from decorator removal
+    let processed_content = content_lines
+        .join("\n")
+        .trim_matches('\n') // Remove leading/trailing newlines potentially left by decorators
+        .to_string();
+
+    (decorators, processed_content)
+}
+
+
 // Lorebook Entry Definition
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Debug, Clone)] // Removed Deserialize temporarily, will add custom later
 #[serde(rename_all = "snake_case")]
 pub struct LorebookEntry {
     #[serde(default)]
     pub keys: Vec<String>,
+    // Raw content as read from JSON
     pub content: String,
     #[serde(default)]
     pub extensions: HashMap<String, Value>,
@@ -118,13 +234,76 @@ pub struct LorebookEntry {
     // Selective Activation fields
     pub selective: Option<bool>,
     #[serde(default)]
-    // Sticking with TS Array<string> definition from spec for now
     pub secondary_keys: Vec<String>,
 
-
     // Position (only before/after_char mentioned in struct definition)
-    // Making this optional as it's not always present
     pub position: Option<LorebookEntryPosition>,
+
+    // --- Fields derived from parsing decorators ---
+    #[serde(skip)] // Don't serialize/deserialize this directly
+    pub parsed_decorators: Vec<Decorator>,
+    #[serde(skip)] // Don't serialize/deserialize this directly
+    pub processed_content: String, // Content after decorators are stripped
+}
+
+// We need a temporary struct for deserialization before processing decorators
+#[derive(Deserialize, Debug)]
+#[serde(rename_all = "snake_case")]
+struct RawLorebookEntry {
+    #[serde(default)]
+    keys: Vec<String>,
+    content: String,
+    #[serde(default)]
+    extensions: HashMap<String, Value>,
+    enabled: bool,
+    #[serde(default)]
+    insertion_order: i64,
+    case_sensitive: Option<bool>,
+    #[serde(default)]
+    use_regex: bool,
+    constant: Option<bool>,
+    name: Option<String>,
+    priority: Option<i64>,
+    id: Option<Value>,
+    comment: Option<String>,
+    selective: Option<bool>,
+    #[serde(default)]
+    secondary_keys: Vec<String>,
+    position: Option<LorebookEntryPosition>,
+}
+
+// Custom Deserialize implementation for LorebookEntry to handle decorator parsing
+impl<'de> Deserialize<'de> for LorebookEntry {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let raw: RawLorebookEntry = RawLorebookEntry::deserialize(deserializer)?;
+
+        // Parse decorators from the raw content
+        let (parsed_decorators, processed_content) = parse_decorators_from_content(&raw.content);
+
+        Ok(LorebookEntry {
+            keys: raw.keys,
+            content: raw.content, // Keep original raw content
+            extensions: raw.extensions,
+            enabled: raw.enabled,
+            insertion_order: raw.insertion_order,
+            case_sensitive: raw.case_sensitive,
+            use_regex: raw.use_regex,
+            constant: raw.constant,
+            name: raw.name,
+            priority: raw.priority,
+            id: raw.id,
+            comment: raw.comment,
+            selective: raw.selective,
+            secondary_keys: raw.secondary_keys,
+            position: raw.position,
+            // --- Populate derived fields ---
+            parsed_decorators,
+            processed_content,
+        })
+    }
 }
 
 // Enum for Lorebook Entry Position Field

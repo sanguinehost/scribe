@@ -15,6 +15,8 @@
     pkgs.diesel-cli # Add diesel-cli directly
     pkgs.docker-compose # Add Docker Compose CLI
     pkgs.docker     # We also need the main docker package for the daemon/client interaction
+    pkgs.cmake      # Added for libz-ng-sys (dependency of zip crate)
+    pkgs.gnumake    # Added to provide the 'make' command needed by cmake
     # pkgs.go
     # pkgs.python311
     # pkgs.python311Packages.pip
