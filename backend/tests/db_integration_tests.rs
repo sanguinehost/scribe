@@ -14,9 +14,21 @@ use std::collections::HashSet;
 use std::env;
 use std::sync::Arc;
 use uuid::Uuid; // For manual cleanup test assertion
+use scribe_backend::models::chat::{
+    ChatSession, MessageType, NewChatMessage, NewChatSession, ChatMessage,
+};
+use scribe_backend::schema::{chat_messages, chat_sessions};
+use diesel_migrations::{embed_migrations, EmbeddedMigrations, MigrationHarness};
+use bigdecimal::BigDecimal; // Add this import
+use std::str::FromStr; // Add this import
 
 // --- DbPool Type ---
 pub type DbPool = Arc<Pool<ConnectionManager<PgConnection>>>;
+
+// Embed migrations for the test context
+// NOTE: This assumes the test binary is run with the working directory
+// at the root of the `scribe-backend` crate, like `cargo test` does.
+const MIGRATIONS: EmbeddedMigrations = embed_migrations!("./migrations");
 
 // Helper function to establish a test database connection (used by test_transaction test)
 fn establish_connection() -> PgConnection {
@@ -249,6 +261,128 @@ async fn test_list_characters_endpoint_manual_cleanup() -> Result<(), AnyhowErro
 
     println!("Successfully listed characters via handler.");
     Ok(()) // Guard will clean up when test finishes
+}
+
+// --- New Tests ---
+
+#[test]
+fn test_migrations_run_cleanly() {
+    let mut conn = establish_connection();
+    // Attempt to run migrations within a test transaction.
+    // This doesn't guarantee all migrations *were* run previously,
+    // but checks if the current set applies cleanly to the DB state.
+    conn.test_transaction::<_, Box<dyn std::error::Error + Send + Sync>, _>(|conn| {
+        match conn.run_pending_migrations(MIGRATIONS) {
+            Ok(versions) => {
+                println!("Applied migrations in test: {:?}", versions);
+                Ok(())
+            }
+            Err(e) => {
+                eprintln!("Failed to run migrations in test: {:?}", e);
+                Err(e)
+                // Manually fail the test if migrations fail
+                // panic!("Migration test failed: {:?}", e);
+            }
+        }
+    });
+}
+
+#[test]
+fn test_chat_session_insert_and_query() {
+    let mut conn = establish_connection();
+    conn.test_transaction::<_, DieselError, _>(|conn| {
+        // --- Setup: Insert User and Character ---
+        let user = insert_test_user(conn, "session_user")?;
+        let character = insert_test_character(conn, user.id, "Session Character")?;
+
+        // --- Insert Chat Session ---
+        let new_session = NewChatSession {
+            user_id: user.id,
+            character_id: character.id,
+            // Optional fields can be None or set
+            system_prompt: Some("Test System Prompt".to_string()),
+            temperature: Some(BigDecimal::from_str("0.8").unwrap()), // Convert float to BigDecimal
+            max_output_tokens: Some(256),
+            title: None, // Add missing title field
+        };
+
+        let inserted_session: ChatSession = diesel::insert_into(chat_sessions::table)
+            .values(&new_session)
+            .get_result(conn)?;
+
+        assert_eq!(inserted_session.user_id, user.id);
+        assert_eq!(inserted_session.character_id, character.id);
+        assert_eq!(inserted_session.system_prompt, new_session.system_prompt);
+        assert_eq!(inserted_session.temperature, new_session.temperature);
+        assert_eq!(
+            inserted_session.max_output_tokens,
+            new_session.max_output_tokens
+        );
+
+        // --- Query Chat Session ---
+        let found_session: ChatSession = chat_sessions::table
+            .find(inserted_session.id)
+            .first(conn)?;
+
+        assert_eq!(found_session.id, inserted_session.id);
+        assert_eq!(found_session.user_id, user.id);
+        assert_eq!(found_session.character_id, character.id);
+
+        println!("Successfully inserted and queried chat session.");
+        Ok(())
+    });
+}
+
+#[tokio::test]
+async fn test_chat_message_insert_and_query() -> Result<(), AnyhowError> {
+    let pool = create_test_pool();
+    let mut guard = TestDataGuard::new(pool.clone());
+    let mut conn = pool.get()?;
+
+    let user = insert_test_user(&mut conn, "message_user")?;
+    guard.add_user(user.id);
+
+    let character = insert_test_character(&mut conn, user.id, "Message Character")?;
+    guard.add_character(character.id);
+
+    let session = {
+        let new_session = NewChatSession {
+            user_id: user.id,
+            character_id: character.id,
+            ..Default::default()
+        };
+        diesel::insert_into(chat_sessions::table)
+            .values(&new_session)
+            .get_result::<ChatSession>(&mut conn)?
+    };
+
+    let test_content = "This is a test message.".to_string();
+    let new_message = NewChatMessage {
+        session_id: session.id,
+        message_type: MessageType::User,
+        content: test_content.clone(),
+        rag_embedding_id: None,
+    };
+
+    let inserted_message: ChatMessage = diesel::insert_into(chat_messages::table)
+        .values(&new_message)
+        .get_result(&mut conn)?;
+
+    assert_eq!(inserted_message.session_id, session.id);
+    assert_eq!(inserted_message.message_type, MessageType::User);
+    assert_eq!(inserted_message.content, test_content);
+    assert!(inserted_message.rag_embedding_id.is_none());
+
+    let found_message: ChatMessage = chat_messages::table
+        .find(inserted_message.id)
+        .first(&mut conn)?;
+
+    assert_eq!(found_message.id, inserted_message.id);
+    assert_eq!(found_message.session_id, session.id);
+    assert_eq!(found_message.content, test_content);
+
+    println!("Successfully inserted and queried chat message (manual cleanup).");
+    Ok(())
 }
 
 // TODO: Add tests for assets, lorebooks, entries, chat etc.

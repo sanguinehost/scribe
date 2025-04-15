@@ -5,8 +5,8 @@
 -- Enable UUID generation
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
--- Define speaker type enum used in chat_messages
-CREATE TYPE speaker_type AS ENUM ('user', 'ai');
+-- Define message type enum used in chat_messages (Renamed from speaker_type)
+CREATE TYPE message_type AS ENUM ('User', 'Ai'); -- Match Rust enum casing if possible, check diesel-derive-enum docs
 
 -- Function to automatically update 'updated_at' timestamps
 CREATE OR REPLACE FUNCTION diesel_manage_updated_at(_tbl regclass) RETURNS VOID AS $$
@@ -131,7 +131,10 @@ CREATE TABLE chat_sessions (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     character_id UUID NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
-    title VARCHAR(255),
+    title VARCHAR(255), -- Added based on potential need, nullable
+    system_prompt TEXT, -- Added to match model Option<String>
+    temperature NUMERIC, -- Added to match model Option<f64>, use NUMERIC for precision
+    max_output_tokens INTEGER, -- Added to match model Option<i32>
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -143,8 +146,11 @@ CREATE INDEX idx_chat_sessions_character_id ON chat_sessions (character_id);
 CREATE TABLE chat_messages (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     session_id UUID NOT NULL REFERENCES chat_sessions(id) ON DELETE CASCADE,
-    speaker speaker_type NOT NULL,
+    message_type message_type NOT NULL, -- Renamed from speaker, uses new type name
     content TEXT NOT NULL,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    rag_embedding_id UUID NULL, -- Added to match model Option<Uuid>, nullable
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW() -- Added to match model
 );
+SELECT diesel_manage_updated_at('chat_messages'); -- Apply updated_at trigger
 CREATE INDEX idx_chat_messages_session_id_created_at ON chat_messages (session_id, created_at);

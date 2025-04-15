@@ -14,7 +14,7 @@ DROP TABLE IF EXISTS users;
 -- Drop helper functions and types
 DROP FUNCTION IF EXISTS diesel_set_updated_at();
 DROP FUNCTION IF EXISTS diesel_manage_updated_at(_tbl regclass);
-DROP TYPE IF EXISTS speaker_type;
+DROP TYPE IF EXISTS message_type;
 
 -- Optionally drop the extension if it's not needed by other parts of the DB
 -- DROP EXTENSION IF EXISTS "uuid-ossp";

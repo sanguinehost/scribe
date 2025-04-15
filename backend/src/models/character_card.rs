@@ -131,6 +131,7 @@ pub struct Decorator {
 // --- End Lorebook Decorator Definitions ---
 
 // Helper function to parse decorators from content string
+// Making this private again as tests are now colocated
 fn parse_decorators_from_content(raw_content: &str) -> (Vec<Decorator>, String) {
     let mut decorators = Vec::new();
     let mut content_lines = Vec::new();
@@ -360,10 +361,13 @@ pub struct StandaloneLorebook {
     pub data: Lorebook,
 }
 
+// Test module declaration removed as tests are now in the /tests directory
+/*
 // Declare the test module (it lives in a separate file)
 #[cfg(test)]
 #[path = "character_card_tests.rs"]
 mod tests;
+*/
 
 // Test module removed from here
 
@@ -685,4 +689,199 @@ pub struct NewDbLorebookEntry {
     pub selective: Option<bool>,
     pub secondary_keys: Option<Vec<Option<String>>>,
     pub position: Option<String>,
+}
+
+// --- Unit tests ---
+#[cfg(test)]
+mod tests {
+    use super::*; // Import items from the parent module
+
+    // --- Tests for parse_decorators_from_content (moved from tests/character_card_tests.rs) ---
+
+    #[test]
+    fn test_parse_decorators_no_decorators() {
+        let content = "This is normal content.\nWith multiple lines.";
+        let (decorators, processed_content) = parse_decorators_from_content(content);
+        assert!(decorators.is_empty());
+        assert_eq!(processed_content, content);
+    }
+
+    #[test]
+    fn test_parse_decorators_simple() {
+        let content = "@@role system\n@@position after_desc\nActual content here.";
+        let (decorators, processed_content) = parse_decorators_from_content(content);
+        assert_eq!(decorators.len(), 2);
+        assert_eq!(decorators[0].name, "role");
+        assert_eq!(decorators[0].value, Some("system".to_string()));
+        assert!(decorators[0].fallbacks.is_empty());
+        assert_eq!(decorators[1].name, "position");
+        assert_eq!(decorators[1].value, Some("after_desc".to_string()));
+        assert!(decorators[1].fallbacks.is_empty());
+        assert_eq!(processed_content, "Actual content here.");
+    }
+
+    #[test]
+    fn test_parse_decorators_no_value() {
+        let content = "@@enabled\nContent line.";
+        let (decorators, processed_content) = parse_decorators_from_content(content);
+        assert_eq!(decorators.len(), 1);
+        assert_eq!(decorators[0].name, "enabled");
+        assert_eq!(decorators[0].value, None);
+        assert!(decorators[0].fallbacks.is_empty());
+        assert_eq!(processed_content, "Content line.");
+    }
+
+    #[test]
+    fn test_parse_decorators_with_fallbacks() {
+        let content = "@@name Character Name\n@@@nombre Nombre del Personaje\n@@@nom Nom du Personnage\nDescription starts here.";
+        let (decorators, processed_content) = parse_decorators_from_content(content);
+        assert_eq!(decorators.len(), 1);
+        let main_decorator = &decorators[0];
+        assert_eq!(main_decorator.name, "name");
+        assert_eq!(main_decorator.value, Some("Character Name".to_string()));
+        assert_eq!(main_decorator.fallbacks.len(), 2);
+        assert_eq!(main_decorator.fallbacks[0].name, "nombre");
+        assert_eq!(
+            main_decorator.fallbacks[0].value,
+            Some("Nombre del Personaje".to_string())
+        );
+        assert!(main_decorator.fallbacks[0].fallbacks.is_empty());
+        assert_eq!(main_decorator.fallbacks[1].name, "nom");
+        assert_eq!(
+            main_decorator.fallbacks[1].value,
+            Some("Nom du Personnage".to_string())
+        );
+        assert!(main_decorator.fallbacks[1].fallbacks.is_empty());
+        assert_eq!(processed_content, "Description starts here.");
+    }
+
+    #[test]
+    fn test_parse_decorators_mixed_content() {
+        let content = "Line 1\n@@decorator1 value1\nLine 2\n@@decorator2\n@@@fallback2 val_fb\nLine 3";
+        let (decorators, processed_content) = parse_decorators_from_content(content);
+        assert_eq!(decorators.len(), 2);
+        assert_eq!(decorators[0].name, "decorator1");
+        assert_eq!(decorators[0].value, Some("value1".to_string()));
+        assert!(decorators[0].fallbacks.is_empty());
+        assert_eq!(decorators[1].name, "decorator2");
+        assert_eq!(decorators[1].value, None);
+        assert_eq!(decorators[1].fallbacks.len(), 1);
+        assert_eq!(decorators[1].fallbacks[0].name, "fallback2");
+        assert_eq!(decorators[1].fallbacks[0].value, Some("val_fb".to_string()));
+        assert_eq!(processed_content, "Line 1\nLine 2\nLine 3");
+    }
+
+    #[test]
+    fn test_parse_decorators_invalid_lines() {
+        let content =
+            "Line 1\n@@\n@@@ \n@@ name value\n@@@fallback val\n  @@@ invalid_fallback\nLine 2";
+        let (decorators, processed_content) = parse_decorators_from_content(content);
+        assert_eq!(decorators.len(), 1); // Only the valid "@@ name value" should be parsed
+        assert_eq!(decorators[0].name, "name");
+        assert_eq!(decorators[0].value, Some("value".to_string()));
+        assert_eq!(decorators[0].fallbacks.len(), 1); // Only the valid "@@@fallback val"
+        assert_eq!(decorators[0].fallbacks[0].name, "fallback");
+        assert_eq!(decorators[0].fallbacks[0].value, Some("val".to_string()));
+        // Invalid lines should be treated as content
+        assert_eq!(
+            processed_content,
+            "Line 1\n@@\n@@@ \n  @@@ invalid_fallback\nLine 2"
+        );
+    }
+
+    #[test]
+    fn test_parse_decorators_whitespace_handling() {
+        let content =
+            "  @@ spaced_name   spaced value  \n\t@@@ spaced_fallback \t spaced_fb_value \t\nContent";
+        let (decorators, processed_content) = parse_decorators_from_content(content);
+        assert_eq!(decorators.len(), 1);
+        assert_eq!(decorators[0].name, "spaced_name");
+        assert_eq!(decorators[0].value, Some("spaced value".to_string()));
+        assert_eq!(decorators[0].fallbacks.len(), 1);
+        assert_eq!(decorators[0].fallbacks[0].name, "spaced_fallback");
+        assert_eq!(
+            decorators[0].fallbacks[0].value,
+            Some("spaced_fb_value".to_string())
+        );
+        assert_eq!(processed_content, "Content");
+    }
+
+    #[test]
+    fn test_parse_decorators_empty_content() {
+        let content = "";
+        let (decorators, processed_content) = parse_decorators_from_content(content);
+        assert!(decorators.is_empty());
+        assert_eq!(processed_content, "");
+    }
+
+    #[test]
+    fn test_parse_decorators_only_decorators() {
+        let content = "@@d1 v1\n@@@f1 vf1\n@@d2";
+        let (decorators, processed_content) = parse_decorators_from_content(content);
+        assert_eq!(decorators.len(), 2);
+        assert_eq!(decorators[0].name, "d1");
+        assert_eq!(decorators[0].value, Some("v1".to_string()));
+        assert_eq!(decorators[0].fallbacks.len(), 1);
+        assert_eq!(decorators[1].name, "d2");
+        assert_eq!(decorators[1].value, None);
+        assert!(decorators[1].fallbacks.is_empty());
+        assert_eq!(processed_content, ""); // Content should be empty
+    }
+
+    #[test]
+    fn test_parse_decorators_fallback_without_main() {
+        let content = "Line 1\n@@@fallback value\nLine 2";
+        let (decorators, processed_content) = parse_decorators_from_content(content);
+        assert!(decorators.is_empty()); // Fallback without main is treated as content
+        assert_eq!(processed_content, content);
+    }
+
+    #[test]
+    fn test_parse_decorators_edge_cases() {
+        // Test @@ followed by nothing or whitespace
+        let content1 = "@@\nContent";
+        let (decorators1, processed_content1) = parse_decorators_from_content(content1);
+        assert!(decorators1.is_empty());
+        assert_eq!(processed_content1, "@@\nContent"); // Should be treated as content
+
+        let content2 = "@@ \nContent";
+        let (decorators2, processed_content2) = parse_decorators_from_content(content2);
+        assert!(decorators2.is_empty());
+        assert_eq!(processed_content2, "@@ \nContent"); // Should be treated as content
+
+        // Test @@@ followed by nothing or whitespace
+        let content3 = "@@main val\n@@@\nContent";
+        let (decorators3, processed_content3) = parse_decorators_from_content(content3);
+        assert_eq!(decorators3.len(), 1);
+        assert!(decorators3[0].fallbacks.is_empty());
+        assert_eq!(processed_content3, "@@@\nContent"); // @@@ treated as content
+
+        let content4 = "@@main val\n@@@ \nContent";
+        let (decorators4, processed_content4) = parse_decorators_from_content(content4);
+        assert_eq!(decorators4.len(), 1);
+        assert!(decorators4[0].fallbacks.is_empty());
+        assert_eq!(processed_content4, "@@@ \nContent"); // @@@ treated as content
+
+        // Test @@@ fallback_name (no value) with leading whitespace
+        let content5 = "@@main val\n  @@@fallback_no_val\nContent";
+        let (decorators5, processed_content5) = parse_decorators_from_content(content5);
+        assert_eq!(decorators5.len(), 1);
+        assert!(decorators5[0].fallbacks.is_empty()); // Fallback treated as content due to whitespace + no value
+        assert_eq!(processed_content5, "  @@@fallback_no_val\nContent");
+
+        // Test @@@ with empty name
+        let content6 = "@@main val\n@@@ \nContent"; // Already tested by content4, but re-verify logic
+        let (decorators6, processed_content6) = parse_decorators_from_content(content6);
+        assert_eq!(decorators6.len(), 1);
+        assert!(decorators6[0].fallbacks.is_empty());
+        assert_eq!(processed_content6, "@@@ \nContent");
+
+        // Test @@ with empty name
+        let content7 = "@@ \nContent"; // Already tested by content2, but re-verify logic
+        let (decorators7, processed_content7) = parse_decorators_from_content(content7);
+        assert!(decorators7.is_empty());
+        assert_eq!(processed_content7, "@@ \nContent");
+    }
+
+    // TODO: Add other tests for character_card.rs structs/impls here if needed
 }

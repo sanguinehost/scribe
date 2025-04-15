@@ -2,8 +2,8 @@
 
 pub mod sql_types {
     #[derive(diesel::sql_types::SqlType)]
-    #[diesel(postgres_type(name = "speaker_type"))]
-    pub struct SpeakerType;
+    #[diesel(postgres_type(name = "message_type"))]
+    pub struct MessageType;
 }
 
 diesel::table! {
@@ -67,14 +67,16 @@ diesel::table! {
 diesel::table! {
     use diesel::sql_types::*;
     use diesel_derive_enum::DbEnum;
-    use super::sql_types::SpeakerType;
+    use super::sql_types::MessageType;
 
     chat_messages (id) {
         id -> Uuid,
         session_id -> Uuid,
-        speaker -> SpeakerType,
+        message_type -> MessageType,
         content -> Text,
+        rag_embedding_id -> Nullable<Uuid>,
         created_at -> Timestamptz,
+        updated_at -> Timestamptz,
     }
 }
 
@@ -88,6 +90,9 @@ diesel::table! {
         character_id -> Uuid,
         #[max_length = 255]
         title -> Nullable<Varchar>,
+        system_prompt -> Nullable<Text>,
+        temperature -> Nullable<Numeric>,
+        max_output_tokens -> Nullable<Int4>,
         created_at -> Timestamptz,
         updated_at -> Timestamptz,
     }

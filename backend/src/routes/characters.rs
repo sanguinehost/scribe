@@ -97,8 +97,3 @@ pub async fn get_character(
         })?;
     Ok(Json(result))
 }
-
-// --- Test Module ---
-#[cfg(test)]
-#[path = "characters_tests.rs"]
-mod tests;

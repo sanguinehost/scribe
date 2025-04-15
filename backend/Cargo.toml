@@ -11,7 +11,8 @@ serde_json = "1.0"
 png = "0.17"
 base64 = "0.22"
 thiserror = "1.0"
-diesel = { version = "2.2.9", features = ["postgres", "chrono", "uuid", "serde_json", "r2d2"] }
+diesel = { version = "2.2.9", features = ["postgres", "chrono", "uuid", "serde_json", "r2d2", "numeric"] }
+diesel_migrations = "2.2.0"
 dotenvy = "0.15"
 chrono = { version = "0.4", features = ["serde"] }
 diesel-derive-enum = { version = "2.1.0", features = ["postgres"] }
@@ -29,6 +30,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 # Added for error handling and multipart
 anyhow = "1.0" # <-- Added for AppError::InternalServerError
 futures-util = "0.3" # <-- Added for multipart stream processing
+bigdecimal = { version = "0.4.8", features = ["serde"] }
 
 [dev-dependencies]
 hyper-util = { version = "0.1", features = ["full"] }

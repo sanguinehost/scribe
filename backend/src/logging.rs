@@ -15,7 +15,25 @@ pub fn init_subscriber() {
     tracing::info!("Tracing subscriber initialized.");
 }
 
+// Remove the outdated test module declaration using #[path]
+/*
 // Declare the test module (it lives in a separate file)
 #[cfg(test)]
 #[path = "logging_tests.rs"]
 mod tests;
+*/
+
+// --- Unit Tests moved from tests/logging_tests.rs ---
+#[cfg(test)]
+mod tests {
+    use super::*; // Import items from parent module (logging.rs)
+
+    #[test]
+    fn test_init_subscriber_runs() {
+        // This test primarily ensures the function can be called without panicking.
+        // It doesn't verify the logger output, which is harder in unit tests.
+        // We expect it might print info during test runs if RUST_LOG isn't set.
+        init_subscriber();
+        // No panic means success for this basic test.
+    }
+}

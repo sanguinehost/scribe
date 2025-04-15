@@ -1,8 +1,9 @@
 #![cfg(test)]
 // use super::*; // Not needed as handlers are imported directly
-use crate::models::character_card::{Character, NewCharacter};
-use crate::routes::characters::{get_character, list_characters, upload_character};
-use crate::state::AppState;
+// Use scribe_backend:: prefix for library items
+use scribe_backend::models::character_card::{Character, NewCharacter};
+use scribe_backend::routes::characters::{get_character, list_characters, upload_character};
+use scribe_backend::state::AppState;
 use axum::{
     Extension, // Added Extension
     Router,
@@ -15,16 +16,16 @@ use crc32fast;
 use http_body_util::BodyExt;
 use tower::ServiceExt;
 // use mime; // Unused
-use crate::models::users::{NewUser, User}; // Added User model import
-use crate::schema::characters;
-use crate::schema::users; // Added schema import
+use scribe_backend::models::users::{NewUser, User}; // Added User model import
+use scribe_backend::schema::characters;
+use scribe_backend::schema::users; // Added schema import
 use anyhow::Result as AnyhowResult;
 use diesel::PgConnection;
 use diesel::prelude::*;
 use diesel::r2d2::{ConnectionManager, Pool};
 use dotenvy;
 use once_cell::sync::Lazy;
-use serde_json::Value; // Removed unused json macro import
+use serde_json::Value;
 use std::collections::HashSet;
 use std::env;
 use std::io::Write; // Import Write trait

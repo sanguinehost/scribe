@@ -7,6 +7,9 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use tower_http::trace::{DefaultMakeSpan, TraceLayer}; // Import TraceLayer
 
+// Add the migrations import
+use diesel_migrations::{embed_migrations, EmbeddedMigrations, MigrationHarness};
+
 // Use modules from the library crate
 use scribe_backend::logging::init_subscriber; // Import the new function
 use scribe_backend::routes::characters::{get_character, list_characters, upload_character};
@@ -31,6 +34,41 @@ async fn main() {
         .build(manager)
         .expect("Failed to create DB pool.");
     tracing::info!("Database connection pool established."); // Log DB success
+
+    // --- Run Migrations ---
+    // Define the embedded migrations macro (adjust path if needed)
+    pub const MIGRATIONS: EmbeddedMigrations = embed_migrations!("./migrations");
+
+    tracing::info!("Attempting to run database migrations...");
+    // Get a connection from the pool to run migrations
+    // Note: `.get()` can block, consider running in `spawn_blocking` if startup time is critical
+    match pool.get() {
+        Ok(mut conn) => {
+            match conn.run_pending_migrations(MIGRATIONS) {
+                Ok(versions) => {
+                    if versions.is_empty() {
+                        tracing::info!("No pending migrations found.");
+                    } else {
+                        for version in versions {
+                            tracing::info!("Applied migration: {}", version);
+                        }
+                        tracing::info!("Successfully ran pending database migrations.");
+                    }
+                }
+                Err(e) => {
+                    tracing::error!("Failed to run database migrations: {:?}", e);
+                    // Depending on the policy, you might want to exit here
+                    // std::process::exit(1);
+                }
+            }
+        }
+        Err(e) => {
+            tracing::error!("Failed to get connection from pool for migrations: {:?}", e);
+            // Depending on the policy, you might want to exit here
+            // std::process::exit(1);
+        }
+    }
+    // --- End Migrations ---
 
     let app_state = AppState {
         pool: Arc::new(pool),
