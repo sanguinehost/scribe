@@ -1,10 +1,6 @@
-use axum::{
-    routing::{get},
-    Json,
-    Router,
-};
-use diesel::r2d2::{ConnectionManager, Pool};
+use axum::{Json, Router, routing::get};
 use diesel::PgConnection;
+use diesel::r2d2::{ConnectionManager, Pool};
 use serde::Serialize;
 use std::env;
 use std::net::SocketAddr;
@@ -14,12 +10,7 @@ use tower_http::trace::{DefaultMakeSpan, TraceLayer}; // Import TraceLayer
 // Use modules from the library crate
 use scribe_backend::logging::init_subscriber; // Import the new function
 use scribe_backend::routes::characters::{get_character, list_characters, upload_character};
-use scribe_backend::state::{AppState};
-// We might not need direct access to models/schema/services in main.rs itself,
-// but if we do, they would be imported like:
-// use scribe_backend::models;
-// use scribe_backend::schema;
-// use scribe_backend::services;
+use scribe_backend::state::AppState;
 
 #[tokio::main]
 async fn main() {
@@ -41,21 +32,25 @@ async fn main() {
         .expect("Failed to create DB pool.");
     tracing::info!("Database connection pool established."); // Log DB success
 
-    let app_state = AppState { pool: Arc::new(pool) };
+    let app_state = AppState {
+        pool: Arc::new(pool),
+    };
 
     // Build our application with routes, state, and tracing layer
     let app = Router::new()
         .route("/api/health", get(health_check)) // health_check is local to main.rs
         // Character routes
-        .route("/api/characters", get(list_characters).post(upload_character))
+        .route(
+            "/api/characters",
+            get(list_characters).post(upload_character),
+        )
         .route("/api/characters/:id", get(get_character))
         .with_state(app_state) // Pass state to the router
         // Add TraceLayer for request logging
         .layer(
             TraceLayer::new_for_http()
-                .make_span_with(DefaultMakeSpan::default().include_headers(true))
+                .make_span_with(DefaultMakeSpan::default().include_headers(true)),
         );
-
 
     // Run our application
     let port = env::var("PORT").unwrap_or_else(|_| "3000".to_string());
@@ -75,13 +70,14 @@ struct HealthStatus {
 // health_check remains defined locally in main.rs
 async fn health_check() -> Json<HealthStatus> {
     tracing::debug!("Health check endpoint called"); // Add a debug log
-    Json(HealthStatus { status: "ok".to_string() })
+    Json(HealthStatus {
+        status: "ok".to_string(),
+    })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use axum::http::StatusCode;
 
     #[tokio::test]
     async fn test_health_check() {

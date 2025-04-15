@@ -1,1 +1,1 @@
-pub mod character_parser; 
+pub mod character_parser;

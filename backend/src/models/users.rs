@@ -1,9 +1,9 @@
-use diesel::prelude::*;
 use crate::schema::users;
-use serde::{Serialize, Deserialize};
-use uuid::Uuid;
 use axum_login::AuthUser;
-use secrecy::{Secret}; // Removed unused ExposeSecret
+use diesel::prelude::*;
+use secrecy::Secret;
+use serde::{Deserialize, Serialize};
+use uuid::Uuid; // Removed unused ExposeSecret
 
 #[derive(Queryable, Selectable, Identifiable, Debug, Serialize, Deserialize, Clone)] // Added Deserialize and Clone
 #[diesel(table_name = users)]
@@ -32,13 +32,13 @@ impl AuthUser for User {
     }
 }
 
-
 #[derive(Insertable, Debug)]
 #[diesel(table_name = users)]
-pub struct NewUser<'a> { // Use lifetime for borrowed password hash
+pub struct NewUser<'a> {
+    // Use lifetime for borrowed password hash
     pub username: String,
     pub password_hash: &'a str, // Borrow the hash
-    // id, created_at, updated_at are handled by the DB
+                                // id, created_at, updated_at are handled by the DB
 }
 
 // You might want a struct for user input during registration
@@ -47,7 +47,6 @@ pub struct UserCredentials {
     pub username: String,
     pub password: Secret<String>, // Use Secret for password handling
 }
-
 
 #[cfg(test)]
 mod tests {

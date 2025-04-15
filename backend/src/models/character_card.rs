@@ -61,7 +61,7 @@ pub struct CharacterCardDataV3 {
     pub source: Option<Vec<String>>,
     #[serde(default)]
     pub group_only_greetings: Vec<String>,
-    pub creation_date: Option<i64>, // Unix timestamp (seconds)
+    pub creation_date: Option<i64>,     // Unix timestamp (seconds)
     pub modification_date: Option<i64>, // Unix timestamp (seconds)
 }
 
@@ -121,16 +121,14 @@ pub enum DecoratorUiPromptType {
     Unknown,
 }
 
-
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Decorator {
     pub name: String,
-    pub value: Option<String>, // Store raw value string for flexibility
+    pub value: Option<String>,     // Store raw value string for flexibility
     pub fallbacks: Vec<Decorator>, // For @@@ fallback mechanism
 }
 
 // --- End Lorebook Decorator Definitions ---
-
 
 // Helper function to parse decorators from content string
 fn parse_decorators_from_content(raw_content: &str) -> (Vec<Decorator>, String) {
@@ -145,14 +143,16 @@ fn parse_decorators_from_content(raw_content: &str) -> (Vec<Decorator>, String) 
             // Found a potential main decorator line
             // Trim leading whitespace *after* the prefix before splitting
             let content_after_prefix = trimmed_line[2..].trim();
-            
+
             // If there's no content after @@, treat it as content
             if content_after_prefix.is_empty() {
                 content_lines.push(line);
                 continue;
             }
 
-            let parts: Vec<&str> = content_after_prefix.splitn(2, |c: char| c.is_whitespace()).collect();
+            let parts: Vec<&str> = content_after_prefix
+                .splitn(2, |c: char| c.is_whitespace())
+                .collect();
             // Trim potential trailing whitespace from name
             let name = parts.get(0).unwrap_or(&"").trim_end().to_string();
 
@@ -181,14 +181,16 @@ fn parse_decorators_from_content(raw_content: &str) -> (Vec<Decorator>, String) 
 
                     // Trim leading whitespace *after* the prefix before splitting
                     let fallback_content_after_prefix = trimmed_next[3..].trim();
-                    
+
                     // If there's no content after @@@, treat it as content
                     if fallback_content_after_prefix.is_empty() {
                         content_lines.push(fallback_line);
                         continue;
                     }
 
-                    let fallback_parts: Vec<&str> = fallback_content_after_prefix.splitn(2, |c: char| c.is_whitespace()).collect();
+                    let fallback_parts: Vec<&str> = fallback_content_after_prefix
+                        .splitn(2, |c: char| c.is_whitespace())
+                        .collect();
                     // Trim potential trailing whitespace from name
                     let fallback_name = fallback_parts.get(0).unwrap_or(&"").trim_end().to_string();
 
@@ -203,8 +205,8 @@ fn parse_decorators_from_content(raw_content: &str) -> (Vec<Decorator>, String) 
                     // Check: If original line had leading whitespace AND value is missing, treat as content
                     // We use the original `fallback_line` (consumed earlier) vs `trimmed_next`
                     if fallback_line != trimmed_next && fallback_value.is_none() {
-                         content_lines.push(fallback_line); // Use the original consumed line
-                         continue; // Skip adding this as a fallback
+                        content_lines.push(fallback_line); // Use the original consumed line
+                        continue; // Skip adding this as a fallback
                     }
 
                     // Fallbacks don't have their own fallbacks according to spec example
@@ -219,8 +221,11 @@ fn parse_decorators_from_content(raw_content: &str) -> (Vec<Decorator>, String) 
                 }
             }
 
-            decorators.push(Decorator { name, value, fallbacks });
-
+            decorators.push(Decorator {
+                name,
+                value,
+                fallbacks,
+            });
         } else {
             // Not a valid decorator line, add to content
             content_lines.push(line);
@@ -235,7 +240,6 @@ fn parse_decorators_from_content(raw_content: &str) -> (Vec<Decorator>, String) 
 
     (decorators, processed_content)
 }
-
 
 // Lorebook Entry Definition
 #[derive(Serialize, Debug, Clone)] // Removed Deserialize temporarily, will add custom later
@@ -365,8 +369,8 @@ mod tests;
 
 // --- Diesel Database Models ---
 
-use diesel::prelude::*;
-use crate::schema::{character_assets, lorebooks, lorebook_entries}; // Removed unused: characters
+use crate::schema::{character_assets, lorebook_entries, lorebooks};
+use diesel::prelude::*; // Removed unused: characters
 // use crate::models::users::User; // Unused import
 use chrono::{DateTime, Utc};
 use serde_json::Value as JsonValue; // Alias to avoid conflict with serde_json::Value
@@ -400,8 +404,8 @@ pub struct Character {
     pub group_only_greetings: Option<Vec<Option<String>>>,
     pub creation_date: Option<DateTime<Utc>>, // TIMESTAMP WITH TIME ZONE
     pub modification_date: Option<DateTime<Utc>>, // TIMESTAMP WITH TIME ZONE
-    pub created_at: DateTime<Utc>, // Changed from Option<DateTime<Utc>>
-    pub updated_at: DateTime<Utc>, // Changed from Option<DateTime<Utc>>
+    pub created_at: DateTime<Utc>,            // Changed from Option<DateTime<Utc>>
+    pub updated_at: DateTime<Utc>,            // Changed from Option<DateTime<Utc>>
 }
 
 // Note: For Insertable, we might need a separate struct `NewCharacter`
@@ -441,7 +445,7 @@ use crate::services::character_parser::ParsedCharacterCard;
 impl NewCharacter {
     // Add user_id parameter
     pub fn from_parsed_card(parsed: &ParsedCharacterCard, user_id: Uuid) -> Self {
-         match parsed {
+        match parsed {
             ParsedCharacterCard::V3(card_v3) => {
                 // --- Handling V3 Card ---
                 let data = &card_v3.data; // Borrow data to avoid repeated card_v3.data
@@ -459,28 +463,49 @@ impl NewCharacter {
                 let alternate_greetings = if data.alternate_greetings.is_empty() {
                     None
                 } else {
-                    Some(data.alternate_greetings.clone().into_iter().map(Some).collect())
+                    Some(
+                        data.alternate_greetings
+                            .clone()
+                            .into_iter()
+                            .map(Some)
+                            .collect(),
+                    )
                 };
                 let group_only_greetings = if data.group_only_greetings.is_empty() {
                     None
                 } else {
-                    Some(data.group_only_greetings.clone().into_iter().map(Some).collect())
+                    Some(
+                        data.group_only_greetings
+                            .clone()
+                            .into_iter()
+                            .map(Some)
+                            .collect(),
+                    )
                 };
                 let source = data.source.as_ref().and_then(|s| {
-                    if s.is_empty() { None } else { Some(s.clone().into_iter().map(Some).collect()) }
+                    if s.is_empty() {
+                        None
+                    } else {
+                        Some(s.clone().into_iter().map(Some).collect())
+                    }
                 });
 
                 // Convert optional timestamps (Option<i64> -> Option<DateTime<Utc>>)
-                let creation_date_ts = data.creation_date.and_then(|ts| DateTime::from_timestamp(ts, 0));
-                let modification_date_ts = data.modification_date.and_then(|ts| DateTime::from_timestamp(ts, 0));
+                let creation_date_ts = data
+                    .creation_date
+                    .and_then(|ts| DateTime::from_timestamp(ts, 0));
+                let modification_date_ts = data
+                    .modification_date
+                    .and_then(|ts| DateTime::from_timestamp(ts, 0));
 
-                let creator_notes_multilingual_json = data.creator_notes_multilingual.as_ref()
+                let creator_notes_multilingual_json = data
+                    .creator_notes_multilingual
+                    .as_ref()
                     .and_then(|m| serde_json::to_value(m).ok()) // Convert HashMap to JsonValue
                     .filter(|v| !v.is_null()); // Ensure it's not null before storing
 
-
                 NewCharacter {
-                    user_id, // Use passed user_id
+                    user_id,                                     // Use passed user_id
                     name: data.name.clone().unwrap_or_default(), // V3 name is Option<String>, DB needs String
                     // Wrap non-optional V3 strings in Some() for DB Option<String>, filter empty
                     description: Some(data.description.clone()).filter(|s| !s.is_empty()),
@@ -490,19 +515,21 @@ impl NewCharacter {
                     mes_example: Some(data.mes_example.clone()).filter(|s| !s.is_empty()),
                     creator_notes: Some(data.creator_notes.clone()).filter(|s| !s.is_empty()),
                     system_prompt: Some(data.system_prompt.clone()).filter(|s| !s.is_empty()),
-                    post_history_instructions: Some(data.post_history_instructions.clone()).filter(|s| !s.is_empty()),
+                    post_history_instructions: Some(data.post_history_instructions.clone())
+                        .filter(|s| !s.is_empty()),
                     creator: Some(data.creator.clone()).filter(|s| !s.is_empty()),
-                    character_version: Some(data.character_version.clone()).filter(|s| !s.is_empty()),
+                    character_version: Some(data.character_version.clone())
+                        .filter(|s| !s.is_empty()),
                     // Use converted vecs
                     alternate_greetings,
                     tags,
-                    spec, // Use extracted spec
+                    spec,         // Use extracted spec
                     spec_version, // Use extracted spec_version
                     // character_book: data.character_book.clone(), // DB has separate table, handle later if needed
                     nickname: data.nickname.clone(), // Already Option<String>
                     creator_notes_multilingual: creator_notes_multilingual_json, // Already Option<JsonValue>
-                    source, // Already Option<Vec<Option<String>>>
-                    group_only_greetings, // Already Option<Vec<Option<String>>>
+                    source,                          // Already Option<Vec<Option<String>>>
+                    group_only_greetings,            // Already Option<Vec<Option<String>>>
                     creation_date: creation_date_ts, // Already Option<DateTime<Utc>>
                     modification_date: modification_date_ts, // Already Option<DateTime<Utc>>
                 }
@@ -513,19 +540,26 @@ impl NewCharacter {
 
                 // V2 tags/greetings are Vec<String>, DB wants Option<Vec<Option<String>>>
                 let tags = if data_v2.tags.is_empty() {
-                     None
+                    None
                 } else {
-                     Some(data_v2.tags.clone().into_iter().map(Some).collect())
+                    Some(data_v2.tags.clone().into_iter().map(Some).collect())
                 };
                 let alternate_greetings = if data_v2.alternate_greetings.is_empty() {
-                     None
+                    None
                 } else {
-                     Some(data_v2.alternate_greetings.clone().into_iter().map(Some).collect())
+                    Some(
+                        data_v2
+                            .alternate_greetings
+                            .clone()
+                            .into_iter()
+                            .map(Some)
+                            .collect(),
+                    )
                 };
 
                 // Most V2 fields are String, DB wants Option<String>. Wrap in Some() and filter empty.
                 NewCharacter {
-                    user_id, // Use passed user_id
+                    user_id,                                        // Use passed user_id
                     name: data_v2.name.clone().unwrap_or_default(), // V2 name is Option<String>, DB needs String
                     description: Some(data_v2.description.clone()).filter(|s| !s.is_empty()),
                     personality: Some(data_v2.personality.clone()).filter(|s| !s.is_empty()),
@@ -534,10 +568,12 @@ impl NewCharacter {
                     mes_example: Some(data_v2.mes_example.clone()).filter(|s| !s.is_empty()),
                     creator_notes: Some(data_v2.creator_notes.clone()).filter(|s| !s.is_empty()),
                     system_prompt: Some(data_v2.system_prompt.clone()).filter(|s| !s.is_empty()),
-                    post_history_instructions: Some(data_v2.post_history_instructions.clone()).filter(|s| !s.is_empty()),
+                    post_history_instructions: Some(data_v2.post_history_instructions.clone())
+                        .filter(|s| !s.is_empty()),
                     tags, // Use converted tags
                     creator: Some(data_v2.creator.clone()).filter(|s| !s.is_empty()),
-                    character_version: Some(data_v2.character_version.clone()).filter(|s| !s.is_empty()),
+                    character_version: Some(data_v2.character_version.clone())
+                        .filter(|s| !s.is_empty()),
                     alternate_greetings, // Use converted greetings
                     spec: "chara_card_v2_fallback".to_string(), // Indicate fallback
                     spec_version: "2.0".to_string(), // Indicate V2 origin
@@ -553,7 +589,6 @@ impl NewCharacter {
         }
     }
 }
-
 
 #[derive(Queryable, Selectable, Identifiable, Associations, Debug, Serialize)]
 #[diesel(table_name = character_assets)]
@@ -579,7 +614,6 @@ pub struct NewCharacterAsset {
     pub name: String,
     pub ext: String,
 }
-
 
 #[derive(Queryable, Selectable, Identifiable, Associations, Debug, Serialize)]
 #[diesel(table_name = lorebooks)]
@@ -608,7 +642,6 @@ pub struct NewDbLorebook {
     pub recursive_scanning: Option<bool>,
     pub extensions: Option<JsonValue>,
 }
-
 
 #[derive(Queryable, Selectable, Identifiable, Associations, Debug, Serialize)]
 #[diesel(table_name = lorebook_entries)]

@@ -1,37 +1,37 @@
 #![cfg(test)]
 // use super::*; // Not needed as handlers are imported directly
-use crate::models::character_card::{NewCharacter, Character};
-use crate::routes::characters::{upload_character, list_characters, get_character};
+use crate::models::character_card::{Character, NewCharacter};
+use crate::routes::characters::{get_character, list_characters, upload_character};
 use crate::state::AppState;
 use axum::{
-    body::{Body},
+    Extension, // Added Extension
+    Router,
+    body::Body,
     http::{self, Request, StatusCode},
     routing::{get, post},
-    Router, Extension, // Added Extension
 };
-use tower::ServiceExt;
-use base64::{engine::general_purpose::STANDARD as base64_standard, Engine as _};
+use base64::{Engine as _, engine::general_purpose::STANDARD as base64_standard};
 use crc32fast;
 use http_body_util::BodyExt;
+use tower::ServiceExt;
 // use mime; // Unused
-use serde_json::{Value}; // Removed unused json macro import
-use std::sync::Arc;
-use std::env;
-use diesel::r2d2::{ConnectionManager, Pool};
-use diesel::PgConnection;
-use diesel::prelude::*;
-use dotenvy;
+use crate::models::users::{NewUser, User}; // Added User model import
 use crate::schema::characters;
 use crate::schema::users; // Added schema import
-use uuid::Uuid;
-use crate::models::users::{NewUser, User}; // Added User model import
-use anyhow::{Result as AnyhowResult};
+use anyhow::Result as AnyhowResult;
+use diesel::PgConnection;
+use diesel::prelude::*;
+use diesel::r2d2::{ConnectionManager, Pool};
+use dotenvy;
+use once_cell::sync::Lazy;
+use serde_json::Value; // Removed unused json macro import
 use std::collections::HashSet;
+use std::env;
 use std::io::Write; // Import Write trait
-use once_cell::sync::Lazy; // Added for static test user
+use std::sync::Arc;
+use uuid::Uuid; // Added for static test user
 
 // --- Test Helpers ---
-
 
 // Creates a valid PNG with a tEXt chunk containing base64 encoded JSON
 fn create_test_png_with_text_chunk(keyword: &[u8], json_payload: &str) -> Vec<u8> {
@@ -82,11 +82,13 @@ fn create_test_pool() -> Arc<Pool<ConnectionManager<PgConnection>>> {
     Arc::new(pool)
 }
 
-// --- Global Test User Setup --- 
+// --- Global Test User Setup ---
 
 static TEST_USER: Lazy<User> = Lazy::new(|| {
     let pool = create_test_pool(); // Create a pool just for this setup
-    let mut conn = pool.get().expect("Failed to get DB connection for global test user setup");
+    let mut conn = pool
+        .get()
+        .expect("Failed to get DB connection for global test user setup");
     let username = format!("global_test_user_{}", Uuid::new_v4());
     let new_user = NewUser {
         username: username.clone(),
@@ -114,20 +116,22 @@ static TEST_USER: Lazy<User> = Lazy::new(|| {
     user
 });
 
-
 fn test_app_router() -> Router {
-     let pool = create_test_pool();
+    let pool = create_test_pool();
 
-     let app_state = AppState { pool };
+    let app_state = AppState { pool };
 
-     // Make the global test user available via request extensions
-     let test_user_extension = Extension(TEST_USER.clone());
+    // Make the global test user available via request extensions
+    let test_user_extension = Extension(TEST_USER.clone());
 
-     Router::new()
-         .route("/api/characters", post(upload_character).get(list_characters))
-         .route("/api/characters/:id", get(get_character))
-         .layer(test_user_extension) // Add user extension layer
-         .with_state(app_state)
+    Router::new()
+        .route(
+            "/api/characters",
+            post(upload_character).get(list_characters),
+        )
+        .route("/api/characters/:id", get(get_character))
+        .layer(test_user_extension) // Add user extension layer
+        .with_state(app_state)
 }
 
 struct TestDataGuard {
@@ -138,12 +142,16 @@ struct TestDataGuard {
 
 impl TestDataGuard {
     fn new(pool: Arc<Pool<ConnectionManager<PgConnection>>>) -> Self {
-        TestDataGuard { pool, user_ids: Vec::new(), character_ids: Vec::new() }
+        TestDataGuard {
+            pool,
+            user_ids: Vec::new(),
+            character_ids: Vec::new(),
+        }
     }
     fn add_user(&mut self, user_id: Uuid) {
         // Avoid adding the globally managed test user to the guard's cleanup list
         if user_id != TEST_USER.id {
-             self.user_ids.push(user_id);
+            self.user_ids.push(user_id);
         }
     }
     fn add_character(&mut self, character_id: Uuid) {
@@ -153,22 +161,36 @@ impl TestDataGuard {
 
 impl Drop for TestDataGuard {
     fn drop(&mut self) {
-        if self.character_ids.is_empty() && self.user_ids.is_empty() { return; }
+        if self.character_ids.is_empty() && self.user_ids.is_empty() {
+            return;
+        }
         tracing::debug!("--- Cleaning up test data ---");
-        let mut conn = self.pool.get().expect("Failed to get DB connection for cleanup");
+        let mut conn = self
+            .pool
+            .get()
+            .expect("Failed to get DB connection for cleanup");
         if !self.character_ids.is_empty() {
-            let delete_chars = diesel::delete(characters::table.filter(characters::id.eq_any(&self.character_ids)))
-                .execute(&mut conn);
-            if let Err(e) = delete_chars { tracing::error!(error = %e, "Error cleaning up characters"); }
-            else { tracing::debug!("Cleaned up {} characters.", self.character_ids.len()); }
+            let delete_chars = diesel::delete(
+                characters::table.filter(characters::id.eq_any(&self.character_ids)),
+            )
+            .execute(&mut conn);
+            if let Err(e) = delete_chars {
+                tracing::error!(error = %e, "Error cleaning up characters");
+            } else {
+                tracing::debug!("Cleaned up {} characters.", self.character_ids.len());
+            }
         }
         if !self.user_ids.is_empty() {
-            let delete_users = diesel::delete(users::table.filter(users::id.eq_any(&self.user_ids)))
-                .execute(&mut conn);
-            if let Err(e) = delete_users { tracing::error!(error = %e, "Error cleaning up users"); }
-            else { tracing::debug!("Cleaned up {} users.", self.user_ids.len()); }
+            let delete_users =
+                diesel::delete(users::table.filter(users::id.eq_any(&self.user_ids)))
+                    .execute(&mut conn);
+            if let Err(e) = delete_users {
+                tracing::error!(error = %e, "Error cleaning up users");
+            } else {
+                tracing::debug!("Cleaned up {} users.", self.user_ids.len());
+            }
         }
-         tracing::debug!("--- Cleanup complete ---");
+        tracing::debug!("--- Cleanup complete ---");
     }
 }
 
@@ -199,7 +221,8 @@ fn create_multipart_request(
     // Add extra text fields if provided
     if let Some(fields) = extra_fields {
         for (name, value) in fields {
-            let field_content_disposition = format!(r#"Content-Disposition: form-data; name="{}""#, name);
+            let field_content_disposition =
+                format!(r#"Content-Disposition: form-data; name="{}""#, name);
             write!(request_body, "--{}\r\n", boundary).unwrap();
             write!(request_body, "{}\r\n", field_content_disposition).unwrap();
             write!(request_body, "\r\n").unwrap(); // Extra CRLF before field value
@@ -222,19 +245,14 @@ fn create_multipart_request(
         .unwrap()
 }
 
-
-
 // --- Tests ---
-
 
 #[cfg(test)]
 mod tests {
     use super::*;
     // Removed unused import: use std::io::Write;
 
-
     // --- Upload Tests (Updated for Multipart and DB persistence) ---
-
 
     #[tokio::test]
     async fn test_upload_valid_v3_card() -> AnyhowResult<()> {
@@ -253,7 +271,13 @@ mod tests {
             }
         }"#;
         let png_bytes = create_test_png_with_text_chunk(b"ccv3", v3_json);
-        let request = create_multipart_request("/api/characters", "test_v3.png", "image/png", png_bytes, None);
+        let request = create_multipart_request(
+            "/api/characters",
+            "test_v3.png",
+            "image/png",
+            png_bytes,
+            None,
+        );
         let response = app.oneshot(request).await?;
         assert_eq!(response.status(), StatusCode::OK, "Expected OK status");
 
@@ -266,8 +290,14 @@ mod tests {
         assert_eq!(character.description.as_deref(), Some("Uploaded via API."));
         assert_eq!(character.spec, "chara_card_v3");
         assert_eq!(character.spec_version, "3.0");
-        assert_eq!(character.tags, Some(vec![Some("test".to_string()), Some("v3".to_string())]));
-        assert!(character.creation_date.is_some(), "Expected creation_date to be parsed");
+        assert_eq!(
+            character.tags,
+            Some(vec![Some("test".to_string()), Some("v3".to_string())])
+        );
+        assert!(
+            character.creation_date.is_some(),
+            "Expected creation_date to be parsed"
+        );
         Ok(())
     }
 
@@ -282,7 +312,13 @@ mod tests {
             "first_mes": "Hello from V2!"
         }"#;
         let png_bytes = create_test_png_with_text_chunk(b"chara", v2_json);
-        let request = create_multipart_request("/api/characters", "test_v2.png", "image/png", png_bytes, None);
+        let request = create_multipart_request(
+            "/api/characters",
+            "test_v2.png",
+            "image/png",
+            png_bytes,
+            None,
+        );
         let response = app.oneshot(request).await?;
         assert_eq!(response.status(), StatusCode::OK, "Expected OK status");
 
@@ -293,8 +329,14 @@ mod tests {
         // assert_eq!(character.user_id, TEST_USER.id); // Removed assertion for now
         assert_eq!(character.name, "Test V2 Upload");
         assert_eq!(character.first_mes.as_deref(), Some("Hello from V2!"));
-        assert_eq!(character.spec, "chara_card_v2_fallback", "Spec should indicate fallback");
-        assert_eq!(character.spec_version, "2.0", "Spec version should indicate V2 origin for fallback");
+        assert_eq!(
+            character.spec, "chara_card_v2_fallback",
+            "Spec should indicate fallback"
+        );
+        assert_eq!(
+            character.spec_version, "2.0",
+            "Spec version should indicate V2 origin for fallback"
+        );
         Ok(())
     }
 
@@ -303,7 +345,13 @@ mod tests {
         let app = test_app_router();
         let not_png_bytes = b"definitely not a png".to_vec();
         // Use the helper even for incorrect content type to ensure boundary format is correct
-        let request = create_multipart_request("/api/characters", "not_png.txt", "text/plain", not_png_bytes, None);
+        let request = create_multipart_request(
+            "/api/characters",
+            "not_png.txt",
+            "text/plain",
+            not_png_bytes,
+            None,
+        );
         let response = app.oneshot(request).await?;
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 
@@ -314,7 +362,7 @@ mod tests {
         Ok(())
     }
 
-     #[tokio::test]
+    #[tokio::test]
     async fn test_upload_png_no_data_chunk() -> AnyhowResult<()> {
         let app = test_app_router();
         let mut png_bytes = Vec::new();
@@ -332,16 +380,28 @@ mod tests {
         png_bytes.extend_from_slice(b"IEND");
         png_bytes.extend_from_slice(&[174, 66, 96, 130]); // CRC of IEND
 
-        let request = create_multipart_request("/api/characters", "no_data.png", "image/png", png_bytes, None);
+        let request = create_multipart_request(
+            "/api/characters",
+            "no_data.png",
+            "image/png",
+            png_bytes,
+            None,
+        );
         let response = app.oneshot(request).await?;
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 
         let body = response.into_body().collect().await?.to_bytes();
         let error: Value = serde_json::from_slice(&body)?;
         // Expect the error about the missing IDAT chunk, as the parser checks PNG validity first.
-        assert!(error["error"].as_str().unwrap().contains("Character parsing failed: PNG decoding error: IDAT or fdAT chunk is missing"), "Unexpected error message: {}", error["error"]);
+        assert!(
+            error["error"].as_str().unwrap().contains(
+                "Character parsing failed: PNG decoding error: IDAT or fdAT chunk is missing"
+            ),
+            "Unexpected error message: {}",
+            error["error"]
+        );
         Ok(())
-     }
+    }
 
     #[tokio::test]
     async fn test_upload_missing_file_field() -> AnyhowResult<()> {
@@ -365,7 +425,7 @@ mod tests {
             .uri("/api/characters")
             .header(
                 http::header::CONTENT_TYPE,
-                 // Corrected: Quote the boundary value in the Content-Type header
+                // Corrected: Quote the boundary value in the Content-Type header
                 format!("multipart/form-data; boundary=\"{}\"", boundary),
             )
             .body(Body::from(request_body))?;
@@ -375,7 +435,10 @@ mod tests {
 
         let body = response.into_body().collect().await?.to_bytes();
         let error: Value = serde_json::from_slice(&body)?;
-        assert_eq!(error["error"], "Missing 'character_card' PNG file in upload form data.");
+        assert_eq!(
+            error["error"],
+            "Missing 'character_card' PNG file in upload form data."
+        );
         Ok(())
     }
 
@@ -403,7 +466,11 @@ mod tests {
         );
 
         let response = app.oneshot(request).await?;
-        assert_eq!(response.status(), StatusCode::OK, "Expected OK status even with extra field");
+        assert_eq!(
+            response.status(),
+            StatusCode::OK,
+            "Expected OK status even with extra field"
+        );
 
         let body = response.into_body().collect().await?.to_bytes();
         let character: Character = serde_json::from_slice(&body)?;
@@ -414,10 +481,7 @@ mod tests {
         Ok(())
     }
 
-
-
     // --- DB Interaction Tests (Manual Setup/Cleanup) ---
-
 
     #[tokio::test]
     async fn test_list_characters_manual_cleanup() -> AnyhowResult<()> {
@@ -441,8 +505,20 @@ mod tests {
         guard.add_user(test_user.id);
 
         let character_data = vec![
-            NewCharacter { user_id: test_user.id, name: "List Character 1".to_string(), spec: "test_spec".to_string(), spec_version: "1".to_string(), ..Default::default() }, // Added missing required fields
-            NewCharacter { user_id: test_user.id, name: "List Character 2".to_string(), spec: "test_spec".to_string(), spec_version: "1".to_string(), ..Default::default() }, // Added missing required fields
+            NewCharacter {
+                user_id: test_user.id,
+                name: "List Character 1".to_string(),
+                spec: "test_spec".to_string(),
+                spec_version: "1".to_string(),
+                ..Default::default()
+            }, // Added missing required fields
+            NewCharacter {
+                user_id: test_user.id,
+                name: "List Character 2".to_string(),
+                spec: "test_spec".to_string(),
+                spec_version: "1".to_string(),
+                ..Default::default()
+            }, // Added missing required fields
         ];
         let inserted_characters: Vec<Character> = diesel::insert_into(characters::table)
             .values(&character_data)
@@ -467,10 +543,21 @@ mod tests {
             .iter()
             .filter(|c| inserted_ids.contains(&c.id))
             .collect();
-        assert_eq!(relevant_characters_from_api.len(), inserted_characters.len(), "API returned wrong number of *test* characters");
-        let api_names: HashSet<String> = relevant_characters_from_api.iter().map(|c| c.name.clone()).collect();
-        let inserted_names: HashSet<String> = inserted_characters.iter().map(|c| c.name.clone()).collect();
-        assert_eq!(api_names, inserted_names, "API character names do not match inserted names");
+        assert_eq!(
+            relevant_characters_from_api.len(),
+            inserted_characters.len(),
+            "API returned wrong number of *test* characters"
+        );
+        let api_names: HashSet<String> = relevant_characters_from_api
+            .iter()
+            .map(|c| c.name.clone())
+            .collect();
+        let inserted_names: HashSet<String> =
+            inserted_characters.iter().map(|c| c.name.clone()).collect();
+        assert_eq!(
+            api_names, inserted_names,
+            "API character names do not match inserted names"
+        );
         Ok(())
     }
 
@@ -519,7 +606,10 @@ mod tests {
         let character_from_api: Character = serde_json::from_slice(&body)?;
         assert_eq!(character_from_api.id, inserted_character.id);
         assert_eq!(character_from_api.name, inserted_character.name);
-        assert_eq!(character_from_api.description, inserted_character.description);
+        assert_eq!(
+            character_from_api.description,
+            inserted_character.description
+        );
         Ok(())
     }
 
@@ -536,7 +626,10 @@ mod tests {
 
         let body = response.into_body().collect().await?.to_bytes();
         let error: Value = serde_json::from_slice(&body)?;
-        assert_eq!(error["error"], format!("Character with ID {} not found", nonexistent_id));
+        assert_eq!(
+            error["error"],
+            format!("Character with ID {} not found", nonexistent_id)
+        );
         Ok(())
     }
 }

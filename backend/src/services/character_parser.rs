@@ -1,14 +1,14 @@
 // backend/src/services/character_parser.rs
 
 use crate::models::character_card::{CharacterCardDataV3, CharacterCardV3};
-use base64::{engine::general_purpose::STANDARD as base64_standard, Engine as _};
-use tracing::{info, warn}; // Import logging macros
+use base64::{Engine as _, engine::general_purpose::STANDARD as base64_standard};
 use png::Decoder;
 use serde_json;
 use std::io::{Cursor, Read, Seek}; // Added Read and Seek for zip
 use thiserror::Error; // Import the derive macro
-use zip::result::ZipError; // Added for CHARX parsing
-use zip::ZipArchive; // Added for CHARX parsing
+use tracing::{info, warn}; // Import logging macros
+use zip::ZipArchive;
+use zip::result::ZipError; // Added for CHARX parsing // Added for CHARX parsing
 
 // Define potential errors for the parser
 #[derive(Debug, Error)] // Use the imported derive macro
@@ -41,7 +41,6 @@ pub enum ParsedCharacterCard {
     V3(CharacterCardV3), // Represents a card parsed from 'ccv3' or a full V3 structure
     V2Fallback(CharacterCardDataV3), // Represents data parsed from 'chara' (V2)
 }
-
 
 // --- Main Parsing Function ---
 
@@ -103,11 +102,11 @@ pub fn parse_character_card_png(png_data: &[u8]) -> Result<ParsedCharacterCard, 
                                     );
                                 }
                                 Ok(v) if v < target_version => {
-                                     warn!(
+                                    warn!(
                                         "Card spec_version ('{}') is older than current spec ('{}'). Attempting to load.",
                                         card.spec_version, target_version
-                                     );
-                                     // Potentially fill missing fields with defaults here if needed for older versions
+                                    );
+                                    // Potentially fill missing fields with defaults here if needed for older versions
                                 }
                                 Ok(_) => {} // Version matches 3.0
                                 Err(_) => {
@@ -123,16 +122,22 @@ pub fn parse_character_card_png(png_data: &[u8]) -> Result<ParsedCharacterCard, 
                         return Ok(ParsedCharacterCard::V3(card));
                     }
                     Err(e) => {
-                         warn!("Failed to parse JSON from 'ccv3' chunk as CharacterCardV3: {}. Falling back to 'chara' if possible.", e);
-                         // Don't return error yet, try fallback
-                         ccv3_parse_attempted_and_failed = true; // Mark that V3 parsing failed
+                        warn!(
+                            "Failed to parse JSON from 'ccv3' chunk as CharacterCardV3: {}. Falling back to 'chara' if possible.",
+                            e
+                        );
+                        // Don't return error yet, try fallback
+                        ccv3_parse_attempted_and_failed = true; // Mark that V3 parsing failed
                     }
                 }
             }
             Err(e) => {
-                 warn!("Failed to decode base64 from 'ccv3' chunk: {}. Falling back to 'chara' if possible.", e);
-                 // Don't return error yet, try fallback
-                 ccv3_parse_attempted_and_failed = true; // Mark that V3 parsing failed
+                warn!(
+                    "Failed to decode base64 from 'ccv3' chunk: {}. Falling back to 'chara' if possible.",
+                    e
+                );
+                // Don't return error yet, try fallback
+                ccv3_parse_attempted_and_failed = true; // Mark that V3 parsing failed
             }
         }
     }
@@ -141,38 +146,41 @@ pub fn parse_character_card_png(png_data: &[u8]) -> Result<ParsedCharacterCard, 
     if let Some(base64_str) = chara_data_base64 {
         match base64_standard.decode(&base64_str) {
             Ok(decoded_bytes) => {
-                 match serde_json::from_slice::<CharacterCardDataV3>(&decoded_bytes) {
-                     Ok(mut data_v2) => { // Make data_v2 mutable
-                         info!("Loaded character from V2 'chara' chunk. Applying V3 compatibility note.");
-                         // Only prepend V2 fallback warning if we actually fell back from a failed V3 attempt
-                         if ccv3_parse_attempted_and_failed {
-                             const V2_FALLBACK_NOTE: &str = "This character card is Character Card V3, but it is loaded as a Character Card V2. Please use a Character Card V3 compatible application to use this character card properly.\n";
-                             if data_v2.creator_notes.is_empty() {
+                match serde_json::from_slice::<CharacterCardDataV3>(&decoded_bytes) {
+                    Ok(mut data_v2) => {
+                        // Make data_v2 mutable
+                        info!(
+                            "Loaded character from V2 'chara' chunk. Applying V3 compatibility note."
+                        );
+                        // Only prepend V2 fallback warning if we actually fell back from a failed V3 attempt
+                        if ccv3_parse_attempted_and_failed {
+                            const V2_FALLBACK_NOTE: &str = "This character card is Character Card V3, but it is loaded as a Character Card V2. Please use a Character Card V3 compatible application to use this character card properly.\n";
+                            if data_v2.creator_notes.is_empty() {
                                 data_v2.creator_notes = V2_FALLBACK_NOTE.to_string();
-                             } else {
-                                 data_v2.creator_notes = format!("{}{}", V2_FALLBACK_NOTE, data_v2.creator_notes);
-                             }
-                         }
-                         // Return the modified V2 data wrapped in the V2Fallback variant
+                            } else {
+                                data_v2.creator_notes =
+                                    format!("{}{}", V2_FALLBACK_NOTE, data_v2.creator_notes);
+                            }
+                        }
+                        // Return the modified V2 data wrapped in the V2Fallback variant
                         return Ok(ParsedCharacterCard::V2Fallback(data_v2));
                     }
                     Err(e) => {
-                         // If 'chara' JSON parsing fails, this is a hard error for the fallback
-                         return Err(ParserError::JsonError(e));
+                        // If 'chara' JSON parsing fails, this is a hard error for the fallback
+                        return Err(ParserError::JsonError(e));
                     }
-                 }
+                }
             }
-             Err(e) => {
-                 // If 'chara' base64 decoding fails, this is a hard error for the fallback
-                 return Err(ParserError::Base64Error(e));
-             }
+            Err(e) => {
+                // If 'chara' base64 decoding fails, this is a hard error for the fallback
+                return Err(ParserError::Base64Error(e));
+            }
         }
     }
 
     // If neither 'ccv3' nor 'chara' yielded a valid result
     Err(ParserError::ChunkNotFound)
 }
-
 
 // --- JSON Parsing Function ---
 
@@ -202,11 +210,11 @@ pub fn parse_character_card_json(json_data: &[u8]) -> Result<ParsedCharacterCard
                         );
                     }
                     Ok(v) if v < target_version => {
-                         warn!(
+                        warn!(
                             "JSON Card spec_version ('{}') is older than current spec ('{}'). Attempting to load.",
                             card.spec_version, target_version
-                         );
-                         // Potentially fill missing fields with defaults here if needed
+                        );
+                        // Potentially fill missing fields with defaults here if needed
                     }
                     Ok(_) => {} // Version matches 3.0
                     Err(_) => {
@@ -229,24 +237,23 @@ pub fn parse_character_card_json(json_data: &[u8]) -> Result<ParsedCharacterCard
     }
 }
 
-
 // --- CHARX (Zip) Parsing Function ---
 
-pub fn parse_character_card_charx<R: Read + Seek>(charx_data: R) -> Result<ParsedCharacterCard, ParserError> {
+pub fn parse_character_card_charx<R: Read + Seek>(
+    charx_data: R,
+) -> Result<ParsedCharacterCard, ParserError> {
     let mut archive = ZipArchive::new(charx_data)?;
 
     // Find and read card.json
-    let mut card_file = archive.by_name("card.json")
-        .map_err(|e| {
-            // Log the specific error for debugging if needed
-            warn!("Error finding 'card.json' in CHARX: {}", e);
-            // Return the specific error type
-            match e {
-                ZipError::FileNotFound => ParserError::CharxCardJsonNotFound,
-                other_zip_error => ParserError::ZipError(other_zip_error),
-            }
-        })?;
-
+    let mut card_file = archive.by_name("card.json").map_err(|e| {
+        // Log the specific error for debugging if needed
+        warn!("Error finding 'card.json' in CHARX: {}", e);
+        // Return the specific error type
+        match e {
+            ZipError::FileNotFound => ParserError::CharxCardJsonNotFound,
+            other_zip_error => ParserError::ZipError(other_zip_error),
+        }
+    })?;
 
     // Read the content of card.json into a buffer
     let mut buffer = Vec::new();
@@ -256,7 +263,7 @@ pub fn parse_character_card_charx<R: Read + Seek>(charx_data: R) -> Result<Parse
     match serde_json::from_slice::<CharacterCardV3>(&buffer) {
         Ok(card) => {
             // --- V3 Spec Conformance Checks (similar to PNG/JSON parsers) ---
-             if card.spec != "chara_card_v3" {
+            if card.spec != "chara_card_v3" {
                 warn!(
                     "Invalid 'spec' field in CHARX card.json: expected 'chara_card_v3', found '{}'. Proceeding.",
                     card.spec
@@ -267,10 +274,19 @@ pub fn parse_character_card_charx<R: Read + Seek>(charx_data: R) -> Result<Parse
                 let current_version: Result<f32, _> = card.spec_version.parse();
                 let target_version: f32 = 3.0;
                 match current_version {
-                    Ok(v) if v > target_version => warn!("CHARX Card spec_version ('{}') is newer than supported ('{}').", card.spec_version, target_version),
-                    Ok(v) if v < target_version => warn!("CHARX Card spec_version ('{}') is older than current spec ('{}').", card.spec_version, target_version),
+                    Ok(v) if v > target_version => warn!(
+                        "CHARX Card spec_version ('{}') is newer than supported ('{}').",
+                        card.spec_version, target_version
+                    ),
+                    Ok(v) if v < target_version => warn!(
+                        "CHARX Card spec_version ('{}') is older than current spec ('{}').",
+                        card.spec_version, target_version
+                    ),
                     Ok(_) => {}
-                    Err(_) => warn!("Could not parse CHARX card spec_version ('{}') as number.", card.spec_version),
+                    Err(_) => warn!(
+                        "Could not parse CHARX card spec_version ('{}') as number.",
+                        card.spec_version
+                    ),
                 }
             }
             // --- End V3 Spec Conformance Checks ---
@@ -284,7 +300,6 @@ pub fn parse_character_card_charx<R: Read + Seek>(charx_data: R) -> Result<Parse
         }
     }
 }
-
 
 // Declare the test module
 #[cfg(test)]

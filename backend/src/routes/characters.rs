@@ -1,18 +1,18 @@
 // backend/src/routes/characters.rs
 use axum::{
-    extract::{Path, State, Multipart, Extension},
     Json,
+    extract::{Extension, Multipart, Path, State},
 };
 // use chrono::DateTime; // <-- Removed unused import
 use diesel::prelude::*;
 use uuid::Uuid;
 
+use crate::errors::{AppError, Result};
 use crate::models::character_card::{Character, NewCharacter};
 use crate::models::users::User; // Needed for Extension / test user
 use crate::schema::characters;
-use crate::state::{AppState};
-use crate::errors::{AppError, Result};
-use crate::services::character_parser::{parse_character_card_png}; // <-- Removed unused ParsedCharacterCard
+use crate::services::character_parser::parse_character_card_png;
+use crate::state::AppState; // <-- Removed unused ParsedCharacterCard
 
 // Define a static UUID for the test user
 // #[cfg(test)] // No longer needed here, user comes from Extension
@@ -23,7 +23,6 @@ pub async fn upload_character(
     Extension(current_user): Extension<User>,
     mut multipart: Multipart,
 ) -> Result<Json<Character>> {
-
     // --- Get user_id from Extension (provided by test setup or actual auth) ---
     let user_id = current_user.id;
 
@@ -36,7 +35,9 @@ pub async fn upload_character(
             found_field = true;
             let content_type = field.content_type().map(|ct| ct.to_string());
             if content_type.as_deref() != Some("image/png") {
-                 return Err(AppError::BadRequest("Uploaded file must be a PNG image.".to_string()));
+                return Err(AppError::BadRequest(
+                    "Uploaded file must be a PNG image.".to_string(),
+                ));
             }
             png_bytes = Some(field.bytes().await.map_err(AppError::from)?.to_vec());
         } else {
@@ -45,9 +46,15 @@ pub async fn upload_character(
     }
 
     if !found_field {
-         return Err(AppError::BadRequest("Missing 'character_card' PNG file in upload form data.".to_string()));
+        return Err(AppError::BadRequest(
+            "Missing 'character_card' PNG file in upload form data.".to_string(),
+        ));
     }
-    let png_bytes = png_bytes.ok_or_else(|| AppError::BadRequest("Failed to read bytes from 'character_card' PNG file field.".to_string()))?;
+    let png_bytes = png_bytes.ok_or_else(|| {
+        AppError::BadRequest(
+            "Failed to read bytes from 'character_card' PNG file field.".to_string(),
+        )
+    })?;
 
     // Parse the PNG data
     let parsed_card = parse_character_card_png(&png_bytes)?;
@@ -66,14 +73,10 @@ pub async fn upload_character(
 }
 
 // --- List Handler ---
-pub async fn list_characters(
-    State(state): State<AppState>,
-) -> Result<Json<Vec<Character>>> {
+pub async fn list_characters(State(state): State<AppState>) -> Result<Json<Vec<Character>>> {
     let mut conn = state.pool.get()?;
     use crate::schema::characters::dsl::*;
-    let results = characters
-        .select(Character::as_select())
-        .load(&mut conn)?;
+    let results = characters.select(Character::as_select()).load(&mut conn)?;
     Ok(Json(results))
 }
 
@@ -89,7 +92,9 @@ pub async fn get_character(
         .select(Character::as_select())
         .first(&mut conn)
         .optional()?
-        .ok_or_else(|| AppError::NotFound(format!("Character with ID {} not found", character_uuid)))?;
+        .ok_or_else(|| {
+            AppError::NotFound(format!("Character with ID {} not found", character_uuid))
+        })?;
     Ok(Json(result))
 }
 

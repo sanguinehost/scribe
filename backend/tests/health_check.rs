@@ -1,6 +1,5 @@
 //! Integration tests for the health check endpoint
 
-
 #[tokio::test]
 async fn health_check_works() {
     // Arrange
@@ -22,4 +21,4 @@ async fn health_check_works() {
     // Optionally, parse the JSON and check the value
     let json: serde_json::Value = serde_json::from_str(&body_text).expect("Failed to parse JSON");
     assert_eq!(json["status"], "ok");
-} 
+}

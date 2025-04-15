@@ -1,8 +1,8 @@
 // backend/src/errors.rs
 use axum::{
+    Json,
     http::StatusCode,
     response::{IntoResponse, Response},
-    Json,
 };
 use serde_json::json;
 use thiserror::Error;
@@ -75,7 +75,10 @@ impl IntoResponse for AppError {
             AppError::Forbidden(ref message) => (StatusCode::FORBIDDEN, message.clone()),
             AppError::CharacterParseError(ref err) => {
                 tracing::warn!("Character parsing failed: {}", err);
-                (StatusCode::BAD_REQUEST, format!("Character parsing failed: {}", err))
+                (
+                    StatusCode::BAD_REQUEST,
+                    format!("Character parsing failed: {}", err),
+                )
             }
             AppError::IoError(ref err) => {
                 tracing::error!("IO Error: {:?}", err);
@@ -86,14 +89,14 @@ impl IntoResponse for AppError {
             }
             AppError::MultipartError(ref err) => {
                 tracing::error!("Multipart Error: {:?}", err);
-                 (
+                (
                     StatusCode::BAD_REQUEST,
                     format!("Failed to process multipart form data: {}", err),
                 )
             }
-             AppError::UuidError(ref err) => {
+            AppError::UuidError(ref err) => {
                 tracing::error!("UUID Error: {:?}", err);
-                 (
+                (
                     StatusCode::BAD_REQUEST,
                     format!("Invalid identifier format: {}", err),
                 )
@@ -118,15 +121,17 @@ mod tests {
     use serde_json::Value;
     // Import necessary types for constructing errors
     use crate::services::character_parser::ParserError;
-    use base64::{engine::general_purpose::STANDARD as base64_standard, Engine as _};
     use axum::body::to_bytes; // Explicitly import to_bytes
+    use base64::{Engine as _, engine::general_purpose::STANDARD as base64_standard};
     use uuid::Uuid; // Import Uuid for parsing
 
     // Helper function to extract JSON body from response using axum::body::to_bytes
     async fn get_body_json(response: Response) -> Value {
         let body = response.into_body();
         // Use the explicitly imported function
-        let body_bytes = to_bytes(body, usize::MAX).await.expect("Failed to read body bytes");
+        let body_bytes = to_bytes(body, usize::MAX)
+            .await
+            .expect("Failed to read body bytes");
         serde_json::from_slice(&body_bytes).expect("Failed to parse JSON body")
     }
 
@@ -162,7 +167,6 @@ mod tests {
         let body = get_body_json(response).await;
         assert_eq!(body["error"], "Internal Server Error");
     }
-
 
     #[tokio::test]
     async fn test_not_found_response() {
@@ -213,10 +217,12 @@ mod tests {
         let response = error.into_response();
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
         let body = get_body_json(response).await;
-        assert!(body["error"]
-            .as_str()
-            .unwrap()
-            .contains("Character parsing failed"));
+        assert!(
+            body["error"]
+                .as_str()
+                .unwrap()
+                .contains("Character parsing failed")
+        );
     }
 
     #[tokio::test]
@@ -239,9 +245,13 @@ mod tests {
         let response = error.into_response();
         assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
         let body = get_body_json(response).await;
-        assert!(body["error"].as_str().unwrap().contains("Internal Server Error"));
+        assert!(
+            body["error"]
+                .as_str()
+                .unwrap()
+                .contains("Internal Server Error")
+        );
     }
-
 
     #[tokio::test]
     async fn test_uuid_error_response() {
@@ -251,9 +261,11 @@ mod tests {
         let response = error.into_response();
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
         let body = get_body_json(response).await;
-        assert!(body["error"]
-            .as_str()
-            .unwrap()
-            .contains("Invalid identifier format"));
+        assert!(
+            body["error"]
+                .as_str()
+                .unwrap()
+                .contains("Invalid identifier format")
+        );
     }
 }

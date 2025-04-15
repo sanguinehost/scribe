@@ -1,19 +1,19 @@
-use diesel::prelude::*;
-use diesel::pg::PgConnection;
-use std::env;
-use dotenvy::dotenv;
-use uuid::Uuid;
-use std::sync::Arc;
-use diesel::r2d2::{ConnectionManager, Pool};
-use scribe_backend::models::users::{User, NewUser};
-use scribe_backend::models::character_card::{Character, NewCharacter};
-use scribe_backend::schema::{self, characters, users}; // Added schema imports
-use axum::extract::State;
-use scribe_backend::routes::characters::list_characters;
-use scribe_backend::state::AppState;
-use diesel::result::Error as DieselError; // Keep alias for test_transaction test
 use anyhow::Error as AnyhowError; // For manual cleanup test return type
-use std::collections::HashSet; // For manual cleanup test assertion
+use axum::extract::State;
+use diesel::pg::PgConnection;
+use diesel::prelude::*;
+use diesel::r2d2::{ConnectionManager, Pool};
+use diesel::result::Error as DieselError; // Keep alias for test_transaction test
+use dotenvy::dotenv;
+use scribe_backend::models::character_card::{Character, NewCharacter};
+use scribe_backend::models::users::{NewUser, User};
+use scribe_backend::routes::characters::list_characters;
+use scribe_backend::schema::{self, characters, users}; // Added schema imports
+use scribe_backend::state::AppState;
+use std::collections::HashSet;
+use std::env;
+use std::sync::Arc;
+use uuid::Uuid; // For manual cleanup test assertion
 
 // --- DbPool Type ---
 pub type DbPool = Arc<Pool<ConnectionManager<PgConnection>>>;
@@ -22,10 +22,8 @@ pub type DbPool = Arc<Pool<ConnectionManager<PgConnection>>>;
 fn establish_connection() -> PgConnection {
     dotenv().ok(); // Load .env file if present
 
-    let database_url = env::var("DATABASE_URL")
-        .expect("DATABASE_URL must be set");
-    PgConnection::establish(&database_url)
-        .expect(&format!("Error connecting to {}", database_url))
+    let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+    PgConnection::establish(&database_url).expect(&format!("Error connecting to {}", database_url))
 }
 
 // --- Test Helper Functions ---
@@ -53,11 +51,15 @@ fn insert_test_user(conn: &mut PgConnection, prefix: &str) -> Result<User, Diese
     diesel::insert_into(schema::users::table)
         .values(&new_user)
         .get_result(conn)
-        // .expect(&format!("Error inserting test user {}", test_username)) // Use Result instead
+    // .expect(&format!("Error inserting test user {}", test_username)) // Use Result instead
 }
 
 // Helper to insert a test character (returns Result)
-fn insert_test_character(conn: &mut PgConnection, user_uuid: Uuid, name: &str) -> Result<Character, DieselError> {
+fn insert_test_character(
+    conn: &mut PgConnection,
+    user_uuid: Uuid,
+    name: &str,
+) -> Result<Character, DieselError> {
     let new_character = NewCharacter {
         user_id: user_uuid,
         spec: "test_spec".to_string(),
@@ -68,7 +70,7 @@ fn insert_test_character(conn: &mut PgConnection, user_uuid: Uuid, name: &str) -
     diesel::insert_into(schema::characters::table)
         .values(new_character)
         .get_result(conn)
-       // .expect(&format!("Error inserting test character {}", name)) // Use Result instead
+    // .expect(&format!("Error inserting test character {}", name)) // Use Result instead
 }
 
 // Helper struct to manage test data cleanup (copied from other file)
@@ -80,7 +82,11 @@ struct TestDataGuard {
 
 impl TestDataGuard {
     fn new(pool: DbPool) -> Self {
-        TestDataGuard { pool, user_ids: Vec::new(), character_ids: Vec::new() }
+        TestDataGuard {
+            pool,
+            user_ids: Vec::new(),
+            character_ids: Vec::new(),
+        }
     }
 
     fn add_user(&mut self, user_id: Uuid) {
@@ -98,31 +104,36 @@ impl Drop for TestDataGuard {
             return;
         }
         println!("--- Cleaning up integration test data ---");
-        let mut conn = self.pool.get().expect("Failed to get DB connection for cleanup");
+        let mut conn = self
+            .pool
+            .get()
+            .expect("Failed to get DB connection for cleanup");
 
         if !self.character_ids.is_empty() {
-            let delete_chars = diesel::delete(characters::table.filter(characters::id.eq_any(&self.character_ids)))
-                .execute(&mut conn);
+            let delete_chars = diesel::delete(
+                characters::table.filter(characters::id.eq_any(&self.character_ids)),
+            )
+            .execute(&mut conn);
             if let Err(e) = delete_chars {
                 eprintln!("Error cleaning up characters: {:?}", e);
             } else {
-                 println!("Cleaned up {} characters.", self.character_ids.len());
+                println!("Cleaned up {} characters.", self.character_ids.len());
             }
         }
 
         if !self.user_ids.is_empty() {
-             let delete_users = diesel::delete(users::table.filter(users::id.eq_any(&self.user_ids)))
-                .execute(&mut conn);
-             if let Err(e) = delete_users {
+            let delete_users =
+                diesel::delete(users::table.filter(users::id.eq_any(&self.user_ids)))
+                    .execute(&mut conn);
+            if let Err(e) = delete_users {
                 eprintln!("Error cleaning up users: {:?}", e);
             } else {
-                 println!("Cleaned up {} users.", self.user_ids.len());
+                println!("Cleaned up {} users.", self.user_ids.len());
             }
         }
-         println!("--- Integration cleanup complete ---");
+        println!("--- Integration cleanup complete ---");
     }
 }
-
 
 // --- Tests ---
 
@@ -153,7 +164,7 @@ fn test_user_character_insert_and_query() {
         let new_character = NewCharacter {
             user_id: inserted_user.id, // Use the ID from the inserted user
             name: test_char_name.clone(),
-             ..Default::default() // Use default for other fields
+            ..Default::default() // Use default for other fields
         };
 
         let inserted_character: Character = diesel::insert_into(schema::characters::table)
@@ -210,17 +221,31 @@ async fn test_list_characters_endpoint_manual_cleanup() -> Result<(), AnyhowErro
 
     // Filter results to only those created in this test
     let inserted_ids: HashSet<Uuid> = vec![char1.id, char2.id].into_iter().collect();
-     let relevant_characters_from_api: Vec<&Character> = characters_list
-            .iter()
-            .filter(|c| inserted_ids.contains(&c.id))
-            .collect();
+    let relevant_characters_from_api: Vec<&Character> = characters_list
+        .iter()
+        .filter(|c| inserted_ids.contains(&c.id))
+        .collect();
 
-    assert_eq!(relevant_characters_from_api.len(), 2, "Expected 2 test characters, found {}", relevant_characters_from_api.len());
+    assert_eq!(
+        relevant_characters_from_api.len(),
+        2,
+        "Expected 2 test characters, found {}",
+        relevant_characters_from_api.len()
+    );
 
     // Check if the IDs of the inserted characters are present in the list
-    let found_ids: HashSet<Uuid> = relevant_characters_from_api.into_iter().map(|c| c.id).collect();
-    assert!(found_ids.contains(&char1.id), "Character 1 not found in list");
-    assert!(found_ids.contains(&char2.id), "Character 2 not found in list");
+    let found_ids: HashSet<Uuid> = relevant_characters_from_api
+        .into_iter()
+        .map(|c| c.id)
+        .collect();
+    assert!(
+        found_ids.contains(&char1.id),
+        "Character 1 not found in list"
+    );
+    assert!(
+        found_ids.contains(&char2.id),
+        "Character 2 not found in list"
+    );
 
     println!("Successfully listed characters via handler.");
     Ok(()) // Guard will clean up when test finishes

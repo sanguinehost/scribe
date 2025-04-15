@@ -6,4 +6,4 @@ pub mod schema;
 pub mod services;
 pub mod state;
 
-// You might add common error types or other shared utilities here later. 
+// You might add common error types or other shared utilities here later.
