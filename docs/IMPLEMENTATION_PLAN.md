@@ -40,8 +40,8 @@ Only mark a task checkbox (`- [x]`) when all these conditions are satisfied.
     - [x] *TDD:* Write integration test for `/api/health`. *(Verified)*
 - [ ] **Task 0.2: Frontend Project Setup (FE)**
     - [x] Initialize SvelteKit project (`npm create svelte@latest scribe-frontend`). Choose Skeleton project with TypeScript.
-    - [ ] Setup basic project structure (routes, components, stores, lib). *(Partially complete: Missing components/stores folders)*
-    - [ ] Configure basic styling (e.g., TailwindCSS or basic CSS). *(Partially complete: Tailwind installed but needs config)*
+    - [x] Setup basic project structure (routes, components, stores, lib). *(Created missing folders)*
+    - [x] Configure basic styling (e.g., TailwindCSS or basic CSS). *(Verified config, added tailwind.config.js)*
     - [x] *TDD:* Setup Vitest and write basic component rendering tests (e.g., for a placeholder component). *(Verified)*
 - [x] **Task 0.3: Database Setup (DevOps/BE)**
     - [x] Create `docker-compose.yml` for PostgreSQL and Qdrant services. *(Verified)*
