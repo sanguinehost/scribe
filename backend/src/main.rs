@@ -77,3 +77,18 @@ async fn health_check() -> Json<HealthStatus> {
     tracing::debug!("Health check endpoint called"); // Add a debug log
     Json(HealthStatus { status: "ok".to_string() })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::http::StatusCode;
+
+    #[tokio::test]
+    async fn test_health_check() {
+        let response = health_check().await;
+        // Assuming get_body_json is not available here, we check status and basic structure
+        assert_eq!(response.0.status, "ok");
+        // We can't easily check the exact JSON structure without a helper or full response processing,
+        // but testing the inner data structure is a good start for a unit test.
+    }
+}

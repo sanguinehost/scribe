@@ -31,6 +31,7 @@ anyhow = "1.0" # <-- Added for AppError::InternalServerError
 futures-util = "0.3" # <-- Added for multipart stream processing
 
 [dev-dependencies]
+hyper-util = { version = "0.1", features = ["full"] }
 reqwest = "0.12"
 serde_json = "1.0"
 crc32fast = "1.4"

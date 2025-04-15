@@ -143,13 +143,23 @@ fn parse_decorators_from_content(raw_content: &str) -> (Vec<Decorator>, String) 
 
         if trimmed_line.starts_with("@@") && !trimmed_line.starts_with("@@@") {
             // Found a potential main decorator line
-            let parts: Vec<&str> = trimmed_line[2..].splitn(2, |c: char| c.is_whitespace()).collect();
-            let name = parts.get(0).unwrap_or(&"").trim().to_string();
+            // Trim leading whitespace *after* the prefix before splitting
+            let content_after_prefix = trimmed_line[2..].trim();
+            
+            // If there's no content after @@, treat it as content
+            if content_after_prefix.is_empty() {
+                content_lines.push(line);
+                continue;
+            }
+
+            let parts: Vec<&str> = content_after_prefix.splitn(2, |c: char| c.is_whitespace()).collect();
+            // Trim potential trailing whitespace from name
+            let name = parts.get(0).unwrap_or(&"").trim_end().to_string();
 
             if name.is_empty() {
-                 // Invalid decorator line, treat as content
-                 content_lines.push(line);
-                 continue;
+                // Invalid decorator line, treat as content
+                content_lines.push(line);
+                continue;
             }
 
             let value = parts.get(1).map(|v| v.trim().to_string());
@@ -157,20 +167,46 @@ fn parse_decorators_from_content(raw_content: &str) -> (Vec<Decorator>, String) 
             let mut fallbacks = Vec::new();
             // Check subsequent lines for fallbacks (@@@)
             while let Some(next_line) = lines.peek() {
-                let trimmed_next = next_line.trim();
+                let trimmed_next = next_line.trim(); // Trim first to check prefix
                 if trimmed_next.starts_with("@@@") {
+                    // Original line needed for whitespace check later: let fallback_line = lines.next().unwrap();
                     // Consume the fallback line
-                    lines.next();
+                    let fallback_line = lines.next().unwrap();
 
-                    let fallback_parts: Vec<&str> = trimmed_next[3..].splitn(2, |c: char| c.is_whitespace()).collect();
-                    let fallback_name = fallback_parts.get(0).unwrap_or(&"").trim().to_string();
+                    // Skip if the line is just "@@@" or "@@@" followed by whitespace
+                    if trimmed_next == "@@@" || trimmed_next[3..].trim().is_empty() {
+                        content_lines.push(fallback_line);
+                        continue;
+                    }
+
+                    // Trim leading whitespace *after* the prefix before splitting
+                    let fallback_content_after_prefix = trimmed_next[3..].trim();
+                    
+                    // If there's no content after @@@, treat it as content
+                    if fallback_content_after_prefix.is_empty() {
+                        content_lines.push(fallback_line);
+                        continue;
+                    }
+
+                    let fallback_parts: Vec<&str> = fallback_content_after_prefix.splitn(2, |c: char| c.is_whitespace()).collect();
+                    // Trim potential trailing whitespace from name
+                    let fallback_name = fallback_parts.get(0).unwrap_or(&"").trim_end().to_string();
 
                     if fallback_name.is_empty() {
-                        // Invalid fallback line, ignore it
+                        // Invalid fallback line, treat as content
+                        content_lines.push(fallback_line);
                         continue;
                     }
 
                     let fallback_value = fallback_parts.get(1).map(|v| v.trim().to_string());
+
+                    // Check: If original line had leading whitespace AND value is missing, treat as content
+                    // We use the original `fallback_line` (consumed earlier) vs `trimmed_next`
+                    if fallback_line != trimmed_next && fallback_value.is_none() {
+                         content_lines.push(fallback_line); // Use the original consumed line
+                         continue; // Skip adding this as a fallback
+                    }
+
                     // Fallbacks don't have their own fallbacks according to spec example
                     fallbacks.push(Decorator {
                         name: fallback_name,
@@ -185,12 +221,8 @@ fn parse_decorators_from_content(raw_content: &str) -> (Vec<Decorator>, String) 
 
             decorators.push(Decorator { name, value, fallbacks });
 
-        } else if trimmed_line.starts_with("@@@") {
-             // Found a fallback line without a preceding main decorator, treat as content
-             content_lines.push(line);
-        }
-        else {
-            // Not a decorator line, add to content
+        } else {
+            // Not a valid decorator line, add to content
             content_lines.push(line);
         }
     }

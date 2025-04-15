@@ -2306,6 +2306,7 @@ dependencies = [
  "dotenvy",
  "futures-util",
  "http-body-util",
+ "hyper-util",
  "mime",
  "once_cell",
  "png",

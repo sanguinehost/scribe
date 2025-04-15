@@ -47,3 +47,63 @@ pub struct UserCredentials {
     pub username: String,
     pub password: Secret<String>, // Use Secret for password handling
 }
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::Utc;
+    use secrecy::ExposeSecret; // Import the ExposeSecret trait
+    use secrecy::SecretString;
+
+    #[test]
+    fn test_user_struct_and_auth_impl() {
+        let user_id = Uuid::new_v4();
+        let now = Utc::now();
+        let user = User {
+            id: user_id,
+            username: "testuser".to_string(),
+            password_hash: "hashed_password".to_string(),
+            created_at: now,
+            updated_at: now,
+        };
+
+        // Test basic fields
+        assert_eq!(user.username, "testuser");
+        assert_eq!(user.password_hash, "hashed_password");
+
+        // Test AuthUser implementation
+        assert_eq!(axum_login::AuthUser::id(&user), user_id); // Disambiguate trait method
+        // Test the current placeholder implementation for session_auth_hash
+        assert_eq!(user.session_auth_hash(), user_id.as_bytes());
+    }
+
+    #[test]
+    fn test_new_user_struct() {
+        let username = "newuser".to_string();
+        let password_hash = "new_hashed_password";
+        let new_user = NewUser {
+            username: username.clone(),
+            password_hash,
+        };
+
+        assert_eq!(new_user.username, username);
+        assert_eq!(new_user.password_hash, password_hash);
+    }
+
+    #[test]
+    fn test_user_credentials_struct() {
+        let username = "loginuser".to_string();
+        let password = SecretString::new("password123".to_string());
+        let credentials = UserCredentials {
+            username: username.clone(),
+            password: password.clone(),
+        };
+
+        assert_eq!(credentials.username, username);
+        // Note: We can't directly compare Secret values easily,
+        // but we can ensure it holds the secret type.
+        // Accessing the secret value requires `expose_secret()`.
+        assert_eq!(credentials.password.expose_secret(), "password123");
+    }
+}

@@ -154,4 +154,130 @@ fn test_default_empty_strings() {
     assert_eq!(card.data.creator, ""); // Check default
     assert_eq!(card.data.character_version, ""); // Check default
     assert!(card.data.extensions.is_empty()); // Check default
-} 
+}
+
+// --- Tests for parse_decorators_from_content ---
+
+#[test]
+fn test_parse_decorators_no_decorators() {
+    let content = "This is normal content.\nWith multiple lines.";
+    let (decorators, processed_content) = parse_decorators_from_content(content);
+    assert!(decorators.is_empty());
+    assert_eq!(processed_content, content);
+}
+
+#[test]
+fn test_parse_decorators_simple() {
+    let content = "@@role system\n@@position after_desc\nActual content here.";
+    let (decorators, processed_content) = parse_decorators_from_content(content);
+    assert_eq!(decorators.len(), 2);
+    assert_eq!(decorators[0].name, "role");
+    assert_eq!(decorators[0].value, Some("system".to_string()));
+    assert!(decorators[0].fallbacks.is_empty());
+    assert_eq!(decorators[1].name, "position");
+    assert_eq!(decorators[1].value, Some("after_desc".to_string()));
+    assert!(decorators[1].fallbacks.is_empty());
+    assert_eq!(processed_content, "Actual content here.");
+}
+
+#[test]
+fn test_parse_decorators_no_value() {
+    let content = "@@enabled\nContent line.";
+    let (decorators, processed_content) = parse_decorators_from_content(content);
+    assert_eq!(decorators.len(), 1);
+    assert_eq!(decorators[0].name, "enabled");
+    assert_eq!(decorators[0].value, None);
+    assert!(decorators[0].fallbacks.is_empty());
+    assert_eq!(processed_content, "Content line.");
+}
+
+#[test]
+fn test_parse_decorators_with_fallbacks() {
+    let content = "@@name Character Name\n@@@nombre Nombre del Personaje\n@@@nom Nom du Personnage\nDescription starts here.";
+    let (decorators, processed_content) = parse_decorators_from_content(content);
+    assert_eq!(decorators.len(), 1);
+    let main_decorator = &decorators[0];
+    assert_eq!(main_decorator.name, "name");
+    assert_eq!(main_decorator.value, Some("Character Name".to_string()));
+    assert_eq!(main_decorator.fallbacks.len(), 2);
+    assert_eq!(main_decorator.fallbacks[0].name, "nombre");
+    assert_eq!(main_decorator.fallbacks[0].value, Some("Nombre del Personaje".to_string()));
+    assert!(main_decorator.fallbacks[0].fallbacks.is_empty());
+    assert_eq!(main_decorator.fallbacks[1].name, "nom");
+    assert_eq!(main_decorator.fallbacks[1].value, Some("Nom du Personnage".to_string()));
+    assert!(main_decorator.fallbacks[1].fallbacks.is_empty());
+    assert_eq!(processed_content, "Description starts here.");
+}
+
+#[test]
+fn test_parse_decorators_mixed_content() {
+    let content = "Line 1\n@@decorator1 value1\nLine 2\n@@decorator2\n@@@fallback2 val_fb\nLine 3";
+    let (decorators, processed_content) = parse_decorators_from_content(content);
+    assert_eq!(decorators.len(), 2);
+    assert_eq!(decorators[0].name, "decorator1");
+    assert_eq!(decorators[0].value, Some("value1".to_string()));
+    assert!(decorators[0].fallbacks.is_empty());
+    assert_eq!(decorators[1].name, "decorator2");
+    assert_eq!(decorators[1].value, None);
+    assert_eq!(decorators[1].fallbacks.len(), 1);
+    assert_eq!(decorators[1].fallbacks[0].name, "fallback2");
+    assert_eq!(decorators[1].fallbacks[0].value, Some("val_fb".to_string()));
+    assert_eq!(processed_content, "Line 1\nLine 2\nLine 3");
+}
+
+#[test]
+fn test_parse_decorators_invalid_lines() {
+    let content = "Line 1\n@@\n@@@ \n@@ name value\n@@@fallback val\n  @@@ invalid_fallback\nLine 2";
+    let (decorators, processed_content) = parse_decorators_from_content(content);
+    assert_eq!(decorators.len(), 1); // Only the valid "@@ name value" should be parsed
+    assert_eq!(decorators[0].name, "name");
+    assert_eq!(decorators[0].value, Some("value".to_string()));
+    assert_eq!(decorators[0].fallbacks.len(), 1); // Only the valid "@@@fallback val"
+    assert_eq!(decorators[0].fallbacks[0].name, "fallback");
+    assert_eq!(decorators[0].fallbacks[0].value, Some("val".to_string()));
+    // Invalid lines should be treated as content
+    assert_eq!(processed_content, "Line 1\n@@\n@@@ \n  @@@ invalid_fallback\nLine 2");
+}
+
+#[test]
+fn test_parse_decorators_whitespace_handling() {
+    let content = "  @@ spaced_name   spaced value  \n\t@@@ spaced_fallback \t spaced_fb_value \t\nContent";
+    let (decorators, processed_content) = parse_decorators_from_content(content);
+    assert_eq!(decorators.len(), 1);
+    assert_eq!(decorators[0].name, "spaced_name");
+    assert_eq!(decorators[0].value, Some("spaced value".to_string()));
+    assert_eq!(decorators[0].fallbacks.len(), 1);
+    assert_eq!(decorators[0].fallbacks[0].name, "spaced_fallback");
+    assert_eq!(decorators[0].fallbacks[0].value, Some("spaced_fb_value".to_string()));
+    assert_eq!(processed_content, "Content");
+}
+
+#[test]
+fn test_parse_decorators_empty_content() {
+    let content = "";
+    let (decorators, processed_content) = parse_decorators_from_content(content);
+    assert!(decorators.is_empty());
+    assert_eq!(processed_content, "");
+}
+
+#[test]
+fn test_parse_decorators_only_decorators() {
+    let content = "@@d1 v1\n@@@f1 vf1\n@@d2";
+    let (decorators, processed_content) = parse_decorators_from_content(content);
+    assert_eq!(decorators.len(), 2);
+    assert_eq!(decorators[0].name, "d1");
+    assert_eq!(decorators[0].value, Some("v1".to_string()));
+    assert_eq!(decorators[0].fallbacks.len(), 1);
+    assert_eq!(decorators[1].name, "d2");
+    assert_eq!(decorators[1].value, None);
+    assert!(decorators[1].fallbacks.is_empty());
+    assert_eq!(processed_content, ""); // Content should be empty
+}
+
+#[test]
+fn test_parse_decorators_fallback_without_main() {
+     let content = "Line 1\n@@@fallback value\nLine 2";
+     let (decorators, processed_content) = parse_decorators_from_content(content);
+     assert!(decorators.is_empty()); // Fallback without main is treated as content
+     assert_eq!(processed_content, content);
+}
