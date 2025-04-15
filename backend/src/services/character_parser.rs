@@ -75,7 +75,7 @@ pub fn parse_character_card_png(png_data: &[u8]) -> Result<ParsedCharacterCard, 
         match base64_standard.decode(&base64_str) {
             Ok(decoded_bytes) => {
                 match serde_json::from_slice::<CharacterCardV3>(&decoded_bytes) {
-                    Ok(mut card) => {
+                    Ok(card) => {
                         // --- V3 Spec Conformance Checks ---
                         if card.spec != "chara_card_v3" {
                             // Spec says SHOULD NOT consider it V3 if spec is wrong.
@@ -178,7 +178,7 @@ pub fn parse_character_card_png(png_data: &[u8]) -> Result<ParsedCharacterCard, 
 
 pub fn parse_character_card_json(json_data: &[u8]) -> Result<ParsedCharacterCard, ParserError> {
     match serde_json::from_slice::<CharacterCardV3>(json_data) {
-        Ok(mut card) => {
+        Ok(card) => {
             // --- V3 Spec Conformance Checks (similar to PNG parser) ---
             if card.spec != "chara_card_v3" {
                 // Spec says SHOULD NOT consider it V3 if spec is wrong.
@@ -254,7 +254,7 @@ pub fn parse_character_card_charx<R: Read + Seek>(charx_data: R) -> Result<Parse
 
     // Parse the JSON content from the buffer
     match serde_json::from_slice::<CharacterCardV3>(&buffer) {
-        Ok(mut card) => {
+        Ok(card) => {
             // --- V3 Spec Conformance Checks (similar to PNG/JSON parsers) ---
              if card.spec != "chara_card_v3" {
                 warn!(
