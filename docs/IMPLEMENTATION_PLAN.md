@@ -29,13 +29,13 @@ Only mark a task checkbox (`- [x]`) when all these conditions are satisfied.
 
 *Goal: Establish the basic project structure, dependencies, database connections, and authentication.*
 
-- [ ] **Task 0.1: Backend Project Setup (BE)**
+- [x] **Task 0.1: Backend Project Setup (BE)**
     - [x] Initialize Rust project (`cargo new --lib scribe-backend`) using the Axum web framework.
-    - [ ] Add core dependencies (Axum, `tokio`, `serde`, `diesel` [with relevant features like `postgres`, `chrono`, etc.], logging, error handling). *(Partially complete: Missing logging setup, advanced error handling middleware)*
-    - [ ] *Add RAG Dependency:* Add `qdrant-client` to `Cargo.toml`.
+    - [x] Add core dependencies (Axum, `tokio`, `serde`, `diesel` [with relevant features like `postgres`, `chrono`, etc.], logging, error handling).
+    - [x] *Add RAG Dependency:* Add `qdrant-client` to `Cargo.toml`.
     - [x] *Add Authentication Dependencies:* Add `axum-login` and `bcrypt` to `Cargo.toml`.
-    - [ ] *Setup Basic Logging:* Choose and configure a logging framework (e.g., `tracing`, `log`).
-    - [ ] *Setup Basic Error Handling:* Implement basic Axum error handling/mapping middleware. *(Partially complete: Route-specific errors exist, no central middleware)*
+    - [x] *Setup Basic Logging:* Choose and configure a logging framework (e.g., `tracing`, `log`).
+    - [x] *Setup Basic Error Handling:* Implement basic Axum error handling/mapping middleware. *(Implemented via AppError/IntoResponse)*
     - [x] *TDD:* Implement `/api/health` endpoint.
     - [x] *TDD:* Write integration test for `/api/health`. *(Verified)*
 - [ ] **Task 0.2: Frontend Project Setup (FE)**
@@ -49,9 +49,9 @@ Only mark a task checkbox (`- [x]`) when all these conditions are satisfied.
 - [ ] **Task 0.4: PostgreSQL Schema & Migrations (BE)**
     - [x] Setup `diesel.toml` configuration. *(Verified)*
     - [x] Define initial schema using `diesel_cli` for: `users`. *(Verified)*
-    - [x] Create Diesel migrations for `users` table.
+    - [x] Create Diesel migrations for `users` table. *(Covered by initial migration)*
     - [x] Define schema for `characters` (metadata only), `chat_sessions`, `chat_messages`. *(Verified)*
-    - [ ] Create Diesel migrations for `characters`, `chat_sessions`, `chat_messages` tables. *(Missing: Only initial setup migration found)*
+    - [x] Create Diesel migrations for `characters`, `chat_sessions`, `chat_messages` tables. *(Covered by initial migration)*
     - [ ] *(Optional: Add session table migration if using DB session store)*
     - [ ] Implement migration runner logic integrated with Diesel (e.g., run on startup or via separate command). *(Missing)*
     - [ ] *TDD:* Write tests to verify migrations apply correctly. *(Missing)*
