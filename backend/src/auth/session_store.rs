@@ -13,10 +13,11 @@ use std::fmt::{self, Debug};
 // use std::marker::PhantomData;
 use tracing::{debug, error, info, instrument};
 use crate::state::DbPool; // Import DbPool type alias
-use tower_sessions::{
+use axum_login::tower_sessions::{
     session::{Id, Record}, // Use tower_sessions::session types
     session_store, SessionStore,
 };
+use time::OffsetDateTime;
 
 // --- Session Data Struct ---
 // This mirrors the table structure in schema.rs for the sessions table
@@ -24,7 +25,8 @@ use tower_sessions::{
 #[diesel(table_name = sessions)]
 struct SessionRecord {
     id: String, // Session ID (PK)
-    expires: Option<chrono::DateTime<chrono::Utc>>,
+    #[diesel(sql_type = diesel::sql_types::Timestamptz)] // Explicitly map to TIMESTAMPTZ
+    expires: Option<OffsetDateTime>,
     session: String, // Serialized tower_sessions::session::Record data
 }
 
@@ -84,22 +86,25 @@ impl DieselSessionStore {
 impl SessionStore for DieselSessionStore {
     #[instrument(skip(self, session), err)]
     async fn save(&self, session: &Record) -> session_store::Result<()> {
-        info!(session_id = %session.id, "Saving session");
+        info!(session_id = %session.id, ">>> DieselSessionStore::save ENTERED");
+
+        // --- Add log right after entry ---
+        debug!(session_id = %session.id, ">>> save method entered successfully.");
 
         let session_data = serde_json::to_string(session).map_err(Self::map_json_error)?;
 
-        // Convert time::OffsetDateTime to Option<chrono::DateTime<Utc>>
-        let expires_chrono: Option<chrono::DateTime<chrono::Utc>> = 
-            chrono::DateTime::<chrono::Utc>::from_timestamp(session.expiry_date.unix_timestamp(), 0);
-
+        // Use session.expiry_date directly, as it's already Option<OffsetDateTime>
         let record = SessionRecord {
             id: session.id.to_string(),
-            expires: expires_chrono,
-            session: session_data,
+            expires: Some(session.expiry_date),
+            session: session_data.clone(), // Clone session_data for logging
         };
 
+        // --- Added Log ---
+        debug!(session_id = %record.id, expires = ?record.expires, session_data = %session_data, "Attempting to save session record to DB");
+
         let pool = self.pool.clone();
-        pool.get()
+        let save_result = pool.get()
             .await.map_err(Self::map_pool_error)?
             .interact(move |conn| {
                 // Use insert + on_conflict_do_update (upsert)
@@ -109,20 +114,35 @@ impl SessionStore for DieselSessionStore {
                     .do_update()
                     .set(&record) // AsChangeset updates all fields
                     .execute(conn)
-                    .map(|_| ()) // Discard row count
+                    // .map(|_| ()) // Discard row count - Keep result for logging
                     .map_err(Self::map_diesel_error)
             })
-            .await.map_err(Self::map_interact_error)??; // Flatten Result<Result<...>>
+            .await.map_err(Self::map_interact_error);
 
-        Ok(())
+        // --- Added Log ---
+        match &save_result {
+            Ok(Ok(rows_affected)) => debug!(session_id = %session.id, %rows_affected, "DB interact for session save successful."),
+            Ok(Err(e)) => error!(session_id = %session.id, error = ?e, "DB interact for session save failed (Diesel error)."),
+            Err(e) => error!(session_id = %session.id, error = ?e, "DB interact for session save failed (Interact error)."),
+        }
+
+        let final_result = save_result?.map(|_| ()); // Flatten Result<Result<...>> and discard row count
+
+        // --- Add log before returning ---
+        debug!(session_id = %session.id, result = ?final_result, ">>> save method attempting to return.");
+
+        final_result
     }
 
     #[instrument(skip(self), err)]
     async fn load(&self, session_id: &Id) -> session_store::Result<Option<Record>> {
         let session_id_str = session_id.to_string();
-        info!(%session_id_str, "Loading session");
+        // --- Modified Log ---
+        info!(session_id = %session_id_str, "DieselSessionStore::load ENTERED");
 
         let pool = self.pool.clone();
+        // --- Log before interact ---
+        debug!(session_id = %session_id_str, "Attempting to load session record from DB...");
         let maybe_record = pool.get()
             .await.map_err(Self::map_pool_error)?
             .interact(move |conn| {
@@ -136,7 +156,8 @@ impl SessionStore for DieselSessionStore {
 
         match maybe_record {
             Some(record) => {
-                debug!(session_id = %record.id, "Session record found in DB");
+                // --- Log found --- 
+                debug!(session_id = %record.id, "Session record found in DB. Deserializing...");
                 let session_record = serde_json::from_str::<Record>(&record.session).map_err(Self::map_json_error)?;
 
                 // tower-sessions handles expiration check internally based on loaded expiry_date
@@ -149,11 +170,13 @@ impl SessionStore for DieselSessionStore {
                 //          // Could spawn a task to delete it, but might interfere with tower-sessions logic
                 //     }
                 // }
-
+                // --- Log success --- 
+                info!(session_id = %record.id, "Session loaded and deserialized successfully.");
                 Ok(Some(session_record))
             }
             None => {
-                debug!(%session_id, "Session record not found in DB");
+                // --- Log not found --- 
+                debug!(session_id = %session_id, "Session record not found in DB.");
                 Ok(None) // Session not found is not an error for load
             }
         }
@@ -162,19 +185,29 @@ impl SessionStore for DieselSessionStore {
     #[instrument(skip(self), err)]
     async fn delete(&self, session_id: &Id) -> session_store::Result<()> {
          let session_id_str = session_id.to_string();
-         info!(%session_id_str, "Deleting session");
+         // --- Modified Log --- 
+         info!(session_id = %session_id_str, "DieselSessionStore::delete ENTERED");
 
          let pool = self.pool.clone();
-         pool.get()
+         // --- Log before interact --- 
+         debug!(session_id = %session_id_str, "Attempting to delete session record from DB...");
+         let delete_result = pool.get()
              .await.map_err(Self::map_pool_error)?
              .interact(move |conn| {
                  diesel::delete(sessions::table.find(session_id_str))
                      .execute(conn)
-                     .map(|_| ()) // Discard result count
+                     // .map(|_| ()) // Discard result count - Keep for logging
                      .map_err(Self::map_diesel_error)
              })
-             .await.map_err(Self::map_interact_error)??; // Flatten Result<Result<...>>
+             .await.map_err(Self::map_interact_error);
+        
+         // --- Added Log --- 
+         match &delete_result {
+            Ok(Ok(rows_affected)) => info!(session_id = %session_id, %rows_affected, "DB interact for session delete successful."),
+            Ok(Err(e)) => error!(session_id = %session_id, error = ?e, "DB interact for session delete failed (Diesel error)."),
+            Err(e) => error!(session_id = %session_id, error = ?e, "DB interact for session delete failed (Interact error)."),
+        }
 
-         Ok(())
+        delete_result?.map(|_| ()) // Flatten Result<Result<...>> and discard row count
     }
 } 

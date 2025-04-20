@@ -16,6 +16,7 @@ use scribe_backend::state::AppState;
 use scribe_backend::auth::session_store::DieselSessionStore; // Import DieselSessionStore
  // Import User model
 use anyhow::Result;
+use anyhow::Context;
 use scribe_backend::auth::user_store::Backend as AuthBackend;
  // Make sure AppError is in scope
 
@@ -24,17 +25,16 @@ use axum_login::{
     login_required,
     AuthManagerLayerBuilder,
 };
+// Import SessionManagerLayer directly from tower_sessions
 use tower_sessions::{
     cookie::SameSite,
     Expiry,
     SessionManagerLayer,
-    // SessionStoreLayer, // Not needed with this approach
-    // session_store::SigningKey, // Not needed, use cookie::Key
 };
-use cookie::Key as CookieKey;
-use tower_cookies::CookieManagerLayer;
-use rand::RngCore; // Import trait for fill_bytes
+use cookie::Key as CookieKey; // Re-add for signing key variable
+use tower_cookies::CookieManagerLayer; // Re-add CookieManagerLayer
 use time; // Used for tower_sessions::Expiry
+use hex; // Added for hex::decode
 
 // Alias the specific Pool type we're using
 pub type PgPool = DeadpoolPool<DeadpoolManager>;
@@ -67,9 +67,9 @@ async fn main() -> Result<()> {
     let session_store = DieselSessionStore::new(pool.clone());
 
     // Generate a signing key for cookies
-    let mut key_bytes = [0u8; 64]; // Use 64 bytes for key
-    rand::thread_rng().fill_bytes(&mut key_bytes);
-    let cookie_signing_key = CookieKey::from(&key_bytes);
+    let secret_key = env::var("COOKIE_SIGNING_KEY").expect("COOKIE_SIGNING_KEY must be set");
+    let key_bytes = hex::decode(secret_key).context("Invalid COOKIE_SIGNING_KEY format (must be hex)")?;
+    let _cookie_signing_key = CookieKey::from(&key_bytes);
 
     // Build the session manager layer (handles session data)
     let session_manager_layer = SessionManagerLayer::new(session_store)
@@ -99,7 +99,7 @@ async fn main() -> Result<()> {
     let characters_routes = Router::new()
         .route("/upload", post(upload_character_handler))
         .route("/", get(list_characters_handler))
-        .route("/:id", get(get_character_handler))
+        .route("/{id}", get(get_character_handler))
         .route_layer(login_required!(AuthBackend, login_url = "/auth/login"));
 
     // Separate routers for protected and public routes
@@ -107,7 +107,7 @@ async fn main() -> Result<()> {
         .route("/api/auth/me", get(me_handler)) // Example protected route
         .route("/api/auth/logout", post(logout_handler))
         .route("/api/characters", get(list_characters_handler).post(upload_character_handler)) // Protect character routes
-        .route("/api/characters/:id", get(get_character_handler)) // Protect character routes
+        .route("/api/characters/{id}", get(get_character_handler))
         // Add other protected routes here (chats, etc.)
         .merge(characters_routes);
 
@@ -121,7 +121,7 @@ async fn main() -> Result<()> {
         .merge(public_routes)
         .merge(protected_routes)
         .layer(auth_layer)
-        // Instantiate CookieManagerLayer without the key
+        // Re-add explicit CookieManagerLayer
         .layer(CookieManagerLayer::new())
         // Potentially apply signed cookie layer here if needed separately?
         // Check axum-login examples for layer order with tower-cookies.

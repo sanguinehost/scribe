@@ -8,6 +8,10 @@ use serde_json::json;
 use thiserror::Error;
 use diesel::result::Error as DieselError;
 use tracing::error;
+use crate::auth::AuthError;
+use crate::auth::user_store::Backend as AuthBackend;
+use axum_login;
+use anyhow::anyhow;
 
 /// Custom Error type for the application.
 /// Wraps various error types and maps them to appropriate HTTP status codes.
@@ -59,11 +63,40 @@ pub enum AppError {
     NotImplemented,
 
     #[error("Authentication/Authorization error: {0}")]
-    AuthError(#[from] crate::auth::AuthError),
+    AuthError(#[from] AuthError),
+
+    // Add a variant for axum_login errors if specific handling is needed,
+    // otherwise, the From impl below will handle it.
+    // #[error("Login session error: {0}")]
+    // LoginSessionError(String),
+}
+
+// Implement From for axum_login::Error
+impl From<axum_login::Error<AuthBackend>> for AppError {
+    fn from(err: axum_login::Error<AuthBackend>) -> Self {
+        match err {
+            axum_login::Error::Session(session_err) => {
+                error!(error = ?session_err, "axum_login session error");
+                // Map tower_sessions::session_store::Error into an AppError
+                // It might be a Backend error (like DB error) or Decode error
+                AppError::InternalServerError(anyhow!("Session storage error: {}", session_err))
+                // Or potentially map more granularly if needed:
+                // AppError::LoginSessionError(session_err.to_string())
+            }
+            axum_login::Error::Backend(backend_err) => {
+                error!(error = ?backend_err, "axum_login backend error");
+                // We already have `From<AuthError> for AppError` via #[from]
+                // on the AuthError variant, so this conversion should work automatically.
+                AppError::AuthError(backend_err)
+            }
+        }
+    }
 }
 
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
+        tracing::debug!(error = ?self, ">>> AppError::into_response called with");
+
         let (status, error_message) = match self {
             AppError::InternalServerError(ref err) => {
                 tracing::error!("Internal Server Error: {:?}", err);
@@ -136,20 +169,20 @@ impl IntoResponse for AppError {
                 )
             }
             AppError::AuthError(ref err) => match err {
-                crate::auth::AuthError::WrongCredentials => {
+                AuthError::WrongCredentials => {
                     (StatusCode::UNAUTHORIZED, "Invalid credentials".to_string())
                 }
-                crate::auth::AuthError::UsernameTaken => {
+                AuthError::UsernameTaken => {
                     (StatusCode::CONFLICT, "Username already taken".to_string())
                 }
-                crate::auth::AuthError::HashingError => (
+                AuthError::HashingError => (
                     StatusCode::INTERNAL_SERVER_ERROR,
                     "Password hashing failed".to_string(),
                 ),
-                crate::auth::AuthError::UserNotFound => {
+                AuthError::UserNotFound => {
                     (StatusCode::NOT_FOUND, "User not found".to_string())
                 }
-                crate::auth::AuthError::DatabaseError(db_err) => {
+                AuthError::DatabaseError(db_err) => {
                     error!("Database error during authentication: {:?}", db_err);
                     match db_err {
                         DieselError::NotFound => {
@@ -161,14 +194,14 @@ impl IntoResponse for AppError {
                         ),
                     }
                 }
-                crate::auth::AuthError::InteractError(msg) => {
+                AuthError::InteractError(msg) => {
                     error!("Database interaction error during authentication: {}", msg);
                     (
                         StatusCode::INTERNAL_SERVER_ERROR,
                         "A database interaction error occurred".to_string(),
                     )
                 }
-                crate::auth::AuthError::PoolError(pool_err) => {
+                AuthError::PoolError(pool_err) => {
                     error!("Database pool error during authentication: {:?}", pool_err);
                     (
                         StatusCode::INTERNAL_SERVER_ERROR,

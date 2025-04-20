@@ -31,3 +31,6 @@ dist/
 
 # Cargo Tarpaulin
 tarpaulin-report.json
+
+# Temp files
+/temp

@@ -1,14 +1,8 @@
 // Use deadpool-diesel types for async pooling
-use crate::auth; // Import auth module
-use crate::auth::AuthError; // Import AuthError enum
-use crate::errors::AppError;
-use crate::models::users::{User, UserCredentials};
-use async_trait::async_trait;
-use axum_login::{AuthUser, AuthnBackend};
+ // Import auth module
+ // Import AuthError enum
 use deadpool_diesel::postgres::Pool as DeadpoolDieselPool;
-use diesel::PgConnection;
-use tracing::{info, instrument};
-use anyhow::anyhow; // Ensure anyhow is imported
+ // Ensure anyhow is imported
 
 // --- DB Connection Pool Type ---
 pub type DbPool = DeadpoolDieselPool;
@@ -20,6 +14,7 @@ pub struct AppState {
     pub pool: DbPool,
 }
 
+/* // REMOVE AuthnBackend implementation from AppState
 // --- Implement AuthnBackend for AppState ---
 #[async_trait]
 impl AuthnBackend for AppState {
@@ -83,3 +78,4 @@ impl AuthnBackend for AppState {
         }
     }
 }
+*/

@@ -58,15 +58,52 @@ mod user_store_tests {
 
     #[tokio::test]
     async fn test_create_user() -> Result<(), Box<dyn std::error::Error>> {
-        let _pool = get_test_pool()?;
-        // TODO: Implement test
+        let pool = get_test_pool()?;
+        
         // 1. Define username and password
+        let username = format!("testcreateuser_{}", uuid::Uuid::new_v4().to_string().split('-').next().unwrap());
+        let password = secrecy::Secret::new("password123".to_string());
+        
         // 2. Call create_user
+        let obj = pool.get().await.map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
+        let username_clone = username.clone();
+        let password_clone = password.clone();
+        let create_result = obj.interact(move |conn| {
+            scribe_backend::auth::create_user(conn, username_clone, password_clone)
+        }).await
+        .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
+        
         // 3. Assert Ok result
-        // 4. Query DB directly or use get_user to verify creation and password hash storage (requires get_user to be implemented)
-        // 5. Consider testing duplicate username constraint
-        panic!("test_create_user not implemented");
-        // Ok(())
+        assert!(create_result.is_ok(), "User creation failed: {:?}", create_result.err());
+        let created_user = create_result.unwrap();
+        assert_eq!(created_user.username, username);
+        
+        // 4. Verify the user exists in DB using get_user_by_username
+        let obj2 = pool.get().await.map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
+        let username_clone2 = username.clone();
+        let get_user_result = obj2.interact(move |conn| {
+            scribe_backend::auth::get_user_by_username(conn, &username_clone2)
+        }).await
+        .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
+        
+        assert!(get_user_result.is_ok(), "Unable to retrieve created user: {:?}", get_user_result.err());
+        let retrieved_user = get_user_result.unwrap();
+        assert_eq!(retrieved_user.id, created_user.id);
+        assert_eq!(retrieved_user.username, username);
+        
+        // 5. Test duplicate username constraint
+        let obj3 = pool.get().await.map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
+        let username_clone3 = username.clone();
+        let password_clone3 = secrecy::Secret::new("another_password".to_string());
+        let duplicate_result = obj3.interact(move |conn| {
+            scribe_backend::auth::create_user(conn, username_clone3, password_clone3)
+        }).await
+        .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
+        
+        assert!(matches!(duplicate_result, Err(scribe_backend::auth::AuthError::UsernameTaken)), 
+            "Expected UsernameTaken error for duplicate username, got: {:?}", duplicate_result);
+        
+        Ok(())
     }
 
     #[tokio::test]
@@ -75,11 +112,11 @@ mod user_store_tests {
         let obj = _pool.get().await.map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
 
         // Manually insert a user for testing
-        let username = "testgetuser";
+        let username = format!("testgetuser_{}", uuid::Uuid::new_v4().to_string().split('-').next().unwrap());
         let password_hash = bcrypt::hash("password123", bcrypt::DEFAULT_COST).map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
         let user_id = uuid::Uuid::new_v4();
 
-        let insert_username = username.to_string();
+        let insert_username = username.clone();
         let insert_password_hash = password_hash.clone();
         obj.interact(move |conn| {
             diesel::insert_into(scribe_backend::schema::users::table)
@@ -126,29 +163,112 @@ mod user_store_tests {
 
     #[tokio::test]
     async fn test_get_user() -> Result<(), Box<dyn std::error::Error>> {
-        let _pool = get_test_pool()?;
-        // TODO: Implement test
+        let pool = get_test_pool()?;
+        
         // 1. Create a user first
+        let username = format!("testgetuser2_{}", uuid::Uuid::new_v4().to_string().split('-').next().unwrap());
+        let password = secrecy::Secret::new("password123".to_string());
+        
+        let obj = pool.get().await.map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
+        let username_clone = username.clone();
+        let password_clone = password.clone();
+        let create_result = obj.interact(move |conn| {
+            scribe_backend::auth::create_user(conn, username_clone, password_clone)
+        }).await
+        .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
+        
+        let created_user = create_result.map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
+        let user_id = created_user.id;
+        
         // 2. Call get_user with the correct user ID
-        // 3. Assert Ok(Some(user))
+        let obj2 = pool.get().await.map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
+        let user_id_clone = user_id.clone();
+        let get_user_result = obj2.interact(move |conn| {
+            scribe_backend::auth::get_user(conn, user_id_clone)
+        }).await
+        .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
+        
+        // 3. Assert Ok(user)
+        assert!(get_user_result.is_ok(), "Get user failed: {:?}", get_user_result.err());
+        let retrieved_user = get_user_result.unwrap();
+        assert_eq!(retrieved_user.id, user_id);
+        assert_eq!(retrieved_user.username, username);
+        
         // 4. Call get_user with a random non-existent UUID
-        // 5. Assert Ok(None)
-        panic!("test_get_user not implemented");
-        // Ok(())
+        let obj3 = pool.get().await.map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
+        let nonexistent_id = uuid::Uuid::new_v4();
+        let nonexistent_result = obj3.interact(move |conn| {
+            scribe_backend::auth::get_user(conn, nonexistent_id)
+        }).await
+        .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
+        
+        // 5. Assert error is UserNotFound
+        assert!(matches!(nonexistent_result, Err(scribe_backend::auth::AuthError::UserNotFound)), 
+            "Expected UserNotFound error for non-existent user, got: {:?}", nonexistent_result);
+        
+        Ok(())
     }
 
     #[tokio::test]
     async fn test_verify_credentials() -> Result<(), Box<dyn std::error::Error>> {
-        let _pool = get_test_pool()?;
-        // TODO: Implement test
+        let pool = get_test_pool()?;
+        
         // 1. Create a user
+        let username = format!("testverify_{}", uuid::Uuid::new_v4().to_string().split('-').next().unwrap());
+        let password = "password123".to_string();
+        let password_secret = secrecy::Secret::new(password.clone());
+        
+        let obj = pool.get().await.map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
+        let username_clone = username.clone();
+        let password_clone = password_secret.clone();
+        let create_result = obj.interact(move |conn| {
+            scribe_backend::auth::create_user(conn, username_clone, password_clone)
+        }).await
+        .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
+        
+        let created_user = create_result.map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
+        
         // 2. Call verify_credentials with correct username/password
-        // 3. Assert Ok(Some(user))
+        let obj2 = pool.get().await.map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
+        let username_clone2 = username.clone();
+        let correct_password = secrecy::Secret::new(password.clone());
+        let verify_correct_result = obj2.interact(move |conn| {
+            scribe_backend::auth::verify_credentials(conn, &username_clone2, correct_password)
+        }).await
+        .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
+        
+        // 3. Assert Ok(user)
+        assert!(verify_correct_result.is_ok(), "Verify with correct credentials failed: {:?}", verify_correct_result.err());
+        let verified_user = verify_correct_result.unwrap();
+        assert_eq!(verified_user.id, created_user.id);
+        assert_eq!(verified_user.username, username);
+        
         // 4. Call verify_credentials with correct username/incorrect password
-        // 5. Assert Ok(None)
+        let obj3 = pool.get().await.map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
+        let username_clone3 = username.clone();
+        let incorrect_password = secrecy::Secret::new("wrong_password".to_string());
+        let verify_wrong_pass_result = obj3.interact(move |conn| {
+            scribe_backend::auth::verify_credentials(conn, &username_clone3, incorrect_password)
+        }).await
+        .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
+        
+        // 5. Assert Err(WrongCredentials)
+        assert!(matches!(verify_wrong_pass_result, Err(scribe_backend::auth::AuthError::WrongCredentials)), 
+            "Expected WrongCredentials error for incorrect password, got: {:?}", verify_wrong_pass_result);
+        
         // 6. Call verify_credentials with incorrect username
-        // 7. Assert Ok(None)
-        panic!("test_verify_credentials not implemented");
-        // Ok(())
+        let obj4 = pool.get().await.map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
+        let nonexistent_username = "nonexistent_user".to_string();
+        let some_password = secrecy::Secret::new("some_password".to_string());
+        let verify_wrong_user_result = obj4.interact(move |conn| {
+            scribe_backend::auth::verify_credentials(conn, &nonexistent_username, some_password)
+        }).await
+        .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
+        
+        // 7. Assert Err(UserNotFound)
+        assert!(matches!(verify_wrong_user_result, Err(scribe_backend::auth::AuthError::UserNotFound)), 
+            "Expected UserNotFound error for non-existent user, got: {:?}", verify_wrong_user_result);
+        
+        Ok(())
     }
 } 

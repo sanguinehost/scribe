@@ -17,7 +17,7 @@ pub enum ParserError {
     IoError(#[from] std::io::Error),
     #[error("PNG decoding error: {0}")]
     PngError(#[from] png::DecodingError),
-    #[error("Character data chunk ('chara' or 'ccv3') not found in PNG.")]
+    #[error("Character data chunk ('chara', 'tEXtchara', or 'ccv3') not found in PNG.")]
     ChunkNotFound,
     #[error("Base64 decoding error: {0}")]
     Base64Error(#[from] base64::DecodeError),
@@ -53,6 +53,7 @@ pub fn parse_character_card_png(png_data: &[u8]) -> Result<ParsedCharacterCard, 
 
     let chara_keyword = "chara";
     let ccv3_keyword = "ccv3";
+    let text_chara_keyword = "tEXtchara"; // Add new keyword for tEXtchara format
 
     let mut ccv3_data_base64: Option<String> = None;
     let mut chara_data_base64: Option<String> = None;
@@ -61,8 +62,11 @@ pub fn parse_character_card_png(png_data: &[u8]) -> Result<ParsedCharacterCard, 
     for text_chunk in &info.uncompressed_latin1_text {
         if text_chunk.keyword == ccv3_keyword {
             ccv3_data_base64 = Some(text_chunk.text.clone());
-        } else if text_chunk.keyword == chara_keyword {
+        } else if text_chunk.keyword == chara_keyword || text_chunk.keyword == text_chara_keyword {
             chara_data_base64 = Some(text_chunk.text.clone());
+            if text_chunk.keyword == text_chara_keyword {
+                info!("Found character data in 'tEXtchara' chunk instead of 'chara' chunk");
+            }
         }
     }
 
@@ -687,6 +691,26 @@ mod tests {
     }
 
     #[test]
+    fn test_prefer_ccv3_over_text_chara() {
+        let v3_json = r#"{"spec": "chara_card_v3", "spec_version": "3.0", "data": {"name": "Test V3"}}"#;
+        let v2_json = r#"{"name": "tEXtchara Test"}"#;
+        let png_data = create_test_png_with_multiple_chunks(vec![
+            (b"tEXtchara", v2_json), // Present but should be ignored
+            (b"ccv3", v3_json),
+        ]);
+
+        let result = parse_character_card_png(&png_data);
+        assert!(result.is_ok(), "Parsing failed: {:?}", result.err());
+        let parsed_card = result.unwrap();
+
+        if let ParsedCharacterCard::V3(card_v3) = parsed_card {
+            assert_eq!(card_v3.data.name, Some("Test V3".to_string()));
+        } else {
+            panic!("Expected V3 variant when both chunks present, got {:?}", parsed_card);
+        }
+    }
+
+    #[test]
     fn test_fallback_to_chara_if_ccv3_invalid_json() {
         let invalid_v3_json = "{\"spec\": \"chara_card_v3\", \"spec_version\": \"3.0\", \"data\": {invalid}}";
         let valid_v2_json = r#"{"name": "Fallback V2"}"#;
@@ -1181,6 +1205,23 @@ mod tests {
             assert_eq!(card.data.name, Some("CHARX Alpha Spec".to_string()));
         } else {
             panic!("Expected V3 variant for non-numeric spec version");
+        }
+    }
+
+    #[test]
+    fn test_parse_text_chara_chunk() {
+        let v2_json = r#"{"name": "tEXtchara Test", "description": "Testing the tEXtchara chunk."}"#;
+        let png_data = create_test_png_with_text_chunk(b"tEXtchara", v2_json);
+
+        let result = parse_character_card_png(&png_data);
+        assert!(result.is_ok(), "Parsing tEXtchara failed: {:?}", result.err());
+        
+        match result.unwrap() {
+            ParsedCharacterCard::V2Fallback(data) => {
+                assert_eq!(data.name, Some("tEXtchara Test".to_string()));
+                assert_eq!(data.description, "Testing the tEXtchara chunk.");
+            },
+            other => panic!("Expected V2Fallback for tEXtchara chunk, got {:?}", other),
         }
     }
 }
