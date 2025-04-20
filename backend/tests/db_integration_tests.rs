@@ -79,7 +79,7 @@ fn insert_test_user(conn: &mut PgConnection, prefix: &str) -> Result<User, Diese
     let test_username = format!("{}_{}", prefix, Uuid::new_v4());
     let new_user = NewUser {
         username: test_username.clone(),
-        password_hash: "test_hash",
+        password_hash: "test_hash".to_string(),
     };
     diesel::insert_into(schema::users::table)
         .values(&new_user)
@@ -202,7 +202,7 @@ fn test_user_character_insert_and_query() {
 
         let new_user = NewUser {
             username: test_username.clone(),
-            password_hash: test_password_hash,
+            password_hash: test_password_hash.to_string(),
         };
 
         let inserted_user: User = diesel::insert_into(schema::users::table)
@@ -279,8 +279,7 @@ fn insert_test_user_with_password(
     // Use the exact username provided rather than creating a new one
     let new_user = NewUser {
         username: username.to_string(),
-        // IMPORTANT: Use the ACTUAL hashing mechanism here eventually
-        password_hash: &hash_test_password(password), // Use the test hasher
+        password_hash: hash_test_password(password), // Use the test hasher
     };
     diesel::insert_into(schema::users::table)
         .values(&new_user)

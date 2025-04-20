@@ -183,7 +183,7 @@ fn insert_test_user_direct(
 
     let new_user = NewUser {
         username: username.to_string(),
-        password_hash: &hashed_password,
+        password_hash: hashed_password,
     };
 
     diesel::insert_into(users::table)

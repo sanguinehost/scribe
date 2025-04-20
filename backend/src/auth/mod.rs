@@ -80,7 +80,7 @@ pub fn create_user(
     // 2. Create a NewUser instance
     let new_user = NewUser {
         username: username_clone, // Pass ownership of username
-        password_hash: &hashed_password, // Pass borrowed hash
+        password_hash: hashed_password, // Pass owned String
     };
 
     // --- Log before DB insert ---

@@ -10,14 +10,17 @@ use tower_http::trace::{DefaultMakeSpan, TraceLayer};
 
 // Use modules from the library crate
 use scribe_backend::logging::init_subscriber;
-use scribe_backend::routes::characters::{get_character_handler, list_characters_handler, upload_character_handler};
+use scribe_backend::routes::{chat::chat_routes, characters::{get_character_handler, list_characters_handler, upload_character_handler}};
 use scribe_backend::routes::auth::{register_handler, login_handler, logout_handler, me_handler}; // Import auth handlers
+use scribe_backend::routes::health::health_check; // Import from new location
 use scribe_backend::state::AppState;
 use scribe_backend::auth::session_store::DieselSessionStore; // Import DieselSessionStore
  // Import User model
 use anyhow::Result;
 use anyhow::Context;
 use scribe_backend::auth::user_store::Backend as AuthBackend;
+// Import PgPool from the library crate
+use scribe_backend::PgPool;
  // Make sure AppError is in scope
 
 // Imports for axum-login and tower-sessions
@@ -35,9 +38,6 @@ use cookie::Key as CookieKey; // Re-add for signing key variable
 use tower_cookies::CookieManagerLayer; // Re-add CookieManagerLayer
 use time; // Used for tower_sessions::Expiry
 use hex; // Added for hex::decode
-
-// Alias the specific Pool type we're using
-pub type PgPool = DeadpoolPool<DeadpoolManager>;
 
 // Define the embedded migrations macro
 pub const MIGRATIONS: EmbeddedMigrations = embed_migrations!("./migrations");
@@ -95,36 +95,37 @@ async fn main() -> Result<()> {
         pool: pool.clone(),
     };
 
-    // Character routes (assuming they are protected)
-    let characters_routes = Router::new()
-        .route("/upload", post(upload_character_handler))
-        .route("/", get(list_characters_handler))
-        .route("/{id}", get(get_character_handler))
-        .route_layer(login_required!(AuthBackend, login_url = "/auth/login"));
+    // --- Define Protected Routes ---
+    let protected_api_routes = Router::new()
+        // Authentication routes (require login)
+        .route("/auth/me", get(me_handler))
+        .route("/auth/logout", post(logout_handler))
+        // Character routes (require login)
+        // TODO: Consolidate character route definition here instead of merging below?
+        .nest("/characters", 
+            Router::new()
+                .route("/upload", post(upload_character_handler))
+                .route("/", get(list_characters_handler))
+                .route("/{id}", get(get_character_handler))
+        )
+        // Chat routes (require login)
+        .nest("/chats", chat_routes()) // Mount the chat router
+        // Add other protected API routes here...
+        .route_layer(login_required!(AuthBackend, login_url = "/api/auth/login")); // Apply login required to all nested routes
 
-    // Separate routers for protected and public routes
-    let protected_routes = Router::new()
-        .route("/api/auth/me", get(me_handler)) // Example protected route
-        .route("/api/auth/logout", post(logout_handler))
-        .route("/api/characters", get(list_characters_handler).post(upload_character_handler)) // Protect character routes
-        .route("/api/characters/{id}", get(get_character_handler))
-        // Add other protected routes here (chats, etc.)
-        .merge(characters_routes);
-
-    let public_routes = Router::new()
-        .route("/api/health", get(health_check))
-        .route("/api/auth/register", post(register_handler))
-        .route("/api/auth/login", post(login_handler));
+    // --- Define Public Routes ---
+    let public_api_routes = Router::new()
+        .route("/health", get(health_check)) // Use imported health_check
+        .route("/auth/register", post(register_handler))
+        .route("/auth/login", post(login_handler));
 
     // Combine routers and add layers
     let app = Router::new()
-        .merge(public_routes)
-        .merge(protected_routes)
-        .layer(auth_layer)
-        // Re-add explicit CookieManagerLayer
-        .layer(CookieManagerLayer::new())
-        // Potentially apply signed cookie layer here if needed separately?
-        // Check axum-login examples for layer order with tower-cookies.
+        // Mount API routes under /api
+        .nest("/api", public_api_routes)
+        .nest("/api", protected_api_routes) // Mount protected routes also under /api
+        .layer(auth_layer) // Apply auth layer (handles session loading/user identification)
+        .layer(CookieManagerLayer::new()) // Apply cookie management
         .with_state(app_state)
         .layer(
             TraceLayer::new_for_http()
@@ -164,18 +165,6 @@ async fn run_migrations(pool: &PgPool) -> Result<()> {
     .await
     .map_err(|e| anyhow::anyhow!("Migration interact task failed: {}", e))??; // Propagate InteractError then inner Result
     Ok(())
-}
-
-#[derive(Serialize)]
-struct HealthStatus {
-    status: String,
-}
-
-async fn health_check() -> Json<HealthStatus> {
-    tracing::debug!("Health check endpoint called");
-    Json(HealthStatus {
-        status: "ok".to_string(),
-    })
 }
 
 // --- Test module remains unchanged ---

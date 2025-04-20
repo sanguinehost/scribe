@@ -193,7 +193,7 @@ fn insert_test_user(conn: &mut PgConnection, prefix: &str) -> Result<User, diese
     let test_username = format!("{}_{}", prefix, Uuid::new_v4());
     let new_user = NewUser {
         username: test_username.clone(),
-        password_hash: "test_hash", // Use a consistent test hash
+        password_hash: "test_hash".to_string(), // Corrected
     };
     diesel::insert_into(users::table)
         .values(&new_user)
@@ -421,8 +421,7 @@ fn insert_test_user_with_password(
 ) -> Result<User, diesel::result::Error> {
     let new_user = NewUser {
         username: username.to_string(),
-        // IMPORTANT: Use the ACTUAL hashing mechanism here eventually
-        password_hash: &hash_test_password(password), // Use the test hasher
+        password_hash: hash_test_password(password), // Corrected (removed &)
     };
     diesel::insert_into(users::table)
         .values(&new_user)

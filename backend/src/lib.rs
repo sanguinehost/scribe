@@ -8,4 +8,9 @@ pub mod schema;
 pub mod services;
 pub mod state;
 
+use deadpool_diesel::postgres::{Manager as DeadpoolManager, Pool as DeadpoolPool};
+
+// Define PgPool type alias here for library-wide use
+pub type PgPool = DeadpoolPool;
+
 // You might add common error types or other shared utilities here later.
