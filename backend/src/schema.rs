@@ -151,6 +151,17 @@ diesel::table! {
     use diesel::sql_types::*;
     use diesel_derive_enum::DbEnum;
 
+    sessions (id) {
+        id -> Text,
+        expires -> Nullable<Timestamptz>,
+        session -> Text,
+    }
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    use diesel_derive_enum::DbEnum;
+
     users (id) {
         id -> Uuid,
         #[max_length = 255]
@@ -176,5 +187,6 @@ diesel::allow_tables_to_appear_in_same_query!(
     chat_sessions,
     lorebook_entries,
     lorebooks,
+    sessions,
     users,
 );

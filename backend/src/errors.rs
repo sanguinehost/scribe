@@ -6,6 +6,8 @@ use axum::{
 };
 use serde_json::json;
 use thiserror::Error;
+use diesel::result::Error as DieselError;
+use tracing::error;
 
 /// Custom Error type for the application.
 /// Wraps various error types and maps them to appropriate HTTP status codes.
@@ -15,10 +17,13 @@ pub enum AppError {
     InternalServerError(#[from] anyhow::Error),
 
     #[error("Database error: {0}")]
-    DatabaseError(#[from] diesel::result::Error),
+    DatabaseError(#[from] DieselError),
 
     #[error("Database pool error: {0}")]
-    DbPoolError(#[from] diesel::r2d2::PoolError),
+    DbPoolError(#[from] deadpool_diesel::PoolError),
+
+    #[error("Task join error: {0}")]
+    JoinError(#[from] tokio::task::JoinError),
 
     #[error("Not Found: {0}")]
     NotFound(String),
@@ -26,11 +31,17 @@ pub enum AppError {
     #[error("Bad Request: {0}")]
     BadRequest(String),
 
-    #[error("Unauthorized: {0}")]
-    Unauthorized(String),
+    #[error("Unauthorized")]
+    Unauthorized,
 
-    #[error("Forbidden: {0}")]
-    Forbidden(String),
+    #[error("Forbidden")]
+    Forbidden,
+
+    #[error("Username already taken")]
+    UsernameTaken,
+
+    #[error("Invalid credentials")]
+    InvalidCredentials,
 
     #[error("Character parsing error: {0}")]
     CharacterParseError(#[from] crate::services::character_parser::ParserError),
@@ -43,6 +54,12 @@ pub enum AppError {
 
     #[error("Invalid UUID: {0}")]
     UuidError(#[from] uuid::Error),
+
+    #[error("Not Implemented")]
+    NotImplemented,
+
+    #[error("Authentication/Authorization error: {0}")]
+    AuthError(#[from] crate::auth::AuthError),
 }
 
 impl IntoResponse for AppError {
@@ -57,6 +74,7 @@ impl IntoResponse for AppError {
             }
             AppError::DatabaseError(ref err) => {
                 tracing::error!("Database Error: {:?}", err);
+                // Treat all database errors as internal server errors
                 (
                     StatusCode::INTERNAL_SERVER_ERROR,
                     "A database error occurred".to_string(),
@@ -66,13 +84,22 @@ impl IntoResponse for AppError {
                 tracing::error!("DB Pool Error: {:?}", err);
                 (
                     StatusCode::INTERNAL_SERVER_ERROR,
-                    "Could not acquire database connection".to_string(),
+                    "Could not acquire database connection pool".to_string(),
+                )
+            }
+            AppError::JoinError(ref err) => {
+                tracing::error!("Task Join Error: {:?}", err);
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Background task failed".to_string(),
                 )
             }
             AppError::NotFound(ref message) => (StatusCode::NOT_FOUND, message.clone()),
             AppError::BadRequest(ref message) => (StatusCode::BAD_REQUEST, message.clone()),
-            AppError::Unauthorized(ref message) => (StatusCode::UNAUTHORIZED, message.clone()),
-            AppError::Forbidden(ref message) => (StatusCode::FORBIDDEN, message.clone()),
+            AppError::Unauthorized => (StatusCode::UNAUTHORIZED, "Unauthorized".to_string()),
+            AppError::Forbidden => (StatusCode::FORBIDDEN, "Forbidden".to_string()),
+            AppError::UsernameTaken => (StatusCode::CONFLICT, "Username already taken".to_string()),
+            AppError::InvalidCredentials => (StatusCode::UNAUTHORIZED, "Invalid credentials".to_string()),
             AppError::CharacterParseError(ref err) => {
                 tracing::warn!("Character parsing failed: {}", err);
                 (
@@ -101,9 +128,56 @@ impl IntoResponse for AppError {
                     format!("Invalid identifier format: {}", err),
                 )
             }
+            AppError::NotImplemented => {
+                tracing::error!("Attempted to use unimplemented functionality");
+                (
+                    StatusCode::NOT_IMPLEMENTED,
+                    "Functionality not yet implemented".to_string(),
+                )
+            }
+            AppError::AuthError(ref err) => match err {
+                crate::auth::AuthError::WrongCredentials => {
+                    (StatusCode::UNAUTHORIZED, "Invalid credentials".to_string())
+                }
+                crate::auth::AuthError::UsernameTaken => {
+                    (StatusCode::CONFLICT, "Username already taken".to_string())
+                }
+                crate::auth::AuthError::HashingError => (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Password hashing failed".to_string(),
+                ),
+                crate::auth::AuthError::UserNotFound => {
+                    (StatusCode::NOT_FOUND, "User not found".to_string())
+                }
+                crate::auth::AuthError::DatabaseError(db_err) => {
+                    error!("Database error during authentication: {:?}", db_err);
+                    match db_err {
+                        DieselError::NotFound => {
+                            (StatusCode::NOT_FOUND, "Auth-related resource not found".to_string())
+                        }
+                        _ => (
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            "A database error occurred during authentication".to_string(),
+                        ),
+                    }
+                }
+                crate::auth::AuthError::InteractError(msg) => {
+                    error!("Database interaction error during authentication: {}", msg);
+                    (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "A database interaction error occurred".to_string(),
+                    )
+                }
+                crate::auth::AuthError::PoolError(pool_err) => {
+                    error!("Database pool error during authentication: {:?}", pool_err);
+                    (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "Database pool error during authentication".to_string(),
+                    )
+                }
+            },
         };
 
-        // Fix: Use correct json! macro syntax
         let body = Json(json!({
             "error": error_message,
         }));
@@ -190,22 +264,20 @@ mod tests {
 
     #[tokio::test]
     async fn test_unauthorized_response() {
-        let msg = "Authentication required".to_string();
-        let error = AppError::Unauthorized(msg.clone());
+        let error = AppError::Unauthorized;
         let response = error.into_response();
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
         let body = get_body_json(response).await;
-        assert_eq!(body["error"], msg);
+        assert_eq!(body["error"], "Unauthorized");
     }
 
     #[tokio::test]
     async fn test_forbidden_response() {
-        let msg = "Permission denied".to_string();
-        let error = AppError::Forbidden(msg.clone());
+        let error = AppError::Forbidden;
         let response = error.into_response();
         assert_eq!(response.status(), StatusCode::FORBIDDEN);
         let body = get_body_json(response).await;
-        assert_eq!(body["error"], msg);
+        assert_eq!(body["error"], "Forbidden");
     }
 
     #[tokio::test]

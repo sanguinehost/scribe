@@ -1,103 +1,169 @@
-use axum::{Json, Router, routing::get};
-use diesel::PgConnection;
-use diesel::r2d2::{ConnectionManager, Pool};
+use axum::{routing::{get, post}, Json, Router};
+use deadpool_diesel::postgres::{Manager as DeadpoolManager, PoolConfig, Runtime as DeadpoolRuntime};
+// Use the r2d2 Pool directly from deadpool_diesel
+use deadpool_diesel::Pool as DeadpoolPool;
+use diesel_migrations::{embed_migrations, EmbeddedMigrations, MigrationHarness};
 use serde::Serialize;
 use std::env;
 use std::net::SocketAddr;
-use std::sync::Arc;
-use tower_http::trace::{DefaultMakeSpan, TraceLayer}; // Import TraceLayer
-
-// Add the migrations import
-use diesel_migrations::{embed_migrations, EmbeddedMigrations, MigrationHarness};
+use tower_http::trace::{DefaultMakeSpan, TraceLayer};
 
 // Use modules from the library crate
-use scribe_backend::logging::init_subscriber; // Import the new function
-use scribe_backend::routes::characters::{get_character, list_characters, upload_character};
+use scribe_backend::logging::init_subscriber;
+use scribe_backend::routes::characters::{get_character_handler, list_characters_handler, upload_character_handler};
+use scribe_backend::routes::auth::{register_handler, login_handler, logout_handler, me_handler}; // Import auth handlers
 use scribe_backend::state::AppState;
+use scribe_backend::auth::session_store::DieselSessionStore; // Import DieselSessionStore
+ // Import User model
+use anyhow::Result;
+use scribe_backend::auth::user_store::Backend as AuthBackend;
+ // Make sure AppError is in scope
+
+// Imports for axum-login and tower-sessions
+use axum_login::{
+    login_required,
+    AuthManagerLayerBuilder,
+};
+use tower_sessions::{
+    cookie::SameSite,
+    Expiry,
+    SessionManagerLayer,
+    // SessionStoreLayer, // Not needed with this approach
+    // session_store::SigningKey, // Not needed, use cookie::Key
+};
+use cookie::Key as CookieKey;
+use tower_cookies::CookieManagerLayer;
+use rand::RngCore; // Import trait for fill_bytes
+use time; // Used for tower_sessions::Expiry
+
+// Alias the specific Pool type we're using
+pub type PgPool = DeadpoolPool<DeadpoolManager>;
+
+// Define the embedded migrations macro
+pub const MIGRATIONS: EmbeddedMigrations = embed_migrations!("./migrations");
 
 #[tokio::main]
-async fn main() {
-    // Load .env file
+async fn main() -> Result<()> {
     dotenvy::dotenv().ok();
+    init_subscriber();
 
-    // Initialize tracing subscriber using the new function
-    init_subscriber(); // Call the function from the logging module
+    tracing::info!("Starting Scribe backend server...");
 
-    tracing::info!("Starting Scribe backend server..."); // Log startup
-
-    // Set up database connection pool
     let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
-    tracing::info!("Connecting to database..."); // Log DB connection attempt
-    let manager = ConnectionManager::<PgConnection>::new(database_url);
-    let pool = Pool::builder()
-        .test_on_check_out(true)
-        .build(manager)
+    tracing::info!("Connecting to database...");
+    let manager = DeadpoolManager::new(database_url, DeadpoolRuntime::Tokio1);
+    let pool_config = PoolConfig::default(); // Use default config for now
+    let pool: PgPool = DeadpoolPool::builder(manager)
+        .config(pool_config)
+        .runtime(DeadpoolRuntime::Tokio1)
+        .build()
         .expect("Failed to create DB pool.");
-    tracing::info!("Database connection pool established."); // Log DB success
+    tracing::info!("Database connection pool established.");
 
-    // --- Run Migrations ---
-    // Define the embedded migrations macro (adjust path if needed)
-    pub const MIGRATIONS: EmbeddedMigrations = embed_migrations!("./migrations");
+    run_migrations(&pool).await?; // Extract migration logic to function
 
-    tracing::info!("Attempting to run database migrations...");
-    // Get a connection from the pool to run migrations
-    // Note: `.get()` can block, consider running in `spawn_blocking` if startup time is critical
-    match pool.get() {
-        Ok(mut conn) => {
-            match conn.run_pending_migrations(MIGRATIONS) {
-                Ok(versions) => {
-                    if versions.is_empty() {
-                        tracing::info!("No pending migrations found.");
-                    } else {
-                        for version in versions {
-                            tracing::info!("Applied migration: {}", version);
-                        }
-                        tracing::info!("Successfully ran pending database migrations.");
-                    }
-                }
-                Err(e) => {
-                    tracing::error!("Failed to run database migrations: {:?}", e);
-                    // Depending on the policy, you might want to exit here
-                    // std::process::exit(1);
-                }
-            }
-        }
-        Err(e) => {
-            tracing::error!("Failed to get connection from pool for migrations: {:?}", e);
-            // Depending on the policy, you might want to exit here
-            // std::process::exit(1);
-        }
-    }
-    // --- End Migrations ---
+    // --- Session Store Setup ---
+    // Ideally load from config/env, generating is okay for dev
+    let session_store = DieselSessionStore::new(pool.clone());
 
+    // Generate a signing key for cookies
+    let mut key_bytes = [0u8; 64]; // Use 64 bytes for key
+    rand::thread_rng().fill_bytes(&mut key_bytes);
+    let cookie_signing_key = CookieKey::from(&key_bytes);
+
+    // Build the session manager layer (handles session data)
+    let session_manager_layer = SessionManagerLayer::new(session_store)
+        .with_secure(false) // Set based on env/config in production
+        .with_same_site(SameSite::Lax)
+        .with_expiry(Expiry::OnInactivity(time::Duration::days(7)));
+
+    // Build the signed cookie layer (handles cookie signing)
+    // REMOVED: let signed_cookie_layer = SignedCookieLayer::new(cookie_signing_key.clone());
+
+    // Note: AuthManagerLayerBuilder expects the SessionStore implementor.
+    // tower-cookies layers need to be applied *outside* the auth layer usually.
+    // Let's pass SessionManagerLayer to AuthManagerLayerBuilder and apply cookie layers later.
+
+    // Configure the auth backend
+    let auth_backend = AuthBackend::new(pool.clone());
+
+    // Build the auth layer, passing the SessionManagerLayer
+    let auth_layer = AuthManagerLayerBuilder::new(auth_backend, session_manager_layer).build();
+
+    // Create the AppState (needs to be defined before use)
     let app_state = AppState {
-        pool: Arc::new(pool),
+        pool: pool.clone(),
     };
 
-    // Build our application with routes, state, and tracing layer
+    // Character routes (assuming they are protected)
+    let characters_routes = Router::new()
+        .route("/upload", post(upload_character_handler))
+        .route("/", get(list_characters_handler))
+        .route("/:id", get(get_character_handler))
+        .route_layer(login_required!(AuthBackend, login_url = "/auth/login"));
+
+    // Separate routers for protected and public routes
+    let protected_routes = Router::new()
+        .route("/api/auth/me", get(me_handler)) // Example protected route
+        .route("/api/auth/logout", post(logout_handler))
+        .route("/api/characters", get(list_characters_handler).post(upload_character_handler)) // Protect character routes
+        .route("/api/characters/:id", get(get_character_handler)) // Protect character routes
+        // Add other protected routes here (chats, etc.)
+        .merge(characters_routes);
+
+    let public_routes = Router::new()
+        .route("/api/health", get(health_check))
+        .route("/api/auth/register", post(register_handler))
+        .route("/api/auth/login", post(login_handler));
+
+    // Combine routers and add layers
     let app = Router::new()
-        .route("/api/health", get(health_check)) // health_check is local to main.rs
-        // Character routes
-        .route(
-            "/api/characters",
-            get(list_characters).post(upload_character),
-        )
-        .route("/api/characters/:id", get(get_character))
-        .with_state(app_state) // Pass state to the router
-        // Add TraceLayer for request logging
+        .merge(public_routes)
+        .merge(protected_routes)
+        .layer(auth_layer)
+        // Instantiate CookieManagerLayer without the key
+        .layer(CookieManagerLayer::new())
+        // Potentially apply signed cookie layer here if needed separately?
+        // Check axum-login examples for layer order with tower-cookies.
+        .with_state(app_state)
         .layer(
             TraceLayer::new_for_http()
                 .make_span_with(DefaultMakeSpan::default().include_headers(true)),
         );
 
-    // Run our application
     let port = env::var("PORT").unwrap_or_else(|_| "3000".to_string());
-    let addr_str = format!("0.0.0.0:{}", port); // Listen on 0.0.0.0 for container compatibility
+    let addr_str = format!("0.0.0.0:{}", port);
     let addr: SocketAddr = addr_str.parse().expect("Invalid address format");
 
-    tracing::info!("Listening on {}", addr); // Use tracing::info instead of println!
-    let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
-    axum::serve(listener, app).await.unwrap();
+    tracing::info!("Listening on {}", addr);
+    let listener = tokio::net::TcpListener::bind(addr).await?;
+    axum::serve(listener, app).await?;
+    Ok(())
+}
+
+// Extracted migration logic
+async fn run_migrations(pool: &PgPool) -> Result<()> {
+    tracing::info!("Attempting to run database migrations...");
+    let conn = pool.get().await.map_err(|e| anyhow::anyhow!("Failed to get connection for migration: {}", e))?;
+    conn.interact(|conn| {
+        match conn.run_pending_migrations(MIGRATIONS) {
+            Ok(versions) => {
+                if versions.is_empty() {
+                    tracing::info!("No pending migrations found.");
+                } else {
+                    tracing::info!("Successfully ran migrations: {:?}", versions);
+                }
+                Ok(())
+            },
+            Err(e) => {
+                tracing::error!("Failed to run database migrations: {:?}", e);
+                Err(anyhow::anyhow!("Migration diesel error: {:?}", e))
+            }
+        }
+    })
+    .await
+    .map_err(|e| anyhow::anyhow!("Migration interact task failed: {}", e))??; // Propagate InteractError then inner Result
+    Ok(())
 }
 
 #[derive(Serialize)]
@@ -105,14 +171,14 @@ struct HealthStatus {
     status: String,
 }
 
-// health_check remains defined locally in main.rs
 async fn health_check() -> Json<HealthStatus> {
-    tracing::debug!("Health check endpoint called"); // Add a debug log
+    tracing::debug!("Health check endpoint called");
     Json(HealthStatus {
         status: "ok".to_string(),
     })
 }
 
+// --- Test module remains unchanged ---
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -120,9 +186,6 @@ mod tests {
     #[tokio::test]
     async fn test_health_check() {
         let response = health_check().await;
-        // Assuming get_body_json is not available here, we check status and basic structure
         assert_eq!(response.0.status, "ok");
-        // We can't easily check the exact JSON structure without a helper or full response processing,
-        // but testing the inner data structure is a good start for a unit test.
     }
 }
