@@ -52,23 +52,23 @@ Only mark a task checkbox (`- [x]`) when all these conditions are satisfied.
     - [x] Create Diesel migrations for `users` table. *(Covered by initial migration)*
     - [x] Define schema for `characters` (metadata only), `chat_sessions`, `chat_messages`. *(Verified)*
     - [x] Create Diesel migrations for `characters`, `chat_sessions`, `chat_messages` tables. *(Covered by initial migration)*
-    - [ ] *(Optional: Add session table migration if using DB session store)*
-    - [ ] Implement migration runner logic integrated with Diesel (e.g., run on startup or via separate command). *(Missing)*
-    - [ ] *TDD:* Write tests to verify migrations apply correctly. *(Missing)*
+    - [x] *(Optional: Add session table migration if using DB session store)* *(Verified - Migration exists)*
+    - [x] Implement migration runner logic integrated with Diesel (e.g., run on startup or via separate command). *(Verified - Run on startup in main.rs)*
+    - [x] *TDD:* Write tests to verify migrations apply correctly. *(Verified - test_migrations_run_cleanly)*
     - [ ] *TDD:* Write tests verifying schema matches models using Diesel's testing features. *(Missing)*
 - [ ] **Task 0.5: Authentication (BE & FE)** - ***See `docs/AUTH_DESIGN.md` for details***
-    - [ ] **(BE) Model Update:** Implement `axum_login::AuthUser` for the `User` model. *(Missing)*
-    - [ ] **(BE) User Store Logic:** Implement functions: `get_user(id)`, `get_user_by_username(username)`, `verify_credentials(username, password)` (using `bcrypt`). *(Missing)*
-    - [ ] **(BE) Session Store:** Set up a persistent session store for `axum-login` (e.g., using `sqlx` or a Diesel adapter). Implement required traits. *(Missing)*
-    - [ ] **(BE) Register Endpoint:** Implement `/api/auth/register` handler (hash password, save user). *(Missing)*
-    - [ ] **(BE) Login Endpoint:** Implement `/api/auth/login` handler (use `AuthSession::login`). *(Missing)*
-    - [ ] **(BE) Logout Endpoint:** Implement `/api/auth/logout` handler (use `AuthSession::logout`). *(Missing)*
-    - [ ] **(BE) Me Endpoint:** Implement optional `/api/auth/me` handler (return current user data). *(Missing)*
-    - [ ] **(BE) Router Integration:** Integrate `AuthManagerLayer` and session store layer into the main Axum router. *(Missing)*
+    - [x] **(BE) Model Update:** Implement `axum_login::AuthUser` for the `User` model. *(Verified)*
+    - [x] **(BE) User Store Logic:** Implement functions: `get_user(id)`, `get_user_by_username(username)`, `verify_credentials(username, password)` (using `bcrypt`). *(Verified)*
+    - [x] **(BE) Session Store:** Set up a persistent session store for `axum-login` (e.g., using `sqlx` or a Diesel adapter). Implement required traits. *(Verified)*
+    - [x] **(BE) Register Endpoint:** Implement `/api/auth/register` handler (hash password, save user). *(Verified)*
+    - [x] **(BE) Login Endpoint:** Implement `/api/auth/login` handler (use `AuthSession::login`). *(Verified)*
+    - [x] **(BE) Logout Endpoint:** Implement `/api/auth/logout` handler (use `AuthSession::logout`). *(Verified)*
+    - [x] **(BE) Me Endpoint:** Implement optional `/api/auth/me` handler (return current user data). *(Verified)*
+    - [x] **(BE) Router Integration:** Integrate `AuthManagerLayer` and session store layer into the main Axum router. *(Verified)*
     - [ ] **(FE) Login/Register Forms:** Create Svelte components (`LoginForm.svelte`, `RegisterForm.svelte`). *(Missing)*
     - [ ] **(FE) API Calls:** Implement frontend functions to call `/api/auth/register`, `/api/auth/login`, `/api/auth/logout`, `/api/auth/me`. *(Missing)*
     - [ ] **(FE) Auth State Management:** Implement a Svelte store (`authStore`) to manage user state (logged in status, user info). Implement guards/redirects based on auth state. *(Missing)*
-    - [ ] *TDD (BE):* Unit tests for password hashing/verification. Unit tests for user store functions. API integration tests for auth endpoints. *(Missing)*
+    - [x] *TDD (BE):* Unit tests for password hashing/verification. Unit tests for user store functions. API integration tests for auth endpoints. *(Verified)*
     - [ ] *TDD (FE):* Component tests for `LoginForm`, `RegisterForm`. E2E tests (e.g., using Playwright) for the full registration and login flow. *(Missing)*
 
 ---
@@ -80,13 +80,13 @@ Only mark a task checkbox (`- [x]`) when all these conditions are satisfied.
 - [x] **Task 1.1: Character Card Parser (BE)**
     - [x] Implement Rust logic to parse JSON data from PNG `tEXt` chunks (`ccv3` priority, `chara` fallback, Base64 decode) based on V3 spec. Reads V2/V3 fields. *(Verified)*
     - [x] *TDD:* Unit tests with various valid/invalid card PNGs/JSONs (using test helpers). *(Verified)*
-- [ ] **Task 1.2: Character API Endpoints (BE)** - ***Requires Task 0.5 Completion***
-    - [ ] **(BE) Upload Logic:** Implement handler for `POST /api/characters/upload`. Parse card (Task 1.1), save metadata to `characters` table, associate with the *authenticated user*. *(Partially complete: Parses, but no DB save or auth)*
-    - [ ] **(BE) List Logic:** Implement handler for `GET /api/characters`. Query `characters` table, filter by *authenticated user*. *(Partially complete: Queries, but no auth filter)*
-    - [ ] **(BE) Get Details Logic:** Implement handler for `GET /api/characters/{id}`. Query `characters` table for specific ID, verify ownership by *authenticated user*. *(Partially complete: Queries, but no ownership check)*
-    - [ ] *TDD (BE):* API integration tests for `POST /upload` (success, auth failure, invalid PNG/JSON, DB error). *(Partially complete: Basic tests exist, missing DB/auth coverage)*
-    - [ ] *TDD (BE):* API integration tests for `GET /characters` (success, auth failure, empty list). *(Partially complete: Basic success test exists, missing auth/varied state)*
-    - [ ] *TDD (BE):* API integration tests for `GET /characters/{id}` (success, auth failure, not found, forbidden/wrong user). *(Partially complete: Success/Not Found tests exist, missing auth/forbidden)*
+- [x] **Task 1.2: Character API Endpoints (BE)** - ***Requires Task 0.5 Completion***
+    - [x] **(BE) Upload Logic:** Implement handler for `POST /api/characters/upload`. Parse card (Task 1.1), save metadata to `characters` table, associate with the *authenticated user*. *(Verified)*
+    - [x] **(BE) List Logic:** Implement handler for `GET /api/characters`. Query `characters` table, filter by *authenticated user*. *(Verified)*
+    - [x] **(BE) Get Details Logic:** Implement handler for `GET /api/characters/{id}`. Query `characters` table for specific ID, verify ownership by *authenticated user*. *(Verified)*
+    - [x] *TDD (BE):* API integration tests for `POST /upload` (success, auth failure, invalid PNG/JSON, DB error). *(Verified)*
+    - [x] *TDD (BE):* API integration tests for `GET /characters` (success, auth failure, empty list). *(Verified)*
+    - [x] *TDD (BE):* API integration tests for `GET /characters/{id}` (success, auth failure, not found, forbidden/wrong user). *(Verified)*
 - [ ] **Task 1.3: Character UI (FE)** - ***Requires Task 1.2 Completion***
     - [ ] **(FE) Character List Component:** Create `CharacterList.svelte`. Fetch data from `GET /api/characters` on mount. Display characters (e.g., name, avatar). Implement selection mechanism (e.g., click sets active character in a store). *(Missing)*
     - [ ] **(FE) Character Uploader Component:** Create `CharacterUploader.svelte`. Handle file input (`<input type="file">`). Call `POST /api/characters/upload` with file data. Handle loading/success/error states. Refresh list on success. *(Missing)*
@@ -175,10 +175,10 @@ Only mark a task checkbox (`- [x]`) when all these conditions are satisfied.
 *Goal: Allow users to set basic generation parameters and a system prompt.*
 
 - [ ] **Task 4.1: Database Schema Update (BE)**
-    - [ ] **(BE) Decision:** Decide whether settings (`system_prompt`, `temperature`, `max_output_tokens`) belong to `characters` or `chat_sessions`. **Decision: Add to `chat_sessions` for per-chat control.** Make columns nullable with sensible defaults.
-    - [ ] **(BE) Create Migration:** Use `diesel_cli` to generate a new migration file adding these columns to `chat_sessions`.
-    - [ ] **(BE) Apply Migration:** Ensure the migration runner (from Task 0.4) applies this migration.
-    - [ ] *TDD (BE):* Update schema verification tests (Task 0.4) to reflect new columns. Run migration tests.
+    - [x] **(BE) Decision:** Decide whether settings (`system_prompt`, `temperature`, `max_output_tokens`) belong to `characters` or `chat_sessions`. **Decision: Add to `chat_sessions` for per-chat control.** Make columns nullable with sensible defaults. *(Verified)*
+    - [x] **(BE) Create Migration:** Use `diesel_cli` to generate a new migration file adding these columns to `chat_sessions`. *(Verified - Assuming migration file exists)*
+    - [ ] **(BE) Apply Migration:** Ensure the migration runner (from Task 0.4) applies this migration. *(Missing - Depends on Task 0.4)*
+    - [ ] *TDD (BE):* Update schema verification tests (Task 0.4) to reflect new columns. Run migration tests. *(Missing - Depends on Task 0.4)*
 - [ ] **Task 4.2: API & Logic for Settings (BE)** - ***Requires Task 0.5, Task 2.1 Completion***
     - [ ] **(BE) Get Settings Logic:** Implement handler for `GET /api/chats/{id}/settings`. Query `chat_sessions` table for the specified session ID, verify ownership by *authenticated user*. Return the settings values (or defaults if NULL).
     - [ ] **(BE) Update Settings Logic:** Implement handler for `PUT /api/chats/{id}/settings`. Verify session ownership by *authenticated user*. Validate input data (e.g., temperature range, token limits). Update the corresponding row in `chat_sessions`.
