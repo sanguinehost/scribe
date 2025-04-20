@@ -46,6 +46,8 @@ hex = "0.4"
 
 tower-sessions = { version = "0.14.0", default-features = false, features = ["signed"] }
 
+genai = "0.2.2"
+
 [dev-dependencies]
 hyper-util = { version = "0.1", features = ["full"] }
 reqwest = { version = "0.12", features = ["json", "cookies"] }
@@ -62,6 +64,5 @@ tempfile = "3"
 testcontainers = "0.21"
 testcontainers-modules = { version = "0.11.6", features = ["postgres"] }
 bcrypt = "0.15"
-axum = "0.8.3"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 http = "1.1.0"

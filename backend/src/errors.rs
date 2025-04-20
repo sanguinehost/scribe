@@ -17,6 +17,12 @@ use anyhow::anyhow;
 /// Wraps various error types and maps them to appropriate HTTP status codes.
 #[derive(Error, Debug)]
 pub enum AppError {
+    #[error("Configuration Error: {0}")]
+    ConfigurationError(String),
+
+    #[error("LLM Client Error: {0}")]
+    LlmError(String),
+
     #[error("Internal Server Error")]
     InternalServerError(#[from] anyhow::Error),
 
@@ -98,6 +104,20 @@ impl IntoResponse for AppError {
         tracing::debug!(error = ?self, ">>> AppError::into_response called with");
 
         let (status, error_message) = match self {
+            AppError::ConfigurationError(ref message) => {
+                tracing::error!("Configuration Error: {}", message);
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Server configuration error".to_string(), // Generic message
+                )
+            }
+            AppError::LlmError(ref message) => {
+                tracing::error!("LLM Error: {}", message);
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "An error occurred with the language model".to_string(), // Generic message
+                )
+            }
             AppError::InternalServerError(ref err) => {
                 tracing::error!("Internal Server Error: {:?}", err);
                 (

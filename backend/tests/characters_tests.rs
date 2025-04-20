@@ -93,6 +93,8 @@ async fn handle_app_errors(req: Request<Body>, next: Next) -> AxumResponse<Body>
                  AppError::JoinError(_) => (StatusCode::INTERNAL_SERVER_ERROR, "Background task failed".to_string()),
                  AppError::IoError(_) => (StatusCode::INTERNAL_SERVER_ERROR, "An input/output error occurred".to_string()),
                  AppError::NotImplemented => (StatusCode::NOT_IMPLEMENTED, "Functionality not yet implemented".to_string()),
+                 AppError::ConfigurationError(_) => (StatusCode::INTERNAL_SERVER_ERROR, "Server configuration error".to_string()),
+                 AppError::LlmError(_) => (StatusCode::INTERNAL_SERVER_ERROR, "An error occurred with the language model".to_string()),
              };
 
              // Use Axum's Json extractor for the response body
