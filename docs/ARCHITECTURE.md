@@ -143,3 +143,9 @@ While the MVP focuses on a self-contained application experience, the chosen arc
 *   **API-Driven:** The strict API contract facilitates integration. The backend could become a core component within a larger SanguineHost platform or ecosystem.
 *   **Federation Readiness:** The backend architecture is suitable for incorporating federation protocols (like ActivityPub or a custom Scribe protocol) in the future, enabling communication and data exchange between independent Scribe instances, aligning with the decentralization goal.
 *   **Modularity:** The separation of concerns allows individual components (e.g., AI client, RAG processor) to be updated or replaced more easily as technology evolves or strategic needs change.
+
+### Extension & Federation Hooks (post‑MVP)
+
+* **Plugin / Tool API surface** – A thin `/api/tools/invoke` endpoint (Axum) will act as a generic broker for "tool calls" originating from the LLM.  
+* **Federated Node Boundary** – Each node runs the exact same codebase.  Cross‑node sharing happens through signed `*.scribe-export.json` bundles (characters, chats).  Long‑term we expect ActivityPub‑style replication.  
+* **Content‑Rating Service** – Every stored entity (`characters`, `chat_sessions`, `chat_messages`) includes a `content_rating` ENUM (`SFW`, `NSFW`, `ILLEGAL`, `OTHER`).  Ratings are additive and bubble upward for fast filtering.

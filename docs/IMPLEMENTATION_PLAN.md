@@ -265,3 +265,14 @@ The MVP is complete when a user can:
 *   Streaming improvements/alternatives (WebSockets).
 *   More robust error handling and user feedback.
 *   **Security Enhancements:** Separate User DB, Advanced Microsegmentation, Refresh Tokens, Rate Limiting, Account Lockout, MFA, External IdP Integration, Audit Logging.
+
+### Epic 6 – Post‑MVP Seeds (scaffolding only)
+
+- [ ] **Task 6.1 Tagging Migration (BE)**  
+      *Add `content_rating` column (ENUM) to characters, chat_sessions, chat_messages; default `SFW`.*
+
+- [ ] **Task 6.2 Plugin SDK Stub (BE)**  
+      *Expose `/api/tools/invoke` → currently logs request; write unit test for accepted payload.*
+
+- [ ] **Task 6.3 Federation Proof‑of‑Concept (DevOps)**  
+      *Spin up a second docker‑compose stack (`node‑B`) with different BASE_URL; export a character from node‑A, import into node‑B with signature verification.*

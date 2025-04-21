@@ -21,6 +21,8 @@ While the immediate focus is on delivering a best-in-class chat and storytelling
 *   **Dynamic RAG Context:** Automatically embed and retrieve relevant past conversation snippets/summaries/facts to augment the prompt context, overcoming traditional context window limitations.
 *   **Database-Backed:** Utilize PostgreSQL for structured data (chats, characters, users) and Qdrant for vector storage, providing a more robust foundation than file-based systems.
 *   **Rust Backend:** Ensure performance, type safety, and reliability for core logic and API interactions.
+* **Federated & self‑host friendly:** The exact same open‑source binary powers both personal servers and SanguineHost's SaaS – think "Mastodon for AI role‑play."
+* **BYO‑key or flat‑rate SaaS tiers:** Local nodes use your own API keys; SanguineHost offers an opt‑in flat subscription that bundles Gemini, DeepSeek‑R1, etc.
 
 ### Guiding Principles & Philosophical Alignment
 

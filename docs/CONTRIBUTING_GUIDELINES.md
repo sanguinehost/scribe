@@ -17,19 +17,18 @@ To facilitate immediate community support and transparency, we utilize the follo
 | :---------------- | :---------------------------------------------------------------------- | :------------------- |
 | **GitHub Sponsors** | Allows one-off or recurring donations directly via GitHub.              | *(To be set up)*     |
 | **Open Collective** | Provides a transparent public ledger for all donations and expenses.    | *(To be set up)*     |
-| **IssueHunt / BountySource** | Enables attaching cash bounties to specific GitHub issues. | *(To be integrated)* |
 
 **Initial Flow:**
 
 1.  An **Open Collective** page for Scribe will be established.
 2.  **GitHub Sponsors** will be configured to funnel donations into the Open Collective budget.
 3.  The Open Collective budget will be **publicly visible**.
-4.  Selected GitHub issues may be tagged with **bounties** via IssueHunt/BountySource, funded initially or by community pledges.
+4.  Selected GitHub issues may be tagged with **bounties**, potentially using pooled community funds or personal funds to advertise specific work on platforms like **Upwork** if no community members are immediately available.
     *(Note: Initially, bounties may be small ($50-$100 USD range) reflecting the project's early stage and funding availability.)*
 
 ## 3. Future Profit-Sharing Framework: "Contributor Dividend" (Phase 2)
 
-Should SanguineHost (the potential future hosted service for Scribe and other tools) become profitable, we are committed to sharing a portion of that success with the open-source contributors who make it possible.
+Should Sanguine Host (the potential future hosted service for Scribe and other tools) become profitable, we are committed to sharing a portion of that success with the open-source contributors who make it possible.
 
 **Formula:**
 
