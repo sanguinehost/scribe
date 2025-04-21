@@ -17,6 +17,11 @@ While the immediate focus is on delivering a best-in-class chat and storytelling
 6.  **Testability & Maintainability:** Employ Test-Driven Development (TDD) principles and a clear separation of concerns between frontend, backend, and data layers.
 
 ## Key Differentiating Features (MVP Focus)
+
+*   **Dynamic RAG Context:** Automatically embed and retrieve relevant past conversation snippets/summaries/facts to augment the prompt context, overcoming traditional context window limitations.
+*   **Database-Backed:** Utilize PostgreSQL for structured data (chats, characters, users) and Qdrant for vector storage, providing a more robust foundation than file-based systems.
+*   **Rust Backend:** Ensure performance, type safety, and reliability for core logic and API interactions.
+
 ### Guiding Principles & Philosophical Alignment
 
 Scribe's development is guided by principles derived from the broader Sanguine philosophy, ensuring that even its initial focus aligns with long-term goals:
@@ -24,11 +29,6 @@ Scribe's development is guided by principles derived from the broader Sanguine p
 *   **Knowledge Liberation & Self-Determination:** In line with these principles, Scribe prioritizes user control, transparency, and open access. Features like robust prompt engineering, compatibility with open standards (V2/V3 character cards), and the underlying database structure empower users to shape their experience and own their creations. The entire Scribe codebase is and will remain fully open source, reflecting the core belief that foundational technology must be free and accessible.
 *   **Empowering Creativity & Conscious Exploration:** By providing a sophisticated platform for roleplaying and storytelling, Scribe acknowledges the value of creative expression and the exploration of human experience (*Embodiment & Conscious Indulgence*) as valid and important uses of AI technology.
 *   **Foundation for the Future (Extensibility & Balance):** The choice of a robust, decoupled architecture (Rust backend, clear API separation, database foundation) is deliberate. It ensures Scribe is not just an isolated application but a potential cornerstone for future Sanguine initiatives requiring secure, context-aware, and balanced human-AI interaction systems. The RAG system represents an early step in managing complex information flows, crucial for more advanced agentic behaviour.
-
-
-*   **Dynamic RAG Context:** Automatically embed and retrieve relevant past conversation snippets/summaries/facts to augment the prompt context, overcoming traditional context window limitations.
-*   **Database-Backed:** Utilize PostgreSQL for structured data (chats, characters, users) and Qdrant for vector storage, providing a more robust foundation than file-based systems.
-*   **Rust Backend:** Ensure performance, type safety, and reliability for core logic and API interactions.
 
 ## Target Audience
 
