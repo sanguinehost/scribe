@@ -41,7 +41,7 @@ Only mark a task checkbox (`- [x]`) when all these conditions are satisfied.
 - [ ] **Task 0.2: Frontend Project Setup (FE)**
     - [x] Initialize SvelteKit project (`npm create svelte@latest scribe-frontend`). Choose Skeleton project with TypeScript.
     - [x] Setup basic project structure (routes, components, stores, lib). *(Created missing folders)*
-    - [x] Configure basic styling (e.g., TailwindCSS or basic CSS). *(Verified config, added tailwind.config.js)*
+    - [ ] **Configure Styling:** Install and configure **Skeleton UI** ([https://www.skeleton.dev/](https://www.skeleton.dev/)) including its Tailwind plugin and themes. Set up the base Sanguine theme. *(Partially done: Tailwind config exists, Skeleton needs integration)*
     - [x] *TDD:* Setup Vitest and write basic component rendering tests (e.g., for a placeholder component). *(Verified)*
 - [x] **Task 0.3: Database Setup (DevOps/BE)**
     - [x] Create `docker-compose.yml` for PostgreSQL and Qdrant services. *(Verified)*
@@ -55,7 +55,7 @@ Only mark a task checkbox (`- [x]`) when all these conditions are satisfied.
     - [x] *(Optional: Add session table migration if using DB session store)* *(Verified - Migration exists)*
     - [x] Implement migration runner logic integrated with Diesel (e.g., run on startup or via separate command). *(Verified - Run on startup in main.rs)*
     - [x] *TDD:* Write tests to verify migrations apply correctly. *(Verified - test_migrations_run_cleanly)*
-    - [ ] *TDD:* Write tests verifying schema matches models using Diesel's testing features. *(Missing)*
+    - [x] *TDD:* Write tests verifying schema matches models using Diesel's testing features. *(Covered by compile-time checks and integration tests like `test_user_character_insert_and_query`)*
 - [ ] **Task 0.5: Authentication (BE & FE)** - ***See `docs/AUTH_DESIGN.md` for details***
     - [x] **(BE) Model Update:** Implement `axum_login::AuthUser` for the `User` model. *(Verified)*
     - [x] **(BE) User Store Logic:** Implement functions: `get_user(id)`, `get_user_by_username(username)`, `verify_credentials(username, password)` (using `bcrypt`). *(Verified)*
@@ -88,8 +88,8 @@ Only mark a task checkbox (`- [x]`) when all these conditions are satisfied.
     - [x] *TDD (BE):* API integration tests for `GET /characters` (success, auth failure, empty list). *(Verified)*
     - [x] *TDD (BE):* API integration tests for `GET /characters/{id}` (success, auth failure, not found, forbidden/wrong user). *(Verified)*
 - [ ] **Task 1.3: Character UI (FE)** - ***Requires Task 1.2 Completion***
-    - [ ] **(FE) Character List Component:** Create `CharacterList.svelte`. Fetch data from `GET /api/characters` on mount. Display characters (e.g., name, avatar). Implement selection mechanism (e.g., click sets active character in a store). *(Missing)*
-    - [ ] **(FE) Character Uploader Component:** Create `CharacterUploader.svelte`. Handle file input (`<input type="file">`). Call `POST /api/characters/upload` with file data. Handle loading/success/error states. Refresh list on success. *(Missing)*
+    - [ ] **(FE) Character List Component:** Create `CharacterList.svelte` (Leverage Skeleton components like `<Card>`, `<Avatar>`, grid utilities). Fetch data from `GET /api/characters` on mount. Display characters. Implement selection mechanism. *(Missing)*
+    - [ ] **(FE) Character Uploader Component:** Create `CharacterUploader.svelte` (Leverage Skeleton form components, file input handling). Call `POST /api/characters/upload`. Handle states. Refresh list. *(Missing)*
     - [ ] *TDD (FE):* Component tests for `CharacterList` (rendering mock data, selection interaction). *(Missing)*
     - [ ] *TDD (FE):* Component tests for `CharacterUploader` (file input simulation, form submission simulation). *(Missing)*
     - [ ] *E2E (FE):* Test uploading a character and seeing it appear in the list. *(Missing)*
@@ -128,9 +128,9 @@ Only mark a task checkbox (`- [x]`) when all these conditions are satisfied.
         - [ ] Return AI response.
     - [ ] *TDD (BE):* API integration tests for `POST /chats/{id}/generate` (mocking the Gemini client call). Test success case, auth failure, session not found, downstream errors (saving message, assembling prompt).
 - [ ] **Task 2.6: Chat UI Components (FE)**
-    - [ ] **(FE) Chat Window:** Create `ChatWindow.svelte` (main container).
-    - [ ] **(FE) Message Bubble:** Create `MessageBubble.svelte` (display individual user/AI messages).
-    - [ ] **(FE) Message Input:** Create `MessageInput.svelte` (textarea, send button).
+    - [ ] **(FE) Chat Window:** Create `ChatWindow.svelte` (main container, potentially using Skeleton layout components like `AppShell`).
+    - [ ] **(FE) Message Bubble:** Create `MessageBubble.svelte` (display individual user/AI messages, style using Skeleton theme/utilities).
+    - [ ] **(FE) Message Input:** Create `MessageInput.svelte` (Leverage Skeleton `<textarea>`, `<button>`).
     - [ ] *TDD (FE):* Component tests for each component (rendering props, basic interactions like button click).
 - [ ] **Task 2.7: Frontend Chat Logic (FE)** - ***Requires BE APIs (Task 2.1, 2.2, 2.5) Completion***
     - [ ] **(FE) Chat Store:** Implement Svelte store (`chatStore`) to manage current session ID, messages, loading state.
@@ -189,8 +189,8 @@ Only mark a task checkbox (`- [x]`) when all these conditions are satisfied.
     - [ ] *TDD (BE):* Update Unit tests for Prompt Assembly (Task 2.4) to verify system prompt usage.
     - [ ] *TDD (BE):* Update Unit tests/Integration tests for Generation Endpoint (Task 2.5) to verify settings are passed to the mocked Gemini client.
 - [ ] **Task 4.3: Settings UI (FE)** - ***Requires Task 4.2 Completion***
-    - [ ] **(FE) Settings Panel Component:** Create `SettingsPanel.svelte`. Could be a modal or a sidebar section.
-    - [ ] **(FE) Input Components:** Add inputs for System Prompt (textarea), Temperature (slider/number input), Max Output Tokens (number input).
+    - [ ] **(FE) Settings Panel Component:** Create `SettingsPanel.svelte` (Leverage Skeleton components like `<Modal>`, `<SlideOver>`, or integrate into `AppShell`).
+    - [ ] **(FE) Input Components:** Use Skeleton form components (`<textarea>`, `<input type="range">`, `<input type="number">`) for System Prompt, Temperature, Max Output Tokens.
     - [ ] **(FE) API Calls:** Implement logic to fetch current settings using `GET /api/chats/{id}/settings` when the panel opens for the current chat session. Implement logic to save settings using `PUT /api/chats/{id}/settings` on change or via a save button. Handle loading/success/error states.
     - [ ] *TDD (FE):* Component tests for `SettingsPanel` (rendering inputs, handling input changes, simulating API calls for fetch/save).
 

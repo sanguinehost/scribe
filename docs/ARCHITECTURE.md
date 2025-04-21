@@ -7,7 +7,7 @@ Scribe adopts a modern client-server architecture designed for performance, main
 ## Components
 
 1.  **Frontend (SvelteKit):**
-    *   **Technology:** SvelteKit framework using Svelte and TypeScript.
+    *   **Technology:** SvelteKit framework using Svelte and TypeScript. UI components and styling provided by the **Skeleton UI toolkit** ([https://www.skeleton.dev/](https://www.skeleton.dev/)) integrated with TailwindCSS.
     *   **Responsibilities:**
         *   Rendering the user interface (login/register, chat, character management, settings).
         *   Handling user input and interactions.

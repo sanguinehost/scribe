@@ -2,7 +2,7 @@
 
 ## 1. Introduction
 
-This document outlines the planned User Experience (UX) and User Interface (UI) design for the Scribe MVP. It draws inspiration from existing platforms like SillyTavern (see provided reference images) but aims for a potentially streamlined, modern interface built with SvelteKit.
+This document outlines the planned User Experience (UX) and User Interface (UI) design for the Scribe MVP. It draws inspiration from existing platforms like SillyTavern but will be implemented using the **Skeleton UI toolkit** ([https://www.skeleton.dev/](https://www.skeleton.dev/)) on top of SvelteKit and TailwindCSS. Skeleton provides pre-built components, themes, and utility classes that will accelerate development and ensure a consistent, modern look and feel.
 
 The goal is to create an intuitive, performant, and extensible UI that effectively supports the core features: chat interaction, V2 character card management, basic prompt settings, and interaction with the underlying RAG context system.
 
@@ -31,21 +31,17 @@ The primary navigation (Left Sidebar) will include links to:
 
 ### 2.3. Theme
 
-*   **Aesthetic:** Aim for a clean, modern look and feel, applying the "Sanguine" theme.
-    *   **Primary Colors:** Black/Very Dark Grey background, Blood Red/Maroon primary elements, Gold accents.
-    *   **Example Palette:**
-        *   Background: `#1A1A1A` (Very Dark Grey/Near Black)
-        *   Primary/Maroon: `#8B0000` (Dark Red)
-        *   Accent/Gold: `#DAA520` (Goldenrod)
-        *   Text (Primary on Dark): `#E0E0E0` (Light Grey)
-        *   Text (Secondary/Muted): `#A0A0A0` (Medium Grey)
-        *   Error: `#FF4C4C` (Bright Red)
-    *   **Symbol:** The Scribe symbol (golden sceptre over maroon horned moon) could potentially be used as a favicon or subtle branding element, but detailed implementation is TBD.
-*   **Typography:**
-    *   **Primary Font:** A clean sans-serif like 'Inter', 'Lato', or 'Roboto'.
-    *   **Headings:** Slightly bolder weight.
-*   **Spacing:** Use consistent spacing units (e.g., multiples of 4px or using rem units).
-*   **(Implementation Note:** Theme variables should be defined centrally, potentially using CSS custom properties or a Svelte store, to allow for easier adjustments or future theme switching.)
+*   **Aesthetic:** Aim for a clean, modern look and feel, leveraging Skeleton's theming capabilities to implement the "Sanguine" theme.
+    *   **Skeleton Theme:** A custom Skeleton theme will be created or an existing preset adapted. This theme will define the core color palette, typography, spacing, and component styles.
+    *   **Target Palette (Sanguine Theme):**
+        *   Primary: Dark Red/Maroon (e.g., `#8B0000` base, with Skeleton generating shades)
+        *   Accent: Gold (e.g., `#DAA520` base)
+        *   Backgrounds: Very Dark Grey/Near Black (e.g., `#1A1A1A`)
+        *   Text: Light Greys/Off-Whites for contrast on dark backgrounds.
+        *   Error: Bright Red.
+    *   **Symbol:** The Scribe symbol (golden sceptre over maroon horned moon) could potentially be used as a favicon or subtle branding element.
+*   **Typography & Spacing:** Will primarily rely on Skeleton's theme settings, configured to use a clean sans-serif font (like 'Inter', 'Lato', or 'Roboto') and consistent spacing scales provided by Skeleton/Tailwind.
+*   **(Implementation Note:** The custom Skeleton theme configuration in `tailwind.config.js` and potentially `app.html` or layout files will be the central point for theme definition.)
 
 ## 3. Key Screens/Views (Task 5.4)
 
@@ -94,7 +90,7 @@ The primary navigation (Left Sidebar) will include links to:
 
 ## 4. Core UI Components (Task 5.2)
 
-This section details individual Svelte components. Theme colors (Maroon `#8B0000`, Gold `#DAA520`, Dark BG `#1A1A1A`, Light Text `#E0E0E0`) are referenced.
+This section outlines the core UI elements needed. Implementation will leverage **Skeleton UI components** where possible (e.g., `<button>`, `<input>`, `<textarea>`, `<card>`, `<avatar>`, `<modal>`, etc.), applying the custom Sanguine theme via Skeleton's utility classes and theme configuration. Custom Svelte components will be created only when Skeleton doesn't provide a suitable base or specific complex behavior is required. Props listed below are conceptual; actual implementation will map to Skeleton component props or custom component props as needed.
 
 ### 4.1. `Button`
 
