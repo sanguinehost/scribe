@@ -64,7 +64,7 @@ mod tests {
     #[test]
     fn test_user_struct_and_auth_impl() {
         let user_id = Uuid::new_v4();
-        let now = Utc::now();
+        let _now = Utc::now();
         let user = User::new_test_user(user_id, "testuser", "hashed_password");
 
         assert_eq!(user.username, "testuser");

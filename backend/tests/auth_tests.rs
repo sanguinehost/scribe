@@ -9,6 +9,7 @@ use scribe_backend::{
     routes::auth::{login_handler, register_handler, logout_handler, me_handler},
     schema::users,
     state::AppState,
+    config::Config,
 };
 use anyhow::{Context, Result as AnyhowResult};
 use axum::{
@@ -36,6 +37,7 @@ use serde_json::{json, Value};
 use std::{
     env,
     sync::Once, 
+    sync::Arc,
 };
 use time;
 use tower::ServiceExt; // For `oneshot`
@@ -209,7 +211,10 @@ fn build_test_app(pool: DeadpoolPool<DeadpoolManager>) -> Router {
     // Pass the session_layer INTO the AuthManagerLayerBuilder
     let auth_layer = AuthManagerLayerBuilder::new(auth_backend, session_layer).build();
 
-    let app_state = AppState { pool };
+    // Assuming 'pool' is already defined
+    // Load config and create AppState
+    let config = Arc::new(Config::load().expect("Failed to load test config for auth_tests"));
+    let app_state = AppState::new(pool.clone(), config); // Updated line
 
     // Define auth routes
     let auth_routes = Router::new()
@@ -329,7 +334,7 @@ async fn test_register_duplicate_username() -> AnyhowResult<()> {
     // Assert error message (optional, depends on AppError mapping)
     let (status, error_body) = get_json_body::<Value>(response2).await?;
     assert_eq!(status, StatusCode::CONFLICT);
-    assert_eq!(error_body["error"], "Username already taken");
+    assert_eq!(error_body["error"], "Username is already taken");
 
     // Cleanup test data
     guard.cleanup().await?;

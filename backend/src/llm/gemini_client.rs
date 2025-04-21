@@ -2,7 +2,6 @@ use genai::{
     chat::{ChatMessage, ChatRequest},
     Client, ClientBuilder,
 };
-use std::env;
 
 use crate::errors::AppError;
 
@@ -38,19 +37,11 @@ pub async fn generate_simple_response(
     // Use content_text_as_str() for potentially simpler extraction
     let content = response
         .content_text_as_str()
-        .ok_or_else(|| AppError::LlmError("No text content in LLM response".to_string()))?
+        // Use GeminiError or a more specific variant if appropriate
+        .ok_or_else(|| AppError::BadRequest("No text content in LLM response".to_string()))?
         .to_string();
 
     Ok(content)
-}
-
-// Implement From<genai::Error> for AppError to handle conversion
-impl From<genai::Error> for AppError {
-    fn from(error: genai::Error) -> Self {
-        // Log the original error for debugging
-        tracing::error!("genai Error: {:?}", error);
-        AppError::LlmError(format!("LLM Client Error: {}", error))
-    }
 }
 
 // TODO: Add unit tests for client building and maybe a mocked generation test (Task 2.3 TDD)

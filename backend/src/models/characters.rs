@@ -6,39 +6,74 @@ use chrono::{DateTime, Utc}; // Removed unused NaiveDateTime
 use diesel::prelude::*;
 // use chrono::{DateTime, Utc, NaiveDateTime};
 use serde::{Deserialize, Serialize};
-// use serde_json::Value as JsonValue; // Removed unused import
+use serde_json::Value as JsonValue;
 use uuid::Uuid;
 use crate::services::character_parser::ParsedCharacterCard;
+use diesel_json::Json; // Import Json wrapper
+use bigdecimal::BigDecimal;
 
-#[derive(Queryable, Selectable, Identifiable, Serialize, Deserialize, Debug, Clone)]
+#[derive(
+    Queryable, Selectable, Insertable, AsChangeset, Serialize, Deserialize, Debug, Clone, PartialEq,
+)]
 #[diesel(table_name = crate::schema::characters)]
-#[diesel(check_for_backend(diesel::pg::Pg))]
+#[diesel(check_for_backend(diesel::pg::Pg))] 
 pub struct Character {
-    pub id: Uuid,
-    pub user_id: Uuid,
-    pub spec: String,
-    pub spec_version: String,
+    #[diesel(deserialize_as = Uuid)]
+    pub id: Uuid, // PK
+    #[diesel(deserialize_as = Uuid)]
+    pub user_id: Uuid, // FK to users table
     pub name: String,
     pub description: Option<String>,
+    pub persona: Option<String>,
+    pub world_scenario: Option<String>,
+    pub system_prompt: Option<String>,
+    pub post_history_instructions: Option<String>,
+    pub creator_notes: Option<String>,
     pub personality: Option<String>,
     pub scenario: Option<String>,
     pub first_mes: Option<String>,
     pub mes_example: Option<String>,
-    pub creator_notes: Option<String>,
-    pub system_prompt: Option<String>,
-    pub post_history_instructions: Option<String>,
-    pub tags: Option<Vec<Option<String>>>,
-    pub creator: Option<String>,
-    pub character_version: Option<String>,
-    pub alternate_greetings: Option<Vec<Option<String>>>,
-    pub nickname: Option<String>,
-    pub creator_notes_multilingual: Option<serde_json::Value>,
-    pub source: Option<Vec<Option<String>>>,
-    pub group_only_greetings: Option<Vec<Option<String>>>,
-    pub creation_date: Option<DateTime<Utc>>,
-    pub modification_date: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    pub creator: Option<String>,
+    pub character_version: Option<String>,
+    pub tags: Option<Vec<Option<String>>>,
+    pub avatar: Option<String>, // file name or identifier for the avatar image
+    pub chat: Option<String>,   // identifier for associated chat history?
+    pub greeting: Option<String>,
+    pub definition: Option<String>,
+    pub default_voice: Option<String>,
+    pub extensions: Option<Json<JsonValue>>, // Use Json wrapper for JSONB
+    pub data_id: Option<i32>,
+    pub alternate_greetings: Option<Vec<Option<String>>>,
+    pub category: Option<String>,
+    pub definition_visibility: Option<String>,
+    pub depth: Option<i32>,
+    pub example_dialogue: Option<String>,
+    pub favorite: Option<bool>,
+    pub first_message_visibility: Option<String>,
+    pub height: Option<BigDecimal>,
+    pub last_activity: Option<DateTime<Utc>>,
+    pub migrated_from: Option<String>,
+    pub model_prompt: Option<String>,
+    pub model_prompt_visibility: Option<String>,
+    pub model_temperature: Option<BigDecimal>,
+    pub num_interactions: Option<i64>,
+    pub permanence: Option<BigDecimal>,
+    pub persona_visibility: Option<String>,
+    pub revision: Option<i32>,
+    pub sharing_visibility: Option<String>,
+    pub status: Option<String>,
+    pub system_prompt_visibility: Option<String>,
+    pub system_tags: Option<Vec<Option<String>>>,
+    pub token_budget: Option<i32>,
+    pub usage_hints: Option<Json<JsonValue>>, // Use Json wrapper for JSONB
+    pub user_persona: Option<String>,
+    pub user_persona_visibility: Option<String>,
+    pub visibility: Option<String>,
+    pub weight: Option<BigDecimal>,
+    pub world_scenario_visibility: Option<String>,
+    pub creator_notes_multilingual: Option<Json<JsonValue>>, // Use Json wrapper for JSONB
 }
 
 // Represents fields that can be updated from a parsed card

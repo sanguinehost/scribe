@@ -47,27 +47,34 @@ pub enum ParsedCharacterCard {
 pub fn parse_character_card_png(png_data: &[u8]) -> Result<ParsedCharacterCard, ParserError> {
     let cursor = Cursor::new(png_data);
     let decoder = Decoder::new(cursor);
-    // Note: We only read info here. IDAT chunks are not needed for text data.
-    let reader = decoder.read_info()?;
+    // Read info, but store the reader mutably
+    let mut reader = decoder.read_info()?;
+
+    // *** Crucial step: Finish reading all chunks before accessing info ***
+    reader.finish()?;
+
+    // Now access the info struct, which should contain all chunks
     let info = reader.info();
 
     let chara_keyword = "chara";
     let ccv3_keyword = "ccv3";
-    let text_chara_keyword = "tEXtchara"; // Add new keyword for tEXtchara format
+    // Restore text_chara_keyword as V2 fallback keyword
+    let text_chara_keyword = "tEXtchara";
 
     let mut ccv3_data_base64: Option<String> = None;
     let mut chara_data_base64: Option<String> = None;
 
-    // Iterate over text chunks found in the PNG info
+    // Iterate over the correct field for tEXt chunks
+    // The TEXtChunk struct conveniently provides keyword and text fields.
     for text_chunk in &info.uncompressed_latin1_text {
         if text_chunk.keyword == ccv3_keyword {
-            ccv3_data_base64 = Some(text_chunk.text.clone());
+            ccv3_data_base64 = Some(text_chunk.text.clone()); // Access the public field
+            info!("Found 'ccv3' tEXt chunk.");
         } else if text_chunk.keyword == chara_keyword || text_chunk.keyword == text_chara_keyword {
-            chara_data_base64 = Some(text_chunk.text.clone());
-            if text_chunk.keyword == text_chara_keyword {
-                info!("Found character data in 'tEXtchara' chunk instead of 'chara' chunk");
-            }
+            chara_data_base64 = Some(text_chunk.text.clone()); // Access the public field
+            info!(keyword = %text_chunk.keyword, "Found V2-style tEXt chunk.");
         }
+        // Ignore other keywords
     }
 
     // Flag to track if V3 parsing was tried and failed

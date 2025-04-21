@@ -49,7 +49,7 @@ pub async fn register_handler(
                         }
                         Err(AuthError::DatabaseError(e)) => {
                             error!(username = %credentials.username, error = ?e, "Registration failed: Database error.");
-                            Err(AppError::DatabaseError(e))
+                            Err(AppError::DatabaseQueryError(e))
                         }
                         Err(e) => {
                             error!(username = %credentials.username, error = ?e, "Registration failed: Unknown AuthError.");
@@ -142,7 +142,7 @@ pub async fn me_handler(auth_session: CurrentAuthSession) -> Result<Response, Ap
         }
         None => {
             info!("No authenticated user found in session for /me endpoint.");
-            Err(AppError::Unauthorized)
+            Err(AppError::Unauthorized("Not logged in".to_string()))
         }
     }
 } 

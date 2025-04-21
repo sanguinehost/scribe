@@ -61,6 +61,54 @@ diesel::table! {
         modification_date -> Nullable<Timestamptz>,
         created_at -> Timestamptz,
         updated_at -> Timestamptz,
+        persona -> Nullable<Text>,
+        world_scenario -> Nullable<Text>,
+        avatar -> Nullable<Text>,
+        chat -> Nullable<Text>,
+        greeting -> Nullable<Text>,
+        definition -> Nullable<Text>,
+        default_voice -> Nullable<Text>,
+        extensions -> Nullable<Jsonb>,
+        data_id -> Nullable<Int4>,
+        #[max_length = 255]
+        category -> Nullable<Varchar>,
+        #[max_length = 50]
+        definition_visibility -> Nullable<Varchar>,
+        depth -> Nullable<Int4>,
+        example_dialogue -> Nullable<Text>,
+        favorite -> Nullable<Bool>,
+        #[max_length = 50]
+        first_message_visibility -> Nullable<Varchar>,
+        height -> Nullable<Numeric>,
+        last_activity -> Nullable<Timestamptz>,
+        #[max_length = 255]
+        migrated_from -> Nullable<Varchar>,
+        model_prompt -> Nullable<Text>,
+        #[max_length = 50]
+        model_prompt_visibility -> Nullable<Varchar>,
+        model_temperature -> Nullable<Numeric>,
+        num_interactions -> Nullable<Int8>,
+        permanence -> Nullable<Numeric>,
+        #[max_length = 50]
+        persona_visibility -> Nullable<Varchar>,
+        revision -> Nullable<Int4>,
+        #[max_length = 50]
+        sharing_visibility -> Nullable<Varchar>,
+        #[max_length = 50]
+        status -> Nullable<Varchar>,
+        #[max_length = 50]
+        system_prompt_visibility -> Nullable<Varchar>,
+        system_tags -> Nullable<Array<Nullable<Text>>>,
+        token_budget -> Nullable<Int4>,
+        usage_hints -> Nullable<Jsonb>,
+        user_persona -> Nullable<Text>,
+        #[max_length = 50]
+        user_persona_visibility -> Nullable<Varchar>,
+        #[max_length = 50]
+        visibility -> Nullable<Varchar>,
+        weight -> Nullable<Numeric>,
+        #[max_length = 50]
+        world_scenario_visibility -> Nullable<Varchar>,
     }
 }
 

@@ -22,6 +22,8 @@ use diesel::RunQueryDsl;
 use axum::body::Bytes; // Added import for Bytes
 use axum_login::AuthSession; // <-- Add this import
 use crate::auth::user_store::Backend as AuthBackend; // <-- Import the backend type
+ // Import User model
+use diesel::result::Error as DieselError; // Add import for DieselError
 
 // Define the type alias for the auth session specific to our AuthBackend
 // type CurrentAuthSession = AuthSession<AppState>;
@@ -35,7 +37,7 @@ pub async fn upload_character_handler(
     mut multipart: Multipart,
 ) -> Result<(StatusCode, Json<Character>), AppError> {
     // Get the user from the session
-    let user = auth_session.user.ok_or(AppError::Unauthorized)?; // <-- Get user or return Unauthorized
+    let user = auth_session.user.ok_or_else(|| AppError::Unauthorized("Authentication required".to_string()))?; // CHANGED
     let local_user_id = user.id; // <-- Get ID from the user struct
 
     let mut file_data: Option<Bytes> = None;
@@ -66,7 +68,7 @@ pub async fn upload_character_handler(
         .interact(move |conn| {
             diesel::insert_into(characters)
                 .values(&new_character)
-                .returning(Character::as_returning())
+                .returning(Character::as_select())
                 .get_result::<Character>(conn)
         })
         .await
@@ -84,24 +86,24 @@ pub async fn list_characters_handler(
     auth_session: CurrentAuthSession, // <-- Add AuthSession extractor
 ) -> Result<Json<Vec<Character>>, AppError> {
     // Get the user from the session
-    let user = auth_session.user.ok_or(AppError::Unauthorized)?; // <-- Get user or return Unauthorized
+    let user = auth_session.user.ok_or_else(|| AppError::Unauthorized("Authentication required".to_string()))?; // CHANGED
     let local_user_id = user.id; // <-- Get ID from the user struct
 
     info!(%local_user_id, "Listing characters for user"); // Updated log message
 
     let conn = state.pool.get().await.map_err(AppError::DbPoolError)?;
 
-    let characters_vec = conn
+    let characters_result = conn
         .interact(move |conn| {
             characters
-                .filter(user_id.eq(local_user_id)) // Filter by the authenticated user's ID
+                .filter(user_id.eq(local_user_id))
                 .select(Character::as_select())
                 .load::<Character>(conn)
+                .map_err(AppError::DatabaseQueryError)
         })
-        .await
-        .map_err(|e| AppError::InternalServerError(anyhow!(e.to_string())))??;
+        .await??;
 
-    Ok(Json(characters_vec))
+    Ok(Json(characters_result))
 }
 
 // GET /api/characters/:id
@@ -112,32 +114,28 @@ pub async fn get_character_handler(
     Path(character_id): Path<Uuid>,
 ) -> Result<Json<Character>, AppError> {
     // Get the user from the session
-    let user = auth_session.user.ok_or(AppError::Unauthorized)?; // <-- Get user or return Unauthorized
+    let user = auth_session.user.ok_or_else(|| AppError::Unauthorized("Authentication required".to_string()))?; // CHANGED
     let local_user_id = user.id; // <-- Get ID from the user struct
 
     info!(%character_id, %local_user_id, "Fetching character details for user"); // Updated log message
 
     let conn = state.pool.get().await.map_err(AppError::DbPoolError)?;
 
-    let character_option = conn
+    let character_result = conn
         .interact(move |conn| {
             characters
-                // Filter by character_id AND the authenticated user's ID
-                .filter(id.eq(character_id).and(user_id.eq(local_user_id)))
+                .filter(id.eq(character_id))
+                .filter(user_id.eq(local_user_id))
                 .select(Character::as_select())
                 .first::<Character>(conn)
-                .optional()
+                .map_err(|e| match e {
+                    DieselError::NotFound => AppError::NotFound(format!("Character {} not found", character_id)),
+                    _ => AppError::DatabaseQueryError(e),
+                })
         })
-        .await
-        .map_err(|e| AppError::InternalServerError(anyhow!(e.to_string())))??;
+        .await??;
 
-    match character_option {
-        Some(character) => Ok(Json(character)),
-        None => Err(AppError::NotFound(format!(
-            "Character with ID {} not found or access denied for user {}", // Updated message
-            character_id, local_user_id // Include user ID in message
-        ))),
-    }
+    Ok(Json(character_result))
 }
 
 // --- Character Router ---

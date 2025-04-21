@@ -2,6 +2,11 @@ use serde::{Deserialize, Deserializer, Serialize}; // Added Deserializer
 use serde_json::Value; // Using Value for flexibility in extensions and mixed types like id
 use std::collections::HashMap;
 use uuid::Uuid; // <-- Add Uuid import
+use diesel_json::Json; // Import Json wrapper
+use chrono::{DateTime, Utc}; // Add DateTime and Utc
+use diesel::prelude::*;
+use diesel_json::Json as DieselJson; // Alias Json to avoid conflict with serde_json::Json
+use serde_json::Value as JsonValue; // Alias serde_json::Value
 
 // Main Character Card Structure (V3)
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
@@ -374,12 +379,9 @@ mod tests;
 // --- Diesel Database Models ---
 
 use crate::schema::{character_assets, lorebook_entries, lorebooks};
-use diesel::prelude::*; // Removed unused: characters
 // use crate::models::users::User; // Unused import
-use chrono::{DateTime, Utc};
-use serde_json::Value as JsonValue; // Alias to avoid conflict with serde_json::Value
 
-#[derive(Debug, Queryable, Selectable, Serialize, Deserialize, Clone)]
+#[derive(Queryable, Selectable, Serialize, Deserialize, Debug, Clone)] // Added Serialize, Deserialize
 #[diesel(table_name = crate::schema::characters)]
 #[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct Character {
@@ -403,13 +405,50 @@ pub struct Character {
     pub character_version: Option<String>,
     pub alternate_greetings: Option<Vec<Option<String>>>,
     pub nickname: Option<String>,
-    pub creator_notes_multilingual: Option<JsonValue>, // JSONB
+    pub creator_notes_multilingual: Option<DieselJson<JsonValue>>, // JSONB -> DieselJson<JsonValue>
     pub source: Option<Vec<Option<String>>>,
     pub group_only_greetings: Option<Vec<Option<String>>>,
     pub creation_date: Option<DateTime<Utc>>, // TIMESTAMP WITH TIME ZONE
     pub modification_date: Option<DateTime<Utc>>, // TIMESTAMP WITH TIME ZONE
     pub created_at: DateTime<Utc>,            // Changed from Option<DateTime<Utc>>
     pub updated_at: DateTime<Utc>,            // Changed from Option<DateTime<Utc>>
+    // --- Fields added to match schema ---
+    pub persona: Option<String>,
+    pub world_scenario: Option<String>,
+    pub avatar: Option<String>,
+    pub chat: Option<String>,
+    pub greeting: Option<String>,
+    pub definition: Option<String>,
+    pub default_voice: Option<String>,
+    pub extensions: Option<DieselJson<JsonValue>>, // JSONB -> DieselJson<JsonValue>
+    pub data_id: Option<i32>,
+    pub category: Option<String>,
+    pub definition_visibility: Option<String>,
+    pub depth: Option<i32>,
+    pub example_dialogue: Option<String>,
+    pub favorite: Option<bool>,
+    pub first_message_visibility: Option<String>,
+    pub height: Option<bigdecimal::BigDecimal>, // Numeric -> BigDecimal
+    pub last_activity: Option<DateTime<Utc>>,
+    pub migrated_from: Option<String>,
+    pub model_prompt: Option<String>,
+    pub model_prompt_visibility: Option<String>,
+    pub model_temperature: Option<bigdecimal::BigDecimal>, // Numeric -> BigDecimal
+    pub num_interactions: Option<i64>,                  // BigInt -> i64
+    pub permanence: Option<bigdecimal::BigDecimal>,     // Numeric -> BigDecimal
+    pub persona_visibility: Option<String>,
+    pub revision: Option<i32>,
+    pub sharing_visibility: Option<String>,
+    pub status: Option<String>,
+    pub system_prompt_visibility: Option<String>,
+    pub system_tags: Option<Vec<Option<String>>>,
+    pub token_budget: Option<i32>,
+    pub usage_hints: Option<DieselJson<JsonValue>>, // JSONB -> DieselJson<JsonValue>
+    pub user_persona: Option<String>,
+    pub user_persona_visibility: Option<String>,
+    pub visibility: Option<String>,
+    pub weight: Option<bigdecimal::BigDecimal>, // Numeric -> BigDecimal
+    pub world_scenario_visibility: Option<String>,
 }
 
 // Note: For Insertable, we might need a separate struct `NewCharacter`
@@ -436,11 +475,12 @@ pub struct NewCharacter {
     pub character_version: Option<String>,
     pub alternate_greetings: Option<Vec<Option<String>>>,
     pub nickname: Option<String>,
-    pub creator_notes_multilingual: Option<JsonValue>,
+    pub creator_notes_multilingual: Option<Json<JsonValue>>,
     pub source: Option<Vec<Option<String>>>,
     pub group_only_greetings: Option<Vec<Option<String>>>,
     pub creation_date: Option<DateTime<Utc>>,
     pub modification_date: Option<DateTime<Utc>>,
+    pub extensions: Option<Json<JsonValue>>, // Added extensions field
 }
 
 // --- Conversion from Parsed Card to NewCharacter ---
@@ -450,15 +490,14 @@ impl NewCharacter {
     // Add user_id parameter
     pub fn from_parsed_card(parsed: &ParsedCharacterCard, user_id: Uuid) -> Self {
         match parsed {
-            ParsedCharacterCard::V3(card_v3) => {
+            ParsedCharacterCard::V3(data) => {
                 // --- Handling V3 Card ---
-                let data = &card_v3.data; // Borrow data to avoid repeated card_v3.data
+                // Extract spec and version
+                let spec = data.spec.clone();
+                let spec_version = data.spec_version.clone();
+                let data = data.data.clone(); // Clone the inner data
 
-                // Ensure spec and spec_version are handled correctly
-                let spec = card_v3.spec.clone();
-                let spec_version = card_v3.spec_version.clone();
-
-                // Convert tags if necessary (Vec<String> -> Option<Vec<Option<String>>>)
+                // Convert V3 Vec<String> to DB Option<Vec<Option<String>>>
                 let tags = if data.tags.is_empty() {
                     None
                 } else {
@@ -475,6 +514,12 @@ impl NewCharacter {
                             .collect(),
                     )
                 };
+                let source = if data.source.as_ref().map_or(true, |s| s.is_empty()) {
+                    None
+                } else {
+                    data.source
+                        .map(|s| s.into_iter().map(Some).collect())
+                };
                 let group_only_greetings = if data.group_only_greetings.is_empty() {
                     None
                 } else {
@@ -486,15 +531,8 @@ impl NewCharacter {
                             .collect(),
                     )
                 };
-                let source = data.source.as_ref().and_then(|s| {
-                    if s.is_empty() {
-                        None
-                    } else {
-                        Some(s.clone().into_iter().map(Some).collect())
-                    }
-                });
 
-                // Convert optional timestamps (Option<i64> -> Option<DateTime<Utc>>)
+                // Convert timestamps
                 let creation_date_ts = data
                     .creation_date
                     .and_then(|ts| DateTime::from_timestamp(ts, 0));
@@ -502,11 +540,23 @@ impl NewCharacter {
                     .modification_date
                     .and_then(|ts| DateTime::from_timestamp(ts, 0));
 
+                // Convert HashMaps to JsonValue for JSONB fields
                 let creator_notes_multilingual_json = data
                     .creator_notes_multilingual
                     .as_ref()
                     .and_then(|m| serde_json::to_value(m).ok()) // Convert HashMap to JsonValue
-                    .filter(|v| !v.is_null()); // Ensure it's not null before storing
+                    .filter(|v| !v.is_null())
+                    .map(Json); // Wrap Option<Value> in Json for Option<Json<Value>> type
+
+                let extensions_json = data
+                    .extensions // data.extensions is HashMap<String, Value>
+                    .into_iter()
+                    .collect::<serde_json::Map<String, serde_json::Value>>();
+                let extensions_option_json = if extensions_json.is_empty() {
+                    None
+                } else {
+                    Some(Json(serde_json::Value::Object(extensions_json))) // Wrap Value in Json for Option<Json<Value>>
+                };
 
                 NewCharacter {
                     user_id,                                     // Use passed user_id
@@ -531,11 +581,12 @@ impl NewCharacter {
                     spec_version, // Use extracted spec_version
                     // character_book: data.character_book.clone(), // DB has separate table, handle later if needed
                     nickname: data.nickname.clone(), // Already Option<String>
-                    creator_notes_multilingual: creator_notes_multilingual_json, // Already Option<JsonValue>
+                    creator_notes_multilingual: creator_notes_multilingual_json, // Assign the wrapped value
                     source,                          // Already Option<Vec<Option<String>>>
                     group_only_greetings,            // Already Option<Vec<Option<String>>>
                     creation_date: creation_date_ts, // Already Option<DateTime<Utc>>
                     modification_date: modification_date_ts, // Already Option<DateTime<Utc>>
+                    extensions: extensions_option_json, // Assign the calculated extensions
                 }
             }
             ParsedCharacterCard::V2Fallback(data_v2) => {
@@ -588,6 +639,7 @@ impl NewCharacter {
                     group_only_greetings: None,
                     creation_date: None,
                     modification_date: None,
+                    extensions: None, // Ensure extensions is None for V2 fallback
                 }
             }
         }
@@ -631,7 +683,7 @@ pub struct DbLorebook {
     pub scan_depth: Option<i32>,
     pub token_budget: Option<i32>,
     pub recursive_scanning: Option<bool>,
-    pub extensions: Option<JsonValue>, // JSONB
+    pub extensions: Option<Json<JsonValue>>, // JSONB
 }
 
 #[derive(Insertable, Debug)]
@@ -644,7 +696,7 @@ pub struct NewDbLorebook {
     pub scan_depth: Option<i32>,
     pub token_budget: Option<i32>,
     pub recursive_scanning: Option<bool>,
-    pub extensions: Option<JsonValue>,
+    pub extensions: Option<Json<JsonValue>>,
 }
 
 #[derive(Queryable, Selectable, Identifiable, Associations, Debug, Serialize)]
@@ -655,7 +707,7 @@ pub struct DbLorebookEntry {
     pub lorebook_id: i32,
     pub keys: Vec<Option<String>>, // TEXT[]
     pub content: String,
-    pub extensions: Option<JsonValue>, // JSONB
+    pub extensions: Option<Json<JsonValue>>, // JSONB
     pub enabled: bool,
     pub insertion_order: i32,
     pub case_sensitive: Option<bool>,
@@ -676,7 +728,7 @@ pub struct NewDbLorebookEntry {
     pub lorebook_id: i32,
     pub keys: Vec<Option<String>>,
     pub content: String,
-    pub extensions: Option<JsonValue>,
+    pub extensions: Option<Json<JsonValue>>,
     pub enabled: bool,
     pub insertion_order: i32,
     pub case_sensitive: Option<bool>,

@@ -1,23 +1,20 @@
 #![cfg(test)]
-use diesel::{PgConnection, RunQueryDsl, QueryDsl, ExpressionMethods, SelectableHelper, Connection}; // Keep Connection here
+use diesel::{PgConnection, RunQueryDsl, QueryDsl, ExpressionMethods}; // Remove unused SelectableHelper
 use deadpool_diesel::postgres::{Pool, Manager, Runtime};
 use scribe_backend::{
     state::AppState,
-    models::{users::{User, NewUser, UserCredentials}, character_card::{Character, NewCharacter}}, // Use character_card path
+    models::{users::{User, NewUser}, character_card::{Character, NewCharacter}}, // Remove unused UserCredentials from here
     schema::{users, characters},
-    errors::AppError,
     routes::characters::characters_router,
     routes::auth::login_handler as auth_login_handler,
     auth::{session_store::DieselSessionStore, user_store::Backend as AuthBackend},
+    config::Config,
 };
 use axum::{
     Router, // Ensure Router is imported
     body::Body,
     http::{Request, Response as AxumResponse, StatusCode, Method, header},
-    middleware::{self, Next},
     routing::post, // Ensure post is imported
-    response::IntoResponse,
-    Json,
 };
 use axum_login::{
     AuthManagerLayerBuilder,
@@ -27,8 +24,6 @@ use tower_cookies::CookieManagerLayer;
 use uuid::Uuid;
 use std::sync::Once;
 use tracing_subscriber::{EnvFilter, fmt};
-use tower::{Service, ServiceExt};
-use anyhow::{Context, Result as AnyhowResult};
 use secrecy::{Secret, ExposeSecret};
 use serde_json::json;
 use mime;
@@ -39,6 +34,9 @@ use dotenvy::dotenv;
 use std::env;
 use base64::{Engine as _, engine::general_purpose::STANDARD as base64_standard};
 use crc32fast;
+use std::sync::Arc;
+use tower::ServiceExt; // Add back ServiceExt for .oneshot()
+use anyhow::Context; // Add back Context for .context()
 
 // Global static for ensuring tracing is initialized only once
 static TRACING_INIT: Once = Once::new();
@@ -50,64 +48,6 @@ fn ensure_tracing_initialized() {
         let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| "info,sqlx=warn,tower_http=debug".into());
         fmt().with_env_filter(filter).init();
     });
-}
-
-// --- Custom Error Handling Middleware ---
-async fn handle_app_errors(req: Request<Body>, next: Next) -> AxumResponse<Body> {
-    let result = next.run(req).await;
-
-    // If the status code is 500, try to extract the original AppError from extensions
-    if result.status() == StatusCode::INTERNAL_SERVER_ERROR {
-        if let Some(app_error_ref) = result.extensions().get::<AppError>() {
-             tracing::debug!("Middleware caught AppError via extensions: {:?}", app_error_ref);
-
-             // Manually create the response based on the AppError reference
-             let (status, error_message) = match app_error_ref {
-                 AppError::NotFound(_) => (StatusCode::NOT_FOUND, "Not Found".to_string()),
-                 AppError::BadRequest(_) => (StatusCode::BAD_REQUEST, "Bad Request".to_string()),
-                 AppError::Unauthorized => (StatusCode::UNAUTHORIZED, "Unauthorized".to_string()),
-                 AppError::Forbidden => (StatusCode::FORBIDDEN, "Forbidden".to_string()),
-                 AppError::CharacterParseError(err) => (
-                     StatusCode::BAD_REQUEST,
-                     format!("Character parsing failed: {}", err)
-                 ),
-                 AppError::MultipartError(err) => (
-                     StatusCode::BAD_REQUEST,
-                     format!("Failed to process multipart form data: {}", err)
-                 ),
-                 AppError::UuidError(err) => (
-                     StatusCode::BAD_REQUEST,
-                     format!("Invalid identifier format: {}", err)
-                 ),
-                 AppError::UsernameTaken => (StatusCode::CONFLICT, "Username already taken".to_string()),
-                 AppError::InvalidCredentials => (StatusCode::UNAUTHORIZED, "Invalid credentials".to_string()),
-                 AppError::AuthError(auth_err) => {
-                    // Map internal auth errors generically, or add specific cases if needed
-                    tracing::error!("Caught AuthError in middleware: {:?}", auth_err);
-                    (StatusCode::INTERNAL_SERVER_ERROR, "An internal authentication error occurred".to_string())
-                 },
-                 // For internal errors, keep generic messages
-                 AppError::InternalServerError(_) => (StatusCode::INTERNAL_SERVER_ERROR, "Internal Server Error".to_string()),
-                 AppError::DatabaseError(_) => (StatusCode::INTERNAL_SERVER_ERROR, "A database error occurred".to_string()),
-                 AppError::DbPoolError(_) => (StatusCode::INTERNAL_SERVER_ERROR, "Could not acquire database connection".to_string()),
-                 AppError::JoinError(_) => (StatusCode::INTERNAL_SERVER_ERROR, "Background task failed".to_string()),
-                 AppError::IoError(_) => (StatusCode::INTERNAL_SERVER_ERROR, "An input/output error occurred".to_string()),
-                 AppError::NotImplemented => (StatusCode::NOT_IMPLEMENTED, "Functionality not yet implemented".to_string()),
-                 AppError::ConfigurationError(_) => (StatusCode::INTERNAL_SERVER_ERROR, "Server configuration error".to_string()),
-                 AppError::LlmError(_) => (StatusCode::INTERNAL_SERVER_ERROR, "An error occurred with the language model".to_string()),
-             };
-
-             // Use Axum's Json extractor for the response body
-             let body = axum::Json(json!({
-                 "error": error_message,
-             }));
-
-             return (status, body).into_response();
-        }
-         tracing::debug!("Middleware saw 500 but no AppError extension found.");
-    }
-
-     result
 }
 
 // --- Test Helpers ---
@@ -232,6 +172,7 @@ fn insert_test_character(
         group_only_greetings: None,
         creation_date: None,
         modification_date: None,
+        extensions: None,
     };
     
     diesel::insert_into(characters::table)
@@ -439,7 +380,8 @@ fn build_test_app_for_characters(pool: Pool) -> Router {
     let auth_backend = AuthBackend::new(pool.clone());
     let auth_layer = AuthManagerLayerBuilder::new(auth_backend, session_layer).build();
 
-    let app_state = AppState { pool: pool.clone() };
+    let config = Arc::new(Config::load().expect("Failed to load test config for characters_tests"));
+    let app_state = AppState::new(pool.clone(), config);
 
     // Define necessary routes for character tests
     let auth_routes = Router::new()
@@ -448,7 +390,7 @@ fn build_test_app_for_characters(pool: Pool) -> Router {
 
     // Build full app with state and layers in the standard order
     // Pass app_state directly to characters_router as it requires it
-    let characters_router_with_state = characters_router(app_state);
+    let characters_router_with_state = characters_router(app_state.clone()); // Clone state here too
     
     Router::new()
         .nest("/api/auth", auth_routes)
@@ -456,7 +398,6 @@ fn build_test_app_for_characters(pool: Pool) -> Router {
         // State already applied above
         .layer(CookieManagerLayer::new())
         .layer(auth_layer)
-        .route_layer(middleware::from_fn(handle_app_errors))
 }
 
 // --- Tests ---
@@ -464,10 +405,10 @@ fn build_test_app_for_characters(pool: Pool) -> Router {
 mod tests {
     use super::*; // Import helpers from outer scope
     
-    // Remove duplicate imports that are already imported from super::*
-    // The only types we need to import specifically here are those used in the tests
-    // that aren't in the parent scope
-    use scribe_backend::models::users::UserCredentials; // Keep UserCredentials for login
+    // Add back necessary imports for test functions
+    use scribe_backend::models::users::UserCredentials;
+    use anyhow::Context as _; // Bring trait methods into scope
+    use tower::ServiceExt as _; // Bring trait methods into scope
     
     // Helper function to run DB operations via pool interact
     // Correctly handle InteractError with explicit matching

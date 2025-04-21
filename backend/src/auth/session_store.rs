@@ -18,16 +18,20 @@ use axum_login::tower_sessions::{
     session_store, SessionStore,
 };
 use time::OffsetDateTime;
+use chrono::{DateTime, Utc}; // Use chrono DateTime
+use serde_json;
 
 // --- Session Data Struct ---
 // This mirrors the table structure in schema.rs for the sessions table
 #[derive(Queryable, Insertable, AsChangeset, Identifiable, Debug, Clone)]
 #[diesel(table_name = sessions)]
-struct SessionRecord {
-    id: String, // Session ID (PK)
-    #[diesel(sql_type = diesel::sql_types::Timestamptz)] // Explicitly map to TIMESTAMPTZ
-    expires: Option<OffsetDateTime>,
-    session: String, // Serialized tower_sessions::session::Record data
+#[diesel(primary_key(id))] // Explicitly define primary key if not id by convention
+pub struct SessionRecord {
+    pub id: String, // Session ID from tower_sessions is String
+    // Use chrono::DateTime<Utc> for TIMESTAMPTZ
+    pub expires: Option<DateTime<Utc>>,
+    // Session data is likely stringified JSON or similar
+    pub session: String,
 }
 
 // --- Diesel Session Store Implementation for tower-sessions ---
@@ -82,6 +86,17 @@ impl DieselSessionStore {
     }
 }
 
+// Helper function to convert time::OffsetDateTime to chrono::DateTime<Utc>
+fn offset_to_utc(offset_dt: Option<OffsetDateTime>) -> Option<DateTime<Utc>> {
+    offset_dt.map(|dt| DateTime::from_timestamp(dt.unix_timestamp(), 0))
+        .flatten()
+}
+
+// Helper function to convert chrono::DateTime<Utc> to time::OffsetDateTime
+fn utc_to_offset(utc_dt: Option<DateTime<Utc>>) -> Option<OffsetDateTime> {
+    utc_dt.and_then(|dt| OffsetDateTime::from_unix_timestamp(dt.timestamp()).ok())
+}
+
 #[async_trait]
 impl SessionStore for DieselSessionStore {
     #[instrument(skip(self, session), err)]
@@ -93,10 +108,12 @@ impl SessionStore for DieselSessionStore {
 
         let session_data = serde_json::to_string(session).map_err(Self::map_json_error)?;
 
-        // Use session.expiry_date directly, as it's already Option<OffsetDateTime>
+        // Convert time::OffsetDateTime to chrono::DateTime<Utc>
+        let expires_utc = offset_to_utc(Some(session.expiry_date));
+
         let record = SessionRecord {
             id: session.id.to_string(),
-            expires: Some(session.expiry_date),
+            expires: expires_utc,
             session: session_data.clone(), // Clone session_data for logging
         };
 
@@ -112,9 +129,8 @@ impl SessionStore for DieselSessionStore {
                     .values(&record)
                     .on_conflict(sessions::id)
                     .do_update()
-                    .set(&record) // AsChangeset updates all fields
+                    .set((sessions::expires.eq(&record.expires), sessions::session.eq(&record.session)))
                     .execute(conn)
-                    // .map(|_| ()) // Discard row count - Keep result for logging
                     .map_err(Self::map_diesel_error)
             })
             .await.map_err(Self::map_interact_error);
@@ -143,11 +159,15 @@ impl SessionStore for DieselSessionStore {
         let pool = self.pool.clone();
         // --- Log before interact ---
         debug!(session_id = %session_id_str, "Attempting to load session record from DB...");
+
+        // Clone session_id_str *before* the closure
+        let session_id_clone_for_closure = session_id_str.clone();
+
         let maybe_record = pool.get()
             .await.map_err(Self::map_pool_error)?
-            .interact(move |conn| {
+            .interact(move |conn| { // Move the clone into the closure
                 sessions::table
-                    .find(&session_id_str) // Use reference here
+                    .find(&session_id_clone_for_closure) // Use the clone here
                     .first::<SessionRecord>(conn)
                     .optional() // Handle not found gracefully within Diesel
                     .map_err(Self::map_diesel_error)
@@ -157,26 +177,33 @@ impl SessionStore for DieselSessionStore {
         match maybe_record {
             Some(record) => {
                 // --- Log found --- 
-                debug!(session_id = %record.id, "Session record found in DB. Deserializing...");
+                // Use the original session_id_str for logging here, it wasn't moved
+                debug!(session_id = %session_id_str, "Session record found in DB. Deserializing...");
                 let session_record = serde_json::from_str::<Record>(&record.session).map_err(Self::map_json_error)?;
 
-                // tower-sessions handles expiration check internally based on loaded expiry_date
-                // We just need to load and return the Record object.
+                // Convert chrono::DateTime<Utc> back to time::OffsetDateTime
+                let expiry_date = utc_to_offset(record.expires);
 
-                // Optional: Clean up expired sessions proactively if desired, but not required by trait.
-                // if let Some(expires) = record.expires {
-                //     if expires < Utc::now() {
-                //          warn!(session_id = %record.id, "Loaded session appears expired based on DB time, but letting tower-sessions confirm.");
-                //          // Could spawn a task to delete it, but might interfere with tower-sessions logic
-                //     }
-                // }
-                // --- Log success --- 
-                info!(session_id = %record.id, "Session loaded and deserialized successfully.");
-                Ok(Some(session_record))
+                // Update expiry_date in the deserialized record
+                let mut session_record: Record = session_record;
+                session_record.expiry_date = expiry_date.unwrap();
+
+                // Check if the session is expired based on the original OffsetDateTime
+                if session_record.expiry_date <= OffsetDateTime::now_utc() {
+                    // If expired based on OffsetDateTime, delete it and return None
+                    // Use the original session_id_str for logging here
+                    info!(session_id = %session_id_str, "Session loaded but expired, deleting.");
+                    self.delete(session_id).await?;
+                    Ok(None)
+                } else {
+                    // --- Log success --- 
+                    info!(session_id = %record.id, "Session loaded and deserialized successfully.");
+                    Ok(Some(session_record))
+                }
             }
             None => {
                 // --- Log not found --- 
-                debug!(session_id = %session_id, "Session record not found in DB.");
+                debug!(session_id = %session_id_str, "Session record not found in DB.");
                 Ok(None) // Session not found is not an error for load
             }
         }
@@ -196,7 +223,6 @@ impl SessionStore for DieselSessionStore {
              .interact(move |conn| {
                  diesel::delete(sessions::table.find(session_id_str))
                      .execute(conn)
-                     // .map(|_| ()) // Discard result count - Keep for logging
                      .map_err(Self::map_diesel_error)
              })
              .await.map_err(Self::map_interact_error);

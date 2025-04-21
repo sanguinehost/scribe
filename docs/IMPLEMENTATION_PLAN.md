@@ -136,6 +136,15 @@ Only mark a task checkbox (`- [x]`) when all these conditions are satisfied.
     - [ ] **(FE) Chat Store:** Implement Svelte store (`chatStore`) to manage current session ID, messages, loading state.
     - [ ] **(FE) API Calls:** Implement functions to: create session (`POST /api/chats`), fetch messages (`GET /api/chats/{id}/messages`), send message & trigger generation (`POST /api/chats/{id}/generate`).
     - [ ] **(FE) UI Integration:** Connect `ChatWindow`, `MessageInput` to the store and API functions. Display messages. Handle loading indicators. Handle errors from API calls.
+- [ ] **Task 2.8: Basic CLI Test Client (BE/DevTool)** - ***Requires BE APIs (Task 2.1, 2.2, 2.5) Completion***
+    - [ ] **(BE/CLI) Create Rust Binary:** Set up a separate Rust binary project or a binary target within the backend (`scribe-cli`). Add necessary dependencies (e.g., `reqwest`, `tokio`, `serde`, `clap` for arg parsing).
+    - [ ] **(BE/CLI) Implement API Client Logic:** Create functions within the CLI to interact with the backend API: login (`/api/auth/login`), list characters (`/api/characters`), create chat (`/api/chats`), generate response (`/api/chats/{id}/generate`). Handle session cookies.
+    - [ ] **(BE/CLI) Basic Interactive Loop:** Implement a simple command-line interface:
+        - Prompt user for login credentials.
+        - List available characters and prompt for selection.
+        - Start a new chat session for the selected character.
+        - Enter a loop: read user input, call the generate endpoint, print the AI response.
+    - [ ] *TDD (BE/CLI):* (Optional but recommended) Add basic integration tests for the CLI's API interaction logic, potentially mocking the server or using a test instance.
 
 ---
 

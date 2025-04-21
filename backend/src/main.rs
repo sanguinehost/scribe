@@ -1,9 +1,8 @@
-use axum::{routing::{get, post}, Json, Router};
+use axum::{routing::{get, post}, Router};
 use deadpool_diesel::postgres::{Manager as DeadpoolManager, PoolConfig, Runtime as DeadpoolRuntime};
 // Use the r2d2 Pool directly from deadpool_diesel
 use deadpool_diesel::Pool as DeadpoolPool;
 use diesel_migrations::{embed_migrations, EmbeddedMigrations, MigrationHarness};
-use serde::Serialize;
 use std::env;
 use std::net::SocketAddr;
 use tower_http::trace::{DefaultMakeSpan, TraceLayer};
@@ -38,20 +37,25 @@ use cookie::Key as CookieKey; // Re-add for signing key variable
 use tower_cookies::CookieManagerLayer; // Re-add CookieManagerLayer
 use time; // Used for tower_sessions::Expiry
 use hex; // Added for hex::decode
+// use scribe_backend::llm::gemini_client::GeminiClient; // Remove unused import
+use scribe_backend::config::Config; // Import Config instead
+// Import the builder function, not a struct
+use std::sync::Arc; // Add Arc for config
 
 // Define the embedded migrations macro
 pub const MIGRATIONS: EmbeddedMigrations = embed_migrations!("./migrations");
 
 #[tokio::main]
-async fn main() -> Result<()> {
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenvy::dotenv().ok();
     init_subscriber();
 
     tracing::info!("Starting Scribe backend server...");
 
-    let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+    let config = Arc::new(Config::load().expect("Failed to load configuration")); // Load Config into Arc
+    let db_url = config.database_url.as_ref().expect("DATABASE_URL not set in config");
     tracing::info!("Connecting to database...");
-    let manager = DeadpoolManager::new(database_url, DeadpoolRuntime::Tokio1);
+    let manager = DeadpoolManager::new(db_url, DeadpoolRuntime::Tokio1);
     let pool_config = PoolConfig::default(); // Use default config for now
     let pool: PgPool = DeadpoolPool::builder(manager)
         .config(pool_config)
@@ -90,10 +94,8 @@ async fn main() -> Result<()> {
     // Build the auth layer, passing the SessionManagerLayer
     let auth_layer = AuthManagerLayerBuilder::new(auth_backend, session_manager_layer).build();
 
-    // Create the AppState (needs to be defined before use)
-    let app_state = AppState {
-        pool: pool.clone(),
-    };
+    // Create AppState 
+    let app_state = AppState::new(pool.clone(), config.clone()); // Pass Arc<Config>
 
     // --- Define Protected Routes ---
     let protected_api_routes = Router::new()
@@ -171,6 +173,7 @@ async fn run_migrations(pool: &PgPool) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+     // Needed for Result<()> in main
 
     #[tokio::test]
     async fn test_health_check() {

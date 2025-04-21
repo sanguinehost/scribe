@@ -20,13 +20,14 @@ use scribe_backend::models::{
 use scribe_backend::schema;
 use diesel::RunQueryDsl;
 use bcrypt;
-use serde_json::json;
 use axum::{
     body::Body,
     http::{header::SET_COOKIE, Method, Request, StatusCode},
 };
 use tower::ServiceExt;
-use tower_cookies::{Cookie, CookieManager, Cookies};
+use scribe_backend::config::Config;
+use std::sync::Arc;
+use diesel::SelectableHelper;
 
 // Define the embedded migrations macro
 pub const MIGRATIONS: EmbeddedMigrations = embed_migrations!("./migrations"); // Use relative path from crate root
@@ -101,7 +102,8 @@ pub async fn spawn_app() -> TestApp {
     let auth_layer = AuthManagerLayerBuilder::new(AuthBackend::new(db_pool.clone()), session_manager_layer).build();
 
     // --- AppState ---
-    let app_state = AppState { pool: db_pool.clone() };
+    let config = Arc::new(Config::load().expect("Failed to load test configuration"));
+    let app_state = AppState::new(db_pool.clone(), config);
 
     // --- Router Setup (mirroring main.rs structure) ---
     use scribe_backend::routes::{
@@ -200,12 +202,14 @@ pub async fn create_test_character(
         group_only_greetings: None,
         creation_date: None,
         modification_date: None,
+        extensions: None,
     };
 
     let conn = pool.get().await.expect("Failed to get DB conn for create_character");
     conn.interact(move |conn| {
         diesel::insert_into(schema::characters::table)
             .values(&new_character)
+            .returning(Character::as_select())
             .get_result::<Character>(conn)
             .expect("Failed to insert test character")
     })
