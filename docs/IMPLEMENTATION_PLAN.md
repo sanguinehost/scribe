@@ -241,6 +241,20 @@ The MVP is complete when a user can:
 
 ## Post-MVP Considerations
 
+*   **Localization:** Supporting multiple languages is a major priority and localizing the UI and API responses. Target audience is English, Chinese, and Spanish speakers with future plans for more (i.e., Russian, French, German, etc.).
+*   **Federation Support:** Implementing federation protocols (e.g., ActivityPub) to allow instances to connect and share data/interactions.
+*   **Advanced Moderation:** Building robust content moderation tools (AI classifiers, hash matching for illegal content), configurable policies (`policy.toml` concept), and moderation dashboards.
+*   **Age Verification:** Integrating reliable age-gating mechanisms for compliance with local laws like GDPR, COPPA, etc. (e.g., ID scan, payment methods).
+*   **Multi-Instance Deployment:** Strategies and tooling for deploying/managing both a central Sanguine Host instance and facilitating community self-hosting.
+*   **Open-Core Features:** Clearly defining and potentially implementing premium features or services for the open-core model (e.g., advanced hosting, enterprise support, specialized integrations).
+*   **Transparency Reporting:** Automating the generation and publication of moderation transparency reports.
+*   **Authentication:** Implementing a more secure and flexible authentication system (e.g., OAuth, JWT, external IdP integration such as Google, Okta, etc.).
+*   **Local Models:** Support for local models (Llama.cpp, Ollama).
+*   **Advanced Prompt Controls:** Advanced prompt controls (Jailbreaks, Author's Notes, Instruct Mode).
+*   **UI for Managing RAG Memories:** UI for managing RAG memories ("forgetting").
+*   **More Sophisticated Chunking/Summarization Strategies:** More sophisticated chunking/summarization strategies for RAG.
+*   **Character Editing Interface:** Character editing interface.
+
 *   Support for local models (Llama.cpp, Ollama).
 *   Advanced prompt controls (Jailbreaks, Author's Notes, Instruct Mode).
 *   UI for managing RAG memories ("forgetting").

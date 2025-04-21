@@ -134,3 +134,12 @@ graph TD
 *   **Asynchronous Processing:** Embedding and vector storage should ideally happen asynchronously.
 *   **Session-Based Auth:** Use secure HttpOnly cookies managed by `axum-login` for session state.
 *   **Configuration:** Manage AI keys, database connections, session secrets, etc., through configuration files or environment variables.
+
+## Scalability and Future Platform Considerations
+
+While the MVP focuses on a self-contained application experience, the chosen architecture is designed with long-term scalability and the broader Sanguine vision in mind:
+
+*   **Client-Server Separation:** The distinct Rust backend API and SvelteKit frontend allow for flexible deployment. The backend can potentially serve multiple different clients (web, desktop, mobile, other Sanguine tools) or operate as a headless service within a larger infrastructure.
+*   **API-Driven:** The strict API contract facilitates integration. The backend could become a core component within a larger SanguineHost platform or ecosystem.
+*   **Federation Readiness:** The backend architecture is suitable for incorporating federation protocols (like ActivityPub or a custom Scribe protocol) in the future, enabling communication and data exchange between independent Scribe instances, aligning with the decentralization goal.
+*   **Modularity:** The separation of concerns allows individual components (e.g., AI client, RAG processor) to be updated or replaced more easily as technology evolves or strategic needs change.
