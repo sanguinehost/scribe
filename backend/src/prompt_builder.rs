@@ -63,53 +63,177 @@ pub fn build_prompt(
     Ok(prompt)
 }
 
-/*
 // --- Unit Tests ---
-// TODO: Move these tests to integration tests in tests/ directory
-// They rely on helpers (TestDataGuard) and AppState which are integration test concerns.
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        models::{character_card::NewCharacter, chat::NewChatMessage},
-        state::AppState, // For getting pool in integration-style test
-        // This path is likely wrong for inline unit tests trying to access integration helpers
-        // Use crate::tests::helpers would be needed if helpers were in src/tests/helpers.rs
-        // But integration tests are typically in tests/ directory outside src/
-        tests::helpers::{self, TestDataGuard}, // Assuming helpers exist
+    use crate::models::{
+        characters::CharacterMetadata,
+        chats::{ChatMessage, MessageRole},
     };
-    use bigdecimal::BigDecimal;
-    use std::str::FromStr;
+    use chrono::Utc;
+    use uuid::Uuid;
 
-
-    // Helper to create necessary DB entries for a prompt assembly test
-    async fn setup_test_data(app: &AppState) -> (Uuid, Uuid, Uuid, TestDataGuard) {
-        // ... test setup code ...
+    fn create_dummy_character(name: &str, description: Option<&str>) -> CharacterMetadata {
+        CharacterMetadata {
+            id: Uuid::new_v4(),
+            user_id: Uuid::new_v4(),
+            name: name.to_string(),
+            description: description.map(String::from),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        }
     }
 
-
-    #[tokio::test]
-    async fn test_assemble_prompt_basic() {
-        // ... test code ...
+    fn create_dummy_message(role: MessageRole, content: &str) -> ChatMessage {
+        ChatMessage {
+            id: Uuid::new_v4(),
+            session_id: Uuid::new_v4(),
+            message_type: role,
+            content: content.to_string(),
+            created_at: Utc::now(),
+        }
     }
 
-    #[tokio::test]
-    async fn test_assemble_prompt_no_history() {
-        // ... test code ...
+    #[test]
+    fn test_build_prompt_with_character_and_history() {
+        let character = create_dummy_character("Alice", Some("A curious adventurer"));
+        let history = vec![
+            create_dummy_message(MessageRole::User, "Hello!"),
+            create_dummy_message(MessageRole::Assistant, "Hi there!"),
+        ];
+        let prompt = build_prompt(Some(&character), &history).unwrap();
+
+        let expected = "Character Name: Alice
+Description: A curious adventurer
+
+---
+Instruction:
+Continue the chat based on the conversation history. Stay in character.
+---
+
+---
+History:
+User:: Hello!
+Assistant:: Hi there!
+---
+
+Alice:";
+        assert_eq!(prompt, expected);
     }
 
-     #[tokio::test]
-    async fn test_assemble_prompt_no_system_prompt() {
-        // ... test code ...
+     #[test]
+    fn test_build_prompt_with_character_no_description() {
+        let character = create_dummy_character("Bob", None);
+        let history = vec![
+            create_dummy_message(MessageRole::User, "Testing"),
+        ];
+        let prompt = build_prompt(Some(&character), &history).unwrap();
+
+        let expected = "Character Name: Bob
+
+---
+Instruction:
+Continue the chat based on the conversation history. Stay in character.
+---
+
+---
+History:
+User:: Testing
+---
+
+Bob:";
+        assert_eq!(prompt, expected);
     }
 
+    #[test]
+    fn test_build_prompt_with_character_no_history() {
+        let character = create_dummy_character("Charlie", Some("Likes testing"));
+        let history = vec![];
+        let prompt = build_prompt(Some(&character), &history).unwrap();
 
-    // TODO: Add test for MAX_HISTORY_MESSAGES limit
-    // TODO: Add test for missing character fields (e.g., no persona)
-    // TODO: Add test for session not found error
-    // TODO: Add test for character not found error (if session exists but character doesn't - should be unlikely)
+        let expected = "Character Name: Charlie
+Description: Likes testing
 
+---
+Instruction:
+Continue the chat based on the conversation history. Stay in character.
+---
 
-}
-*/ 
+---
+History:
+(Start of conversation)
+---
+
+Charlie:";
+        assert_eq!(prompt, expected);
+    }
+
+    #[test]
+    fn test_build_prompt_no_character_with_history() {
+        let history = vec![
+            create_dummy_message(MessageRole::User, "First message"),
+            create_dummy_message(MessageRole::System, "System note"),
+            create_dummy_message(MessageRole::Assistant, "AI response"),
+        ];
+        let prompt = build_prompt(None, &history).unwrap();
+
+        let expected = "---
+Instruction:
+Continue the chat based on the conversation history. Stay in character.
+---
+
+---
+History:
+User:: First message
+System:: System note
+Assistant:: AI response
+---
+
+Character:"; // Defaults to "Character"
+        assert_eq!(prompt, expected);
+    }
+
+    #[test]
+    fn test_build_prompt_no_character_no_history() {
+        let history = vec![];
+        let prompt = build_prompt(None, &history).unwrap();
+
+        let expected = "---
+Instruction:
+Continue the chat based on the conversation history. Stay in character.
+---
+
+---
+History:
+(Start of conversation)
+---
+
+Character:"; // Defaults to "Character"
+        assert_eq!(prompt, expected);
+    }
+
+     #[test]
+    fn test_build_prompt_history_trimming() {
+        let character = create_dummy_character("Trimmer", None);
+        let history = vec![
+            create_dummy_message(MessageRole::User, "  Leading and trailing spaces  "),
+        ];
+        let prompt = build_prompt(Some(&character), &history).unwrap();
+
+        let expected = "Character Name: Trimmer
+
+---
+Instruction:
+Continue the chat based on the conversation history. Stay in character.
+---
+
+---
+History:
+User:: Leading and trailing spaces
+---
+
+Trimmer:"; // Check that content is trimmed
+        assert_eq!(prompt, expected);
+    }
+} 

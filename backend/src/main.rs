@@ -176,11 +176,40 @@ async fn run_migrations(pool: &PgPool) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-     // Needed for Result<()> in main
+    use testcontainers_modules::postgres::Postgres;
+    use testcontainers::runners::AsyncRunner; // Import the necessary trait
+    use deadpool_diesel::postgres::{Manager as DeadpoolManager, PoolConfig, Runtime as DeadpoolRuntime};
+    use deadpool_diesel::Pool as DeadpoolPool; // Use the r2d2 Pool directly from deadpool_diesel
+    use scribe_backend::PgPool; // Ensure PgPool is in scope for the test
 
     #[tokio::test]
     async fn test_health_check() {
         let response = health_check().await;
         assert_eq!(response.0.status, "ok");
+    }
+
+    #[tokio::test]
+    #[ignore] // Ignore by default as it requires Docker
+    async fn test_migrations_with_testcontainer() -> Result<(), anyhow::Error> {
+        let postgres_image = Postgres::default().with_user("test").with_password("test").with_db_name("test");
+        let node = postgres_image.start().await?;
+        let port = node.get_host_port_ipv4(5432).await?;
+        let db_url = format!("postgres://test:test@localhost:{}/test", port);
+
+        // Create a pool for the test database
+        let manager = DeadpoolManager::new(&db_url, DeadpoolRuntime::Tokio1);
+        let pool_config = PoolConfig::default();
+        let test_pool: PgPool = DeadpoolPool::builder(manager)
+            .config(pool_config)
+            .runtime(DeadpoolRuntime::Tokio1)
+            .build()
+            .expect("Failed to create test DB pool.");
+
+        // Run migrations against the test database
+        let migration_result = run_migrations(&test_pool).await;
+
+        assert!(migration_result.is_ok(), "Migrations failed to run: {:?}", migration_result.err());
+
+        Ok(())
     }
 }

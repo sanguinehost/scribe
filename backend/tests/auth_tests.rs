@@ -331,6 +331,7 @@ async fn test_register_duplicate_username() -> AnyhowResult<()> {
 async fn test_login_success() -> AnyhowResult<()> {
     let pool = create_test_pool();
     let mut guard = TestDataGuard::new(pool.clone());
+    // Build the app directly, no need to spawn
     let app = build_test_app(pool.clone()).await;
 
     let username = format!("test_login_{}", Uuid::new_v4().to_string()[..8].to_string());
@@ -345,39 +346,29 @@ async fn test_login_success() -> AnyhowResult<()> {
     guard.add_user(user.id);
     info!(user_id = %user.id, %username, "Test user created for login");
 
-    // 2. Build App and Spawn Server
-    let app = build_test_app(pool.clone()).await;
-    let server_addr = spawn_app(app).await;
-    let base_url = format!("http://{}", server_addr);
-
-    // 3. Create Reqwest Client with Cookie Store
-    let client = Client::builder()
-        .cookie_store(true) // Enable automatic cookie handling
-        .build()
-        .context("Failed to build reqwest client")?;
-
-    // 4. Perform Login Request
-    let login_url = format!("{}/api/auth/login", base_url);
+    // --- Use app.oneshot() ---
     let login_credentials = json!({
         "username": username, // Use the generated unique username
         "password": password,
     });
 
-    info!(url = %login_url, %username, "Sending login request...");
-    let response = client.post(&login_url)
-        .json(&login_credentials)
-        .send()
-        .await
-        .context("Failed to send login request")?;
+    info!(%username, "Sending login request via oneshot...");
+    let request = Request::builder()
+        .method(Method::POST)
+        .uri("/api/auth/login")
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(serde_json::to_vec(&login_credentials)?))?;
 
-    // 5. Assertions
+    let response = app.oneshot(request).await?; // Use oneshot here
+
+    // --- Assertions ---
     let status = response.status();
     info!(%status, headers = ?response.headers(), "Received login response");
 
     assert_eq!(status, StatusCode::OK, "Login request did not return OK");
 
     // Check for Set-Cookie header
-    let set_cookie_header = response.headers().get(SET_COOKIE);
+    let set_cookie_header = response.headers().get(header::SET_COOKIE);
     assert!(
         set_cookie_header.is_some(),
         "Set-Cookie header was not found in the login response. Headers: {:?}",
@@ -391,7 +382,10 @@ async fn test_login_success() -> AnyhowResult<()> {
     }
 
     // Check response body (optional, but good practice)
-    let body: Value = response.json().await.context("Failed to parse login response JSON")?;
+    // Use the get_json_body helper
+    let (body_status, body): (StatusCode, Value) = get_json_body(response).await.context("Failed to parse login response JSON")?;
+    assert_eq!(body_status, StatusCode::OK, "Body status code mismatch"); // Ensure body status also OK
+
     // Assert the structure of the returned User object
     assert_eq!(body["username"], username, "Response body username mismatch");
     assert_eq!(body["id"], user.id.to_string(), "Response body user ID mismatch");
@@ -454,7 +448,7 @@ async fn test_login_wrong_password() -> AnyhowResult<()> {
 #[tokio::test]
 async fn test_login_user_not_found() -> AnyhowResult<()> {
     let pool = create_test_pool();
-    let app = build_test_app(pool.clone()).await;
+    let _app = build_test_app(pool.clone()).await;
 
     let username = format!("login_nonexistent_{}", Uuid::new_v4());
     let password = "password123";
@@ -471,7 +465,7 @@ async fn test_login_user_not_found() -> AnyhowResult<()> {
         .header(header::CONTENT_TYPE, "application/json")
         .body(Body::from(serde_json::to_vec(&credentials)?))?;
 
-    let response = app.oneshot(request).await?;
+    let response = _app.oneshot(request).await?;
 
     // Assertions
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED, "Login with non-existent user should return 401");

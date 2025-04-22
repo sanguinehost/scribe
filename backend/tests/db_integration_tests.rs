@@ -18,7 +18,6 @@ use scribe_backend::models::chats::{
 use scribe_backend::schema::{chat_messages, chat_sessions};
 use diesel_migrations::{embed_migrations, EmbeddedMigrations, MigrationHarness};
 use bigdecimal::BigDecimal; // Add this import
-use std::str::FromStr; // Add this import
 use deadpool_diesel::postgres::Manager as DeadpoolManager;
 use deadpool_diesel::{Pool as DeadpoolPool, Runtime as DeadpoolRuntime};
 use axum::http::StatusCode;

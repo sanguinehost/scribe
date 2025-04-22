@@ -13,7 +13,7 @@ use diesel_json::Json; // Import Json wrapper
 use bigdecimal::BigDecimal;
 use crate::schema::characters;
 use crate::models::users::User; // Added import
-use crate::models::character_card::{CharacterCardV3, CharacterCardDataV3}; // Import the actual structs
+// use crate::models::character_card::{CharacterCardV3, CharacterCardDataV3}; // Import the actual structs
 
 #[derive(
     Queryable, Selectable, Insertable, AsChangeset, Serialize, Deserialize, Debug, Clone, PartialEq,

@@ -25,9 +25,7 @@ use reqwest_middleware::Error as ReqwestMiddlewareError;
 use std::num::ParseIntError;
 use tower_sessions::session_store::Error as SessionStoreError;
 use uuid::Error as UuidError;
-use axum::body::Body;
 use uuid::Uuid;
- // For testing AnyhowError path
 
 // AppError should automatically be Send + Sync if all its fields are.
 // Remove Send and Sync from derive list.
@@ -147,6 +145,9 @@ pub enum AppError {
 
     #[error("LLM Embedding Error: {0}")] // Maybe wrap specific GenAIError later
     EmbeddingError(String), // Using String for now
+
+    #[error("Session Error: {0}")]
+    Session(#[from] tower_sessions::session::Error),
 }
 
 // This helper enum is necessary because axum_login::Error requires the UserStore::Error
@@ -324,6 +325,10 @@ impl IntoResponse for AppError {
                  // Log the full error chain if possible
                  error!("Internal Server Error: {:?}", e); // Use debug formatting for Anyhow
                  (StatusCode::INTERNAL_SERVER_ERROR, "An unexpected error occurred".to_string())
+             }
+             AppError::Session(e) => {
+                 error!("Session Error: {}", e);
+                 (StatusCode::INTERNAL_SERVER_ERROR, "Session management error".to_string())
              }
          };
 

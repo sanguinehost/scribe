@@ -28,8 +28,7 @@ use axum::{
     http::{header, Method, Request, StatusCode},
     Router,
 };
-use async_trait::async_trait; // Import directly from the crate
-use axum_login::{login_required, AuthManagerLayerBuilder, AuthSession}; // Add AuthSession
+use axum_login::{login_required, AuthManagerLayerBuilder};
 use bcrypt;
 use deadpool_diesel::postgres::{
     Manager as DeadpoolManager, Pool as DeadpoolPool, PoolConfig, Runtime as DeadpoolRuntime,
@@ -38,13 +37,13 @@ use diesel::prelude::*;
 use diesel::RunQueryDsl;
 use diesel::SelectableHelper;
 use diesel_migrations::{embed_migrations, EmbeddedMigrations, MigrationHarness};
-use http_body_util::BodyExt; // Add this import for response body handling
-use serde_json::Value;       // Add this import for json body handling
-use std::{env, net::TcpListener, sync::Arc};
-use time; // Keep original time import
+use dotenvy::dotenv;
+use std::env;
+use std::net::TcpListener;
+use std::sync::Arc;
+use tower_cookies::{CookieManagerLayer};
+use tower_sessions::{Expiry, SessionManagerLayer};
 use tower::ServiceExt;
-use tower_cookies::{Cookie, CookieManagerLayer, Cookies}; // Add Cookies
-use tower_sessions::{Expiry, SessionManagerLayer, SessionStore};
 use uuid::Uuid;
 
 // Define the embedded migrations macro
@@ -63,7 +62,7 @@ pub struct TestApp {
 /// Sets up the application state and router for integration testing, WITHOUT spawning a server.
 pub async fn spawn_app() -> TestApp {
     // Tracing initialization is handled by #[tracing_test::traced_test] on each test function
-    dotenvy::dotenv().ok(); // Load .env for test environment variables
+    dotenv().ok(); // Load .env for test environment variables
 
     // --- Database Setup ---
     let db_name = format!("test_db_{}", Uuid::new_v4());

@@ -366,20 +366,27 @@ pub fn chat_routes() -> Router<AppState> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::models::{chats::{ChatSession, ChatMessage, MessageRole}, users::User};
-    use axum::{body::Body, http::{self, Method, Request, StatusCode}};
+    // use super::*; // Removed unused import
+    // use crate::models::{chats::{ChatSession, ChatMessage, MessageRole}, users::User}; // Removed unused User import
+    use crate::models::{chats::{ChatSession, ChatMessage, MessageRole}};
+    use crate::state::AppState;
+    // use crate::llm::LLMClient; // Removed unresolved import
+    // use crate::test_helpers::{self, create_test_user, setup_test_app, TestContext, create_test_user_and_login}; // Removed unused TestContext import
+    use crate::test_helpers::{self, create_test_user, setup_test_app, create_test_user_and_login};
+    use axum::{
+        body::Body,
+        http::{self, Method, Request, StatusCode},
+    };
     use http_body_util::BodyExt;
     use serde_json::{json, Value};
     use tower::ServiceExt;
     use uuid::Uuid;
-    use crate::test_helpers::{self, create_test_user, setup_test_app, TestContext, create_test_user_and_login};
 
     // --- Test Cases ---
 
     #[tokio::test]
     async fn test_create_chat_session_success() {
-        let mut context = setup_test_app().await;
+        let context = setup_test_app().await; // Removed mut
         let (auth_cookie, user) = create_test_user_and_login(&context.app, "test_create_chat_user", "password").await;
         let character = test_helpers::create_test_character(&context.app.db_pool, user.id, "Test Character for Chat").await;
         let request_body = json!({ "character_id": character.id });

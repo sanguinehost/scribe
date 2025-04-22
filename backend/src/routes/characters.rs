@@ -2,15 +2,15 @@
 
 use crate::errors::AppError;
 use crate::models::characters::Character;
-use crate::models::character_card::NewCharacter;
+use crate::models::character_card::{NewCharacter};
 use crate::schema::characters::dsl::*; // DSL needed for table/columns
 use crate::services::character_parser::{self};
 use crate::state::AppState;
 use axum::{
     extract::{multipart::Multipart, Path, State},
     http::StatusCode,
-    response::Json,
-    routing::{get, post},
+    response::{IntoResponse, Json},
+    routing::{get, post, delete},
     Router,
 };
 use diesel::prelude::*; // Needed for .filter(), .load(), .first(), etc.
@@ -22,12 +22,18 @@ use diesel::RunQueryDsl;
 use axum::body::Bytes; // Added import for Bytes
 use axum_login::AuthSession; // <-- Add this import
 use crate::auth::user_store::Backend as AuthBackend; // <-- Import the backend type
- // Import User model
 use diesel::result::Error as DieselError; // Add import for DieselError
+use serde::{Deserialize}; // Add serde import
 
 // Define the type alias for the auth session specific to our AuthBackend
 // type CurrentAuthSession = AuthSession<AppState>;
 type CurrentAuthSession = AuthSession<AuthBackend>; // <-- Use correct Backend type
+
+// Define input structure for the generation prompt
+#[derive(Deserialize, Debug)]
+pub struct GenerateCharacterPayload {
+    prompt: String,
+}
 
 // POST /api/characters/upload
 #[instrument(skip(state, multipart, auth_session), err)]
@@ -138,11 +144,138 @@ pub async fn get_character_handler(
     Ok(Json(character_result))
 }
 
+// POST /api/characters/generate
+#[instrument(skip(state, auth_session, payload), err)]
+pub async fn generate_character_handler(
+    State(state): State<AppState>,
+    auth_session: CurrentAuthSession,
+    Json(payload): Json<GenerateCharacterPayload>,
+) -> Result<(StatusCode, Json<Character>), AppError> {
+    let user = auth_session.user.ok_or_else(|| AppError::Unauthorized("Authentication required".to_string()))?;
+    let user_id_val = user.id; // Capture user id
+
+    info!(%user_id_val, prompt = %payload.prompt, "Generating character requested by user");
+
+    // --- TODO: Implement AI character generation logic ---
+    // 1. Call state.ai_client.generate_character(payload.prompt) -> This needs to be implemented
+    // 2. Parse the AI response into character fields (name, description, etc.)
+    // 3. Create a NewCharacter struct
+    // 4. Save the NewCharacter to the database using interact
+    // 5. Return the created Character
+
+    // Placeholder implementation: Return an error indicating not implemented yet
+    // Err(AppError::InternalServerError(anyhow!("Character generation not yet implemented")))
+
+    // Placeholder implementation 2: Return a dummy character (for testing the route)
+    let dummy_character = Character {
+        id: Uuid::new_v4(), // Generate a new ID
+        user_id: user_id_val,
+        name: "Generated Placeholder".to_string(),
+        description: Some(format!("Based on prompt: '{}'", payload.prompt)),
+        personality: Some("Placeholder".to_string()),
+        scenario: Some("Placeholder".to_string()),
+        first_mes: Some("Placeholder".to_string()),
+        mes_example: Some("Placeholder".to_string()),
+        created_at: chrono::Utc::now(), // Fixed: Use DateTime<Utc>
+        updated_at: chrono::Utc::now(), // Fixed: Use DateTime<Utc>
+        persona: None,
+        world_scenario: None,
+        creator_notes: None,
+        system_prompt: None,
+        post_history_instructions: None,
+        tags: None,
+        creator: None,
+        character_version: None,
+        alternate_greetings: None,
+        avatar: None,
+        chat: None,
+        greeting: None,
+        definition: None,
+        default_voice: None,
+        extensions: None,
+        data_id: None,
+        category: None,
+        definition_visibility: None,
+        depth: None,
+        example_dialogue: None,
+        favorite: None,
+        first_message_visibility: None,
+        height: None,
+        last_activity: None,
+        migrated_from: None,
+        model_prompt: None,
+        model_prompt_visibility: None,
+        model_temperature: None,
+        num_interactions: None,
+        permanence: None,
+        persona_visibility: None,
+        revision: None,
+        sharing_visibility: None,
+        status: None,
+        system_prompt_visibility: None,
+        system_tags: None,
+        token_budget: None,
+        usage_hints: None,
+        user_persona: None,
+        user_persona_visibility: None,
+        visibility: None,
+        weight: None,
+        world_scenario_visibility: None,
+        creator_notes_multilingual: None,
+    };
+
+    // --- TODO: Optionally save the dummy character to DB if needed for testing downstream GET ---
+    // If saving, ensure the dummy_character above matches the NewCharacter structure and use interact
+
+    Ok((StatusCode::OK, Json(dummy_character))) // Return OK for now
+}
+
+// DELETE /api/characters/:id
+#[instrument(skip(state, auth_session), err)]
+pub async fn delete_character_handler(
+    State(state): State<AppState>,
+    auth_session: CurrentAuthSession,
+    Path(character_id): Path<Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    let user = auth_session.user.ok_or_else(|| AppError::Unauthorized("Authentication required".to_string()))?;
+    let user_id_val = user.id;
+
+    info!(%character_id, %user_id_val, "Deleting character for user");
+
+    let conn = state.pool.get().await.map_err(AppError::DbPoolError)?;
+
+    let rows_deleted = conn
+        .interact(move |conn| {
+            diesel::delete(
+                characters
+                    .filter(id.eq(character_id))
+                    .filter(user_id.eq(user_id_val))
+            )
+            .execute(conn)
+            .map_err(AppError::DatabaseQueryError)
+        })
+        .await??;
+
+    if rows_deleted == 0 {
+        // This could be NotFound or Forbidden, but NotFound is common if ID doesn't exist
+        // or doesn't belong to the user.
+        Err(AppError::NotFound(format!(
+            "Character {} not found or not owned by user {}",
+            character_id,
+            user_id_val
+        )))
+    } else {
+        Ok(StatusCode::NO_CONTENT)
+    }
+}
+
 // --- Character Router ---
 pub fn characters_router(state: AppState) -> Router {
     Router::new()
         .route("/upload", post(upload_character_handler))
         .route("/", get(list_characters_handler))
         .route("/{id}", get(get_character_handler))
+        .route("/{id}", delete(delete_character_handler))
+        .route("/generate", post(generate_character_handler))
         .with_state(state)
 }
