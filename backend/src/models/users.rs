@@ -5,16 +5,18 @@ use diesel::Insertable;
 use secrecy::{Secret};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
+use chrono::{DateTime, Utc};
 
-#[derive(Queryable, Selectable, Identifiable, Debug, Serialize, Deserialize, Clone)]
+#[derive(Queryable, Selectable, Identifiable, Serialize, Deserialize, Debug, Clone)]
 #[diesel(table_name = users)]
+#[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct User {
     pub id: Uuid,
     pub username: String,
     #[serde(skip_serializing, skip_deserializing)]
     pub password_hash: String,
-    pub created_at: chrono::DateTime<chrono::Utc>,
-    pub updated_at: chrono::DateTime<chrono::Utc>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
 }
 
 impl AuthUser for User {

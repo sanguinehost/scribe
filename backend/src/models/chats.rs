@@ -106,4 +106,21 @@ pub struct NewChatMessage {
 pub struct NewChatMessageRequest {
     pub content: String,
     // Role is often implicit based on the sender/endpoint being called
+}
+
+// API Request/Response Structures
+
+#[derive(Deserialize, Debug)]
+pub struct CreateChatSessionPayload {
+    pub character_id: Uuid,
+}
+
+#[derive(Deserialize, Debug)]
+pub struct GenerateResponsePayload {
+    pub content: String,
+}
+
+#[derive(Serialize, Debug)]
+pub struct GenerateResponse {
+    pub ai_message: ChatMessage,
 } 
