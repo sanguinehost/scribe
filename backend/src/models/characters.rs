@@ -11,6 +11,8 @@ use uuid::Uuid;
 use crate::services::character_parser::ParsedCharacterCard;
 use diesel_json::Json; // Import Json wrapper
 use bigdecimal::BigDecimal;
+use crate::schema::characters;
+use crate::models::users::User; // Added import
 
 #[derive(
     Queryable, Selectable, Insertable, AsChangeset, Serialize, Deserialize, Debug, Clone, PartialEq,
@@ -169,4 +171,33 @@ impl<'a> From<&'a ParsedCharacterCard> for UpdatableCharacter<'a> {
             }
         }
     }
+}
+
+// Represents the core metadata of a character, stored in the DB
+#[derive(Queryable, Selectable, Identifiable, Associations, Serialize, Deserialize, Debug, Clone)]
+#[diesel(belongs_to(User, foreign_key = user_id))]
+#[diesel(table_name = characters)]
+pub struct CharacterMetadata {
+    pub id: Uuid,
+    pub user_id: Uuid,
+    pub name: String,
+    pub description: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    // Add other V2/V3 fields needed for listing/selection if necessary
+    // pub persona: Option<String>,
+    // pub greeting: Option<String>,
+    // pub example_dialogue: Option<String>,
+    // ... other fields extracted from the card
+}
+
+// Structure for inserting a new character metadata record
+#[derive(Insertable)]
+#[diesel(table_name = characters)]
+pub struct NewCharacterMetadata<'a> {
+    pub user_id: Uuid,
+    pub name: &'a str,
+    pub description: Option<&'a str>,
+    // Add other required fields that come directly from the parsed card
+    // e.g., pub persona: Option<&'a str>,
 } 

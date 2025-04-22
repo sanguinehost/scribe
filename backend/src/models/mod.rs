@@ -1,4 +1,5 @@
-pub mod character_card;
 pub mod users;
-pub mod chat;
+pub mod character_card;
 pub mod characters;
+pub mod chats;
+pub mod auth;

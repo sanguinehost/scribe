@@ -37,10 +37,10 @@ use cookie::Key as CookieKey; // Re-add for signing key variable
 use tower_cookies::CookieManagerLayer; // Re-add CookieManagerLayer
 use time; // Used for tower_sessions::Expiry
 use hex; // Added for hex::decode
-// use scribe_backend::llm::gemini_client::GeminiClient; // Remove unused import
 use scribe_backend::config::Config; // Import Config instead
-// Import the builder function, not a struct
 use std::sync::Arc; // Add Arc for config
+// Import the builder function
+use scribe_backend::llm::gemini_client::build_gemini_client; // Import the async builder
 
 // Define the embedded migrations macro
 pub const MIGRATIONS: EmbeddedMigrations = embed_migrations!("./migrations");
@@ -66,6 +66,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     run_migrations(&pool).await?; // Extract migration logic to function
 
+    // --- Initialize GenAI Client Asynchronously ---
+    let ai_client = build_gemini_client()
+        .await?;
+    let ai_client_arc = Arc::new(ai_client); // Wrap in Arc for AppState
+
     // --- Session Store Setup ---
     // Ideally load from config/env, generating is okay for dev
     let session_store = DieselSessionStore::new(pool.clone());
@@ -73,20 +78,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Generate a signing key for cookies
     let secret_key = env::var("COOKIE_SIGNING_KEY").expect("COOKIE_SIGNING_KEY must be set");
     let key_bytes = hex::decode(secret_key).context("Invalid COOKIE_SIGNING_KEY format (must be hex)")?;
-    let _cookie_signing_key = CookieKey::from(&key_bytes);
+    let _cookie_signing_key = CookieKey::from(&key_bytes); // Renamed variable for clarity
 
     // Build the session manager layer (handles session data)
     let session_manager_layer = SessionManagerLayer::new(session_store)
         .with_secure(false) // Set based on env/config in production
         .with_same_site(SameSite::Lax)
+        // .with_signing_key(cookie_signing_key.clone()) // REMOVED: Signing is handled by CookieManagerLayer now
         .with_expiry(Expiry::OnInactivity(time::Duration::days(7)));
 
-    // Build the signed cookie layer (handles cookie signing)
-    // REMOVED: let signed_cookie_layer = SignedCookieLayer::new(cookie_signing_key.clone());
-
-    // Note: AuthManagerLayerBuilder expects the SessionStore implementor.
-    // tower-cookies layers need to be applied *outside* the auth layer usually.
-    // Let's pass SessionManagerLayer to AuthManagerLayerBuilder and apply cookie layers later.
 
     // Configure the auth backend
     let auth_backend = AuthBackend::new(pool.clone());
@@ -94,8 +94,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Build the auth layer, passing the SessionManagerLayer
     let auth_layer = AuthManagerLayerBuilder::new(auth_backend, session_manager_layer).build();
 
-    // Create AppState 
-    let app_state = AppState::new(pool.clone(), config.clone()); // Pass Arc<Config>
+    // Create AppState - pass the initialized AI client Arc
+    let app_state = AppState::new(pool.clone(), config.clone(), ai_client_arc); // Pass Arc<GenAiClient>
 
     // --- Define Protected Routes ---
     let protected_api_routes = Router::new()
@@ -127,7 +127,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .nest("/api", public_api_routes)
         .nest("/api", protected_api_routes) // Mount protected routes also under /api
         .layer(auth_layer) // Apply auth layer (handles session loading/user identification)
-        .layer(CookieManagerLayer::new()) // Apply cookie management
+        // Apply cookie management layer *after* the auth layer if it needs access to session data set by auth
+        // OR before if auth layer needs cookies set by it. Axum layers execute outside-in.
+        // Usually CookieManagerLayer goes near the outside.
+        .layer(CookieManagerLayer::new())
         .with_state(app_state)
         .layer(
             TraceLayer::new_for_http()

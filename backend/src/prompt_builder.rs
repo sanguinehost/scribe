@@ -1,147 +1,64 @@
 use crate::{
     errors::AppError,
     models::{
-        character_card::Character,
-        chat::{ChatMessage, ChatSession, MessageType},
+        characters::CharacterMetadata,
+        chats::{ChatMessage, MessageRole},
     },
-    schema,
 };
-use diesel::prelude::*;
-use deadpool_diesel::postgres::Pool;
-use uuid::Uuid;
-
-const MAX_HISTORY_MESSAGES: usize = 20; // Limit the number of messages included in the prompt
 
 /// Assembles the prompt for the LLM based on character, session settings, and history.
-pub async fn assemble_prompt(
-    pool: &Pool,
-    session_id: Uuid,
-    latest_user_message_content: &str, // The newest message not yet in history
+pub fn build_prompt(
+    character: Option<&CharacterMetadata>,
+    history: &[ChatMessage],
 ) -> Result<String, AppError> {
-    let conn = pool.get().await?;
-
-    // Use interact to run DB queries off the Tokio thread pool
-    let (maybe_session, history_result) = conn
-        .interact(move |conn| {
-            // 1. Get the session (don't fail here if not found yet)
-            let maybe_session = schema::chat_sessions::table
-                .find(session_id)
-                .select(ChatSession::as_select())
-                .first::<ChatSession>(conn)
-                .optional()?;
-            
-            // If session exists, get history, otherwise return empty history
-            let history = if let Some(session) = &maybe_session {
-                 schema::chat_messages::table
-                    .filter(schema::chat_messages::session_id.eq(session.id))
-                    .order(schema::chat_messages::created_at.desc())
-                    .limit(MAX_HISTORY_MESSAGES as i64) // Cast usize to i64 for limit
-                    .select(ChatMessage::as_select())
-                    .load::<ChatMessage>(conn)?
-                    .into_iter()
-                    .rev() // Reverse to get chronological order (oldest first)
-                    .collect::<Vec<_>>()
-            } else {
-                Vec::new() // Return empty vec if session doesn't exist
-            };
-
-            // Return session option and history result separately
-            Ok::<_, diesel::result::Error>((maybe_session, history))
-        })
-        .await
-        .map_err(|e| AppError::InternalServerError(anyhow::anyhow!("DB interact error: {}", e)))??;
-
-    // Now, check if the session was found. If not, return NotFound.
-    let session = maybe_session
-        .ok_or_else(|| AppError::NotFound(format!("Chat session {} not found", session_id)))?;
-    let history = history_result; // Already Vec<ChatMessage>
-
-    // Get character associated with the found session
-    // This needs another DB call or a join in the first interact block
-    // Let's add a separate call for simplicity for now
-    let character = conn
-        .interact(move |conn| {
-             schema::characters::table
-                .find(session.character_id)
-                .select(Character::as_select())
-                .first::<Character>(conn)
-        })
-        .await??; // Propagate interact error then Diesel error
-
-    // --- Assemble the prompt string ---
-
     let mut prompt = String::new();
+    let char_name = character.map(|c| c.name.as_str()).unwrap_or("Character");
 
-    // Character details (Using fields available in Character model)
-    prompt.push_str(&format!("Character Name: {}\n", character.name));
-     if let Some(description) = &character.description {
-         prompt.push_str(&format!("Description: {}\n", description));
-     }
-     if let Some(personality) = &character.personality {
-         prompt.push_str(&format!("Personality: {}\n", personality));
-     }
-     if let Some(scenario) = &character.scenario {
-         prompt.push_str(&format!("Scenario: {}
-", scenario));
-     }
-    // Add other relevant character fields if needed (e.g., example_dialogue)
-    prompt.push_str("
-");
-
-
-    // System prompt (from session settings - Task 4.x)
-    if let Some(system_prompt) = &session.system_prompt {
-        if !system_prompt.trim().is_empty() {
-            prompt.push_str(&format!("System Prompt: {}
-
-", system_prompt));
+    // Character details (if provided)
+    if let Some(char_data) = character {
+        prompt.push_str(&format!("Character Name: {}\n", char_data.name));
+        if let Some(description) = &char_data.description {
+            prompt.push_str(&format!("Description: {}\n", description));
         }
+        // Add other fields from CharacterMetadata if needed (persona, scenario, etc.)
+        // Note: The current CharacterMetadata struct in models/characters.rs
+        // only has id, user_id, name, description, created_at, updated_at.
+        // It needs to be updated to include persona, scenario etc. if they are
+        // required for the prompt.
+        /*
+        if let Some(personality) = &char_data.persona { // Assuming persona field exists
+            prompt.push_str(&format!("Personality: {}\n", personality));
+        }
+        if let Some(scenario) = &char_data.world_scenario { // Assuming world_scenario field exists
+            prompt.push_str(&format!("Scenario: {}\n", scenario));
+        }
+        */
+        prompt.push_str("\n");
     }
 
-    // Static Instruction (Using --- instead of ###)
-    prompt.push_str("---
-Instruction:
-Continue the chat based on the conversation history. Stay in character.
----
+    // Static Instruction
+    prompt.push_str("---\nInstruction:\nContinue the chat based on the conversation history. Stay in character.\n---\n\n");
 
-");
-
-    // History (Using --- instead of ###)
-    prompt.push_str("---
-History:
-");
-    if history.is_empty() && latest_user_message_content.trim().is_empty() {
-         prompt.push_str("(Start of conversation)
-");
+    // History
+    prompt.push_str("---\nHistory:\n");
+    if history.is_empty() {
+        prompt.push_str("(Start of conversation)\n");
     } else {
         for message in history {
-            let prefix = match message.message_type {
-                MessageType::User => "User",
-                MessageType::Ai => {
-                    // Use character.name directly (it's String)
-                    &character.name
-                }
+            // Determine prefix based on the message role
+            let prefix = match message.message_type { // Use message_type instead of role
+                MessageRole::User => "User:",
+                MessageRole::Assistant => "Assistant:",
+                MessageRole::System => "System:", // Include system messages if present
             };
-            // Ensure content is trimmed and formatted correctly
             prompt.push_str(&format!("{}: {}
 ", prefix, message.content.trim()));
         }
-         // Add the latest user message that triggered this generation
-         if !latest_user_message_content.trim().is_empty() {
-            // Ensure content is trimmed
-            prompt.push_str(&format!("User: {}
-", latest_user_message_content.trim()));
-         }
     }
-    prompt.push_str("---
-"); // End History section
-
+    prompt.push_str("---\n"); // End History section
 
     // Final prompt for AI completion
-     // Use character.name directly (it's String)
-     let char_name = &character.name;
-     prompt.push_str(&format!("\n{}:", char_name)); // AI should start its response here
-
+    prompt.push_str(&format!("\n{}:", char_name));
 
     Ok(prompt)
 }

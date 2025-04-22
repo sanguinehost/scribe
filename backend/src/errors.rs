@@ -27,7 +27,8 @@ use tower_sessions::session_store::Error as SessionStoreError;
 use uuid::Error as UuidError;
  // For testing AnyhowError path
 
-
+// AppError should automatically be Send + Sync if all its fields are.
+// Remove Send and Sync from derive list.
 #[derive(Error, Debug)]
 pub enum AppError {
     // --- Authentication/Authorization Errors ---

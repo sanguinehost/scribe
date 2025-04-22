@@ -1758,6 +1758,21 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6dbf3de79e51f3d586ab4cb9d5c3e2c14aa28ed23d180cf89b4df0454a69cc87"
 
 [[package]]
+name = "httpc-test"
+version = "0.1.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a0d788a4e5e85f11802600a68dc81e7cd7f1c203bfd383a6eae1371dd76a9dd2"
+dependencies = [
+ "cookie",
+ "reqwest 0.12.15",
+ "reqwest_cookie_store",
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
+ "tokio",
+]
+
+[[package]]
 name = "httpdate"
 version = "1.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3421,6 +3436,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "reqwest_cookie_store"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a0b36498c7452f11b1833900f31fbb01fc46be20992a50269c88cf59d79f54e9"
+dependencies = [
+ "bytes",
+ "cookie_store",
+ "reqwest 0.12.15",
+ "url",
+]
+
+[[package]]
 name = "retry-policies"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3655,6 +3682,7 @@ dependencies = [
  "bytes",
  "cargo-tarpaulin",
  "chrono",
+ "clap",
  "cookie",
  "crc32fast",
  "deadpool",
@@ -3670,6 +3698,7 @@ dependencies = [
  "hex",
  "http 1.3.1",
  "http-body-util",
+ "httpc-test",
  "hyper-util",
  "image",
  "jsonwebtoken",
@@ -3701,6 +3730,7 @@ dependencies = [
  "tower-sessions",
  "tracing",
  "tracing-subscriber",
+ "url",
  "uuid",
  "zip",
 ]

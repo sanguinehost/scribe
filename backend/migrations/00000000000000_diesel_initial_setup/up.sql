@@ -5,8 +5,13 @@
 -- Enable UUID generation
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
--- Define message type enum used in chat_messages (Renamed from speaker_type)
-CREATE TYPE message_type AS ENUM ('User', 'Ai'); -- Match Rust enum casing if possible, check diesel-derive-enum docs
+-- Drop dependent objects first if they exist (idempotent)
+-- Note: Order matters. Drop table before type.
+DROP TABLE IF EXISTS chat_messages;
+DROP TYPE IF EXISTS message_type;
+
+-- Define message type enum using standard roles
+CREATE TYPE message_type AS ENUM ('User', 'Assistant', 'System'); -- Changed 'Ai' to 'Assistant', added 'System'
 
 -- Function to automatically update 'updated_at' timestamps
 CREATE OR REPLACE FUNCTION diesel_manage_updated_at(_tbl regclass) RETURNS VOID AS $$
@@ -142,11 +147,11 @@ SELECT diesel_manage_updated_at('chat_sessions');
 CREATE INDEX idx_chat_sessions_user_id ON chat_sessions (user_id);
 CREATE INDEX idx_chat_sessions_character_id ON chat_sessions (character_id);
 
--- Chat Messages table (Inferred structure)
+-- Recreate Chat Messages table (using the corrected message_type)
 CREATE TABLE chat_messages (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     session_id UUID NOT NULL REFERENCES chat_sessions(id) ON DELETE CASCADE,
-    message_type message_type NOT NULL, -- Renamed from speaker, uses new type name
+    message_type message_type NOT NULL, -- Uses corrected type
     content TEXT NOT NULL,
     rag_embedding_id UUID NULL, -- Added to match model Option<Uuid>, nullable
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),

@@ -7,12 +7,16 @@ use axum_login::AuthSession;
 use crate::{
     auth::user_store::Backend as AuthBackend,
     errors::AppError,
-    models::chat::{ChatSession, NewChatSession, ChatMessage, MessageType, NewChatMessage},
+    models::{
+        chats::{ChatSession, NewChatSession, ChatMessage, MessageRole, NewChatMessage, NewChatMessageRequest},
+        characters::CharacterMetadata,
+    },
     prompt_builder,
-    schema,
+    schema::{self, chat_messages, chat_sessions, characters},
     state::AppState,
+    llm::gemini_client,
 };
-use tracing::error;
+use tracing::{error, info, instrument};
 
 // Request body for creating a new chat session
 #[derive(Deserialize)]
@@ -21,23 +25,10 @@ pub struct CreateChatRequest {
     // Add other fields if needed, e.g., initial title
 }
 
-// Request body for saving a new chat message
-#[derive(Deserialize)]
-pub struct SaveMessageRequest {
-    message_type: MessageType, // User or Ai
-    content: String,
-}
-
-// Response body for saving a new chat message (returning the created message)
-#[derive(Serialize)] // Need Serialize for the response
-pub struct SaveMessageResponse {
-    message: ChatMessage,
-}
-
 // Request body for generating a response
 #[derive(Deserialize)]
 pub struct GenerateRequest {
-    content: String,
+    // Removed unused field: content: String,
 }
 
 // Response body for generating a response
@@ -48,6 +39,7 @@ pub struct GenerateResponse {
 
 /// Creates a new chat session associated with a character for the authenticated user.
 #[debug_handler]
+#[instrument(skip(state, auth_session, payload), fields(user_id = ?auth_session.user.as_ref().map(|u| u.id)), err)]
 pub async fn create_chat_session(
     State(state): State<AppState>,
     auth_session: AuthSession<AuthBackend>,
@@ -74,14 +66,11 @@ pub async fn create_chat_session(
                     let new_session = NewChatSession {
                         user_id,
                         character_id,
-                        title: None,
-                        system_prompt: None,
-                        temperature: None,
-                        max_output_tokens: None,
                     };
 
                     diesel::insert_into(schema::chat_sessions::table)
                         .values(&new_session)
+                        .returning(ChatSession::as_returning())
                         .get_result::<ChatSession>(conn)
                         .map_err(|e| {
                             error!("Failed to insert new chat session: {}", e);
@@ -104,6 +93,7 @@ pub async fn create_chat_session(
 
 /// Lists all chat sessions belonging to the authenticated user.
 #[debug_handler]
+#[instrument(skip(state, auth_session), fields(user_id = ?auth_session.user.as_ref().map(|u| u.id)), err)]
 pub async fn list_chat_sessions(
     State(state): State<AppState>,
     auth_session: AuthSession<AuthBackend>,
@@ -137,6 +127,7 @@ pub async fn list_chat_sessions(
 
 /// Retrieves messages for a specific chat session owned by the authenticated user.
 #[debug_handler]
+#[instrument(skip(state, auth_session), fields(user_id = ?auth_session.user.as_ref().map(|u| u.id), %session_id), err)]
 pub async fn get_chat_messages(
     State(state): State<AppState>,
     auth_session: AuthSession<AuthBackend>,
@@ -186,187 +177,188 @@ pub async fn get_chat_messages(
     Ok(Json(messages))
 }
 
-/// Saves a new message (User or AI) to a specific chat session owned by the authenticated user.
-#[debug_handler]
-pub async fn save_chat_message(
-    State(state): State<AppState>,
-    auth_session: AuthSession<AuthBackend>,
-    Path(session_id): Path<Uuid>,
-    Json(payload): Json<SaveMessageRequest>,
-) -> Result<impl IntoResponse, AppError> {
-    let user = auth_session.user.ok_or_else(|| AppError::Unauthorized("Authentication required".to_string()))?;
-    let user_id = user.id;
+// Updated internal save function - simplified, removes user_id check
+#[instrument(skip(conn), err)]
+fn save_chat_message_internal(
+    conn: &mut PgConnection,
+    session_id: Uuid,
+    role: MessageRole,
+    content: String,
+) -> Result<ChatMessage, AppError> {
+    let new_message = NewChatMessage {
+        session_id,
+        message_type: role,
+        content,
+    };
 
-    // Input validation (basic)
-    if payload.content.trim().is_empty() {
-        return Err(AppError::BadRequest("Message content cannot be empty".into()));
-    }
-
-    let saved_message = state
-        .pool
-        .get()
-        .await?
-        .interact(move |conn| {
-            // 1. Verify session exists and belongs to the user
-            let session_owner_id = schema::chat_sessions::table
-                .filter(schema::chat_sessions::id.eq(session_id))
-                .select(schema::chat_sessions::user_id)
-                .first::<Uuid>(conn)
-                .optional()?;
-
-            match session_owner_id {
-                Some(owner_id) => {
-                    if owner_id != user_id {
-                        Err(AppError::Forbidden)
-                    } else {
-                        // 2. Create and insert the new message
-                        let new_message = NewChatMessage {
-                            session_id,
-                            message_type: payload.message_type,
-                            content: payload.content,
-                            rag_embedding_id: None, // RAG embedding ID will be set later
-                        };
-
-                        diesel::insert_into(schema::chat_messages::table)
-                            .values(&new_message)
-                            .get_result::<ChatMessage>(conn)
-                            .map_err(|e| {
-                                error!("Failed to insert chat message: {}", e);
-                                AppError::DatabaseQueryError(e)
-                            })
-                    }
-                }
-                None => {
-                    Err(AppError::NotFound("Chat session not found".into()))
-                }
-            }
+    diesel::insert_into(chat_messages::table)
+        .values(&new_message)
+        .returning(ChatMessage::as_returning())
+        .get_result::<ChatMessage>(conn)
+        .map_err(|e| {
+            error!(%session_id, ?role, error=?e, "DB Insert Error in save_chat_message_internal");
+            AppError::DatabaseQueryError(e)
         })
-        .await
-        .map_err(|interact_err| {
-            tracing::error!("InteractError in save_chat_message: {}", interact_err);
-            AppError::InternalServerError(anyhow::anyhow!("DB interact error: {}", interact_err))
-        })??;
-
-    // Return the created message
-    Ok((StatusCode::CREATED, Json(SaveMessageResponse { message: saved_message })))
 }
 
-/// Generates an AI response for a chat session based on the user's message.
-/// Saves both the user message and the AI response.
+/// Generates a response from the AI for the given chat session.
+/// Saves the user's message and the AI's response.
 #[debug_handler]
+#[instrument(skip(state, auth_session, payload), fields(user_id = ?auth_session.user.as_ref().map(|u| u.id), %session_id), err)]
 pub async fn generate_chat_response(
     State(state): State<AppState>,
     auth_session: AuthSession<AuthBackend>,
     Path(session_id): Path<Uuid>,
-    Json(payload): Json<GenerateRequest>,
+    Json(payload): Json<NewChatMessageRequest>, // Use model struct directly
 ) -> Result<impl IntoResponse, AppError> {
-    let user = auth_session.user.ok_or_else(|| AppError::Unauthorized("Authentication required".to_string()))?;
+    info!("Generating chat response");
+    let user = auth_session.user.ok_or_else(|| {
+        error!("Authentication required for generate_chat_response");
+        AppError::Unauthorized("Authentication required".to_string())
+    })?;
     let user_id = user.id;
-    let user_message_content = payload.content;
 
-    // Basic validation
-    if user_message_content.trim().is_empty() {
+    // Basic input validation
+    if payload.content.trim().is_empty() {
+        error!("Attempted to send empty message");
         return Err(AppError::BadRequest("Message content cannot be empty".into()));
     }
 
-    // --- Transaction Block --- 
-    // It might be better to perform these operations within a DB transaction 
-    // to ensure atomicity, especially saving user message, generating, saving AI message.
-    // However, the LLM call is external, making a pure DB transaction tricky.
-    // For MVP, we proceed sequentially. Consider distributed transaction patterns later if needed.
+    let user_message_content = payload.content.clone();
+    let pool = state.pool.clone(); // Clone pool for the first interact
+    let ai_client = state.ai_client.clone(); // Clone AI client
 
-    // 1. Verify session ownership (also done implicitly when saving messages)
-    let conn = state.pool.get().await?;
-    conn.interact(move |conn| {
-        schema::chat_sessions::table
-            .filter(schema::chat_sessions::id.eq(session_id))
-            .filter(schema::chat_sessions::user_id.eq(user_id))
-            .select(schema::chat_sessions::id)
-            .first::<Uuid>(conn)
-            .optional()
-    })
-    .await?? // Double ?? to handle interact error then Option error
-    .ok_or_else(|| AppError::NotFound("Chat session not found or access denied".into()))?; 
-
-
-    // 2. Save the user's message
-    let user_message = {
-        let pool = state.pool.clone(); // Clone pool for async move block
-        async move {
-            let conn = pool.get().await?;
-            conn.interact(move |conn| {
-                let new_message = NewChatMessage {
-                    session_id,
-                    message_type: MessageType::User,
-                    content: user_message_content.clone(), // Clone content
-                    rag_embedding_id: None,
-                };
-                diesel::insert_into(schema::chat_messages::table)
-                    .values(&new_message)
-                    .get_result::<ChatMessage>(conn)
+    // --- First Interact: Validate, Fetch data, Save user message, Build prompt ---    
+    info!("Starting first DB interaction (fetch data, save user msg)");
+    let prompt = pool
+        .get()
+        .await?
+        .interact(move |conn| {
+            conn.transaction(|transaction_conn| {
+                // 1. Retrieve session & character, ensuring ownership
+                info!("Fetching session and character");
+                // --- Query 1: Fetch Chat Session ---
+                info!("Fetching chat session by ID and user ID");
+                let chat_session = chat_sessions::table
+                    .filter(chat_sessions::id.eq(session_id))
+                    .filter(chat_sessions::user_id.eq(user_id)) // Ensure ownership
+                    .select(ChatSession::as_select())
+                    .first::<ChatSession>(transaction_conn)
                     .map_err(|e| {
-                        error!("Failed to insert chat message: {}", e);
-                        AppError::DatabaseQueryError(e)
-                    })
-            })
-            .await? // Propagates JoinError -> AppError
-            // The inner result from interact is Result<ChatMessage, AppError>,
-            // so the final result of the block is Result<ChatMessage, AppError>
-        }
-        .await? // Propagates error from the outer async block's Result
-    };
+                        error!(?e, "Failed to fetch chat session or permission denied");
+                        match e {
+                            diesel::result::Error::NotFound => AppError::NotFound("Chat session not found or permission denied".into()),
+                            _ => AppError::DatabaseQueryError(e),
+                        }
+                    })?;
+                info!(session_id=%chat_session.id, character_id=%chat_session.character_id, "Chat session fetched successfully");
 
-    // 3. Assemble the prompt
-    // Pass the user message content directly, as it's not yet in the DB history used by assemble_prompt internal query
-    let _prompt = prompt_builder::assemble_prompt(
-        &state.pool, 
-        session_id, 
-        &user_message.content
-    ).await?;
-
-    // TODO: Re-implement Gemini client access (e.g., build it here or get from state if added back)
-    // let client_ref = &state.gemini_client; // Commented out due to removal from AppState
-
-    // 4. Call the Gemini client function
-    // TODO: Re-implement Gemini client access
-    // let gemini_response = generate_simple_response(client_ref, user_message_content).await?;
-
-    // 5. Save the AI's response message
-    let ai_message = {
-         let pool = state.pool.clone(); // Clone pool again
-         // Make the block return Result
-         async move {
-            let conn = pool.get().await?;
-            conn.interact(move |conn| {
-                let new_message = NewChatMessage {
-                    session_id,
-                    message_type: MessageType::Ai,
-                    content: "This is the mocked AI response.".to_string(), // Use the mocked content from the test
-                    rag_embedding_id: None,
-                };
-                diesel::insert_into(schema::chat_messages::table)
-                    .values(&new_message)
-                    .get_result::<ChatMessage>(conn)
+                // --- Query 2: Fetch Character ---
+                let character_id_for_query = chat_session.character_id; // Use ID from fetched session
+                info!(%character_id_for_query, "Fetching character by ID");
+                let character = characters::table
+                    .filter(characters::id.eq(character_id_for_query))
+                    // Optional: Add user_id check here too for extra safety, though session check should cover it
+                    // .filter(characters::user_id.eq(user_id))
+                    .select(CharacterMetadata::as_select())
+                    .first::<CharacterMetadata>(transaction_conn)
                     .map_err(|e| {
-                        error!("Failed to save AI response message: {}", e);
-                        AppError::DatabaseQueryError(e)
-                    })
-            })
-            .await? // Propagates JoinError -> AppError
-            // The inner result is Result<ChatMessage, AppError>
-         }
-         .await? // Propagates error from the outer async block's Result
-    };
+                        error!(?e, character_id = %character_id_for_query, "Failed to fetch character associated with session");
+                        match e {
+                            diesel::result::Error::NotFound => AppError::NotFound("Character associated with the session not found".into()),
+                            _ => AppError::DatabaseQueryError(e),
+                        }
+                    })?;
+                info!(character_id=%character.id, character_name=%character.name, "Character fetched successfully");
+                // info!(character_id=%chat_session.character_id, "Session and character fetched successfully"); // Original combined log
 
-    // 6. Return the AI's response
-    Ok((StatusCode::OK, Json(GenerateResponse { ai_message })))
+                // 2. Fetch recent messages
+                info!("Fetching recent messages");
+                let recent_messages = chat_messages::table
+                    .filter(chat_messages::session_id.eq(session_id))
+                    .order(chat_messages::created_at.desc()) // Fetch in reverse chronological
+                    .limit(20) // TODO: Make limit configurable
+                    .select(ChatMessage::as_select())
+                    .load::<ChatMessage>(transaction_conn)?
+                    .into_iter()
+                    .rev() // Reverse to get chronological order for prompt building
+                    .collect::<Vec<_>>();
+                info!(count=recent_messages.len(), "Recent messages fetched");
+
+                // 3. Save User's message (Insert directly)
+                info!("Saving user message");
+                let new_user_message = NewChatMessage {
+                    session_id,
+                    message_type: MessageRole::User,
+                    content: user_message_content, // Use the cloned content
+                };
+                let user_message = diesel::insert_into(chat_messages::table)
+                    .values(&new_user_message)
+                    .returning(ChatMessage::as_returning())
+                    .get_result::<ChatMessage>(transaction_conn)
+                    .map_err(|e| {
+                        error!(?e, "Failed to insert user message");
+                        AppError::DatabaseQueryError(e)
+                    })?;
+                info!(message_id=%user_message.id, "User message saved");
+
+                // Combine newly saved message with previously fetched messages for the prompt
+                let messages_for_prompt = recent_messages.into_iter().chain(std::iter::once(user_message)).collect::<Vec<_>>();
+
+                // 4. Build the prompt string
+                info!("Building prompt");
+                let prompt = prompt_builder::build_prompt(Some(&character), &messages_for_prompt)?;
+                info!(prompt_length=prompt.len(), "Prompt built");
+                Ok::<_, AppError>(prompt)
+            }) // End transaction
+        }) // End interact
+        .await // await the result of interact
+        .map_err(|interact_err| {
+             error!(error=?interact_err, "InteractError during prompt build phase");
+             AppError::InternalServerError(anyhow::anyhow!("DB interact error (prompt build): {}", interact_err))
+        })??; // Handle interact error then inner DB error
+    info!("First DB interaction complete");
+
+    // --- AI Call (outside interact) ---
+    info!("Calling AI service");
+    let ai_content = gemini_client::generate_simple_response(&ai_client, prompt)
+        .await
+        .map_err(|e| {
+            error!(error=?e, "AI generation failed");
+            AppError::GenerationError(e.to_string())
+        })?;
+    info!(response_length=ai_content.len(), "AI response received");
+
+    // --- Second Interact: Save AI message ---    
+    info!("Starting second DB interaction (save AI msg)");
+    let pool2 = state.pool.clone(); // Clone pool again for the second interact
+    let ai_response_message = pool2
+        .get()
+        .await?
+        .interact(move |conn| {
+            // Call simplified internal function (no user_id needed)
+            save_chat_message_internal(
+                conn,
+                session_id,
+                MessageRole::Assistant,
+                ai_content, // Use the content received from AI
+            )
+        }) // End interact (no transaction needed for single insert, but keep for consistency maybe? Let's remove it for now)
+        .await // await the result of interact
+         .map_err(|interact_err| {
+             error!(error=?interact_err, "InteractError during AI message save");
+             AppError::InternalServerError(anyhow::anyhow!("DB interact error (save AI msg): {}", interact_err))
+        })??; // Handle interact error then DB error
+    info!(message_id=%ai_response_message.id, "AI message saved. Interaction complete.");
+
+    Ok((StatusCode::OK, Json(GenerateResponse { ai_message: ai_response_message })))
 }
 
 /// Defines the routes related to chat sessions and messages.
 pub fn chat_routes() -> Router<AppState> {
     Router::new()
         .route("/", post(create_chat_session).get(list_chat_sessions))
-        .route("/{session_id}/messages", get(get_chat_messages).post(save_chat_message))
+        .route("/{session_id}/messages", get(get_chat_messages))
         .route("/{session_id}/generate", post(generate_chat_response))
 }
 

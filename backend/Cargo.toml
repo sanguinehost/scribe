@@ -48,7 +48,7 @@ hex = "0.4.3"
 
 genai = "0.2.2"
 
-reqwest = { version = "0.12.15", features = ["json", "multipart", "stream"] }
+reqwest = { version = "0.12.15", features = ["json", "cookies", "rustls-tls", "multipart"], default-features = false }
 reqwest-middleware = { version = "0.4.2" }
 reqwest-retry = { version = "0.7.0"}
 
@@ -58,6 +58,12 @@ diesel_json = "0.2.1"
 image = { version = "0.25.1", default-features = false, features = ["png", "jpeg"] }
 
 envy = "0.4"
+
+# Url (for parsing base URLs, etc.)
+url = "2.5.0"
+
+# CLI Argument Parsing
+clap = { version = "4.5.4", features = ["derive", "env"] }
 
 [dev-dependencies]
 hyper-util = { version = "0.1.6", features = ["full"] }
@@ -81,3 +87,18 @@ test-context = "0.1.4"
 lazy_static = "1.5.0"
 
 rstest = "0.25.0"
+
+# Testing utilities
+httpc-test = "0.1.9" # For testing axum handlers
+
+# Specify the library target explicitly if you also have binaries
+[lib]
+name = "scribe_backend"
+path = "src/lib.rs"
+
+# Add the new binary target for the CLI client
+[[bin]]
+name = "scribe_cli"
+path = "src/bin/scribe_cli.rs"
+# Add required features if the binary needs specific ones enabled from workspace deps
+# required-features = ["cli-feature"]
