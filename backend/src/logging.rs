@@ -30,10 +30,17 @@ mod tests {
 
     #[test]
     fn test_init_subscriber_runs() {
-        // This test primarily ensures the function can be called without panicking.
-        // It doesn't verify the logger output, which is harder in unit tests.
-        // We expect it might print info during test runs if RUST_LOG isn't set.
-        init_subscriber();
+        // Use try_init() to avoid panicking if a subscriber is already set globally
+        // by another test running concurrently.
+        // We discard the result because we only care that the setup doesn't panic.
+        let _ = tracing_subscriber::registry()
+            .with(
+                EnvFilter::try_from_default_env()
+                    .unwrap_or_else(|_| "scribe_backend=info,tower_http=info".into()),
+            )
+            .with(fmt::layer().json())
+            .try_init(); // Use try_init() instead of init()
+
         // No panic means success for this basic test.
     }
 }

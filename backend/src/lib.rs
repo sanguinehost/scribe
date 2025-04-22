@@ -21,3 +21,5 @@ pub type PgPool = DeadpoolPool;
 pub use state::AppState;
 
 // Conditionally compile test helpers only when testing
+#[cfg(test)]
+pub mod test_helpers;

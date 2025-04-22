@@ -13,6 +13,7 @@ use diesel_json::Json; // Import Json wrapper
 use bigdecimal::BigDecimal;
 use crate::schema::characters;
 use crate::models::users::User; // Added import
+use crate::models::character_card::{CharacterCardV3, CharacterCardDataV3}; // Import the actual structs
 
 #[derive(
     Queryable, Selectable, Insertable, AsChangeset, Serialize, Deserialize, Debug, Clone, PartialEq,
@@ -200,4 +201,147 @@ pub struct NewCharacterMetadata<'a> {
     pub description: Option<&'a str>,
     // Add other required fields that come directly from the parsed card
     // e.g., pub persona: Option<&'a str>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::character_card::{CharacterCardV3, CharacterCardDataV3}; // Import the actual structs
+    use crate::services::character_parser::ParsedCharacterCard; // Import the enum
+    use serde_json;
+    use uuid::Uuid;
+    use chrono::Utc;
+
+    // Helper function to create a dummy V3 card
+    fn create_dummy_v3_card() -> ParsedCharacterCard {
+        ParsedCharacterCard::V3(CharacterCardV3 {
+            spec: "chara_card_v3_spec".to_string(),
+            spec_version: "1.0.0".to_string(),
+            data: CharacterCardDataV3 {
+                name: Some("Test V3 Name".to_string()),
+                description: "V3 Description".to_string(),
+                personality: "".to_string(), // Empty string
+                first_mes: "V3 First Message".to_string(),
+                mes_example: "V3 Example".to_string(),
+                scenario: "".to_string(),
+                system_prompt: "V3 System".to_string(),
+                creator_notes: "V3 Creator Notes".to_string(),
+                tags: vec!["tag1".to_string(), "".to_string(), "tag3".to_string()], // Include empty tag
+                creator: "V3 Creator".to_string(),
+                character_version: "v1.2".to_string(),
+                alternate_greetings: vec!["Hi".to_string(), "Hello".to_string()],
+                // Explicitly add missing fields with default values
+                post_history_instructions: Default::default(),
+                character_book: None,
+                assets: None,
+                nickname: None,
+                creator_notes_multilingual: None,
+                source: None,
+                group_only_greetings: Default::default(),
+                creation_date: None,
+                modification_date: None,
+                extensions: Default::default(), // Keep extensions
+            },
+        })
+    }
+
+    // Helper function to create a dummy V2 card
+     fn create_dummy_v2_card() -> ParsedCharacterCard {
+        ParsedCharacterCard::V2Fallback(CharacterCardDataV3 { // V2 uses the V3 data struct as fallback
+            name: Some("Test V2 Name".to_string()),
+            description: "V2 Description".to_string(),
+            personality: "V2 Personality".to_string(),
+            first_mes: "".to_string(), // Empty string
+            mes_example: "V2 Example".to_string(),
+            scenario: "V2 Scenario".to_string(),
+            system_prompt: "".to_string(),
+            creator_notes: "V2 Creator Notes".to_string(),
+            tags: vec!["v2tag1".to_string()],
+            creator: "V2 Creator".to_string(),
+            character_version: "v1.1".to_string(),
+            alternate_greetings: vec![], // Empty vec
+            // Fields specific to V2 or common fields used as fallback
+            // These fields aren't part of CharacterCardDataV3 struct, so remove them or handle differently if needed
+            // greeting: Some("V2 Greeting".to_string()),
+            // avatar: Some("v2_avatar.png".to_string()),
+            // chat: None,
+            // ... other V2 fields if they exist in the struct
+            ..Default::default() // Use default for remaining fields in CharacterCardDataV3
+        })
+    }
+
+    #[test]
+    fn test_updatable_character_from_v3_card() {
+        let v3_card = create_dummy_v3_card();
+        let updatable = UpdatableCharacter::from(&v3_card);
+
+        assert_eq!(updatable.spec, Some("chara_card_v3_spec"));
+        assert_eq!(updatable.spec_version, Some("1.0.0"));
+        assert_eq!(updatable.name, Some("Test V3 Name"));
+        assert_eq!(updatable.description, Some("V3 Description"));
+        assert_eq!(updatable.personality, None); // Empty string maps to None
+        assert_eq!(updatable.first_mes, Some("V3 First Message"));
+        assert_eq!(updatable.mes_example, Some("V3 Example"));
+        assert_eq!(updatable.scenario, None); // Empty string maps to None
+        assert_eq!(updatable.system_prompt, Some("V3 System"));
+        assert_eq!(updatable.creator_notes, Some("V3 Creator Notes"));
+        assert_eq!(updatable.tags, Some(vec!["tag1", "tag3"])); // Empty tag is filtered out
+        assert_eq!(updatable.creator, Some("V3 Creator"));
+        assert_eq!(updatable.character_version, Some("v1.2"));
+        assert_eq!(updatable.alternate_greetings, Some(vec!["Hi", "Hello"]));
+    }
+
+    #[test]
+    fn test_updatable_character_from_v2_card() {
+        let v2_card = create_dummy_v2_card();
+        let updatable = UpdatableCharacter::from(&v2_card);
+
+        assert_eq!(updatable.spec, None); // No spec in V2
+        assert_eq!(updatable.spec_version, None); // No spec_version in V2
+        assert_eq!(updatable.name, Some("Test V2 Name"));
+        assert_eq!(updatable.description, Some("V2 Description"));
+        assert_eq!(updatable.personality, Some("V2 Personality"));
+        assert_eq!(updatable.first_mes, None); // Empty string maps to None
+        assert_eq!(updatable.mes_example, Some("V2 Example"));
+        assert_eq!(updatable.scenario, Some("V2 Scenario"));
+        assert_eq!(updatable.system_prompt, None); // Empty string maps to None
+        assert_eq!(updatable.creator_notes, Some("V2 Creator Notes"));
+        assert_eq!(updatable.tags, Some(vec!["v2tag1"]));
+        assert_eq!(updatable.creator, Some("V2 Creator"));
+        assert_eq!(updatable.character_version, Some("v1.1"));
+        assert_eq!(updatable.alternate_greetings, None); // Empty vec maps to None
+    }
+
+    #[test]
+    fn test_character_metadata_serde() {
+        let dt = Utc::now();
+        let uuid = Uuid::new_v4();
+        let user_uuid = Uuid::new_v4();
+
+        let metadata = CharacterMetadata {
+            id: uuid,
+            user_id: user_uuid,
+            name: "Test Character".to_string(),
+            description: Some("A test description".to_string()),
+            created_at: dt,
+            updated_at: dt,
+        };
+
+        // Serialize
+        let json_string = serde_json::to_string(&metadata).expect("Serialization failed");
+        println!("Serialized JSON: {}", json_string); // Optional: print for debugging
+
+        // Deserialize
+        let deserialized_metadata: CharacterMetadata = serde_json::from_str(&json_string).expect("Deserialization failed");
+
+        // Assert equality (Direct comparison should work due to Clone, PartialEq)
+        assert_eq!(metadata.id, deserialized_metadata.id);
+        assert_eq!(metadata.user_id, deserialized_metadata.user_id);
+        assert_eq!(metadata.name, deserialized_metadata.name);
+        assert_eq!(metadata.description, deserialized_metadata.description);
+        // Note: Comparing DateTime<Utc> directly might be flaky due to precision differences
+        // after serialization/deserialization. Comparing timestamps is safer.
+        assert_eq!(metadata.created_at.timestamp_millis(), deserialized_metadata.created_at.timestamp_millis());
+        assert_eq!(metadata.updated_at.timestamp_millis(), deserialized_metadata.updated_at.timestamp_millis());
+    }
 } 

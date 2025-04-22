@@ -113,7 +113,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // Chat routes (require login)
         .nest("/chats", chat_routes()) // Mount the chat router
         // Add other protected API routes here...
-        .route_layer(login_required!(AuthBackend, login_url = "/api/auth/login")); // Apply login required to all nested routes
+        .route_layer(login_required!(AuthBackend)); // Apply login required, return 401 on failure
 
     // --- Define Public Routes ---
     let public_api_routes = Router::new()

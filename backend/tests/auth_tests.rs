@@ -36,13 +36,11 @@ use serde::de::DeserializeOwned; // For get_json_body
 use serde_json::{json, Value};
 use std::{
     env,
-    sync::Once, 
     sync::Arc,
 };
 use time;
 use tower::ServiceExt; // For `oneshot`
 use tower_cookies::{Cookie, CookieManagerLayer, Cookies};
-use tracing_subscriber::{EnvFilter, fmt}; // For tracing setup
 use uuid::Uuid;
 use tracing::{info, error, instrument};
 use tokio::net::TcpListener;
@@ -55,22 +53,6 @@ use http::header::SET_COOKIE;
 // use tower_sessions::MemoryStore;
 
 // --- Test Helpers (Copied/Adapted from characters_tests.rs) ---
-
-// Global static for ensuring tracing is initialized only once
-static TRACING_INIT: Once = Once::new();
-
-// Helper function to initialize tracing safely (respecting RUST_LOG)
-fn ensure_tracing_initialized() {
-    TRACING_INIT.call_once(|| {
-        let filter = EnvFilter::try_from_default_env()
-            .unwrap_or_else(|_| "scribe_backend=info,tower_http=info,sqlx=warn".into()); // Default filter
-        fmt()
-            .with_env_filter(filter)
-            // .with_test_writer() // Optional: use test writer
-            .try_init()
-            .ok(); // Ignore error if already initialized
-    });
-}
 
 // Helper function to extract JSON body from response
 async fn get_json_body<T: DeserializeOwned>(
@@ -256,7 +238,6 @@ async fn spawn_app(app: Router) -> SocketAddr {
 
 #[tokio::test]
 async fn test_register_success() -> AnyhowResult<()> {
-    ensure_tracing_initialized();
     let pool = create_test_pool();
     let mut guard = TestDataGuard::new(pool.clone());
     let app = build_test_app(pool.clone()).await;
@@ -303,7 +284,6 @@ async fn test_register_success() -> AnyhowResult<()> {
 
 #[tokio::test]
 async fn test_register_duplicate_username() -> AnyhowResult<()> {
-    ensure_tracing_initialized();
     let pool = create_test_pool();
     let mut guard = TestDataGuard::new(pool.clone());
     let app = build_test_app(pool.clone()).await;
@@ -349,15 +329,11 @@ async fn test_register_duplicate_username() -> AnyhowResult<()> {
 
 #[tokio::test]
 async fn test_login_success() -> AnyhowResult<()> {
-    ensure_tracing_initialized();
-    info!("--- Running test: test_login_success ---");
-
     let pool = create_test_pool();
     let mut guard = TestDataGuard::new(pool.clone());
+    let app = build_test_app(pool.clone()).await;
 
-    // 1. Setup: Create a test user with a unique username
-    let unique_part = Uuid::new_v4().to_string()[..8].to_string(); // Use a portion for readability
-    let username = format!("test_login_{}", unique_part);
+    let username = format!("test_login_{}", Uuid::new_v4().to_string()[..8].to_string());
     let password = "testPassword123";
     let user = run_db_op(&pool, {
         let username = username.clone(); // Clone for the closure
@@ -427,13 +403,11 @@ async fn test_login_success() -> AnyhowResult<()> {
 
     // Cleanup
     guard.cleanup().await.context("Failed during cleanup")?;
-    info!("--- Test finished: test_login_success ---");
     Ok(())
 }
 
 #[tokio::test]
 async fn test_login_wrong_password() -> AnyhowResult<()> {
-    ensure_tracing_initialized();
     let pool = create_test_pool();
     let mut guard = TestDataGuard::new(pool.clone());
     let app = build_test_app(pool.clone()).await;
@@ -479,9 +453,7 @@ async fn test_login_wrong_password() -> AnyhowResult<()> {
 
 #[tokio::test]
 async fn test_login_user_not_found() -> AnyhowResult<()> {
-    ensure_tracing_initialized();
     let pool = create_test_pool();
-    let guard = TestDataGuard::new(pool.clone()); // Guard without users
     let app = build_test_app(pool.clone()).await;
 
     let username = format!("login_nonexistent_{}", Uuid::new_v4());
@@ -509,13 +481,11 @@ async fn test_login_user_not_found() -> AnyhowResult<()> {
     assert_eq!(status, StatusCode::UNAUTHORIZED);
     assert_eq!(error_body["error"], "Invalid credentials"); // Or potentially "User not found" depending on error mapping
 
-    guard.cleanup().await?;
     Ok(())
 }
 
 #[tokio::test]
 async fn test_logout_success() -> AnyhowResult<()> {
-    ensure_tracing_initialized();
     let pool = create_test_pool();
     let mut guard = TestDataGuard::new(pool.clone());
     let app = build_test_app(pool.clone()).await;
@@ -583,9 +553,7 @@ async fn test_logout_success() -> AnyhowResult<()> {
 
 #[tokio::test]
 async fn test_logout_no_session() -> AnyhowResult<()> {
-    ensure_tracing_initialized();
     let pool = create_test_pool();
-    let guard = TestDataGuard::new(pool.clone());
     let app = build_test_app(pool.clone()).await;
 
     // Attempt Logout without logging in (no cookie)
@@ -599,13 +567,11 @@ async fn test_logout_no_session() -> AnyhowResult<()> {
     // Logout should still return OK even if no session existed
     assert_eq!(response.status(), StatusCode::OK, "Logout without session failed");
 
-    guard.cleanup().await?;
     Ok(())
 }
 
 #[tokio::test]
 async fn test_me_success() -> AnyhowResult<()> {
-    ensure_tracing_initialized();
     let pool = create_test_pool();
     let mut guard = TestDataGuard::new(pool.clone());
     let app = build_test_app(pool.clone()).await;
@@ -661,9 +627,7 @@ async fn test_me_success() -> AnyhowResult<()> {
 
 #[tokio::test]
 async fn test_me_unauthorized() -> AnyhowResult<()> {
-    ensure_tracing_initialized();
     let pool = create_test_pool();
-    let guard = TestDataGuard::new(pool.clone());
     let app = build_test_app(pool.clone()).await;
 
     // Call /me endpoint without logging in (no cookie)
@@ -677,7 +641,6 @@ async fn test_me_unauthorized() -> AnyhowResult<()> {
     // Assertions
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED, "/me without login should be unauthorized");
 
-    guard.cleanup().await?;
     Ok(())
 }
 
@@ -695,17 +658,14 @@ async fn test_cookie_handler(cookies: Cookies) -> Result<impl IntoResponse, AppE
 
 #[tokio::test]
 async fn test_cookie_layer_sets_cookie() -> AnyhowResult<()> {
-    ensure_tracing_initialized();
-    let _pool = create_test_pool(); // Prefixed with _
-    // Build a minimal app with just the cookie layer and the test handler
     let app = Router::new()
-        .route("/test-cookie", get(test_cookie_handler))
-        .layer(CookieManagerLayer::new()); // Apply only the cookie layer
+        .route("/", get(test_cookie_handler))
+        .layer(CookieManagerLayer::new());
 
     // Send request
     let request = Request::builder()
         .method(Method::GET)
-        .uri("/test-cookie")
+        .uri("/")
         .body(Body::empty())?;
 
     let response = app.oneshot(request).await?;
