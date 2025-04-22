@@ -28,6 +28,7 @@ use tower::ServiceExt;
 use scribe_backend::config::Config;
 use std::sync::Arc;
 use diesel::SelectableHelper;
+use diesel::prelude::*;
 
 // Define the embedded migrations macro
 pub const MIGRATIONS: EmbeddedMigrations = embed_migrations!("./migrations"); // Use relative path from crate root
@@ -240,6 +241,21 @@ pub async fn create_test_chat_session(
     })
     .await
     .expect("Interact failed for create_chat_session")
+}
+
+// Helper to fetch a chat session directly from DB (used for verification)
+pub async fn get_chat_session_from_db(pool: &PgPool, session_id: Uuid) -> Option<ChatSession> {
+    let conn = pool.get().await.expect("Failed to get DB conn for get_chat_session");
+    conn.interact(move |conn| {
+        schema::chat_sessions::table
+            .find(session_id)
+            .select(ChatSession::as_select())
+            .first::<ChatSession>(conn)
+            .optional() // Return Option<ChatSession>
+    })
+    .await
+    .expect("Interact failed for get_chat_session")
+    .expect("DB query failed for get_chat_session") // Handle potential Diesel error inside interact
 }
 
 pub async fn create_test_chat_message(

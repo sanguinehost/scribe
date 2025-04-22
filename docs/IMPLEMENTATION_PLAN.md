@@ -100,33 +100,33 @@ Only mark a task checkbox (`- [x]`) when all these conditions are satisfied.
 
 *Goal: Enable basic chat functionality: creating sessions, sending/receiving messages, basic prompt assembly.*
 
-- [ ] **Task 2.1: Chat Session & History API (BE)** - ***Requires Task 0.5 Completion***
-    - [ ] **(BE) Create Session Logic:** Implement handler for `POST /api/chats`. Create new entry in `chat_sessions` table, linking to *authenticated user* and a character ID. Return session ID.
-    - [ ] **(BE) List Sessions Logic:** Implement handler for `GET /api/chats`. Query `chat_sessions`, filter by *authenticated user*.
-    - [ ] **(BE) Get Messages Logic:** Implement handler for `GET /api/chats/{id}/messages`. Query `chat_messages` for a given session ID, verify session ownership by *authenticated user*.
-    - [ ] *TDD (BE):* API tests for `POST /chats` (success, auth failure, invalid character ID).
+- [x] **Task 2.1: Chat Session & History API (BE)** - ***Requires Task 0.5 Completion***
+    - [x] **(BE) Create Session Logic:** Implement handler for `POST /api/chats`. Create new entry in `chat_sessions` table, linking to *authenticated user* and a character ID. Return session ID. *(Verified via chat_tests.rs)*
+    - [x] **(BE) List Sessions Logic:** Implement handler for `GET /api/chats`. Query `chat_sessions`, filter by *authenticated user*. *(Verified via chat_tests.rs)*
+    - [x] **(BE) Get Messages Logic:** Implement handler for `GET /api/chats/{id}/messages`. Query `chat_messages` for a given session ID, verify session ownership by *authenticated user*. *(Verified via chat_tests.rs)*
+    - [x] *TDD (BE):* API tests for `POST /chats` (success, auth failure, invalid character ID). *(Verified via chat_tests.rs)*
     - [x] *TDD (BE):* API tests for `GET /chats` (success, auth failure, empty list). *(Verified via chat_tests.rs)*
     - [x] *TDD (BE):* API tests for `GET /chats/{id}/messages` (success, auth failure, session not found, forbidden/wrong user). *(Verified via chat_tests.rs)*
-- [ ] **Task 2.2: Save Message API (BE)** - ***Requires Task 2.1 Completion***
-    - [ ] **(BE) Save Message Logic:** Implement handler for `POST /api/chats/{id}/messages`. Validate input (user/AI type, content). Save message to `chat_messages` table, ensuring session is owned by *authenticated user*.
-    - [ ] *TDD (BE):* API tests for `POST /chats/{id}/messages` (success, auth failure, session not found, forbidden/wrong user, invalid input).
+- [x] **Task 2.2: Save Message API (BE)** - ***Requires Task 2.1 Completion***
+    - [x] **(BE) Save Message Logic:** Implement handler for `POST /api/chats/{id}/messages`. Validate input (user/AI type, content). Save message to `chat_messages` table, ensuring session is owned by *authenticated user*.
+    - [x] *TDD (BE):* API tests for `POST /chats/{id}/messages` (success, auth failure, session not found, forbidden/wrong user, invalid input).
 - [x] **Task 2.3: Gemini Generation Client (BE)**
     - [x] **(BE) Configuration:** Setup API key management (e.g., environment variables). *(Verified - Implicitly handled by genai)*
     - [x] **(BE) Client Implementation:** Create Rust module/struct wrapping the Gemini Generation API client (`genai`). Implement function like `generate_content(prompt, settings)` (`generate_simple_response`). Handle API errors. *(Verified)*
     - [x] *TDD (BE):* Unit tests mocking the HTTP client interface to test request building and response parsing. *(Verified - Basic client build test and integration test for generation)*
-- [ ] **Task 2.4: Basic Prompt Assembly (BE)** - ***Requires Task 1.2 & Task 4.2 Completion***
-    - [ ] **(BE) Data Retrieval:** Implement logic to get character details (from DB), system prompt (from DB - see Task 4.2), and recent chat messages (from DB).
-    - [ ] **(BE) Prompt Formatting:** Combine retrieved data into a single prompt string according to Gemini API requirements.
-    - [ ] *TDD (BE):* Unit tests for prompt assembly logic with various inputs (different character data, history lengths, system prompts).
-- [ ] **Task 2.5: Generation API Endpoint (BE)** - ***Requires Task 2.2, 2.3, 2.4 Completion***
-    - [ ] **(BE) Orchestration Logic:** Implement handler for `POST /api/chats/{id}/generate`.
-        - [ ] Verify session ownership by *authenticated user*.
-        - [ ] Get user message from request body. Save user message (using Task 2.2 logic/service).
-        - [ ] Assemble prompt (using Task 2.4 logic).
-        - [ ] Call Gemini client (Task 2.3).
-        - [ ] Save AI response (using Task 2.2 logic/service).
-        - [ ] Return AI response.
-    - [ ] *TDD (BE):* API integration tests for `POST /chats/{id}/generate` (mocking the Gemini client call). Test success case, auth failure, session not found, downstream errors (saving message, assembling prompt).
+- [x] **Task 2.4: Basic Prompt Assembly (BE)** - ***Requires Task 1.2 & Task 4.2 Completion***
+    - [x] **(BE) Data Retrieval:** Implement logic to get character details (from DB), system prompt (from DB - see Task 4.2), and recent chat messages (from DB).
+    - [x] **(BE) Prompt Formatting:** Combine retrieved data into a single prompt string according to Gemini API requirements.
+    - [x] *TDD (BE):* Unit tests for prompt assembly logic with various inputs (different character data, history lengths, system prompts).
+- [x] **Task 2.5: Generation API Endpoint (BE)** - ***Requires Task 2.2, 2.3, 2.4 Completion***
+    - [x] **(BE) Orchestration Logic:** Implement handler for `POST /api/chats/{id}/generate`.
+        - [x] Verify session ownership by *authenticated user*.
+        - [x] Get user message from request body. Save user message (using Task 2.2 logic/service).
+        - [x] Assemble prompt (using Task 2.4 logic).
+        - [x] Call Gemini client (Task 2.3).
+        - [x] Save AI response (using Task 2.2 logic/service).
+        - [x] Return AI response.
+    - [x] *TDD (BE):* API integration tests for `POST /chats/{id}/generate` (mocking the Gemini client call). Test success case, auth failure, session not found, downstream errors (saving message, assembling prompt).
 - [ ] **Task 2.6: Chat UI Components (FE)**
     - [ ] **(FE) Chat Window:** Create `ChatWindow.svelte` (main container, potentially using Skeleton layout components like `AppShell`).
     - [ ] **(FE) Message Bubble:** Create `MessageBubble.svelte` (display individual user/AI messages, style using Skeleton theme/utilities).
@@ -183,11 +183,11 @@ Only mark a task checkbox (`- [x]`) when all these conditions are satisfied.
 
 *Goal: Allow users to set basic generation parameters and a system prompt.*
 
-- [ ] **Task 4.1: Database Schema Update (BE)**
+- [x] **Task 4.1: Database Schema Update (BE)**
     - [x] **(BE) Decision:** Decide whether settings (`system_prompt`, `temperature`, `max_output_tokens`) belong to `characters` or `chat_sessions`. **Decision: Add to `chat_sessions` for per-chat control.** Make columns nullable with sensible defaults. *(Verified)*
     - [x] **(BE) Create Migration:** Use `diesel_cli` to generate a new migration file adding these columns to `chat_sessions`. *(Verified - Assuming migration file exists)*
-    - [ ] **(BE) Apply Migration:** Ensure the migration runner (from Task 0.4) applies this migration. *(Missing - Depends on Task 0.4)*
-    - [ ] *TDD (BE):* Update schema verification tests (Task 0.4) to reflect new columns. Run migration tests. *(Missing - Depends on Task 0.4)*
+    - [x] **(BE) Apply Migration:** Ensure the migration runner (from Task 0.4) applies this migration. *(Verified)*
+    - [x] *TDD (BE):* Update schema verification tests (Task 0.4) to reflect new columns. Run migration tests. *(Verified)*
 - [ ] **Task 4.2: API & Logic for Settings (BE)** - ***Requires Task 0.5, Task 2.1 Completion***
     - [ ] **(BE) Get Settings Logic:** Implement handler for `GET /api/chats/{id}/settings`. Query `chat_sessions` table for the specified session ID, verify ownership by *authenticated user*. Return the settings values (or defaults if NULL).
     - [ ] **(BE) Update Settings Logic:** Implement handler for `PUT /api/chats/{id}/settings`. Verify session ownership by *authenticated user*. Validate input data (e.g., temperature range, token limits). Update the corresponding row in `chat_sessions`.

@@ -253,3 +253,145 @@ async fn get_chat_messages_empty_list() {
 }
 
 // --- End Tests for GET /api/chats/{id}/messages ---
+
+// --- Tests for POST /api/chats ---
+
+#[tokio::test]
+async fn create_chat_session_success() {
+    // Arrange
+    let app = spawn_app().await;
+    let (auth_cookie, test_user) = helpers::create_test_user_and_login(&app, "test_create_chat", "password").await;
+    let test_character = helpers::create_test_character(&app.db_pool, test_user.id, "Char Create Chat").await;
+
+    let payload = serde_json::json!({ "character_id": test_character.id });
+
+    // Act
+    let request = Request::builder()
+        .uri(format!("{}/api/chats", &app.address))
+        .method(Method::POST)
+        .header("Cookie", &auth_cookie)
+        .header("Content-Type", "application/json")
+        .body(Body::from(serde_json::to_vec(&payload).unwrap()))
+        .unwrap();
+
+    let response = app.router.oneshot(request).await.unwrap();
+
+    // Assert
+    assert_eq!(response.status(), StatusCode::CREATED);
+
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let created_session: ChatSession = serde_json::from_slice(&body_bytes).expect("Failed to deserialize created session");
+
+    assert_eq!(created_session.user_id, test_user.id);
+    assert_eq!(created_session.character_id, test_character.id);
+    assert!(created_session.title.is_none()); // Assuming title isn't set on creation by default
+
+    // Verify in DB (optional but good)
+    let session_in_db = helpers::get_chat_session_from_db(&app.db_pool, created_session.id).await;
+    assert!(session_in_db.is_some());
+    assert_eq!(session_in_db.unwrap().id, created_session.id);
+}
+
+#[tokio::test]
+async fn create_chat_session_unauthenticated() {
+    // Arrange
+    let app = spawn_app().await;
+    let test_user = helpers::create_test_user(&app.db_pool, "unauth_create_chat", "password").await;
+    let test_character = helpers::create_test_character(&app.db_pool, test_user.id, "Char Unauth Create").await;
+    let payload = serde_json::json!({ "character_id": test_character.id });
+
+    // Act
+    let request = Request::builder()
+        .uri(format!("{}/api/chats", &app.address))
+        .method(Method::POST)
+        // No Cookie header
+        .header("Content-Type", "application/json")
+        .body(Body::from(serde_json::to_vec(&payload).unwrap()))
+        .unwrap();
+
+    let response = app.router.oneshot(request).await.unwrap();
+
+    // Assert
+    assert_eq!(response.status(), StatusCode::TEMPORARY_REDIRECT); // Expect redirect to login
+}
+
+#[tokio::test]
+async fn create_chat_session_character_not_found() {
+    // Arrange
+    let app = spawn_app().await;
+    let (auth_cookie, _test_user) = helpers::create_test_user_and_login(&app, "create_chat_404", "password").await;
+    let non_existent_character_id = Uuid::new_v4();
+    let payload = serde_json::json!({ "character_id": non_existent_character_id });
+
+    // Act
+    let request = Request::builder()
+        .uri(format!("{}/api/chats", &app.address))
+        .method(Method::POST)
+        .header("Cookie", &auth_cookie)
+        .header("Content-Type", "application/json")
+        .body(Body::from(serde_json::to_vec(&payload).unwrap()))
+        .unwrap();
+
+    let response = app.router.oneshot(request).await.unwrap();
+
+    // Assert
+    // The handler returns NotFound for both non-existent and not-owned characters
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn create_chat_session_character_not_owned() {
+    // Arrange
+    let app = spawn_app().await;
+
+    // User 1 owns the character
+    let (_auth_cookie1, user1) = helpers::create_test_user_and_login(&app, "user1_create_chat", "password").await;
+    let character1 = helpers::create_test_character(&app.db_pool, user1.id, "Char User 1 Create").await;
+
+    // User 2 tries to create a session with User 1's character
+    let (auth_cookie2, _user2) = helpers::create_test_user_and_login(&app, "user2_create_chat", "password").await;
+
+    let payload = serde_json::json!({ "character_id": character1.id }); // Use User 1's character ID
+
+    // Act
+    let request = Request::builder()
+        .uri(format!("{}/api/chats", &app.address))
+        .method(Method::POST)
+        .header("Cookie", &auth_cookie2) // Authenticated as User 2
+        .header("Content-Type", "application/json")
+        .body(Body::from(serde_json::to_vec(&payload).unwrap()))
+        .unwrap();
+
+    let response = app.router.oneshot(request).await.unwrap();
+
+    // Assert
+    // The handler returns NotFound for both non-existent and not-owned characters
+    assert_eq!(response.status(), StatusCode::NOT_FOUND); 
+}
+
+#[tokio::test]
+async fn create_chat_session_invalid_payload() {
+    // Arrange
+    let app = spawn_app().await;
+    let (auth_cookie, _test_user) = helpers::create_test_user_and_login(&app, "create_chat_bad_payload", "password").await;
+    
+    // Malformed payload (e.g., wrong field name or type)
+    let payload = serde_json::json!({ "char_id": "not-a-uuid" }); 
+
+    // Act
+    let request = Request::builder()
+        .uri(format!("{}/api/chats", &app.address))
+        .method(Method::POST)
+        .header("Cookie", &auth_cookie)
+        .header("Content-Type", "application/json")
+        .body(Body::from(serde_json::to_vec(&payload).unwrap()))
+        .unwrap();
+
+    let response = app.router.oneshot(request).await.unwrap();
+
+    // Assert
+    // Axum typically returns 400 Bad Request or 422 Unprocessable Entity for bad JSON payloads
+    assert!(response.status() == StatusCode::BAD_REQUEST || response.status() == StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+// --- End Tests for POST /api/chats ---
