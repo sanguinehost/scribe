@@ -199,7 +199,7 @@ fn insert_test_user_direct(
 }
 
 // Helper function to build the test app router with auth layers
-fn build_test_app(pool: DeadpoolPool<DeadpoolManager>) -> Router {
+async fn build_test_app(pool: DeadpoolPool<DeadpoolManager>) -> Router {
     let session_store = DieselSessionStore::new(pool.clone());
     // Configure the session layer
     let session_layer = SessionManagerLayer::new(session_store)
@@ -214,7 +214,13 @@ fn build_test_app(pool: DeadpoolPool<DeadpoolManager>) -> Router {
     // Assuming 'pool' is already defined
     // Load config and create AppState
     let config = Arc::new(Config::load().expect("Failed to load test config for auth_tests"));
-    let app_state = AppState::new(pool.clone(), config); // Updated line
+    // Build AI client
+    let ai_client = Arc::new(
+        scribe_backend::llm::gemini_client::build_gemini_client()
+            .await
+            .expect("Failed to build Gemini client for auth tests. Is GOOGLE_API_KEY set?"),
+    );
+    let app_state = AppState::new(pool.clone(), config, ai_client);
 
     // Define auth routes
     let auth_routes = Router::new()
@@ -253,7 +259,7 @@ async fn test_register_success() -> AnyhowResult<()> {
     ensure_tracing_initialized();
     let pool = create_test_pool();
     let mut guard = TestDataGuard::new(pool.clone());
-    let app = build_test_app(pool.clone());
+    let app = build_test_app(pool.clone()).await;
 
     let username = format!("register_success_{}", Uuid::new_v4());
     let password = "password123";
@@ -300,7 +306,7 @@ async fn test_register_duplicate_username() -> AnyhowResult<()> {
     ensure_tracing_initialized();
     let pool = create_test_pool();
     let mut guard = TestDataGuard::new(pool.clone());
-    let app = build_test_app(pool.clone());
+    let app = build_test_app(pool.clone()).await;
 
     let username = format!("register_duplicate_{}", Uuid::new_v4());
     let password = "password123";
@@ -364,7 +370,7 @@ async fn test_login_success() -> AnyhowResult<()> {
     info!(user_id = %user.id, %username, "Test user created for login");
 
     // 2. Build App and Spawn Server
-    let app = build_test_app(pool.clone());
+    let app = build_test_app(pool.clone()).await;
     let server_addr = spawn_app(app).await;
     let base_url = format!("http://{}", server_addr);
 
@@ -430,7 +436,7 @@ async fn test_login_wrong_password() -> AnyhowResult<()> {
     ensure_tracing_initialized();
     let pool = create_test_pool();
     let mut guard = TestDataGuard::new(pool.clone());
-    let app = build_test_app(pool.clone());
+    let app = build_test_app(pool.clone()).await;
 
     let username = format!("login_wrong_pass_{}", Uuid::new_v4());
     let correct_password = "password123";
@@ -476,7 +482,7 @@ async fn test_login_user_not_found() -> AnyhowResult<()> {
     ensure_tracing_initialized();
     let pool = create_test_pool();
     let guard = TestDataGuard::new(pool.clone()); // Guard without users
-    let app = build_test_app(pool.clone());
+    let app = build_test_app(pool.clone()).await;
 
     let username = format!("login_nonexistent_{}", Uuid::new_v4());
     let password = "password123";
@@ -512,7 +518,7 @@ async fn test_logout_success() -> AnyhowResult<()> {
     ensure_tracing_initialized();
     let pool = create_test_pool();
     let mut guard = TestDataGuard::new(pool.clone());
-    let app = build_test_app(pool.clone());
+    let app = build_test_app(pool.clone()).await;
 
     let username = format!("logout_success_{}", Uuid::new_v4());
     let password = "password123";
@@ -580,7 +586,7 @@ async fn test_logout_no_session() -> AnyhowResult<()> {
     ensure_tracing_initialized();
     let pool = create_test_pool();
     let guard = TestDataGuard::new(pool.clone());
-    let app = build_test_app(pool.clone());
+    let app = build_test_app(pool.clone()).await;
 
     // Attempt Logout without logging in (no cookie)
     let request = Request::builder()
@@ -602,7 +608,7 @@ async fn test_me_success() -> AnyhowResult<()> {
     ensure_tracing_initialized();
     let pool = create_test_pool();
     let mut guard = TestDataGuard::new(pool.clone());
-    let app = build_test_app(pool.clone());
+    let app = build_test_app(pool.clone()).await;
 
     let username = format!("me_success_{}", Uuid::new_v4());
     let password = "password123";
@@ -658,7 +664,7 @@ async fn test_me_unauthorized() -> AnyhowResult<()> {
     ensure_tracing_initialized();
     let pool = create_test_pool();
     let guard = TestDataGuard::new(pool.clone());
-    let app = build_test_app(pool.clone());
+    let app = build_test_app(pool.clone()).await;
 
     // Call /me endpoint without logging in (no cookie)
     let request = Request::builder()

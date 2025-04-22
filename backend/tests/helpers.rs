@@ -15,7 +15,7 @@ use scribe_backend::models::{
     users::{User, NewUser},
     characters::Character,
     character_card::NewCharacter,
-    chat::{ChatSession, NewChatSession, ChatMessage, NewChatMessage, MessageType},
+    chats::{ChatSession, NewChatSession, ChatMessage, NewChatMessage, MessageRole},
 };
 use scribe_backend::schema;
 use diesel::RunQueryDsl;
@@ -104,7 +104,13 @@ pub async fn spawn_app() -> TestApp {
 
     // --- AppState ---
     let config = Arc::new(Config::load().expect("Failed to load test configuration"));
-    let app_state = AppState::new(db_pool.clone(), config);
+    // Build the AI client (requires GOOGLE_API_KEY in env for tests)
+    let ai_client = Arc::new(
+        scribe_backend::llm::gemini_client::build_gemini_client()
+            .await
+            .expect("Failed to build Gemini client for tests. Is GOOGLE_API_KEY set?"),
+    );
+    let app_state = AppState::new(db_pool.clone(), config, ai_client);
 
     // --- Router Setup (mirroring main.rs structure) ---
     use scribe_backend::routes::{
@@ -226,16 +232,13 @@ pub async fn create_test_chat_session(
     let new_session = NewChatSession {
         user_id,
         character_id,
-        title: Some(format!("Test Chat {}", Uuid::new_v4().to_string().split('-').next().unwrap_or(""))),
-        system_prompt: None,
-        temperature: None,
-        max_output_tokens: None,
     };
 
     let conn = pool.get().await.expect("Failed to get DB conn for create_chat_session");
     conn.interact(move |conn| {
         diesel::insert_into(schema::chat_sessions::table)
             .values(&new_session)
+            .returning(ChatSession::as_returning())
             .get_result::<ChatSession>(conn)
             .expect("Failed to insert test chat session")
     })
@@ -261,20 +264,20 @@ pub async fn get_chat_session_from_db(pool: &PgPool, session_id: Uuid) -> Option
 pub async fn create_test_chat_message(
     pool: &PgPool,
     session_id: Uuid,
-    message_type: MessageType,
+    message_type: MessageRole,
     content: &str,
 ) -> ChatMessage {
     let new_message = NewChatMessage {
         session_id,
         message_type,
         content: content.to_string(),
-        rag_embedding_id: None, // Not relevant for basic tests yet
     };
 
     let conn = pool.get().await.expect("Failed to get DB conn for create_chat_message");
     conn.interact(move |conn| {
         diesel::insert_into(schema::chat_messages::table)
             .values(&new_message)
+            .returning(ChatMessage::as_returning())
             .get_result::<ChatMessage>(conn)
             .expect("Failed to insert test chat message")
     })

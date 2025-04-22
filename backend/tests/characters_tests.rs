@@ -370,7 +370,7 @@ fn insert_test_user_with_password(
 }
 
 // --- Helper to Build Test App (Similar to auth_tests) ---
-fn build_test_app_for_characters(pool: Pool) -> Router {
+async fn build_test_app_for_characters(pool: Pool) -> Router {
     let session_store = DieselSessionStore::new(pool.clone());
     let session_layer = SessionManagerLayer::new(session_store)
         .with_secure(false)
@@ -381,7 +381,13 @@ fn build_test_app_for_characters(pool: Pool) -> Router {
     let auth_layer = AuthManagerLayerBuilder::new(auth_backend, session_layer).build();
 
     let config = Arc::new(Config::load().expect("Failed to load test config for characters_tests"));
-    let app_state = AppState::new(pool.clone(), config);
+    // Build AI client
+    let ai_client = Arc::new(
+        scribe_backend::llm::gemini_client::build_gemini_client()
+            .await
+            .expect("Failed to build Gemini client for characters tests. Is GOOGLE_API_KEY set?"),
+    );
+    let app_state = AppState::new(pool.clone(), config, ai_client);
 
     // Define necessary routes for character tests
     let auth_routes = Router::new()
@@ -467,7 +473,7 @@ mod tests {
         guard.add_user(_user.id);
 
         // --- Setup App using Helper ---
-        let app = build_test_app_for_characters(pool.clone());
+        let app = build_test_app_for_characters(pool.clone()).await;
 
         // -- Simulate Login ---
         let login_credentials = UserCredentials {
@@ -531,7 +537,7 @@ mod tests {
         guard.add_user(_user.id);
 
         // --- Setup App using Helper ---
-        let app = build_test_app_for_characters(pool.clone());
+        let app = build_test_app_for_characters(pool.clone()).await;
 
         // -- Simulate Login ---
         let login_credentials = UserCredentials {
@@ -595,7 +601,7 @@ mod tests {
         guard.add_user(_user.id);
 
         // --- Setup App using Helper ---
-        let app = build_test_app_for_characters(pool.clone());
+        let app = build_test_app_for_characters(pool.clone()).await;
 
         // -- Simulate Login ---
         let login_credentials = UserCredentials {
@@ -626,7 +632,7 @@ mod tests {
             .to_string();
 
         // --- Process the real test file instead of a generated one ---
-        let real_card_data = include_bytes!("../tests/test_card.png").to_vec();
+        let real_card_data = include_bytes!("../tests/test_data/test_card.png").to_vec();
         
         // Log some info about the file
         tracing::info!("Real test_card.png size: {} bytes", real_card_data.len());

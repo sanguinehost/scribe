@@ -5,7 +5,7 @@ use axum::{
 use http_body_util::BodyExt; // For .collect()
 use serde_json::Value;
 use scribe_backend::models::{
-    chat::{ChatSession, ChatMessage, MessageType},
+    chats::{ChatSession, ChatMessage, MessageRole},
 };
 use tower::ServiceExt; // for `app.oneshot()`
 use uuid::Uuid;
@@ -126,8 +126,8 @@ async fn get_chat_messages_success() {
     let session = helpers::create_test_chat_session(&app.db_pool, test_user.id, test_character.id).await;
     
     // Add messages to the session
-    let msg1 = helpers::create_test_chat_message(&app.db_pool, session.id, MessageType::User, "Hello").await;
-    let msg2 = helpers::create_test_chat_message(&app.db_pool, session.id, MessageType::Ai, "Hi there").await;
+    let msg1 = helpers::create_test_chat_message(&app.db_pool, session.id, MessageRole::User, "Hello").await;
+    let msg2 = helpers::create_test_chat_message(&app.db_pool, session.id, MessageRole::Assistant, "Hi there").await;
 
     // Act
     let request = Request::builder()
@@ -162,7 +162,7 @@ async fn get_chat_messages_forbidden() {
     let (_auth_cookie1, user1) = helpers::create_test_user_and_login(&app, "user1_get_msgs", "password").await;
     let character1 = helpers::create_test_character(&app.db_pool, user1.id, "Char User 1").await;
     let session1 = helpers::create_test_chat_session(&app.db_pool, user1.id, character1.id).await;
-    let _msg1 = helpers::create_test_chat_message(&app.db_pool, session1.id, MessageType::User, "Msg 1").await;
+    let _msg1 = helpers::create_test_chat_message(&app.db_pool, session1.id, MessageRole::User, "Msg 1").await;
 
     // User 2 (tries to access User 1's session)
     let (auth_cookie2, _user2) = helpers::create_test_user_and_login(&app, "user2_get_msgs", "password").await;
@@ -284,7 +284,6 @@ async fn create_chat_session_success() {
 
     assert_eq!(created_session.user_id, test_user.id);
     assert_eq!(created_session.character_id, test_character.id);
-    assert!(created_session.title.is_none()); // Assuming title isn't set on creation by default
 
     // Verify in DB (optional but good)
     let session_in_db = helpers::get_chat_session_from_db(&app.db_pool, created_session.id).await;

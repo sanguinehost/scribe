@@ -7,14 +7,13 @@ use diesel::prelude::*;
 use diesel::result::Error as DieselError;
 use dotenvy::dotenv;
 use scribe_backend::models::character_card::{Character, NewCharacter};
-use scribe_backend::models::chat::{ChatMessage, NewChatMessage};
 use scribe_backend::models::users::{NewUser, User};
 use scribe_backend::schema::{self, characters, users}; // Added schema imports
 use scribe_backend::state::AppState;
 use std::env;
 use uuid::Uuid; // For manual cleanup test assertion
-use scribe_backend::models::chat::{
-    ChatSession, MessageType, NewChatSession,
+use scribe_backend::models::chats::{
+    ChatSession, NewChatSession, ChatMessage, NewChatMessage, MessageRole
 };
 use scribe_backend::schema::{chat_messages, chat_sessions};
 use diesel_migrations::{embed_migrations, EmbeddedMigrations, MigrationHarness};
@@ -462,7 +461,13 @@ async fn test_list_characters_endpoint_manual_cleanup() -> Result<(), AnyhowErro
     // Assuming 'pool' is available from the setup (e.g., pool.clone())
     // Load config and create AppState
     let config = Arc::new(Config::load().expect("Failed to load test config for db_integration_tests"));
-    let app_state = AppState::new(pool.clone(), config); // Updated line
+    // Build AI client
+    let ai_client = Arc::new(
+        scribe_backend::llm::gemini_client::build_gemini_client()
+            .await
+            .expect("Failed to build Gemini client for db integration tests. Is GOOGLE_API_KEY set?"),
+    );
+    let app_state = AppState::new(pool.clone(), config, ai_client);
 
     // Create the router with the new AppState
     let router = Router::new()
@@ -598,29 +603,33 @@ fn test_chat_session_insert_and_query() {
         let new_session = NewChatSession {
             user_id: user.id,
             character_id: character.id,
-            // Optional fields can be None or set
-            system_prompt: Some("Test System Prompt".to_string()),
-            temperature: Some(BigDecimal::from_str("0.8").unwrap()), // Convert float to BigDecimal
-            max_output_tokens: Some(256),
-            title: None, // Add missing title field
+            // Optional fields removed from NewChatSession
+            // system_prompt: Some("Test System Prompt".to_string()),
+            // temperature: Some(BigDecimal::from_str("0.8").unwrap()), // Convert float to BigDecimal
+            // max_output_tokens: Some(256),
+            // title: None, // Add missing title field
         };
 
         let inserted_session: ChatSession = diesel::insert_into(chat_sessions::table)
             .values(&new_session)
+            // Explicitly return columns matching ChatSession
+            .returning(ChatSession::as_returning())
             .get_result(conn)?;
 
         assert_eq!(inserted_session.user_id, user.id);
         assert_eq!(inserted_session.character_id, character.id);
-        assert_eq!(inserted_session.system_prompt, new_session.system_prompt);
-        assert_eq!(inserted_session.temperature, new_session.temperature);
-        assert_eq!(
-            inserted_session.max_output_tokens,
-            new_session.max_output_tokens
-        );
+        // assert_eq!(inserted_session.system_prompt, new_session.system_prompt);
+        // assert_eq!(inserted_session.temperature, new_session.temperature);
+        // assert_eq!(
+        //     inserted_session.max_output_tokens,
+        //     new_session.max_output_tokens
+        // );
 
         // --- Query Chat Session ---
         let found_session: ChatSession = chat_sessions::table
             .find(inserted_session.id)
+            // Explicitly select columns matching ChatSession
+            .select(ChatSession::as_select())
             .first(conn)?;
 
         assert_eq!(found_session.id, inserted_session.id);
@@ -682,10 +691,11 @@ async fn test_chat_message_insert_and_query() -> Result<(), AnyhowError> {
             let new_session = NewChatSession {
                 user_id: user_id_clone,
                 character_id: char_id_clone,
-                ..Default::default()
+                // Removed ..Default::default() as it's not implemented and unnecessary
             };
             diesel::insert_into(chat_sessions::table)
                 .values(&new_session)
+                .returning(ChatSession::as_returning())
                 .get_result::<ChatSession>(conn)
         }).await;
         // Manual handling of InteractError
@@ -703,22 +713,24 @@ async fn test_chat_message_insert_and_query() -> Result<(), AnyhowError> {
         let interact_result = obj.interact(move |conn| {
             let user_message = NewChatMessage {
                 session_id: session_id_clone,
-                message_type: MessageType::User,
+                message_type: MessageRole::User,
                 content: "Hello, character!".to_string(),
-                rag_embedding_id: None,
+                // rag_embedding_id: None, // Removed
             };
             diesel::insert_into(chat_messages::table)
                 .values(&user_message)
-                .execute(conn)?; // Just execute
+                .returning(ChatMessage::as_returning())
+                .execute(conn)?; // Just execute -> .get_result() if needed, execute for now
 
             let ai_message = NewChatMessage {
                  session_id: session_id_clone,
-                 message_type: MessageType::Ai,
+                 message_type: MessageRole::Assistant,
                  content: "Hello, user!".to_string(),
-                 rag_embedding_id: None,
+                 // rag_embedding_id: None, // Removed
             };
              diesel::insert_into(chat_messages::table)
                 .values(&ai_message)
+                .returning(ChatMessage::as_returning())
                 .execute(conn)?;
 
             Ok::<(), DieselError>(()) // Return Ok(()) from closure
@@ -740,6 +752,7 @@ async fn test_chat_message_insert_and_query() -> Result<(), AnyhowError> {
              chat_messages::table
                  .filter(chat_messages::session_id.eq(session_id_clone))
                  .order(chat_messages::created_at.asc())
+                 .select(ChatMessage::as_select())
                  .load::<ChatMessage>(conn)
          }).await;
          // Manual handling of InteractError
@@ -754,9 +767,9 @@ async fn test_chat_message_insert_and_query() -> Result<(), AnyhowError> {
     // --- Assertions ---
     assert_eq!(messages.len(), 2);
     assert_eq!(messages[0].content, "Hello, character!");
-    assert_eq!(messages[0].message_type, MessageType::User);
+    assert_eq!(messages[0].message_type, MessageRole::User);
     assert_eq!(messages[1].content, "Hello, user!");
-    assert_eq!(messages[1].message_type, MessageType::Ai);
+    assert_eq!(messages[1].message_type, MessageRole::Assistant);
 
     // At the end of the test
     tracing::debug!("Chat messages test completed successfully");
