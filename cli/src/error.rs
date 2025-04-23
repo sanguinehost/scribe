@@ -1,10 +1,9 @@
 // use scribe_backend; // Keep backend types if needed by error variants - Removed
 use reqwest;
-use reqwest::Error as ReqwestError;
-use reqwest::StatusCode;
 use url;
 use serde_json;
-use thiserror::Error;
+// Remove unused import, derive macro handles it
+// use thiserror::Error;
 
 /// Custom Error type for the CLI client
 #[derive(thiserror::Error, Debug)]
@@ -13,8 +12,8 @@ pub enum CliError { // Made pub
     Reqwest(#[from] reqwest::Error),
     #[error("URL parsing error: {0}")]
     UrlParse(#[from] url::ParseError),
-    #[error("JSON deserialization error: {0}")]
-    JsonDeser(#[from] serde_json::Error),
+    #[error("JSON serialization/deserialization error: {0}")] // Renamed JsonDeser -> Json, updated message
+    Json(#[from] serde_json::Error),
     #[error("API returned an error: status={status}, message={message}")]
     ApiError { status: reqwest::StatusCode, message: String },
     #[error("Authentication failed: {0}")]
@@ -29,6 +28,15 @@ pub enum CliError { // Made pub
     InputError(String),
     #[error("Internal client error: {0}")]
     Internal(String),
+    // Renamed RateLimited to RateLimitExceeded
     #[error("API rate limit exceeded. Please try again later.")]
-    RateLimited,
+    RateLimitExceeded, // Renamed from RateLimited
+
+    // Add new variants from client.rs logic
+    #[error("Network error: {0}")]
+    Network(String),
+    #[error("Serialization error: {0}")]
+    Serialization(String), // Note: Covers Json errors too, consider merging/refining?
+    #[error("Backend error: {0}")]
+    Backend(String), // For generic non-API errors from backend responses
 } 

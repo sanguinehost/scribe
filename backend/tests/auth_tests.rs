@@ -43,14 +43,9 @@ use tower::ServiceExt; // For `oneshot`
 use tower_cookies::{Cookie, CookieManagerLayer, Cookies};
 use uuid::Uuid;
 use tracing::{info, error, instrument};
-use tokio::net::TcpListener;
+// use tokio::net::TcpListener; // Unused
 use std::net::SocketAddr;
-use reqwest::Client;
-use http::header::SET_COOKIE;
-// Remove unused AuthUser
-// use axum_login::{ AuthUser };
-// Remove unused MemoryStore
-// use tower_sessions::MemoryStore;
+// use scribe_backend::test_helpers::{self, create_test_user, setup_test_app, TestContext}; // Unused
 
 // --- Test Helpers (Copied/Adapted from characters_tests.rs) ---
 
@@ -219,9 +214,10 @@ async fn build_test_app(pool: DeadpoolPool<DeadpoolManager>) -> Router {
         .layer(auth_layer) // Apply AuthManagerLayer (containing SessionManagerLayer) second
 }
 
-// Helper to spawn the app in the background for reqwest tests
+// Helper function to spawn the app for testing
+#[allow(dead_code)] // Added to silence unused function warning
 async fn spawn_app(app: Router) -> SocketAddr {
-    let listener = TcpListener::bind("127.0.0.1:0") // Bind to random available port
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
         .await
         .expect("Failed to bind to random port");
     let addr = listener.local_addr().expect("Failed to get local address");

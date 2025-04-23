@@ -102,9 +102,12 @@ pub struct NewChatMessage {
 }
 
 // Request body for sending a new message (used by generate endpoint)
-#[derive(Deserialize, Debug)]
+// Added Serialize for cases where it might be returned or logged
+#[derive(Deserialize, Serialize, Debug)]
 pub struct NewChatMessageRequest {
     pub content: String,
+    // Add optional model field
+    pub model: Option<String>,
     // Role is often implicit based on the sender/endpoint being called
 }
 
@@ -115,9 +118,10 @@ pub struct CreateChatSessionPayload {
     pub character_id: Uuid,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Serialize, Debug)] // Added Serialize
 pub struct GenerateResponsePayload {
     pub content: String,
+    pub model: Option<String>, // Added optional model field
 }
 
 #[derive(Serialize, Debug)]

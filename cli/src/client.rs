@@ -6,7 +6,7 @@ use reqwest::multipart;
 use reqwest::{Client as ReqwestClient, Response, Url, StatusCode}; // Added Response, Url, and StatusCode
 use scribe_backend::models::auth::Credentials;
 use scribe_backend::models::characters::CharacterMetadata;
-use scribe_backend::models::chats::{ChatMessage, ChatSession};
+use scribe_backend::models::chats::{ChatMessage, ChatSession, NewChatMessageRequest, GenerateResponsePayload}; // Added GenerateResponsePayload
 use scribe_backend::models::users::User;
 use serde::de::DeserializeOwned;
 use serde_json::json;
@@ -36,7 +36,7 @@ pub async fn handle_response<T: DeserializeOwned>(response: Response) -> Result<
         // Check for specific status codes before generic ApiError
         if status == StatusCode::TOO_MANY_REQUESTS { // Check for 429
              tracing::warn!("Received 429 Too Many Requests from backend");
-             return Err(CliError::RateLimited);
+             return Err(CliError::RateLimitExceeded);
         }
 
         // Existing generic error handling
@@ -55,12 +55,11 @@ pub async fn handle_response<T: DeserializeOwned>(response: Response) -> Result<
 
 /// Trait for abstracting HTTP client interactions to allow mocking in tests.
 #[async_trait]
-pub trait HttpClient { // Made pub
+pub trait HttpClient: Send + Sync {
     async fn login(&self, credentials: &Credentials) -> Result<User, CliError>;
     async fn register(&self, credentials: &Credentials) -> Result<User, CliError>;
     async fn list_characters(&self) -> Result<Vec<CharacterMetadata>, CliError>;
     async fn create_chat_session(&self, character_id: Uuid) -> Result<ChatSession, CliError>;
-    async fn generate_response(&self, chat_id: Uuid, message_content: &str) -> Result<ChatMessage, CliError>;
     async fn upload_character(&self, name: &str, file_path: &str) -> Result<CharacterMetadata, CliError>;
     async fn health_check(&self) -> Result<HealthStatus, CliError>;
     async fn logout(&self) -> Result<(), CliError>;
@@ -68,6 +67,15 @@ pub trait HttpClient { // Made pub
     async fn get_character(&self, character_id: Uuid) -> Result<CharacterMetadata, CliError>;
     async fn list_chat_sessions(&self) -> Result<Vec<ChatSession>, CliError>;
     async fn get_chat_messages(&self, session_id: Uuid) -> Result<Vec<ChatMessage>, CliError>;
+    async fn send_message(
+        &self,
+        chat_id: Uuid,
+        content: &str,
+        model_name: Option<&str>,
+    ) -> Result<ChatMessage, CliError>;
+
+    #[allow(dead_code)]
+    async fn generate_response(&self, chat_id: Uuid, message_content: &str, model_name: Option<String>) -> Result<ChatMessage, CliError>;
 }
 
 /// Wrapper around ReqwestClient implementing the HttpClient trait.
@@ -137,23 +145,6 @@ impl HttpClient for ReqwestClientWrapper {
         handle_response(response).await
     }
 
-     async fn generate_response(&self, chat_id: Uuid, message_content: &str) -> Result<ChatMessage, CliError> {
-        // Define the expected structure locally as it's an implementation detail for this client
-        #[derive(serde::Deserialize)] struct ResponseBody { ai_message: ChatMessage }
-
-        let url = build_url(&self.base_url, &format!("/api/chats/{}/generate", chat_id))?;
-        tracing::debug!(%url, %chat_id, "Sending message and generating response via HttpClient");
-        let payload = json!({ "content": message_content });
-        let response = self.client
-            .post(url)
-            .json(&payload)
-            .send()
-            .await
-            .map_err(CliError::Reqwest)?;
-        // Handle response and extract ai_message
-        let response_body: ResponseBody = handle_response(response).await?;
-        Ok(response_body.ai_message)
-    }
 
     async fn upload_character(&self, name: &str, file_path: &str) -> Result<CharacterMetadata, CliError> {
         tracing::info!(character_name = name, %file_path, "Attempting to upload character via HttpClient");
@@ -275,6 +266,97 @@ impl HttpClient for ReqwestClientWrapper {
             .await
             .map_err(CliError::Reqwest)?;
         handle_response(response).await
+    }
+
+    async fn send_message(
+        &self,
+        chat_id: Uuid,
+        content: &str,
+        model_name: Option<&str>,
+    ) -> Result<ChatMessage, CliError> {
+        let url = self.base_url.join(&format!("api/chats/{}/generate", chat_id))?;
+
+        // Use the backend model struct directly (NewChatMessageRequest)
+        // NOTE: Backend struct now supports optional `model` field.
+        let request_body = NewChatMessageRequest {
+            content: content.to_string(),
+            model: model_name.map(|s| s.to_string()),
+        };
+
+        tracing::info!(%url, chat_id = %chat_id, model = ?model_name, "Sending message via HttpClient");
+
+        let response = self.client.post(url)
+            .json(&request_body)
+            .send()
+            .await
+            .map_err(|e| {
+                 tracing::error!(error = ?e, "Network error sending message");
+                 CliError::Network(e.to_string())
+            })?;
+
+        // Check for specific status codes like 429 Too Many Requests
+        match response.status() {
+            StatusCode::OK => {
+                // Define a local struct matching the backend's GenerateResponse structure
+                #[derive(serde::Deserialize)]
+                struct GenerateResponseBody {
+                    ai_message: ChatMessage,
+                }
+                // Deserialize into the wrapper struct
+                let response_body: GenerateResponseBody = response.json().await.map_err(|e| {
+                    tracing::error!(error = ?e, "Failed to deserialize send message response");
+                    // Use a more specific error message if possible
+                    CliError::Serialization(format!("error decoding response body: {}", e))
+                })?;
+                 tracing::info!(chat_id = %chat_id, message_id = %response_body.ai_message.id, "Message sent successfully");
+                 // Return the nested ChatMessage
+                Ok(response_body.ai_message)
+            },
+            StatusCode::TOO_MANY_REQUESTS => {
+                tracing::warn!("Received 429 Too Many Requests from backend");
+                Err(CliError::RateLimitExceeded)
+            },
+            status => {
+                let error_text = response.text().await.unwrap_or_else(|_| "Failed to read error body".to_string());
+                tracing::error!(%status, error = %error_text, "Failed to send message");
+                Err(CliError::Backend(format!("{} - {}", status, error_text)))
+            }
+        }
+    }
+
+    // This implementation now correctly calls the backend endpoint
+    async fn generate_response(&self, chat_id: Uuid, message_content: &str, model_name: Option<String>) -> Result<ChatMessage, CliError> {
+        let url = build_url(&self.base_url, &format!("/api/chats/{}/generate", chat_id))?;
+        tracing::info!(%url, %chat_id, ?model_name, "Generating response via HttpClient");
+
+        let payload = GenerateResponsePayload {
+        	content: message_content.to_string(), // Corrected field name
+        	model: model_name, // Corrected field name
+        };
+
+        let response = self.client
+            .post(url)
+            .json(&payload)
+            .send()
+            .await
+            .map_err(CliError::Reqwest)?;
+
+        // Handle response similar to send_message
+        match response.status() {
+            StatusCode::OK => {
+                #[derive(serde::Deserialize)]
+                struct GenerateResponseBody { ai_message: ChatMessage }
+                let response_body: GenerateResponseBody = handle_response(response).await?;
+                Ok(response_body.ai_message)
+            },
+            StatusCode::TOO_MANY_REQUESTS => {
+                Err(CliError::RateLimitExceeded)
+            },
+            status => {
+                let error_text = response.text().await.unwrap_or_else(|_| "Failed to read error body".to_string());
+                Err(CliError::Backend(format!("{} - {}", status, error_text)))
+            }
+        }
     }
 }
 

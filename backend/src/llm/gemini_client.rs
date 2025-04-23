@@ -5,9 +5,6 @@ use genai::{
 
 use crate::errors::AppError;
 
-// TODO: Consider moving this to a more central configuration area if reused
-const MODEL_NAME: &str = "gemini-2.5-pro-exp-03-25";
-
 pub async fn build_gemini_client() -> Result<Client, AppError> {
 
     // TODO: Implement proper auth resolver based on genai docs/examples if needed
@@ -25,12 +22,18 @@ pub async fn build_gemini_client() -> Result<Client, AppError> {
 pub async fn generate_simple_response(
     client: &Client,
     user_message: String,
+    // Add model_name parameter
+    model_name: &str,
 ) -> Result<String, AppError> {
     let chat_request = ChatRequest::default()
         .append_message(ChatMessage::user(user_message));
 
+    tracing::debug!(%model_name, "Executing chat with specified model");
+
+    // Pass the provided model_name to exec_chat
+    // genai::ModelName implements From<&str>
     let response = client
-        .exec_chat(MODEL_NAME, chat_request, None) // Pass MODEL_NAME here
+        .exec_chat(model_name, chat_request, None)
         .await?;
 
     // Extract the text content from the response
@@ -75,9 +78,11 @@ mod tests {
 
         // Define a simple user message
         let user_message = "Test: Say hello!".to_string();
+        // Define the model to use for the test
+        let model_name_for_test = "gemini-2.5-pro-exp-03-25";
 
-        // Call the generation function
-        let result = generate_simple_response(&client, user_message).await;
+        // Call the generation function with the model name
+        let result = generate_simple_response(&client, user_message, model_name_for_test).await;
 
         // Assert that the call was successful and returned a non-empty response
         match result {

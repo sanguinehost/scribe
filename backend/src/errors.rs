@@ -8,6 +8,7 @@ use axum::{
 use serde_json::json;
 use thiserror::Error;
 use tracing::error;
+// use validator::ValidationErrors;
 
 // Corrected and Consolidated Imports
 use crate::auth::user_store::Backend as AuthBackend;
@@ -366,6 +367,7 @@ mod tests {
     use serde_json::Value;
     use diesel::result::Error as DieselError; // Keep for test
     use anyhow::anyhow; // Keep for test
+    use uuid::Uuid; // Add missing import
 
     // Helper to extract JSON body from response
     async fn get_body_json(response: Response) -> Value {

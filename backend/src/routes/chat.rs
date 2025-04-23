@@ -8,13 +8,16 @@ use crate::{
     auth::user_store::Backend as AuthBackend,
     errors::AppError,
     models::{
-        chats::{ChatSession, NewChatSession, ChatMessage, MessageRole, NewChatMessage, NewChatMessageRequest},
+        chats::{ChatSession, NewChatSession, ChatMessage, MessageRole, NewChatMessage, NewChatMessageRequest}, // Removed CreateChatSessionPayload, GenerateResponsePayload
         characters::CharacterMetadata,
+        // characters::Character, // Removed
+        // users::User, // Removed
     },
     prompt_builder,
     schema::{self, chat_messages, chat_sessions, characters},
     state::AppState,
     llm::gemini_client,
+    // config::get_config, // Keep commented out
 };
 use tracing::{error, info, instrument};
 use genai::webc::Error as WebClientError;
@@ -325,9 +328,19 @@ pub async fn generate_chat_response(
 
     // --- LLM Interaction ---
     info!("Sending prompt to AI client");
+
+    // Determine the model to use
+    let default_model = "gemini-2.5-pro-exp-03-25".to_string(); // Define default
+    let requested_model = payload.model.clone().filter(|m| !m.is_empty()); // Get valid requested model
+    let model_to_use = requested_model.as_deref().unwrap_or(&default_model);
+
+    info!(selected_model = model_to_use, requested_model = ?payload.model, "Determined model for generation");
+
+    // TODO: Update gemini_client::generate_simple_response to accept model_name
     let llm_result = gemini_client::generate_simple_response(
         &ai_client,
         prompt,
+        model_to_use, // Pass the selected model name
     ).await;
 
     let ai_response_content = match llm_result {
@@ -397,36 +410,31 @@ pub fn chat_routes() -> Router<AppState> {
 
 #[cfg(test)]
 mod tests {
-    // use super::*; // Removed unused import
-    // use crate::models::{chats::{ChatSession, ChatMessage, MessageRole}, users::User}; // Removed unused User import
-    use crate::models::{chats::{ChatSession, ChatMessage, MessageRole}};
-    use crate::state::AppState;
-    // use crate::llm::LLMClient; // Removed unresolved import
-    // use crate::test_helpers::{self, create_test_user, setup_test_app, TestContext, create_test_user_and_login}; // Removed unused TestContext import
-    use crate::test_helpers::{self, create_test_user, setup_test_app, create_test_user_and_login};
-    use axum::{
-        body::Body,
-        http::{self, Method, Request, StatusCode},
-    };
-    use http_body_util::BodyExt;
-    use serde_json::{json, Value};
+    use super::*;
+    use crate::test_helpers; // Simplified import
+    use crate::models::chats::{ChatSession, ChatMessage};
+    // Removed unused: characters::CharacterMetadata, users::User
+    // REMOVED INCORRECT IMPORT: use crate::routes::test_helpers::{create_test_state, setup_test_db};
+    use axum::body::Body;
+    use axum::http::{Request, StatusCode, Method, header}; // Added Method, header
+    // Removed unused: use axum_login::AuthSession;
+    use serde_json::{json, Value}; // Added Value
     use tower::ServiceExt;
     use uuid::Uuid;
-
-    // --- Test Cases ---
+    use http_body_util::BodyExt; // Added for body collection
 
     #[tokio::test]
     async fn test_create_chat_session_success() {
-        let context = setup_test_app().await; // Removed mut
-        let (auth_cookie, user) = create_test_user_and_login(&context.app, "test_create_chat_user", "password").await;
+        let context = test_helpers::setup_test_app().await;
+        let (auth_cookie, user) = test_helpers::create_test_user_and_login(&context.app, "test_create_chat_user", "password").await;
         let character = test_helpers::create_test_character(&context.app.db_pool, user.id, "Test Character for Chat").await;
         let request_body = json!({ "character_id": character.id });
 
         let request = Request::builder()
-            .method(http::Method::POST)
+            .method(Method::POST) // Use Method::POST
             .uri("/api/chats")
-            .header(http::header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
-            .header(http::header::COOKIE, auth_cookie)
+            .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref()) // Use header::CONTENT_TYPE
+            .header(header::COOKIE, auth_cookie) // Use header::COOKIE
             .body(Body::from(serde_json::to_vec(&request_body).unwrap()))
             .unwrap();
         let response = context.app.router.oneshot(request).await.unwrap();
@@ -440,13 +448,13 @@ mod tests {
 
     #[tokio::test]
     async fn test_create_chat_session_unauthorized() {
-        let context = setup_test_app().await;
+        let context = test_helpers::setup_test_app().await;
         let request_body = json!({ "character_id": Uuid::new_v4() }); // Dummy ID
 
         let request = Request::builder()
-            .method(http::Method::POST)
+            .method(Method::POST) // Use Method::POST
             .uri("/api/chats")
-            .header(http::header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
+            .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref()) // Use header::CONTENT_TYPE
             .body(Body::from(serde_json::to_vec(&request_body).unwrap()))
             .unwrap();
         // No login simulation
@@ -457,17 +465,17 @@ mod tests {
 
     #[tokio::test]
     async fn test_create_chat_session_character_not_found() {
-        let context = setup_test_app().await;
-        let (auth_cookie, _user) = create_test_user_and_login(&context.app, "test_char_not_found_user", "password").await;
+        let context = test_helpers::setup_test_app().await;
+        let (auth_cookie, _user) = test_helpers::create_test_user_and_login(&context.app, "test_char_not_found_user", "password").await;
         let non_existent_char_id = Uuid::new_v4();
 
         let request_body = json!({ "character_id": non_existent_char_id });
 
         let request = Request::builder()
-            .method(http::Method::POST)
+            .method(Method::POST) // Use Method::POST
             .uri("/api/chats")
-            .header(http::header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
-            .header(http::header::COOKIE, auth_cookie) // Use cookie
+            .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref()) // Use header::CONTENT_TYPE
+            .header(header::COOKIE, auth_cookie) // Use cookie
             .body(Body::from(serde_json::to_vec(&request_body).unwrap()))
             .unwrap();
 
@@ -482,18 +490,18 @@ mod tests {
 
     #[tokio::test]
     async fn test_create_chat_session_character_other_user() {
-         let context = setup_test_app().await;
-         let (_auth_cookie1, user1) = create_test_user_and_login(&context.app, "chat_user_1", "password").await;
+         let context = test_helpers::setup_test_app().await;
+         let (_auth_cookie1, user1) = test_helpers::create_test_user_and_login(&context.app, "chat_user_1", "password").await;
          let character = test_helpers::create_test_character(&context.app.db_pool, user1.id, "User1 Character").await;
-         let (auth_cookie2, _user2) = create_test_user_and_login(&context.app, "chat_user_2", "password").await;
+         let (auth_cookie2, _user2) = test_helpers::create_test_user_and_login(&context.app, "chat_user_2", "password").await;
 
          let request_body = json!({ "character_id": character.id });
 
          let request = Request::builder()
-            .method(http::Method::POST)
+            .method(Method::POST) // Use Method::POST
             .uri("/api/chats")
-            .header(http::header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
-            .header(http::header::COOKIE, auth_cookie2) // Use user2's cookie
+            .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref()) // Use header::CONTENT_TYPE
+            .header(header::COOKIE, auth_cookie2) // Use user2's cookie
             .body(Body::from(serde_json::to_vec(&request_body).unwrap()))
             .unwrap();
 
@@ -510,8 +518,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_list_chat_sessions_success() {
-        let context = setup_test_app().await;
-        let (auth_cookie, user) = create_test_user_and_login(&context.app, "test_list_chats_user", "password").await;
+        let context = test_helpers::setup_test_app().await;
+        let (auth_cookie, user) = test_helpers::create_test_user_and_login(&context.app, "test_list_chats_user", "password").await;
 
         // Create a character and sessions for the user
         let char1 = test_helpers::create_test_character(&context.app.db_pool, user.id, "Char 1 for List").await;
@@ -520,14 +528,14 @@ mod tests {
         let session2 = test_helpers::create_test_chat_session(&context.app.db_pool, user.id, char2.id).await;
 
         // Create data for another user (should not be listed)
-        let other_user = create_test_user(&context.app.db_pool, "other_list_user", "password").await;
+        let other_user = test_helpers::create_test_user(&context.app.db_pool, "other_list_user", "password").await;
         let other_char = test_helpers::create_test_character(&context.app.db_pool, other_user.id, "Other User Char").await;
         let _other_session = test_helpers::create_test_chat_session(&context.app.db_pool, other_user.id, other_char.id).await; // Renamed to avoid unused var warning
 
         let request = Request::builder()
-            .method(http::Method::GET)
+            .method(Method::GET) // Use Method::GET
             .uri("/api/chats")
-            .header(http::header::COOKIE, auth_cookie) // Use cookie
+            .header(header::COOKIE, auth_cookie) // Use cookie
             .body(Body::empty())
             .unwrap();
 
@@ -546,13 +554,13 @@ mod tests {
 
     #[tokio::test]
     async fn test_list_chat_sessions_empty() {
-        let context = setup_test_app().await;
-        let (auth_cookie, _user) = create_test_user_and_login(&context.app, "test_list_empty_user", "password").await;
+        let context = test_helpers::setup_test_app().await;
+        let (auth_cookie, _user) = test_helpers::create_test_user_and_login(&context.app, "test_list_empty_user", "password").await;
 
         let request = Request::builder()
-            .method(http::Method::GET)
+            .method(Method::GET) // Use Method::GET
             .uri("/api/chats")
-            .header(http::header::COOKIE, auth_cookie) // Use cookie
+            .header(header::COOKIE, auth_cookie) // Use cookie
             .body(Body::empty())
             .unwrap();
 
@@ -566,10 +574,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_list_chat_sessions_unauthorized() {
-        let context = setup_test_app().await;
+        let context = test_helpers::setup_test_app().await;
 
         let request = Request::builder()
-            .method(http::Method::GET)
+            .method(Method::GET) // Use Method::GET
             .uri("/api/chats")
             .body(Body::empty())
             .unwrap();

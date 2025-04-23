@@ -207,6 +207,7 @@ pub async fn handle_view_chat_history_action<Http: HttpClient, IO: IoHandler>(
 pub async fn handle_resume_chat_session_action<Http: HttpClient, IO: IoHandler>(
     http_client: &Http,
     io_handler: &mut IO,
+    current_model: &str,
 ) -> Result<(), CliError> {
     io_handler.write_line("\nSelect a chat session to resume.")?;
 
@@ -278,12 +279,68 @@ pub async fn handle_resume_chat_session_action<Http: HttpClient, IO: IoHandler>(
     }
 
     tracing::info!(chat_id = %selected_session_id, "Resuming chat session");
-    if let Err(e) = run_chat_loop(http_client, selected_session_id, io_handler).await {
+    if let Err(e) = run_chat_loop(http_client, selected_session_id, io_handler, current_model).await {
         tracing::error!(error = ?e, "Chat loop failed");
         io_handler.write_line(&format!("Chat loop encountered an error: {}", e))?;
     }
     io_handler.write_line("Chat finished.")?;
     Ok(())
+}
+
+/// Handles the model settings submenu actions.
+pub async fn handle_model_settings_action<C: HttpClient, H: IoHandler>(
+    _http_client: &C, // Not used yet, but keep for consistency
+    io_handler: &mut H,
+    current_model: &mut String,
+) -> Result<(), CliError> {
+    // Define the full model names for clarity in prompts/examples if needed
+    const EXPERIMENTAL_MODEL: &str = "gemini-2.5-pro-exp-03-25";
+    const PAID_MODEL: &str = "gemini-2.5-pro-preview-03-25";
+
+    loop {
+        io_handler.write_line("\n--- Model Settings ---")?;
+        // Display the current full model name
+        io_handler.write_line(&format!("[1] View Current Model (Currently: {})", current_model))?;
+        io_handler.write_line("[2] Change Model")?;
+        io_handler.write_line("[b] Back to Main Menu")?;
+
+        let choice = io_handler.read_line("Enter choice:")?;
+
+        match choice.as_str() {
+            "1" => {
+                // Explicitly confirm the current full model name
+                io_handler.write_line(&format!("The current model is set to: {}", current_model))?;
+            }
+            "2" => {
+                 // Prompt for the full model name directly, providing examples
+                let prompt = format!(
+                    "Enter the full model name (e.g., '{}', '{}'):",
+                    EXPERIMENTAL_MODEL,
+                    PAID_MODEL
+                );
+                let new_model = io_handler.read_line(&prompt)?;
+                let trimmed_model = new_model.trim();
+
+                if trimmed_model.is_empty() {
+                     io_handler.write_line("Model name cannot be empty. No changes made.")?;
+                } else {
+                    // Store the exact name entered by the user
+                    *current_model = trimmed_model.to_string();
+                    tracing::info!(new_model = %current_model, "Chat model updated");
+                    io_handler.write_line(&format!("Model updated to: {}", current_model))?;
+                }
+            }
+            "b" | "B" => {
+                io_handler.write_line("Returning to main menu.")?;
+                return Ok(()); // Exit the settings submenu loop
+            }
+            _ => {
+                io_handler.write_line("Invalid choice, please try again.")?;
+            }
+        }
+    }
+    // Note: The loop is infinite until 'b' is chosen, so this Ok(()) is unreachable,
+    // but needed for the function signature. Loop exit returns Ok explicitly.
 }
 
 // --- Character Selection ---
@@ -498,16 +555,6 @@ mod tests {
              );
              mock_result.map_err(Into::into)
         }
-        async fn generate_response(&self, _chat_id: Uuid, _message_content: &str) -> Result<ChatMessage, CliError> {
-             let mock_result = Arc::unwrap_or_clone(
-                 self.generate_response_result.clone().unwrap_or_else(|| {
-                     Arc::new(Err(MockCliError::Internal(
-                         "MockHttpClient: generate_response result not set".into(),
-                     )))
-                 }),
-             );
-             mock_result.map_err(Into::into)
-        }
         async fn upload_character(&self, _name: &str, _file_path: &str) -> Result<CharacterMetadata, CliError> {
             let mock_result = Arc::unwrap_or_clone(
                 self.upload_character_result.clone().unwrap_or_else(|| {
@@ -577,6 +624,37 @@ mod tests {
                 }),
             );
             mock_result.map_err(Into::into)
+        }
+
+        // Add missing implementation for generate_response (matching the trait signature)
+        async fn generate_response(&self, _chat_id: Uuid, _message_content: &str, _model_name: Option<String>) -> Result<ChatMessage, CliError> {
+             let mock_result = Arc::unwrap_or_clone(
+                 self.generate_response_result.clone().unwrap_or_else(|| {
+                     Arc::new(Err(MockCliError::Internal(
+                         "MockHttpClient: generate_response result not set".into(),
+                     )))
+                 }),
+             );
+             mock_result.map_err(Into::into)
+        }
+
+
+        // Add missing implementation for send_message
+        async fn send_message(
+            &self,
+            _chat_id: Uuid,
+            _content: &str,
+            _model_name: Option<&str>,
+        ) -> Result<ChatMessage, CliError> {
+            // Use the configurable result field, similar to generate_response
+             let mock_result = Arc::unwrap_or_clone(
+                 self.generate_response_result.clone().unwrap_or_else(|| {
+                     Arc::new(Err(MockCliError::Internal(
+                         "MockHttpClient: generate_response_result (for send_message) not set".into(),
+                     )))
+                 }),
+             );
+             mock_result.map_err(Into::into)
         }
     }
 
@@ -1221,7 +1299,7 @@ mod tests {
             ..Default::default()
         };
 
-        let result = handle_resume_chat_session_action(&mock_http, &mut mock_io).await;
+        let result = handle_resume_chat_session_action(&mock_http, &mut mock_io, "current_model").await;
 
         assert!(result.is_ok());
         mock_io.expect_output("Select a chat session to resume.");
@@ -1239,7 +1317,7 @@ mod tests {
         mock_io.expect_output("You: Previous message");
         mock_io.expect_output("Entering chat session");
         mock_io.expect_output("You:"); // Prompt for 'hello'
-        mock_io.expect_output("AI: AI response");
+        mock_io.expect_output("AI: AI response"); // Reverted to expect the actual mock content
         mock_io.expect_output("You:"); // Prompt for 'quit'
         mock_io.expect_output("Leaving chat session.");
         mock_io.expect_output("Chat finished.");
@@ -1253,7 +1331,7 @@ mod tests {
             ..Default::default()
         };
 
-        let result = handle_resume_chat_session_action(&mock_http, &mut mock_io).await;
+        let result = handle_resume_chat_session_action(&mock_http, &mut mock_io, "current_model").await;
 
         assert!(result.is_err());
         match result.err().unwrap() {
@@ -1275,7 +1353,7 @@ mod tests {
             ..Default::default()
         };
 
-        let result = handle_resume_chat_session_action(&mock_http, &mut mock_io).await;
+        let result = handle_resume_chat_session_action(&mock_http, &mut mock_io, "current_model").await;
 
         assert!(result.is_err());
         match result.err().unwrap() {
@@ -1299,7 +1377,7 @@ mod tests {
             ..Default::default()
         };
 
-        let result = handle_resume_chat_session_action(&mock_http, &mut mock_io).await;
+        let result = handle_resume_chat_session_action(&mock_http, &mut mock_io, "current_model").await;
 
         assert!(result.is_ok());
         mock_io.expect_output("Select session by number:");
@@ -1330,13 +1408,13 @@ mod tests {
             ..Default::default()
         };
 
-        let result = handle_resume_chat_session_action(&mock_http, &mut mock_io).await;
+        let result = handle_resume_chat_session_action(&mock_http, &mut mock_io, "current_model").await;
 
         assert!(result.is_ok());
         mock_io.expect_output("Entering chat session");
         mock_io.expect_output("You:"); // Prompt for 'hello'
-        mock_io.expect_output("Error: Could not get response from AI. Please try again.");
-        mock_io.expect_output("LLM unavailable");
+        // Expect the actual error message format printed by the chat loop
+        mock_io.expect_output("Error sending message: API returned an error: status=500 Internal Server Error, message=LLM unavailable.");
         mock_io.expect_output("You:"); // Prompt for 'quit'
         mock_io.expect_output("Leaving chat session.");
         mock_io.expect_output("Chat finished.");

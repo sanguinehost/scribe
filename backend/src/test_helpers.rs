@@ -25,7 +25,7 @@ use crate::{
 };
 use axum::{
     body::Body,
-    http::{header, Method, Request, StatusCode},
+    http::{header, Method, Request, StatusCode}, // Removed cookie
     Router,
 };
 use axum_login::{login_required, AuthManagerLayerBuilder};
@@ -42,9 +42,10 @@ use std::env;
 use std::net::TcpListener;
 use std::sync::Arc;
 use tower_cookies::{CookieManagerLayer};
-use tower_sessions::{Expiry, SessionManagerLayer};
+use tower_sessions::{Expiry, SessionManagerLayer, cookie}; // Added cookie import here
 use tower::ServiceExt;
 use uuid::Uuid;
+use anyhow::Context; // Added for TestDataGuard cleanup
 
 // Define the embedded migrations macro
 // Ensure this path is correct relative to the crate root (src)
@@ -413,4 +414,95 @@ pub async fn setup_test_app() -> TestContext {
     TestContext {
         app: test_app, // Store the whole TestApp
     }
+}
+
+// --- Helpers needed by integration tests ---
+
+// ** ADDED pub **
+/// Helper function to create a deadpool pool for integration tests
+pub fn create_test_pool() -> DeadpoolPool { // Removed <DeadpoolManager>
+    dotenv().ok();
+    let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set for test pool");
+    let manager = DeadpoolManager::new(&database_url, DeadpoolRuntime::Tokio1);
+    DeadpoolPool::builder(manager)
+        .build()
+        .expect("Failed to create test DB pool.")
+}
+
+// ** ADDED pub **
+/// Helper struct to manage test data cleanup for integration tests
+pub struct TestDataGuard {
+    pool: DeadpoolPool, // Removed <DeadpoolManager>
+    user_ids: Vec<Uuid>,
+    character_ids: Vec<Uuid>,
+}
+
+// ** ADDED pub to impl and methods **
+impl TestDataGuard {
+    pub fn new(pool: DeadpoolPool) -> Self { // Removed <DeadpoolManager>
+        TestDataGuard {
+            pool, // Changed _pool to pool
+            user_ids: Vec::new(),
+            character_ids: Vec::new(),
+        }
+    }
+
+    pub fn add_user(&mut self, user_id: Uuid) {
+        self.user_ids.push(user_id);
+    }
+
+    pub fn add_character(&mut self, character_id: Uuid) {
+        self.character_ids.push(character_id);
+    }
+
+    // Explicit async cleanup function
+    pub async fn cleanup(self) -> Result<(), anyhow::Error> {
+        if self.character_ids.is_empty() && self.user_ids.is_empty() {
+            return Ok(());
+        }
+        tracing::debug!(user_ids = ?self.user_ids, character_ids = ?self.character_ids, "--- Cleaning up test data ---");
+
+        let pool_clone = self.pool.clone(); // Use self.pool
+        let obj = pool_clone.get().await.context("Failed to get DB connection for cleanup")?;
+
+        let character_ids_to_delete = self.character_ids.clone();
+        let user_ids_to_delete = self.user_ids.clone();
+
+        // Delete characters first (due to potential foreign key constraints)
+        if !character_ids_to_delete.is_empty() {
+            obj.interact(move |conn| {
+                diesel::delete(
+                    schema::characters::table.filter(schema::characters::id.eq_any(character_ids_to_delete))
+                )
+                .execute(conn)
+            }).await.map_err(|e| anyhow::anyhow!("Interact error deleting characters: {:?}", e))?
+              .map_err(|e| anyhow::Error::new(e).context("DB error deleting characters"))?;
+            tracing::debug!("Cleaned up {} characters.", self.character_ids.len());
+        }
+
+        // Then delete users
+        if !user_ids_to_delete.is_empty() {
+            obj.interact(move |conn| {
+                diesel::delete(schema::users::table.filter(schema::users::id.eq_any(user_ids_to_delete)))
+                .execute(conn)
+            }).await.map_err(|e| anyhow::anyhow!("Interact error deleting users: {:?}", e))?
+              .map_err(|e| anyhow::Error::new(e).context("DB error deleting users"))?;
+            tracing::debug!("Cleaned up {} users.", self.user_ids.len());
+        }
+
+        tracing::debug!("--- Cleanup complete ---");
+        Ok(())
+    }
+}
+
+// ** ADDED pub **
+/// Helper function to initialize tracing safely for integration tests
+pub fn ensure_tracing_initialized() {
+    use std::sync::Once;
+    use tracing_subscriber::{EnvFilter, fmt};
+    static TRACING_INIT: Once = Once::new();
+    TRACING_INIT.call_once(|| {
+        let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| "info,sqlx=warn,tower_http=debug".into());
+        fmt().with_env_filter(filter).init();
+    });
 }

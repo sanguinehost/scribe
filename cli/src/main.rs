@@ -1,7 +1,7 @@
 // cli/src/main.rs
 
 // Relative path to the test card image - Keep this constant here if only used by main loop logic
-const TEST_CARD_PATH: &str = "../../backend/tests/test_data/test_card.png";
+const TEST_CARD_PATH: &str = "test_data/test_card.png";
 
 // Declare modules
 mod error;
@@ -67,6 +67,8 @@ async fn main() -> Result<()> {
 
     // Keep logged_in_user state here in the main loop
     let mut logged_in_user: Option<User> = None;
+    // Add state for the selected model - Use full name as default
+    let mut current_model: String = "gemini-2.5-pro-exp-03-25".to_string();
 
     loop {
         if logged_in_user.is_none() {
@@ -142,6 +144,7 @@ async fn main() -> Result<()> {
             io_handler.write_line("[8] Resume Chat Session")?;
             io_handler.write_line("[9] Show My Info")?;
             io_handler.write_line("[10] Logout")?;
+            io_handler.write_line("[11] Model Settings")?;
             io_handler.write_line("[q] Quit Application")?;
 
             let choice = io_handler.read_line("Enter choice:")?;
@@ -177,7 +180,7 @@ async fn main() -> Result<()> {
                                 Ok(chat_session) => {
                                     tracing::info!(chat_id = %chat_session.id, "Chat session started");
                                     // Use chat loop function
-                                    if let Err(e) = run_chat_loop(&http_client, chat_session.id, &mut io_handler).await {
+                                    if let Err(e) = run_chat_loop(&http_client, chat_session.id, &mut io_handler, &current_model).await {
                                          tracing::error!(error = ?e, "Chat loop failed");
                                          io_handler.write_line(&format!("Chat loop encountered an error: {}", e))?;
                                     }
@@ -280,7 +283,7 @@ async fn main() -> Result<()> {
               }
               "8" => { // Resume Chat Session
                   // Use handler function
-                  match handle_resume_chat_session_action(&http_client, &mut io_handler).await {
+                  match handle_resume_chat_session_action(&http_client, &mut io_handler, &current_model).await {
                       Ok(()) => { /* Chat loop finished or error handled inside */ }
                       // Handle specific error from handler
                       Err(CliError::InputError(msg)) if msg.contains("No chat sessions found") => {
@@ -319,6 +322,18 @@ async fn main() -> Result<()> {
                             // Keep local state, server logout failed
                             tracing::error!(error = ?e, "Logout API call failed");
                             io_handler.write_line(&format!("Logout failed on the server: {}. You might still be logged in.", e))?;
+                        }
+                    }
+                }
+                "11" => { // Model Settings
+                    // Call a new handler function for model settings
+                    // Pass the current_model mutably so the handler can change it
+                    match handle_model_settings_action(&http_client, &mut io_handler, &mut current_model).await {
+                        Ok(()) => { /* Settings updated or user backed out */ }
+                        Err(e) => {
+                            // Errors should ideally be handled within the action, but log if they propagate
+                            tracing::error!(error = ?e, "Model settings action failed");
+                            io_handler.write_line(&format!("Error in model settings: {}", e))?;
                         }
                     }
                 }

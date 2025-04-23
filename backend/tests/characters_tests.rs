@@ -1,27 +1,24 @@
 #![cfg(test)]
-use diesel::{PgConnection, RunQueryDsl, QueryDsl, ExpressionMethods}; // Remove unused SelectableHelper
-use deadpool_diesel::postgres::{Pool, Manager, Runtime};
+use diesel::{PgConnection, RunQueryDsl};
+use deadpool_diesel::postgres::{Pool}; // Removed unused Manager, Runtime
 use scribe_backend::{
     state::AppState,
     models::{
-        characters::{Character as DbCharacter}, // Keep DbCharacter alias
-        character_card::{NewCharacter}, // Correct import for NewCharacter
+        characters::{Character as DbCharacter},
         users::{User, NewUser},
     },
-    schema::{users, characters},
+    schema::{users}, // Removed unused characters alias
     routes::characters::characters_router,
     routes::auth::login_handler as auth_login_handler,
     auth::{session_store::DieselSessionStore, user_store::Backend as AuthBackend},
     config::Config,
-    llm::{
-        // Remove unused llm_client import
-    },
+    // errors::AppError, // Unused
 };
 use axum::{
-    Router, // Ensure Router is imported
+    Router,
     body::Body,
     http::{Request, Response as AxumResponse, StatusCode, Method, header},
-    routing::post, // Ensure post is imported
+    routing::post,
 };
 use axum_login::{
     AuthManagerLayerBuilder,
@@ -29,122 +26,49 @@ use axum_login::{
 };
 use tower_cookies::CookieManagerLayer;
 use uuid::Uuid;
-use std::sync::Once;
-use tracing_subscriber::{EnvFilter, fmt};
-use secrecy::{Secret, ExposeSecret};
+// use std::sync::Once; // Removed unused import
+// use tracing_subscriber::{EnvFilter, fmt}; // Removed unused
+// use secrecy::{Secret, ExposeSecret}; // Unused
 use serde_json::json;
 use mime;
 use http_body_util::BodyExt;
 use time;
 use bcrypt;
-use dotenvy::dotenv;
-use std::env;
+// use dotenvy::dotenv; // Removed unused
+// use std::env; // Removed unused
 use base64::{Engine as _, engine::general_purpose::STANDARD as base64_standard};
 use crc32fast;
 use std::sync::Arc;
-use anyhow::Context; // Add back Context for .context()
-use reqwest::StatusCode as ReqwestStatusCode; // Use alias to avoid conflict
-use diesel::prelude::*; // Add diesel prelude
+use anyhow::Context;
+use reqwest::StatusCode as ReqwestStatusCode;
+use diesel::prelude::*;
+// use scribe_backend::models::characters::Character as DbCharacter; // Removed duplicate import
+use scribe_backend::models::auth::Credentials as UserCredentials; // Correct path for Credentials, remove duplicate User import
+// use scribe_backend::auth::user_store::Backend as AuthBackend; // Removed duplicate import
+// use scribe_backend::state::AppState; // Remove duplicate AppState import
+// use scribe_backend::test_helpers::{create_test_pool, ensure_tracing_initialized, TestDataGuard}; // Unused import (helpers defined locally or not used)
+use reqwest::cookie::Jar;
+use reqwest::Client;
+// use tower::ServiceExt; // Unused
+// use axum_login::AuthSession; // Unused
+// use std::collections::HashMap; // Unused
 
 // Global static for ensuring tracing is initialized only once
-static TRACING_INIT: Once = Once::new();
+// static TRACING_INIT: Once = Once::new(); // Removed unused static
 
 // Helper function to initialize tracing safely
-fn ensure_tracing_initialized() {
-    TRACING_INIT.call_once(|| {
-        // Use standard init, configure filter
-        let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| "info,sqlx=warn,tower_http=debug".into());
-        fmt().with_env_filter(filter).init();
-    });
-}
-
-// --- Test Helpers ---
-
-// ** RE-ADDED create_test_pool **
-// Updated helper to create a deadpool pool
-pub fn create_test_pool() -> Pool {
-    dotenv().ok();
-    let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set for test pool");
-    let manager = Manager::new(&database_url, Runtime::Tokio1);
-    Pool::builder(manager)
-        .build()
-        .expect("Failed to create test DB pool.")
-}
-
-// ** RE-ADDED TestDataGuard and impls **
-// Helper struct to manage test data cleanup (copied from other file)
-struct TestDataGuard {
-    _pool: Pool, // Remove generic parameters
-    user_ids: Vec<Uuid>,
-    character_ids: Vec<Uuid>,
-}
-
-impl TestDataGuard {
-    fn new(pool: Pool) -> Self { // Remove generic parameters
-        TestDataGuard {
-            _pool: pool,
-            user_ids: Vec::new(),
-            character_ids: Vec::new(),
-        }
-    }
-
-    fn add_user(&mut self, user_id: Uuid) {
-        self.user_ids.push(user_id);
-    }
-
-    fn add_character(&mut self, character_id: Uuid) {
-        self.character_ids.push(character_id);
-    }
-
-    // Explicit async cleanup function
-    async fn cleanup(self) -> Result<(), anyhow::Error> { // Use Result<(), anyhow::Error> 
-        if self.character_ids.is_empty() && self.user_ids.is_empty() {
-            return Ok(());
-        }
-        tracing::debug!(user_ids = ?self.user_ids, character_ids = ?self.character_ids, "--- Cleaning up test data ---");
-
-        let pool_clone = self._pool.clone();
-        let obj = pool_clone.get().await.context("Failed to get DB connection for cleanup")?;
-        
-        let character_ids_to_delete = self.character_ids.clone();
-        let user_ids_to_delete = self.user_ids.clone();
-
-        // Delete characters first (due to potential foreign key constraints)
-        if !character_ids_to_delete.is_empty() {
-            obj.interact(move |conn| {
-                diesel::delete(
-                    characters::table.filter(characters::id.eq_any(character_ids_to_delete))
-                )
-                .execute(conn)
-            }).await.map_err(|e| anyhow::anyhow!("Interact error deleting characters: {:?}", e))?
-              .map_err(|e| anyhow::Error::new(e).context("DB error deleting characters"))?;
-            tracing::debug!("Cleaned up {} characters.", self.character_ids.len());
-        }
-
-        // Then delete users
-        if !user_ids_to_delete.is_empty() {
-            obj.interact(move |conn| {
-                diesel::delete(users::table.filter(users::id.eq_any(user_ids_to_delete)))
-                .execute(conn)
-            }).await.map_err(|e| anyhow::anyhow!("Interact error deleting users: {:?}", e))?
-              .map_err(|e| anyhow::Error::new(e).context("DB error deleting users"))?;
-            tracing::debug!("Cleaned up {} users.", self.user_ids.len());
-        }
-
-        tracing::debug!("--- Cleanup complete ---");
-        Ok(())
-    }
-}
+// Removed local definitions of ensure_tracing_initialized, create_test_pool, and TestDataGuard
+// These are now imported from scribe_backend::test_helpers
 
 // Helper to insert a test character (returns Result<(), ...>)
 fn insert_test_character(
     conn: &mut PgConnection,
     user_uuid: Uuid,
     name: &str,
-) -> Result<DbCharacter, diesel::result::Error> { // Changed return type
+) -> Result<DbCharacter, diesel::result::Error> {
     use scribe_backend::schema::characters;
     // Remove SelectableHelper if unused elsewhere, added QueryDsl, ExpressionMethods
-    use diesel::{QueryDsl, ExpressionMethods, RunQueryDsl};
+    use diesel::{RunQueryDsl}; // Removed unused QueryDsl, ExpressionMethods
 
     // Define a local struct for insertion
     // This local struct might need more fields if the DB schema requires them for insertion
@@ -407,7 +331,6 @@ async fn build_test_app_for_characters(pool: Pool) -> Router {
 }
 
 // --- New Test Case for Character Generation ---
-use reqwest::{Client, cookie::Jar}; // Import reqwest::Client and cookie::Jar
 use std::net::SocketAddr; // Import SocketAddr
 use tokio::net::TcpListener; // Import TcpListener
 use tracing::instrument; // Import instrument
@@ -430,10 +353,11 @@ async fn spawn_app(app: Router) -> SocketAddr {
 // --- Tests ---
 #[cfg(test)]
 mod tests {
+    use scribe_backend::test_helpers::{create_test_pool, ensure_tracing_initialized, TestDataGuard};
+
     use super::*; // Import helpers from outer scope
     
     // Add back necessary imports for test functions
-    use scribe_backend::models::users::UserCredentials; // Moved import here
     use tower::ServiceExt; // Corrected import
     
     // Helper function to run DB operations via pool interact
@@ -487,11 +411,11 @@ mod tests {
         // -- Simulate Login ---
         let login_credentials = UserCredentials {
             username: test_username.clone(),
-            password: Secret::new(test_password.to_string()),
+            password: test_password.to_string(), // Use plain string
         };
         let login_body = json!({
             "username": login_credentials.username,
-            "password": login_credentials.password.expose_secret()
+            "password": login_credentials.password // Use plain string
         });
         let login_request = Request::builder()
             .method(Method::POST)
@@ -551,11 +475,11 @@ mod tests {
         // -- Simulate Login ---
         let login_credentials = UserCredentials {
             username: test_username.clone(),
-            password: Secret::new(test_password.to_string()),
+            password: test_password.to_string(), // Use plain string
         };
         let login_body = json!({
             "username": login_credentials.username,
-            "password": login_credentials.password.expose_secret()
+            "password": login_credentials.password // Use plain string
         });
         let login_request = Request::builder()
             .method(Method::POST)
@@ -615,11 +539,11 @@ mod tests {
         // -- Simulate Login ---
         let login_credentials = UserCredentials {
             username: test_username.clone(),
-            password: Secret::new(test_password.to_string()),
+            password: test_password.to_string(), // Use plain string
         };
         let login_body = json!({
             "username": login_credentials.username,
-            "password": login_credentials.password.expose_secret()
+            "password": login_credentials.password // Use plain string
         });
         let login_request = Request::builder()
             .method(Method::POST)
@@ -641,7 +565,7 @@ mod tests {
             .to_string();
 
         // --- Process the real test file instead of a generated one ---
-        let real_card_data = include_bytes!("../tests/test_data/test_card.png").to_vec();
+        let real_card_data = include_bytes!("../../test_data/test_card.png").to_vec();
         
         // Log some info about the file
         tracing::info!("Real test_card.png size: {} bytes", real_card_data.len());
