@@ -25,7 +25,6 @@ use reqwest_middleware::Error as ReqwestMiddlewareError;
 use std::num::ParseIntError;
 use tower_sessions::session_store::Error as SessionStoreError;
 use uuid::Error as UuidError;
-use uuid::Uuid;
 
 // AppError should automatically be Send + Sync if all its fields are.
 // Remove Send and Sync from derive list.
@@ -148,6 +147,14 @@ pub enum AppError {
 
     #[error("Session Error: {0}")]
     Session(#[from] tower_sessions::session::Error),
+
+    // Added RateLimited variant
+    #[error("API Rate Limit Exceeded")]
+    RateLimited,
+
+    // Added NotImplemented variant
+    #[error("Not Implemented: {0}")]
+    NotImplemented(String),
 }
 
 // This helper enum is necessary because axum_login::Error requires the UserStore::Error
@@ -249,6 +256,8 @@ impl IntoResponse for AppError {
                 (StatusCode::INTERNAL_SERVER_ERROR, "Session management error".to_string())
             }
 
+            // Added RateLimited mapping
+            AppError::RateLimited => (StatusCode::TOO_MANY_REQUESTS, "API rate limit exceeded. Please try again later.".to_string()), // 429
 
             // 5xx Server Errors
             AppError::DatabaseQueryError(e) => {
@@ -329,6 +338,10 @@ impl IntoResponse for AppError {
              AppError::Session(e) => {
                  error!("Session Error: {}", e);
                  (StatusCode::INTERNAL_SERVER_ERROR, "Session management error".to_string())
+             }
+             AppError::NotImplemented(msg) => {
+                 error!("Not Implemented: {}", msg);
+                 (StatusCode::NOT_IMPLEMENTED, msg)
              }
          };
 

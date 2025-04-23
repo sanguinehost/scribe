@@ -17,6 +17,7 @@ use crate::{
     llm::gemini_client,
 };
 use tracing::{error, info, instrument};
+use genai::webc::Error as WebClientError;
 
 // Request body for creating a new chat session
 #[derive(Deserialize)]
@@ -324,12 +325,42 @@ pub async fn generate_chat_response(
 
     // --- LLM Interaction ---
     info!("Sending prompt to AI client");
-    // TODO: Pass the actual prompt built above
-    let ai_response_content = gemini_client::generate_simple_response(
+    let llm_result = gemini_client::generate_simple_response(
         &ai_client,
-        prompt, // Pass the actual prompt built above
-    )
-    .await?; // Propagates GeminiError -> AppError::GeminiError
+        prompt,
+    ).await;
+
+    let ai_response_content = match llm_result {
+        Ok(content) => content,
+        Err(genai_err) => {
+            // Convert genai::Error to AppError first
+            let initial_app_error = AppError::from(genai_err);
+
+            // Now match on the resulting AppError
+            match initial_app_error {
+                // Check if the error was specifically a GeminiError
+                AppError::GeminiError(ref underlying_genai_error) => {
+                     // Check the underlying genai::Error for the rate limit condition
+                    if let genai::Error::WebModelCall { webc_error, .. } = underlying_genai_error {
+                        if let WebClientError::ResponseFailedStatus { status, .. } = webc_error {
+                            if *status == 429 {
+                                error!("Gemini API rate limit hit (429)");
+                                return Err(AppError::RateLimited); // Return specific RateLimited error
+                            }
+                        }
+                    }
+                    // If not a 429 rate limit, return the original GeminiError
+                    error!(error = ?underlying_genai_error, "Gemini API call failed (non-429)");
+                    return Err(initial_app_error);
+                }
+                // Handle any other AppError variants that might have resulted from the From conversion (less likely)
+                other_app_error => {
+                    error!(error = ?other_app_error, "LLM call failed (converted to non-GeminiError)");
+                    return Err(other_app_error);
+                }
+            }
+        }
+    };
 
     // --- Second Interact: Save AI message ---
     info!("Starting second DB interaction (save AI msg)");

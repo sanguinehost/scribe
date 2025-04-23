@@ -3,13 +3,16 @@
 use crate::errors::AppError;
 use crate::models::characters::Character;
 use crate::models::character_card::{NewCharacter};
+use crate::models::users::User;
 use crate::schema::characters::dsl::*; // DSL needed for table/columns
 use crate::services::character_parser::{self};
 use crate::state::AppState;
 use axum::{
-    extract::{multipart::Multipart, Path, State},
+    body::Body,
+    debug_handler,
+    extract::{multipart::Multipart, Path, State, Extension},
     http::StatusCode,
-    response::{IntoResponse, Json},
+    response::{IntoResponse, Json, Response},
     routing::{get, post, delete},
     Router,
 };
@@ -113,10 +116,10 @@ pub async fn list_characters_handler(
 }
 
 // GET /api/characters/:id
-#[instrument(skip(state, auth_session), err)]
+#[instrument(skip(_state, auth_session), err)]
 pub async fn get_character_handler(
-    State(state): State<AppState>,
-    auth_session: CurrentAuthSession, // <-- Add AuthSession extractor
+    State(_state): State<AppState>,
+    auth_session: CurrentAuthSession,
     Path(character_id): Path<Uuid>,
 ) -> Result<Json<Character>, AppError> {
     // Get the user from the session
@@ -125,7 +128,7 @@ pub async fn get_character_handler(
 
     info!(%character_id, %local_user_id, "Fetching character details for user"); // Updated log message
 
-    let conn = state.pool.get().await.map_err(AppError::DbPoolError)?;
+    let conn = _state.pool.get().await.map_err(AppError::DbPoolError)?;
 
     let character_result = conn
         .interact(move |conn| {
@@ -145,9 +148,9 @@ pub async fn get_character_handler(
 }
 
 // POST /api/characters/generate
-#[instrument(skip(state, auth_session, payload), err)]
+#[instrument(skip(_state, auth_session, payload), err)]
 pub async fn generate_character_handler(
-    State(state): State<AppState>,
+    State(_state): State<AppState>,
     auth_session: CurrentAuthSession,
     Json(payload): Json<GenerateCharacterPayload>,
 ) -> Result<(StatusCode, Json<Character>), AppError> {
@@ -278,4 +281,21 @@ pub fn characters_router(state: AppState) -> Router {
         .route("/{id}", delete(delete_character_handler))
         .route("/generate", post(generate_character_handler))
         .with_state(state)
+}
+
+#[debug_handler]
+pub async fn get_character_image(
+    Path(character_id): Path<Uuid>,
+    State(_state): State<AppState>,
+    Extension(user): Extension<User>,
+) -> Result<Response<Body>, AppError> {
+    tracing::info!(%character_id, user_id = %user.id, "Fetching character image");
+
+    // TODO: Implement actual logic to fetch the image data
+    // This would involve querying the database or file storage based on character_id and user_id
+    // For now, return a placeholder response or error
+
+    Err(AppError::NotImplemented(
+        "Character image retrieval not yet implemented".to_string(),
+    ))
 }
