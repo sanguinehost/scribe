@@ -6,9 +6,8 @@ use deadpool_diesel::postgres::{Pool as DeadpoolPool};
 use crate::config::Config; // Use Config instead
 // use genai::Client as GeminiApiClient; // Remove Gemini client for now
 use std::sync::Arc;
-// Use the genai client and the builder function from our llm module
-use genai::Client as GenAiClient;
-// Removed unused import: use crate::llm::gemini_client::build_gemini_client;
+// Use the AiClient trait from our llm module
+use crate::llm::AiClient;
 
 // --- DB Connection Pool Type ---
 pub type DbPool = DeadpoolPool;
@@ -24,13 +23,17 @@ pub struct AppState {
     // pub gemini_client: GeminiApiClient,
     #[cfg(test)] // Only include mock_response in test builds
     pub mock_llm_response: std::sync::Arc<tokio::sync::Mutex<Option<String>>>,
-    pub ai_client: Arc<GenAiClient>, // Add AI client
+    // Change to use the AiClient trait object
+    pub ai_client: Arc<dyn AiClient + Send + Sync>,
 }
 
 impl AppState {
-    // Update constructor signature to accept Arc<GenAiClient>
-    pub fn new(pool: DeadpoolPool, config: Arc<Config>, ai_client: Arc<GenAiClient>) -> Self {
-        // Removed internal client creation logic
+    // Update constructor signature to accept the trait object Arc
+    pub fn new(
+        pool: DeadpoolPool,
+        config: Arc<Config>,
+        ai_client: Arc<dyn AiClient + Send + Sync>, // Use trait object Arc here
+    ) -> Self {
         Self {
             pool,
             config,

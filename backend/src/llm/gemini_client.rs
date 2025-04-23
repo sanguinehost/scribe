@@ -1,46 +1,76 @@
+use async_trait::async_trait;
 use genai::{
-    chat::{ChatMessage, ChatRequest},
+    chat::{ChatMessage, ChatOptions, ChatRequest, ChatResponse}, // Add ChatOptions, remove GenConfig import
     Client, ClientBuilder,
 };
+use std::sync::Arc; // Added Arc
 
 use crate::errors::AppError;
+use super::AiClient; // Import the trait from the parent module
 
-pub async fn build_gemini_client() -> Result<Client, AppError> {
-
-    // TODO: Implement proper auth resolver based on genai docs/examples if needed
-    // For now, assume direct API key usage is handled by the underlying adapter.
-    // This might need refinement depending on how `genai` expects the key.
-    let client = ClientBuilder::default()
-        // Potentially add .with_auth_resolver_fn here if direct key isn't enough
-        .build(); // Build should not return a result directly
-
-    Ok(client)
+/// Wrapper struct around the genai::Client to implement our AiClient trait.
+pub struct ScribeGeminiClient {
+    inner: Client,
 }
 
-// Basic example function to test the client
-// We'll refine this later to integrate with chat history, settings, etc. (Task 2.4, 2.5)
+#[async_trait]
+impl AiClient for ScribeGeminiClient {
+    /// Executes a chat request using the underlying genai::Client.
+    async fn exec_chat(
+        &self,
+        model_name: &str,
+        request: ChatRequest,
+        config_override: Option<ChatOptions>, // Use ChatOptions
+    ) -> Result<ChatResponse, AppError> {
+        // Delegate the call to the inner genai::Client
+        // Convert the genai::Error to AppError using the existing From impl
+        self.inner
+            .exec_chat(model_name, request, config_override.as_ref())
+            .await
+            .map_err(AppError::from)
+    }
+}
+
+/// Implement AiClient for Arc<ScribeGeminiClient> to fix the error
+#[async_trait]
+impl AiClient for Arc<ScribeGeminiClient> {
+    async fn exec_chat(
+        &self,
+        model_name: &str,
+        request: ChatRequest,
+        config_override: Option<ChatOptions>,
+    ) -> Result<ChatResponse, AppError> {
+        // Delegate to the inner ScribeGeminiClient
+        (**self).exec_chat(model_name, request, config_override).await
+    }
+}
+
+/// Builds the ScribeGeminiClient wrapper.
+pub async fn build_gemini_client() -> Result<Arc<ScribeGeminiClient>, AppError> {
+    // TODO: Implement proper auth resolver based on genai docs/examples if needed
+    let client = ClientBuilder::default().build();
+
+    Ok(Arc::new(ScribeGeminiClient { inner: client }))
+}
+
+// Basic example function to test the client - Updated to use the trait object
 pub async fn generate_simple_response(
-    client: &Client,
+    client: &dyn AiClient, // Use trait object reference
     user_message: String,
-    // Add model_name parameter
     model_name: &str,
 ) -> Result<String, AppError> {
-    let chat_request = ChatRequest::default()
-        .append_message(ChatMessage::user(user_message));
+    let chat_request = ChatRequest::default().append_message(ChatMessage::user(user_message));
 
-    tracing::debug!(%model_name, "Executing chat with specified model");
+    tracing::debug!(%model_name, "Executing chat with specified model via trait");
 
-    // Pass the provided model_name to exec_chat
-    // genai::ModelName implements From<&str>
+    // Call exec_chat via the trait
     let response = client
         .exec_chat(model_name, chat_request, None)
         .await?;
 
     // Extract the text content from the response
-    // Use content_text_as_str() for potentially simpler extraction
     let content = response
         .content_text_as_str()
-        // Use GeminiError or a more specific variant if appropriate
         .ok_or_else(|| AppError::BadRequest("No text content in LLM response".to_string()))?
         .to_string();
 
@@ -53,49 +83,47 @@ pub async fn generate_simple_response(
 mod tests {
     use super::*;
     use dotenvy::dotenv;
+    // Removed unused: use crate::llm::AiClient;
 
-    // Test if the client can be built successfully when GEMINI_API_KEY is set
+    // Test if the client wrapper can be built successfully
     #[tokio::test]
-    async fn test_build_gemini_client_ok() {
+    async fn test_build_gemini_client_wrapper_ok() {
         dotenv().ok(); // Load .env file
         let result = build_gemini_client().await;
-        // Assert that the client was built successfully
-        // This implicitly checks if the API key was read from env
-        assert!(result.is_ok(), "Failed to build Gemini client: {:?}", result.err());
+        assert!(result.is_ok(), "Failed to build Gemini client wrapper: {:?}", result.err());
+        // We can't easily assert the inner client type without more complex setup
     }
 
-    // Integration test: Calls the actual Gemini API
-    // Run with: cargo test -- --ignored llm::gemini_client::tests::test_generate_simple_response_integration
+    // Integration test: Calls the actual Gemini API via the wrapper and trait
     #[tokio::test]
-    #[ignore] // Ignored by default to avoid unnecessary API calls/costs
-    async fn test_generate_simple_response_integration() {
-        dotenv().ok(); // Load .env file
+    #[ignore] // Ignored by default
+    async fn test_generate_simple_response_integration_via_wrapper() {
+        dotenv().ok();
 
-        // Build the client
-        let client = build_gemini_client()
+        // Build the client wrapper (returns Arc<ScribeGeminiClient>)
+        let client_wrapper = build_gemini_client()
             .await
-            .expect("Failed to build Gemini client for integration test");
+            .expect("Failed to build Gemini client wrapper for integration test");
 
         // Define a simple user message
-        let user_message = "Test: Say hello!".to_string();
-        // Define the model to use for the test
-        let model_name_for_test = "gemini-2.5-pro-exp-03-25";
+        let user_message = "Test Wrapper: Say hello!".to_string();
+        let model_name_for_test = "gemini-1.5-flash-latest"; // Use a common model
 
-        // Call the generation function with the model name
-        let result = generate_simple_response(&client, user_message, model_name_for_test).await;
+        // Call the generation function using the trait object reference
+        // Dereference the Arc to get &ScribeGeminiClient, which automatically coerces to &dyn AiClient
+        let result = generate_simple_response(&*client_wrapper, user_message, model_name_for_test).await;
 
         // Assert that the call was successful and returned a non-empty response
         match result {
             Ok(response) => {
-                println!("Gemini Response: {}", response);
+                println!("Gemini Response (via wrapper): {}", response);
                 assert!(!response.is_empty(), "Gemini returned an empty response");
             }
             Err(e) => {
-                panic!("Gemini API call failed: {:?}", e);
+                panic!("Gemini API call (via wrapper) failed: {:?}", e);
             }
         }
     }
 
-    // TODO: Add a mocked test for generate_simple_response
-    // This would require a mocking framework or feature flags to swap the client
+    // TODO: Add a mocked test for generate_simple_response using a MockAiClient
 }

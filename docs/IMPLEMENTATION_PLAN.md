@@ -98,7 +98,7 @@ Only mark a task checkbox (`- [x]`) when all these conditions are satisfied.
 
 ### Epic 2: Core Chat Loop
 
-*Goal: Enable basic chat functionality: creating sessions, sending/receiving messages, basic prompt assembly.*
+*Goal: Enable basic chat functionality: creating sessions, sending/receiving messages, basic prompt assembly, **and streaming responses**.*
 
 - [x] **Task 2.1: Chat Session & History API (BE)** - ***Requires Task 0.5 Completion***
     - [x] **(BE) Create Session Logic:** Implement handler for `POST /api/chats`. Create new entry in `chat_sessions` table, linking to *authenticated user* and a character ID. Return session ID. *(Verified via chat_tests.rs)*
@@ -110,32 +110,33 @@ Only mark a task checkbox (`- [x]`) when all these conditions are satisfied.
 - [x] **Task 2.2: Save Message API (BE)** - ***Requires Task 2.1 Completion***
     - [x] **(BE) Save Message Logic:** Implement handler for `POST /api/chats/{id}/messages`. Validate input (user/AI type, content). Save message to `chat_messages` table, ensuring session is owned by *authenticated user*.
     - [x] *TDD (BE):* API tests for `POST /chats/{id}/messages` (success, auth failure, session not found, forbidden/wrong user, invalid input).
-- [x] **Task 2.3: Gemini Generation Client (BE)**
+- [ ] **Task 2.3: Gemini Generation Client (BE)**
     - [x] **(BE) Configuration:** Setup API key management (e.g., environment variables). *(Verified - Implicitly handled by genai)*
-    - [x] **(BE) Client Implementation:** Create Rust module/struct wrapping the Gemini Generation API client (`genai`). Implement function like `generate_content(prompt, settings)` (`generate_simple_response`). Handle API errors. *(Verified)*
-    - [x] *TDD (BE):* Unit tests mocking the HTTP client interface to test request building and response parsing. *(Verified - Basic client build test and integration test for generation)*
+    - [x] **(BE) Client Implementation:** Create Rust module/struct wrapping the Gemini Generation API client (`genai`). Implement function like `generate_content(prompt, settings)` (`generate_simple_response`). Handle API errors. **Investigate and implement streaming response handling if supported by `genai`/Gemini API.** *(Verified - Base client exists, streaming needs implementation)*
+    - [x] *TDD (BE):* Unit tests mocking the HTTP client interface to test request building and response parsing. *(Verified - Basic client build test and integration test for generation)* **Add tests for streaming.**
 - [x] **Task 2.4: Basic Prompt Assembly (BE)** - ***Requires Task 1.2 & Task 4.2 Completion***
     - [x] **(BE) Data Retrieval:** Implement logic to get character details (from DB), system prompt (from DB - see Task 4.2), and recent chat messages (from DB).
     - [x] **(BE) Prompt Formatting:** Combine retrieved data into a single prompt string according to Gemini API requirements.
     - [x] *TDD (BE):* Unit tests for prompt assembly logic with various inputs (different character data, history lengths, system prompts).
-- [x] **Task 2.5: Generation API Endpoint (BE)** - ***Requires Task 2.2, 2.3, 2.4 Completion***
-    - [x] **(BE) Orchestration Logic:** Implement handler for `POST /api/chats/{id}/generate`.
+- [ ] **Task 2.5: Generation API Endpoint (BE)** - ***Requires Task 2.2, 2.3, 2.4 Completion***
+    - [ ] **(BE) Orchestration Logic:** Implement handler for `POST /api/chats/{id}/generate`. **Support streaming responses (e.g., Server-Sent Events).**
         - [x] Verify session ownership by *authenticated user*.
         - [x] Get user message from request body. Save user message (using Task 2.2 logic/service).
         - [x] Assemble prompt (using Task 2.4 logic).
-        - [x] Call Gemini client (Task 2.3).
-        - [x] Save AI response (using Task 2.2 logic/service).
-        - [x] Return AI response.
-    - [x] *TDD (BE):* API integration tests for `POST /chats/{id}/generate` (mocking the Gemini client call). Test success case, auth failure, session not found, downstream errors (saving message, assembling prompt).
+        - [ ] Call Gemini client (Task 2.3), **handling potential streaming.**
+        - [ ] Save AI response (using Task 2.2 logic/service) **(potentially after stream completion or incrementally if feasible)**.
+        - [ ] Return AI response **(as stream or complete response)**.
+    - [ ] *TDD (BE):* API integration tests for `POST /chats/{id}/generate` (mocking the Gemini client call). Test success case (both streaming and non-streaming), auth failure, session not found, downstream errors (saving message, assembling prompt). **Verify stream format (e.g., SSE).**
 - [ ] **Task 2.6: Chat UI Components (FE)**
     - [ ] **(FE) Chat Window:** Create `ChatWindow.svelte` (main container, potentially using Skeleton layout components like `AppShell`).
-    - [ ] **(FE) Message Bubble:** Create `MessageBubble.svelte` (display individual user/AI messages, style using Skeleton theme/utilities).
+    - [ ] **(FE) Message Bubble:** Create `MessageBubble.svelte` (display individual user/AI messages, style using Skeleton theme/utilities). **Must support rendering incrementally updating text for streaming.**
     - [ ] **(FE) Message Input:** Create `MessageInput.svelte` (Leverage Skeleton `<textarea>`, `<button>`).
-    - [ ] *TDD (FE):* Component tests for each component (rendering props, basic interactions like button click).
+    - [ ] *TDD (FE):* Component tests for each component (rendering props, basic interactions like button click). **Add tests for incremental text updates in `MessageBubble`.**
 - [ ] **Task 2.7: Frontend Chat Logic (FE)** - ***Requires BE APIs (Task 2.1, 2.2, 2.5) Completion***
     - [ ] **(FE) Chat Store:** Implement Svelte store (`chatStore`) to manage current session ID, messages, loading state.
-    - [ ] **(FE) API Calls:** Implement functions to: create session (`POST /api/chats`), fetch messages (`GET /api/chats/{id}/messages`), send message & trigger generation (`POST /api/chats/{id}/generate`).
-    - [ ] **(FE) UI Integration:** Connect `ChatWindow`, `MessageInput` to the store and API functions. Display messages. Handle loading indicators. Handle errors from API calls.
+    - [ ] **(FE) API Calls:** Implement functions to: create session (`POST /api/chats`), fetch messages (`GET /api/chats/{id}/messages`), send message & trigger generation (`POST /api/chats/{id}/generate`). **Handle streaming responses (e.g., using `EventSource` for SSE).**
+    - [ ] **(FE) UI Integration:** Connect `ChatWindow`, `MessageInput` to the store and API functions. Display messages. **Update messages incrementally during streaming.** Handle loading indicators. Handle errors from API calls.
+    - [ ] *TDD (FE):* Add tests for handling streaming responses and updating the store/UI correctly.
 - [x] **Task 2.8: Basic CLI Test Client (BE/DevTool)** - ***Requires BE APIs (Task 2.1, 2.2, 2.5) Completion***
    - [x] **(BE/CLI) Create Rust Binary:** Set up a separate Rust binary project or a binary target within the backend (`scribe-cli`). Add necessary dependencies (e.g., `reqwest`, `tokio`, `serde`, `clap` for arg parsing).
    - [x] **(BE/CLI) Implement API Client Logic:** Create functions within the CLI to interact with the backend API: login (`/api/auth/login`), list characters (`/api/characters`), create chat (`/api/chats`), generate response (`/api/chats/{id}/generate`). Handle session cookies.
@@ -186,25 +187,28 @@ Only mark a task checkbox (`- [x]`) when all these conditions are satisfied.
 
 *Goal: Allow users to set basic generation parameters and a system prompt.*
 
-- [x] **Task 4.1: Database Schema Update (BE)**
-    - [x] **(BE) Decision:** Decide whether settings (`system_prompt`, `temperature`, `max_output_tokens`) belong to `characters` or `chat_sessions`. **Decision: Add to `chat_sessions` for per-chat control.** Make columns nullable with sensible defaults. *(Verified)*
-    - [x] **(BE) Create Migration:** Use `diesel_cli` to generate a new migration file adding these columns to `chat_sessions`. *(Verified - Assuming migration file exists)*
+- [ ] **Task 4.1: Database Schema Update (BE)**
+    - [x] **(BE) Decision:** Decide whether settings (`system_prompt`, `temperature`, `max_output_tokens`, **`frequency_penalty`, `presence_penalty`, `top_k`, `top_p`, `repetition_penalty`, `min_p`, `top_a`, `seed`, `logit_bias` (JSON?)**) belong to `characters` or `chat_sessions`. **Decision: Add to `chat_sessions` for per-chat control.** Make columns nullable with sensible defaults. *(Verified for original 3)*
+    - [ ] **(BE) Create Migration:** Use `diesel_cli` to generate a new migration file adding these columns to `chat_sessions`. *(Verified - Assuming migration file exists for original 3)* **Needs update for new columns.**
     - [x] **(BE) Apply Migration:** Ensure the migration runner (from Task 0.4) applies this migration. *(Verified)*
-    - [x] *TDD (BE):* Update schema verification tests (Task 0.4) to reflect new columns. Run migration tests. *(Verified)*
+    - [ ] *TDD (BE):* Update schema verification tests (Task 0.4) to reflect new columns. Run migration tests. *(Verified for original 3)* **Needs update.**
 - [ ] **Task 4.2: API & Logic for Settings (BE)** - ***Requires Task 0.5, Task 2.1 Completion***
-    - [ ] **(BE) Get Settings Logic:** Implement handler for `GET /api/chats/{id}/settings`. Query `chat_sessions` table for the specified session ID, verify ownership by *authenticated user*. Return the settings values (or defaults if NULL).
-    - [ ] **(BE) Update Settings Logic:** Implement handler for `PUT /api/chats/{id}/settings`. Verify session ownership by *authenticated user*. Validate input data (e.g., temperature range, token limits). Update the corresponding row in `chat_sessions`.
+    - [ ] **(BE) Get Settings Logic:** Implement handler for `GET /api/chats/{id}/settings`. Query `chat_sessions` table for the specified session ID, verify ownership by *authenticated user*. Return the settings values (or defaults if NULL). **Handle all new settings.**
+    - [ ] **(BE) Update Settings Logic:** Implement handler for `PUT /api/chats/{id}/settings`. Verify session ownership by *authenticated user*. Validate input data (e.g., temperature range, token limits, penalty ranges, K/P/A values, seed format, logit bias structure). Update the corresponding row in `chat_sessions`. **Handle all new settings.**
     - [ ] **(BE) Update Prompt Assembly:** Modify Task 2.4 logic to fetch `system_prompt` from the session settings (retrieved via Task 4.2 logic or passed in) and include it in the prompt.
-    - [ ] **(BE) Update Gemini Client Call:** Modify Task 2.5 logic to fetch `temperature` and `max_output_tokens` from session settings and pass them to the Gemini client (Task 2.3).
-    - [ ] *TDD (BE):* API tests for `GET /api/chats/{id}/settings` (success, auth failure, not found, forbidden).
-    - [ ] *TDD (BE):* API tests for `PUT /api/chats/{id}/settings` (success, auth failure, not found, forbidden, invalid data).
+    - [ ] **(BE) Update Gemini Client Call:** Modify Task 2.5 logic to fetch **all relevant settings** (`temperature`, `max_output_tokens`, `frequency_penalty`, `presence_penalty`, `top_k`, `top_p`, etc.) from session settings and pass them to the Gemini client (Task 2.3). **Requires mapping to `genai::ChatOptions` / `genai::GenerationConfig` and verification of Gemini API support for each.**
+    - [ ] *TDD (BE):* API tests for `GET /api/chats/{id}/settings` (success, auth failure, not found, forbidden). **Verify all settings returned.**
+    - [ ] *TDD (BE):* API tests for `PUT /api/chats/{id}/settings` (success, auth failure, not found, forbidden, invalid data for *each* setting). **Verify all settings updated.**
     - [ ] *TDD (BE):* Update Unit tests for Prompt Assembly (Task 2.4) to verify system prompt usage.
-    - [ ] *TDD (BE):* Update Unit tests/Integration tests for Generation Endpoint (Task 2.5) to verify settings are passed to the mocked Gemini client.
+    - [ ] *TDD (BE):* Update Unit tests/Integration tests for Generation Endpoint (Task 2.5) to verify **all applicable settings** are passed to the mocked Gemini client.
 - [ ] **Task 4.3: Settings UI (FE)** - ***Requires Task 4.2 Completion***
     - [ ] **(FE) Settings Panel Component:** Create `SettingsPanel.svelte` (Leverage Skeleton components like `<Modal>`, `<SlideOver>`, or integrate into `AppShell`).
-    - [ ] **(FE) Input Components:** Use Skeleton form components (`<textarea>`, `<input type="range">`, `<input type="number">`) for System Prompt, Temperature, Max Output Tokens.
-    - [ ] **(FE) API Calls:** Implement logic to fetch current settings using `GET /api/chats/{id}/settings` when the panel opens for the current chat session. Implement logic to save settings using `PUT /api/chats/{id}/settings` on change or via a save button. Handle loading/success/error states.
-    - [ ] *TDD (FE):* Component tests for `SettingsPanel` (rendering inputs, handling input changes, simulating API calls for fetch/save).
+    - [ ] **(FE) Input Components:** Use Skeleton form components (`<textarea>`, `<input type="range">`, `<input type="number">`, sliders, text inputs as appropriate) for System Prompt, Temperature, Max Output Tokens, **Frequency/Presence Penalty, Top K/P/A, Repetition Penalty, Min P, Seed, Logit Bias editor (potentially complex)**.
+    - [ ] **(FE) API Calls:** Implement logic to fetch current settings using `GET /api/chats/{id}/settings` when the panel opens for the current chat session. Implement logic to save settings using `PUT /api/chats/{id}/settings` on change or via a save button. Handle loading/success/error states. **Ensure all settings are fetched/saved.**
+    - [ ] *TDD (FE):* Component tests for `SettingsPanel` (rendering inputs, handling input changes, simulating API calls for fetch/save). **Verify all settings inputs.**
+- [ ] **Task 4.4: Investigate Gemini API Support (BE)** - ***Requires consulting `genai` / Google Gemini docs***
+    - [ ] **(BE) Research:** Systematically check the `genai` crate and official Google Gemini API documentation to confirm which of the newly added settings (`frequency_penalty`, `presence_penalty`, `top_k`, `top_p`, `repetition_penalty`, `min_p`, `top_a`, `seed`, `logit_bias`) are directly supported via API parameters in `ChatOptions` or `GenerationConfig`.
+    - [ ] **(BE) Document Findings:** Update comments in the code or relevant documentation (`docs/LLM_INTEGRATION.md`?) to note which settings are supported, which might require workarounds (if any), and which are unsupported by the Gemini API.
 
 ---
 
@@ -253,6 +257,10 @@ The MVP is complete when a user can:
 
 ## Post-MVP Considerations
 
+*   **High Priority:**
+    *   **Function Calling:** Allow the LLM to call predefined tools/functions.
+    *   **Web Search:** Integrate external web search capabilities into the LLM context.
+    *   **Inline Image Handling:** Support sending and displaying images within chat for multimodal models.
 *   **Localization:** Supporting multiple languages is a major priority and localizing the UI and API responses. Target audience is English, Chinese, and Spanish speakers with future plans for more (i.e., Russian, French, German, etc.).
 *   **Federation Support:** Implementing federation protocols (e.g., ActivityPub) to allow instances to connect and share data/interactions.
 *   **Advanced Moderation:** Building robust content moderation tools (AI classifiers, hash matching for illegal content), configurable policies (`policy.toml` concept), and moderation dashboards.

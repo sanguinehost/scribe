@@ -3,6 +3,7 @@ use chrono::{DateTime, Utc};
 use diesel::prelude::*;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
+use bigdecimal::BigDecimal; // Add import
 use crate::models::users::User;
 use crate::models::characters::CharacterMetadata;
 use tracing::error;
@@ -23,9 +24,9 @@ pub struct ChatSession {
     pub id: Uuid,
     pub user_id: Uuid,
     pub character_id: Uuid,
-    // pub system_prompt: Option<String>, // Added in later migration
-    // pub temperature: Option<f64>,
-    // pub max_output_tokens: Option<i32>,
+    pub system_prompt: Option<String>,
+    pub temperature: Option<BigDecimal>, // Changed f32 to BigDecimal to match NUMERIC
+    pub max_output_tokens: Option<i32>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -128,3 +129,23 @@ pub struct GenerateResponsePayload {
 pub struct GenerateResponse {
     pub ai_message: ChatMessage,
 } 
+
+
+// --- Chat Settings API Structures ---
+
+/// Response body for GET /api/chats/{id}/settings
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct ChatSettingsResponse {
+    pub system_prompt: Option<String>,
+    pub temperature: Option<BigDecimal>, // Changed f32 to BigDecimal
+    pub max_output_tokens: Option<i32>,
+}
+
+/// Request body for PUT /api/chats/{id}/settings
+/// All fields are optional to allow partial updates.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)] // Added Serialize
+pub struct UpdateChatSettingsRequest {
+    pub system_prompt: Option<String>,
+    pub temperature: Option<BigDecimal>, // Changed f32 to BigDecimal
+    pub max_output_tokens: Option<i32>,
+}

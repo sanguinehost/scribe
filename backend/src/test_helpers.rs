@@ -1,12 +1,11 @@
 // backend/src/test_helpers.rs
 // Contains helper functions and structs for integration testing within the src directory.
-// Moved from backend/tests/helpers.rs to be accessible by inline tests.
 
 // Make sure all necessary imports from the main crate and external crates are included.
 use crate::{
     auth::{session_store::DieselSessionStore, user_store::Backend as AuthBackend}, // Use crate::auth and alias Backend
     config::Config,
-    llm::gemini_client::build_gemini_client,
+    // Ensure build_gemini_client is removed if present
     models::{
         character_card::NewCharacter,
         characters::Character,
@@ -19,13 +18,13 @@ use crate::{
         chat::chat_routes,
         health::health_check,
     },
-    schema, // Use crate::schema
-    state::AppState, // Use crate::state
-    PgPool, // Use crate::PgPool
+    schema,
+    state::AppState,
+    PgPool,
 };
 use axum::{
     body::Body,
-    http::{header, Method, Request, StatusCode}, // Removed cookie
+    http::{header, Method, Request, StatusCode},
     Router,
 };
 use axum_login::{login_required, AuthManagerLayerBuilder};
@@ -46,18 +45,30 @@ use tower_sessions::{Expiry, SessionManagerLayer, cookie}; // Added cookie impor
 use tower::ServiceExt;
 use uuid::Uuid;
 use anyhow::Context; // Added for TestDataGuard cleanup
+use async_trait::async_trait;
+// Removed unused: use axum::response::Response;
+// Removed unused: use axum_login::AuthUser;
+// Removed unused: use diesel::r2d2::ConnectionManager;
+// Removed unused: use diesel::PgConnection;
+// Removed unused: use diesel::r2d2 as diesel_r2d2;
+use std::sync::Mutex; // Only import Mutex, not {Arc, Mutex}
+use genai::ModelIden;
+use genai::adapter::AdapterKind;
+use genai::chat::{ChatOptions, ChatRequest, ChatResponse, MessageContent, Usage};
+use bigdecimal::BigDecimal;
 
 // Define the embedded migrations macro
 // Ensure this path is correct relative to the crate root (src)
 pub const MIGRATIONS: EmbeddedMigrations = embed_migrations!("./migrations");
 
 /// Structure to hold information about the running test application.
-#[derive(Clone)] // Clone needed because TestContext clones it
+#[derive(Clone)]
 pub struct TestApp {
     pub address: String,
-    pub router: Router, // The configured Axum router
+    pub router: Router,
     pub db_pool: PgPool,
-    // Add other relevant fields, e.g., http client if needed for direct API calls
+    // Ensure mock_ai_client field exists
+    pub mock_ai_client: Arc<MockAiClient>,
 }
 
 /// Sets up the application state and router for integration testing, WITHOUT spawning a server.
@@ -135,13 +146,10 @@ pub async fn spawn_app() -> TestApp {
 
     // --- AppState ---
     let config = Arc::new(Config::load().expect("Failed to load test configuration"));
-    // Build the AI client (requires GOOGLE_API_KEY in env for tests)
-    let ai_client = Arc::new(
-        build_gemini_client()
-            .await
-            .expect("Failed to build Gemini client for tests. Is GOOGLE_API_KEY set?"),
-    );
-    let app_state = AppState::new(db_pool.clone(), config, ai_client);
+    // Ensure Mock AI Client is instantiated
+    let mock_ai_client = Arc::new(MockAiClient::new());
+    // Ensure AppState is created with the mock client
+    let app_state = AppState::new(db_pool.clone(), config, mock_ai_client.clone());
 
     // --- Router Setup (mirroring main.rs structure) ---
     // Note: Imports moved to top of file
@@ -175,9 +183,11 @@ pub async fn spawn_app() -> TestApp {
     // The router will be called directly using oneshot
 
     TestApp {
-        address, // Keep address for building request URIs
-        router: app_router, // Return the router for direct calls via oneshot
+        address,
+        router: app_router,
         db_pool,
+        // Ensure mock_ai_client is stored
+        mock_ai_client,
     }
 }
 
@@ -273,7 +283,7 @@ pub async fn create_test_chat_session(
     conn.interact(move |conn| {
         diesel::insert_into(schema::chat_sessions::table)
             .values(&new_session)
-            .returning(ChatSession::as_returning())
+            .returning(ChatSession::as_select()) // Use as_select() with returning
             .get_result::<ChatSession>(conn)
             .expect("Failed to insert test chat session")
     })
@@ -292,10 +302,10 @@ pub async fn get_chat_session_from_db(pool: &PgPool, session_id: Uuid) -> Option
     conn.interact(move |conn| {
         chat_sessions
             .filter(id.eq(session_id))
-            .select(ChatSession::as_select())
+            .select(ChatSession::as_select()) // Explicitly select fields matching the struct
             .first::<ChatSession>(conn)
-            .optional() // Return Option<ChatSession>
-            .expect("Failed to query test chat session") // Interact should handle Result
+            .optional()
+            .expect("Failed to query test chat session")
     })
     .await
     .expect("Interact failed for get_chat_session")
@@ -328,9 +338,83 @@ pub async fn create_test_chat_message(
     .expect("Interact failed for create_chat_message")
 }
 
+/// Helper to update chat settings directly in the DB for testing.
+pub async fn update_test_chat_settings(
+    pool: &PgPool,
+    session_id: Uuid,
+    system_prompt: Option<String>,
+    temperature: Option<BigDecimal>, // Changed f32 to BigDecimal
+    max_output_tokens: Option<i32>,
+) {
+    use crate::schema::chat_sessions::dsl::*;
+    use diesel::dsl::now;
+
+    let conn = pool
+        .get()
+        .await
+        .expect("Failed to get DB conn for update_test_chat_settings");
+
+    conn.interact(move |conn| {
+        diesel::update(chat_sessions.filter(id.eq(session_id)))
+            .set((
+                system_prompt.eq(system_prompt),
+                temperature.eq(temperature), // Pass BigDecimal directly
+                max_output_tokens.eq(max_output_tokens),
+                updated_at.eq(now),
+            ))
+            .execute(conn)
+            .expect("Failed to update test chat settings")
+    })
+    .await
+    .expect("Interact failed for update_test_chat_settings");
+}
+
+/// Helper to get messages directly from DB for a specific session.
+pub async fn get_chat_messages_from_db(pool: &PgPool, session_id: Uuid) -> Vec<ChatMessage> {
+    // Imports needed within this function scope
+    use crate::schema::chat_messages::dsl::*;
+    use crate::models::chats::ChatMessage; // Ensure ChatMessage model is in scope
+    use diesel::prelude::*; // For .filter(), .select(), .order(), .load()
+
+    let conn = pool.get().await.expect("Failed to get DB conn for get_chat_messages_from_db");
+    conn.interact(move |conn| {
+        chat_messages
+            .filter(crate::schema::chat_messages::dsl::session_id.eq(session_id)) // Use dsl namespace
+            .select(ChatMessage::as_select())
+            .order(created_at.asc())
+            .load::<ChatMessage>(conn)
+            .expect("Failed to load chat messages in test helper")
+    })
+    .await.expect("Interact failed for get_chat_messages_from_db")
+}
+
+/// Helper to get chat session settings directly from DB.
+pub async fn get_chat_session_settings(pool: &PgPool, session_id: Uuid) 
+-> Option<(Option<String>, Option<BigDecimal>, Option<i32>)> {
+    use crate::schema::chat_sessions::dsl::*;
+    
+    let conn = pool
+        .get()
+        .await
+        .expect("Failed to get DB conn for get_chat_session_settings");
+
+    conn.interact(move |conn| {
+        chat_sessions
+            .filter(id.eq(session_id))
+            .select((system_prompt, temperature, max_output_tokens))
+             // Expect DB to store temperature as NUMERIC -> BigDecimal
+            .first::<(Option<String>, Option<BigDecimal>, Option<i32>)>(conn)
+            .optional()
+            // No need to map f64 -> f32 anymore
+            .expect("Failed to query test chat session settings")
+    })
+    .await
+    .expect("Interact failed for get_chat_session_settings")
+}
+
 /// Creates a user, logs them in via API call, and returns the session cookie string and the user object.
 pub async fn create_test_user_and_login(
-    app: &TestApp, // Use TestApp which contains the router
+    app: &TestApp, // TestApp now includes mock_ai_client
     username: &str,
     password: &str,
 ) -> (String, User) {
@@ -411,9 +495,7 @@ impl TestContext {
 /// Sets up the test application and returns a TestContext.
 pub async fn setup_test_app() -> TestContext {
     let test_app = spawn_app().await;
-    TestContext {
-        app: test_app, // Store the whole TestApp
-    }
+    TestContext { app: test_app }
 }
 
 // --- Helpers needed by integration tests ---
@@ -432,18 +514,21 @@ pub fn create_test_pool() -> DeadpoolPool { // Removed <DeadpoolManager>
 // ** ADDED pub **
 /// Helper struct to manage test data cleanup for integration tests
 pub struct TestDataGuard {
-    pool: DeadpoolPool, // Removed <DeadpoolManager>
+    pool: DeadpoolPool,
     user_ids: Vec<Uuid>,
     character_ids: Vec<Uuid>,
+    // Add session IDs if needed for cleanup
+    session_ids: Vec<Uuid>,
 }
 
 // ** ADDED pub to impl and methods **
 impl TestDataGuard {
     pub fn new(pool: DeadpoolPool) -> Self { // Removed <DeadpoolManager>
         TestDataGuard {
-            pool, // Changed _pool to pool
+            pool,
             user_ids: Vec::new(),
             character_ids: Vec::new(),
+            session_ids: Vec::new(), // Initialize session IDs
         }
     }
 
@@ -455,32 +540,69 @@ impl TestDataGuard {
         self.character_ids.push(character_id);
     }
 
+    pub fn add_session(&mut self, session_id: Uuid) {
+        self.session_ids.push(session_id);
+    }
+
+
     // Explicit async cleanup function
     pub async fn cleanup(self) -> Result<(), anyhow::Error> {
-        if self.character_ids.is_empty() && self.user_ids.is_empty() {
-            return Ok(());
+        if self.character_ids.is_empty() && self.user_ids.is_empty() && self.session_ids.is_empty() {
+             return Ok(());
         }
-        tracing::debug!(user_ids = ?self.user_ids, character_ids = ?self.character_ids, "--- Cleaning up test data ---");
+        tracing::debug!(user_ids = ?self.user_ids, character_ids = ?self.character_ids, session_ids = ?self.session_ids, "--- Cleaning up test data ---");
 
         let pool_clone = self.pool.clone(); // Use self.pool
         let obj = pool_clone.get().await.context("Failed to get DB connection for cleanup")?;
 
         let character_ids_to_delete = self.character_ids.clone();
         let user_ids_to_delete = self.user_ids.clone();
+        let session_ids_to_delete = self.session_ids.clone();
 
-        // Delete characters first (due to potential foreign key constraints)
-        if !character_ids_to_delete.is_empty() {
-            obj.interact(move |conn| {
+        // Delete messages first (FK to sessions)
+        if !session_ids_to_delete.is_empty() {
+             obj.interact({
+                let ids = session_ids_to_delete.clone(); // Clone for closure
+                move |conn| {
+                    diesel::delete(
+                        schema::chat_messages::table.filter(schema::chat_messages::session_id.eq_any(ids))
+                    )
+                    .execute(conn)
+                }
+            }).await.map_err(|e| anyhow::anyhow!("Interact error deleting messages: {:?}", e))?
+              .map_err(|e| anyhow::Error::new(e).context("DB error deleting messages"))?;
+             tracing::debug!("Cleaned up messages for {} sessions.", session_ids_to_delete.len());
+        }
+
+
+        // Delete sessions (FK to users, characters)
+        if !session_ids_to_delete.is_empty() {
+             obj.interact(move |conn| {
                 diesel::delete(
-                    schema::characters::table.filter(schema::characters::id.eq_any(character_ids_to_delete))
+                    schema::chat_sessions::table.filter(schema::chat_sessions::id.eq_any(session_ids_to_delete))
                 )
                 .execute(conn)
+            }).await.map_err(|e| anyhow::anyhow!("Interact error deleting sessions: {:?}", e))?
+              .map_err(|e| anyhow::Error::new(e).context("DB error deleting sessions"))?;
+             tracing::debug!("Cleaned up {} sessions.", self.session_ids.len());
+        }
+
+        // Delete characters (FK to users)
+        if !character_ids_to_delete.is_empty() {
+            obj.interact({ // Use block to manage clone lifetime
+                let ids = character_ids_to_delete.clone();
+                move |conn| {
+                    diesel::delete(
+                        schema::characters::table.filter(schema::characters::id.eq_any(ids))
+                    )
+                    .execute(conn)
+                }
             }).await.map_err(|e| anyhow::anyhow!("Interact error deleting characters: {:?}", e))?
               .map_err(|e| anyhow::Error::new(e).context("DB error deleting characters"))?;
             tracing::debug!("Cleaned up {} characters.", self.character_ids.len());
         }
 
-        // Then delete users
+        // Delete users
         if !user_ids_to_delete.is_empty() {
             obj.interact(move |conn| {
                 diesel::delete(schema::users::table.filter(schema::users::id.eq_any(user_ids_to_delete)))
@@ -505,4 +627,78 @@ pub fn ensure_tracing_initialized() {
         let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| "info,sqlx=warn,tower_http=debug".into());
         fmt().with_env_filter(filter).init();
     });
+}
+
+
+// --- Mock AI Client for Testing ---
+
+use crate::llm::AiClient;
+use crate::errors::AppError; // Add missing import
+
+/// Mock AI client for testing
+pub struct MockAiClient {
+    // Store the last request received in a thread-safe manner
+    last_request: Arc<Mutex<Option<ChatRequest>>>,
+    // Store the last options received
+    last_options: Arc<Mutex<Option<ChatOptions>>>,
+    response_to_return: Arc<Mutex<Result<ChatResponse, AppError>>>,
+}
+
+impl MockAiClient {
+    pub fn new() -> Self {
+        // Create a simple successful response
+        let default_response = ChatResponse {
+            model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-1.5-flash-latest"),
+            provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-1.5-flash-latest"),
+            // other fields with reasonable defaults
+            content: Some(MessageContent::Text("Mock response".to_string())),
+            reasoning_content: None,
+            usage: Usage::default(),
+        };
+
+        Self {
+            last_request: Arc::new(Mutex::new(None)),
+            last_options: Arc::new(Mutex::new(None)),
+            response_to_return: Arc::new(Mutex::new(Ok(default_response))),
+        }
+    }
+
+    /// Retrieves the last ChatRequest captured by the mock client.
+    pub fn get_last_request(&self) -> Option<ChatRequest> {
+        self.last_request.lock().unwrap().clone() // Clone the Option<ChatRequest>
+    }
+
+    /// Retrieves the last ChatOptions captured by the mock client.
+    pub fn get_last_options(&self) -> Option<ChatOptions> {
+        self.last_options.lock().unwrap().clone() // Clone the Option<ChatOptions>
+    }
+
+    /// Sets the response that the mock client should return.
+    pub fn set_response(&self, response: Result<ChatResponse, AppError>) {
+        *self.response_to_return.lock().unwrap() = response;
+    }
+}
+
+#[async_trait]
+impl AiClient for MockAiClient {
+    async fn exec_chat(
+        &self,
+        _model_name: &str,
+        request: ChatRequest,
+        config_override: Option<ChatOptions>, // Use ChatOptions
+    ) -> Result<ChatResponse, AppError> {
+        // Store the request for later inspection
+        *self.last_request.lock().unwrap() = Some(request);
+        
+        // Store the options if provided
+        if let Some(opts) = config_override {
+            *self.last_options.lock().unwrap() = Some(opts);
+        }
+
+        // Return the predetermined response
+        match &*self.response_to_return.lock().unwrap() {
+            Ok(response) => Ok(response.clone()),
+            Err(_) => Err(AppError::BadRequest("Mock error".to_string())),
+        }
+    }
 }

@@ -688,6 +688,9 @@ mod tests {
             character_id,
             created_at: Utc::now(),
             updated_at: Utc::now(),
+            system_prompt: None,
+            temperature: None, 
+            max_output_tokens: None,
             // removed summary, title
         }
     }
