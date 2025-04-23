@@ -80,6 +80,7 @@ mod tests {
             user_id: Uuid::new_v4(),
             name: name.to_string(),
             description: description.map(String::from),
+            first_mes: None,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         }

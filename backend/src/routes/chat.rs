@@ -8,19 +8,22 @@ use crate::{
     auth::user_store::Backend as AuthBackend,
     errors::AppError,
     models::{
-        chats::{ChatSession, NewChatSession, ChatMessage, MessageRole, NewChatMessage, NewChatMessageRequest}, // Removed CreateChatSessionPayload, GenerateResponsePayload
-        characters::CharacterMetadata,
-        // characters::Character, // Removed
-        // users::User, // Removed
+        chats::{ChatSession, NewChatSession, ChatMessage as DbChatMessage, MessageRole, NewChatMessage, NewChatMessageRequest},
+        characters::Character,
+        // users::User, // Removed unused import
     },
-    prompt_builder,
-    schema::{self, chat_messages, chat_sessions, characters},
+    schema::{self, characters},
     state::AppState,
-    llm::gemini_client,
-    // config::get_config, // Keep commented out
 };
-use tracing::{error, info, instrument};
-use genai::webc::Error as WebClientError;
+use tracing::{error, info, instrument, warn};
+use genai::chat::{
+    ChatRequest,
+    ChatMessage,
+    ContentPart,
+};
+
+// Default model to use if character doesn't specify one
+const DEFAULT_MODEL_NAME: &str = "gemini-1.5-flash-latest";
 
 // Request body for creating a new chat session
 #[derive(Deserialize)]
@@ -38,7 +41,7 @@ pub struct GenerateRequest {
 // Response body for generating a response
 #[derive(Serialize)]
 pub struct GenerateResponse {
-    ai_message: ChatMessage, // Return the full AI message object
+    ai_message: DbChatMessage, // Return the full AI message object
 }
 
 /// Creates a new chat session associated with a character for the authenticated user.
@@ -49,57 +52,116 @@ pub async fn create_chat_session(
     auth_session: AuthSession<AuthBackend>,
     Json(payload): Json<CreateChatRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let user = auth_session.user.ok_or_else(|| AppError::Unauthorized("Authentication required".to_string()))?;
+    info!("Creating new chat session");
+    let user = auth_session.user.ok_or_else(|| {
+        error!("Authentication required for create_chat_session");
+        AppError::Unauthorized("Authentication required".to_string())
+    })?;
     let user_id = user.id;
-    let character_id = payload.character_id;
+    let character_id = payload.character_id; // Store for use in interact closure
 
-    let created_session = state
+    // Use interact for blocking Diesel operations
+    let created_session: ChatSession = state
         .pool
         .get()
         .await?
         .interact(move |conn| {
-            // 1. Check if the character exists at all
-            let character_exists = schema::characters::table
-                .filter(schema::characters::id.eq(character_id))
-                .select(schema::characters::user_id) // Select user_id for ownership check
-                .first::<Uuid>(conn)
-                .optional()?;
+            // Import schema modules within the closure for clarity
+            use crate::schema::characters::dsl as characters_dsl;
+            use crate::schema::chat_sessions::dsl as chat_sessions_dsl;
+            use crate::schema::chat_messages::dsl as chat_messages_dsl;
 
-            match character_exists {
-                Some(owner_id) => {
-                    // 2. Check if the character is owned by the current user
-                    if owner_id != user_id {
-                        // Character exists but belongs to another user
-                        Err(AppError::Forbidden)
-                    } else {
-                        // Character exists and is owned by the user, proceed to create session
+
+            // Wrap operations in a transaction
+            conn.transaction(|transaction_conn| {
+                // 1. Verify character exists and belongs to the user
+                info!(%character_id, %user_id, "Verifying character ownership");
+                let character_owner_id = characters_dsl::characters
+                    .filter(characters::dsl::id.eq(character_id))
+                    .select(characters::dsl::user_id)
+                    .first::<Uuid>(transaction_conn)
+                    .optional()?; // Use optional to handle not found
+
+                match character_owner_id {
+                    Some(owner_id) => {
+                        if owner_id != user_id {
+                            error!(%character_id, %user_id, owner_id=%owner_id, "User does not own character");
+                            return Err(AppError::Forbidden); // Character owned by someone else
+                        }
+                        // Character exists and is owned by the user, proceed.
+
+                        // 2. Create the new chat session
+                        info!(%character_id, %user_id, "Inserting new chat session");
                         let new_session = NewChatSession {
                             user_id,
                             character_id,
                         };
-
-                        diesel::insert_into(schema::chat_sessions::table)
+                        let created_session: ChatSession = diesel::insert_into(chat_sessions_dsl::chat_sessions)
                             .values(&new_session)
                             .returning(ChatSession::as_returning())
-                            .get_result::<ChatSession>(conn)
+                            .get_result(transaction_conn)
                             .map_err(|e| {
-                                error!("Failed to insert new chat session: {}", e);
+                                error!(error = ?e, "Failed to insert new chat session");
                                 AppError::DatabaseQueryError(e)
-                            })
+                            })?;
+                         info!(session_id = %created_session.id, "Chat session created");
+
+                        // ---- START: Add first_mes as initial AI message ----
+                        info!(%character_id, session_id = %created_session.id, "Fetching character details for first_mes");
+                        let character: Character = characters_dsl::characters
+                            .filter(characters::dsl::id.eq(character_id))
+                            .select(Character::as_select()) // Fetch the full character
+                            .first::<Character>(transaction_conn)
+                            .map_err(|e| {
+                                error!(error = ?e, %character_id, "Failed to fetch full character details during session creation");
+                                // If character was found moments ago, this should ideally not fail, but handle just in case
+                                match e {
+                                    diesel::result::Error::NotFound => AppError::InternalServerError(anyhow::anyhow!("Character inconsistency during session creation")),
+                                    _ => AppError::DatabaseQueryError(e),
+                                }
+                            })?;
+
+                        if let Some(first_message_content) = character.first_mes {
+                            if !first_message_content.trim().is_empty() {
+                                info!(session_id = %created_session.id, "Character has first_mes, adding as initial assistant message");
+                                let first_message = NewChatMessage {
+                                    session_id: created_session.id,
+                                    message_type: MessageRole::Assistant, // Use Assistant role
+                                    content: first_message_content,
+                                    // created_at is handled by DB default or trigger
+                                };
+                                diesel::insert_into(chat_messages_dsl::chat_messages)
+                                    .values(&first_message)
+                                    .execute(transaction_conn) // We don't need the result of this insert
+                                    .map_err(|e| {
+                                        error!(error = ?e, session_id = %created_session.id, "Failed to insert first_mes");
+                                        AppError::DatabaseQueryError(e)
+                                    })?;
+                                info!(session_id = %created_session.id, "Successfully inserted first_mes");
+                            } else {
+                                info!(session_id = %created_session.id, "Character first_mes is empty, skipping initial message.");
+                            }
+                        } else {
+                             info!(session_id = %created_session.id, "Character first_mes is None, skipping initial message.");
+                        }
+                        // ---- END: Add first_mes ----
+
+                        Ok(created_session) // Return the created session
+                    }
+                    None => {
+                        error!(%character_id, "Character not found during session creation");
+                        Err(AppError::NotFound("Character not found".into())) // Character does not exist
                     }
                 }
-                None => {
-                    // Character does not exist
-                    Err(AppError::NotFound("Character not found".into()))
-                }
-            }
+            }) // End transaction
         })
         .await
         .map_err(|interact_err| {
              tracing::error!("InteractError in create_chat_session: {}", interact_err);
              AppError::InternalServerError(anyhow::anyhow!("DB interact error: {}", interact_err))
-        })??;
+        })??; // Double '?' handles both InteractError and the inner Result<ChatSession, AppError>
 
+    info!(session_id = %created_session.id, "Chat session creation successful");
     Ok((StatusCode::CREATED, Json(created_session)))
 }
 
@@ -166,9 +228,9 @@ pub async fn get_chat_messages(
                     } else {
                         schema::chat_messages::table
                             .filter(schema::chat_messages::session_id.eq(session_id))
-                            .select(ChatMessage::as_select())
+                            .select(DbChatMessage::as_select())
                             .order(schema::chat_messages::created_at.asc())
-                            .load::<ChatMessage>(conn)
+                            .load::<DbChatMessage>(conn)
                             .map_err(|e| {
                                 error!("Failed to load messages for session {}: {}", session_id, e);
                                 AppError::DatabaseQueryError(e)
@@ -196,17 +258,19 @@ fn save_chat_message_internal(
     session_id: Uuid,
     role: MessageRole,
     content: String,
-) -> Result<ChatMessage, AppError> {
+) -> Result<DbChatMessage, AppError> {
+    use crate::schema::chat_messages::dsl as chat_messages_dsl; // Add import needed after edit
+
     let new_message = NewChatMessage {
         session_id,
         message_type: role,
         content,
     };
 
-    diesel::insert_into(chat_messages::table)
+    diesel::insert_into(chat_messages_dsl::chat_messages) // Use imported dsl
         .values(&new_message)
-        .returning(ChatMessage::as_returning())
-        .get_result::<ChatMessage>(conn)
+        .returning(DbChatMessage::as_returning())
+        .get_result::<DbChatMessage>(conn)
         .map_err(|e| {
             error!(%session_id, ?role, error=?e, "DB Insert Error in save_chat_message_internal");
             AppError::DatabaseQueryError(e)
@@ -242,18 +306,23 @@ pub async fn generate_chat_response(
 
     // --- First Interact: Validate, Fetch data, Save user message, Build prompt ---
     info!("Starting first DB interaction (fetch data, save user msg)");
-    let prompt = pool
+    let (prompt_history, system_message): (Vec<(MessageRole, String)>, String) = pool
         .get()
         .await?
         .interact(move |conn| {
+            // Use schema modules for clarity
+            use crate::schema::characters::dsl as characters_dsl;
+            use crate::schema::chat_sessions::dsl as chat_sessions_dsl;
+            use crate::schema::chat_messages::dsl as chat_messages_dsl;
+
             conn.transaction(|transaction_conn| {
                 // 1. Retrieve session & character, ensuring ownership
                 info!("Fetching session and character");
                 // --- Query 1: Fetch Chat Session ---
                 info!("Fetching chat session by ID and user ID");
-                let chat_session = chat_sessions::table
-                    .filter(chat_sessions::id.eq(session_id))
-                    .filter(chat_sessions::user_id.eq(user_id)) // Ensure ownership
+                let chat_session = chat_sessions_dsl::chat_sessions // Use imported dsl
+                    .filter(chat_sessions_dsl::id.eq(session_id))
+                    .filter(chat_sessions_dsl::user_id.eq(user_id)) // Ensure ownership
                     .select(ChatSession::as_select())
                     .first::<ChatSession>(transaction_conn)
                     .map_err(|e| {
@@ -266,12 +335,12 @@ pub async fn generate_chat_response(
 
                  info!("Fetching character details");
                  // --- Query 2: Fetch Character ---
-                 let character = characters::table
-                    .filter(characters::id.eq(chat_session.character_id))
+                 let character = characters_dsl::characters // Use imported dsl
+                    .filter(characters_dsl::id.eq(chat_session.character_id))
                     // We already validated session ownership, indirectly validating character access
                     // If characters could be accessed by others, add user_id check here too
-                    .select(CharacterMetadata::as_select()) // Fetch only needed fields
-                    .first::<CharacterMetadata>(transaction_conn)
+                    .select(Character::as_select()) // <-- Fetch the full Character struct
+                    .first::<Character>(transaction_conn) // <-- To get Character
                      .map_err(|e| {
                          error!(?e, "Failed to fetch character details for session");
                          match e {
@@ -280,71 +349,129 @@ pub async fn generate_chat_response(
                           }
                      })?;
 
+                 // Construct the system message here
+                 let system_message = character.system_prompt.clone().unwrap_or_default(); // Get system prompt from Character
+
                 info!("Fetching chat history");
                 // --- Query 3: Fetch Chat History ---
-                let history = chat_messages::table
-                    .filter(chat_messages::session_id.eq(session_id))
-                    .select(ChatMessage::as_select())
-                    .order(chat_messages::created_at.asc())
-                    .load::<ChatMessage>(transaction_conn)
-                     .map_err(|e| {
-                         error!(?e, "Failed to fetch chat history");
-                         AppError::DatabaseQueryError(e)
-                     })?;
+                let history = chat_messages_dsl::chat_messages // Use imported dsl
+                    .filter(chat_messages_dsl::session_id.eq(session_id))
+                    .select(DbChatMessage::as_select())
+                    .order(chat_messages_dsl::created_at.asc())
+                    .load::<DbChatMessage>(transaction_conn)
+                    .map_err(|e| {
+                        error!(?e, "Failed to load chat history");
+                        AppError::DatabaseQueryError(e)
+                    })?;
 
-
-                // 2. Save the new user message
+                // --- Save User Message ---
                 info!("Saving user message");
-                let _user_db_message = save_chat_message_internal(
+                let user_chat_message = save_chat_message_internal(
                     transaction_conn,
                     session_id,
-                    MessageRole::User,
-                    user_message_content, // Use the original content
+                    MessageRole::User, // Use User role
+                    user_message_content,
                 )?;
 
+                // --- Build Prompt History ---
+                info!("Building prompt history");
+                let mut prompt_history = history // Start with existing history
+                    .into_iter()
+                    .map(|msg| (msg.message_type, msg.content))
+                    .collect::<Vec<(MessageRole, String)>>();
 
-                // 3. Build the prompt using the fetched data
-                 info!("Building prompt");
-                 // Assuming prompt_builder is synchronous for now
-                 prompt_builder::build_prompt(
-                     Some(&character),
-                     &history, // Pass the fetched history
-                     // Add other necessary parameters like user name if needed
-                 )
-                 .map_err(|e| {
-                     // Handle potential errors from prompt building if it can fail
-                     error!(?e, "Failed to build prompt");
-                     AppError::InternalServerError(anyhow::anyhow!("Prompt building failed: {}", e))
-                 })
+                prompt_history.push((user_chat_message.message_type, user_chat_message.content)); // Add the new user message
 
+                 // --- Return both history and system message ---
+                 Ok::<_, AppError>((prompt_history, system_message)) // Return history and system message
             }) // End transaction
-        }) // End interact
+        })
         .await
         .map_err(|interact_err| {
-             tracing::error!("InteractError in generate_chat_response (first block): {}", interact_err);
-             AppError::InternalServerError(anyhow::anyhow!("DB interact error: {}", interact_err))
-        })??; // Propagate AppError from inside transaction/interact
+            tracing::error!("InteractError during fetch/save/build prompt: {}", interact_err);
+            AppError::InternalServerError(anyhow::anyhow!("DB interact error: {}", interact_err))
+        })??; // Double '??' for InteractError and inner Result
+
+    // --- Determine Model Name ---
+    // Get model from request payload, fallback to default if not provided by client.
+    let model_name = payload.model.unwrap_or_else(|| {
+        warn!(
+            session_id = %session_id,
+            "Client did not specify a model, defaulting to {}",
+            DEFAULT_MODEL_NAME
+        );
+        DEFAULT_MODEL_NAME.to_string()
+    });
+
+    // Destructure the tuple from the interact block - Now contains history and system message
+    // let (prompt_history, system_message) = prompt; // This line is effectively done by the let binding above
+    // Remove the FIXME/TODO comments and placeholder
+    // FIXME: Refetch character or pass system_message out of interact block
+    // let system_message = ""; // Placeholder - Needs fixing
+    // TODO: Re-fetch character here or modify interact block to return (history, system_message)
+    // For now, system prompt is lost. Need to fix this.
+
+    info!(prompt_history_len = %prompt_history.len(), %model_name, "Data fetched for AI call");
+
+    // --- Call AI Service ---
+    info!("Calling AI service ({})", model_name);
+
+    // Construct genai::ChatRequest messages using correct associated functions
+    let messages: Vec<ChatMessage> = prompt_history.into_iter().map(|(role, content)| {
+        match role {
+            MessageRole::User => ChatMessage::user(content),
+            MessageRole::Assistant => ChatMessage::assistant(content), // Use ::assistant
+            // Assuming MessageRole::System is not expected here, or needs specific handling
+            MessageRole::System => {
+                // Decide how to handle system messages from DB history.
+                // Option 1: Skip them (Gemini uses the 'system' field)
+                 warn!(%session_id, "Skipping System role message from DB history when building genai prompt");
+                 // Return Option<ChatMessage> and filter_map later, or handle differently.
+                 // For now, let's create a user message as a placeholder, though skipping might be better.
+                 ChatMessage::user(format!("[System Message]: {}", content)) // Or skip entirely
+                // Option 2: Panic if unexpected
+                // panic!("Unexpected MessageRole::System found in prompt history");
+            }
+        }
+    }).collect();
+
+    let chat_request = ChatRequest {
+        system: if !system_message.is_empty() {
+            // System field expects Option<String>, not ContentPart
+            Some(system_message)
+        } else {
+            None
+        },
+        messages,
+        // TODO: Add other fields like tools, safety_settings, generation_config if needed
+        ..Default::default()
+    };
 
 
-    // --- LLM Interaction ---
-    info!("Sending prompt to AI client");
+    let ai_response_result = ai_client.exec_chat(&model_name, chat_request, None).await; // <-- New call using exec_chat
 
-    // Determine the model to use
-    let default_model = "gemini-2.5-pro-exp-03-25".to_string(); // Define default
-    let requested_model = payload.model.clone().filter(|m| !m.is_empty()); // Get valid requested model
-    let model_to_use = requested_model.as_deref().unwrap_or(&default_model);
-
-    info!(selected_model = model_to_use, requested_model = ?payload.model, "Determined model for generation");
-
-    // TODO: Update gemini_client::generate_simple_response to accept model_name
-    let llm_result = gemini_client::generate_simple_response(
-        &ai_client,
-        prompt,
-        model_to_use, // Pass the selected model name
-    ).await;
-
-    let ai_response_content = match llm_result {
-        Ok(content) => content,
+    let ai_response_content = match ai_response_result {
+        Ok(response) => {
+             // Extract text content robustly using match on MessageContent and then ContentPart
+             response.content.as_ref()
+                 .and_then(|content| {
+                     match content {
+                         genai::chat::MessageContent::Text(s) => Some(s.clone()),
+                         genai::chat::MessageContent::Parts(parts) => {
+                             // Find the first text part by matching on ContentPart
+                             parts.iter().find_map(|part| match part {
+                                 ContentPart::Text(s) => Some(s.clone()), // Use imported ContentPart directly
+                                 _ => None, // Ignore other part types (e.g., images, function calls)
+                             })
+                         }
+                         _ => None, // Ignore ToolCalls/ToolResponses
+                     }
+                 })
+                .unwrap_or_else(|| {
+                    error!(session_id=%session_id, model=%model_name, "LLM response content was empty, malformed, or contained no text parts");
+                    "Sorry, I received an empty response.".to_string()
+                })
+        },
         Err(genai_err) => {
             // Convert genai::Error to AppError first
             let initial_app_error = AppError::from(genai_err);
@@ -355,7 +482,7 @@ pub async fn generate_chat_response(
                 AppError::GeminiError(ref underlying_genai_error) => {
                      // Check the underlying genai::Error for the rate limit condition
                     if let genai::Error::WebModelCall { webc_error, .. } = underlying_genai_error {
-                        if let WebClientError::ResponseFailedStatus { status, .. } = webc_error {
+                        if let genai::webc::Error::ResponseFailedStatus { status, .. } = webc_error {
                             if *status == 429 {
                                 error!("Gemini API rate limit hit (429)");
                                 return Err(AppError::RateLimited); // Return specific RateLimited error

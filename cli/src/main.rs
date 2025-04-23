@@ -175,21 +175,57 @@ async fn main() -> Result<()> {
                     match select_character(&http_client, &mut io_handler).await {
                         Ok(character_id) => {
                             tracing::info!(%character_id, "Character selected for chat");
-                            // Now create the session
-                            match http_client.create_chat_session(character_id).await {
-                                Ok(chat_session) => {
-                                    tracing::info!(chat_id = %chat_session.id, "Chat session started");
-                                    // Use chat loop function
-                                    if let Err(e) = run_chat_loop(&http_client, chat_session.id, &mut io_handler, &current_model).await {
-                                         tracing::error!(error = ?e, "Chat loop failed");
-                                         io_handler.write_line(&format!("Chat loop encountered an error: {}", e))?;
+
+                            // Fetch character details to display first_mes
+                            match http_client.get_character(character_id).await {
+                                Ok(character_metadata) => {
+                                    // Print the character's first message
+                                    io_handler.write_line(&format!("\n--- {} ---", character_metadata.name))?;
+                                    if let Some(first_mes) = character_metadata.first_mes {
+                                        io_handler.write_line(&first_mes)?;
+                                    } else {
+                                        io_handler.write_line("[Character has no first message defined]")?;
                                     }
-                                    // Message moved inside chat loop exit
-                                    // io_handler.write_line("Chat finished.")?;
+                                    io_handler.write_line("---")?; // Separator
+
+                                    // Now create the chat session
+                                    match http_client.create_chat_session(character_id).await {
+                                        Ok(chat_session) => {
+                                            tracing::info!(chat_id = %chat_session.id, "Chat session started");
+                                            // Use chat loop function
+                                            // The character's first message is displayed above now.
+                                            if let Err(e) = run_chat_loop(&http_client, chat_session.id, &mut io_handler, &current_model).await {
+                                                 tracing::error!(error = ?e, "Chat loop failed");
+                                                 io_handler.write_line(&format!("Chat loop encountered an error: {}", e))?;
+                                            }
+                                            // Message moved inside chat loop exit
+                                        }
+                                        Err(e) => {
+                                            tracing::error!(error = ?e, "Failed to create chat session");
+                                            io_handler.write_line(&format!("Error starting chat session: {}", e))?;
+                                        }
+                                    }
                                 }
                                 Err(e) => {
-                                    tracing::error!(error = ?e, "Failed to create chat session");
-                                    io_handler.write_line(&format!("Error starting chat session: {}", e))?;
+                                    // Log error fetching details, but proceed to attempt chat creation anyway?
+                                    // Or maybe return to menu? For now, just log and inform user.
+                                    tracing::error!(error = ?e, %character_id, "Failed to fetch character details before starting chat");
+                                    io_handler.write_line(&format!("Error fetching character details: {}. Attempting to start chat anyway...", e))?;
+                                    // Proceed to create session even if details failed? Or handle differently?
+                                    // Let's try creating the session still.
+                                    match http_client.create_chat_session(character_id).await {
+                                        Ok(chat_session) => {
+                                            tracing::info!(chat_id = %chat_session.id, "Chat session started (without pre-fetched details)");
+                                            if let Err(e) = run_chat_loop(&http_client, chat_session.id, &mut io_handler, &current_model).await {
+                                                 tracing::error!(error = ?e, "Chat loop failed");
+                                                 io_handler.write_line(&format!("Chat loop encountered an error: {}", e))?;
+                                            }
+                                        }
+                                        Err(e) => {
+                                            tracing::error!(error = ?e, "Failed to create chat session after failing to get details");
+                                            io_handler.write_line(&format!("Error starting chat session after failing to get details: {}", e))?;
+                                        }
+                                    }
                                 }
                             }
                         }

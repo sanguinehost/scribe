@@ -1,7 +1,7 @@
 // backend/src/routes/characters.rs
 
 use crate::errors::AppError;
-use crate::models::characters::Character;
+use crate::models::characters::{Character, CharacterMetadata};
 use crate::models::character_card::{NewCharacter};
 use crate::models::users::User;
 use crate::schema::characters::dsl::*; // DSL needed for table/columns
@@ -93,7 +93,7 @@ pub async fn upload_character_handler(
 pub async fn list_characters_handler(
     State(state): State<AppState>,
     auth_session: CurrentAuthSession, // <-- Add AuthSession extractor
-) -> Result<Json<Vec<Character>>, AppError> {
+) -> Result<Json<Vec<CharacterMetadata>>, AppError> {
     // Get the user from the session
     let user = auth_session.user.ok_or_else(|| AppError::Unauthorized("Authentication required".to_string()))?; // CHANGED
     let local_user_id = user.id; // <-- Get ID from the user struct
@@ -106,8 +106,8 @@ pub async fn list_characters_handler(
         .interact(move |conn| {
             characters
                 .filter(user_id.eq(local_user_id))
-                .select(Character::as_select())
-                .load::<Character>(conn)
+                .select(CharacterMetadata::as_select())
+                .load::<CharacterMetadata>(conn)
                 .map_err(AppError::DatabaseQueryError)
         })
         .await??;
@@ -121,7 +121,7 @@ pub async fn get_character_handler(
     State(_state): State<AppState>,
     auth_session: CurrentAuthSession,
     Path(character_id): Path<Uuid>,
-) -> Result<Json<Character>, AppError> {
+) -> Result<Json<CharacterMetadata>, AppError> {
     // Get the user from the session
     let user = auth_session.user.ok_or_else(|| AppError::Unauthorized("Authentication required".to_string()))?; // CHANGED
     let local_user_id = user.id; // <-- Get ID from the user struct
@@ -135,8 +135,8 @@ pub async fn get_character_handler(
             characters
                 .filter(id.eq(character_id))
                 .filter(user_id.eq(local_user_id))
-                .select(Character::as_select())
-                .first::<Character>(conn)
+                .select(CharacterMetadata::as_select())
+                .first::<CharacterMetadata>(conn)
                 .map_err(|e| match e {
                     DieselError::NotFound => AppError::NotFound(format!("Character {} not found", character_id)),
                     _ => AppError::DatabaseQueryError(e),

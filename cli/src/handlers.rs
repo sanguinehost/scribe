@@ -672,9 +672,10 @@ mod tests {
     fn mock_character(id: Uuid, name: &str, description: Option<&str>) -> CharacterMetadata {
         CharacterMetadata {
             id,
-            user_id: Uuid::new_v4(), // Doesn't matter much for these tests
+            user_id: Uuid::new_v4(),
             name: name.to_string(),
             description: description.map(String::from),
+            first_mes: None,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         }
@@ -707,6 +708,17 @@ mod tests {
         }
     }
 
+    fn dummy_char_metadata(id: Uuid, name: &str) -> CharacterMetadata {
+        CharacterMetadata {
+            id,
+            user_id: Uuid::nil(), // Doesn't matter for this mock
+            name: name.to_string(),
+            description: Some(format!("Description for {}", name)),
+            first_mes: None, // Add missing field
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        }
+    }
 
     // --- Action Handler Tests (Moved from main.rs tests) ---
 

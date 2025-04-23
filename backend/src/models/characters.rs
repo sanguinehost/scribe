@@ -183,6 +183,7 @@ pub struct CharacterMetadata {
     pub user_id: Uuid,
     pub name: String,
     pub description: Option<String>,
+    pub first_mes: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     // Add other V2/V3 fields needed for listing/selection if necessary
@@ -323,6 +324,7 @@ mod tests {
             user_id: user_uuid,
             name: "Test Character".to_string(),
             description: Some("A test description".to_string()),
+            first_mes: None,
             created_at: dt,
             updated_at: dt,
         };
@@ -339,6 +341,7 @@ mod tests {
         assert_eq!(metadata.user_id, deserialized_metadata.user_id);
         assert_eq!(metadata.name, deserialized_metadata.name);
         assert_eq!(metadata.description, deserialized_metadata.description);
+        assert_eq!(metadata.first_mes, deserialized_metadata.first_mes);
         // Note: Comparing DateTime<Utc> directly might be flaky due to precision differences
         // after serialization/deserialization. Comparing timestamps is safer.
         assert_eq!(metadata.created_at.timestamp_millis(), deserialized_metadata.created_at.timestamp_millis());
