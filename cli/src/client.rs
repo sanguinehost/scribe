@@ -3,43 +3,43 @@
 use crate::error::CliError;
 use async_trait::async_trait;
 use reqwest::multipart;
-use reqwest::{Client as ReqwestClient, Response, Url, StatusCode}; // Added Response, Url, and StatusCode
+use reqwest::{Client as ReqwestClient, Response, Url, StatusCode};
 use scribe_backend::models::auth::Credentials;
 use scribe_backend::models::characters::CharacterMetadata;
-use scribe_backend::models::chats::{ChatMessage, ChatSession, NewChatMessageRequest, GenerateResponsePayload}; // Added GenerateResponsePayload
+// Updated imports for chats models
+use scribe_backend::models::chats::{ChatMessage, ChatSession, GenerateResponsePayload};
 use scribe_backend::models::users::User;
 use serde::de::DeserializeOwned;
+use serde::Deserialize; // Added Deserialize
 use serde_json::json;
 use std::fs;
 use std::path::Path;
 use uuid::Uuid;
+use futures_util::{Stream, StreamExt, TryStreamExt}; // Added Stream, StreamExt, TryStreamExt
+use reqwest_eventsource::{Event, EventSource}; // Added Event, EventSource
+use std::pin::Pin; // Added Pin
 
 // Define the expected response structure from the /health endpoint (matching backend)
-// Moved here as it's returned by the client trait method
 #[derive(serde::Deserialize, Debug, Clone)]
-pub struct HealthStatus { // Made pub
-    pub status: String, // Made pub
+pub struct HealthStatus {
+    pub status: String,
 }
 
-// Helper to join path to base URL - moved here from main
-pub fn build_url(base: &Url, path: &str) -> Result<Url, CliError> { // Made pub
+// Helper to join path to base URL
+pub fn build_url(base: &Url, path: &str) -> Result<Url, CliError> {
     base.join(path).map_err(CliError::UrlParse)
 }
 
-// Helper to handle API responses - moved here from main
-pub async fn handle_response<T: DeserializeOwned>(response: Response) -> Result<T, CliError> { // Made pub
+// Helper to handle API responses
+pub async fn handle_response<T: DeserializeOwned>(response: Response) -> Result<T, CliError> {
     let status = response.status();
     if status.is_success() {
-        // Use map_err for concise error conversion
         response.json::<T>().await.map_err(CliError::Reqwest)
     } else {
-        // Check for specific status codes before generic ApiError
-        if status == StatusCode::TOO_MANY_REQUESTS { // Check for 429
+        if status == StatusCode::TOO_MANY_REQUESTS {
              tracing::warn!("Received 429 Too Many Requests from backend");
              return Err(CliError::RateLimitExceeded);
         }
-
-        // Existing generic error handling
         let error_text = response
             .text()
             .await
@@ -50,6 +50,16 @@ pub async fn handle_response<T: DeserializeOwned>(response: Response) -> Result<
             message: error_text,
         })
     }
+}
+
+// NEW: Define the StreamEvent enum for SSE events
+#[derive(Debug, Deserialize, Clone)] // Added Deserialize and Clone
+#[serde(tag = "event", content = "data")] // Specify how to deserialize based on SSE event name
+#[serde(rename_all = "snake_case")] // Match backend event names (e.g., event: thinking)
+pub enum StreamEvent {
+    Thinking(String), // Corresponds to event: thinking, data: "step description"
+    Content(String),  // Corresponds to event: content, data: "text chunk"
+    Done,             // Corresponds to event: done (no data expected)
 }
 
 
@@ -74,18 +84,26 @@ pub trait HttpClient: Send + Sync {
         model_name: Option<&str>,
     ) -> Result<ChatMessage, CliError>;
 
+    // NEW: Add stream_chat_response signature
+    async fn stream_chat_response(
+        &self,
+        chat_id: Uuid,
+        message_content: &str,
+        request_thinking: bool,
+    ) -> Result<Pin<Box<dyn Stream<Item = Result<StreamEvent, CliError>> + Send>>, CliError>;
+
+    // Keep generate_response for mock compatibility if needed, but mark unused
     #[allow(dead_code)]
     async fn generate_response(&self, chat_id: Uuid, message_content: &str, model_name: Option<String>) -> Result<ChatMessage, CliError>;
 }
 
 /// Wrapper around ReqwestClient implementing the HttpClient trait.
-pub struct ReqwestClientWrapper { // Made pub
+pub struct ReqwestClientWrapper {
     client: ReqwestClient,
     base_url: Url,
 }
 
 impl ReqwestClientWrapper {
-    // Kept pub as it's used in main
     pub fn new(client: ReqwestClient, base_url: Url) -> Self {
         Self { client, base_url }
     }
@@ -102,7 +120,6 @@ impl HttpClient for ReqwestClientWrapper {
             .send()
             .await
             .map_err(CliError::Reqwest)?;
-        // Use map_err for concise error formatting
         handle_response::<User>(response).await
              .map_err(|e| CliError::AuthFailed(format!("{}", e)))
     }
@@ -116,7 +133,6 @@ impl HttpClient for ReqwestClientWrapper {
             .send()
             .await
             .map_err(CliError::Reqwest)?;
-        // Use map_err for concise error formatting
         handle_response::<User>(response).await
              .map_err(|e| CliError::RegistrationFailed(format!("{}", e)))
     }
@@ -164,7 +180,7 @@ impl HttpClient for ReqwestClientWrapper {
             "image/png"
         } else {
              tracing::warn!(%file_name, "Uploading non-PNG file, assuming image/png MIME type");
-            "image/png" // Or default to application/octet-stream? Backend expects image.
+            "image/png"
         };
 
         let file_part = multipart::Part::bytes(file_bytes)
@@ -268,24 +284,26 @@ impl HttpClient for ReqwestClientWrapper {
         handle_response(response).await
     }
 
+    // This is the non-streaming version
     async fn send_message(
         &self,
         chat_id: Uuid,
         content: &str,
         model_name: Option<&str>,
     ) -> Result<ChatMessage, CliError> {
-        let url = self.base_url.join(&format!("api/chats/{}/generate", chat_id))?;
+        // Build URL with query parameter for non-streaming
+        let mut url = build_url(&self.base_url, &format!("/api/chats/{}/generate", chat_id))?;
+        url.query_pairs_mut().append_pair("request_thinking", "false");
 
-        // Use the backend model struct directly (NewChatMessageRequest)
-        // NOTE: Backend struct now supports optional `model` field.
-        let request_body = NewChatMessageRequest {
+        // Use the backend model struct directly (without request_thinking)
+        let request_body = GenerateResponsePayload {
             content: content.to_string(),
             model: model_name.map(|s| s.to_string()),
         };
 
-        tracing::info!(%url, chat_id = %chat_id, model = ?model_name, "Sending message via HttpClient");
+        tracing::info!(%url, chat_id = %chat_id, model = ?model_name, "Sending non-streaming message via HttpClient");
 
-        let response = self.client.post(url)
+        let response = self.client.post(url.clone()) // Clone URL here
             .json(&request_body)
             .send()
             .await
@@ -294,22 +312,12 @@ impl HttpClient for ReqwestClientWrapper {
                  CliError::Network(e.to_string())
             })?;
 
-        // Check for specific status codes like 429 Too Many Requests
         match response.status() {
             StatusCode::OK => {
-                // Define a local struct matching the backend's GenerateResponse structure
                 #[derive(serde::Deserialize)]
-                struct GenerateResponseBody {
-                    ai_message: ChatMessage,
-                }
-                // Deserialize into the wrapper struct
-                let response_body: GenerateResponseBody = response.json().await.map_err(|e| {
-                    tracing::error!(error = ?e, "Failed to deserialize send message response");
-                    // Use a more specific error message if possible
-                    CliError::Serialization(format!("error decoding response body: {}", e))
-                })?;
-                 tracing::info!(chat_id = %chat_id, message_id = %response_body.ai_message.id, "Message sent successfully");
-                 // Return the nested ChatMessage
+                struct GenerateResponseBody { ai_message: ChatMessage }
+                let response_body: GenerateResponseBody = handle_response(response).await?;
+                 tracing::info!(chat_id = %chat_id, message_id = %response_body.ai_message.id, "Message sent successfully (non-streaming)");
                 Ok(response_body.ai_message)
             },
             StatusCode::TOO_MANY_REQUESTS => {
@@ -324,39 +332,114 @@ impl HttpClient for ReqwestClientWrapper {
         }
     }
 
-    // This implementation now correctly calls the backend endpoint
-    async fn generate_response(&self, chat_id: Uuid, message_content: &str, model_name: Option<String>) -> Result<ChatMessage, CliError> {
-        let url = build_url(&self.base_url, &format!("/api/chats/{}/generate", chat_id))?;
-        tracing::info!(%url, %chat_id, ?model_name, "Generating response via HttpClient");
+    // NEW: Implement stream_chat_response
+    async fn stream_chat_response(
+        &self,
+        chat_id: Uuid,
+        message_content: &str,
+        request_thinking: bool,
+    ) -> Result<Pin<Box<dyn Stream<Item = Result<StreamEvent, CliError>> + Send>>, CliError> {
+        // Build URL with query parameter for streaming
+        let mut url = build_url(&self.base_url, &format!("/api/chats/{}/generate", chat_id))?;
+        url.query_pairs_mut().append_pair("request_thinking", &request_thinking.to_string());
 
+        tracing::info!(%url, %chat_id, %request_thinking, "Initiating streaming chat response via HttpClient");
+
+        // Payload without request_thinking
         let payload = GenerateResponsePayload {
-        	content: message_content.to_string(), // Corrected field name
-        	model: model_name, // Corrected field name
+            content: message_content.to_string(),
+            model: None, // Model selection isn't part of this specific test endpoint for now
         };
 
-        let response = self.client
-            .post(url)
-            .json(&payload)
-            .send()
-            .await
-            .map_err(CliError::Reqwest)?;
+        // Build the request manually to use with EventSource
+        let request_builder = self.client.post(url.clone()).json(&payload); // Clone URL, create builder
 
-        // Handle response similar to send_message
-        match response.status() {
-            StatusCode::OK => {
-                #[derive(serde::Deserialize)]
-                struct GenerateResponseBody { ai_message: ChatMessage }
-                let response_body: GenerateResponseBody = handle_response(response).await?;
-                Ok(response_body.ai_message)
-            },
-            StatusCode::TOO_MANY_REQUESTS => {
-                Err(CliError::RateLimitExceeded)
-            },
-            status => {
-                let error_text = response.text().await.unwrap_or_else(|_| "Failed to read error body".to_string());
-                Err(CliError::Backend(format!("{} - {}", status, error_text)))
+        // Create the EventSource from the RequestBuilder
+        let mut es = EventSource::new(request_builder).map_err(|e| CliError::Internal(format!("Failed to create EventSource: {}", e)))?;
+
+        // Use async_stream to create a Stream
+        let stream = async_stream::stream! {
+            while let Some(event) = es.next().await {
+                match event {
+                    Ok(Event::Open) => {
+                        tracing::debug!("SSE connection opened.");
+                        // No need to yield anything for the Open event
+                    }
+                    Ok(Event::Message(message)) => {
+                        tracing::trace!(event_type = %message.event, data = %message.data, "Received SSE message");
+
+                        // Directly match the event type and construct the StreamEvent enum
+                        let stream_event_result = match message.event.as_str() {
+                            "thinking" => Ok(StreamEvent::Thinking(message.data)),
+                            "content" => Ok(StreamEvent::Content(message.data)),
+                            "done" => Ok(StreamEvent::Done),
+                            "error" => {
+                                // Handle potential errors sent via SSE 'error' event
+                                tracing::error!(sse_error_data = %message.data, "Received error event from backend stream");
+                                // Propagate as a general backend error, or create a specific variant if needed
+                                Err(CliError::Backend(format!("Stream error from server: {}", message.data)))
+                            }
+                            unknown_event => {
+                                tracing::warn!(%unknown_event, data = %message.data, "Received unknown SSE event type");
+                                // Decide how to handle unknown events: ignore or error?
+                                // Let's ignore for now, but log a warning.
+                                continue; // Skip to the next event
+                            }
+                        };
+
+                        match stream_event_result {
+                            Ok(StreamEvent::Done) => {
+                                yield Ok(StreamEvent::Done);
+                                es.close(); // Close the event source
+                                break; // Stop processing
+                            }
+                            Ok(event) => {
+                                yield Ok(event);
+                            }
+                            Err(cli_error) => {
+                                yield Err(cli_error);
+                                es.close();
+                                break;
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        // Handle different EventSource errors
+                        let cli_error = match e {
+                            reqwest_eventsource::Error::StreamEnded => {
+                                tracing::debug!("SSE stream ended by the server.");
+                                // Don't yield an error, just break. The caller expects Done or an error.
+                                // If Done wasn't received, it implies an unexpected closure.
+                                // We could potentially yield a custom error here if needed.
+                                break; // Exit the loop cleanly
+                            }
+                            reqwest_eventsource::Error::InvalidStatusCode(status, resp) => {
+                                let body = resp.text().await.unwrap_or_else(|_| "Failed to read error body".to_string());
+                                tracing::error!(%status, error_body = %body, "SSE request failed with status code");
+                                CliError::ApiError { status, message: body }
+                            }
+                            _ => {
+                                tracing::error!(error = ?e, "SSE stream error");
+                                CliError::Network(format!("SSE stream error: {}", e))
+                            }
+                        };
+                        yield Err(cli_error);
+                        es.close(); // Close the source on error
+                        break; // Stop processing on error
+                    }
+                }
             }
-        }
+            tracing::debug!("SSE stream processing finished.");
+        };
+
+        Ok(Box::pin(stream))
+    }
+
+    // Keep generate_response for mock compatibility if needed
+    #[allow(dead_code)]
+    async fn generate_response(&self, chat_id: Uuid, message_content: &str, model_name: Option<String>) -> Result<ChatMessage, CliError> {
+        // This implementation might need adjustment if used, but for now, it mirrors send_message
+        self.send_message(chat_id, message_content, model_name.as_deref()).await
     }
 }
 
@@ -364,7 +447,7 @@ impl HttpClient for ReqwestClientWrapper {
 // --- Tests ---
 #[cfg(test)]
 mod tests {
-    use super::*; // Import items from parent module (client.rs)
+    use super::*;
     use url::Url;
 
     #[test]
@@ -394,6 +477,5 @@ mod tests {
     }
 
     // TODO: Add tests for handle_response if possible (requires mocking reqwest::Response)
-    // Consider testing specific client methods using a mock server (e.g., wiremock)
-    // or by further abstracting the reqwest::Client interaction within ReqwestClientWrapper.
-} 
+    // TODO: Add tests for stream_chat_response using a mock server (e.g., wiremock)
+}

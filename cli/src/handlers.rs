@@ -2,6 +2,7 @@ use crate::client::HttpClient;
 use crate::error::CliError;
 use crate::io::IoHandler;
 use crate::chat::run_chat_loop; // Import the chat loop function
+use crate::chat::run_stream_test_loop; // Import the stream test loop function
 
 use scribe_backend::models::auth::Credentials;
 use scribe_backend::models::characters::CharacterMetadata;
@@ -387,12 +388,54 @@ pub async fn select_character<Http: HttpClient, IO: IoHandler>(
 }
 
 
+/// Handles the streaming chat test action.
+/// Selects a character, creates a session, gets a user message, and runs the stream test loop.
+pub async fn handle_stream_test_action<Http: HttpClient, IO: IoHandler>(
+    http_client: &Http,
+    io_handler: &mut IO,
+) -> Result<(), CliError> {
+    io_handler.write_line("\n--- Test Streaming Chat (with Thinking) ---")?;
+
+    // 1. Select Character
+    let character_id = select_character(http_client, io_handler).await?;
+    tracing::info!(%character_id, "Character selected for streaming test");
+
+    // 2. Create Chat Session
+    io_handler.write_line("Creating a new chat session for the test...")?;
+    let chat_session = http_client.create_chat_session(character_id).await?;
+    let chat_id = chat_session.id;
+    tracing::info!(%chat_id, "Chat session created for streaming test");
+    io_handler.write_line(&format!("Chat session created (ID: {}).", chat_id))?;
+
+    // 3. Get User's Initial Message
+    let user_message = io_handler.read_line("Enter your message to start the stream test:")?;
+    if user_message.trim().is_empty() {
+        io_handler.write_line("Message cannot be empty. Aborting test.")?;
+        return Ok(());
+    }
+
+    // 4. Run the Stream Test Loop (function to be defined in chat.rs)
+    io_handler.write_line("\nInitiating streaming response...")?;
+    if let Err(e) = run_stream_test_loop(http_client, chat_id, &user_message, io_handler).await {
+        tracing::error!(error = ?e, "Stream test loop failed");
+        io_handler.write_line(&format!("Stream test encountered an error: {}", e))?;
+        // Return Ok here as the action itself didn't fail, the loop did.
+        // The error is reported to the user.
+    } else {
+        io_handler.write_line("\nStreaming test finished.")?;
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::client::{HttpClient, HealthStatus}; // Need HealthStatus for mock
+    use crate::client::{HttpClient, HealthStatus, StreamEvent}; // Added StreamEvent
     use crate::error::CliError; // Need base CliError
     use crate::io::IoHandler; // Need IoHandler trait
+    use futures_util::stream::{self, Stream}; // Added stream and Stream
+    use std::pin::Pin; // Added Pin
     use scribe_backend::models::auth::Credentials;
     use scribe_backend::models::characters::CharacterMetadata;
     use scribe_backend::models::chats::{ChatMessage, ChatSession, MessageRole};
@@ -492,8 +535,14 @@ mod tests {
             self.outputs.borrow_mut().push(line.to_string());
             Ok(())
         }
-    }
 
+        fn write_raw(&mut self, text: &str) -> Result<(), CliError> {
+            // For the mock, just store the raw text like write_line
+            self.outputs.borrow_mut().push(text.to_string());
+            Ok(())
+        }
+    }
+ 
     #[derive(Default)] // Use default for simple mock state
      // Made pub
     pub struct MockHttpClient {
@@ -655,10 +704,25 @@ mod tests {
                  }),
              );
              mock_result.map_err(Into::into)
-        }
-    }
+         }
 
-    // --- Helper Functions for Creating Mocks ---
+        // Add mock implementation for stream_chat_response
+        async fn stream_chat_response(
+            &self,
+            _chat_id: Uuid,
+            _message_content: &str,
+            _request_thinking: bool,
+        ) -> Result<Pin<Box<dyn Stream<Item = Result<StreamEvent, CliError>> + Send>>, CliError> {
+            // Default mock implementation: return an error or an empty stream.
+            // For most handler tests, we don't need to simulate a full stream.
+            // If a specific test needs a stream, it can configure a dedicated mock field.
+             Err(CliError::Internal("MockHttpClient: stream_chat_response not implemented/configured".into()))
+            // Or return an empty stream:
+            // Ok(Box::pin(stream::empty()))
+        }
+     }
+ 
+     // --- Helper Functions for Creating Mocks ---
     fn mock_user(username: &str) -> User {
         User {
             id: Uuid::new_v4(),

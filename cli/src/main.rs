@@ -145,6 +145,7 @@ async fn main() -> Result<()> {
             io_handler.write_line("[9] Show My Info")?;
             io_handler.write_line("[10] Logout")?;
             io_handler.write_line("[11] Model Settings")?;
+            io_handler.write_line("[12] Test Streaming Chat (with Thinking)")?; // New Option
             io_handler.write_line("[q] Quit Application")?;
 
             let choice = io_handler.read_line("Enter choice:")?;
@@ -372,10 +373,24 @@ async fn main() -> Result<()> {
                             io_handler.write_line(&format!("Error in model settings: {}", e))?;
                         }
                     }
-                }
-                "q" | "Q" => {
-                    io_handler.write_line("Exiting Scribe CLI.")?;
-                    return Ok(()); // Exit application
+                 }
+                 "12" => { // Test Streaming Chat
+                    // Call a new handler function for the streaming test
+                    match handle_stream_test_action(&http_client, &mut io_handler).await {
+                        Ok(()) => { /* Test completed or error handled inside */ }
+                        // Handle specific error from handler/select_character
+                        Err(CliError::InputError(msg)) if msg.contains("No characters found") => {
+                             io_handler.write_line(&msg)?;
+                        }
+                        Err(e) => {
+                            tracing::error!(error = ?e, "Streaming test action failed");
+                            io_handler.write_line(&format!("Error in streaming test: {}", e))?;
+                        }
+                    }
+                 }
+                 "q" | "Q" => {
+                     io_handler.write_line("Exiting Scribe CLI.")?;
+                     return Ok(()); // Exit application
                 }
                 _ => {
                     io_handler.write_line("Invalid choice, please try again.")?;

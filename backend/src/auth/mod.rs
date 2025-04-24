@@ -48,39 +48,17 @@ impl From<InteractError> for AuthError {
 pub fn create_user(
     conn: &mut PgConnection,
     username: String,
-    password: Secret<String>,
+    password: Secret<String>, // This password should now be the hash from the handler
 ) -> Result<User, AuthError> {
     // --- Log username explicitly ---
     info!(username = %username, "Attempting to create user");
 
     let username_clone = username.clone(); // Clone for error message
-    let username_clone_for_hash_err = username.clone(); // Clone for hash error message
-
-    // --- Log before hashing ---
-    debug!(username = %username_clone_for_hash_err, "Hashing password using spawn_blocking...");
-    let hashed_password = tokio::runtime::Handle::current().block_on(async move {
-        tokio::task::spawn_blocking(move || {
-            bcrypt::hash(password.expose_secret(), BCRYPT_COST)
-        })
-        .await
-        .map_err(|e: JoinError| {
-            // --- Log JoinError --- 
-            error!(username=%username_clone_for_hash_err, error=%e, "Hashing task failed (JoinError)");
-            AuthError::HashingError
-        })?
-        .map_err(|e: BcryptError| {
-            // --- Log BcryptError ---
-            error!(username=%username_clone_for_hash_err, error=%e, "Hashing failed (BcryptError)");
-            AuthError::HashingError
-        })
-    })?;
-    // --- Log after hashing ---
-    debug!(username = %username_clone, "Password hashing successful.");
 
     // 2. Create a NewUser instance
     let new_user = NewUser {
         username: username_clone, // Pass ownership of username
-        password_hash: hashed_password, // Pass owned String
+        password_hash: password.expose_secret().to_string(), // Use the provided hash directly
     };
 
     // --- Log before DB insert ---

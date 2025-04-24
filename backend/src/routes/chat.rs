@@ -466,33 +466,44 @@ pub async fn generate_chat_response(
             match event_result {
                 Ok(ChatStreamEvent::Chunk(chunk)) => {
                     if !chunk.content.is_empty() {
+                        // Lock buffer once for the whole chunk
                         let mut buffer_guard = buffer_clone.lock().await;
                         buffer_guard.push_str(&chunk.content);
-                        drop(buffer_guard);
+                        drop(buffer_guard); // Release lock
 
-                        debug!(%session_id_clone, bytes = chunk.content.len(), "Yielding chunk");
-                        yield Ok::<_, axum::BoxError>(Event::default().data(chunk.content));
+                        // Split chunk content by lines and yield each line as a separate event
+                        for line in chunk.content.lines() {
+                             debug!(%session_id_clone, line_len = line.len(), "Yielding content line");
+                            // Send each line as its own SSE data field
+                             yield Ok::<_, axum::BoxError>(Event::default().event("content").data(line.to_string()));
+                        }
                     }
                 }
                 Ok(ChatStreamEvent::End(end_event)) => {
                     debug!(%session_id_clone, ?end_event, "AI stream ended");
+                    // No need to yield anything here, the 'done' event is sent after the loop
                     break;
                 }
                  Ok(ChatStreamEvent::Start) => {
-                     debug!(%session_id_clone, "AI stream started event received");
+                     debug!(%session_id_clone, "AI stream started event received (ignored)");
+                     // Explicitly ignore, no SSE event sent
                  }
                  Ok(ChatStreamEvent::ReasoningChunk(reasoning)) => {
-                    debug!(%session_id_clone, ?reasoning, "AI stream reasoning chunk received (ignored)");
+                    debug!(%session_id_clone, ?reasoning.content, "Yielding thinking chunk");
+                    // Send thinking event
+                    yield Ok::<_, axum::BoxError>(Event::default().event("thinking").data(reasoning.content));
                  }
                 Err(e) => {
                     error!(error = ?e, %session_id_clone, "Error receiving chunk from AI stream");
                     let err_msg = format!("Error processing AI stream: {}", e);
+                    // Use a custom 'error' event type for stream errors
                     yield Ok::<_, axum::BoxError>(Event::default().event("error").data(err_msg));
                     break;
                 }
             }
         }
 
+        // Save the full response after the stream finishes or errors
         let final_content = full_response_buffer.lock().await.clone();
         if !final_content.is_empty() {
             info!(%session_id_clone, bytes = final_content.len(), "Spawning background task to save full AI response.");
@@ -528,6 +539,11 @@ pub async fn generate_chat_response(
         } else {
            warn!(%session_id_clone, "AI stream finished but produced no content to save.");
         }
+
+        // Send the final "done" event after processing all chunks and errors
+        debug!(%session_id_clone, "Sending final 'done' event");
+        yield Ok::<_, axum::BoxError>(Event::default().event("done"));
+
         info!(%session_id_clone, "SSE stream processing finished.");
 
     };

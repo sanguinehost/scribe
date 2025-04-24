@@ -20,7 +20,10 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] } # fmt
 url = "2.5"
 thiserror = "2.0"
 async-trait = "0.1"
+reqwest-eventsource = "0.6.0"
+futures-util = { version = "0.3", features = ["sink"] } # For StreamExt
 
+async-stream = "0.3" # For creating streams
 [dev-dependencies]
 # Add dev dependencies if needed for CLI-specific tests
 tempfile = "3.19.1"

@@ -3585,10 +3585,13 @@ name = "scribe-cli"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-stream",
  "async-trait",
  "chrono",
  "clap",
+ "futures-util",
  "reqwest",
+ "reqwest-eventsource",
  "scribe-backend",
  "serde",
  "serde_json",
