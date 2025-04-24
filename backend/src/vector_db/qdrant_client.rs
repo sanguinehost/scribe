@@ -8,6 +8,9 @@ use qdrant_client::qdrant::vectors_config::Config as QdrantVectorsConfig; // Ali
 use std::sync::Arc;
 use tracing::{info, error, instrument, warn};
 use uuid::Uuid;
+use serde_json::json;
+use qdrant_client::qdrant::{PointId, Vectors, Value}; // Added imports
+use std::collections::HashMap;
 
 // Constants
 const DEFAULT_COLLECTION_NAME: &str = "chat_embeddings";
@@ -237,10 +240,104 @@ pub fn create_qdrant_point(id: Uuid, vector: Vec<f32>, payload: Option<serde_jso
 // --- Unit/Integration Tests (To be added later) ---
 #[cfg(test)]
 mod tests {
-    // Add tests here
-    // - Test connection
-    // - Test collection creation
-    // - Test point creation helper
+    use super::*;
+    use serde_json::json;
+    use uuid::Uuid;
+    use qdrant_client::qdrant::{PointId, Vectors, Value}; // Added imports
+    use std::collections::HashMap;
+
+    #[test]
+    fn test_create_qdrant_point_with_payload() {
+        let id = Uuid::new_v4();
+        let vector = vec![0.1, 0.2, 0.3];
+        let payload = json!({
+            "key": "value",
+            "number": 123
+        });
+
+        let result = create_qdrant_point(id, vector.clone(), Some(payload));
+        assert!(result.is_ok());
+        let point = result.unwrap();
+
+        // Check ID
+        assert_eq!(point.id, Some(PointId::from(id.to_string())));
+
+        // Check Vector
+        assert_eq!(point.vectors, Some(Vectors::from(vector)));
+
+        // Check Payload
+        assert!(point.payload.contains_key("key"));
+        assert!(point.payload.contains_key("number"));
+        assert_eq!(point.payload.get("key").unwrap().kind.as_ref().unwrap(), &Value { kind: Some(qdrant_client::qdrant::value::Kind::StringValue("value".to_string())) }.kind.unwrap());
+        assert_eq!(point.payload.get("number").unwrap().kind.as_ref().unwrap(), &Value { kind: Some(qdrant_client::qdrant::value::Kind::IntegerValue(123)) }.kind.unwrap());
+    }
+
+    #[test]
+    fn test_create_qdrant_point_without_payload() {
+        let id = Uuid::new_v4();
+        let vector = vec![0.4, 0.5];
+
+        let result = create_qdrant_point(id, vector.clone(), None);
+        assert!(result.is_ok());
+        let point = result.unwrap();
+
+        assert_eq!(point.id, Some(PointId::from(id.to_string())));
+        assert_eq!(point.vectors, Some(Vectors::from(vector)));
+        assert!(point.payload.is_empty(), "Payload should be an empty map");
+    }
+
+    #[test]
+    fn test_create_qdrant_point_payload_not_object() {
+        let id = Uuid::new_v4();
+        let vector = vec![0.6];
+        let payload = json!("this is just a string"); // Not a JSON object
+
+        let result = create_qdrant_point(id, vector, Some(payload));
+        assert!(result.is_err());
+        match result.err().unwrap() {
+            AppError::SerializationError(msg) => {
+                assert!(msg.contains("Payload must be a JSON object"));
+            }
+            _ => panic!("Expected SerializationError due to non-object payload"),
+        }
+    }
+
+     #[test]
+    fn test_create_qdrant_point_payload_deserialization_error() {
+        // This tests the internal serde_json::from_value step.
+        // We create a valid JSON object but one that might fail complex struct deserialization
+        // if we were using a specific struct type here. Since we deserialize to HashMap<String, Value>,
+        // most valid JSON objects should work unless they contain types Value can't represent directly.
+        // Let's use a nested structure.
+        let id = Uuid::new_v4();
+        let vector = vec![0.7, 0.8];
+        let payload = json!({
+            "nested": { "a": 1 },
+            "array": [1, 2, 3]
+        });
+
+        let result = create_qdrant_point(id, vector.clone(), Some(payload));
+        assert!(result.is_ok()); // Should be Ok because HashMap<String, Value> can handle nested objects/arrays
+        let point = result.unwrap();
+
+        // Check payload structure was preserved
+        assert!(point.payload.contains_key("nested"));
+        assert!(point.payload.contains_key("array"));
+
+        let nested_val = point.payload.get("nested").unwrap();
+        assert!(matches!(nested_val.kind, Some(qdrant_client::qdrant::value::Kind::StructValue(_))));
+
+        let array_val = point.payload.get("array").unwrap();
+         assert!(matches!(array_val.kind, Some(qdrant_client::qdrant::value::Kind::ListValue(_))));
+
+        // If we were expecting a flat structure, we might add a test that fails here.
+        // For now, this confirms the basic conversion handles nested JSON.
+    }
+
+    // --- Integration Tests (Require running Qdrant instance) ---
+    // Add tests here later for:
+    // - Test connection (implicitly done by new)
+    // - Test ensure_collection_exists (new and existing)
     // - Test upsert (requires running Qdrant)
     // - Test search (requires running Qdrant)
 }

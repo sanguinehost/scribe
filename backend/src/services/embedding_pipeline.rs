@@ -282,3 +282,151 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
 
 // TODO: Add function/mechanism to trigger `process_and_embed_message` asynchronously
 // e.g., call this using tokio::spawn from ChatService after saving a message.
+
+// --- Unit Tests ---
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use qdrant_client::qdrant::{Value, value::Kind};
+    use std::collections::HashMap;
+    use uuid::Uuid;
+    use chrono::Utc; // Keep Utc
+
+    // Helper to create a Value::StringValue
+    fn string_value(s: &str) -> Value {
+        Value { kind: Some(Kind::StringValue(s.to_string())) }
+    }
+
+     // Helper to create a Value::IntegerValue
+    fn integer_value(i: i64) -> Value {
+         Value { kind: Some(Kind::IntegerValue(i)) }
+    }
+
+    // Helper to build a valid payload HashMap for testing
+    fn build_valid_payload() -> HashMap<String, Value> {
+        let message_id = Uuid::new_v4();
+        let session_id = Uuid::new_v4();
+        let timestamp = Utc::now().to_rfc3339();
+
+        HashMap::from([
+            ("message_id".to_string(), string_value(&message_id.to_string())),
+            ("session_id".to_string(), string_value(&session_id.to_string())),
+            ("speaker".to_string(), string_value("User")),
+            ("timestamp".to_string(), string_value(&timestamp)),
+            ("text".to_string(), string_value("Sample chunk text")),
+        ])
+    }
+
+    #[test]
+    fn test_embedding_metadata_try_from_valid_payload() {
+        let payload = build_valid_payload();
+        let result = EmbeddingMetadata::try_from(payload.clone()); // Clone for assertion checks
+        assert!(result.is_ok());
+        let metadata = result.unwrap();
+
+        // Basic checks
+        assert_eq!(metadata.speaker, "User");
+        assert_eq!(metadata.text, "Sample chunk text");
+
+        // Extract string values correctly using pattern matching
+        let message_id_str = match payload["message_id"].kind.as_ref().unwrap() {
+            Kind::StringValue(s) => s.as_str(),
+            _ => panic!("Expected StringValue for message_id"),
+        };
+        let session_id_str = match payload["session_id"].kind.as_ref().unwrap() {
+            Kind::StringValue(s) => s.as_str(),
+            _ => panic!("Expected StringValue for session_id"),
+        };
+        let timestamp_str = match payload["timestamp"].kind.as_ref().unwrap() {
+            Kind::StringValue(s) => s.as_str(),
+            _ => panic!("Expected StringValue for timestamp"),
+        };
+
+        // Compare UUIDs and timestamps by parsing back from the extracted strings
+        assert_eq!(metadata.message_id, Uuid::parse_str(message_id_str).unwrap());
+        assert_eq!(metadata.session_id, Uuid::parse_str(session_id_str).unwrap());
+        let expected_ts = chrono::DateTime::parse_from_rfc3339(timestamp_str).unwrap().with_timezone(&Utc);
+        assert_eq!(metadata.timestamp, expected_ts);
+    }
+
+    #[test]
+    fn test_embedding_metadata_try_from_missing_field() {
+        let mut payload = build_valid_payload();
+        payload.remove("session_id"); // Remove a required field
+
+        let result = EmbeddingMetadata::try_from(payload);
+        assert!(result.is_err());
+        match result.err().unwrap() {
+            AppError::SerializationError(msg) => {
+                assert!(msg.contains("Missing or invalid 'session_id'"));
+            }
+            _ => panic!("Expected SerializationError due to missing field"),
+        }
+    }
+
+    #[test]
+    fn test_embedding_metadata_try_from_invalid_uuid_format() {
+        let mut payload = build_valid_payload();
+        payload.insert("message_id".to_string(), string_value("not-a-valid-uuid")); // Invalid format
+
+        let result = EmbeddingMetadata::try_from(payload);
+        assert!(result.is_err());
+         match result.err().unwrap() {
+            AppError::SerializationError(msg) => {
+                assert!(msg.contains("Failed to parse 'message_id' as UUID"));
+            }
+            _ => panic!("Expected SerializationError due to invalid UUID format"),
+        }
+    }
+
+     #[test]
+    fn test_embedding_metadata_try_from_invalid_timestamp_format() {
+        let mut payload = build_valid_payload();
+         payload.insert("timestamp".to_string(), string_value("invalid-date-format")); // Invalid format
+
+        let result = EmbeddingMetadata::try_from(payload);
+        assert!(result.is_err());
+         match result.err().unwrap() {
+            AppError::SerializationError(msg) => {
+                assert!(msg.contains("Failed to parse 'timestamp'"));
+            }
+            _ => panic!("Expected SerializationError due to invalid timestamp format"),
+        }
+    }
+
+     #[test]
+    fn test_embedding_metadata_try_from_wrong_field_type() {
+        let mut payload = build_valid_payload();
+        // Insert 'speaker' as an integer instead of a string
+         payload.insert("speaker".to_string(), integer_value(123));
+
+        let result = EmbeddingMetadata::try_from(payload);
+        assert!(result.is_err());
+         match result.err().unwrap() {
+            AppError::SerializationError(msg) => {
+                 // The error message might vary slightly depending on how Option::and_then unwraps
+                assert!(msg.contains("'speaker'"));
+                // We expect it to fail because we expect a StringValue but get an Integer value
+            }
+            _ => panic!("Expected SerializationError due to wrong field type"),
+        }
+    }
+
+     #[test]
+    fn test_embedding_metadata_try_from_empty_payload() {
+        let payload: HashMap<String, Value> = HashMap::new();
+        let result = EmbeddingMetadata::try_from(payload);
+        assert!(result.is_err());
+        // Expect error because required fields are missing
+         match result.err().unwrap() {
+            AppError::SerializationError(msg) => {
+                assert!(msg.contains("Missing or invalid")); // Should complain about the first field it checks
+            }
+            _ => panic!("Expected SerializationError due to empty payload"),
+        }
+    }
+
+    // TODO: Add Integration tests later for:
+    // - process_and_embed_message (requires mocks or live services)
+    // - retrieve_relevant_chunks (requires mocks or live services)
+}

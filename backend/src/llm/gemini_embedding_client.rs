@@ -163,6 +163,19 @@ mod tests {
         })
     }
 
+    #[test]
+    fn test_build_gemini_embedding_client_success() {
+        // Provide a dummy key for the config, builder doesn't validate it
+        let config = create_test_config(Some("dummy-key".to_string()));
+        let result = build_gemini_embedding_client(config);
+        assert!(result.is_ok());
+        let client = result.unwrap();
+        // Check if the model name is set to the default
+        assert_eq!(client.model_name, DEFAULT_EMBEDDING_MODEL);
+        // We could potentially check the reqwest client's default timeout if needed,
+        // but basic successful construction is the main goal here.
+    }
+
     #[tokio::test]
     #[ignore] // Integration test: requires network and valid GEMINI_API_KEY env var
     async fn test_embed_content_success_integration() {
