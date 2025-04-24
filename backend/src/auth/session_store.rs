@@ -84,6 +84,79 @@ impl DieselSessionStore {
         error!(error = ?e, "Session JSON serialization/deserialization failed");
         session_store::Error::Decode(e.to_string()) // Use Decode variant for JSON errors
     }
+    
+    /// Gets a list of all session metadata (IDs and expiration times) without exposing session content
+    /// 
+    /// This method is useful for administrative purposes such as monitoring session counts
+    /// or trimming expired sessions, while maintaining user privacy by not exposing session data.
+    #[instrument(skip(self), err)]
+    async fn get_session_metadata(&self) -> Result<Vec<SessionMetadata>, session_store::Error> {
+        info!("DieselSessionStore::get_session_metadata ENTERED");
+        
+        let pool = self.pool.clone();
+        debug!("Retrieving session metadata (IDs and expiration times only)...");
+
+        let metadata_result = pool.get()
+            .await.map_err(Self::map_pool_error)?
+            .interact(move |conn| {
+                sessions::table
+                    .select((sessions::id, sessions::expires))
+                    .load::<(String, Option<DateTime<Utc>>)>(conn)
+                    .map(|rows| {
+                        rows.into_iter()
+                            .map(|(id, expires)| SessionMetadata { id, expires })
+                            .collect::<Vec<_>>()
+                    })
+                    .map_err(Self::map_diesel_error)
+            })
+            .await.map_err(Self::map_interact_error);
+            
+        // Log the result
+        match &metadata_result {
+            Ok(Ok(metadata)) => info!(count = metadata.len(), "Successfully retrieved session metadata"),
+            Ok(Err(e)) => error!(error = ?e, "Failed to retrieve session metadata (Diesel error)"),
+            Err(e) => error!(error = ?e, "Failed to retrieve session metadata (Interact error)"),
+        }
+        
+        // Flatten Result<Result<...>>
+        metadata_result?
+    }
+    
+    /// Deletes sessions that have expired based on their expiration timestamp
+    /// 
+    /// This method is useful for cleaning up old sessions without accessing their content
+    #[instrument(skip(self), err)]
+    async fn delete_expired_sessions(&self) -> Result<usize, session_store::Error> {
+        info!("DieselSessionStore::delete_expired_sessions ENTERED");
+        
+        let pool = self.pool.clone();
+        let now = Utc::now();
+        
+        debug!(now = %now, "Attempting to delete expired sessions...");
+        
+        let delete_result = pool.get()
+            .await.map_err(Self::map_pool_error)?
+            .interact(move |conn| {
+                diesel::delete(
+                    sessions::table.filter(
+                        sessions::expires.lt(now).or(sessions::expires.is_null())
+                    )
+                )
+                .execute(conn)
+                .map_err(Self::map_diesel_error)
+            })
+            .await.map_err(Self::map_interact_error);
+            
+        // Log the result
+        match &delete_result {
+            Ok(Ok(count)) => info!(deleted_count = count, "Successfully deleted expired sessions"),
+            Ok(Err(e)) => error!(error = ?e, "Failed to delete expired sessions (Diesel error)"),
+            Err(e) => error!(error = ?e, "Failed to delete expired sessions (Interact error)"),
+        }
+        
+        // Flatten Result<Result<...>>
+        delete_result?
+    }
 }
 
 // Helper function to convert time::OffsetDateTime to chrono::DateTime<Utc>
@@ -95,6 +168,13 @@ fn offset_to_utc(offset_dt: Option<OffsetDateTime>) -> Option<DateTime<Utc>> {
 // Helper function to convert chrono::DateTime<Utc> to time::OffsetDateTime
 fn utc_to_offset(utc_dt: Option<DateTime<Utc>>) -> Option<OffsetDateTime> {
     utc_dt.and_then(|dt| OffsetDateTime::from_unix_timestamp(dt.timestamp()).ok())
+}
+
+/// Session metadata structure that includes only non-sensitive data
+#[derive(Debug, Clone)]
+pub struct SessionMetadata {
+    pub id: String,
+    pub expires: Option<DateTime<Utc>>,
 }
 
 #[async_trait]

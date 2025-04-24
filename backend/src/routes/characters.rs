@@ -71,7 +71,7 @@ pub async fn upload_character_handler(
     // Log the character data just before insertion
     info!(?new_character, user_id = %local_user_id, "Attempting to insert character into DB for user"); // Updated log
 
-    let conn = state.pool.get().await.map_err(AppError::DbPoolError)?;
+    let conn = state.pool.get().await.map_err(|e| AppError::DbPoolError(e.to_string()))?;
 
     let inserted_character: Character = conn
         .interact(move |conn| {
@@ -81,7 +81,7 @@ pub async fn upload_character_handler(
                 .get_result::<Character>(conn)
         })
         .await
-        .map_err(|e| AppError::InternalServerError(anyhow!(e.to_string())))??;
+        .map_err(|e| AppError::InternalServerError(e.to_string()))??;
 
     info!(character_id = %inserted_character.id, "Character uploaded and saved");
 
@@ -100,7 +100,7 @@ pub async fn list_characters_handler(
 
     info!(%local_user_id, "Listing characters for user"); // Updated log message
 
-    let conn = state.pool.get().await.map_err(AppError::DbPoolError)?;
+    let conn = state.pool.get().await.map_err(|e| AppError::DbPoolError(e.to_string()))?;
 
     let characters_result = conn
         .interact(move |conn| {
@@ -108,7 +108,7 @@ pub async fn list_characters_handler(
                 .filter(user_id.eq(local_user_id))
                 .select(CharacterMetadata::as_select())
                 .load::<CharacterMetadata>(conn)
-                .map_err(AppError::DatabaseQueryError)
+                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
         })
         .await??;
 
@@ -128,7 +128,7 @@ pub async fn get_character_handler(
 
     info!(%character_id, %local_user_id, "Fetching character details for user"); // Updated log message
 
-    let conn = _state.pool.get().await.map_err(AppError::DbPoolError)?;
+    let conn = _state.pool.get().await.map_err(|e| AppError::DbPoolError(e.to_string()))?;
 
     let character_result = conn
         .interact(move |conn| {
@@ -139,7 +139,7 @@ pub async fn get_character_handler(
                 .first::<CharacterMetadata>(conn)
                 .map_err(|e| match e {
                     DieselError::NotFound => AppError::NotFound(format!("Character {} not found", character_id)),
-                    _ => AppError::DatabaseQueryError(e),
+                    _ => AppError::DatabaseQueryError(e.to_string()),
                 })
         })
         .await??;
@@ -245,7 +245,7 @@ pub async fn delete_character_handler(
 
     info!(%character_id, %user_id_val, "Deleting character for user");
 
-    let conn = state.pool.get().await.map_err(AppError::DbPoolError)?;
+    let conn = state.pool.get().await.map_err(|e| AppError::DbPoolError(e.to_string()))?;
 
     let rows_deleted = conn
         .interact(move |conn| {
@@ -255,7 +255,7 @@ pub async fn delete_character_handler(
                     .filter(user_id.eq(user_id_val))
             )
             .execute(conn)
-            .map_err(AppError::DatabaseQueryError)
+            .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
         })
         .await??;
 

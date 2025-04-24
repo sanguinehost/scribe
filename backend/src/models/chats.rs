@@ -43,6 +43,22 @@ pub struct ChatSession {
     pub logit_bias: Option<Value>, // JSONB maps to serde_json::Value
 }
 
+// Type alias for the tuple returned when querying chat session settings
+pub type SettingsTuple = (
+    Option<String>,      // system_prompt
+    Option<BigDecimal>,  // temperature
+    Option<i32>,         // max_output_tokens
+    Option<BigDecimal>,  // frequency_penalty
+    Option<BigDecimal>,  // presence_penalty
+    Option<i32>,         // top_k
+    Option<BigDecimal>,  // top_p
+    Option<BigDecimal>,  // repetition_penalty
+    Option<BigDecimal>,  // min_p
+    Option<BigDecimal>,  // top_a
+    Option<i32>,         // seed
+    Option<Value>,       // logit_bias
+);
+
 // For creating a new chat session
 #[derive(Insertable)]
 #[diesel(table_name = chat_sessions)]
@@ -89,6 +105,17 @@ impl FromSql<crate::schema::sql_types::MessageType, Pg> for MessageRole {
     }
 }
 
+// Implement Display for MessageRole
+impl std::fmt::Display for MessageRole {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            MessageRole::User => write!(f, "User"),
+            MessageRole::Assistant => write!(f, "Assistant"),
+            MessageRole::System => write!(f, "System"),
+        }
+    }
+}
+
 // Represents a chat message in the database
 #[derive(Queryable, Selectable, Identifiable, Associations, Debug, Clone, Serialize, Deserialize)]
 #[diesel(belongs_to(ChatSession, foreign_key = session_id))]
@@ -112,6 +139,32 @@ pub struct NewChatMessage {
     pub session_id: Uuid,
     pub message_type: MessageRole,
     pub content: String,
+}
+
+// For inserting a new chat message with better naming clarity
+#[derive(Insertable, Debug)]
+#[diesel(table_name = chat_messages)]
+pub struct DbInsertableChatMessage {
+    #[diesel(column_name = session_id)]
+    pub chat_id: Uuid, // Maps to session_id in the database
+    #[diesel(column_name = message_type)]
+    pub role: MessageRole, // Maps to message_type in the database
+    pub content: String,
+}
+
+impl DbInsertableChatMessage {
+    pub fn new(
+        chat_id: Uuid,
+        user_id: Option<Uuid>, // Keep this parameter for backward compatibility
+        role: MessageRole,
+        content: String,
+    ) -> Self {
+        Self {
+            chat_id,
+            role,
+            content,
+        }
+    }
 }
 
 // Request body for sending a new message (used by generate endpoint)

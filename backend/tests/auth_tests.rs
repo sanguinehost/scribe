@@ -435,7 +435,7 @@ async fn test_login_wrong_password() -> AnyhowResult<()> {
     // Verify error message (depends on AppError mapping)
     let (status, error_body) = get_json_body::<Value>(response).await?;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
-    assert_eq!(error_body["error"], "Invalid credentials");
+    assert_eq!(error_body["error"], "Invalid username or password"); // Updated expected error message
 
     guard.cleanup().await?;
     Ok(())
@@ -469,7 +469,7 @@ async fn test_login_user_not_found() -> AnyhowResult<()> {
     // Verify error message
     let (status, error_body) = get_json_body::<Value>(response).await?;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
-    assert_eq!(error_body["error"], "Invalid credentials"); // Or potentially "User not found" depending on error mapping
+    assert_eq!(error_body["error"], "Invalid username or password"); // Updated expected error message
 
     Ok(())
 }

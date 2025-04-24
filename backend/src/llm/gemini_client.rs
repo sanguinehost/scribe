@@ -1,12 +1,15 @@
 use async_trait::async_trait;
 use genai::{
-    chat::{ChatMessage, ChatOptions, ChatRequest, ChatResponse}, // Add ChatOptions, remove GenConfig import
+    chat::{ChatMessage, ChatOptions, ChatRequest, ChatResponse, ChatStreamEvent}, // Add ChatStreamEvent
     Client, ClientBuilder,
 };
 use std::sync::Arc; // Added Arc
+use futures::{StreamExt, TryStreamExt}; // For stream mapping
+use std::pin::Pin;
+use futures::stream::Stream;
 
 use crate::errors::AppError;
-use super::AiClient; // Import the trait from the parent module
+use super::{AiClient, ChatStream, ChatStreamItem}; // Import the trait and types from the parent module
 
 /// Wrapper struct around the genai::Client to implement our AiClient trait.
 pub struct ScribeGeminiClient {
@@ -29,6 +32,33 @@ impl AiClient for ScribeGeminiClient {
             .await
             .map_err(AppError::from)
     }
+
+    /// Executes a streaming chat request using the underlying genai::Client.
+    async fn stream_chat(
+        &self,
+        model_name: &str,
+        request: ChatRequest,
+        config_override: Option<ChatOptions>,
+    ) -> Result<ChatStream, AppError> {
+        // Call the underlying client's chat_stream method
+        let chat_stream_response = self.inner
+            .exec_chat_stream(model_name, request, config_override.as_ref())
+            .await
+            .map_err(AppError::from)?;
+
+        // Extract the actual stream from the response
+        let inner_stream = chat_stream_response.stream;
+
+        // Map the stream items from Result<ChatStreamEvent, genai::Error> to Result<ChatStreamEvent, AppError>
+        let mapped_stream = inner_stream.map(|result| {
+            result.map_err(AppError::from)
+        });
+
+        // Box the stream and pin it
+        let boxed_stream: ChatStream = Box::pin(mapped_stream);
+        Ok(boxed_stream)
+    }
+
 }
 
 /// Implement AiClient for Arc<ScribeGeminiClient> to fix the error
@@ -43,6 +73,17 @@ impl AiClient for Arc<ScribeGeminiClient> {
         // Delegate to the inner ScribeGeminiClient
         (**self).exec_chat(model_name, request, config_override).await
     }
+
+    // Delegate stream_chat for Arc<ScribeGeminiClient>
+    async fn stream_chat(
+        &self,
+        model_name: &str,
+        request: ChatRequest,
+        config_override: Option<ChatOptions>,
+    ) -> Result<ChatStream, AppError> {
+        (**self).stream_chat(model_name, request, config_override).await
+    }
+
 }
 
 /// Builds the ScribeGeminiClient wrapper.
@@ -121,6 +162,62 @@ mod tests {
             }
             Err(e) => {
                 panic!("Gemini API call (via wrapper) failed: {:?}", e);
+            }
+        }
+    }
+
+
+    // Integration test: Calls the actual Gemini API stream via the wrapper and trait
+    #[tokio::test]
+    #[ignore] // Ignored by default
+    async fn test_stream_chat_integration_via_wrapper() {
+        dotenv().ok();
+
+        // Build the client wrapper
+        let client_wrapper = build_gemini_client()
+            .await
+            .expect("Failed to build Gemini client wrapper for streaming integration test");
+
+        // Define a simple user message
+        let user_message = "Test Stream Wrapper: Say hello stream!".to_string();
+        let model_name_for_test = "gemini-1.5-flash-latest"; // Use a common model
+        let chat_request = ChatRequest::default().append_message(ChatMessage::user(user_message));
+
+        // Call the streaming function using the trait object reference
+        let stream_result = client_wrapper
+            .stream_chat(model_name_for_test, chat_request, None)
+            .await;
+
+        match stream_result {
+            Ok(mut stream) => {
+                let mut full_response = String::new();
+                let mut chunk_count = 0;
+                while let Some(item_result) = stream.next().await {
+                    match item_result {
+                        Ok(ChatStreamEvent::Chunk(chunk)) => {
+                            // Access content directly and check if it's not empty
+                            if !chunk.content.is_empty() {
+                                print!("{}", chunk.content); // Print chunks as they arrive
+                                full_response.push_str(&chunk.content);
+                                chunk_count += 1;
+                            }
+                        }
+                        Ok(ChatStreamEvent::End(_)) => { // Use End variant
+                            println!("\nStream ended.");
+                            break;
+                        }
+                        Err(e) => {
+                            panic!("Error during stream processing: {:?}", e);
+                        }
+                        _ => {} // Ignore other event types for this simple test
+                    }
+                }
+                println!("\nFull Gemini Stream Response (via wrapper): {}", full_response);
+                assert!(!full_response.is_empty(), "Gemini stream returned an empty response");
+                assert!(chunk_count > 0, "Gemini stream did not produce any chunks");
+            }
+            Err(e) => {
+                panic!("Gemini API stream call (via wrapper) failed: {:?}", e);
             }
         }
     }

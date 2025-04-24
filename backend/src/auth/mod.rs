@@ -28,7 +28,7 @@ pub enum AuthError {
     #[error("User not found")]
     UserNotFound,
     #[error("Database error during authentication: {0}")]
-    DatabaseError(#[from] diesel::result::Error),
+    DatabaseError(String),
     #[error("Database pool error: {0}")]
     PoolError(#[from] deadpool_diesel::PoolError),
     #[error("Database interaction error: {0}")]
@@ -108,7 +108,7 @@ pub fn create_user(
                 warn!(username = %new_user.username, "Username already taken (UniqueViolation).");
                 Err(AuthError::UsernameTaken)
             } else {
-                 Err(AuthError::DatabaseError(e))
+                 Err(AuthError::DatabaseError(e.to_string()))
             }
         }
     }
@@ -132,7 +132,7 @@ pub fn get_user_by_username(conn: &mut PgConnection, username: &str) -> Result<U
             _ => {
                  // --- Log other DB error --- 
                  error!(%username, error = ?e, "Database error finding user by username.");
-                 AuthError::DatabaseError(e)
+                 AuthError::DatabaseError(e.to_string())
             }
         })
 }
@@ -155,7 +155,7 @@ pub fn get_user(conn: &mut PgConnection, user_id: Uuid) -> Result<User, AuthErro
             _ => {
                  // --- Log other DB error --- 
                  error!(%user_id, error = ?e, "Database error finding user by ID.");
-                 AuthError::DatabaseError(e)
+                 AuthError::DatabaseError(e.to_string())
             }
         })
 }

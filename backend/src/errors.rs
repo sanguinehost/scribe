@@ -29,7 +29,7 @@ use uuid::Error as UuidError;
 
 // AppError should automatically be Send + Sync if all its fields are.
 // Remove Send and Sync from derive list.
-#[derive(Error, Debug)]
+#[derive(Error, Debug, Clone)]
 pub enum AppError {
     // --- Authentication/Authorization Errors ---
     #[error("User not found")]
@@ -38,8 +38,8 @@ pub enum AppError {
     #[error("Invalid credentials")]
     InvalidCredentials, // Specific auth error
 
-    #[error("Password hashing failed")]
-    PasswordHashingFailed(#[from] bcrypt::BcryptError), // Corrected type
+    #[error("Password hashing failed: {0}")]
+    PasswordHashingFailed(String), // Change to String instead of BcryptError
 
     #[error("Username Taken")]
     UsernameTaken, // Specific registration error
@@ -50,30 +50,30 @@ pub enum AppError {
     #[error("Forbidden")]
     Forbidden, // Access denied despite authentication
 
-    #[error("Authentication framework error")]
-    AuthError(#[from] axum_login::Error<AuthBackend>), // CORRECTED: Use the actual backend type
+    #[error("Authentication framework error: {0}")]
+    AuthError(String), // Use String instead of the full error type
 
-    #[error("Session store error")]
-    SessionStoreError(#[from] SessionStoreError),
+    #[error("Session store error: {0}")]
+    SessionStoreError(String), // Use String instead of tower_sessions::session_store::Error
 
     // --- Database Errors ---
     #[error("Database query error: {0}")]
-    DatabaseQueryError(#[from] DieselError),
+    DatabaseQueryError(String), // Use String instead of DieselError
 
     #[error("Database pool error: {0}")]
-    DbPoolError(#[from] DeadpoolDieselPoolError), // Use the specific alias from deadpool_diesel
+    DbPoolError(String), // Use String instead of DeadpoolDieselPoolError
 
     #[error("Database managed pool error: {0}")]
-    DbManagedPoolError(#[from] DeadpoolManagedPoolError<DeadpoolDieselPoolError>),
+    DbManagedPoolError(String), // Use String instead of DeadpoolManagedPoolError
 
     #[error("Database pool build error: {0}")]
-    DbPoolBuildError(#[from] DeadpoolBuildError),
+    DbPoolBuildError(String), // Use String instead of DeadpoolBuildError
 
     #[error("Database interaction error (deadpool): {0}")]
-    DbInteractError(#[from] DeadpoolInteractError),
+    DbInteractError(String), // Use String instead of DeadpoolInteractError
 
     #[error("Database migration error: {0}")]
-    DbMigrationError(#[from] DieselMigrationError),
+    DbMigrationError(String), // Use String instead of DieselMigrationError
 
     // --- Request/Input Errors ---
     #[error("Bad Request: {0}")]
@@ -82,35 +82,38 @@ pub enum AppError {
     #[error("Not Found: {0}")]
     NotFound(String), // Resource not found
 
+    #[error("Conflict: {0}")]
+    Conflict(String), // Resource conflict (e.g., duplicate entries)
+
     #[error("File upload error: {0}")]
-    FileUploadError(#[from] MultipartError), // Reverted back to #[from]
+    FileUploadError(String), // Use String instead of MultipartError
 
     #[error("Character parsing error: {0}")]
-    CharacterParseError(#[from] CharacterParserError), // Corrected type
+    CharacterParseError(String), // Use String instead of CharacterParserError
 
     #[error("Invalid Input: {0}")]
     InvalidInput(String),
 
     #[error("Integer Parsing Error: {0}")]
-    ParseIntError(#[from] ParseIntError),
+    ParseIntError(String), // Use String instead of ParseIntError
 
     #[error("UUID Error: {0}")]
-    UuidError(#[from] UuidError),
+    UuidError(String), // Use String instead of UuidError
 
     // --- External Service Errors ---
     #[error("LLM API error: {0}")]
-    GeminiError(#[from] GenAIError),
+    GeminiError(String), // Use String instead of GenAIError
 
     #[error("Image Processing Error: {0}")]
-    ImageProcessingError(#[from] ImageError),
+    ImageProcessingError(String), // Use String instead of ImageError
 
     #[error("HTTP Request Error: {0}")]
-    HttpRequestError(#[from] ReqwestError),
+    HttpRequestError(String), // Use String instead of ReqwestError
 
     #[error("HTTP Middleware Error: {0}")]
-    HttpMiddlewareError(#[from] ReqwestMiddlewareError),
+    HttpMiddlewareError(String), // Use String instead of ReqwestMiddlewareError
 
-    #[error("LLM Client Error: {0}")] // Keep general LLM Client Error if needed for non-GenAI errors
+    #[error("LLM Client Error: {0}")] 
     LlmClientError(String),
 
     // --- General/Internal Errors ---
@@ -118,13 +121,13 @@ pub enum AppError {
     ConfigError(String),
 
     #[error("IO Error: {0}")]
-    IoError(#[from] std::io::Error),
+    IoError(String), // Use String instead of std::io::Error
 
     #[error("Serialization Error: {0}")]
-    SerializationError(#[from] serde_json::Error),
+    SerializationError(String), // Use String instead of serde_json::Error
 
-    #[error("Internal Server Error: {0}")] // Catch-all for Anyhow errors
-    InternalServerError(#[from] AnyhowError),
+    #[error("Internal Server Error: {0}")] 
+    InternalServerError(String), // Use String instead of AnyhowError
 
     // REMOVED DUPLICATE/REDUNDANT VARIANTS:
     // - DatabaseQueryError(String)
@@ -147,7 +150,7 @@ pub enum AppError {
     EmbeddingError(String), // Using String for now
 
     #[error("Session Error: {0}")]
-    Session(#[from] tower_sessions::session::Error),
+    Session(String), // Use String instead of tower_sessions::session::Error
 
     // Added RateLimited variant
     #[error("API Rate Limit Exceeded")]
@@ -226,6 +229,7 @@ impl IntoResponse for AppError {
             AppError::Forbidden => (StatusCode::FORBIDDEN, "Forbidden".to_string()),
             AppError::BadRequest(msg) => (StatusCode::BAD_REQUEST, msg),
             AppError::NotFound(msg) => (StatusCode::NOT_FOUND, msg),
+            AppError::Conflict(msg) => (StatusCode::CONFLICT, msg),
             AppError::UserNotFound => (StatusCode::NOT_FOUND, "User not found".to_string()), // Often treated as 404
             AppError::UsernameTaken => (StatusCode::CONFLICT, "Username is already taken".to_string()), // 409 Conflict
             AppError::InvalidInput(msg) => (StatusCode::BAD_REQUEST, format!("Invalid input: {}", msg)),
@@ -379,7 +383,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_internal_server_error_response() {
-        let error = AppError::InternalServerError(anyhow!("Something went very wrong"));
+        let error = AppError::InternalServerError("Something went very wrong".to_string());
         let response = error.into_response();
         assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
         let body = get_body_json(response).await;
@@ -540,5 +544,132 @@ mod tests {
         } else {
             panic!("Expected InternalError variant");
         }
+    }
+}
+
+// Now add the From implementations to convert from actual errors to our string versions
+impl From<bcrypt::BcryptError> for AppError {
+    fn from(err: bcrypt::BcryptError) -> Self {
+        AppError::PasswordHashingFailed(err.to_string())
+    }
+}
+
+impl From<axum_login::Error<AuthBackend>> for AppError {
+    fn from(err: axum_login::Error<AuthBackend>) -> Self {
+        AppError::AuthError(err.to_string())
+    }
+}
+
+impl From<tower_sessions::session_store::Error> for AppError {
+    fn from(err: tower_sessions::session_store::Error) -> Self {
+        AppError::SessionStoreError(err.to_string())
+    }
+}
+
+impl From<diesel::result::Error> for AppError {
+    fn from(err: diesel::result::Error) -> Self {
+        AppError::DatabaseQueryError(err.to_string())
+    }
+}
+
+impl From<deadpool_diesel::PoolError> for AppError {
+    fn from(err: deadpool_diesel::PoolError) -> Self {
+        AppError::DbPoolError(err.to_string())
+    }
+}
+
+impl From<deadpool::managed::PoolError<deadpool_diesel::PoolError>> for AppError {
+    fn from(err: deadpool::managed::PoolError<deadpool_diesel::PoolError>) -> Self {
+        AppError::DbManagedPoolError(err.to_string())
+    }
+}
+
+impl From<deadpool::managed::BuildError> for AppError {
+    fn from(err: deadpool::managed::BuildError) -> Self {
+        AppError::DbPoolBuildError(err.to_string())
+    }
+}
+
+impl From<deadpool_diesel::InteractError> for AppError {
+    fn from(err: deadpool_diesel::InteractError) -> Self {
+        AppError::DbInteractError(err.to_string())
+    }
+}
+
+impl From<diesel_migrations::MigrationError> for AppError {
+    fn from(err: diesel_migrations::MigrationError) -> Self {
+        AppError::DbMigrationError(err.to_string())
+    }
+}
+
+impl From<axum::extract::multipart::MultipartError> for AppError {
+    fn from(err: axum::extract::multipart::MultipartError) -> Self {
+        AppError::FileUploadError(err.to_string())
+    }
+}
+
+impl From<crate::services::character_parser::ParserError> for AppError {
+    fn from(err: crate::services::character_parser::ParserError) -> Self {
+        AppError::CharacterParseError(err.to_string())
+    }
+}
+
+impl From<std::num::ParseIntError> for AppError {
+    fn from(err: std::num::ParseIntError) -> Self {
+        AppError::ParseIntError(err.to_string())
+    }
+}
+
+impl From<uuid::Error> for AppError {
+    fn from(err: uuid::Error) -> Self {
+        AppError::UuidError(err.to_string())
+    }
+}
+
+impl From<genai::Error> for AppError {
+    fn from(err: genai::Error) -> Self {
+        AppError::GeminiError(err.to_string())
+    }
+}
+
+impl From<image::ImageError> for AppError {
+    fn from(err: image::ImageError) -> Self {
+        AppError::ImageProcessingError(err.to_string())
+    }
+}
+
+impl From<reqwest::Error> for AppError {
+    fn from(err: reqwest::Error) -> Self {
+        AppError::HttpRequestError(err.to_string())
+    }
+}
+
+impl From<reqwest_middleware::Error> for AppError {
+    fn from(err: reqwest_middleware::Error) -> Self {
+        AppError::HttpMiddlewareError(err.to_string())
+    }
+}
+
+impl From<std::io::Error> for AppError {
+    fn from(err: std::io::Error) -> Self {
+        AppError::IoError(err.to_string())
+    }
+}
+
+impl From<serde_json::Error> for AppError {
+    fn from(err: serde_json::Error) -> Self {
+        AppError::SerializationError(err.to_string())
+    }
+}
+
+impl From<anyhow::Error> for AppError {
+    fn from(err: anyhow::Error) -> Self {
+        AppError::InternalServerError(err.to_string())
+    }
+}
+
+impl From<tower_sessions::session::Error> for AppError {
+    fn from(err: tower_sessions::session::Error) -> Self {
+        AppError::Session(err.to_string())
     }
 }

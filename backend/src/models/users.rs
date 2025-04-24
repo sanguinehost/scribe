@@ -2,7 +2,7 @@ use crate::schema::users;
 use axum_login::{AuthUser};
 use diesel::prelude::*;
 use diesel::Insertable;
-use secrecy::{Secret};
+use secrecy::Secret;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use chrono::{DateTime, Utc};

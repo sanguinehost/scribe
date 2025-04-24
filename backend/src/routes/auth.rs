@@ -9,7 +9,7 @@ use axum::http::StatusCode;
 use axum_login::{AuthSession, AuthUser};
 use serde_json::json;
 use tracing::{debug, error, info, instrument, warn};
-use anyhow::anyhow;
+use secrecy::{Secret, ExposeSecret};
 
 use crate::auth::user_store::Backend as AuthBackend;
 type CurrentAuthSession = AuthSession<AuthBackend>;
@@ -25,11 +25,17 @@ pub async fn register_handler(
     let username = credentials.username.clone();
     let password = credentials.password.clone();
 
+    // Hash the password
+    let password_hash = match bcrypt::hash(password.expose_secret(), bcrypt::DEFAULT_COST) {
+        Ok(hash) => hash,
+        Err(e) => return Err(AppError::InternalServerError(format!("Password hashing failed during registration: {}", e))),
+    };
+
     debug!(username = %username, "Attempting to get DB connection from pool for registration...");
     match pool.get().await {
         Ok(conn) => {
             debug!(username = %username, "Got DB connection. Calling interact for create_user...");
-            let user_result = conn.interact(move |conn| create_user(conn, username, password)).await;
+            let user_result = conn.interact(move |conn| create_user(conn, username, Secret::new(password_hash))).await;
 
             match user_result {
                 Ok(inner_result) => {
@@ -45,7 +51,7 @@ pub async fn register_handler(
                         }
                         Err(AuthError::HashingError) => {
                             error!(username = %credentials.username, "Registration failed: Password hashing error.");
-                            Err(AppError::InternalServerError(anyhow::anyhow!("Password hashing failed during registration")))
+                            Err(AppError::InternalServerError("Password hashing failed during registration".to_string()))
                         }
                         Err(AuthError::DatabaseError(e)) => {
                             error!(username = %credentials.username, error = ?e, "Registration failed: Database error.");
@@ -53,19 +59,19 @@ pub async fn register_handler(
                         }
                         Err(e) => {
                             error!(username = %credentials.username, error = ?e, "Registration failed: Unknown AuthError.");
-                            Err(AppError::InternalServerError(anyhow!("An unexpected authentication error occurred.")))
+                            Err(AppError::InternalServerError("An unexpected authentication error occurred.".to_string()))
                         }
                     }
                 }
                 Err(interact_err) => {
                     error!(username = %credentials.username, error = ?interact_err, "Interact error during user creation");
-                    Err(AppError::InternalServerError(anyhow!(interact_err.to_string())))
+                    Err(AppError::InternalServerError(interact_err.to_string()))
                 }
             }
         }
         Err(pool_err) => {
             error!(username = %credentials.username, error = ?pool_err, "Failed to get DB connection for registration");
-            Err(AppError::DbPoolError(pool_err))
+            Err(AppError::DbPoolError(pool_err.to_string()))
         }
     }
 }
@@ -80,33 +86,23 @@ pub async fn login_handler(
 
     info!("Calling auth_session.authenticate...");
     tracing::debug!(username=%username, ">>> BEFORE auth_session.authenticate().await");
-    let user_result = auth_session.authenticate(credentials).await?;
-    tracing::debug!(username=%username, user_result_is_some = user_result.is_some(), ">>> AFTER auth_session.authenticate().await");
-
-    match user_result {
-        Some(user) => {
-            let user_id = user.id;
-            let username = user.username.clone();
-            info!(%username, %user_id, "Authentication successful via auth_session.authenticate");
-
-            info!("Calling auth_session.login...");
-            tracing::debug!(username=%username, user_id=%user_id, ">>> BEFORE auth_session.login().await");
+    match auth_session
+        .authenticate(credentials)
+        .await
+    {
+        Ok(Some(user)) => {
+            let user_id = user.id; // Capture for logging
+            let username = user.username.clone(); // Capture for logging
+            info!(%username, %user_id, "Authentication successful, attempting explicit login...");
             if let Err(e) = auth_session.login(&user).await {
-                error!(error = ?e, ">>> auth_session.login FAILED");
-                tracing::error!(username=%username, user_id=%user_id, error=?e, "Error during auth_session.login, returning InternalServerError");
-                return Err(AppError::InternalServerError(anyhow::anyhow!(
-                    "Session login failed: {}",
-                    e
-                )));
+                error!(error = ?e, %username, %user_id, "Explicit auth_session.login failed after successful authentication");
+                return Err(AppError::InternalServerError(format!("Session login failed: {}", e)));
             }
-            tracing::debug!(username=%username, user_id=%user_id, ">>> AFTER auth_session.login().await (Success)");
-            info!(%username, %user_id, "auth_session.login successful");
+            info!(%username, %user_id, "Explicit auth_session.login successful");
             Ok((StatusCode::OK, Json(user)).into_response())
         }
-        None => {
-            info!(%username, "Login failed: Invalid credentials (auth_session.authenticate returned Ok(None))");
-            Err(AppError::InvalidCredentials)
-        }
+        Ok(None) => Err(AppError::Unauthorized("Invalid username or password".to_string())),
+        Err(e) => Err(AppError::InternalServerError(format!("An unexpected authentication error occurred: {}", e))),
     }
 }
 
@@ -122,7 +118,7 @@ pub async fn logout_handler(mut auth_session: CurrentAuthSession) -> Result<Resp
     debug!("Calling auth_session.logout().await...");
     if let Err(e) = auth_session.logout().await {
         error!(error = ?e, "Failed to destroy session during logout via auth_session.logout()");
-        return Err(AppError::InternalServerError(anyhow::anyhow!(
+        return Err(AppError::InternalServerError(format!(
             "Failed to clear session during logout: {}",
             e
         )));

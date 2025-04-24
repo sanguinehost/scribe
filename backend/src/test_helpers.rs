@@ -46,11 +46,6 @@ use tower::ServiceExt;
 use uuid::Uuid;
 use anyhow::Context; // Added for TestDataGuard cleanup
 use async_trait::async_trait;
-// Removed unused: use axum::response::Response;
-// Removed unused: use axum_login::AuthUser;
-// Removed unused: use diesel::r2d2::ConnectionManager;
-// Removed unused: use diesel::PgConnection;
-// Removed unused: use diesel::r2d2 as diesel_r2d2;
 use std::sync::Mutex; // Only import Mutex, not {Arc, Mutex}
 use genai::ModelIden;
 use genai::adapter::AdapterKind;
@@ -58,6 +53,14 @@ use genai::chat::{ChatOptions, ChatRequest, ChatResponse, MessageContent, Usage}
 use bigdecimal::BigDecimal;
 use chrono::{DateTime, Utc};
 use serde_json::Value;
+use crate::llm::{AiClient, ChatStream, ChatStreamItem}; // Add ChatStream, ChatStreamItem
+use crate::errors::AppError;
+use futures::stream::{self, StreamExt}; // Add stream
+use std::pin::Pin;
+use genai::chat::{ChatStreamEvent, StreamChunk}; // Add import for chatstream types
+use std::path::PathBuf;
+use axum::extract::FromRef;
+use axum_login::{AuthUser};
 
 // Define the embedded migrations macro
 // Ensure this path is correct relative to the crate root (src)
@@ -141,6 +144,8 @@ pub async fn spawn_app() -> TestApp {
     let session_manager_layer = SessionManagerLayer::new(session_store)
         .with_secure(false) // Required for tests, SessionManagerLayer handles signing/encryption
         .with_same_site(cookie::SameSite::Lax) // Use cookie::SameSite
+        .with_name("sid") // Use consistent cookie name
+        .with_path("/")   // Set cookie path to root
         .with_expiry(Expiry::OnInactivity(time::Duration::days(1)));
 
     let auth_backend = AuthBackend::new(db_pool.clone()); // Create backend instance
@@ -519,14 +524,27 @@ pub async fn create_test_user_and_login(
         "Login request failed in helper"
     );
 
-    // Extract the session cookie
-    let session_cookie = response
-        .headers()
-        .get(header::SET_COOKIE)
-        .expect("No session cookie found after login")
-        .to_str()
-        .unwrap()
-        .to_string();
+    // Extract the session cookie with better error handling
+    let response_headers = response.headers();
+    
+    // Log all headers to debug cookie issues
+    tracing::debug!("Login response headers: {:?}", response_headers);
+    
+    // Look for Set-Cookie or set-cookie header (case-insensitive)
+    let session_cookie = if let Some(cookie_header) = response_headers.get(header::SET_COOKIE) {
+        cookie_header.to_str().unwrap().to_string()
+    } else {
+        // Try a fallback approach - iterate through headers to find any Set-Cookie variants
+        let mut cookie_header_val = None;
+        for (name, value) in response_headers.iter() {
+            if name.as_str().to_lowercase() == "set-cookie" {
+                cookie_header_val = Some(value.to_str().unwrap().to_string());
+                break;
+            }
+        }
+        
+        cookie_header_val.expect("No session cookie found in response headers after login")
+    };
 
     (session_cookie, user)
 }
@@ -707,16 +725,16 @@ pub fn ensure_tracing_initialized() {
 
 // --- Mock AI Client for Testing ---
 
-use crate::llm::AiClient;
-use crate::errors::AppError; // Add missing import
-
 /// Mock AI client for testing
 pub struct MockAiClient {
     // Store the last request received in a thread-safe manner
     last_request: Arc<Mutex<Option<ChatRequest>>>,
     // Store the last options received
     last_options: Arc<Mutex<Option<ChatOptions>>>,
+    // Response for non-streaming calls
     response_to_return: Arc<Mutex<Result<ChatResponse, AppError>>>,
+    // Stream items for streaming calls
+    stream_to_return: Arc<Mutex<Option<Vec<ChatStreamItem>>>>,
 }
 
 impl MockAiClient {
@@ -725,7 +743,6 @@ impl MockAiClient {
         let default_response = ChatResponse {
             model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-1.5-flash-latest"),
             provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-1.5-flash-latest"),
-            // other fields with reasonable defaults
             content: Some(MessageContent::Text("Mock response".to_string())),
             reasoning_content: None,
             usage: Usage::default(),
@@ -735,6 +752,7 @@ impl MockAiClient {
             last_request: Arc::new(Mutex::new(None)),
             last_options: Arc::new(Mutex::new(None)),
             response_to_return: Arc::new(Mutex::new(Ok(default_response))),
+            stream_to_return: Arc::new(Mutex::new(None)), // Initialize stream holder
         }
     }
 
@@ -748,9 +766,15 @@ impl MockAiClient {
         self.last_options.lock().unwrap().clone() // Clone the Option<ChatOptions>
     }
 
-    /// Sets the response that the mock client should return.
+    /// Sets the non-streaming response that the mock client should return.
     pub fn set_response(&self, response: Result<ChatResponse, AppError>) {
         *self.response_to_return.lock().unwrap() = response;
+    }
+
+    /// Sets the stream items that the mock client should return for stream_chat.
+    pub fn set_stream_response(&self, stream_items: Vec<ChatStreamItem>) {
+        let mut stream = self.stream_to_return.lock().unwrap();
+        *stream = Some(stream_items);
     }
 }
 
@@ -771,9 +795,72 @@ impl AiClient for MockAiClient {
         }
 
         // Return the predetermined response
-        match &*self.response_to_return.lock().unwrap() {
-            Ok(response) => Ok(response.clone()),
-            Err(_) => Err(AppError::BadRequest("Mock error".to_string())),
+        // Clone the inner Result<ChatResponse, AppError>
+        self.response_to_return.lock().unwrap().clone()
+    }
+
+    async fn stream_chat(
+        &self,
+        _model_name: &str,
+        request: ChatRequest,
+        config_override: Option<ChatOptions>,
+    ) -> Result<ChatStream, AppError> {
+        // Save the last request and options for tests
+        {
+            let mut last_req = self.last_request.lock().unwrap();
+            *last_req = Some(request);
         }
+        {
+            let mut last_opts = self.last_options.lock().unwrap();
+            *last_opts = config_override;
+        }
+
+        // Get the stream items from the mutex - avoid using clone()
+        let guard = self.stream_to_return.lock().unwrap();
+        let stream_items = match &*guard {
+            Some(items) => {
+                // Manually create a new Vec since ChatStreamEvent is not Clone
+                let mut new_items = Vec::with_capacity(items.len());
+                for item in items {
+                    // For each Result item, rebuild it with a new ChatStreamEvent
+                    match item {
+                        Ok(event) => {
+                            match event {
+                                ChatStreamEvent::Chunk(chunk) => {
+                                    // Create a new chunk with same content
+                                    new_items.push(Ok(ChatStreamEvent::Chunk(
+                                        StreamChunk { content: chunk.content.clone() }
+                                    )));
+                                },
+                                // Handle other event types if needed
+                                _ => {
+                                    // For simplicity, create a dummy chunk for other event types
+                                    new_items.push(Ok(ChatStreamEvent::Chunk(
+                                        StreamChunk { content: String::new() }
+                                    )));
+                                }
+                            }
+                        },
+                        Err(err) => {
+                            // Clone the error message for AppError
+                            if let AppError::GeminiError(msg) = err {
+                                new_items.push(Err(AppError::GeminiError(msg.clone())));
+                            } else {
+                                // For other errors, create a generic error message
+                                new_items.push(Err(AppError::InternalServerError("Error in mock stream".to_string())));
+                            }
+                        }
+                    }
+                }
+                new_items
+            },
+            None => Vec::<ChatStreamItem>::new(), // Create empty Vec with correct type
+        };
+        drop(guard); // Release the mutex guard
+
+        // Create a stream from the vector of items
+        let stream = stream::iter(stream_items);
+        let boxed_stream: ChatStream = Box::pin(stream);
+        Ok(boxed_stream)
     }
 }

@@ -1,8 +1,15 @@
 use async_trait::async_trait;
 use genai::{
-    chat::{ChatOptions, ChatRequest, ChatResponse},
+    chat::{ChatOptions, ChatRequest, ChatResponse, ChatStreamEvent},
 };
 use crate::errors::AppError;
+use futures::stream::Stream;
+use std::pin::Pin;
+
+// Type alias for the stream item (Event yielded by the stream)
+pub type ChatStreamItem = Result<ChatStreamEvent, AppError>;
+// Type alias for the stream itself (The stream implementor)
+pub type ChatStream = Pin<Box<dyn Stream<Item = ChatStreamItem> + Send>>;
 
 pub mod gemini_client;
 
@@ -26,4 +33,12 @@ pub trait AiClient: Send + Sync {
         request: ChatRequest,
         config_override: Option<ChatOptions>, // Use ChatOptions
     ) -> Result<ChatResponse, AppError>;
+
+    // Add the streaming method signature
+    async fn stream_chat(
+        &self,
+        model_name: &str,
+        request: ChatRequest,
+        config_override: Option<ChatOptions>,
+    ) -> Result<ChatStream, AppError>; // Return type alias
 }

@@ -187,28 +187,28 @@ Only mark a task checkbox (`- [x]`) when all these conditions are satisfied.
 
 *Goal: Allow users to set basic generation parameters and a system prompt.*
 
-- [ ] **Task 4.1: Database Schema Update (BE)**
+- [x] **Task 4.1: Database Schema Update (BE)**
     - [x] **(BE) Decision:** Decide whether settings (`system_prompt`, `temperature`, `max_output_tokens`, **`frequency_penalty`, `presence_penalty`, `top_k`, `top_p`, `repetition_penalty`, `min_p`, `top_a`, `seed`, `logit_bias` (JSON?)**) belong to `characters` or `chat_sessions`. **Decision: Add to `chat_sessions` for per-chat control.** Make columns nullable with sensible defaults. *(Verified for original 3)*
     - [x] **(BE) Create Migration:** Use `diesel_cli` to generate a new migration file adding these columns to `chat_sessions`. *(Verified - Migration created for all fields including new parameters)*
     - [x] **(BE) Apply Migration:** Ensure the migration runner (from Task 0.4) applies this migration. *(Verified)*
-    - [ ] *TDD (BE):* Update schema verification tests (Task 0.4) to reflect new columns. Run migration tests. *(Verified for original 3)* **Needs update.**
-- [ ] **Task 4.2: API & Logic for Settings (BE)** - ***Requires Task 0.5, Task 2.1 Completion***
-    - [ ] **(BE) Get Settings Logic:** Implement handler for `GET /api/chats/{id}/settings`. Query `chat_sessions` table for the specified session ID, verify ownership by *authenticated user*. Return the settings values (or defaults if NULL). **Handle all new settings.**
-    - [ ] **(BE) Update Settings Logic:** Implement handler for `PUT /api/chats/{id}/settings`. Verify session ownership by *authenticated user*. Validate input data (e.g., temperature range, token limits, penalty ranges, K/P/A values, seed format, logit bias structure). Update the corresponding row in `chat_sessions`. **Handle all new settings.**
-    - [ ] **(BE) Update Prompt Assembly:** Modify Task 2.4 logic to fetch `system_prompt` from the session settings (retrieved via Task 4.2 logic or passed in) and include it in the prompt.
-    - [ ] **(BE) Update Gemini Client Call:** Modify Task 2.5 logic to fetch **all relevant settings** (`temperature`, `max_output_tokens`, `frequency_penalty`, `presence_penalty`, `top_k`, `top_p`, etc.) from session settings and pass them to the Gemini client (Task 2.3). **Requires mapping to `genai::ChatOptions` / `genai::GenerationConfig` and verification of Gemini API support for each.**
-    - [ ] *TDD (BE):* API tests for `GET /api/chats/{id}/settings` (success, auth failure, not found, forbidden). **Verify all settings returned.**
-    - [ ] *TDD (BE):* API tests for `PUT /api/chats/{id}/settings` (success, auth failure, not found, forbidden, invalid data for *each* setting). **Verify all settings updated.**
-    - [ ] *TDD (BE):* Update Unit tests for Prompt Assembly (Task 2.4) to verify system prompt usage.
-    - [ ] *TDD (BE):* Update Unit tests/Integration tests for Generation Endpoint (Task 2.5) to verify **all applicable settings** are passed to the mocked Gemini client.
+    - [x] *TDD (BE):* Update schema verification tests (Task 0.4) to reflect new columns. Run migration tests. *(Verified)*
+- [x] **Task 4.2: API & Logic for Settings (BE)** - ***Requires Task 0.5, Task 2.1 Completion***
+    - [x] **(BE) Get Settings Logic:** Implement handler for `GET /api/chats/{id}/settings`. Query `chat_sessions` table for the specified session ID, verify ownership by *authenticated user*. Return the settings values (or defaults if NULL). **Handle all new settings.** *(Verified)*
+    - [x] **(BE) Update Settings Logic:** Implement handler for `PUT /api/chats/{id}/settings`. Verify session ownership by *authenticated user*. Validate input data (e.g., temperature range, token limits, penalty ranges, K/P/A values, seed format, logit bias structure). Update the corresponding row in `chat_sessions`. **Handle all new settings.** *(Verified)*
+    - [x] **(BE) Update Prompt Assembly:** Modify Task 2.4 logic to fetch `system_prompt` from the session settings (retrieved via Task 4.2 logic or passed in) and include it in the prompt. *(Verified)*
+    - [x] **(BE) Update Gemini Client Call:** Modify Task 2.5 logic to fetch **all relevant settings** (`temperature`, `max_output_tokens`, `frequency_penalty`, `presence_penalty`, `top_k`, `top_p`, etc.) from session settings and pass them to the Gemini client (Task 2.3). **Requires mapping to `genai::ChatOptions` / `genai::GenerationConfig` and verification of Gemini API support for each.** *(Verified)*
+    - [x] *TDD (BE):* API tests for `GET /api/chats/{id}/settings` (success, auth failure, not found, forbidden). **Verify all settings returned.** *(Verified)*
+    - [x] *TDD (BE):* API tests for `PUT /api/chats/{id}/settings` (success, auth failure, not found, forbidden, invalid data for *each* setting). **Verify all settings updated.** *(Verified)*
+    - [x] *TDD (BE):* Update Unit tests for Prompt Assembly (Task 2.4) to verify system prompt usage. *(Verified)*
+    - [x] *TDD (BE):* Update Unit tests/Integration tests for Generation Endpoint (Task 2.5) to verify **all applicable settings** are passed to the mocked Gemini client. *(Verified)*
 - [ ] **Task 4.3: Settings UI (FE)** - ***Requires Task 4.2 Completion***
     - [ ] **(FE) Settings Panel Component:** Create `SettingsPanel.svelte` (Leverage Skeleton components like `<Modal>`, `<SlideOver>`, or integrate into `AppShell`).
     - [ ] **(FE) Input Components:** Use Skeleton form components (`<textarea>`, `<input type="range">`, `<input type="number">`, sliders, text inputs as appropriate) for System Prompt, Temperature, Max Output Tokens, **Frequency/Presence Penalty, Top K/P/A, Repetition Penalty, Min P, Seed, Logit Bias editor (potentially complex)**.
     - [ ] **(FE) API Calls:** Implement logic to fetch current settings using `GET /api/chats/{id}/settings` when the panel opens for the current chat session. Implement logic to save settings using `PUT /api/chats/{id}/settings` on change or via a save button. Handle loading/success/error states. **Ensure all settings are fetched/saved.**
     - [ ] *TDD (FE):* Component tests for `SettingsPanel` (rendering inputs, handling input changes, simulating API calls for fetch/save). **Verify all settings inputs.**
-- [ ] **Task 4.4: Investigate Gemini API Support (BE)** - ***Requires consulting `genai` / Google Gemini docs***
-    - [ ] **(BE) Research:** Systematically check the `genai` crate and official Google Gemini API documentation to confirm which of the newly added settings (`frequency_penalty`, `presence_penalty`, `top_k`, `top_p`, `repetition_penalty`, `min_p`, `top_a`, `seed`, `logit_bias`) are directly supported via API parameters in `ChatOptions` or `GenerationConfig`.
-    - [ ] **(BE) Document Findings:** Update comments in the code or relevant documentation (`docs/LLM_INTEGRATION.md`?) to note which settings are supported, which might require workarounds (if any), and which are unsupported by the Gemini API.
+- [x] **Task 4.4: Investigate Gemini API Support (BE)** - ***Requires consulting `genai` / Google Gemini docs***
+    - [x] **(BE) Research:** Systematically check the `genai` crate and official Google Gemini API documentation to confirm which of the newly added settings (`frequency_penalty`, `presence_penalty`, `top_k`, `top_p`, `repetition_penalty`, `min_p`, `top_a`, `seed`, `logit_bias`) are directly supported via API parameters in `ChatOptions` or `GenerationConfig`. *(Findings documented via comments/logs in chat.rs)*
+    - [x] **(BE) Document Findings:** Update comments in the code or relevant documentation (`docs/LLM_INTEGRATION.md`?) to note which settings are supported, which might require workarounds (if any), and which are unsupported by the Gemini API. *(In-code comments/logs suffice for MVP)*
 
 ---
 

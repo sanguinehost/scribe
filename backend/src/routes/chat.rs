@@ -1,56 +1,58 @@
-use axum::{extract::{Path, State}, http::StatusCode, response::IntoResponse, Json, routing::{post, get}, Router};
+use axum::{
+    extract::{Path, State},
+    http::StatusCode,
+    response::{sse::Event, sse::Sse, IntoResponse},
+    Json,
+    routing::{post, get},
+    Router,
+};
 use axum::debug_handler;
+use futures::{stream::Stream, StreamExt};
+use std::{pin::Pin, convert::Infallible, sync::Arc, time::Duration};
+use tokio::sync::Mutex;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use bigdecimal::BigDecimal;
 use std::str::FromStr;
 use diesel::prelude::*;
 use axum_login::AuthSession;
-use serde_json::Value; // Add the missing import
+use serde_json::{Value, json};
+use genai::chat::ChatStreamEvent;
 use crate::{
     auth::user_store::Backend as AuthBackend,
     errors::AppError,
     models::{
-        chats::{ChatSession, NewChatSession, ChatMessage as DbChatMessage, MessageRole, NewChatMessage, NewChatMessageRequest, ChatSettingsResponse, UpdateChatSettingsRequest},
+        chats::{ChatSession, NewChatSession, ChatMessage as DbChatMessage, MessageRole, NewChatMessage, NewChatMessageRequest, ChatSettingsResponse, UpdateChatSettingsRequest, SettingsTuple, DbInsertableChatMessage},
         characters::Character,
-        // users::User, // Removed unused import
     },
-    schema::{self, characters},
+    llm::ChatStream,
+    schema::{self, characters, chat_messages},
     state::AppState,
 };
 use tracing::{error, info, instrument, warn, debug};
 use genai::chat::{
     ChatRequest,
     ChatMessage,
-    // Removed unused: ContentPart,
     ChatOptions,
-    // Removed unused: ChatRole,
 };
 use chrono::Utc;
+use diesel::result::DatabaseErrorKind;
 
-// Default model to use if character doesn't specify one
+// For HTTP related imports in tests
+#[cfg(test)]
+use http::{Request, Method, header};
+#[cfg(test)]
+use axum::body::Body;
+#[cfg(test)]
+use tower::ServiceExt;
+
 const DEFAULT_MODEL_NAME: &str = "gemini-1.5-flash-latest";
 
-// Request body for creating a new chat session
 #[derive(Deserialize)]
 pub struct CreateChatRequest {
     character_id: Uuid,
-    // Add other fields if needed, e.g., initial title
 }
 
-// Request body for generating a response
-#[derive(Deserialize)]
-pub struct GenerateRequest {
-    // Removed unused field: content: String,
-}
-
-// Response body for generating a response
-#[derive(Serialize)]
-pub struct GenerateResponse {
-    ai_message: DbChatMessage, // Return the full AI message object
-}
-
-/// Creates a new chat session associated with a character for the authenticated user.
 #[debug_handler]
 #[instrument(skip(state, auth_session, payload), fields(user_id = ?auth_session.user.as_ref().map(|u| u.id)), err)]
 pub async fn create_chat_session(
@@ -64,39 +66,31 @@ pub async fn create_chat_session(
         AppError::Unauthorized("Authentication required".to_string())
     })?;
     let user_id = user.id;
-    let character_id = payload.character_id; // Store for use in interact closure
+    let character_id = payload.character_id;
 
-    // Use interact for blocking Diesel operations
     let created_session: ChatSession = state
         .pool
         .get()
         .await?
         .interact(move |conn| {
-            // Import schema modules within the closure for clarity
             use crate::schema::characters::dsl as characters_dsl;
             use crate::schema::chat_sessions::dsl as chat_sessions_dsl;
             use crate::schema::chat_messages::dsl as chat_messages_dsl;
 
-
-            // Wrap operations in a transaction
             conn.transaction(|transaction_conn| {
-                // 1. Verify character exists and belongs to the user
                 info!(%character_id, %user_id, "Verifying character ownership");
                 let character_owner_id = characters_dsl::characters
                     .filter(characters::dsl::id.eq(character_id))
                     .select(characters::dsl::user_id)
                     .first::<Uuid>(transaction_conn)
-                    .optional()?; // Use optional to handle not found
+                    .optional()?;
 
                 match character_owner_id {
                     Some(owner_id) => {
                         if owner_id != user_id {
                             error!(%character_id, %user_id, owner_id=%owner_id, "User does not own character");
-                            return Err(AppError::Forbidden); // Character owned by someone else
+                            return Err(AppError::Forbidden);
                         }
-                        // Character exists and is owned by the user, proceed.
-
-                        // 2. Create the new chat session
                         info!(%character_id, %user_id, "Inserting new chat session");
                         let new_session = NewChatSession {
                             user_id,
@@ -104,26 +98,24 @@ pub async fn create_chat_session(
                         };
                         let created_session: ChatSession = diesel::insert_into(chat_sessions_dsl::chat_sessions)
                             .values(&new_session)
-                            .returning(ChatSession::as_select()) // Use as_select() with returning
+                            .returning(ChatSession::as_select())
                             .get_result(transaction_conn)
                             .map_err(|e| {
                                 error!(error = ?e, "Failed to insert new chat session");
-                                AppError::DatabaseQueryError(e)
+                                AppError::DatabaseQueryError(e.to_string())
                             })?;
                          info!(session_id = %created_session.id, "Chat session created");
 
-                        // ---- START: Add first_mes as initial AI message ----
                         info!(%character_id, session_id = %created_session.id, "Fetching character details for first_mes");
                         let character: Character = characters_dsl::characters
                             .filter(characters::dsl::id.eq(character_id))
-                            .select(Character::as_select()) // Fetch the full character
+                            .select(Character::as_select())
                             .first::<Character>(transaction_conn)
                             .map_err(|e| {
                                 error!(error = ?e, %character_id, "Failed to fetch full character details during session creation");
-                                // If character was found moments ago, this should ideally not fail, but handle just in case
                                 match e {
-                                    diesel::result::Error::NotFound => AppError::InternalServerError(anyhow::anyhow!("Character inconsistency during session creation")),
-                                    _ => AppError::DatabaseQueryError(e),
+                                    diesel::result::Error::NotFound => AppError::InternalServerError(anyhow::anyhow!("Character inconsistency during session creation").to_string()),
+                                    _ => AppError::DatabaseQueryError(e.to_string()),
                                 }
                             })?;
 
@@ -132,16 +124,15 @@ pub async fn create_chat_session(
                                 info!(session_id = %created_session.id, "Character has first_mes, adding as initial assistant message");
                                 let first_message = NewChatMessage {
                                     session_id: created_session.id,
-                                    message_type: MessageRole::Assistant, // Use Assistant role
+                                    message_type: MessageRole::Assistant,
                                     content: first_message_content,
-                                    // created_at is handled by DB default or trigger
                                 };
                                 diesel::insert_into(chat_messages_dsl::chat_messages)
                                     .values(&first_message)
-                                    .execute(transaction_conn) // We don't need the result of this insert
+                                    .execute(transaction_conn)
                                     .map_err(|e| {
                                         error!(error = ?e, session_id = %created_session.id, "Failed to insert first_mes");
-                                        AppError::DatabaseQueryError(e)
+                                        AppError::DatabaseQueryError(e.to_string())
                                     })?;
                                 info!(session_id = %created_session.id, "Successfully inserted first_mes");
                             } else {
@@ -150,28 +141,25 @@ pub async fn create_chat_session(
                         } else {
                              info!(session_id = %created_session.id, "Character first_mes is None, skipping initial message.");
                         }
-                        // ---- END: Add first_mes ----
-
-                        Ok(created_session) // Return the created session
+                        Ok(created_session)
                     }
                     None => {
                         error!(%character_id, "Character not found during session creation");
-                        Err(AppError::NotFound("Character not found".into())) // Character does not exist
+                        Err(AppError::NotFound("Character not found".into()))
                     }
                 }
-            }) // End transaction
+            })
         })
         .await
         .map_err(|interact_err| {
              tracing::error!("InteractError in create_chat_session: {}", interact_err);
-             AppError::InternalServerError(anyhow::anyhow!("DB interact error: {}", interact_err))
-        })??; // Double '?' handles both InteractError and the inner Result<ChatSession, AppError>
+             AppError::InternalServerError(anyhow::anyhow!("DB interact error: {}", interact_err).to_string())
+        })??;
 
     info!(session_id = %created_session.id, "Chat session creation successful");
     Ok((StatusCode::CREATED, Json(created_session)))
 }
 
-/// Lists all chat sessions belonging to the authenticated user.
 #[debug_handler]
 #[instrument(skip(state, auth_session), fields(user_id = ?auth_session.user.as_ref().map(|u| u.id)), err)]
 pub async fn list_chat_sessions(
@@ -193,19 +181,18 @@ pub async fn list_chat_sessions(
                 .load::<ChatSession>(conn)
                 .map_err(|e| {
                     error!("Failed to load chat sessions for user {}: {}", user_id, e);
-                    AppError::DatabaseQueryError(e)
+                    AppError::DatabaseQueryError(e.to_string())
                 })
         })
         .await
         .map_err(|interact_err| {
             tracing::error!("InteractError in list_chat_sessions: {}", interact_err);
-            AppError::InternalServerError(anyhow::anyhow!("DB interact error: {}", interact_err))
+            AppError::InternalServerError(anyhow::anyhow!("DB interact error: {}", interact_err).to_string())
         })??;
 
     Ok(Json(sessions))
 }
 
-/// Retrieves messages for a specific chat session owned by the authenticated user.
 #[debug_handler]
 #[instrument(skip(state, auth_session), fields(user_id = ?auth_session.user.as_ref().map(|u| u.id), %session_id), err)]
 pub async fn get_chat_messages(
@@ -239,7 +226,7 @@ pub async fn get_chat_messages(
                             .load::<DbChatMessage>(conn)
                             .map_err(|e| {
                                 error!("Failed to load messages for session {}: {}", session_id, e);
-                                AppError::DatabaseQueryError(e)
+                                AppError::DatabaseQueryError(e.to_string())
                             })
                     }
                 }
@@ -251,88 +238,66 @@ pub async fn get_chat_messages(
         .await
         .map_err(|interact_err| {
             tracing::error!("InteractError in get_chat_messages: {}", interact_err);
-            AppError::InternalServerError(anyhow::anyhow!("DB interact error: {}", interact_err))
+            AppError::InternalServerError(anyhow::anyhow!("DB interact error: {}", interact_err).to_string())
         })??;
 
     Ok(Json(messages))
 }
 
-// Updated internal save function - simplified, removes user_id check
 #[instrument(skip(conn), err)]
 fn save_chat_message_internal(
     conn: &mut PgConnection,
-    session_id: Uuid,
-    role: MessageRole,
-    content: String,
+    message: DbInsertableChatMessage,
 ) -> Result<DbChatMessage, AppError> {
-    use crate::schema::chat_messages::dsl as chat_messages_dsl; // Add import needed after edit
-
-    let new_message = NewChatMessage {
-        session_id,
-        message_type: role,
-        content,
-    };
-
-    diesel::insert_into(chat_messages_dsl::chat_messages) // Use imported dsl
-        .values(&new_message)
-        .returning(DbChatMessage::as_returning())
-        .get_result::<DbChatMessage>(conn)
-        .map_err(|e| {
-            error!(%session_id, ?role, error=?e, "DB Insert Error in save_chat_message_internal");
-            AppError::DatabaseQueryError(e)
-        })
+    match diesel::insert_into(chat_messages::table)
+        .values(&message)
+        .returning(DbChatMessage::as_select())
+        .get_result(conn)
+    {
+        Ok(inserted_message) => {
+            info!(message_id = %inserted_message.id, session_id = %inserted_message.session_id, "Chat message successfully inserted");
+            Ok(inserted_message)
+        },
+        Err(diesel::result::Error::DatabaseError(DatabaseErrorKind::UniqueViolation, _)) => {
+            warn!(session_id = %message.chat_id, role=%message.role, "Attempted to insert duplicate chat message (UniqueViolation), ignoring.");
+            Err(AppError::Conflict("Potential duplicate message detected".to_string()))
+        }
+        Err(e) => {
+            tracing::error!(session_id = %message.chat_id, error = ?e, "Error inserting chat message into database");
+            Err(AppError::DatabaseQueryError(e.to_string()))
+        }
+    }
 }
 
-/// Generates a response from the AI for the given chat session.
-/// Saves the user's message and the AI's response.
 #[debug_handler]
 #[instrument(skip(state, auth_session, payload), fields(user_id = ?auth_session.user.as_ref().map(|u| u.id), %session_id), err)]
 pub async fn generate_chat_response(
     State(state): State<AppState>,
     auth_session: AuthSession<AuthBackend>,
     Path(session_id): Path<Uuid>,
-    Json(payload): Json<NewChatMessageRequest>, // Use model struct directly
-) -> Result<impl IntoResponse, AppError> {
-    info!("Generating chat response");
+    Json(payload): Json<NewChatMessageRequest>,
+) -> Result<Sse<impl Stream<Item = Result<Event, axum::BoxError>>>, AppError> {
+    info!(%session_id, "Generating streaming chat response");
     let user = auth_session.user.ok_or_else(|| {
-        error!("Authentication required for generate_chat_response");
+        error!(%session_id, "Authentication required for generate_chat_response");
         AppError::Unauthorized("Authentication required".to_string())
     })?;
     let user_id = user.id;
 
-    // Basic input validation
     if payload.content.trim().is_empty() {
-        error!("Attempted to send empty message");
+        error!(%session_id, "Attempted to send empty message");
         return Err(AppError::BadRequest("Message content cannot be empty".into()));
     }
 
     let user_message_content = payload.content.clone();
-    let pool = state.pool.clone(); // Clone pool for the first interact
+    let pool = state.pool.clone();
 
-    // --- First Interact: Validate, Fetch data, Save user message, Build prompt ---
-    info!("Starting first DB interaction (fetch data, save user msg, get settings)");
-    
-    // Define the settings type for clarity
-    type SettingsTuple = (
-        Option<String>,      // system_prompt
-        Option<BigDecimal>,  // temperature
-        Option<i32>,         // max_output_tokens
-        Option<BigDecimal>,  // frequency_penalty
-        Option<BigDecimal>,  // presence_penalty
-        Option<i32>,         // top_k
-        Option<BigDecimal>,  // top_p
-        Option<BigDecimal>,  // repetition_penalty
-        Option<BigDecimal>,  // min_p
-        Option<BigDecimal>,  // top_a
-        Option<i32>,         // seed
-        Option<Value>,       // logit_bias
-    );
-    
-    // Update the expected tuple type to include all settings and model_name
+    info!(%session_id, "Starting first DB interaction (fetch data, save user msg, get settings)");
+
     let (
-        prompt_history, 
-        system_prompt, 
-        temperature, 
+        prompt_history,
+        system_prompt,
+        temperature,
         max_tokens,
         frequency_penalty,
         presence_penalty,
@@ -348,131 +313,85 @@ pub async fn generate_chat_response(
         .get()
         .await?
         .interact(move |conn| {
-            // Use schema modules for clarity
             use crate::schema::chat_sessions::dsl as chat_sessions_dsl;
             use crate::schema::chat_messages::dsl as chat_messages_dsl;
 
             conn.transaction(|transaction_conn| {
-                // 1. Retrieve session & character, ensuring ownership
-                info!("Fetching session and character");
-                
-                // First, get the basic ChatSession to verify ownership
-                let _session = chat_sessions_dsl::chat_sessions
-                    .filter(chat_sessions_dsl::id.eq(session_id))
-                    .filter(chat_sessions_dsl::user_id.eq(user_id)) // Ensure ownership
-                    .select(ChatSession::as_select())
-                    .first(transaction_conn)
-                    .optional()
-                    .map_err(AppError::DatabaseQueryError)?
-                    .ok_or_else(|| {
-                        warn!(%session_id, %user_id, "Chat session not found or user mismatch");
-                        AppError::NotFound("Chat session not found".into())
-                    })?;
-                
-                // Then, get all the settings we need
-                let settings = chat_sessions_dsl::chat_sessions
-                    .filter(chat_sessions_dsl::id.eq(session_id))
-                    .select((
-                        chat_sessions_dsl::system_prompt,
-                        chat_sessions_dsl::temperature,
-                        chat_sessions_dsl::max_output_tokens,
-                        chat_sessions_dsl::frequency_penalty,
-                        chat_sessions_dsl::presence_penalty,
-                        chat_sessions_dsl::top_k,
-                        chat_sessions_dsl::top_p,
-                        chat_sessions_dsl::repetition_penalty,
-                        chat_sessions_dsl::min_p,
-                        chat_sessions_dsl::top_a,
-                        chat_sessions_dsl::seed,
-                        chat_sessions_dsl::logit_bias,
-                    ))
-                    .first::<SettingsTuple>(transaction_conn)
-                    .map_err(AppError::DatabaseQueryError)?;
-                
-                // Unpack settings
-                let (
-                    system_prompt,
-                    temperature,
-                    max_tokens,
-                    frequency_penalty,
-                    presence_penalty,
-                    top_k,
-                    top_p,
-                    repetition_penalty,
-                    min_p,
-                    top_a,
-                    seed,
-                    logit_bias,
-                ) = settings;
+                info!(%session_id, %user_id, "Fetching session for streaming");
+                chat_sessions_dsl::chat_sessions
+                   .filter(chat_sessions_dsl::id.eq(session_id))
+                   .filter(chat_sessions_dsl::user_id.eq(user_id))
+                   .select(chat_sessions_dsl::id)
+                   .first::<Uuid>(transaction_conn)
+                   .optional()
+                   .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?
+                   .ok_or_else(|| {
+                       warn!(%session_id, %user_id, "Chat session not found or user mismatch");
+                       AppError::NotFound("Chat session not found".into())
+                   })?;
+                info!(%session_id, %user_id, "Session ownership verified");
 
-                // Use the default model_name since we don't have it in the database
-                let model_name = DEFAULT_MODEL_NAME;
+                info!(%session_id, "Fetching chat settings");
+                let settings: SettingsTuple = chat_sessions_dsl::chat_sessions
+                   .filter(chat_sessions_dsl::id.eq(session_id))
+                   .select((
+                       chat_sessions_dsl::system_prompt,
+                       chat_sessions_dsl::temperature,
+                       chat_sessions_dsl::max_output_tokens,
+                       chat_sessions_dsl::frequency_penalty,
+                       chat_sessions_dsl::presence_penalty,
+                       chat_sessions_dsl::top_k,
+                       chat_sessions_dsl::top_p,
+                       chat_sessions_dsl::repetition_penalty,
+                       chat_sessions_dsl::min_p,
+                       chat_sessions_dsl::top_a,
+                       chat_sessions_dsl::seed,
+                       chat_sessions_dsl::logit_bias,
+                   ))
+                   .first::<SettingsTuple>(transaction_conn)
+                   .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+                let ( system_prompt, temperature, max_tokens, frequency_penalty, presence_penalty, top_k, top_p, repetition_penalty, min_p, top_a, seed, logit_bias ) = settings;
 
-                // 2. Fetch message history
-                info!("Fetching message history");
-                let history = chat_messages_dsl::chat_messages // Use imported dsl
-                    .filter(chat_messages_dsl::session_id.eq(session_id))
-                    .order(chat_messages_dsl::created_at.asc())
-                    .select((chat_messages_dsl::message_type, chat_messages_dsl::content))
-                    .load::<(MessageRole, String)>(transaction_conn)
-                    .map_err(AppError::DatabaseQueryError)?;
+                let model_name = DEFAULT_MODEL_NAME.to_string();
 
-                // 3. Save the new user message
-                info!("Saving user message");
-                save_chat_message_internal(
-                    transaction_conn,
+                info!(%session_id, "Fetching message history for streaming");
+                let history = chat_messages_dsl::chat_messages
+                   .filter(chat_messages_dsl::session_id.eq(session_id))
+                   .order(chat_messages_dsl::created_at.asc())
+                   .select((chat_messages_dsl::message_type, chat_messages_dsl::content))
+                   .load::<(MessageRole, String)>(transaction_conn)
+                   .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+
+                info!(%session_id, "Saving user message before streaming");
+                let user_db_message = DbInsertableChatMessage::new(
                     session_id,
+                    Some(user_id),
                     MessageRole::User,
                     user_message_content.clone(),
-                )?;
+                );
+                
+                // Manually call and handle the future since we can't await in the non-async transaction closure
+                let _saved_message = save_chat_message_internal(transaction_conn, user_db_message)?;
 
-                // 4. Combine history and new message
                 let mut full_history = history;
                 full_history.push((MessageRole::User, user_message_content));
 
-                // Return with the specific type annotation
-                Ok::<(
-                    Vec<(MessageRole, String)>, 
-                    Option<String>, 
-                    Option<BigDecimal>, 
-                    Option<i32>,
-                    Option<BigDecimal>,
-                    Option<BigDecimal>,
-                    Option<i32>,
-                    Option<BigDecimal>,
-                    Option<BigDecimal>,
-                    Option<BigDecimal>,
-                    Option<BigDecimal>,
-                    Option<i32>,
-                    Option<Value>,
-                    &'static str
-                ), AppError>((
-                    full_history, 
-                    system_prompt, 
-                    temperature,
-                    max_tokens,
-                    frequency_penalty,
-                    presence_penalty,
-                    top_k,
-                    top_p,
-                    repetition_penalty,
-                    min_p,
-                    top_a,
-                    seed,
-                    logit_bias,
+                Ok::<_, AppError>((
+                    full_history, system_prompt, temperature, max_tokens,
+                    frequency_penalty, presence_penalty, top_k, top_p,
+                    repetition_penalty, min_p, top_a, seed, logit_bias,
                     model_name
                 ))
             })
         })
         .await
         .map_err(|interact_err| {
-            tracing::error!("InteractError in first interaction: {}", interact_err);
-            AppError::InternalServerError(anyhow::anyhow!("DB interact error: {}", interact_err))
+           tracing::error!(%session_id, "InteractError fetching data for streaming: {}", interact_err);
+           AppError::InternalServerError(anyhow::anyhow!("DB interact error: {}", interact_err).to_string())
         })??;
 
-    info!("DB interaction complete, preparing AI request");
+    info!(%session_id, "DB interaction complete, preparing AI stream request");
 
-    // --- Convert DB messages to GenAI format ---
     let genai_messages: Vec<ChatMessage> = prompt_history
         .into_iter()
         .map(|(role, content)| {
@@ -484,175 +403,143 @@ pub async fn generate_chat_response(
         })
         .collect();
 
-    // --- Prepare ChatOptions from settings --- 
     let mut chat_options = ChatOptions::default();
-
-    // Apply temperature if set
     if let Some(temp) = temperature {
-        // Convert BigDecimal to f64 for ChatOptions
-        // Using to_string().parse() for conversion
         if let Ok(temp_f64) = temp.to_string().parse::<f64>() {
-             debug!(temperature = temp_f64, "Applying temperature setting");
+             debug!(%session_id, temperature = temp_f64, "Applying temperature setting");
              chat_options = chat_options.with_temperature(temp_f64);
-        } else {
-             warn!(temperature = %temp, "Could not convert BigDecimal temperature to f64");
-        }
+        } else { warn!(%session_id, temperature = %temp, "Could not convert BigDecimal temperature to f64"); }
     }
-
-    // Apply max_tokens if set
     if let Some(max_tok) = max_tokens {
-        // Validate max_tokens is non-negative before casting
         if max_tok >= 0 {
-            debug!(max_tokens = max_tok, "Applying max_output_tokens setting");
-            chat_options = chat_options.with_max_tokens(max_tok as u32); // Cast i32 to u32
-        } else {
-            warn!(max_tokens = max_tok, "Ignoring negative max_output_tokens setting");
-        }
+            debug!(%session_id, max_tokens = max_tok, "Applying max_output_tokens setting");
+            chat_options = chat_options.with_max_tokens(max_tok as u32);
+        } else { warn!(%session_id, max_tokens = max_tok, "Ignoring negative max_output_tokens"); }
     }
-
-    // Apply frequency_penalty if set
-    if let Some(fp) = frequency_penalty {
-        if let Ok(fp_f64) = fp.to_string().parse::<f64>() {
-            debug!(frequency_penalty = fp_f64, "Applying frequency_penalty setting");
-            // Check if genai library supports frequency_penalty setting
-            // chat_options = chat_options.with_frequency_penalty(fp_f64);
-            debug!("frequency_penalty is not yet supported by the genai library");
-        }
-    }
-
-    // Apply presence_penalty if set
-    if let Some(pp) = presence_penalty {
-        if let Ok(pp_f64) = pp.to_string().parse::<f64>() {
-            debug!(presence_penalty = pp_f64, "Applying presence_penalty setting");
-            // Check if genai library supports presence_penalty setting
-            // chat_options = chat_options.with_presence_penalty(pp_f64);
-            debug!("presence_penalty is not yet supported by the genai library");
-        }
-    }
-
-    // Apply top_k if set
-    if let Some(k) = top_k {
-        if k > 0 {
-            debug!(top_k = k, "Applying top_k setting");
-            // Check if genai library supports top_k setting
-            // chat_options = chat_options.with_top_k(k as u32);
-            debug!("top_k is not yet supported by the genai library");
-        }
-    }
-
-    // Apply top_p if set
     if let Some(p) = top_p {
         if let Ok(p_f64) = p.to_string().parse::<f64>() {
-            debug!(top_p = p_f64, "Applying top_p setting");
-            // Check if genai library supports top_p setting
-            // chat_options = chat_options.with_top_p(p_f64);
-            debug!("top_p is not yet supported by the genai library");
-        }
+            debug!(%session_id, top_p = p_f64, "Applying top_p setting");
+            chat_options = chat_options.with_top_p(p_f64);
+        } else { warn!(%session_id, top_p = %p, "Could not convert BigDecimal top_p to f64"); }
     }
+    if frequency_penalty.is_some() { debug!(%session_id, "frequency_penalty not currently supported by genai ChatOptions"); }
+    if presence_penalty.is_some() { debug!(%session_id, "presence_penalty not currently supported by genai ChatOptions"); }
+    if top_k.is_some() { debug!(%session_id, "top_k not currently supported by genai ChatOptions"); }
+    if repetition_penalty.is_some() { debug!(%session_id, "repetition_penalty not currently supported by genai ChatOptions"); }
+    if min_p.is_some() { debug!(%session_id, "min_p not currently supported by genai ChatOptions"); }
+    if top_a.is_some() { debug!(%session_id, "top_a not currently supported by genai ChatOptions"); }
+    if seed.is_some() { debug!(%session_id, "seed not currently supported by genai ChatOptions"); }
+    if logit_bias.is_some() { debug!(%session_id, "logit_bias not currently supported by genai ChatOptions"); }
 
-    // Apply repetition_penalty if set
-    if let Some(rp) = repetition_penalty {
-        if let Ok(rp_f64) = rp.to_string().parse::<f64>() {
-            debug!(repetition_penalty = rp_f64, "Applying repetition_penalty setting");
-            // Check if genai library supports repetition_penalty setting
-            // chat_options = chat_options.with_repetition_penalty(rp_f64);
-            debug!("repetition_penalty is not yet supported by the genai library");
-        }
-    }
-
-    // Apply min_p if set
-    if let Some(mp) = min_p {
-        if let Ok(mp_f64) = mp.to_string().parse::<f64>() {
-            debug!(min_p = mp_f64, "Applying min_p setting");
-            // Check if genai library supports min_p setting
-            // chat_options = chat_options.with_min_p(mp_f64);
-            debug!("min_p is not yet supported by the genai library");
-        }
-    }
-
-    // Apply top_a if set
-    if let Some(ta) = top_a {
-        if let Ok(ta_f64) = ta.to_string().parse::<f64>() {
-            debug!(top_a = ta_f64, "Applying top_a setting");
-            // Check if genai library supports top_a setting
-            // chat_options = chat_options.with_top_a(ta_f64);
-            debug!("top_a is not yet supported by the genai library");
-        }
-    }
-
-    // Apply seed if set
-    if let Some(s) = seed {
-        debug!(seed = s, "Applying seed setting");
-        // Check if genai library supports seed setting
-        // chat_options = chat_options.with_seed(s as u64);
-        debug!("seed is not yet supported by the genai library");
-    }
-
-    // Apply logit_bias if set
-    if let Some(lb) = logit_bias {
-        debug!(logit_bias = ?lb, "Applying logit_bias setting");
-        // Check if genai library supports logit_bias setting
-        // This would require mapping the JSON object to the genai library's format
-        debug!("logit_bias is not yet supported by the genai library");
-    }
-
-    // --- Create ChatRequest with system prompt ---
     let genai_request = if let Some(system) = system_prompt {
         ChatRequest::new(genai_messages).with_system(system)
     } else {
         ChatRequest::new(genai_messages)
     };
 
-    debug!(?genai_request, ?chat_options, "Sending request to AI client");
+    debug!(%session_id, ?genai_request, ?chat_options, "Sending stream request to AI client");
 
-    // --- Call the AI client ---
-    let ai_response = state.ai_client
-        .exec_chat(model_name, genai_request, Some(chat_options))
-        .await
-        .map_err(|e| {
-            error!(error = ?e, "LLM API call failed");
-            // Convert AppError to GenAIError if needed
-            match e {
-                AppError::GeminiError(genai_err) => AppError::GeminiError(genai_err),
-                _ => AppError::BadRequest(format!("LLM API call failed: {}", e))
+    let ai_stream_result = state.ai_client
+        .stream_chat(&model_name, genai_request, Some(chat_options))
+        .await;
+
+    let ai_stream = match ai_stream_result {
+        Ok(stream) => {
+            info!(%session_id, "Successfully initiated AI stream");
+            stream
+        },
+        Err(e) => {
+            error!(error = ?e, %session_id, "LLM stream initiation failed");
+            return Err(AppError::InternalServerError(anyhow::anyhow!("LLM stream initiation failed: {}", e).to_string()));
+        }
+    };
+
+    let session_id_clone = session_id;
+    let pool_clone = state.pool.clone();
+    let full_response_buffer = Arc::new(Mutex::new(String::new()));
+    let buffer_clone = full_response_buffer.clone();
+
+    let sse_stream = async_stream::stream! {
+        let mut pinned_stream = Box::pin(ai_stream);
+
+        while let Some(event_result) = pinned_stream.next().await {
+            match event_result {
+                Ok(ChatStreamEvent::Chunk(chunk)) => {
+                    if !chunk.content.is_empty() {
+                        let mut buffer_guard = buffer_clone.lock().await;
+                        buffer_guard.push_str(&chunk.content);
+                        drop(buffer_guard);
+
+                        debug!(%session_id_clone, bytes = chunk.content.len(), "Yielding chunk");
+                        yield Ok::<_, axum::BoxError>(Event::default().data(chunk.content));
+                    }
+                }
+                Ok(ChatStreamEvent::End(end_event)) => {
+                    debug!(%session_id_clone, ?end_event, "AI stream ended");
+                    break;
+                }
+                 Ok(ChatStreamEvent::Start) => {
+                     debug!(%session_id_clone, "AI stream started event received");
+                 }
+                 Ok(ChatStreamEvent::ReasoningChunk(reasoning)) => {
+                    debug!(%session_id_clone, ?reasoning, "AI stream reasoning chunk received (ignored)");
+                 }
+                Err(e) => {
+                    error!(error = ?e, %session_id_clone, "Error receiving chunk from AI stream");
+                    let err_msg = format!("Error processing AI stream: {}", e);
+                    yield Ok::<_, axum::BoxError>(Event::default().event("error").data(err_msg));
+                    break;
+                }
             }
-        })?;
+        }
 
-    // --- Extract the text content from the response ---
-    let response_text = ai_response
-        .content_text_as_str()
-        .ok_or_else(|| {
-            error!("LLM response missing text content");
-            AppError::BadRequest("LLM response missing text content".into())
-        })?
-        .to_string();
+        let final_content = full_response_buffer.lock().await.clone();
+        if !final_content.is_empty() {
+            info!(%session_id_clone, bytes = final_content.len(), "Spawning background task to save full AI response.");
+            tokio::spawn(async move {
+                match pool_clone.get().await {
+                    Ok(conn_wrapper) => {
+                        let save_result = conn_wrapper.interact(move |conn| {
+                            let ai_message = DbInsertableChatMessage::new(
+                                session_id_clone,
+                                None,
+                                MessageRole::Assistant,
+                                final_content,
+                            );
+                            
+                            save_chat_message_internal(conn, ai_message)
+                        }).await;
 
-    // --- Second Interact: Save assistant message ---
-    info!("Starting second DB interaction (save assistant msg)");
-    let assistant_db_message = state // Use original state here
-        .pool
-        .get()
-        .await?
-        .interact(move |conn| {
-            save_chat_message_internal(
-                conn,
-                session_id,
-                MessageRole::Assistant,
-                response_text.clone(), // Clone response_text for the closure
-            )
-        })
-        .await
-        .map_err(|interact_err| {
-            tracing::error!("InteractError in second interaction: {}", interact_err);
-            AppError::InternalServerError(anyhow::anyhow!("DB interact error: {}", interact_err))
-        })??;
+                        match save_result {
+                            Ok(future_result) => {
+                                match future_result {
+                                    Ok(saved_msg) => info!(%session_id_clone, msg_id=%saved_msg.id, "Successfully saved full AI response in background."),
+                                    Err(db_err) => error!(%session_id_clone, error=?db_err, "Failed to save full AI response (DB error) in background."),
+                                }
+                            },
+                            Err(interact_err) => error!(%session_id_clone, error=?interact_err, "Failed to save full AI response (Interact error) in background."),
+                        }
+                    }
+                    Err(pool_err) => {
+                        error!(%session_id_clone, error=?pool_err, "Failed to get DB connection for background save.");
+                    }
+                }
+            });
+        } else {
+           warn!(%session_id_clone, "AI stream finished but produced no content to save.");
+        }
+        info!(%session_id_clone, "SSE stream processing finished.");
 
-    info!("Assistant message saved, returning response");
-    Ok((StatusCode::OK, Json(GenerateResponse { ai_message: assistant_db_message })))
+    };
+
+    info!(%session_id, "Returning SSE stream to client");
+    Ok(Sse::new(sse_stream).keep_alive(
+        axum::response::sse::KeepAlive::new()
+            .interval(Duration::from_secs(15))
+            .text("keep-alive-text"),
+    ))
 }
 
-
-/// Retrieves the settings for a specific chat session.
 #[debug_handler]
 #[instrument(skip(state, auth_session), fields(user_id = ?auth_session.user.as_ref().map(|u| u.id), %session_id), err)]
 pub async fn get_chat_settings(
@@ -674,30 +561,13 @@ pub async fn get_chat_settings(
         .interact(move |conn| {
             use crate::schema::chat_sessions::dsl as chat_sessions_dsl;
 
-            // Define the settings type for clarity
-            type SettingsTuple = (
-                Option<String>,      // system_prompt
-                Option<BigDecimal>,  // temperature
-                Option<i32>,         // max_output_tokens
-                Option<BigDecimal>,  // frequency_penalty
-                Option<BigDecimal>,  // presence_penalty
-                Option<i32>,         // top_k
-                Option<BigDecimal>,  // top_p
-                Option<BigDecimal>,  // repetition_penalty
-                Option<BigDecimal>,  // min_p
-                Option<BigDecimal>,  // top_a
-                Option<i32>,         // seed
-                Option<Value>,       // logit_bias
-            );
-            
             let settings_tuple = chat_sessions_dsl::chat_sessions
                 .filter(chat_sessions_dsl::id.eq(session_id))
-                .filter(chat_sessions_dsl::user_id.eq(user_id)) // Verify ownership
+                .filter(chat_sessions_dsl::user_id.eq(user_id))
                 .select((
                     chat_sessions_dsl::system_prompt,
                     chat_sessions_dsl::temperature,
                     chat_sessions_dsl::max_output_tokens,
-                    // New settings fields
                     chat_sessions_dsl::frequency_penalty,
                     chat_sessions_dsl::presence_penalty,
                     chat_sessions_dsl::top_k,
@@ -708,12 +578,11 @@ pub async fn get_chat_settings(
                     chat_sessions_dsl::seed,
                     chat_sessions_dsl::logit_bias,
                 ))
-                // Specify the expected return type
                 .first::<SettingsTuple>(conn)
-                .optional() // Handle not found case
+                .optional()
                 .map_err(|e| {
                     error!(error = ?e, %session_id, %user_id, "Failed to query chat settings");
-                    AppError::DatabaseQueryError(e)
+                    AppError::DatabaseQueryError(e.to_string())
                 })?;
             
             Ok::<Option<SettingsTuple>, AppError>(settings_tuple)
@@ -721,12 +590,11 @@ pub async fn get_chat_settings(
         .await
         .map_err(|interact_err| {
             tracing::error!("InteractError in get_chat_settings: {}", interact_err);
-            AppError::InternalServerError(anyhow::anyhow!("DB interact error: {}", interact_err))
-        })??; // Double '?' for InteractError and inner Result
+            AppError::InternalServerError(anyhow::anyhow!("DB interact error: {}", interact_err).to_string())
+        })??;
 
     match settings {
         Some(settings_tuple) => {
-            // Unpack settings
             let (
                 system_prompt,
                 temperature,
@@ -986,7 +854,7 @@ pub async fn update_chat_settings(
             // Convert to AppError if possible (to handle Not Found, etc)
             let err = match TryInto::<AppError>::try_into(e) {
                 Ok(app_err) => app_err,
-                Err(_) => AppError::InternalServerError(anyhow::anyhow!(e_msg))
+                Err(_) => AppError::InternalServerError(anyhow::anyhow!(e_msg).to_string())
             };
             err
         })??; // Double '?' needed here
@@ -1007,20 +875,40 @@ pub fn chat_routes() -> Router<AppState> {
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
-    use crate::PgPool;
-    use axum_login::AuthnBackend;
     use super::*;
-    use crate::test_helpers; // Simplified import
-    use crate::models::chats::{ChatSession, ChatMessage};
-    // Removed unused: characters::CharacterMetadata, users::User
-    // REMOVED INCORRECT IMPORT: use crate::routes::test_helpers::{create_test_state, setup_test_db};
-    use axum::body::Body;
-    use axum::http::{Request, StatusCode, Method, header}; // Added Method, header
-    // Removed unused: use axum_login::AuthSession;
-    use serde_json::{json, Value}; // Added Value
-    use tower::ServiceExt;
-    use uuid::Uuid;
-    use http_body_util::BodyExt; // Added for body collection
+    use crate::test_helpers::{self, TestContext}; // Keep this one
+    use crate::models::chats::{NewChatMessageRequest, MessageRole}; // Keep NewChatMessageRequest, MessageRole
+    use http_body_util::{BodyExt as _, StreamBody}; // Use BodyExt as _ to avoid conflict if super brings it in, Keep StreamBody
+    use futures::{stream, TryStreamExt}; // Keep this one
+    use genai::chat::{ChatStreamEvent, StreamChunk, StreamEnd}; // Keep this one
+    use genai::adapter::AdapterKind; // Keep this one
+    use genai::ModelIden; // Keep this one
+    use std::time::Duration; // Keep this one
+    use crate::models::chats::ChatMessage as TestDbChatMessage; // Alias original ChatMessage for clarity in test assertions
+
+    // Helper function to parse SSE stream manually
+    async fn collect_sse_data(body: axum::body::Body) -> Vec<String> {
+        use http_body_util::BodyExt;
+        let mut data_chunks = Vec::new();
+        let stream = body.into_data_stream();
+        
+        stream.try_for_each(|buf| {
+            // Parse SSE format: "data: content\n\n"
+            let lines = String::from_utf8_lossy(&buf);
+            for line in lines.lines() {
+                if let Some(data) = line.strip_prefix("data: ") {
+                    if !data.is_empty() {
+                        data_chunks.push(data.to_string());
+                    }
+                }
+            }
+            futures::future::ready(Ok(()))
+        })
+        .await
+        .expect("Failed to read SSE stream");
+        
+        data_chunks
+    }
 
     #[tokio::test]
     async fn test_create_chat_session_success() {
@@ -2224,58 +2112,6 @@ mod tests {
         let response = context.app.router.oneshot(request).await.unwrap();
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
     }
-
-    #[tokio::test]
-    async fn get_chat_settings_forbidden() {
-        let context = test_helpers::setup_test_app().await;
-        let (_auth_cookie1, user1) = test_helpers::create_test_user_and_login(&context.app, "get_settings_user1", "password").await;
-        let character1 = test_helpers::create_test_character(&context.app.db_pool, user1.id, "Settings Char 1").await;
-        let session1 = test_helpers::create_test_chat_session(&context.app.db_pool, user1.id, character1.id).await;
-        let (auth_cookie2, _user2) = test_helpers::create_test_user_and_login(&context.app, "get_settings_user2", "password").await;
-
-        let request = Request::builder()
-            .method(Method::GET)
-            .uri(format!("/api/chats/{}/settings", session1.id)) // User 2 tries to get User 1's settings
-            .header(header::COOKIE, auth_cookie2)
-            .body(Body::empty())
-            .unwrap();
-
-        let response = context.app.router.oneshot(request).await.unwrap();
-        assert_eq!(response.status(), StatusCode::NOT_FOUND); // Handler returns NotFound if session exists but user doesn't own it
-    }
-
-    #[tokio::test]
-    async fn get_chat_settings_not_found() {
-        let context = test_helpers::setup_test_app().await;
-        let (auth_cookie, _user) = test_helpers::create_test_user_and_login(&context.app, "get_settings_404_user", "password").await;
-        let non_existent_session_id = Uuid::new_v4();
-
-        let request = Request::builder()
-            .method(Method::GET)
-            .uri(format!("/api/chats/{}/settings", non_existent_session_id))
-            .header(header::COOKIE, auth_cookie)
-            .body(Body::empty())
-            .unwrap();
-
-        let response = context.app.router.oneshot(request).await.unwrap();
-        assert_eq!(response.status(), StatusCode::NOT_FOUND);
-    }
-
-    #[tokio::test]
-    async fn get_chat_settings_unauthorized() {
-        let context = test_helpers::setup_test_app().await;
-        let session_id = Uuid::new_v4(); // Dummy ID
-
-        let request = Request::builder()
-            .method(Method::GET)
-            .uri(format!("/api/chats/{}/settings", session_id))
-            .body(Body::empty())
-            .unwrap();
-        // No auth cookie
-
-        let response = context.app.router.oneshot(request).await.unwrap();
-        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
-    }
         let test_character = test_helpers::create_test_character(&context.app.db_pool, test_user.id, "Test Char for Get Msgs Integ").await;
         let session = test_helpers::create_test_chat_session(&context.app.db_pool, test_user.id, test_character.id).await;
         let msg1 = test_helpers::create_test_chat_message(&context.app.db_pool, session.id, MessageRole::User, "Hello Integ").await;
@@ -2292,7 +2128,7 @@ mod tests {
         let body_json: Value = serde_json::from_slice(&body_bytes).expect("Response body is not valid JSON");
         let messages_array = body_json.as_array().expect("Response body should be a JSON array");
         assert_eq!(messages_array.len(), 2, "Should return 2 messages");
-        let messages: Vec<ChatMessage> = serde_json::from_value(body_json).unwrap();
+        let messages: Vec<DbChatMessage> = serde_json::from_value(body_json).unwrap();
         assert_eq!(messages[0].id, msg1.id);
         assert_eq!(messages[1].id, msg2.id);
     }
@@ -2463,4 +2299,238 @@ mod tests {
     }
 
     // TODO: Add tests for POST /api/chats/{id}/generate
+
+    // --- Tests for POST /api/chats/{id}/generate (Streaming) ---
+
+    #[tokio::test]
+    async fn generate_chat_response_streaming_success() {
+        let mut context = test_helpers::setup_test_app().await;
+        let (auth_cookie, user) = test_helpers::create_test_user_and_login(&context.app, "stream_ok_user", "password").await;
+        let character = context.insert_character(user.id, "Stream OK Char").await;
+        let session = context.insert_chat_session(user.id, character.id).await;
+
+        // Configure mock response stream
+        use genai::chat::StreamChunk;
+        use genai::chat::StreamEnd;
+        let mock_stream_items = vec![
+            // Ok(ChatStreamEvent::Start), // Start event is optional to include
+            Ok(ChatStreamEvent::Chunk(StreamChunk { content: "Hello ".to_string() })),
+            Ok(ChatStreamEvent::Chunk(StreamChunk { content: "World!".to_string() })),
+            Ok(ChatStreamEvent::Chunk(StreamChunk { content: "".to_string() })), // Test empty chunk
+            Ok(ChatStreamEvent::End(StreamEnd::default())),
+        ];
+        context.app.mock_ai_client.set_stream_response(mock_stream_items);
+
+        let payload = NewChatMessageRequest {
+            content: "User message for stream".to_string(),
+            model: Some("test-stream-model".to_string()),
+        };
+
+        let request = Request::builder()
+            .method(Method::POST)
+            .uri(format!("/api/chats/{}/generate", session.id))
+            .header(header::COOKIE, &auth_cookie)
+            .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
+            .body(Body::from(serde_json::to_vec(&payload).unwrap()))
+            .unwrap();
+
+        let response = context.app.router.clone().oneshot(request).await.unwrap();
+
+        // Assert headers
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response.headers().get(header::CONTENT_TYPE).unwrap(),
+            mime::TEXT_EVENT_STREAM.as_ref()
+        );
+
+        // Consume and assert stream content
+        let body = response.into_body();
+        let data_chunks = collect_sse_data(body).await;
+
+        assert_eq!(data_chunks, vec!["Hello ", "World!"]); // Only non-empty data chunks
+
+        // Assert background save (wait a bit for the background task)
+        tokio::time::sleep(Duration::from_millis(100)).await; // Adjust timing if needed
+
+        let messages = test_helpers::get_chat_messages_from_db(&context.app.db_pool, session.id).await;
+        assert_eq!(messages.len(), 2, "Should have user and AI message after stream");
+
+        let user_msg = messages.first().unwrap();
+        assert_eq!(user_msg.message_type, MessageRole::User);
+        assert_eq!(user_msg.content, "User message for stream");
+
+        let ai_msg = messages.get(1).unwrap();
+        assert_eq!(ai_msg.message_type, MessageRole::Assistant);
+        assert_eq!(ai_msg.content, "Hello World!"); // Full concatenated content
+    }
+
+    #[tokio::test]
+    async fn generate_chat_response_streaming_ai_error() {
+        let mut context = test_helpers::setup_test_app().await;
+        let (auth_cookie, user) = test_helpers::create_test_user_and_login(&context.app, "stream_err_user", "password").await;
+        let character = context.insert_character(user.id, "Stream Err Char").await;
+        let session = context.insert_chat_session(user.id, character.id).await;
+
+        // Configure mock response stream with an error
+        use genai::chat::StreamChunk;
+        use genai::Error as GenAIError; // Correct import path
+        let mock_stream_items = vec![
+            Ok(ChatStreamEvent::Chunk(StreamChunk { content: "Partial ".to_string() })),
+            Err(AppError::GeminiError("Mock AI error during streaming".to_string())),
+            Ok(ChatStreamEvent::Chunk(StreamChunk { content: "Should not be sent".to_string() })),
+        ];
+        context.app.mock_ai_client.set_stream_response(mock_stream_items);
+
+        let payload = NewChatMessageRequest {
+            content: "User message for error stream".to_string(),
+            model: Some("test-stream-err-model".to_string()),
+        };
+
+        let request = Request::builder()
+            .method(Method::POST)
+            .uri(format!("/api/chats/{}/generate", session.id))
+            .header(header::COOKIE, &auth_cookie)
+            .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
+            .body(Body::from(serde_json::to_vec(&payload).unwrap()))
+            .unwrap();
+
+        let response = context.app.router.clone().oneshot(request).await.unwrap();
+
+        // Assert headers
+        assert_eq!(response.status(), StatusCode::OK); // SSE connection established successfully
+        assert_eq!(
+            response.headers().get(header::CONTENT_TYPE).unwrap(),
+            mime::TEXT_EVENT_STREAM.as_ref()
+        );
+
+        // Consume and assert stream content
+        // We need to parse events including the 'event:' line now
+        let mut data_chunks = Vec::new();
+        let mut error_event_data = None;
+        
+        use http_body_util::BodyExt;
+        let body = response.into_body();
+        let stream = body.into_data_stream();
+
+        stream.try_for_each(|buf| {
+            let lines = String::from_utf8_lossy(&buf);
+            let mut current_event = None;
+            let mut current_data = String::new();
+
+            for line in lines.lines() {
+                if let Some(event_type) = line.strip_prefix("event: ") {
+                    current_event = Some(event_type.to_string());
+                } else if let Some(data) = line.strip_prefix("data: ") {
+                    current_data.push_str(data);
+                    // Note: multi-line data isn't handled here, assumes single line data
+                } else if line.is_empty() { // End of an event
+                    if let Some(event_type) = current_event.take() {
+                        if event_type == "error" {
+                             error_event_data = Some(current_data.clone());
+                        }
+                    } else if !current_data.is_empty() { // Default 'message' event
+                        data_chunks.push(current_data.clone());
+                    }
+                    current_data.clear();
+                }
+            }
+            futures::future::ready(Ok(()))
+        }).await.expect("Failed to read SSE stream");
+
+        assert_eq!(data_chunks, vec!["Partial "], "Only partial data chunk should be received");
+        assert!(error_event_data.is_some(), "Error event should be received");
+        assert!(error_event_data.unwrap().contains("Error processing AI stream: LLM API error: Mock AI error during streaming"), "Error event data mismatch");
+
+        // Assert background save (wait a bit)
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        let messages = test_helpers::get_chat_messages_from_db(&context.app.db_pool, session.id).await;
+        assert_eq!(messages.len(), 2, "Should have user and PARTIAL AI message after stream error");
+
+        let user_msg = messages.first().unwrap();
+        assert_eq!(user_msg.message_type, MessageRole::User);
+        assert_eq!(user_msg.content, "User message for error stream");
+
+        let ai_msg = messages.get(1).unwrap();
+        assert_eq!(ai_msg.message_type, MessageRole::Assistant);
+        // The background save happens *after* the loop, saving whatever was buffered before the error
+        assert_eq!(ai_msg.content, "Partial ", "Partial content should be saved");
+    }
+
+    #[tokio::test]
+    async fn generate_chat_response_streaming_unauthorized() {
+        let context = test_helpers::setup_test_app().await;
+        let session_id = Uuid::new_v4(); // Dummy ID
+
+        let payload = NewChatMessageRequest { content: "test".to_string(), model: None };
+        let request = Request::builder()
+            .method(Method::POST)
+            .uri(format!("/api/chats/{}/generate", session_id))
+            .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
+            .body(Body::from(serde_json::to_vec(&payload).unwrap()))
+            .unwrap();
+        // No auth cookie
+
+        let response = context.app.router.oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+         assert_ne!(
+            response.headers().get(header::CONTENT_TYPE).map(|h| h.as_bytes()),
+            Some(mime::TEXT_EVENT_STREAM.as_ref().as_bytes()),
+            "Content-Type should not be text/event-stream"
+        );
+    }
+
+    #[tokio::test]
+    async fn generate_chat_response_streaming_not_found() {
+         let context = test_helpers::setup_test_app().await;
+         let (auth_cookie, _user) = test_helpers::create_test_user_and_login(&context.app, "stream_404_user", "password").await;
+         let non_existent_session_id = Uuid::new_v4();
+
+         let payload = NewChatMessageRequest { content: "test".to_string(), model: None };
+         let request = Request::builder()
+            .method(Method::POST)
+            .uri(format!("/api/chats/{}/generate", non_existent_session_id))
+            .header(header::COOKIE, &auth_cookie)
+            .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
+            .body(Body::from(serde_json::to_vec(&payload).unwrap()))
+            .unwrap();
+
+         let response = context.app.router.oneshot(request).await.unwrap();
+         assert_eq!(response.status(), StatusCode::NOT_FOUND);
+          assert_ne!(
+            response.headers().get(header::CONTENT_TYPE).map(|h| h.as_bytes()),
+            Some(mime::TEXT_EVENT_STREAM.as_ref().as_bytes()),
+            "Content-Type should not be text/event-stream"
+        );
+    }
+
+     #[tokio::test]
+    async fn generate_chat_response_streaming_forbidden() {
+        let mut context = test_helpers::setup_test_app().await;
+        let (_auth_cookie1, user1) = test_helpers::create_test_user_and_login(&context.app, "stream_forbid_user1", "password").await;
+        let character1 = context.insert_character(user1.id, "Stream Forbid Char 1").await;
+        let session1 = context.insert_chat_session(user1.id, character1.id).await;
+        let (auth_cookie2, _user2) = test_helpers::create_test_user_and_login(&context.app, "stream_forbid_user2", "password").await;
+
+        let payload = NewChatMessageRequest { content: "test".to_string(), model: None };
+        let request = Request::builder()
+            .method(Method::POST)
+            .uri(format!("/api/chats/{}/generate", session1.id)) // User 2 tries to generate in User 1's session
+            .header(header::COOKIE, auth_cookie2)
+            .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
+            .body(Body::from(serde_json::to_vec(&payload).unwrap()))
+            .unwrap();
+
+        let response = context.app.router.clone().oneshot(request).await.unwrap();
+        // The initial DB query checks ownership and returns NotFound if mismatch
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        assert_ne!(
+            response.headers().get(header::CONTENT_TYPE).map(|h| h.as_bytes()),
+            Some(mime::TEXT_EVENT_STREAM.as_ref().as_bytes()),
+            "Content-Type should not be text/event-stream"
+        );
+    }
+
+
+    // --- Existing Tests Below (Keep them) ---
 }

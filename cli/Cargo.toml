@@ -8,7 +8,7 @@ edition = "2024"
 scribe-backend = { path = "../backend" }
 
 # CLI dependencies
-clap = { version = "4.5.4", features = ["derive", "env"] }
+clap = { version = "4.5.37", features = ["derive", "env"] }
 tokio = { version = "1", features = ["full"] } # Using version 1 for compatibility, adjust as needed
 anyhow = "1.0"
 reqwest = { version = "0.12", features = ["json", "cookies", "multipart", "rustls-tls"], default-features = false }
@@ -18,7 +18,7 @@ uuid = { version = "1.16.0", features = ["v4"] } # v4 only might be sufficient
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] } # fmt feature needed for subscriber init
 url = "2.5"
-thiserror = "1.0"
+thiserror = "2.0"
 async-trait = "0.1"
 
 [dev-dependencies]
