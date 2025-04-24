@@ -1270,12 +1270,35 @@ mod tests {
         let expected_prompt = "Test System Prompt";
         let expected_temp = BigDecimal::from_str("0.75").unwrap();
         let expected_tokens = 512_i32;
-        test_helpers::update_test_chat_settings(
+        let expected_freq_penalty = BigDecimal::from_str("0.2").unwrap();
+        let expected_pres_penalty = BigDecimal::from_str("0.1").unwrap();
+        let expected_top_k = 40_i32;
+        let expected_top_p = BigDecimal::from_str("0.95").unwrap();
+        let expected_rep_penalty = BigDecimal::from_str("1.2").unwrap();
+        let expected_min_p = BigDecimal::from_str("0.05").unwrap();
+        let expected_top_a = BigDecimal::from_str("0.9").unwrap();
+        let expected_seed = 12345_i32;
+        let expected_logit_bias = serde_json::json!({
+            "10001": -100,
+            "10002": 100
+        });
+
+        // Use update_all_chat_settings to update all fields
+        test_helpers::update_all_chat_settings(
             &context.app.db_pool,
             session.id,
             Some(expected_prompt.to_string()),
             Some(expected_temp.clone()),
-            Some(expected_tokens)
+            Some(expected_tokens),
+            Some(expected_freq_penalty.clone()),
+            Some(expected_pres_penalty.clone()),
+            Some(expected_top_k),
+            Some(expected_top_p.clone()),
+            Some(expected_rep_penalty.clone()),
+            Some(expected_min_p.clone()),
+            Some(expected_top_a.clone()),
+            Some(expected_seed),
+            Some(expected_logit_bias.clone())
         ).await;
 
         let request = Request::builder()
@@ -1291,9 +1314,19 @@ mod tests {
         let body = response.into_body().collect().await.unwrap().to_bytes();
         let settings_resp: ChatSettingsResponse = serde_json::from_slice(&body).expect("Failed to deserialize settings response");
 
+        // Check all fields match expected values
         assert_eq!(settings_resp.system_prompt, Some(expected_prompt.to_string()));
         assert_eq!(settings_resp.temperature, Some(expected_temp));
         assert_eq!(settings_resp.max_output_tokens, Some(expected_tokens));
+        assert_eq!(settings_resp.frequency_penalty, Some(expected_freq_penalty));
+        assert_eq!(settings_resp.presence_penalty, Some(expected_pres_penalty));
+        assert_eq!(settings_resp.top_k, Some(expected_top_k));
+        assert_eq!(settings_resp.top_p, Some(expected_top_p));
+        assert_eq!(settings_resp.repetition_penalty, Some(expected_rep_penalty));
+        assert_eq!(settings_resp.min_p, Some(expected_min_p));
+        assert_eq!(settings_resp.top_a, Some(expected_top_a));
+        assert_eq!(settings_resp.seed, Some(expected_seed));
+        assert_eq!(settings_resp.logit_bias, Some(expected_logit_bias));
     }
 
     #[tokio::test]
@@ -1318,9 +1351,19 @@ mod tests {
         let body = response.into_body().collect().await.unwrap().to_bytes();
         let settings_resp: ChatSettingsResponse = serde_json::from_slice(&body).expect("Failed to deserialize settings response");
 
+        // Check all fields are None
         assert_eq!(settings_resp.system_prompt, None);
         assert_eq!(settings_resp.temperature, None);
         assert_eq!(settings_resp.max_output_tokens, None);
+        assert_eq!(settings_resp.frequency_penalty, None);
+        assert_eq!(settings_resp.presence_penalty, None);
+        assert_eq!(settings_resp.top_k, None);
+        assert_eq!(settings_resp.top_p, None);
+        assert_eq!(settings_resp.repetition_penalty, None);
+        assert_eq!(settings_resp.min_p, None);
+        assert_eq!(settings_resp.top_a, None);
+        assert_eq!(settings_resp.seed, None);
+        assert_eq!(settings_resp.logit_bias, None);
     }
 
 
@@ -1336,20 +1379,32 @@ mod tests {
         let new_prompt = "New System Prompt";
         let new_temp = BigDecimal::from_str("0.9").unwrap();
         let new_tokens = 1024_i32;
+        let new_freq_penalty = BigDecimal::from_str("0.3").unwrap();
+        let new_pres_penalty = BigDecimal::from_str("0.2").unwrap();
+        let new_top_k = 30_i32;
+        let new_top_p = BigDecimal::from_str("0.85").unwrap();
+        let new_rep_penalty = BigDecimal::from_str("1.1").unwrap();
+        let new_min_p = BigDecimal::from_str("0.1").unwrap();
+        let new_top_a = BigDecimal::from_str("0.8").unwrap();
+        let new_seed = 54321_i32;
+        let new_logit_bias = serde_json::json!({
+            "20001": -50,
+            "20002": 50
+        });
 
         let payload = UpdateChatSettingsRequest {
             system_prompt: Some(new_prompt.to_string()),
             temperature: Some(new_temp.clone()),
             max_output_tokens: Some(new_tokens),
-            frequency_penalty: None,
-            presence_penalty: None,
-            top_k: None,
-            top_p: None,
-            repetition_penalty: None,
-            min_p: None,
-            top_a: None,
-            seed: None,
-            logit_bias: None,
+            frequency_penalty: Some(new_freq_penalty.clone()),
+            presence_penalty: Some(new_pres_penalty.clone()),
+            top_k: Some(new_top_k),
+            top_p: Some(new_top_p.clone()),
+            repetition_penalty: Some(new_rep_penalty.clone()),
+            min_p: Some(new_min_p.clone()),
+            top_a: Some(new_top_a.clone()),
+            seed: Some(new_seed),
+            logit_bias: Some(new_logit_bias.clone()),
         };
 
         let request = Request::builder()
@@ -1363,12 +1418,25 @@ mod tests {
         let response = context.app.router.clone().oneshot(request).await.unwrap();
         assert_eq!(response.status(), StatusCode::OK);
 
-        // Verify changes in DB (assuming a helper exists)
+        // Verify changes in DB
         let db_settings = test_helpers::get_chat_session_settings(&context.app.db_pool, session.id).await.unwrap();
-        // Only check the first three fields
-        assert_eq!(db_settings.0, Some(new_prompt.to_string()));
-        assert_eq!(db_settings.1, Some(new_temp));
-        assert_eq!(db_settings.2, Some(new_tokens));
+        
+        // Check all fields
+        assert_eq!(db_settings.0, Some(new_prompt.to_string())); // system_prompt
+        assert_eq!(db_settings.1, Some(new_temp)); // temperature
+        assert_eq!(db_settings.2, Some(new_tokens)); // max_output_tokens
+        assert_eq!(db_settings.3, Some(new_freq_penalty)); // frequency_penalty
+        assert_eq!(db_settings.4, Some(new_pres_penalty)); // presence_penalty
+        assert_eq!(db_settings.5, Some(new_top_k)); // top_k
+        assert_eq!(db_settings.6, Some(new_top_p)); // top_p
+        assert_eq!(db_settings.7, Some(new_rep_penalty)); // repetition_penalty
+        assert_eq!(db_settings.8, Some(new_min_p)); // min_p
+        assert_eq!(db_settings.9, Some(new_top_a)); // top_a
+        assert_eq!(db_settings.10, Some(new_seed)); // seed
+        
+        // For JSON comparison, need to deserialize
+        let db_logit_bias: serde_json::Value = serde_json::from_value(db_settings.11.unwrap()).unwrap();
+        assert_eq!(db_logit_bias, new_logit_bias); // logit_bias
     }
 
     #[tokio::test]
@@ -1431,13 +1499,257 @@ mod tests {
         let session = test_helpers::create_test_chat_session(&context.app.db_pool, user.id, character.id).await;
 
         let invalid_payloads = vec![
-            UpdateChatSettingsRequest { system_prompt: None, temperature: Some(BigDecimal::from_str("-0.1").unwrap()), max_output_tokens: None, frequency_penalty: None, presence_penalty: None, top_k: None, top_p: None, repetition_penalty: None, min_p: None, top_a: None, seed: None, logit_bias: None }, // Invalid temp
-            UpdateChatSettingsRequest { system_prompt: None, temperature: Some(BigDecimal::from_str("2.1").unwrap()), max_output_tokens: None, frequency_penalty: None, presence_penalty: None, top_k: None, top_p: None, repetition_penalty: None, min_p: None, top_a: None, seed: None, logit_bias: None }, // Invalid temp
-            UpdateChatSettingsRequest { system_prompt: None, temperature: None, max_output_tokens: Some(0), frequency_penalty: None, presence_penalty: None, top_k: None, top_p: None, repetition_penalty: None, min_p: None, top_a: None, seed: None, logit_bias: None }, // Invalid tokens
-            UpdateChatSettingsRequest { system_prompt: None, temperature: None, max_output_tokens: Some(-100), frequency_penalty: None, presence_penalty: None, top_k: None, top_p: None, repetition_penalty: None, min_p: None, top_a: None, seed: None, logit_bias: None }, // Invalid tokens
+            // Temperature validation
+            UpdateChatSettingsRequest { 
+                system_prompt: None, 
+                temperature: Some(BigDecimal::from_str("-0.1").unwrap()), // Negative temperature
+                max_output_tokens: None, 
+                frequency_penalty: None, 
+                presence_penalty: None, 
+                top_k: None, 
+                top_p: None, 
+                repetition_penalty: None, 
+                min_p: None, 
+                top_a: None, 
+                seed: None, 
+                logit_bias: None 
+            },
+            UpdateChatSettingsRequest { 
+                system_prompt: None, 
+                temperature: Some(BigDecimal::from_str("2.1").unwrap()), // Temperature > 2.0
+                max_output_tokens: None, 
+                frequency_penalty: None, 
+                presence_penalty: None, 
+                top_k: None, 
+                top_p: None, 
+                repetition_penalty: None, 
+                min_p: None, 
+                top_a: None, 
+                seed: None, 
+                logit_bias: None 
+            },
+            // Max tokens validation
+            UpdateChatSettingsRequest { 
+                system_prompt: None, 
+                temperature: None, 
+                max_output_tokens: Some(0), // Zero tokens
+                frequency_penalty: None, 
+                presence_penalty: None, 
+                top_k: None, 
+                top_p: None, 
+                repetition_penalty: None, 
+                min_p: None, 
+                top_a: None, 
+                seed: None, 
+                logit_bias: None 
+            },
+            UpdateChatSettingsRequest { 
+                system_prompt: None, 
+                temperature: None, 
+                max_output_tokens: Some(-100), // Negative tokens
+                frequency_penalty: None, 
+                presence_penalty: None, 
+                top_k: None, 
+                top_p: None, 
+                repetition_penalty: None, 
+                min_p: None, 
+                top_a: None, 
+                seed: None, 
+                logit_bias: None 
+            },
+            // Frequency penalty validation
+            UpdateChatSettingsRequest { 
+                system_prompt: None, 
+                temperature: None, 
+                max_output_tokens: None,
+                frequency_penalty: Some(BigDecimal::from_str("-2.1").unwrap()), // < -2.0
+                presence_penalty: None, 
+                top_k: None, 
+                top_p: None, 
+                repetition_penalty: None, 
+                min_p: None, 
+                top_a: None, 
+                seed: None, 
+                logit_bias: None 
+            },
+            UpdateChatSettingsRequest { 
+                system_prompt: None, 
+                temperature: None, 
+                max_output_tokens: None,
+                frequency_penalty: Some(BigDecimal::from_str("2.1").unwrap()), // > 2.0
+                presence_penalty: None, 
+                top_k: None, 
+                top_p: None, 
+                repetition_penalty: None, 
+                min_p: None, 
+                top_a: None, 
+                seed: None, 
+                logit_bias: None 
+            },
+            // Presence penalty validation
+            UpdateChatSettingsRequest { 
+                system_prompt: None, 
+                temperature: None, 
+                max_output_tokens: None,
+                frequency_penalty: None,
+                presence_penalty: Some(BigDecimal::from_str("-2.1").unwrap()), // < -2.0
+                top_k: None, 
+                top_p: None, 
+                repetition_penalty: None, 
+                min_p: None, 
+                top_a: None, 
+                seed: None, 
+                logit_bias: None 
+            },
+            UpdateChatSettingsRequest { 
+                system_prompt: None, 
+                temperature: None, 
+                max_output_tokens: None,
+                frequency_penalty: None,
+                presence_penalty: Some(BigDecimal::from_str("2.1").unwrap()), // > 2.0
+                top_k: None, 
+                top_p: None, 
+                repetition_penalty: None, 
+                min_p: None, 
+                top_a: None, 
+                seed: None, 
+                logit_bias: None 
+            },
+            // Top-k validation
+            UpdateChatSettingsRequest { 
+                system_prompt: None, 
+                temperature: None, 
+                max_output_tokens: None,
+                frequency_penalty: None,
+                presence_penalty: None,
+                top_k: Some(-1), // Negative top_k
+                top_p: None, 
+                repetition_penalty: None, 
+                min_p: None, 
+                top_a: None, 
+                seed: None, 
+                logit_bias: None 
+            },
+            // Top-p validation
+            UpdateChatSettingsRequest { 
+                system_prompt: None, 
+                temperature: None, 
+                max_output_tokens: None,
+                frequency_penalty: None,
+                presence_penalty: None,
+                top_k: None,
+                top_p: Some(BigDecimal::from_str("-0.1").unwrap()), // < 0
+                repetition_penalty: None, 
+                min_p: None, 
+                top_a: None, 
+                seed: None, 
+                logit_bias: None 
+            },
+            UpdateChatSettingsRequest { 
+                system_prompt: None, 
+                temperature: None, 
+                max_output_tokens: None,
+                frequency_penalty: None,
+                presence_penalty: None,
+                top_k: None,
+                top_p: Some(BigDecimal::from_str("1.1").unwrap()), // > 1.0
+                repetition_penalty: None, 
+                min_p: None, 
+                top_a: None, 
+                seed: None, 
+                logit_bias: None 
+            },
+            // Repetition penalty validation
+            UpdateChatSettingsRequest { 
+                system_prompt: None, 
+                temperature: None, 
+                max_output_tokens: None,
+                frequency_penalty: None,
+                presence_penalty: None,
+                top_k: None,
+                top_p: None,
+                repetition_penalty: Some(BigDecimal::from_str("0").unwrap()), // <= 0
+                min_p: None, 
+                top_a: None, 
+                seed: None, 
+                logit_bias: None 
+            },
+            // Min-p validation
+            UpdateChatSettingsRequest { 
+                system_prompt: None, 
+                temperature: None, 
+                max_output_tokens: None,
+                frequency_penalty: None,
+                presence_penalty: None,
+                top_k: None,
+                top_p: None,
+                repetition_penalty: None,
+                min_p: Some(BigDecimal::from_str("-0.1").unwrap()), // < 0
+                top_a: None, 
+                seed: None, 
+                logit_bias: None 
+            },
+            UpdateChatSettingsRequest { 
+                system_prompt: None, 
+                temperature: None, 
+                max_output_tokens: None,
+                frequency_penalty: None,
+                presence_penalty: None,
+                top_k: None,
+                top_p: None,
+                repetition_penalty: None,
+                min_p: Some(BigDecimal::from_str("1.1").unwrap()), // > 1.0
+                top_a: None, 
+                seed: None, 
+                logit_bias: None 
+            },
+            // Top-a validation
+            UpdateChatSettingsRequest { 
+                system_prompt: None, 
+                temperature: None, 
+                max_output_tokens: None,
+                frequency_penalty: None,
+                presence_penalty: None,
+                top_k: None,
+                top_p: None,
+                repetition_penalty: None,
+                min_p: None,
+                top_a: Some(BigDecimal::from_str("-0.1").unwrap()), // < 0
+                seed: None, 
+                logit_bias: None 
+            },
+            UpdateChatSettingsRequest { 
+                system_prompt: None, 
+                temperature: None, 
+                max_output_tokens: None,
+                frequency_penalty: None,
+                presence_penalty: None,
+                top_k: None,
+                top_p: None,
+                repetition_penalty: None,
+                min_p: None,
+                top_a: Some(BigDecimal::from_str("1.1").unwrap()), // > 1.0
+                seed: None, 
+                logit_bias: None 
+            },
+            // Invalid logit_bias format
+            UpdateChatSettingsRequest { 
+                system_prompt: None, 
+                temperature: None, 
+                max_output_tokens: None,
+                frequency_penalty: None,
+                presence_penalty: None,
+                top_k: None,
+                top_p: None,
+                repetition_penalty: None,
+                min_p: None,
+                top_a: None,
+                seed: None, 
+                logit_bias: Some(serde_json::json!(["invalid", "format"])) // Should be object
+            },
         ];
 
-        for payload in invalid_payloads {
+        for (i, payload) in invalid_payloads.iter().enumerate() {
             let request = Request::builder()
                 .method(Method::PUT)
                 .uri(format!("/api/chats/{}/settings", session.id))
@@ -1448,7 +1760,7 @@ mod tests {
 
             let response = context.app.router.clone().oneshot(request).await.unwrap();
             // Expect Bad Request for validation errors on PUT
-            assert_eq!(response.status(), StatusCode::BAD_REQUEST, "Failed for payload: {:?}", payload);
+            assert_eq!(response.status(), StatusCode::BAD_REQUEST, "Failed for payload index {}: {:?}", i, payload);
         }
     }
 
@@ -1492,6 +1804,9 @@ mod tests {
 
     #[tokio::test]
     async fn generate_chat_response_uses_session_settings() {
+        use bigdecimal::ToPrimitive;
+        use genai::chat::ChatRole;
+        
         let context = test_helpers::setup_test_app().await;
         let (auth_cookie, user) = test_helpers::create_test_user_and_login(&context.app, "gen_settings_user", "password").await;
         let character = test_helpers::create_test_character(&context.app.db_pool, user.id, "Gen Settings Char").await;
@@ -1499,14 +1814,38 @@ mod tests {
 
         // Set specific settings for this session
         let test_prompt = "Test system prompt for session";
-        let test_temp = 0.88_f32;
+        let test_temp = BigDecimal::from_str("0.88").unwrap();
         let test_tokens = 444_i32;
-        test_helpers::update_test_chat_settings(
+        let test_top_p = BigDecimal::from_str("0.92").unwrap();
+        
+        // Also add other fields to ensure they are stored correctly
+        let test_freq_penalty = BigDecimal::from_str("0.5").unwrap();
+        let test_pres_penalty = BigDecimal::from_str("0.3").unwrap();
+        let test_top_k = 50_i32;
+        let test_rep_penalty = BigDecimal::from_str("1.3").unwrap();
+        let test_min_p = BigDecimal::from_str("0.05").unwrap();
+        let test_top_a = BigDecimal::from_str("0.75").unwrap();
+        let test_seed = 98765_i32;
+        let test_logit_bias = serde_json::json!({
+            "30001": -20,
+            "30002": 20
+        });
+
+        test_helpers::update_all_chat_settings(
             &context.app.db_pool,
             session.id,
             Some(test_prompt.to_string()),
-            Some(BigDecimal::from_str("0.88").unwrap()),
-            Some(test_tokens)
+            Some(test_temp.clone()),
+            Some(test_tokens),
+            Some(test_freq_penalty.clone()),
+            Some(test_pres_penalty.clone()),
+            Some(test_top_k),
+            Some(test_top_p.clone()),
+            Some(test_rep_penalty.clone()),
+            Some(test_min_p.clone()),
+            Some(test_top_a.clone()),
+            Some(test_seed),
+            Some(test_logit_bias.clone())
         ).await;
 
         let payload = NewChatMessageRequest {
@@ -1528,17 +1867,65 @@ mod tests {
         // Verify the request sent to the mock AI client
         let last_request = context.app.mock_ai_client.get_last_request().expect("Mock AI client did not receive a request");
         
-        // Check that the system prompt is set correctly via new with_system_opt method
-        assert_eq!(last_request.system.as_ref().map(|s| s.as_str()), Some(test_prompt));
+        // Check that system prompt is included in the messages
+        let has_system_message = last_request.messages.iter().any(|msg| {
+            // First check role
+            let is_system = match msg.role {
+                ChatRole::System => true,
+                _ => false
+            };
+            
+            // Then check content contains the prompt
+            let has_prompt = format!("{:?}", msg.content).contains(test_prompt);
+            
+            // Both conditions must be true
+            is_system && has_prompt
+        });
+        assert!(has_system_message, "System prompt not found in request messages");
         
-        // Check that the ChatOptions were passed correctly
-        let last_options = context.app.mock_ai_client.get_last_options().expect("Mock AI client did not receive options");
+        // Verify the options sent to the mock AI client - only the ones supported by ChatOptions
+        let options = context.app.mock_ai_client.get_last_options().expect("Mock AI client did not receive options");
         
-        // Check temperature was cast from f32 to f64
-        assert_eq!(last_options.temperature, Some(test_temp as f64));
+        // Check the temperature - convert from BigDecimal to f64
+        if let Some(temp) = options.temperature {
+            let expected_temp = test_temp.to_f64().unwrap();
+            assert!((temp - expected_temp).abs() < 0.001, "Temperature value doesn't match");
+        } else {
+            panic!("Expected temperature to be set in options");
+        }
         
-        // Check max_tokens was cast from i32 to u32
-        assert_eq!(last_options.max_tokens, Some(test_tokens as u32));
+        // Check max_tokens - our max_output_tokens should be mapped to max_tokens
+        if let Some(tokens) = options.max_tokens {
+            assert_eq!(tokens, test_tokens as u32, "Max tokens value doesn't match");
+        } else {
+            panic!("Expected max_tokens to be set in options");
+        }
+        
+        // Check top_p - convert from BigDecimal to f64
+        if let Some(top_p) = options.top_p {
+            let expected_top_p = test_top_p.to_f64().unwrap();
+            assert!((top_p - expected_top_p).abs() < 0.001, "Top-p value doesn't match");
+        } else {
+            panic!("Expected top_p to be set in options");
+        }
+        
+        // Verify all settings were stored correctly in the database
+        let db_settings = test_helpers::get_chat_session_settings(&context.app.db_pool, session.id).await.unwrap();
+        assert_eq!(db_settings.0, Some(test_prompt.to_string())); // system_prompt
+        assert_eq!(db_settings.1, Some(test_temp)); // temperature
+        assert_eq!(db_settings.2, Some(test_tokens)); // max_output_tokens
+        assert_eq!(db_settings.3, Some(test_freq_penalty)); // frequency_penalty
+        assert_eq!(db_settings.4, Some(test_pres_penalty)); // presence_penalty
+        assert_eq!(db_settings.5, Some(test_top_k)); // top_k
+        assert_eq!(db_settings.6, Some(test_top_p)); // top_p
+        assert_eq!(db_settings.7, Some(test_rep_penalty)); // repetition_penalty
+        assert_eq!(db_settings.8, Some(test_min_p)); // min_p
+        assert_eq!(db_settings.9, Some(test_top_a)); // top_a
+        assert_eq!(db_settings.10, Some(test_seed)); // seed
+        
+        // For JSON comparison, deserialize to Value first
+        let db_logit_bias: serde_json::Value = serde_json::from_value(db_settings.11.unwrap()).unwrap();
+        assert_eq!(db_logit_bias, test_logit_bias); // logit_bias
     }
 
     #[tokio::test]
