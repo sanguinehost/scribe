@@ -9,7 +9,7 @@ use scribe_backend::models::chats::{MessageRole}; // Keep this minimal for main 
 use scribe_backend::models::users::User;
 use uuid::Uuid;
 use std::path::Path; // Added Path for file existence check
-use futures_util::Stream;
+use tokio_stream::Stream; // Added Stream import for async streaming
 
 // --- Action Functions ---
 

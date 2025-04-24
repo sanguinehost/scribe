@@ -10,10 +10,8 @@ use scribe_backend::{
     schema::users,
     state::AppState,
     config::Config,
-    test_helpers::{create_test_user, MockEmbeddingClient, MockEmbeddingPipelineService},
+    test_helpers::{MockEmbeddingClient, MockEmbeddingPipelineService},
     vector_db::QdrantClientService,
-    llm::{AiClient, EmbeddingClient},
-    services::embedding_pipeline::EmbeddingPipelineServiceTrait,
 };
 use anyhow::{Context, Result as AnyhowResult};
 use axum::{

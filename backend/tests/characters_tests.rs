@@ -12,14 +12,10 @@ use scribe_backend::{
     routes::auth::login_handler as auth_login_handler,
     auth::{session_store::DieselSessionStore, user_store::Backend as AuthBackend},
     config::Config,
-    errors::AppError,
     // llm::EmbeddingClient, // Removed unused import
     // test_helpers::MockEmbeddingClient, // Removed old mock import
     test_helpers::{MockEmbeddingPipelineService, MockEmbeddingClient},
     vector_db::QdrantClientService,
-    services::embedding_pipeline::EmbeddingPipelineServiceTrait,
-    llm::EmbeddingClient,
-    llm::AiClient,
 };
 use axum::{
     Router,

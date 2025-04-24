@@ -36,11 +36,11 @@ use serde_json::{json, Value}; // Added missing import + Value
 use bcrypt; // Added bcrypt import
 use std::sync::Arc; // Added Arc import for AppState
 use scribe_backend::config::{Config}; // Correct import
-use scribe_backend::llm::{gemini_client, gemini_embedding_client, AiClient}; // Import AiClient trait
+ // Import AiClient trait
 use scribe_backend::vector_db::QdrantClientService; // Import Qdrant service
-use scribe_backend::services::embedding_pipeline::EmbeddingPipelineServiceTrait; // Import pipeline trait
+ // Import pipeline trait
 use scribe_backend::test_helpers::{MockEmbeddingClient, MockEmbeddingPipelineService}; // Import necessary mocks
-use scribe_backend::llm::EmbeddingClient; // Import EmbeddingClient trait
+ // Import EmbeddingClient trait
 use chrono::{DateTime, Utc}; // ADDED for timestamp types
 use scribe_backend::state::DbPool; // ADDED DbPool
 use scribe_backend::AppState; // ADDED AppState

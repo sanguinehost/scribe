@@ -16,9 +16,9 @@ mod user_store_tests {
     use diesel::prelude::*;
     use deadpool_diesel::postgres::Manager;
     use deadpool_diesel::Runtime;
-    use scribe_backend::test_helpers; // Use crate namespace for test helpers
+     // Use crate namespace for test helpers
     use scribe_backend::auth::user_store::Backend as AuthBackend; // Use crate namespace and alias Backend
-    use scribe_backend::schema;
+    
     use uuid::Uuid; // Added import for Uuid
 
     // Placeholder function to simulate getting the pool (replace with actual import later)

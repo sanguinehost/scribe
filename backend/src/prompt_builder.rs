@@ -10,7 +10,7 @@ use crate::{
 use std::sync::Arc; // Add Arc import
 use tracing::{info, warn}; // Add tracing
 use uuid::Uuid; // Add Uuid import
-use chrono::Utc;
+ // Added import here
 
 const RAG_CHUNK_LIMIT: u64 = 3; // Max number of chunks to retrieve
 
@@ -117,11 +117,10 @@ pub async fn build_prompt_with_rag( // Rename and make async
 // The existing tests for the basic prompt structure are kept below but commented out
 // as they target the old synchronous `build_prompt` function.
 #[cfg(test)]
-// Removed: use rstest::rstest;
 
 mod tests {
     use super::*; // Import items from the parent module
-    use rstest::rstest; // Added import here
+    use chrono::Utc; // Add Utc import for tests
 
     fn create_dummy_character(name: &str, description: Option<&str>) -> CharacterMetadata {
         CharacterMetadata {
@@ -143,163 +142,5 @@ mod tests {
             content: content.to_string(),
             created_at: Utc::now(),
         }
-    }
-
-    /* // Comment out old tests as they target the non-async, non-RAG version
-    #[test]
-    fn test_build_prompt_with_character_and_history() {
-        let character = create_dummy_character("Alice", Some("A curious adventurer"));
-        let history = vec![
-            create_dummy_message(MessageRole::User, "Hello!"),
-            create_dummy_message(MessageRole::Assistant, "Hi there!"),
-        ];
-        // Need to mock state for build_prompt_with_rag
-        // let prompt = build_prompt(Some(&character), &history).unwrap();
-
-        let expected = "Character Name: Alice
-Description: A curious adventurer
-
----
-Instruction:
-Continue the chat based on the conversation history. Stay in character.
----
-
----
-History:
-User:: Hello!
-Assistant:: Hi there!
----
-
-Alice:";
-        // assert_eq!(prompt, expected);
-    }
-
-     #[test]
-    fn test_build_prompt_with_character_no_description() {
-        let character = create_dummy_character("Bob", None);
-        let history = vec![
-            create_dummy_message(MessageRole::User, "Testing"),
-        ];
-        // Need to mock state for build_prompt_with_rag
-        // let prompt = build_prompt(Some(&character), &history).unwrap();
-
-        let expected = "Character Name: Bob
-
----
-Instruction:
-Continue the chat based on the conversation history. Stay in character.
----
-
----
-History:
-User:: Testing
----
-
-Bob:";
-        // assert_eq!(prompt, expected);
-    }
-
-    #[test]
-    fn test_build_prompt_with_character_no_history() {
-        let character = create_dummy_character("Charlie", Some("Likes testing"));
-        let history = vec![];
-        // Need to mock state for build_prompt_with_rag
-        // let prompt = build_prompt(Some(&character), &history).unwrap();
-
-        let expected = "Character Name: Charlie
-Description: Likes testing
-
----
-Instruction:
-Continue the chat based on the conversation history. Stay in character.
----
-
----
-History:
-(Start of conversation)
----
-
-Charlie:";
-        // assert_eq!(prompt, expected);
-    }
-
-    #[test]
-    fn test_build_prompt_no_character_with_history() {
-        let history = vec![
-            create_dummy_message(MessageRole::User, "First message"),
-            create_dummy_message(MessageRole::System, "System note"),
-            create_dummy_message(MessageRole::Assistant, "AI response"),
-        ];
-        // Need to mock state for build_prompt_with_rag
-        // let prompt = build_prompt(None, &history).unwrap();
-
-        let expected = "---
-Instruction:
-Continue the chat based on the conversation history. Stay in character.
----
-
----
-History:
-User:: First message
-System:: System note
-Assistant:: AI response
----
-
-Character:"; // Defaults to "Character"
-        // assert_eq!(prompt, expected);
-    }
-
-    #[test]
-    fn test_build_prompt_no_character_no_history() {
-        let history = vec![];
-        // Need to mock state for build_prompt_with_rag
-        // let prompt = build_prompt(None, &history).unwrap();
-
-        let expected = "---
-Instruction:
-Continue the chat based on the conversation history. Stay in character.
----
-
----
-History:
-(Start of conversation)
----
-
-Character:"; // Defaults to "Character"
-        // assert_eq!(prompt, expected);
-    }
-
-     #[test]
-    fn test_build_prompt_history_trimming() {
-        let character = create_dummy_character("Trimmer", None);
-        let history = vec![
-            create_dummy_message(MessageRole::User, "  Leading and trailing spaces  "),
-        ];
-        // Need to mock state for build_prompt_with_rag
-        // let prompt = build_prompt(Some(&character), &history).unwrap();
-
-        let expected = "Character Name: Trimmer
-
----
-Instruction:
-Continue the chat based on the conversation history. Stay in character.
----
-
----
-History:
-User:: Leading and trailing spaces
----
-
-Trimmer:"; // Check that content is trimmed
-        // assert_eq!(prompt, expected);
-    }
-    */ // End comment out old tests
-
-    // Test adding multiple settings
-    #[rstest]
-    // #[case::temp_and_max(("temperature", "0.9"), ("max_output_tokens", "512"))]
-    // #[case::sys_and_temp(("system_prompt", "Be helpful"), ("temperature", "0.7"))]
-    fn test_add_multiple_settings() {
-        // ... existing code ...
     }
 }
