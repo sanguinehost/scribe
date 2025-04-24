@@ -41,6 +41,9 @@ use scribe_backend::config::Config; // Import Config instead
 use std::sync::Arc; // Add Arc for config
 // Import the builder function
 use scribe_backend::llm::gemini_client::build_gemini_client; // Import the async builder
+use scribe_backend::llm::gemini_embedding_client::build_gemini_embedding_client; // Add this
+use scribe_backend::vector_db::QdrantClientService; // Add Qdrant service import
+use scribe_backend::services::embedding_pipeline::{EmbeddingPipelineService, EmbeddingPipelineServiceTrait}; // Add embedding pipeline service import
 
 // Define the embedded migrations macro
 pub const MIGRATIONS: EmbeddedMigrations = embed_migrations!("./migrations");
@@ -71,6 +74,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .await?;
     let ai_client_arc = Arc::new(ai_client); // Wrap in Arc for AppState
 
+    // --- Initialize Embedding Client ---
+    let embedding_client = build_gemini_embedding_client(config.clone())?;
+    let embedding_client_arc = Arc::new(embedding_client); // Wrap in Arc
+
+    // --- Initialize Qdrant Client Service ---
+    tracing::info!("Initializing Qdrant client service...");
+    let qdrant_service = QdrantClientService::new(config.clone()).await?;
+    let qdrant_service_arc = Arc::new(qdrant_service);
+    tracing::info!("Qdrant client service initialized.");
+
     // --- Session Store Setup ---
     // Ideally load from config/env, generating is okay for dev
     let session_store = DieselSessionStore::new(pool.clone());
@@ -94,8 +107,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Build the auth layer, passing the SessionManagerLayer
     let auth_layer = AuthManagerLayerBuilder::new(auth_backend, session_manager_layer).build();
 
-    // Create AppState - pass the initialized AI client Arc
-    let app_state = AppState::new(pool.clone(), config.clone(), ai_client_arc); // Pass Arc<GenAiClient>
+    // -- Create Embedding Pipeline Service --
+    let embedding_pipeline_service = Arc::new(EmbeddingPipelineService {}) as Arc<dyn EmbeddingPipelineServiceTrait>; // Instantiate the service
+
+    // -- Create AppState --
+    let app_state = AppState::new(
+        pool.clone(),
+        config.clone(),
+        ai_client_arc,
+        embedding_client_arc,
+        qdrant_service_arc,
+        embedding_pipeline_service, // Add the embedding pipeline service
+    );
 
     // --- Define Protected Routes ---
     let protected_api_routes = Router::new()

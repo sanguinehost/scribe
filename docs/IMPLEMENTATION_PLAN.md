@@ -110,23 +110,24 @@ Only mark a task checkbox (`- [x]`) when all these conditions are satisfied.
 - [x] **Task 2.2: Save Message API (BE)** - ***Requires Task 2.1 Completion***
     - [x] **(BE) Save Message Logic:** Implement handler for `POST /api/chats/{id}/messages`. Validate input (user/AI type, content). Save message to `chat_messages` table, ensuring session is owned by *authenticated user*.
     - [x] *TDD (BE):* API tests for `POST /chats/{id}/messages` (success, auth failure, session not found, forbidden/wrong user, invalid input).
-- [ ] **Task 2.3: Gemini Generation Client (BE)**
+- [x] **Task 2.3: Gemini Generation Client (BE)**
     - [x] **(BE) Configuration:** Setup API key management (e.g., environment variables). *(Verified - Implicitly handled by genai)*
     - [x] **(BE) Client Implementation:** Create Rust module/struct wrapping the Gemini Generation API client (`genai`). Implement function like `generate_content(prompt, settings)` (`generate_simple_response`). Handle API errors. **Investigate and implement streaming response handling if supported by `genai`/Gemini API.** *(Verified - Base client exists, streaming needs implementation)*
-    - [x] *TDD (BE):* Unit tests mocking the HTTP client interface to test request building and response parsing. *(Verified - Basic client build test and integration test for generation)* **Add tests for streaming.**
+    - [x] *TDD (BE):* Unit tests mocking the HTTP client interface to test request building and response parsing. *(Verified - Basic client build test and integration test for generation)* **Add tests for streaming.** *(Verified via chat_tests.rs integration)*
+    - *Note:* The current `genai` crate version (local v0.2.2) does not support sending the `thinkingBudget` parameter to control Gemini's internal thinking process. This capability is deferred to Post-MVP, where options include contributing to `genai` or implementing direct API calls. This is an accepted MVP limitation, similar to other unsupported generation parameters.
 - [x] **Task 2.4: Basic Prompt Assembly (BE)** - ***Requires Task 1.2 & Task 4.2 Completion***
     - [x] **(BE) Data Retrieval:** Implement logic to get character details (from DB), system prompt (from DB - see Task 4.2), and recent chat messages (from DB).
     - [x] **(BE) Prompt Formatting:** Combine retrieved data into a single prompt string according to Gemini API requirements.
-    - [x] *TDD (BE):* Unit tests for prompt assembly logic with various inputs (different character data, history lengths, system prompts).
-- [ ] **Task 2.5: Generation API Endpoint (BE)** - ***Requires Task 2.2, 2.3, 2.4 Completion***
-    - [ ] **(BE) Orchestration Logic:** Implement handler for `POST /api/chats/{id}/generate`. **Support streaming responses (e.g., Server-Sent Events).**
+    - [ ] *TDD (BE):* Unit tests for prompt assembly logic with various inputs (different character data, history lengths, system prompts).
+- [x] **Task 2.5: Generation API Endpoint (BE)** - ***Requires Task 2.2, 2.3, 2.4 Completion***
+    - [x] **(BE) Orchestration Logic:** Implement handler for `POST /api/chats/{id}/generate`. **Support streaming responses (e.g., Server-Sent Events).**
         - [x] Verify session ownership by *authenticated user*.
         - [x] Get user message from request body. Save user message (using Task 2.2 logic/service).
         - [x] Assemble prompt (using Task 2.4 logic).
-        - [ ] Call Gemini client (Task 2.3), **handling potential streaming.**
-        - [ ] Save AI response (using Task 2.2 logic/service) **(potentially after stream completion or incrementally if feasible)**.
-        - [ ] Return AI response **(as stream or complete response)**.
-    - [ ] *TDD (BE):* API integration tests for `POST /chats/{id}/generate` (mocking the Gemini client call). Test success case (both streaming and non-streaming), auth failure, session not found, downstream errors (saving message, assembling prompt). **Verify stream format (e.g., SSE).**
+        - [x] Call Gemini client (Task 2.3), **handling potential streaming.**
+        - [x] Save AI response (using Task 2.2 logic/service) **(potentially after stream completion or incrementally if feasible)**.
+        - [x] Return AI response **(as stream or complete response)**.
+    - [x] *TDD (BE):* API integration tests for `POST /chats/{id}/generate` (mocking the Gemini client call). Test success case (both streaming and non-streaming), auth failure, session not found, downstream errors (saving message, assembling prompt). **Verify stream format (e.g., SSE).**
 - [ ] **Task 2.6: Chat UI Components (FE)**
     - [ ] **(FE) Chat Window:** Create `ChatWindow.svelte` (main container, potentially using Skeleton layout components like `AppShell`).
     - [ ] **(FE) Message Bubble:** Create `MessageBubble.svelte` (display individual user/AI messages, style using Skeleton theme/utilities). **Must support rendering incrementally updating text for streaming.**

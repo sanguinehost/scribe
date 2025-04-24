@@ -9,12 +9,8 @@ use dotenvy::dotenv;
 use scribe_backend::models::character_card::{Character, NewCharacter};
 use scribe_backend::models::users::{NewUser, User};
 use scribe_backend::schema::{self, characters, users}; // Added schema imports
-use scribe_backend::state::AppState;
 use std::env;
 use uuid::Uuid; // For manual cleanup test assertion
-use scribe_backend::models::chats::{
-    ChatSession, NewChatSession, ChatMessage, NewChatMessage, MessageRole
-};
 use scribe_backend::schema::{chat_messages, chat_sessions};
 use diesel_migrations::{embed_migrations, EmbeddedMigrations, MigrationHarness};
 use bigdecimal::BigDecimal; // Add this import
@@ -36,16 +32,21 @@ use axum::http::{Request, header}; // For Request builder and header
 use axum::body::Body; // For Body
 use secrecy::{Secret, ExposeSecret}; // For wrapping password & EXPOSE TRAIT
 use time; // Used for tower_sessions::Expiry
-use serde_json::json; // Added missing import
+use serde_json::{json, Value}; // Added missing import + Value
 use bcrypt; // Added bcrypt import
-use scribe_backend::config::Config;
-use std::sync::Arc;
-use serde_json::Value;
-use chrono::{DateTime, Utc};
-
-// --- DbPool Type ---
-
-use scribe_backend::state::DbPool;
+use std::sync::Arc; // Added Arc import for AppState
+use scribe_backend::config::{Config}; // Correct import
+use scribe_backend::llm::{gemini_client, gemini_embedding_client, AiClient}; // Import AiClient trait
+use scribe_backend::vector_db::QdrantClientService; // Import Qdrant service
+use scribe_backend::services::embedding_pipeline::EmbeddingPipelineServiceTrait; // Import pipeline trait
+use scribe_backend::test_helpers::{MockEmbeddingClient, MockEmbeddingPipelineService}; // Import necessary mocks
+use scribe_backend::llm::EmbeddingClient; // Import EmbeddingClient trait
+use chrono::{DateTime, Utc}; // ADDED for timestamp types
+use scribe_backend::state::DbPool; // ADDED DbPool
+use scribe_backend::AppState; // ADDED AppState
+use scribe_backend::models::chats::{ // ADDED Chat related types
+    ChatSession, NewChatSession, ChatMessage, NewChatMessage, MessageRole
+};
 
 // Define a struct matching the expected JSON structure from the list endpoint
 #[derive(Deserialize, Debug, PartialEq)] // Add PartialEq for assertion
@@ -466,7 +467,24 @@ async fn test_list_characters_endpoint_manual_cleanup() -> Result<(), AnyhowErro
             .await
             .expect("Failed to build Gemini client for db integration tests. Is GOOGLE_API_KEY set?"),
     );
-    let app_state = AppState::new(pool.clone(), config, ai_client);
+    // Instantiate mock embedding client
+    let embedding_client = Arc::new(MockEmbeddingClient::new());
+    // Instantiate mock embedding pipeline service
+    let embedding_pipeline_service = Arc::new(MockEmbeddingPipelineService::new());
+    // Instantiate Qdrant service
+    let qdrant_service = Arc::new(
+        QdrantClientService::new(config.clone())
+            .await
+            .expect("Failed to create QdrantClientService for db integration test"),
+    );
+    let app_state = AppState::new(
+        pool.clone(), 
+        config, 
+        ai_client, 
+        embedding_client,
+        qdrant_service, // Add Qdrant service
+        embedding_pipeline_service, // Add Embedding Pipeline service
+    ); // Pass embedding client
 
     // Create the router with the new AppState
     let router = Router::new()

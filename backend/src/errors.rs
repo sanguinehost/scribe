@@ -15,17 +15,8 @@ use crate::auth::user_store::Backend as AuthBackend;
 use crate::services::character_parser::ParserError as CharacterParserError; // Alias for clarity
 use anyhow::Error as AnyhowError;
 use bcrypt; // Use bcrypt directly
-// use deadpool::managed::{BuildError as DeadpoolBuildError, PoolError as DeadpoolManagedPoolError}; // Unused imports
 use deadpool_diesel::{PoolError as DeadpoolDieselPoolError}; // Removed unused InteractError
 use diesel::result::Error as DieselError;
-// use diesel_migrations::MigrationError as DieselMigrationError; // Unused import
-// use genai::Error as GenAIError; // Unused import
-// use image::ImageError; // Unused import
-// use reqwest::Error as ReqwestError; // Unused import
-// use reqwest_middleware::Error as ReqwestMiddlewareError; // Unused import
-// use std::num::ParseIntError; // Unused import
-// use tower_sessions::session_store::Error as SessionStoreError; // Unused import
-// use uuid::Error as UuidError; // Unused import
 
 // AppError should automatically be Send + Sync if all its fields are.
 // Remove Send and Sync from derive list.
@@ -116,6 +107,9 @@ pub enum AppError {
     #[error("LLM Client Error: {0}")] 
     LlmClientError(String),
 
+
+    #[error("Vector DB Error: {0}")]
+    VectorDbError(String),
     // --- General/Internal Errors ---
     #[error("Configuration Error: {0}")]
     ConfigError(String),
@@ -159,6 +153,20 @@ pub enum AppError {
     // Added NotImplemented variant
     #[error("Not Implemented: {0}")]
     NotImplemented(String),
+
+    // WebSocket Errors
+    #[error("WebSocket send error: {0}")]
+    WebSocketSendError(String),
+    #[error("WebSocket receive error: {0}")]
+    WebSocketReceiveError(String),
+
+    // Chunking Errors (NEW)
+    #[error("Text chunking error: {0}")]
+    ChunkingError(String),
+
+    // Character Parsing Error (NEW)
+    #[error("Character parsing error: {0}")]
+    CharacterParsingError(String),
 }
 
 // This helper enum is necessary because axum_login::Error requires the UserStore::Error
@@ -334,6 +342,11 @@ impl IntoResponse for AppError {
                  error!("LLM Embedding Error: {}", msg);
                  (StatusCode::INTERNAL_SERVER_ERROR, "AI embedding failed".to_string())
             }
+            AppError::VectorDbError(e) => {
+                error!("Vector DB error: {}", e);
+                (StatusCode::INTERNAL_SERVER_ERROR, "Vector database operation failed".to_string())
+            }
+
              // Catch-all Internal Server Error MUST be last
              AppError::InternalServerError(e) => {
                  // Log the full error chain if possible
@@ -347,6 +360,28 @@ impl IntoResponse for AppError {
              AppError::NotImplemented(msg) => {
                  error!("Not Implemented: {}", msg);
                  (StatusCode::NOT_IMPLEMENTED, msg)
+             }
+
+             // WebSocket Errors
+             AppError::WebSocketSendError(e) => {
+                 error!("WebSocket send error: {}", e);
+                 (StatusCode::INTERNAL_SERVER_ERROR, "WebSocket send error".to_string())
+             }
+             AppError::WebSocketReceiveError(e) => {
+                 error!("WebSocket receive error: {}", e);
+                 (StatusCode::BAD_REQUEST, "WebSocket receive error".to_string())
+             }
+
+             // Chunking Errors (NEW)
+             AppError::ChunkingError(e) => {
+                 error!("Text chunking error: {}", e);
+                 (StatusCode::INTERNAL_SERVER_ERROR, "Text chunking error".to_string())
+             }
+
+             // Character Parsing Error (NEW)
+             AppError::CharacterParsingError(e) => {
+                 error!("Character parsing error: {}", e);
+                 (StatusCode::BAD_REQUEST, "Failed to parse character data".to_string())
              }
          };
 

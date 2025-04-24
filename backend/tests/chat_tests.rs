@@ -34,8 +34,9 @@ use scribe_backend::{ // Use crate name directly
         // users::User, // Not directly needed if using test_helpers
     },
     test_helpers::{self}, // Removed TestContext
-};
-
+    services::embedding_pipeline::{RetrievedChunk, EmbeddingMetadata}, // Add RAG imports
+   };
+   
 // Helper function to parse SSE stream manually
 async fn collect_sse_data(body: axum::body::Body) -> Vec<String> {
     let mut data_chunks = Vec::new();
@@ -843,7 +844,8 @@ async fn update_chat_settings_forbidden() {
 async fn generate_chat_response_uses_session_settings() {
     use bigdecimal::ToPrimitive;
     use genai::chat::ChatRole;
-
+    use chrono::Utc; // Add Utc for timestamp
+   
     let context = test_helpers::setup_test_app().await;
     let (auth_cookie, user) = test_helpers::create_test_user_and_login(&context.app, "gen_settings_user", "password").await;
     let character = test_helpers::create_test_character(&context.app.db_pool, user.id, "Gen Settings Char").await;
@@ -884,7 +886,29 @@ async fn generate_chat_response_uses_session_settings() {
         Some(test_seed),
         Some(test_logit_bias.clone())
     ).await;
-
+   
+    // --- Mock RAG Response ---
+    let mock_metadata1 = EmbeddingMetadata {
+        message_id: Uuid::new_v4(),
+        session_id: session.id, // Added
+        speaker: "user".to_string(),
+        timestamp: Utc::now(),
+        text: "This is relevant chunk 1.".to_string(),
+    };
+    let mock_metadata2 = EmbeddingMetadata {
+        message_id: Uuid::new_v4(),
+        session_id: session.id, // Added
+        speaker: "ai".to_string(),
+        timestamp: Utc::now(),
+        text: "This is relevant chunk 2, slightly longer.".to_string(),
+    };
+    let mock_chunks = vec![
+        RetrievedChunk { score: 0.95, text: mock_metadata1.text.clone(), metadata: mock_metadata1 },
+        RetrievedChunk { score: 0.88, text: mock_metadata2.text.clone(), metadata: mock_metadata2 },
+    ];
+    context.app.mock_embedding_pipeline_service.set_response(Ok(mock_chunks));
+    // --- End Mock RAG Response ---
+   
     let payload = NewChatMessageRequest {
         content: "Hello, world!".to_string(),
         model: Some("test-model".to_string()), // Provide a model name
@@ -903,8 +927,22 @@ async fn generate_chat_response_uses_session_settings() {
 
     // Verify the request sent to the mock AI client
     let last_request = context.app.mock_ai_client.get_last_request().expect("Mock AI client did not receive a request");
-
-    // Check that system prompt is included in the messages
+   
+    // --- Verify RAG Context Injection ---
+    let last_message_content = last_request.messages.last().unwrap().content.clone();
+    let prompt_text = match last_message_content {
+        MessageContent::Text(text) => text,
+        _ => panic!("Expected last message content to be text"),
+    };
+   
+    // Check if the RAG context section exists and contains the chunk text
+    assert!(prompt_text.contains("<RAG_CONTEXT>"), "Prompt missing RAG_CONTEXT start tag");
+    assert!(prompt_text.contains("</RAG_CONTEXT>"), "Prompt missing RAG_CONTEXT end tag");
+    assert!(prompt_text.contains("This is relevant chunk 1."), "Prompt missing text from chunk 1");
+    assert!(prompt_text.contains("This is relevant chunk 2, slightly longer."), "Prompt missing text from chunk 2");
+    // --- End RAG Verification ---
+   
+    // Check that system prompt is included in the messages (before RAG context)
     let has_system_message = last_request.messages.iter().any(|msg| {
         // First check role
         let is_system = match msg.role {

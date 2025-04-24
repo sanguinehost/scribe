@@ -12,6 +12,7 @@ pub type ChatStreamItem = Result<ChatStreamEvent, AppError>;
 pub type ChatStream = Pin<Box<dyn Stream<Item = ChatStreamItem> + Send>>;
 
 pub mod gemini_client;
+pub mod gemini_embedding_client;
 
 /// Trait defining the interface for AI client operations.
 #[async_trait]
@@ -41,4 +42,13 @@ pub trait AiClient: Send + Sync {
         request: ChatRequest,
         config_override: Option<ChatOptions>,
     ) -> Result<ChatStream, AppError>; // Return type alias
+}
+
+#[async_trait]
+pub trait EmbeddingClient: Send + Sync {
+    async fn embed_content(
+        &self,
+        text: &str,
+        task_type: &str, // e.g., "RETRIEVAL_DOCUMENT", "RETRIEVAL_QUERY"
+    ) -> Result<Vec<f32>, AppError>;
 }

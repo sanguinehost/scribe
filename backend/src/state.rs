@@ -8,6 +8,9 @@ use crate::config::Config; // Use Config instead
 use std::sync::Arc;
 // Use the AiClient trait from our llm module
 use crate::llm::AiClient;
+use crate::llm::EmbeddingClient; // Add this
+use crate::vector_db::QdrantClientService; // Add Qdrant service import
+use crate::services::embedding_pipeline::EmbeddingPipelineServiceTrait; // Import the new trait
 
 // --- DB Connection Pool Type ---
 pub type DbPool = DeadpoolPool;
@@ -25,21 +28,30 @@ pub struct AppState {
     pub mock_llm_response: std::sync::Arc<tokio::sync::Mutex<Option<String>>>,
     // Change to use the AiClient trait object
     pub ai_client: Arc<dyn AiClient + Send + Sync>,
-}
-
+    pub embedding_client: Arc<dyn EmbeddingClient>, // Add this line
+    pub qdrant_service: Arc<QdrantClientService>, // Add Qdrant service
+    pub embedding_pipeline_service: Arc<dyn EmbeddingPipelineServiceTrait>, // Add Embedding Pipeline service trait object
+   }
+   
 impl AppState {
     // Update constructor signature to accept the trait object Arc
     pub fn new(
         pool: DeadpoolPool,
         config: Arc<Config>,
         ai_client: Arc<dyn AiClient + Send + Sync>, // Use trait object Arc here
-    ) -> Self {
+        embedding_client: Arc<dyn EmbeddingClient>, // Add this parameter
+        qdrant_service: Arc<QdrantClientService>, // Add Qdrant service parameter
+        embedding_pipeline_service: Arc<dyn EmbeddingPipelineServiceTrait>, // Add Embedding Pipeline service parameter
+       ) -> Self {
         Self {
             pool,
             config,
             #[cfg(test)]
             mock_llm_response: std::sync::Arc::new(tokio::sync::Mutex::new(None)),
             ai_client, // Assign the passed-in client Arc
-        }
-    }
+            embedding_client, // Add this assignment
+            qdrant_service, // Add this assignment
+            embedding_pipeline_service, // Add this assignment
+           }
+           }
 }

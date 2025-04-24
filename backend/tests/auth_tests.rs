@@ -6,10 +6,14 @@ use scribe_backend::{
     auth::{session_store::DieselSessionStore, user_store::Backend as AuthBackend},
     errors::AppError,
     models::{users::User, users::NewUser}, // Import NewUser
-    routes::auth::{login_handler, register_handler, logout_handler, me_handler},
+    routes::auth::{register_handler, login_handler, logout_handler, me_handler},
     schema::users,
     state::AppState,
     config::Config,
+    test_helpers::{create_test_user, MockEmbeddingClient, MockEmbeddingPipelineService},
+    vector_db::QdrantClientService,
+    llm::{AiClient, EmbeddingClient},
+    services::embedding_pipeline::EmbeddingPipelineServiceTrait,
 };
 use anyhow::{Context, Result as AnyhowResult};
 use axum::{
@@ -197,7 +201,24 @@ async fn build_test_app(pool: DeadpoolPool<DeadpoolManager>) -> Router {
             .await
             .expect("Failed to build Gemini client for auth tests. Is GOOGLE_API_KEY set?"),
     );
-    let app_state = AppState::new(pool.clone(), config, ai_client);
+    // Instantiate mock embedding client
+    let embedding_client = Arc::new(MockEmbeddingClient::new());
+    // Instantiate mock embedding pipeline service
+    let embedding_pipeline_service = Arc::new(MockEmbeddingPipelineService::new());
+    // Instantiate Qdrant service
+    let qdrant_service = Arc::new(
+        QdrantClientService::new(config.clone())
+            .await
+            .expect("Failed to create QdrantClientService for auth test"),
+    );
+    let app_state = AppState::new(
+        pool.clone(),
+        config,
+        ai_client,
+        embedding_client,
+        qdrant_service,
+        embedding_pipeline_service,
+    );
 
     // Define auth routes
     let auth_routes = Router::new()

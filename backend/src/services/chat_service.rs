@@ -18,8 +18,10 @@ use crate::{
         characters::Character,
     },
     schema::{characters, chat_messages, chat_sessions}, // Removed self
-    state::DbPool, // Use DbPool from state
+    state::{AppState, DbPool}, // Use DbPool from state, Add AppState
+    services::embedding_pipeline::process_and_embed_message, // Import the pipeline function
 };
+use std::sync::Arc; // Add Arc for AppState
 
 // Type alias for the history tuple returned for generation
 pub type HistoryForGeneration = Vec<(MessageRole, String)>;
@@ -212,22 +214,39 @@ fn save_chat_message_internal(
     }
 }
 
-/// Saves a single chat message (user or assistant).
+/// Saves a single chat message (user or assistant) and triggers background embedding.
 /// This is intended for saving the final assistant response outside the main generation transaction.
-#[instrument(skip(pool), err)]
+#[instrument(skip(state), err)] // Update skip attribute
 pub async fn save_message(
-    pool: &DbPool,
+    state: Arc<AppState>, // Change pool to state
     session_id: Uuid,
     user_id: Option<Uuid>, // User ID is only present for user messages
     role: MessageRole,
     content: String,
 ) -> Result<DbChatMessage, AppError> {
-    let conn = pool.get().await?;
-    conn.interact(move |conn| {
+    let pool = state.pool.clone(); // Get pool from state
+    let saved_message_result = pool.get().await?.interact(move |conn| {
         let new_message = DbInsertableChatMessage::new(session_id, user_id, role, content);
         save_chat_message_internal(conn, new_message)
     })
-    .await?
+    .await?; // This double '?' propagates interact error then the inner Result
+
+    // After successfully saving, spawn the embedding task asynchronously
+    if let Ok(saved_message) = &saved_message_result {
+        let state_clone = state.clone();
+        let message_clone = saved_message.clone(); // Clone the message data for the task
+        tokio::spawn(async move {
+            info!(message_id = %message_clone.id, "Spawning background task for message embedding");
+            if let Err(e) = process_and_embed_message(state_clone, message_clone).await {
+                error!(error = %e, "Background embedding task failed");
+                // TODO: Consider adding monitoring or retry logic for failed background tasks
+            } else {
+                info!("Background embedding task completed successfully");
+            }
+        });
+    }
+
+    saved_message_result // Return the original result (Ok or Err)
 }
 
 

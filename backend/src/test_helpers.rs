@@ -21,6 +21,7 @@ use crate::{
     schema,
     state::AppState,
     PgPool,
+    vector_db::qdrant_client::QdrantClientService, // Import QdrantClientService
 };
 use axum::{
     body::Body,
@@ -53,7 +54,7 @@ use genai::chat::{ChatOptions, ChatRequest, ChatResponse, MessageContent, Usage}
 use bigdecimal::BigDecimal;
 // use chrono::{DateTime, Utc}; // Unused imports
 use serde_json::Value;
-use crate::llm::{AiClient, ChatStream, ChatStreamItem}; // Add ChatStream, ChatStreamItem
+use crate::llm::{AiClient, ChatStream, ChatStreamItem, EmbeddingClient}; // Add EmbeddingClient
 use crate::errors::AppError;
 use futures::stream::{self}; // Removed StreamExt, Add stream
 // use std::pin::Pin; // Unused import
@@ -61,6 +62,7 @@ use genai::chat::{ChatStreamEvent, StreamChunk}; // Add import for chatstream ty
 // use std::path::PathBuf; // Unused import
 // use axum::extract::FromRef; // Unused import
 // use axum_login::{AuthUser}; // Unused import
+use crate::services::embedding_pipeline::{EmbeddingPipelineServiceTrait, RetrievedChunk}; // Import RAG service trait and chunk struct
 
 // Define the embedded migrations macro
 // Ensure this path is correct relative to the crate root (src)
@@ -72,10 +74,13 @@ pub struct TestApp {
     pub address: String,
     pub router: Router,
     pub db_pool: PgPool,
-    // Ensure mock_ai_client field exists
+    // Ensure mock clients fields exist
     pub mock_ai_client: Arc<MockAiClient>,
-}
-
+    pub mock_embedding_client: Arc<MockEmbeddingClient>, // Add mock embedding client
+    pub mock_embedding_pipeline_service: Arc<MockEmbeddingPipelineService>, // Add mock RAG service
+    pub qdrant_service: Arc<QdrantClientService>, // Add Qdrant service
+   }
+   
 /// Sets up the application state and router for integration testing, WITHOUT spawning a server.
 pub async fn spawn_app() -> TestApp {
     // Tracing initialization is handled by #[tracing_test::traced_test] on each test function
@@ -155,8 +160,27 @@ pub async fn spawn_app() -> TestApp {
     let config = Arc::new(Config::load().expect("Failed to load test configuration"));
     // Ensure Mock AI Client is instantiated
     let mock_ai_client = Arc::new(MockAiClient::new());
-    // Ensure AppState is created with the mock client
-    let app_state = AppState::new(db_pool.clone(), config, mock_ai_client.clone());
+    // Ensure Mock Embedding Client is instantiated
+    let mock_embedding_client = Arc::new(MockEmbeddingClient::new());
+    // Ensure Mock Embedding Pipeline Service is instantiated
+    let mock_embedding_pipeline_service = Arc::new(MockEmbeddingPipelineService::new());
+    // Create the real Qdrant service for tests (assuming Qdrant is running or mocked appropriately)
+    // If Qdrant isn't available during unit/integration tests, this might need mocking too.
+    let qdrant_service = Arc::new(
+        QdrantClientService::new(config.clone())
+            .await
+            .expect("Failed to create QdrantClientService for test"),
+    );
+
+    // Ensure AppState is created with the mock clients and real Qdrant service
+    let app_state = AppState::new(
+        db_pool.clone(),
+        config.clone(), // Clone config Arc for AppState
+        mock_ai_client.clone(),
+        mock_embedding_client.clone(), // Pass mock embedding client
+        qdrant_service.clone(), // Pass the real Qdrant service
+        mock_embedding_pipeline_service.clone(), // Pass mock RAG service
+       );
 
     // --- Router Setup (mirroring main.rs structure) ---
     // Note: Imports moved to top of file
@@ -193,10 +217,13 @@ pub async fn spawn_app() -> TestApp {
         address,
         router: app_router,
         db_pool,
-        // Ensure mock_ai_client is stored
+        // Ensure mock clients are stored
         mock_ai_client,
-    }
-}
+        mock_embedding_client, // Store mock embedding client
+        mock_embedding_pipeline_service, // Store mock RAG service
+        qdrant_service, // Store Qdrant service
+       }
+       }
 
 // --- Database Helper Functions ---
 
@@ -862,5 +889,111 @@ impl AiClient for MockAiClient {
         let stream = stream::iter(stream_items);
         let boxed_stream: ChatStream = Box::pin(stream);
         Ok(boxed_stream)
+    }
+}
+
+
+// --- Mock Embedding Client for Testing ---
+
+pub struct MockEmbeddingClient {
+    response_to_return: Arc<Mutex<Result<Vec<f32>, AppError>>>,
+    last_text: Arc<Mutex<Option<String>>>,
+    last_task_type: Arc<Mutex<Option<String>>>,
+}
+
+impl MockEmbeddingClient {
+    pub fn new() -> Self {
+        Self {
+            // Default to a successful response with a dummy vector
+            response_to_return: Arc::new(Mutex::new(Ok(vec![0.1, 0.2, 0.3]))),
+            last_text: Arc::new(Mutex::new(None)),
+            last_task_type: Arc::new(Mutex::new(None)),
+        }
+    }
+
+    #[allow(dead_code)] // Keep potentially useful test helpers
+    pub fn set_response(&self, response: Result<Vec<f32>, AppError>) {
+        *self.response_to_return.lock().unwrap() = response;
+    }
+
+    #[allow(dead_code)] // Keep potentially useful test helpers
+    pub fn get_last_text(&self) -> Option<String> {
+        self.last_text.lock().unwrap().clone()
+    }
+    
+    #[allow(dead_code)] // Keep potentially useful test helpers
+    pub fn get_last_task_type(&self) -> Option<String> {
+        self.last_task_type.lock().unwrap().clone()
+    }
+}
+
+#[async_trait]
+impl EmbeddingClient for MockEmbeddingClient {
+    async fn embed_content(
+        &self,
+        text: &str,
+        task_type: &str,
+    ) -> Result<Vec<f32>, AppError> {
+        *self.last_text.lock().unwrap() = Some(text.to_string());
+        *self.last_task_type.lock().unwrap() = Some(task_type.to_string());
+        self.response_to_return.lock().unwrap().clone()
+    }
+}
+
+
+// --- Mock Embedding Pipeline Service for Testing ---
+
+pub struct MockEmbeddingPipelineService {
+    response_to_return: Arc<Mutex<Result<Vec<RetrievedChunk>, AppError>>>,
+    last_chat_id: Arc<Mutex<Option<Uuid>>>,
+    last_query_text: Arc<Mutex<Option<String>>>,
+    last_limit: Arc<Mutex<Option<u64>>>,
+}
+
+impl MockEmbeddingPipelineService {
+    pub fn new() -> Self {
+        Self {
+            // Default to a successful empty response
+            response_to_return: Arc::new(Mutex::new(Ok(Vec::new()))),
+            last_chat_id: Arc::new(Mutex::new(None)),
+            last_query_text: Arc::new(Mutex::new(None)),
+            last_limit: Arc::new(Mutex::new(None)),
+        }
+    }
+
+    #[allow(dead_code)] // Keep potentially useful test helpers
+    pub fn set_response(&self, response: Result<Vec<RetrievedChunk>, AppError>) {
+        *self.response_to_return.lock().unwrap() = response;
+    }
+
+    #[allow(dead_code)] // Keep potentially useful test helpers
+    pub fn get_last_chat_id(&self) -> Option<Uuid> {
+        *self.last_chat_id.lock().unwrap()
+    }
+
+    #[allow(dead_code)] // Keep potentially useful test helpers
+    pub fn get_last_query_text(&self) -> Option<String> {
+        self.last_query_text.lock().unwrap().clone()
+    }
+
+    #[allow(dead_code)] // Keep potentially useful test helpers
+    pub fn get_last_limit(&self) -> Option<u64> {
+        *self.last_limit.lock().unwrap()
+    }
+}
+
+#[async_trait]
+impl EmbeddingPipelineServiceTrait for MockEmbeddingPipelineService {
+    async fn retrieve_relevant_chunks(
+        &self,
+        _state: Arc<AppState>, // Mock doesn't need state
+        chat_id: Uuid,
+        query_text: &str,
+        limit: u64,
+    ) -> Result<Vec<RetrievedChunk>, AppError> {
+        *self.last_chat_id.lock().unwrap() = Some(chat_id);
+        *self.last_query_text.lock().unwrap() = Some(query_text.to_string());
+        *self.last_limit.lock().unwrap() = Some(limit);
+        self.response_to_return.lock().unwrap().clone()
     }
 }

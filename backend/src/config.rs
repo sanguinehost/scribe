@@ -9,6 +9,8 @@ pub struct Config { // Renamed
     pub database_url: Option<String>, // Example field
     pub gemini_api_key: Option<String>, // Example field
     // Add other fields like server address, log level, etc.
+    pub qdrant_url: Option<String>, // URL for the Qdrant instance
+    pub qdrant_collection_name: Option<String>, // Optional: Name for the Qdrant collection
 }
 
 impl Config {

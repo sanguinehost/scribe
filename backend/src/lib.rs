@@ -9,6 +9,8 @@ pub mod services;
 pub mod state;
 pub mod prompt_builder;
 pub mod config; // Add config module
+pub mod vector_db; // Added vector_db module
+pub mod text_processing; // Added text processing module
 
 use deadpool_diesel::postgres::Pool as DeadpoolPool;
 

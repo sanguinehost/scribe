@@ -217,7 +217,7 @@ pub async fn generate_chat_response(
     };
 
     let session_id_clone = session_id;
-    let pool_clone = state.pool.clone();
+    let _pool_clone = state.pool.clone(); // Keep clone for potential future use, but mark unused for now
     let full_response_buffer = Arc::new(Mutex::new(String::new()));
     let buffer_clone = full_response_buffer.clone();
 
@@ -266,7 +266,7 @@ pub async fn generate_chat_response(
                     if !final_content.is_empty() {
                         warn!(%session_id_clone, content_len = final_content.len(), "Saving partial response due to stream error");
                         let save_result = chat_service::save_message(
-                            &pool_clone,
+                            state.clone().into(), // Pass AppState instead of pool, convert with .into()
                             session_id_clone,
                             None, // Assistant messages have no user_id
                             MessageRole::Assistant,
@@ -291,7 +291,7 @@ pub async fn generate_chat_response(
                 info!(%session_id_clone, bytes = final_content.len(), "Spawning background task to save full AI response via chat service.");
                 tokio::spawn(async move {
                     match chat_service::save_message(
-                        &pool_clone,
+                        state.clone().into(), // Pass AppState instead of pool, convert with .into()
                         session_id_clone,
                         None, // Assistant message has no user_id directly associated
                         MessageRole::Assistant,

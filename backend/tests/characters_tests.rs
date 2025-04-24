@@ -12,7 +12,14 @@ use scribe_backend::{
     routes::auth::login_handler as auth_login_handler,
     auth::{session_store::DieselSessionStore, user_store::Backend as AuthBackend},
     config::Config,
-    // errors::AppError, // Unused
+    errors::AppError,
+    // llm::EmbeddingClient, // Removed unused import
+    // test_helpers::MockEmbeddingClient, // Removed old mock import
+    test_helpers::{MockEmbeddingPipelineService, MockEmbeddingClient},
+    vector_db::QdrantClientService,
+    services::embedding_pipeline::EmbeddingPipelineServiceTrait,
+    llm::EmbeddingClient,
+    llm::AiClient,
 };
 use axum::{
     Router,
@@ -304,14 +311,26 @@ async fn build_test_app_for_characters(pool: Pool) -> Router {
     let auth_backend = AuthBackend::new(pool.clone());
     let auth_layer = AuthManagerLayerBuilder::new(auth_backend, session_layer).build();
 
-    let config = Arc::new(Config::load().expect("Failed to load test config for characters_tests"));
-    // Build AI client
-    let ai_client = Arc::new(
-        scribe_backend::llm::gemini_client::build_gemini_client()
+    let config = Arc::new(Config::load().expect("Failed to load test configuration"));
+    // Instantiate mock clients
+    let ai_client = Arc::new(scribe_backend::test_helpers::MockAiClient::new());
+    let embedding_client = Arc::new(MockEmbeddingClient::new());
+    let embedding_pipeline_service = Arc::new(MockEmbeddingPipelineService::new());
+    // Instantiate Qdrant service
+    let qdrant_service = Arc::new(
+        QdrantClientService::new(config.clone())
             .await
-            .expect("Failed to build Gemini client for characters tests. Is GOOGLE_API_KEY set?"),
+            .expect("Failed to create QdrantClientService for test"),
     );
-    let app_state = AppState::new(pool.clone(), config, ai_client);
+
+    let app_state = AppState::new(
+        pool.clone(),
+        config,
+        ai_client,
+        embedding_client,
+        qdrant_service,
+        embedding_pipeline_service,
+    );
 
     // Define necessary routes for character tests
     let auth_routes = Router::new()
