@@ -189,7 +189,7 @@ Only mark a task checkbox (`- [x]`) when all these conditions are satisfied.
 
 - [ ] **Task 4.1: Database Schema Update (BE)**
     - [x] **(BE) Decision:** Decide whether settings (`system_prompt`, `temperature`, `max_output_tokens`, **`frequency_penalty`, `presence_penalty`, `top_k`, `top_p`, `repetition_penalty`, `min_p`, `top_a`, `seed`, `logit_bias` (JSON?)**) belong to `characters` or `chat_sessions`. **Decision: Add to `chat_sessions` for per-chat control.** Make columns nullable with sensible defaults. *(Verified for original 3)*
-    - [ ] **(BE) Create Migration:** Use `diesel_cli` to generate a new migration file adding these columns to `chat_sessions`. *(Verified - Assuming migration file exists for original 3)* **Needs update for new columns.**
+    - [x] **(BE) Create Migration:** Use `diesel_cli` to generate a new migration file adding these columns to `chat_sessions`. *(Verified - Migration created for all fields including new parameters)*
     - [x] **(BE) Apply Migration:** Ensure the migration runner (from Task 0.4) applies this migration. *(Verified)*
     - [ ] *TDD (BE):* Update schema verification tests (Task 0.4) to reflect new columns. Run migration tests. *(Verified for original 3)* **Needs update.**
 - [ ] **Task 4.2: API & Logic for Settings (BE)** - ***Requires Task 0.5, Task 2.1 Completion***
