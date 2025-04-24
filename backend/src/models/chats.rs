@@ -7,6 +7,7 @@ use bigdecimal::BigDecimal; // Add import
 use crate::models::users::User;
 use crate::models::characters::CharacterMetadata;
 use tracing::error;
+use serde_json::Value; // Add import for JSON value
 
 // Import necessary Diesel traits for manual enum mapping
 use diesel::deserialize::{self, FromSql};
@@ -24,11 +25,22 @@ pub struct ChatSession {
     pub id: Uuid,
     pub user_id: Uuid,
     pub character_id: Uuid,
+    pub title: Option<String>,
     pub system_prompt: Option<String>,
     pub temperature: Option<BigDecimal>, // Changed f32 to BigDecimal to match NUMERIC
     pub max_output_tokens: Option<i32>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    // New generation settings fields
+    pub frequency_penalty: Option<BigDecimal>,
+    pub presence_penalty: Option<BigDecimal>,
+    pub top_k: Option<i32>,
+    pub top_p: Option<BigDecimal>,
+    pub repetition_penalty: Option<BigDecimal>,
+    pub min_p: Option<BigDecimal>,
+    pub top_a: Option<BigDecimal>,
+    pub seed: Option<i32>,
+    pub logit_bias: Option<Value>, // JSONB maps to serde_json::Value
 }
 
 // For creating a new chat session
@@ -139,6 +151,16 @@ pub struct ChatSettingsResponse {
     pub system_prompt: Option<String>,
     pub temperature: Option<BigDecimal>, // Changed f32 to BigDecimal
     pub max_output_tokens: Option<i32>,
+    // New generation settings fields
+    pub frequency_penalty: Option<BigDecimal>,
+    pub presence_penalty: Option<BigDecimal>,
+    pub top_k: Option<i32>,
+    pub top_p: Option<BigDecimal>,
+    pub repetition_penalty: Option<BigDecimal>,
+    pub min_p: Option<BigDecimal>,
+    pub top_a: Option<BigDecimal>,
+    pub seed: Option<i32>,
+    pub logit_bias: Option<Value>,
 }
 
 /// Request body for PUT /api/chats/{id}/settings
@@ -148,4 +170,14 @@ pub struct UpdateChatSettingsRequest {
     pub system_prompt: Option<String>,
     pub temperature: Option<BigDecimal>, // Changed f32 to BigDecimal
     pub max_output_tokens: Option<i32>,
+    // New generation settings fields
+    pub frequency_penalty: Option<BigDecimal>,
+    pub presence_penalty: Option<BigDecimal>,
+    pub top_k: Option<i32>,
+    pub top_p: Option<BigDecimal>,
+    pub repetition_penalty: Option<BigDecimal>,
+    pub min_p: Option<BigDecimal>,
+    pub top_a: Option<BigDecimal>,
+    pub seed: Option<i32>,
+    pub logit_bias: Option<Value>,
 }

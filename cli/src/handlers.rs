@@ -686,12 +686,22 @@ mod tests {
             id,
             user_id: Uuid::new_v4(),
             character_id,
+            title: None,
             created_at: Utc::now(),
             updated_at: Utc::now(),
             system_prompt: None,
             temperature: None, 
             max_output_tokens: None,
-            // removed summary, title
+            // New generation settings fields
+            frequency_penalty: None,
+            presence_penalty: None,
+            top_k: None,
+            top_p: None,
+            repetition_penalty: None,
+            min_p: None,
+            top_a: None,
+            seed: None,
+            logit_bias: None,
         }
     }
 

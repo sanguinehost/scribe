@@ -36,7 +36,7 @@ use diesel::prelude::*;
 use diesel::RunQueryDsl;
 use diesel::SelectableHelper;
 use diesel_migrations::{embed_migrations, EmbeddedMigrations, MigrationHarness};
-use dotenvy::dotenv;
+use dotenvy::{dotenv, var};
 use std::env;
 use std::net::TcpListener;
 use std::sync::Arc;
@@ -56,6 +56,8 @@ use genai::ModelIden;
 use genai::adapter::AdapterKind;
 use genai::chat::{ChatOptions, ChatRequest, ChatResponse, MessageContent, Usage};
 use bigdecimal::BigDecimal;
+use chrono::{DateTime, Utc};
+use serde_json::Value;
 
 // Define the embedded migrations macro
 // Ensure this path is correct relative to the crate root (src)
@@ -369,6 +371,55 @@ pub async fn update_test_chat_settings(
     .expect("Interact failed for update_test_chat_settings");
 }
 
+/// Updated helper to update all chat settings including new generation params.
+pub async fn update_all_chat_settings(
+    pool: &PgPool,
+    session_id: Uuid,
+    system_prompt: Option<String>,
+    temperature: Option<BigDecimal>,
+    max_output_tokens: Option<i32>,
+    frequency_penalty: Option<BigDecimal>,
+    presence_penalty: Option<BigDecimal>,
+    top_k: Option<i32>,
+    top_p: Option<BigDecimal>,
+    repetition_penalty: Option<BigDecimal>,
+    min_p: Option<BigDecimal>,
+    top_a: Option<BigDecimal>,
+    seed: Option<i32>,
+    logit_bias: Option<Value>,
+) {
+    use crate::schema::chat_sessions::dsl::*;
+    use diesel::dsl::now;
+
+    let conn = pool
+        .get()
+        .await
+        .expect("Failed to get DB conn for update_all_chat_settings");
+
+    conn.interact(move |conn| {
+        diesel::update(chat_sessions.filter(id.eq(session_id)))
+            .set((
+                system_prompt.eq(system_prompt),
+                temperature.eq(temperature),
+                max_output_tokens.eq(max_output_tokens),
+                frequency_penalty.eq(frequency_penalty),
+                presence_penalty.eq(presence_penalty),
+                top_k.eq(top_k),
+                top_p.eq(top_p),
+                repetition_penalty.eq(repetition_penalty),
+                min_p.eq(min_p),
+                top_a.eq(top_a),
+                seed.eq(seed),
+                logit_bias.eq(logit_bias),
+                updated_at.eq(now),
+            ))
+            .execute(conn)
+            .expect("Failed to update all chat settings")
+    })
+    .await
+    .expect("Interact failed for update_all_chat_settings");
+}
+
 /// Helper to get messages directly from DB for a specific session.
 pub async fn get_chat_messages_from_db(pool: &PgPool, session_id: Uuid) -> Vec<ChatMessage> {
     // Imports needed within this function scope
@@ -390,7 +441,7 @@ pub async fn get_chat_messages_from_db(pool: &PgPool, session_id: Uuid) -> Vec<C
 
 /// Helper to get chat session settings directly from DB.
 pub async fn get_chat_session_settings(pool: &PgPool, session_id: Uuid) 
--> Option<(Option<String>, Option<BigDecimal>, Option<i32>)> {
+-> Option<(Option<String>, Option<BigDecimal>, Option<i32>, Option<BigDecimal>, Option<BigDecimal>, Option<i32>, Option<BigDecimal>, Option<BigDecimal>, Option<BigDecimal>, Option<BigDecimal>, Option<i32>, Option<Value>)> {
     use crate::schema::chat_sessions::dsl::*;
     
     let conn = pool
@@ -401,11 +452,35 @@ pub async fn get_chat_session_settings(pool: &PgPool, session_id: Uuid)
     conn.interact(move |conn| {
         chat_sessions
             .filter(id.eq(session_id))
-            .select((system_prompt, temperature, max_output_tokens))
-             // Expect DB to store temperature as NUMERIC -> BigDecimal
-            .first::<(Option<String>, Option<BigDecimal>, Option<i32>)>(conn)
+            .select((
+                system_prompt, 
+                temperature, 
+                max_output_tokens,
+                frequency_penalty,
+                presence_penalty,
+                top_k,
+                top_p,
+                repetition_penalty,
+                min_p,
+                top_a,
+                seed,
+                logit_bias
+            ))
+            .first::<(
+                Option<String>, 
+                Option<BigDecimal>, 
+                Option<i32>,
+                Option<BigDecimal>,
+                Option<BigDecimal>,
+                Option<i32>,
+                Option<BigDecimal>,
+                Option<BigDecimal>,
+                Option<BigDecimal>,
+                Option<BigDecimal>,
+                Option<i32>,
+                Option<Value>
+            )>(conn)
             .optional()
-            // No need to map f64 -> f32 anymore
             .expect("Failed to query test chat session settings")
     })
     .await

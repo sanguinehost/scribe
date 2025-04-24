@@ -143,6 +143,15 @@ diesel::table! {
         max_output_tokens -> Nullable<Int4>,
         created_at -> Timestamptz,
         updated_at -> Timestamptz,
+        frequency_penalty -> Nullable<Numeric>,
+        presence_penalty -> Nullable<Numeric>,
+        top_k -> Nullable<Int4>,
+        top_p -> Nullable<Numeric>,
+        repetition_penalty -> Nullable<Numeric>,
+        min_p -> Nullable<Numeric>,
+        top_a -> Nullable<Numeric>,
+        seed -> Nullable<Int4>,
+        logit_bias -> Nullable<Jsonb>,
     }
 }
 

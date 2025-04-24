@@ -6,6 +6,7 @@ use bigdecimal::BigDecimal;
 use std::str::FromStr;
 use diesel::prelude::*;
 use axum_login::AuthSession;
+use serde_json::Value; // Add the missing import
 use crate::{
     auth::user_store::Backend as AuthBackend,
     errors::AppError,
@@ -307,46 +308,59 @@ pub async fn generate_chat_response(
 
     let user_message_content = payload.content.clone();
     let pool = state.pool.clone(); // Clone pool for the first interact
-    let ai_client = state.ai_client.clone(); // Clone AI client
 
     // --- First Interact: Validate, Fetch data, Save user message, Build prompt ---
     info!("Starting first DB interaction (fetch data, save user msg, get settings)");
-    // Update the expected tuple type to include settings and model_name
-    let (prompt_history, system_prompt, temperature, max_tokens, model_name): ( // Added model_name
-        Vec<(MessageRole, String)>,
-        Option<String>,
-        Option<BigDecimal>, // Changed f32 to BigDecimal
-        Option<i32>,
-        &'static str, // Type for DEFAULT_MODEL_NAME
+    
+    // Define the settings type for clarity
+    type SettingsTuple = (
+        Option<String>,      // system_prompt
+        Option<BigDecimal>,  // temperature
+        Option<i32>,         // max_output_tokens
+        Option<BigDecimal>,  // frequency_penalty
+        Option<BigDecimal>,  // presence_penalty
+        Option<i32>,         // top_k
+        Option<BigDecimal>,  // top_p
+        Option<BigDecimal>,  // repetition_penalty
+        Option<BigDecimal>,  // min_p
+        Option<BigDecimal>,  // top_a
+        Option<i32>,         // seed
+        Option<Value>,       // logit_bias
+    );
+    
+    // Update the expected tuple type to include all settings and model_name
+    let (
+        prompt_history, 
+        system_prompt, 
+        temperature, 
+        max_tokens,
+        frequency_penalty,
+        presence_penalty,
+        top_k,
+        top_p,
+        repetition_penalty,
+        min_p,
+        top_a,
+        seed,
+        logit_bias,
+        model_name
     ) = pool
         .get()
         .await?
         .interact(move |conn| {
             // Use schema modules for clarity
-            // Removed unused: use crate::schema::characters::dsl as characters_dsl;
             use crate::schema::chat_sessions::dsl as chat_sessions_dsl;
             use crate::schema::chat_messages::dsl as chat_messages_dsl;
 
             conn.transaction(|transaction_conn| {
                 // 1. Retrieve session & character, ensuring ownership
                 info!("Fetching session and character");
-                // --- Query 1: Fetch Chat Session ---
-                info!("Fetching chat session by ID and user ID");
-                let (session, system_prompt, temperature, max_tokens): (
-                    ChatSession,
-                    Option<String>,
-                    Option<BigDecimal>, // Changed f32 to BigDecimal
-                    Option<i32>,
-                ) = chat_sessions_dsl::chat_sessions // Use imported dsl
+                
+                // First, get the basic ChatSession to verify ownership
+                let _session = chat_sessions_dsl::chat_sessions
                     .filter(chat_sessions_dsl::id.eq(session_id))
                     .filter(chat_sessions_dsl::user_id.eq(user_id)) // Ensure ownership
-                    // Select the necessary fields including settings
-                    .select((
-                        ChatSession::as_select(), // Still need the whole session for character_id
-                        chat_sessions_dsl::system_prompt,
-                        chat_sessions_dsl::temperature,
-                        chat_sessions_dsl::max_output_tokens, // Add max_output_tokens
-                    ))
+                    .select(ChatSession::as_select())
                     .first(transaction_conn)
                     .optional()
                     .map_err(AppError::DatabaseQueryError)?
@@ -354,6 +368,42 @@ pub async fn generate_chat_response(
                         warn!(%session_id, %user_id, "Chat session not found or user mismatch");
                         AppError::NotFound("Chat session not found".into())
                     })?;
+                
+                // Then, get all the settings we need
+                let settings = chat_sessions_dsl::chat_sessions
+                    .filter(chat_sessions_dsl::id.eq(session_id))
+                    .select((
+                        chat_sessions_dsl::system_prompt,
+                        chat_sessions_dsl::temperature,
+                        chat_sessions_dsl::max_output_tokens,
+                        chat_sessions_dsl::frequency_penalty,
+                        chat_sessions_dsl::presence_penalty,
+                        chat_sessions_dsl::top_k,
+                        chat_sessions_dsl::top_p,
+                        chat_sessions_dsl::repetition_penalty,
+                        chat_sessions_dsl::min_p,
+                        chat_sessions_dsl::top_a,
+                        chat_sessions_dsl::seed,
+                        chat_sessions_dsl::logit_bias,
+                    ))
+                    .first::<SettingsTuple>(transaction_conn)
+                    .map_err(AppError::DatabaseQueryError)?;
+                
+                // Unpack settings
+                let (
+                    system_prompt,
+                    temperature,
+                    max_tokens,
+                    frequency_penalty,
+                    presence_penalty,
+                    top_k,
+                    top_p,
+                    repetition_penalty,
+                    min_p,
+                    top_a,
+                    seed,
+                    logit_bias,
+                ) = settings;
 
                 // Use the default model_name since we don't have it in the database
                 let model_name = DEFAULT_MODEL_NAME;
@@ -380,7 +430,38 @@ pub async fn generate_chat_response(
                 let mut full_history = history;
                 full_history.push((MessageRole::User, user_message_content));
 
-                Ok::<(Vec<(MessageRole, String)>, Option<String>, Option<BigDecimal>, Option<i32>, &'static str), AppError>((full_history, system_prompt, temperature, max_tokens, model_name))
+                // Return with the specific type annotation
+                Ok::<(
+                    Vec<(MessageRole, String)>, 
+                    Option<String>, 
+                    Option<BigDecimal>, 
+                    Option<i32>,
+                    Option<BigDecimal>,
+                    Option<BigDecimal>,
+                    Option<i32>,
+                    Option<BigDecimal>,
+                    Option<BigDecimal>,
+                    Option<BigDecimal>,
+                    Option<BigDecimal>,
+                    Option<i32>,
+                    Option<Value>,
+                    &'static str
+                ), AppError>((
+                    full_history, 
+                    system_prompt, 
+                    temperature,
+                    max_tokens,
+                    frequency_penalty,
+                    presence_penalty,
+                    top_k,
+                    top_p,
+                    repetition_penalty,
+                    min_p,
+                    top_a,
+                    seed,
+                    logit_bias,
+                    model_name
+                ))
             })
         })
         .await
@@ -406,7 +487,8 @@ pub async fn generate_chat_response(
     // --- Prepare ChatOptions from settings --- 
     let mut chat_options = ChatOptions::default();
 
-    if let Some(temp) = temperature { // temp is Option<BigDecimal>
+    // Apply temperature if set
+    if let Some(temp) = temperature {
         // Convert BigDecimal to f64 for ChatOptions
         // Using to_string().parse() for conversion
         if let Ok(temp_f64) = temp.to_string().parse::<f64>() {
@@ -416,6 +498,8 @@ pub async fn generate_chat_response(
              warn!(temperature = %temp, "Could not convert BigDecimal temperature to f64");
         }
     }
+
+    // Apply max_tokens if set
     if let Some(max_tok) = max_tokens {
         // Validate max_tokens is non-negative before casting
         if max_tok >= 0 {
@@ -424,6 +508,92 @@ pub async fn generate_chat_response(
         } else {
             warn!(max_tokens = max_tok, "Ignoring negative max_output_tokens setting");
         }
+    }
+
+    // Apply frequency_penalty if set
+    if let Some(fp) = frequency_penalty {
+        if let Ok(fp_f64) = fp.to_string().parse::<f64>() {
+            debug!(frequency_penalty = fp_f64, "Applying frequency_penalty setting");
+            // Check if genai library supports frequency_penalty setting
+            // chat_options = chat_options.with_frequency_penalty(fp_f64);
+            debug!("frequency_penalty is not yet supported by the genai library");
+        }
+    }
+
+    // Apply presence_penalty if set
+    if let Some(pp) = presence_penalty {
+        if let Ok(pp_f64) = pp.to_string().parse::<f64>() {
+            debug!(presence_penalty = pp_f64, "Applying presence_penalty setting");
+            // Check if genai library supports presence_penalty setting
+            // chat_options = chat_options.with_presence_penalty(pp_f64);
+            debug!("presence_penalty is not yet supported by the genai library");
+        }
+    }
+
+    // Apply top_k if set
+    if let Some(k) = top_k {
+        if k > 0 {
+            debug!(top_k = k, "Applying top_k setting");
+            // Check if genai library supports top_k setting
+            // chat_options = chat_options.with_top_k(k as u32);
+            debug!("top_k is not yet supported by the genai library");
+        }
+    }
+
+    // Apply top_p if set
+    if let Some(p) = top_p {
+        if let Ok(p_f64) = p.to_string().parse::<f64>() {
+            debug!(top_p = p_f64, "Applying top_p setting");
+            // Check if genai library supports top_p setting
+            // chat_options = chat_options.with_top_p(p_f64);
+            debug!("top_p is not yet supported by the genai library");
+        }
+    }
+
+    // Apply repetition_penalty if set
+    if let Some(rp) = repetition_penalty {
+        if let Ok(rp_f64) = rp.to_string().parse::<f64>() {
+            debug!(repetition_penalty = rp_f64, "Applying repetition_penalty setting");
+            // Check if genai library supports repetition_penalty setting
+            // chat_options = chat_options.with_repetition_penalty(rp_f64);
+            debug!("repetition_penalty is not yet supported by the genai library");
+        }
+    }
+
+    // Apply min_p if set
+    if let Some(mp) = min_p {
+        if let Ok(mp_f64) = mp.to_string().parse::<f64>() {
+            debug!(min_p = mp_f64, "Applying min_p setting");
+            // Check if genai library supports min_p setting
+            // chat_options = chat_options.with_min_p(mp_f64);
+            debug!("min_p is not yet supported by the genai library");
+        }
+    }
+
+    // Apply top_a if set
+    if let Some(ta) = top_a {
+        if let Ok(ta_f64) = ta.to_string().parse::<f64>() {
+            debug!(top_a = ta_f64, "Applying top_a setting");
+            // Check if genai library supports top_a setting
+            // chat_options = chat_options.with_top_a(ta_f64);
+            debug!("top_a is not yet supported by the genai library");
+        }
+    }
+
+    // Apply seed if set
+    if let Some(s) = seed {
+        debug!(seed = s, "Applying seed setting");
+        // Check if genai library supports seed setting
+        // chat_options = chat_options.with_seed(s as u64);
+        debug!("seed is not yet supported by the genai library");
+    }
+
+    // Apply logit_bias if set
+    if let Some(lb) = logit_bias {
+        debug!(logit_bias = ?lb, "Applying logit_bias setting");
+        // Check if genai library supports logit_bias setting
+        // This would require mapping the JSON object to the genai library's format
+        debug!("logit_bias is not yet supported by the genai library");
     }
 
     // --- Create ChatRequest with system prompt ---
@@ -437,7 +607,7 @@ pub async fn generate_chat_response(
 
     // --- Call the AI client ---
     let ai_response = state.ai_client
-        .exec_chat(DEFAULT_MODEL_NAME, genai_request, Some(chat_options)) // Use DEFAULT_MODEL_NAME constant
+        .exec_chat(model_name, genai_request, Some(chat_options))
         .await
         .map_err(|e| {
             error!(error = ?e, "LLM API call failed");
@@ -504,21 +674,49 @@ pub async fn get_chat_settings(
         .interact(move |conn| {
             use crate::schema::chat_sessions::dsl as chat_sessions_dsl;
 
-            chat_sessions_dsl::chat_sessions
+            // Define the settings type for clarity
+            type SettingsTuple = (
+                Option<String>,      // system_prompt
+                Option<BigDecimal>,  // temperature
+                Option<i32>,         // max_output_tokens
+                Option<BigDecimal>,  // frequency_penalty
+                Option<BigDecimal>,  // presence_penalty
+                Option<i32>,         // top_k
+                Option<BigDecimal>,  // top_p
+                Option<BigDecimal>,  // repetition_penalty
+                Option<BigDecimal>,  // min_p
+                Option<BigDecimal>,  // top_a
+                Option<i32>,         // seed
+                Option<Value>,       // logit_bias
+            );
+            
+            let settings_tuple = chat_sessions_dsl::chat_sessions
                 .filter(chat_sessions_dsl::id.eq(session_id))
                 .filter(chat_sessions_dsl::user_id.eq(user_id)) // Verify ownership
                 .select((
                     chat_sessions_dsl::system_prompt,
                     chat_sessions_dsl::temperature,
                     chat_sessions_dsl::max_output_tokens,
+                    // New settings fields
+                    chat_sessions_dsl::frequency_penalty,
+                    chat_sessions_dsl::presence_penalty,
+                    chat_sessions_dsl::top_k,
+                    chat_sessions_dsl::top_p,
+                    chat_sessions_dsl::repetition_penalty,
+                    chat_sessions_dsl::min_p,
+                    chat_sessions_dsl::top_a,
+                    chat_sessions_dsl::seed,
+                    chat_sessions_dsl::logit_bias,
                 ))
-                // Expect BigDecimal from DB for temperature
-                .first::<(Option<String>, Option<BigDecimal>, Option<i32>)>(conn)
+                // Specify the expected return type
+                .first::<SettingsTuple>(conn)
                 .optional() // Handle not found case
                 .map_err(|e| {
                     error!(error = ?e, %session_id, %user_id, "Failed to query chat settings");
                     AppError::DatabaseQueryError(e)
-                })
+                })?;
+            
+            Ok::<Option<SettingsTuple>, AppError>(settings_tuple)
         })
         .await
         .map_err(|interact_err| {
@@ -527,13 +725,37 @@ pub async fn get_chat_settings(
         })??; // Double '?' for InteractError and inner Result
 
     match settings {
-        // temperature is now Option<BigDecimal>
-        Some((system_prompt, temperature, max_output_tokens)) => {
+        Some(settings_tuple) => {
+            // Unpack settings
+            let (
+                system_prompt,
+                temperature,
+                max_output_tokens,
+                frequency_penalty,
+                presence_penalty,
+                top_k,
+                top_p,
+                repetition_penalty,
+                min_p,
+                top_a,
+                seed,
+                logit_bias,
+            ) = settings_tuple;
+            
             info!(%session_id, "Successfully fetched chat settings");
             Ok(Json(ChatSettingsResponse {
                 system_prompt,
-                temperature, // Pass BigDecimal directly
+                temperature,
                 max_output_tokens,
+                frequency_penalty,
+                presence_penalty,
+                top_k,
+                top_p,
+                repetition_penalty,
+                min_p,
+                top_a,
+                seed,
+                logit_bias,
             }))
         }
         None => {
@@ -562,25 +784,87 @@ pub async fn update_chat_settings(
     let user_id = user.id;
 
     // --- Input Validation ---
+    // BigDecimal helpers for comparisons
+    use bigdecimal::FromPrimitive;
+    let zero = BigDecimal::from_f32(0.0).unwrap();
+    let two = BigDecimal::from_f32(2.0).unwrap();
+    let one = BigDecimal::from_f32(1.0).unwrap();
+    let neg_two = BigDecimal::from_f32(-2.0).unwrap();
+
+    // Validate temperature (between 0.0 and 2.0)
     if let Some(temp) = &payload.temperature { // temp is &BigDecimal
-        // Validate BigDecimal range (e.g., between 0.0 and 2.0)
-        // Need to create BigDecimal representations of 0.0 and 2.0 for comparison
-        use bigdecimal::FromPrimitive;
-        let zero = BigDecimal::from_f32(0.0).unwrap();
-        let two = BigDecimal::from_f32(2.0).unwrap();
         if temp < &zero || temp > &two {
             error!(%session_id, invalid_temp = %temp, "Invalid temperature value");
             return Err(AppError::BadRequest("Temperature must be between 0.0 and 2.0".into()));
         }
     }
+
+    // Validate max_output_tokens (positive)
     if let Some(tokens) = payload.max_output_tokens {
         if tokens <= 0 {
             error!(%session_id, invalid_tokens = tokens, "Invalid max_output_tokens value");
             return Err(AppError::BadRequest("Max output tokens must be positive".into()));
         }
-        // Consider adding a reasonable upper limit check if desired
     }
-    // No validation needed for system_prompt other than it being a string (handled by deserialization)
+
+    // Validate frequency_penalty (between -2.0 and 2.0)
+    if let Some(fp) = &payload.frequency_penalty {
+        if fp < &neg_two || fp > &two {
+            error!(%session_id, invalid_fp = %fp, "Invalid frequency_penalty value");
+            return Err(AppError::BadRequest("Frequency penalty must be between -2.0 and 2.0".into()));
+        }
+    }
+
+    // Validate presence_penalty (between -2.0 and 2.0)
+    if let Some(pp) = &payload.presence_penalty {
+        if pp < &neg_two || pp > &two {
+            error!(%session_id, invalid_pp = %pp, "Invalid presence_penalty value");
+            return Err(AppError::BadRequest("Presence penalty must be between -2.0 and 2.0".into()));
+        }
+    }
+
+    // Validate top_k (positive)
+    if let Some(k) = payload.top_k {
+        if k <= 0 {
+            error!(%session_id, invalid_k = k, "Invalid top_k value");
+            return Err(AppError::BadRequest("Top-k must be positive".into()));
+        }
+    }
+
+    // Validate top_p (between 0.0 and 1.0)
+    if let Some(p) = &payload.top_p {
+        if p < &zero || p > &one {
+            error!(%session_id, invalid_p = %p, "Invalid top_p value");
+            return Err(AppError::BadRequest("Top-p must be between 0.0 and 1.0".into()));
+        }
+    }
+
+    // Validate repetition_penalty (positive)
+    if let Some(rp) = &payload.repetition_penalty {
+        if rp <= &zero {
+            error!(%session_id, invalid_rp = %rp, "Invalid repetition_penalty value");
+            return Err(AppError::BadRequest("Repetition penalty must be positive".into()));
+        }
+    }
+
+    // Validate min_p (between 0.0 and 1.0)
+    if let Some(mp) = &payload.min_p {
+        if mp < &zero || mp > &one {
+            error!(%session_id, invalid_mp = %mp, "Invalid min_p value");
+            return Err(AppError::BadRequest("Min-p must be between 0.0 and 1.0".into()));
+        }
+    }
+
+    // Validate top_a (positive)
+    if let Some(ta) = &payload.top_a {
+        if ta <= &zero {
+            error!(%session_id, invalid_ta = %ta, "Invalid top_a value");
+            return Err(AppError::BadRequest("Top-a must be positive".into()));
+        }
+    }
+
+    // No special validation needed for seed (any i32 is valid)
+    // No direct validation for logit_bias, treat as generic JSON
 
     // --- Database Update ---
     let updated_settings_response = state // Capture the result
@@ -590,6 +874,22 @@ pub async fn update_chat_settings(
         .interact(move |conn| {
             use crate::schema::chat_sessions::dsl as chat_sessions_dsl;
             use diesel::dsl::now;
+
+            // Define the settings type for clarity
+            type SettingsTuple = (
+                Option<String>,      // system_prompt
+                Option<BigDecimal>,  // temperature
+                Option<i32>,         // max_output_tokens
+                Option<BigDecimal>,  // frequency_penalty
+                Option<BigDecimal>,  // presence_penalty
+                Option<i32>,         // top_k
+                Option<BigDecimal>,  // top_p
+                Option<BigDecimal>,  // repetition_penalty
+                Option<BigDecimal>,  // min_p
+                Option<BigDecimal>,  // top_a
+                Option<i32>,         // seed
+                Option<Value>,       // logit_bias
+            );
 
             // 1. Verify the user owns this chat session
             let session_exists = chat_sessions_dsl::chat_sessions
@@ -609,27 +909,72 @@ pub async fn update_chat_settings(
                 // No need to filter by user_id again, already verified
                 .set((
                     chat_sessions_dsl::system_prompt.eq(payload.system_prompt),
-                    chat_sessions_dsl::temperature.eq(payload.temperature), // Pass BigDecimal directly
+                    chat_sessions_dsl::temperature.eq(payload.temperature),
                     chat_sessions_dsl::max_output_tokens.eq(payload.max_output_tokens),
+                    // New settings fields
+                    chat_sessions_dsl::frequency_penalty.eq(payload.frequency_penalty),
+                    chat_sessions_dsl::presence_penalty.eq(payload.presence_penalty),
+                    chat_sessions_dsl::top_k.eq(payload.top_k),
+                    chat_sessions_dsl::top_p.eq(payload.top_p),
+                    chat_sessions_dsl::repetition_penalty.eq(payload.repetition_penalty),
+                    chat_sessions_dsl::min_p.eq(payload.min_p),
+                    chat_sessions_dsl::top_a.eq(payload.top_a),
+                    chat_sessions_dsl::seed.eq(payload.seed),
+                    chat_sessions_dsl::logit_bias.eq(payload.logit_bias),
                     chat_sessions_dsl::updated_at.eq(now),
                 ))
                 .execute(conn)?; // We only need to know if execute succeeded
 
             // 3. Fetch and return updated settings after successful update
-            let updated_settings = chat_sessions_dsl::chat_sessions
+            let settings = chat_sessions_dsl::chat_sessions
                 .filter(chat_sessions_dsl::id.eq(session_id))
                 .select((
                     chat_sessions_dsl::system_prompt,
                     chat_sessions_dsl::temperature,
                     chat_sessions_dsl::max_output_tokens,
+                    // New settings fields
+                    chat_sessions_dsl::frequency_penalty,
+                    chat_sessions_dsl::presence_penalty,
+                    chat_sessions_dsl::top_k,
+                    chat_sessions_dsl::top_p,
+                    chat_sessions_dsl::repetition_penalty,
+                    chat_sessions_dsl::min_p,
+                    chat_sessions_dsl::top_a,
+                    chat_sessions_dsl::seed,
+                    chat_sessions_dsl::logit_bias,
                 ))
-                .first::<(Option<String>, Option<BigDecimal>, Option<i32>)>(conn)?; // Expect BigDecimal
+                .first::<SettingsTuple>(conn)?;
+                
+            // Unpack settings
+            let (
+                system_prompt,
+                temperature,
+                max_output_tokens,
+                frequency_penalty,
+                presence_penalty,
+                top_k,
+                top_p,
+                repetition_penalty,
+                min_p,
+                top_a,
+                seed,
+                logit_bias,
+            ) = settings;
 
             // Convert from DB tuple to response struct
-            Ok(ChatSettingsResponse {
-                system_prompt: updated_settings.0,
-                temperature: updated_settings.1, // Pass BigDecimal directly
-                max_output_tokens: updated_settings.2,
+            Ok::<ChatSettingsResponse, AppError>(ChatSettingsResponse {
+                system_prompt,
+                temperature,
+                max_output_tokens,
+                frequency_penalty,
+                presence_penalty,
+                top_k,
+                top_p,
+                repetition_penalty,
+                min_p,
+                top_a,
+                seed,
+                logit_bias,
             })
         })
         .await
@@ -996,6 +1341,15 @@ mod tests {
             system_prompt: Some(new_prompt.to_string()),
             temperature: Some(new_temp.clone()),
             max_output_tokens: Some(new_tokens),
+            frequency_penalty: None,
+            presence_penalty: None,
+            top_k: None,
+            top_p: None,
+            repetition_penalty: None,
+            min_p: None,
+            top_a: None,
+            seed: None,
+            logit_bias: None,
         };
 
         let request = Request::builder()
@@ -1011,6 +1365,7 @@ mod tests {
 
         // Verify changes in DB (assuming a helper exists)
         let db_settings = test_helpers::get_chat_session_settings(&context.app.db_pool, session.id).await.unwrap();
+        // Only check the first three fields
         assert_eq!(db_settings.0, Some(new_prompt.to_string()));
         assert_eq!(db_settings.1, Some(new_temp));
         assert_eq!(db_settings.2, Some(new_tokens));
@@ -1038,6 +1393,15 @@ mod tests {
             system_prompt: None, // Not updating prompt
             temperature: Some(new_temp.clone()),
             max_output_tokens: None, // Not updating tokens
+            frequency_penalty: None,
+            presence_penalty: None,
+            top_k: None,
+            top_p: None,
+            repetition_penalty: None,
+            min_p: None,
+            top_a: None,
+            seed: None,
+            logit_bias: None,
         };
 
         let request = Request::builder()
@@ -1053,6 +1417,7 @@ mod tests {
 
         // Verify changes in DB
         let db_settings = test_helpers::get_chat_session_settings(&context.app.db_pool, session.id).await.unwrap();
+        // Only check the first three fields
         assert_eq!(db_settings.0, Some("Initial Prompt".to_string())); // Should be unchanged
         assert_eq!(db_settings.1, Some(new_temp)); // Should be updated
         assert_eq!(db_settings.2, Some(256)); // Should be unchanged
@@ -1066,10 +1431,10 @@ mod tests {
         let session = test_helpers::create_test_chat_session(&context.app.db_pool, user.id, character.id).await;
 
         let invalid_payloads = vec![
-            UpdateChatSettingsRequest { system_prompt: None, temperature: Some(BigDecimal::from_str("-0.1").unwrap()), max_output_tokens: None }, // Invalid temp
-            UpdateChatSettingsRequest { system_prompt: None, temperature: Some(BigDecimal::from_str("2.1").unwrap()), max_output_tokens: None }, // Invalid temp
-            UpdateChatSettingsRequest { system_prompt: None, temperature: None, max_output_tokens: Some(0) }, // Invalid tokens
-            UpdateChatSettingsRequest { system_prompt: None, temperature: None, max_output_tokens: Some(-100) }, // Invalid tokens
+            UpdateChatSettingsRequest { system_prompt: None, temperature: Some(BigDecimal::from_str("-0.1").unwrap()), max_output_tokens: None, frequency_penalty: None, presence_penalty: None, top_k: None, top_p: None, repetition_penalty: None, min_p: None, top_a: None, seed: None, logit_bias: None }, // Invalid temp
+            UpdateChatSettingsRequest { system_prompt: None, temperature: Some(BigDecimal::from_str("2.1").unwrap()), max_output_tokens: None, frequency_penalty: None, presence_penalty: None, top_k: None, top_p: None, repetition_penalty: None, min_p: None, top_a: None, seed: None, logit_bias: None }, // Invalid temp
+            UpdateChatSettingsRequest { system_prompt: None, temperature: None, max_output_tokens: Some(0), frequency_penalty: None, presence_penalty: None, top_k: None, top_p: None, repetition_penalty: None, min_p: None, top_a: None, seed: None, logit_bias: None }, // Invalid tokens
+            UpdateChatSettingsRequest { system_prompt: None, temperature: None, max_output_tokens: Some(-100), frequency_penalty: None, presence_penalty: None, top_k: None, top_p: None, repetition_penalty: None, min_p: None, top_a: None, seed: None, logit_bias: None }, // Invalid tokens
         ];
 
         for payload in invalid_payloads {
@@ -1099,6 +1464,15 @@ mod tests {
             system_prompt: Some("Attempted Update".to_string()),
             temperature: None,
             max_output_tokens: None,
+            frequency_penalty: None,
+            presence_penalty: None,
+            top_k: None,
+            top_p: None,
+            repetition_penalty: None,
+            min_p: None,
+            top_a: None,
+            seed: None,
+            logit_bias: None,
         };
 
         let request = Request::builder()
@@ -1409,6 +1783,15 @@ mod tests {
             system_prompt: Some("Attempted Update".to_string()),
             temperature: None,
             max_output_tokens: None,
+            frequency_penalty: None,
+            presence_penalty: None,
+            top_k: None,
+            top_p: None,
+            repetition_penalty: None,
+            min_p: None,
+            top_a: None,
+            seed: None,
+            logit_bias: None,
         };
 
         let request = Request::builder()
@@ -1432,6 +1815,15 @@ mod tests {
             system_prompt: Some("Attempted Update".to_string()),
             temperature: None,
             max_output_tokens: None,
+            frequency_penalty: None,
+            presence_penalty: None,
+            top_k: None,
+            top_p: None,
+            repetition_penalty: None,
+            min_p: None,
+            top_a: None,
+            seed: None,
+            logit_bias: None,
         };
 
         let request = Request::builder()
