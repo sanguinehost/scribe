@@ -14,8 +14,6 @@ use tokio::task::JoinError;
 use bcrypt::BcryptError;
 use deadpool_diesel::InteractError; // Import InteractError
 
-const BCRYPT_COST: u32 = 12; // Standard bcrypt cost factor
-
 // Make AuthError enum public
 #[derive(Error, Debug)] // Removed Clone
 pub enum AuthError {

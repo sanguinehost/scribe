@@ -1,6 +1,6 @@
 // backend/src/errors.rs
 use axum::{
-    extract::multipart::MultipartError,
+    // extract::multipart::MultipartError, // Unused import
     http::StatusCode,
     response::{IntoResponse, Response},
     Json,
@@ -15,17 +15,17 @@ use crate::auth::user_store::Backend as AuthBackend;
 use crate::services::character_parser::ParserError as CharacterParserError; // Alias for clarity
 use anyhow::Error as AnyhowError;
 use bcrypt; // Use bcrypt directly
-use deadpool::managed::{BuildError as DeadpoolBuildError, PoolError as DeadpoolManagedPoolError};
-use deadpool_diesel::{PoolError as DeadpoolDieselPoolError, InteractError as DeadpoolInteractError};
+// use deadpool::managed::{BuildError as DeadpoolBuildError, PoolError as DeadpoolManagedPoolError}; // Unused imports
+use deadpool_diesel::{PoolError as DeadpoolDieselPoolError}; // Removed unused InteractError
 use diesel::result::Error as DieselError;
-use diesel_migrations::MigrationError as DieselMigrationError;
-use genai::Error as GenAIError; // Use the error type from the genai crate
-use image::ImageError;
-use reqwest::Error as ReqwestError;
-use reqwest_middleware::Error as ReqwestMiddlewareError;
-use std::num::ParseIntError;
-use tower_sessions::session_store::Error as SessionStoreError;
-use uuid::Error as UuidError;
+// use diesel_migrations::MigrationError as DieselMigrationError; // Unused import
+// use genai::Error as GenAIError; // Unused import
+// use image::ImageError; // Unused import
+// use reqwest::Error as ReqwestError; // Unused import
+// use reqwest_middleware::Error as ReqwestMiddlewareError; // Unused import
+// use std::num::ParseIntError; // Unused import
+// use tower_sessions::session_store::Error as SessionStoreError; // Unused import
+// use uuid::Error as UuidError; // Unused import
 
 // AppError should automatically be Send + Sync if all its fields are.
 // Remove Send and Sync from derive list.
@@ -89,7 +89,7 @@ pub enum AppError {
     FileUploadError(String), // Use String instead of MultipartError
 
     #[error("Character parsing error: {0}")]
-    CharacterParseError(String), // Use String instead of CharacterParserError
+    CharacterParseError(#[from] CharacterParserError),
 
     #[error("Invalid Input: {0}")]
     InvalidInput(String),
@@ -372,6 +372,7 @@ mod tests {
     use diesel::result::Error as DieselError; // Keep for test
     use anyhow::anyhow; // Keep for test
     use uuid::Uuid; // Add missing import
+    use crate::services::character_parser::ParserError as CharacterParserError; // Add this back
 
     // Helper to extract JSON body from response
     async fn get_body_json(response: Response) -> Value {
@@ -458,7 +459,7 @@ mod tests {
     #[tokio::test]
     async fn test_character_parse_error_response() {
         // Simulate a parser error
-        let inner_error = CharacterParserError::JsonError(serde_json::from_str::<Value>("{").unwrap_err());
+        let inner_error = CharacterParserError::JsonError(serde_json::from_str::<Value>("{").unwrap_err().to_string());
         let error = AppError::from(inner_error);
         let response = error.into_response();
 
@@ -545,6 +546,13 @@ mod tests {
             panic!("Expected InternalError variant");
         }
     }
+
+    #[test]
+    fn test_character_parse_error_display() {
+        let inner_error = CharacterParserError::JsonError(serde_json::from_str::<Value>("{").unwrap_err().to_string());
+        let app_error = AppError::CharacterParseError(inner_error);
+        assert!(app_error.to_string().contains("Character parsing error:"));
+    }
 }
 
 // Now add the From implementations to convert from actual errors to our string versions
@@ -605,12 +613,6 @@ impl From<diesel_migrations::MigrationError> for AppError {
 impl From<axum::extract::multipart::MultipartError> for AppError {
     fn from(err: axum::extract::multipart::MultipartError) -> Self {
         AppError::FileUploadError(err.to_string())
-    }
-}
-
-impl From<crate::services::character_parser::ParserError> for AppError {
-    fn from(err: crate::services::character_parser::ParserError) -> Self {
-        AppError::CharacterParseError(err.to_string())
     }
 }
 

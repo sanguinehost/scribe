@@ -16,6 +16,10 @@ mod user_store_tests {
     use diesel::prelude::*;
     use deadpool_diesel::postgres::Manager;
     use deadpool_diesel::Runtime;
+    use scribe_backend::test_helpers; // Use crate namespace for test helpers
+    use scribe_backend::auth::user_store::Backend as AuthBackend; // Use crate namespace and alias Backend
+    use scribe_backend::schema;
+    use uuid::Uuid; // Added import for Uuid
 
     // Placeholder function to simulate getting the pool (replace with actual import later)
     fn get_test_pool() -> Result<DbPool, Box<dyn std::error::Error>> {
@@ -212,38 +216,43 @@ mod user_store_tests {
     #[tokio::test]
     async fn test_verify_credentials() -> Result<(), Box<dyn std::error::Error>> {
         let pool = get_test_pool()?;
+        let auth_backend = AuthBackend::new(pool.clone());
+        let username = format!("verify_user_{}", Uuid::new_v4());
+        let password = "test_password".to_string();
+
+        // 1. Hash the password first
+        let password_secret_plain = secrecy::Secret::new(password.clone());
+        let hashed_password_string = scribe_backend::auth::hash_password(password_secret_plain.clone()).await?;
+        let hashed_password_secret = secrecy::Secret::new(hashed_password_string); // Wrap the hash in Secret for create_user
         
-        // 1. Create a user
-        let username = format!("testverify_{}", uuid::Uuid::new_v4().to_string().split('-').next().unwrap());
-        let password = "password123".to_string();
-        let password_secret = secrecy::Secret::new(password.clone());
-        
+        // 2. Create user using the HASHED password
         let obj = pool.get().await.map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
         let username_clone = username.clone();
-        let password_clone = password_secret.clone();
+        // Pass the SECRET containing the HASH to create_user
         let create_result = obj.interact(move |conn| {
-            scribe_backend::auth::create_user(conn, username_clone, password_clone)
+            scribe_backend::auth::create_user(conn, username_clone, hashed_password_secret)
         }).await
         .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
         
         let created_user = create_result.map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
         
-        // 2. Call verify_credentials with correct username/password
+        // 3. Call verify_credentials with correct username/PLAIN password
         let obj2 = pool.get().await.map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
         let username_clone2 = username.clone();
-        let correct_password = secrecy::Secret::new(password.clone());
+        // Pass the SECRET containing the PLAIN password to verify_credentials
+        let correct_password_plain = secrecy::Secret::new(password.clone()); 
         let verify_correct_result = obj2.interact(move |conn| {
-            scribe_backend::auth::verify_credentials(conn, &username_clone2, correct_password)
+            scribe_backend::auth::verify_credentials(conn, &username_clone2, correct_password_plain)
         }).await
         .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
         
-        // 3. Assert Ok(user)
+        // 4. Assert Ok(user)
         assert!(verify_correct_result.is_ok(), "Verify with correct credentials failed: {:?}", verify_correct_result.err());
         let verified_user = verify_correct_result.unwrap();
         assert_eq!(verified_user.id, created_user.id);
         assert_eq!(verified_user.username, username);
         
-        // 4. Call verify_credentials with correct username/incorrect password
+        // 5. Call verify_credentials with correct username/incorrect PLAIN password
         let obj3 = pool.get().await.map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
         let username_clone3 = username.clone();
         let incorrect_password = secrecy::Secret::new("wrong_password".to_string());
@@ -252,11 +261,11 @@ mod user_store_tests {
         }).await
         .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
         
-        // 5. Assert Err(WrongCredentials)
+        // 6. Assert Err(WrongCredentials)
         assert!(matches!(verify_wrong_pass_result, Err(scribe_backend::auth::AuthError::WrongCredentials)), 
             "Expected WrongCredentials error for incorrect password, got: {:?}", verify_wrong_pass_result);
         
-        // 6. Call verify_credentials with incorrect username
+        // 7. Call verify_credentials with incorrect username
         let obj4 = pool.get().await.map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
         let nonexistent_username = "nonexistent_user".to_string();
         let some_password = secrecy::Secret::new("some_password".to_string());
@@ -265,10 +274,17 @@ mod user_store_tests {
         }).await
         .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
         
-        // 7. Assert Err(UserNotFound)
+        // 8. Assert Err(UserNotFound)
         assert!(matches!(verify_wrong_user_result, Err(scribe_backend::auth::AuthError::UserNotFound)), 
             "Expected UserNotFound error for non-existent user, got: {:?}", verify_wrong_user_result);
         
+        // Cleanup: Delete the created user
+        let user_id_to_delete = created_user.id;
+        let obj_cleanup = pool.get().await.map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
+        obj_cleanup.interact(move |conn| {
+             diesel::delete(scribe_backend::schema::users::table.find(user_id_to_delete)).execute(conn)
+        }).await.map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
+
         Ok(())
     }
 } 

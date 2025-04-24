@@ -155,14 +155,14 @@ pub struct DbInsertableChatMessage {
 impl DbInsertableChatMessage {
     pub fn new(
         chat_id: Uuid,
-        user_id: Option<Uuid>, // Keep this parameter for backward compatibility
+        _user_id: Option<Uuid>, // Keep this parameter for backward compatibility
         role: MessageRole,
-        content: String,
+        text: String,
     ) -> Self {
         Self {
             chat_id,
             role,
-            content,
+            content: text,
         }
     }
 }

@@ -15,7 +15,7 @@ use serde_json::json;
 use std::fs;
 use std::path::Path;
 use uuid::Uuid;
-use futures_util::{Stream, StreamExt, TryStreamExt}; // Added Stream, StreamExt, TryStreamExt
+use futures_util::{Stream, StreamExt}; // Removed StreamExt, TryStreamExt // Add StreamExt back
 use reqwest_eventsource::{Event, EventSource}; // Added Event, EventSource
 use std::pin::Pin; // Added Pin
 

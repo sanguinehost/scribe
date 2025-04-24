@@ -36,7 +36,7 @@ use diesel::prelude::*;
 use diesel::RunQueryDsl;
 use diesel::SelectableHelper;
 use diesel_migrations::{embed_migrations, EmbeddedMigrations, MigrationHarness};
-use dotenvy::{dotenv, var};
+use dotenvy::{dotenv}; // Removed var
 use std::env;
 use std::net::TcpListener;
 use std::sync::Arc;
@@ -51,16 +51,16 @@ use genai::ModelIden;
 use genai::adapter::AdapterKind;
 use genai::chat::{ChatOptions, ChatRequest, ChatResponse, MessageContent, Usage};
 use bigdecimal::BigDecimal;
-use chrono::{DateTime, Utc};
+// use chrono::{DateTime, Utc}; // Unused imports
 use serde_json::Value;
 use crate::llm::{AiClient, ChatStream, ChatStreamItem}; // Add ChatStream, ChatStreamItem
 use crate::errors::AppError;
-use futures::stream::{self, StreamExt}; // Add stream
-use std::pin::Pin;
+use futures::stream::{self}; // Removed StreamExt, Add stream
+// use std::pin::Pin; // Unused import
 use genai::chat::{ChatStreamEvent, StreamChunk}; // Add import for chatstream types
-use std::path::PathBuf;
-use axum::extract::FromRef;
-use axum_login::{AuthUser};
+// use std::path::PathBuf; // Unused import
+// use axum::extract::FromRef; // Unused import
+// use axum_login::{AuthUser}; // Unused import
 
 // Define the embedded migrations macro
 // Ensure this path is correct relative to the crate root (src)
@@ -349,9 +349,9 @@ pub async fn create_test_chat_message(
 pub async fn update_test_chat_settings(
     pool: &PgPool,
     session_id: Uuid,
-    system_prompt: Option<String>,
-    temperature: Option<BigDecimal>, // Changed f32 to BigDecimal
-    max_output_tokens: Option<i32>,
+    _system_prompt: Option<String>, // Prefixed unused variable
+    _temperature: Option<BigDecimal>, // Prefixed unused variable, Changed f32 to BigDecimal
+    _max_output_tokens: Option<i32>, // Prefixed unused variable
 ) {
     use crate::schema::chat_sessions::dsl::*;
     use diesel::dsl::now;
@@ -380,18 +380,18 @@ pub async fn update_test_chat_settings(
 pub async fn update_all_chat_settings(
     pool: &PgPool,
     session_id: Uuid,
-    system_prompt: Option<String>,
-    temperature: Option<BigDecimal>,
-    max_output_tokens: Option<i32>,
-    frequency_penalty: Option<BigDecimal>,
-    presence_penalty: Option<BigDecimal>,
-    top_k: Option<i32>,
-    top_p: Option<BigDecimal>,
-    repetition_penalty: Option<BigDecimal>,
-    min_p: Option<BigDecimal>,
-    top_a: Option<BigDecimal>,
-    seed: Option<i32>,
-    logit_bias: Option<Value>,
+    _system_prompt: Option<String>, // Prefixed unused variable
+    _temperature: Option<BigDecimal>, // Prefixed unused variable
+    _max_output_tokens: Option<i32>, // Prefixed unused variable
+    _frequency_penalty: Option<BigDecimal>, // Prefixed unused variable
+    _presence_penalty: Option<BigDecimal>, // Prefixed unused variable
+    _top_k: Option<i32>, // Prefixed unused variable
+    _top_p: Option<BigDecimal>, // Prefixed unused variable
+    _repetition_penalty: Option<BigDecimal>, // Prefixed unused variable
+    _min_p: Option<BigDecimal>, // Prefixed unused variable
+    _top_a: Option<BigDecimal>, // Prefixed unused variable
+    _seed: Option<i32>, // Prefixed unused variable
+    _logit_bias: Option<Value>, // Prefixed unused variable
 ) {
     use crate::schema::chat_sessions::dsl::*;
     use diesel::dsl::now;
@@ -426,7 +426,7 @@ pub async fn update_all_chat_settings(
 }
 
 /// Helper to get messages directly from DB for a specific session.
-pub async fn get_chat_messages_from_db(pool: &PgPool, session_id: Uuid) -> Vec<ChatMessage> {
+pub async fn get_chat_messages_from_db(pool: &PgPool, _session_id: Uuid) -> Vec<ChatMessage> { // Prefixed unused variable
     // Imports needed within this function scope
     use crate::schema::chat_messages::dsl::*;
     use crate::models::chats::ChatMessage; // Ensure ChatMessage model is in scope

@@ -11,18 +11,18 @@ use zip::ZipArchive;
 use zip::result::ZipError; // Added for CHARX parsing // Added for CHARX parsing
 
 // Define potential errors for the parser
-#[derive(Debug, Error)] // Use the imported derive macro
+#[derive(Debug, Error, Clone)] // Use the imported derive macro, Add Clone
 pub enum ParserError {
     #[error("I/O Error reading PNG data: {0}")]
-    IoError(#[from] std::io::Error),
+    IoError(String), // Store as String
     #[error("PNG decoding error: {0}")]
-    PngError(#[from] png::DecodingError),
+    PngError(String), // Store as String
     #[error("Character data chunk ('chara', 'tEXtchara', or 'ccv3') not found in PNG.")]
     ChunkNotFound,
     #[error("Base64 decoding error: {0}")]
-    Base64Error(#[from] base64::DecodeError),
+    Base64Error(String), // Store as String
     #[error("JSON deserialization error: {0}")]
-    JsonError(#[from] serde_json::Error),
+    JsonError(String), // Store as String
     #[error("Unsupported character card format: {0}")]
     UnsupportedFormat(String),
     #[error("Invalid tEXt chunk format for 'chara'.")]
@@ -30,9 +30,40 @@ pub enum ParserError {
     #[error("Invalid spec field in ccv3 chunk: expected 'chara_card_v3', found '{0}'")]
     InvalidSpecField(String),
     #[error("CHARX (Zip) processing error: {0}")]
-    ZipError(#[from] ZipError),
+    ZipError(String), // Store as String
     #[error("Required 'card.json' not found in CHARX archive.")]
     CharxCardJsonNotFound,
+}
+
+// Manually implement From for non-Clone error types
+impl From<std::io::Error> for ParserError {
+    fn from(err: std::io::Error) -> Self {
+        ParserError::IoError(err.to_string())
+    }
+}
+
+impl From<png::DecodingError> for ParserError {
+    fn from(err: png::DecodingError) -> Self {
+        ParserError::PngError(err.to_string())
+    }
+}
+
+impl From<base64::DecodeError> for ParserError {
+    fn from(err: base64::DecodeError) -> Self {
+        ParserError::Base64Error(err.to_string())
+    }
+}
+
+impl From<serde_json::Error> for ParserError {
+    fn from(err: serde_json::Error) -> Self {
+        ParserError::JsonError(err.to_string())
+    }
+}
+
+impl From<ZipError> for ParserError {
+    fn from(err: ZipError) -> Self {
+        ParserError::ZipError(err.to_string())
+    }
 }
 
 // Define the structure to represent the parsed result
@@ -178,13 +209,13 @@ pub fn parse_character_card_png(png_data: &[u8]) -> Result<ParsedCharacterCard, 
                     }
                     Err(e) => {
                         // If 'chara' JSON parsing fails, this is a hard error for the fallback
-                        return Err(ParserError::JsonError(e));
+                        return Err(ParserError::JsonError(e.to_string()));
                     }
                 }
             }
             Err(e) => {
                 // If 'chara' base64 decoding fails, this is a hard error for the fallback
-                return Err(ParserError::Base64Error(e));
+                return Err(ParserError::Base64Error(e.to_string()));
             }
         }
     }
@@ -243,7 +274,7 @@ pub fn parse_character_card_json(json_data: &[u8]) -> Result<ParsedCharacterCard
         }
         Err(e) => {
             // If it doesn't parse as V3, it's an error for JSON format
-            Err(ParserError::JsonError(e))
+            Err(ParserError::JsonError(e.to_string()))
         }
     }
 }
@@ -262,7 +293,7 @@ pub fn parse_character_card_charx<R: Read + Seek>(
         // Return the specific error type
         match e {
             ZipError::FileNotFound => ParserError::CharxCardJsonNotFound,
-            other_zip_error => ParserError::ZipError(other_zip_error),
+            other_zip_error => ParserError::ZipError(other_zip_error.to_string()),
         }
     })?;
 
@@ -307,7 +338,7 @@ pub fn parse_character_card_charx<R: Read + Seek>(
         }
         Err(e) => {
             // If card.json doesn't parse as V3, it's an error
-            Err(ParserError::JsonError(e))
+            Err(ParserError::JsonError(e.to_string()))
         }
     }
 }

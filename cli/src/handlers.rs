@@ -3,13 +3,13 @@ use crate::error::CliError;
 use crate::io::IoHandler;
 use crate::chat::run_chat_loop; // Import the chat loop function
 use crate::chat::run_stream_test_loop; // Import the stream test loop function
-
 use scribe_backend::models::auth::Credentials;
 use scribe_backend::models::characters::CharacterMetadata;
 use scribe_backend::models::chats::{MessageRole}; // Keep this minimal for main code
 use scribe_backend::models::users::User;
 use uuid::Uuid;
 use std::path::Path; // Added Path for file existence check
+use futures_util::Stream;
 
 // --- Action Functions ---
 
@@ -434,7 +434,6 @@ mod tests {
     use crate::client::{HttpClient, HealthStatus, StreamEvent}; // Added StreamEvent
     use crate::error::CliError; // Need base CliError
     use crate::io::IoHandler; // Need IoHandler trait
-    use futures_util::stream::{self, Stream}; // Added stream and Stream
     use std::pin::Pin; // Added Pin
     use scribe_backend::models::auth::Credentials;
     use scribe_backend::models::characters::CharacterMetadata;
@@ -718,7 +717,7 @@ mod tests {
             // If a specific test needs a stream, it can configure a dedicated mock field.
              Err(CliError::Internal("MockHttpClient: stream_chat_response not implemented/configured".into()))
             // Or return an empty stream:
-            // Ok(Box::pin(stream::empty()))
+            // Ok(Box::pin(futures_util::stream::empty())) // Use futures_util::stream::empty
         }
      }
  
@@ -782,18 +781,6 @@ mod tests {
             content: content.to_string(),
             created_at: Utc::now(),
             // removed metadata, token_count
-        }
-    }
-
-    fn dummy_char_metadata(id: Uuid, name: &str) -> CharacterMetadata {
-        CharacterMetadata {
-            id,
-            user_id: Uuid::nil(), // Doesn't matter for this mock
-            name: name.to_string(),
-            description: Some(format!("Description for {}", name)),
-            first_mes: None, // Add missing field
-            created_at: Utc::now(),
-            updated_at: Utc::now(),
         }
     }
 

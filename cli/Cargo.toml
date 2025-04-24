@@ -24,6 +24,8 @@ reqwest-eventsource = "0.6.0"
 futures-util = { version = "0.3", features = ["sink"] } # For StreamExt
 
 async-stream = "0.3" # For creating streams
+tokio-stream = "0.1" # Removed incorrect features
+
 [dev-dependencies]
 # Add dev dependencies if needed for CLI-specific tests
 tempfile = "3.19.1"

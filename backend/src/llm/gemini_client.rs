@@ -1,15 +1,15 @@
 use async_trait::async_trait;
 use genai::{
-    chat::{ChatMessage, ChatOptions, ChatRequest, ChatResponse, ChatStreamEvent}, // Add ChatStreamEvent
+    chat::{ChatMessage, ChatOptions, ChatRequest, ChatResponse},
     Client, ClientBuilder,
 };
 use std::sync::Arc; // Added Arc
-use futures::{StreamExt, TryStreamExt}; // For stream mapping
-use std::pin::Pin;
-use futures::stream::Stream;
+use futures::{StreamExt}; // Removed TryStreamExt, For stream mapping
+// use std::pin::Pin; // Unused import
+// use futures::stream::Stream; // Unused import
 
 use crate::errors::AppError;
-use super::{AiClient, ChatStream, ChatStreamItem}; // Import the trait and types from the parent module
+use super::{AiClient, ChatStream}; // Removed ChatStreamItem, Import the trait and types from the parent module
 
 /// Wrapper struct around the genai::Client to implement our AiClient trait.
 pub struct ScribeGeminiClient {
@@ -124,7 +124,7 @@ pub async fn generate_simple_response(
 mod tests {
     use super::*;
     use dotenvy::dotenv;
-    // Removed unused: use crate::llm::AiClient;
+    use genai::chat::ChatStreamEvent;
 
     // Test if the client wrapper can be built successfully
     #[tokio::test]
