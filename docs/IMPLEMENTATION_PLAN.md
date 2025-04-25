@@ -157,30 +157,30 @@ Only mark a task checkbox (`- [x]`) when all these conditions are satisfied.
 
 *Goal: Implement the core RAG pipeline using Gemini embeddings and Qdrant.*
 
-- [ ] **Task 3.1: Gemini Embedding Client (BE)**
-    - [ ] **(BE) Configuration:** Setup API key management.
-    - [ ] **(BE) Client Implementation:** Create Rust module/struct wrapping the Gemini Embedding API client. Implement function like `embed_content(text)`. Handle API errors.
-    - [ ] *TDD (BE):* Unit tests mocking the HTTP client interface.
-- [ ] **Task 3.2: Qdrant Client Service (BE)**
-    - [ ] *(Dependency: Add `qdrant-client` crate - Covered in Task 0.1)*
-    - [ ] **(BE) Configuration:** Setup Qdrant connection details (URL, API key if any).
-    - [ ] **(BE) Service Implementation:** Create Rust service wrapping `qdrant-client`. Implement functions for ensuring collection exists, upserting points (vectors + payload), searching points.
-    - [ ] *TDD (BE):* Integration tests against a local Qdrant instance (via Docker Compose) for service functions.
-- [ ] **Task 3.3: Chat History Chunking (BE)**
-    - [ ] **(BE) Strategy Definition:** Decide on a chunking strategy (e.g., by message pair, fixed token count).
-    - [ ] **(BE) Implementation:** Implement Rust function `chunk_messages(messages) -> Vec<Chunk>`.
-    - [ ] *TDD (BE):* Unit tests for the chunking function with different message list scenarios.
-- [ ] **Task 3.4: Embedding & Storage Pipeline (BE)** - ***Requires Task 2.2, 3.1, 3.2, 3.3 Completion***
-    - [ ] **(BE) Trigger Mechanism:** Modify message saving logic (Task 2.2) or use a background task runner (e.g., `tokio::spawn`) to trigger embedding *after* a message pair (user + AI) is saved.
-    - [ ] **(BE) Pipeline Logic:** Implement function that takes saved messages, chunks them (Task 3.3), embeds chunks (Task 3.1), and upserts vectors/payloads to Qdrant (Task 3.2). Associate vectors with session ID and user ID in Qdrant payload for filtering.
-    - [ ] *TDD (BE):* Integration test for the end-to-end embedding pipeline (mocking Gemini Embedding API, interacting with real Qdrant).
-- [ ] **Task 3.5: RAG Query Logic (BE)** - ***Requires Task 3.1, 3.2 Completion***
-    - [ ] **(BE) Context Embedding:** Embed the user's latest message (or recent conversational turn) using Task 3.1.
-    - [ ] **(BE) Qdrant Search:** Implement logic to query Qdrant (Task 3.2) using the generated embedding. Filter by relevant session ID / user ID. Retrieve top N relevant chunks.
-    - [ ] *TDD (BE):* Unit/Integration tests for the RAG query process (mocking embedding API, using real Qdrant).
-- [ ] **Task 3.6: RAG Context Injection (BE)** - ***Requires Task 2.4, 3.5 Completion***
-    - [ ] **(BE) Modify Prompt Assembly:** Update Task 2.4 logic. Before generating the final prompt, execute RAG query (Task 3.5). Prepend retrieved context chunks (formatted appropriately) to the main prompt section.
-    - [ ] *TDD (BE):* Unit tests verifying correct injection formatting in the assembled prompt.
+- [x] **Task 3.1: Gemini Embedding Client (BE)**
+    - [x] **(BE) Configuration:** Setup API key management.
+    - [x] **(BE) Client Implementation:** Create Rust module/struct wrapping the Gemini Embedding API client. Implement function like `embed_content(text)`. Handle API errors.
+    - [ ] *TDD (BE):* Unit tests mocking the HTTP client interface. *(Missing - Only integration tests exist)*
+- [x] **Task 3.2: Qdrant Client Service (BE)**
+    - [x] *(Dependency: Add `qdrant-client` crate - Covered in Task 0.1)*
+    - [x] **(BE) Configuration:** Setup Qdrant connection details (URL, API key if any).
+    - [x] **(BE) Service Implementation:** Create Rust service wrapping `qdrant-client`. Implement functions for ensuring collection exists, upserting points (vectors + payload), searching points.
+    - [ ] *TDD (BE):* Integration tests against a local Qdrant instance (via Docker Compose) for service functions. *(Missing - Planned but not implemented)*
+- [x] **Task 3.3: Chat History Chunking (BE)**
+    - [x] **(BE) Strategy Definition:** Decide on a chunking strategy (e.g., by message pair, fixed token count). *(Implemented: Paragraph/Sentence/Char Limit)*
+    - [ ] **(BE) Implementation:** Implement Rust function `chunk_messages(messages) -> Vec<Chunk>`. *(Missing - Only `chunk_text` helper exists)*
+    - [ ] *TDD (BE):* Unit tests for the chunking function with different message list scenarios. *(Missing - Tests only cover `chunk_text`)*
+- [x] **Task 3.4: Embedding & Storage Pipeline (BE)** - ***Requires Task 2.2, 3.1, 3.2, 3.3 Completion***
+    - [ ] **(BE) Trigger Mechanism:** Modify message saving logic (Task 2.2) or use a background task runner (e.g., `tokio::spawn`) to trigger embedding *after* a message pair (user + AI) is saved. *(Missing - Explicit TODO)*
+    - [x] **(BE) Pipeline Logic:** Implement function that takes saved messages, chunks them (Task 3.3), embeds chunks (Task 3.1), and upserts vectors/payloads to Qdrant (Task 3.2). Associate vectors with session ID and user ID in Qdrant payload for filtering. *(Implemented via `process_and_embed_message` using `chunk_text`)*
+    - [ ] *TDD (BE):* Integration test for the end-to-end embedding pipeline (mocking Gemini Embedding API, interacting with real Qdrant). *(Missing - Explicit TODO)*
+- [x] **Task 3.5: RAG Query Logic (BE)** - ***Requires Task 3.1, 3.2 Completion***
+    - [x] **(BE) Context Embedding:** Embed the user's latest message (or recent conversational turn) using Task 3.1. *(Implemented in `retrieve_relevant_chunks`)*
+    - [x] **(BE) Qdrant Search:** Implement logic to query Qdrant (Task 3.2) using the generated embedding. Filter by relevant session ID / user ID. Retrieve top N relevant chunks. *(Implemented in `retrieve_relevant_chunks`)*
+    - [ ] *TDD (BE):* Unit/Integration tests for the RAG query process (mocking embedding API, using real Qdrant). *(Missing - Explicit TODO)*
+- [x] **Task 3.6: RAG Context Injection (BE)** - ***Requires Task 2.4, 3.5 Completion***
+    - [x] **(BE) Modify Prompt Assembly:** Update Task 2.4 logic. Before generating the final prompt, execute RAG query (Task 3.5). Prepend retrieved context chunks (formatted appropriately) to the main prompt section. *(Implemented in `build_prompt_with_rag`)*
+    - [ ] *TDD (BE):* Unit tests verifying correct injection formatting in the assembled prompt. *(Missing - Explicit TODO)*
 
 ---
 

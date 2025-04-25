@@ -102,6 +102,7 @@ rstest = "0.25.0"
 # Testing utilities
 httpc-test = "0.1.10" # For testing axum handlers
 mockito = "1.7.0"
+httpmock = "0.7.0" # For mocking HTTP requests
 
 # Specify the library target explicitly
 [lib]

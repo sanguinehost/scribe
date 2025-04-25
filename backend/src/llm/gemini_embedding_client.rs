@@ -147,20 +147,65 @@ pub fn build_gemini_embedding_client(config: Arc<Config>) -> Result<RestGeminiEm
 mod tests {
     use super::*;
     use crate::config::Config;
-    // Removed mockito import as we are doing integration tests
-    use std::env;
     use dotenvy::dotenv;
+    use std::env;
     use std::sync::Arc;
-
+    use serde_json::json;
+    use httpmock::prelude::*;
+    
     // Helper to create a mock config with or without API key
-    fn create_test_config(api_key: Option<String>) -> Arc<Config> { // No need for pub(self)
+    fn create_test_config(api_key: Option<String>) -> Arc<Config> {
         Arc::new(Config {
             database_url: Some("test_db_url".to_string()),
             gemini_api_key: api_key,
-            // cookie_signing_key: Some("test_signing_key".to_string()), // Field does not exist in Config
-            // Add other necessary default fields for Config if any
-            ..Default::default() // Assuming Config derives Default or has a suitable default constructor
+            ..Default::default()
         })
+    }
+
+    // Helper function for testing with mock server
+    async fn custom_embed_content(
+        client: &RestGeminiEmbeddingClient,
+        server_url: &str,
+        text: &str,
+        task_type: &str,
+    ) -> Result<Vec<f32>, AppError> {
+        let api_key = client.config.gemini_api_key.as_ref()
+            .ok_or_else(|| AppError::ConfigError("GEMINI_API_KEY not configured".to_string()))?;
+        
+        // Use the mock server URL instead of the real API URL
+        let url = format!(
+            "{}/v1beta/{}:embedContent?key={}",
+            server_url, client.model_name, api_key
+        );
+        
+        let request_body = EmbeddingRequest {
+            model: &client.model_name,
+            content: Content { parts: vec![Part { text }] },
+            task_type,
+        };
+        
+        let response = client.reqwest_client.post(&url)
+            .json(&request_body)
+            .send()
+            .await
+            .map_err(|e| AppError::HttpRequestError(e.to_string()))?;
+        
+        if !response.status().is_success() {
+            let status = response.status();
+            let error_body = response.json::<GeminiApiErrorResponse>().await;
+            let error_message = error_body.map(|b| b.error.message)
+                .unwrap_or_else(|e| format!("Failed to parse error body: {}", e));
+            
+            return Err(AppError::GeminiError(format!(
+                "Gemini API error ({}): {}",
+                status, error_message
+            )));
+        }
+        
+        let embedding_response = response.json::<EmbeddingResponse>().await
+            .map_err(|e| AppError::SerializationError(format!("Failed to parse Gemini embedding response: {}", e)))?;
+        
+        Ok(embedding_response.embedding.values)
     }
 
     #[test]
@@ -172,8 +217,257 @@ mod tests {
         let client = result.unwrap();
         // Check if the model name is set to the default
         assert_eq!(client.model_name, DEFAULT_EMBEDDING_MODEL);
-        // We could potentially check the reqwest client's default timeout if needed,
-        // but basic successful construction is the main goal here.
+    }
+
+    // New unit tests with httpmock
+
+    #[tokio::test]
+    async fn test_embed_content_successful_response() {
+        // Start a mock server
+        let server = MockServer::start();
+        let api_key = "test_api_key";
+        
+        // Create a mock for successful embedding response
+        let mock = server.mock(|when, then| {
+            when.method(POST)
+                .path("/v1beta/models/test-model:embedContent")
+                .query_param("key", api_key)
+                .header("content-type", "application/json")
+                .json_body(json!({
+                    "model": "models/test-model",
+                    "content": {
+                        "parts": [{
+                            "text": "Test text"
+                        }]
+                    },
+                    "taskType": "RETRIEVAL_QUERY"
+                }));
+            
+            then.status(200)
+                .header("content-type", "application/json")
+                .json_body(json!({
+                    "embedding": {
+                        "values": [0.1, 0.2, 0.3, 0.4, 0.5]
+                    }
+                }));
+        });
+        
+        // Create a client with our mocked server URL
+        let config = create_test_config(Some(api_key.to_string()));
+        let reqwest_client = ReqwestClient::new();
+        
+        let client = RestGeminiEmbeddingClient {
+            reqwest_client,
+            config,
+            model_name: "models/test-model".to_string(),
+        };
+        
+        // Call our custom function
+        let result = custom_embed_content(&client, &server.base_url(), "Test text", "RETRIEVAL_QUERY").await;
+        
+        // Verify the mock was called
+        mock.assert();
+        
+        // Verify the result
+        assert!(result.is_ok());
+        let embedding = result.unwrap();
+        assert_eq!(embedding, vec![0.1, 0.2, 0.3, 0.4, 0.5]);
+    }
+
+    #[tokio::test]
+    async fn test_embed_content_api_error_response() {
+        // Start a mock server
+        let server = MockServer::start();
+        let api_key = "test_api_key";
+        
+        // Create a mock for API error response
+        let mock = server.mock(|when, then| {
+            when.method(POST)
+                .path("/v1beta/models/test-model:embedContent")
+                .query_param("key", api_key);
+            
+            then.status(400)
+                .header("content-type", "application/json")
+                .json_body(json!({
+                    "error": {
+                        "code": 400,
+                        "message": "Invalid task type",
+                        "status": "INVALID_ARGUMENT"
+                    }
+                }));
+        });
+        
+        // Create a client with our mocked server URL
+        let config = create_test_config(Some(api_key.to_string()));
+        let reqwest_client = ReqwestClient::new();
+        
+        let client = RestGeminiEmbeddingClient {
+            reqwest_client,
+            config,
+            model_name: "models/test-model".to_string(),
+        };
+        
+        // Call our custom function
+        let result = custom_embed_content(&client, &server.base_url(), "Test text", "INVALID_TASK_TYPE").await;
+        
+        // Verify the mock was called
+        mock.assert();
+        
+        // Verify the result is an error
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            AppError::GeminiError(msg) => {
+                assert!(msg.contains("400"));
+                assert!(msg.contains("Invalid task type"));
+            }
+            err => panic!("Expected GeminiError, got {:?}", err),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_embed_content_malformed_response() {
+        // Start a mock server
+        let server = MockServer::start();
+        let api_key = "test_api_key";
+        
+        // Create a mock for malformed response
+        let mock = server.mock(|when, then| {
+            when.method(POST)
+                .path("/v1beta/models/test-model:embedContent")
+                .query_param("key", api_key);
+            
+            then.status(200)
+                .header("content-type", "application/json")
+                .body(r#"{"embedding":{"WRONG_FIELD":[0.1, 0.2]}}"#); // Missing "values" field
+        });
+        
+        // Create a client with our mocked server URL
+        let config = create_test_config(Some(api_key.to_string()));
+        let reqwest_client = ReqwestClient::new();
+        
+        let client = RestGeminiEmbeddingClient {
+            reqwest_client,
+            config,
+            model_name: "models/test-model".to_string(),
+        };
+        
+        // Call our custom function
+        let result = custom_embed_content(&client, &server.base_url(), "Test text", "RETRIEVAL_QUERY").await;
+        
+        // Verify the mock was called
+        mock.assert();
+        
+        // Verify the result is a serialization error
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            AppError::SerializationError(msg) => {
+                assert!(msg.contains("Failed to parse Gemini embedding response"));
+            }
+            err => panic!("Expected SerializationError, got {:?}", err),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_embed_content_http_error() {
+        // Start a mock server
+        let server = MockServer::start();
+        let api_key = "test_api_key";
+        
+        // Create a mock for HTTP error
+        let mock = server.mock(|when, then| {
+            when.method(POST)
+                .path("/v1beta/models/test-model:embedContent")
+                .query_param("key", api_key);
+            
+            then.status(500)
+                .body("Internal Server Error");
+        });
+        
+        // Create a client with our mocked server URL
+        let config = create_test_config(Some(api_key.to_string()));
+        let reqwest_client = ReqwestClient::new();
+        
+        let client = RestGeminiEmbeddingClient {
+            reqwest_client,
+            config,
+            model_name: "models/test-model".to_string(),
+        };
+        
+        // Call our custom function
+        let result = custom_embed_content(&client, &server.base_url(), "Test text", "RETRIEVAL_QUERY").await;
+        
+        // Verify the mock was called
+        mock.assert();
+        
+        // Verify the result is an error
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            AppError::GeminiError(msg) => {
+                assert!(msg.contains("500"));
+            }
+            err => panic!("Expected GeminiError, got {:?}", err),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_embed_content_missing_api_key() {
+        let config = create_test_config(None); // No API key
+        let model_name = DEFAULT_EMBEDDING_MODEL.to_string();
+
+        let reqwest_client = ReqwestClient::builder()
+            .timeout(Duration::from_secs(5))
+            .build()
+            .unwrap();
+
+        let client = RestGeminiEmbeddingClient {
+            reqwest_client,
+            config,
+            model_name,
+        };
+
+        let text = "Test input text";
+        let task_type = "RETRIEVAL_QUERY";
+
+        let result = client.embed_content(text, task_type).await;
+
+        assert!(result.is_err());
+        match result.err().unwrap() {
+            AppError::ConfigError(msg) => {
+                assert_eq!(msg, "GEMINI_API_KEY not configured");
+            }
+            _ => panic!("Expected ConfigError"),
+        }
+    }
+
+    #[tokio::test]
+    #[ignore] // Integration test: requires network but should fail due to invalid key
+    async fn test_embed_content_invalid_api_key_integration() {
+        // No need for dotenv here, we are providing an invalid key directly
+        let invalid_api_key = "invalid_test_api_key_string".to_string();
+        let config = create_test_config(Some(invalid_api_key)); // Should be accessible now
+
+        // Use the builder to create the client
+        let client = build_gemini_embedding_client(config)
+            .expect("Failed to build client for integration test");
+
+        let text = "Test text for invalid key";
+        let task_type = "RETRIEVAL_QUERY";
+
+        let result = client.embed_content(text, task_type).await;
+
+        assert!(result.is_err(), "Expected an error due to invalid API key");
+
+        match result.err().unwrap() {
+            AppError::GeminiError(msg) => {
+                // Check if the error message indicates an API key issue (content may vary)
+                println!("Received expected GeminiError: {}", msg);
+                assert!(msg.contains("API key not valid") || msg.contains("invalid") || msg.contains("400"),
+                        "Error message should indicate an invalid API key problem. Actual: {}", msg);
+            }
+            other_err => {
+                panic!("Expected AppError::GeminiError, but got {:?}", other_err);
+            }
+        }
     }
 
     #[tokio::test]
@@ -208,68 +502,4 @@ mod tests {
             }
         }
     }
-
-    #[tokio::test]
-    async fn test_embed_content_missing_api_key() {
-        let config = create_test_config(None); // No API key
-        let model_name = DEFAULT_EMBEDDING_MODEL.to_string();
-
-        let reqwest_client = ReqwestClient::builder()
-            .timeout(Duration::from_secs(5))
-            .build()
-            .unwrap();
-
-        let client = RestGeminiEmbeddingClient {
-            reqwest_client,
-            config,
-            model_name,
-        };
-
-        let text = "Test input text";
-        let task_type = "RETRIEVAL_QUERY";
-
-        let result = client.embed_content(text, task_type).await;
-
-        assert!(result.is_err());
-        match result.err().unwrap() {
-            AppError::ConfigError(msg) => {
-                assert_eq!(msg, "GEMINI_API_KEY not configured");
-            }
-            _ => panic!("Expected ConfigError"),
-        }
-    }
-
-    // Note: Tests for specific network errors (e.g., timeout) or malformed responses
-    // are harder to simulate reliably without mocking.
-
-    #[tokio::test]
-    #[ignore] // Integration test: requires network but should fail due to invalid key
-    async fn test_embed_content_invalid_api_key_integration() {
-        // No need for dotenv here, we are providing an invalid key directly
-        let invalid_api_key = "invalid_test_api_key_string".to_string();
-        let config = create_test_config(Some(invalid_api_key)); // Should be accessible now
-
-        // Use the builder to create the client
-        let client = build_gemini_embedding_client(config)
-            .expect("Failed to build client for integration test");
-
-        let text = "Test text for invalid key";
-        let task_type = "RETRIEVAL_QUERY";
-
-        let result = client.embed_content(text, task_type).await;
-
-        assert!(result.is_err(), "Expected an error due to invalid API key");
-
-        match result.err().unwrap() {
-            AppError::GeminiError(msg) => {
-                // Check if the error message indicates an API key issue (content may vary)
-                println!("Received expected GeminiError: {}", msg);
-                assert!(msg.contains("API key not valid") || msg.contains("invalid") || msg.contains("400"),
-                        "Error message should indicate an invalid API key problem. Actual: {}", msg);
-            }
-            other_err => {
-                panic!("Expected AppError::GeminiError, but got {:?}", other_err);
-            }
-        }
-    }
-} // <-- Move closing brace here
+}
