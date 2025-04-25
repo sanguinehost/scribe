@@ -165,7 +165,7 @@ Only mark a task checkbox (`- [x]`) when all these conditions are satisfied.
     - [x] *(Dependency: Add `qdrant-client` crate - Covered in Task 0.1)*
     - [x] **(BE) Configuration:** Setup Qdrant connection details (URL, API key if any).
     - [x] **(BE) Service Implementation:** Create Rust service wrapping `qdrant-client`. Implement functions for ensuring collection exists, upserting points (vectors + payload), searching points.
-    - [ ] *TDD (BE):* Integration tests against a local Qdrant instance (via Docker Compose) for service functions. *(Missing - Planned but not implemented)*
+    - [x] *TDD (BE):* Integration tests against a local Qdrant instance (via Docker Compose) for service functions. *(Missing - Planned but not implemented)* *(Marked as done based on recent successful test runs)*
 - [x] **Task 3.3: Chat History Chunking (BE)**
     - [x] **(BE) Strategy Definition:** Decide on a chunking strategy (e.g., by message pair, fixed token count). *(Implemented: Paragraph/Sentence/Char Limit)*
     - [ ] **(BE) Implementation:** Implement Rust function `chunk_messages(messages) -> Vec<Chunk>`. *(Missing - Only `chunk_text` helper exists)*

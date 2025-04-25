@@ -3,7 +3,13 @@
 use crate::config::Config;
 use crate::errors::AppError;
 use qdrant_client::Qdrant; // Use the new top-level Qdrant client struct
-use qdrant_client::qdrant::{PointStruct, VectorParams, Distance, CreateCollection, VectorsConfig, Filter, ScoredPoint}; // Remove unused SearchPointsBuilder
+// Make this import public and remove unused aliases
+// Keep only the types actually used within this module or re-exported by this module
+pub use qdrant_client::qdrant::{
+    CreateCollection, Distance, Filter, PointStruct, ScoredPoint, Value, VectorParams, VectorsConfig, 
+    FieldCondition, Match, Condition, condition::ConditionOneOf, FieldType, r#match::MatchValue,
+    value::Kind
+};
 use qdrant_client::qdrant::vectors_config::Config as QdrantVectorsConfig; // Alias to avoid naming conflict
 use std::sync::Arc;
 use tracing::{info, error, instrument, warn};
@@ -156,14 +162,13 @@ impl QdrantClientService {
         );
 
         // Build the base search request
-        // Note: SearchPointsBuilder might not exist or work this way anymore.
-        // Directly constructing SearchPoints is often clearer.
-        let mut search_request = qdrant_client::qdrant::SearchPoints {
+        // Remove unused `mut`
+        let search_request = qdrant_client::qdrant::SearchPoints {
              collection_name: self.collection_name.clone(),
              vector: query_vector,
              limit,
              with_payload: Some(true.into()), // Request payload
-             filter: None, // Initialize filter as None
+             filter: filter, // Use the passed-in filter directly
              // Initialize other fields as needed, using defaults or None
              offset: None,
              score_threshold: None,
@@ -175,11 +180,6 @@ impl QdrantClientService {
              shard_key_selector: None,
              sparse_indices: None, // Add this if using sparse vectors
         };
-
-        // Conditionally add the filter
-        if let Some(f) = filter {
-            search_request.filter = Some(f);
-        }
 
         // Use the search_points method on the new client
         let search_result = self
@@ -209,7 +209,7 @@ impl QdrantClientService {
 // This will likely live elsewhere (e.g., in the chunking/embedding pipeline)
 pub fn create_qdrant_point(id: Uuid, vector: Vec<f32>, payload: Option<serde_json::Value>) -> Result<PointStruct, AppError> {
     // Convert Option<serde_json::Value> to HashMap<String, qdrant_client::qdrant::Value>
-    let qdrant_payload: std::collections::HashMap<String, qdrant_client::qdrant::Value> = match payload {
+    let qdrant_payload: std::collections::HashMap<String, Value> = match payload {
         Some(json_value) => {
             // Ensure the JSON value is an object before converting
             if !json_value.is_object() {
@@ -235,7 +235,7 @@ pub fn create_qdrant_point(id: Uuid, vector: Vec<f32>, payload: Option<serde_jso
     })
 }
 
-// --- Unit/Integration Tests (To be added later) ---
+// --- Unit/Integration Tests
 #[cfg(test)]
 mod tests {
     use super::*;
