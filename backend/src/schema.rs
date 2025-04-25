@@ -125,6 +125,7 @@ diesel::table! {
         rag_embedding_id -> Nullable<Uuid>,
         created_at -> Timestamptz,
         updated_at -> Timestamptz,
+        user_id -> Uuid,
     }
 }
 
@@ -232,6 +233,7 @@ diesel::table! {
 diesel::joinable!(character_assets -> characters (character_id));
 diesel::joinable!(characters -> users (user_id));
 diesel::joinable!(chat_messages -> chat_sessions (session_id));
+diesel::joinable!(chat_messages -> users (user_id));
 diesel::joinable!(chat_sessions -> characters (character_id));
 diesel::joinable!(chat_sessions -> users (user_id));
 diesel::joinable!(lorebook_entries -> lorebooks (lorebook_id));

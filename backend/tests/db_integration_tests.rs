@@ -47,6 +47,7 @@ use scribe_backend::AppState; // ADDED AppState
 use scribe_backend::models::chats::{ // ADDED Chat related types
     ChatSession, NewChatSession, ChatMessage, NewChatMessage, MessageRole
 };
+use scribe_backend::models::chats::DbInsertableChatMessage; // Added DbInsertableChatMessage
 
 // Define a struct matching the expected JSON structure from the list endpoint
 #[derive(Deserialize, Debug, PartialEq)] // Add PartialEq for assertion
@@ -727,27 +728,30 @@ async fn test_chat_message_insert_and_query() -> Result<(), AnyhowError> {
     // --- Insert Messages ---
      { // Scope for interact
         let session_id_clone = session.id;
+        let user_id_clone = user.id; // Clone user_id for the closure
         let interact_result = obj.interact(move |conn| {
-            let user_message = NewChatMessage {
-                session_id: session_id_clone,
-                message_type: MessageRole::User,
-                content: "Hello, character!".to_string(),
-                // rag_embedding_id: None, // Removed
-            };
+            // Use DbInsertableChatMessage and provide user_id
+            let user_message = DbInsertableChatMessage::new(
+                session_id_clone,
+                user_id_clone,
+                MessageRole::User,
+                "Hello, character!".to_string(),
+            );
             diesel::insert_into(chat_messages::table)
                 .values(&user_message)
-                .returning(ChatMessage::as_returning())
-                .execute(conn)?; // Just execute -> .get_result() if needed, execute for now
+                // .returning(ChatMessage::as_returning()) // returning doesn't work well with execute
+                .execute(conn)?; 
 
-            let ai_message = NewChatMessage {
-                 session_id: session_id_clone,
-                 message_type: MessageRole::Assistant,
-                 content: "Hello, user!".to_string(),
-                 // rag_embedding_id: None, // Removed
-            };
+            // Use DbInsertableChatMessage and provide user_id
+            let ai_message = DbInsertableChatMessage::new(
+                 session_id_clone,
+                 user_id_clone, // Use the same user_id for assistant message in this test context
+                 MessageRole::Assistant,
+                 "Hello, user!".to_string(),
+            );
              diesel::insert_into(chat_messages::table)
                 .values(&ai_message)
-                .returning(ChatMessage::as_returning())
+                // .returning(ChatMessage::as_returning())
                 .execute(conn)?;
 
             Ok::<(), DieselError>(()) // Return Ok(()) from closure

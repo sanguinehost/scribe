@@ -150,17 +150,19 @@ pub struct DbInsertableChatMessage {
     #[diesel(column_name = message_type)]
     pub role: MessageRole, // Maps to message_type in the database
     pub content: String,
+    pub user_id: Uuid, // Add the user_id field
 }
 
 impl DbInsertableChatMessage {
     pub fn new(
         chat_id: Uuid,
-        _user_id: Option<Uuid>, // Keep this parameter for backward compatibility
+        user_id: Uuid, // Change parameter to non-optional Uuid
         role: MessageRole,
         text: String,
     ) -> Self {
         Self {
             chat_id,
+            user_id, // Assign the user_id
             role,
             content: text,
         }

@@ -37,3 +37,4 @@ tarpaulin-report.json
 
 # Cursor rules
 .cursorrules
+.cursor 

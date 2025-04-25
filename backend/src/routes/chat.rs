@@ -158,7 +158,7 @@ pub async fn generate_chat_response(
     let saved_user_message = chat_service::save_message(
         app_state.clone().into(),
         user_message_to_save.chat_id, // Correct field name: chat_id
-        Some(user_id), // Pass the user_id obtained from auth_session
+        user_id, // Pass user_id directly (was Some(user_id))
         user_message_to_save.role, // Correct field name: role
         user_message_to_save.content.clone(), // Clone content for saving
     ).await?;
@@ -294,7 +294,7 @@ pub async fn generate_chat_response(
                                         if let Err(save_err) = chat_service::save_message(
                                             app_state_clone.into(),
                                             session_id_clone,
-                                            None,
+                                            user_id, // Pass the request user_id (was None)
                                             MessageRole::Assistant,
                                             partial_response, // Save the partial content
                                         ).await {
@@ -324,7 +324,7 @@ pub async fn generate_chat_response(
                              if let Err(save_err) = chat_service::save_message(
                                  app_state_clone.into(),
                                  session_id_clone,
-                                 None,
+                                 user_id, // Pass the request user_id (was None)
                                  MessageRole::Assistant,
                                  full_response_clone, // Use the cloned value
                              ).await {
@@ -372,7 +372,7 @@ pub async fn generate_chat_response(
                     let empty_saved_message = chat_service::save_message(
                         app_state.clone().into(),
                         session_id,
-                        None,
+                        user_id, // Pass the request user_id (was None)
                         MessageRole::Assistant,
                         "".to_string(),
                     ).await?;
@@ -381,7 +381,7 @@ pub async fn generate_chat_response(
                     let saved_message = chat_service::save_message(
                         app_state.clone().into(),
                         session_id,
-                        None,
+                        user_id, // Pass the request user_id (was None)
                         MessageRole::Assistant,
                         full_content.clone(),
                     ).await?;

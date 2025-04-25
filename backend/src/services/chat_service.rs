@@ -98,11 +98,12 @@ pub async fn create_session_and_maybe_first_message(
                     if let Some(first_message_content) = character.first_mes {
                         if !first_message_content.trim().is_empty() {
                             info!(session_id = %created_session.id, "Character has first_mes, adding as initial assistant message");
-                            let first_message = NewChatMessage {
-                                session_id: created_session.id,
-                                message_type: MessageRole::Assistant,
-                                content: first_message_content,
-                            };
+                            let first_message = DbInsertableChatMessage::new(
+                                created_session.id,
+                                user_id,
+                                MessageRole::Assistant,
+                                first_message_content,
+                            );
                             diesel::insert_into(chat_messages::table)
                                 .values(&first_message)
                                 .execute(transaction_conn)
@@ -222,7 +223,7 @@ fn save_chat_message_internal(
 pub async fn save_message(
     state: Arc<AppState>, // Change pool to state
     session_id: Uuid,
-    user_id: Option<Uuid>, // User ID is only present for user messages
+    user_id: Uuid, // Change from Option<Uuid> to Uuid
     role: MessageRole,
     content: String,
 ) -> Result<DbChatMessage, AppError> {
@@ -318,7 +319,7 @@ pub async fn get_session_data_for_generation(
         // Prepare the user message struct, but don't save it here
         let user_db_message_to_save = DbInsertableChatMessage::new(
             session_id,
-            Some(user_id),
+            user_id, // Pass user_id directly, not Some(user_id)
             MessageRole::User,
             user_message_content, // Use directly, no clone needed now
         );
