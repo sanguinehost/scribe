@@ -114,3 +114,9 @@ httpmock = "0.7.0" # For mocking HTTP requests
 [lib]
 name = "scribe_backend"
 path = "src/lib.rs"
+
+# Optional: If you have separate integration tests
+# [[test]]
+# name = "integration_tests" # Example name
+# path = "tests/integration.rs" # Example path
+# harness = true

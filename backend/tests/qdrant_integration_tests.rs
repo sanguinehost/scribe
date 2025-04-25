@@ -94,6 +94,7 @@ fn generate_test_vectors(dimension: usize, count: usize) -> Vec<Vec<f32>> {
 
 #[tokio::test]
 #[serial] // Add serial attribute
+#[ignore] // Added ignore for CI
 async fn test_qdrant_service_creation() -> Result<(), AnyhowError> {
     cleanup_and_prepare_collection().await?; // Ensure clean state
     // Create a new instance of the Qdrant service with the shared collection name
@@ -103,6 +104,7 @@ async fn test_qdrant_service_creation() -> Result<(), AnyhowError> {
 
 #[tokio::test]
 #[serial] // Add serial attribute
+#[ignore] // Added ignore for CI
 async fn test_qdrant_upsert_points() -> Result<(), AnyhowError> {
     cleanup_and_prepare_collection().await?; // Ensure clean state
     // Create a new instance of the Qdrant service
@@ -136,6 +138,7 @@ async fn test_qdrant_upsert_points() -> Result<(), AnyhowError> {
 
 #[tokio::test]
 #[serial] // Add serial attribute
+#[ignore] // Added ignore for CI
 async fn test_qdrant_search_points() -> Result<(), AnyhowError> {
     cleanup_and_prepare_collection().await?; // Ensure clean state
     // Create a new instance of the Qdrant service
@@ -237,6 +240,7 @@ async fn test_qdrant_search_points() -> Result<(), AnyhowError> {
 
 #[tokio::test]
 #[serial] // Add serial attribute
+#[ignore] // Added ignore for CI
 async fn test_qdrant_empty_results() -> Result<(), AnyhowError> {
     cleanup_and_prepare_collection().await?; // Ensure clean state
     // Create a new instance of the Qdrant service
@@ -285,6 +289,7 @@ async fn test_qdrant_empty_results() -> Result<(), AnyhowError> {
 
 #[tokio::test]
 #[serial] // Add serial attribute
+#[ignore] // Added ignore for CI
 async fn test_qdrant_update_existing_point() -> Result<(), AnyhowError> {
     cleanup_and_prepare_collection().await?; // Ensure clean state
     // Create a new instance of the Qdrant service
@@ -395,6 +400,7 @@ async fn test_qdrant_update_existing_point() -> Result<(), AnyhowError> {
 // Add a test for the case when we try to upsert an empty vector
 #[tokio::test]
 #[serial] // Add serial attribute
+#[ignore] // Added ignore for CI
 async fn test_qdrant_upsert_empty_points() -> Result<(), AnyhowError> {
     cleanup_and_prepare_collection().await?; // Ensure clean state
     // Create a new instance of the Qdrant service

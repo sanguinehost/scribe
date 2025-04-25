@@ -15,6 +15,8 @@ use std::sync::Arc;
 use tracing::{info, error, instrument, warn};
 use uuid::Uuid;
 // Removed unused imports: serde_json::json, qdrant_client::qdrant::{PointId, Vectors, Value}, std::collections::HashMap
+use rand::{Rng, SeedableRng}; // Add rand for distinct test vectors
+use rand::rngs::StdRng;
 
 // Constants
 const DEFAULT_COLLECTION_NAME: &str = "chat_embeddings";
@@ -259,8 +261,54 @@ mod tests {
     use super::*;
     use serde_json::json; // Moved import here
     use uuid::Uuid;
-    use qdrant_client::qdrant::{PointId, Vectors, Value}; // Moved import here
-    // Removed unused std::collections::HashMap import
+    use qdrant_client::qdrant::{PointId, Vectors, Value}; // Correct the import path for PointId and Vectors if they are part of the public API
+    use crate::config::Config;
+    use std::sync::Arc;
+    use tokio; // Add tokio for async tests
+    use qdrant_client::qdrant::{Filter, Condition, FieldCondition, Match, value::Kind};
+    use qdrant_client::qdrant::r#match::MatchValue; // Corrected import
+    use dotenvy::dotenv;
+    use qdrant_client::qdrant::point_id::PointIdOptions; // Import for PointId variants
+    // Use Rng trait for gen method, StdRng for concrete type, SeedableRng for seeding
+    use rand::{Rng, SeedableRng}; 
+    use rand::rngs::StdRng;
+
+    // Helper function to load config and create a real Qdrant client for integration tests
+    async fn setup_test_qdrant_client() -> Result<QdrantClientService, AppError> {
+        dotenv().ok(); // Load .env file for QDRANT_URL
+        let config = Arc::new(Config::load().expect("Failed to load config for integration test"));
+        let service = QdrantClientService::new(config).await?;
+
+        // --- Clean up before test --- 
+        // Delete the collection if it exists to ensure a clean state for each test
+        // This might fail if the collection doesn't exist, so we can ignore the error.
+        info!("Attempting to delete collection '{}' before test for clean state...", service.collection_name);
+        let _ = service.client.delete_collection(&service.collection_name).await;
+        // Give Qdrant a moment to process deletion
+        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+        
+        // Now, ensure the collection exists (it should be created by new, but ensure_collection_exists handles recreation)
+        service.ensure_collection_exists().await?;
+        info!("Collection '{}' ready for test.", service.collection_name);
+
+        Ok(service)
+    }
+
+    // Helper to create a simple filter for testing
+    fn create_test_filter(key: &str, value: &str) -> Filter {
+        Filter {
+            must: vec![Condition {
+                condition_one_of: Some(ConditionOneOf::Field(FieldCondition {
+                    key: key.to_string(),
+                    r#match: Some(Match {
+                        match_value: Some(MatchValue::Keyword(value.to_string())),
+                    }),
+                    ..Default::default() // Initialize other fields as needed
+                })),
+            }],
+            ..Default::default()
+        }
+    }
 
     #[test]
     fn test_create_qdrant_point_with_payload() {
@@ -351,9 +399,129 @@ mod tests {
     }
 
     // --- Integration Tests (Require running Qdrant instance) ---
-    // Add tests here later for:
-    // - Test connection (implicitly done by new)
-    // - Test ensure_collection_exists (new and existing)
-    // - Test upsert (requires running Qdrant)
-    // - Test search (requires running Qdrant)
+    // Run these tests with `cargo test -- --ignored`
+
+    #[tokio::test]
+    #[ignore] // Ignore this test by default, requires running Qdrant
+    async fn test_integration_connection_and_collection() {
+        let result = setup_test_qdrant_client().await;
+        assert!(result.is_ok(), "Failed to connect to Qdrant and ensure collection exists: {:?}", result.err());
+
+        // Optionally, you could add a check using the raw client to see if the collection exists
+        // let service = result.unwrap();
+        // let exists = service.client.collection_exists(&service.collection_name).await;
+        // assert!(exists.is_ok() && exists.unwrap(), "Collection should exist after service initialization");
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn test_integration_upsert_and_search() {
+        let service = setup_test_qdrant_client().await.expect("Failed to setup Qdrant client");
+        let _collection_name = service.collection_name.clone(); // Prefix unused variable
+        let embedding_dim = service.embedding_dimension as usize;
+
+        let point_id_1 = Uuid::new_v4();
+        // Use slightly more distinct vectors for testing
+        let mut rng1 = StdRng::seed_from_u64(42); // Seeded RNG for reproducibility
+        // Use rng.gen::<f32>() for f32 which generates [0.0, 1.0)
+        let vector_1: Vec<f32> = (0..embedding_dim).map(|_| rng1.r#gen::<f32>()).collect(); 
+
+        let payload_1 = json!({"test_key": "value1"});
+        let point_1 = create_qdrant_point(point_id_1, vector_1.clone(), Some(payload_1.clone())).expect("Failed to create point 1");
+
+        let point_id_2 = Uuid::new_v4();
+        // Use a different seed or different generation logic for vector_2
+        let mut rng2 = StdRng::seed_from_u64(99);
+        let vector_2: Vec<f32> = (0..embedding_dim).map(|_| rng2.r#gen::<f32>()).collect(); 
+
+        let payload_2 = json!({"test_key": "value2"});
+        let point_2 = create_qdrant_point(point_id_2, vector_2.clone(), Some(payload_2.clone())).expect("Failed to create point 2");
+
+        // Upsert points
+        let upsert_result = service.upsert_points(vec![point_1, point_2]).await;
+        assert!(upsert_result.is_ok(), "Failed to upsert points: {:?}", upsert_result.err());
+
+        // Give Qdrant a moment to index (usually fast, but safer in tests)
+        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await; // Increased sleep time slightly
+
+        // Search for point 1
+        let search_result = service.search_points(vector_1.clone(), 1, None).await;
+        assert!(search_result.is_ok(), "Search failed: {:?}", search_result.err());
+        let found_points = search_result.unwrap();
+
+        assert_eq!(found_points.len(), 1, "Expected to find 1 point");
+        let found_point = &found_points[0];
+
+        // Extract the string ID correctly from PointId before comparing
+        let found_id_str = match found_point.id.as_ref().unwrap().point_id_options.as_ref().unwrap() {
+            PointIdOptions::Uuid(s) => s.clone(),
+            PointIdOptions::Num(n) => n.to_string(), // Handle numeric IDs just in case, though we use UUIDs
+        };
+        assert_eq!(found_id_str, point_id_1.to_string(), "Found point ID does not match");
+
+        // Verify payload. Need to convert qdrant::Value back to serde_json::Value or compare map directly.
+        assert!(found_point.payload.contains_key("test_key"), "Payload key missing");
+        assert_eq!(
+            found_point.payload.get("test_key").unwrap().kind,
+            Some(Kind::StringValue("value1".to_string())),
+            "Payload value mismatch"
+        );
+
+        // Clean up: Optionally delete the points or the collection if needed,
+        // but usually test instances are ephemeral.
+        // Note: Qdrant doesn't easily support deleting specific points by ID without knowing shard keys etc.
+        // Clearing/recreating the collection might be easier if cleanup is needed.
+    }
+
+     #[tokio::test]
+    #[ignore]
+    async fn test_integration_search_with_filter() {
+        let service = setup_test_qdrant_client().await.expect("Failed to setup Qdrant client");
+        let _collection_name = service.collection_name.clone(); // Prefix unused variable
+        let embedding_dim = service.embedding_dimension as usize;
+
+        let point_id_filter = Uuid::new_v4();
+        let mut rng3 = StdRng::seed_from_u64(123);
+        let vector_filter: Vec<f32> = (0..embedding_dim).map(|_| rng3.r#gen::<f32>()).collect(); 
+
+        let payload_filter = json!({"filter_key": "target_value", "other": "data1"});
+        let point_filter = create_qdrant_point(point_id_filter, vector_filter.clone(), Some(payload_filter.clone())).expect("Failed to create filter point");
+
+        let point_id_other = Uuid::new_v4();
+        let mut rng4 = StdRng::seed_from_u64(456);
+        let vector_other: Vec<f32> = (0..embedding_dim).map(|_| rng4.r#gen::<f32>()).collect(); 
+
+        let payload_other = json!({"filter_key": "different_value", "other": "data2"});
+        let point_other = create_qdrant_point(point_id_other, vector_other.clone(), Some(payload_other.clone())).expect("Failed to create other point");
+
+        // Upsert points
+        let upsert_result = service.upsert_points(vec![point_filter, point_other]).await;
+        assert!(upsert_result.is_ok(), "Failed to upsert points for filter test: {:?}", upsert_result.err());
+
+        // Give Qdrant a moment
+        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await; // Increased sleep time slightly
+
+        // Create filter
+        let filter = create_test_filter("filter_key", "target_value");
+
+        // Search with filter
+        let search_result = service.search_points(vector_filter.clone(), 5, Some(filter)).await; // Search near the target vector
+        assert!(search_result.is_ok(), "Filtered search failed: {:?}", search_result.err());
+        let found_points = search_result.unwrap();
+
+        assert_eq!(found_points.len(), 1, "Expected to find exactly 1 point matching the filter");
+        let found_point = &found_points[0];
+        // Extract the string ID correctly from PointId before comparing
+         let found_id_str_filter = match found_point.id.as_ref().unwrap().point_id_options.as_ref().unwrap() {
+            PointIdOptions::Uuid(s) => s.clone(),
+            PointIdOptions::Num(n) => n.to_string(),
+        };
+        assert_eq!(found_id_str_filter, point_id_filter.to_string(), "Found point ID does not match the filtered point");
+        assert!(found_point.payload.contains_key("filter_key"), "Payload key missing");
+        assert_eq!(
+            found_point.payload.get("filter_key").unwrap().kind,
+            Some(Kind::StringValue("target_value".to_string())),
+            "Payload value mismatch"
+        );
+    }
 }
