@@ -502,4 +502,132 @@ mod tests {
             }
         }
     }
+
+    // Test for API error status with a body that is *not* valid GeminiError JSON
+    #[tokio::test]
+    async fn test_embed_content_api_error_malformed_body() {
+        let server = MockServer::start();
+        let api_key = "test_api_key";
+        let config = create_test_config(Some(api_key.to_string()));
+        let client = RestGeminiEmbeddingClient {
+            reqwest_client: ReqwestClient::new(),
+            config,
+            model_name: "models/test-model".to_string(),
+        };
+        
+        let mock = server.mock(|when, then| {
+            when.method(POST)
+                .path("/v1beta/models/test-model:embedContent")
+                .query_param("key", api_key);
+            then.status(500)
+                .header("content-type", "text/plain") // Simulate non-JSON error body
+                .body("Internal Server Error Text");
+        });
+
+        let result = custom_embed_content(&client, &server.base_url(), "Test text", "RETRIEVAL_QUERY").await;
+
+        assert!(result.is_err());
+        match result.err().unwrap() {
+            AppError::GeminiError(msg) => {
+                assert!(msg.contains("Gemini API error (500 Internal Server Error)"));
+                assert!(msg.contains("Failed to parse error body")); // Check that parsing failure is mentioned
+            }
+            _ => panic!("Expected AppError::GeminiError"),
+        }
+        mock.assert();
+    }
+
+    // Test using a different task type
+    #[tokio::test]
+    async fn test_embed_content_different_task_type() {
+        let server = MockServer::start();
+        let api_key = "test_api_key";
+        let task_type = "RETRIEVAL_DOCUMENT"; // Different task type
+        let config = create_test_config(Some(api_key.to_string()));
+        let client = RestGeminiEmbeddingClient {
+            reqwest_client: ReqwestClient::new(),
+            config,
+            model_name: "models/test-model".to_string(),
+        };
+
+        let mock = server.mock(|when, then| {
+            when.method(POST)
+                .path("/v1beta/models/test-model:embedContent")
+                .query_param("key", api_key)
+                .json_body(json!({
+                    "model": "models/test-model",
+                    "content": {
+                        "parts": [{
+                            "text": "Test text"
+                        }]
+                    },
+                    "taskType": task_type // Verify this task type is sent
+                }));
+            then.status(200)
+                .header("content-type", "application/json")
+                .json_body(json!({
+                    "embedding": {
+                        "values": [0.6, 0.7, 0.8]
+                    }
+                }));
+        });
+
+        let result = custom_embed_content(&client, &server.base_url(), "Test text", task_type).await;
+
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), vec![0.6, 0.7, 0.8]);
+        mock.assert();
+    }
+
+    // Test with empty input text (expecting API error)
+    #[tokio::test]
+    async fn test_embed_content_empty_text() {
+        let server = MockServer::start();
+        let api_key = "test_api_key";
+        let config = create_test_config(Some(api_key.to_string()));
+        let client = RestGeminiEmbeddingClient {
+            reqwest_client: ReqwestClient::new(),
+            config,
+            model_name: "models/test-model".to_string(),
+        };
+
+        // Assume the API returns a 400 Bad Request for empty text
+        let mock = server.mock(|when, then| {
+            when.method(POST)
+                .path("/v1beta/models/test-model:embedContent")
+                .query_param("key", api_key)
+                .json_body(json!({
+                    "model": "models/test-model",
+                    "content": {
+                        "parts": [{
+                            "text": "" // Empty text
+                        }]
+                    },
+                    "taskType": "RETRIEVAL_QUERY"
+                }));
+            then.status(400)
+                .header("content-type", "application/json")
+                .json_body(json!({
+                    "error": {
+                        "message": "Invalid content format."
+                    }
+                }));
+        });
+
+        let result = custom_embed_content(&client, &server.base_url(), "", "RETRIEVAL_QUERY").await;
+
+        assert!(result.is_err());
+        match result.err().unwrap() {
+            AppError::GeminiError(msg) => {
+                assert!(msg.contains("Gemini API error (400 Bad Request)"));
+                assert!(msg.contains("Invalid content format."));
+            }
+            _ => panic!("Expected AppError::GeminiError"),
+        }
+        mock.assert();
+    }
+
+    // --- Integration Tests (Require API Key and Network) ---
+    // #[tokio::test]
+    // #[ignore] // Ignore by default, requires real API key
 }
