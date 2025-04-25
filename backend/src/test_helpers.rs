@@ -1000,3 +1000,98 @@ impl EmbeddingPipelineServiceTrait for MockEmbeddingPipelineService {
         self.response_to_return.lock().unwrap().clone()
     }
 }
+
+// --- AppState Builder for Tests ---
+
+// Builder struct for AppState, making it easier to construct in tests
+#[derive(Default)]
+pub struct AppStateBuilder { // Make the builder public
+    pool: Option<PgPool>,
+    config: Option<Arc<Config>>,
+    ai_client: Option<Arc<dyn AiClient + Send + Sync>>,
+    mock_embedding_client: Option<Arc<MockEmbeddingClient>>,
+    mock_embedding_pipeline_service: Option<Arc<MockEmbeddingPipelineService>>,
+    qdrant_service: Option<Arc<QdrantClientService>>,
+    embedding_call_tracker: Option<Arc<tokio::sync::Mutex<Vec<uuid::Uuid>>>>,
+}
+
+// Add the missing implementation block for the builder
+impl AppStateBuilder { 
+    // New function (constructor)
+    pub fn new() -> Self { 
+        Self::default()
+    }
+
+    // Methods to set optional fields
+    pub fn with_pool(mut self, pool: PgPool) -> Self {
+        self.pool = Some(pool);
+        self
+    }
+
+    pub fn with_config(mut self, config: Arc<Config>) -> Self {
+        self.config = Some(config);
+        self
+    }
+
+    pub fn with_ai_client(mut self, client: Arc<dyn AiClient + Send + Sync>) -> Self {
+        self.ai_client = Some(client);
+        self
+    }
+    
+    pub fn with_embedding_client(mut self, client: Arc<MockEmbeddingClient>) -> Self {
+        self.mock_embedding_client = Some(client);
+        self
+    }
+
+    pub fn with_embedding_pipeline_service(mut self, service: Arc<MockEmbeddingPipelineService>) -> Self {
+        self.mock_embedding_pipeline_service = Some(service);
+        self
+    }
+    
+    pub fn with_qdrant_service(mut self, service: Arc<QdrantClientService>) -> Self {
+        self.qdrant_service = Some(service);
+        self
+    }
+
+    pub fn with_embedding_call_tracker(mut self, tracker: Arc<tokio::sync::Mutex<Vec<uuid::Uuid>>>) -> Self {
+        self.embedding_call_tracker = Some(tracker);
+        self
+    }
+
+    // Build method for simplified test setup (might need refinement)
+    pub async fn build_for_test(self) -> Result<Arc<AppState>, String> {
+        let config = self.config.unwrap_or_else(|| Arc::new(Config::load().expect("Test config load failed")));
+        // For unit tests, we often don't need a real pool
+        let pool = self.pool.unwrap_or_else(|| create_test_pool()); // Use helper to create a pool
+        // Default to mock AI client if not provided
+        let ai_client = self.ai_client.unwrap_or_else(|| Arc::new(MockAiClient::new()));
+        // Default to mock embedding client
+        let embedding_client = self.mock_embedding_client.unwrap_or_else(|| Arc::new(MockEmbeddingClient::new()));
+        // Default to mock embedding pipeline service
+        let embedding_pipeline_service = self.mock_embedding_pipeline_service.unwrap_or_else(|| Arc::new(MockEmbeddingPipelineService::new()));
+        // Default to real Qdrant service (might fail if Qdrant not running).
+        // This assumes config (e.g., QDRANT_URL) is available in the test environment.
+        // Tests mocking the pipeline service won't actually use this Qdrant client.
+        let qdrant_service = match self.qdrant_service {
+            Some(service) => service,
+            None => Arc::new(QdrantClientService::new_test_dummy()),
+        };
+        // Default tracker
+        let tracker = self.embedding_call_tracker.unwrap_or_else(|| Arc::new(tokio::sync::Mutex::new(Vec::new())));
+        
+        // Construct the real AppState
+        let state = AppState {
+            pool,
+            config,
+            ai_client,
+            embedding_client: embedding_client as Arc<dyn EmbeddingClient>, // Cast mock to trait object
+            qdrant_service, // Assume type matches AppState field
+            embedding_pipeline_service: embedding_pipeline_service as Arc<dyn EmbeddingPipelineServiceTrait>, // Cast mock to trait object
+            embedding_call_tracker: tracker,
+        };
+
+        Ok(Arc::new(state))
+    }
+}
+
+// --- End AppState Builder Implementation ---

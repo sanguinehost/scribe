@@ -61,6 +61,24 @@ impl QdrantClientService {
         Ok(service)
     }
 
+    /// Private constructor for creating a dummy instance for tests where
+    /// the actual Qdrant service is mocked at a higher level.
+    /// Avoids hitting network or requiring config.
+    pub fn new_test_dummy() -> Self {
+        // NOTE: The Qdrant client here is likely non-functional or will panic if used.
+        // This is acceptable ONLY because the AppStateBuilder uses this when the
+        // higher-level service (like EmbeddingPipelineService) is mocked, meaning
+        // this dummy QdrantClientService won't actually be called.
+        Self {
+            // Attempt to build a client with a dummy URL. This might still panic
+            // if the builder tries to resolve the URL immediately, but it avoids Default::default().
+            // If this panics, we might need a more sophisticated mock/dummy approach.
+            client: Arc::new(Qdrant::from_url("http://localhost:6333").build().expect("Failed to build dummy Qdrant client")), 
+            collection_name: DEFAULT_COLLECTION_NAME.to_string(),
+            embedding_dimension: EMBEDDING_DIMENSION,
+        }
+    }
+
     #[instrument(skip(self), name = "qdrant_ensure_collection")]
     async fn ensure_collection_exists(&self) -> Result<(), AppError> {
         // Use the collection_exist method on the new client (assuming name change, check docs if fails)

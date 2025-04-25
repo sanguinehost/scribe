@@ -118,7 +118,7 @@ Only mark a task checkbox (`- [x]`) when all these conditions are satisfied.
 - [x] **Task 2.4: Basic Prompt Assembly (BE)** - ***Requires Task 1.2 & Task 4.2 Completion***
     - [x] **(BE) Data Retrieval:** Implement logic to get character details (from DB), system prompt (from DB - see Task 4.2), and recent chat messages (from DB).
     - [x] **(BE) Prompt Formatting:** Combine retrieved data into a single prompt string according to Gemini API requirements.
-    - [ ] *TDD (BE):* Unit tests for prompt assembly logic with various inputs (different character data, history lengths, system prompts).
+    - [x] *TDD (BE):* Unit tests for prompt assembly logic with various inputs (different character data, history lengths, system prompts).
 - [x] **Task 2.5: Generation API Endpoint (BE)** - ***Requires Task 2.2, 2.3, 2.4 Completion***
     - [x] **(BE) Orchestration Logic:** Implement handler for `POST /api/chats/{id}/generate`. **Support streaming responses (e.g., Server-Sent Events).**
         - [x] Verify session ownership by *authenticated user*.
