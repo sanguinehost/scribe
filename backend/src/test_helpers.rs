@@ -376,9 +376,9 @@ pub async fn create_test_chat_message(
 pub async fn update_test_chat_settings(
     pool: &PgPool,
     session_id: Uuid,
-    _system_prompt: Option<String>, // Prefixed unused variable
-    _temperature: Option<BigDecimal>, // Prefixed unused variable, Changed f32 to BigDecimal
-    _max_output_tokens: Option<i32>, // Prefixed unused variable
+    new_system_prompt: Option<String>, // Renamed argument
+    new_temperature: Option<BigDecimal>, // Renamed argument
+    new_max_output_tokens: Option<i32>, // Renamed argument
 ) {
     use crate::schema::chat_sessions::dsl::*;
     use diesel::dsl::now;
@@ -391,9 +391,9 @@ pub async fn update_test_chat_settings(
     conn.interact(move |conn| {
         diesel::update(chat_sessions.filter(id.eq(session_id)))
             .set((
-                system_prompt.eq(system_prompt),
-                temperature.eq(temperature), // Pass BigDecimal directly
-                max_output_tokens.eq(max_output_tokens),
+                system_prompt.eq(new_system_prompt), // Use renamed argument
+                temperature.eq(new_temperature), // Use renamed argument
+                max_output_tokens.eq(new_max_output_tokens), // Use renamed argument
                 updated_at.eq(now),
             ))
             .execute(conn)
@@ -407,18 +407,18 @@ pub async fn update_test_chat_settings(
 pub async fn update_all_chat_settings(
     pool: &PgPool,
     session_id: Uuid,
-    _system_prompt: Option<String>, // Prefixed unused variable
-    _temperature: Option<BigDecimal>, // Prefixed unused variable
-    _max_output_tokens: Option<i32>, // Prefixed unused variable
-    _frequency_penalty: Option<BigDecimal>, // Prefixed unused variable
-    _presence_penalty: Option<BigDecimal>, // Prefixed unused variable
-    _top_k: Option<i32>, // Prefixed unused variable
-    _top_p: Option<BigDecimal>, // Prefixed unused variable
-    _repetition_penalty: Option<BigDecimal>, // Prefixed unused variable
-    _min_p: Option<BigDecimal>, // Prefixed unused variable
-    _top_a: Option<BigDecimal>, // Prefixed unused variable
-    _seed: Option<i32>, // Prefixed unused variable
-    _logit_bias: Option<Value>, // Prefixed unused variable
+    new_system_prompt: Option<String>, // Renamed argument
+    new_temperature: Option<BigDecimal>, // Renamed argument
+    new_max_output_tokens: Option<i32>, // Renamed argument
+    new_frequency_penalty: Option<BigDecimal>, // Renamed argument
+    new_presence_penalty: Option<BigDecimal>, // Renamed argument
+    new_top_k: Option<i32>, // Renamed argument
+    new_top_p: Option<BigDecimal>, // Renamed argument
+    new_repetition_penalty: Option<BigDecimal>, // Renamed argument
+    new_min_p: Option<BigDecimal>, // Renamed argument
+    new_top_a: Option<BigDecimal>, // Renamed argument
+    new_seed: Option<i32>, // Renamed argument
+    new_logit_bias: Option<Value>, // Renamed argument
 ) {
     use crate::schema::chat_sessions::dsl::*;
     use diesel::dsl::now;
@@ -431,18 +431,18 @@ pub async fn update_all_chat_settings(
     conn.interact(move |conn| {
         diesel::update(chat_sessions.filter(id.eq(session_id)))
             .set((
-                system_prompt.eq(system_prompt),
-                temperature.eq(temperature),
-                max_output_tokens.eq(max_output_tokens),
-                frequency_penalty.eq(frequency_penalty),
-                presence_penalty.eq(presence_penalty),
-                top_k.eq(top_k),
-                top_p.eq(top_p),
-                repetition_penalty.eq(repetition_penalty),
-                min_p.eq(min_p),
-                top_a.eq(top_a),
-                seed.eq(seed),
-                logit_bias.eq(logit_bias),
+                system_prompt.eq(new_system_prompt), // Use renamed argument
+                temperature.eq(new_temperature), // Use renamed argument
+                max_output_tokens.eq(new_max_output_tokens), // Use renamed argument
+                frequency_penalty.eq(new_frequency_penalty), // Use renamed argument
+                presence_penalty.eq(new_presence_penalty), // Use renamed argument
+                top_k.eq(new_top_k), // Use renamed argument
+                top_p.eq(new_top_p), // Use renamed argument
+                repetition_penalty.eq(new_repetition_penalty), // Use renamed argument
+                min_p.eq(new_min_p), // Use renamed argument
+                top_a.eq(new_top_a), // Use renamed argument
+                seed.eq(new_seed), // Use renamed argument
+                logit_bias.eq(new_logit_bias), // Use renamed argument
                 updated_at.eq(now),
             ))
             .execute(conn)

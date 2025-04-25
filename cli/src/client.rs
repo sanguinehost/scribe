@@ -62,6 +62,52 @@ pub enum StreamEvent {
     Done,             // Corresponds to event: done (no data expected)
 }
 
+// NEW: Intermediate struct for the non-streaming response body
+#[derive(Deserialize)]
+struct NonStreamingResponse {
+    message_id: Uuid,
+    content: String,
+}
+
+// NEW: Helper function specifically for handling the non-streaming chat response
+async fn handle_non_streaming_chat_response(response: Response) -> Result<ChatMessage, CliError> {
+    let status = response.status();
+    if status.is_success() {
+        match response.json::<NonStreamingResponse>().await {
+            Ok(body) => {
+                // Construct a partial ChatMessage. The chat loop primarily needs the content.
+                // Other fields like created_at, session_id are not strictly needed by the loop
+                // but we can add them with default/dummy values if necessary elsewhere.
+                Ok(ChatMessage {
+                    id: body.message_id,
+                    session_id: Uuid::nil(), // Not provided by this endpoint, set to nil
+                    message_type: scribe_backend::models::chats::MessageRole::Assistant,
+                    content: body.content,
+                    created_at: chrono::Utc::now(), // Use current time
+                })
+            }
+            Err(e) => {
+                tracing::error!(error = ?e, "Failed to decode non-streaming chat response");
+                Err(CliError::Reqwest(e))
+            }
+        }
+    } else {
+        // Reuse the existing error handling logic from handle_response
+        if status == StatusCode::TOO_MANY_REQUESTS {
+             tracing::warn!("Received 429 Too Many Requests from backend");
+             return Err(CliError::RateLimitExceeded);
+        }
+        let error_text = response
+            .text()
+            .await
+            .unwrap_or_else(|_| "Failed to read error body".to_string());
+        tracing::error!(%status, error_body = %error_text, "API request failed");
+        Err(CliError::ApiError {
+            status,
+            message: error_text,
+        })
+    }
+}
 
 /// Trait for abstracting HTTP client interactions to allow mocking in tests.
 #[async_trait]
@@ -312,24 +358,8 @@ impl HttpClient for ReqwestClientWrapper {
                  CliError::Network(e.to_string())
             })?;
 
-        match response.status() {
-            StatusCode::OK => {
-                #[derive(serde::Deserialize)]
-                struct GenerateResponseBody { ai_message: ChatMessage }
-                let response_body: GenerateResponseBody = handle_response(response).await?;
-                 tracing::info!(chat_id = %chat_id, message_id = %response_body.ai_message.id, "Message sent successfully (non-streaming)");
-                Ok(response_body.ai_message)
-            },
-            StatusCode::TOO_MANY_REQUESTS => {
-                tracing::warn!("Received 429 Too Many Requests from backend");
-                Err(CliError::RateLimitExceeded)
-            },
-            status => {
-                let error_text = response.text().await.unwrap_or_else(|_| "Failed to read error body".to_string());
-                tracing::error!(%status, error = %error_text, "Failed to send message");
-                Err(CliError::Backend(format!("{} - {}", status, error_text)))
-            }
-        }
+        // Use the NEW handler function specifically for this response type
+        handle_non_streaming_chat_response(response).await
     }
 
     // NEW: Implement stream_chat_response

@@ -218,7 +218,8 @@ pub struct ChatSettingsResponse {
 
 /// Request body for PUT /api/chats/{id}/settings
 /// All fields are optional to allow partial updates.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)] // Added Serialize
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, AsChangeset)] // Added AsChangeset
+#[diesel(table_name = crate::schema::chat_sessions)] // Specify target table
 pub struct UpdateChatSettingsRequest {
     pub system_prompt: Option<String>,
     pub temperature: Option<BigDecimal>, // Changed f32 to BigDecimal

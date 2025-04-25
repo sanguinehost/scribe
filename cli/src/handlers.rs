@@ -5,11 +5,11 @@ use crate::chat::run_chat_loop; // Import the chat loop function
 use crate::chat::run_stream_test_loop; // Import the stream test loop function
 use scribe_backend::models::auth::Credentials;
 use scribe_backend::models::characters::CharacterMetadata;
-use scribe_backend::models::chats::{MessageRole}; // Keep this minimal for main code
+use scribe_backend::models::chats::{MessageRole};
 use scribe_backend::models::users::User;
 use uuid::Uuid;
-use std::path::Path; // Added Path for file existence check
-use tokio_stream::Stream; // Added Stream import for async streaming
+use std::path::Path;
+use futures_util::Stream;
 
 // --- Action Functions ---
 

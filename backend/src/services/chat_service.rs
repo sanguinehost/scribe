@@ -263,18 +263,29 @@ pub async fn get_session_data_for_generation(
     conn.interact(move |conn| {
         conn.transaction(|transaction_conn| {
             info!(%session_id, %user_id, "Fetching session for generation");
-            // Verify ownership first
-            chat_sessions::table
-               .filter(chat_sessions::id.eq(session_id))
-               .filter(chat_sessions::user_id.eq(user_id))
-               .select(chat_sessions::id)
-               .first::<Uuid>(transaction_conn)
-               .optional()?
-               .ok_or_else(|| {
-                   warn!(%session_id, %user_id, "Chat session not found or user mismatch for generation");
-                   AppError::NotFound("Chat session not found".into())
-               })?;
-            info!(%session_id, %user_id, "Session ownership verified for generation");
+
+            // 1. Fetch session and check existence
+            let session_owner_id = chat_sessions::table
+                .filter(chat_sessions::id.eq(session_id))
+                .select(chat_sessions::user_id)
+                .first::<Uuid>(transaction_conn)
+                .optional()?;
+
+            // 2. Handle not found or forbidden
+            match session_owner_id {
+                None => {
+                    warn!(%session_id, %user_id, "Chat session not found for generation");
+                    return Err(AppError::NotFound("Chat session not found".into()));
+                }
+                Some(owner_id) if owner_id != user_id => {
+                    warn!(%session_id, %user_id, owner_id=%owner_id, "User mismatch for generation");
+                    return Err(AppError::Forbidden);
+                }
+                Some(_) => {
+                    // Ownership verified, proceed
+                    info!(%session_id, %user_id, "Session ownership verified for generation");
+                }
+            }
 
             info!(%session_id, "Fetching chat settings for generation");
             let settings: SettingsTuple = chat_sessions::table
@@ -316,10 +327,27 @@ pub async fn get_session_data_for_generation(
             let mut full_history = history;
             full_history.push((MessageRole::User, user_message_content)); // Add the *just saved* user message
 
+            // Prepend system prompt if it exists and is not empty
+            if let Some(ref prompt) = system_prompt {
+                if !prompt.trim().is_empty() {
+                    full_history.insert(0, (MessageRole::System, prompt.clone()));
+                }
+            }
+
             Ok((
-                full_history, system_prompt, temperature, max_tokens,
-                frequency_penalty, presence_penalty, top_k, top_p,
-                repetition_penalty, min_p, top_a, seed, logit_bias,
+                full_history,
+                system_prompt,
+                temperature,
+                max_tokens,
+                frequency_penalty,
+                presence_penalty,
+                top_k,
+                top_p,
+                repetition_penalty,
+                min_p,
+                top_a,
+                seed,
+                logit_bias,
                 default_model_name // Return the passed-in default model name
             ))
         })
@@ -406,87 +434,89 @@ pub async fn update_session_settings(
 ) -> Result<ChatSettingsResponse, AppError> {
     let conn = pool.get().await?;
     conn.interact(move |conn| {
-        use diesel::dsl::now;
+        conn.transaction(|transaction_conn| {
+            // 1. Verify ownership
+            let session_details = chat_sessions::table
+                .filter(chat_sessions::id.eq(session_id))
+                // Remove model_name from select
+                .select((chat_sessions::user_id, chat_sessions::title, chat_sessions::system_prompt, chat_sessions::temperature, chat_sessions::max_output_tokens, chat_sessions::frequency_penalty, chat_sessions::presence_penalty, chat_sessions::top_k, chat_sessions::top_p, chat_sessions::repetition_penalty, chat_sessions::min_p, chat_sessions::top_a, chat_sessions::seed, chat_sessions::logit_bias /*, chat_sessions::model_name */ ))
+                .first::<(
+                    Uuid, // user_id
+                    Option<String>, // title
+                    Option<String>, // system_prompt
+                    Option<BigDecimal>, // temperature
+                    Option<i32>, // max_output_tokens
+                    Option<BigDecimal>, // frequency_penalty
+                    Option<BigDecimal>, // presence_penalty
+                    Option<i32>, // top_k
+                    Option<BigDecimal>, // top_p
+                    Option<BigDecimal>, // repetition_penalty
+                    Option<BigDecimal>, // min_p
+                    Option<BigDecimal>, // top_a
+                    Option<i32>, // seed
+                    Option<Value> // logit_bias
+                    // Option<String> // model_name (removed)
+                )>(transaction_conn)
+                .optional()?;
 
-        // 1. Verify the user owns this chat session within the transaction
-        let session_exists = chat_sessions::table
-            .filter(chat_sessions::id.eq(session_id))
-            .filter(chat_sessions::user_id.eq(user_id))
-            .count()
-            .get_result::<i64>(conn)?;
+            match session_details {
+                Some((owner_id, _, _, _, _, _, _, _, _, _, _, _, _, _)) => {
+                    if owner_id != user_id {
+                        error!("User {} attempted to update settings for session {} owned by {}", user_id, session_id, owner_id);
+                        return Err(AppError::Forbidden);
+                    }
 
-        if session_exists == 0 {
-            return Err(AppError::NotFound("Chat session not found or permission denied".to_string()));
-        }
+                    // 2. Perform the update explicitly setting columns
+                    let update_target = chat_sessions::table.filter(chat_sessions::id.eq(session_id));
 
-        // 2. Perform the update
-        diesel::update(chat_sessions::table.filter(chat_sessions::id.eq(session_id)))
-            .set((
-                chat_sessions::system_prompt.eq(payload.system_prompt),
-                chat_sessions::temperature.eq(payload.temperature),
-                chat_sessions::max_output_tokens.eq(payload.max_output_tokens),
-                chat_sessions::frequency_penalty.eq(payload.frequency_penalty),
-                chat_sessions::presence_penalty.eq(payload.presence_penalty),
-                chat_sessions::top_k.eq(payload.top_k),
-                chat_sessions::top_p.eq(payload.top_p),
-                chat_sessions::repetition_penalty.eq(payload.repetition_penalty),
-                chat_sessions::min_p.eq(payload.min_p),
-                chat_sessions::top_a.eq(payload.top_a),
-                chat_sessions::seed.eq(payload.seed),
-                chat_sessions::logit_bias.eq(payload.logit_bias),
-                chat_sessions::updated_at.eq(now),
-            ))
-            .execute(conn)?;
+                    // Using the original update method which relies on AsChangeset derived on the payload struct
+                    let updated_settings_tuple: SettingsTuple = diesel::update(update_target)
+                        .set(payload) // Use the payload struct directly (requires AsChangeset derive)
+                        .returning((
+                            // Return the fields needed for ChatSettingsResponse
+                            chat_sessions::system_prompt,
+                            chat_sessions::temperature,
+                            chat_sessions::max_output_tokens,
+                            chat_sessions::frequency_penalty,
+                            chat_sessions::presence_penalty,
+                            chat_sessions::top_k,
+                            chat_sessions::top_p,
+                            chat_sessions::repetition_penalty,
+                            chat_sessions::min_p,
+                            chat_sessions::top_a,
+                            chat_sessions::seed,
+                            chat_sessions::logit_bias,
+                        ))
+                        .get_result(transaction_conn)
+                        .map_err(|e| {
+                            error!(error = ?e, "Failed to update chat session settings");
+                            AppError::DatabaseQueryError(e.to_string())
+                        })?;
 
-        // 3. Fetch and return updated settings
-        let updated_settings_tuple = chat_sessions::table
-            .filter(chat_sessions::id.eq(session_id))
-            // Explicitly select columns
-            .select((
-                chat_sessions::system_prompt,
-                chat_sessions::temperature,
-                chat_sessions::max_output_tokens,
-                chat_sessions::frequency_penalty,
-                chat_sessions::presence_penalty,
-                chat_sessions::top_k,
-                chat_sessions::top_p,
-                chat_sessions::repetition_penalty,
-                chat_sessions::min_p,
-                chat_sessions::top_a,
-                chat_sessions::seed,
-                chat_sessions::logit_bias,
-            ))
-            .first::<SettingsTuple>(conn)?;
+                    info!(%session_id, "Chat session settings updated successfully");
 
-        // Convert the fetched tuple back into the response struct
-        let (
-            system_prompt,
-            temperature,
-            max_output_tokens,
-            frequency_penalty,
-            presence_penalty,
-            top_k,
-            top_p,
-            repetition_penalty,
-            min_p,
-            top_a,
-            seed,
-            logit_bias,
-        ) = updated_settings_tuple;
-
-        Ok(ChatSettingsResponse {
-            system_prompt,
-            temperature,
-            max_output_tokens,
-            frequency_penalty,
-            presence_penalty,
-            top_k,
-            top_p,
-            repetition_penalty,
-            min_p,
-            top_a,
-            seed,
-            logit_bias,
+                    // Manually map the returned tuple to ChatSettingsResponse
+                    let (system_prompt, temperature, max_output_tokens, frequency_penalty, presence_penalty, top_k, top_p, repetition_penalty, min_p, top_a, seed, logit_bias) = updated_settings_tuple;
+                    Ok(ChatSettingsResponse {
+                        system_prompt,
+                        temperature,
+                        max_output_tokens,
+                        frequency_penalty,
+                        presence_penalty,
+                        top_k,
+                        top_p,
+                        repetition_penalty,
+                        min_p,
+                        top_a,
+                        seed,
+                        logit_bias,
+                    })
+                }
+                None => {
+                    error!("Chat session {} not found for update", session_id);
+                    Err(AppError::NotFound("Chat session not found".into()))
+                }
+            }
         })
     })
     .await?

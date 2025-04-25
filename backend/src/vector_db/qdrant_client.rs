@@ -8,9 +8,7 @@ use qdrant_client::qdrant::vectors_config::Config as QdrantVectorsConfig; // Ali
 use std::sync::Arc;
 use tracing::{info, error, instrument, warn};
 use uuid::Uuid;
-use serde_json::json;
-use qdrant_client::qdrant::{PointId, Vectors, Value}; // Added imports
-use std::collections::HashMap;
+// Removed unused imports: serde_json::json, qdrant_client::qdrant::{PointId, Vectors, Value}, std::collections::HashMap
 
 // Constants
 const DEFAULT_COLLECTION_NAME: &str = "chat_embeddings";
@@ -241,10 +239,10 @@ pub fn create_qdrant_point(id: Uuid, vector: Vec<f32>, payload: Option<serde_jso
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::json;
+    use serde_json::json; // Moved import here
     use uuid::Uuid;
-    use qdrant_client::qdrant::{PointId, Vectors, Value}; // Added imports
-    use std::collections::HashMap;
+    use qdrant_client::qdrant::{PointId, Vectors, Value}; // Moved import here
+    // Removed unused std::collections::HashMap import
 
     #[test]
     fn test_create_qdrant_point_with_payload() {
