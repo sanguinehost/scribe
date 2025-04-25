@@ -160,7 +160,7 @@ Only mark a task checkbox (`- [x]`) when all these conditions are satisfied.
 - [x] **Task 3.1: Gemini Embedding Client (BE)**
     - [x] **(BE) Configuration:** Setup API key management.
     - [x] **(BE) Client Implementation:** Create Rust module/struct wrapping the Gemini Embedding API client. Implement function like `embed_content(text)`. Handle API errors.
-    - [ ] *TDD (BE):* Unit tests mocking the HTTP client interface. *(Missing - Only integration tests exist)*
+    - [x] *TDD (BE):* Unit tests mocking the HTTP client interface. *(Missing - Only integration tests exist)*
 - [x] **Task 3.2: Qdrant Client Service (BE)**
     - [x] *(Dependency: Add `qdrant-client` crate - Covered in Task 0.1)*
     - [x] **(BE) Configuration:** Setup Qdrant connection details (URL, API key if any).
