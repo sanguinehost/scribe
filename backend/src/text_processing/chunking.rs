@@ -103,19 +103,75 @@ pub fn chunk_text(text: &str) -> Result<Vec<TextChunk>, AppError> {
     Ok(chunks)
 }
 
+// Placeholder for ChatMessage structure used in chunk_messages tests
+// In a real scenario, this would likely import the actual ChatMessage model
+// from `crate::models` or similar.
+#[cfg(test)]
+#[derive(Debug, Clone)]
+struct TestChatMessage {
+    // Assuming basic fields for testing purposes
+    author: String,
+    content: String,
+}
+
+/// Chunks the content of multiple chat messages.
+///
+/// Iterates through a slice of messages, applying `chunk_text` to the content
+/// of each message and collecting all resulting chunks.
+///
+/// TODO: Consider adding metadata to TextChunk later (e.g., original message index/ID, author)
+///       if the RAG pipeline needs to associate chunks back to specific messages.
+/// TODO: Explore alternative chunking strategies (e.g., combining message pairs before chunking)
+///       if simple per-message chunking proves insufficient.
+#[instrument(skip(messages), fields(num_messages = messages.len()))]
+pub fn chunk_messages<M>(messages: &[M]) -> Result<Vec<TextChunk>, AppError>
+where
+    // Use a trait bound to accept any type with a `content()` method returning &str
+    // This makes the function more flexible without needing the concrete ChatMessage type here.
+    M: HasContent,
+{
+    let mut all_chunks = Vec::new();
+    for (index, message) in messages.iter().enumerate() {
+        let content = message.content();
+        if content.trim().is_empty() {
+            debug!(message_index = index, "Skipping message with empty content");
+            continue;
+        }
+        debug!(message_index = index, content_len = content.len(), "Chunking message content");
+        match chunk_text(content) {
+            Ok(message_chunks) => {
+                // TODO: Potentially add message index/ID metadata to chunks here
+                all_chunks.extend(message_chunks);
+            }
+            Err(e) => {
+                // Decide on error handling: return error immediately or log and continue?
+                // For now, return immediately.
+                warn!(message_index = index, error = ?e, "Failed to chunk message content");
+                return Err(e);
+            }
+        }
+    }
+    debug!(total_chunks = all_chunks.len(), "Finished chunking messages");
+    Ok(all_chunks)
+}
+
+/// Simple trait to abstract getting message content.
+/// Implement this for your actual ChatMessage struct.
+pub trait HasContent {
+    fn content(&self) -> &str;
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::iter::repeat; // Import repeat
-    // use icu_locid::locale; // Already removed
-    // use icu_provider::DataProvider; // Already removed
-    // use icu_segmenter::provider::{SentenceBreakDataV1Marker, LineBreakDataV1Marker}; // Already removed
+    use std::iter::repeat;
 
-    /* REMOVED test_provider function
-    fn test_provider() -> impl DataProvider<SentenceBreakDataV1Marker> + DataProvider<LineBreakDataV1Marker> + Sized + Clone + Send + Sync + 'static {
-        icu_testdata::get_provider()
+    // Implement the trait for the test struct
+    impl HasContent for TestChatMessage {
+        fn content(&self) -> &str {
+            &self.content
+        }
     }
-    */
 
     #[test]
     fn test_chunk_simple_paragraph() {
@@ -394,5 +450,134 @@ She walks towards a boarded-up entrance to the side building. With minimal appar
         println!("\n--- End RPG Scenario EDA Test ---");
         // This test primarily relies on the printed output for analysis.
         // Add more specific assertions as needed based on observed behavior and requirements.
+    }
+
+    #[test]
+    fn test_chunk_messages_empty_list() {
+        let messages: Vec<TestChatMessage> = vec![];
+        let result = chunk_messages(&messages).unwrap();
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_chunk_messages_single_short_message() {
+        let messages = vec![TestChatMessage {
+            author: "User".to_string(),
+            content: "Hello there.".to_string(),
+        }];
+        let result = chunk_messages(&messages).unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].content, "Hello there.");
+    }
+
+     #[test]
+    fn test_chunk_messages_multiple_short_messages() {
+        let messages = vec![
+            TestChatMessage { author: "User".to_string(), content: "First message.".to_string() },
+            TestChatMessage { author: "AI".to_string(), content: "Second message.".to_string() },
+        ];
+        let result = chunk_messages(&messages).unwrap();
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].content, "First message.");
+        assert_eq!(result[1].content, "Second message.");
+    }
+
+    #[test]
+    fn test_chunk_messages_with_empty_content() {
+        let messages = vec![
+            TestChatMessage { author: "User".to_string(), content: "Real message.".to_string() },
+            TestChatMessage { author: "AI".to_string(), content: "   ".to_string() }, // Empty after trim
+            TestChatMessage { author: "User".to_string(), content: "".to_string() },   // Empty
+            TestChatMessage { author: "AI".to_string(), content: "Another real one.".to_string() },
+        ];
+        let result = chunk_messages(&messages).unwrap();
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].content, "Real message.");
+        assert_eq!(result[1].content, "Another real one.");
+    }
+
+    #[test]
+    fn test_chunk_messages_one_message_needs_splitting() {
+        let long_content = "This is the first sentence. ".to_string()
+            + &"This is a much longer second sentence designed to exceed the limit all on its own, forcing a split. ".repeat(15) // Make it long
+            + &"This is the third sentence.";
+        let messages = vec![
+            TestChatMessage { author: "User".to_string(), content: "Short intro.".to_string() },
+            TestChatMessage { author: "AI".to_string(), content: long_content },
+            TestChatMessage { author: "User".to_string(), content: "Short outro.".to_string() },
+        ];
+
+        let result = chunk_messages(&messages).unwrap();
+
+        // Expecting:
+        // 1 chunk from "Short intro."
+        // Multiple chunks from `long_content` (at least 2: the first sentence, and the truncated long sentence)
+        // 1 chunk from "Short outro."
+        // The exact number from long_content depends on chunk_text and ICU behavior.
+        assert!(result.len() > 3, "Expected more than 3 chunks due to splitting");
+
+        assert_eq!(result[0].content, "Short intro.");
+        assert!(result[1].content.starts_with("This is the first sentence.")); // First part of the long message
+        // Check that all chunks derived from the long message are within the size limit
+        assert!(result.iter().skip(1).take(result.len()-2).all(|c| c.content.chars().count() <= DEFAULT_MAX_CHUNK_SIZE_CHARS));
+        assert_eq!(result.last().unwrap().content, "Short outro.");
+    }
+
+     #[test]
+    fn test_chunk_messages_multiple_messages_need_splitting() {
+        // Create two long contents that will both be split by chunk_text
+        let long_content1 = "Sentence A1. ".to_string() + &"Long part A that needs splitting. ".repeat(20) + &"Sentence A2.";
+        let long_content2 = "Sentence B1. ".to_string() + &"Long part B that also needs splitting. ".repeat(20) + &"Sentence B2.";
+
+        let messages = vec![
+            TestChatMessage { author: "User".to_string(), content: long_content1 },
+            TestChatMessage { author: "AI".to_string(), content: "A short reply in between.".to_string() },
+            TestChatMessage { author: "User".to_string(), content: long_content2 },
+        ];
+
+        let result = chunk_messages(&messages).unwrap();
+
+        // Expecting chunks from msg1, 1 chunk from msg2, chunks from msg3
+        assert!(result.len() > 3, "Expected significantly more than 3 chunks");
+
+        // Check first chunk is start of msg1
+        assert!(result[0].content.starts_with("Sentence A1."));
+
+        // Check intermediate short message chunk exists correctly
+        // The exact index depends on how msg1 was split. Find it.
+        let intermediate_chunk_index = result.iter().position(|c| c.content == "A short reply in between.");
+        assert!(intermediate_chunk_index.is_some(), "Could not find the intermediate short message chunk");
+
+        // Check chunks after the intermediate one belong to msg3
+        let intermediate_index = intermediate_chunk_index.unwrap();
+        assert!(result[intermediate_index + 1].content.starts_with("Sentence B1."), "Chunk after intermediate should be start of msg3");
+
+        // General check for size limits
+        assert!(result.iter().all(|c| c.content.chars().count() <= DEFAULT_MAX_CHUNK_SIZE_CHARS));
+    }
+
+    #[test]
+    fn test_chunk_messages_unicode_content() {
+        let messages = vec![
+            TestChatMessage {
+                author: "User".to_string(),
+                // Japanese text spanning sentences and paragraphs (similar to chunk_text test)
+                content: "これは最初の文です。これは二番目の文。\n\n新しい段落。".to_string(),
+            },
+            TestChatMessage {
+                author: "AI".to_string(),
+                content: "了解しました。".to_string(), // "Understood."
+            },
+        ];
+        let result = chunk_messages(&messages).unwrap();
+
+        // Expecting chunks from the first message (potentially split) + 1 chunk from the second.
+        // Based on chunk_text test, first message might yield 2 or 3 chunks. +1 for the second.
+        assert!(result.len() == 3 || result.len() == 4, "Expected 3 or 4 chunks total");
+
+        // Check the last chunk is the simple response
+        assert_eq!(result.last().unwrap().content, "了解しました。");
+        assert!(result.iter().all(|c| !c.content.is_empty()));
+        assert!(result.iter().all(|c| c.content.chars().count() <= DEFAULT_MAX_CHUNK_SIZE_CHARS));
     }
 }

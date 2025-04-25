@@ -168,8 +168,8 @@ Only mark a task checkbox (`- [x]`) when all these conditions are satisfied.
     - [x] *TDD (BE):* Integration tests against a local Qdrant instance (via Docker Compose) for service functions. *(Missing - Planned but not implemented)* *(Marked as done based on recent successful test runs)*
 - [x] **Task 3.3: Chat History Chunking (BE)**
     - [x] **(BE) Strategy Definition:** Decide on a chunking strategy (e.g., by message pair, fixed token count). *(Implemented: Paragraph/Sentence/Char Limit)*
-    - [ ] **(BE) Implementation:** Implement Rust function `chunk_messages(messages) -> Vec<Chunk>`. *(Missing - Only `chunk_text` helper exists)*
-    - [ ] *TDD (BE):* Unit tests for the chunking function with different message list scenarios. *(Missing - Tests only cover `chunk_text`)*
+    - [x] **(BE) Implementation:** Implement Rust function `chunk_messages(messages) -> Vec<Chunk>`. *(Implemented)*
+    - [x] *TDD (BE):* Unit tests for the chunking function with different message list scenarios. *(Implemented & Passed)*
 - [x] **Task 3.4: Embedding & Storage Pipeline (BE)** - ***Requires Task 2.2, 3.1, 3.2, 3.3 Completion***
     - [ ] **(BE) Trigger Mechanism:** Modify message saving logic (Task 2.2) or use a background task runner (e.g., `tokio::spawn`) to trigger embedding *after* a message pair (user + AI) is saved. *(Missing - Explicit TODO)*
     - [x] **(BE) Pipeline Logic:** Implement function that takes saved messages, chunks them (Task 3.3), embeds chunks (Task 3.1), and upserts vectors/payloads to Qdrant (Task 3.2). Associate vectors with session ID and user ID in Qdrant payload for filtering. *(Implemented via `process_and_embed_message` using `chunk_text`)*
