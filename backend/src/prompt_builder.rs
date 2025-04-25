@@ -112,23 +112,11 @@ pub async fn build_prompt_with_rag( // Rename and make async
 
 
 // --- Unit Tests ---
-// Note: Testing build_prompt_with_rag now requires mocking AppState and its dependencies (embedding, qdrant).
 // This is more complex and might require dedicated test infrastructure or refactoring.
 // The existing tests for the basic prompt structure are kept below but commented out
 // as they target the old synchronous `build_prompt` function.
 #[cfg(test)]
 mod tests {
-    use super::*; // Import items from the parent module
-    use chrono::Utc; // Add Utc import for tests
-
-    // Helper function to create a dummy chat message
-    fn create_dummy_message(role: MessageRole, content: &str) -> ChatMessage {
-        ChatMessage {
-            id: Uuid::new_v4(),
-            session_id: Uuid::new_v4(),
-            message_type: role,
-            content: content.to_string(),
-            created_at: Utc::now(),
-        }
-    }
+    // Removed outdated test code that targeted the old build_prompt function
+    // and unresolved/unused imports.
 }

@@ -45,10 +45,10 @@ use chrono::{DateTime, Utc}; // ADDED for timestamp types
 use scribe_backend::state::DbPool; // ADDED DbPool
 use scribe_backend::AppState; // ADDED AppState
 use scribe_backend::models::chats::{ // ADDED Chat related types
-    ChatSession, NewChatSession, ChatMessage, NewChatMessage, MessageRole
+    ChatSession, NewChatSession, ChatMessage, MessageRole
 };
-use scribe_backend::models::chats::DbInsertableChatMessage; // Added DbInsertableChatMessage
 
+use scribe_backend::models::chats::DbInsertableChatMessage;
 // Define a struct matching the expected JSON structure from the list endpoint
 #[derive(Deserialize, Debug, PartialEq)] // Add PartialEq for assertion
 struct CharacterSummary {

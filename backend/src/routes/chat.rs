@@ -27,8 +27,7 @@ use serde_json::json;
 use bigdecimal::ToPrimitive;
 use mime;
 
-const DEFAULT_MODEL_NAME: &str = "gemini-2.5-pro-exp-03-25
-";
+const DEFAULT_MODEL_NAME: &str = "gemini-1.5-flash-latest";
 
 #[derive(Deserialize)]
 pub struct CreateChatRequest {
@@ -267,9 +266,13 @@ pub async fn generate_chat_response(
                     while let Some(item_result) = stream.next().await {
                         match item_result {
                             Ok(ChatStreamEvent::Chunk(chunk)) => {
+                                // Access the content field directly
                                 if !chunk.content.is_empty() {
                                     full_response.push_str(&chunk.content);
                                     yield Ok::<_, AppError>(Event::default().event("content").data(chunk.content));
+                                } else {
+                                    // Log if a chunk had empty content (optional)
+                                    debug!(%session_id, ?chunk, "Received stream chunk with empty content.");
                                 }
                             }
                             Ok(ChatStreamEvent::End(_end_event)) => {
@@ -365,33 +368,56 @@ pub async fn generate_chat_response(
 
         match ai_response_result {
             Ok(response) => {
-                let full_content = extract_content_or_error(&response)?;
-
-                if full_content.is_empty() {
-                    warn!(%session_id, "Non-streaming AI response was empty after extraction");
-                    let empty_saved_message = chat_service::save_message(
-                        app_state.clone().into(),
-                        session_id,
-                        user_id, // Pass the request user_id (was None)
-                        MessageRole::Assistant,
-                        "".to_string(),
-                    ).await?;
-                    Ok(Json(json!({ "message_id": empty_saved_message.id, "content": "" })).into_response())
-                } else {
-                    let saved_message = chat_service::save_message(
-                        app_state.clone().into(),
-                        session_id,
-                        user_id, // Pass the request user_id (was None)
-                        MessageRole::Assistant,
-                        full_content.clone(),
-                    ).await?;
-
-                    Ok(Json(json!({ "message_id": saved_message.id, "content": full_content })).into_response())
+                // Try to extract content. This might fail if response is blocked or empty.
+                match extract_content_or_error(&response) {
+                    Ok(full_content) => {
+                        if full_content.is_empty() {
+                            warn!(%session_id, "Non-streaming AI response was empty after extraction");
+                            // Still save an empty message, return success with empty content
+                            let empty_saved_message = chat_service::save_message(
+                                app_state.clone().into(),
+                                session_id,
+                                user_id, 
+                                MessageRole::Assistant,
+                                "".to_string(),
+                            ).await?;
+                            Ok(Json(json!({ "message_id": empty_saved_message.id, "content": "" })).into_response())
+                        } else {
+                            // Save the successful response
+                            let saved_message = chat_service::save_message(
+                                app_state.clone().into(),
+                                session_id,
+                                user_id, 
+                                MessageRole::Assistant,
+                                full_content.clone(),
+                            ).await?;
+                            // Return success with content
+                            Ok(Json(json!({ "message_id": saved_message.id, "content": full_content })).into_response())
+                        }
+                    }
+                    Err(e @ AppError::GenerationError(_)) => {
+                        // This specifically handles the case where extract_content_or_error failed (e.g., safety block)
+                        error!(error = ?e, %session_id, "Failed to extract content from non-streaming AI response, possibly blocked.");
+                        // Return a specific error response to the client
+                        let status = StatusCode::BAD_GATEWAY; // 502 might be appropriate
+                        let body = Json(json!({ "error": "Generation failed", "detail": e.to_string() }));
+                        Ok((status, body).into_response())
+                    }
+                    Err(e) => {
+                        // Handle other potential errors from extract_content_or_error if any exist
+                        error!(error = ?e, %session_id, "Unexpected error during content extraction");
+                        Err(e) // Propagate other errors for default 500 handling
+                    }
                 }
             }
             Err(e) => {
-                error!(error = ?e, %session_id, "Failed to generate non-streaming AI response");
-                Err(e)
+                // This handles errors from the initial ai_client.exec_chat call (e.g., network error, API key issue)
+                error!(error = ?e, %session_id, "Failed to execute non-streaming AI request");
+                // Return a specific error response to the client
+                let status = StatusCode::BAD_GATEWAY; // Or potentially another 5xx code
+                let body = Json(json!({ "error": "AI service request failed", "detail": e.to_string() }));
+                Ok((status, body).into_response())
+                // Or propagate if default 500 handling is preferred for these specific errors: Err(e)
             }
         }
     }

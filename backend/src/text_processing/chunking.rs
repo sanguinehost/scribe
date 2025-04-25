@@ -1,5 +1,3 @@
-// backend/src/text_processing/chunking.rs
-
 use crate::errors::AppError;
 use tracing::{debug, warn, instrument}; // Removed unused 'error' import
 
@@ -106,12 +104,6 @@ pub fn chunk_text(text: &str) -> Result<Vec<TextChunk>, AppError> {
 // Placeholder for ChatMessage structure used in chunk_messages tests
 // In a real scenario, this would likely import the actual ChatMessage model
 // from `crate::models` or similar.
-#[derive(Debug, Clone)]
-struct TestChatMessage {
-    // Assuming basic fields for testing purposes
-    // author: String, // Commented out: unused field
-    content: String,
-}
 
 /// Chunks the content of multiple chat messages.
 ///
@@ -164,6 +156,12 @@ pub trait HasContent {
 mod tests {
     use super::*;
     use std::iter::repeat;
+
+    // Define a simple struct for testing purposes
+    #[derive(Debug, Clone)] // Added Debug and Clone for easier testing
+    struct TestChatMessage {
+        content: String,
+    }
 
     // Implement the trait for the test struct
     impl HasContent for TestChatMessage {

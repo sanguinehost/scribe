@@ -18,7 +18,7 @@ use uuid::Uuid;
 
 // Constants
 const DEFAULT_COLLECTION_NAME: &str = "chat_embeddings";
-const EMBEDDING_DIMENSION: u64 = 768; // Dimension for gemini-embedding-001 (or the model you use) - Needs verification for gemini-embedding-exp-03-07
+const EMBEDDING_DIMENSION: u64 = 3072; // Updated dimension based on error logs (likely text-embedding-004 or similar)
 
 #[derive(Clone)]
 pub struct QdrantClientService {

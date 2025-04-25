@@ -4452,6 +4452,8 @@ dependencies = [
  "chrono",
  "clap",
  "futures-util",
+ "genai",
+ "qdrant-client",
  "reqwest",
  "reqwest-eventsource",
  "scribe-backend",

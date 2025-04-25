@@ -7,6 +7,7 @@ use serde_json;
 
 /// Custom Error type for the CLI client
 #[derive(thiserror::Error, Debug)]
+#[allow(dead_code)] // Allow unused variants for now
 pub enum CliError { // Made pub
     #[error("Request failed: {0}")]
     Reqwest(#[from] reqwest::Error),

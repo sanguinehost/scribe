@@ -12,7 +12,7 @@ use crate::{
     models::{
         chats::{
             ChatSession, NewChatSession, ChatMessage as DbChatMessage, MessageRole,
-            NewChatMessage, DbInsertableChatMessage, SettingsTuple, ChatSettingsResponse,
+            DbInsertableChatMessage, SettingsTuple, ChatSettingsResponse,
             UpdateChatSettingsRequest,
         },
         characters::Character,

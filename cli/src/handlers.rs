@@ -9,7 +9,7 @@ use scribe_backend::models::chats::{MessageRole};
 use scribe_backend::models::users::User;
 use uuid::Uuid;
 use std::path::Path;
-use futures_util::Stream;
+use futures_util::Stream; // Re-added for MockHttpClient::stream_chat_response
 
 // --- Action Functions ---
 

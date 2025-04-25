@@ -222,5 +222,42 @@ mod tests {
         }
     }
 
+// Integration test: Calls the actual Gemini API with different model names
+    #[tokio::test]
+    #[ignore] // Ignored by default
+    async fn test_generate_simple_response_with_different_models() {
+        dotenv().ok();
+
+        let client_wrapper = build_gemini_client()
+            .await
+            .expect("Failed to build Gemini client wrapper for model comparison test");
+
+        let models_to_test = vec![
+            "gemini-2.5-pro-preview-03-25", // Paid/Preview model
+            "gemini-2.5-pro-exp-03-25",     // Experimental model
+            // Add "gemini-1.5-flash-latest" here too if desired for baseline
+        ];
+
+        for model_name in models_to_test {
+            println!("Testing model: {}", model_name);
+            let user_message = format!("Test Model [{}]: Say hello!", model_name);
+
+            let result = generate_simple_response(&*client_wrapper, user_message, model_name).await;
+
+            match result {
+                Ok(response) => {
+                    println!("  Response: {}", response);
+                    assert!(!response.is_empty(), "Gemini model {} returned an empty response", model_name);
+                    // We expect both models *should* ideally work for a simple request.
+                    // If the experimental one fails consistently, this assertion will catch it.
+                }
+                Err(e) => {
+                    // If the experimental model *is* expected to fail, adjust assertion here.
+                    // For now, panic on any error to highlight the issue.
+                    panic!("Gemini API call for model {} failed: {:?}", model_name, e);
+                }
+            }
+        }
+    }
     // TODO: Add a mocked test for generate_simple_response using a MockAiClient
 }
