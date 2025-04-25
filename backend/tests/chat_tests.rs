@@ -289,7 +289,7 @@ async fn list_chat_sessions_empty_integration() {
 #[tokio::test]
 async fn get_chat_messages_success_integration() {
     let context = test_helpers::setup_test_app().await;
-    let (auth_cookie, test_user) = test_helpers::create_test_user_and_login(&context.app, "test_get_msgs_integ", "password").await;
+    let (_auth_cookie, _test_user) = test_helpers::create_test_user_and_login(&context.app, "test_get_msgs_integ", "password").await;
 
     // TODO: Add actual test logic here
 }
@@ -1046,24 +1046,6 @@ async fn generate_chat_response_uses_default_settings() {
     let last_request = context.app.mock_ai_client.get_last_request().expect("Mock AI client did not receive a request");
 
     // Check that system prompt is included in the messages
-    let has_system_message = last_request.messages.iter().any(|msg| {
-        // First check role
-        let is_system = match msg.role {
-            ChatRole::System => true,
-            _ => false
-        };
-
-        // Then check content contains the prompt
-        // Note: The prompt might not be exactly "Default settings mock response" if it's derived differently
-        // Let's make this check more robust if needed, but for now assume it's passed correctly.
-        let has_prompt = format!("{:?}", msg.content).contains("Default settings mock response"); // Check against expected mock content
-
-        // Both conditions must be true
-        is_system && has_prompt
-    });
-    // Adjusted assertion: The system prompt is NOT added explicitly by the handler from the mock response content.
-    // The handler *should* read the system prompt from the DB (which is NULL here).
-    // So, we expect NO system message in the request sent to the LLM.
     let _has_system_message = last_request.messages.iter().any(|msg| matches!(msg.role, ChatRole::System)); // Prefixed again
     assert!(!_has_system_message, "System prompt should NOT be present when NULL in DB");
 
@@ -1592,4 +1574,121 @@ async fn generate_chat_response_non_streaming_success() {
     let ai_msg = messages.get(1).unwrap();
     assert_eq!(ai_msg.message_type, MessageRole::Assistant);
     assert_eq!(ai_msg.content, mock_ai_content);
+}
+#[tokio::test]
+async fn test_generate_chat_response_triggers_embeddings() {
+    let context = test_helpers::setup_test_app().await;
+    let (auth_cookie, user) = test_helpers::create_test_user_and_login(&context.app, "embed_trigger_user", "password").await;
+    let character = test_helpers::create_test_character(&context.app.db_pool, user.id, "Embed Trigger Char").await;
+    let session = test_helpers::create_test_chat_session(&context.app.db_pool, user.id, character.id).await;
+
+    // Mock the AI response
+    let mock_ai_content = "Response to trigger embedding.";
+    let mock_response = ChatResponse {
+        model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-1.5-flash-latest"),
+        provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-1.5-flash-latest"),
+        content: Some(MessageContent::Text(mock_ai_content.to_string())),
+        reasoning_content: None,
+        usage: Usage::default(),
+    };
+    context.app.mock_ai_client.set_response(Ok(mock_response));
+
+    let payload = NewChatMessageRequest {
+        content: "User message to trigger embedding".to_string(),
+        model: Some("test-embed-trigger-model".to_string()),
+    };
+
+    let request = Request::builder()
+        .method(Method::POST)
+        .uri(format!("/api/chats/{}/generate", session.id))
+        .header(header::COOKIE, &auth_cookie)
+        .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
+        // Non-streaming request
+        .body(Body::from(serde_json::to_vec(&payload).unwrap()))
+        .unwrap();
+
+    let response = context.app.router.clone().oneshot(request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+
+    // Consume the body to ensure the request is fully processed
+    let _ = response.into_body().collect().await.unwrap().to_bytes();
+
+    // Wait for background embedding tasks to potentially run and update the tracker
+    tokio::time::sleep(Duration::from_millis(200)).await; // Adjust if needed
+
+    // Assert that the embedding function was called twice
+    let tracker = context.app.embedding_call_tracker.clone(); // Access tracker directly from TestApp
+    let calls = tracker.lock().await;
+    assert_eq!(calls.len(), 2, "Expected embedding function to be called twice (user + assistant)");
+
+    // Verify the IDs match the saved messages
+    let messages = test_helpers::get_chat_messages_from_db(&context.app.db_pool, session.id).await;
+    assert_eq!(messages.len(), 2, "Should have user and AI message saved");
+
+    let user_msg = messages.iter().find(|m| m.message_type == MessageRole::User).expect("User message not found");
+    let ai_msg = messages.iter().find(|m| m.message_type == MessageRole::Assistant).expect("Assistant message not found");
+
+    assert!(calls.contains(&user_msg.id), "Embedding tracker should contain user message ID");
+    assert!(calls.contains(&ai_msg.id), "Embedding tracker should contain assistant message ID");
+}
+
+#[tokio::test]
+async fn test_generate_chat_response_triggers_embeddings_with_existing_session() {
+    let context = test_helpers::setup_test_app().await;
+    let _ai_response_content = "General Kenobi!".to_string(); // Prefix with _
+    // Rename _auth_cookie to auth_cookie and pass context.app
+    let (auth_cookie, test_user) = test_helpers::create_test_user_and_login(&context.app, "testuser", "password").await;
+    // Create a character first
+    let character = test_helpers::create_test_character(&context.app.db_pool, test_user.id, "Embed Trigger Char Session").await;
+    // Pass db_pool, user_id, and character.id, remove .unwrap()
+    let session = test_helpers::create_test_chat_session(&context.app.db_pool, test_user.id, character.id).await;
+
+    // Mock the AI response
+    let mock_ai_content = "Response to trigger embedding.";
+    let mock_response = ChatResponse {
+        model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-1.5-flash-latest"),
+        provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-1.5-flash-latest"),
+        content: Some(MessageContent::Text(mock_ai_content.to_string())),
+        reasoning_content: None,
+        usage: Usage::default(),
+    };
+    context.app.mock_ai_client.set_response(Ok(mock_response));
+
+    let payload = NewChatMessageRequest {
+        content: "User message to trigger embedding".to_string(),
+        model: Some("test-embed-trigger-model".to_string()),
+    };
+
+    let request = Request::builder()
+        .method(Method::POST)
+        .uri(format!("/api/chats/{}/generate", session.id))
+        .header(header::COOKIE, &auth_cookie) // Use the renamed auth_cookie
+        .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
+        // Non-streaming request
+        .body(Body::from(serde_json::to_vec(&payload).unwrap()))
+        .unwrap();
+
+    let response = context.app.router.clone().oneshot(request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+
+    // Consume the body to ensure the request is fully processed
+    let _ = response.into_body().collect().await.unwrap().to_bytes();
+
+    // Wait for background embedding tasks to potentially run and update the tracker
+    tokio::time::sleep(Duration::from_millis(200)).await; // Adjust if needed
+
+    // Assert that the embedding function was called twice
+    let tracker = context.app.embedding_call_tracker.clone(); // Access tracker directly from TestApp
+    let calls = tracker.lock().await;
+    assert_eq!(calls.len(), 2, "Expected embedding function to be called twice (user + assistant)");
+
+    // Verify the IDs match the saved messages
+    let messages = test_helpers::get_chat_messages_from_db(&context.app.db_pool, session.id).await;
+    assert_eq!(messages.len(), 2, "Should have user and AI message saved");
+
+    let user_msg = messages.iter().find(|m| m.message_type == MessageRole::User).expect("User message not found");
+    let ai_msg = messages.iter().find(|m| m.message_type == MessageRole::Assistant).expect("Assistant message not found");
+
+    assert!(calls.contains(&user_msg.id), "Embedding tracker should contain user message ID");
+    assert!(calls.contains(&ai_msg.id), "Embedding tracker should contain assistant message ID");
 }

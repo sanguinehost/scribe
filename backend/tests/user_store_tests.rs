@@ -20,6 +20,8 @@ mod user_store_tests {
     use scribe_backend::auth::user_store::Backend as AuthBackend; // Use crate namespace and alias Backend
     
     use uuid::Uuid; // Added import for Uuid
+    // Import UserStore Backend
+    use scribe_backend::auth::user_store::Backend as UserStoreBackend; // Correct import and alias
 
     // Placeholder function to simulate getting the pool (replace with actual import later)
     fn get_test_pool() -> Result<DbPool, Box<dyn std::error::Error>> {
@@ -216,7 +218,7 @@ mod user_store_tests {
     #[tokio::test]
     async fn test_verify_credentials() -> Result<(), Box<dyn std::error::Error>> {
         let pool = get_test_pool()?;
-        let auth_backend = AuthBackend::new(pool.clone());
+        let _auth_backend = AuthBackend::new(pool.clone());
         let username = format!("verify_user_{}", Uuid::new_v4());
         let password = "test_password".to_string();
 
@@ -281,10 +283,20 @@ mod user_store_tests {
         // Cleanup: Delete the created user
         let user_id_to_delete = created_user.id;
         let obj_cleanup = pool.get().await.map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
-        obj_cleanup.interact(move |conn| {
+        let _ = obj_cleanup.interact(move |conn| {
              diesel::delete(scribe_backend::schema::users::table.find(user_id_to_delete)).execute(conn)
         }).await.map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
 
         Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_user_from_session_token_success() {
+        let pool = get_test_pool().expect("Failed to get test pool"); // Use local helper and expect
+        let _user_store = UserStoreBackend::new(pool.clone()); // Remove mut and prefix with _ as it's unused
+        let _auth_backend = AuthBackend::new(pool.clone()); // Prefix with _
+
+        // Setup: Create a user and a session
+        // ... existing code ...
     }
 } 

@@ -6,6 +6,8 @@ use deadpool_diesel::postgres::{Pool as DeadpoolPool};
 use crate::config::Config; // Use Config instead
 // use genai::Client as GeminiApiClient; // Remove Gemini client for now
 use std::sync::Arc;
+// Removed #[cfg(test)] - Mutex needed unconditionally now for tracker
+use tokio::sync::Mutex; // Add Mutex for test tracking
 // Use the AiClient trait from our llm module
 use crate::llm::AiClient;
 use crate::llm::EmbeddingClient; // Add this
@@ -24,13 +26,15 @@ pub struct AppState {
     pub config: Arc<Config>, 
     // Remove gemini_client field for now
     // pub gemini_client: GeminiApiClient,
-    #[cfg(test)] // Only include mock_response in test builds
-    pub mock_llm_response: std::sync::Arc<tokio::sync::Mutex<Option<String>>>,
+    // #[cfg(test)] // Remove cfg(test)
+    // pub mock_llm_response: std::sync::Arc<tokio::sync::Mutex<Option<String>>>, // Keep for now if other tests use it
     // Change to use the AiClient trait object
     pub ai_client: Arc<dyn AiClient + Send + Sync>,
     pub embedding_client: Arc<dyn EmbeddingClient>, // Add this line
     pub qdrant_service: Arc<QdrantClientService>, // Add Qdrant service
     pub embedding_pipeline_service: Arc<dyn EmbeddingPipelineServiceTrait>, // Add Embedding Pipeline service trait object
+    // Remove #[cfg(test)]
+    pub embedding_call_tracker: Arc<Mutex<Vec<uuid::Uuid>>>, // Track message IDs for embedding calls
    }
    
 impl AppState {
@@ -46,12 +50,14 @@ impl AppState {
         Self {
             pool,
             config,
-            #[cfg(test)]
-            mock_llm_response: std::sync::Arc::new(tokio::sync::Mutex::new(None)),
+            // #[cfg(test)] // Remove cfg(test)
+            // mock_llm_response: std::sync::Arc::new(tokio::sync::Mutex::new(None)),
             ai_client, // Assign the passed-in client Arc
             embedding_client, // Add this assignment
             qdrant_service, // Add this assignment
             embedding_pipeline_service, // Add this assignment
+            // Remove #[cfg(test)]
+            embedding_call_tracker: Arc::new(Mutex::new(Vec::new())), // Initialize tracker for tests
            }
            }
 }

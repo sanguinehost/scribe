@@ -50,9 +50,9 @@ struct GeminiApiErrorResponse {
 }
 #[derive(Deserialize, Debug)]
 struct GeminiApiError {
-    code: i32,
+    // code: i32, // Commented out: unused field
     message: String,
-    status: String,
+    // status: String, // Commented out: unused field
 }
 
 // --- Client Implementation (To be added below) ---

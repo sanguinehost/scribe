@@ -6,13 +6,23 @@ use scribe_backend::errors::AppError;
 use scribe_backend::vector_db::qdrant_client::{QdrantClientService, create_qdrant_point};
 // Import necessary types for direct client use in setup
 use qdrant_client::Qdrant;
-use qdrant_client::qdrant::{CreateCollection, VectorParams, Distance, VectorsConfig};
-use qdrant_client::qdrant::vectors_config::Config as QdrantVectorsConfig;
-use scribe_backend::vector_db::qdrant_client::{Filter, FieldCondition, Match, Condition, ConditionOneOf, MatchValue};
+use qdrant_client::qdrant::{
+    CreateCollection, VectorParams, Distance, VectorsConfig,
+    vectors_config::Config as QdrantVectorsConfig,
+    Condition,
+    Filter,
+    FieldCondition,
+};
+// Import MatchValue from its specific module
+use qdrant_client::qdrant::r#match::MatchValue;
+// Import ConditionOneOf from its specific module
+use qdrant_client::qdrant::condition::ConditionOneOf;
+// Import Match
+use qdrant_client::qdrant::Match;
+// Removed duplicate/unused imports from scribe_backend::vector_db::qdrant_client
 use scribe_backend::vector_db::qdrant_client::Kind as ValueKind;
 use serde_json::json;
 use std::sync::Arc;
-use tokio::test;
 use uuid::Uuid;
 // Add serial_test import
 use serial_test::serial;
@@ -20,7 +30,9 @@ use serial_test::serial;
 // Define a shared collection name
 const TEST_COLLECTION_NAME: &str = "sanguine_scribe_integration_test";
 // Use the dimension defined in the main service
-const EMBEDDING_DIMENSION: u64 = 768;
+// Use the dimension constant from the service module - Make local as source is private
+// const EMBEDDING_DIMENSION: u64 = qdrant_service::EMBEDDING_DIMENSION; // Use alias
+const EMBEDDING_DIMENSION: u64 = 768; // Redefine locally
 
 // Helper function to create a Qdrant client service for testing (uses shared name)
 async fn create_test_qdrant_service() -> Result<QdrantClientService, AppError> {

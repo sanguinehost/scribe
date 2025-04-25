@@ -79,6 +79,7 @@ pub struct TestApp {
     pub mock_embedding_client: Arc<MockEmbeddingClient>, // Add mock embedding client
     pub mock_embedding_pipeline_service: Arc<MockEmbeddingPipelineService>, // Add mock RAG service
     pub qdrant_service: Arc<QdrantClientService>, // Add Qdrant service
+    pub embedding_call_tracker: Arc<tokio::sync::Mutex<Vec<uuid::Uuid>>>, // Add tracker field
    }
    
 /// Sets up the application state and router for integration testing, WITHOUT spawning a server.
@@ -172,7 +173,8 @@ pub async fn spawn_app() -> TestApp {
             .expect("Failed to create QdrantClientService for test"),
     );
 
-    // Ensure AppState is created with the mock clients and real Qdrant service
+    // Ensure AppState is created with the mock clients, real Qdrant service,
+    // and the tracker (only for test builds).
     let app_state = AppState::new(
         db_pool.clone(),
         config.clone(), // Clone config Arc for AppState
@@ -208,7 +210,7 @@ pub async fn spawn_app() -> TestApp {
         .nest("/api", protected_api_routes)
         .layer(CookieManagerLayer::new())
         .layer(auth_layer)
-        .with_state(app_state);
+        .with_state(app_state.clone());
 
     // --- DO NOT Run Server (in background) ---
     // The router will be called directly using oneshot
@@ -222,6 +224,7 @@ pub async fn spawn_app() -> TestApp {
         mock_embedding_client, // Store mock embedding client
         mock_embedding_pipeline_service, // Store mock RAG service
         qdrant_service, // Store Qdrant service
+        embedding_call_tracker: app_state.embedding_call_tracker.clone(),
        }
        }
 

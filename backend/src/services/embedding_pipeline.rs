@@ -102,6 +102,21 @@ pub async fn process_and_embed_message(
 ) -> Result<(), AppError> {
     info!("Starting embedding process for message");
 
+    // --- Test Hook: Track call (using tracker from AppState) ---
+    // Removed #[cfg(test)] - Tracker is now always part of AppState
+    {
+        let tracker = state.embedding_call_tracker.clone();
+        let msg_id = message.id;
+        // Lock and push directly, no need for extra spawn
+        if let Ok(mut calls) = tracker.try_lock() { // Use try_lock for simplicity in async context
+            calls.push(msg_id);
+            info!(message_id = %msg_id, "Tracked embedding call for test");
+        } else {
+            warn!(message_id = %msg_id, "Failed to lock embedding tracker for test (already locked?)");
+        }
+    }
+    // --- End Test Hook ---
+
     // 1. Chunk the message content
     let chunks = match chunk_text(&message.content) {
         Ok(chunks) => {

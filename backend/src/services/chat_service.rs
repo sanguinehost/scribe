@@ -27,8 +27,9 @@ use std::sync::Arc; // Add Arc for AppState
 pub type HistoryForGeneration = Vec<(MessageRole, String)>;
 
 // Type alias for the full data needed for generation, including the model name
-pub type GenerationData = (
-    HistoryForGeneration,
+// AND the unsaved user message struct
+pub type GenerationDataWithUnsavedUserMessage = (
+    HistoryForGeneration, // Existing history BEFORE the new user message
     Option<String>,      // system_prompt
     Option<BigDecimal>,  // temperature
     Option<i32>,         // max_output_tokens
@@ -42,6 +43,7 @@ pub type GenerationData = (
     Option<i32>,         // seed
     Option<Value>,       // logit_bias
     String,              // model_name
+    DbInsertableChatMessage, // The user message struct, ready to be saved
 );
 
 
@@ -250,7 +252,7 @@ pub async fn save_message(
 }
 
 
-/// Fetches session settings, history, saves the user message, and returns data needed for generation.
+/// Fetches session settings, history, and prepares the user message struct, returning data needed for generation.
 #[instrument(skip(pool, user_message_content), err)]
 pub async fn get_session_data_for_generation(
     pool: &DbPool,
@@ -258,99 +260,98 @@ pub async fn get_session_data_for_generation(
     session_id: Uuid,
     user_message_content: String,
     default_model_name: String, // Pass default model name
-) -> Result<GenerationData, AppError> {
+) -> Result<GenerationDataWithUnsavedUserMessage, AppError> { // Updated return type
     let conn = pool.get().await?;
     conn.interact(move |conn| {
-        conn.transaction(|transaction_conn| {
-            info!(%session_id, %user_id, "Fetching session for generation");
+        // No transaction needed here anymore as we don't save the message
+        info!(%session_id, %user_id, "Fetching session data for generation");
 
-            // 1. Fetch session and check existence
-            let session_owner_id = chat_sessions::table
-                .filter(chat_sessions::id.eq(session_id))
-                .select(chat_sessions::user_id)
-                .first::<Uuid>(transaction_conn)
-                .optional()?;
+        // 1. Fetch session and check existence/ownership
+        let session_owner_id = chat_sessions::table
+            .filter(chat_sessions::id.eq(session_id))
+            .select(chat_sessions::user_id)
+            .first::<Uuid>(conn)
+            .optional()?;
 
-            // 2. Handle not found or forbidden
-            match session_owner_id {
-                None => {
-                    warn!(%session_id, %user_id, "Chat session not found for generation");
-                    return Err(AppError::NotFound("Chat session not found".into()));
-                }
-                Some(owner_id) if owner_id != user_id => {
-                    warn!(%session_id, %user_id, owner_id=%owner_id, "User mismatch for generation");
-                    return Err(AppError::Forbidden);
-                }
-                Some(_) => {
-                    // Ownership verified, proceed
-                    info!(%session_id, %user_id, "Session ownership verified for generation");
-                }
+        match session_owner_id {
+            None => {
+                warn!(%session_id, %user_id, "Chat session not found for generation");
+                return Err(AppError::NotFound("Chat session not found".into()));
             }
-
-            info!(%session_id, "Fetching chat settings for generation");
-            let settings: SettingsTuple = chat_sessions::table
-               .filter(chat_sessions::id.eq(session_id))
-               // Explicitly select columns instead of using SettingsTuple::as_select()
-               .select((
-                   chat_sessions::system_prompt,
-                   chat_sessions::temperature,
-                   chat_sessions::max_output_tokens,
-                   chat_sessions::frequency_penalty,
-                   chat_sessions::presence_penalty,
-                   chat_sessions::top_k,
-                   chat_sessions::top_p,
-                   chat_sessions::repetition_penalty,
-                   chat_sessions::min_p,
-                   chat_sessions::top_a,
-                   chat_sessions::seed,
-                   chat_sessions::logit_bias,
-               ))
-               .first::<SettingsTuple>(transaction_conn)?;
-            let ( system_prompt, temperature, max_tokens, frequency_penalty, presence_penalty, top_k, top_p, repetition_penalty, min_p, top_a, seed, logit_bias ) = settings;
-
-            info!(%session_id, "Fetching message history for generation");
-            let history = chat_messages::table
-               .filter(chat_messages::session_id.eq(session_id))
-               .order(chat_messages::created_at.asc())
-               .select((chat_messages::message_type, chat_messages::content))
-               .load::<(MessageRole, String)>(transaction_conn)?;
-
-            info!(%session_id, "Saving user message before generation");
-            let user_db_message = DbInsertableChatMessage::new(
-                session_id,
-                Some(user_id),
-                MessageRole::User,
-                user_message_content.clone(),
-            );
-            let _saved_user_message = save_chat_message_internal(transaction_conn, user_db_message)?;
-
-            let mut full_history = history;
-            full_history.push((MessageRole::User, user_message_content)); // Add the *just saved* user message
-
-            // Prepend system prompt if it exists and is not empty
-            if let Some(ref prompt) = system_prompt {
-                if !prompt.trim().is_empty() {
-                    full_history.insert(0, (MessageRole::System, prompt.clone()));
-                }
+            Some(owner_id) if owner_id != user_id => {
+                warn!(%session_id, %user_id, owner_id=%owner_id, "User mismatch for generation");
+                return Err(AppError::Forbidden);
             }
+            Some(_) => {
+                info!(%session_id, %user_id, "Session ownership verified for generation");
+            }
+        }
 
-            Ok((
-                full_history,
-                system_prompt,
-                temperature,
-                max_tokens,
-                frequency_penalty,
-                presence_penalty,
-                top_k,
-                top_p,
-                repetition_penalty,
-                min_p,
-                top_a,
-                seed,
-                logit_bias,
-                default_model_name // Return the passed-in default model name
+        info!(%session_id, "Fetching chat settings for generation");
+        let settings: SettingsTuple = chat_sessions::table
+            .filter(chat_sessions::id.eq(session_id))
+            .select((
+                chat_sessions::system_prompt,
+                chat_sessions::temperature,
+                chat_sessions::max_output_tokens,
+                chat_sessions::frequency_penalty,
+                chat_sessions::presence_penalty,
+                chat_sessions::top_k,
+                chat_sessions::top_p,
+                chat_sessions::repetition_penalty,
+                chat_sessions::min_p,
+                chat_sessions::top_a,
+                chat_sessions::seed,
+                chat_sessions::logit_bias,
             ))
-        })
+            .first::<SettingsTuple>(conn)?;
+        let ( system_prompt, temperature, max_tokens, frequency_penalty, presence_penalty, top_k, top_p, repetition_penalty, min_p, top_a, seed, logit_bias ) = settings;
+
+        info!(%session_id, "Fetching message history for generation (excluding current user message)");
+        let history = chat_messages::table
+            .filter(chat_messages::session_id.eq(session_id))
+            .order(chat_messages::created_at.asc())
+            .select((chat_messages::message_type, chat_messages::content))
+            .load::<(MessageRole, String)>(conn)?;
+
+        // info!(%session_id, "Saving user message before generation"); // Removed save
+        // Prepare the user message struct, but don't save it here
+        let user_db_message_to_save = DbInsertableChatMessage::new(
+            session_id,
+            Some(user_id),
+            MessageRole::User,
+            user_message_content, // Use directly, no clone needed now
+        );
+        // let saved_user_message = save_chat_message_internal(transaction_conn, user_db_message)?; // Removed save
+
+        let mut full_history = history;
+        // We do NOT add the current user message to the history passed to the LLM yet,
+        // as the handler will add it after potentially prepending RAG context.
+
+        // Prepend system prompt if it exists and is not empty
+        if let Some(ref prompt) = system_prompt {
+            if !prompt.trim().is_empty() {
+                full_history.insert(0, (MessageRole::System, prompt.clone()));
+            }
+        }
+
+        Ok((
+            full_history, // History *without* the current user message
+            system_prompt,
+            temperature,
+            max_tokens,
+            frequency_penalty,
+            presence_penalty,
+            top_k,
+            top_p,
+            repetition_penalty,
+            min_p,
+            top_a,
+            seed,
+            logit_bias,
+            default_model_name,
+            user_db_message_to_save, // Return the unsaved user message struct
+        ))
     })
     .await?
 }

@@ -106,11 +106,10 @@ pub fn chunk_text(text: &str) -> Result<Vec<TextChunk>, AppError> {
 // Placeholder for ChatMessage structure used in chunk_messages tests
 // In a real scenario, this would likely import the actual ChatMessage model
 // from `crate::models` or similar.
-#[cfg(test)]
 #[derive(Debug, Clone)]
 struct TestChatMessage {
     // Assuming basic fields for testing purposes
-    author: String,
+    // author: String, // Commented out: unused field
     content: String,
 }
 
@@ -462,7 +461,7 @@ She walks towards a boarded-up entrance to the side building. With minimal appar
     #[test]
     fn test_chunk_messages_single_short_message() {
         let messages = vec![TestChatMessage {
-            author: "User".to_string(),
+            // author: "User".to_string(),
             content: "Hello there.".to_string(),
         }];
         let result = chunk_messages(&messages).unwrap();
@@ -473,8 +472,14 @@ She walks towards a boarded-up entrance to the side building. With minimal appar
      #[test]
     fn test_chunk_messages_multiple_short_messages() {
         let messages = vec![
-            TestChatMessage { author: "User".to_string(), content: "First message.".to_string() },
-            TestChatMessage { author: "AI".to_string(), content: "Second message.".to_string() },
+            TestChatMessage {
+                // author: "User".to_string(),
+                content: "First message.".to_string(),
+            },
+            TestChatMessage {
+                // author: "AI".to_string(),
+                content: "Second message.".to_string(),
+            },
         ];
         let result = chunk_messages(&messages).unwrap();
         assert_eq!(result.len(), 2);
@@ -485,10 +490,22 @@ She walks towards a boarded-up entrance to the side building. With minimal appar
     #[test]
     fn test_chunk_messages_with_empty_content() {
         let messages = vec![
-            TestChatMessage { author: "User".to_string(), content: "Real message.".to_string() },
-            TestChatMessage { author: "AI".to_string(), content: "   ".to_string() }, // Empty after trim
-            TestChatMessage { author: "User".to_string(), content: "".to_string() },   // Empty
-            TestChatMessage { author: "AI".to_string(), content: "Another real one.".to_string() },
+            TestChatMessage {
+                // author: "User".to_string(),
+                content: "Real message.".to_string(),
+            },
+            TestChatMessage {
+                // author: "AI".to_string(),
+                content: "   ".to_string(), // Empty after trim
+            },
+            TestChatMessage {
+                // author: "User".to_string(),
+                content: "".to_string(),   // Empty
+            },
+            TestChatMessage {
+                // author: "AI".to_string(),
+                content: "Another real one.".to_string(),
+            },
         ];
         let result = chunk_messages(&messages).unwrap();
         assert_eq!(result.len(), 2);
@@ -502,9 +519,18 @@ She walks towards a boarded-up entrance to the side building. With minimal appar
             + &"This is a much longer second sentence designed to exceed the limit all on its own, forcing a split. ".repeat(15) // Make it long
             + &"This is the third sentence.";
         let messages = vec![
-            TestChatMessage { author: "User".to_string(), content: "Short intro.".to_string() },
-            TestChatMessage { author: "AI".to_string(), content: long_content },
-            TestChatMessage { author: "User".to_string(), content: "Short outro.".to_string() },
+            TestChatMessage {
+                // author: "User".to_string(),
+                content: "Short intro.".to_string(),
+            },
+            TestChatMessage {
+                // author: "AI".to_string(),
+                content: long_content,
+            },
+            TestChatMessage {
+                // author: "User".to_string(),
+                content: "Short outro.".to_string(),
+            },
         ];
 
         let result = chunk_messages(&messages).unwrap();
@@ -530,9 +556,18 @@ She walks towards a boarded-up entrance to the side building. With minimal appar
         let long_content2 = "Sentence B1. ".to_string() + &"Long part B that also needs splitting. ".repeat(20) + &"Sentence B2.";
 
         let messages = vec![
-            TestChatMessage { author: "User".to_string(), content: long_content1 },
-            TestChatMessage { author: "AI".to_string(), content: "A short reply in between.".to_string() },
-            TestChatMessage { author: "User".to_string(), content: long_content2 },
+            TestChatMessage {
+                // author: "User".to_string(),
+                content: long_content1,
+            },
+            TestChatMessage {
+                // author: "AI".to_string(),
+                content: "A short reply in between.".to_string(),
+            },
+            TestChatMessage {
+                // author: "User".to_string(),
+                content: long_content2,
+            },
         ];
 
         let result = chunk_messages(&messages).unwrap();
@@ -560,12 +595,11 @@ She walks towards a boarded-up entrance to the side building. With minimal appar
     fn test_chunk_messages_unicode_content() {
         let messages = vec![
             TestChatMessage {
-                author: "User".to_string(),
-                // Japanese text spanning sentences and paragraphs (similar to chunk_text test)
+                // author: "User".to_string(),
                 content: "これは最初の文です。これは二番目の文。\n\n新しい段落。".to_string(),
             },
             TestChatMessage {
-                author: "AI".to_string(),
+                // author: "AI".to_string(),
                 content: "了解しました。".to_string(), // "Understood."
             },
         ];

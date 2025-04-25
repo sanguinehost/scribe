@@ -117,23 +117,11 @@ pub async fn build_prompt_with_rag( // Rename and make async
 // The existing tests for the basic prompt structure are kept below but commented out
 // as they target the old synchronous `build_prompt` function.
 #[cfg(test)]
-
 mod tests {
     use super::*; // Import items from the parent module
     use chrono::Utc; // Add Utc import for tests
 
-    fn create_dummy_character(name: &str, description: Option<&str>) -> CharacterMetadata {
-        CharacterMetadata {
-            id: Uuid::new_v4(),
-            user_id: Uuid::new_v4(),
-            name: name.to_string(),
-            description: description.map(String::from),
-            first_mes: None,
-            created_at: Utc::now(),
-            updated_at: Utc::now(),
-        }
-    }
-
+    // Helper function to create a dummy chat message
     fn create_dummy_message(role: MessageRole, content: &str) -> ChatMessage {
         ChatMessage {
             id: Uuid::new_v4(),

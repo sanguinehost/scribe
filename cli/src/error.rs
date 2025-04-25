@@ -35,8 +35,14 @@ pub enum CliError { // Made pub
     // Add new variants from client.rs logic
     #[error("Network error: {0}")]
     Network(String),
-    #[error("Serialization error: {0}")]
-    Serialization(String), // Note: Covers Json errors too, consider merging/refining?
     #[error("Backend error: {0}")]
     Backend(String), // For generic non-API errors from backend responses
+    #[error("Database error: {0}")]
+    DatabaseError(String),
+    #[error("User not found")]
+    UserNotFound,
+    #[error("Character upload error: {0}")]
+    CharacterUploadError(String),
+    #[error("Chat session error: {0}")]
+    ChatSessionError(String),
 } 

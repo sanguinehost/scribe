@@ -8,12 +8,9 @@ use axum::{
 };
 use axum::debug_handler;
 use futures::{StreamExt};
-// Removed unused std::time::Duration
-// Removed unused tokio::sync::Mutex
-use serde::{Deserialize}; // Removed Serialize
+use serde::{Deserialize};
 use uuid::Uuid;
 use bigdecimal::BigDecimal;
-// Removed unused diesel::prelude::*
 use axum_login::AuthSession;
 use genai::chat::{ChatOptions, ChatRequest, ChatResponse, ChatMessage, ChatStreamEvent};
 use crate::{
@@ -30,7 +27,8 @@ use serde_json::json;
 use bigdecimal::ToPrimitive;
 use mime;
 
-const DEFAULT_MODEL_NAME: &str = "gemini-1.5-flash-latest";
+const DEFAULT_MODEL_NAME: &str = "gemini-2.5-pro-exp-03-25
+";
 
 #[derive(Deserialize)]
 pub struct CreateChatRequest {
@@ -131,9 +129,9 @@ pub async fn generate_chat_response(
     let user_id = user.id;
     let user_message_content = req.content;
 
-    // --- 1. Get Settings, History, and Save User Message ---
+    // --- 1. Get Settings, History, and Prepare User Message Struct ---
     let (
-        prompt_history,
+        prompt_history, // History *before* the current user message
         system_prompt,
         temperature,
         max_tokens_setting,
@@ -146,16 +144,28 @@ pub async fn generate_chat_response(
         top_a,
         seed,
         logit_bias,
-        model_name
+        model_name,
+        user_message_to_save // Get the unsaved user message struct
     ) = chat_service::get_session_data_for_generation(
         &app_state.pool,
         user_id,
         session_id,
-        user_message_content.clone(),
+        user_message_content.clone(), // Clone here for RAG context later
         DEFAULT_MODEL_NAME.to_string(),
     ).await?;
 
-    // --- 1b. Retrieve RAG Context ---
+    // --- 1a. Save User Message (and trigger its embedding) ---
+    let saved_user_message = chat_service::save_message(
+        app_state.clone().into(),
+        user_message_to_save.chat_id, // Correct field name: chat_id
+        Some(user_id), // Pass the user_id obtained from auth_session
+        user_message_to_save.role, // Correct field name: role
+        user_message_to_save.content.clone(), // Clone content for saving
+    ).await?;
+    let user_message_id = saved_user_message.id; // Get ID for potential logging/use
+    info!(%user_message_id, %session_id, "User message saved successfully");
+
+    // --- 1b. Retrieve RAG Context (using original user message content) ---
     let retrieved_chunks = match app_state.embedding_pipeline_service
         .retrieve_relevant_chunks(app_state.clone().into(), session_id, &user_message_content, 3) // Convert AppState to Arc<AppState>, Added limit=3
         .await
@@ -375,6 +385,7 @@ pub async fn generate_chat_response(
                         MessageRole::Assistant,
                         full_content.clone(),
                     ).await?;
+
                     Ok(Json(json!({ "message_id": saved_message.id, "content": full_content })).into_response())
                 }
             }
