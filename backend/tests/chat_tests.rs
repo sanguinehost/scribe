@@ -9,7 +9,7 @@ use axum::{
 };
 use bigdecimal::BigDecimal; // Removed FromPrimitive, ToPrimitive
 // Removed: use diesel::RunQueryDsl; // Added for .execute()
- // Added for .run_pending_migrations()
+// Added for .run_pending_migrations()
 use futures::{StreamExt, TryStreamExt}; // Added StreamExt
 use genai::{
     ModelIden,                                                              // Added
@@ -32,19 +32,17 @@ use uuid::Uuid;
 use scribe_backend::models::chats::ChatMessage; // Add missing import
 use scribe_backend::test_helpers::MockEmbeddingPipelineService;
 use scribe_backend::{
-    errors::AppError,                              // Keep AiClient, EmbeddingClient
+    errors::AppError, // Keep AiClient, EmbeddingClient
     models::chats::{
         ChatSession,
         ChatSettingsResponse, // Removed NewChatSession,
-                              // Removed NewChatMessage, SettingsTuple, DbInsertableChatMessage,
+        // Removed NewChatMessage, SettingsTuple, DbInsertableChatMessage,
         MessageRole,
         NewChatMessageRequest,
         UpdateChatSettingsRequest,
     },
-    services::embedding_pipeline::{
-        EmbeddingMetadata, RetrievedChunk,
-    }, // Add RAG imports // Added EmbeddingPipelineServiceTrait
-    test_helpers::{self, PipelineCall},               // Added QdrantClientService
+    services::embedding_pipeline::{EmbeddingMetadata, RetrievedChunk}, // Add RAG imports // Added EmbeddingPipelineServiceTrait
+    test_helpers::{self, PipelineCall},                                // Added QdrantClientService
 }; // Add missing import
 
 // Helper function to parse SSE stream manually

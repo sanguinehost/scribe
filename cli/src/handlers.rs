@@ -1,9 +1,9 @@
 use crate::chat::run_chat_loop; // Import the chat loop function
 use crate::chat::run_stream_test_loop; // Import the stream test loop function
-use crate::client::HttpClient;
+use crate::client::HttpClient; // Added StreamEvent
 use crate::error::CliError;
 use crate::io::IoHandler;
-use futures_util::Stream;
+// Added missing Stream trait import
 use scribe_backend::models::auth::Credentials;
 use scribe_backend::models::characters::CharacterMetadata;
 use scribe_backend::models::chats::MessageRole;
@@ -441,6 +441,7 @@ mod tests {
     use crate::io::IoHandler; // Need IoHandler trait
     use async_trait::async_trait;
     use chrono::Utc;
+    use futures_util::Stream; // Added Stream trait import
     use scribe_backend::models::auth::Credentials;
     use scribe_backend::models::characters::CharacterMetadata;
     use scribe_backend::models::chats::{ChatMessage, ChatSession, MessageRole};
