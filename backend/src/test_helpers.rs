@@ -756,6 +756,7 @@ pub fn ensure_tracing_initialized() {
 // --- Mock AI Client for Testing ---
 
 /// Mock AI client for testing
+#[derive(Clone)]
 pub struct MockAiClient {
     // Store the last request received in a thread-safe manner
     last_request: Arc<Mutex<Option<ChatRequest>>>,
@@ -769,42 +770,41 @@ pub struct MockAiClient {
 
 impl MockAiClient {
     pub fn new() -> Self {
-        // Create a simple successful response
-        let default_response = ChatResponse {
-            model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-1.5-flash-latest"),
-            provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-1.5-flash-latest"),
-            content: Some(MessageContent::Text("Mock response".to_string())),
-            reasoning_content: None,
-            usage: Usage::default(),
-        };
-
         Self {
             last_request: Arc::new(Mutex::new(None)),
             last_options: Arc::new(Mutex::new(None)),
-            response_to_return: Arc::new(Mutex::new(Ok(default_response))),
-            stream_to_return: Arc::new(Mutex::new(None)), // Initialize stream holder
+            // Default to a simple OK response
+            response_to_return: Arc::new(Mutex::new(Ok(ChatResponse {
+                model_iden: ModelIden::new(AdapterKind::Gemini, "mock-model"),
+                provider_model_iden: ModelIden::new(AdapterKind::Gemini, "mock-model"),
+                content: Some(MessageContent::Text("Mock AI response".to_string())),
+                reasoning_content: None,
+                usage: Usage::default(),
+            }))),
+            stream_to_return: Arc::new(Mutex::new(None)),
         }
     }
 
     /// Retrieves the last ChatRequest captured by the mock client.
     pub fn get_last_request(&self) -> Option<ChatRequest> {
-        self.last_request.lock().unwrap().clone() // Clone the Option<ChatRequest>
+        self.last_request.lock().unwrap().clone()
     }
 
     /// Retrieves the last ChatOptions captured by the mock client.
     pub fn get_last_options(&self) -> Option<ChatOptions> {
-        self.last_options.lock().unwrap().clone() // Clone the Option<ChatOptions>
+        self.last_options.lock().unwrap().clone()
     }
 
     /// Sets the non-streaming response that the mock client should return.
     pub fn set_response(&self, response: Result<ChatResponse, AppError>) {
-        *self.response_to_return.lock().unwrap() = response;
+        let mut lock = self.response_to_return.lock().unwrap();
+        *lock = response;
     }
 
     /// Sets the stream items that the mock client should return for stream_chat.
     pub fn set_stream_response(&self, stream_items: Vec<ChatStreamItem>) {
-        let mut stream = self.stream_to_return.lock().unwrap();
-        *stream = Some(stream_items);
+        let mut lock = self.stream_to_return.lock().unwrap();
+        *lock = Some(stream_items);
     }
 }
 
@@ -816,16 +816,14 @@ impl AiClient for MockAiClient {
         request: ChatRequest,
         config_override: Option<ChatOptions>, // Use ChatOptions
     ) -> Result<ChatResponse, AppError> {
-        // Store the request for later inspection
+        // Store the received request and options
         *self.last_request.lock().unwrap() = Some(request);
-        
-        // Store the options if provided
-        if let Some(opts) = config_override {
-            *self.last_options.lock().unwrap() = Some(opts);
-        }
+        *self.last_options.lock().unwrap() = config_override;
 
-        // Return the predetermined response
-        // Clone the inner Result<ChatResponse, AppError>
+        // Simulate some processing delay if needed
+        // tokio::time::sleep(Duration::from_millis(10)).await;
+
+        // Clone the response to return
         self.response_to_return.lock().unwrap().clone()
     }
 
@@ -835,17 +833,15 @@ impl AiClient for MockAiClient {
         request: ChatRequest,
         config_override: Option<ChatOptions>,
     ) -> Result<ChatStream, AppError> {
-        // Save the last request and options for tests
-        {
-            let mut last_req = self.last_request.lock().unwrap();
-            *last_req = Some(request);
-        }
-        {
-            let mut last_opts = self.last_options.lock().unwrap();
-            *last_opts = config_override;
-        }
+        // Store the received request and options
+        *self.last_request.lock().unwrap() = Some(request);
+        *self.last_options.lock().unwrap() = config_override;
 
-        // Get the stream items from the mutex - avoid using clone()
+        // Simulate some processing delay if needed
+        // tokio::time::sleep(Duration::from_millis(10)).await;
+
+        // Retrieve the stream items to return
+        // Revert to manual reconstruction as ChatStreamEvent is not Clone
         let guard = self.stream_to_return.lock().unwrap();
         let stream_items = match &*guard {
             Some(items) => {
@@ -862,23 +858,28 @@ impl AiClient for MockAiClient {
                                         StreamChunk { content: chunk.content.clone() }
                                     )));
                                 },
-                                // Handle other event types if needed
-                                _ => {
-                                    // For simplicity, create a dummy chunk for other event types
-                                    new_items.push(Ok(ChatStreamEvent::Chunk(
-                                        StreamChunk { content: String::new() }
+                                ChatStreamEvent::Start => {
+                                    new_items.push(Ok(ChatStreamEvent::Start));
+                                },
+                                ChatStreamEvent::ReasoningChunk(chunk) => {
+                                     new_items.push(Ok(ChatStreamEvent::ReasoningChunk(
+                                        StreamChunk { content: chunk.content.clone() }
                                     )));
-                                }
+                                },
+                                ChatStreamEvent::End(end_event) => {
+                                    // StreamEnd is not Clone, use Default instead
+                                    new_items.push(Ok(ChatStreamEvent::End(Default::default()))); 
+                                },
+                                // Handle other potential future ChatStreamEvent variants if necessary
+                                // _ => { 
+                                //     // Default handling or panic if unexpected event types appear
+                                //     new_items.push(Err(AppError::InternalServerError("Unhandled mock stream event type".to_string())));
+                                // }                                
                             }
                         },
                         Err(err) => {
-                            // Clone the error message for AppError
-                            if let AppError::GeminiError(msg) = err {
-                                new_items.push(Err(AppError::GeminiError(msg.clone())));
-                            } else {
-                                // For other errors, create a generic error message
-                                new_items.push(Err(AppError::InternalServerError("Error in mock stream".to_string())));
-                            }
+                            // Create a new AppError (assuming AppError is Clone)
+                            new_items.push(Err(err.clone()));
                         }
                     }
                 }
@@ -898,36 +899,34 @@ impl AiClient for MockAiClient {
 
 // --- Mock Embedding Client for Testing ---
 
+#[derive(Clone)]
 pub struct MockEmbeddingClient {
     response_to_return: Arc<Mutex<Result<Vec<f32>, AppError>>>,
-    last_text: Arc<Mutex<Option<String>>>,
-    last_task_type: Arc<Mutex<Option<String>>>,
+    calls: Arc<Mutex<Vec<(String, String)>>>, // Store (text, task_type) tuples
 }
 
 impl MockEmbeddingClient {
     pub fn new() -> Self {
         Self {
-            // Default to a successful response with a dummy vector
-            response_to_return: Arc::new(Mutex::new(Ok(vec![0.1, 0.2, 0.3]))),
-            last_text: Arc::new(Mutex::new(None)),
-            last_task_type: Arc::new(Mutex::new(None)),
+            response_to_return: Arc::new(Mutex::new(Ok(vec![0.1, 0.2, 0.3]))), // Default OK response
+            calls: Arc::new(Mutex::new(Vec::new())), // Initialize with empty history
         }
     }
 
-    #[allow(dead_code)] // Keep potentially useful test helpers
     pub fn set_response(&self, response: Result<Vec<f32>, AppError>) {
-        *self.response_to_return.lock().unwrap() = response;
+        let mut lock = self.response_to_return.lock().unwrap();
+        *lock = response;
     }
 
-    #[allow(dead_code)] // Keep potentially useful test helpers
-    pub fn get_last_text(&self) -> Option<String> {
-        self.last_text.lock().unwrap().clone()
+    // Method to retrieve the call history
+    pub fn get_calls(&self) -> Vec<(String, String)> {
+        self.calls.lock().unwrap().clone()
     }
-    
-    #[allow(dead_code)] // Keep potentially useful test helpers
-    pub fn get_last_task_type(&self) -> Option<String> {
-        self.last_task_type.lock().unwrap().clone()
-    }
+
+    // Method to clear call history (optional, might be useful between test steps)
+    // pub fn clear_calls(&self) {
+    //     self.calls.lock().unwrap().clear();
+    // }
 }
 
 #[async_trait]
@@ -937,8 +936,10 @@ impl EmbeddingClient for MockEmbeddingClient {
         text: &str,
         task_type: &str,
     ) -> Result<Vec<f32>, AppError> {
-        *self.last_text.lock().unwrap() = Some(text.to_string());
-        *self.last_task_type.lock().unwrap() = Some(task_type.to_string());
+        // Store the received text and task type in history
+        self.calls.lock().unwrap().push((text.to_string(), task_type.to_string()));
+
+        // Clone the response to return
         self.response_to_return.lock().unwrap().clone()
     }
 }
@@ -946,6 +947,7 @@ impl EmbeddingClient for MockEmbeddingClient {
 
 // --- Mock Embedding Pipeline Service for Testing ---
 
+#[derive(Clone)]
 pub struct MockEmbeddingPipelineService {
     response_to_return: Arc<Mutex<Result<Vec<RetrievedChunk>, AppError>>>,
     last_chat_id: Arc<Mutex<Option<Uuid>>>,
@@ -956,32 +958,28 @@ pub struct MockEmbeddingPipelineService {
 impl MockEmbeddingPipelineService {
     pub fn new() -> Self {
         Self {
-            // Default to a successful empty response
-            response_to_return: Arc::new(Mutex::new(Ok(Vec::new()))),
+            response_to_return: Arc::new(Mutex::new(Ok(Vec::new()))), // Default empty vec
             last_chat_id: Arc::new(Mutex::new(None)),
             last_query_text: Arc::new(Mutex::new(None)),
             last_limit: Arc::new(Mutex::new(None)),
         }
     }
 
-    #[allow(dead_code)] // Keep potentially useful test helpers
     pub fn set_response(&self, response: Result<Vec<RetrievedChunk>, AppError>) {
-        *self.response_to_return.lock().unwrap() = response;
+        let mut lock = self.response_to_return.lock().unwrap();
+        *lock = response;
     }
 
-    #[allow(dead_code)] // Keep potentially useful test helpers
     pub fn get_last_chat_id(&self) -> Option<Uuid> {
-        *self.last_chat_id.lock().unwrap()
+        self.last_chat_id.lock().unwrap().clone()
     }
 
-    #[allow(dead_code)] // Keep potentially useful test helpers
     pub fn get_last_query_text(&self) -> Option<String> {
         self.last_query_text.lock().unwrap().clone()
     }
 
-    #[allow(dead_code)] // Keep potentially useful test helpers
     pub fn get_last_limit(&self) -> Option<u64> {
-        *self.last_limit.lock().unwrap()
+        self.last_limit.lock().unwrap().clone()
     }
 }
 
@@ -989,14 +987,29 @@ impl MockEmbeddingPipelineService {
 impl EmbeddingPipelineServiceTrait for MockEmbeddingPipelineService {
     async fn retrieve_relevant_chunks(
         &self,
-        _state: Arc<AppState>, // Mock doesn't need state
+        state: Arc<AppState>, // Use the state argument
         chat_id: Uuid,
         query_text: &str,
         limit: u64,
     ) -> Result<Vec<RetrievedChunk>, AppError> {
+        // Record the arguments received
         *self.last_chat_id.lock().unwrap() = Some(chat_id);
         *self.last_query_text.lock().unwrap() = Some(query_text.to_string());
         *self.last_limit.lock().unwrap() = Some(limit);
+
+        // --- ADDED: Call the actual embedding client from state ---
+        let task_type = "RETRIEVAL_QUERY";
+        let _embedding_vector = state // Use state
+            .embedding_client // Access the client (should be the mock in tests)
+            .embed_content(query_text, task_type)
+            .await?;
+        // We don't need the vector itself in the mock, just need to ensure the call happens
+        // ---------------------------------------------------------
+
+        // Simulate some processing delay if needed
+        // tokio::time::sleep(Duration::from_millis(5)).await;
+
+        // Return the pre-configured response
         self.response_to_return.lock().unwrap().clone()
     }
 }

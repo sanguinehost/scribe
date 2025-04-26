@@ -2,9 +2,7 @@
 
 use crate::config::Config;
 use crate::errors::AppError;
-use qdrant_client::Qdrant; // Use the new top-level Qdrant client struct
-// Make this import public and remove unused aliases
-// Keep only the types actually used within this module or re-exported by this module
+use qdrant_client::Qdrant;
 pub use qdrant_client::qdrant::{
     CreateCollection, Distance, Filter, PointStruct, ScoredPoint, Value, VectorParams, VectorsConfig, 
     FieldCondition, Match, Condition, condition::ConditionOneOf, FieldType, r#match::MatchValue,
@@ -14,7 +12,6 @@ use qdrant_client::qdrant::vectors_config::Config as QdrantVectorsConfig; // Ali
 use std::sync::Arc;
 use tracing::{info, error, instrument, warn};
 use uuid::Uuid;
-// Removed unused imports: serde_json::json, qdrant_client::qdrant::{PointId, Vectors, Value}, std::collections::HashMap
 use rand::{Rng, SeedableRng}; // Add rand for distinct test vectors
 use rand::rngs::StdRng;
 

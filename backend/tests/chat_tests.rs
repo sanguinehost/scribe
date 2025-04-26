@@ -16,11 +16,16 @@ use genai::{
 };
 use mime;
 use serde_json::{json, Value};
-use std::{str::{self, FromStr}, time::Duration}; // Added str
+use std::{str::{self, FromStr}, time::Duration, collections::HashMap}; // Added collections::HashMap
 use tower::ServiceExt;
 use uuid::Uuid;
 use http_body_util::BodyExt; // Add this back for .collect()
 use tracing::error; // Added error import
+use qdrant_client::{
+    qdrant::Value as QdrantValue, // QdrantValue alias is already defined
+    qdrant::{PointId, PointStruct, Vector}, // Payload is not in this submodule
+    Payload, // Import Payload directly from qdrant_client
+};
 
 // Crate imports
 use scribe_backend::{ // Use crate name directly
@@ -1727,4 +1732,155 @@ async fn test_generate_chat_response_triggers_embeddings_with_existing_session()
 
     assert!(calls.contains(&user_msg.id), "Embedding tracker should contain user message ID");
     assert!(calls.contains(&ai_msg.id), "Embedding tracker should contain assistant message ID");
+}
+
+// Add the new test function
+#[tokio::test]
+#[ignore] // Interacts with Qdrant
+async fn test_rag_context_injection_in_prompt() {
+    const EMBEDDING_DIMENSION: u64 = 3072;
+
+    let context = test_helpers::setup_test_app().await;
+    let (auth_cookie, user) = test_helpers::create_test_user_and_login(&context.app, "rag_user", "password").await;
+    let character = test_helpers::create_test_character(&context.app.db_pool, user.id, "Rag Character").await;
+    let session = test_helpers::create_test_chat_session(&context.app.db_pool, user.id, character.id).await;
+
+    // 1. Define test data
+    let secret_message_content = "The secret code is Ouroboros";
+    let trigger_message_content = "What is the secret code?";
+    let expected_retrieved_chunk_text = format!("User: Some previous query\nAI: {}", secret_message_content);
+    let mock_query_embedding: Vec<f32> = (1..=EMBEDDING_DIMENSION).map(|i| i as f32 * 0.1).collect();
+
+    // --- Qdrant Setup ---
+    let qdrant_service = &context.app.qdrant_service;
+
+    let point_id_uuid = Uuid::new_v4();
+    let point_id = PointId::from(point_id_uuid.to_string());
+    let mut payload_serde_map = serde_json::Map::new();
+    payload_serde_map.insert("text".to_string(), json!(expected_retrieved_chunk_text));
+    payload_serde_map.insert("user_id".to_string(), json!(user.id.to_string()));
+    payload_serde_map.insert("chat_id".to_string(), json!(session.id.to_string()));
+
+    let payload_hash_map: HashMap<String, QdrantValue> = payload_serde_map
+        .into_iter()
+        .map(|(k, v)| {
+            let qdrant_value: QdrantValue = serde_json::from_value(v).expect("Failed to convert serde_json::Value to qdrant::Value");
+            (k, qdrant_value)
+        })
+        .collect();
+
+    let payload = Payload::from(payload_hash_map);
+
+    let point = PointStruct::new(
+        point_id.clone(),
+        Vector::from(mock_query_embedding.clone()),
+        payload,
+    );
+
+    qdrant_service
+        .upsert_points(vec![point])
+        .await
+        .expect("Failed to insert test point via Qdrant service");
+
+    tokio::time::sleep(Duration::from_millis(500)).await;
+
+    // 2. Configure Mocks
+    // Mock the embedding client's response for the RAG query
+    context.app.mock_embedding_client.set_response(Ok(mock_query_embedding.clone()));
+
+    // --- ADDED: Configure mock RAG service response --- 
+    let mock_metadata = EmbeddingMetadata {
+        message_id: Uuid::new_v4(), // Example UUID
+        session_id: session.id,
+        speaker: "User".to_string(), // Example speaker
+        timestamp: chrono::Utc::now(), // Example timestamp
+        text: expected_retrieved_chunk_text.clone(),
+    };
+    let mock_retrieved_chunk = RetrievedChunk {
+        score: 0.9, // Example score
+        text: expected_retrieved_chunk_text.clone(),
+        metadata: mock_metadata,
+    };
+    context.app.mock_embedding_pipeline_service.set_response(Ok(vec![mock_retrieved_chunk]));
+    // --- END ADDED --- 
+
+    // Mock the AI client's streaming response
+    let mock_stream_response = vec![
+        Ok(ChatStreamEvent::Chunk(genai::chat::StreamChunk {
+            content: "Mock AI response part 1".to_string(),
+        })),
+        Ok(ChatStreamEvent::Chunk(genai::chat::StreamChunk {
+            content: " part 2".to_string(),
+        })),
+        Ok(ChatStreamEvent::End(Default::default())),
+    ];
+    context.app.mock_ai_client.set_stream_response(mock_stream_response);
+
+    // 3. Send Trigger Message via API
+    let request_body = NewChatMessageRequest {
+        content: trigger_message_content.to_string(),
+        model: None,
+    };
+
+    let request = Request::builder()
+        .method(Method::POST)
+        .uri(format!("/api/chats/{}/generate", session.id))
+        .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
+        .header(header::COOKIE, auth_cookie)
+        .header(header::ACCEPT, mime::TEXT_EVENT_STREAM.as_ref())
+        .body(Body::from(serde_json::to_vec(&request_body).unwrap()))
+        .unwrap();
+
+    let response = context.app.router.oneshot(request).await.unwrap();
+
+    // 4. Assertions
+    assert_eq!(response.status(), StatusCode::OK, "API call failed");
+    
+    // --- Check Streamed Response Content --- 
+    let response_body = response.into_body();
+    let sse_data = collect_sse_data(response_body).await;
+    let received_content = sse_data.join("");
+    // Add println! to show the collected content
+    // println!("AI Response Received by Test:\\n---\\n{}\\n---", received_content); // REMOVE THIS
+    assert_eq!(received_content, "Mock AI response part 1 part 2", "Streamed AI response content mismatch");
+    // --- End Streamed Response Check --- 
+
+    // Add a small delay to allow the embedding call within RAG retrieval to complete
+    tokio::time::sleep(Duration::from_millis(100)).await; // Adjust if needed
+
+    // Verify the embedding client was called correctly for the RAG query
+    let embedding_calls = context.app.mock_embedding_client.get_calls();
+    let expected_call = (trigger_message_content.to_string(), "RETRIEVAL_QUERY".to_string());
+    assert!(
+        embedding_calls.contains(&expected_call),
+        "Embedding client calls ({:?}) did not contain the expected RAG query call: {:?}",
+        embedding_calls,
+        expected_call
+    );
+
+    let received_chat_request = context.app.mock_ai_client.get_last_request()
+        .expect("Mock AI client did not receive a request");
+
+    let mut prompt_parts = Vec::new();
+    for message in received_chat_request.messages {
+        let role_prefix = match message.role {
+            genai::chat::ChatRole::User => "User:",
+            genai::chat::ChatRole::Assistant => "AI:",
+            genai::chat::ChatRole::System => "System:",
+            _ => "Unknown:",
+        };
+        match message.content {
+            MessageContent::Text(text) => prompt_parts.push(format!("{} {}", role_prefix, text)),
+            _ => prompt_parts.push(format!("{} [Non-Text Content]", role_prefix)),
+        }
+    }
+    let prompt_text = prompt_parts.join("\\n");
+
+    // println!("Full Prompt Received by AI Mock:\\n---\\n{}\\n---", prompt_text); // REMOVE THIS
+
+    // assert!(prompt_text.contains("[Retrieved Memories]"), "Prompt missing RAG header"); // Outdated header check
+    assert!(prompt_text.contains("<RAG_CONTEXT>"), "Prompt missing RAG_CONTEXT start tag");
+    assert!(prompt_text.contains("</RAG_CONTEXT>"), "Prompt missing RAG_CONTEXT end tag");
+    assert!(prompt_text.contains(secret_message_content), "Prompt missing secret message");
+    assert!(prompt_text.contains(&expected_retrieved_chunk_text), "Prompt missing exact chunk text");
 }
