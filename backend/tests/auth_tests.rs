@@ -15,6 +15,7 @@ use axum_login::{
     AuthManagerLayerBuilder,
     tower_sessions::{Expiry, SessionManagerLayer, cookie::SameSite},
 };
+use axum_login::AuthnBackend;
 use bcrypt; // For direct verification if needed, though backend handles it
 use deadpool_diesel::{
     Pool as DeadpoolPool, Runtime as DeadpoolRuntime, postgres::Manager as DeadpoolManager,
@@ -553,6 +554,101 @@ async fn test_login_user_not_found() -> AnyhowResult<()> {
 }
 
 #[tokio::test]
+#[ignore] // Added ignore for CI - Requires DB
+async fn test_verify_credentials_invalid_hash_in_db() -> AnyhowResult<()> {
+    // Covers lines 156-157 in auth/mod.rs (verify_credentials -> HashingError)
+    let pool = create_test_pool();
+    let mut guard = TestDataGuard::new(pool.clone());
+
+    let username = format!("verify_invalid_hash_{}", Uuid::new_v4());
+    let password = "password123";
+    let invalid_hash = "this_is_not_a_valid_bcrypt_hash";
+
+    // 1. Insert user with a valid hash initially (using the helper)
+    let user = run_db_op(&pool, {
+        let username = username.clone();
+        let password = password.to_string();
+        move |conn| insert_test_user_direct(conn, &username, &password)
+    })
+    .await
+    .with_context(|| format!("Failed to insert test user '{}'", username))?;
+    guard.add_user(user.id);
+    info!(user_id = %user.id, %username, "Test user created");
+
+    // 2. Manually update the hash in the DB to an invalid one
+    let update_result = run_db_op(&pool, {
+        let user_id = user.id;
+        move |conn| {
+            diesel::update(users::table.find(user_id))
+                .set(users::password_hash.eq(invalid_hash))
+                .execute(conn)
+        }
+    })
+    .await;
+    update_result.context("Failed to update user hash to invalid string")?;
+    info!(user_id = %user.id, %username, "Updated password hash to invalid string in DB");
+
+    // 3. Attempt to verify credentials - should fail during bcrypt::verify
+    let verification_result = run_db_op(&pool, {
+        let username = username.clone();
+        let password = Secret::new(password.to_string()); // Wrap password in Secret
+        move |conn| {
+            scribe_backend::auth::verify_credentials(conn, &username, password)
+                // Map AuthError to a Diesel error variant for run_db_op compatibility
+                .map_err(|auth_err| diesel::result::Error::QueryBuilderError(Box::new(auth_err)))
+        }
+    })
+    .await;
+
+    info!(user_id = %user.id, %username, ?verification_result, "Verification result with invalid hash");
+
+    // 4. Assert that the error is HashingError
+    assert!(verification_result.is_err(), "Verification should fail with invalid hash in DB");
+    match verification_result {
+        Err(e) => {
+            // Drill down through the wrapped errors: anyhow -> diesel -> Box<AuthError>
+            let root_cause = e.root_cause();
+            info!(root_cause = ?root_cause, "Root cause of the error");
+
+            // Attempt to downcast the root cause directly to AuthError
+            if let Some(auth_error) = root_cause.downcast_ref::<AuthError>() {
+                 match auth_error {
+                    AuthError::HashingError => {
+                        info!("Successfully caught expected AuthError::HashingError as root cause");
+                    }
+                    _ => {
+                        panic!("Expected root cause to be AuthError::HashingError, but got {:?}", auth_error);
+                    }
+                }
+            } else {
+                 // Fallback: Check if it's the wrapped Diesel error containing the Boxed AuthError
+                 // This might be necessary depending on how anyhow wraps things.
+                 if let Some(diesel_error) = e.downcast_ref::<diesel::result::Error>() {
+                     if let diesel::result::Error::QueryBuilderError(boxed_err) = diesel_error {
+                         if let Some(auth_error) = boxed_err.downcast_ref::<AuthError>() {
+                             assert!(matches!(auth_error, AuthError::HashingError), "Expected boxed AuthError::HashingError, got {:?}", auth_error);
+                             info!("Successfully caught expected HashingError inside Diesel QueryBuilderError");
+                         } else {
+                             panic!("Boxed error inside QueryBuilderError was not an AuthError: {:?}", boxed_err);
+                         }
+                     } else {
+                         panic!("Error was a Diesel error, but not QueryBuilderError: {:?}", diesel_error);
+                     }
+                 } else {
+                    panic!("Error was not an AuthError root cause and could not be downcasted to diesel::result::Error. Original anyhow error: {:?}", e);
+                 }
+            }
+        }
+        Ok(_) => {
+            panic!("Expected an error during verification, but got Ok");
+        }
+    }
+
+    // Cleanup
+    guard.cleanup().await?;
+    Ok(())
+}
+#[tokio::test]
 #[ignore] // Added ignore for CI
 async fn test_logout_success() -> AnyhowResult<()> {
     let pool = create_test_pool();
@@ -1011,5 +1107,108 @@ async fn test_session_store_load_expired_session() -> AnyhowResult<()> {
     assert!(loaded_after_load.is_none(), "Expired session should have been deleted during load");
     info!(session_id = %session_id_val, "Verified expired session was deleted during load"); // Log i128 ID
 
+    Ok(())
+}
+
+// --- Tests for AuthBackend (user_store.rs) ---
+
+#[test]
+fn test_auth_backend_debug_impl() {
+    // Covers lines 23-24 in user_store.rs
+    let pool = create_test_pool();
+    let backend = AuthBackend::new(pool);
+    let debug_output = format!("{:?}", backend);
+    assert!(debug_output.contains("Backend"));
+    assert!(debug_output.contains("pool: \"<DbPool>\"")); // Check that pool is not printed directly
+    println!("Debug output: {}", debug_output); // Optional: print for verification
+}
+
+#[tokio::test]
+#[ignore] // Requires DB access via pool
+async fn test_auth_backend_get_user_not_found() -> AnyhowResult<()> {
+    // Covers lines 115-116 in user_store.rs
+    let pool = create_test_pool();
+    let backend = AuthBackend::new(pool.clone());
+    let non_existent_user_id = Uuid::new_v4(); // Generate a random UUID
+
+    info!(user_id = %non_existent_user_id, "Attempting to get non-existent user via AuthBackend");
+
+    // Call get_user directly on the backend instance
+    let result = backend.get_user(&non_existent_user_id).await;
+
+    info!(user_id = %non_existent_user_id, ?result, "Result from AuthBackend::get_user");
+
+    // Assert that the result is Ok(None)
+    assert!(result.is_ok(), "get_user should return Ok even if user not found");
+    let user_option = result.unwrap();
+    assert!(user_option.is_none(), "get_user should return None for a non-existent user ID");
+
+    Ok(())
+}
+
+use scribe_backend::models::users::UserCredentials; // Add import for UserCredentials
+
+#[tokio::test]
+#[ignore] // Requires DB access via pool
+async fn test_auth_backend_authenticate_hashing_error() -> AnyhowResult<()> {
+    // Covers lines 81, 83-84 in user_store.rs (Err(e) path in authenticate)
+    let pool = create_test_pool();
+    let mut guard = TestDataGuard::new(pool.clone());
+    let backend = AuthBackend::new(pool.clone());
+
+    let username = format!("auth_backend_hash_err_{}", Uuid::new_v4());
+    let password = "password123";
+    let invalid_hash = "this_is_not_a_valid_bcrypt_hash";
+
+    // 1. Insert user with a valid hash initially
+    let user = run_db_op(&pool, {
+        let username = username.clone();
+        let password = password.to_string();
+        move |conn| insert_test_user_direct(conn, &username, &password)
+    })
+    .await
+    .with_context(|| format!("Failed to insert test user '{}'", username))?;
+    guard.add_user(user.id);
+    info!(user_id = %user.id, %username, "Test user created for hashing error test");
+
+    // 2. Manually update the hash in the DB to an invalid one
+    let update_result = run_db_op(&pool, {
+        let user_id = user.id;
+        move |conn| {
+            diesel::update(users::table.find(user_id))
+                .set(users::password_hash.eq(invalid_hash))
+                .execute(conn)
+        }
+    })
+    .await;
+    update_result.context("Failed to update user hash to invalid string")?;
+    info!(user_id = %user.id, %username, "Updated password hash to invalid string in DB");
+
+    // 3. Attempt to authenticate using the AuthBackend
+    let credentials = UserCredentials {
+        username: username.clone(),
+        password: Secret::new(password.to_string()), // Use Secret here as authenticate expects it
+    };
+
+    info!(%username, "Attempting authentication via AuthBackend with invalid hash in DB");
+    let auth_result = backend.authenticate(credentials).await;
+    info!(%username, ?auth_result, "Result from AuthBackend::authenticate");
+
+    // 4. Assert that the error is HashingError
+    assert!(auth_result.is_err(), "Authentication should fail with invalid hash in DB");
+    match auth_result {
+        Err(AuthError::HashingError) => {
+            info!("Successfully caught expected AuthError::HashingError from AuthBackend::authenticate");
+        }
+        Err(e) => {
+            panic!("Expected AuthError::HashingError, but got {:?}", e);
+        }
+        Ok(_) => {
+            panic!("Expected an error during authentication, but got Ok");
+        }
+    }
+
+    // Cleanup
+    guard.cleanup().await?;
     Ok(())
 }
