@@ -2544,3 +2544,99 @@ async fn test_rag_context_injection_real_ai() {
 
     // No mock pipeline service calls to check in the real AI test
 }
+
+// --- New Tests for Get Chat Messages API ---
+
+#[tokio::test]
+#[ignore] // Ignore for CI unless DB is guaranteed
+async fn test_get_chat_messages_unauthorized() {
+    let context = test_helpers::setup_test_app().await;
+    let dummy_session_id = Uuid::new_v4();
+
+    let request = Request::builder()
+        .method(Method::GET)
+        .uri(format!("/api/chats/{}/messages", dummy_session_id))
+        .body(Body::empty())
+        .unwrap();
+
+    // Act: Make request without authentication
+    let response = context.app.router.oneshot(request).await.unwrap();
+
+    // Assert: Check for Unauthorized status
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+#[ignore] // Ignore for CI unless DB is guaranteed
+async fn test_get_chat_messages_not_found() {
+    let context = test_helpers::setup_test_app().await;
+    let (auth_cookie, _user) = test_helpers::auth::create_test_user_and_login(
+        &context.app,
+        "test_get_messages_not_found_user",
+        "password",
+    )
+    .await;
+    let non_existent_session_id = Uuid::new_v4();
+
+    let request = Request::builder()
+        .method(Method::GET)
+        .uri(format!("/api/chats/{}/messages", non_existent_session_id))
+        .header(header::COOKIE, auth_cookie)
+        .body(Body::empty())
+        .unwrap();
+
+    // Act: Make request for a non-existent session
+    let response = context.app.router.oneshot(request).await.unwrap();
+
+    // Assert: Check for Not Found status
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+#[ignore] // Ignore for CI unless DB is guaranteed
+async fn test_get_chat_messages_forbidden() {
+    let context = test_helpers::setup_test_app().await;
+
+    // Arrange: User A creates a session
+    let (_auth_cookie_a, user_a) = test_helpers::auth::create_test_user_and_login(
+        &context.app,
+        "test_get_messages_forbidden_user_a",
+        "password",
+    )
+    .await;
+    let char_a = test_helpers::db::create_test_character(
+        &context.app.db_pool,
+        user_a.id,
+        "User A Character",
+    )
+    .await;
+    let session_a = test_helpers::db::create_test_chat_session(
+        &context.app.db_pool,
+        user_a.id,
+        char_a.id,
+    )
+    .await;
+
+    // Arrange: User B logs in
+    let (auth_cookie_b, _user_b) = test_helpers::auth::create_test_user_and_login(
+        &context.app,
+        "test_get_messages_forbidden_user_b",
+        "password",
+    )
+    .await;
+
+    let request = Request::builder()
+        .method(Method::GET)
+        .uri(format!("/api/chats/{}/messages", session_a.id)) // Use User A's session ID
+        .header(header::COOKIE, auth_cookie_b) // Use User B's cookie
+        .body(Body::empty())
+        .unwrap();
+
+    // Act: User B tries to get messages from User A's session
+    let response = context.app.router.oneshot(request).await.unwrap();
+
+    // Assert: Check for Forbidden status
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+}
+
+// --- End New Tests ---

@@ -935,4 +935,170 @@ mod tests {
         tracing::info!("Test delete_character_success completed successfully.");
         Ok(())
     }
+
+    // --- New Tests for List Characters API ---
+
+    #[tokio::test]
+    async fn test_list_characters_unauthorized() -> Result<(), anyhow::Error> {
+        ensure_tracing_initialized();
+        let pool = create_test_pool();
+        let _guard = TestDataGuard::new(pool.clone()); // Ensure cleanup
+        let app = build_test_app_for_characters(pool).await;
+        let server_addr = spawn_app(app).await;
+        let client = Client::new();
+
+        let list_url = format!("http://{}/api/characters", server_addr);
+
+        // Act: Make request without authentication
+        let response = client.get(&list_url).send().await?;
+
+        // Assert: Check for Unauthorized status
+        assert_eq!(response.status(), ReqwestStatusCode::UNAUTHORIZED);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_list_characters_empty() -> Result<(), anyhow::Error> {
+        ensure_tracing_initialized();
+        let pool = create_test_pool();
+        let _guard = TestDataGuard::new(pool.clone());
+        let app = build_test_app_for_characters(pool.clone()).await;
+        let server_addr = spawn_app(app).await;
+        let cookie_jar = Arc::new(Jar::default());
+        let client = Client::builder().cookie_provider(cookie_jar.clone()).build()?;
+
+        // Arrange: Create and log in a user
+        let username = format!("list_empty_user_{}", Uuid::new_v4());
+        let password = "testpassword";
+        let username_for_closure = username.clone(); // Clone before move
+        let user = run_db_op(&pool, move |conn| {
+            insert_test_user_with_password(conn, &username_for_closure, password)
+        })
+        .await?;
+
+        let login_url = format!("http://{}/api/auth/login", server_addr);
+        let login_response = client
+            .post(&login_url)
+            .json(&UserCredentials {
+                username: username.clone(), // Use original username here
+                password: password.to_string(),
+            })
+            .send()
+            .await?;
+        assert_eq!(login_response.status(), ReqwestStatusCode::OK);
+
+        let list_url = format!("http://{}/api/characters", server_addr);
+
+        // Act: Make request as the logged-in user (who has no characters)
+        let response = client.get(&list_url).send().await?;
+
+        // Assert: Check for OK status and empty JSON array
+        assert_eq!(response.status(), ReqwestStatusCode::OK);
+        let body: serde_json::Value = response.json().await?;
+        assert_eq!(body, json!([]));
+
+        // Cleanup (optional, depends on TestDataGuard)
+        let user_id = user.id; // Capture user_id before moving into closure
+        run_db_op(&pool, move |conn| {
+            diesel::delete(users::table.filter(users::id.eq(user_id))).execute(conn)
+        })
+        .await?;
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_list_characters_success() -> Result<(), anyhow::Error> {
+        ensure_tracing_initialized();
+        let pool = create_test_pool();
+        let _guard = TestDataGuard::new(pool.clone());
+        let app = build_test_app_for_characters(pool.clone()).await;
+        let server_addr = spawn_app(app).await;
+        let cookie_jar = Arc::new(Jar::default());
+        let client = Client::builder().cookie_provider(cookie_jar.clone()).build()?;
+
+        // Arrange: Create user, log in, and add characters
+        let username = format!("list_success_user_{}", Uuid::new_v4());
+        let password = "testpassword";
+        let username_for_closure = username.clone(); // Clone before move
+        let user = run_db_op(&pool, move |conn| {
+            insert_test_user_with_password(conn, &username_for_closure, password)
+        })
+        .await?;
+
+        let login_url = format!("http://{}/api/auth/login", server_addr);
+        let login_response = client
+            .post(&login_url)
+            .json(&UserCredentials {
+                username: username.clone(), // Use original username here
+                password: password.to_string(),
+            })
+            .send()
+            .await?;
+        assert_eq!(login_response.status(), ReqwestStatusCode::OK);
+
+        // Insert characters directly into DB for this user
+        let user_id = user.id; // Capture user_id
+        let char1 = run_db_op(&pool, move |conn| {
+            insert_test_character(conn, user_id, "Character One")
+        })
+        .await?;
+        let char2 = run_db_op(&pool, move |conn| {
+            insert_test_character(conn, user_id, "Character Two")
+        })
+        .await?;
+
+        let list_url = format!("http://{}/api/characters", server_addr);
+
+        // Act: Make request as the logged-in user
+        let response = client.get(&list_url).send().await?;
+
+        // Assert: Check for OK status and correct character data
+        assert_eq!(response.status(), ReqwestStatusCode::OK);
+        let body: Vec<DbCharacter> = response.json().await?;
+
+        assert_eq!(body.len(), 2);
+        // Sort by name to ensure consistent order for comparison
+        let mut sorted_body = body;
+        sorted_body.sort_by(|a, b| a.name.cmp(&b.name));
+
+        assert_eq!(sorted_body[0].id, char1.id);
+        assert_eq!(sorted_body[0].name, char1.name);
+        assert_eq!(sorted_body[0].user_id, user.id);
+        assert_eq!(sorted_body[1].id, char2.id);
+        assert_eq!(sorted_body[1].name, char2.name);
+        assert_eq!(sorted_body[1].user_id, user.id);
+
+        // Cleanup (optional, depends on TestDataGuard)
+        // TestDataGuard should handle this if setup correctly
+        // If not, manual cleanup:
+        // run_db_op(&pool, |conn| {
+        //     diesel::delete(scribe_backend::schema::characters::table.filter(scribe_backend::schema::characters::user_id.eq(user.id))).execute(conn)
+        // }).await?;
+        // run_db_op(&pool, |conn| {
+        //     diesel::delete(users::table.filter(users::id.eq(user.id))).execute(conn)
+        // }).await?;
+
+        Ok(())
+    }
+
+    // --- End New Tests ---
+
+    // Placeholder/TODO tests from implementation plan
+    // #[tokio::test]
+    // async fn test_get_character_success() -> Result<(), anyhow::Error> { Ok(()) } // Already covered by test_get_character_manual_cleanup
+    // #[tokio::test]
+    // async fn test_get_character_auth_failure() -> Result<(), anyhow::Error> { Ok(()) } // Covered by test_get_unauthorized
+    // #[tokio::test]
+    // async fn test_get_character_not_found() -> Result<(), anyhow::Error> { Ok(()) } // Covered by test_get_nonexistent_character
+    // #[tokio::test]
+    // async fn test_get_character_wrong_user() -> Result<(), anyhow::Error> { Ok(()) } // Covered by test_get_character_forbidden
+
+    // #[tokio::test]
+    // async fn test_upload_character_malformed_png() -> Result<(), anyhow::Error> { Ok(()) } // Covered by test_upload_not_png
+    // #[tokio::test]
+    // async fn test_upload_character_invalid_json() -> Result<(), anyhow::Error> { Ok(()) } // Covered by test_upload_invalid_json_in_png
+    // #[tokio::test]
+    // async fn test_upload_character_db_error() -> Result<(), anyhow::Error> { /* TODO */ Ok(()) }
 } // End of tests module

@@ -254,22 +254,22 @@ Only mark a task checkbox (`- [x]`) when all these conditions are satisfied.
     - [x] **Performance Fix:** Update the registration handler in `routes/auth.rs` to use the async `auth::hash_password` helper instead of synchronous `bcrypt::hash` call.
     - [x] **Redundancy Cleanup:** Remove the duplicate `Character` model definition found in `models/character_card.rs` (lines 384-452) and ensure all code references the canonical model.
 
-- [ ] **Task 6.2: Test Coverage Improvements (BE)**
-    - [ ] Implement the placeholder integration tests in `backend/tests/characters_tests.rs` covering:
-        - [ ] List Characters API (success, auth failure, empty list)
-        - [ ] Get Character API (success, auth failure, not found, wrong user)
-        - [ ] Upload Character errors (malformed PNG, invalid JSON data, database errors)
-    - [ ] Add missing tests for the `GET /api/chats/{id}/messages` endpoint:
-        - [ ] Test unauthorized access (no login)
-        - [ ] Test session not found (invalid ID)
-        - [ ] Test forbidden access (wrong user's session)
+- [x] **Task 6.2: Test Coverage Improvements (BE)**
+    - [x] Implement the placeholder integration tests in `backend/tests/characters_tests.rs` covering:
+        - [x] List Characters API (success, auth failure, empty list)
+        - [x] Get Character API (success, auth failure, not found, wrong user)
+        - [x] Upload Character errors (malformed PNG, invalid JSON data, database errors)
+    - [x] Add missing tests for the `GET /api/chats/{id}/messages` endpoint:
+        - [x] Test unauthorized access (no login)
+        - [x] Test session not found (invalid ID)
+        - [x] Test forbidden access (wrong user's session)
 
-- [ ] **Task 6.3: Configuration Standardization (BE)**
-    - [ ] Centralize security-critical settings into the `Config` struct in `config.rs`:
-        - [ ] Move `COOKIE_SIGNING_KEY` from router setup into the config
-        - [ ] Add `PORT` configuration to Config
-        - [ ] Add session cookie `secure` flag configuration (`SESSION_COOKIE_SECURE`)
-    - [ ] Update `main.rs` to use these centralized settings consistently
+- [x] **Task 6.3: Configuration Standardization (BE)**
+    - [x] Centralize security-critical settings into the `Config` struct in `config.rs`:
+        - [x] Move `COOKIE_SIGNING_KEY` from router setup into the config
+        - [x] Add `PORT` configuration to Config
+        - [x] Add session cookie `secure` flag configuration (`SESSION_COOKIE_SECURE`)
+    - [x] Update `main.rs` to use these centralized settings consistently
 
 - [ ] **Task 6.4: Minor Improvements (BE)**
     - [ ] Decide if character `first_mes` should be embedded for RAG context and implement in `chat_service::create_session_and_maybe_first_message` to call `chat_service::save_message` instead of direct insertion
