@@ -1056,19 +1056,26 @@ mod tests {
 
         // Assert: Check for OK status and correct character data
         assert_eq!(response.status(), ReqwestStatusCode::OK);
-        let body: Vec<DbCharacter> = response.json().await?;
+        // Expect CharacterMetadata, not the full Character
+        let body: Vec<scribe_backend::models::characters::CharacterMetadata> = response.json().await?;
 
         assert_eq!(body.len(), 2);
         // Sort by name to ensure consistent order for comparison
         let mut sorted_body = body;
         sorted_body.sort_by(|a, b| a.name.cmp(&b.name));
 
+        // Assert only fields present in CharacterMetadata
         assert_eq!(sorted_body[0].id, char1.id);
         assert_eq!(sorted_body[0].name, char1.name);
         assert_eq!(sorted_body[0].user_id, user.id);
+        // Add checks for other metadata fields if needed, e.g., description
+        assert_eq!(sorted_body[0].description, char1.description);
+
         assert_eq!(sorted_body[1].id, char2.id);
         assert_eq!(sorted_body[1].name, char2.name);
         assert_eq!(sorted_body[1].user_id, user.id);
+        assert_eq!(sorted_body[1].description, char2.description);
+
 
         // Cleanup (optional, depends on TestDataGuard)
         // TestDataGuard should handle this if setup correctly

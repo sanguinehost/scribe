@@ -28,7 +28,7 @@ use tracing::{debug, error, info, instrument};
 #[diesel(table_name = sessions)]
 #[diesel(primary_key(id))] // Explicitly define primary key if not id by convention
 pub struct SessionRecord {
-    pub id: String, // Session ID from tower_sessions is String
+    pub id: String, // Keep as String to match DB schema (Text)
     // Use chrono::DateTime<Utc> for TIMESTAMPTZ
     pub expires: Option<DateTime<Utc>>,
     // Session data is likely stringified JSON or similar
@@ -104,7 +104,7 @@ impl DieselSessionStore {
             .interact(move |conn| {
                 sessions::table
                     .select((sessions::id, sessions::expires))
-                    .load::<(String, Option<DateTime<Utc>>)>(conn)
+                    .load::<(String, Option<DateTime<Utc>>)>(conn) // Load ID as String from DB
                     .map(|rows| {
                         rows.into_iter()
                             .map(|(id, expires)| SessionMetadata { id, expires })
@@ -172,7 +172,7 @@ impl DieselSessionStore {
 }
 
 // Helper function to convert time::OffsetDateTime to chrono::DateTime<Utc>
-fn offset_to_utc(offset_dt: Option<OffsetDateTime>) -> Option<DateTime<Utc>> {
+pub fn offset_to_utc(offset_dt: Option<OffsetDateTime>) -> Option<DateTime<Utc>> { // Made pub
     offset_dt
         .map(|dt| DateTime::from_timestamp(dt.unix_timestamp(), 0))
         .flatten()
@@ -186,7 +186,7 @@ fn utc_to_offset(utc_dt: Option<DateTime<Utc>>) -> Option<OffsetDateTime> {
 /// Session metadata structure that includes only non-sensitive data
 #[derive(Debug, Clone)]
 pub struct SessionMetadata {
-    pub id: String,
+    pub id: String, // Keep as String to match DB schema
     pub expires: Option<DateTime<Utc>>,
 }
 
@@ -205,7 +205,7 @@ impl SessionStore for DieselSessionStore {
         let expires_utc = offset_to_utc(Some(session.expiry_date));
 
         let record = SessionRecord {
-            id: session.id.to_string(),
+            id: session.id.0.to_string(), // Convert i128 from Id to String for DB
             expires: expires_utc,
             session: session_data.clone(), // Clone session_data for logging
         };
@@ -257,7 +257,7 @@ impl SessionStore for DieselSessionStore {
 
     #[instrument(skip(self), err)]
     async fn load(&self, session_id: &Id) -> session_store::Result<Option<Record>> {
-        let session_id_str = session_id.to_string();
+        let session_id_str = session_id.0.to_string(); // Convert i128 from Id to String for query
         // --- Modified Log ---
         info!(session_id = %session_id_str, "DieselSessionStore::load ENTERED");
 
@@ -275,7 +275,7 @@ impl SessionStore for DieselSessionStore {
             .interact(move |conn| {
                 // Move the clone into the closure
                 sessions::table
-                    .find(&session_id_clone_for_closure) // Use the clone here
+                    .find(&session_id_clone_for_closure) // Use the String clone here
                     .first::<SessionRecord>(conn)
                     .optional() // Handle not found gracefully within Diesel
                     .map_err(Self::map_diesel_error)
@@ -286,7 +286,7 @@ impl SessionStore for DieselSessionStore {
         match maybe_record {
             Some(record) => {
                 // --- Log found ---
-                // Use the original session_id_str for logging here, it wasn't moved
+                // Use the original session_id_str for logging here
                 debug!(session_id = %session_id_str, "Session record found in DB. Deserializing...");
                 let session_record = serde_json::from_str::<Record>(&record.session)
                     .map_err(Self::map_json_error)?;
@@ -321,7 +321,7 @@ impl SessionStore for DieselSessionStore {
 
     #[instrument(skip(self), err)]
     async fn delete(&self, session_id: &Id) -> session_store::Result<()> {
-        let session_id_str = session_id.to_string();
+        let session_id_str = session_id.0.to_string(); // Convert i128 from Id to String for query
         // --- Modified Log ---
         info!(session_id = %session_id_str, "DieselSessionStore::delete ENTERED");
 
@@ -333,7 +333,7 @@ impl SessionStore for DieselSessionStore {
             .await
             .map_err(Self::map_pool_error)?
             .interact(move |conn| {
-                diesel::delete(sessions::table.find(session_id_str))
+                diesel::delete(sessions::table.find(session_id_str)) // Use String value
                     .execute(conn)
                     .map_err(Self::map_diesel_error)
             })

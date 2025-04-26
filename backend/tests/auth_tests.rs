@@ -27,8 +27,9 @@ use scribe_backend::{
     config::Config,
     errors::AppError,
     models::{users::NewUser, users::User}, // Import NewUser
+    auth::session_store::SessionRecord, // Import SessionRecord correctly
     routes::auth::{login_handler, logout_handler, me_handler, register_handler},
-    schema::users,
+    schema::{users, sessions}, // Import sessions schema
     state::AppState,
     test_helpers::{MockEmbeddingClient, MockEmbeddingPipelineService},
     vector_db::QdrantClientService,
@@ -36,7 +37,7 @@ use scribe_backend::{
 use serde::de::DeserializeOwned; // For get_json_body
 use serde_json::{Value, json};
 use std::{env, sync::Arc};
-use time;
+use time::{self, OffsetDateTime}; // Import OffsetDateTime
 use tower::ServiceExt; // For `oneshot`
 use tower_cookies::{Cookie, CookieManagerLayer, Cookies};
 use tracing::{error, info, instrument};
@@ -44,6 +45,11 @@ use uuid::Uuid;
 // use tokio::net::TcpListener; // Unused
 use std::net::SocketAddr;
 // use scribe_backend::test_helpers::{self, create_test_user, setup_test_app, TestContext}; // Unused
+use axum_login::tower_sessions::{SessionStore, session::{Id, Record}, session_store}; // Import SessionStore traits and session_store module
+use chrono::Utc; // For Utc::now()
+// No longer needed: use scribe_backend::auth::session_store::offset_to_utc;
+use std::collections::HashMap; // For manually creating Record.data
+use rand; // Import rand crate
 
 // --- Test Helpers (Copied/Adapted from characters_tests.rs) ---
 
@@ -797,6 +803,213 @@ async fn test_cookie_layer_sets_cookie() -> AnyhowResult<()> {
         set_cookie_header.contains("test-cookie=test-value"),
         "Set-Cookie header missing test cookie info"
     );
+
+    Ok(())
+}
+
+// --- Unit Tests for auth module helpers ---
+
+use scribe_backend::auth::{AuthError, verify_password};
+use deadpool_diesel::InteractError;
+use secrecy::Secret;
+
+#[test]
+fn test_auth_error_from_interact_error() {
+    let interact_error = InteractError::Aborted; // Example InteractError variant
+    let auth_error = AuthError::from(interact_error);
+    assert!(matches!(auth_error, AuthError::InteractError(_)));
+    assert_eq!(auth_error.to_string(), "Database interaction error: Aborted");
+
+    // Optional: Test other variants if needed
+    // let panic_error = InteractError::Panic(std::panic::Location::caller().to_string()); // Requires more setup
+    // let auth_error_panic = AuthError::from(panic_error);
+    // assert!(matches!(auth_error_panic, AuthError::InteractError(_)));
+}
+
+#[tokio::test]
+async fn test_verify_password_invalid_hash() {
+    let password = Secret::new("correct_password".to_string());
+    let invalid_hash = "this_is_not_a_valid_bcrypt_hash";
+
+    let result = verify_password(invalid_hash, password).await;
+
+    assert!(result.is_err(), "Verification should fail for invalid hash");
+    match result {
+        Err(AuthError::HashingError) => {
+            // Correct error type, test passes
+        }
+        Err(e) => {
+            panic!("Expected AuthError::HashingError, but got {:?}", e);
+        }
+        Ok(_) => {
+            panic!("Expected an error, but verification succeeded unexpectedly");
+        }
+    }
+}
+
+// --- Tests for DieselSessionStore ---
+
+// Helper to create a session store instance for tests
+fn create_test_session_store(pool: DeadpoolPool<DeadpoolManager>) -> DieselSessionStore {
+    DieselSessionStore::new(pool)
+}
+
+#[tokio::test]
+#[ignore] // Requires DB
+async fn test_session_store_save_load_delete() -> AnyhowResult<()> {
+    let pool = create_test_pool();
+    let store = create_test_session_store(pool.clone());
+    let session_id_val = rand::random::<i128>(); // Use rand::random per compiler suggestion
+    let session_id = Id(session_id_val); // Construct Id using tuple struct syntax
+    let expiry_date = OffsetDateTime::now_utc() + time::Duration::hours(1);
+    // Manually construct Record as ::new() is private
+    let mut data = HashMap::new();
+    data.insert("user_id".to_string(), serde_json::to_value(Uuid::new_v4().to_string())?);
+    let record = Record {
+        id: session_id.clone(), // Clone Id here
+        data,
+        expiry_date,
+    };
+
+    // 1. Save
+    store.save(&record).await.context("Failed to save session")?;
+    info!(session_id = %session_id, "Session saved");
+
+    // 2. Load
+    let loaded_record_opt = store.load(&session_id).await.context("Failed to load session")?;
+    assert!(loaded_record_opt.is_some(), "Session should be found after saving");
+    let loaded_record = loaded_record_opt.unwrap();
+    info!(session_id = %session_id, "Session loaded");
+
+    // Assert data integrity (ignoring expiry precision differences)
+    assert_eq!(loaded_record.id, session_id);
+    // Access data via the .data field
+    assert_eq!(
+        loaded_record.data.get("user_id").and_then(|v| v.as_str()),
+        record.data.get("user_id").and_then(|v| v.as_str())
+    );
+    // Compare expiry timestamps loosely (within a second) due to potential conversion nuances
+    assert!((loaded_record.expiry_date - expiry_date).abs() < time::Duration::seconds(1));
+
+    // 3. Delete
+    store.delete(&session_id).await.context("Failed to delete session")?;
+    info!(session_id = %session_id, "Session deleted");
+
+    // 4. Verify deletion
+    let loaded_after_delete = store.load(&session_id).await.context("Failed to load session after delete")?;
+    assert!(loaded_after_delete.is_none(), "Session should not be found after deletion");
+    info!(session_id = %session_id, "Verified session deletion");
+
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore] // Requires DB
+async fn test_session_store_load_invalid_json() -> AnyhowResult<()> {
+    // Covers lines 84-86 (map_json_error), 292 (load deserialize error)
+    let pool = create_test_pool();
+    let store = create_test_session_store(pool.clone());
+    let session_id_val = rand::random::<i128>(); // Use rand::random per compiler suggestion
+    let session_id_str = session_id_val.to_string(); // String version for DB interaction
+    let invalid_json = "{ \"key\": \"value\", invalid }"; // Malformed JSON
+
+    // Manually insert invalid record within a transaction
+    let insert_result = run_db_op(&pool, {
+        let sid = session_id_str.clone(); // Use String for DB
+        move |conn| {
+            let record = SessionRecord {
+                id: sid, // Use String ID
+                expires: Some(Utc::now() + chrono::Duration::hours(1)),
+                session: invalid_json.to_string(),
+            };
+            diesel::insert_into(sessions::table)
+                .values(&record)
+                .execute(conn)
+        }
+    }).await;
+
+    // Check if insertion itself failed unexpectedly (it shouldn't just for bad JSON string)
+    insert_result.context("Manual insertion of invalid JSON failed unexpectedly")?;
+    info!(session_id = %session_id_val, "Manually inserted record with invalid JSON");
+
+    // Attempt to load the record with invalid JSON
+    let load_result = store.load(&Id(session_id_val)).await; // Construct Id with i128
+    info!(session_id = %session_id_val, ?load_result, "Load result for invalid JSON");
+
+    // Assert that loading failed with a Decode error
+    assert!(load_result.is_err(), "Loading invalid JSON should result in an error");
+    match load_result {
+        Err(session_store::Error::Decode(e)) => {
+            info!(error=%e, "Successfully caught expected Decode error");
+            // Removed specific error message check: assert!(e.contains("expected `,` or `}` at line 1 column 21"));
+        }
+        Err(e) => panic!("Expected Decode error, but got different error: {:?}", e),
+        Ok(_) => panic!("Expected an error when loading invalid JSON, but got Ok"),
+    }
+
+    // Cleanup: Delete the manually inserted record
+    let delete_result = run_db_op(&pool, {
+        let sid = session_id_str.clone(); // Use String for DB query
+        move |conn| {
+            diesel::delete(sessions::table.find(sid))
+                .execute(conn)
+        }
+    }).await;
+    delete_result.context("Failed to clean up manually inserted invalid record")?;
+    info!(session_id = %session_id_val, "Cleaned up invalid JSON record");
+
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore] // Requires DB
+async fn test_session_store_load_expired_session() -> AnyhowResult<()> {
+    // Covers lines 305-307 (load expired session logic)
+    let pool = create_test_pool();
+    let store = create_test_session_store(pool.clone());
+    let session_id_val = rand::random::<i128>(); // Use rand::random per compiler suggestion
+    let session_id = Id(session_id_val); // Construct Id with i128
+    let session_id_str = session_id_val.to_string(); // String version for DB interaction
+    // Set expiry firmly in the past
+    let expiry_date = OffsetDateTime::now_utc() - time::Duration::days(1);
+    // Manually construct Record
+    let mut data = HashMap::new();
+    data.insert("data".to_string(), serde_json::to_value("some_expired_data")?);
+    let record = Record {
+        id: session_id.clone(),
+        data,
+        expiry_date,
+    };
+
+    // 1. Save the expired record
+    store.save(&record).await.context("Failed to save expired session")?;
+    info!(session_id = %session_id, "Saved expired session");
+
+    // Verify it exists momentarily in DB (optional sanity check)
+    let exists_before_load = run_db_op(&pool, {
+        let sid = session_id_str.clone(); // Use String for DB query
+        move |conn| {
+            sessions::table.find(sid).select(sessions::id).first::<String>(conn).optional() // Check for String
+        }
+    }).await?.is_some();
+    assert!(exists_before_load, "Expired session should exist in DB before loading");
+
+    // 2. Load the expired record
+    let loaded_record_opt = store.load(&session_id).await.context("Failed to load expired session")?;
+    info!(session_id = %session_id_val, ?loaded_record_opt, "Load result for expired session"); // Log i128 ID
+
+    // Assert that loading returns None because it was expired
+    assert!(loaded_record_opt.is_none(), "Loading an expired session should return None");
+
+    // 3. Verify deletion happened during load
+    let loaded_after_load = run_db_op(&pool, {
+        let sid = session_id_str.clone(); // Use String for DB query
+        move |conn| {
+            sessions::table.find(sid).select(sessions::id).first::<String>(conn).optional() // Check for String
+        }
+    }).await?;
+    assert!(loaded_after_load.is_none(), "Expired session should have been deleted during load");
+    info!(session_id = %session_id_val, "Verified expired session was deleted during load"); // Log i128 ID
 
     Ok(())
 }
