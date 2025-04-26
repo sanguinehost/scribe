@@ -17,10 +17,13 @@ use genai::{
 use mime;
 use serde_json::{json, Value};
 use std::{str::{self, FromStr}, time::Duration, collections::HashMap}; // Added collections::HashMap
+use std::sync::Arc; // Added Arc
 use tower::ServiceExt;
 use uuid::Uuid;
 use http_body_util::BodyExt; // Add this back for .collect()
 use tracing::error; // Added error import
+use diesel::RunQueryDsl; // Added for .execute()
+use diesel_migrations::MigrationHarness; // Added for .run_pending_migrations()
 use qdrant_client::{
     qdrant::Value as QdrantValue, // QdrantValue alias is already defined
     qdrant::{PointId, PointStruct, Vector}, // Payload is not in this submodule
@@ -36,7 +39,12 @@ use scribe_backend::{ // Use crate name directly
             // Removed NewChatMessage, SettingsTuple, DbInsertableChatMessage,
         },
     test_helpers::{self}, // Removed TestContext
-    services::embedding_pipeline::{RetrievedChunk, EmbeddingMetadata}, // Add RAG imports
+    services::embedding_pipeline::{RetrievedChunk, EmbeddingMetadata, EmbeddingPipelineServiceTrait}, // Add RAG imports // Added EmbeddingPipelineServiceTrait
+    config::Config, // Added Config
+    vector_db::QdrantClientService, // Added QdrantClientService
+    AppState, // Added AppState
+    llm::{AiClient, EmbeddingClient}, // Keep AiClient, EmbeddingClient
+    llm::gemini_client::{ScribeGeminiClient, build_gemini_client}, // Use correct struct and builder
    };
    
 // Helper function to parse SSE stream manually
@@ -1777,11 +1785,13 @@ async fn test_rag_context_injection_in_prompt() {
         payload,
     );
 
-    qdrant_service
-        .upsert_points(vec![point])
+    // Use the service's public upsert method
+    qdrant_service // Use the service Arc directly
+        .upsert_points(vec![point]) // Pass point in a vec
         .await
-        .expect("Failed to insert test point via Qdrant service");
-
+        .expect("Failed to upsert test point via Qdrant service");
+    
+    // Small delay to ensure Qdrant indexes the point
     tokio::time::sleep(Duration::from_millis(500)).await;
 
     // 2. Configure Mocks
@@ -1883,4 +1893,213 @@ async fn test_rag_context_injection_in_prompt() {
     assert!(prompt_text.contains("</RAG_CONTEXT>"), "Prompt missing RAG_CONTEXT end tag");
     assert!(prompt_text.contains(secret_message_content), "Prompt missing secret message");
     assert!(prompt_text.contains(&expected_retrieved_chunk_text), "Prompt missing exact chunk text");
+}
+
+// +++ NEW TEST +++
+#[tokio::test]
+#[ignore] // Interacts with Qdrant AND real Gemini API
+async fn test_rag_context_injection_real_ai() {
+    const EMBEDDING_DIMENSION: u64 = 3072; // Added constant back
+    // Setup: Real AI client, mock embedding client
+    // Configure tracing for the test
+    test_helpers::ensure_tracing_initialized(); // Fixed function name
+
+    // --- Database Setup (copied & adapted from test_helpers::spawn_app) ---
+    dotenvy::dotenv().ok(); // Load .env for test environment variables
+    let db_name = format!("test_db_{}", Uuid::new_v4());
+    let base_db_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set for testing");
+    let (main_db_url, _) = base_db_url.rsplit_once('/').expect("Invalid DATABASE_URL format");
+
+    let manager_default = deadpool_diesel::postgres::Manager::new(format!("{}/postgres", main_db_url), deadpool_diesel::Runtime::Tokio1);
+    let pool_default = deadpool_diesel::postgres::Pool::builder(manager_default).max_size(1).build().expect("Failed to create default DB pool");
+    let conn_default = pool_default.get().await.expect("Failed to get default DB connection");
+
+    let db_name_clone_create = db_name.clone();
+    let db_name_clone_drop = db_name.clone();
+    conn_default
+        .interact(move |conn| {
+            // Drop first, in case a previous test run failed mid-way
+            let _ = diesel::sql_query(format!("DROP DATABASE IF EXISTS \"{}\"", db_name_clone_drop)).execute(conn);
+            diesel::sql_query(format!("CREATE DATABASE \"{}\"", db_name_clone_create)).execute(conn)
+        })
+        .await
+        .expect("DB interaction failed")
+        .expect("Failed to create test DB");
+
+    let test_db_url = format!("{}/{}", main_db_url, db_name);
+    let manager = deadpool_diesel::postgres::Manager::new(test_db_url.clone(), deadpool_diesel::Runtime::Tokio1);
+    let db_pool = deadpool_diesel::postgres::Pool::builder(manager).build().expect("Failed to create test DB pool");
+
+    // Run migrations
+    let conn_migrate = db_pool.get().await.expect("Failed to get test DB connection for migration");
+    conn_migrate.interact(|conn| conn.run_pending_migrations(test_helpers::MIGRATIONS).map(|_| ()))
+        .await
+        .expect("Migration interact task failed")
+        .expect("Failed to run migrations on test DB");
+    // --- End Database Setup ---
+
+    // Load config for the real AI test
+    let config = Arc::new(Config::load().expect("Failed to load config for real AI test"));
+
+    // Real AI client
+    let real_ai_client = build_gemini_client().await.expect("Failed to build real Gemini client");
+
+    // Mock embedding client
+    let mock_embedding_client = Arc::new(test_helpers::MockEmbeddingClient::new());
+    let mock_embedding_pipeline_service = Arc::new(test_helpers::MockEmbeddingPipelineService::new());
+
+    // Real Qdrant client
+    let qdrant_service = Arc::new(
+        QdrantClientService::new(config.clone())
+            .await
+            .expect("Failed to create Qdrant service")
+    );
+
+    // AppState with real AI client and mock embedding client
+    let app_state = AppState {
+        pool: db_pool.clone(), // Use the created pool
+        config: config.clone(),
+        ai_client: real_ai_client.clone() as Arc<dyn AiClient + Send + Sync>, // Corrected trait to AiClient
+        embedding_client: mock_embedding_client.clone() as Arc<dyn EmbeddingClient + Send + Sync>,
+        qdrant_service: qdrant_service.clone(),
+        embedding_pipeline_service: mock_embedding_pipeline_service.clone() as Arc<dyn EmbeddingPipelineServiceTrait + Send + Sync>,
+        embedding_call_tracker: Arc::new(tokio::sync::Mutex::new(Vec::new())), // Default tracker
+    };
+
+    // --- Auth Setup (copied from spawn_app, adapted for existing AppState) ---
+    let session_store = scribe_backend::auth::session_store::DieselSessionStore::new(app_state.pool.clone()); // Fixed path and field access
+    let session_manager_layer = tower_sessions::SessionManagerLayer::new(session_store)
+        .with_secure(false)
+        .with_same_site(tower_sessions::cookie::SameSite::Lax)
+        .with_name("sid")
+        .with_path("/")
+        .with_expiry(tower_sessions::Expiry::OnInactivity(time::Duration::days(1)));
+
+    let auth_backend = scribe_backend::auth::user_store::Backend::new(app_state.pool.clone()); // Fixed path and field access
+    let auth_layer = axum_login::AuthManagerLayerBuilder::new(auth_backend, session_manager_layer).build();
+
+    // --- Router Setup (copied from spawn_app, adapted) ---
+    let protected_api_routes = axum::Router::new()
+        .route("/auth/me", axum::routing::get(scribe_backend::routes::auth::me_handler)) // Fixed path
+        .route("/auth/logout", axum::routing::post(scribe_backend::routes::auth::logout_handler)) // Fixed path
+        .nest(
+            "/characters",
+            axum::Router::new()
+                .route("/upload", axum::routing::post(scribe_backend::routes::characters::upload_character_handler)) // Fixed path
+                .route("/", axum::routing::get(scribe_backend::routes::characters::list_characters_handler)) // Fixed path
+                .route("/{id}", axum::routing::get(scribe_backend::routes::characters::get_character_handler)), // Fixed path
+        )
+        .nest("/chats", scribe_backend::routes::chat::chat_routes()) // Fixed path
+        .route_layer(axum_login::login_required!(scribe_backend::auth::user_store::Backend)); // Fixed path
+
+    let public_api_routes = axum::Router::new()
+        .route("/health", axum::routing::get(scribe_backend::routes::health::health_check)) // Fixed path
+        .route("/auth/register", axum::routing::post(scribe_backend::routes::auth::register_handler)) // Fixed path
+        .route("/auth/login", axum::routing::post(scribe_backend::routes::auth::login_handler)); // Fixed path
+
+    let app_router = axum::Router::new()
+        .nest("/api", public_api_routes)
+        .nest("/api", protected_api_routes)
+        .layer(tower_cookies::CookieManagerLayer::new())
+        .layer(auth_layer)
+        .with_state(app_state.clone());
+
+    // --- Create user and login (replaces create_test_user_and_login_direct) ---
+    let test_username = "rag_real_user";
+    let test_password = "password";
+    let user = test_helpers::create_test_user(&app_state.pool, test_username, test_password).await;
+
+    let login_request_body = json!({ "username": test_username, "password": test_password });
+    let login_request = Request::builder()
+        .method(Method::POST)
+        .uri("/api/auth/login")
+        .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
+        .body(Body::from(serde_json::to_vec(&login_request_body).unwrap()))
+        .unwrap();
+
+    let login_response = app_router.clone().oneshot(login_request).await.unwrap();
+    assert_eq!(login_response.status(), StatusCode::OK, "Login failed");
+    let auth_cookie = login_response.headers()
+        .get(header::SET_COOKIE)
+        .expect("Missing Set-Cookie header")
+        .to_str().unwrap().to_string();
+    // --- End user creation and login ---
+
+    let character = test_helpers::create_test_character(&app_state.pool, user.id, "Rag Real Char").await; // Use app_state.pool
+    let session = test_helpers::create_test_chat_session(&app_state.pool, user.id, character.id).await; // Use app_state.pool
+
+    // 1. Define test data (Using Ouroboros)
+    let user_query = "What is Ouroboros in Greek mythology?".to_string();
+    let mock_embedding: Vec<f32> = (1..=EMBEDDING_DIMENSION).map(|i| i as f32 * 0.1).collect(); // Define mock_embedding
+
+    // 2. Configure Mocks (Only for non-AI services)
+    // Mock the embedding client's response for the RAG query
+    mock_embedding_client.set_response(Ok(mock_embedding.clone())); // Use mock_embedding
+    // Configure mock RAG service response
+    let mock_metadata = EmbeddingMetadata {
+        message_id: Uuid::new_v4(), 
+        session_id: session.id,
+        speaker: "User".to_string(),
+        timestamp: chrono::Utc::now(),
+        text: user_query.clone(),
+    };
+    let mock_retrieved_chunk = RetrievedChunk {
+        score: 0.9, 
+        text: user_query.clone(),
+        metadata: mock_metadata,
+    };
+    mock_embedding_pipeline_service.set_response(Ok(vec![mock_retrieved_chunk]));
+
+    // NO mock AI response configuration needed 
+
+    // 3. Send Trigger Message via API
+    let request_body = NewChatMessageRequest {
+        content: user_query.to_string(),
+        model: None, // Use default model configured in GeminiClient
+    };
+    let request = Request::builder()
+        .method(Method::POST)
+        .uri(format!("/api/chats/{}/generate", session.id))
+        .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
+        .header(header::COOKIE, auth_cookie)
+        .header(header::ACCEPT, mime::TEXT_EVENT_STREAM.as_ref()) // Request streaming
+        .body(Body::from(serde_json::to_vec(&request_body).unwrap()))
+        .unwrap();
+
+    // Use app_router directly
+    let response = app_router.oneshot(request).await.unwrap();
+
+    // 4. Assertions
+    assert_eq!(response.status(), StatusCode::OK, "API call failed");
+    
+    // --- Check Streamed Response Content --- 
+    let response_body = response.into_body();
+    let sse_data = collect_sse_data(response_body).await;
+    let received_content = sse_data.join("");
+    
+    // Print the actual response
+    println!("\n--- REAL AI Response Received ---\n{}
+---------------------------------\n", received_content);
+    
+    // Basic check: Ensure response is not empty
+    assert!(!received_content.is_empty(), "Real AI response should not be empty");
+    // Optional: Check if it mentions the secret
+    assert!(received_content.contains("Ouroboros"), "Real AI response did not contain the secret code 'Ouroboros'");
+    // --- End Streamed Response Check --- 
+
+    // Delay might still be needed for background embedding task triggered by saving user message
+    tokio::time::sleep(Duration::from_millis(100)).await; 
+
+    // Verify the embedding client was called correctly for the RAG query
+    let embedding_calls = mock_embedding_client.get_calls(); // Check the mock
+    let expected_rag_call = (user_query.to_string(), "RETRIEVAL_QUERY".to_string());
+    assert!(
+        embedding_calls.contains(&expected_rag_call),
+        "Embedding client calls ({:?}) did not contain the expected RAG query call: {:?}",
+        embedding_calls,
+        expected_rag_call
+    );
+
+    // We can't easily check the prompt sent to the *real* AI client without modifying it,
+    // but the RAG context injection logic is tested by the previous mock test.
 }
