@@ -813,3 +813,20 @@ impl From<tower_sessions::session::Error> for AppError {
         AppError::Session(err.to_string())
     }
 }
+
+// NEW From impl for AuthError
+impl From<crate::auth::AuthError> for AppError {
+    fn from(err: crate::auth::AuthError) -> Self {
+        match err {
+            crate::auth::AuthError::WrongCredentials => AppError::InvalidCredentials,
+            crate::auth::AuthError::UsernameTaken => AppError::UsernameTaken,
+            crate::auth::AuthError::HashingError => {
+                AppError::PasswordHashingFailed("Password hashing failed".to_string())
+            }
+            crate::auth::AuthError::UserNotFound => AppError::UserNotFound,
+            crate::auth::AuthError::DatabaseError(s) => AppError::DatabaseQueryError(s),
+            crate::auth::AuthError::PoolError(e) => AppError::DbPoolError(e.to_string()),
+            crate::auth::AuthError::InteractError(s) => AppError::DbInteractError(s),
+        }
+    }
+}

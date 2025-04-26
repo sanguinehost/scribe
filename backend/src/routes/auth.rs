@@ -25,16 +25,8 @@ pub async fn register_handler(
     let username = credentials.username.clone();
     let password = credentials.password.clone();
 
-    // Hash the password
-    let password_hash = match bcrypt::hash(password.expose_secret(), bcrypt::DEFAULT_COST) {
-        Ok(hash) => hash,
-        Err(e) => {
-            return Err(AppError::InternalServerError(format!(
-                "Password hashing failed during registration: {}",
-                e
-            )));
-        }
-    };
+    // Hash the password asynchronously
+    let password_hash = crate::auth::hash_password(password).await?;
 
     debug!(username = %username, "Attempting to get DB connection from pool for registration...");
     match pool.get().await {

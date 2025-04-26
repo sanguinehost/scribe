@@ -27,8 +27,8 @@ impl AuthUser for User {
     }
 
     fn session_auth_hash(&self) -> &[u8] {
-        // TODO: Implement secure session hashing.
-        self.id.as_bytes()
+        // Use the password hash to ensure sessions are invalidated on password change.
+        self.password_hash.as_bytes()
     }
 }
 
@@ -73,7 +73,7 @@ mod tests {
         assert_eq!(user.password_hash, "hashed_password");
 
         assert_eq!(axum_login::AuthUser::id(&user), user_id);
-        assert_eq!(user.session_auth_hash(), user_id.as_bytes());
+        assert_eq!(user.session_auth_hash(), user.password_hash.as_bytes());
     }
 
     #[test]
