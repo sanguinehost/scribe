@@ -93,17 +93,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Ideally load from config/env, generating is okay for dev
     let session_store = DieselSessionStore::new(pool.clone());
 
-    // Generate a signing key for cookies
-    let secret_key = env::var("COOKIE_SIGNING_KEY").expect("COOKIE_SIGNING_KEY must be set");
+    // Use the signing key from the config
+    let secret_key = config.cookie_signing_key
+        .as_ref()
+        .context("COOKIE_SIGNING_KEY must be set in config")?;
     let key_bytes =
-        hex::decode(secret_key).context("Invalid COOKIE_SIGNING_KEY format (must be hex)")?;
-    let _cookie_signing_key = CookieKey::from(&key_bytes); // Renamed variable for clarity
+        hex::decode(secret_key).context("Invalid COOKIE_SIGNING_KEY format in config (must be hex)")?;
+    let cookie_signing_key = CookieKey::from(&key_bytes); // Keep the original variable name
 
     // Build the session manager layer (handles session data)
     let session_manager_layer = SessionManagerLayer::new(session_store)
-        .with_secure(false) // Set based on env/config in production
+        .with_secure(config.session_cookie_secure.unwrap_or(false)) // Use config value, default to false
         .with_same_site(SameSite::Lax)
-        // .with_signing_key(cookie_signing_key.clone()) // REMOVED: Signing is handled by CookieManagerLayer now
+        // Use with_signed to enable signed cookies with the key
+        .with_signed(cookie_signing_key)
         .with_expiry(Expiry::OnInactivity(time::Duration::days(7)));
 
     // Configure the auth backend
@@ -160,14 +163,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // Apply cookie management layer *after* the auth layer if it needs access to session data set by auth
         // OR before if auth layer needs cookies set by it. Axum layers execute outside-in.
         // Usually CookieManagerLayer goes near the outside.
-        .layer(CookieManagerLayer::new())
+        .layer(CookieManagerLayer::new()) // Remove the key here
         .with_state(app_state)
         .layer(
             TraceLayer::new_for_http()
                 .make_span_with(DefaultMakeSpan::default().include_headers(true)),
         );
 
-    let port = env::var("PORT").unwrap_or_else(|_| "3000".to_string());
+    // Use port from config, default to 3000
+    let port = config.port.unwrap_or(3000);
     let addr_str = format!("0.0.0.0:{}", port);
     let addr: SocketAddr = addr_str.parse().expect("Invalid address format");
 

@@ -12,6 +12,9 @@ pub struct Config {
     // Add other fields like server address, log level, etc.
     pub qdrant_url: Option<String>, // URL for the Qdrant instance
     pub qdrant_collection_name: Option<String>, // Optional: Name for the Qdrant collection
+    pub cookie_signing_key: Option<String>, // Moved from main.rs
+    pub port: Option<u16>, // Moved from main.rs
+    pub session_cookie_secure: Option<bool>, // Added for session security
 }
 
 impl Config {
