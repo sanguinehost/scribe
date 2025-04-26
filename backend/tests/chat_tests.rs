@@ -1763,7 +1763,7 @@ async fn test_generate_chat_response_triggers_embeddings_with_existing_session()
 }
 
 #[tokio::test]
-#[ignore] // This test specifically checks RAG behavior with mocks
+// Removed ignore: #[ignore] // Integration test, relies on external services
 async fn test_rag_context_injection_in_prompt() {
     let context = test_helpers::setup_test_app().await;
     let (auth_cookie, user) = test_helpers::auth::create_test_user_and_login(&context.app, "rag_user", "password").await;

@@ -1,21 +1,22 @@
 // backend/src/services/embedding_pipeline.rs
 
 use crate::errors::AppError;
-// use crate::config::Config; // Removed unused import
-// Removed unused: EmbeddingClient, QdrantClientService, PointsSelectorOneOf, SelectorOptions, WithPayloadSelector
-use crate::models::chats::ChatMessage; // Assuming ChatMessage model exists
-use crate::state::AppState; // To access clients
+use crate::models::chats::ChatMessage;
+use crate::state::AppState;
 use crate::text_processing::chunking::chunk_text;
-use crate::vector_db::qdrant_client::create_qdrant_point; // Keep create_qdrant_point
-use qdrant_client::qdrant::{Filter, Condition, Value, FieldCondition, Match}; // Keep Filter, Condition, Value; Add FieldCondition, Match
-use qdrant_client::qdrant::condition::ConditionOneOf; // Add ConditionOneOf
-use qdrant_client::qdrant::r#match::MatchValue; // Add MatchValue
+use crate::vector_db::qdrant_client::{create_qdrant_point, QdrantClientServiceTrait};
+use crate::llm::EmbeddingClient;
+
+use qdrant_client::qdrant::{Condition, FieldCondition, Filter, Match, Value as QdrantValue};
+use qdrant_client::qdrant::r#match::MatchValue;
+use qdrant_client::qdrant::condition::ConditionOneOf;
 use std::collections::HashMap;
 use std::convert::TryFrom;
-use async_trait::async_trait; // Add async_trait
+use async_trait::async_trait;
 use std::sync::Arc;
 use tracing::{error, info, instrument, warn};
 use uuid::Uuid;
+use chrono::Utc;
 
 // Define metadata to store alongside vectors
 // TODO: Finalize required metadata fields
@@ -30,10 +31,10 @@ pub struct EmbeddingMetadata {
 }
 
 // Implement conversion from Qdrant payload
-impl TryFrom<HashMap<String, Value>> for EmbeddingMetadata {
+impl TryFrom<HashMap<String, QdrantValue>> for EmbeddingMetadata {
     type Error = AppError; // Use our standard AppError for conversion errors
 
-    fn try_from(payload: HashMap<String, Value>) -> Result<Self, Self::Error> {
+    fn try_from(payload: HashMap<String, QdrantValue>) -> Result<Self, Self::Error> {
         let message_id_str = payload
             .get("message_id")
             .and_then(|v| v.kind.as_ref())
@@ -216,19 +217,9 @@ pub trait EmbeddingPipelineServiceTrait: Send + Sync {
 
 pub struct EmbeddingPipelineService;
 
-// --- RAG Retrieval Logic ---
-
-// Represents a retrieved chunk with its score and metadata
-#[derive(Debug, Clone, serde::Deserialize)] // Deserialize needed if parsing payload
-pub struct RetrievedChunk {
-    pub score: f32,
-    pub text: String,
-    pub metadata: EmbeddingMetadata, // Reuse the metadata struct
-}
-
+// Implement the trait for EmbeddingPipelineService
 #[async_trait]
 impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
-    #[instrument(skip(self, state, query_text), fields(chat_id = %chat_id, limit), err)]
     async fn retrieve_relevant_chunks(
         &self,
         state: Arc<AppState>,
@@ -236,74 +227,104 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
         query_text: &str,
         limit: u64,
     ) -> Result<Vec<RetrievedChunk>, AppError> {
-        info!("Retrieving relevant chunks for query");
+        // Call the standalone function
+        retrieve_relevant_chunks(
+            state.qdrant_service.clone(),
+            state.embedding_client.clone(),
+            chat_id,
+            query_text,
+            limit,
+        ).await
+    }
+}
 
-        // 1. Get embedding for the query text
-        let task_type = "RETRIEVAL_QUERY";
-        let query_embedding = state
-            .embedding_client
-            .embed_content(query_text, task_type)
-            .await
-            .map_err(|e| {
-                error!(error = %e, "Failed to get embedding for RAG query");
-                e // Assuming embed_content now returns AppError directly
-            })?;
+// --- RAG (Retrieval-Augmented Generation) Logic ---
 
-        // 2. Construct filter for session_id
-        let filter = Filter {
-            must: vec![Condition {
-                condition_one_of: Some(ConditionOneOf::Field(FieldCondition {
-                    key: "session_id".to_string(), // Field name in Qdrant payload
-                    r#match: Some(Match {
-                        match_value: Some(MatchValue::Keyword(chat_id.to_string())),
-                    }),
-                    range: None, // Explicitly None
-                    geo_bounding_box: None,
-                    geo_radius: None,
-                    geo_polygon: None,
-                    values_count: None,
-                    datetime_range: None,
-                    is_empty: None,
-                    is_null: None,
-                })),
-            }],
-            should: vec![], // Explicitly empty
-            must_not: vec![], // Explicitly empty
-            min_should: None,
-        };
+/// Represents a chunk of text retrieved from the vector database during RAG.
+#[derive(Clone)]
+pub struct RetrievedChunk {
+    pub score: f32,
+    pub text: String,
+    pub metadata: EmbeddingMetadata, // Reuse the metadata struct
+}
 
-        // 3. Search Qdrant
-        let search_results = state
-            .qdrant_service
-            .search_points(query_embedding, limit, Some(filter))
-            .await
-            .map_err(|e| {
-                error!(error = %e, "Failed to search Qdrant for relevant chunks");
-                e // Propagate AppError
-            })?;
+/// Retrieves relevant text chunks from the vector database based on a query.
+///
+/// 1. Creates an embedding for the `query_text` using the `EmbeddingClient`.
+/// 2. Searches the Qdrant collection using the embedding and a filter for the `session_id`.
+/// 3. Converts the retrieved `ScoredPoint`s into `RetrievedChunk`s.
+pub async fn retrieve_relevant_chunks(
+    qdrant_service: Arc<dyn QdrantClientServiceTrait>,
+    embedding_client: Arc<dyn EmbeddingClient>,
+    session_id: Uuid,
+    query_text: &str,
+    limit: u64,
+) -> Result<Vec<RetrievedChunk>, AppError> {
+    info!("Retrieving relevant chunks for query");
 
-        // 4. Convert search results to RetrievedChunk
-        let mut retrieved_chunks = Vec::new();
-        for scored_point in search_results {
-            match EmbeddingMetadata::try_from(scored_point.payload) {
-                Ok(metadata) => retrieved_chunks.push(RetrievedChunk {
-                    score: scored_point.score,
-                    text: metadata.text.clone(), // Use text from parsed metadata
-                    metadata,
+    // 1. Get embedding for the query text
+    let task_type = "RETRIEVAL_QUERY";
+    let query_embedding = embedding_client
+        .embed_content(query_text, task_type)
+        .await
+        .map_err(|e| {
+            error!(error = %e, "Failed to get embedding for RAG query");
+            e // Assuming embed_content now returns AppError directly
+        })?;
+
+    // 2. Construct filter for session_id
+    let filter = Filter {
+        must: vec![Condition {
+            condition_one_of: Some(ConditionOneOf::Field(FieldCondition {
+                key: "session_id".to_string(), // Field name in Qdrant payload
+                r#match: Some(Match {
+                    match_value: Some(MatchValue::Keyword(session_id.to_string())),
                 }),
-                Err(e) => {
-                    // Use scored_point.id.map(|id| format!("{:?}", id)).unwrap_or_else(|| "N/A".to_string())
-                    // to safely get the ID as a string for logging, handling None case.
-                    let point_id_str = scored_point.id.map(|id| format!("{:?}", id)).unwrap_or_else(|| "N/A".to_string());
-                    error!(error = %e, point_id = %point_id_str, "Failed to parse metadata from Qdrant point payload");
-                    // Skipping for now
-                }
+                range: None, // Explicitly None
+                geo_bounding_box: None,
+                geo_radius: None,
+                geo_polygon: None,
+                values_count: None,
+                datetime_range: None,
+                is_empty: None,
+                is_null: None,
+            })),
+        }],
+        should: vec![], // Explicitly empty
+        must_not: vec![], // Explicitly empty
+        min_should: None,
+    };
+
+    // 3. Search Qdrant
+    let search_results = qdrant_service
+        .search_points(query_embedding, limit, Some(filter))
+        .await
+        .map_err(|e| {
+            error!(error = %e, "Failed to search Qdrant for relevant chunks");
+            e // Propagate AppError
+        })?;
+
+    // 4. Convert search results to RetrievedChunk
+    let mut retrieved_chunks = Vec::new();
+    for scored_point in search_results {
+        match EmbeddingMetadata::try_from(scored_point.payload) {
+            Ok(metadata) => retrieved_chunks.push(RetrievedChunk {
+                score: scored_point.score,
+                text: metadata.text.clone(), // Use text from parsed metadata
+                metadata,
+            }),
+            Err(e) => {
+                // Use scored_point.id.map(|id| format!("{:?}", id)).unwrap_or_else(|| "N/A".to_string())
+                // to safely get the ID as a string for logging, handling None case.
+                let point_id_str = scored_point.id.map(|id| format!("{:?}", id)).unwrap_or_else(|| "N/A".to_string());
+                error!(error = %e, point_id = %point_id_str, "Failed to parse metadata from Qdrant point payload");
+                // Skipping for now
             }
         }
-
-        info!("Retrieved {} relevant chunks", retrieved_chunks.len());
-        Ok(retrieved_chunks)
     }
+
+    info!("Retrieved {} relevant chunks", retrieved_chunks.len());
+    Ok(retrieved_chunks)
 }
 
 

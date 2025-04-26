@@ -6,13 +6,16 @@ use qdrant_client::Qdrant;
 pub use qdrant_client::qdrant::{
     CreateCollection, Distance, Filter, PointStruct, ScoredPoint, Value, VectorParams, VectorsConfig, 
     FieldCondition, Match, Condition, condition::ConditionOneOf, FieldType, r#match::MatchValue,
-    value::Kind
+    value::Kind, PointId, point_id::PointIdOptions, PayloadIncludeSelector, WithPayloadSelector,
+    ReadConsistency, ReadConsistencyType, UpdateCollection, OptimizersConfigDiff, WalConfigDiff
 };
 use qdrant_client::qdrant::vectors_config::Config as QdrantVectorsConfig; // Alias to avoid naming conflict
 use std::sync::Arc;
 use tracing::{info, error, instrument, warn};
 use uuid::Uuid;
- // Add rand for distinct test vectors
+use async_trait::async_trait;
+use serde_json::Value as JsonValue;
+use thiserror::Error;
 
 // Constants
 pub const DEFAULT_COLLECTION_NAME: &str = "chat_embeddings";
@@ -23,6 +26,21 @@ pub struct QdrantClientService {
     client: Arc<Qdrant>, // Update client type
     collection_name: String,
     embedding_dimension: u64,
+}
+
+#[async_trait]
+pub trait QdrantClientServiceTrait: Send + Sync {
+    async fn ensure_collection_exists(&self) -> Result<(), AppError>;
+    async fn store_points(&self, points: Vec<PointStruct>) -> Result<(), AppError>;
+    async fn search_points(
+        &self,
+        vector: Vec<f32>,
+        limit: u64,
+        filter: Option<Filter>,
+    ) -> Result<Vec<ScoredPoint>, AppError>;
+    async fn retrieve_points(&self, filter: Option<Filter>, limit: u64) -> Result<Vec<ScoredPoint>, AppError>; // Added Retrieve Method
+    async fn delete_points(&self, point_ids: Vec<PointId>) -> Result<(), AppError>;
+    async fn update_collection_settings(&self) -> Result<(), AppError>; // Added Update Settings Method
 }
 
 impl QdrantClientService {
@@ -582,5 +600,61 @@ mod tests {
             Some(Kind::StringValue("target_value".to_string())),
             "Payload value mismatch"
         );
+    }
+}
+
+// Implement the QdrantClientServiceTrait for QdrantClientService
+#[async_trait]
+impl QdrantClientServiceTrait for QdrantClientService {
+    async fn ensure_collection_exists(&self) -> Result<(), AppError> {
+        // Call the method directly instead of through the trait
+        QdrantClientService::ensure_collection_exists(self).await
+    }
+
+    async fn store_points(&self, points: Vec<PointStruct>) -> Result<(), AppError> {
+        // Rename upsert_points to store_points for the trait, but call the implementation method
+        self.upsert_points(points).await
+    }
+
+    async fn search_points(
+        &self,
+        vector: Vec<f32>,
+        limit: u64,
+        filter: Option<Filter>,
+    ) -> Result<Vec<ScoredPoint>, AppError> {
+        // Use the implementation's method directly
+        QdrantClientService::search_points(self, vector, limit, filter).await
+    }
+
+    async fn retrieve_points(&self, filter: Option<Filter>, limit: u64) -> Result<Vec<ScoredPoint>, AppError> {
+        // Call the implementation method which returns RetrievedPoint
+        let retrieved_points = QdrantClientService::retrieve_points(self, filter, limit as usize).await?;
+        
+        // Convert RetrievedPoint to ScoredPoint
+        let scored_points = retrieved_points.into_iter()
+            .map(|rp| ScoredPoint {
+                id: rp.id,
+                version: 0, // Use a default version
+                score: 1.0, // Default score as RetrievedPoint doesn't have a score
+                payload: rp.payload,
+                vectors: rp.vectors,
+                shard_key: rp.shard_key,
+                order_value: rp.order_value,
+            })
+            .collect();
+        
+        Ok(scored_points)
+    }
+
+    async fn delete_points(&self, point_ids: Vec<PointId>) -> Result<(), AppError> {
+        // Implement delete functionality if needed
+        // For now, return success
+        Ok(())
+    }
+
+    async fn update_collection_settings(&self) -> Result<(), AppError> {
+        // Implement update settings functionality if needed
+        // For now, return success
+        Ok(())
     }
 }

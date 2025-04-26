@@ -51,10 +51,11 @@ use serde_json::Value;
 use crate::llm::{AiClient, ChatStream, EmbeddingClient}; // Add EmbeddingClient
 use crate::errors::AppError;
 use genai::chat::ChatStreamEvent; // Add import for chatstream types
-use crate::services::embedding_pipeline::{EmbeddingPipelineServiceTrait, RetrievedChunk}; // Removed unused EmbeddingMetadata
-use qdrant_client::qdrant::{Filter, ScoredPoint};
-use std::sync::{Arc, Mutex}; // Keep Arc and Mutex import here
+use crate::services::embedding_pipeline::{EmbeddingPipelineServiceTrait, RetrievedChunk};
+use qdrant_client::qdrant::{PointId, Filter, ScoredPoint};
+use std::sync::{Arc, Mutex};
 use tracing::warn;
+use crate::vector_db::qdrant_client::{QdrantClientServiceTrait, PointStruct};
 
 // --- START Placeholder Mock Definitions ---
 // TODO: Implement proper mocks based on required functionality
@@ -248,7 +249,8 @@ impl EmbeddingPipelineServiceTrait for MockEmbeddingPipelineService {
         });
 
         // Return the pre-set response or a default
-        match self.retrieve_response.lock().unwrap().clone() {
+        let response = self.retrieve_response.lock().unwrap().take();
+        match response {
             Some(res) => res,
             None => {
                 // Default behavior if no response is set
@@ -337,7 +339,63 @@ impl MockQdrantClientService {
         response.unwrap_or(Ok(vec![]))
     }
 }
-// TODO: Add basic trait implementation if QdrantClientService implements a trait used in AppState or elsewhere
+
+// Implement the QdrantClientServiceTrait for MockQdrantClientService
+#[async_trait]
+impl QdrantClientServiceTrait for MockQdrantClientService {
+    async fn ensure_collection_exists(&self) -> Result<(), AppError> {
+        Ok(()) // Just return success for the mock
+    }
+
+    async fn store_points(&self, points: Vec<PointStruct>) -> Result<(), AppError> {
+        // Track call
+        {
+            let mut count = self.upsert_call_count.lock().unwrap();
+            *count += 1;
+            
+            let mut last_points = self.last_upsert_points.lock().unwrap();
+            *last_points = Some(points.clone());
+        }
+        
+        // Return response
+        let response = self.upsert_response.lock().unwrap().take();
+        response.unwrap_or(Ok(()))
+    }
+
+    async fn search_points(
+        &self,
+        vector: Vec<f32>,
+        limit: u64,
+        filter: Option<Filter>,
+    ) -> Result<Vec<ScoredPoint>, AppError> {
+        // Track call
+        {
+            let mut count = self.search_call_count.lock().unwrap();
+            *count += 1;
+            
+            let mut last_params = self.last_search_params.lock().unwrap();
+            *last_params = Some((vector.clone(), limit, filter.clone()));
+        }
+        
+        // Return response
+        let response = self.search_response.lock().unwrap().take();
+        response.unwrap_or(Ok(vec![]))
+    }
+
+    async fn retrieve_points(&self, _filter: Option<Filter>, _limit: u64) -> Result<Vec<ScoredPoint>, AppError> {
+        // Use the search response for retrieve as well
+        let response = self.search_response.lock().unwrap().take();
+        response.unwrap_or(Ok(vec![]))
+    }
+
+    async fn delete_points(&self, _point_ids: Vec<PointId>) -> Result<(), AppError> {
+        Ok(()) // Just return success for the mock
+    }
+
+    async fn update_collection_settings(&self) -> Result<(), AppError> {
+        Ok(()) // Just return success for the mock
+    }
+}
 
 // --- END Placeholder Mock Definitions ---
 
