@@ -196,16 +196,14 @@ pub async fn generate_character_handler(
     let dummy_character = Character {
         id: Uuid::new_v4(), // Generate a new ID
         user_id: user_id_val,
+        spec: "dummy_spec_placeholder".to_string(), // Added placeholder
+        spec_version: "dummy_spec_version_placeholder".to_string(), // Added placeholder
         name: "Generated Placeholder".to_string(),
         description: Some(format!("Based on prompt: '{}'", payload.prompt)),
         personality: Some("Placeholder".to_string()),
         scenario: Some("Placeholder".to_string()),
         first_mes: Some("Placeholder".to_string()),
         mes_example: Some("Placeholder".to_string()),
-        created_at: chrono::Utc::now(), // Fixed: Use DateTime<Utc>
-        updated_at: chrono::Utc::now(), // Fixed: Use DateTime<Utc>
-        persona: None,
-        world_scenario: None,
         creator_notes: None,
         system_prompt: None,
         post_history_instructions: None,
@@ -213,6 +211,16 @@ pub async fn generate_character_handler(
         creator: None,
         character_version: None,
         alternate_greetings: None,
+        nickname: None,
+        creator_notes_multilingual: None,
+        source: None,
+        group_only_greetings: None,
+        creation_date: None,
+        modification_date: None,
+        created_at: chrono::Utc::now(),
+        updated_at: chrono::Utc::now(),
+        persona: None,
+        world_scenario: None,
         avatar: None,
         chat: None,
         greeting: None,
@@ -247,7 +255,6 @@ pub async fn generate_character_handler(
         visibility: None,
         weight: None,
         world_scenario_visibility: None,
-        creator_notes_multilingual: None,
     };
 
     // --- TODO: Optionally save the dummy character to DB if needed for testing downstream GET ---

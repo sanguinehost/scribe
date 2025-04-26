@@ -7,6 +7,7 @@ use serde_json::Value; // Using Value for flexibility in extensions and mixed ty
 use serde_json::Value as JsonValue;
 use std::collections::HashMap;
 use uuid::Uuid; // <-- Add Uuid import // Alias serde_json::Value
+use crate::models::characters::Character; // Add use statement for canonical Character struct
 
 // Main Character Card Structure (V3)
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
@@ -380,76 +381,6 @@ mod tests;
 
 use crate::schema::{character_assets, lorebook_entries, lorebooks};
 // use crate::models::users::User; // Unused import
-
-#[derive(Queryable, Selectable, Serialize, Deserialize, Debug, Clone)] // Added Serialize, Deserialize
-#[diesel(table_name = crate::schema::characters)]
-#[diesel(check_for_backend(diesel::pg::Pg))]
-pub struct Character {
-    #[diesel(deserialize_as = Uuid)] // Specify type if needed, though Diesel might infer
-    pub id: Uuid, // Changed from i32
-    #[diesel(deserialize_as = Uuid)]
-    pub user_id: Uuid, // Changed from i32
-    pub spec: String,
-    pub spec_version: String,
-    pub name: String,
-    pub description: Option<String>,
-    pub personality: Option<String>,
-    pub scenario: Option<String>,
-    pub first_mes: Option<String>,
-    pub mes_example: Option<String>,
-    pub creator_notes: Option<String>,
-    pub system_prompt: Option<String>,
-    pub post_history_instructions: Option<String>,
-    pub tags: Option<Vec<Option<String>>>, // Assuming TEXT[] maps to Vec<Option<String>>
-    pub creator: Option<String>,
-    pub character_version: Option<String>,
-    pub alternate_greetings: Option<Vec<Option<String>>>,
-    pub nickname: Option<String>,
-    pub creator_notes_multilingual: Option<DieselJson<JsonValue>>, // JSONB -> DieselJson<JsonValue>
-    pub source: Option<Vec<Option<String>>>,
-    pub group_only_greetings: Option<Vec<Option<String>>>,
-    pub creation_date: Option<DateTime<Utc>>, // TIMESTAMP WITH TIME ZONE
-    pub modification_date: Option<DateTime<Utc>>, // TIMESTAMP WITH TIME ZONE
-    pub created_at: DateTime<Utc>,            // Changed from Option<DateTime<Utc>>
-    pub updated_at: DateTime<Utc>,            // Changed from Option<DateTime<Utc>>
-    // --- Fields added to match schema ---
-    pub persona: Option<String>,
-    pub world_scenario: Option<String>,
-    pub avatar: Option<String>,
-    pub chat: Option<String>,
-    pub greeting: Option<String>,
-    pub definition: Option<String>,
-    pub default_voice: Option<String>,
-    pub extensions: Option<DieselJson<JsonValue>>, // JSONB -> DieselJson<JsonValue>
-    pub data_id: Option<i32>,
-    pub category: Option<String>,
-    pub definition_visibility: Option<String>,
-    pub depth: Option<i32>,
-    pub example_dialogue: Option<String>,
-    pub favorite: Option<bool>,
-    pub first_message_visibility: Option<String>,
-    pub height: Option<bigdecimal::BigDecimal>, // Numeric -> BigDecimal
-    pub last_activity: Option<DateTime<Utc>>,
-    pub migrated_from: Option<String>,
-    pub model_prompt: Option<String>,
-    pub model_prompt_visibility: Option<String>,
-    pub model_temperature: Option<bigdecimal::BigDecimal>, // Numeric -> BigDecimal
-    pub num_interactions: Option<i64>,                     // BigInt -> i64
-    pub permanence: Option<bigdecimal::BigDecimal>,        // Numeric -> BigDecimal
-    pub persona_visibility: Option<String>,
-    pub revision: Option<i32>,
-    pub sharing_visibility: Option<String>,
-    pub status: Option<String>,
-    pub system_prompt_visibility: Option<String>,
-    pub system_tags: Option<Vec<Option<String>>>,
-    pub token_budget: Option<i32>,
-    pub usage_hints: Option<DieselJson<JsonValue>>, // JSONB -> DieselJson<JsonValue>
-    pub user_persona: Option<String>,
-    pub user_persona_visibility: Option<String>,
-    pub visibility: Option<String>,
-    pub weight: Option<bigdecimal::BigDecimal>, // Numeric -> BigDecimal
-    pub world_scenario_visibility: Option<String>,
-}
 
 // Note: For Insertable, we might need a separate struct `NewCharacter`
 // if some fields (like id, created_at, updated_at) are not set manually during insertion.

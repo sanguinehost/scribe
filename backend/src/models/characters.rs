@@ -21,62 +21,67 @@ use uuid::Uuid; // Added import
 #[diesel(table_name = crate::schema::characters)]
 #[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct Character {
-    #[diesel(deserialize_as = Uuid)]
-    pub id: Uuid, // PK
-    #[diesel(deserialize_as = Uuid)]
-    pub user_id: Uuid, // FK to users table
+    pub id: Uuid,                             // PK
+    pub user_id: Uuid,                        // FK to users table
+    pub spec: String,
+    pub spec_version: String,
     pub name: String,
     pub description: Option<String>,
-    pub persona: Option<String>,
-    pub world_scenario: Option<String>,
-    pub system_prompt: Option<String>,
-    pub post_history_instructions: Option<String>,
-    pub creator_notes: Option<String>,
-    pub personality: Option<String>,
-    pub scenario: Option<String>,
-    pub first_mes: Option<String>,
-    pub mes_example: Option<String>,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
-    pub creator: Option<String>,
-    pub character_version: Option<String>,
-    pub tags: Option<Vec<Option<String>>>,
-    pub avatar: Option<String>, // file name or identifier for the avatar image
-    pub chat: Option<String>,   // identifier for associated chat history?
-    pub greeting: Option<String>,
-    pub definition: Option<String>,
-    pub default_voice: Option<String>,
-    pub extensions: Option<Json<JsonValue>>, // Use Json wrapper for JSONB
-    pub data_id: Option<i32>,
-    pub alternate_greetings: Option<Vec<Option<String>>>,
-    pub category: Option<String>,
-    pub definition_visibility: Option<String>,
-    pub depth: Option<i32>,
-    pub example_dialogue: Option<String>,
-    pub favorite: Option<bool>,
-    pub first_message_visibility: Option<String>,
-    pub height: Option<BigDecimal>,
-    pub last_activity: Option<DateTime<Utc>>,
-    pub migrated_from: Option<String>,
-    pub model_prompt: Option<String>,
-    pub model_prompt_visibility: Option<String>,
-    pub model_temperature: Option<BigDecimal>,
-    pub num_interactions: Option<i64>,
-    pub permanence: Option<BigDecimal>,
-    pub persona_visibility: Option<String>,
-    pub revision: Option<i32>,
-    pub sharing_visibility: Option<String>,
-    pub status: Option<String>,
-    pub system_prompt_visibility: Option<String>,
-    pub system_tags: Option<Vec<Option<String>>>,
-    pub token_budget: Option<i32>,
-    pub usage_hints: Option<Json<JsonValue>>, // Use Json wrapper for JSONB
-    pub user_persona: Option<String>,
-    pub user_persona_visibility: Option<String>,
-    pub visibility: Option<String>,
-    pub weight: Option<BigDecimal>,
-    pub world_scenario_visibility: Option<String>,
-    pub creator_notes_multilingual: Option<Json<JsonValue>>, // Use Json wrapper for JSONB
+    pub personality: Option<String>,          // Moved to match schema order
+    pub scenario: Option<String>,             // Moved to match schema order
+    pub first_mes: Option<String>,            // Moved to match schema order
+    pub mes_example: Option<String>,          // Moved to match schema order
+    pub creator_notes: Option<String>,        // Moved to match schema order
+    pub system_prompt: Option<String>,        // Moved to match schema order
+    pub post_history_instructions: Option<String>, // Moved to match schema order
+    pub tags: Option<Vec<Option<String>>>,    // Moved to match schema order
+    pub creator: Option<String>,              // Moved to match schema order
+    pub character_version: Option<String>,    // Moved to match schema order
+    pub alternate_greetings: Option<Vec<Option<String>>>, // Moved to match schema order
+    pub nickname: Option<String>,             // Added missing field
+    pub creator_notes_multilingual: Option<Json<JsonValue>>, // Moved to match schema order
+    pub source: Option<Vec<Option<String>>>, // Added missing field
+    pub group_only_greetings: Option<Vec<Option<String>>>, // Added missing field
+    pub creation_date: Option<DateTime<Utc>>, // Added missing field
+    pub modification_date: Option<DateTime<Utc>>, // Added missing field
+    pub created_at: DateTime<Utc>,            // Moved to match schema order
+    pub updated_at: DateTime<Utc>,            // Moved to match schema order
+    pub persona: Option<String>,              // Moved to match schema order
+    pub world_scenario: Option<String>,       // Moved to match schema order
+    pub avatar: Option<String>,               // Moved to match schema order
+    pub chat: Option<String>,                 // Moved to match schema order
+    pub greeting: Option<String>,             // Moved to match schema order
+    pub definition: Option<String>,           // Moved to match schema order
+    pub default_voice: Option<String>,        // Moved to match schema order
+    pub extensions: Option<Json<JsonValue>>,  // Moved to match schema order
+    pub data_id: Option<i32>,                 // Moved to match schema order
+    pub category: Option<String>,             // Moved to match schema order
+    pub definition_visibility: Option<String>, // Moved to match schema order
+    pub depth: Option<i32>,                   // Moved to match schema order
+    pub example_dialogue: Option<String>,     // Moved to match schema order
+    pub favorite: Option<bool>,               // Moved to match schema order
+    pub first_message_visibility: Option<String>, // Moved to match schema order
+    pub height: Option<BigDecimal>,           // Moved to match schema order
+    pub last_activity: Option<DateTime<Utc>>, // Moved to match schema order
+    pub migrated_from: Option<String>,        // Moved to match schema order
+    pub model_prompt: Option<String>,         // Moved to match schema order
+    pub model_prompt_visibility: Option<String>, // Moved to match schema order
+    pub model_temperature: Option<BigDecimal>, // Moved to match schema order
+    pub num_interactions: Option<i64>,        // Moved to match schema order
+    pub permanence: Option<BigDecimal>,       // Moved to match schema order
+    pub persona_visibility: Option<String>,   // Moved to match schema order
+    pub revision: Option<i32>,                // Moved to match schema order
+    pub sharing_visibility: Option<String>,   // Moved to match schema order
+    pub status: Option<String>,               // Moved to match schema order
+    pub system_prompt_visibility: Option<String>, // Moved to match schema order
+    pub system_tags: Option<Vec<Option<String>>>, // Moved to match schema order
+    pub token_budget: Option<i32>,            // Moved to match schema order
+    pub usage_hints: Option<Json<JsonValue>>, // Moved to match schema order
+    pub user_persona: Option<String>,         // Moved to match schema order
+    pub user_persona_visibility: Option<String>, // Moved to match schema order
+    pub visibility: Option<String>,           // Moved to match schema order
+    pub weight: Option<BigDecimal>,           // Moved to match schema order
+    pub world_scenario_visibility: Option<String>, // Moved to match schema order
 }
 
 // Represents fields that can be updated from a parsed card

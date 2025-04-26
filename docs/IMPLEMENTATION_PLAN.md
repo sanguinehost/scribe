@@ -249,10 +249,10 @@ Only mark a task checkbox (`- [x]`) when all these conditions are satisfied.
 
 *Goal: Implement key improvements identified during code review to fix security issues, improve performance, and remove redundancies.*
 
-- [ ] **Task 6.1: High Priority Fixes (BE)**
-    - [ ] **Security Fix:** Correct the `session_auth_hash` function in `models/users.rs` to use the password hash (`self.password_hash.as_bytes()`) instead of `self.id.as_bytes()` for proper session invalidation on password changes.
-    - [ ] **Performance Fix:** Update the registration handler in `routes/auth.rs` to use the async `auth::hash_password` helper instead of synchronous `bcrypt::hash` call.
-    - [ ] **Redundancy Cleanup:** Remove the duplicate `Character` model definition found in `models/character_card.rs` (lines 384-452) and ensure all code references the canonical model.
+- [x] **Task 6.1: High Priority Fixes (BE)**
+    - [x] **Security Fix:** Correct the `session_auth_hash` function in `models/users.rs` to use the password hash (`self.password_hash.as_bytes()`) instead of `self.id.as_bytes()` for proper session invalidation on password changes.
+    - [x] **Performance Fix:** Update the registration handler in `routes/auth.rs` to use the async `auth::hash_password` helper instead of synchronous `bcrypt::hash` call.
+    - [x] **Redundancy Cleanup:** Remove the duplicate `Character` model definition found in `models/character_card.rs` (lines 384-452) and ensure all code references the canonical model.
 
 - [ ] **Task 6.2: Test Coverage Improvements (BE)**
     - [ ] Implement the placeholder integration tests in `backend/tests/characters_tests.rs` covering:

@@ -20,7 +20,8 @@ use http_body_util::BodyExt;
 use scribe_backend::auth::session_store::DieselSessionStore;
 use scribe_backend::auth::user_store::Backend as AuthBackend;
 use scribe_backend::config::Config;
-use scribe_backend::models::character_card::{Character, NewCharacter};
+use scribe_backend::models::characters::Character; // Import canonical Character struct
+use scribe_backend::models::character_card::NewCharacter; // Keep NewCharacter import from card
 use scribe_backend::models::users::UserCredentials; // Add credentials import
 use scribe_backend::models::users::{NewUser, User};
 use scribe_backend::routes::auth::login_handler; // Import login handler
@@ -329,6 +330,7 @@ fn test_user_character_insert_and_query() {
         // --- Query Character ---
         let found_character: Character = schema::characters::table
             .find(inserted_character.id) // Find by the ID we got back
+            .select(Character::as_select()) // Add back: Explicitly select columns matching Character struct
             .first(conn)?; // Use ?
 
         assert_eq!(found_character.id, inserted_character.id);
