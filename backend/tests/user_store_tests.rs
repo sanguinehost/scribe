@@ -36,6 +36,7 @@ mod user_store_tests {
 
     // Moved from models/users.rs
     #[tokio::test]
+    // This test is pure computation, no external services needed
     async fn test_password_hashing_and_verification() -> Result<(), Box<dyn std::error::Error>> {
         let password_string = "test_password123".to_string();
         let password_secret = Secret::new(password_string.clone());
@@ -63,6 +64,7 @@ mod user_store_tests {
     }
 
     #[tokio::test]
+    #[ignore] // Added ignore for CI (interacts with DB)
     async fn test_create_user() -> Result<(), Box<dyn std::error::Error>> {
         let pool = get_test_pool()?;
         
@@ -113,6 +115,7 @@ mod user_store_tests {
     }
 
     #[tokio::test]
+    #[ignore] // Added ignore for CI (interacts with DB)
     async fn test_get_user_by_username() -> Result<(), Box<dyn std::error::Error>> {
         let _pool = get_test_pool()?;
         let obj = _pool.get().await.map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
@@ -168,6 +171,7 @@ mod user_store_tests {
     }
 
     #[tokio::test]
+    #[ignore] // Added ignore for CI (interacts with DB)
     async fn test_get_user() -> Result<(), Box<dyn std::error::Error>> {
         let pool = get_test_pool()?;
         
@@ -216,6 +220,7 @@ mod user_store_tests {
     }
 
     #[tokio::test]
+    #[ignore] // Added ignore for CI (interacts with DB)
     async fn test_verify_credentials() -> Result<(), Box<dyn std::error::Error>> {
         let pool = get_test_pool()?;
         let _auth_backend = AuthBackend::new(pool.clone());
@@ -291,6 +296,7 @@ mod user_store_tests {
     }
 
     #[tokio::test]
+    #[ignore] // Added ignore for CI (interacts with DB)
     async fn test_user_from_session_token_success() {
         let pool = get_test_pool().expect("Failed to get test pool"); // Use local helper and expect
         let _user_store = UserStoreBackend::new(pool.clone()); // Remove mut and prefix with _ as it's unused
