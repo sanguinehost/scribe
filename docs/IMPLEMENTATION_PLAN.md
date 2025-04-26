@@ -245,6 +245,47 @@ Only mark a task checkbox (`- [x]`) when all these conditions are satisfied.
 
 ---
 
+### Epic 6: Backend Code Cleanup
+
+*Goal: Implement key improvements identified during code review to fix security issues, improve performance, and remove redundancies.*
+
+- [ ] **Task 6.1: High Priority Fixes (BE)**
+    - [ ] **Security Fix:** Correct the `session_auth_hash` function in `models/users.rs` to use the password hash (`self.password_hash.as_bytes()`) instead of `self.id.as_bytes()` for proper session invalidation on password changes.
+    - [ ] **Performance Fix:** Update the registration handler in `routes/auth.rs` to use the async `auth::hash_password` helper instead of synchronous `bcrypt::hash` call.
+    - [ ] **Redundancy Cleanup:** Remove the duplicate `Character` model definition found in `models/character_card.rs` (lines 384-452) and ensure all code references the canonical model.
+
+- [ ] **Task 6.2: Test Coverage Improvements (BE)**
+    - [ ] Implement the placeholder integration tests in `backend/tests/characters_tests.rs` covering:
+        - [ ] List Characters API (success, auth failure, empty list)
+        - [ ] Get Character API (success, auth failure, not found, wrong user)
+        - [ ] Upload Character errors (malformed PNG, invalid JSON data, database errors)
+    - [ ] Add missing tests for the `GET /api/chats/{id}/messages` endpoint:
+        - [ ] Test unauthorized access (no login)
+        - [ ] Test session not found (invalid ID)
+        - [ ] Test forbidden access (wrong user's session)
+
+- [ ] **Task 6.3: Configuration Standardization (BE)**
+    - [ ] Centralize security-critical settings into the `Config` struct in `config.rs`:
+        - [ ] Move `COOKIE_SIGNING_KEY` from router setup into the config
+        - [ ] Add `PORT` configuration to Config
+        - [ ] Add session cookie `secure` flag configuration (`SESSION_COOKIE_SECURE`)
+    - [ ] Update `main.rs` to use these centralized settings consistently
+
+- [ ] **Task 6.4: Minor Improvements (BE)**
+    - [ ] Decide if character `first_mes` should be embedded for RAG context and implement in `chat_service::create_session_and_maybe_first_message` to call `chat_service::save_message` instead of direct insertion
+    - [ ] Standardize authentication method in `get_character_image` route to use `AuthSession` instead of `Extension<User>`
+    - [ ] Remove redundant code:
+        - [ ] Remove unused async `verify_password` helper from `auth/mod.rs`
+        - [ ] Consider removing unused `NewCharacterMetadata` struct from `models/characters.rs`
+    - [ ] Address TODOs:
+        - [ ] TODOs in `text_processing/chunking.rs` regarding token-based chunking
+        - [ ] TODOs for handling overly long sentences in chunking
+        - [ ] TODOs in `vector_db/qdrant_client.rs` for configurable parameters
+    - [ ] Make CLI more robust:
+        - [ ] Fix CLI test card path to be workspace-relative (using manifest dir) instead of CLI directory-relative
+        - [ ] Remove unnecessary `#[async_trait]` from `cli/src/io.rs::IoHandler` since methods are synchronous
+
+
 ## MVP Definition
 
 The MVP is complete when a user can:
@@ -287,13 +328,13 @@ The MVP is complete when a user can:
 *   More robust error handling and user feedback.
 *   **Security Enhancements:** Separate User DB, Advanced Microsegmentation, Refresh Tokens, Rate Limiting, Account Lockout, MFA, External IdP Integration, Audit Logging.
 
-### Epic 6 – Post‑MVP Seeds (scaffolding only)
+### Epic 7 – Post‑MVP Seeds (scaffolding only)
 
-- [ ] **Task 6.1 Tagging Migration (BE)**  
+- [ ] **Task 7.1 Tagging Migration (BE)**  
       *Add `content_rating` column (ENUM) to characters, chat_sessions, chat_messages; default `SFW`.*
 
-- [ ] **Task 6.2 Plugin SDK Stub (BE)**  
+- [ ] **Task 7.2 Plugin SDK Stub (BE)**  
       *Expose `/api/tools/invoke` → currently logs request; write unit test for accepted payload.*
 
-- [ ] **Task 6.3 Federation Proof‑of‑Concept (DevOps)**  
+- [ ] **Task 7.3 Federation Proof‑of‑Concept (DevOps)**  
       *Spin up a second docker‑compose stack (`node‑B`) with different BASE_URL; export a character from node‑A, import into node‑B with signature verification.*
