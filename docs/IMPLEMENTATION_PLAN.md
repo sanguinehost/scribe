@@ -170,10 +170,10 @@ Only mark a task checkbox (`- [x]`) when all these conditions are satisfied.
     - [x] **(BE) Strategy Definition:** Decide on a chunking strategy (e.g., by message pair, fixed token count). *(Implemented: Paragraph/Sentence/Char Limit)*
     - [x] **(BE) Implementation:** Implement Rust function `chunk_messages(messages) -> Vec<Chunk>`. *(Implemented)*
     - [x] *TDD (BE):* Unit tests for the chunking function with different message list scenarios. *(Implemented & Passed)*
-- [ ] **Task 3.4: Embedding & Storage Pipeline (BE)** - ***Requires Task 2.2, 3.1, 3.2, 3.3 Completion***
-    - [ ] **(BE) Trigger Mechanism:** Modify message saving logic (Task 2.2) or use a background task runner (e.g., `tokio::spawn`) to trigger embedding *after* a message pair (user + AI) is saved. *(Missing - Explicit TODO)*
+- [x] **Task 3.4: Embedding & Storage Pipeline (BE)** - ***Requires Task 2.2, 3.1, 3.2, 3.3 Completion***
+    - [x] **(BE) Trigger Mechanism:** Modify message saving logic (Task 2.2) or use a background task runner (e.g., `tokio::spawn`) to trigger embedding *after* a message pair (user + AI) is saved. *(Verified via logs)*
     - [x] **(BE) Pipeline Logic:** Implement function that takes saved messages, chunks them (Task 3.3), embeds chunks (Task 3.1), and upserts vectors/payloads to Qdrant (Task 3.2). Associate vectors with session ID and user ID in Qdrant payload for filtering. *(Implemented via `process_and_embed_message` using `chunk_text`)*
-    - [ ] *TDD (BE):* Integration test for the end-to-end embedding pipeline (mocking Gemini Embedding API, interacting with real Qdrant). *(Missing - Explicit TODO)*
+    - [x] *TDD (BE):* Integration test for the end-to-end embedding pipeline (mocking Gemini Embedding API, interacting with real Qdrant). *(Verified via `test_process_and_embed_message_integration`)*
 - [ ] **Task 3.5: RAG Query Logic (BE)** - ***Requires Task 3.1, 3.2 Completion***
     - [x] **(BE) Context Embedding:** Embed the user's latest message (or recent conversational turn) using Task 3.1. *(Implemented in `retrieve_relevant_chunks`)*
     - [x] **(BE) Qdrant Search:** Implement logic to query Qdrant (Task 3.2) using the generated embedding. Filter by relevant session ID / user ID. Retrieve top N relevant chunks. *(Implemented in `retrieve_relevant_chunks`)*

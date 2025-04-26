@@ -12,12 +12,11 @@ use qdrant_client::qdrant::vectors_config::Config as QdrantVectorsConfig; // Ali
 use std::sync::Arc;
 use tracing::{info, error, instrument, warn};
 use uuid::Uuid;
-use rand::{Rng, SeedableRng}; // Add rand for distinct test vectors
-use rand::rngs::StdRng;
+ // Add rand for distinct test vectors
 
 // Constants
-const DEFAULT_COLLECTION_NAME: &str = "chat_embeddings";
-const EMBEDDING_DIMENSION: u64 = 3072; // Updated dimension based on error logs (likely text-embedding-004 or similar)
+pub const DEFAULT_COLLECTION_NAME: &str = "chat_embeddings";
+pub const EMBEDDING_DIMENSION: u64 = 3072; // Updated dimension based on error logs (likely text-embedding-004 or similar)
 
 #[derive(Clone)]
 pub struct QdrantClientService {
@@ -216,6 +215,53 @@ impl QdrantClientService {
         Ok(search_result.result)
     }
 
+    // --- Retrieve Operation (using Scroll API) ---
+    #[instrument(skip(self, filter), fields(limit), name = "qdrant_retrieve_points_scroll")]
+    pub async fn retrieve_points(
+        &self,
+        filter: Option<Filter>,
+        limit: usize,
+    ) -> Result<Vec<qdrant_client::qdrant::RetrievedPoint>, AppError> {
+        info!(
+            limit,
+            filter_is_some = filter.is_some(),
+            collection = %self.collection_name,
+            "Retrieving points from Qdrant using scroll"
+        );
+
+        // Use the client's `scroll` method for retrieving by filter
+        let scroll_request = qdrant_client::qdrant::ScrollPoints {
+            collection_name: self.collection_name.clone(),
+            filter,
+            limit: Some(limit as u32), // Scroll API uses u32 for limit
+            with_payload: Some(true.into()),
+            with_vectors: Some(true.into()), // Include vectors (optional)
+            offset: None, // Start from the beginning
+            read_consistency: None, // Correct field name
+            shard_key_selector: None,
+            // Add missing fields required by ScrollPoints
+            order_by: None,
+            timeout: None,
+        };
+
+        let scroll_response = self
+            .client
+            .scroll(scroll_request) // Pass request by value
+            .await
+            .map_err(|e| {
+                error!(error = %e, collection = %self.collection_name, "Failed to scroll points in Qdrant");
+                AppError::VectorDbError(format!("Failed to scroll points: {}", e))
+            })?;
+
+        info!(
+            found_points = scroll_response.result.len(),
+            next_page_offset = ?scroll_response.next_page_offset,
+            "Qdrant scroll completed"
+        );
+
+        Ok(scroll_response.result)
+    }
+
     // --- Placeholder for Search Operation ---
     // Add search functionality later as needed by RAG logic
     // pub async fn search(...) -> Result<...> { ... }
@@ -250,6 +296,22 @@ pub fn create_qdrant_point(id: Uuid, vector: Vec<f32>, payload: Option<serde_jso
         vectors: Some(vector.into()), // Convert Vec<f32> to Qdrant Vectors
         payload: qdrant_payload,
     })
+}
+
+// Add a helper function to create a filter for message_id
+pub fn create_message_id_filter(message_id: Uuid) -> Filter {
+    Filter {
+        must: vec![Condition {
+            condition_one_of: Some(ConditionOneOf::Field(FieldCondition {
+                key: "message_id".to_string(), // Assumes metadata field name
+                r#match: Some(Match {
+                    match_value: Some(MatchValue::Keyword(message_id.to_string())),
+                }),
+                ..Default::default() // Initialize other FieldCondition fields if needed
+            })),
+        }],
+        ..Default::default() // Initialize other Filter fields if needed
+    }
 }
 
 // --- Unit/Integration Tests
