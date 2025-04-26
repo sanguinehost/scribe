@@ -350,7 +350,6 @@ pub fn parse_character_card_charx<R: Read + Seek>(
 
 // Test module removed from here
 
-
 // --- Unit Tests moved from tests/character_parser_tests.rs ---
 
 #[cfg(test)]
@@ -387,7 +386,8 @@ mod tests {
         let chunk_type_text = b"tEXt";
         png_bytes.extend_from_slice(chunk_type_text);
         png_bytes.extend_from_slice(&text_chunk_data_internal);
-        let crc_text = crc32fast::hash(&[&chunk_type_text[..], &text_chunk_data_internal[..]].concat());
+        let crc_text =
+            crc32fast::hash(&[&chunk_type_text[..], &text_chunk_data_internal[..]].concat());
         png_bytes.extend_from_slice(&crc_text.to_be_bytes());
         // Dummy IDAT
         let idat_data = &[8, 29, 99, 96, 0, 0, 0, 3, 0, 1];
@@ -432,7 +432,8 @@ mod tests {
         let chunk_type_text = b"tEXt";
         png_bytes.extend_from_slice(chunk_type_text);
         png_bytes.extend_from_slice(&text_chunk_data_internal);
-        let crc_text = crc32fast::hash(&[&chunk_type_text[..], &text_chunk_data_internal[..]].concat());
+        let crc_text =
+            crc32fast::hash(&[&chunk_type_text[..], &text_chunk_data_internal[..]].concat());
         png_bytes.extend_from_slice(&crc_text.to_be_bytes());
         // Dummy IDAT
         let idat_data = &[8, 29, 99, 96, 0, 0, 0, 3, 0, 1];
@@ -504,8 +505,9 @@ mod tests {
         let buffer = Vec::new();
         let mut zip = ZipWriter::new(Cursor::new(buffer));
 
-        let options: FileOptions<()> = FileOptions::default() // Annotate type before chaining
-            .compression_method(zip::CompressionMethod::Stored); // Use Stored for simplicity
+        let options: FileOptions<()> =
+            FileOptions::default() // Annotate type before chaining
+                .compression_method(zip::CompressionMethod::Stored); // Use Stored for simplicity
 
         // Add card.json if provided
         if let Some(json_str) = card_json_payload {
@@ -645,7 +647,7 @@ mod tests {
         // Test with invalid base64 in ccv3, falling back to valid chara
         let valid_v2_json = r#"{"name": "Fallback V2"}"#;
         let png_data_fallback = create_test_png_with_multiple_chunks(vec![
-            (b"ccv3", "!@#$%^"), // Invalid base64
+            (b"ccv3", "!@#$%^"),       // Invalid base64
             (b"chara", valid_v2_json), // Valid JSON
         ]);
         let result_fallback = parse_character_card_png(&png_data_fallback);
@@ -710,7 +712,8 @@ mod tests {
 
     #[test]
     fn test_prefer_ccv3_over_chara() {
-        let v3_json = r#"{"spec": "chara_card_v3", "spec_version": "3.0", "data": {"name": "Test V3"}}"#;
+        let v3_json =
+            r#"{"spec": "chara_card_v3", "spec_version": "3.0", "data": {"name": "Test V3"}}"#;
         let v2_json = r#"{"name": "Test V2"}"#;
         let png_data = create_test_png_with_multiple_chunks(vec![
             (b"chara", v2_json), // Present but should be ignored
@@ -724,13 +727,17 @@ mod tests {
         if let ParsedCharacterCard::V3(card_v3) = parsed_card {
             assert_eq!(card_v3.data.name, Some("Test V3".to_string()));
         } else {
-            panic!("Expected V3 variant when both chunks present, got {:?}", parsed_card);
+            panic!(
+                "Expected V3 variant when both chunks present, got {:?}",
+                parsed_card
+            );
         }
     }
 
     #[test]
     fn test_prefer_ccv3_over_text_chara() {
-        let v3_json = r#"{"spec": "chara_card_v3", "spec_version": "3.0", "data": {"name": "Test V3"}}"#;
+        let v3_json =
+            r#"{"spec": "chara_card_v3", "spec_version": "3.0", "data": {"name": "Test V3"}}"#;
         let v2_json = r#"{"name": "tEXtchara Test"}"#;
         let png_data = create_test_png_with_multiple_chunks(vec![
             (b"tEXtchara", v2_json), // Present but should be ignored
@@ -744,13 +751,17 @@ mod tests {
         if let ParsedCharacterCard::V3(card_v3) = parsed_card {
             assert_eq!(card_v3.data.name, Some("Test V3".to_string()));
         } else {
-            panic!("Expected V3 variant when both chunks present, got {:?}", parsed_card);
+            panic!(
+                "Expected V3 variant when both chunks present, got {:?}",
+                parsed_card
+            );
         }
     }
 
     #[test]
     fn test_fallback_to_chara_if_ccv3_invalid_json() {
-        let invalid_v3_json = "{\"spec\": \"chara_card_v3\", \"spec_version\": \"3.0\", \"data\": {invalid}}";
+        let invalid_v3_json =
+            "{\"spec\": \"chara_card_v3\", \"spec_version\": \"3.0\", \"data\": {invalid}}";
         let valid_v2_json = r#"{"name": "Fallback V2"}"#;
         let png_data = create_test_png_with_multiple_chunks(vec![
             (b"ccv3", invalid_v3_json),
@@ -764,9 +775,16 @@ mod tests {
         if let ParsedCharacterCard::V2Fallback(data_v2) = parsed_card {
             assert_eq!(data_v2.name, Some("Fallback V2".to_string()));
             // Check for the fallback note
-            assert!(data_v2.creator_notes.contains("loaded as a Character Card V2"));
+            assert!(
+                data_v2
+                    .creator_notes
+                    .contains("loaded as a Character Card V2")
+            );
         } else {
-            panic!("Expected V2Fallback variant after invalid ccv3, got {:?}", parsed_card);
+            panic!(
+                "Expected V2Fallback variant after invalid ccv3, got {:?}",
+                parsed_card
+            );
         }
     }
 
@@ -790,7 +808,10 @@ mod tests {
             assert_eq!(card_v3.spec, "chara_card_v2"); // Should retain original spec
             assert_eq!(card_v3.data.name, Some("Wrong Spec V3".to_string()));
         } else {
-            panic!("Expected V3 variant even with wrong spec field, got {:?}", parsed_card);
+            panic!(
+                "Expected V3 variant even with wrong spec field, got {:?}",
+                parsed_card
+            );
         }
 
         // Test fallback if ccv3 has wrong spec AND chara is present
@@ -803,13 +824,12 @@ mod tests {
         assert!(result_fallback.is_ok());
         // Should still prefer ccv3 even if spec is wrong, as it parsed successfully
         if let ParsedCharacterCard::V3(card_v3) = result_fallback.unwrap() {
-             assert_eq!(card_v3.spec, "chara_card_v2");
-             assert_eq!(card_v3.data.name, Some("Wrong Spec V3".to_string()));
+            assert_eq!(card_v3.spec, "chara_card_v2");
+            assert_eq!(card_v3.data.name, Some("Wrong Spec V3".to_string()));
         } else {
-             panic!("Expected V3 variant (with wrong spec) when both present, got fallback");
+            panic!("Expected V3 variant (with wrong spec) when both present, got fallback");
         }
     }
-
 
     #[test]
     fn test_fallback_to_chara_if_ccv3_invalid_base64() {
@@ -831,13 +851,15 @@ mod tests {
 
         // ccv3 chunk with invalid base64
         let ccv3_keyword = b"ccv3";
-        let text_chunk_data_ccv3 = [&ccv3_keyword[..], &[0u8], invalid_base64_ccv3.as_bytes()].concat();
+        let text_chunk_data_ccv3 =
+            [&ccv3_keyword[..], &[0u8], invalid_base64_ccv3.as_bytes()].concat();
         let text_chunk_len_ccv3 = (text_chunk_data_ccv3.len() as u32).to_be_bytes();
         png_bytes.extend_from_slice(&text_chunk_len_ccv3);
         let chunk_type_text_ccv3 = b"tEXt";
         png_bytes.extend_from_slice(chunk_type_text_ccv3);
         png_bytes.extend_from_slice(&text_chunk_data_ccv3);
-        let crc_text_ccv3 = crc32fast::hash(&[&chunk_type_text_ccv3[..], &text_chunk_data_ccv3[..]].concat());
+        let crc_text_ccv3 =
+            crc32fast::hash(&[&chunk_type_text_ccv3[..], &text_chunk_data_ccv3[..]].concat());
         png_bytes.extend_from_slice(&crc_text_ccv3.to_be_bytes());
 
         // chara chunk with valid JSON
@@ -850,7 +872,8 @@ mod tests {
         let chunk_type_text_chara = b"tEXt";
         png_bytes.extend_from_slice(chunk_type_text_chara);
         png_bytes.extend_from_slice(&text_chunk_data_chara);
-        let crc_text_chara = crc32fast::hash(&[&chunk_type_text_chara[..], &text_chunk_data_chara[..]].concat());
+        let crc_text_chara =
+            crc32fast::hash(&[&chunk_type_text_chara[..], &text_chunk_data_chara[..]].concat());
         png_bytes.extend_from_slice(&crc_text_chara.to_be_bytes());
 
         // Dummy IDAT and IEND (as before)
@@ -871,11 +894,21 @@ mod tests {
         let parsed_card = result.unwrap();
 
         if let ParsedCharacterCard::V2Fallback(data_v2) = parsed_card {
-            assert_eq!(data_v2.name, Some("Fallback V2 From Bad Base64".to_string()));
+            assert_eq!(
+                data_v2.name,
+                Some("Fallback V2 From Bad Base64".to_string())
+            );
             // Check for the fallback note
-            assert!(data_v2.creator_notes.contains("loaded as a Character Card V2"));
+            assert!(
+                data_v2
+                    .creator_notes
+                    .contains("loaded as a Character Card V2")
+            );
         } else {
-            panic!("Expected V2Fallback variant after invalid ccv3 base64, got {:?}", parsed_card);
+            panic!(
+                "Expected V2Fallback variant after invalid ccv3 base64, got {:?}",
+                parsed_card
+            );
         }
     }
 
@@ -892,23 +925,25 @@ mod tests {
         // Expecting JsonError from the chara fallback attempt
         match result.err().unwrap() {
             ParserError::JsonError(_) => (),
-            e => panic!("Expected JsonError when both chunks are invalid, got {:?}", e),
+            e => panic!(
+                "Expected JsonError when both chunks are invalid, got {:?}",
+                e
+            ),
         }
     }
 
     #[test]
     fn test_error_if_chara_invalid_base64_and_no_ccv3() {
-         let invalid_base64 = "!@#$%^";
-         let png_data = create_test_png_with_raw_text_chunk(b"chara", invalid_base64.as_bytes());
+        let invalid_base64 = "!@#$%^";
+        let png_data = create_test_png_with_raw_text_chunk(b"chara", invalid_base64.as_bytes());
 
-         let result = parse_character_card_png(&png_data);
-         assert!(result.is_err());
-         match result.err().unwrap() {
-             ParserError::Base64Error(_) => (),
-             e => panic!("Expected Base64Error, got {:?}", e),
-         }
+        let result = parse_character_card_png(&png_data);
+        assert!(result.is_err());
+        match result.err().unwrap() {
+            ParserError::Base64Error(_) => (),
+            e => panic!("Expected Base64Error, got {:?}", e),
+        }
     }
-
 
     #[test]
     fn test_parse_ccv3_valid_json_wrong_spec_string() {
@@ -989,13 +1024,14 @@ mod tests {
     // --- V2 Fallback Notes Tests ---
     #[test]
     fn test_fallback_note_when_v2_notes_empty() {
-        let invalid_v3_json = "{\"spec\": \"chara_card_v3\", \"spec_version\": \"3.0\", \"data\": {invalid}}";
+        let invalid_v3_json =
+            "{\"spec\": \"chara_card_v3\", \"spec_version\": \"3.0\", \"data\": {invalid}}";
         let v2_json_no_notes = r#"{
             "name": "Fallback V2 No Notes",
             "creator_notes": ""
         }"#;
         let png_data = create_test_png_with_multiple_chunks(vec![
-            (b"ccv3", invalid_v3_json), // Invalid V3 triggers fallback
+            (b"ccv3", invalid_v3_json),   // Invalid V3 triggers fallback
             (b"chara", v2_json_no_notes), // V2 with empty notes
         ]);
 
@@ -1006,12 +1042,28 @@ mod tests {
         if let ParsedCharacterCard::V2Fallback(data_v2) = parsed_card {
             assert_eq!(data_v2.name, Some("Fallback V2 No Notes".to_string()));
             // Check if creator_notes *only* contains the fallback warning
-            assert!(data_v2.creator_notes.contains("loaded as a Character Card V2"), "Missing fallback note");
-            assert!(data_v2.creator_notes.starts_with("This character card is Character Card V3"), "Note should start with the warning");
-            assert!(data_v2.creator_notes.ends_with("properly.\n"), "Note should end correctly");
+            assert!(
+                data_v2
+                    .creator_notes
+                    .contains("loaded as a Character Card V2"),
+                "Missing fallback note"
+            );
+            assert!(
+                data_v2
+                    .creator_notes
+                    .starts_with("This character card is Character Card V3"),
+                "Note should start with the warning"
+            );
+            assert!(
+                data_v2.creator_notes.ends_with("properly.\n"),
+                "Note should end correctly"
+            );
             // Verify length if needed to ensure only the note is present
             let expected_note = "This character card is Character Card V3, but it is loaded as a Character Card V2. Please use a Character Card V3 compatible application to use this character card properly.\n";
-            assert_eq!(data_v2.creator_notes, expected_note, "Creator notes should be exactly the fallback note");
+            assert_eq!(
+                data_v2.creator_notes, expected_note,
+                "Creator notes should be exactly the fallback note"
+            );
         } else {
             panic!("Expected V2Fallback variant");
         }
@@ -1019,13 +1071,14 @@ mod tests {
 
     #[test]
     fn test_fallback_note_when_v2_notes_not_empty() {
-        let invalid_v3_json = "{\"spec\": \"chara_card_v3\", \"spec_version\": \"3.0\", \"data\": {invalid}}";
+        let invalid_v3_json =
+            "{\"spec\": \"chara_card_v3\", \"spec_version\": \"3.0\", \"data\": {invalid}}";
         let v2_json_with_notes = r#"{
             "name": "Fallback V2 With Notes",
             "creator_notes": "Original V2 notes here."
         }"#;
         let png_data = create_test_png_with_multiple_chunks(vec![
-            (b"ccv3", invalid_v3_json), // Invalid V3 triggers fallback
+            (b"ccv3", invalid_v3_json),     // Invalid V3 triggers fallback
             (b"chara", v2_json_with_notes), // V2 with existing notes
         ]);
 
@@ -1038,10 +1091,22 @@ mod tests {
             // Check if creator_notes contains *both* the warning and original notes
             let expected_prefix = "This character card is Character Card V3, but it is loaded as a Character Card V2. Please use a Character Card V3 compatible application to use this character card properly.\n";
             let expected_suffix = "Original V2 notes here.";
-            assert!(data_v2.creator_notes.starts_with(expected_prefix), "Notes should start with fallback warning");
-            assert!(data_v2.creator_notes.ends_with(expected_suffix), "Notes should end with original notes");
-            assert!(data_v2.creator_notes.contains(expected_prefix), "Missing fallback note part");
-            assert!(data_v2.creator_notes.contains(expected_suffix), "Missing original notes part");
+            assert!(
+                data_v2.creator_notes.starts_with(expected_prefix),
+                "Notes should start with fallback warning"
+            );
+            assert!(
+                data_v2.creator_notes.ends_with(expected_suffix),
+                "Notes should end with original notes"
+            );
+            assert!(
+                data_v2.creator_notes.contains(expected_prefix),
+                "Missing fallback note part"
+            );
+            assert!(
+                data_v2.creator_notes.contains(expected_suffix),
+                "Missing original notes part"
+            );
         } else {
             panic!("Expected V2Fallback variant");
         }
@@ -1077,7 +1142,7 @@ mod tests {
 
     #[test]
     fn test_parse_json_wrong_spec_string() {
-         let json = r#"{
+        let json = r#"{
             "spec": "wrong_spec",
             "spec_version": "3.0",
             "data": { "name": "JSON Wrong Spec" }
@@ -1092,7 +1157,6 @@ mod tests {
             panic!("Expected V3 variant even with wrong spec string");
         }
     }
-
 
     #[test]
     fn test_parse_json_newer_spec_version() {
@@ -1248,17 +1312,22 @@ mod tests {
 
     #[test]
     fn test_parse_text_chara_chunk() {
-        let v2_json = r#"{"name": "tEXtchara Test", "description": "Testing the tEXtchara chunk."}"#;
+        let v2_json =
+            r#"{"name": "tEXtchara Test", "description": "Testing the tEXtchara chunk."}"#;
         let png_data = create_test_png_with_text_chunk(b"tEXtchara", v2_json);
 
         let result = parse_character_card_png(&png_data);
-        assert!(result.is_ok(), "Parsing tEXtchara failed: {:?}", result.err());
-        
+        assert!(
+            result.is_ok(),
+            "Parsing tEXtchara failed: {:?}",
+            result.err()
+        );
+
         match result.unwrap() {
             ParsedCharacterCard::V2Fallback(data) => {
                 assert_eq!(data.name, Some("tEXtchara Test".to_string()));
                 assert_eq!(data.description, "Testing the tEXtchara chunk.");
-            },
+            }
             other => panic!("Expected V2Fallback for tEXtchara chunk, got {:?}", other),
         }
     }

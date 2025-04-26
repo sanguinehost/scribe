@@ -1,5 +1,5 @@
 use crate::errors::AppError;
-use tracing::{debug, warn, instrument}; // Removed unused 'error' import
+use tracing::{debug, instrument, warn}; // Removed unused 'error' import
 
 // Using ICU4X for sentence splitting.
 
@@ -49,19 +49,25 @@ pub fn chunk_text(text: &str) -> Result<Vec<TextChunk>, AppError> {
         // 2. Check paragraph size
         if trimmed_paragraph.chars().count() <= max_size {
             // Paragraph fits within the limit
-            debug!(chunk_len = trimmed_paragraph.len(), "Adding paragraph chunk");
+            debug!(
+                chunk_len = trimmed_paragraph.len(),
+                "Adding paragraph chunk"
+            );
             chunks.push(TextChunk {
                 content: trimmed_paragraph.to_string(),
             });
         } else {
             // 3. Paragraph too long, split into sentences using punkt
-            warn!(paragraph_len = trimmed_paragraph.len(), max_size, "Paragraph exceeds max chunk size, splitting into sentences using ICU");
+            warn!(
+                paragraph_len = trimmed_paragraph.len(),
+                max_size, "Paragraph exceeds max chunk size, splitting into sentences using ICU"
+            );
 
             // Iterate over sentence boundaries using ICU
             // The segmenter returns byte indices.
             let mut start = 0;
             for end in sentence_segmenter.segment_str(trimmed_paragraph) {
-                 // Extract the sentence slice using byte indices
+                // Extract the sentence slice using byte indices
                 let sentence_slice = &trimmed_paragraph[start..end];
                 let trimmed_sentence = sentence_slice.trim();
 
@@ -74,16 +80,19 @@ pub fn chunk_text(text: &str) -> Result<Vec<TextChunk>, AppError> {
                     // TODO: Handle sentences that are themselves too long.
                     // TODO: Handle sentences that are themselves too long more gracefully.
                     // Options: Truncate, split further (harder, maybe by clauses/tokens), skip?
-                    warn!(sentence_len = trimmed_sentence.len(), max_size, "Sentence still exceeds max chunk size, truncating");
+                    warn!(
+                        sentence_len = trimmed_sentence.len(),
+                        max_size, "Sentence still exceeds max chunk size, truncating"
+                    );
                     // For now, truncate. A better strategy might involve token-level splitting.
-                     chunks.push(TextChunk {
-                         content: trimmed_sentence.chars().take(max_size).collect(),
-                     });
+                    chunks.push(TextChunk {
+                        content: trimmed_sentence.chars().take(max_size).collect(),
+                    });
                 } else {
-                     debug!(chunk_len = trimmed_sentence.len(), "Adding sentence chunk");
-                     chunks.push(TextChunk {
-                         content: trimmed_sentence.to_string(),
-                     });
+                    debug!(chunk_len = trimmed_sentence.len(), "Adding sentence chunk");
+                    chunks.push(TextChunk {
+                        content: trimmed_sentence.to_string(),
+                    });
                 }
                 // Update start index for the next iteration AFTER processing the current segment
                 start = end;
@@ -94,8 +103,12 @@ pub fn chunk_text(text: &str) -> Result<Vec<TextChunk>, AppError> {
     if chunks.is_empty() && !text.trim().is_empty() {
         // Handle case where input text is not empty but splitting resulted in no chunks
         // (e.g., text shorter than max size but contains no paragraph/sentence breaks recognized by basic split)
-        warn!("Chunking resulted in no chunks for non-empty input, adding entire text as one chunk.");
-        chunks.push(TextChunk { content: text.trim().to_string() });
+        warn!(
+            "Chunking resulted in no chunks for non-empty input, adding entire text as one chunk."
+        );
+        chunks.push(TextChunk {
+            content: text.trim().to_string(),
+        });
     }
 
     Ok(chunks)
@@ -128,7 +141,11 @@ where
             debug!(message_index = index, "Skipping message with empty content");
             continue;
         }
-        debug!(message_index = index, content_len = content.len(), "Chunking message content");
+        debug!(
+            message_index = index,
+            content_len = content.len(),
+            "Chunking message content"
+        );
         match chunk_text(content) {
             Ok(message_chunks) => {
                 // TODO: Potentially add message index/ID metadata to chunks here
@@ -142,7 +159,10 @@ where
             }
         }
     }
-    debug!(total_chunks = all_chunks.len(), "Finished chunking messages");
+    debug!(
+        total_chunks = all_chunks.len(),
+        "Finished chunking messages"
+    );
     Ok(all_chunks)
 }
 
@@ -173,7 +193,9 @@ mod tests {
     #[test]
     fn test_chunk_simple_paragraph() {
         let text = "This is a single paragraph. It should fit in one chunk.";
-        let expected = vec![TextChunk { content: text.to_string() }];
+        let expected = vec![TextChunk {
+            content: text.to_string(),
+        }];
         let result = chunk_text(text).unwrap();
         assert_eq!(result, expected);
     }
@@ -182,8 +204,12 @@ mod tests {
     fn test_chunk_multiple_paragraphs() {
         let text = "First paragraph.\n\nSecond paragraph, also short.";
         let expected = vec![
-            TextChunk { content: "First paragraph.".to_string() },
-            TextChunk { content: "Second paragraph, also short.".to_string() },
+            TextChunk {
+                content: "First paragraph.".to_string(),
+            },
+            TextChunk {
+                content: "Second paragraph, also short.".to_string(),
+            },
         ];
         let result = chunk_text(text).unwrap();
         assert_eq!(result, expected);
@@ -193,19 +219,36 @@ mod tests {
     fn test_chunk_long_paragraph_fallback_to_sentences() {
         // Create text longer than DEFAULT_MAX_CHUNK_SIZE_CHARS
         let long_sentence = "This is a very long sentence designed to exceed the default character limit all by itself, forcing a split if the paragraph logic works correctly. ".repeat(10); // Approx 1000 chars
-        let text = format!("Short first sentence. {} Short third sentence.", long_sentence);
+        let text = format!(
+            "Short first sentence. {} Short third sentence.",
+            long_sentence
+        );
 
         let result = chunk_text(&text).unwrap();
 
         // Expecting sentences because the paragraph is too long.
         // ICU should correctly identify the sentences.
-        assert!(result.len() >= 3, "Expected at least 3 chunks (sentence, long sentence parts, sentence)");
-        assert!(result.iter().all(|c| c.content.chars().count() <= DEFAULT_MAX_CHUNK_SIZE_CHARS), "All chunks should be within size limit");
+        assert!(
+            result.len() >= 3,
+            "Expected at least 3 chunks (sentence, long sentence parts, sentence)"
+        );
+        assert!(
+            result
+                .iter()
+                .all(|c| c.content.chars().count() <= DEFAULT_MAX_CHUNK_SIZE_CHARS),
+            "All chunks should be within size limit"
+        );
         assert_eq!(result[0].content, "Short first sentence."); // ICU keeps punctuation
-        assert!(result.last().unwrap().content.contains("Short third sentence.")); // ICU keeps punctuation
+        assert!(
+            result
+                .last()
+                .unwrap()
+                .content
+                .contains("Short third sentence.")
+        ); // ICU keeps punctuation
     }
 
-     #[test]
+    #[test]
     fn test_chunk_empty_input() {
         let text = "";
         let expected: Vec<TextChunk> = vec![];
@@ -224,35 +267,62 @@ mod tests {
     #[test]
     fn test_chunk_text_without_breaks_fits() {
         let text = "Single block of text without paragraph breaks that fits.";
-        let expected = vec![TextChunk { content: text.to_string() }];
+        let expected = vec![TextChunk {
+            content: text.to_string(),
+        }];
         let result = chunk_text(text).unwrap();
         // The current basic paragraph split might fail this if it doesn't see \n\n
         // Let's adjust the expectation based on current logic (treats as one paragraph)
         assert_eq!(result, expected);
     }
 
-     #[test]
+    #[test]
     fn test_chunk_text_without_breaks_too_long() {
         let text = "A".repeat(DEFAULT_MAX_CHUNK_SIZE_CHARS + 10); // Exceeds limit
         let result = chunk_text(&text).unwrap();
         // ICU should treat this as one long sentence.
         // Since the sentence itself is too long, it gets truncated by the current logic.
-        assert_eq!(result.len(), 1, "Expected one chunk as ICU sees one sentence");
-        assert_eq!(result[0].content.chars().count(), DEFAULT_MAX_CHUNK_SIZE_CHARS, "Chunk should be truncated");
+        assert_eq!(
+            result.len(),
+            1,
+            "Expected one chunk as ICU sees one sentence"
+        );
+        assert_eq!(
+            result[0].content.chars().count(),
+            DEFAULT_MAX_CHUNK_SIZE_CHARS,
+            "Chunk should be truncated"
+        );
     }
 
     #[test]
     fn test_chunk_long_sentence_exceeding_limit() {
         // Create a sentence longer than the limit, without paragraph breaks
-        let long_text = repeat('a').take(DEFAULT_MAX_CHUNK_SIZE_CHARS + 50).collect::<String>() + ".";
+        let long_text = repeat('a')
+            .take(DEFAULT_MAX_CHUNK_SIZE_CHARS + 50)
+            .collect::<String>()
+            + ".";
         let result = chunk_text(&long_text).unwrap();
 
         // Expecting one chunk, truncated, because ICU sees one sentence and it's too long
-        assert_eq!(result.len(), 1, "Expected one chunk for a single long sentence.");
-        assert_eq!(result[0].content.chars().count(), DEFAULT_MAX_CHUNK_SIZE_CHARS, "Chunk should be truncated to max size.");
-        assert!(result[0].content.starts_with('a'), "Truncated content should start with 'a'.");
+        assert_eq!(
+            result.len(),
+            1,
+            "Expected one chunk for a single long sentence."
+        );
+        assert_eq!(
+            result[0].content.chars().count(),
+            DEFAULT_MAX_CHUNK_SIZE_CHARS,
+            "Chunk should be truncated to max size."
+        );
+        assert!(
+            result[0].content.starts_with('a'),
+            "Truncated content should start with 'a'."
+        );
         // Check if the trailing punctuation was lost due to truncation (expected behaviour for now)
-        assert!(!result[0].content.ends_with('.'), "Truncated content shouldn't end with the original period.");
+        assert!(
+            !result[0].content.ends_with('.'),
+            "Truncated content shouldn't end with the original period."
+        );
     }
 
     #[test]
@@ -261,7 +331,10 @@ mod tests {
         let very_long_sentence = "Sentence ".repeat(DEFAULT_MAX_CHUNK_SIZE_CHARS / 5); // Approx 100 chars if max_size is 500
         let even_longer_sentence = "Longer ".repeat(DEFAULT_MAX_CHUNK_SIZE_CHARS / 3); // Approx 166 chars if max_size is 500
         // Input: "Short sentence 1. {very_long}Sentence 2 is also short. {even_longer}. Sentence 4 is final."
-        let text = format!("Short sentence 1. {}Sentence 2 is also short. {}. Sentence 4 is final.", very_long_sentence, even_longer_sentence);
+        let text = format!(
+            "Short sentence 1. {}Sentence 2 is also short. {}. Sentence 4 is final.",
+            very_long_sentence, even_longer_sentence
+        );
         // println!("--- Test: Mixed Short/Long Sentences ---"); // Keep for debugging if needed
         // println!("Input Text ({} chars): {}", text.chars().count(), text);
 
@@ -277,25 +350,49 @@ mod tests {
         // println!("--- End Debug Print ---");
 
         // Assert based on observed output (4 chunks)
-        assert_eq!(chunks.len(), 4, "Expected 4 chunks based on observed behavior");
+        assert_eq!(
+            chunks.len(),
+            4,
+            "Expected 4 chunks based on observed behavior"
+        );
 
         // Chunk 0: First sentence
         assert_eq!(chunks[0].content, "Short sentence 1.");
 
         // Chunk 1: Truncated combination of very_long_sentence and sentence 2
-        assert!(chunks[1].content.starts_with("Sentence "), "Chunk 1 should start with 'Sentence '" );
-        assert!(chunks[1].content.chars().count() == DEFAULT_MAX_CHUNK_SIZE_CHARS, "Chunk 1 should be truncated to max size");
-        assert!(!chunks[1].content.contains("Sentence 2 is also short."), "Chunk 1 should be truncated before 'Sentence 2'");
+        assert!(
+            chunks[1].content.starts_with("Sentence "),
+            "Chunk 1 should start with 'Sentence '"
+        );
+        assert!(
+            chunks[1].content.chars().count() == DEFAULT_MAX_CHUNK_SIZE_CHARS,
+            "Chunk 1 should be truncated to max size"
+        );
+        assert!(
+            !chunks[1].content.contains("Sentence 2 is also short."),
+            "Chunk 1 should be truncated before 'Sentence 2'"
+        );
 
         // Chunk 2: Truncated even_longer_sentence
-        assert!(chunks[2].content.starts_with("Longer "), "Chunk 2 should start with 'Longer '" );
-        assert!(chunks[2].content.chars().count() == DEFAULT_MAX_CHUNK_SIZE_CHARS, "Chunk 2 should be truncated to max size");
+        assert!(
+            chunks[2].content.starts_with("Longer "),
+            "Chunk 2 should start with 'Longer '"
+        );
+        assert!(
+            chunks[2].content.chars().count() == DEFAULT_MAX_CHUNK_SIZE_CHARS,
+            "Chunk 2 should be truncated to max size"
+        );
 
         // Chunk 3: Final sentence
         assert_eq!(chunks[3].content, "Sentence 4 is final.");
 
         // General check
-        assert!(chunks.iter().all(|c| c.content.chars().count() <= DEFAULT_MAX_CHUNK_SIZE_CHARS), "All chunks must be within size limit");
+        assert!(
+            chunks
+                .iter()
+                .all(|c| c.content.chars().count() <= DEFAULT_MAX_CHUNK_SIZE_CHARS),
+            "All chunks must be within size limit"
+        );
 
         // println!("--- Test Complete: Mixed Short/Long Sentences ---");
     }
@@ -304,9 +401,15 @@ mod tests {
     fn test_chunk_unusual_whitespace() {
         let text = "  Leading space. \n\n \t Lots of \t tabs and spaces. \n\nTrailing space.  ";
         let expected = vec![
-            TextChunk { content: "Leading space.".to_string() },
-            TextChunk { content: "Lots of \t tabs and spaces.".to_string() }, // trim() keeps internal whitespace
-            TextChunk { content: "Trailing space.".to_string() },
+            TextChunk {
+                content: "Leading space.".to_string(),
+            },
+            TextChunk {
+                content: "Lots of \t tabs and spaces.".to_string(),
+            }, // trim() keeps internal whitespace
+            TextChunk {
+                content: "Trailing space.".to_string(),
+            },
         ];
         let result = chunk_text(text).unwrap();
         assert_eq!(result, expected);
@@ -315,7 +418,9 @@ mod tests {
     #[test]
     fn test_chunk_text_with_only_symbols_or_punctuation() {
         let text = "!!! ??? ... ---"; // Should be treated as one paragraph/sentence by current logic
-        let expected = vec![TextChunk { content: text.to_string() }];
+        let expected = vec![TextChunk {
+            content: text.to_string(),
+        }];
         let result = chunk_text(text).unwrap();
         assert_eq!(result, expected);
 
@@ -323,7 +428,10 @@ mod tests {
         let long_symbols = ".".repeat(DEFAULT_MAX_CHUNK_SIZE_CHARS + 1);
         let result_long = chunk_text(&long_symbols).unwrap();
         assert_eq!(result_long.len(), 1); // One sentence chunk
-        assert_eq!(result_long[0].content.chars().count(), DEFAULT_MAX_CHUNK_SIZE_CHARS); // Truncated
+        assert_eq!(
+            result_long[0].content.chars().count(),
+            DEFAULT_MAX_CHUNK_SIZE_CHARS
+        ); // Truncated
     }
 
     #[test]
@@ -337,19 +445,35 @@ mod tests {
         // Expecting 3 chunks: first two sentences as one paragraph, third sentence as another.
         // Note: The exact splitting depends on ICU's rules for Japanese.
         // Assuming the first paragraph fits.
-        assert!(result.len() == 2 || result.len() == 3, "Expected 2 or 3 chunks based on paragraph/sentence splitting");
+        assert!(
+            result.len() == 2 || result.len() == 3,
+            "Expected 2 or 3 chunks based on paragraph/sentence splitting"
+        );
 
-        if result.len() == 2 { // Assumes first paragraph fits
-            assert_eq!(result[0].content, "これは最初の文です。これは二番目の文で、少し長いです。");
+        if result.len() == 2 {
+            // Assumes first paragraph fits
+            assert_eq!(
+                result[0].content,
+                "これは最初の文です。これは二番目の文で、少し長いです。"
+            );
             assert_eq!(result[1].content, "これは新しい段落です。短い。");
-        } else { // Assumes first paragraph was too long and split
-             assert_eq!(result[0].content, "これは最初の文です。");
-             assert_eq!(result[1].content, "これは二番目の文で、少し長いです。");
-             assert_eq!(result[2].content, "これは新しい段落です。短い。");
+        } else {
+            // Assumes first paragraph was too long and split
+            assert_eq!(result[0].content, "これは最初の文です。");
+            assert_eq!(result[1].content, "これは二番目の文で、少し長いです。");
+            assert_eq!(result[2].content, "これは新しい段落です。短い。");
         }
 
-         assert!(result.iter().all(|c| !c.content.is_empty()), "Chunks should not be empty");
-         assert!(result.iter().all(|c| c.content.chars().count() <= DEFAULT_MAX_CHUNK_SIZE_CHARS), "All chunks must be within limit");
+        assert!(
+            result.iter().all(|c| !c.content.is_empty()),
+            "Chunks should not be empty"
+        );
+        assert!(
+            result
+                .iter()
+                .all(|c| c.content.chars().count() <= DEFAULT_MAX_CHUNK_SIZE_CHARS),
+            "All chunks must be within limit"
+        );
     }
 
     #[test]
@@ -379,14 +503,26 @@ She walks towards a boarded-up entrance to the side building. With minimal appar
         println!("Input Text Length (Bytes): {}", rpg_text.len());
 
         // 1. Analyze original paragraph structure
-        let original_paragraphs: Vec<&str> = rpg_text.split("\n\n").map(|p| p.trim()).filter(|p| !p.is_empty()).collect();
-        println!("\n--- Original Paragraphs ({} total) ---", original_paragraphs.len());
+        let original_paragraphs: Vec<&str> = rpg_text
+            .split("\n\n")
+            .map(|p| p.trim())
+            .filter(|p| !p.is_empty())
+            .collect();
+        println!(
+            "\n--- Original Paragraphs ({} total) ---",
+            original_paragraphs.len()
+        );
         for (i, p) in original_paragraphs.iter().enumerate() {
-            println!("Paragraph {}: Chars = {}, Bytes = {}", i + 1, p.chars().count(), p.len());
+            println!(
+                "Paragraph {}: Chars = {}, Bytes = {}",
+                i + 1,
+                p.chars().count(),
+                p.len()
+            );
             // Check if any original paragraph exceeds the limit
-             if p.chars().count() > DEFAULT_MAX_CHUNK_SIZE_CHARS {
-                 println!("  -> Exceeds max chunk size!");
-             }
+            if p.chars().count() > DEFAULT_MAX_CHUNK_SIZE_CHARS {
+                println!("  -> Exceeds max chunk size!");
+            }
         }
 
         // 2. Run the chunker
@@ -401,17 +537,32 @@ She walks towards a boarded-up entrance to the side building. With minimal appar
             let char_count = chunk.content.chars().count();
             let byte_count = chunk.content.len();
             total_chunked_chars += char_count;
-            println!("Chunk {}: Chars = {}, Bytes = {}", i + 1, char_count, byte_count);
+            println!(
+                "Chunk {}: Chars = {}, Bytes = {}",
+                i + 1,
+                char_count,
+                byte_count
+            );
             println!("  Content: \"{}\"", chunk.content); // Print content for inspection
 
             // Assert that no chunk exceeds the max size
-            assert!(char_count <= DEFAULT_MAX_CHUNK_SIZE_CHARS, "Chunk {} exceeds max size!", i + 1);
+            assert!(
+                char_count <= DEFAULT_MAX_CHUNK_SIZE_CHARS,
+                "Chunk {} exceeds max size!",
+                i + 1
+            );
         }
 
         println!("\n--- EDA Observations ---");
         println!("Original Paragraph Count: {}", original_paragraphs.len());
         println!("Resulting Chunk Count: {}", chunks.len());
-        println!("Total Original Chars (trimmed): {}", original_paragraphs.iter().map(|p| p.chars().count()).sum::<usize>());
+        println!(
+            "Total Original Chars (trimmed): {}",
+            original_paragraphs
+                .iter()
+                .map(|p| p.chars().count())
+                .sum::<usize>()
+        );
         println!("Total Chunked Chars: {}", total_chunked_chars);
         // Note: Total chars might differ slightly due to potential truncation or nuances in trimming/splitting.
 
@@ -421,28 +572,43 @@ She walks towards a boarded-up entrance to the side building. With minimal appar
 
         // Example: Check if the first paragraph became the first chunk (assuming it fits)
         if original_paragraphs[0].chars().count() <= DEFAULT_MAX_CHUNK_SIZE_CHARS {
-             assert_eq!(chunks[0].content, original_paragraphs[0], "First paragraph should be the first chunk if it fits.");
+            assert_eq!(
+                chunks[0].content, original_paragraphs[0],
+                "First paragraph should be the first chunk if it fits."
+            );
         }
 
         // Example: Check if a known long paragraph was split.
         // Paragraph 4 (index 3) looks long. Let's find its length.
         let paragraph4_len = original_paragraphs.get(3).map_or(0, |p| p.chars().count());
         if paragraph4_len > DEFAULT_MAX_CHUNK_SIZE_CHARS {
-            println!("Observation: Paragraph 4 (length {}) exceeded limit and should have been split.", paragraph4_len);
+            println!(
+                "Observation: Paragraph 4 (length {}) exceeded limit and should have been split.",
+                paragraph4_len
+            );
             // We expect more chunks than original paragraphs if splitting occurred.
-             assert!(chunks.len() > original_paragraphs.len(), "Expected more chunks than paragraphs due to splitting.");
-             // Find which chunks correspond to paragraph 4. This is harder to assert directly without knowing the exact sentence splits.
-             // We could check if chunks roughly starting around where paragraph 4 was seem to be sentence-level.
-             // For now, we'll rely on the printout and the length check.
+            assert!(
+                chunks.len() > original_paragraphs.len(),
+                "Expected more chunks than paragraphs due to splitting."
+            );
+            // Find which chunks correspond to paragraph 4. This is harder to assert directly without knowing the exact sentence splits.
+            // We could check if chunks roughly starting around where paragraph 4 was seem to be sentence-level.
+            // For now, we'll rely on the printout and the length check.
         } else {
-            println!("Observation: Paragraph 4 (length {}) fit within the limit.", paragraph4_len);
+            println!(
+                "Observation: Paragraph 4 (length {}) fit within the limit.",
+                paragraph4_len
+            );
         }
 
-         // Example: Check the last chunk corresponds to the last paragraph (if it fits)
+        // Example: Check the last chunk corresponds to the last paragraph (if it fits)
         if original_paragraphs.last().unwrap().chars().count() <= DEFAULT_MAX_CHUNK_SIZE_CHARS {
-            assert_eq!(chunks.last().unwrap().content, *original_paragraphs.last().unwrap(), "Last paragraph should be the last chunk if it fits.");
+            assert_eq!(
+                chunks.last().unwrap().content,
+                *original_paragraphs.last().unwrap(),
+                "Last paragraph should be the last chunk if it fits."
+            );
         }
-
 
         println!("\n--- End RPG Scenario EDA Test ---");
         // This test primarily relies on the printed output for analysis.
@@ -467,7 +633,7 @@ She walks towards a boarded-up entrance to the side building. With minimal appar
         assert_eq!(result[0].content, "Hello there.");
     }
 
-     #[test]
+    #[test]
     fn test_chunk_messages_multiple_short_messages() {
         let messages = vec![
             TestChatMessage {
@@ -498,7 +664,7 @@ She walks towards a boarded-up entrance to the side building. With minimal appar
             },
             TestChatMessage {
                 // author: "User".to_string(),
-                content: "".to_string(),   // Empty
+                content: "".to_string(), // Empty
             },
             TestChatMessage {
                 // author: "AI".to_string(),
@@ -538,20 +704,33 @@ She walks towards a boarded-up entrance to the side building. With minimal appar
         // Multiple chunks from `long_content` (at least 2: the first sentence, and the truncated long sentence)
         // 1 chunk from "Short outro."
         // The exact number from long_content depends on chunk_text and ICU behavior.
-        assert!(result.len() > 3, "Expected more than 3 chunks due to splitting");
+        assert!(
+            result.len() > 3,
+            "Expected more than 3 chunks due to splitting"
+        );
 
         assert_eq!(result[0].content, "Short intro.");
         assert!(result[1].content.starts_with("This is the first sentence.")); // First part of the long message
         // Check that all chunks derived from the long message are within the size limit
-        assert!(result.iter().skip(1).take(result.len()-2).all(|c| c.content.chars().count() <= DEFAULT_MAX_CHUNK_SIZE_CHARS));
+        assert!(
+            result
+                .iter()
+                .skip(1)
+                .take(result.len() - 2)
+                .all(|c| c.content.chars().count() <= DEFAULT_MAX_CHUNK_SIZE_CHARS)
+        );
         assert_eq!(result.last().unwrap().content, "Short outro.");
     }
 
-     #[test]
+    #[test]
     fn test_chunk_messages_multiple_messages_need_splitting() {
         // Create two long contents that will both be split by chunk_text
-        let long_content1 = "Sentence A1. ".to_string() + &"Long part A that needs splitting. ".repeat(20) + &"Sentence A2.";
-        let long_content2 = "Sentence B1. ".to_string() + &"Long part B that also needs splitting. ".repeat(20) + &"Sentence B2.";
+        let long_content1 = "Sentence A1. ".to_string()
+            + &"Long part A that needs splitting. ".repeat(20)
+            + &"Sentence A2.";
+        let long_content2 = "Sentence B1. ".to_string()
+            + &"Long part B that also needs splitting. ".repeat(20)
+            + &"Sentence B2.";
 
         let messages = vec![
             TestChatMessage {
@@ -571,22 +750,39 @@ She walks towards a boarded-up entrance to the side building. With minimal appar
         let result = chunk_messages(&messages).unwrap();
 
         // Expecting chunks from msg1, 1 chunk from msg2, chunks from msg3
-        assert!(result.len() > 3, "Expected significantly more than 3 chunks");
+        assert!(
+            result.len() > 3,
+            "Expected significantly more than 3 chunks"
+        );
 
         // Check first chunk is start of msg1
         assert!(result[0].content.starts_with("Sentence A1."));
 
         // Check intermediate short message chunk exists correctly
         // The exact index depends on how msg1 was split. Find it.
-        let intermediate_chunk_index = result.iter().position(|c| c.content == "A short reply in between.");
-        assert!(intermediate_chunk_index.is_some(), "Could not find the intermediate short message chunk");
+        let intermediate_chunk_index = result
+            .iter()
+            .position(|c| c.content == "A short reply in between.");
+        assert!(
+            intermediate_chunk_index.is_some(),
+            "Could not find the intermediate short message chunk"
+        );
 
         // Check chunks after the intermediate one belong to msg3
         let intermediate_index = intermediate_chunk_index.unwrap();
-        assert!(result[intermediate_index + 1].content.starts_with("Sentence B1."), "Chunk after intermediate should be start of msg3");
+        assert!(
+            result[intermediate_index + 1]
+                .content
+                .starts_with("Sentence B1."),
+            "Chunk after intermediate should be start of msg3"
+        );
 
         // General check for size limits
-        assert!(result.iter().all(|c| c.content.chars().count() <= DEFAULT_MAX_CHUNK_SIZE_CHARS));
+        assert!(
+            result
+                .iter()
+                .all(|c| c.content.chars().count() <= DEFAULT_MAX_CHUNK_SIZE_CHARS)
+        );
     }
 
     #[test]
@@ -605,11 +801,18 @@ She walks towards a boarded-up entrance to the side building. With minimal appar
 
         // Expecting chunks from the first message (potentially split) + 1 chunk from the second.
         // Based on chunk_text test, first message might yield 2 or 3 chunks. +1 for the second.
-        assert!(result.len() == 3 || result.len() == 4, "Expected 3 or 4 chunks total");
+        assert!(
+            result.len() == 3 || result.len() == 4,
+            "Expected 3 or 4 chunks total"
+        );
 
         // Check the last chunk is the simple response
         assert_eq!(result.last().unwrap().content, "了解しました。");
         assert!(result.iter().all(|c| !c.content.is_empty()));
-        assert!(result.iter().all(|c| c.content.chars().count() <= DEFAULT_MAX_CHUNK_SIZE_CHARS));
+        assert!(
+            result
+                .iter()
+                .all(|c| c.content.chars().count() <= DEFAULT_MAX_CHUNK_SIZE_CHARS)
+        );
     }
 }

@@ -1,11 +1,11 @@
 use crate::schema::users;
-use axum_login::{AuthUser};
-use diesel::prelude::*;
+use axum_login::AuthUser;
+use chrono::{DateTime, Utc};
 use diesel::Insertable;
+use diesel::prelude::*;
 use secrecy::Secret;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
-use chrono::{DateTime, Utc};
 
 #[derive(Queryable, Selectable, Identifiable, Serialize, Deserialize, Debug, Clone)]
 #[diesel(table_name = users)]

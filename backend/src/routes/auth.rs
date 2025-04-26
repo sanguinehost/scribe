@@ -1,15 +1,15 @@
-use crate::auth::{create_user, AuthError};
+use crate::auth::{AuthError, create_user};
 use crate::errors::AppError;
 use crate::models::users::UserCredentials;
 use crate::state::AppState;
+use axum::Json;
 use axum::extract::State;
-use axum::response::{IntoResponse, Response};
-use axum::{Json};
 use axum::http::StatusCode;
+use axum::response::{IntoResponse, Response};
 use axum_login::{AuthSession, AuthUser};
+use secrecy::{ExposeSecret, Secret};
 use serde_json::json;
 use tracing::{debug, error, info, instrument, warn};
-use secrecy::{Secret, ExposeSecret};
 
 use crate::auth::user_store::Backend as AuthBackend;
 type CurrentAuthSession = AuthSession<AuthBackend>;
@@ -28,14 +28,21 @@ pub async fn register_handler(
     // Hash the password
     let password_hash = match bcrypt::hash(password.expose_secret(), bcrypt::DEFAULT_COST) {
         Ok(hash) => hash,
-        Err(e) => return Err(AppError::InternalServerError(format!("Password hashing failed during registration: {}", e))),
+        Err(e) => {
+            return Err(AppError::InternalServerError(format!(
+                "Password hashing failed during registration: {}",
+                e
+            )));
+        }
     };
 
     debug!(username = %username, "Attempting to get DB connection from pool for registration...");
     match pool.get().await {
         Ok(conn) => {
             debug!(username = %username, "Got DB connection. Calling interact for create_user...");
-            let user_result = conn.interact(move |conn| create_user(conn, username, Secret::new(password_hash))).await;
+            let user_result = conn
+                .interact(move |conn| create_user(conn, username, Secret::new(password_hash)))
+                .await;
 
             match user_result {
                 Ok(inner_result) => {
@@ -51,7 +58,9 @@ pub async fn register_handler(
                         }
                         Err(AuthError::HashingError) => {
                             error!(username = %credentials.username, "Registration failed: Password hashing error.");
-                            Err(AppError::InternalServerError("Password hashing failed during registration".to_string()))
+                            Err(AppError::InternalServerError(
+                                "Password hashing failed during registration".to_string(),
+                            ))
                         }
                         Err(AuthError::DatabaseError(e)) => {
                             error!(username = %credentials.username, error = ?e, "Registration failed: Database error.");
@@ -59,7 +68,9 @@ pub async fn register_handler(
                         }
                         Err(e) => {
                             error!(username = %credentials.username, error = ?e, "Registration failed: Unknown AuthError.");
-                            Err(AppError::InternalServerError("An unexpected authentication error occurred.".to_string()))
+                            Err(AppError::InternalServerError(
+                                "An unexpected authentication error occurred.".to_string(),
+                            ))
                         }
                     }
                 }
@@ -86,23 +97,28 @@ pub async fn login_handler(
 
     info!("Calling auth_session.authenticate...");
     tracing::debug!(username=%username, ">>> BEFORE auth_session.authenticate().await");
-    match auth_session
-        .authenticate(credentials)
-        .await
-    {
+    match auth_session.authenticate(credentials).await {
         Ok(Some(user)) => {
             let user_id = user.id; // Capture for logging
             let username = user.username.clone(); // Capture for logging
             info!(%username, %user_id, "Authentication successful, attempting explicit login...");
             if let Err(e) = auth_session.login(&user).await {
                 error!(error = ?e, %username, %user_id, "Explicit auth_session.login failed after successful authentication");
-                return Err(AppError::InternalServerError(format!("Session login failed: {}", e)));
+                return Err(AppError::InternalServerError(format!(
+                    "Session login failed: {}",
+                    e
+                )));
             }
             info!(%username, %user_id, "Explicit auth_session.login successful");
             Ok((StatusCode::OK, Json(user)).into_response())
         }
-        Ok(None) => Err(AppError::Unauthorized("Invalid username or password".to_string())),
-        Err(e) => Err(AppError::InternalServerError(format!("An unexpected authentication error occurred: {}", e))),
+        Ok(None) => Err(AppError::Unauthorized(
+            "Invalid username or password".to_string(),
+        )),
+        Err(e) => Err(AppError::InternalServerError(format!(
+            "An unexpected authentication error occurred: {}",
+            e
+        ))),
     }
 }
 
@@ -125,7 +141,11 @@ pub async fn logout_handler(mut auth_session: CurrentAuthSession) -> Result<Resp
     }
     info!("Logout process completed (session cleared if existed).");
 
-    Ok((StatusCode::OK, Json(json!({ "message": "Logout successful" }))).into_response())
+    Ok((
+        StatusCode::OK,
+        Json(json!({ "message": "Logout successful" })),
+    )
+        .into_response())
 }
 
 #[instrument(skip(auth_session), err)]
@@ -141,4 +161,4 @@ pub async fn me_handler(auth_session: CurrentAuthSession) -> Result<Response, Ap
             Err(AppError::Unauthorized("Not logged in".to_string()))
         }
     }
-} 
+}

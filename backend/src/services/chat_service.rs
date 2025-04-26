@@ -1,25 +1,25 @@
 // backend/src/services/chat_service.rs
 
+use bigdecimal::BigDecimal;
 use diesel::prelude::*;
 use diesel::result::{DatabaseErrorKind, Error as DieselError};
-use uuid::Uuid;
-use bigdecimal::BigDecimal;
 use serde_json::Value;
-use tracing::{error, info, instrument, warn}; // Removed debug
+use tracing::{error, info, instrument, warn};
+use uuid::Uuid; // Removed debug
 
 use crate::{
     errors::AppError,
     models::{
+        characters::Character,
         chats::{
-            ChatSession, NewChatSession, ChatMessage as DbChatMessage, MessageRole,
-            DbInsertableChatMessage, SettingsTuple, ChatSettingsResponse,
+            ChatMessage as DbChatMessage, ChatSession, ChatSettingsResponse,
+            DbInsertableChatMessage, MessageRole, NewChatSession, SettingsTuple,
             UpdateChatSettingsRequest,
         },
-        characters::Character,
     },
     schema::{characters, chat_messages, chat_sessions}, // Removed self
-    state::{AppState, DbPool}, // Use DbPool from state, Add AppState
     services::embedding_pipeline::process_and_embed_message, // Import the pipeline function
+    state::{AppState, DbPool},                          // Use DbPool from state, Add AppState
 };
 use std::sync::Arc; // Add Arc for AppState
 
@@ -29,23 +29,22 @@ pub type HistoryForGeneration = Vec<(MessageRole, String)>;
 // Type alias for the full data needed for generation, including the model name
 // AND the unsaved user message struct
 pub type GenerationDataWithUnsavedUserMessage = (
-    HistoryForGeneration, // Existing history BEFORE the new user message
-    Option<String>,      // system_prompt
-    Option<BigDecimal>,  // temperature
-    Option<i32>,         // max_output_tokens
-    Option<BigDecimal>,  // frequency_penalty
-    Option<BigDecimal>,  // presence_penalty
-    Option<i32>,         // top_k
-    Option<BigDecimal>,  // top_p
-    Option<BigDecimal>,  // repetition_penalty
-    Option<BigDecimal>,  // min_p
-    Option<BigDecimal>,  // top_a
-    Option<i32>,         // seed
-    Option<Value>,       // logit_bias
-    String,              // model_name
+    HistoryForGeneration,    // Existing history BEFORE the new user message
+    Option<String>,          // system_prompt
+    Option<BigDecimal>,      // temperature
+    Option<i32>,             // max_output_tokens
+    Option<BigDecimal>,      // frequency_penalty
+    Option<BigDecimal>,      // presence_penalty
+    Option<i32>,             // top_k
+    Option<BigDecimal>,      // top_p
+    Option<BigDecimal>,      // repetition_penalty
+    Option<BigDecimal>,      // min_p
+    Option<BigDecimal>,      // top_a
+    Option<i32>,             // seed
+    Option<Value>,           // logit_bias
+    String,                  // model_name
     DbInsertableChatMessage, // The user message struct, ready to be saved
 );
-
 
 /// Creates a new chat session, verifies character ownership, and adds the character's first message if available.
 #[instrument(skip(pool), err)]
@@ -204,11 +203,13 @@ fn save_chat_message_internal(
             // Corrected chat_id to session_id
             info!(message_id = %inserted_message.id, session_id = %inserted_message.session_id, "Chat message successfully inserted");
             Ok(inserted_message)
-        },
+        }
         Err(DieselError::DatabaseError(DatabaseErrorKind::UniqueViolation, _)) => {
             warn!(session_id = %message.chat_id, role=%message.role, "Attempted to insert duplicate chat message (UniqueViolation), ignoring.");
             // Consider returning the existing message if needed, or just signal conflict
-            Err(AppError::Conflict("Potential duplicate message detected".to_string()))
+            Err(AppError::Conflict(
+                "Potential duplicate message detected".to_string(),
+            ))
         }
         Err(e) => {
             error!(session_id = %message.chat_id, error = ?e, "Error inserting chat message into database");
@@ -228,11 +229,14 @@ pub async fn save_message(
     content: String,
 ) -> Result<DbChatMessage, AppError> {
     let pool = state.pool.clone(); // Get pool from state
-    let saved_message_result = pool.get().await?.interact(move |conn| {
-        let new_message = DbInsertableChatMessage::new(session_id, user_id, role, content);
-        save_chat_message_internal(conn, new_message)
-    })
-    .await?; // This double '?' propagates interact error then the inner Result
+    let saved_message_result = pool
+        .get()
+        .await?
+        .interact(move |conn| {
+            let new_message = DbInsertableChatMessage::new(session_id, user_id, role, content);
+            save_chat_message_internal(conn, new_message)
+        })
+        .await?; // This double '?' propagates interact error then the inner Result
 
     // After successfully saving, spawn the embedding task asynchronously
     if let Ok(saved_message) = &saved_message_result {
@@ -252,7 +256,6 @@ pub async fn save_message(
     saved_message_result // Return the original result (Ok or Err)
 }
 
-
 /// Fetches session settings, history, and prepares the user message struct, returning data needed for generation.
 #[instrument(skip(pool, user_message_content), err)]
 pub async fn get_session_data_for_generation(
@@ -261,7 +264,8 @@ pub async fn get_session_data_for_generation(
     session_id: Uuid,
     user_message_content: String,
     default_model_name: String, // Pass default model name
-) -> Result<GenerationDataWithUnsavedUserMessage, AppError> { // Updated return type
+) -> Result<GenerationDataWithUnsavedUserMessage, AppError> {
+    // Updated return type
     let conn = pool.get().await?;
     conn.interact(move |conn| {
         // No transaction needed here anymore as we don't save the message
@@ -357,7 +361,6 @@ pub async fn get_session_data_for_generation(
     .await?
 }
 
-
 /// Gets chat settings for a specific session, verifying ownership.
 #[instrument(skip(pool), err)]
 pub async fn get_session_settings(
@@ -419,7 +422,9 @@ pub async fn get_session_settings(
                     logit_bias,
                 })
             }
-            None => Err(AppError::NotFound("Chat session not found or permission denied".into())),
+            None => Err(AppError::NotFound(
+                "Chat session not found or permission denied".into(),
+            )),
         }
     })
     .await?
@@ -441,35 +446,54 @@ pub async fn update_session_settings(
             let session_details = chat_sessions::table
                 .filter(chat_sessions::id.eq(session_id))
                 // Remove model_name from select
-                .select((chat_sessions::user_id, chat_sessions::title, chat_sessions::system_prompt, chat_sessions::temperature, chat_sessions::max_output_tokens, chat_sessions::frequency_penalty, chat_sessions::presence_penalty, chat_sessions::top_k, chat_sessions::top_p, chat_sessions::repetition_penalty, chat_sessions::min_p, chat_sessions::top_a, chat_sessions::seed, chat_sessions::logit_bias /*, chat_sessions::model_name */ ))
+                .select((
+                    chat_sessions::user_id,
+                    chat_sessions::title,
+                    chat_sessions::system_prompt,
+                    chat_sessions::temperature,
+                    chat_sessions::max_output_tokens,
+                    chat_sessions::frequency_penalty,
+                    chat_sessions::presence_penalty,
+                    chat_sessions::top_k,
+                    chat_sessions::top_p,
+                    chat_sessions::repetition_penalty,
+                    chat_sessions::min_p,
+                    chat_sessions::top_a,
+                    chat_sessions::seed,
+                    chat_sessions::logit_bias, /*, chat_sessions::model_name */
+                ))
                 .first::<(
-                    Uuid, // user_id
-                    Option<String>, // title
-                    Option<String>, // system_prompt
+                    Uuid,               // user_id
+                    Option<String>,     // title
+                    Option<String>,     // system_prompt
                     Option<BigDecimal>, // temperature
-                    Option<i32>, // max_output_tokens
+                    Option<i32>,        // max_output_tokens
                     Option<BigDecimal>, // frequency_penalty
                     Option<BigDecimal>, // presence_penalty
-                    Option<i32>, // top_k
+                    Option<i32>,        // top_k
                     Option<BigDecimal>, // top_p
                     Option<BigDecimal>, // repetition_penalty
                     Option<BigDecimal>, // min_p
                     Option<BigDecimal>, // top_a
-                    Option<i32>, // seed
-                    Option<Value> // logit_bias
-                    // Option<String> // model_name (removed)
+                    Option<i32>,        // seed
+                    Option<Value>,      // logit_bias
+                                        // Option<String> // model_name (removed)
                 )>(transaction_conn)
                 .optional()?;
 
             match session_details {
                 Some((owner_id, _, _, _, _, _, _, _, _, _, _, _, _, _)) => {
                     if owner_id != user_id {
-                        error!("User {} attempted to update settings for session {} owned by {}", user_id, session_id, owner_id);
+                        error!(
+                            "User {} attempted to update settings for session {} owned by {}",
+                            user_id, session_id, owner_id
+                        );
                         return Err(AppError::Forbidden);
                     }
 
                     // 2. Perform the update explicitly setting columns
-                    let update_target = chat_sessions::table.filter(chat_sessions::id.eq(session_id));
+                    let update_target =
+                        chat_sessions::table.filter(chat_sessions::id.eq(session_id));
 
                     // Using the original update method which relies on AsChangeset derived on the payload struct
                     let updated_settings_tuple: SettingsTuple = diesel::update(update_target)
@@ -498,7 +522,20 @@ pub async fn update_session_settings(
                     info!(%session_id, "Chat session settings updated successfully");
 
                     // Manually map the returned tuple to ChatSettingsResponse
-                    let (system_prompt, temperature, max_output_tokens, frequency_penalty, presence_penalty, top_k, top_p, repetition_penalty, min_p, top_a, seed, logit_bias) = updated_settings_tuple;
+                    let (
+                        system_prompt,
+                        temperature,
+                        max_output_tokens,
+                        frequency_penalty,
+                        presence_penalty,
+                        top_k,
+                        top_p,
+                        repetition_penalty,
+                        min_p,
+                        top_a,
+                        seed,
+                        logit_bias,
+                    ) = updated_settings_tuple;
                     Ok(ChatSettingsResponse {
                         system_prompt,
                         temperature,

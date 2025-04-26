@@ -2,7 +2,12 @@
 // Contains helper functions and structs for integration testing within the src directory.
 
 // Make sure all necessary imports from the main crate and external crates are included.
+use crate::errors::AppError;
+use crate::llm::{AiClient, ChatStream, EmbeddingClient}; // Add EmbeddingClient
+use crate::services::embedding_pipeline::{EmbeddingPipelineServiceTrait, RetrievedChunk};
+use crate::vector_db::qdrant_client::{PointStruct, QdrantClientServiceTrait};
 use crate::{
+    PgPool,
     auth::{session_store::DieselSessionStore, user_store::Backend as AuthBackend}, // Use crate::auth and alias Backend
     config::Config,
     // Ensure build_gemini_client is removed if present
@@ -20,42 +25,37 @@ use crate::{
     },
     schema,
     state::AppState,
-    PgPool,
     vector_db::qdrant_client::QdrantClientService, // Import constants module alias
 };
+use anyhow::Context; // Added for TestDataGuard cleanup
+use async_trait::async_trait;
 use axum::{
-    body::Body,
-    http::{header, Method, Request, StatusCode},
     Router,
+    body::Body,
+    http::{Method, Request, StatusCode, header},
 };
-use axum_login::{login_required, AuthManagerLayerBuilder};
+use axum_login::{AuthManagerLayerBuilder, login_required};
+use bigdecimal::BigDecimal;
 use deadpool_diesel::postgres::{
     Manager as DeadpoolManager, Pool as DeadpoolPool, PoolConfig, Runtime as DeadpoolRuntime,
 };
-use diesel::prelude::*;
 use diesel::RunQueryDsl;
 use diesel::SelectableHelper;
-use diesel_migrations::{embed_migrations, EmbeddedMigrations, MigrationHarness};
-use dotenvy::{dotenv}; // Removed var
+use diesel::prelude::*;
+use diesel_migrations::{EmbeddedMigrations, MigrationHarness, embed_migrations};
+use dotenvy::dotenv; // Removed var
+use genai::chat::ChatStreamEvent; // Add import for chatstream types
+use genai::chat::{ChatOptions, ChatRequest, ChatResponse};
+use qdrant_client::qdrant::{Filter, PointId, ScoredPoint};
+use serde_json::Value;
 use std::env;
 use std::net::TcpListener;
-use tower_cookies::{CookieManagerLayer};
-use tower_sessions::{Expiry, SessionManagerLayer, cookie}; // Added cookie import here
-use tower::ServiceExt;
-use uuid::Uuid;
-use anyhow::Context; // Added for TestDataGuard cleanup
-use async_trait::async_trait;
-use genai::chat::{ChatOptions, ChatRequest, ChatResponse};
-use bigdecimal::BigDecimal;
-use serde_json::Value;
-use crate::llm::{AiClient, ChatStream, EmbeddingClient}; // Add EmbeddingClient
-use crate::errors::AppError;
-use genai::chat::ChatStreamEvent; // Add import for chatstream types
-use crate::services::embedding_pipeline::{EmbeddingPipelineServiceTrait, RetrievedChunk};
-use qdrant_client::qdrant::{PointId, Filter, ScoredPoint};
 use std::sync::{Arc, Mutex};
+use tower::ServiceExt;
+use tower_cookies::CookieManagerLayer;
+use tower_sessions::{Expiry, SessionManagerLayer, cookie}; // Added cookie import here
 use tracing::warn;
-use crate::vector_db::qdrant_client::{QdrantClientServiceTrait, PointStruct};
+use uuid::Uuid;
 
 // --- START Placeholder Mock Definitions ---
 // TODO: Implement proper mocks based on required functionality
@@ -67,20 +67,29 @@ pub struct MockAiClient {
     last_request: std::sync::Arc<std::sync::Mutex<Option<ChatRequest>>>,
     last_options: std::sync::Arc<std::sync::Mutex<Option<ChatOptions>>>,
     response_to_return: std::sync::Arc<std::sync::Mutex<Result<ChatResponse, AppError>>>,
-    stream_to_return: std::sync::Arc<std::sync::Mutex<Option<Vec<Result<ChatStreamEvent, AppError>>>>>,
+    stream_to_return:
+        std::sync::Arc<std::sync::Mutex<Option<Vec<Result<ChatStreamEvent, AppError>>>>>,
 }
 
 impl MockAiClient {
-    pub fn new() -> Self { 
+    pub fn new() -> Self {
         // Initialize fields with default values
         Self {
             last_request: Default::default(),
             last_options: Default::default(),
             // Default to a simple OK response
             response_to_return: std::sync::Arc::new(std::sync::Mutex::new(Ok(ChatResponse {
-                model_iden: genai::ModelIden::new(genai::adapter::AdapterKind::Gemini, "mock-model"), // Placeholder iden
-                provider_model_iden: genai::ModelIden::new(genai::adapter::AdapterKind::Gemini, "mock-model"),
-                content: Some(genai::chat::MessageContent::Text("Mock AI response".to_string())),
+                model_iden: genai::ModelIden::new(
+                    genai::adapter::AdapterKind::Gemini,
+                    "mock-model",
+                ), // Placeholder iden
+                provider_model_iden: genai::ModelIden::new(
+                    genai::adapter::AdapterKind::Gemini,
+                    "mock-model",
+                ),
+                content: Some(genai::chat::MessageContent::Text(
+                    "Mock AI response".to_string(),
+                )),
                 reasoning_content: None,
                 usage: Default::default(),
             }))),
@@ -113,14 +122,24 @@ impl MockAiClient {
 // Basic trait implementation to satisfy AppState::new
 #[async_trait]
 impl AiClient for MockAiClient {
-    async fn exec_chat(&self, _model_name: &str, request: ChatRequest, config_override: Option<ChatOptions>) -> Result<ChatResponse, AppError> {
+    async fn exec_chat(
+        &self,
+        _model_name: &str,
+        request: ChatRequest,
+        config_override: Option<ChatOptions>,
+    ) -> Result<ChatResponse, AppError> {
         *self.last_request.lock().unwrap() = Some(request);
         *self.last_options.lock().unwrap() = config_override;
         // TODO: Implement proper mock logic using stored response
         self.response_to_return.lock().unwrap().clone()
         // unimplemented!("MockAiClient exec_chat not implemented")
     }
-    async fn stream_chat(&self, _model_name: &str, request: ChatRequest, config_override: Option<ChatOptions>) -> Result<ChatStream, AppError> {
+    async fn stream_chat(
+        &self,
+        _model_name: &str,
+        request: ChatRequest,
+        config_override: Option<ChatOptions>,
+    ) -> Result<ChatStream, AppError> {
         *self.last_request.lock().unwrap() = Some(request);
         *self.last_options.lock().unwrap() = config_override;
 
@@ -135,16 +154,23 @@ impl AiClient for MockAiClient {
                             Ok(event) => {
                                 // Rebuild the event based on its type
                                 let new_event = match event {
-                                    ChatStreamEvent::Chunk(chunk) => 
-                                        ChatStreamEvent::Chunk(genai::chat::StreamChunk { content: chunk.content.clone() }),
+                                    ChatStreamEvent::Chunk(chunk) => {
+                                        ChatStreamEvent::Chunk(genai::chat::StreamChunk {
+                                            content: chunk.content.clone(),
+                                        })
+                                    }
                                     ChatStreamEvent::Start => ChatStreamEvent::Start,
-                                    ChatStreamEvent::ReasoningChunk(chunk) => 
-                                        ChatStreamEvent::ReasoningChunk(genai::chat::StreamChunk { content: chunk.content.clone() }),
-                                    ChatStreamEvent::End(_end_event) => 
-                                        ChatStreamEvent::End(Default::default()), // StreamEnd is not Clone, use Default
+                                    ChatStreamEvent::ReasoningChunk(chunk) => {
+                                        ChatStreamEvent::ReasoningChunk(genai::chat::StreamChunk {
+                                            content: chunk.content.clone(),
+                                        })
+                                    }
+                                    ChatStreamEvent::End(_end_event) => {
+                                        ChatStreamEvent::End(Default::default())
+                                    } // StreamEnd is not Clone, use Default
                                 };
                                 new_items.push(Ok(new_event));
-                            },
+                            }
                             Err(err) => {
                                 // Clone the error (assuming AppError is Clone)
                                 new_items.push(Err(err.clone()));
@@ -152,11 +178,11 @@ impl AiClient for MockAiClient {
                         }
                     }
                     new_items
-                },
+                }
                 None => Vec::new(), // Return empty Vec if None
             }
         }; // Mutex guard is dropped here
-        
+
         let stream = futures::stream::iter(items);
         Ok(Box::pin(stream) as ChatStream)
     }
@@ -169,7 +195,7 @@ pub struct MockEmbeddingClient {
 }
 
 impl MockEmbeddingClient {
-    pub fn new() -> Self { 
+    pub fn new() -> Self {
         MockEmbeddingClient {
             response: Arc::new(Mutex::new(None)),
             calls: Arc::new(Mutex::new(Vec::new())),
@@ -190,8 +216,11 @@ impl MockEmbeddingClient {
 impl EmbeddingClient for MockEmbeddingClient {
     async fn embed_content(&self, text: &str, task_type: &str) -> Result<Vec<f32>, AppError> {
         // Record the call
-        self.calls.lock().unwrap().push((text.to_string(), task_type.to_string()));
-        
+        self.calls
+            .lock()
+            .unwrap()
+            .push((text.to_string(), task_type.to_string()));
+
         // Return the pre-set response or a default
         match self.response.lock().unwrap().clone() {
             Some(res) => res,
@@ -240,13 +269,22 @@ impl MockEmbeddingPipelineService {
 
 #[async_trait]
 impl EmbeddingPipelineServiceTrait for MockEmbeddingPipelineService {
-    async fn retrieve_relevant_chunks(&self, _state: Arc<AppState>, chat_id: Uuid, query_text: &str, limit: u64) -> Result<Vec<RetrievedChunk>, AppError> {
+    async fn retrieve_relevant_chunks(
+        &self,
+        _state: Arc<AppState>,
+        chat_id: Uuid,
+        query_text: &str,
+        limit: u64,
+    ) -> Result<Vec<RetrievedChunk>, AppError> {
         // Record the call
-        self.calls.lock().unwrap().push(PipelineCall::RetrieveRelevantChunks {
-            chat_id,
-            query_text: query_text.to_string(),
-            limit,
-        });
+        self.calls
+            .lock()
+            .unwrap()
+            .push(PipelineCall::RetrieveRelevantChunks {
+                chat_id,
+                query_text: query_text.to_string(),
+                limit,
+            });
 
         // Return the pre-set response or a default
         let response = self.retrieve_response.lock().unwrap().take();
@@ -254,7 +292,9 @@ impl EmbeddingPipelineServiceTrait for MockEmbeddingPipelineService {
             Some(res) => res,
             None => {
                 // Default behavior if no response is set
-                warn!("MockEmbeddingPipelineService::retrieve_relevant_chunks called without a pre-set response, returning Ok(vec![])");
+                warn!(
+                    "MockEmbeddingPipelineService::retrieve_relevant_chunks called without a pre-set response, returning Ok(vec![])"
+                );
                 Ok(vec![])
             }
         }
@@ -297,7 +337,7 @@ impl MockQdrantClientService {
     }
 
     pub fn set_search_response(&self, response: Result<Vec<ScoredPoint>, AppError>) {
-         let mut lock = self.search_response.lock().unwrap();
+        let mut lock = self.search_response.lock().unwrap();
         *lock = Some(response);
     }
 
@@ -309,31 +349,39 @@ impl MockQdrantClientService {
         self.last_search_params.lock().unwrap().clone()
     }
 
-    pub async fn upsert_points(&self, points: Vec<qdrant_client::qdrant::PointStruct>) -> Result<(), AppError> {
+    pub async fn upsert_points(
+        &self,
+        points: Vec<qdrant_client::qdrant::PointStruct>,
+    ) -> Result<(), AppError> {
         // Track call
         {
             let mut count = self.upsert_call_count.lock().unwrap();
             *count += 1;
-            
+
             let mut last_points = self.last_upsert_points.lock().unwrap();
             *last_points = Some(points.clone());
         }
-        
+
         // Return response
         let response = self.upsert_response.lock().unwrap().take();
         response.unwrap_or(Ok(()))
     }
 
-    pub async fn search_points(&self, query_vector: Vec<f32>, limit: u64, filter: Option<Filter>) -> Result<Vec<ScoredPoint>, AppError> {
+    pub async fn search_points(
+        &self,
+        query_vector: Vec<f32>,
+        limit: u64,
+        filter: Option<Filter>,
+    ) -> Result<Vec<ScoredPoint>, AppError> {
         // Track call
         {
             let mut count = self.search_call_count.lock().unwrap();
             *count += 1;
-            
+
             let mut last_params = self.last_search_params.lock().unwrap();
             *last_params = Some((query_vector.clone(), limit, filter.clone()));
         }
-        
+
         // Return response
         let response = self.search_response.lock().unwrap().take();
         response.unwrap_or(Ok(vec![]))
@@ -352,11 +400,11 @@ impl QdrantClientServiceTrait for MockQdrantClientService {
         {
             let mut count = self.upsert_call_count.lock().unwrap();
             *count += 1;
-            
+
             let mut last_points = self.last_upsert_points.lock().unwrap();
             *last_points = Some(points.clone());
         }
-        
+
         // Return response
         let response = self.upsert_response.lock().unwrap().take();
         response.unwrap_or(Ok(()))
@@ -372,17 +420,21 @@ impl QdrantClientServiceTrait for MockQdrantClientService {
         {
             let mut count = self.search_call_count.lock().unwrap();
             *count += 1;
-            
+
             let mut last_params = self.last_search_params.lock().unwrap();
             *last_params = Some((vector.clone(), limit, filter.clone()));
         }
-        
+
         // Return response
         let response = self.search_response.lock().unwrap().take();
         response.unwrap_or(Ok(vec![]))
     }
 
-    async fn retrieve_points(&self, _filter: Option<Filter>, _limit: u64) -> Result<Vec<ScoredPoint>, AppError> {
+    async fn retrieve_points(
+        &self,
+        _filter: Option<Filter>,
+        _limit: u64,
+    ) -> Result<Vec<ScoredPoint>, AppError> {
         // Use the search response for retrieve as well
         let response = self.search_response.lock().unwrap().take();
         response.unwrap_or(Ok(vec![]))
@@ -413,10 +465,10 @@ pub struct TestApp {
     pub mock_ai_client: Arc<MockAiClient>,
     pub mock_embedding_client: Arc<MockEmbeddingClient>, // Add mock embedding client
     pub mock_embedding_pipeline_service: Arc<MockEmbeddingPipelineService>, // Add mock RAG service
-    pub qdrant_service: Arc<QdrantClientService>, // Add Qdrant service
+    pub qdrant_service: Arc<QdrantClientService>,        // Add Qdrant service
     pub embedding_call_tracker: Arc<tokio::sync::Mutex<Vec<uuid::Uuid>>>, // Add tracker field
-   }
-   
+}
+
 /// Sets up the application state and router for integration testing, WITHOUT spawning a server.
 pub async fn spawn_app() -> TestApp {
     // Tracing initialization is handled by #[tracing_test::traced_test] on each test function
@@ -486,7 +538,7 @@ pub async fn spawn_app() -> TestApp {
         .with_secure(false) // Required for tests, SessionManagerLayer handles signing/encryption
         .with_same_site(cookie::SameSite::Lax) // Use cookie::SameSite
         .with_name("sid") // Use consistent cookie name
-        .with_path("/")   // Set cookie path to root
+        .with_path("/") // Set cookie path to root
         .with_expiry(Expiry::OnInactivity(time::Duration::days(1)));
 
     let auth_backend = AuthBackend::new(db_pool.clone()); // Create backend instance
@@ -515,9 +567,9 @@ pub async fn spawn_app() -> TestApp {
         config.clone(), // Clone config Arc for AppState
         mock_ai_client.clone(),
         mock_embedding_client.clone(), // Pass mock embedding client
-        qdrant_service.clone(), // Pass the real Qdrant service
+        qdrant_service.clone(),        // Pass the real Qdrant service
         mock_embedding_pipeline_service.clone(), // Pass mock RAG service
-       );
+    );
 
     // --- Router Setup (mirroring main.rs structure) ---
     // Note: Imports moved to top of file
@@ -556,12 +608,12 @@ pub async fn spawn_app() -> TestApp {
         db_pool,
         // Ensure mock clients are stored
         mock_ai_client,
-        mock_embedding_client, // Store mock embedding client
+        mock_embedding_client,           // Store mock embedding client
         mock_embedding_pipeline_service, // Store mock RAG service
-        qdrant_service, // Store Qdrant service
+        qdrant_service,                  // Store Qdrant service
         embedding_call_tracker: app_state.embedding_call_tracker.clone(),
-       }
-       }
+    }
+}
 
 // --- Modules containing test helpers ---
 
@@ -570,15 +622,18 @@ pub mod db {
     use diesel::prelude::*;
     use diesel_migrations::MigrationHarness;
     // Import common types from super, explicitly add NewChatSession from crate::models
-    use super::{PgPool, Uuid, DeadpoolManager, DeadpoolPool, DeadpoolRuntime, MIGRATIONS, User, NewUser, Character, NewCharacter, ChatSession, ChatMessage, MessageRole, schema, BigDecimal, Value, RunQueryDsl, SelectableHelper};
-    use crate::models::chats::NewChatSession; // <<< Add this import
+    use super::{
+        BigDecimal, Character, ChatMessage, ChatSession, DeadpoolManager, DeadpoolPool,
+        DeadpoolRuntime, MIGRATIONS, MessageRole, NewCharacter, NewUser, PgPool, RunQueryDsl,
+        SelectableHelper, User, Uuid, Value, schema,
+    };
     use crate::models::chats::DbInsertableChatMessage;
+    use crate::models::chats::NewChatSession; // <<< Add this import
     // Import specifics needed within this module
-    use std::env;
-    use dotenvy::dotenv;
     use bcrypt;
+    use dotenvy::dotenv;
+    use std::env;
     // Removed duplicate diesel::SelectableHelper import
-    
 
     /// Sets up a clean test database with migrations run.
     pub async fn setup_test_database(db_name_suffix: Option<&str>) -> PgPool {
@@ -592,38 +647,58 @@ pub mod db {
         let (main_db_url, _) = base_db_url.rsplit_once('/').expect("Invalid DATABASE_URL");
 
         // Create a connection pool to the default database (e.g., postgres) to create the test database
-        let manager_default = DeadpoolManager::new(format!("{}/postgres", main_db_url), DeadpoolRuntime::Tokio1);
-        let pool_default = DeadpoolPool::builder(manager_default).max_size(1).build().expect("Failed to create default DB pool");
-        let conn_default = pool_default.get().await.expect("Failed to get default DB connection");
+        let manager_default =
+            DeadpoolManager::new(format!("{}/postgres", main_db_url), DeadpoolRuntime::Tokio1);
+        let pool_default = DeadpoolPool::builder(manager_default)
+            .max_size(1)
+            .build()
+            .expect("Failed to create default DB pool");
+        let conn_default = pool_default
+            .get()
+            .await
+            .expect("Failed to get default DB connection");
 
         // Drop and Create the test database
         let db_name_clone_drop = db_name.clone();
         let db_name_clone_create = db_name.clone();
-        conn_default.interact(move |conn| {
-            diesel::sql_query(format!("DROP DATABASE IF EXISTS \"{}\" WITH (FORCE)", db_name_clone_drop)).execute(conn)?; // Added WITH (FORCE)
-            diesel::sql_query(format!("CREATE DATABASE \"{}\"", db_name_clone_create)).execute(conn)?;        
-            Ok::<(), diesel::result::Error>(())
-        }).await.expect("DB interaction failed").expect("Failed to create test DB");
+        conn_default
+            .interact(move |conn| {
+                diesel::sql_query(format!(
+                    "DROP DATABASE IF EXISTS \"{}\" WITH (FORCE)",
+                    db_name_clone_drop
+                ))
+                .execute(conn)?; // Added WITH (FORCE)
+                diesel::sql_query(format!("CREATE DATABASE \"{}\"", db_name_clone_create))
+                    .execute(conn)?;
+                Ok::<(), diesel::result::Error>(())
+            })
+            .await
+            .expect("DB interaction failed")
+            .expect("Failed to create test DB");
 
         // Create a connection pool to the newly created test database
         let test_db_url = format!("{}/{}", main_db_url, db_name);
         let manager = DeadpoolManager::new(test_db_url, DeadpoolRuntime::Tokio1);
-        let pool = DeadpoolPool::builder(manager).build().expect("Failed to create test DB pool");
+        let pool = DeadpoolPool::builder(manager)
+            .build()
+            .expect("Failed to create test DB pool");
 
         // Run migrations on the test database
-        let conn = pool.get().await.expect("Failed to get test DB connection for migration");
+        let conn = pool
+            .get()
+            .await
+            .expect("Failed to get test DB connection for migration");
         conn.interact(|conn| conn.run_pending_migrations(MIGRATIONS).map(|_| ()))
-            .await.expect("Migration task failed").expect("Failed to run migrations");
+            .await
+            .expect("Migration task failed")
+            .expect("Failed to run migrations");
 
         pool
     }
 
-    pub async fn create_test_user(
-        pool: &PgPool,
-        username: &str,
-        password: &str,
-    ) -> User {
-        let hashed_password = bcrypt::hash(password, bcrypt::DEFAULT_COST).expect("Failed to hash password");
+    pub async fn create_test_user(pool: &PgPool, username: &str, password: &str) -> User {
+        let hashed_password =
+            bcrypt::hash(password, bcrypt::DEFAULT_COST).expect("Failed to hash password");
         let new_user = NewUser {
             username: username.to_string(),
             password_hash: hashed_password,
@@ -634,18 +709,17 @@ pub mod db {
                 .values(&new_user)
                 .returning(User::as_returning())
                 .get_result(conn)
-        }).await.expect("Interact failed").expect("Failed to insert user")
+        })
+        .await
+        .expect("Interact failed")
+        .expect("Failed to insert user")
     }
 
-    pub async fn create_test_character(
-        pool: &PgPool,
-        user_id: Uuid,
-        name: &str,
-    ) -> Character {
+    pub async fn create_test_character(pool: &PgPool, user_id: Uuid, name: &str) -> Character {
         let new_char = NewCharacter {
             user_id,
             spec: "chara_card_v2".to_string(), // Field from models::character_card
-            spec_version: "2.0".to_string(),  // Field from models::character_card
+            spec_version: "2.0".to_string(),   // Field from models::character_card
             name: name.to_string(),
             description: Some("Test description".to_string()),
             personality: Some("Test personality".to_string()),
@@ -669,12 +743,15 @@ pub mod db {
             extensions: None,
         };
         let conn = pool.get().await.expect("Failed to get DB conn");
-         conn.interact(move |conn| {
+        conn.interact(move |conn| {
             diesel::insert_into(schema::characters::table)
                 .values(&new_char)
                 .returning(Character::as_returning())
                 .get_result(conn)
-        }).await.expect("Interact failed").expect("Failed to insert character")
+        })
+        .await
+        .expect("Interact failed")
+        .expect("Failed to insert character")
     }
 
     pub async fn create_test_chat_session(
@@ -692,9 +769,12 @@ pub mod db {
                 .values(&new_session)
                 .returning(ChatSession::as_returning())
                 .get_result(conn)
-        }).await.expect("Interact failed").expect("Failed to insert chat session")
+        })
+        .await
+        .expect("Interact failed")
+        .expect("Failed to insert chat session")
     }
-    
+
     pub async fn get_chat_session_from_db(pool: &PgPool, session_id: Uuid) -> Option<ChatSession> {
         use crate::schema::chat_sessions::dsl::*;
         let conn = pool.get().await.expect("Failed to get DB conn");
@@ -704,7 +784,10 @@ pub mod db {
                 .select(ChatSession::as_select())
                 .first(conn)
                 .optional()
-        }).await.expect("Interact failed").expect("Query failed")
+        })
+        .await
+        .expect("Interact failed")
+        .expect("Query failed")
     }
 
     pub async fn create_test_chat_message(
@@ -727,9 +810,12 @@ pub mod db {
                 .values(&new_message)
                 .returning(ChatMessage::as_returning())
                 .get_result(conn)
-        }).await.expect("Interact failed").expect("Failed to insert chat message")
+        })
+        .await
+        .expect("Interact failed")
+        .expect("Failed to insert chat message")
     }
-    
+
     pub async fn update_test_chat_settings(
         pool: &PgPool,
         session_id: Uuid,
@@ -737,19 +823,22 @@ pub mod db {
         new_temperature: Option<BigDecimal>,
         new_max_output_tokens: Option<i32>,
     ) {
-         use crate::schema::chat_sessions::dsl::*;
-         let conn = pool.get().await.expect("Failed to get DB conn");
-         conn.interact(move |conn| {
-             diesel::update(chat_sessions.filter(id.eq(session_id)))
-                 .set((
-                     system_prompt.eq(new_system_prompt),
-                     temperature.eq(new_temperature),
-                     max_output_tokens.eq(new_max_output_tokens),
-                 ))
-                 .execute(conn)
-         }).await.expect("Interact failed").expect("Failed to update settings");
+        use crate::schema::chat_sessions::dsl::*;
+        let conn = pool.get().await.expect("Failed to get DB conn");
+        conn.interact(move |conn| {
+            diesel::update(chat_sessions.filter(id.eq(session_id)))
+                .set((
+                    system_prompt.eq(new_system_prompt),
+                    temperature.eq(new_temperature),
+                    max_output_tokens.eq(new_max_output_tokens),
+                ))
+                .execute(conn)
+        })
+        .await
+        .expect("Interact failed")
+        .expect("Failed to update settings");
     }
-    
+
     pub async fn update_all_chat_settings(
         pool: &PgPool,
         session_id: Uuid,
@@ -766,11 +855,11 @@ pub mod db {
         new_seed: Option<i32>,
         new_logit_bias: Option<Value>,
     ) {
-         use crate::schema::chat_sessions::dsl::*;
-         let conn = pool.get().await.expect("Failed to get DB conn");
-         conn.interact(move |conn| {
-             diesel::update(chat_sessions.filter(id.eq(session_id)))
-                 .set((
+        use crate::schema::chat_sessions::dsl::*;
+        let conn = pool.get().await.expect("Failed to get DB conn");
+        conn.interact(move |conn| {
+            diesel::update(chat_sessions.filter(id.eq(session_id)))
+                .set((
                     system_prompt.eq(new_system_prompt),
                     temperature.eq(new_temperature),
                     max_output_tokens.eq(new_max_output_tokens),
@@ -783,9 +872,12 @@ pub mod db {
                     top_a.eq(new_top_a),
                     seed.eq(new_seed),
                     logit_bias.eq(new_logit_bias),
-                 ))
-                 .execute(conn)
-         }).await.expect("Interact failed").expect("Failed to update all settings");
+                ))
+                .execute(conn)
+        })
+        .await
+        .expect("Interact failed")
+        .expect("Failed to update all settings");
     }
 
     pub async fn get_chat_messages_from_db(pool: &PgPool, _session_id: Uuid) -> Vec<ChatMessage> {
@@ -797,21 +889,36 @@ pub mod db {
                 .order(created_at.asc())
                 .select(ChatMessage::as_select())
                 .load::<ChatMessage>(conn)
-        }).await.expect("Interact failed").expect("Query failed")
+        })
+        .await
+        .expect("Interact failed")
+        .expect("Query failed")
     }
-    
+
     // Define the settings tuple type alias within the module as well if needed, or import it.
     type SettingsTuple = (
-        Option<String>, Option<BigDecimal>, Option<i32>, Option<BigDecimal>, 
-        Option<BigDecimal>, Option<i32>, Option<BigDecimal>, Option<BigDecimal>, 
-        Option<BigDecimal>, Option<BigDecimal>, Option<i32>, Option<Value>
+        Option<String>,
+        Option<BigDecimal>,
+        Option<i32>,
+        Option<BigDecimal>,
+        Option<BigDecimal>,
+        Option<i32>,
+        Option<BigDecimal>,
+        Option<BigDecimal>,
+        Option<BigDecimal>,
+        Option<BigDecimal>,
+        Option<i32>,
+        Option<Value>,
     );
 
-    pub async fn get_chat_session_settings(pool: &PgPool, session_id: Uuid) -> Option<SettingsTuple> {
+    pub async fn get_chat_session_settings(
+        pool: &PgPool,
+        session_id: Uuid,
+    ) -> Option<SettingsTuple> {
         use crate::schema::chat_sessions::dsl::*;
         let conn = pool.get().await.expect("Failed to get DB conn");
         conn.interact(move |conn| {
-             chat_sessions
+            chat_sessions
                 .filter(id.eq(session_id))
                 .select((
                     system_prompt,
@@ -829,7 +936,10 @@ pub mod db {
                 ))
                 .first::<SettingsTuple>(conn)
                 .optional()
-        }).await.expect("Interact failed").expect("Query failed")
+        })
+        .await
+        .expect("Interact failed")
+        .expect("Query failed")
     }
 }
 
@@ -837,14 +947,14 @@ pub mod db {
 
 pub mod auth {
     // Import types from the parent module and db module
-    use super::{TestApp, User, StatusCode, Method, Request, header, Body, ServiceExt};
     use super::db::create_test_user; // Import from db module
+    use super::{Body, Method, Request, ServiceExt, StatusCode, TestApp, User, header};
     use serde_json::json;
-     // Import HeaderValue
+    // Import HeaderValue
 
     /// Creates a user and logs them in, returning the auth cookie and user object.
     pub async fn create_test_user_and_login(
-        app: &TestApp, 
+        app: &TestApp,
         username: &str,
         password: &str,
     ) -> (String, User) {
@@ -863,14 +973,27 @@ pub mod auth {
             .unwrap();
 
         let response = app.router.clone().oneshot(request).await.unwrap();
-        assert_eq!(response.status(), StatusCode::OK, "Login failed after user creation");
+        assert_eq!(
+            response.status(),
+            StatusCode::OK,
+            "Login failed after user creation"
+        );
 
         // Extract the cookie
-        let cookie_header = response.headers().get(header::SET_COOKIE).expect("No set-cookie header found");
+        let cookie_header = response
+            .headers()
+            .get(header::SET_COOKIE)
+            .expect("No set-cookie header found");
         // Convert HeaderValue to str, handling potential errors
-        let cookie_str = cookie_header.to_str().expect("Invalid characters in cookie header");
+        let cookie_str = cookie_header
+            .to_str()
+            .expect("Invalid characters in cookie header");
         // Simple parsing assuming single cookie: sid=...;
-        let auth_cookie = cookie_str.split(';').next().expect("Cookie format error").to_string();
+        let auth_cookie = cookie_str
+            .split(';')
+            .next()
+            .expect("Cookie format error")
+            .to_string();
 
         (auth_cookie, user)
     }
@@ -880,7 +1003,7 @@ pub mod auth {
 
 pub struct TestContext {
     pub app: TestApp, // Store the whole TestApp
-    // Add other context if needed, e.g., pre-created users, characters
+                      // Add other context if needed, e.g., pre-created users, characters
 }
 
 impl TestContext {
@@ -890,11 +1013,7 @@ impl TestContext {
     }
 
     /// Inserts a chat session directly into the database for test setup.
-    pub async fn insert_chat_session(
-        &mut self,
-        user_id: Uuid,
-        character_id: Uuid,
-    ) -> ChatSession {
+    pub async fn insert_chat_session(&mut self, user_id: Uuid, character_id: Uuid) -> ChatSession {
         db::create_test_chat_session(&self.app.db_pool, user_id, character_id).await // Use pool from TestApp
     }
 
@@ -906,7 +1025,14 @@ impl TestContext {
         message_type: MessageRole,
         content: &str,
     ) -> ChatMessage {
-        db::create_test_chat_message(&self.app.db_pool, session_id, user_id, message_type, content).await // Use pool from TestApp
+        db::create_test_chat_message(
+            &self.app.db_pool,
+            session_id,
+            user_id,
+            message_type,
+            content,
+        )
+        .await // Use pool from TestApp
     }
 
     // Add other helper methods as needed, e.g., fetching data directly from DB
@@ -919,10 +1045,12 @@ pub async fn setup_test_app() -> TestContext {
 }
 
 pub fn create_test_pool() -> DeadpoolPool {
-     dotenv().ok();
+    dotenv().ok();
     let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
     let manager = DeadpoolManager::new(database_url, DeadpoolRuntime::Tokio1);
-    DeadpoolPool::builder(manager).build().expect("Failed to create pool.")
+    DeadpoolPool::builder(manager)
+        .build()
+        .expect("Failed to create pool.")
 }
 
 // --- Test Data Cleanup Guard ---
@@ -958,13 +1086,17 @@ impl TestDataGuard {
 
     // Explicit async cleanup function
     pub async fn cleanup(self) -> Result<(), anyhow::Error> {
-        if self.character_ids.is_empty() && self.user_ids.is_empty() && self.session_ids.is_empty() {
-             return Ok(());
+        if self.character_ids.is_empty() && self.user_ids.is_empty() && self.session_ids.is_empty()
+        {
+            return Ok(());
         }
         tracing::debug!(user_ids = ?self.user_ids, character_ids = ?self.character_ids, session_ids = ?self.session_ids, "--- Cleaning up test data ---");
 
         let pool_clone = self.pool.clone(); // Use self.pool
-        let obj = pool_clone.get().await.context("Failed to get DB connection for cleanup")?;
+        let obj = pool_clone
+            .get()
+            .await
+            .context("Failed to get DB connection for cleanup")?;
 
         let character_ids_to_delete = self.character_ids.clone();
         let user_ids_to_delete = self.user_ids.clone();
@@ -972,54 +1104,69 @@ impl TestDataGuard {
 
         // Delete messages first (FK to sessions)
         if !session_ids_to_delete.is_empty() {
-             obj.interact({
+            obj.interact({
                 let ids = session_ids_to_delete.clone(); // Clone for closure
                 move |conn| {
                     diesel::delete(
-                        schema::chat_messages::table.filter(schema::chat_messages::session_id.eq_any(ids))
+                        schema::chat_messages::table
+                            .filter(schema::chat_messages::session_id.eq_any(ids)),
                     )
                     .execute(conn)
                 }
-            }).await.map_err(|e| anyhow::anyhow!("Interact error deleting messages: {:?}", e))?
-              .map_err(|e| anyhow::Error::new(e).context("DB error deleting messages"))?;
-             tracing::debug!("Cleaned up messages for {} sessions.", session_ids_to_delete.len());
+            })
+            .await
+            .map_err(|e| anyhow::anyhow!("Interact error deleting messages: {:?}", e))?
+            .map_err(|e| anyhow::Error::new(e).context("DB error deleting messages"))?;
+            tracing::debug!(
+                "Cleaned up messages for {} sessions.",
+                session_ids_to_delete.len()
+            );
         }
-
 
         // Delete sessions (FK to users, characters)
         if !session_ids_to_delete.is_empty() {
-             obj.interact(move |conn| {
+            obj.interact(move |conn| {
                 diesel::delete(
-                    schema::chat_sessions::table.filter(schema::chat_sessions::id.eq_any(session_ids_to_delete))
+                    schema::chat_sessions::table
+                        .filter(schema::chat_sessions::id.eq_any(session_ids_to_delete)),
                 )
                 .execute(conn)
-            }).await.map_err(|e| anyhow::anyhow!("Interact error deleting sessions: {:?}", e))?
-              .map_err(|e| anyhow::Error::new(e).context("DB error deleting sessions"))?;
-             tracing::debug!("Cleaned up {} sessions.", self.session_ids.len());
+            })
+            .await
+            .map_err(|e| anyhow::anyhow!("Interact error deleting sessions: {:?}", e))?
+            .map_err(|e| anyhow::Error::new(e).context("DB error deleting sessions"))?;
+            tracing::debug!("Cleaned up {} sessions.", self.session_ids.len());
         }
 
         // Delete characters (FK to users)
         if !character_ids_to_delete.is_empty() {
-            obj.interact({ // Use block to manage clone lifetime
+            obj.interact({
+                // Use block to manage clone lifetime
                 let ids = character_ids_to_delete.clone();
                 move |conn| {
                     diesel::delete(
-                        schema::characters::table.filter(schema::characters::id.eq_any(ids))
+                        schema::characters::table.filter(schema::characters::id.eq_any(ids)),
                     )
                     .execute(conn)
                 }
-            }).await.map_err(|e| anyhow::anyhow!("Interact error deleting characters: {:?}", e))?
-              .map_err(|e| anyhow::Error::new(e).context("DB error deleting characters"))?;
+            })
+            .await
+            .map_err(|e| anyhow::anyhow!("Interact error deleting characters: {:?}", e))?
+            .map_err(|e| anyhow::Error::new(e).context("DB error deleting characters"))?;
             tracing::debug!("Cleaned up {} characters.", self.character_ids.len());
         }
 
         // Delete users
         if !user_ids_to_delete.is_empty() {
             obj.interact(move |conn| {
-                diesel::delete(schema::users::table.filter(schema::users::id.eq_any(user_ids_to_delete)))
+                diesel::delete(
+                    schema::users::table.filter(schema::users::id.eq_any(user_ids_to_delete)),
+                )
                 .execute(conn)
-            }).await.map_err(|e| anyhow::anyhow!("Interact error deleting users: {:?}", e))?
-              .map_err(|e| anyhow::Error::new(e).context("DB error deleting users"))?;
+            })
+            .await
+            .map_err(|e| anyhow::anyhow!("Interact error deleting users: {:?}", e))?
+            .map_err(|e| anyhow::Error::new(e).context("DB error deleting users"))?;
             tracing::debug!("Cleaned up {} users.", self.user_ids.len());
         }
 
@@ -1034,7 +1181,8 @@ pub fn ensure_tracing_initialized() {
     use tracing_subscriber::{EnvFilter, fmt};
     static TRACING_INIT: Once = Once::new();
     TRACING_INIT.call_once(|| {
-        let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| "info,sqlx=warn,tower_http=debug".into());
+        let filter = EnvFilter::try_from_default_env()
+            .unwrap_or_else(|_| "info,sqlx=warn,tower_http=debug".into());
         fmt().with_env_filter(filter).init();
     });
 }
@@ -1044,7 +1192,8 @@ pub fn ensure_tracing_initialized() {
 
 // --- AppState Builder (already pub) ---
 #[derive(Default)]
-pub struct AppStateBuilder { /* ... existing fields ... */ 
+pub struct AppStateBuilder {
+    /* ... existing fields ... */
     // Add fields if they were removed or keep as is if defined elsewhere
 }
 impl AppStateBuilder {
@@ -1070,11 +1219,14 @@ impl AppStateBuilder {
     }
 
     // Accept trait object for EmbeddingPipelineServiceTrait
-    pub fn with_embedding_pipeline_service(self, _service: Arc<dyn EmbeddingPipelineServiceTrait + Send + Sync>) -> Self {
+    pub fn with_embedding_pipeline_service(
+        self,
+        _service: Arc<dyn EmbeddingPipelineServiceTrait + Send + Sync>,
+    ) -> Self {
         // TODO: Store service if needed
         self
     }
-    
+
     // Renamed based on embedding_pipeline tests usage
     // Keep concrete type for MockQdrantClientService as it's not a trait
     pub fn with_mock_qdrant_service(self, _service: Arc<MockQdrantClientService>) -> Self {
@@ -1099,7 +1251,8 @@ impl AppStateBuilder {
             ai_client,
             embedding_client: embedding_client as Arc<dyn EmbeddingClient + Send + Sync>,
             qdrant_service,
-            embedding_pipeline_service: embedding_pipeline_service as Arc<dyn EmbeddingPipelineServiceTrait + Send + Sync>,
+            embedding_pipeline_service: embedding_pipeline_service
+                as Arc<dyn EmbeddingPipelineServiceTrait + Send + Sync>,
             embedding_call_tracker: Arc::new(tokio::sync::Mutex::new(Vec::new())), // Add default tracker
         }))
     }
@@ -1108,11 +1261,11 @@ impl AppStateBuilder {
 // --- Docker Testcontainer Helpers ---
 pub mod docker {
     // Add top-level testcontainers import
-    
+
     // Qdrant feature not available in testcontainers-modules v0.11.6
     // use testcontainers_modules::qdrant::Qdrant;
-    
-     // Add sleep
+
+    // Add sleep
 
     // Commented out doc comment as the function is also commented out
     // /// Runs Qdrant in a test container and returns the host port.
@@ -1142,9 +1295,9 @@ pub mod qdrant {
     // Use the higher-level Qdrant client
     use qdrant_client::Qdrant;
     // Import needed protobuf types separately
-    use qdrant_client::qdrant::{CreateCollection, VectorParams, Distance, VectorsConfig};
-    use crate::vector_db::qdrant_client::{EMBEDDING_DIMENSION, DEFAULT_COLLECTION_NAME};
+    use crate::vector_db::qdrant_client::{DEFAULT_COLLECTION_NAME, EMBEDDING_DIMENSION};
     use qdrant_client::qdrant::vectors_config::Config as QdrantVectorsConfig;
+    use qdrant_client::qdrant::{CreateCollection, Distance, VectorParams, VectorsConfig};
     use tracing::{info, warn};
 
     /// Sets up a Qdrant client connected to the test container and ensures the collection exists.
@@ -1153,8 +1306,7 @@ pub mod qdrant {
         let client_config = QdrantConfig::from_url(&format!("http://localhost:{}", port));
 
         // Use Qdrant::new(config) as suggested by the compiler error
-        let client = Qdrant::new(client_config)
-            .expect("Failed to build Qdrant client");
+        let client = Qdrant::new(client_config).expect("Failed to build Qdrant client");
 
         // Ensure collection exists - Methods might be slightly different on Qdrant vs QdrantClient
         let collection_name = DEFAULT_COLLECTION_NAME;
@@ -1163,29 +1315,44 @@ pub mod qdrant {
             Ok(exists) => {
                 if !exists {
                     info!("Creating Qdrant collection '{}' for test", collection_name);
-                    if let Err(create_err) = client.create_collection(CreateCollection {
-                        collection_name: collection_name.to_string(),
-                        vectors_config: Some(VectorsConfig {
-                            config: Some(QdrantVectorsConfig::Params(VectorParams {
-                                size: EMBEDDING_DIMENSION, // Use constant
-                                distance: Distance::Cosine.into(),
-                                ..Default::default()
-                            })),
-                        }),
-                        ..Default::default()
-                    }).await {
+                    if let Err(create_err) = client
+                        .create_collection(CreateCollection {
+                            collection_name: collection_name.to_string(),
+                            vectors_config: Some(VectorsConfig {
+                                config: Some(QdrantVectorsConfig::Params(VectorParams {
+                                    size: EMBEDDING_DIMENSION, // Use constant
+                                    distance: Distance::Cosine.into(),
+                                    ..Default::default()
+                                })),
+                            }),
+                            ..Default::default()
+                        })
+                        .await
+                    {
                         if create_err.to_string().contains("already exists") {
-                            warn!("Collection '{}' already exists (race condition?), continuing test.", collection_name);
+                            warn!(
+                                "Collection '{}' already exists (race condition?), continuing test.",
+                                collection_name
+                            );
                         } else {
-                            panic!("Failed to create test collection '{}': {}", collection_name, create_err);
+                            panic!(
+                                "Failed to create test collection '{}': {}",
+                                collection_name, create_err
+                            );
                         }
                     }
                 } else {
-                     info!("Qdrant collection '{}' already exists for test", collection_name);
+                    info!(
+                        "Qdrant collection '{}' already exists for test",
+                        collection_name
+                    );
                 }
-            },
+            }
             Err(e) => {
-                 panic!("Failed to check collection info for '{}': {}", collection_name, e);
+                panic!(
+                    "Failed to check collection info for '{}': {}",
+                    collection_name, e
+                );
             }
         }
         client
@@ -1195,22 +1362,23 @@ pub mod qdrant {
 // --- Config Test Helpers ---
 pub mod config {
     use crate::config::Config;
-    
+
     use dotenvy::dotenv;
     use tracing::info;
 
     /// Initializes Config, potentially overriding with test-specific values.
     pub fn initialize_test_config(qdrant_port: Option<u16>) -> Config {
         dotenv().ok();
-        let mut test_config = Config::load().expect("Failed to load base config for test initialization");
-        
+        let mut test_config =
+            Config::load().expect("Failed to load base config for test initialization");
+
         // Override specific settings for tests
         if let Some(port) = qdrant_port {
             let qdrant_url = format!("http://localhost:{}", port);
             info!("Setting QDRANT_URL for test config: {}", qdrant_url);
             test_config.qdrant_url = Some(qdrant_url);
         }
-        
+
         // Override other configs as needed (e.g., log level, ports)
         // test_config.log_level = "debug".to_string();
 

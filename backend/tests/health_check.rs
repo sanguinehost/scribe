@@ -3,7 +3,7 @@
 // Import necessary items
 use axum::{
     body::Body,
-    http::{Request, Method, StatusCode},
+    http::{Method, Request, StatusCode},
 };
 use http_body_util::BodyExt; // For `.collect()`
 use scribe_backend::test_helpers; // Assuming setup_test_app is here
@@ -26,7 +26,11 @@ async fn health_check_works() {
 
     // Act
     // Send the request directly to the router using oneshot
-    let response = app.router.oneshot(request).await.expect("Failed to execute request.");
+    let response = app
+        .router
+        .oneshot(request)
+        .await
+        .expect("Failed to execute request.");
 
     // Assert
     assert_eq!(response.status(), StatusCode::OK);

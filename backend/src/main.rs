@@ -1,49 +1,52 @@
-use axum::{routing::{get, post}, Router};
-use deadpool_diesel::postgres::{Manager as DeadpoolManager, PoolConfig, Runtime as DeadpoolRuntime};
+use axum::{
+    Router,
+    routing::{get, post},
+};
+use deadpool_diesel::postgres::{
+    Manager as DeadpoolManager, PoolConfig, Runtime as DeadpoolRuntime,
+};
 // Use the r2d2 Pool directly from deadpool_diesel
 use deadpool_diesel::Pool as DeadpoolPool;
-use diesel_migrations::{embed_migrations, EmbeddedMigrations, MigrationHarness};
+use diesel_migrations::{EmbeddedMigrations, MigrationHarness, embed_migrations};
 use std::env;
 use std::net::SocketAddr;
 use tower_http::trace::{DefaultMakeSpan, TraceLayer};
 
 // Use modules from the library crate
+use scribe_backend::auth::session_store::DieselSessionStore;
 use scribe_backend::logging::init_subscriber;
-use scribe_backend::routes::{chat::chat_routes, characters::{get_character_handler, list_characters_handler, upload_character_handler}};
-use scribe_backend::routes::auth::{register_handler, login_handler, logout_handler, me_handler}; // Import auth handlers
+use scribe_backend::routes::auth::{login_handler, logout_handler, me_handler, register_handler}; // Import auth handlers
 use scribe_backend::routes::health::health_check; // Import from new location
-use scribe_backend::state::AppState;
-use scribe_backend::auth::session_store::DieselSessionStore; // Import DieselSessionStore
- // Import User model
-use anyhow::Result;
+use scribe_backend::routes::{
+    characters::{get_character_handler, list_characters_handler, upload_character_handler},
+    chat::chat_routes,
+};
+use scribe_backend::state::AppState; // Import DieselSessionStore
+// Import User model
 use anyhow::Context;
+use anyhow::Result;
 use scribe_backend::auth::user_store::Backend as AuthBackend;
 // Import PgPool from the library crate
 use scribe_backend::PgPool;
- // Make sure AppError is in scope
+// Make sure AppError is in scope
 
 // Imports for axum-login and tower-sessions
-use axum_login::{
-    login_required,
-    AuthManagerLayerBuilder,
-};
+use axum_login::{AuthManagerLayerBuilder, login_required};
 // Import SessionManagerLayer directly from tower_sessions
-use tower_sessions::{
-    cookie::SameSite,
-    Expiry,
-    SessionManagerLayer,
-};
 use cookie::Key as CookieKey; // Re-add for signing key variable
-use tower_cookies::CookieManagerLayer; // Re-add CookieManagerLayer
-use time; // Used for tower_sessions::Expiry
 use hex; // Added for hex::decode
 use scribe_backend::config::Config; // Import Config instead
-use std::sync::Arc; // Add Arc for config
+use std::sync::Arc;
+use time; // Used for tower_sessions::Expiry
+use tower_cookies::CookieManagerLayer; // Re-add CookieManagerLayer
+use tower_sessions::{Expiry, SessionManagerLayer, cookie::SameSite}; // Add Arc for config
 // Import the builder function
 use scribe_backend::llm::gemini_client::build_gemini_client; // Import the async builder
 use scribe_backend::llm::gemini_embedding_client::build_gemini_embedding_client; // Add this
-use scribe_backend::vector_db::QdrantClientService; // Add Qdrant service import
-use scribe_backend::services::embedding_pipeline::{EmbeddingPipelineService, EmbeddingPipelineServiceTrait}; // Add embedding pipeline service import
+use scribe_backend::services::embedding_pipeline::{
+    EmbeddingPipelineService, EmbeddingPipelineServiceTrait,
+};
+use scribe_backend::vector_db::QdrantClientService; // Add Qdrant service import // Add embedding pipeline service import
 
 // Define the embedded migrations macro
 pub const MIGRATIONS: EmbeddedMigrations = embed_migrations!("./migrations");
@@ -56,7 +59,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing::info!("Starting Scribe backend server...");
 
     let config = Arc::new(Config::load().expect("Failed to load configuration")); // Load Config into Arc
-    let db_url = config.database_url.as_ref().expect("DATABASE_URL not set in config");
+    let db_url = config
+        .database_url
+        .as_ref()
+        .expect("DATABASE_URL not set in config");
     tracing::info!("Connecting to database...");
     let manager = DeadpoolManager::new(db_url, DeadpoolRuntime::Tokio1);
     let pool_config = PoolConfig::default(); // Use default config for now
@@ -70,8 +76,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     run_migrations(&pool).await?; // Extract migration logic to function
 
     // --- Initialize GenAI Client Asynchronously ---
-    let ai_client = build_gemini_client()
-        .await?;
+    let ai_client = build_gemini_client().await?;
     let ai_client_arc = Arc::new(ai_client); // Wrap in Arc for AppState
 
     // --- Initialize Embedding Client ---
@@ -90,7 +95,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Generate a signing key for cookies
     let secret_key = env::var("COOKIE_SIGNING_KEY").expect("COOKIE_SIGNING_KEY must be set");
-    let key_bytes = hex::decode(secret_key).context("Invalid COOKIE_SIGNING_KEY format (must be hex)")?;
+    let key_bytes =
+        hex::decode(secret_key).context("Invalid COOKIE_SIGNING_KEY format (must be hex)")?;
     let _cookie_signing_key = CookieKey::from(&key_bytes); // Renamed variable for clarity
 
     // Build the session manager layer (handles session data)
@@ -100,7 +106,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // .with_signing_key(cookie_signing_key.clone()) // REMOVED: Signing is handled by CookieManagerLayer now
         .with_expiry(Expiry::OnInactivity(time::Duration::days(7)));
 
-
     // Configure the auth backend
     let auth_backend = AuthBackend::new(pool.clone());
 
@@ -108,7 +113,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let auth_layer = AuthManagerLayerBuilder::new(auth_backend, session_manager_layer).build();
 
     // -- Create Embedding Pipeline Service --
-    let embedding_pipeline_service = Arc::new(EmbeddingPipelineService {}) as Arc<dyn EmbeddingPipelineServiceTrait>; // Instantiate the service
+    let embedding_pipeline_service =
+        Arc::new(EmbeddingPipelineService {}) as Arc<dyn EmbeddingPipelineServiceTrait>; // Instantiate the service
 
     // -- Create AppState --
     let app_state = AppState::new(
@@ -127,11 +133,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/auth/logout", post(logout_handler))
         // Character routes (require login)
         // TODO: Consolidate character route definition here instead of merging below?
-        .nest("/characters", 
+        .nest(
+            "/characters",
             Router::new()
                 .route("/upload", post(upload_character_handler))
                 .route("/", get(list_characters_handler))
-                .route("/{id}", get(get_character_handler))
+                .route("/{id}", get(get_character_handler)),
         )
         // Chat routes (require login)
         .nest("/chats", chat_routes()) // Mount the chat router
@@ -173,21 +180,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 // Extracted migration logic
 async fn run_migrations(pool: &PgPool) -> Result<()> {
     tracing::info!("Attempting to run database migrations...");
-    let conn = pool.get().await.map_err(|e| anyhow::anyhow!("Failed to get connection for migration: {}", e))?;
-    conn.interact(|conn| {
-        match conn.run_pending_migrations(MIGRATIONS) {
-            Ok(versions) => {
-                if versions.is_empty() {
-                    tracing::info!("No pending migrations found.");
-                } else {
-                    tracing::info!("Successfully ran migrations: {:?}", versions);
-                }
-                Ok(())
-            },
-            Err(e) => {
-                tracing::error!("Failed to run database migrations: {:?}", e);
-                Err(anyhow::anyhow!("Migration diesel error: {:?}", e))
+    let conn = pool
+        .get()
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to get connection for migration: {}", e))?;
+    conn.interact(|conn| match conn.run_pending_migrations(MIGRATIONS) {
+        Ok(versions) => {
+            if versions.is_empty() {
+                tracing::info!("No pending migrations found.");
+            } else {
+                tracing::info!("Successfully ran migrations: {:?}", versions);
             }
+            Ok(())
+        }
+        Err(e) => {
+            tracing::error!("Failed to run database migrations: {:?}", e);
+            Err(anyhow::anyhow!("Migration diesel error: {:?}", e))
         }
     })
     .await
@@ -199,10 +207,10 @@ async fn run_migrations(pool: &PgPool) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-     // Import the necessary trait
-    
-     // Use the r2d2 Pool directly from deadpool_diesel
-     // Ensure PgPool is in scope for the test
+    // Import the necessary trait
+
+    // Use the r2d2 Pool directly from deadpool_diesel
+    // Ensure PgPool is in scope for the test
     // Remove import for unavailable module
     // use testcontainers_modules::postgres::Postgres;
 

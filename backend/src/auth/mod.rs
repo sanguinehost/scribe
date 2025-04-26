@@ -3,16 +3,16 @@
 use crate::models::users::{NewUser, User};
 use crate::schema::users;
 // Required imports for synchronous Diesel
-use diesel::{prelude::*, PgConnection};
+use diesel::{PgConnection, prelude::*};
 // Removed DbPool import as functions will now take PgConnection
 // use crate::state::DbPool;
+use bcrypt::BcryptError;
+use deadpool_diesel::InteractError;
 use secrecy::{ExposeSecret, Secret};
-use tracing::{error, info, instrument, debug, warn};
-use uuid::Uuid;
 use thiserror::Error;
 use tokio::task::JoinError;
-use bcrypt::BcryptError;
-use deadpool_diesel::InteractError; // Import InteractError
+use tracing::{debug, error, info, instrument, warn};
+use uuid::Uuid; // Import InteractError
 
 // Make AuthError enum public
 #[derive(Error, Debug)] // Removed Clone
@@ -31,7 +31,7 @@ pub enum AuthError {
     PoolError(#[from] deadpool_diesel::PoolError),
     #[error("Database interaction error: {0}")]
     InteractError(String), // Changed from InteractError to String
-    // Add other potential errors as needed
+                           // Add other potential errors as needed
 }
 
 // Manual From implementation for InteractError
@@ -67,7 +67,7 @@ pub fn create_user(
         .returning(User::as_returning()) // Use returning to get the full User struct back
         .get_result(conn);
 
-    // --- Log DB result --- 
+    // --- Log DB result ---
     match insert_result {
         Ok(user) => {
             info!(username = %user.username, user_id = %user.id, "User created successfully in DB.");
@@ -84,7 +84,7 @@ pub fn create_user(
                 warn!(username = %new_user.username, "Username already taken (UniqueViolation).");
                 Err(AuthError::UsernameTaken)
             } else {
-                 Err(AuthError::DatabaseError(e.to_string()))
+                Err(AuthError::DatabaseError(e.to_string()))
             }
         }
     }
@@ -101,14 +101,14 @@ pub fn get_user_by_username(conn: &mut PgConnection, username: &str) -> Result<U
         .first(conn)
         .map_err(|e| match e {
             diesel::result::Error::NotFound => {
-                 // --- Log not found --- 
-                 debug!(%username, "User not found by username.");
-                 AuthError::UserNotFound
+                // --- Log not found ---
+                debug!(%username, "User not found by username.");
+                AuthError::UserNotFound
             }
             _ => {
-                 // --- Log other DB error --- 
-                 error!(%username, error = ?e, "Database error finding user by username.");
-                 AuthError::DatabaseError(e.to_string())
+                // --- Log other DB error ---
+                error!(%username, error = ?e, "Database error finding user by username.");
+                AuthError::DatabaseError(e.to_string())
             }
         })
 }
@@ -124,14 +124,14 @@ pub fn get_user(conn: &mut PgConnection, user_id: Uuid) -> Result<User, AuthErro
         .first(conn)
         .map_err(|e| match e {
             diesel::result::Error::NotFound => {
-                 // --- Log not found ---
-                 debug!(%user_id, "User not found by ID.");
-                 AuthError::UserNotFound
+                // --- Log not found ---
+                debug!(%user_id, "User not found by ID.");
+                AuthError::UserNotFound
             }
             _ => {
-                 // --- Log other DB error --- 
-                 error!(%user_id, error = ?e, "Database error finding user by ID.");
-                 AuthError::DatabaseError(e.to_string())
+                // --- Log other DB error ---
+                error!(%user_id, error = ?e, "Database error finding user by ID.");
+                AuthError::DatabaseError(e.to_string())
             }
         })
 }
@@ -149,7 +149,7 @@ pub fn verify_credentials(
 
     // Perform bcrypt verification synchronously within the function
     // This avoids potential issues with nested spawn_blocking inside interact
-    // --- Log before verify --- 
+    // --- Log before verify ---
     debug!(username = %user.username, user_id = %user.id, "Verifying password hash...");
     let is_valid = bcrypt::verify(password.expose_secret(), &user.password_hash)
         .map_err(|e| {
@@ -158,11 +158,11 @@ pub fn verify_credentials(
         })?;
 
     if is_valid {
-        // --- Log success --- 
+        // --- Log success ---
         debug!(username = %user.username, user_id = %user.id, "Password verification successful.");
         Ok(user)
     } else {
-        // --- Log failure --- 
+        // --- Log failure ---
         warn!(username = %user.username, user_id = %user.id, "Password verification failed (wrong password).");
         Err(AuthError::WrongCredentials)
     }
@@ -172,10 +172,12 @@ pub mod session_store;
 pub mod user_store;
 
 pub async fn hash_password(password: Secret<String>) -> Result<String, AuthError> {
-    tokio::task::spawn_blocking(move || bcrypt::hash(password.expose_secret(), bcrypt::DEFAULT_COST))
-        .await
-        .map_err(|_e: JoinError| AuthError::HashingError)?
-        .map_err(|_e: BcryptError| AuthError::HashingError)
+    tokio::task::spawn_blocking(move || {
+        bcrypt::hash(password.expose_secret(), bcrypt::DEFAULT_COST)
+    })
+    .await
+    .map_err(|_e: JoinError| AuthError::HashingError)?
+    .map_err(|_e: BcryptError| AuthError::HashingError)
 }
 
 pub async fn verify_password(
@@ -187,4 +189,4 @@ pub async fn verify_password(
         .await
         .map_err(|_e: JoinError| AuthError::HashingError)?
         .map_err(|_e: BcryptError| AuthError::HashingError)
-} 
+}

@@ -1,22 +1,21 @@
 // backend/src/services/embedding_pipeline.rs
 
 use crate::errors::AppError;
+use crate::llm::EmbeddingClient;
 use crate::models::chats::ChatMessage;
 use crate::state::AppState;
 use crate::text_processing::chunking::chunk_text;
-use crate::vector_db::qdrant_client::{create_qdrant_point, QdrantClientServiceTrait};
-use crate::llm::EmbeddingClient;
+use crate::vector_db::qdrant_client::{QdrantClientServiceTrait, create_qdrant_point};
 
-use qdrant_client::qdrant::{Condition, FieldCondition, Filter, Match, Value as QdrantValue};
-use qdrant_client::qdrant::r#match::MatchValue;
+use async_trait::async_trait;
 use qdrant_client::qdrant::condition::ConditionOneOf;
+use qdrant_client::qdrant::r#match::MatchValue;
+use qdrant_client::qdrant::{Condition, FieldCondition, Filter, Match, Value as QdrantValue};
 use std::collections::HashMap;
 use std::convert::TryFrom;
-use async_trait::async_trait;
 use std::sync::Arc;
 use tracing::{error, info, instrument, warn};
 use uuid::Uuid;
-use chrono::Utc;
 
 // Define metadata to store alongside vectors
 // TODO: Finalize required metadata fields
@@ -42,9 +41,14 @@ impl TryFrom<HashMap<String, QdrantValue>> for EmbeddingMetadata {
                 qdrant_client::qdrant::value::Kind::StringValue(s) => Some(s.as_str()),
                 _ => None,
             })
-            .ok_or_else(|| AppError::SerializationError("Missing or invalid 'message_id' in payload".to_string()))?;
-        let message_id = Uuid::parse_str(message_id_str)
-            .map_err(|e| AppError::SerializationError(format!("Failed to parse 'message_id' as UUID: {}", e)))?;
+            .ok_or_else(|| {
+                AppError::SerializationError(
+                    "Missing or invalid 'message_id' in payload".to_string(),
+                )
+            })?;
+        let message_id = Uuid::parse_str(message_id_str).map_err(|e| {
+            AppError::SerializationError(format!("Failed to parse 'message_id' as UUID: {}", e))
+        })?;
 
         let session_id_str = payload
             .get("session_id")
@@ -53,9 +57,14 @@ impl TryFrom<HashMap<String, QdrantValue>> for EmbeddingMetadata {
                 qdrant_client::qdrant::value::Kind::StringValue(s) => Some(s.as_str()),
                 _ => None,
             })
-            .ok_or_else(|| AppError::SerializationError("Missing or invalid 'session_id' in payload".to_string()))?;
-        let session_id = Uuid::parse_str(session_id_str)
-            .map_err(|e| AppError::SerializationError(format!("Failed to parse 'session_id' as UUID: {}", e)))?;
+            .ok_or_else(|| {
+                AppError::SerializationError(
+                    "Missing or invalid 'session_id' in payload".to_string(),
+                )
+            })?;
+        let session_id = Uuid::parse_str(session_id_str).map_err(|e| {
+            AppError::SerializationError(format!("Failed to parse 'session_id' as UUID: {}", e))
+        })?;
 
         let speaker = payload
             .get("speaker")
@@ -64,7 +73,9 @@ impl TryFrom<HashMap<String, QdrantValue>> for EmbeddingMetadata {
                 qdrant_client::qdrant::value::Kind::StringValue(s) => Some(s.clone()),
                 _ => None,
             })
-            .ok_or_else(|| AppError::SerializationError("Missing or invalid 'speaker' in payload".to_string()))?;
+            .ok_or_else(|| {
+                AppError::SerializationError("Missing or invalid 'speaker' in payload".to_string())
+            })?;
 
         let timestamp_str = payload
             .get("timestamp")
@@ -73,9 +84,15 @@ impl TryFrom<HashMap<String, QdrantValue>> for EmbeddingMetadata {
                 qdrant_client::qdrant::value::Kind::StringValue(s) => Some(s.as_str()),
                 _ => None,
             })
-            .ok_or_else(|| AppError::SerializationError("Missing or invalid 'timestamp' in payload".to_string()))?;
+            .ok_or_else(|| {
+                AppError::SerializationError(
+                    "Missing or invalid 'timestamp' in payload".to_string(),
+                )
+            })?;
         let timestamp = chrono::DateTime::parse_from_rfc3339(timestamp_str)
-            .map_err(|e| AppError::SerializationError(format!("Failed to parse 'timestamp': {}", e)))
+            .map_err(|e| {
+                AppError::SerializationError(format!("Failed to parse 'timestamp': {}", e))
+            })
             .map(|dt| dt.with_timezone(&chrono::Utc))?;
 
         let text = payload
@@ -85,7 +102,9 @@ impl TryFrom<HashMap<String, QdrantValue>> for EmbeddingMetadata {
                 qdrant_client::qdrant::value::Kind::StringValue(s) => Some(s.clone()),
                 _ => None,
             })
-            .ok_or_else(|| AppError::SerializationError("Missing or invalid 'text' in payload".to_string()))?;
+            .ok_or_else(|| {
+                AppError::SerializationError("Missing or invalid 'text' in payload".to_string())
+            })?;
 
         Ok(EmbeddingMetadata {
             message_id,
@@ -110,7 +129,8 @@ pub async fn process_and_embed_message(
         let tracker = state.embedding_call_tracker.clone();
         let msg_id = message.id;
         // Lock and push directly, no need for extra spawn
-        if let Ok(mut calls) = tracker.try_lock() { // Use try_lock for simplicity in async context
+        if let Ok(mut calls) = tracker.try_lock() {
+            // Use try_lock for simplicity in async context
             calls.push(msg_id);
             info!(message_id = %msg_id, "Tracked embedding call for test");
         } else {
@@ -147,7 +167,10 @@ pub async fn process_and_embed_message(
         // Common types: RETRIEVAL_QUERY, RETRIEVAL_DOCUMENT, SEMANTIC_SIMILARITY, CLASSIFICATION, CLUSTERING
         // For storing chat history chunks, RETRIEVAL_DOCUMENT seems appropriate.
         let task_type = "RETRIEVAL_DOCUMENT";
-        let embedding_vector = match embedding_client.embed_content(&chunk.content, task_type).await {
+        let embedding_vector = match embedding_client
+            .embed_content(&chunk.content, task_type)
+            .await
+        {
             Ok(vector) => vector,
             Err(e) => {
                 error!(error = %e, chunk_index = index, "Failed to get embedding for chunk");
@@ -166,20 +189,24 @@ pub async fn process_and_embed_message(
             message_id: message.id,
             session_id: message.session_id, // Use session_id from ChatMessage
             // user_id: None, // Removed
-            speaker: speaker_str, // Use formatted message_type
+            speaker: speaker_str,          // Use formatted message_type
             timestamp: message.created_at, // Assuming created_at field
-            text: chunk.content.clone(), // Store original chunk text
+            text: chunk.content.clone(),   // Store original chunk text
         };
 
         // 2c. Create Qdrant point
         // Generate a unique ID for each chunk point (e.g., combine message ID and chunk index)
         // Using a new UUID per chunk is simpler for now.
         let point_id = Uuid::new_v4();
-        let point = match create_qdrant_point(point_id, embedding_vector, Some(serde_json::to_value(metadata)?)) {
+        let point = match create_qdrant_point(
+            point_id,
+            embedding_vector,
+            Some(serde_json::to_value(metadata)?),
+        ) {
             Ok(p) => p,
             Err(e) => {
-                 error!(error = %e, chunk_index = index, "Failed to create Qdrant point struct");
-                 continue; // Skip this chunk
+                error!(error = %e, chunk_index = index, "Failed to create Qdrant point struct");
+                continue; // Skip this chunk
             }
         };
         points_to_upsert.push(point);
@@ -200,7 +227,6 @@ pub async fn process_and_embed_message(
 
     Ok(())
 }
-
 
 // --- Service Trait and Implementation ---
 
@@ -234,7 +260,8 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
             chat_id,
             query_text,
             limit,
-        ).await
+        )
+        .await
     }
 }
 
@@ -290,7 +317,7 @@ pub async fn retrieve_relevant_chunks(
                 is_null: None,
             })),
         }],
-        should: vec![], // Explicitly empty
+        should: vec![],   // Explicitly empty
         must_not: vec![], // Explicitly empty
         min_should: None,
     };
@@ -316,7 +343,10 @@ pub async fn retrieve_relevant_chunks(
             Err(e) => {
                 // Use scored_point.id.map(|id| format!("{:?}", id)).unwrap_or_else(|| "N/A".to_string())
                 // to safely get the ID as a string for logging, handling None case.
-                let point_id_str = scored_point.id.map(|id| format!("{:?}", id)).unwrap_or_else(|| "N/A".to_string());
+                let point_id_str = scored_point
+                    .id
+                    .map(|id| format!("{:?}", id))
+                    .unwrap_or_else(|| "N/A".to_string());
                 error!(error = %e, point_id = %point_id_str, "Failed to parse metadata from Qdrant point payload");
                 // Skipping for now
             }
@@ -327,7 +357,6 @@ pub async fn retrieve_relevant_chunks(
     Ok(retrieved_chunks)
 }
 
-
 // TODO: Add function/mechanism to trigger `process_and_embed_message` asynchronously
 // e.g., call this using tokio::spawn from ChatService after saving a message.
 
@@ -337,36 +366,53 @@ mod tests {
     use super::*;
     use crate::models::chats::MessageRole;
     // Corrected mock import
-    use crate::test_helpers::{MockEmbeddingClient, MockQdrantClientService, MockAiClient, AppStateBuilder}; 
-    use crate::vector_db::qdrant_client::ScoredPoint; // Import ScoredPoint
     use crate::config::Config;
+    use crate::test_helpers::{
+        AppStateBuilder, MockAiClient, MockEmbeddingClient, MockQdrantClientService,
+    };
+    use crate::vector_db::qdrant_client::ScoredPoint; // Import ScoredPoint
     use std::sync::Arc;
     // use tokio::sync::Mutex; // Removed unused import
     // Correct Payload import
-    use qdrant_client::qdrant::{PointId, Value}; 
-     // Import Payload from correct location
+    use qdrant_client::qdrant::{PointId, Value};
+    // Import Payload from correct location
+    use chrono::Utc;
     use std::collections::HashMap;
     use uuid::Uuid;
-    use chrono::Utc;
     // Add missing import for tests
     use crate::llm::EmbeddingClient;
 
-    // --- Tests for EmbeddingMetadata TryFrom (already exist) --- 
+    // --- Tests for EmbeddingMetadata TryFrom (already exist) ---
     fn string_value(s: &str) -> Value {
-        Value { kind: Some(qdrant_client::qdrant::value::Kind::StringValue(s.to_string())) }
+        Value {
+            kind: Some(qdrant_client::qdrant::value::Kind::StringValue(
+                s.to_string(),
+            )),
+        }
     }
 
     fn integer_value(i: i64) -> Value {
-        Value { kind: Some(qdrant_client::qdrant::value::Kind::IntegerValue(i)) }
+        Value {
+            kind: Some(qdrant_client::qdrant::value::Kind::IntegerValue(i)),
+        }
     }
 
     // Helper to build a valid payload HashMap<String, Value>
     fn build_valid_payload_map() -> HashMap<String, Value> {
         let mut payload = HashMap::new();
-        payload.insert("message_id".to_string(), string_value(&Uuid::new_v4().to_string()));
-        payload.insert("session_id".to_string(), string_value(&Uuid::new_v4().to_string()));
+        payload.insert(
+            "message_id".to_string(),
+            string_value(&Uuid::new_v4().to_string()),
+        );
+        payload.insert(
+            "session_id".to_string(),
+            string_value(&Uuid::new_v4().to_string()),
+        );
         payload.insert("speaker".to_string(), string_value("User"));
-        payload.insert("timestamp".to_string(), string_value(&Utc::now().to_rfc3339()));
+        payload.insert(
+            "timestamp".to_string(),
+            string_value(&Utc::now().to_rfc3339()),
+        );
         payload.insert("text".to_string(), string_value("Some chunk text"));
         payload
     }
@@ -388,7 +434,11 @@ mod tests {
         let result = EmbeddingMetadata::try_from(payload_map);
         assert!(result.is_err());
         match result.err().unwrap() {
-            AppError::SerializationError(msg) => assert!(msg.contains("Missing or invalid 'speaker'"), "Error message mismatch: {}", msg),
+            AppError::SerializationError(msg) => assert!(
+                msg.contains("Missing or invalid 'speaker'"),
+                "Error message mismatch: {}",
+                msg
+            ),
             _ => panic!("Expected SerializationError"),
         }
     }
@@ -400,7 +450,11 @@ mod tests {
         let result = EmbeddingMetadata::try_from(payload_map);
         assert!(result.is_err());
         match result.err().unwrap() {
-            AppError::SerializationError(msg) => assert!(msg.contains("Failed to parse 'message_id'"), "Error message mismatch: {}", msg),
+            AppError::SerializationError(msg) => assert!(
+                msg.contains("Failed to parse 'message_id'"),
+                "Error message mismatch: {}",
+                msg
+            ),
             _ => panic!("Expected SerializationError"),
         }
     }
@@ -412,7 +466,11 @@ mod tests {
         let result = EmbeddingMetadata::try_from(payload_map);
         assert!(result.is_err());
         match result.err().unwrap() {
-            AppError::SerializationError(msg) => assert!(msg.contains("Failed to parse 'timestamp'"), "Error message mismatch: {}", msg),
+            AppError::SerializationError(msg) => assert!(
+                msg.contains("Failed to parse 'timestamp'"),
+                "Error message mismatch: {}",
+                msg
+            ),
             _ => panic!("Expected SerializationError"),
         }
     }
@@ -425,7 +483,11 @@ mod tests {
         let result = EmbeddingMetadata::try_from(payload_map);
         assert!(result.is_err());
         match result.err().unwrap() {
-            AppError::SerializationError(msg) => assert!(msg.contains("Missing or invalid 'speaker'"), "Error message mismatch: {}", msg),
+            AppError::SerializationError(msg) => assert!(
+                msg.contains("Missing or invalid 'speaker'"),
+                "Error message mismatch: {}",
+                msg
+            ),
             _ => panic!("Expected SerializationError"),
         }
     }
@@ -437,13 +499,21 @@ mod tests {
         assert!(result.is_err());
         // Check for one of the expected missing field errors
         match result.err().unwrap() {
-            AppError::SerializationError(msg) => assert!(msg.contains("Missing or invalid"), "Error message mismatch: {}", msg),
+            AppError::SerializationError(msg) => assert!(
+                msg.contains("Missing or invalid"),
+                "Error message mismatch: {}",
+                msg
+            ),
             _ => panic!("Expected SerializationError"),
         }
     }
 
     // --- Helper to create Mock AppState using AppStateBuilder ---
-    async fn create_mock_app_state() -> (Arc<AppState>, Arc<MockEmbeddingClient>, Arc<MockQdrantClientService>) {
+    async fn create_mock_app_state() -> (
+        Arc<AppState>,
+        Arc<MockEmbeddingClient>,
+        Arc<MockQdrantClientService>,
+    ) {
         let mock_embedding_client = Arc::new(MockEmbeddingClient::new());
         let mock_qdrant_service = Arc::new(MockQdrantClientService::new());
         let mock_ai_client = Arc::new(MockAiClient::new());
@@ -451,8 +521,12 @@ mod tests {
         struct MockPipeline;
         #[async_trait]
         impl EmbeddingPipelineServiceTrait for MockPipeline {
-             async fn retrieve_relevant_chunks(
-                &self, _state: Arc<AppState>, _chat_id: Uuid, _query_text: &str, _limit: u64
+            async fn retrieve_relevant_chunks(
+                &self,
+                _state: Arc<AppState>,
+                _chat_id: Uuid,
+                _query_text: &str,
+                _limit: u64,
             ) -> Result<Vec<RetrievedChunk>, AppError> {
                 unimplemented!("MockPipeline should not be called in these tests")
             }
@@ -465,7 +539,9 @@ mod tests {
             .with_config(Arc::new(Config::default())) // Provide dummy config
             .with_ai_client(mock_ai_client)
             .with_embedding_client(mock_embedding_client.clone() as Arc<dyn EmbeddingClient>)
-            .with_embedding_pipeline_service(mock_embedding_pipeline_service as Arc<dyn EmbeddingPipelineServiceTrait>)
+            .with_embedding_pipeline_service(
+                mock_embedding_pipeline_service as Arc<dyn EmbeddingPipelineServiceTrait>,
+            )
             .with_mock_qdrant_service(mock_qdrant_service.clone()) // Provide the mock Qdrant service
             .build_for_test()
             .await
@@ -479,11 +555,11 @@ mod tests {
     #[tokio::test]
     async fn test_process_and_embed_message_success() {
         let (state, mock_embedding_client, mock_qdrant_service) = create_mock_app_state().await;
-        let message = ChatMessage { 
+        let message = ChatMessage {
             id: Uuid::new_v4(),
             session_id: Uuid::new_v4(),
             message_type: MessageRole::User,
-            content: "Chunk one. Chunk two.".to_string(), 
+            content: "Chunk one. Chunk two.".to_string(),
             created_at: Utc::now(),
         };
 
@@ -492,15 +568,15 @@ mod tests {
         mock_qdrant_service.set_upsert_response(Ok(()));
 
         let _ = process_and_embed_message(state.clone(), message.clone()).await;
-        
+
         // Verify embedding_call_tracker was updated
         let tracker_calls = state.embedding_call_tracker.lock().await;
         assert_eq!(tracker_calls.len(), 1);
         assert_eq!(tracker_calls[0], message.id);
-        
+
         // Drop the lock before checking mock_embedding_client calls
         drop(tracker_calls);
-        
+
         // Check that mock_embedding_client methods were called correctly
         let embed_calls = mock_embedding_client.get_calls();
         for (text, task_type) in embed_calls.iter() {
@@ -523,7 +599,10 @@ mod tests {
         };
 
         let result = process_and_embed_message(state.clone(), message.clone()).await;
-        assert!(result.is_ok(), "Expected Ok(()) when chunking produces no chunks");
+        assert!(
+            result.is_ok(),
+            "Expected Ok(()) when chunking produces no chunks"
+        );
         let tracker_calls = state.embedding_call_tracker.lock().await;
         assert_eq!(tracker_calls.len(), 1);
         assert_eq!(tracker_calls[0], message.id);
@@ -532,11 +611,11 @@ mod tests {
     #[tokio::test]
     async fn test_process_and_embed_message_embedding_error() {
         let (state, mock_embedding_client, _) = create_mock_app_state().await;
-        let message = ChatMessage { 
+        let message = ChatMessage {
             id: Uuid::new_v4(),
             session_id: Uuid::new_v4(),
             message_type: MessageRole::User,
-            content: "Some content".to_string(), 
+            content: "Some content".to_string(),
             created_at: Utc::now(),
         };
 
@@ -545,15 +624,15 @@ mod tests {
         mock_embedding_client.set_response(Err(embedding_error));
 
         let _ = process_and_embed_message(state.clone(), message.clone()).await;
-        
+
         // Verify the call tracker was updated
         let tracker_calls = state.embedding_call_tracker.lock().await;
         assert_eq!(tracker_calls.len(), 1);
         assert_eq!(tracker_calls[0], message.id);
-        
+
         // Drop the lock before checking mock_embedding_client calls
         drop(tracker_calls);
-        
+
         // Verify the embedding client was called with the expected content
         let embed_calls = mock_embedding_client.get_calls();
         for (text, task_type) in embed_calls.iter() {
@@ -567,11 +646,11 @@ mod tests {
     #[tokio::test]
     async fn test_process_and_embed_message_qdrant_error() {
         let (state, mock_embedding_client, mock_qdrant_service) = create_mock_app_state().await;
-        let message = ChatMessage { 
+        let message = ChatMessage {
             id: Uuid::new_v4(),
             session_id: Uuid::new_v4(),
             message_type: MessageRole::User,
-            content: "Some content".to_string(), 
+            content: "Some content".to_string(),
             created_at: Utc::now(),
         };
 
@@ -580,15 +659,15 @@ mod tests {
         mock_qdrant_service.set_upsert_response(Err(qdrant_error.clone()));
 
         let _ = process_and_embed_message(state.clone(), message.clone()).await;
-        
+
         // Verify the call tracker was updated
         let tracker_calls = state.embedding_call_tracker.lock().await;
         assert_eq!(tracker_calls.len(), 1);
         assert_eq!(tracker_calls[0], message.id);
-        
+
         // Drop the lock before checking mock_embedding_client calls
         drop(tracker_calls);
-        
+
         // Verify the embedding client was called with the expected content
         let embed_calls = mock_embedding_client.get_calls();
         for (text, task_type) in embed_calls.iter() {
@@ -615,7 +694,7 @@ mod tests {
 
         let point_id1 = Uuid::new_v4();
         let payload1_map = build_valid_payload_map();
-        
+
         let mock_point1 = ScoredPoint {
             id: Some(PointId::from(point_id1.to_string())),
             payload: payload1_map,
@@ -627,8 +706,10 @@ mod tests {
         };
         mock_qdrant_service.set_search_response(Ok(vec![mock_point1.clone()]));
 
-        let _ = service.retrieve_relevant_chunks(state, chat_id, query_text, limit).await;
-        
+        let _ = service
+            .retrieve_relevant_chunks(state, chat_id, query_text, limit)
+            .await;
+
         // Verify the embedding client was called with the expected query
         let embed_calls = mock_embedding_client.get_calls();
         for (text, task_type) in embed_calls.iter() {
@@ -646,10 +727,13 @@ mod tests {
         let chat_id = Uuid::new_v4();
         let query_text = "query";
 
-        mock_embedding_client.set_response(Err(AppError::EmbeddingError("Embed failed".to_string())));
+        mock_embedding_client
+            .set_response(Err(AppError::EmbeddingError("Embed failed".to_string())));
 
-        let _ = service.retrieve_relevant_chunks(state, chat_id, query_text, 5).await;
-        
+        let _ = service
+            .retrieve_relevant_chunks(state, chat_id, query_text, 5)
+            .await;
+
         // Verify the embedding client was called with the expected query
         let embed_calls = mock_embedding_client.get_calls();
         for (text, task_type) in embed_calls.iter() {
@@ -668,10 +752,13 @@ mod tests {
         let query_text = "query";
 
         mock_embedding_client.set_response(Ok(vec![0.3; 768]));
-        mock_qdrant_service.set_search_response(Err(AppError::VectorDbError("Search failed".to_string())));
+        mock_qdrant_service
+            .set_search_response(Err(AppError::VectorDbError("Search failed".to_string())));
 
-        let _ = service.retrieve_relevant_chunks(state, chat_id, query_text, 5).await;
-        
+        let _ = service
+            .retrieve_relevant_chunks(state, chat_id, query_text, 5)
+            .await;
+
         // Verify the embedding client was called with the expected query
         let embed_calls = mock_embedding_client.get_calls();
         for (text, task_type) in embed_calls.iter() {
@@ -704,8 +791,10 @@ mod tests {
         };
         mock_qdrant_service.set_search_response(Ok(vec![mock_point_invalid]));
 
-        let _ = service.retrieve_relevant_chunks(state, chat_id, query_text, 5).await;
-        
+        let _ = service
+            .retrieve_relevant_chunks(state, chat_id, query_text, 5)
+            .await;
+
         // Verify the embedding client was called with the expected query
         let embed_calls = mock_embedding_client.get_calls();
         for (text, task_type) in embed_calls.iter() {

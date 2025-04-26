@@ -1,15 +1,15 @@
 use async_trait::async_trait;
+use futures::StreamExt;
 use genai::{
-    chat::{ChatMessage, ChatOptions, ChatRequest, ChatResponse},
     Client, ClientBuilder,
+    chat::{ChatMessage, ChatOptions, ChatRequest, ChatResponse},
 };
-use std::sync::Arc; // Added Arc
-use futures::{StreamExt}; // Removed TryStreamExt, For stream mapping
+use std::sync::Arc; // Added Arc // Removed TryStreamExt, For stream mapping
 // use std::pin::Pin; // Unused import
 // use futures::stream::Stream; // Unused import
 
-use crate::errors::AppError;
-use super::{AiClient, ChatStream}; // Removed ChatStreamItem, Import the trait and types from the parent module
+use super::{AiClient, ChatStream};
+use crate::errors::AppError; // Removed ChatStreamItem, Import the trait and types from the parent module
 
 /// Wrapper struct around the genai::Client to implement our AiClient trait.
 pub struct ScribeGeminiClient {
@@ -41,7 +41,8 @@ impl AiClient for ScribeGeminiClient {
         config_override: Option<ChatOptions>,
     ) -> Result<ChatStream, AppError> {
         // Call the underlying client's chat_stream method
-        let chat_stream_response = self.inner
+        let chat_stream_response = self
+            .inner
             .exec_chat_stream(model_name, request, config_override.as_ref())
             .await
             .map_err(AppError::from)?;
@@ -50,15 +51,12 @@ impl AiClient for ScribeGeminiClient {
         let inner_stream = chat_stream_response.stream;
 
         // Map the stream items from Result<ChatStreamEvent, genai::Error> to Result<ChatStreamEvent, AppError>
-        let mapped_stream = inner_stream.map(|result| {
-            result.map_err(AppError::from)
-        });
+        let mapped_stream = inner_stream.map(|result| result.map_err(AppError::from));
 
         // Box the stream and pin it
         let boxed_stream: ChatStream = Box::pin(mapped_stream);
         Ok(boxed_stream)
     }
-
 }
 
 /// Implement AiClient for Arc<ScribeGeminiClient> to fix the error
@@ -71,7 +69,9 @@ impl AiClient for Arc<ScribeGeminiClient> {
         config_override: Option<ChatOptions>,
     ) -> Result<ChatResponse, AppError> {
         // Delegate to the inner ScribeGeminiClient
-        (**self).exec_chat(model_name, request, config_override).await
+        (**self)
+            .exec_chat(model_name, request, config_override)
+            .await
     }
 
     // Delegate stream_chat for Arc<ScribeGeminiClient>
@@ -81,9 +81,10 @@ impl AiClient for Arc<ScribeGeminiClient> {
         request: ChatRequest,
         config_override: Option<ChatOptions>,
     ) -> Result<ChatStream, AppError> {
-        (**self).stream_chat(model_name, request, config_override).await
+        (**self)
+            .stream_chat(model_name, request, config_override)
+            .await
     }
-
 }
 
 /// Builds the ScribeGeminiClient wrapper.
@@ -105,9 +106,7 @@ pub async fn generate_simple_response(
     tracing::debug!(%model_name, "Executing chat with specified model via trait");
 
     // Call exec_chat via the trait
-    let response = client
-        .exec_chat(model_name, chat_request, None)
-        .await?;
+    let response = client.exec_chat(model_name, chat_request, None).await?;
 
     // Extract the text content from the response
     let content = response
@@ -131,7 +130,11 @@ mod tests {
     async fn test_build_gemini_client_wrapper_ok() {
         dotenv().ok(); // Load .env file
         let result = build_gemini_client().await;
-        assert!(result.is_ok(), "Failed to build Gemini client wrapper: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "Failed to build Gemini client wrapper: {:?}",
+            result.err()
+        );
         // We can't easily assert the inner client type without more complex setup
     }
 
@@ -152,7 +155,8 @@ mod tests {
 
         // Call the generation function using the trait object reference
         // Dereference the Arc to get &ScribeGeminiClient, which automatically coerces to &dyn AiClient
-        let result = generate_simple_response(&*client_wrapper, user_message, model_name_for_test).await;
+        let result =
+            generate_simple_response(&*client_wrapper, user_message, model_name_for_test).await;
 
         // Assert that the call was successful and returned a non-empty response
         match result {
@@ -165,7 +169,6 @@ mod tests {
             }
         }
     }
-
 
     // Integration test: Calls the actual Gemini API stream via the wrapper and trait
     #[tokio::test]
@@ -202,7 +205,8 @@ mod tests {
                                 chunk_count += 1;
                             }
                         }
-                        Ok(ChatStreamEvent::End(_)) => { // Use End variant
+                        Ok(ChatStreamEvent::End(_)) => {
+                            // Use End variant
                             println!("\nStream ended.");
                             break;
                         }
@@ -212,8 +216,14 @@ mod tests {
                         _ => {} // Ignore other event types for this simple test
                     }
                 }
-                println!("\nFull Gemini Stream Response (via wrapper): {}", full_response);
-                assert!(!full_response.is_empty(), "Gemini stream returned an empty response");
+                println!(
+                    "\nFull Gemini Stream Response (via wrapper): {}",
+                    full_response
+                );
+                assert!(
+                    !full_response.is_empty(),
+                    "Gemini stream returned an empty response"
+                );
                 assert!(chunk_count > 0, "Gemini stream did not produce any chunks");
             }
             Err(e) => {
@@ -222,7 +232,7 @@ mod tests {
         }
     }
 
-// Integration test: Calls the actual Gemini API with different model names
+    // Integration test: Calls the actual Gemini API with different model names
     #[tokio::test]
     #[ignore] // Ignored by default
     async fn test_generate_simple_response_with_different_models() {
@@ -235,7 +245,7 @@ mod tests {
         let models_to_test = vec![
             "gemini-2.5-pro-preview-03-25", // Paid/Preview model
             "gemini-2.5-pro-exp-03-25",     // Experimental model
-            // Add "gemini-1.5-flash-latest" here too if desired for baseline
+                                            // Add "gemini-1.5-flash-latest" here too if desired for baseline
         ];
 
         for model_name in models_to_test {
@@ -247,7 +257,11 @@ mod tests {
             match result {
                 Ok(response) => {
                     println!("  Response: {}", response);
-                    assert!(!response.is_empty(), "Gemini model {} returned an empty response", model_name);
+                    assert!(
+                        !response.is_empty(),
+                        "Gemini model {} returned an empty response",
+                        model_name
+                    );
                     // We expect both models *should* ideally work for a simple request.
                     // If the experimental one fails consistently, this assertion will catch it.
                 }

@@ -1,9 +1,7 @@
-use async_trait::async_trait;
-use genai::{
-    chat::{ChatOptions, ChatRequest, ChatResponse, ChatStreamEvent},
-};
 use crate::errors::AppError;
+use async_trait::async_trait;
 use futures::stream::Stream;
+use genai::chat::{ChatOptions, ChatRequest, ChatResponse, ChatStreamEvent};
 use std::pin::Pin;
 
 // Type alias for the stream item (Event yielded by the stream)

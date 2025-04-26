@@ -4,7 +4,7 @@ use crate::{
         characters::CharacterMetadata,
         chats::{ChatMessage, MessageRole},
     },
-    state::{AppState},
+    state::AppState,
 };
 use std::sync::Arc;
 use tracing::{info, warn};
@@ -27,10 +27,17 @@ pub async fn build_prompt_with_rag(
     if let Some(last_message) = history.last() {
         let query_text = &last_message.content;
         info!(%session_id, "Retrieving RAG context for prompt building");
-        match state.embedding_pipeline_service.retrieve_relevant_chunks(state.clone(), session_id, query_text, RAG_CHUNK_LIMIT).await {
+        match state
+            .embedding_pipeline_service
+            .retrieve_relevant_chunks(state.clone(), session_id, query_text, RAG_CHUNK_LIMIT)
+            .await
+        {
             Ok(retrieved_chunks) => {
                 if !retrieved_chunks.is_empty() {
-                    info!(count = retrieved_chunks.len(), "Adding retrieved chunks to prompt context");
+                    info!(
+                        count = retrieved_chunks.len(),
+                        "Adding retrieved chunks to prompt context"
+                    );
                     rag_context_section.push_str("---\nRelevant Historical Context:\n");
                     for chunk in retrieved_chunks {
                         rag_context_section.push_str(&format!(
@@ -39,7 +46,7 @@ pub async fn build_prompt_with_rag(
                             chunk.text.trim()
                         ));
                     }
-                     rag_context_section.push_str("---\n\n");
+                    rag_context_section.push_str("---\n\n");
                 } else {
                     info!("No relevant historical chunks found via RAG.");
                 }
@@ -94,30 +101,29 @@ pub async fn build_prompt_with_rag(
 mod tests {
     use super::*;
     use crate::{
-        state::{AppState},
-        test_helpers::{MockEmbeddingPipelineService, PipelineCall},
-        services::embedding_pipeline::{RetrievedChunk, EmbeddingMetadata},
         errors::AppError,
-        models::chats::{ChatMessage, MessageRole},
         models::characters::CharacterMetadata,
+        models::chats::{ChatMessage, MessageRole},
+        services::embedding_pipeline::{EmbeddingMetadata, RetrievedChunk},
+        state::AppState,
+        test_helpers::{MockEmbeddingPipelineService, PipelineCall},
     };
+    use chrono::Utc;
     use std::sync::Arc;
     use uuid::Uuid;
-    use chrono::Utc;
-    
-    
 
     // Helper to create a mock AppState for testing
     async fn mock_app_state() -> (Arc<AppState>, Arc<MockEmbeddingPipelineService>) {
         let mock_embedding_service = Arc::new(MockEmbeddingPipelineService::new());
-        
+
         // Create a basic AppState with default values
         let pool = crate::test_helpers::create_test_pool();
         let config = Arc::new(crate::config::Config::default());
         let ai_client = Arc::new(crate::test_helpers::MockAiClient::new());
         let embedding_client = Arc::new(crate::test_helpers::MockEmbeddingClient::new());
-        let qdrant_service = Arc::new(crate::vector_db::qdrant_client::QdrantClientService::new_test_dummy());
-        
+        let qdrant_service =
+            Arc::new(crate::vector_db::qdrant_client::QdrantClientService::new_test_dummy());
+
         // Create AppState with our mock service
         let app_state = Arc::new(AppState {
             pool,
@@ -128,7 +134,7 @@ mod tests {
             embedding_pipeline_service: mock_embedding_service.clone(),
             embedding_call_tracker: Arc::new(tokio::sync::Mutex::new(Vec::new())),
         });
-        
+
         (app_state, mock_embedding_service)
     }
 
@@ -138,7 +144,9 @@ mod tests {
         let session_id = Uuid::new_v4();
         let history = vec![];
 
-        let prompt = build_prompt_with_rag(state, session_id, None, &history).await.unwrap();
+        let prompt = build_prompt_with_rag(state, session_id, None, &history)
+            .await
+            .unwrap();
 
         assert!(!prompt.contains("Character Name:"));
         assert!(!prompt.contains("Relevant Historical Context:"));
@@ -161,7 +169,9 @@ mod tests {
             first_mes: Some("Bot greeting".to_string()),
         };
 
-        let prompt = build_prompt_with_rag(state, session_id, Some(&char_meta), &history).await.unwrap();
+        let prompt = build_prompt_with_rag(state, session_id, Some(&char_meta), &history)
+            .await
+            .unwrap();
 
         assert!(prompt.contains("Character Name: Test Bot"));
         assert!(prompt.contains("Description: A friendly test bot."));
@@ -193,15 +203,26 @@ mod tests {
         // The function uses the last message, which is from the Assistant with "Hi there!" content
         mock_rag.set_retrieve_response(Ok(vec![]));
 
-        let prompt = build_prompt_with_rag(state, session_id, None, &history).await.unwrap();
+        let prompt = build_prompt_with_rag(state, session_id, None, &history)
+            .await
+            .unwrap();
 
         // Print the prompt for debugging
-        eprintln!("--- Prompt for test_build_prompt_with_history ---\n{}
----", prompt);
+        eprintln!(
+            "--- Prompt for test_build_prompt_with_history ---\n{}
+---",
+            prompt
+        );
 
         assert!(prompt.contains("---\nHistory:\n"));
-        assert!(prompt.contains("User: Hello!"), "Prompt does not contain 'User: Hello!'");
-        assert!(prompt.contains("Assistant: Hi there!"), "Prompt does not contain 'Assistant: Hi there!'");
+        assert!(
+            prompt.contains("User: Hello!"),
+            "Prompt does not contain 'User: Hello!'"
+        );
+        assert!(
+            prompt.contains("Assistant: Hi there!"),
+            "Prompt does not contain 'Assistant: Hi there!'"
+        );
         assert!(prompt.contains("---\n"));
         assert!(prompt.contains("\nCharacter:"));
 
@@ -212,11 +233,17 @@ mod tests {
             eprintln!("Call {}: {:?}", idx, call);
         }
 
-        assert!(!calls.is_empty(), "Expected at least one call to retrieve_relevant_chunks");
-        
+        assert!(
+            !calls.is_empty(),
+            "Expected at least one call to retrieve_relevant_chunks"
+        );
+
         // Verify the call parameters
         if let Some(PipelineCall::RetrieveRelevantChunks { query_text, .. }) = calls.last() {
-            assert_eq!(query_text, "Hi there!", "Query text does not match expected value");
+            assert_eq!(
+                query_text, "Hi there!",
+                "Query text does not match expected value"
+            );
         }
     }
 
@@ -238,27 +265,38 @@ mod tests {
                 text: "Dogs are mammals.".to_string(),
                 metadata: EmbeddingMetadata {
                     message_id: Uuid::new_v4(),
-                    session_id, speaker: "ai".to_string(), timestamp: Utc::now(), text: "Dogs are mammals.".to_string()
-                }
+                    session_id,
+                    speaker: "ai".to_string(),
+                    timestamp: Utc::now(),
+                    text: "Dogs are mammals.".to_string(),
+                },
             },
             RetrievedChunk {
                 score: 0.8,
                 text: "They bark.".to_string(),
                 metadata: EmbeddingMetadata {
                     message_id: Uuid::new_v4(),
-                    session_id, speaker: "user".to_string(), timestamp: Utc::now(), text: "They bark.".to_string()
-                }
+                    session_id,
+                    speaker: "user".to_string(),
+                    timestamp: Utc::now(),
+                    text: "They bark.".to_string(),
+                },
             },
         ];
-        
+
         // Setup the mock to return our predefined chunks
         mock_rag.set_retrieve_response(Ok(mock_chunks.clone()));
 
-        let prompt = build_prompt_with_rag(state, session_id, None, &history).await.unwrap();
+        let prompt = build_prompt_with_rag(state, session_id, None, &history)
+            .await
+            .unwrap();
 
         // Print the prompt for debugging
-        eprintln!("--- Prompt for test_build_prompt_with_rag_context ---\n{}
----", prompt);
+        eprintln!(
+            "--- Prompt for test_build_prompt_with_rag_context ---\n{}
+---",
+            prompt
+        );
 
         // Debug output for the calls
         let calls = mock_rag.get_calls();
@@ -268,20 +306,44 @@ mod tests {
         }
 
         // Check for RAG content in the prompt - the exact format that's used in build_prompt_with_rag function
-        assert!(prompt.contains("Relevant Historical Context:"), "Prompt does not contain the RAG context header");
-        assert!(prompt.contains("- (Score: 0.90) Dogs are mammals."), "Prompt does not contain the first RAG chunk");
-        assert!(prompt.contains("- (Score: 0.80) They bark."), "Prompt does not contain the second RAG chunk");
-        
-        // Check other sections
-        assert!(prompt.contains("---\nHistory:\n"), "Prompt does not contain the history section");
-        assert!(prompt.contains("User: Tell me about dogs"), "Prompt does not contain 'User: Tell me about dogs'");
-        assert!(prompt.contains("---\n"), "Prompt does not contain the history section end");
+        assert!(
+            prompt.contains("Relevant Historical Context:"),
+            "Prompt does not contain the RAG context header"
+        );
+        assert!(
+            prompt.contains("- (Score: 0.90) Dogs are mammals."),
+            "Prompt does not contain the first RAG chunk"
+        );
+        assert!(
+            prompt.contains("- (Score: 0.80) They bark."),
+            "Prompt does not contain the second RAG chunk"
+        );
 
-        assert!(!calls.is_empty(), "Expected at least one call to retrieve_relevant_chunks");
-        
+        // Check other sections
+        assert!(
+            prompt.contains("---\nHistory:\n"),
+            "Prompt does not contain the history section"
+        );
+        assert!(
+            prompt.contains("User: Tell me about dogs"),
+            "Prompt does not contain 'User: Tell me about dogs'"
+        );
+        assert!(
+            prompt.contains("---\n"),
+            "Prompt does not contain the history section end"
+        );
+
+        assert!(
+            !calls.is_empty(),
+            "Expected at least one call to retrieve_relevant_chunks"
+        );
+
         // Verify the call parameters
         if let Some(PipelineCall::RetrieveRelevantChunks { query_text, .. }) = calls.last() {
-            assert_eq!(query_text, "Tell me about dogs", "Query text does not match expected value");
+            assert_eq!(
+                query_text, "Tell me about dogs",
+                "Query text does not match expected value"
+            );
         } else {
             panic!("Expected RetrieveRelevantChunks call");
         }
@@ -300,16 +362,24 @@ mod tests {
         }];
 
         // Setup the mock to simulate a retrieval error
-        mock_rag.set_retrieve_response(Err(AppError::InternalServerError("RAG DB down".to_string())));
+        mock_rag.set_retrieve_response(Err(AppError::InternalServerError(
+            "RAG DB down".to_string(),
+        )));
 
         let prompt_result = build_prompt_with_rag(state, session_id, None, &history).await;
 
-        assert!(prompt_result.is_ok(), "Expected Ok result even with RAG error");
+        assert!(
+            prompt_result.is_ok(),
+            "Expected Ok result even with RAG error"
+        );
         let prompt = prompt_result.unwrap();
 
         // Print the prompt for debugging
-        eprintln!("--- Prompt for test_build_prompt_rag_retrieval_error ---\n{}
----", prompt);
+        eprintln!(
+            "--- Prompt for test_build_prompt_rag_retrieval_error ---\n{}
+---",
+            prompt
+        );
 
         // Debug output for the calls
         let calls = mock_rag.get_calls();
@@ -318,17 +388,35 @@ mod tests {
             eprintln!("Call {}: {:?}", idx, call);
         }
 
-        assert!(!prompt.contains("Relevant Historical Context:"), "Prompt contains RAG context section despite error");
+        assert!(
+            !prompt.contains("Relevant Historical Context:"),
+            "Prompt contains RAG context section despite error"
+        );
 
-        assert!(prompt.contains("---\nHistory:\n"), "Prompt does not contain history section");
-        assert!(prompt.contains("User: Query that causes error"), "Prompt does not contain 'User: Query that causes error'");
-        assert!(prompt.contains("---\n"), "Prompt does not contain history section end");
+        assert!(
+            prompt.contains("---\nHistory:\n"),
+            "Prompt does not contain history section"
+        );
+        assert!(
+            prompt.contains("User: Query that causes error"),
+            "Prompt does not contain 'User: Query that causes error'"
+        );
+        assert!(
+            prompt.contains("---\n"),
+            "Prompt does not contain history section end"
+        );
 
-        assert!(!calls.is_empty(), "Expected at least one call to retrieve_relevant_chunks");
-        
+        assert!(
+            !calls.is_empty(),
+            "Expected at least one call to retrieve_relevant_chunks"
+        );
+
         // Verify the call parameters
         if let Some(PipelineCall::RetrieveRelevantChunks { query_text, .. }) = calls.last() {
-            assert_eq!(query_text, "Query that causes error", "Query text does not match expected value");
+            assert_eq!(
+                query_text, "Query that causes error",
+                "Query text does not match expected value"
+            );
         } else {
             panic!("Expected RetrieveRelevantChunks call");
         }
@@ -340,7 +428,9 @@ mod tests {
         let session_id = Uuid::new_v4();
         let history = vec![];
 
-        let prompt = build_prompt_with_rag(state, session_id, None, &history).await.unwrap();
+        let prompt = build_prompt_with_rag(state, session_id, None, &history)
+            .await
+            .unwrap();
 
         assert!(!prompt.contains("---\nRelevant Historical Context:\n"));
 

@@ -1,15 +1,15 @@
+use crate::chat::run_chat_loop; // Import the chat loop function
+use crate::chat::run_stream_test_loop; // Import the stream test loop function
 use crate::client::HttpClient;
 use crate::error::CliError;
 use crate::io::IoHandler;
-use crate::chat::run_chat_loop; // Import the chat loop function
-use crate::chat::run_stream_test_loop; // Import the stream test loop function
+use futures_util::Stream;
 use scribe_backend::models::auth::Credentials;
 use scribe_backend::models::characters::CharacterMetadata;
-use scribe_backend::models::chats::{MessageRole};
+use scribe_backend::models::chats::MessageRole;
 use scribe_backend::models::users::User;
-use uuid::Uuid;
 use std::path::Path;
-use futures_util::Stream; // Re-added for MockHttpClient::stream_chat_response
+use uuid::Uuid; // Re-added for MockHttpClient::stream_chat_response
 
 // --- Action Functions ---
 
@@ -68,7 +68,9 @@ pub async fn handle_upload_character_action<Http: HttpClient, IO: IoHandler>(
     let file_path = io_handler.read_line("Path to Character Card (.png):")?;
 
     if name.trim().is_empty() {
-        return Err(CliError::InputError("Character name cannot be empty.".into()));
+        return Err(CliError::InputError(
+            "Character name cannot be empty.".into(),
+        ));
     }
     if file_path.trim().is_empty() {
         return Err(CliError::InputError("File path cannot be empty.".into()));
@@ -280,7 +282,8 @@ pub async fn handle_resume_chat_session_action<Http: HttpClient, IO: IoHandler>(
     }
 
     tracing::info!(chat_id = %selected_session_id, "Resuming chat session");
-    if let Err(e) = run_chat_loop(http_client, selected_session_id, io_handler, current_model).await {
+    if let Err(e) = run_chat_loop(http_client, selected_session_id, io_handler, current_model).await
+    {
         tracing::error!(error = ?e, "Chat loop failed");
         io_handler.write_line(&format!("Chat loop encountered an error: {}", e))?;
     }
@@ -301,7 +304,10 @@ pub async fn handle_model_settings_action<C: HttpClient, H: IoHandler>(
     loop {
         io_handler.write_line("\n--- Model Settings ---")?;
         // Display the current full model name
-        io_handler.write_line(&format!("[1] View Current Model (Currently: {})", current_model))?;
+        io_handler.write_line(&format!(
+            "[1] View Current Model (Currently: {})",
+            current_model
+        ))?;
         io_handler.write_line("[2] Change Model")?;
         io_handler.write_line("[b] Back to Main Menu")?;
 
@@ -310,20 +316,20 @@ pub async fn handle_model_settings_action<C: HttpClient, H: IoHandler>(
         match choice.as_str() {
             "1" => {
                 // Explicitly confirm the current full model name
-                io_handler.write_line(&format!("The current model is set to: {}", current_model))?;
+                io_handler
+                    .write_line(&format!("The current model is set to: {}", current_model))?;
             }
             "2" => {
-                 // Prompt for the full model name directly, providing examples
+                // Prompt for the full model name directly, providing examples
                 let prompt = format!(
                     "Enter the full model name (e.g., '{}', '{}'):",
-                    EXPERIMENTAL_MODEL,
-                    PAID_MODEL
+                    EXPERIMENTAL_MODEL, PAID_MODEL
                 );
                 let new_model = io_handler.read_line(&prompt)?;
                 let trimmed_model = new_model.trim();
 
                 if trimmed_model.is_empty() {
-                     io_handler.write_line("Model name cannot be empty. No changes made.")?;
+                    io_handler.write_line("Model name cannot be empty. No changes made.")?;
                 } else {
                     // Store the exact name entered by the user
                     *current_model = trimmed_model.to_string();
@@ -387,7 +393,6 @@ pub async fn select_character<Http: HttpClient, IO: IoHandler>(
     }
 }
 
-
 /// Handles the streaming chat test action.
 /// Selects a character, creates a session, gets a user message, and runs the stream test loop.
 pub async fn handle_stream_test_action<Http: HttpClient, IO: IoHandler>(
@@ -431,29 +436,29 @@ pub async fn handle_stream_test_action<Http: HttpClient, IO: IoHandler>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::client::{HttpClient, HealthStatus, StreamEvent}; // Added StreamEvent
+    use crate::client::{HealthStatus, HttpClient, StreamEvent}; // Added StreamEvent
     use crate::error::CliError; // Need base CliError
     use crate::io::IoHandler; // Need IoHandler trait
-    use std::pin::Pin; // Added Pin
+    use async_trait::async_trait;
+    use chrono::Utc;
     use scribe_backend::models::auth::Credentials;
     use scribe_backend::models::characters::CharacterMetadata;
     use scribe_backend::models::chats::{ChatMessage, ChatSession, MessageRole};
     use scribe_backend::models::users::User;
-    use uuid::Uuid;
-    use chrono::Utc;
     use std::cell::RefCell;
     use std::collections::VecDeque;
+    use std::fs; // Need fs for temp file writing
+    use std::pin::Pin; // Added Pin
     use std::sync::Arc;
     use tempfile::NamedTempFile;
-    use std::fs; // Need fs for temp file writing
-    use async_trait::async_trait; // Needed for mock impl
-
+    use uuid::Uuid; // Needed for mock impl
 
     // --- Mocks (Moved here from main.rs tests) ---
 
     // Define a simple, cloneable error for mocking purposes
     #[derive(Debug, Clone, PartialEq, Eq)]
-    pub enum MockCliError { // Made pub for use in this test module
+    pub enum MockCliError {
+        // Made pub for use in this test module
         AuthFailed(String),
         RegistrationFailed(String),
         ApiError(String), // Simplified API error
@@ -478,20 +483,21 @@ mod tests {
     }
 
     #[derive(Default)] // Added default derive
-    pub struct MockIoHandler { // Made pub
+    pub struct MockIoHandler {
+        // Made pub
         inputs: RefCell<VecDeque<String>>,
         outputs: RefCell<Vec<String>>,
     }
 
     impl MockIoHandler {
-         // Made pub
+        // Made pub
         pub fn new(inputs: Vec<&str>) -> Self {
             MockIoHandler {
                 inputs: RefCell::new(inputs.into_iter().map(String::from).collect()),
                 outputs: RefCell::new(Vec::new()),
             }
         }
-         // Made pub
+        // Made pub
         pub fn expect_output(&self, expected: &str) {
             assert!(
                 self.outputs
@@ -503,7 +509,7 @@ mod tests {
                 self.outputs.borrow()
             );
         }
-         // Made pub
+        // Made pub
         pub fn expect_no_output_containing(&self, unexpected: &str) {
             assert!(
                 !self
@@ -522,12 +528,9 @@ mod tests {
     impl IoHandler for MockIoHandler {
         fn read_line(&mut self, prompt: &str) -> Result<String, CliError> {
             self.outputs.borrow_mut().push(prompt.to_string());
-            self.inputs
-                .borrow_mut()
-                .pop_front()
-                .ok_or_else(|| {
-                    CliError::InputError("MockIoHandler: No more inputs provided".to_string())
-                })
+            self.inputs.borrow_mut().pop_front().ok_or_else(|| {
+                CliError::InputError("MockIoHandler: No more inputs provided".to_string())
+            })
         }
 
         fn write_line(&mut self, line: &str) -> Result<(), CliError> {
@@ -541,9 +544,9 @@ mod tests {
             Ok(())
         }
     }
- 
+
     #[derive(Default)] // Use default for simple mock state
-     // Made pub
+    // Made pub
     pub struct MockHttpClient {
         login_result: Option<Arc<Result<User, MockCliError>>>,
         register_result: Option<Arc<Result<User, MockCliError>>>,
@@ -556,136 +559,132 @@ mod tests {
         create_chat_session_result: Option<Arc<Result<ChatSession, MockCliError>>>, // Added
         generate_response_result: Option<Arc<Result<ChatMessage, MockCliError>>>,
         logout_result: Option<Arc<Result<(), MockCliError>>>, // Added
-        me_result: Option<Arc<Result<User, MockCliError>>>,    // Added
+        me_result: Option<Arc<Result<User, MockCliError>>>,   // Added
     }
 
     #[async_trait]
     impl HttpClient for MockHttpClient {
         async fn login(&self, _credentials: &Credentials) -> Result<User, CliError> {
-            let mock_result = Arc::unwrap_or_clone(
-                self.login_result.clone().unwrap_or_else(|| {
+            let mock_result =
+                Arc::unwrap_or_clone(self.login_result.clone().unwrap_or_else(|| {
                     Arc::new(Err(MockCliError::Internal(
                         "MockHttpClient: login result not set".into(),
                     )))
-                }),
-            );
+                }));
             mock_result.map_err(Into::into)
         }
 
         async fn register(&self, _credentials: &Credentials) -> Result<User, CliError> {
-            let mock_result = Arc::unwrap_or_clone(
-                self.register_result.clone().unwrap_or_else(|| {
+            let mock_result =
+                Arc::unwrap_or_clone(self.register_result.clone().unwrap_or_else(|| {
                     Arc::new(Err(MockCliError::Internal(
                         "MockHttpClient: register result not set".into(),
                     )))
-                }),
-            );
+                }));
             mock_result.map_err(Into::into)
         }
 
         async fn list_characters(&self) -> Result<Vec<CharacterMetadata>, CliError> {
-            let mock_result = Arc::unwrap_or_clone(
-                self.list_characters_result.clone().unwrap_or_else(|| {
+            let mock_result =
+                Arc::unwrap_or_clone(self.list_characters_result.clone().unwrap_or_else(|| {
                     Arc::new(Err(MockCliError::Internal(
                         "MockHttpClient: list_characters result not set".into(),
                     )))
-                }),
-            );
+                }));
             mock_result.map_err(Into::into)
         }
         async fn create_chat_session(&self, _character_id: Uuid) -> Result<ChatSession, CliError> {
-             let mock_result = Arc::unwrap_or_clone(
-                 self.create_chat_session_result.clone().unwrap_or_else(|| {
-                     Arc::new(Err(MockCliError::Internal(
-                         "MockHttpClient: create_chat_session result not set".into(),
-                     )))
-                 }),
-             );
-             mock_result.map_err(Into::into)
-        }
-        async fn upload_character(&self, _name: &str, _file_path: &str) -> Result<CharacterMetadata, CliError> {
             let mock_result = Arc::unwrap_or_clone(
-                self.upload_character_result.clone().unwrap_or_else(|| {
+                self.create_chat_session_result.clone().unwrap_or_else(|| {
+                    Arc::new(Err(MockCliError::Internal(
+                        "MockHttpClient: create_chat_session result not set".into(),
+                    )))
+                }),
+            );
+            mock_result.map_err(Into::into)
+        }
+        async fn upload_character(
+            &self,
+            _name: &str,
+            _file_path: &str,
+        ) -> Result<CharacterMetadata, CliError> {
+            let mock_result =
+                Arc::unwrap_or_clone(self.upload_character_result.clone().unwrap_or_else(|| {
                     Arc::new(Err(MockCliError::Internal(
                         "MockHttpClient: upload_character result not set".into(),
                     )))
-                }),
-            );
+                }));
             mock_result.map_err(Into::into)
         }
         async fn health_check(&self) -> Result<HealthStatus, CliError> {
-            let mock_result = Arc::unwrap_or_clone(
-                self.health_check_result.clone().unwrap_or_else(|| {
+            let mock_result =
+                Arc::unwrap_or_clone(self.health_check_result.clone().unwrap_or_else(|| {
                     Arc::new(Err(MockCliError::Internal(
                         "MockHttpClient: health_check result not set".into(),
                     )))
-                }),
-            );
+                }));
             mock_result.map_err(Into::into)
         }
         async fn logout(&self) -> Result<(), CliError> {
-             let mock_result = Arc::unwrap_or_clone(
-                 self.logout_result.clone().unwrap_or_else(|| {
-                     Arc::new(Err(MockCliError::Internal(
-                         "MockHttpClient: logout result not set".into(),
-                     )))
-                 }),
-             );
-             mock_result.map_err(Into::into)
-         }
+            let mock_result =
+                Arc::unwrap_or_clone(self.logout_result.clone().unwrap_or_else(|| {
+                    Arc::new(Err(MockCliError::Internal(
+                        "MockHttpClient: logout result not set".into(),
+                    )))
+                }));
+            mock_result.map_err(Into::into)
+        }
         async fn me(&self) -> Result<User, CliError> {
-             let mock_result = Arc::unwrap_or_clone(
-                 self.me_result.clone().unwrap_or_else(|| {
-                     Arc::new(Err(MockCliError::Internal(
-                         "MockHttpClient: me result not set".into(),
-                     )))
-                 }),
-             );
-             mock_result.map_err(Into::into)
-         }
+            let mock_result = Arc::unwrap_or_clone(self.me_result.clone().unwrap_or_else(|| {
+                Arc::new(Err(MockCliError::Internal(
+                    "MockHttpClient: me result not set".into(),
+                )))
+            }));
+            mock_result.map_err(Into::into)
+        }
         async fn get_character(&self, _character_id: Uuid) -> Result<CharacterMetadata, CliError> {
-            let mock_result = Arc::unwrap_or_clone(
-                self.get_character_result.clone().unwrap_or_else(|| {
+            let mock_result =
+                Arc::unwrap_or_clone(self.get_character_result.clone().unwrap_or_else(|| {
                     Arc::new(Err(MockCliError::Internal(
                         "MockHttpClient: get_character result not set".into(),
                     )))
-                }),
-            );
+                }));
             mock_result.map_err(Into::into)
         }
         async fn list_chat_sessions(&self) -> Result<Vec<ChatSession>, CliError> {
-            let mock_result = Arc::unwrap_or_clone(
-                self.list_chat_sessions_result.clone().unwrap_or_else(|| {
+            let mock_result =
+                Arc::unwrap_or_clone(self.list_chat_sessions_result.clone().unwrap_or_else(|| {
                     Arc::new(Err(MockCliError::Internal(
                         "MockHttpClient: list_chat_sessions result not set".into(),
                     )))
-                }),
-            );
+                }));
             mock_result.map_err(Into::into)
         }
         async fn get_chat_messages(&self, _session_id: Uuid) -> Result<Vec<ChatMessage>, CliError> {
-            let mock_result = Arc::unwrap_or_clone(
-                self.get_chat_messages_result.clone().unwrap_or_else(|| {
+            let mock_result =
+                Arc::unwrap_or_clone(self.get_chat_messages_result.clone().unwrap_or_else(|| {
                     Arc::new(Err(MockCliError::Internal(
                         "MockHttpClient: get_chat_messages result not set".into(),
                     )))
-                }),
-            );
+                }));
             mock_result.map_err(Into::into)
         }
 
         // Add missing implementation for generate_response (matching the trait signature)
-        async fn generate_response(&self, _chat_id: Uuid, _message_content: &str, _model_name: Option<String>) -> Result<ChatMessage, CliError> {
-             let mock_result = Arc::unwrap_or_clone(
-                 self.generate_response_result.clone().unwrap_or_else(|| {
-                     Arc::new(Err(MockCliError::Internal(
-                         "MockHttpClient: generate_response result not set".into(),
-                     )))
-                 }),
-             );
-             mock_result.map_err(Into::into)
+        async fn generate_response(
+            &self,
+            _chat_id: Uuid,
+            _message_content: &str,
+            _model_name: Option<String>,
+        ) -> Result<ChatMessage, CliError> {
+            let mock_result =
+                Arc::unwrap_or_clone(self.generate_response_result.clone().unwrap_or_else(|| {
+                    Arc::new(Err(MockCliError::Internal(
+                        "MockHttpClient: generate_response result not set".into(),
+                    )))
+                }));
+            mock_result.map_err(Into::into)
         }
-
 
         // Add missing implementation for send_message
         async fn send_message(
@@ -695,15 +694,15 @@ mod tests {
             _model_name: Option<&str>,
         ) -> Result<ChatMessage, CliError> {
             // Use the configurable result field, similar to generate_response
-             let mock_result = Arc::unwrap_or_clone(
-                 self.generate_response_result.clone().unwrap_or_else(|| {
-                     Arc::new(Err(MockCliError::Internal(
-                         "MockHttpClient: generate_response_result (for send_message) not set".into(),
-                     )))
-                 }),
-             );
-             mock_result.map_err(Into::into)
-         }
+            let mock_result =
+                Arc::unwrap_or_clone(self.generate_response_result.clone().unwrap_or_else(|| {
+                    Arc::new(Err(MockCliError::Internal(
+                        "MockHttpClient: generate_response_result (for send_message) not set"
+                            .into(),
+                    )))
+                }));
+            mock_result.map_err(Into::into)
+        }
 
         // Add mock implementation for stream_chat_response
         async fn stream_chat_response(
@@ -711,17 +710,20 @@ mod tests {
             _chat_id: Uuid,
             _message_content: &str,
             _request_thinking: bool,
-        ) -> Result<Pin<Box<dyn Stream<Item = Result<StreamEvent, CliError>> + Send>>, CliError> {
+        ) -> Result<Pin<Box<dyn Stream<Item = Result<StreamEvent, CliError>> + Send>>, CliError>
+        {
             // Default mock implementation: return an error or an empty stream.
             // For most handler tests, we don't need to simulate a full stream.
             // If a specific test needs a stream, it can configure a dedicated mock field.
-             Err(CliError::Internal("MockHttpClient: stream_chat_response not implemented/configured".into()))
+            Err(CliError::Internal(
+                "MockHttpClient: stream_chat_response not implemented/configured".into(),
+            ))
             // Or return an empty stream:
             // Ok(Box::pin(futures_util::stream::empty())) // Use futures_util::stream::empty
         }
-     }
- 
-     // --- Helper Functions for Creating Mocks ---
+    }
+
+    // --- Helper Functions for Creating Mocks ---
     fn mock_user(username: &str) -> User {
         User {
             id: Uuid::new_v4(),
@@ -753,7 +755,7 @@ mod tests {
             created_at: Utc::now(),
             updated_at: Utc::now(),
             system_prompt: None,
-            temperature: None, 
+            temperature: None,
             max_output_tokens: None,
             // New generation settings fields
             frequency_penalty: None,
@@ -1035,10 +1037,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_handle_upload_character_action_api_error() {
-         let temp_file = NamedTempFile::new().unwrap();
-         let path = temp_file.path().with_extension("png"); // Ensure .png extension
-         fs::write(&path, "dummy png data").unwrap();
-         let file_path_str = path.to_str().unwrap().to_string();
+        let temp_file = NamedTempFile::new().unwrap();
+        let path = temp_file.path().with_extension("png"); // Ensure .png extension
+        fs::write(&path, "dummy png data").unwrap();
+        let file_path_str = path.to_str().unwrap().to_string();
 
         let mut mock_io = MockIoHandler::new(vec!["Test Char", &file_path_str]);
         let mock_http = MockHttpClient {
@@ -1059,9 +1061,8 @@ mod tests {
         }
         mock_io.expect_output("Upload a new character.");
         mock_io.expect_output("Uploading...");
-         fs::remove_file(&path).ok(); // Clean up
+        fs::remove_file(&path).ok(); // Clean up
     }
-
 
     #[tokio::test]
     async fn test_handle_view_character_details_success() {
@@ -1112,7 +1113,6 @@ mod tests {
         mock_io.expect_output("Fetching your characters...");
     }
 
-
     #[tokio::test]
     async fn test_handle_view_character_details_list_api_error() {
         let mut mock_io = MockIoHandler::new(vec![]);
@@ -1154,7 +1154,6 @@ mod tests {
         }
         mock_io.expect_output("Fetching character details...");
     }
-
 
     #[tokio::test]
     async fn test_handle_list_chat_sessions_success() {
@@ -1249,14 +1248,8 @@ mod tests {
         mock_io.expect_output("Available chat sessions:");
         mock_io.expect_output(&format!("[{}] Session ID: {}", 1, session1_id));
         mock_io.expect_output("Select session by number:");
-        mock_io.expect_output(&format!(
-            "Fetching messages for session {}...",
-            session1_id
-        ));
-        mock_io.expect_output(&format!(
-            "--- Chat History (Session: {}) ---",
-            session1_id
-        ));
+        mock_io.expect_output(&format!("Fetching messages for session {}...", session1_id));
+        mock_io.expect_output(&format!("--- Chat History (Session: {}) ---", session1_id));
         mock_io.expect_output("You: Hello");
         mock_io.expect_output("AI: Hi there!");
         mock_io.expect_output("------------------------------------");
@@ -1321,10 +1314,7 @@ mod tests {
             e => panic!("Expected NotFound error, got {:?}", e),
         }
         mock_io.expect_output("Select session by number:");
-        mock_io.expect_output(&format!(
-            "Fetching messages for session {}...",
-            session1_id
-        ));
+        mock_io.expect_output(&format!("Fetching messages for session {}...", session1_id));
     }
 
     #[tokio::test]
@@ -1375,7 +1365,8 @@ mod tests {
             ..Default::default()
         };
 
-        let result = handle_resume_chat_session_action(&mock_http, &mut mock_io, "current_model").await;
+        let result =
+            handle_resume_chat_session_action(&mock_http, &mut mock_io, "current_model").await;
 
         assert!(result.is_ok());
         mock_io.expect_output("Select a chat session to resume.");
@@ -1407,7 +1398,8 @@ mod tests {
             ..Default::default()
         };
 
-        let result = handle_resume_chat_session_action(&mock_http, &mut mock_io, "current_model").await;
+        let result =
+            handle_resume_chat_session_action(&mock_http, &mut mock_io, "current_model").await;
 
         assert!(result.is_err());
         match result.err().unwrap() {
@@ -1429,7 +1421,8 @@ mod tests {
             ..Default::default()
         };
 
-        let result = handle_resume_chat_session_action(&mock_http, &mut mock_io, "current_model").await;
+        let result =
+            handle_resume_chat_session_action(&mock_http, &mut mock_io, "current_model").await;
 
         assert!(result.is_err());
         match result.err().unwrap() {
@@ -1453,7 +1446,8 @@ mod tests {
             ..Default::default()
         };
 
-        let result = handle_resume_chat_session_action(&mock_http, &mut mock_io, "current_model").await;
+        let result =
+            handle_resume_chat_session_action(&mock_http, &mut mock_io, "current_model").await;
 
         assert!(result.is_ok());
         mock_io.expect_output("Select session by number:");
@@ -1484,7 +1478,8 @@ mod tests {
             ..Default::default()
         };
 
-        let result = handle_resume_chat_session_action(&mock_http, &mut mock_io, "current_model").await;
+        let result =
+            handle_resume_chat_session_action(&mock_http, &mut mock_io, "current_model").await;
 
         assert!(result.is_ok());
         mock_io.expect_output("Entering chat session");
@@ -1495,5 +1490,4 @@ mod tests {
         mock_io.expect_output("Leaving chat session.");
         mock_io.expect_output("Chat finished.");
     }
-
-} 
+}

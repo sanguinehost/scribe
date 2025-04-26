@@ -1,52 +1,56 @@
 #![cfg(test)]
 
-use anyhow::{anyhow, Context, Error as AnyhowError}; // Consolidate anyhow imports
-use serde::Deserialize; // Import Deserialize for derive macro
-use diesel::pg::PgConnection;
-use diesel::prelude::*;
-use diesel::result::Error as DieselError;
-use dotenvy::dotenv;
-use scribe_backend::models::character_card::{Character, NewCharacter};
-use scribe_backend::models::users::{NewUser, User};
-use scribe_backend::schema::{self, characters, users}; // Added schema imports
-use std::env;
-use uuid::Uuid; // For manual cleanup test assertion
-use scribe_backend::schema::{chat_messages, chat_sessions};
-use diesel_migrations::{embed_migrations, EmbeddedMigrations, MigrationHarness};
+use anyhow::{Context, Error as AnyhowError, anyhow}; // Consolidate anyhow imports
+use axum::body::Body; // For Body
+use axum::http::StatusCode;
+use axum::http::{Request, header}; // For Request builder and header
+use axum::{Router, routing::post};
+use axum_login::AuthManagerLayerBuilder;
+use axum_login::tower_sessions::{Expiry, SessionManagerLayer, cookie::SameSite};
+use bcrypt; // Added bcrypt import
 use bigdecimal::BigDecimal; // Add this import
 use deadpool_diesel::postgres::Manager as DeadpoolManager;
 use deadpool_diesel::{Pool as DeadpoolPool, Runtime as DeadpoolRuntime};
-use axum::http::StatusCode;
+use diesel::pg::PgConnection;
+use diesel::prelude::*;
+use diesel::result::Error as DieselError;
+use diesel_migrations::{EmbeddedMigrations, MigrationHarness, embed_migrations};
+use dotenvy::dotenv;
 use http_body_util::BodyExt;
-use scribe_backend::models::users::UserCredentials; // Add credentials import
-use scribe_backend::routes::auth::login_handler; // Import login handler
-use scribe_backend::routes::characters::characters_router; // Import the character router fn
 use scribe_backend::auth::session_store::DieselSessionStore;
 use scribe_backend::auth::user_store::Backend as AuthBackend;
-use axum_login::{AuthManagerLayerBuilder};
-use axum_login::tower_sessions::{SessionManagerLayer, Expiry, cookie::SameSite};
-use tower_cookies::CookieManagerLayer;
-use axum::{Router, routing::{post}};
-use tower::ServiceExt; // for `oneshot`
-use axum::http::{Request, header}; // For Request builder and header
-use axum::body::Body; // For Body
-use secrecy::{Secret, ExposeSecret}; // For wrapping password & EXPOSE TRAIT
-use time; // Used for tower_sessions::Expiry
-use serde_json::{json, Value}; // Added missing import + Value
-use bcrypt; // Added bcrypt import
+use scribe_backend::config::Config;
+use scribe_backend::models::character_card::{Character, NewCharacter};
+use scribe_backend::models::users::UserCredentials; // Add credentials import
+use scribe_backend::models::users::{NewUser, User};
+use scribe_backend::routes::auth::login_handler; // Import login handler
+use scribe_backend::routes::characters::characters_router; // Import the character router fn
+use scribe_backend::schema::{self, characters, users}; // Added schema imports
+use scribe_backend::schema::{chat_messages, chat_sessions};
+use secrecy::{ExposeSecret, Secret}; // For wrapping password & EXPOSE TRAIT
+use serde::Deserialize; // Import Deserialize for derive macro
+use serde_json::{Value, json}; // Added missing import + Value
+use std::env;
 use std::sync::Arc; // Added Arc import for AppState
-use scribe_backend::config::{Config}; // Correct import
- // Import AiClient trait
+use time; // Used for tower_sessions::Expiry
+use tower::ServiceExt; // for `oneshot`
+use tower_cookies::CookieManagerLayer;
+use uuid::Uuid; // For manual cleanup test assertion // Correct import
+// Import AiClient trait
 use scribe_backend::vector_db::QdrantClientService; // Import Qdrant service
- // Import pipeline trait
+// Import pipeline trait
 use scribe_backend::test_helpers::{MockEmbeddingClient, MockEmbeddingPipelineService}; // Import necessary mocks
- // Import EmbeddingClient trait
+// Import EmbeddingClient trait
 use chrono::{DateTime, Utc}; // ADDED for timestamp types
-use scribe_backend::state::DbPool; // ADDED DbPool
 use scribe_backend::AppState; // ADDED AppState
-use scribe_backend::models::chats::{ // ADDED Chat related types
-    ChatSession, NewChatSession, ChatMessage, MessageRole
+use scribe_backend::models::chats::{
+    ChatMessage,
+    // ADDED Chat related types
+    ChatSession,
+    MessageRole,
+    NewChatSession,
 };
+use scribe_backend::state::DbPool; // ADDED DbPool
 
 use scribe_backend::models::chats::DbInsertableChatMessage;
 // Define a struct matching the expected JSON structure from the list endpoint
@@ -108,7 +112,7 @@ struct CharacterSummary {
     world_scenario: Option<String>, // Added from Character struct
     world_scenario_visibility: Option<String>,
     creator_notes_multilingual: Option<Value>, // Added from Character struct
-    // NOTE: spec and spec_version are intentionally omitted as they cause the error
+                                               // NOTE: spec and spec_version are intentionally omitted as they cause the error
 }
 
 // Embed migrations for the test context
@@ -159,12 +163,12 @@ fn insert_test_character(
 ) -> Result<Character, diesel::result::Error> {
     let new_character = NewCharacter {
         user_id: user_uuid,
-        spec: "test_spec".to_string(), // No Some()
+        spec: "test_spec".to_string(),   // No Some()
         spec_version: "1.0".to_string(), // No Some()
         name: name.to_string(),
         post_history_instructions: Some("".to_string()), // Add missing field
-        creator_notes_multilingual: None, // Add missing field
-        ..Default::default() // Use default for other optional fields
+        creator_notes_multilingual: None,                // Add missing field
+        ..Default::default()                             // Use default for other optional fields
     };
     diesel::insert_into(characters::table)
         .values(new_character)
@@ -203,43 +207,53 @@ impl TestDataGuard {
         tracing::debug!(user_ids = ?self.user_ids, character_ids = ?self.character_ids, "--- Cleaning up test data ---");
 
         // Get the actual deadpool object
-        let obj = self.pool.get().await.context("Failed to get DB conn for cleanup")?;
+        let obj = self
+            .pool
+            .get()
+            .await
+            .context("Failed to get DB conn for cleanup")?;
 
         if !self.character_ids.is_empty() {
             let ids = self.character_ids.clone(); // Clone IDs for the interact closure
-            let delete_chars_result = obj.interact(move |conn| { // Force move
-                diesel::delete(
-                    characters::table.filter(characters::id.eq_any(ids)),
-                )
-                .execute(conn) // Execute uses the conn passed by interact
-            }).await;
+            let delete_chars_result = obj
+                .interact(move |conn| {
+                    // Force move
+                    diesel::delete(characters::table.filter(characters::id.eq_any(ids)))
+                        .execute(conn) // Execute uses the conn passed by interact
+                })
+                .await;
 
             match delete_chars_result {
                 Ok(Ok(count)) => tracing::debug!("Cleaned up {} characters.", count),
                 Ok(Err(e)) => {
                     tracing::error!(error = ?e, "DB error cleaning up characters");
                     return Err(AnyhowError::new(e).context("DB error cleaning up characters"));
-                },
+                }
                 Err(e) => {
                     tracing::error!(error = ?e, "Interact error cleaning up characters");
-                    return Err(anyhow::anyhow!("Interact error cleaning up characters: {:?}", e));
+                    return Err(anyhow::anyhow!(
+                        "Interact error cleaning up characters: {:?}",
+                        e
+                    ));
                 }
             }
         }
 
         if !self.user_ids.is_empty() {
             let ids = self.user_ids.clone(); // Clone IDs for the interact closure
-            let delete_users_result = obj.interact(move |conn| { // Force move
-                diesel::delete(users::table.filter(users::id.eq_any(ids)))
-                .execute(conn) // Execute uses the conn passed by interact
-            }).await; // await the interact future
+            let delete_users_result = obj
+                .interact(move |conn| {
+                    // Force move
+                    diesel::delete(users::table.filter(users::id.eq_any(ids))).execute(conn) // Execute uses the conn passed by interact
+                })
+                .await; // await the interact future
 
             match delete_users_result {
                 Ok(Ok(count)) => tracing::debug!("Cleaned up {} users.", count),
                 Ok(Err(e)) => {
                     tracing::error!(error = ?e, "DB error cleaning up users");
                     return Err(AnyhowError::new(e).context("DB error cleaning up users"));
-                },
+                }
                 Err(e) => {
                     tracing::error!(error = ?e, "Interact error cleaning up users");
                     return Err(anyhow::anyhow!("Interact error cleaning up users: {:?}", e));
@@ -331,15 +345,14 @@ fn test_user_character_insert_and_query() {
 fn hash_test_password(password: &str) -> String {
     // Use the actual hashing library used by the application
     // Perform synchronously in test helper for simplicity
-    bcrypt::hash(password, bcrypt::DEFAULT_COST)
-        .expect("Failed to hash test password with bcrypt")
+    bcrypt::hash(password, bcrypt::DEFAULT_COST).expect("Failed to hash test password with bcrypt")
     // format!("hashed_{}", password) // Old placeholder
 }
 
 // Helper to insert a unique test user with a known password hash
 fn insert_test_user_with_password(
     conn: &mut PgConnection,
-    username: &str,  // Rename parameter to username for clarity
+    username: &str, // Rename parameter to username for clarity
     password: &str,
 ) -> Result<User, DieselError> {
     // Use the exact username provided rather than creating a new one
@@ -361,13 +374,22 @@ async fn test_list_characters_endpoint_manual_cleanup() -> Result<(), AnyhowErro
     let obj = pool.get().await?;
 
     // --- Clean DB ---
-    let delete_chars_result = obj.interact(|conn| diesel::delete(characters::table).execute(conn)).await;
+    let delete_chars_result = obj
+        .interact(|conn| diesel::delete(characters::table).execute(conn))
+        .await;
     match delete_chars_result {
         Ok(Ok(_)) => (), // Success
         Ok(Err(e)) => return Err(AnyhowError::new(e).context("DB error cleaning up characters")),
-        Err(e) => return Err(anyhow::anyhow!("Interact error cleaning up characters: {:?}", e)),
+        Err(e) => {
+            return Err(anyhow::anyhow!(
+                "Interact error cleaning up characters: {:?}",
+                e
+            ));
+        }
     };
-    let delete_users_result = obj.interact(|conn| diesel::delete(users::table).execute(conn)).await;
+    let delete_users_result = obj
+        .interact(|conn| diesel::delete(users::table).execute(conn))
+        .await;
     match delete_users_result {
         Ok(Ok(_)) => (), // Success
         Ok(Err(e)) => return Err(AnyhowError::new(e).context("DB error cleaning up users")),
@@ -384,22 +406,28 @@ async fn test_list_characters_endpoint_manual_cleanup() -> Result<(), AnyhowErro
     let user = {
         let username_clone = test_username.clone(); // Clone for closure
         let test_password_clone = test_password.to_string(); // Clone for closure
-        let interact_result = obj.interact(move |conn| {
-             insert_test_user_with_password(conn, &username_clone, &test_password_clone)
-        }).await;
+        let interact_result = obj
+            .interact(move |conn| {
+                insert_test_user_with_password(conn, &username_clone, &test_password_clone)
+            })
+            .await;
 
         // Manual handling of InteractError
         let diesel_result = match interact_result {
             Ok(Ok(u)) => {
                 println!("Successfully inserted test user: {}", u.username);
                 Ok(u)
-            },
+            }
             Ok(Err(e)) => {
                 println!("Error inserting test user: {:?}", e);
                 Err(anyhow::Error::new(e).context("DB error inserting user"))
-            }, // Map Diesel error
-            Err(deadpool_diesel::InteractError::Panic(_)) => Err(anyhow!("Interact panicked inserting user")), // Map panic
-            Err(deadpool_diesel::InteractError::Aborted) => Err(anyhow!("Interact aborted inserting user")), // Map abort
+            } // Map Diesel error
+            Err(deadpool_diesel::InteractError::Panic(_)) => {
+                Err(anyhow!("Interact panicked inserting user"))
+            } // Map panic
+            Err(deadpool_diesel::InteractError::Aborted) => {
+                Err(anyhow!("Interact aborted inserting user"))
+            } // Map abort
         }?;
 
         diesel_result // This is now Result<User, anyhow::Error>
@@ -407,44 +435,59 @@ async fn test_list_characters_endpoint_manual_cleanup() -> Result<(), AnyhowErro
     guard.add_user(user.id);
 
     // Print the inserted user for debugging
-    println!("User created in DB: id={}, username={}", user.id, user.username);
+    println!(
+        "User created in DB: id={}, username={}",
+        user.id, user.username
+    );
 
     // Insert characters for the user (same as before)
     let user_id_clone1 = user.id;
     let char1 = {
-        let interact_result = obj.interact(move |conn| insert_test_character(conn, user_id_clone1, "List Test 1")).await;
+        let interact_result = obj
+            .interact(move |conn| insert_test_character(conn, user_id_clone1, "List Test 1"))
+            .await;
         // Manual handling of InteractError
         match interact_result {
             Ok(Ok(c)) => {
                 println!("Successfully inserted character 1: {}", c.name);
                 Ok(c)
-            },
+            }
             Ok(Err(e)) => {
                 println!("Error inserting character 1: {:?}", e);
                 Err(anyhow::Error::new(e).context("DB error inserting char1"))
-            }, // Map Diesel error
-            Err(deadpool_diesel::InteractError::Panic(_)) => Err(anyhow!("Interact panicked inserting char1")), // Map panic
-            Err(deadpool_diesel::InteractError::Aborted) => Err(anyhow!("Interact aborted inserting char1")), // Map abort
+            } // Map Diesel error
+            Err(deadpool_diesel::InteractError::Panic(_)) => {
+                Err(anyhow!("Interact panicked inserting char1"))
+            } // Map panic
+            Err(deadpool_diesel::InteractError::Aborted) => {
+                Err(anyhow!("Interact aborted inserting char1"))
+            } // Map abort
         }?
     };
     guard.add_character(char1.id);
 
     let user_id_clone2 = user.id;
     let char2 = {
-        let interact_result = obj.interact(move |conn| insert_test_character(conn, user_id_clone2, "List Test 2")).await;
+        let interact_result = obj
+            .interact(move |conn| insert_test_character(conn, user_id_clone2, "List Test 2"))
+            .await;
         // Manual handling of InteractError
         match interact_result {
-             Ok(Ok(c)) => {
+            Ok(Ok(c)) => {
                 println!("Successfully inserted character 2: {}", c.name);
                 Ok(c)
-             },
-             Ok(Err(e)) => {
+            }
+            Ok(Err(e)) => {
                 println!("Error inserting character 2: {:?}", e);
                 Err(anyhow::Error::new(e).context("DB error inserting char2"))
-             }, // Map Diesel error
-             Err(deadpool_diesel::InteractError::Panic(_)) => Err(anyhow!("Interact panicked inserting char2")), // Map panic
-             Err(deadpool_diesel::InteractError::Aborted) => Err(anyhow!("Interact aborted inserting char2")), // Map abort
-         }?
+            } // Map Diesel error
+            Err(deadpool_diesel::InteractError::Panic(_)) => {
+                Err(anyhow!("Interact panicked inserting char2"))
+            } // Map panic
+            Err(deadpool_diesel::InteractError::Aborted) => {
+                Err(anyhow!("Interact aborted inserting char2"))
+            } // Map abort
+        }?
     };
     guard.add_character(char2.id);
 
@@ -463,12 +506,15 @@ async fn test_list_characters_endpoint_manual_cleanup() -> Result<(), AnyhowErro
 
     // Assuming 'pool' is available from the setup (e.g., pool.clone())
     // Load config and create AppState
-    let config = Arc::new(Config::load().expect("Failed to load test config for db_integration_tests"));
+    let config =
+        Arc::new(Config::load().expect("Failed to load test config for db_integration_tests"));
     // Build AI client
     let ai_client = Arc::new(
         scribe_backend::llm::gemini_client::build_gemini_client()
             .await
-            .expect("Failed to build Gemini client for db integration tests. Is GOOGLE_API_KEY set?"),
+            .expect(
+                "Failed to build Gemini client for db integration tests. Is GOOGLE_API_KEY set?",
+            ),
     );
     // Instantiate mock embedding client
     let embedding_client = Arc::new(MockEmbeddingClient::new());
@@ -481,11 +527,11 @@ async fn test_list_characters_endpoint_manual_cleanup() -> Result<(), AnyhowErro
             .expect("Failed to create QdrantClientService for db integration test"),
     );
     let app_state = AppState::new(
-        pool.clone(), 
-        config, 
-        ai_client, 
+        pool.clone(),
+        config,
+        ai_client,
         embedding_client,
-        qdrant_service, // Add Qdrant service
+        qdrant_service,             // Add Qdrant service
         embedding_pipeline_service, // Add Embedding Pipeline service
     ); // Pass embedding client
 
@@ -493,7 +539,7 @@ async fn test_list_characters_endpoint_manual_cleanup() -> Result<(), AnyhowErro
     let router = Router::new()
         .route("/api/auth/login", post(login_handler)) // Add login route
         // Apply state *before* nesting routes that require it
-        .with_state(app_state.clone()) 
+        .with_state(app_state.clone())
         .nest("/api/characters", characters_router(app_state.clone())) // Mount character routes AFTER state
         .layer(auth_layer)
         .layer(CookieManagerLayer::new()) // Add cookie manager
@@ -509,9 +555,12 @@ async fn test_list_characters_endpoint_manual_cleanup() -> Result<(), AnyhowErro
         "username": login_credentials.username,
         "password": login_credentials.password.expose_secret()
     });
-    
-    println!("Login request body: {}", serde_json::to_string(&login_body).unwrap());
-    
+
+    println!(
+        "Login request body: {}",
+        serde_json::to_string(&login_body).unwrap()
+    );
+
     let login_request = Request::builder()
         .method("POST")
         .uri("/api/auth/login")
@@ -521,19 +570,23 @@ async fn test_list_characters_endpoint_manual_cleanup() -> Result<(), AnyhowErro
     let login_response = router.clone().oneshot(login_request).await?; // Use router instead of app
     let login_status = login_response.status();
     println!("Login status: {}", login_status);
-    
+
     if login_status != StatusCode::OK {
         // If login failed, extract and print response body for debugging
         let body_bytes = login_response.into_body().collect().await?.to_bytes();
         let body_text = String::from_utf8_lossy(&body_bytes);
         println!("Login response body: {}", body_text);
-        
+
         // Clean up before failing
         guard.cleanup().await?;
-        
-        return Err(anyhow!("Login failed with status {} and body: {}", login_status, body_text));
+
+        return Err(anyhow!(
+            "Login failed with status {} and body: {}",
+            login_status,
+            body_text
+        ));
     }
-    
+
     assert_eq!(login_status, StatusCode::OK, "Login failed");
 
     // Extract the session cookie
@@ -559,7 +612,11 @@ async fn test_list_characters_endpoint_manual_cleanup() -> Result<(), AnyhowErro
     let response = router.oneshot(list_request).await?; // Use router instead of app
 
     // Assert success and parse response (same as before)
-    assert_eq!(response.status(), StatusCode::OK, "Expected OK status code for list");
+    assert_eq!(
+        response.status(),
+        StatusCode::OK,
+        "Expected OK status code for list"
+    );
 
     let body_bytes = response.into_body().collect().await?.to_bytes();
     match serde_json::from_slice::<Vec<CharacterSummary>>(&body_bytes) {
@@ -573,7 +630,7 @@ async fn test_list_characters_endpoint_manual_cleanup() -> Result<(), AnyhowErro
         Err(e) => {
             // Explicitly cleanup before returning error
             guard.cleanup().await?;
-            
+
             return Err(AnyhowError::new(e).context(format!(
                 "Failed to deserialize OK response body: {}",
                 String::from_utf8_lossy(&body_bytes)
@@ -583,7 +640,7 @@ async fn test_list_characters_endpoint_manual_cleanup() -> Result<(), AnyhowErro
 
     // Explicitly clean up resources
     guard.cleanup().await?;
-    
+
     Ok(())
 }
 
@@ -674,15 +731,21 @@ async fn test_chat_message_insert_and_query() -> Result<(), AnyhowError> {
     let user = {
         let username_clone = test_username.clone();
         let password_clone = test_password.to_string();
-        let interact_result = obj.interact(move |conn| {
-            insert_test_user_with_password(conn, &username_clone, &password_clone)
-        }).await;
+        let interact_result = obj
+            .interact(move |conn| {
+                insert_test_user_with_password(conn, &username_clone, &password_clone)
+            })
+            .await;
         // Manual handling of InteractError
         match interact_result {
             Ok(Ok(u)) => Ok(u),
             Ok(Err(e)) => Err(AnyhowError::new(e).context("DB error inserting chat user")), // Map Diesel error
-            Err(deadpool_diesel::InteractError::Panic(_)) => Err(anyhow!("Interact panicked inserting chat user")), // Map panic
-            Err(deadpool_diesel::InteractError::Aborted) => Err(anyhow!("Interact aborted inserting chat user")), // Map abort
+            Err(deadpool_diesel::InteractError::Panic(_)) => {
+                Err(anyhow!("Interact panicked inserting chat user"))
+            } // Map panic
+            Err(deadpool_diesel::InteractError::Aborted) => {
+                Err(anyhow!("Interact aborted inserting chat user"))
+            } // Map abort
         }?
     };
     guard.add_user(user.id);
@@ -690,15 +753,21 @@ async fn test_chat_message_insert_and_query() -> Result<(), AnyhowError> {
     // --- Setup Character ---
     let character = {
         let user_id_clone = user.id;
-        let interact_result = obj.interact(move |conn| {
-            insert_test_character(conn, user_id_clone, "Chat Message Character")
-        }).await;
+        let interact_result = obj
+            .interact(move |conn| {
+                insert_test_character(conn, user_id_clone, "Chat Message Character")
+            })
+            .await;
         // Manual handling of InteractError
         match interact_result {
             Ok(Ok(c)) => Ok(c),
             Ok(Err(e)) => Err(AnyhowError::new(e).context("DB error inserting chat character")), // Map Diesel error
-            Err(deadpool_diesel::InteractError::Panic(_)) => Err(anyhow!("Interact panicked inserting chat character")), // Map panic
-            Err(deadpool_diesel::InteractError::Aborted) => Err(anyhow!("Interact aborted inserting chat character")), // Map abort
+            Err(deadpool_diesel::InteractError::Panic(_)) => {
+                Err(anyhow!("Interact panicked inserting chat character"))
+            } // Map panic
+            Err(deadpool_diesel::InteractError::Aborted) => {
+                Err(anyhow!("Interact aborted inserting chat character"))
+            } // Map abort
         }?
     };
     guard.add_character(character.id);
@@ -707,85 +776,103 @@ async fn test_chat_message_insert_and_query() -> Result<(), AnyhowError> {
     let session = {
         let user_id_clone = user.id;
         let char_id_clone = character.id;
-        let interact_result = obj.interact(move |conn| {
-            let new_session = NewChatSession {
-                user_id: user_id_clone,
-                character_id: char_id_clone,
-                // Removed ..Default::default() as it's not implemented and unnecessary
-            };
-            diesel::insert_into(chat_sessions::table)
-                .values(&new_session)
-                .returning(ChatSession::as_returning())
-                .get_result::<ChatSession>(conn)
-        }).await;
+        let interact_result = obj
+            .interact(move |conn| {
+                let new_session = NewChatSession {
+                    user_id: user_id_clone,
+                    character_id: char_id_clone,
+                    // Removed ..Default::default() as it's not implemented and unnecessary
+                };
+                diesel::insert_into(chat_sessions::table)
+                    .values(&new_session)
+                    .returning(ChatSession::as_returning())
+                    .get_result::<ChatSession>(conn)
+            })
+            .await;
         // Manual handling of InteractError
-         match interact_result {
+        match interact_result {
             Ok(Ok(s)) => Ok(s),
             Ok(Err(e)) => Err(AnyhowError::new(e).context("DB error inserting chat session")), // Map Diesel error
-            Err(deadpool_diesel::InteractError::Panic(_)) => Err(anyhow!("Interact panicked inserting chat session")), // Map panic
-            Err(deadpool_diesel::InteractError::Aborted) => Err(anyhow!("Interact aborted inserting chat session")), // Map abort
+            Err(deadpool_diesel::InteractError::Panic(_)) => {
+                Err(anyhow!("Interact panicked inserting chat session"))
+            } // Map panic
+            Err(deadpool_diesel::InteractError::Aborted) => {
+                Err(anyhow!("Interact aborted inserting chat session"))
+            } // Map abort
         }?
     };
 
     // --- Insert Messages ---
-     { // Scope for interact
+    {
+        // Scope for interact
         let session_id_clone = session.id;
         let user_id_clone = user.id; // Clone user_id for the closure
-        let interact_result = obj.interact(move |conn| {
-            // Use DbInsertableChatMessage and provide user_id
-            let user_message = DbInsertableChatMessage::new(
-                session_id_clone,
-                user_id_clone,
-                MessageRole::User,
-                "Hello, character!".to_string(),
-            );
-            diesel::insert_into(chat_messages::table)
-                .values(&user_message)
-                // .returning(ChatMessage::as_returning()) // returning doesn't work well with execute
-                .execute(conn)?; 
+        let interact_result = obj
+            .interact(move |conn| {
+                // Use DbInsertableChatMessage and provide user_id
+                let user_message = DbInsertableChatMessage::new(
+                    session_id_clone,
+                    user_id_clone,
+                    MessageRole::User,
+                    "Hello, character!".to_string(),
+                );
+                diesel::insert_into(chat_messages::table)
+                    .values(&user_message)
+                    // .returning(ChatMessage::as_returning()) // returning doesn't work well with execute
+                    .execute(conn)?;
 
-            // Use DbInsertableChatMessage and provide user_id
-            let ai_message = DbInsertableChatMessage::new(
-                 session_id_clone,
-                 user_id_clone, // Use the same user_id for assistant message in this test context
-                 MessageRole::Assistant,
-                 "Hello, user!".to_string(),
-            );
-             diesel::insert_into(chat_messages::table)
-                .values(&ai_message)
-                // .returning(ChatMessage::as_returning())
-                .execute(conn)?;
+                // Use DbInsertableChatMessage and provide user_id
+                let ai_message = DbInsertableChatMessage::new(
+                    session_id_clone,
+                    user_id_clone, // Use the same user_id for assistant message in this test context
+                    MessageRole::Assistant,
+                    "Hello, user!".to_string(),
+                );
+                diesel::insert_into(chat_messages::table)
+                    .values(&ai_message)
+                    // .returning(ChatMessage::as_returning())
+                    .execute(conn)?;
 
-            Ok::<(), DieselError>(()) // Return Ok(()) from closure
-        }).await;
+                Ok::<(), DieselError>(()) // Return Ok(()) from closure
+            })
+            .await;
         // Manual handling of InteractError
         match interact_result {
             Ok(Ok(_)) => Ok(()),
             Ok(Err(e)) => Err(AnyhowError::new(e).context("DB error inserting chat messages")), // Map Diesel error
-            Err(deadpool_diesel::InteractError::Panic(_)) => Err(anyhow!("Interact panicked inserting chat messages")), // Map panic
-            Err(deadpool_diesel::InteractError::Aborted) => Err(anyhow!("Interact aborted inserting chat messages")), // Map abort
+            Err(deadpool_diesel::InteractError::Panic(_)) => {
+                Err(anyhow!("Interact panicked inserting chat messages"))
+            } // Map panic
+            Err(deadpool_diesel::InteractError::Aborted) => {
+                Err(anyhow!("Interact aborted inserting chat messages"))
+            } // Map abort
         }?
     }
 
-
     // --- Query Messages ---
-     let messages = {
-         let session_id_clone = session.id;
-         let interact_result = obj.interact(move |conn| {
-             chat_messages::table
-                 .filter(chat_messages::session_id.eq(session_id_clone))
-                 .order(chat_messages::created_at.asc())
-                 .select(ChatMessage::as_select())
-                 .load::<ChatMessage>(conn)
-         }).await;
-         // Manual handling of InteractError
-         match interact_result {
+    let messages = {
+        let session_id_clone = session.id;
+        let interact_result = obj
+            .interact(move |conn| {
+                chat_messages::table
+                    .filter(chat_messages::session_id.eq(session_id_clone))
+                    .order(chat_messages::created_at.asc())
+                    .select(ChatMessage::as_select())
+                    .load::<ChatMessage>(conn)
+            })
+            .await;
+        // Manual handling of InteractError
+        match interact_result {
             Ok(Ok(m)) => Ok(m),
             Ok(Err(e)) => Err(AnyhowError::new(e).context("DB error querying chat messages")), // Map Diesel error
-            Err(deadpool_diesel::InteractError::Panic(_)) => Err(anyhow!("Interact panicked querying chat messages")), // Map panic
-            Err(deadpool_diesel::InteractError::Aborted) => Err(anyhow!("Interact aborted querying chat messages")), // Map abort
+            Err(deadpool_diesel::InteractError::Panic(_)) => {
+                Err(anyhow!("Interact panicked querying chat messages"))
+            } // Map panic
+            Err(deadpool_diesel::InteractError::Aborted) => {
+                Err(anyhow!("Interact aborted querying chat messages"))
+            } // Map abort
         }?
-     };
+    };
 
     // --- Assertions ---
     assert_eq!(messages.len(), 2);
@@ -796,10 +883,10 @@ async fn test_chat_message_insert_and_query() -> Result<(), AnyhowError> {
 
     // At the end of the test
     tracing::debug!("Chat messages test completed successfully");
-    
+
     // Explicitly clean up resources
     guard.cleanup().await?;
-    
+
     Ok(())
 }
 

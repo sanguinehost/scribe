@@ -5,21 +5,21 @@
 use chrono::{DateTime, Utc}; // Removed unused NaiveDateTime
 use diesel::prelude::*;
 // use chrono::{DateTime, Utc, NaiveDateTime};
+use crate::models::users::User;
+use crate::schema::characters;
+use crate::services::character_parser::ParsedCharacterCard;
+use bigdecimal::BigDecimal;
+use diesel_json::Json; // Import Json wrapper
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
-use uuid::Uuid;
-use crate::services::character_parser::ParsedCharacterCard;
-use diesel_json::Json; // Import Json wrapper
-use bigdecimal::BigDecimal;
-use crate::schema::characters;
-use crate::models::users::User; // Added import
+use uuid::Uuid; // Added import
 // use crate::models::character_card::{CharacterCardV3, CharacterCardDataV3}; // Import the actual structs
 
 #[derive(
     Queryable, Selectable, Insertable, AsChangeset, Serialize, Deserialize, Debug, Clone, PartialEq,
 )]
 #[diesel(table_name = crate::schema::characters)]
-#[diesel(check_for_backend(diesel::pg::Pg))] 
+#[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct Character {
     #[diesel(deserialize_as = Uuid)]
     pub id: Uuid, // PK
@@ -115,11 +115,16 @@ impl<'a> From<&'a ParsedCharacterCard> for UpdatableCharacter<'a> {
                 };
                 // Corrected map_vec helper
                 let map_vec = |v: &'a Vec<String>| -> Option<Vec<&'a str>> {
-                    let mapped: Vec<&'a str> = v.iter()
-                                                .filter(|s| !s.is_empty())
-                                                .map(|s| s.as_str()) // Use as_str()
-                                                .collect(); // Compiler should infer Vec<&str>
-                    if mapped.is_empty() { None } else { Some(mapped) }
+                    let mapped: Vec<&'a str> = v
+                        .iter()
+                        .filter(|s| !s.is_empty())
+                        .map(|s| s.as_str()) // Use as_str()
+                        .collect(); // Compiler should infer Vec<&str>
+                    if mapped.is_empty() {
+                        None
+                    } else {
+                        Some(mapped)
+                    }
                 };
 
                 Self {
@@ -142,17 +147,22 @@ impl<'a> From<&'a ParsedCharacterCard> for UpdatableCharacter<'a> {
             }
             ParsedCharacterCard::V2Fallback(data_v2) => {
                 let map_string = |s: &'a String| -> Option<&'a str> {
-                     if s.is_empty() { None } else { Some(s.as_str()) }
-                 };
+                    if s.is_empty() { None } else { Some(s.as_str()) }
+                };
                 let map_vec = |v: &'a Vec<String>| -> Option<Vec<&'a str>> {
-                      let mapped: Vec<&'a str> = v.iter()
-                                                  .filter(|s| !s.is_empty())
-                                                  .map(|s| s.as_str()) // Use as_str()
-                                                  .collect();
-                      if mapped.is_empty() { None } else { Some(mapped) }
-                  };
+                    let mapped: Vec<&'a str> = v
+                        .iter()
+                        .filter(|s| !s.is_empty())
+                        .map(|s| s.as_str()) // Use as_str()
+                        .collect();
+                    if mapped.is_empty() {
+                        None
+                    } else {
+                        Some(mapped)
+                    }
+                };
 
-                 Self {
+                Self {
                     spec: None,
                     spec_version: None,
                     name: data_v2.name.as_deref(), // Correct: Option<String> -> Option<&str>
@@ -168,14 +178,16 @@ impl<'a> From<&'a ParsedCharacterCard> for UpdatableCharacter<'a> {
                     creator: map_string(&data_v2.creator),
                     character_version: map_string(&data_v2.character_version),
                     alternate_greetings: map_vec(&data_v2.alternate_greetings),
-                 }
+                }
             }
         }
     }
 }
 
 // Represents the core metadata of a character, stored in the DB
-#[derive(Queryable, Selectable, Identifiable, Associations, Serialize, Deserialize, Debug, Clone)]
+#[derive(
+    Queryable, Selectable, Identifiable, Associations, Serialize, Deserialize, Debug, Clone,
+)]
 #[diesel(belongs_to(User, foreign_key = user_id))]
 #[diesel(table_name = characters)]
 pub struct CharacterMetadata {
@@ -207,11 +219,11 @@ pub struct NewCharacterMetadata<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::character_card::{CharacterCardV3, CharacterCardDataV3}; // Import the actual structs
+    use crate::models::character_card::{CharacterCardDataV3, CharacterCardV3}; // Import the actual structs
     use crate::services::character_parser::ParsedCharacterCard; // Import the enum
+    use chrono::Utc;
     use serde_json;
     use uuid::Uuid;
-    use chrono::Utc;
 
     // Helper function to create a dummy V3 card
     fn create_dummy_v3_card() -> ParsedCharacterCard {
@@ -247,8 +259,9 @@ mod tests {
     }
 
     // Helper function to create a dummy V2 card
-     fn create_dummy_v2_card() -> ParsedCharacterCard {
-        ParsedCharacterCard::V2Fallback(CharacterCardDataV3 { // V2 uses the V3 data struct as fallback
+    fn create_dummy_v2_card() -> ParsedCharacterCard {
+        ParsedCharacterCard::V2Fallback(CharacterCardDataV3 {
+            // V2 uses the V3 data struct as fallback
             name: Some("Test V2 Name".to_string()),
             description: "V2 Description".to_string(),
             personality: "V2 Personality".to_string(),
@@ -334,7 +347,8 @@ mod tests {
         println!("Serialized JSON: {}", json_string); // Optional: print for debugging
 
         // Deserialize
-        let deserialized_metadata: CharacterMetadata = serde_json::from_str(&json_string).expect("Deserialization failed");
+        let deserialized_metadata: CharacterMetadata =
+            serde_json::from_str(&json_string).expect("Deserialization failed");
 
         // Assert equality (Direct comparison should work due to Clone, PartialEq)
         assert_eq!(metadata.id, deserialized_metadata.id);
@@ -344,7 +358,13 @@ mod tests {
         assert_eq!(metadata.first_mes, deserialized_metadata.first_mes);
         // Note: Comparing DateTime<Utc> directly might be flaky due to precision differences
         // after serialization/deserialization. Comparing timestamps is safer.
-        assert_eq!(metadata.created_at.timestamp_millis(), deserialized_metadata.created_at.timestamp_millis());
-        assert_eq!(metadata.updated_at.timestamp_millis(), deserialized_metadata.updated_at.timestamp_millis());
+        assert_eq!(
+            metadata.created_at.timestamp_millis(),
+            deserialized_metadata.created_at.timestamp_millis()
+        );
+        assert_eq!(
+            metadata.updated_at.timestamp_millis(),
+            deserialized_metadata.updated_at.timestamp_millis()
+        );
     }
-} 
+}

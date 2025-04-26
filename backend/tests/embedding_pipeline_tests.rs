@@ -1,20 +1,21 @@
+use chrono::Utc;
+use log;
+use mockall::predicate::*;
+use qdrant_client::qdrant::{PointId, RetrievedPoint, Value, point_id::PointIdOptions};
 use scribe_backend::{
     AppState,
     models::chats::{ChatMessage, MessageRole},
-    services::embedding_pipeline::{process_and_embed_message, EmbeddingMetadata, EmbeddingPipelineService, retrieve_relevant_chunks, RetrievedChunk},
-    test_helpers::{db, config, MockEmbeddingClient, MockAiClient, MockQdrantClientService},
-    vector_db::{
-        qdrant_client::{QdrantClientService, create_message_id_filter, ScoredPoint},
+    services::embedding_pipeline::{
+        EmbeddingMetadata, EmbeddingPipelineService, process_and_embed_message,
+        retrieve_relevant_chunks,
     },
-    llm::EmbeddingClient,
-    vector_db::qdrant_client::QdrantClientServiceTrait,
+    test_helpers::{MockAiClient, MockEmbeddingClient, MockQdrantClientService, config, db},
+    vector_db::qdrant_client::{QdrantClientService, ScoredPoint, create_message_id_filter},
 };
-use std::{collections::HashMap, sync::Arc};
-use uuid::Uuid;
-use chrono::Utc;
-use qdrant_client::qdrant::{Value, RetrievedPoint, PointId, point_id::PointIdOptions};
+use serial_test::serial;
 use std::convert::TryFrom; // Needed for EmbeddingMetadata::try_from
-use mockall::predicate::*; // For mock assertions
+use std::{collections::HashMap, env, sync::Arc};
+use uuid::Uuid; // For mock assertions
 
 // Comment out the test requiring a Qdrant instance setup via testcontainers
 #[tokio::test]
@@ -24,17 +25,17 @@ async fn test_process_and_embed_message_integration() {
     // Use helpers via their modules
     // let qdrant_port = docker::run_qdrant_container().await;
     // This line has a type error (expected u16, found Option)
-    // let qdrant_client = qdrant::setup_qdrant(None).await; 
+    // let qdrant_client = qdrant::setup_qdrant(None).await;
     let mock_embedding_client = Arc::new(MockEmbeddingClient::new());
-    let mock_ai_client = Arc::new(MockAiClient::new()); 
-    let pool = db::setup_test_database(None).await; 
-    let config = Arc::new(config::initialize_test_config(None)); 
+    let mock_ai_client = Arc::new(MockAiClient::new());
+    let pool = db::setup_test_database(None).await;
+    let config = Arc::new(config::initialize_test_config(None));
 
     // Create Qdrant service instance directly for AppState
     let qdrant_service = Arc::new(
         QdrantClientService::new(config.clone())
             .await
-            .expect("Failed to create QdrantClientService for test")
+            .expect("Failed to create QdrantClientService for test"),
     );
 
     // Instantiate the real EmbeddingPipelineService
@@ -42,7 +43,7 @@ async fn test_process_and_embed_message_integration() {
 
     // Create AppState using the constructor
     let app_state = Arc::new(AppState::new(
-        pool.clone(), 
+        pool.clone(),
         config.clone(),
         mock_ai_client.clone(),
         mock_embedding_client.clone(),
@@ -76,7 +77,11 @@ async fn test_process_and_embed_message_integration() {
 
     // 3. Call the function under test
     let result = process_and_embed_message(app_state.clone(), test_message.clone()).await;
-    assert!(result.is_ok(), "process_and_embed_message failed: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "process_and_embed_message failed: {:?}",
+        result.err()
+    );
 
     // 4. Verification: Check Qdrant for stored points
     tokio::time::sleep(std::time::Duration::from_millis(500)).await; // Allow indexing
@@ -88,18 +93,25 @@ async fn test_process_and_embed_message_integration() {
         .await
         .expect("Failed to retrieve points from Qdrant");
 
-    // --- Assertions --- 
+    // --- Assertions ---
 
-    assert!(!retrieved_points.is_empty(), "No points found in Qdrant for the message ID");
+    assert!(
+        !retrieved_points.is_empty(),
+        "No points found in Qdrant for the message ID"
+    );
 
     // Use the actual chunking function for reliable assertion
     let expected_chunks = scribe_backend::text_processing::chunking::chunk_text(&test_content)
         .expect("Failed to chunk test content for verification");
     let expected_num_chunks = expected_chunks.len();
 
-    assert_eq!(retrieved_points.len(), expected_num_chunks, 
-               "Expected {} chunks based on chunking logic, but found {} points in Qdrant", 
-               expected_num_chunks, retrieved_points.len());
+    assert_eq!(
+        retrieved_points.len(),
+        expected_num_chunks,
+        "Expected {} chunks based on chunking logic, but found {} points in Qdrant",
+        expected_num_chunks,
+        retrieved_points.len()
+    );
 
     // Verify metadata and content of each point
     let mut found_chunk_texts: Vec<String> = Vec::new();
@@ -108,25 +120,49 @@ async fn test_process_and_embed_message_integration() {
         let metadata = EmbeddingMetadata::try_from(payload_map)
             .expect("Failed to parse EmbeddingMetadata from Qdrant payload");
 
-        assert_eq!(metadata.message_id, test_message_id, "Metadata message_id mismatch");
-        assert_eq!(metadata.session_id, test_session_id, "Metadata session_id mismatch");
-        assert_eq!(metadata.speaker, format!("{:?}", test_message.message_type), "Metadata speaker mismatch"); 
-        assert_eq!(metadata.timestamp, test_message.created_at, "Metadata timestamp mismatch"); 
-        
-        assert!(expected_chunks.iter().any(|chunk| chunk.content == metadata.text),
-                "Stored text '{}' did not match any expected chunk", metadata.text);
-        
+        assert_eq!(
+            metadata.message_id, test_message_id,
+            "Metadata message_id mismatch"
+        );
+        assert_eq!(
+            metadata.session_id, test_session_id,
+            "Metadata session_id mismatch"
+        );
+        assert_eq!(
+            metadata.speaker,
+            format!("{:?}", test_message.message_type),
+            "Metadata speaker mismatch"
+        );
+        assert_eq!(
+            metadata.timestamp, test_message.created_at,
+            "Metadata timestamp mismatch"
+        );
+
+        assert!(
+            expected_chunks
+                .iter()
+                .any(|chunk| chunk.content == metadata.text),
+            "Stored text '{}' did not match any expected chunk",
+            metadata.text
+        );
+
         found_chunk_texts.push(metadata.text);
     }
 
     // Verify that all expected chunks were found
-    assert_eq!(found_chunk_texts.len(), expected_num_chunks, "Number of verified chunks doesn't match expected");
+    assert_eq!(
+        found_chunk_texts.len(),
+        expected_num_chunks,
+        "Number of verified chunks doesn't match expected"
+    );
     for expected_chunk in expected_chunks {
-        assert!(found_chunk_texts.contains(&expected_chunk.content), "Expected chunk missing: {}", expected_chunk.content);
+        assert!(
+            found_chunk_texts.contains(&expected_chunk.content),
+            "Expected chunk missing: {}",
+            expected_chunk.content
+        );
     }
-
 }
-
 
 // --- Unit Tests for retrieve_relevant_chunks ---
 
@@ -141,8 +177,14 @@ fn create_mock_scored_point(
     text: &str,
 ) -> ScoredPoint {
     let mut payload = HashMap::new();
-    payload.insert("session_id".to_string(), Value::from(session_id.to_string()));
-    payload.insert("message_id".to_string(), Value::from(message_id.to_string()));
+    payload.insert(
+        "session_id".to_string(),
+        Value::from(session_id.to_string()),
+    );
+    payload.insert(
+        "message_id".to_string(),
+        Value::from(message_id.to_string()),
+    );
     payload.insert("speaker".to_string(), Value::from(speaker.to_string()));
     payload.insert("timestamp".to_string(), Value::from(timestamp.to_rfc3339()));
     payload.insert("text".to_string(), Value::from(text.to_string()));
@@ -163,8 +205,8 @@ fn create_mock_scored_point(
 #[tokio::test]
 async fn test_retrieve_relevant_chunks_success() {
     // 1. Setup Mocks
-    let mut mock_embedding_client = MockEmbeddingClient::new();
-    let mut mock_qdrant_service = MockQdrantClientService::new();
+    let mock_embedding_client = MockEmbeddingClient::new();
+    let mock_qdrant_service = MockQdrantClientService::new();
 
     let query_text = "What is the meaning of life?";
     let session_id = Uuid::new_v4();
@@ -179,8 +221,24 @@ async fn test_retrieve_relevant_chunks_success() {
     let point_id2 = Uuid::new_v4();
     let mock_timestamp = Utc::now();
     let mock_scored_points = vec![
-        create_mock_scored_point(point_id1, 0.95, session_id, Uuid::new_v4(), "User", mock_timestamp, "Chunk 1 text"),
-        create_mock_scored_point(point_id2, 0.88, session_id, Uuid::new_v4(), "Assistant", mock_timestamp, "Chunk 2 text"),
+        create_mock_scored_point(
+            point_id1,
+            0.95,
+            session_id,
+            Uuid::new_v4(),
+            "User",
+            mock_timestamp,
+            "Chunk 1 text",
+        ),
+        create_mock_scored_point(
+            point_id2,
+            0.88,
+            session_id,
+            Uuid::new_v4(),
+            "Assistant",
+            mock_timestamp,
+            "Chunk 2 text",
+        ),
     ];
 
     // Use set_search_response instead of expect_search_points
@@ -197,10 +255,18 @@ async fn test_retrieve_relevant_chunks_success() {
     .await;
 
     // 3. Assertions
-    assert!(result.is_ok(), "retrieve_relevant_chunks failed: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "retrieve_relevant_chunks failed: {:?}",
+        result.err()
+    );
     let retrieved_chunks = result.unwrap();
 
-    assert_eq!(retrieved_chunks.len(), 2, "Expected 2 chunks to be retrieved");
+    assert_eq!(
+        retrieved_chunks.len(),
+        2,
+        "Expected 2 chunks to be retrieved"
+    );
 
     // Verify content of the first chunk
     assert_eq!(retrieved_chunks[0].score, 0.95);
@@ -220,8 +286,8 @@ async fn test_retrieve_relevant_chunks_success() {
 #[tokio::test]
 async fn test_retrieve_relevant_chunks_no_results() {
     // 1. Setup Mocks
-    let mut mock_embedding_client = MockEmbeddingClient::new();
-    let mut mock_qdrant_service = MockQdrantClientService::new();
+    let mock_embedding_client = MockEmbeddingClient::new();
+    let mock_qdrant_service = MockQdrantClientService::new();
 
     let query_text = "A query that finds nothing";
     let session_id = Uuid::new_v4();
@@ -245,16 +311,23 @@ async fn test_retrieve_relevant_chunks_no_results() {
     .await;
 
     // 3. Assertions
-    assert!(result.is_ok(), "retrieve_relevant_chunks failed: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "retrieve_relevant_chunks failed: {:?}",
+        result.err()
+    );
     let retrieved_chunks = result.unwrap();
-    assert!(retrieved_chunks.is_empty(), "Expected no chunks to be retrieved");
+    assert!(
+        retrieved_chunks.is_empty(),
+        "Expected no chunks to be retrieved"
+    );
 }
 
 #[tokio::test]
 async fn test_retrieve_relevant_chunks_qdrant_error() {
     // 1. Setup Mocks
-    let mut mock_embedding_client = MockEmbeddingClient::new();
-    let mut mock_qdrant_service = MockQdrantClientService::new();
+    let mock_embedding_client = MockEmbeddingClient::new();
+    let mock_qdrant_service = MockQdrantClientService::new();
 
     let query_text = "Query leading to Qdrant error";
     let session_id = Uuid::new_v4();
@@ -265,7 +338,9 @@ async fn test_retrieve_relevant_chunks_qdrant_error() {
     mock_embedding_client.set_response(Ok(mock_query_embedding.clone()));
 
     // Use set_search_response for error
-    mock_qdrant_service.set_search_response(Err(scribe_backend::errors::AppError::VectorDbError("Simulated Qdrant search failure".to_string())));
+    mock_qdrant_service.set_search_response(Err(scribe_backend::errors::AppError::VectorDbError(
+        "Simulated Qdrant search failure".to_string(),
+    )));
 
     // 2. Call the function
     let result = retrieve_relevant_chunks(
@@ -278,10 +353,16 @@ async fn test_retrieve_relevant_chunks_qdrant_error() {
     .await;
 
     // 3. Assertions
-    assert!(result.is_err(), "Expected retrieve_relevant_chunks to return an error");
+    assert!(
+        result.is_err(),
+        "Expected retrieve_relevant_chunks to return an error"
+    );
     if let Err(e) = result {
         // Check if the error is the expected type (or wraps it)
-        assert!(matches!(e, scribe_backend::errors::AppError::VectorDbError(_)), "Expected a VectorDbError");
+        assert!(
+            matches!(e, scribe_backend::errors::AppError::VectorDbError(_)),
+            "Expected a VectorDbError"
+        );
         assert!(e.to_string().contains("Simulated Qdrant search failure"));
     }
 }
@@ -289,7 +370,7 @@ async fn test_retrieve_relevant_chunks_qdrant_error() {
 #[tokio::test]
 async fn test_retrieve_relevant_chunks_embedding_error() {
     // 1. Setup Mocks
-    let mut mock_embedding_client = MockEmbeddingClient::new();
+    let mock_embedding_client = MockEmbeddingClient::new();
     let mock_qdrant_service = MockQdrantClientService::new(); // No expectations needed here
 
     let query_text = "Query leading to embedding error";
@@ -297,7 +378,9 @@ async fn test_retrieve_relevant_chunks_embedding_error() {
     let limit = 4;
 
     // Configure mock embedding client to return an error
-    mock_embedding_client.set_response(Err(scribe_backend::errors::AppError::GeminiError("Simulated embedding failure".to_string())));
+    mock_embedding_client.set_response(Err(scribe_backend::errors::AppError::GeminiError(
+        "Simulated embedding failure".to_string(),
+    )));
 
     // 2. Call the function
     let result = retrieve_relevant_chunks(
@@ -310,10 +393,16 @@ async fn test_retrieve_relevant_chunks_embedding_error() {
     .await;
 
     // 3. Assertions
-    assert!(result.is_err(), "Expected retrieve_relevant_chunks to return an error");
+    assert!(
+        result.is_err(),
+        "Expected retrieve_relevant_chunks to return an error"
+    );
     if let Err(e) = result {
         // Check if the error is the expected type (or wraps it)
-        assert!(matches!(e, scribe_backend::errors::AppError::GeminiError(_)), "Expected a GeminiError");
+        assert!(
+            matches!(e, scribe_backend::errors::AppError::GeminiError(_)),
+            "Expected a GeminiError"
+        );
         assert!(e.to_string().contains("Simulated embedding failure"));
     }
 }
@@ -321,9 +410,8 @@ async fn test_retrieve_relevant_chunks_embedding_error() {
 // TODO: Add tests for retrieve_relevant_chunks integration if needed,
 // likely involving inserting known points and then querying them.
 
-
-#[cfg(feature = "integration-tests")]
 #[tokio::test]
+#[ignore] // Test requires external Qdrant service
 #[serial]
 async fn test_rag_context_injection_with_qdrant() {
     // Skip test if QDRANT_URL is not set (e.g., in CI without service)
@@ -334,8 +422,7 @@ async fn test_rag_context_injection_with_qdrant() {
     // Remove call to non-existent/commented-out function
     // let qdrant_port = docker::run_qdrant_container().await;
     // Use QDRANT_URL directly from environment for the test
-    let qdrant_url = env::var("QDRANT_URL").expect("QDRANT_URL check failed after initial check");
+    let _qdrant_url = env::var("QDRANT_URL").expect("QDRANT_URL check failed after initial check");
 
     // Setup: Initialize tracing, config, DB, Qdrant client
 }
-

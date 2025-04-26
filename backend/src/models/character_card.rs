@@ -1,12 +1,12 @@
-use serde::{Deserialize, Deserializer, Serialize}; // Added Deserializer
-use serde_json::Value; // Using Value for flexibility in extensions and mixed types like id
-use std::collections::HashMap;
-use uuid::Uuid; // <-- Add Uuid import
-use diesel_json::Json; // Import Json wrapper
 use chrono::{DateTime, Utc}; // Add DateTime and Utc
 use diesel::prelude::*;
+use diesel_json::Json; // Import Json wrapper
 use diesel_json::Json as DieselJson; // Alias Json to avoid conflict with serde_json::Json
-use serde_json::Value as JsonValue; // Alias serde_json::Value
+use serde::{Deserialize, Deserializer, Serialize}; // Added Deserializer
+use serde_json::Value; // Using Value for flexibility in extensions and mixed types like id
+use serde_json::Value as JsonValue;
+use std::collections::HashMap;
+use uuid::Uuid; // <-- Add Uuid import // Alias serde_json::Value
 
 // Main Character Card Structure (V3)
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
@@ -434,8 +434,8 @@ pub struct Character {
     pub model_prompt: Option<String>,
     pub model_prompt_visibility: Option<String>,
     pub model_temperature: Option<bigdecimal::BigDecimal>, // Numeric -> BigDecimal
-    pub num_interactions: Option<i64>,                  // BigInt -> i64
-    pub permanence: Option<bigdecimal::BigDecimal>,     // Numeric -> BigDecimal
+    pub num_interactions: Option<i64>,                     // BigInt -> i64
+    pub permanence: Option<bigdecimal::BigDecimal>,        // Numeric -> BigDecimal
     pub persona_visibility: Option<String>,
     pub revision: Option<i32>,
     pub sharing_visibility: Option<String>,
@@ -517,8 +517,7 @@ impl NewCharacter {
                 let source = if data.source.as_ref().map_or(true, |s| s.is_empty()) {
                     None
                 } else {
-                    data.source
-                        .map(|s| s.into_iter().map(Some).collect())
+                    data.source.map(|s| s.into_iter().map(Some).collect())
                 };
                 let group_only_greetings = if data.group_only_greetings.is_empty() {
                     None
@@ -809,7 +808,8 @@ mod tests {
 
     #[test]
     fn test_parse_decorators_mixed_content() {
-        let content = "Line 1\n@@decorator1 value1\nLine 2\n@@decorator2\n@@@fallback2 val_fb\nLine 3";
+        let content =
+            "Line 1\n@@decorator1 value1\nLine 2\n@@decorator2\n@@@fallback2 val_fb\nLine 3";
         let (decorators, processed_content) = parse_decorators_from_content(content);
         assert_eq!(decorators.len(), 2);
         assert_eq!(decorators[0].name, "decorator1");
@@ -843,8 +843,7 @@ mod tests {
 
     #[test]
     fn test_parse_decorators_whitespace_handling() {
-        let content =
-            "  @@ spaced_name   spaced value  \n\t@@@ spaced_fallback \t spaced_fb_value \t\nContent";
+        let content = "  @@ spaced_name   spaced value  \n\t@@@ spaced_fallback \t spaced_fb_value \t\nContent";
         let (decorators, processed_content) = parse_decorators_from_content(content);
         assert_eq!(decorators.len(), 1);
         assert_eq!(decorators[0].name, "spaced_name");

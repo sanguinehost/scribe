@@ -1,9 +1,9 @@
 // backend/src/errors.rs
 use axum::{
+    Json,
     // extract::multipart::MultipartError, // Unused import
     http::StatusCode,
     response::{IntoResponse, Response},
-    Json,
 };
 use serde_json::json;
 use thiserror::Error;
@@ -15,7 +15,7 @@ use crate::auth::user_store::Backend as AuthBackend;
 use crate::services::character_parser::ParserError as CharacterParserError; // Alias for clarity
 use anyhow::Error as AnyhowError;
 use bcrypt; // Use bcrypt directly
-use deadpool_diesel::{PoolError as DeadpoolDieselPoolError}; // Removed unused InteractError
+use deadpool_diesel::PoolError as DeadpoolDieselPoolError; // Removed unused InteractError
 use diesel::result::Error as DieselError;
 
 // AppError should automatically be Send + Sync if all its fields are.
@@ -104,9 +104,8 @@ pub enum AppError {
     #[error("HTTP Middleware Error: {0}")]
     HttpMiddlewareError(String), // Use String instead of ReqwestMiddlewareError
 
-    #[error("LLM Client Error: {0}")] 
+    #[error("LLM Client Error: {0}")]
     LlmClientError(String),
-
 
     #[error("Vector DB Error: {0}")]
     VectorDbError(String),
@@ -120,7 +119,7 @@ pub enum AppError {
     #[error("Serialization Error: {0}")]
     SerializationError(String), // Use String instead of serde_json::Error
 
-    #[error("Internal Server Error: {0}")] 
+    #[error("Internal Server Error: {0}")]
     InternalServerError(String), // Use String instead of AnyhowError
 
     // REMOVED DUPLICATE/REDUNDANT VARIANTS:
@@ -184,7 +183,8 @@ pub enum AuthBackendError {
     DbQueryError(String), // Store as String
     #[error("Username Taken")]
     UsernameTaken,
-    #[error("Database Pool Error: {0}")] // Added for completeness if UserStore interacts with pool directly
+    #[error("Database Pool Error: {0}")]
+    // Added for completeness if UserStore interacts with pool directly
     DbPoolError(String),
     #[error("Internal Server Error: {0}")] // Catch-all for other errors
     InternalError(String),
@@ -232,182 +232,278 @@ impl IntoResponse for AppError {
     fn into_response(self) -> Response {
         let (status, error_message) = match self {
             // 4xx Client Errors
-            AppError::InvalidCredentials => (StatusCode::UNAUTHORIZED, "Invalid credentials".to_string()),
+            AppError::InvalidCredentials => {
+                (StatusCode::UNAUTHORIZED, "Invalid credentials".to_string())
+            }
             AppError::Unauthorized(msg) => (StatusCode::UNAUTHORIZED, msg),
             AppError::Forbidden => (StatusCode::FORBIDDEN, "Forbidden".to_string()),
             AppError::BadRequest(msg) => (StatusCode::BAD_REQUEST, msg),
             AppError::NotFound(msg) => (StatusCode::NOT_FOUND, msg),
             AppError::Conflict(msg) => (StatusCode::CONFLICT, msg),
             AppError::UserNotFound => (StatusCode::NOT_FOUND, "User not found".to_string()), // Often treated as 404
-            AppError::UsernameTaken => (StatusCode::CONFLICT, "Username is already taken".to_string()), // 409 Conflict
-            AppError::InvalidInput(msg) => (StatusCode::BAD_REQUEST, format!("Invalid input: {}", msg)),
+            AppError::UsernameTaken => (
+                StatusCode::CONFLICT,
+                "Username is already taken".to_string(),
+            ), // 409 Conflict
+            AppError::InvalidInput(msg) => {
+                (StatusCode::BAD_REQUEST, format!("Invalid input: {}", msg))
+            }
             AppError::FileUploadError(e) => {
                 error!("File upload error: {}", e);
                 (StatusCode::BAD_REQUEST, "File upload failed".to_string())
             }
-            AppError::CharacterParseError(e) => { // Corrected variant name
+            AppError::CharacterParseError(e) => {
+                // Corrected variant name
                 error!("Character parsing error: {}", e);
-                (StatusCode::BAD_REQUEST, "Failed to parse character data".to_string())
+                (
+                    StatusCode::BAD_REQUEST,
+                    "Failed to parse character data".to_string(),
+                )
             }
-             AppError::ParseIntError(e) => {
-                 error!("Integer parsing error: {}", e);
-                 (StatusCode::BAD_REQUEST, "Invalid numeric value provided".to_string())
+            AppError::ParseIntError(e) => {
+                error!("Integer parsing error: {}", e);
+                (
+                    StatusCode::BAD_REQUEST,
+                    "Invalid numeric value provided".to_string(),
+                )
             }
-             AppError::UuidError(e) => {
-                 error!("UUID error: {}", e);
-                 (StatusCode::BAD_REQUEST, "Invalid identifier format".to_string())
+            AppError::UuidError(e) => {
+                error!("UUID error: {}", e);
+                (
+                    StatusCode::BAD_REQUEST,
+                    "Invalid identifier format".to_string(),
+                )
             }
-            AppError::AuthError(e) => { // Corrected variant name
+            AppError::AuthError(e) => {
+                // Corrected variant name
                 error!("Authentication framework error: {}", e);
-                 // Determine status based on underlying axum_login::Error if possible
-                 // For now, default to UNAUTHORIZED or INTERNAL_SERVER_ERROR
-                 // Note: axum_login::Error doesn't expose underlying easily without matching
-                 (StatusCode::UNAUTHORIZED, "Authentication error".to_string())
+                // Determine status based on underlying axum_login::Error if possible
+                // For now, default to UNAUTHORIZED or INTERNAL_SERVER_ERROR
+                // Note: axum_login::Error doesn't expose underlying easily without matching
+                (StatusCode::UNAUTHORIZED, "Authentication error".to_string())
             }
             AppError::SessionStoreError(e) => {
                 error!("Session store error: {}", e);
-                (StatusCode::INTERNAL_SERVER_ERROR, "Session management error".to_string())
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Session management error".to_string(),
+                )
             }
 
             // Added RateLimited mapping
-            AppError::RateLimited => (StatusCode::TOO_MANY_REQUESTS, "API rate limit exceeded. Please try again later.".to_string()), // 429
+            AppError::RateLimited => (
+                StatusCode::TOO_MANY_REQUESTS,
+                "API rate limit exceeded. Please try again later.".to_string(),
+            ), // 429
 
             // 5xx Server Errors
             AppError::DatabaseQueryError(e) => {
                 error!("Database query error: {}", e);
-                (StatusCode::INTERNAL_SERVER_ERROR, "Database error".to_string())
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Database error".to_string(),
+                )
             }
             AppError::DbPoolError(e) => {
                 error!("Database pool error: {}", e);
-                (StatusCode::INTERNAL_SERVER_ERROR, "Database connection error".to_string())
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Database connection error".to_string(),
+                )
             }
-             AppError::DbManagedPoolError(e) => {
-                 error!("Database managed pool error: {}", e);
-                 (StatusCode::INTERNAL_SERVER_ERROR, "Database connection error".to_string())
-             }
-             AppError::DbPoolBuildError(e) => {
-                 error!("Database pool build error: {}", e);
-                 (StatusCode::INTERNAL_SERVER_ERROR, "Database configuration error".to_string())
-             }
+            AppError::DbManagedPoolError(e) => {
+                error!("Database managed pool error: {}", e);
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Database connection error".to_string(),
+                )
+            }
+            AppError::DbPoolBuildError(e) => {
+                error!("Database pool build error: {}", e);
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Database configuration error".to_string(),
+                )
+            }
             AppError::DbInteractError(e) => {
                 error!("Database interaction error: {}", e);
-                (StatusCode::INTERNAL_SERVER_ERROR, "Database task execution error".to_string())
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Database task execution error".to_string(),
+                )
             }
             AppError::DbMigrationError(e) => {
                 error!("Database migration error: {}", e);
-                (StatusCode::INTERNAL_SERVER_ERROR, "Database schema error".to_string())
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Database schema error".to_string(),
+                )
             }
             AppError::PasswordHashingFailed(e) => {
                 error!("Password hashing failed: {}", e);
-                (StatusCode::INTERNAL_SERVER_ERROR, "Internal security error".to_string())
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Internal security error".to_string(),
+                )
             }
             AppError::ConfigError(msg) => {
                 error!("Configuration error: {}", msg);
-                (StatusCode::INTERNAL_SERVER_ERROR, "Server configuration error".to_string())
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Server configuration error".to_string(),
+                )
             }
             AppError::IoError(e) => {
                 error!("IO error: {}", e);
-                (StatusCode::INTERNAL_SERVER_ERROR, "File system or network error".to_string())
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "File system or network error".to_string(),
+                )
             }
             AppError::SerializationError(e) => {
                 error!("Serialization error: {}", e);
-                (StatusCode::INTERNAL_SERVER_ERROR, "Data formatting error".to_string())
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Data formatting error".to_string(),
+                )
             }
             AppError::GeminiError(e) => {
                 error!("LLM API error: {}", e);
-                 // Consider mapping specific GenAIError types to different user messages/codes
-                (StatusCode::INTERNAL_SERVER_ERROR, "AI service error".to_string())
+                // Consider mapping specific GenAIError types to different user messages/codes
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "AI service error".to_string(),
+                )
             }
-             AppError::ImageProcessingError(e) => {
-                 error!("Image Processing Error: {}", e);
-                 (StatusCode::INTERNAL_SERVER_ERROR, "Failed to process image".to_string())
+            AppError::ImageProcessingError(e) => {
+                error!("Image Processing Error: {}", e);
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Failed to process image".to_string(),
+                )
             }
-             AppError::HttpRequestError(e) => {
-                 error!("HTTP Request Error: {}", e);
-                 (StatusCode::INTERNAL_SERVER_ERROR, "Failed to communicate with external service".to_string())
-             }
-             AppError::HttpMiddlewareError(e) => {
-                 error!("HTTP Middleware Error: {}", e);
-                 (StatusCode::INTERNAL_SERVER_ERROR, "Failed during external service communication".to_string())
-             }
-             AppError::LlmClientError(msg) => {
+            AppError::HttpRequestError(e) => {
+                error!("HTTP Request Error: {}", e);
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Failed to communicate with external service".to_string(),
+                )
+            }
+            AppError::HttpMiddlewareError(e) => {
+                error!("HTTP Middleware Error: {}", e);
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Failed during external service communication".to_string(),
+                )
+            }
+            AppError::LlmClientError(msg) => {
                 error!("LLM Client Error: {}", msg);
-                (StatusCode::INTERNAL_SERVER_ERROR, "AI service client error".to_string())
-             }
-             AppError::GenerationError(msg) => { // Updated variant name
-                 error!("LLM Generation Error: {}", msg);
-                 (StatusCode::INTERNAL_SERVER_ERROR, "AI generation failed".to_string())
-             }
-             AppError::EmbeddingError(msg) => { // Updated variant name
-                 error!("LLM Embedding Error: {}", msg);
-                 (StatusCode::INTERNAL_SERVER_ERROR, "AI embedding failed".to_string())
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "AI service client error".to_string(),
+                )
+            }
+            AppError::GenerationError(msg) => {
+                // Updated variant name
+                error!("LLM Generation Error: {}", msg);
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "AI generation failed".to_string(),
+                )
+            }
+            AppError::EmbeddingError(msg) => {
+                // Updated variant name
+                error!("LLM Embedding Error: {}", msg);
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "AI embedding failed".to_string(),
+                )
             }
             AppError::VectorDbError(e) => {
                 error!("Vector DB error: {}", e);
-                (StatusCode::INTERNAL_SERVER_ERROR, "Vector database operation failed".to_string())
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Vector database operation failed".to_string(),
+                )
             }
 
-             // Catch-all Internal Server Error MUST be last
-             AppError::InternalServerError(e) => {
-                 // Log the full error chain if possible
-                 error!("Internal Server Error: {:?}", e); // Use debug formatting for Anyhow
-                 (StatusCode::INTERNAL_SERVER_ERROR, "An unexpected error occurred".to_string())
-             }
-             AppError::Session(e) => {
-                 error!("Session Error: {}", e);
-                 (StatusCode::INTERNAL_SERVER_ERROR, "Session management error".to_string())
-             }
-             AppError::NotImplemented(msg) => {
-                 error!("Not Implemented: {}", msg);
-                 (StatusCode::NOT_IMPLEMENTED, msg)
-             }
+            // Catch-all Internal Server Error MUST be last
+            AppError::InternalServerError(e) => {
+                // Log the full error chain if possible
+                error!("Internal Server Error: {:?}", e); // Use debug formatting for Anyhow
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "An unexpected error occurred".to_string(),
+                )
+            }
+            AppError::Session(e) => {
+                error!("Session Error: {}", e);
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Session management error".to_string(),
+                )
+            }
+            AppError::NotImplemented(msg) => {
+                error!("Not Implemented: {}", msg);
+                (StatusCode::NOT_IMPLEMENTED, msg)
+            }
 
-             // WebSocket Errors
-             AppError::WebSocketSendError(e) => {
-                 error!("WebSocket send error: {}", e);
-                 (StatusCode::INTERNAL_SERVER_ERROR, "WebSocket send error".to_string())
-             }
-             AppError::WebSocketReceiveError(e) => {
-                 error!("WebSocket receive error: {}", e);
-                 (StatusCode::BAD_REQUEST, "WebSocket receive error".to_string())
-             }
+            // WebSocket Errors
+            AppError::WebSocketSendError(e) => {
+                error!("WebSocket send error: {}", e);
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "WebSocket send error".to_string(),
+                )
+            }
+            AppError::WebSocketReceiveError(e) => {
+                error!("WebSocket receive error: {}", e);
+                (
+                    StatusCode::BAD_REQUEST,
+                    "WebSocket receive error".to_string(),
+                )
+            }
 
-             // Chunking Errors (NEW)
-             AppError::ChunkingError(e) => {
-                 error!("Text chunking error: {}", e);
-                 (StatusCode::INTERNAL_SERVER_ERROR, "Text chunking error".to_string())
-             }
+            // Chunking Errors (NEW)
+            AppError::ChunkingError(e) => {
+                error!("Text chunking error: {}", e);
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Text chunking error".to_string(),
+                )
+            }
 
-             // Character Parsing Error (NEW)
-             AppError::CharacterParsingError(e) => {
-                 error!("Character parsing error: {}", e);
-                 (StatusCode::BAD_REQUEST, "Failed to parse character data".to_string())
-             }
-         };
+            // Character Parsing Error (NEW)
+            AppError::CharacterParsingError(e) => {
+                error!("Character parsing error: {}", e);
+                (
+                    StatusCode::BAD_REQUEST,
+                    "Failed to parse character data".to_string(),
+                )
+            }
+        };
 
-         let body = Json(json!({
-             "error": error_message,
-         }));
+        let body = Json(json!({
+            "error": error_message,
+        }));
 
-         (status, body).into_response()
-     }
- }
-
+        (status, body).into_response()
+    }
+}
 
 // --- Convenience Result Type ---
 pub type Result<T, E = AppError> = std::result::Result<T, E>;
-
 
 // --- Test Module ---
 #[cfg(test)]
 mod tests {
     use super::*;
-    use axum::response::Response;
-    use serde_json::Value;
-    use diesel::result::Error as DieselError; // Keep for test
+    use crate::services::character_parser::ParserError as CharacterParserError;
     use anyhow::anyhow; // Keep for test
-    use uuid::Uuid; // Add missing import
-    use crate::services::character_parser::ParserError as CharacterParserError; // Add this back
+    use axum::response::Response;
+    use diesel::result::Error as DieselError; // Keep for test
+    use serde_json::Value;
+    use uuid::Uuid; // Add missing import // Add this back
 
     // Helper to extract JSON body from response
     async fn get_body_json(response: Response) -> Value {
@@ -452,32 +548,32 @@ mod tests {
         assert_eq!(body["error"], "Resource 'abc' not found");
     }
 
-     #[tokio::test]
-     async fn test_bad_request_response() {
-         let error = AppError::BadRequest("Missing required field 'name'".to_string());
-         let response = error.into_response();
-         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-         let body = get_body_json(response).await;
-         assert_eq!(body["error"], "Missing required field 'name'");
-     }
+    #[tokio::test]
+    async fn test_bad_request_response() {
+        let error = AppError::BadRequest("Missing required field 'name'".to_string());
+        let response = error.into_response();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        let body = get_body_json(response).await;
+        assert_eq!(body["error"], "Missing required field 'name'");
+    }
 
-     #[tokio::test]
-     async fn test_unauthorized_response() {
-         let error = AppError::Unauthorized("Invalid API Key".to_string());
-         let response = error.into_response();
-         assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
-         let body = get_body_json(response).await;
-         assert_eq!(body["error"], "Invalid API Key");
-     }
+    #[tokio::test]
+    async fn test_unauthorized_response() {
+        let error = AppError::Unauthorized("Invalid API Key".to_string());
+        let response = error.into_response();
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        let body = get_body_json(response).await;
+        assert_eq!(body["error"], "Invalid API Key");
+    }
 
-     #[tokio::test]
-     async fn test_forbidden_response() {
-         let error = AppError::Forbidden;
-         let response = error.into_response();
-         assert_eq!(response.status(), StatusCode::FORBIDDEN);
-         let body = get_body_json(response).await;
-         assert_eq!(body["error"], "Forbidden");
-     }
+    #[tokio::test]
+    async fn test_forbidden_response() {
+        let error = AppError::Forbidden;
+        let response = error.into_response();
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+        let body = get_body_json(response).await;
+        assert_eq!(body["error"], "Forbidden");
+    }
 
     #[tokio::test]
     async fn test_username_taken_response() {
@@ -494,7 +590,9 @@ mod tests {
     #[tokio::test]
     async fn test_character_parse_error_response() {
         // Simulate a parser error
-        let inner_error = CharacterParserError::JsonError(serde_json::from_str::<Value>("{").unwrap_err().to_string());
+        let inner_error = CharacterParserError::JsonError(
+            serde_json::from_str::<Value>("{").unwrap_err().to_string(),
+        );
         let error = AppError::from(inner_error);
         let response = error.into_response();
 
@@ -532,7 +630,6 @@ mod tests {
     }
     */
 
-
     // --- Tests for AuthBackendError From implementations ---
 
     #[test]
@@ -543,7 +640,9 @@ mod tests {
         let backend_error = AuthBackendError::PasswordHashingFailed(simulated_error_string.clone());
         // We can't directly test the From trait without a BcryptError instance,
         // but we assert the structure we expect from the conversion.
-        assert!(matches!(backend_error, AuthBackendError::PasswordHashingFailed(s) if s == simulated_error_string));
+        assert!(
+            matches!(backend_error, AuthBackendError::PasswordHashingFailed(s) if s == simulated_error_string)
+        );
     }
 
     #[test]
@@ -555,7 +654,9 @@ mod tests {
         let diesel_other_err = DieselError::RollbackTransaction;
         let diesel_other_str = diesel_other_err.to_string(); // Store string first
         let backend_error_other = AuthBackendError::from(diesel_other_err); // Move the error here
-        assert!(matches!(backend_error_other, AuthBackendError::DbQueryError(s) if s == diesel_other_str)); // Compare with stored string
+        assert!(
+            matches!(backend_error_other, AuthBackendError::DbQueryError(s) if s == diesel_other_str)
+        ); // Compare with stored string
     }
 
     #[test]
@@ -584,7 +685,9 @@ mod tests {
 
     #[test]
     fn test_character_parse_error_display() {
-        let inner_error = CharacterParserError::JsonError(serde_json::from_str::<Value>("{").unwrap_err().to_string());
+        let inner_error = CharacterParserError::JsonError(
+            serde_json::from_str::<Value>("{").unwrap_err().to_string(),
+        );
         let app_error = AppError::CharacterParseError(inner_error);
         assert!(app_error.to_string().contains("Character parsing error:"));
     }

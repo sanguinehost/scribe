@@ -12,4 +12,4 @@ pub async fn health_check() -> Json<HealthStatus> {
     Json(HealthStatus {
         status: "ok".to_string(),
     })
-} 
+}

@@ -1,16 +1,16 @@
 pub mod auth; // Added auth module
+pub mod config; // Add config module
 pub mod errors; // Corrected from 'error'
 pub mod llm; // Added llm module
 pub mod logging;
 pub mod models;
+pub mod prompt_builder;
 pub mod routes;
 pub mod schema;
 pub mod services;
 pub mod state;
-pub mod prompt_builder;
-pub mod config; // Add config module
-pub mod vector_db; // Added vector_db module
-pub mod text_processing; // Added text processing module
+pub mod text_processing;
+pub mod vector_db; // Added vector_db module // Added text processing module
 
 use deadpool_diesel::postgres::Pool as DeadpoolPool;
 

@@ -1,31 +1,28 @@
-use axum::{
-    extract::{Path, State},
-    http::StatusCode,
-    response::{sse::Event, sse::Sse, IntoResponse, Response},
-    Json,
-    routing::{post, get},
-    Router,
-};
-use axum::debug_handler;
-use futures::{StreamExt};
-use serde::{Deserialize};
-use uuid::Uuid;
-use bigdecimal::BigDecimal;
-use axum_login::AuthSession;
-use genai::chat::{ChatOptions, ChatRequest, ChatResponse, ChatMessage, ChatStreamEvent};
 use crate::{
     auth::user_store::Backend as AuthBackend,
     errors::AppError,
-    models::{
-        chats::{MessageRole, NewChatMessageRequest, UpdateChatSettingsRequest},
-    },
+    models::chats::{MessageRole, NewChatMessageRequest, UpdateChatSettingsRequest},
+    services::chat_service,
     state::AppState,
-    services::{chat_service},
 };
-use tracing::{error, info, instrument, warn, debug};
-use serde_json::json;
+use axum::debug_handler;
+use axum::{
+    Json, Router,
+    extract::{Path, State},
+    http::StatusCode,
+    response::{IntoResponse, Response, sse::Event, sse::Sse},
+    routing::{get, post},
+};
+use axum_login::AuthSession;
+use bigdecimal::BigDecimal;
 use bigdecimal::ToPrimitive;
+use futures::StreamExt;
+use genai::chat::{ChatMessage, ChatOptions, ChatRequest, ChatResponse, ChatStreamEvent};
 use mime;
+use serde::Deserialize;
+use serde_json::json;
+use tracing::{debug, error, info, instrument, warn};
+use uuid::Uuid;
 
 const DEFAULT_MODEL_NAME: &str = "gemini-1.5-flash-latest";
 
@@ -50,12 +47,9 @@ pub async fn create_chat_session(
     let character_id = payload.character_id;
 
     // Call the service function to handle database operations
-    let created_session = chat_service::create_session_and_maybe_first_message(
-        &state.pool,
-        user_id,
-        character_id,
-    )
-    .await?;
+    let created_session =
+        chat_service::create_session_and_maybe_first_message(&state.pool, user_id, character_id)
+            .await?;
 
     info!(session_id = %created_session.id, "Chat session creation successful");
     Ok((StatusCode::CREATED, Json(created_session)))
@@ -67,7 +61,9 @@ pub async fn list_chat_sessions(
     State(state): State<AppState>,
     auth_session: AuthSession<AuthBackend>,
 ) -> Result<impl IntoResponse, AppError> {
-    let user = auth_session.user.ok_or_else(|| AppError::Unauthorized("Authentication required".to_string()))?;
+    let user = auth_session
+        .user
+        .ok_or_else(|| AppError::Unauthorized("Authentication required".to_string()))?;
     let user_id = user.id;
 
     // Call the service function
@@ -83,7 +79,9 @@ pub async fn get_chat_messages(
     auth_session: AuthSession<AuthBackend>,
     Path(session_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let user = auth_session.user.ok_or_else(|| AppError::Unauthorized("Authentication required".to_string()))?;
+    let user = auth_session
+        .user
+        .ok_or_else(|| AppError::Unauthorized("Authentication required".to_string()))?;
     let user_id = user.id;
 
     // Call the service function
@@ -94,10 +92,13 @@ pub async fn get_chat_messages(
 
 // Helper to extract content from a response, returning an error if missing
 fn extract_content_or_error(response: &ChatResponse) -> Result<String, AppError> {
-    response.content_text_as_str()
+    response
+        .content_text_as_str()
         .ok_or_else(|| {
             error!("Gemini response missing content: {:?}", response);
-            AppError::GenerationError("Gemini response was empty or missing text content".to_string())
+            AppError::GenerationError(
+                "Gemini response was empty or missing text content".to_string(),
+            )
         })
         .map(|s| s.to_string()) // Convert &str to String on success
 }
@@ -144,29 +145,37 @@ pub async fn generate_chat_response(
         seed,
         logit_bias,
         model_name,
-        user_message_to_save // Get the unsaved user message struct
+        user_message_to_save, // Get the unsaved user message struct
     ) = chat_service::get_session_data_for_generation(
         &app_state.pool,
         user_id,
         session_id,
         user_message_content.clone(), // Clone here for RAG context later
         DEFAULT_MODEL_NAME.to_string(),
-    ).await?;
+    )
+    .await?;
 
     // --- 1a. Save User Message (and trigger its embedding) ---
     let saved_user_message = chat_service::save_message(
         app_state.clone().into(),
         user_message_to_save.chat_id, // Correct field name: chat_id
-        user_id, // Pass user_id directly (was Some(user_id))
-        user_message_to_save.role, // Correct field name: role
+        user_id,                      // Pass user_id directly (was Some(user_id))
+        user_message_to_save.role,    // Correct field name: role
         user_message_to_save.content.clone(), // Clone content for saving
-    ).await?;
+    )
+    .await?;
     let user_message_id = saved_user_message.id; // Get ID for potential logging/use
     info!(%user_message_id, %session_id, "User message saved successfully");
 
     // --- 1b. Retrieve RAG Context (using original user message content) ---
-    let retrieved_chunks = match app_state.embedding_pipeline_service
-        .retrieve_relevant_chunks(app_state.clone().into(), session_id, &user_message_content, 3) // Convert AppState to Arc<AppState>, Added limit=3
+    let retrieved_chunks = match app_state
+        .embedding_pipeline_service
+        .retrieve_relevant_chunks(
+            app_state.clone().into(),
+            session_id,
+            &user_message_content,
+            3,
+        ) // Convert AppState to Arc<AppState>, Added limit=3
         .await
     {
         Ok(chunks) => {
@@ -185,7 +194,10 @@ pub async fn generate_chat_response(
             .map(|chunk| format!("- {}", chunk.text.trim())) // Format each chunk
             .collect();
         // Ensure there's a newline between the closing tag and the user message
-        format!("<RAG_CONTEXT>\n{}\n</RAG_CONTEXT>\n\n", context_lines.join("\n"))
+        format!(
+            "<RAG_CONTEXT>\n{}\n</RAG_CONTEXT>\n\n",
+            context_lines.join("\n")
+        )
     } else {
         String::new() // Empty string if no chunks
     };
@@ -194,12 +206,10 @@ pub async fn generate_chat_response(
     // Convert DB history to ChatMessage format
     let genai_messages: Vec<ChatMessage> = prompt_history
         .into_iter()
-        .map(|(role, content)| {
-            match role {
-                MessageRole::User => ChatMessage::user(content),
-                MessageRole::Assistant => ChatMessage::assistant(content),
-                MessageRole::System => ChatMessage::system(content),
-            }
+        .map(|(role, content)| match role {
+            MessageRole::User => ChatMessage::user(content),
+            MessageRole::Assistant => ChatMessage::assistant(content),
+            MessageRole::System => ChatMessage::system(content),
         })
         .collect();
 
@@ -225,22 +235,42 @@ pub async fn generate_chat_response(
 
     // Explicitly set the fields we manage, overriding defaults only where needed
     let chat_options = ChatOptions {
-        temperature: temperature.and_then(|t| t.to_f64()).or(Some(default_temperature)),
-        max_tokens: max_tokens_setting.map(|t| t as u32).or(Some(default_max_tokens)),
+        temperature: temperature
+            .and_then(|t| t.to_f64())
+            .or(Some(default_temperature)),
+        max_tokens: max_tokens_setting
+            .map(|t| t as u32)
+            .or(Some(default_max_tokens)),
         top_p: top_p.and_then(|p| p.to_f64()).or(Some(default_top_p)), // Apply default if None
         // Use struct update syntax to fill remaining fields from base_options
         ..base_options
     };
 
     // Warnings for fields potentially not mapped or used by the underlying API
-    if frequency_penalty.is_some() { warn!(%session_id, "frequency_penalty specified but potentially not used in ChatOptions struct init"); }
-    if presence_penalty.is_some() { warn!(%session_id, "presence_penalty specified but potentially not used in ChatOptions struct init"); }
-    if top_k.is_some() { warn!(%session_id, "top_k specified but potentially not used in ChatOptions struct init"); }
-    if repetition_penalty.is_some() { warn!(%session_id, "repetition_penalty specified but potentially not used in ChatOptions struct init"); }
-    if min_p.is_some() { warn!(%session_id, "min_p specified but potentially not used in ChatOptions struct init"); }
-    if top_a.is_some() { warn!(%session_id, "top_a specified but potentially not used in ChatOptions struct init"); }
-    if seed.is_some() { warn!(%session_id, "seed specified but potentially not used in ChatOptions struct init"); }
-    if logit_bias.is_some() { warn!(%session_id, "logit_bias specified but potentially not used in ChatOptions struct init"); }
+    if frequency_penalty.is_some() {
+        warn!(%session_id, "frequency_penalty specified but potentially not used in ChatOptions struct init");
+    }
+    if presence_penalty.is_some() {
+        warn!(%session_id, "presence_penalty specified but potentially not used in ChatOptions struct init");
+    }
+    if top_k.is_some() {
+        warn!(%session_id, "top_k specified but potentially not used in ChatOptions struct init");
+    }
+    if repetition_penalty.is_some() {
+        warn!(%session_id, "repetition_penalty specified but potentially not used in ChatOptions struct init");
+    }
+    if min_p.is_some() {
+        warn!(%session_id, "min_p specified but potentially not used in ChatOptions struct init");
+    }
+    if top_a.is_some() {
+        warn!(%session_id, "top_a specified but potentially not used in ChatOptions struct init");
+    }
+    if seed.is_some() {
+        warn!(%session_id, "seed specified but potentially not used in ChatOptions struct init");
+    }
+    if logit_bias.is_some() {
+        warn!(%session_id, "logit_bias specified but potentially not used in ChatOptions struct init");
+    }
 
     debug!(?chat_options, ?genai_request, %model_name, "Prepared request for Gemini");
 
@@ -248,13 +278,16 @@ pub async fn generate_chat_response(
     let accept_header = headers.get(axum::http::header::ACCEPT);
     let accept_stream = accept_header
         .and_then(|value| value.to_str().ok())
-        .map_or(false, |value_str| value_str.contains(mime::TEXT_EVENT_STREAM.as_ref()));
+        .map_or(false, |value_str| {
+            value_str.contains(mime::TEXT_EVENT_STREAM.as_ref())
+        });
 
     // --- 3. Generate Response ---
     if accept_stream {
         info!(%session_id, "Client accepts SSE, initiating streaming response.");
 
-        let ai_stream_result = app_state.ai_client
+        let ai_stream_result = app_state
+            .ai_client
             .stream_chat(&model_name, genai_request, Some(chat_options))
             .await;
 
@@ -352,7 +385,9 @@ pub async fn generate_chat_response(
                      info!(%session_id, "SSE stream generation finished.");
                 };
 
-                Ok(Sse::new(sse_stream).keep_alive(axum::response::sse::KeepAlive::default()).into_response())
+                Ok(Sse::new(sse_stream)
+                    .keep_alive(axum::response::sse::KeepAlive::default())
+                    .into_response())
             }
             Err(e) => {
                 error!(error = ?e, %session_id, "Failed to initiate AI stream");
@@ -362,7 +397,8 @@ pub async fn generate_chat_response(
     } else {
         info!(%session_id, "Client does not accept SSE, generating full response.");
 
-        let ai_response_result = app_state.ai_client
+        let ai_response_result = app_state
+            .ai_client
             .exec_chat(&model_name, genai_request, Some(chat_options))
             .await;
 
@@ -377,22 +413,32 @@ pub async fn generate_chat_response(
                             let empty_saved_message = chat_service::save_message(
                                 app_state.clone().into(),
                                 session_id,
-                                user_id, 
+                                user_id,
                                 MessageRole::Assistant,
                                 "".to_string(),
-                            ).await?;
-                            Ok(Json(json!({ "message_id": empty_saved_message.id, "content": "" })).into_response())
+                            )
+                            .await?;
+                            Ok(
+                                Json(
+                                    json!({ "message_id": empty_saved_message.id, "content": "" }),
+                                )
+                                .into_response(),
+                            )
                         } else {
                             // Save the successful response
                             let saved_message = chat_service::save_message(
                                 app_state.clone().into(),
                                 session_id,
-                                user_id, 
+                                user_id,
                                 MessageRole::Assistant,
                                 full_content.clone(),
-                            ).await?;
+                            )
+                            .await?;
                             // Return success with content
-                            Ok(Json(json!({ "message_id": saved_message.id, "content": full_content })).into_response())
+                            Ok(Json(
+                                json!({ "message_id": saved_message.id, "content": full_content }),
+                            )
+                            .into_response())
                         }
                     }
                     Err(e @ AppError::GenerationError(_)) => {
@@ -400,7 +446,8 @@ pub async fn generate_chat_response(
                         error!(error = ?e, %session_id, "Failed to extract content from non-streaming AI response, possibly blocked.");
                         // Return a specific error response to the client
                         let status = StatusCode::BAD_GATEWAY; // 502 might be appropriate
-                        let body = Json(json!({ "error": "Generation failed", "detail": e.to_string() }));
+                        let body =
+                            Json(json!({ "error": "Generation failed", "detail": e.to_string() }));
                         Ok((status, body).into_response())
                     }
                     Err(e) => {
@@ -415,7 +462,8 @@ pub async fn generate_chat_response(
                 error!(error = ?e, %session_id, "Failed to execute non-streaming AI request");
                 // Return a specific error response to the client
                 let status = StatusCode::BAD_GATEWAY; // Or potentially another 5xx code
-                let body = Json(json!({ "error": "AI service request failed", "detail": e.to_string() }));
+                let body =
+                    Json(json!({ "error": "AI service request failed", "detail": e.to_string() }));
                 Ok((status, body).into_response())
                 // Or propagate if default 500 handling is preferred for these specific errors: Err(e)
             }
@@ -438,7 +486,8 @@ pub async fn get_chat_settings(
     let user_id = user.id;
 
     // Call the service function
-    let settings_response = chat_service::get_session_settings(&state.pool, user_id, session_id).await?;
+    let settings_response =
+        chat_service::get_session_settings(&state.pool, user_id, session_id).await?;
     info!(%session_id, "Successfully fetched chat settings");
     Ok(Json(settings_response))
 }
@@ -468,10 +517,13 @@ pub async fn update_chat_settings(
     let neg_two = BigDecimal::from_f32(-2.0).unwrap();
 
     // Validate temperature (between 0.0 and 2.0)
-    if let Some(temp) = &payload.temperature { // temp is &BigDecimal
+    if let Some(temp) = &payload.temperature {
+        // temp is &BigDecimal
         if temp < &zero || temp > &two {
             error!(%session_id, invalid_temp = %temp, "Invalid temperature value");
-            return Err(AppError::BadRequest("Temperature must be between 0.0 and 2.0".into()));
+            return Err(AppError::BadRequest(
+                "Temperature must be between 0.0 and 2.0".into(),
+            ));
         }
     }
 
@@ -479,7 +531,9 @@ pub async fn update_chat_settings(
     if let Some(tokens) = payload.max_output_tokens {
         if tokens <= 0 {
             error!(%session_id, invalid_tokens = tokens, "Invalid max_output_tokens value");
-            return Err(AppError::BadRequest("Max output tokens must be positive".into()));
+            return Err(AppError::BadRequest(
+                "Max output tokens must be positive".into(),
+            ));
         }
     }
 
@@ -487,7 +541,9 @@ pub async fn update_chat_settings(
     if let Some(fp) = &payload.frequency_penalty {
         if fp < &neg_two || fp > &two {
             error!(%session_id, invalid_fp = %fp, "Invalid frequency_penalty value");
-            return Err(AppError::BadRequest("Frequency penalty must be between -2.0 and 2.0".into()));
+            return Err(AppError::BadRequest(
+                "Frequency penalty must be between -2.0 and 2.0".into(),
+            ));
         }
     }
 
@@ -495,7 +551,9 @@ pub async fn update_chat_settings(
     if let Some(pp) = &payload.presence_penalty {
         if pp < &neg_two || pp > &two {
             error!(%session_id, invalid_pp = %pp, "Invalid presence_penalty value");
-            return Err(AppError::BadRequest("Presence penalty must be between -2.0 and 2.0".into()));
+            return Err(AppError::BadRequest(
+                "Presence penalty must be between -2.0 and 2.0".into(),
+            ));
         }
     }
 
@@ -511,7 +569,9 @@ pub async fn update_chat_settings(
     if let Some(p) = &payload.top_p {
         if p < &zero || p > &one {
             error!(%session_id, invalid_p = %p, "Invalid top_p value");
-            return Err(AppError::BadRequest("Top-p must be between 0.0 and 1.0".into()));
+            return Err(AppError::BadRequest(
+                "Top-p must be between 0.0 and 1.0".into(),
+            ));
         }
     }
 
@@ -519,7 +579,9 @@ pub async fn update_chat_settings(
     if let Some(rp) = &payload.repetition_penalty {
         if rp <= &zero {
             error!(%session_id, invalid_rp = %rp, "Invalid repetition_penalty value");
-            return Err(AppError::BadRequest("Repetition penalty must be positive".into()));
+            return Err(AppError::BadRequest(
+                "Repetition penalty must be positive".into(),
+            ));
         }
     }
 
@@ -527,15 +589,20 @@ pub async fn update_chat_settings(
     if let Some(mp) = &payload.min_p {
         if mp < &zero || mp > &one {
             error!(%session_id, invalid_mp = %mp, "Invalid min_p value");
-            return Err(AppError::BadRequest("Min-p must be between 0.0 and 1.0".into()));
+            return Err(AppError::BadRequest(
+                "Min-p must be between 0.0 and 1.0".into(),
+            ));
         }
     }
 
     // Validate top_a (between 0.0 and 1.0)
     if let Some(ta) = &payload.top_a {
-        if ta < &zero || ta > &one { // Check if outside 0.0-1.0 range
+        if ta < &zero || ta > &one {
+            // Check if outside 0.0-1.0 range
             error!(%session_id, invalid_ta = %ta, "Invalid top_a value");
-            return Err(AppError::BadRequest("Top-a must be between 0.0 and 1.0".into()));
+            return Err(AppError::BadRequest(
+                "Top-a must be between 0.0 and 1.0".into(),
+            ));
         }
     }
 
@@ -545,7 +612,9 @@ pub async fn update_chat_settings(
     if let Some(bias) = &payload.logit_bias {
         if !bias.is_object() {
             error!(%session_id, invalid_bias = ?bias, "Invalid logit_bias value (must be a JSON object)");
-            return Err(AppError::BadRequest("Logit bias must be a JSON object".into()));
+            return Err(AppError::BadRequest(
+                "Logit bias must be a JSON object".into(),
+            ));
         }
         // Optional: Further validation on the object's keys/values if needed
     }
@@ -557,7 +626,8 @@ pub async fn update_chat_settings(
         user_id,
         session_id,
         payload, // Pass the validated payload
-    ).await?;
+    )
+    .await?;
 
     info!(%session_id, "Successfully updated chat settings");
     Ok(Json(updated_settings_response)) // Explicitly return Ok(Json(...))
@@ -569,5 +639,8 @@ pub fn chat_routes() -> Router<AppState> {
         .route("/", post(create_chat_session).get(list_chat_sessions))
         .route("/{session_id}/messages", get(get_chat_messages))
         .route("/{session_id}/generate", post(generate_chat_response))
-        .route("/{session_id}/settings", get(get_chat_settings).put(update_chat_settings)) // Add settings routes
+        .route(
+            "/{session_id}/settings",
+            get(get_chat_settings).put(update_chat_settings),
+        ) // Add settings routes
 }

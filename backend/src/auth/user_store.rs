@@ -2,13 +2,13 @@
 use async_trait::async_trait;
 use axum_login::{AuthnBackend, UserId};
 use std::fmt::{self, Debug};
- // Assuming User ID is Uuid
+// Assuming User ID is Uuid
 use tracing::{debug, error, info, instrument, warn};
 
 use crate::auth::AuthError;
 use crate::models::users::User; // Assuming your User model is here
-use crate::state::DbPool; // Assuming you use a DbPool
-use crate::models::users::UserCredentials; // <-- ADD import for model's credentials
+use crate::models::users::UserCredentials;
+use crate::state::DbPool; // Assuming you use a DbPool // <-- ADD import for model's credentials
 
 // Manually implement Debug because DbPool doesn't implement it.
 #[derive(Clone)]
@@ -22,8 +22,8 @@ pub struct Backend {
 impl Debug for Backend {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Backend")
-         .field("pool", &"<DbPool>") // Avoid printing the pool
-         .finish()
+            .field("pool", &"<DbPool>") // Avoid printing the pool
+            .finish()
     }
 }
 
@@ -49,7 +49,7 @@ impl AuthnBackend for Backend {
         let username = creds.username.clone();
         let password = creds.password.clone();
 
-        // --- Log before interact --- 
+        // --- Log before interact ---
         info!(username = %username, "AuthBackend: Authenticating via verify_credentials interact call...");
 
         let verify_result = pool
@@ -64,24 +64,24 @@ impl AuthnBackend for Backend {
         // Match the Result directly
         match verify_result {
             Ok(user) => {
-                 // --- Log success --- 
-                 info!(username = %user.username, user_id = %user.id, "AuthBackend: Authentication successful.");
-                 Ok(Some(user))
+                // --- Log success ---
+                info!(username = %user.username, user_id = %user.id, "AuthBackend: Authentication successful.");
+                Ok(Some(user))
             }
             Err(AuthError::WrongCredentials) => {
-                 // --- Log wrong creds ---
-                 warn!(username = %creds.username, "AuthBackend: Authentication failed (Wrong Credentials).");
-                 Ok(None)
+                // --- Log wrong creds ---
+                warn!(username = %creds.username, "AuthBackend: Authentication failed (Wrong Credentials).");
+                Ok(None)
             }
             Err(AuthError::UserNotFound) => {
                 // --- Log user not found ---
                 warn!(username = %creds.username, "AuthBackend: Authentication failed (User Not Found).");
-                 Ok(None)
+                Ok(None)
             }
             Err(e) => {
-                 // --- Log other error --- 
-                 error!(username = %creds.username, error = ?e, "AuthBackend: Authentication failed (Other Error).");
-                 Err(e)
+                // --- Log other error ---
+                error!(username = %creds.username, error = ?e, "AuthBackend: Authentication failed (Other Error).");
+                Err(e)
             }
         }
     }
@@ -91,7 +91,7 @@ impl AuthnBackend for Backend {
         let pool = self.pool.clone();
         let id: uuid::Uuid = *user_id;
 
-        // --- Log before interact --- 
+        // --- Log before interact ---
         info!(user_id = %id, "AuthBackend: Getting user via get_user interact call...");
 
         let get_result = pool
@@ -116,9 +116,9 @@ impl AuthnBackend for Backend {
                 Ok(None) // User not found is not an error for get_user, return None
             }
             Err(e) => {
-                 // --- Log other error --- 
-                 error!(user_id = %id, error = ?e, "AuthBackend: Get user failed (Other Error).");
-                 Err(e)
+                // --- Log other error ---
+                error!(user_id = %id, error = ?e, "AuthBackend: Get user failed (Other Error).");
+                Err(e)
             }
         }
     }
@@ -137,4 +137,4 @@ impl AuthnBackend for Backend {
 //         // Implement permission checking logic here
 //         Ok(true) // Placeholder
 //     }
-// } 
+// }

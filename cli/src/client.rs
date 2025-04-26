@@ -3,21 +3,21 @@
 use crate::error::CliError;
 use async_trait::async_trait;
 use reqwest::multipart;
-use reqwest::{Client as ReqwestClient, Response, Url, StatusCode};
+use reqwest::{Client as ReqwestClient, Response, StatusCode, Url};
 use scribe_backend::models::auth::Credentials;
 use scribe_backend::models::characters::CharacterMetadata;
 // Updated imports for chats models
+use futures_util::{Stream, StreamExt}; // Removed StreamExt, TryStreamExt // Add StreamExt back
+use reqwest_eventsource::{Event, EventSource}; // Added Event, EventSource
 use scribe_backend::models::chats::{ChatMessage, ChatSession, GenerateResponsePayload};
 use scribe_backend::models::users::User;
-use serde::de::DeserializeOwned;
 use serde::Deserialize; // Added Deserialize
+use serde::de::DeserializeOwned;
 use serde_json::json;
 use std::fs;
 use std::path::Path;
-use uuid::Uuid;
-use futures_util::{Stream, StreamExt}; // Removed StreamExt, TryStreamExt // Add StreamExt back
-use reqwest_eventsource::{Event, EventSource}; // Added Event, EventSource
-use std::pin::Pin; // Added Pin
+use std::pin::Pin;
+use uuid::Uuid; // Added Pin
 
 // Define the expected response structure from the /health endpoint (matching backend)
 #[derive(serde::Deserialize, Debug, Clone)]
@@ -37,8 +37,8 @@ pub async fn handle_response<T: DeserializeOwned>(response: Response) -> Result<
         response.json::<T>().await.map_err(CliError::Reqwest)
     } else {
         if status == StatusCode::TOO_MANY_REQUESTS {
-             tracing::warn!("Received 429 Too Many Requests from backend");
-             return Err(CliError::RateLimitExceeded);
+            tracing::warn!("Received 429 Too Many Requests from backend");
+            return Err(CliError::RateLimitExceeded);
         }
         let error_text = response
             .text()
@@ -94,8 +94,8 @@ async fn handle_non_streaming_chat_response(response: Response) -> Result<ChatMe
     } else {
         // Reuse the existing error handling logic from handle_response
         if status == StatusCode::TOO_MANY_REQUESTS {
-             tracing::warn!("Received 429 Too Many Requests from backend");
-             return Err(CliError::RateLimitExceeded);
+            tracing::warn!("Received 429 Too Many Requests from backend");
+            return Err(CliError::RateLimitExceeded);
         }
         let error_text = response
             .text()
@@ -116,7 +116,11 @@ pub trait HttpClient: Send + Sync {
     async fn register(&self, credentials: &Credentials) -> Result<User, CliError>;
     async fn list_characters(&self) -> Result<Vec<CharacterMetadata>, CliError>;
     async fn create_chat_session(&self, character_id: Uuid) -> Result<ChatSession, CliError>;
-    async fn upload_character(&self, name: &str, file_path: &str) -> Result<CharacterMetadata, CliError>;
+    async fn upload_character(
+        &self,
+        name: &str,
+        file_path: &str,
+    ) -> Result<CharacterMetadata, CliError>;
     async fn health_check(&self) -> Result<HealthStatus, CliError>;
     async fn logout(&self) -> Result<(), CliError>;
     async fn me(&self) -> Result<User, CliError>;
@@ -140,7 +144,12 @@ pub trait HttpClient: Send + Sync {
 
     // Keep generate_response for mock compatibility if needed, but mark unused
     #[allow(dead_code)]
-    async fn generate_response(&self, chat_id: Uuid, message_content: &str, model_name: Option<String>) -> Result<ChatMessage, CliError>;
+    async fn generate_response(
+        &self,
+        chat_id: Uuid,
+        message_content: &str,
+        model_name: Option<String>,
+    ) -> Result<ChatMessage, CliError>;
 }
 
 /// Wrapper around ReqwestClient implementing the HttpClient trait.
@@ -160,33 +169,38 @@ impl HttpClient for ReqwestClientWrapper {
     async fn login(&self, credentials: &Credentials) -> Result<User, CliError> {
         let url = build_url(&self.base_url, "/api/auth/login")?;
         tracing::info!(%url, username = %credentials.username, "Attempting login via HttpClient");
-        let response = self.client
+        let response = self
+            .client
             .post(url)
             .json(credentials)
             .send()
             .await
             .map_err(CliError::Reqwest)?;
-        handle_response::<User>(response).await
-             .map_err(|e| CliError::AuthFailed(format!("{}", e)))
+        handle_response::<User>(response)
+            .await
+            .map_err(|e| CliError::AuthFailed(format!("{}", e)))
     }
 
     async fn register(&self, credentials: &Credentials) -> Result<User, CliError> {
         let url = build_url(&self.base_url, "/api/auth/register")?;
         tracing::info!(%url, username = %credentials.username, "Attempting registration via HttpClient");
-        let response = self.client
+        let response = self
+            .client
             .post(url)
             .json(credentials)
             .send()
             .await
             .map_err(CliError::Reqwest)?;
-        handle_response::<User>(response).await
-             .map_err(|e| CliError::RegistrationFailed(format!("{}", e)))
+        handle_response::<User>(response)
+            .await
+            .map_err(|e| CliError::RegistrationFailed(format!("{}", e)))
     }
 
     async fn list_characters(&self) -> Result<Vec<CharacterMetadata>, CliError> {
         let url = build_url(&self.base_url, "/api/characters")?;
         tracing::info!(%url, "Listing characters via HttpClient");
-        let response = self.client
+        let response = self
+            .client
             .get(url)
             .send()
             .await
@@ -198,7 +212,8 @@ impl HttpClient for ReqwestClientWrapper {
         let url = build_url(&self.base_url, "/api/chats")?;
         tracing::info!(%url, %character_id, "Creating chat session via HttpClient");
         let payload = json!({ "character_id": character_id });
-        let response = self.client
+        let response = self
+            .client
             .post(url)
             .json(&payload)
             .send()
@@ -207,15 +222,17 @@ impl HttpClient for ReqwestClientWrapper {
         handle_response(response).await
     }
 
-
-    async fn upload_character(&self, name: &str, file_path: &str) -> Result<CharacterMetadata, CliError> {
+    async fn upload_character(
+        &self,
+        name: &str,
+        file_path: &str,
+    ) -> Result<CharacterMetadata, CliError> {
         tracing::info!(character_name = name, %file_path, "Attempting to upload character via HttpClient");
 
-        let file_bytes = fs::read(file_path)
-            .map_err(|e| {
-                tracing::error!(error = ?e, %file_path, "Failed to read character card file");
-                CliError::Io(e)
-            })?;
+        let file_bytes = fs::read(file_path).map_err(|e| {
+            tracing::error!(error = ?e, %file_path, "Failed to read character card file");
+            CliError::Io(e)
+        })?;
 
         let file_name = Path::new(file_path)
             .file_name()
@@ -225,14 +242,16 @@ impl HttpClient for ReqwestClientWrapper {
         let mime_type = if file_name.to_lowercase().ends_with(".png") {
             "image/png"
         } else {
-             tracing::warn!(%file_name, "Uploading non-PNG file, assuming image/png MIME type");
+            tracing::warn!(%file_name, "Uploading non-PNG file, assuming image/png MIME type");
             "image/png"
         };
 
         let file_part = multipart::Part::bytes(file_bytes)
             .file_name(file_name.to_string())
             .mime_str(mime_type)
-            .map_err(|e| CliError::Internal(format!("Failed to create multipart file part: {}", e)))?;
+            .map_err(|e| {
+                CliError::Internal(format!("Failed to create multipart file part: {}", e))
+            })?;
 
         let form = multipart::Form::new()
             .text("name", name.to_string())
@@ -241,7 +260,8 @@ impl HttpClient for ReqwestClientWrapper {
         let url = build_url(&self.base_url, "/api/characters/upload")?;
         tracing::info!(%url, "Sending character upload request via HttpClient");
 
-        let response = self.client
+        let response = self
+            .client
             .post(url)
             .multipart(form)
             .send()
@@ -253,7 +273,8 @@ impl HttpClient for ReqwestClientWrapper {
     async fn health_check(&self) -> Result<HealthStatus, CliError> {
         let url = build_url(&self.base_url, "/api/health")?;
         tracing::info!(%url, "Performing health check via HttpClient");
-        let response = self.client
+        let response = self
+            .client
             .get(url)
             .send()
             .await
@@ -264,7 +285,8 @@ impl HttpClient for ReqwestClientWrapper {
     async fn logout(&self) -> Result<(), CliError> {
         let url = build_url(&self.base_url, "/api/auth/logout")?;
         tracing::info!(%url, "Attempting logout via HttpClient");
-        let response = self.client
+        let response = self
+            .client
             .post(url)
             .send()
             .await
@@ -289,7 +311,8 @@ impl HttpClient for ReqwestClientWrapper {
     async fn me(&self) -> Result<User, CliError> {
         let url = build_url(&self.base_url, "/api/auth/me")?;
         tracing::info!(%url, "Fetching current user info via HttpClient");
-        let response = self.client
+        let response = self
+            .client
             .get(url)
             .send()
             .await
@@ -300,7 +323,8 @@ impl HttpClient for ReqwestClientWrapper {
     async fn get_character(&self, character_id: Uuid) -> Result<CharacterMetadata, CliError> {
         let url = build_url(&self.base_url, &format!("/api/characters/{}", character_id))?;
         tracing::info!(%url, %character_id, "Fetching character details via HttpClient");
-        let response = self.client
+        let response = self
+            .client
             .get(url)
             .send()
             .await
@@ -311,7 +335,8 @@ impl HttpClient for ReqwestClientWrapper {
     async fn list_chat_sessions(&self) -> Result<Vec<ChatSession>, CliError> {
         let url = build_url(&self.base_url, "/api/chats")?;
         tracing::info!(%url, "Listing chat sessions via HttpClient");
-        let response = self.client
+        let response = self
+            .client
             .get(url)
             .send()
             .await
@@ -320,9 +345,13 @@ impl HttpClient for ReqwestClientWrapper {
     }
 
     async fn get_chat_messages(&self, session_id: Uuid) -> Result<Vec<ChatMessage>, CliError> {
-        let url = build_url(&self.base_url, &format!("/api/chats/{}/messages", session_id))?;
+        let url = build_url(
+            &self.base_url,
+            &format!("/api/chats/{}/messages", session_id),
+        )?;
         tracing::info!(%url, %session_id, "Fetching chat messages via HttpClient");
-        let response = self.client
+        let response = self
+            .client
             .get(url)
             .send()
             .await
@@ -339,7 +368,8 @@ impl HttpClient for ReqwestClientWrapper {
     ) -> Result<ChatMessage, CliError> {
         // Build URL with query parameter for non-streaming
         let mut url = build_url(&self.base_url, &format!("/api/chats/{}/generate", chat_id))?;
-        url.query_pairs_mut().append_pair("request_thinking", "false");
+        url.query_pairs_mut()
+            .append_pair("request_thinking", "false");
 
         // Use the backend model struct directly (without request_thinking)
         let request_body = GenerateResponsePayload {
@@ -349,13 +379,15 @@ impl HttpClient for ReqwestClientWrapper {
 
         tracing::info!(%url, chat_id = %chat_id, model = ?model_name, "Sending non-streaming message via HttpClient");
 
-        let response = self.client.post(url.clone()) // Clone URL here
+        let response = self
+            .client
+            .post(url.clone()) // Clone URL here
             .json(&request_body)
             .send()
             .await
             .map_err(|e| {
-                 tracing::error!(error = ?e, "Network error sending message");
-                 CliError::Network(e.to_string())
+                tracing::error!(error = ?e, "Network error sending message");
+                CliError::Network(e.to_string())
             })?;
 
         // Use the NEW handler function specifically for this response type
@@ -371,7 +403,8 @@ impl HttpClient for ReqwestClientWrapper {
     ) -> Result<Pin<Box<dyn Stream<Item = Result<StreamEvent, CliError>> + Send>>, CliError> {
         // Build URL with query parameter for streaming
         let mut url = build_url(&self.base_url, &format!("/api/chats/{}/generate", chat_id))?;
-        url.query_pairs_mut().append_pair("request_thinking", &request_thinking.to_string());
+        url.query_pairs_mut()
+            .append_pair("request_thinking", &request_thinking.to_string());
 
         tracing::info!(%url, %chat_id, %request_thinking, "Initiating streaming chat response via HttpClient");
 
@@ -385,7 +418,8 @@ impl HttpClient for ReqwestClientWrapper {
         let request_builder = self.client.post(url.clone()).json(&payload); // Clone URL, create builder
 
         // Create the EventSource from the RequestBuilder
-        let mut es = EventSource::new(request_builder).map_err(|e| CliError::Internal(format!("Failed to create EventSource: {}", e)))?;
+        let mut es = EventSource::new(request_builder)
+            .map_err(|e| CliError::Internal(format!("Failed to create EventSource: {}", e)))?;
 
         // Use async_stream to create a Stream
         let stream = async_stream::stream! {
@@ -467,12 +501,17 @@ impl HttpClient for ReqwestClientWrapper {
 
     // Keep generate_response for mock compatibility if needed
     #[allow(dead_code)]
-    async fn generate_response(&self, chat_id: Uuid, message_content: &str, model_name: Option<String>) -> Result<ChatMessage, CliError> {
+    async fn generate_response(
+        &self,
+        chat_id: Uuid,
+        message_content: &str,
+        model_name: Option<String>,
+    ) -> Result<ChatMessage, CliError> {
         // This implementation might need adjustment if used, but for now, it mirrors send_message
-        self.send_message(chat_id, message_content, model_name.as_deref()).await
+        self.send_message(chat_id, message_content, model_name.as_deref())
+            .await
     }
 }
-
 
 // --- Tests ---
 #[cfg(test)]
@@ -488,11 +527,17 @@ mod tests {
 
         let base_with_path = Url::parse("http://example.com/base/").unwrap();
         let expected_with_path = Url::parse("http://example.com/base/path").unwrap();
-        assert_eq!(build_url(&base_with_path, "path").unwrap(), expected_with_path);
+        assert_eq!(
+            build_url(&base_with_path, "path").unwrap(),
+            expected_with_path
+        );
 
         let base_no_slash = Url::parse("http://example.com").unwrap();
         let expected_no_slash = Url::parse("http://example.com/path").unwrap();
-        assert_eq!(build_url(&base_no_slash, "/path").unwrap(), expected_no_slash);
+        assert_eq!(
+            build_url(&base_no_slash, "/path").unwrap(),
+            expected_no_slash
+        );
     }
 
     #[test]

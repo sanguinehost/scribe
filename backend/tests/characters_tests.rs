@@ -1,57 +1,57 @@
 #![cfg(test)]
-use diesel::{PgConnection, RunQueryDsl};
-use deadpool_diesel::postgres::{Pool}; // Removed unused Manager, Runtime
-use scribe_backend::{
-    state::AppState,
-    models::{
-        characters::{Character as DbCharacter},
-        users::{User, NewUser},
-    },
-    schema::{users}, // Removed unused characters alias
-    routes::characters::characters_router,
-    routes::auth::login_handler as auth_login_handler,
-    auth::{session_store::DieselSessionStore, user_store::Backend as AuthBackend},
-    config::Config,
-    // llm::EmbeddingClient, // Removed unused import
-    // test_helpers::MockEmbeddingClient, // Removed old mock import
-    test_helpers::{MockEmbeddingPipelineService, MockEmbeddingClient},
-    vector_db::QdrantClientService,
-};
 use axum::{
     Router,
     body::Body,
-    http::{Request, Response as AxumResponse, StatusCode, Method, header},
+    http::{Method, Request, Response as AxumResponse, StatusCode, header},
     routing::post,
 };
 use axum_login::{
     AuthManagerLayerBuilder,
-    tower_sessions::{SessionManagerLayer, Expiry, cookie::SameSite},
+    tower_sessions::{Expiry, SessionManagerLayer, cookie::SameSite},
+};
+use deadpool_diesel::postgres::Pool; // Removed unused Manager, Runtime
+use diesel::{PgConnection, RunQueryDsl};
+use scribe_backend::{
+    auth::{session_store::DieselSessionStore, user_store::Backend as AuthBackend},
+    config::Config,
+    models::{
+        characters::Character as DbCharacter,
+        users::{NewUser, User},
+    },
+    routes::auth::login_handler as auth_login_handler,
+    routes::characters::characters_router,
+    schema::users, // Removed unused characters alias
+    state::AppState,
+    // llm::EmbeddingClient, // Removed unused import
+    // test_helpers::MockEmbeddingClient, // Removed old mock import
+    test_helpers::{MockEmbeddingClient, MockEmbeddingPipelineService},
+    vector_db::QdrantClientService,
 };
 use tower_cookies::CookieManagerLayer;
 use uuid::Uuid;
 // use std::sync::Once; // Removed unused import
 // use tracing_subscriber::{EnvFilter, fmt}; // Removed unused
 // use secrecy::{Secret, ExposeSecret}; // Unused
-use serde_json::json;
-use mime;
-use http_body_util::BodyExt;
-use time;
 use bcrypt;
+use http_body_util::BodyExt;
+use mime;
+use serde_json::json;
+use time;
 // use dotenvy::dotenv; // Removed unused
 // use std::env; // Removed unused
+use anyhow::Context;
 use base64::{Engine as _, engine::general_purpose::STANDARD as base64_standard};
 use crc32fast;
-use std::sync::Arc;
-use anyhow::Context;
-use reqwest::StatusCode as ReqwestStatusCode;
 use diesel::prelude::*;
+use reqwest::StatusCode as ReqwestStatusCode;
+use std::sync::Arc;
 // use scribe_backend::models::characters::Character as DbCharacter; // Removed duplicate import
 use scribe_backend::models::auth::Credentials as UserCredentials; // Correct path for Credentials, remove duplicate User import
 // use scribe_backend::auth::user_store::Backend as AuthBackend; // Removed duplicate import
 // use scribe_backend::state::AppState; // Remove duplicate AppState import
 // use scribe_backend::test_helpers::{create_test_pool, ensure_tracing_initialized, TestDataGuard}; // Unused import (helpers defined locally or not used)
-use reqwest::cookie::Jar;
 use reqwest::Client;
+use reqwest::cookie::Jar;
 // use tower::ServiceExt; // Unused
 // use axum_login::AuthSession; // Unused
 // use std::collections::HashMap; // Unused
@@ -71,7 +71,7 @@ fn insert_test_character(
 ) -> Result<DbCharacter, diesel::result::Error> {
     use scribe_backend::schema::characters;
     // Remove SelectableHelper if unused elsewhere, added QueryDsl, ExpressionMethods
-    use diesel::{RunQueryDsl}; // Removed unused QueryDsl, ExpressionMethods
+    use diesel::RunQueryDsl; // Removed unused QueryDsl, ExpressionMethods
 
     // Define a local struct for insertion
     // This local struct might need more fields if the DB schema requires them for insertion
@@ -86,8 +86,8 @@ fn insert_test_character(
         personality: Option<&'a str>,
         spec: &'a str, // Add spec field (assuming it's non-nullable text)
         spec_version: &'a str, // Add spec_version field
-        // Ensure all non-nullable fields in the DB characters table
-        // without a default value are present here.
+                       // Ensure all non-nullable fields in the DB characters table
+                       // without a default value are present here.
     }
 
     let new_character_for_insert = NewDbCharacter {
@@ -96,8 +96,8 @@ fn insert_test_character(
         // Provide values for other required fields
         description: Some("Default test description"), // Example
         personality: Some("Default test personality"), // Example
-        spec: "chara_card_v3", // Provide a default spec value
-        spec_version: "1.0", // Provide a default spec_version value
+        spec: "chara_card_v3",                         // Provide a default spec value
+        spec_version: "1.0",                           // Provide a default spec_version value
     };
 
     diesel::insert_into(characters::table)
@@ -148,13 +148,10 @@ fn create_multipart_request(
     // Final boundary
     body.extend_from_slice(format!("--{}--\r\n", boundary).as_bytes());
 
-    let mut request_builder = Request::builder()
-        .method(Method::POST)
-        .uri(uri)
-        .header(
-            header::CONTENT_TYPE,
-            format!("multipart/form-data; boundary={}", boundary),
-        );
+    let mut request_builder = Request::builder().method(Method::POST).uri(uri).header(
+        header::CONTENT_TYPE,
+        format!("multipart/form-data; boundary={}", boundary),
+    );
 
     // Add cookie header if provided
     if let Some(cookie) = session_cookie {
@@ -167,10 +164,9 @@ fn create_multipart_request(
 // Helper to create a test PNG with a valid character card chunk
 fn create_test_character_png(version: &str) -> Vec<u8> {
     let (chunk_keyword, json_payload) = match version {
-        "v2" => {
-            (
-                "chara",
-                r#"{
+        "v2" => (
+            "chara",
+            r#"{
                     "name": "Test V2 Character",
                     "description": "A test character for v2",
                     "personality": "Friendly and helpful",
@@ -184,13 +180,11 @@ fn create_test_character_png(version: &str) -> Vec<u8> {
                     "creator": "Test Author",
                     "character_version": "1.0",
                     "alternate_greetings": ["Hey there!", "Hi!"]
-                }"#
-            )
-        },
-        "v3" => {
-            (
-                "ccv3",
-                r#"{
+                }"#,
+        ),
+        "v3" => (
+            "ccv3",
+            r#"{
                     "spec": "chara_card_v3",
                     "spec_version": "3.0",
                     "data": {
@@ -208,32 +202,31 @@ fn create_test_character_png(version: &str) -> Vec<u8> {
                         "character_version": "1.0",
                         "alternate_greetings": ["Hey there from V3!", "Hi from V3!"]
                     }
-                }"#
-            )
-        },
+                }"#,
+        ),
         _ => panic!("Unsupported version: {}", version),
     };
 
     // Create a minimal valid PNG with the character chunk
     let mut png_bytes = Vec::new();
-    
+
     // PNG signature
     png_bytes.extend_from_slice(&[137, 80, 78, 71, 13, 10, 26, 10]);
-    
+
     // IHDR chunk (required)
     let ihdr_data = &[0, 0, 0, 1, 0, 0, 0, 1, 8, 6, 0, 0, 0];
     let ihdr_len = (ihdr_data.len() as u32).to_be_bytes();
     png_bytes.extend_from_slice(&ihdr_len);
     png_bytes.extend_from_slice(b"IHDR");
     png_bytes.extend_from_slice(ihdr_data);
-    
+
     // Calculate CRC for IHDR
     let mut crc_data = Vec::new();
     crc_data.extend_from_slice(b"IHDR");
     crc_data.extend_from_slice(ihdr_data);
     let crc_ihdr = crc32fast::hash(&crc_data);
     png_bytes.extend_from_slice(&crc_ihdr.to_be_bytes());
-    
+
     // tEXt chunk with character data
     let base64_payload = base64_standard.encode(json_payload);
     let text_chunk_data = [chunk_keyword.as_bytes(), &[0u8], base64_payload.as_bytes()].concat();
@@ -241,33 +234,33 @@ fn create_test_character_png(version: &str) -> Vec<u8> {
     png_bytes.extend_from_slice(&text_chunk_len);
     png_bytes.extend_from_slice(b"tEXt");
     png_bytes.extend_from_slice(&text_chunk_data);
-    
+
     // Calculate CRC for tEXt
     let mut crc_text_data = Vec::new();
     crc_text_data.extend_from_slice(b"tEXt");
     crc_text_data.extend_from_slice(&text_chunk_data);
     let crc_text = crc32fast::hash(&crc_text_data);
     png_bytes.extend_from_slice(&crc_text.to_be_bytes());
-    
+
     // IDAT chunk (minimal required data)
     let idat_data = &[8, 29, 99, 96, 0, 0, 0, 3, 0, 1];
     let idat_len = (idat_data.len() as u32).to_be_bytes();
     png_bytes.extend_from_slice(&idat_len);
     png_bytes.extend_from_slice(b"IDAT");
     png_bytes.extend_from_slice(idat_data);
-    
+
     // Calculate CRC for IDAT
     let mut crc_idat_data = Vec::new();
     crc_idat_data.extend_from_slice(b"IDAT");
     crc_idat_data.extend_from_slice(idat_data);
     let crc_idat = crc32fast::hash(&crc_idat_data);
     png_bytes.extend_from_slice(&crc_idat.to_be_bytes());
-    
+
     // IEND chunk
     png_bytes.extend_from_slice(&[0, 0, 0, 0]);
     png_bytes.extend_from_slice(b"IEND");
     png_bytes.extend_from_slice(&[174, 66, 96, 130]);
-    
+
     png_bytes
 }
 
@@ -276,8 +269,7 @@ fn create_test_character_png(version: &str) -> Vec<u8> {
 fn hash_test_password(password: &str) -> String {
     // Use the actual hashing library used by the application
     // Perform synchronously in test helper for simplicity
-    bcrypt::hash(password, bcrypt::DEFAULT_COST)
-        .expect("Failed to hash test password with bcrypt")
+    bcrypt::hash(password, bcrypt::DEFAULT_COST).expect("Failed to hash test password with bcrypt")
     // format!("hashed_{}", password) // Old placeholder
 }
 
@@ -321,20 +313,20 @@ async fn build_test_app_for_characters(pool: Pool) -> Router {
             .expect("Failed to create QdrantClientService for characters test"),
     );
     let app_state = AppState::new(
-        pool.clone(), 
-        config, 
-        ai_client, 
+        pool.clone(),
+        config,
+        ai_client,
         embedding_client,
         qdrant_service,
         embedding_pipeline_service,
-    ); 
+    );
 
     Router::new()
         // Apply routes first
         .nest("/api/characters", characters_router(app_state.clone())) // Nested character routes with state
         .route("/api/auth/login", post(auth_login_handler)) // Auth route for login
         // Remove redundant state application here; state is handled by nested routers
-        // .with_state(app_state) 
+        // .with_state(app_state)
         // Apply layers
         .layer(CookieManagerLayer::new())
         .layer(auth_layer)
@@ -354,7 +346,9 @@ async fn spawn_app(app: Router) -> SocketAddr {
     tracing::debug!(address = %addr, "Character test server listening");
 
     tokio::spawn(async move {
-        axum::serve(listener, app).await.expect("Test server failed");
+        axum::serve(listener, app)
+            .await
+            .expect("Test server failed");
     });
 
     addr
@@ -363,13 +357,15 @@ async fn spawn_app(app: Router) -> SocketAddr {
 // --- Tests ---
 #[cfg(test)]
 mod tests {
-    use scribe_backend::test_helpers::{create_test_pool, ensure_tracing_initialized, TestDataGuard};
+    use scribe_backend::test_helpers::{
+        TestDataGuard, create_test_pool, ensure_tracing_initialized,
+    };
 
     use super::*; // Import helpers from outer scope
-    
+
     // Add back necessary imports for test functions
     use tower::ServiceExt; // Corrected import
-    
+
     // Helper function to run DB operations via pool interact
     // Correctly handle InteractError with explicit matching
     async fn run_db_op<F, T>(pool: &Pool, op: F) -> Result<T, anyhow::Error>
@@ -377,23 +373,31 @@ mod tests {
         F: FnOnce(&mut PgConnection) -> Result<T, diesel::result::Error> + Send + 'static,
         T: Send + 'static,
     {
-        let obj = pool.get().await.context("Failed to get DB conn from pool")?;
+        let obj = pool
+            .get()
+            .await
+            .context("Failed to get DB conn from pool")?;
         match obj.interact(op).await {
             Ok(Ok(data)) => Ok(data),
             Ok(Err(db_err)) => Err(anyhow::Error::new(db_err).context("DB interact error")),
-            Err(interact_err) => Err(anyhow::anyhow!("Deadpool interact error: {:?}", interact_err)),
+            Err(interact_err) => Err(anyhow::anyhow!(
+                "Deadpool interact error: {:?}",
+                interact_err
+            )),
         }
     }
 
     // Helper to extract plain text body
-    async fn get_text_body(response: AxumResponse<Body>) -> Result<(StatusCode, String), anyhow::Error> {
+    async fn get_text_body(
+        response: AxumResponse<Body>,
+    ) -> Result<(StatusCode, String), anyhow::Error> {
         let status = response.status();
         let body_bytes = response.into_body().collect().await?.to_bytes();
         let body_text = String::from_utf8(body_bytes.to_vec())?;
         Ok((status, body_text))
     }
 
-    // --- Upload Tests --- 
+    // --- Upload Tests ---
     #[tokio::test]
     #[ignore] // Added ignore for CI
     async fn test_upload_valid_v3_card() -> Result<(), anyhow::Error> {
@@ -407,7 +411,8 @@ mod tests {
         let username_for_insert = test_username.clone();
         let _user = run_db_op(&pool, move |conn| {
             insert_test_user_with_password(conn, &username_for_insert, test_password)
-        }).await?;
+        })
+        .await?;
         guard.add_user(_user.id);
 
         // --- Setup App using Helper ---
@@ -452,7 +457,11 @@ mod tests {
         );
 
         let upload_response = app.oneshot(upload_request).await?;
-        assert_eq!(upload_response.status(), StatusCode::CREATED, "Upload failed");
+        assert_eq!(
+            upload_response.status(),
+            StatusCode::CREATED,
+            "Upload failed"
+        );
 
         // --- Cleanup ---
         guard.cleanup().await?;
@@ -472,7 +481,8 @@ mod tests {
         let username_for_insert = test_username.clone();
         let _user = run_db_op(&pool, move |conn| {
             insert_test_user_with_password(conn, &username_for_insert, test_password)
-        }).await?;
+        })
+        .await?;
         guard.add_user(_user.id);
 
         // --- Setup App using Helper ---
@@ -517,7 +527,11 @@ mod tests {
         );
 
         let upload_response = app.oneshot(upload_request).await?;
-        assert_eq!(upload_response.status(), StatusCode::CREATED, "Upload failed");
+        assert_eq!(
+            upload_response.status(),
+            StatusCode::CREATED,
+            "Upload failed"
+        );
 
         // --- Cleanup ---
         guard.cleanup().await?;
@@ -537,7 +551,8 @@ mod tests {
         let username_for_insert = test_username.clone();
         let _user = run_db_op(&pool, move |conn| {
             insert_test_user_with_password(conn, &username_for_insert, test_password)
-        }).await?;
+        })
+        .await?;
         guard.add_user(_user.id);
 
         // --- Setup App using Helper ---
@@ -573,10 +588,10 @@ mod tests {
 
         // --- Process the real test file instead of a generated one ---
         let real_card_data = include_bytes!("../../test_data/test_card.png").to_vec();
-        
+
         // Log some info about the file
         tracing::info!("Real test_card.png size: {} bytes", real_card_data.len());
-        
+
         // --- Simulate Upload with real file ---
         let upload_request = create_multipart_request(
             "/api/characters/upload",
@@ -588,16 +603,17 @@ mod tests {
         );
 
         let upload_response = app.oneshot(upload_request).await?;
-        
+
         // Log response for debugging
         let (status, body_text) = get_text_body(upload_response).await?;
         tracing::info!("Response status: {}, body: {}", status, body_text);
-        
+
         // Since we're not sure yet if this is a valid card, we'll consider both success and
         // specific error messages as acceptable outcomes
         assert!(
-            status == StatusCode::CREATED || 
-            (status == StatusCode::BAD_REQUEST && body_text.contains("Character data chunk")),
+            status == StatusCode::CREATED
+                || (status == StatusCode::BAD_REQUEST
+                    && body_text.contains("Character data chunk")),
             "Upload failed with unexpected status/error: {} - {}",
             status,
             body_text
@@ -680,7 +696,7 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore] 
+    #[ignore]
     async fn test_get_unauthorized() -> Result<(), anyhow::Error> {
         // Test implementation remains the same
         Ok(())
@@ -703,10 +719,10 @@ mod tests {
         let user = run_db_op(&pool, {
             let username = username.clone();
             let password = password.to_string(); // Capture password
-            move |conn| {
-                insert_test_user_with_password(conn, &username, &password)
-            }
-        }).await.context("Failed to insert test user for generation")?;
+            move |conn| insert_test_user_with_password(conn, &username, &password)
+        })
+        .await
+        .context("Failed to insert test user for generation")?;
         guard.add_user(user.id);
         tracing::info!(user_id = %user.id, %username, "Test user created for character generation");
 
@@ -730,13 +746,18 @@ mod tests {
         });
 
         tracing::info!(url = %login_url, %username, "Logging in user for generation test...");
-        let login_response = client.post(&login_url)
+        let login_response = client
+            .post(&login_url)
             .json(&login_credentials)
             .send()
             .await
             .context("Failed to send login request")?;
 
-        assert_eq!(login_response.status(), StatusCode::OK, "Login failed before generation test");
+        assert_eq!(
+            login_response.status(),
+            StatusCode::OK,
+            "Login failed before generation test"
+        );
         tracing::info!("Login successful.");
 
         // --- 3. Send Generation Request ---
@@ -746,7 +767,8 @@ mod tests {
         });
 
         tracing::info!(url = %generate_url, "Sending character generation request...");
-        let gen_response = client.post(&generate_url)
+        let gen_response = client
+            .post(&generate_url)
             .json(&prompt_data)
             .send()
             .await
@@ -758,24 +780,44 @@ mod tests {
 
         // Check status code (should be OK or CREATED, let's assume OK for now)
         // TODO: Update expected status if the handler uses CREATED
-        assert_eq!(gen_status, StatusCode::OK, "Character generation request did not return OK");
+        assert_eq!(
+            gen_status,
+            StatusCode::OK,
+            "Character generation request did not return OK"
+        );
 
         // --- Log the raw response body before attempting deserialization ---
-        let response_bytes = gen_response.bytes().await
+        let response_bytes = gen_response
+            .bytes()
+            .await
             .context("Failed to read generation response body bytes")?;
         let response_text = String::from_utf8_lossy(&response_bytes);
         tracing::info!(response_body = %response_text, "Raw generation response body");
 
         // Deserialize the response body from the captured bytes
-        let character: DbCharacter = serde_json::from_slice(&response_bytes)
-            .context(format!("Failed to parse character generation response JSON. Body: {}", response_text))?;
+        let character: DbCharacter = serde_json::from_slice(&response_bytes).context(format!(
+            "Failed to parse character generation response JSON. Body: {}",
+            response_text
+        ))?;
 
         tracing::info!(character_id = %character.id, character_name = %character.name, "Character generated successfully");
 
         // Basic assertions on the returned character data
-        assert!(!character.name.is_empty(), "Generated character name should not be empty");
-        assert!(character.description.as_ref().map_or(false, |d| !d.is_empty()), "Generated character description should not be empty");
-        assert_eq!(character.user_id, user.id, "Generated character user_id does not match logged-in user");
+        assert!(
+            !character.name.is_empty(),
+            "Generated character name should not be empty"
+        );
+        assert!(
+            character
+                .description
+                .as_ref()
+                .map_or(false, |d| !d.is_empty()),
+            "Generated character description should not be empty"
+        );
+        assert_eq!(
+            character.user_id, user.id,
+            "Generated character user_id does not match logged-in user"
+        );
         // assert_eq!(character.spec, "v3", "Generated character should use spec v3"); // Assertion already removed
 
         // The dummy handler doesn't save to DB yet, so no need to add to guard
@@ -804,7 +846,9 @@ mod tests {
             let username = username.clone();
             let password = password.to_string();
             move |conn| insert_test_user_with_password(conn, &username, &password)
-        }).await.context("Failed to insert test user for deletion")?;
+        })
+        .await
+        .context("Failed to insert test user for deletion")?;
         guard.add_user(user.id);
         tracing::info!(user_id = %user.id, %username, "Test user created for deletion test");
 
@@ -813,10 +857,11 @@ mod tests {
             let character_name = character_name.clone(); // Clone for closure
             let user_id = user.id; // Capture user id
             move |conn| insert_test_character(conn, user_id, &character_name)
-        }).await.context("Failed to insert test character for deletion")?;
+        })
+        .await
+        .context("Failed to insert test character for deletion")?;
         // No need to add character to guard, as the test will delete it
         tracing::info!(character_id = %character.id, %character_name, "Test character created for deletion");
-
 
         // --- 2. Build App and Login User ---
         let app = build_test_app_for_characters(pool.clone()).await;
@@ -834,18 +879,24 @@ mod tests {
         let login_credentials = json!({ "username": username, "password": password });
 
         tracing::info!(url = %login_url, %username, "Logging in user for deletion test...");
-        let login_response = client.post(&login_url)
+        let login_response = client
+            .post(&login_url)
             .json(&login_credentials)
             .send()
             .await
             .context("Failed to send login request")?;
-        assert_eq!(login_response.status(), ReqwestStatusCode::OK, "Login failed");
+        assert_eq!(
+            login_response.status(),
+            ReqwestStatusCode::OK,
+            "Login failed"
+        );
         tracing::info!("Login successful.");
 
         // --- 3. Send Delete Request ---
         let delete_url = format!("{}/characters/{}", api_base_url, character.id);
         tracing::info!(url = %delete_url, character_id = %character.id, "Sending delete character request...");
-        let delete_response = client.delete(&delete_url)
+        let delete_response = client
+            .delete(&delete_url)
             .send()
             .await
             .context("Failed to send delete character request")?;
@@ -853,26 +904,35 @@ mod tests {
         // --- 4. Assert Delete Response ---
         let delete_status = delete_response.status();
         tracing::info!(status = %delete_status, "Received delete response");
-        assert_eq!(delete_status, ReqwestStatusCode::NO_CONTENT, "Delete request did not return 204 NO_CONTENT");
+        assert_eq!(
+            delete_status,
+            ReqwestStatusCode::NO_CONTENT,
+            "Delete request did not return 204 NO_CONTENT"
+        );
 
         // --- 5. Verify Character is Deleted (Attempt GET) ---
         let get_url = delete_url; // Same URL as delete
         tracing::info!(url = %get_url, character_id = %character.id, "Attempting to GET deleted character...");
-        let get_response = client.get(&get_url)
+        let get_response = client
+            .get(&get_url)
             .send()
             .await
             .context("Failed to send GET request for deleted character")?;
 
         let get_status = get_response.status();
         tracing::info!(status = %get_status, "Received GET response for deleted character");
-        assert_eq!(get_status, ReqwestStatusCode::NOT_FOUND, "GET request for deleted character did not return 404 NOT_FOUND");
-
+        assert_eq!(
+            get_status,
+            ReqwestStatusCode::NOT_FOUND,
+            "GET request for deleted character did not return 404 NOT_FOUND"
+        );
 
         // --- 6. Cleanup User ---
-        guard.cleanup().await.context("Failed during user cleanup")?;
+        guard
+            .cleanup()
+            .await
+            .context("Failed during user cleanup")?;
         tracing::info!("Test delete_character_success completed successfully.");
         Ok(())
     }
 } // End of tests module
-
-

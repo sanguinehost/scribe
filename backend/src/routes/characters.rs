@@ -1,32 +1,32 @@
 // backend/src/routes/characters.rs
 
 use crate::errors::AppError;
+use crate::models::character_card::NewCharacter;
 use crate::models::characters::{Character, CharacterMetadata};
-use crate::models::character_card::{NewCharacter};
 use crate::models::users::User;
 use crate::schema::characters::dsl::*; // DSL needed for table/columns
 use crate::services::character_parser::{self};
 use crate::state::AppState;
 use axum::{
+    Router,
     body::Body,
     debug_handler,
-    extract::{multipart::Multipart, Path, State, Extension},
+    extract::{Extension, Path, State, multipart::Multipart},
     http::StatusCode,
     response::{IntoResponse, Json, Response},
-    routing::{get, post, delete},
-    Router,
+    routing::{delete, get, post},
 };
 use diesel::prelude::*; // Needed for .filter(), .load(), .first(), etc.
 use tracing::{info, instrument}; // Use needed tracing macros
 use uuid::Uuid;
 // use anyhow::anyhow; // Unused import
-use diesel::SelectableHelper;
-use diesel::RunQueryDsl;
+use crate::auth::user_store::Backend as AuthBackend; // <-- Import the backend type
 use axum::body::Bytes; // Added import for Bytes
 use axum_login::AuthSession; // <-- Add this import
-use crate::auth::user_store::Backend as AuthBackend; // <-- Import the backend type
+use diesel::RunQueryDsl;
+use diesel::SelectableHelper;
 use diesel::result::Error as DieselError; // Add import for DieselError
-use serde::{Deserialize}; // Add serde import
+use serde::Deserialize; // Add serde import
 
 // Define the type alias for the auth session specific to our AuthBackend
 // type CurrentAuthSession = AuthSession<AppState>;
@@ -46,7 +46,9 @@ pub async fn upload_character_handler(
     mut multipart: Multipart,
 ) -> Result<(StatusCode, Json<Character>), AppError> {
     // Get the user from the session
-    let user = auth_session.user.ok_or_else(|| AppError::Unauthorized("Authentication required".to_string()))?; // CHANGED
+    let user = auth_session
+        .user
+        .ok_or_else(|| AppError::Unauthorized("Authentication required".to_string()))?; // CHANGED
     let local_user_id = user.id; // <-- Get ID from the user struct
 
     let mut file_data: Option<Bytes> = None;
@@ -62,8 +64,9 @@ pub async fn upload_character_handler(
             break;
         }
     }
-    let png_data = file_data
-        .ok_or_else(|| AppError::BadRequest("Missing 'character_card' field in upload".to_string()))?;
+    let png_data = file_data.ok_or_else(|| {
+        AppError::BadRequest("Missing 'character_card' field in upload".to_string())
+    })?;
 
     let parsed_card = character_parser::parse_character_card_png(&png_data)?; // Pass Bytes directly
     let new_character = NewCharacter::from_parsed_card(&parsed_card, local_user_id); // Use user_id from session
@@ -71,7 +74,11 @@ pub async fn upload_character_handler(
     // Log the character data just before insertion
     info!(?new_character, user_id = %local_user_id, "Attempting to insert character into DB for user"); // Updated log
 
-    let conn = state.pool.get().await.map_err(|e| AppError::DbPoolError(e.to_string()))?;
+    let conn = state
+        .pool
+        .get()
+        .await
+        .map_err(|e| AppError::DbPoolError(e.to_string()))?;
 
     let inserted_character: Character = conn
         .interact(move |conn| {
@@ -95,12 +102,18 @@ pub async fn list_characters_handler(
     auth_session: CurrentAuthSession, // <-- Add AuthSession extractor
 ) -> Result<Json<Vec<CharacterMetadata>>, AppError> {
     // Get the user from the session
-    let user = auth_session.user.ok_or_else(|| AppError::Unauthorized("Authentication required".to_string()))?; // CHANGED
+    let user = auth_session
+        .user
+        .ok_or_else(|| AppError::Unauthorized("Authentication required".to_string()))?; // CHANGED
     let local_user_id = user.id; // <-- Get ID from the user struct
 
     info!(%local_user_id, "Listing characters for user"); // Updated log message
 
-    let conn = state.pool.get().await.map_err(|e| AppError::DbPoolError(e.to_string()))?;
+    let conn = state
+        .pool
+        .get()
+        .await
+        .map_err(|e| AppError::DbPoolError(e.to_string()))?;
 
     let characters_result = conn
         .interact(move |conn| {
@@ -123,12 +136,18 @@ pub async fn get_character_handler(
     Path(character_id): Path<Uuid>,
 ) -> Result<Json<CharacterMetadata>, AppError> {
     // Get the user from the session
-    let user = auth_session.user.ok_or_else(|| AppError::Unauthorized("Authentication required".to_string()))?; // CHANGED
+    let user = auth_session
+        .user
+        .ok_or_else(|| AppError::Unauthorized("Authentication required".to_string()))?; // CHANGED
     let local_user_id = user.id; // <-- Get ID from the user struct
 
     info!(%character_id, %local_user_id, "Fetching character details for user"); // Updated log message
 
-    let conn = _state.pool.get().await.map_err(|e| AppError::DbPoolError(e.to_string()))?;
+    let conn = _state
+        .pool
+        .get()
+        .await
+        .map_err(|e| AppError::DbPoolError(e.to_string()))?;
 
     let character_result = conn
         .interact(move |conn| {
@@ -138,7 +157,9 @@ pub async fn get_character_handler(
                 .select(CharacterMetadata::as_select())
                 .first::<CharacterMetadata>(conn)
                 .map_err(|e| match e {
-                    DieselError::NotFound => AppError::NotFound(format!("Character {} not found", character_id)),
+                    DieselError::NotFound => {
+                        AppError::NotFound(format!("Character {} not found", character_id))
+                    }
                     _ => AppError::DatabaseQueryError(e.to_string()),
                 })
         })
@@ -154,7 +175,9 @@ pub async fn generate_character_handler(
     auth_session: CurrentAuthSession,
     Json(payload): Json<GenerateCharacterPayload>,
 ) -> Result<(StatusCode, Json<Character>), AppError> {
-    let user = auth_session.user.ok_or_else(|| AppError::Unauthorized("Authentication required".to_string()))?;
+    let user = auth_session
+        .user
+        .ok_or_else(|| AppError::Unauthorized("Authentication required".to_string()))?;
     let user_id_val = user.id; // Capture user id
 
     info!(%user_id_val, prompt = %payload.prompt, "Generating character requested by user");
@@ -240,19 +263,25 @@ pub async fn delete_character_handler(
     auth_session: CurrentAuthSession,
     Path(character_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let user = auth_session.user.ok_or_else(|| AppError::Unauthorized("Authentication required".to_string()))?;
+    let user = auth_session
+        .user
+        .ok_or_else(|| AppError::Unauthorized("Authentication required".to_string()))?;
     let user_id_val = user.id;
 
     info!(%character_id, %user_id_val, "Deleting character for user");
 
-    let conn = state.pool.get().await.map_err(|e| AppError::DbPoolError(e.to_string()))?;
+    let conn = state
+        .pool
+        .get()
+        .await
+        .map_err(|e| AppError::DbPoolError(e.to_string()))?;
 
     let rows_deleted = conn
         .interact(move |conn| {
             diesel::delete(
                 characters
                     .filter(id.eq(character_id))
-                    .filter(user_id.eq(user_id_val))
+                    .filter(user_id.eq(user_id_val)),
             )
             .execute(conn)
             .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
@@ -264,8 +293,7 @@ pub async fn delete_character_handler(
         // or doesn't belong to the user.
         Err(AppError::NotFound(format!(
             "Character {} not found or not owned by user {}",
-            character_id,
-            user_id_val
+            character_id, user_id_val
         )))
     } else {
         Ok(StatusCode::NO_CONTENT)

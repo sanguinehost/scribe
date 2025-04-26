@@ -1,23 +1,25 @@
+use crate::models::characters::CharacterMetadata;
+use crate::models::users::User;
 use crate::schema::{chat_messages, chat_sessions};
+use bigdecimal::BigDecimal; // Add import
 use chrono::{DateTime, Utc};
 use diesel::prelude::*;
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
-use bigdecimal::BigDecimal; // Add import
-use crate::models::users::User;
-use crate::models::characters::CharacterMetadata;
+use serde_json::Value;
 use tracing::error;
-use serde_json::Value; // Add import for JSON value
+use uuid::Uuid; // Add import for JSON value
 
 // Import necessary Diesel traits for manual enum mapping
 use diesel::deserialize::{self, FromSql};
 use diesel::pg::{Pg, PgValue};
 use diesel::serialize::{self, IsNull, Output, ToSql};
-use std::io::Write;
 use diesel::{AsExpression, FromSqlRow};
+use std::io::Write;
 
 // Represents a chat session in the database
-#[derive(Queryable, Selectable, Identifiable, Associations, Debug, Clone, Serialize, Deserialize)]
+#[derive(
+    Queryable, Selectable, Identifiable, Associations, Debug, Clone, Serialize, Deserialize,
+)]
 #[diesel(belongs_to(User, foreign_key = user_id))]
 #[diesel(belongs_to(CharacterMetadata, foreign_key = character_id))]
 #[diesel(table_name = chat_sessions)]
@@ -45,18 +47,18 @@ pub struct ChatSession {
 
 // Type alias for the tuple returned when querying chat session settings
 pub type SettingsTuple = (
-    Option<String>,      // system_prompt
-    Option<BigDecimal>,  // temperature
-    Option<i32>,         // max_output_tokens
-    Option<BigDecimal>,  // frequency_penalty
-    Option<BigDecimal>,  // presence_penalty
-    Option<i32>,         // top_k
-    Option<BigDecimal>,  // top_p
-    Option<BigDecimal>,  // repetition_penalty
-    Option<BigDecimal>,  // min_p
-    Option<BigDecimal>,  // top_a
-    Option<i32>,         // seed
-    Option<Value>,       // logit_bias
+    Option<String>,     // system_prompt
+    Option<BigDecimal>, // temperature
+    Option<i32>,        // max_output_tokens
+    Option<BigDecimal>, // frequency_penalty
+    Option<BigDecimal>, // presence_penalty
+    Option<i32>,        // top_k
+    Option<BigDecimal>, // top_p
+    Option<BigDecimal>, // repetition_penalty
+    Option<BigDecimal>, // min_p
+    Option<BigDecimal>, // top_a
+    Option<i32>,        // seed
+    Option<Value>,      // logit_bias
 );
 
 // For creating a new chat session
@@ -69,7 +71,9 @@ pub struct NewChatSession {
 }
 
 // Enum to represent the role of the sender
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default, AsExpression, FromSqlRow)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default, AsExpression, FromSqlRow,
+)]
 #[diesel(sql_type = crate::schema::sql_types::MessageType)]
 pub enum MessageRole {
     #[default]
@@ -98,7 +102,10 @@ impl FromSql<crate::schema::sql_types::MessageType, Pg> for MessageRole {
             b"Assistant" => Ok(MessageRole::Assistant),
             b"System" => Ok(MessageRole::System),
             unrecognized => {
-                error!("Unrecognized message_type enum variant from DB: {:?}", String::from_utf8_lossy(unrecognized));
+                error!(
+                    "Unrecognized message_type enum variant from DB: {:?}",
+                    String::from_utf8_lossy(unrecognized)
+                );
                 Err("Unrecognized enum variant from database".into())
             }
         }
@@ -117,7 +124,9 @@ impl std::fmt::Display for MessageRole {
 }
 
 // Represents a chat message in the database
-#[derive(Queryable, Selectable, Identifiable, Associations, Debug, Clone, Serialize, Deserialize)]
+#[derive(
+    Queryable, Selectable, Identifiable, Associations, Debug, Clone, Serialize, Deserialize,
+)]
 #[diesel(belongs_to(ChatSession, foreign_key = session_id))]
 #[diesel(table_name = chat_messages)]
 pub struct ChatMessage {
@@ -195,8 +204,7 @@ pub struct GenerateResponsePayload {
 #[derive(Serialize, Debug)]
 pub struct GenerateResponse {
     pub ai_message: ChatMessage,
-} 
-
+}
 
 // --- Chat Settings API Structures ---
 

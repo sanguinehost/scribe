@@ -3,9 +3,9 @@
 use crate::client::{HttpClient, StreamEvent}; // Added StreamEvent
 use crate::error::CliError;
 use crate::io::IoHandler;
-use uuid::Uuid;
+use futures_util::StreamExt;
 use tracing;
-use futures_util::StreamExt; // Needed for stream processing
+use uuid::Uuid; // Needed for stream processing
 
 /// Handles the interactive chat session with the AI.
 /// Prompts the user for input, sends it to the backend, displays the response,
@@ -26,7 +26,8 @@ pub async fn run_chat_loop<IO: IoHandler, Http: HttpClient>(
         let user_input = io_handler.read_line("You: ")?;
         let trimmed_input = user_input.trim();
 
-        if trimmed_input.eq_ignore_ascii_case("quit") || trimmed_input.eq_ignore_ascii_case("exit") {
+        if trimmed_input.eq_ignore_ascii_case("quit") || trimmed_input.eq_ignore_ascii_case("exit")
+        {
             io_handler.write_line("Leaving chat session.")?;
             break;
         }
@@ -35,25 +36,31 @@ pub async fn run_chat_loop<IO: IoHandler, Http: HttpClient>(
             continue; // Skip empty input
         }
 
-        match http_client.send_message(chat_id, trimmed_input, Some(current_model)).await {
+        match http_client
+            .send_message(chat_id, trimmed_input, Some(current_model))
+            .await
+        {
             Ok(ai_message) => {
                 io_handler.write_line(&format!("AI: {}", ai_message.content))?;
                 io_handler.write_line("--------------------------------------------------")?;
             }
             Err(CliError::RateLimitExceeded) => {
-                io_handler.write_line("API rate limit exceeded. Please wait a moment and try again.")?;
+                io_handler
+                    .write_line("API rate limit exceeded. Please wait a moment and try again.")?;
                 io_handler.write_line("--------------------------------------------------")?;
             }
             Err(e) => {
                 tracing::error!(error = ?e, chat_id = %chat_id, "Failed to send message or receive response");
-                io_handler.write_line(&format!("Error sending message: {}. Try again or type 'quit' to exit.", e))?;
+                io_handler.write_line(&format!(
+                    "Error sending message: {}. Try again or type 'quit' to exit.",
+                    e
+                ))?;
                 io_handler.write_line("--------------------------------------------------")?;
             }
         }
     }
     Ok(())
 }
-
 
 /// Runs a single streaming chat interaction for testing purposes.
 /// Sends one message and prints the streamed response including thinking steps.
@@ -63,7 +70,9 @@ pub async fn run_stream_test_loop<IO: IoHandler, Http: HttpClient>(
     user_message: &str,
     io_handler: &mut IO,
 ) -> Result<(), CliError> {
-    let mut stream = http_client.stream_chat_response(chat_id, user_message, true).await?; // Request thinking
+    let mut stream = http_client
+        .stream_chat_response(chat_id, user_message, true)
+        .await?; // Request thinking
 
     let mut thinking_started = false;
     let mut content_started = false;
@@ -84,8 +93,8 @@ pub async fn run_stream_test_loop<IO: IoHandler, Http: HttpClient>(
                     thinking_started = false;
                 }
                 if !content_started {
-                     io_handler.write_raw("AI: ")?; // Prefix AI response only once
-                     content_started = true;
+                    io_handler.write_raw("AI: ")?; // Prefix AI response only once
+                    content_started = true;
                 }
                 io_handler.write_raw(&chunk)?; // Print content chunk directly
             }
@@ -94,18 +103,18 @@ pub async fn run_stream_test_loop<IO: IoHandler, Http: HttpClient>(
                 break; // Stream finished successfully
             }
             Err(e) => {
-                 if thinking_started || content_started {
-                     io_handler.write_raw("\n")?; // Ensure newline if stream errors out mid-response
-                 }
-                 tracing::error!(error = ?e, chat_id = %chat_id, "Error during streaming response");
-                 io_handler.write_line(&format!("\nError receiving stream data: {}", e))?;
-                 return Err(e); // Propagate the stream error
+                if thinking_started || content_started {
+                    io_handler.write_raw("\n")?; // Ensure newline if stream errors out mid-response
+                }
+                tracing::error!(error = ?e, chat_id = %chat_id, "Error during streaming response");
+                io_handler.write_line(&format!("\nError receiving stream data: {}", e))?;
+                return Err(e); // Propagate the stream error
             }
         }
     }
-     if thinking_started || content_started {
-         io_handler.write_raw("\n")?; // Ensure a final newline if the stream ended cleanly
-     }
+    if thinking_started || content_started {
+        io_handler.write_raw("\n")?; // Ensure a final newline if the stream ended cleanly
+    }
     io_handler.write_line("--------------------------------------------------")?;
     Ok(())
 }

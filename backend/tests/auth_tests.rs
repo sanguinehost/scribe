@@ -2,49 +2,45 @@
 // backend/tests/auth_tests.rs
 
 // --- Imports (similar to characters_tests, but focused on auth) ---
-use scribe_backend::{
-    auth::{session_store::DieselSessionStore, user_store::Backend as AuthBackend},
-    errors::AppError,
-    models::{users::User, users::NewUser}, // Import NewUser
-    routes::auth::{register_handler, login_handler, logout_handler, me_handler},
-    schema::users,
-    state::AppState,
-    config::Config,
-    test_helpers::{MockEmbeddingClient, MockEmbeddingPipelineService},
-    vector_db::QdrantClientService,
-};
 use anyhow::{Context, Result as AnyhowResult};
 use axum::{
-    body::Body,
-    http::{header, Method, Request, StatusCode},
-    response::{IntoResponse, Response},
-    routing::post, routing::get, // Add get for /me route
     Router,
+    body::Body,
+    http::{Method, Request, StatusCode, header},
+    response::{IntoResponse, Response},
+    routing::get, // Add get for /me route
+    routing::post,
 };
 use axum_login::{
-    tower_sessions::{Expiry, SessionManagerLayer, cookie::SameSite},
     AuthManagerLayerBuilder,
+    tower_sessions::{Expiry, SessionManagerLayer, cookie::SameSite},
 };
 use bcrypt; // For direct verification if needed, though backend handles it
 use deadpool_diesel::{
-    postgres::Manager as DeadpoolManager,
-    Pool as DeadpoolPool,
-    Runtime as DeadpoolRuntime,
+    Pool as DeadpoolPool, Runtime as DeadpoolRuntime, postgres::Manager as DeadpoolManager,
 };
-use diesel::{prelude::*, PgConnection};
+use diesel::{PgConnection, prelude::*};
 use dotenvy;
 use http_body_util::BodyExt;
-use serde::de::DeserializeOwned; // For get_json_body
-use serde_json::{json, Value};
-use std::{
-    env,
-    sync::Arc,
+use scribe_backend::{
+    auth::{session_store::DieselSessionStore, user_store::Backend as AuthBackend},
+    config::Config,
+    errors::AppError,
+    models::{users::NewUser, users::User}, // Import NewUser
+    routes::auth::{login_handler, logout_handler, me_handler, register_handler},
+    schema::users,
+    state::AppState,
+    test_helpers::{MockEmbeddingClient, MockEmbeddingPipelineService},
+    vector_db::QdrantClientService,
 };
+use serde::de::DeserializeOwned; // For get_json_body
+use serde_json::{Value, json};
+use std::{env, sync::Arc};
 use time;
 use tower::ServiceExt; // For `oneshot`
 use tower_cookies::{Cookie, CookieManagerLayer, Cookies};
+use tracing::{error, info, instrument};
 use uuid::Uuid;
-use tracing::{info, error, instrument};
 // use tokio::net::TcpListener; // Unused
 use std::net::SocketAddr;
 // use scribe_backend::test_helpers::{self, create_test_user, setup_test_app, TestContext}; // Unused
@@ -57,14 +53,13 @@ async fn get_json_body<T: DeserializeOwned>(
 ) -> AnyhowResult<(StatusCode, T)> {
     let status = response.status();
     let body_bytes = response.into_body().collect().await?.to_bytes();
-    let json_body: T = serde_json::from_slice(&body_bytes)
-        .with_context(|| {
-            format!(
-                "Failed to deserialize JSON body. Status: {}. Body: {}",
-                status,
-                String::from_utf8_lossy(&body_bytes)
-            )
-        })?;
+    let json_body: T = serde_json::from_slice(&body_bytes).with_context(|| {
+        format!(
+            "Failed to deserialize JSON body. Status: {}. Body: {}",
+            status,
+            String::from_utf8_lossy(&body_bytes)
+        )
+    })?;
     Ok((status, json_body))
 }
 
@@ -104,13 +99,18 @@ impl TestDataGuard {
         tracing::debug!(user_ids = ?self.user_ids, "--- Cleaning up test users ---");
 
         let pool_clone = self.pool.clone();
-        let obj = pool_clone.get().await.context("Failed to get DB connection for cleanup")?;
+        let obj = pool_clone
+            .get()
+            .await
+            .context("Failed to get DB connection for cleanup")?;
         let user_ids_to_delete = self.user_ids.clone();
 
-        let delete_result = obj.interact(move |conn| {
-            diesel::delete(users::table.filter(users::id.eq_any(user_ids_to_delete)))
-                .execute(conn)
-        }).await;
+        let delete_result = obj
+            .interact(move |conn| {
+                diesel::delete(users::table.filter(users::id.eq_any(user_ids_to_delete)))
+                    .execute(conn)
+            })
+            .await;
 
         match delete_result {
             Ok(Ok(count)) => tracing::debug!("Cleaned up {} users.", count),
@@ -120,7 +120,10 @@ impl TestDataGuard {
             }
             Err(interact_err) => {
                 tracing::error!(error = ?interact_err, "Interact error cleaning up users");
-                return Err(anyhow::anyhow!("Interact error cleaning up users: {:?}", interact_err));
+                return Err(anyhow::anyhow!(
+                    "Interact error cleaning up users: {:?}",
+                    interact_err
+                ));
             }
         }
 
@@ -138,9 +141,13 @@ where
     let obj = pool.get().await.context("Failed to get DB connection")?;
     match obj.interact(op).await {
         Ok(Ok(data)) => Ok(data),
-        Ok(Err(db_err)) => Err(anyhow::Error::new(db_err).context("DB operation failed inside interact")),
+        Ok(Err(db_err)) => {
+            Err(anyhow::Error::new(db_err).context("DB operation failed inside interact"))
+        }
         Err(interact_err) => match interact_err {
-            deadpool_diesel::InteractError::Panic(_) => Err(anyhow::anyhow!("DB operation panicked")),
+            deadpool_diesel::InteractError::Panic(_) => {
+                Err(anyhow::anyhow!("DB operation panicked"))
+            }
             deadpool_diesel::InteractError::Aborted => Err(anyhow::anyhow!("DB operation aborted")),
         },
     }
@@ -155,12 +162,11 @@ fn insert_test_user_direct(
     info!(%username, "Inserting test user directly (sync hash)");
 
     // Hash synchronously within the test helper
-    let hashed_password = bcrypt::hash(password, bcrypt::DEFAULT_COST)
-        .map_err(|e| {
-            error!(%username, error=?e, "Sync bcrypt hashing failed in test helper");
-            // Map bcrypt error to a generic Diesel error or panic for test failure
-            diesel::result::Error::QueryBuilderError(Box::new(e))
-        })?;
+    let hashed_password = bcrypt::hash(password, bcrypt::DEFAULT_COST).map_err(|e| {
+        error!(%username, error=?e, "Sync bcrypt hashing failed in test helper");
+        // Map bcrypt error to a generic Diesel error or panic for test failure
+        diesel::result::Error::QueryBuilderError(Box::new(e))
+    })?;
 
     let new_user = NewUser {
         username: username.to_string(),
@@ -243,7 +249,9 @@ async fn spawn_app(app: Router) -> SocketAddr {
     tracing::debug!(address = %addr, "Test server listening");
 
     tokio::spawn(async move {
-        axum::serve(listener, app).await.expect("Test server failed");
+        axum::serve(listener, app)
+            .await
+            .expect("Test server failed");
     });
 
     addr
@@ -275,7 +283,11 @@ async fn test_register_success() -> AnyhowResult<()> {
     let response = app.oneshot(request).await?;
 
     // Assert response status
-    assert_eq!(response.status(), StatusCode::CREATED, "Registration should succeed");
+    assert_eq!(
+        response.status(),
+        StatusCode::CREATED,
+        "Registration should succeed"
+    );
 
     // Assert response body (should contain the created user, excluding password)
     let (status, user_body) = get_json_body::<User>(response).await?;
@@ -290,7 +302,8 @@ async fn test_register_success() -> AnyhowResult<()> {
         users::table
             .filter(users::username.eq(username))
             .first::<User>(conn)
-    }).await?;
+    })
+    .await?;
     assert_eq!(fetched_user.id, user_body.id);
 
     // Cleanup test data
@@ -319,7 +332,11 @@ async fn test_register_duplicate_username() -> AnyhowResult<()> {
         .header(header::CONTENT_TYPE, "application/json")
         .body(Body::from(serde_json::to_vec(&credentials)?))?;
     let response1 = app.clone().oneshot(request1).await?;
-    assert_eq!(response1.status(), StatusCode::CREATED, "First registration failed");
+    assert_eq!(
+        response1.status(),
+        StatusCode::CREATED,
+        "First registration failed"
+    );
     let (_, user_body) = get_json_body::<User>(response1).await?;
     guard.add_user(user_body.id); // Ensure cleanup
 
@@ -332,7 +349,11 @@ async fn test_register_duplicate_username() -> AnyhowResult<()> {
     let response2 = app.oneshot(request2).await?;
 
     // Assert status code is 409 Conflict
-    assert_eq!(response2.status(), StatusCode::CONFLICT, "Duplicate registration did not return 409");
+    assert_eq!(
+        response2.status(),
+        StatusCode::CONFLICT,
+        "Duplicate registration did not return 409"
+    );
 
     // Assert error message (optional, depends on AppError mapping)
     let (status, error_body) = get_json_body::<Value>(response2).await?;
@@ -357,10 +378,13 @@ async fn test_login_success() -> AnyhowResult<()> {
     let user = run_db_op(&pool, {
         let username = username.clone(); // Clone for the closure
         let password = password.to_string(); // Convert password to String for closure
-        move |conn| {
-            insert_test_user_direct(conn, &username, &password)
-        }
-    }).await.context(format!("Failed to insert test user '{}' for login", username))?;
+        move |conn| insert_test_user_direct(conn, &username, &password)
+    })
+    .await
+    .context(format!(
+        "Failed to insert test user '{}' for login",
+        username
+    ))?;
     guard.add_user(user.id);
     info!(user_id = %user.id, %username, "Test user created for login");
 
@@ -396,18 +420,33 @@ async fn test_login_success() -> AnyhowResult<()> {
     if let Some(cookie_value) = set_cookie_header {
         info!(cookie = ?cookie_value, "Set-Cookie header found");
         // Optional: Further parsing/assertions on the cookie value (e.g., name)
-        assert!(cookie_value.to_str()?.contains("id="), "Set-Cookie header does not contain 'id='");
+        assert!(
+            cookie_value.to_str()?.contains("id="),
+            "Set-Cookie header does not contain 'id='"
+        );
     }
 
     // Check response body (optional, but good practice)
     // Use the get_json_body helper
-    let (body_status, body): (StatusCode, Value) = get_json_body(response).await.context("Failed to parse login response JSON")?;
+    let (body_status, body): (StatusCode, Value) = get_json_body(response)
+        .await
+        .context("Failed to parse login response JSON")?;
     assert_eq!(body_status, StatusCode::OK, "Body status code mismatch"); // Ensure body status also OK
 
     // Assert the structure of the returned User object
-    assert_eq!(body["username"], username, "Response body username mismatch");
-    assert_eq!(body["id"], user.id.to_string(), "Response body user ID mismatch");
-    assert!(body.get("password_hash").is_none(), "Password hash should not be present in response");
+    assert_eq!(
+        body["username"], username,
+        "Response body username mismatch"
+    );
+    assert_eq!(
+        body["id"],
+        user.id.to_string(),
+        "Response body user ID mismatch"
+    );
+    assert!(
+        body.get("password_hash").is_none(),
+        "Password hash should not be present in response"
+    );
     assert!(body.get("created_at").is_some(), "created_at field missing");
     assert!(body.get("updated_at").is_some(), "updated_at field missing");
 
@@ -434,7 +473,8 @@ async fn test_login_wrong_password() -> AnyhowResult<()> {
         let username = username.clone();
         let password = correct_password.to_string();
         move |conn| insert_test_user_direct(conn, &username, &password)
-    }).await
+    })
+    .await
     .with_context(|| format!("Failed to insert test user '{}' directly into DB", username))?;
     guard.add_user(user.id); // Ensure cleanup
 
@@ -453,7 +493,11 @@ async fn test_login_wrong_password() -> AnyhowResult<()> {
     let response = app.oneshot(request).await?;
 
     // Assertions
-    assert_eq!(response.status(), StatusCode::UNAUTHORIZED, "Login with wrong password should return 401");
+    assert_eq!(
+        response.status(),
+        StatusCode::UNAUTHORIZED,
+        "Login with wrong password should return 401"
+    );
 
     // Verify error message (depends on AppError mapping)
     let (status, error_body) = get_json_body::<Value>(response).await?;
@@ -488,7 +532,11 @@ async fn test_login_user_not_found() -> AnyhowResult<()> {
     let response = _app.oneshot(request).await?;
 
     // Assertions
-    assert_eq!(response.status(), StatusCode::UNAUTHORIZED, "Login with non-existent user should return 401");
+    assert_eq!(
+        response.status(),
+        StatusCode::UNAUTHORIZED,
+        "Login with non-existent user should return 401"
+    );
 
     // Verify error message
     let (status, error_body) = get_json_body::<Value>(response).await?;
@@ -513,7 +561,9 @@ async fn test_logout_success() -> AnyhowResult<()> {
         let username = username.clone();
         let password = password.to_string();
         move |conn| insert_test_user_direct(conn, &username, &password)
-    }).await.with_context(|| "Failed to insert user")?;
+    })
+    .await
+    .with_context(|| "Failed to insert user")?;
     guard.add_user(user.id);
 
     // --- Log in first ---
@@ -527,12 +577,19 @@ async fn test_logout_success() -> AnyhowResult<()> {
         .header(header::CONTENT_TYPE, "application/json")
         .body(Body::from(serde_json::to_vec(&login_credentials)?))?;
     let login_response = app.clone().oneshot(login_request).await?;
-    assert_eq!(login_response.status(), StatusCode::OK, "Login failed before logout");
+    assert_eq!(
+        login_response.status(),
+        StatusCode::OK,
+        "Login failed before logout"
+    );
 
     // Extract session cookie
-    let session_cookie = login_response.headers().get(header::SET_COOKIE)
+    let session_cookie = login_response
+        .headers()
+        .get(header::SET_COOKIE)
         .ok_or_else(|| anyhow::anyhow!("Login response missing Set-Cookie"))?
-        .to_str()?.to_string();
+        .to_str()?
+        .to_string();
 
     // --- Attempt Logout ---
     let logout_request = Request::builder()
@@ -543,14 +600,27 @@ async fn test_logout_success() -> AnyhowResult<()> {
     let logout_response = app.clone().oneshot(logout_request).await?;
 
     // Assertions for logout
-    assert_eq!(logout_response.status(), StatusCode::OK, "Logout request failed");
+    assert_eq!(
+        logout_response.status(),
+        StatusCode::OK,
+        "Logout request failed"
+    );
 
     // Verify Set-Cookie header clears the session
-    let logout_set_cookie = logout_response.headers().get(header::SET_COOKIE)
+    let logout_set_cookie = logout_response
+        .headers()
+        .get(header::SET_COOKIE)
         .ok_or_else(|| anyhow::anyhow!("Logout response missing Set-Cookie"))?
         .to_str()?;
-    assert!(logout_set_cookie.contains("id="), "Logout Set-Cookie missing id=");
-    assert!(logout_set_cookie.contains("Max-Age=0") || logout_set_cookie.contains("expires=Thu, 01 Jan 1970"), "Logout Set-Cookie did not clear session");
+    assert!(
+        logout_set_cookie.contains("id="),
+        "Logout Set-Cookie missing id="
+    );
+    assert!(
+        logout_set_cookie.contains("Max-Age=0")
+            || logout_set_cookie.contains("expires=Thu, 01 Jan 1970"),
+        "Logout Set-Cookie did not clear session"
+    );
 
     // --- Verify logout worked by calling /me ---
     let me_request = Request::builder()
@@ -560,7 +630,11 @@ async fn test_logout_success() -> AnyhowResult<()> {
         .body(Body::empty())?;
     let me_response = app.oneshot(me_request).await?;
 
-    assert_eq!(me_response.status(), StatusCode::UNAUTHORIZED, "/me should be unauthorized after logout");
+    assert_eq!(
+        me_response.status(),
+        StatusCode::UNAUTHORIZED,
+        "/me should be unauthorized after logout"
+    );
 
     guard.cleanup().await?;
     Ok(())
@@ -581,7 +655,11 @@ async fn test_logout_no_session() -> AnyhowResult<()> {
     let response = app.oneshot(request).await?;
 
     // Logout should still return OK even if no session existed
-    assert_eq!(response.status(), StatusCode::OK, "Logout without session failed");
+    assert_eq!(
+        response.status(),
+        StatusCode::OK,
+        "Logout without session failed"
+    );
 
     Ok(())
 }
@@ -601,7 +679,9 @@ async fn test_me_success() -> AnyhowResult<()> {
         let username = username.clone();
         let password = password.to_string();
         move |conn| insert_test_user_direct(conn, &username, &password)
-    }).await.with_context(|| "Failed to insert user")?;
+    })
+    .await
+    .with_context(|| "Failed to insert user")?;
     guard.add_user(user.id);
 
     // --- Log in ---
@@ -615,12 +695,19 @@ async fn test_me_success() -> AnyhowResult<()> {
         .header(header::CONTENT_TYPE, "application/json")
         .body(Body::from(serde_json::to_vec(&login_credentials)?))?;
     let login_response = app.clone().oneshot(login_request).await?;
-    assert_eq!(login_response.status(), StatusCode::OK, "Login failed before /me test");
+    assert_eq!(
+        login_response.status(),
+        StatusCode::OK,
+        "Login failed before /me test"
+    );
 
     // Extract session cookie
-    let session_cookie = login_response.headers().get(header::SET_COOKIE)
+    let session_cookie = login_response
+        .headers()
+        .get(header::SET_COOKIE)
         .ok_or_else(|| anyhow::anyhow!("Login response missing Set-Cookie"))?
-        .to_str()?.to_string();
+        .to_str()?
+        .to_string();
 
     // --- Call /me endpoint ---
     let me_request = Request::builder()
@@ -657,7 +744,11 @@ async fn test_me_unauthorized() -> AnyhowResult<()> {
     let response = app.oneshot(request).await?;
 
     // Assertions
-    assert_eq!(response.status(), StatusCode::UNAUTHORIZED, "/me without login should be unauthorized");
+    assert_eq!(
+        response.status(),
+        StatusCode::UNAUTHORIZED,
+        "/me without login should be unauthorized"
+    );
 
     Ok(())
 }
@@ -690,13 +781,22 @@ async fn test_cookie_layer_sets_cookie() -> AnyhowResult<()> {
     let response = app.oneshot(request).await?;
 
     // Assertions
-    assert_eq!(response.status(), StatusCode::OK, "Test cookie handler failed");
+    assert_eq!(
+        response.status(),
+        StatusCode::OK,
+        "Test cookie handler failed"
+    );
 
     // Verify Set-Cookie header exists for our test cookie
-    let set_cookie_header = response.headers().get(header::SET_COOKIE)
+    let set_cookie_header = response
+        .headers()
+        .get(header::SET_COOKIE)
         .ok_or_else(|| anyhow::anyhow!("Test cookie handler response missing Set-Cookie header"))?
         .to_str()?;
-    assert!(set_cookie_header.contains("test-cookie=test-value"), "Set-Cookie header missing test cookie info");
+    assert!(
+        set_cookie_header.contains("test-cookie=test-value"),
+        "Set-Cookie header missing test cookie info"
+    );
 
     Ok(())
 }
