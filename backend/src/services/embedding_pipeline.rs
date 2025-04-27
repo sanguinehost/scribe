@@ -116,28 +116,13 @@ impl TryFrom<HashMap<String, QdrantValue>> for EmbeddingMetadata {
     }
 }
 
-#[instrument(skip_all, fields(message_id = %message.id, session_id = %message.session_id))] // Use session_id
+#[instrument(skip_all, fields(message_id = %message.id, session_id = %message.session_id))]
 pub async fn process_and_embed_message(
-    state: Arc<AppState>,
+    embedding_client: Arc<dyn EmbeddingClient + Send + Sync>,
+    qdrant_service: Arc<dyn QdrantClientServiceTrait + Send + Sync>,
     message: ChatMessage,
 ) -> Result<(), AppError> {
     info!("Starting embedding process for message");
-
-    // --- Test Hook: Track call (using tracker from AppState) ---
-    // Removed #[cfg(test)] - Tracker is now always part of AppState
-    {
-        let tracker = state.embedding_call_tracker.clone();
-        let msg_id = message.id;
-        // Lock and push directly, no need for extra spawn
-        if let Ok(mut calls) = tracker.try_lock() {
-            // Use try_lock for simplicity in async context
-            calls.push(msg_id);
-            info!(message_id = %msg_id, "Tracked embedding call for test");
-        } else {
-            warn!(message_id = %msg_id, "Failed to lock embedding tracker for test (already locked?)");
-        }
-    }
-    // --- End Test Hook ---
 
     // 1. Chunk the message content
     let chunks = match chunk_text(&message.content) {
@@ -150,14 +135,11 @@ pub async fn process_and_embed_message(
         }
         Err(e) => {
             error!(error = %e, "Failed to chunk message content");
-            // Decide if this error should halt processing or just be logged
             return Err(e);
         }
     };
     info!("Message content split into {} chunks", chunks.len());
 
-    let embedding_client = state.embedding_client.clone();
-    let qdrant_service = state.qdrant_service.clone();
     let mut points_to_upsert = Vec::new();
 
     // 2. Process each chunk
@@ -215,7 +197,7 @@ pub async fn process_and_embed_message(
     // 3. Upsert points to Qdrant in batch
     if !points_to_upsert.is_empty() {
         info!("Upserting {} points to Qdrant", points_to_upsert.len());
-        if let Err(e) = qdrant_service.upsert_points(points_to_upsert).await {
+        if let Err(e) = qdrant_service.store_points(points_to_upsert).await {
             error!(error = %e, "Failed to upsert points to Qdrant");
             // Decide on error handling: retry? Mark message as failed embedding?
             return Err(e);
@@ -508,53 +490,14 @@ mod tests {
         }
     }
 
-    // --- Helper to create Mock AppState using AppStateBuilder ---
-    async fn create_mock_app_state() -> (
-        Arc<AppState>,
-        Arc<MockEmbeddingClient>,
-        Arc<MockQdrantClientService>,
-    ) {
-        let mock_embedding_client = Arc::new(MockEmbeddingClient::new());
-        let mock_qdrant_service = Arc::new(MockQdrantClientService::new());
-        let mock_ai_client = Arc::new(MockAiClient::new());
-        // Create a mock pipeline service (won't be called directly in these tests)
-        struct MockPipeline;
-        #[async_trait]
-        impl EmbeddingPipelineServiceTrait for MockPipeline {
-            async fn retrieve_relevant_chunks(
-                &self,
-                _state: Arc<AppState>,
-                _chat_id: Uuid,
-                _query_text: &str,
-                _limit: u64,
-            ) -> Result<Vec<RetrievedChunk>, AppError> {
-                unimplemented!("MockPipeline should not be called in these tests")
-            }
-        }
-        let mock_embedding_pipeline_service = Arc::new(MockPipeline);
-
-        // Use AppStateBuilder
-        let app_state = AppStateBuilder::new()
-            // Note: No pool needed for these unit tests
-            .with_config(Arc::new(Config::default())) // Provide dummy config
-            .with_ai_client(mock_ai_client)
-            .with_embedding_client(mock_embedding_client.clone() as Arc<dyn EmbeddingClient>)
-            .with_embedding_pipeline_service(
-                mock_embedding_pipeline_service as Arc<dyn EmbeddingPipelineServiceTrait>,
-            )
-            .with_mock_qdrant_service(mock_qdrant_service.clone()) // Provide the mock Qdrant service
-            .build_for_test()
-            .await
-            .expect("Failed to build mock AppState");
-
-        (app_state, mock_embedding_client, mock_qdrant_service)
-    }
-
     // --- Tests for process_and_embed_message ---
 
     #[tokio::test]
     async fn test_process_and_embed_message_success() {
-        let (state, mock_embedding_client, mock_qdrant_service) = create_mock_app_state().await;
+        // Create mocks directly
+        let mock_embedding_client = Arc::new(MockEmbeddingClient::new());
+        let mock_qdrant_service = Arc::new(MockQdrantClientService::new());
+
         let message = ChatMessage {
             id: Uuid::new_v4(),
             session_id: Uuid::new_v4(),
@@ -563,33 +506,44 @@ mod tests {
             created_at: Utc::now(),
         };
 
-        let mock_embedding = vec![0.1; 768];
+        let mock_embedding = vec![0.1; 768]; // Use appropriate dimension
         mock_embedding_client.set_response(Ok(mock_embedding.clone()));
         mock_qdrant_service.set_upsert_response(Ok(()));
 
-        let _ = process_and_embed_message(state.clone(), message.clone()).await;
+        // Call the function directly with mocks
+        let result = process_and_embed_message(
+            mock_embedding_client.clone() as Arc<dyn EmbeddingClient + Send + Sync>,
+            mock_qdrant_service.clone() as Arc<dyn QdrantClientServiceTrait + Send + Sync>,
+            message.clone(),
+        )
+        .await;
 
-        // Verify embedding_call_tracker was updated
-        let tracker_calls = state.embedding_call_tracker.lock().await;
-        assert_eq!(tracker_calls.len(), 1);
-        assert_eq!(tracker_calls[0], message.id);
-
-        // Drop the lock before checking mock_embedding_client calls
-        drop(tracker_calls);
+        assert!(result.is_ok(), "process_and_embed_message failed: {:?}", result.err());
 
         // Check that mock_embedding_client methods were called correctly
         let embed_calls = mock_embedding_client.get_calls();
-        for (text, task_type) in embed_calls.iter() {
-            assert!(
-                (text == "Chunk one." || text == "Chunk two.") && task_type == "RETRIEVAL_DOCUMENT",
-                "Expected calls with correct text and task type"
-            );
+        // Correct assertion: The input is treated as one short paragraph -> one chunk
+        assert_eq!(embed_calls.len(), 1, "Expected 1 embedding call for the single chunk");
+        // Check the content of the single call
+        if embed_calls.len() == 1 {
+            assert_eq!(embed_calls[0].0, message.content);
+            assert_eq!(embed_calls[0].1, "RETRIEVAL_DOCUMENT");
+        }
+
+        // Check Qdrant mock was called (with one point)
+        assert_eq!(mock_qdrant_service.get_upsert_call_count(), 1, "Expected 1 upsert call");
+        // Further assertions on points passed to upsert could be added
+        if let Some(points) = mock_qdrant_service.get_last_upsert_points() {
+            assert_eq!(points.len(), 1, "Expected 1 point to be upserted");
         }
     }
 
     #[tokio::test]
     async fn test_process_and_embed_message_chunking_error() {
-        let (state, _, _) = create_mock_app_state().await;
+        // Create mocks directly
+        let mock_embedding_client = Arc::new(MockEmbeddingClient::new());
+        let mock_qdrant_service = Arc::new(MockQdrantClientService::new());
+
         let message = ChatMessage {
             id: Uuid::new_v4(),
             session_id: Uuid::new_v4(),
@@ -598,19 +552,30 @@ mod tests {
             created_at: Utc::now(),
         };
 
-        let result = process_and_embed_message(state.clone(), message.clone()).await;
+        // No need to set mock responses as they shouldn't be called
+
+        let result = process_and_embed_message(
+            mock_embedding_client.clone() as Arc<dyn EmbeddingClient + Send + Sync>,
+            mock_qdrant_service.clone() as Arc<dyn QdrantClientServiceTrait + Send + Sync>,
+            message.clone(),
+        )
+        .await;
         assert!(
             result.is_ok(),
             "Expected Ok(()) when chunking produces no chunks"
         );
-        let tracker_calls = state.embedding_call_tracker.lock().await;
-        assert_eq!(tracker_calls.len(), 1);
-        assert_eq!(tracker_calls[0], message.id);
+
+        // Verify mocks were NOT called
+        assert_eq!(mock_embedding_client.get_calls().len(), 0, "Embedding should not be called");
+        assert_eq!(mock_qdrant_service.get_upsert_call_count(), 0, "Upsert should not be called");
     }
 
     #[tokio::test]
     async fn test_process_and_embed_message_embedding_error() {
-        let (state, mock_embedding_client, _) = create_mock_app_state().await;
+        // Create mocks directly
+        let mock_embedding_client = Arc::new(MockEmbeddingClient::new());
+        let mock_qdrant_service = Arc::new(MockQdrantClientService::new());
+
         let message = ChatMessage {
             id: Uuid::new_v4(),
             session_id: Uuid::new_v4(),
@@ -622,30 +587,35 @@ mod tests {
         // Mock embedding client to return an error
         let embedding_error = AppError::EmbeddingError("Embedding failed".to_string());
         mock_embedding_client.set_response(Err(embedding_error));
+        // Mock Qdrant upsert (should not be called)
+        mock_qdrant_service.set_upsert_response(Ok(()));
 
-        let _ = process_and_embed_message(state.clone(), message.clone()).await;
+        // Call function directly
+        let result = process_and_embed_message(
+            mock_embedding_client.clone() as Arc<dyn EmbeddingClient + Send + Sync>,
+            mock_qdrant_service.clone() as Arc<dyn QdrantClientServiceTrait + Send + Sync>,
+            message.clone(),
+        )
+        .await;
 
-        // Verify the call tracker was updated
-        let tracker_calls = state.embedding_call_tracker.lock().await;
-        assert_eq!(tracker_calls.len(), 1);
-        assert_eq!(tracker_calls[0], message.id);
+        // Should return Ok even if embedding fails internally
+        assert!(result.is_ok(), "Expected Ok(()) even on embedding error, but got: {:?}", result.err());
 
-        // Drop the lock before checking mock_embedding_client calls
-        drop(tracker_calls);
-
-        // Verify the embedding client was called with the expected content
+        // Verify the embedding client was called
         let embed_calls = mock_embedding_client.get_calls();
-        for (text, task_type) in embed_calls.iter() {
-            assert!(
-                text.contains("Some content") && task_type == "RETRIEVAL_DOCUMENT",
-                "Expected call with correct text and task type"
-            );
-        }
+        assert_eq!(embed_calls.len(), 1, "Expected 1 embedding call");
+        assert_eq!(embed_calls[0].0, "Some content");
+
+        // Verify Qdrant was NOT called
+        assert_eq!(mock_qdrant_service.get_upsert_call_count(), 0, "Upsert should not be called");
     }
 
     #[tokio::test]
     async fn test_process_and_embed_message_qdrant_error() {
-        let (state, mock_embedding_client, mock_qdrant_service) = create_mock_app_state().await;
+        // Create mocks directly
+        let mock_embedding_client = Arc::new(MockEmbeddingClient::new());
+        let mock_qdrant_service = Arc::new(MockQdrantClientService::new());
+
         let message = ChatMessage {
             id: Uuid::new_v4(),
             session_id: Uuid::new_v4(),
@@ -654,154 +624,247 @@ mod tests {
             created_at: Utc::now(),
         };
 
+        // Mock embedding success
         mock_embedding_client.set_response(Ok(vec![0.1; 768]));
+        // Mock Qdrant upsert to return an error
         let qdrant_error = AppError::VectorDbError("Upsert failed".to_string());
         mock_qdrant_service.set_upsert_response(Err(qdrant_error.clone()));
 
-        let _ = process_and_embed_message(state.clone(), message.clone()).await;
+        // Call function directly
+        let result = process_and_embed_message(
+            mock_embedding_client.clone() as Arc<dyn EmbeddingClient + Send + Sync>,
+            mock_qdrant_service.clone() as Arc<dyn QdrantClientServiceTrait + Send + Sync>,
+            message.clone(),
+        )
+        .await;
 
-        // Verify the call tracker was updated
-        let tracker_calls = state.embedding_call_tracker.lock().await;
-        assert_eq!(tracker_calls.len(), 1);
-        assert_eq!(tracker_calls[0], message.id);
-
-        // Drop the lock before checking mock_embedding_client calls
-        drop(tracker_calls);
-
-        // Verify the embedding client was called with the expected content
-        let embed_calls = mock_embedding_client.get_calls();
-        for (text, task_type) in embed_calls.iter() {
-            assert!(
-                text.contains("Some content") && task_type == "RETRIEVAL_DOCUMENT",
-                "Expected call with correct text and task type"
-            );
+        // Expect the Qdrant error to be returned
+        assert!(result.is_err(), "Expected an error due to Qdrant failure");
+        match result.err().unwrap() {
+            AppError::VectorDbError(msg) => assert!(msg.contains("Upsert failed")),
+            _ => panic!("Expected VectorDbError"),
         }
+
+        // Verify the embedding client was called
+        let embed_calls = mock_embedding_client.get_calls();
+        assert_eq!(embed_calls.len(), 1);
+        assert_eq!(embed_calls[0].0, "Some content");
+
+        // Verify Qdrant upsert was called
+        assert_eq!(mock_qdrant_service.get_upsert_call_count(), 1);
     }
 
     // --- Tests for retrieve_relevant_chunks ---
 
-    #[tokio::test]
-    async fn test_retrieve_relevant_chunks_success() {
-        let (state, mock_embedding_client, mock_qdrant_service) = create_mock_app_state().await;
-        let service = EmbeddingPipelineService;
+    // Helper to create a mock ScoredPoint (assuming it exists or is added)
+    fn create_mock_scored_point(
+        id_uuid: Uuid,
+        score: f32,
+        session_id: Uuid,
+        message_id: Uuid,
+        speaker: &str,
+        timestamp: chrono::DateTime<Utc>,
+        text: &str,
+    ) -> ScoredPoint {
+        let mut payload = HashMap::new();
+        payload.insert(
+            "session_id".to_string(),
+            Value::from(session_id.to_string()),
+        );
+        payload.insert(
+            "message_id".to_string(),
+            Value::from(message_id.to_string()),
+        );
+        payload.insert("speaker".to_string(), Value::from(speaker.to_string()));
+        payload.insert("timestamp".to_string(), Value::from(timestamp.to_rfc3339()));
+        payload.insert("text".to_string(), Value::from(text.to_string()));
 
-        let chat_id = Uuid::new_v4();
-        let query_text = "search query";
-        let limit = 5u64;
-
-        let mock_query_embedding = vec![0.2; 768];
-        mock_embedding_client.set_response(Ok(mock_query_embedding.clone()));
-
-        let point_id1 = Uuid::new_v4();
-        let payload1_map = build_valid_payload_map();
-
-        let mock_point1 = ScoredPoint {
-            id: Some(PointId::from(point_id1.to_string())),
-            payload: payload1_map,
-            score: 0.95,
-            version: 0,
+        ScoredPoint {
+            id: Some(qdrant_client::qdrant::PointId { // Add PointId struct path
+                point_id_options: Some(qdrant_client::qdrant::point_id::PointIdOptions::Uuid(id_uuid.to_string())), // Add PointIdOptions path
+            }),
+            version: 1,
+            score,
+            payload,
             vectors: None,
             shard_key: None,
             order_value: None,
-        };
-        mock_qdrant_service.set_search_response(Ok(vec![mock_point1.clone()]));
-
-        let _ = service
-            .retrieve_relevant_chunks(state, chat_id, query_text, limit)
-            .await;
-
-        // Verify the embedding client was called with the expected query
-        let embed_calls = mock_embedding_client.get_calls();
-        for (text, task_type) in embed_calls.iter() {
-            assert!(
-                text == query_text && task_type == "RETRIEVAL_QUERY",
-                "Expected call with correct query text and task type"
-            );
         }
+    }
+
+    #[tokio::test]
+    async fn test_retrieve_relevant_chunks_success() {
+        // Create mocks directly
+        let mock_embedding_client = Arc::new(MockEmbeddingClient::new());
+        let mock_qdrant_service = Arc::new(MockQdrantClientService::new());
+
+        let query_text = "What is the meaning of life?";
+        let session_id = Uuid::new_v4();
+        let limit = 3;
+        let mock_query_embedding = vec![0.5; 768]; // Use appropriate dimension
+
+        mock_embedding_client.set_response(Ok(mock_query_embedding.clone()));
+
+        let point_id1 = Uuid::new_v4();
+        let point_id2 = Uuid::new_v4();
+        let mock_timestamp = Utc::now();
+        let mock_scored_points = vec![
+            create_mock_scored_point(
+                point_id1,
+                0.95,
+                session_id,
+                Uuid::new_v4(),
+                "User",
+                mock_timestamp,
+                "Chunk 1 text",
+            ),
+            create_mock_scored_point(
+                point_id2,
+                0.88,
+                session_id,
+                Uuid::new_v4(),
+                "Assistant",
+                mock_timestamp,
+                "Chunk 2 text",
+            ),
+        ];
+        mock_qdrant_service.set_search_response(Ok(mock_scored_points.clone()));
+
+        // Call the function directly
+        let result = retrieve_relevant_chunks(
+            mock_qdrant_service.clone() as Arc<dyn QdrantClientServiceTrait + Send + Sync>,
+            mock_embedding_client.clone() as Arc<dyn EmbeddingClient + Send + Sync>,
+            session_id,
+            query_text,
+            limit,
+        )
+        .await;
+
+        assert!(result.is_ok(), "retrieve_relevant_chunks failed: {:?}", result.err());
+        let retrieved_chunks = result.unwrap();
+        assert_eq!(retrieved_chunks.len(), 2);
+        assert_eq!(retrieved_chunks[0].text, "Chunk 1 text");
+        assert_eq!(retrieved_chunks[1].text, "Chunk 2 text");
+        assert_eq!(mock_embedding_client.get_calls().len(), 1, "Expected 1 embedding call");
+        assert_eq!(mock_qdrant_service.get_search_call_count(), 1, "Expected 1 search call");
     }
 
     #[tokio::test]
     async fn test_retrieve_relevant_chunks_embedding_error() {
-        let (state, mock_embedding_client, _) = create_mock_app_state().await;
-        let service = EmbeddingPipelineService;
-        let chat_id = Uuid::new_v4();
-        let query_text = "query";
+        // Create mocks directly
+        let mock_embedding_client = Arc::new(MockEmbeddingClient::new());
+        let mock_qdrant_service = Arc::new(MockQdrantClientService::new());
 
-        mock_embedding_client
-            .set_response(Err(AppError::EmbeddingError("Embed failed".to_string())));
+        let query_text = "Query causing embedding error";
+        let session_id = Uuid::new_v4();
+        let limit = 5;
 
-        let _ = service
-            .retrieve_relevant_chunks(state, chat_id, query_text, 5)
-            .await;
+        let embedding_error = AppError::EmbeddingError("Embedding lookup failed".to_string());
+        mock_embedding_client.set_response(Err(embedding_error.clone()));
 
-        // Verify the embedding client was called with the expected query
-        let embed_calls = mock_embedding_client.get_calls();
-        for (text, task_type) in embed_calls.iter() {
-            assert!(
-                text == query_text && task_type == "RETRIEVAL_QUERY",
-                "Expected call with correct query text and task type"
-            );
+        // Qdrant mock shouldn't be called
+        mock_qdrant_service.set_search_response(Ok(vec![]));
+
+        // Call the function directly
+        let result = retrieve_relevant_chunks(
+            mock_qdrant_service.clone() as Arc<dyn QdrantClientServiceTrait + Send + Sync>,
+            mock_embedding_client.clone() as Arc<dyn EmbeddingClient + Send + Sync>,
+            session_id,
+            query_text,
+            limit,
+        )
+        .await;
+
+        assert!(result.is_err(), "Expected error due to embedding failure");
+        match result.err().unwrap() {
+            AppError::EmbeddingError(msg) => assert!(msg.contains("Embedding lookup failed")),
+            _ => panic!("Expected EmbeddingError"),
         }
+
+        assert_eq!(mock_embedding_client.get_calls().len(), 1);
+        assert_eq!(mock_qdrant_service.get_search_call_count(), 0, "Search should not be called");
     }
 
     #[tokio::test]
     async fn test_retrieve_relevant_chunks_qdrant_error() {
-        let (state, mock_embedding_client, mock_qdrant_service) = create_mock_app_state().await;
-        let service = EmbeddingPipelineService;
-        let chat_id = Uuid::new_v4();
-        let query_text = "query";
+        // Create mocks directly
+        let mock_embedding_client = Arc::new(MockEmbeddingClient::new());
+        let mock_qdrant_service = Arc::new(MockQdrantClientService::new());
 
-        mock_embedding_client.set_response(Ok(vec![0.3; 768]));
-        mock_qdrant_service
-            .set_search_response(Err(AppError::VectorDbError("Search failed".to_string())));
+        let query_text = "Query causing Qdrant error";
+        let session_id = Uuid::new_v4();
+        let limit = 2;
+        let mock_query_embedding = vec![0.2; 768];
 
-        let _ = service
-            .retrieve_relevant_chunks(state, chat_id, query_text, 5)
-            .await;
+        mock_embedding_client.set_response(Ok(mock_query_embedding.clone()));
+        let qdrant_error = AppError::VectorDbError("Qdrant search failed".to_string());
+        mock_qdrant_service.set_search_response(Err(qdrant_error.clone()));
 
-        // Verify the embedding client was called with the expected query
-        let embed_calls = mock_embedding_client.get_calls();
-        for (text, task_type) in embed_calls.iter() {
-            assert!(
-                text == query_text && task_type == "RETRIEVAL_QUERY",
-                "Expected call with correct query text and task type"
-            );
+        // Call the function directly
+        let result = retrieve_relevant_chunks(
+            mock_qdrant_service.clone() as Arc<dyn QdrantClientServiceTrait + Send + Sync>,
+            mock_embedding_client.clone() as Arc<dyn EmbeddingClient + Send + Sync>,
+            session_id,
+            query_text,
+            limit,
+        )
+        .await;
+
+        assert!(result.is_err(), "Expected error due to Qdrant failure");
+        match result.err().unwrap() {
+            AppError::VectorDbError(msg) => assert!(msg.contains("Qdrant search failed")),
+            _ => panic!("Expected VectorDbError"),
         }
+
+        assert_eq!(mock_embedding_client.get_calls().len(), 1);
+        assert_eq!(mock_qdrant_service.get_search_call_count(), 1);
     }
 
     #[tokio::test]
     async fn test_retrieve_relevant_chunks_metadata_parsing_error() {
-        let (state, mock_embedding_client, mock_qdrant_service) = create_mock_app_state().await;
-        let service = EmbeddingPipelineService;
-        let chat_id = Uuid::new_v4();
-        let query_text = "query";
+        // Create mocks directly
+        let mock_embedding_client = Arc::new(MockEmbeddingClient::new());
+        let mock_qdrant_service = Arc::new(MockQdrantClientService::new());
 
-        mock_embedding_client.set_response(Ok(vec![0.4; 768]));
+        let query_text = "Query for bad metadata";
+        let session_id = Uuid::new_v4();
+        let limit = 3;
+        let mock_query_embedding = vec![0.9; 768];
 
-        let mut invalid_payload_map = build_valid_payload_map();
-        invalid_payload_map.remove("speaker"); // Remove required field
-        let mock_point_invalid = ScoredPoint {
-            id: Some(PointId::from(Uuid::new_v4().to_string())),
-            payload: invalid_payload_map,
-            score: 0.8,
-            version: 0,
-            vectors: None,
-            shard_key: None,
-            order_value: None,
+        mock_embedding_client.set_response(Ok(mock_query_embedding.clone()));
+
+        // Create a point with invalid payload (e.g., missing field)
+        let mut invalid_payload = create_mock_scored_point(
+            Uuid::new_v4(), 0.9, session_id, Uuid::new_v4(), "User", Utc::now(), "Valid text",
+        ).payload;
+        invalid_payload.remove("timestamp"); // Remove required field
+
+        let mock_invalid_point = ScoredPoint {
+            id: Some(qdrant_client::qdrant::PointId { point_id_options: Some(qdrant_client::qdrant::point_id::PointIdOptions::Uuid(Uuid::new_v4().to_string())) }),
+            version: 1,
+            score: 0.9,
+            payload: invalid_payload,
+            vectors: None, shard_key: None, order_value: None,
         };
-        mock_qdrant_service.set_search_response(Ok(vec![mock_point_invalid]));
+        mock_qdrant_service.set_search_response(Ok(vec![mock_invalid_point]));
 
-        let _ = service
-            .retrieve_relevant_chunks(state, chat_id, query_text, 5)
-            .await;
+        // Call the function directly
+        let result = retrieve_relevant_chunks(
+            mock_qdrant_service.clone() as Arc<dyn QdrantClientServiceTrait + Send + Sync>,
+            mock_embedding_client.clone() as Arc<dyn EmbeddingClient + Send + Sync>,
+            session_id,
+            query_text,
+            limit,
+        )
+        .await;
 
-        // Verify the embedding client was called with the expected query
-        let embed_calls = mock_embedding_client.get_calls();
-        for (text, task_type) in embed_calls.iter() {
-            assert!(
-                text == query_text && task_type == "RETRIEVAL_QUERY",
-                "Expected call with correct query text and task type"
-            );
-        }
+        // Expect Ok, but empty chunks because the point was skipped due to parsing error
+        assert!(result.is_ok(), "Expected Ok even with metadata errors: {:?}", result.err());
+        let retrieved_chunks = result.unwrap();
+        assert!(retrieved_chunks.is_empty(), "Expected no chunks due to metadata parsing error");
+
+        assert_eq!(mock_embedding_client.get_calls().len(), 1);
+        assert_eq!(mock_qdrant_service.get_search_call_count(), 1);
+        // Check logs for error message (cannot assert directly here)
     }
 }

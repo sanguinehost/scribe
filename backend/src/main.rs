@@ -8,7 +8,6 @@ use deadpool_diesel::postgres::{
 // Use the r2d2 Pool directly from deadpool_diesel
 use deadpool_diesel::Pool as DeadpoolPool;
 use diesel_migrations::{EmbeddedMigrations, MigrationHarness, embed_migrations};
-use std::env;
 use std::net::SocketAddr;
 use tower_http::trace::{DefaultMakeSpan, TraceLayer};
 

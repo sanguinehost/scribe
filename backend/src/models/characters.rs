@@ -1,10 +1,9 @@
 // backend/src/models/characters.rs
 #![allow(dead_code)] // Allow dead code for fields not yet actively used
-// use crate::schema::characters; // Removed unused import
-// use crate::schema::users; // Removed unused import
-use chrono::{DateTime, Utc}; // Removed unused NaiveDateTime
+use std::str::FromStr; // <-- ADD THIS LINE
+use serde_json::json; // <-- ADD THIS LINE
+use chrono::{DateTime, Utc};
 use diesel::prelude::*;
-// use chrono::{DateTime, Utc, NaiveDateTime};
 use crate::models::users::User;
 use crate::schema::characters;
 use crate::services::character_parser::ParsedCharacterCard;
@@ -13,7 +12,6 @@ use diesel_json::Json; // Import Json wrapper
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use uuid::Uuid; // Added import
-// use crate::models::character_card::{CharacterCardV3, CharacterCardDataV3}; // Import the actual structs
 
 #[derive(
     Queryable, Selectable, Insertable, AsChangeset, Serialize, Deserialize, Debug, Clone, PartialEq,
@@ -221,14 +219,102 @@ pub struct NewCharacterMetadata<'a> {
     // e.g., pub persona: Option<&'a str>,
 }
 
-#[cfg(test)]
+// Helper function to create a dummy Character instance
+    fn create_dummy_character() -> Character {
+        let now = Utc::now();
+        let user_uuid = Uuid::new_v4();
+        Character {
+            id: Uuid::new_v4(),
+            user_id: user_uuid,
+            spec: "spec_v1".to_string(),
+            spec_version: "1.0".to_string(),
+            name: "Dummy Character".to_string(),
+            description: Some("A character for testing".to_string()),
+            personality: Some("Test personality".to_string()),
+            scenario: Some("Test scenario".to_string()),
+            first_mes: Some("Hello there!".to_string()),
+            mes_example: Some("An example message.".to_string()),
+            creator_notes: Some("Notes from creator.".to_string()),
+            system_prompt: Some("System prompt here.".to_string()),
+            post_history_instructions: Some("Instructions.".to_string()),
+            tags: Some(vec![Some("tag1".to_string()), Some("tag2".to_string())]),
+            creator: Some("Test Creator".to_string()),
+            character_version: Some("v1.0".to_string()),
+            alternate_greetings: Some(vec![Some("Hi".to_string()), Some("Hey".to_string())]),
+            nickname: Some("Dummy".to_string()),
+            creator_notes_multilingual: Some(Json(json!({"en": "English notes"}))),
+            source: Some(vec![Some("Source A".to_string())]),
+            group_only_greetings: Some(vec![Some("Group greeting".to_string())]),
+            creation_date: Some(now),
+            modification_date: Some(now),
+            created_at: now,
+            updated_at: now,
+            persona: Some("Test Persona".to_string()),
+            world_scenario: Some("Test World".to_string()),
+            avatar: Some("avatar.png".to_string()),
+            chat: Some("chat_id".to_string()),
+            greeting: Some("General Kenobi!".to_string()),
+            definition: Some("Definition text".to_string()),
+            default_voice: Some("voice_id".to_string()),
+            extensions: Some(Json(json!({"custom_field": "value"}))),
+            data_id: Some(123),
+            category: Some("Test Category".to_string()),
+            definition_visibility: Some("public".to_string()),
+            depth: Some(5),
+            example_dialogue: Some("Dialogue example.".to_string()),
+            favorite: Some(true),
+            first_message_visibility: Some("private".to_string()),
+            height: Some(BigDecimal::from(180)),
+            last_activity: Some(now),
+            migrated_from: Some("old_system".to_string()),
+            model_prompt: Some("Model prompt text.".to_string()),
+            model_prompt_visibility: Some("public".to_string()),
+            model_temperature: Some(BigDecimal::from_str("0.7").unwrap()),
+            num_interactions: Some(100),
+            permanence: Some(BigDecimal::from_str("0.5").unwrap()),
+            persona_visibility: Some("public".to_string()),
+            revision: Some(2),
+            sharing_visibility: Some("friends".to_string()),
+            status: Some("active".to_string()),
+            system_prompt_visibility: Some("private".to_string()),
+            system_tags: Some(vec![Some("system_tag".to_string())]),
+            token_budget: Some(2048),
+            usage_hints: Some(Json(json!({"hint": "Use carefully"}))),
+            user_persona: Some("User persona text.".to_string()),
+            user_persona_visibility: Some("private".to_string()),
+            visibility: Some("public".to_string()),
+            weight: Some(BigDecimal::from_str("75.5").unwrap()),
+            world_scenario_visibility: Some("public".to_string()),
+        }
+    }
+
+    #[test]
+    fn test_character_debug() {
+        let character = create_dummy_character();
+        // Ensure Debug formatting doesn't panic
+        let debug_output = format!("{:?}", character);
+        assert!(debug_output.contains("Dummy Character")); // Basic check
+        assert!(debug_output.starts_with("Character {"));
+        assert!(debug_output.ends_with("}"));
+    }
+
+    #[test]
+    fn test_character_clone() {
+        let character1 = create_dummy_character();
+        let character2 = character1.clone();
+        // Assert equality using derived PartialEq
+        assert_eq!(character1, character2);
+        // Optionally, modify one and assert they are no longer equal
+        // let mut character3 = character1.clone();
+        // character3.name = "Modified Name".to_string();
+        // assert_ne!(character1, character3);
+    }
+
 mod tests {
-    use super::*;
-    use crate::models::character_card::{CharacterCardDataV3, CharacterCardV3}; // Import the actual structs
-    use crate::services::character_parser::ParsedCharacterCard; // Import the enum
-    use chrono::Utc;
-    use serde_json;
-    use uuid::Uuid;
+    #[allow(unused_imports)] // <-- ADD THIS LINE
+    use super::*; // <-- RESTORE THIS LINE
+    use crate::models::character_card::{CharacterCardDataV3, CharacterCardV3};
+    use crate::services::character_parser::ParsedCharacterCard;
 
     // Helper function to create a dummy V3 card
     fn create_dummy_v3_card() -> ParsedCharacterCard {

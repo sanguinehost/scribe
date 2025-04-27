@@ -1331,4 +1331,191 @@ mod tests {
             other => panic!("Expected V2Fallback for tEXtchara chunk, got {:?}", other),
         }
     }
+// Helper to create a minimally valid V3 JSON string
+fn create_minimal_valid_v3_json(spec_version: &str, name: &str) -> String {
+    // Based on CharacterCardV3 and CharacterCardDataV3 defaults
+    format!(r#"{{
+        "spec": "chara_card_v3",
+        "spec_version": "{}",
+        "data": {{
+            "name": "{}",
+            "description": "",
+            "personality": "",
+            "scenario": "",
+            "first_mes": "",
+            "mes_example": "",
+            "creator_notes": "",
+            "system_prompt": "",
+            "post_history_instructions": "",
+            "alternate_greetings": [],
+            "tags": [],
+            "creator": "",
+            "character_version": "",
+            "extensions": {{}},
+            "group_only_greetings": []
+        }}
+    }}"#, spec_version, name)
+}
+
+
+#[test]
+fn test_parse_json_older_spec_version() {
+    let json = create_minimal_valid_v3_json("2.9", "JSON Old Spec");
+    let result = parse_character_card_json(json.as_bytes());
+
+    assert!(result.is_ok(), "Parsing failed for older spec version: {:?}", result.err()); // Should parse ok, with warning
+    if let ParsedCharacterCard::V3(card) = result.unwrap() {
+        assert_eq!(card.spec_version, "2.9"); // Line 254-255
+        assert_eq!(card.data.name, Some("JSON Old Spec".to_string()));
+    } else {
+        panic!("Expected V3 variant for older spec version");
+    }
+}
+
+#[test]
+fn test_parse_json_non_numeric_spec_version() {
+    let json = create_minimal_valid_v3_json("alpha", "JSON Alpha Spec");
+    let result = parse_character_card_json(json.as_bytes());
+
+    assert!(result.is_ok(), "Parsing failed for non-numeric spec version: {:?}", result.err()); // Should parse ok, with warning
+    if let ParsedCharacterCard::V3(card) = result.unwrap() {
+        assert_eq!(card.spec_version, "alpha"); // Line 263
+        assert_eq!(card.data.name, Some("JSON Alpha Spec".to_string()));
+    } else {
+        panic!("Expected V3 variant for non-numeric spec version");
+    }
+}
+
+    #[test]
+    fn test_parse_charx_other_zip_error() {
+        // Create intentionally corrupted zip data (e.g., invalid central directory)
+        // This is tricky to do reliably without deep knowledge of the zip format.
+        // A simpler approach is to provide data that *looks* like a zip header
+        // but is otherwise invalid.
+        let corrupted_zip_data = Cursor::new(b"PK\x03\x04DefinitelyNotAZipFile".to_vec());
+
+        let result = parse_character_card_charx(corrupted_zip_data);
+        assert!(result.is_err());
+        match result.err().unwrap() {
+            // Expecting a generic ZipError, not FileNotFound
+            ParserError::ZipError(e) => { // Line 296 (other_zip_error branch)
+                assert!(!e.contains("file not found"), "Expected a generic ZipError, not FileNotFound");
+            },
+            e => panic!("Expected ZipError for corrupted zip data, got {:?}", e),
+        }
+    }
+
+    // Helper to create a reader that fails after some bytes
+    struct FailingReader {
+        data: Cursor<Vec<u8>>,
+        fail_after: u64,
+        read_count: u64,
+    }
+
+    impl Read for FailingReader {
+        fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+            if self.read_count >= self.fail_after {
+                Err(std::io::Error::new(std::io::ErrorKind::Other, "Simulated I/O error"))
+            } else {
+                // Calculate how many bytes we *can* read before hitting the limit or EOF
+                let remaining_in_data = self.data.get_ref().len() as u64 - self.data.position();
+                let remaining_before_fail = self.fail_after.saturating_sub(self.read_count);
+                let max_readable = std::cmp::min(remaining_in_data, remaining_before_fail);
+                let bytes_to_read = std::cmp::min(buf.len() as u64, max_readable) as usize;
+
+                if bytes_to_read == 0 && remaining_before_fail > 0 {
+                    // If we can still read more before failing, but the underlying reader is EOF, return Ok(0)
+                     return Ok(0);
+                } else if bytes_to_read == 0 && remaining_before_fail == 0 {
+                     // If we are exactly at the fail point and can't read more, return the error
+                     return Err(std::io::Error::new(std::io::ErrorKind::Other, "Simulated I/O error"));
+                }
+
+                let bytes_read = self.data.read(&mut buf[..bytes_to_read])?;
+                self.read_count += bytes_read as u64;
+                Ok(bytes_read)
+            }
+        }
+    }
+
+
+    #[test]
+    fn test_png_io_error_conversion() {
+        // Create valid PNG data first
+        let v3_json = r#"{ "spec": "chara_card_v3", "spec_version": "3.0", "data": { "name": "IO Test" } }"#;
+        let png_data = create_test_png_with_text_chunk(b"ccv3", v3_json);
+
+        // Wrap it in a reader that will fail partway through
+        let failing_reader = FailingReader {
+            data: Cursor::new(png_data),
+            fail_after: 20, // Fail after reading 20 bytes (e.g., during header/chunk reading)
+            read_count: 0,
+        };
+
+        // Use the png decoder directly with the failing reader
+        let decoder = Decoder::new(failing_reader);
+        // Reading info might succeed if fail_after is large enough,
+        // the error might occur during the actual pixel data reading (which we skip here)
+        // or during finish() if chunks are read lazily. Let's try reading info first.
+        let read_result = decoder.read_info();
+
+        // Check if read_info itself failed with IO error
+        if let Err(png::DecodingError::IoError(io_err)) = read_result {
+             let parser_error: ParserError = png::DecodingError::IoError(io_err).into(); // Line 46-47
+             match parser_error {
+                 ParserError::PngError(s) => {
+                     assert!(s.contains("Simulated I/O error"));
+                 }
+                 _ => panic!("Expected PngError(IoError variant) from read_info"),
+             }
+        } else if let Ok(mut reader) = read_result {
+             // If read_info succeeded, try reading data or finishing
+             let mut buffer = vec![0; 10]; // Small buffer
+             let data_read_result = reader.next_frame(&mut buffer);
+             if let Err(png::DecodingError::IoError(io_err)) = data_read_result {
+                  let parser_error: ParserError = png::DecodingError::IoError(io_err).into(); // Line 46-47
+                  match parser_error {
+                      ParserError::PngError(s) => {
+                          assert!(s.contains("Simulated I/O error"));
+                      }
+                      _ => panic!("Expected PngError(IoError variant) from next_frame"),
+                  }
+             } else {
+                 // If reading data also didn't fail (maybe fail_after was too large),
+                 // the error should be caught by the From impl anyway if an IO error occurred.
+                 // We still test the direct conversion below.
+                 // It's hard to guarantee the exact point of failure within the png library.
+             }
+        } else {
+             panic!("Expected Ok or png::DecodingError::IoError from read_info, got {:?}", read_result.err());
+        }
+
+
+        // Also test the direct From<std::io::Error>
+         let io_error = std::io::Error::new(std::io::ErrorKind::PermissionDenied, "Permission denied test");
+         let parser_error_direct: ParserError = io_error.into(); // Line 40-41
+         match parser_error_direct {
+             ParserError::IoError(s) => assert!(s.contains("Permission denied test")),
+             _ => panic!("Expected IoError from direct conversion"),
+         }
+    }
+
+    // Test for From<ZipError> (Line 64-65)
+    #[test]
+    fn test_zip_error_conversion() {
+        let zip_error = ZipError::FileNotFound;
+        let parser_error: ParserError = zip_error.into(); // Line 64-65
+        match parser_error {
+            ParserError::ZipError(s) => assert!(s.contains("file not found")),
+            _ => panic!("Expected ZipError from conversion"),
+        }
+
+        let zip_error_other = ZipError::Io(std::io::Error::new(std::io::ErrorKind::Other, "zip io"));
+         let parser_error_other: ParserError = zip_error_other.into(); // Line 64-65
+         match parser_error_other {
+             // Check for the specific lowercase "i/o error" string representation
+             ParserError::ZipError(s) => assert!(s.contains("i/o error"), "Expected ZipError string to contain 'i/o error', got: {}", s),
+             _ => panic!("Expected ZipError from conversion"),
+         }
+    }
 }

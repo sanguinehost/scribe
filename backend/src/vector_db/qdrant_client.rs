@@ -537,6 +537,15 @@ mod tests {
         // For now, this confirms the basic conversion handles nested JSON.
     }
 
+#[test]
+    fn test_new_test_dummy_creation() {
+        // This test covers lines 89, 98, 103
+        let dummy_service = QdrantClientService::new_test_dummy();
+        // Basic assertion to ensure it runs without panic and fields are initialized
+        assert_eq!(dummy_service.collection_name, DEFAULT_COLLECTION_NAME);
+        assert_eq!(dummy_service.embedding_dimension, EMBEDDING_DIMENSION);
+        // We don't assert on the client itself as it's expected to be non-functional.
+    }
     // --- Integration Tests (Require running Qdrant instance) ---
     // Run these tests with `cargo test -- --ignored`
 

@@ -7,7 +7,7 @@ use axum::extract::State;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum_login::{AuthSession, AuthUser};
-use secrecy::{ExposeSecret, Secret};
+use secrecy::{/* ExposeSecret, */ Secret};
 use serde_json::json;
 use tracing::{debug, error, info, instrument, warn};
 

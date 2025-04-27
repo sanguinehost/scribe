@@ -226,7 +226,8 @@ impl EmbeddingClient for MockEmbeddingClient {
             Some(res) => res,
             None => {
                 // Default behavior if no response is set
-                Ok(vec![0.0; 768])
+                warn!("MockEmbeddingClient response not set, returning default OK response."); // Keep warning
+                Ok(vec![0.0; 768]) // Restore default Ok(...) behavior
             }
         }
     }
@@ -1193,67 +1194,95 @@ pub fn ensure_tracing_initialized() {
 // --- AppState Builder (already pub) ---
 #[derive(Default)]
 pub struct AppStateBuilder {
-    /* ... existing fields ... */
-    // Add fields if they were removed or keep as is if defined elsewhere
+    // Store provided components as Options
+    config: Option<Arc<Config>>,
+    ai_client: Option<Arc<dyn AiClient + Send + Sync>>,
+    embedding_client: Option<Arc<dyn EmbeddingClient + Send + Sync>>,
+    embedding_pipeline_service: Option<Arc<dyn EmbeddingPipelineServiceTrait + Send + Sync>>,
+    // Use the concrete mock type here, but store as dyn trait below if needed
+    // Keep as concrete type since it's used directly in AppState later if provided
+    qdrant_service: Option<Arc<MockQdrantClientService>>,
+    // Add pool field if needed for build() method
+    pool: Option<PgPool>, // Example if pool configuration is needed
 }
+
 impl AppStateBuilder {
     pub fn new() -> Self {
         Self::default()
     }
 
-    // Add placeholder builder methods used in tests
-    pub fn with_config(self, _config: Arc<Config>) -> Self {
-        // TODO: Store config if needed by builder logic
+    // Update builder methods to store the provided values
+    pub fn with_config(mut self, config: Arc<Config>) -> Self {
+        self.config = Some(config);
         self
     }
 
-    pub fn with_ai_client(self, _client: Arc<dyn AiClient + Send + Sync>) -> Self {
-        // TODO: Store client if needed
+    pub fn with_ai_client(mut self, client: Arc<dyn AiClient + Send + Sync>) -> Self {
+        self.ai_client = Some(client);
         self
     }
 
-    // Accept trait object for EmbeddingClient
-    pub fn with_embedding_client(self, _client: Arc<dyn EmbeddingClient + Send + Sync>) -> Self {
-        // TODO: Store client if needed
+    pub fn with_embedding_client(mut self, client: Arc<dyn EmbeddingClient + Send + Sync>) -> Self {
+        self.embedding_client = Some(client);
         self
     }
 
-    // Accept trait object for EmbeddingPipelineServiceTrait
     pub fn with_embedding_pipeline_service(
-        self,
-        _service: Arc<dyn EmbeddingPipelineServiceTrait + Send + Sync>,
+        mut self,
+        service: Arc<dyn EmbeddingPipelineServiceTrait + Send + Sync>,
     ) -> Self {
-        // TODO: Store service if needed
+        self.embedding_pipeline_service = Some(service);
         self
     }
 
-    // Renamed based on embedding_pipeline tests usage
-    // Keep concrete type for MockQdrantClientService as it's not a trait
-    pub fn with_mock_qdrant_service(self, _service: Arc<MockQdrantClientService>) -> Self {
-        // TODO: Store service if needed
+    // Rename to align with common naming and store the mock
+    pub fn with_qdrant_service(mut self, service: Arc<MockQdrantClientService>) -> Self {
+        self.qdrant_service = Some(service);
         self
     }
 
-    // Add placeholder build_for_test method
+    // Optional: Add method to provide pool if needed by build()
+    pub fn with_pool(mut self, pool: PgPool) -> Self {
+        self.pool = Some(pool);
+        self
+    }
+
+
+    // Update build_for_test to use stored components or defaults
     pub async fn build_for_test(self) -> Result<Arc<AppState>, String> {
-        // TODO: Implement proper AppState construction logic using stored fields
-        // For now, create a default/dummy state to satisfy the call
-        let pool = create_test_pool(); // Assuming create_test_pool helper exists
-        let config = Arc::new(Config::default());
-        let ai_client = Arc::new(MockAiClient::new());
-        let embedding_client = Arc::new(MockEmbeddingClient::new());
-        let qdrant_service = Arc::new(QdrantClientService::new_test_dummy()); // Use dummy Qdrant
-        let embedding_pipeline_service = Arc::new(MockEmbeddingPipelineService::new());
+        // Use stored pool or create a default test pool
+        let pool = self.pool.unwrap_or_else(create_test_pool);
+        // Use stored config or default
+        let config = self.config.unwrap_or_else(|| Arc::new(Config::default()));
+        // Use stored AI client or default mock
+        let ai_client = self
+            .ai_client
+            .unwrap_or_else(|| Arc::new(MockAiClient::new()));
+        // Use stored Embedding client or default mock
+        let embedding_client = self
+            .embedding_client
+            .unwrap_or_else(|| Arc::new(MockEmbeddingClient::new()));
+
+        // Use the provided mock Qdrant service if available, otherwise create a default mock.
+        // Ensure it's cast to the correct trait object type for AppState.
+        let qdrant_service = self
+            .qdrant_service
+            .map(|mock_arc| mock_arc as Arc<dyn QdrantClientServiceTrait + Send + Sync>)
+            .unwrap_or_else(|| Arc::new(MockQdrantClientService::new()) as Arc<dyn QdrantClientServiceTrait + Send + Sync>);
+
+        let embedding_pipeline_service = self.embedding_pipeline_service.unwrap_or_else(|| {
+            Arc::new(MockEmbeddingPipelineService::new())
+                as Arc<dyn EmbeddingPipelineServiceTrait + Send + Sync>
+        });
 
         Ok(Arc::new(AppState {
             pool,
             config,
             ai_client,
-            embedding_client: embedding_client as Arc<dyn EmbeddingClient + Send + Sync>,
-            qdrant_service,
-            embedding_pipeline_service: embedding_pipeline_service
-                as Arc<dyn EmbeddingPipelineServiceTrait + Send + Sync>,
-            embedding_call_tracker: Arc::new(tokio::sync::Mutex::new(Vec::new())), // Add default tracker
+            embedding_client, // This is already the correct type Arc<dyn...>
+            qdrant_service, // Use the potentially mocked service
+            embedding_pipeline_service,
+            embedding_call_tracker: Arc::new(tokio::sync::Mutex::new(Vec::new())),
         }))
     }
 }

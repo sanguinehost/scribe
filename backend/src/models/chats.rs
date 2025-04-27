@@ -142,7 +142,7 @@ pub struct ChatMessage {
 }
 
 // For inserting a new chat message
-#[derive(Insertable, Default)]
+#[derive(Insertable, Default, Debug, Clone)] // Added Debug and Clone
 #[diesel(table_name = chat_messages)]
 pub struct NewChatMessage {
     pub session_id: Uuid,
@@ -244,4 +244,225 @@ pub struct UpdateChatSettingsRequest {
     pub top_a: Option<BigDecimal>,
     pub seed: Option<i32>,
     pub logit_bias: Option<Value>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use bigdecimal::BigDecimal; // Import BigDecimal
+    use chrono::Utc;
+    use serde_json::json; // Import json macro
+    use std::str::FromStr; // For BigDecimal::from_str
+    use uuid::Uuid;
+
+    // Helper to create BigDecimal from string, panicking on error
+    fn bd(s: &str) -> BigDecimal {
+        BigDecimal::from_str(s).expect("Invalid BigDecimal string in test")
+    }
+
+    // --- ChatSession Tests (Lines 20-46) ---
+
+    fn create_sample_chat_session() -> ChatSession {
+        ChatSession {
+            id: Uuid::new_v4(),
+            user_id: Uuid::new_v4(),
+            character_id: Uuid::new_v4(),
+            title: Some("Test Chat Session".to_string()),
+            system_prompt: Some("You are a helpful assistant.".to_string()),
+            temperature: Some(bd("0.7")),
+            max_output_tokens: Some(256),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+            frequency_penalty: Some(bd("0.1")),
+            presence_penalty: Some(bd("0.2")),
+            top_k: Some(50),
+            top_p: Some(bd("0.9")),
+            repetition_penalty: Some(bd("1.1")),
+            min_p: Some(bd("0.05")),
+            top_a: Some(bd("0.8")),
+            seed: Some(12345),
+            logit_bias: Some(json!({ "token_id": 1.5 })),
+        }
+    }
+
+    #[test]
+    fn test_debug_chat_session() {
+        let session = create_sample_chat_session();
+        let debug_output = format!("{:?}", session);
+        assert!(!debug_output.is_empty());
+        assert!(debug_output.contains("Test Chat Session"));
+        assert!(debug_output.contains("helpful assistant"));
+        println!("ChatSession Debug: {}", debug_output);
+        assert!(debug_output.contains("temperature: Some("));
+    }
+
+    #[test]
+    fn test_clone_chat_session() {
+        let session = create_sample_chat_session();
+        let cloned_session = session.clone();
+        // Basic field comparison (PartialEq not derived, compare key fields)
+        assert_eq!(session.id, cloned_session.id);
+        assert_eq!(session.user_id, cloned_session.user_id);
+        assert_eq!(session.character_id, cloned_session.character_id);
+        assert_eq!(session.title, cloned_session.title);
+        assert_eq!(session.system_prompt, cloned_session.system_prompt);
+        assert_eq!(session.temperature, cloned_session.temperature);
+        assert_eq!(session.max_output_tokens, cloned_session.max_output_tokens);
+        assert_eq!(session.logit_bias, cloned_session.logit_bias);
+    }
+
+    // --- MessageRole Tests (Lines 74-124) ---
+    // Testing Debug and Clone for the enum itself
+
+    #[test]
+    fn test_debug_message_role() {
+        assert_eq!(format!("{:?}", MessageRole::User), "User");
+        assert_eq!(format!("{:?}", MessageRole::Assistant), "Assistant");
+        assert_eq!(format!("{:?}", MessageRole::System), "System");
+    }
+
+    #[test]
+    fn test_clone_message_role() {
+        let role = MessageRole::Assistant;
+        let cloned_role = role.clone();
+        assert_eq!(role, cloned_role); // PartialEq is derived
+    }
+
+    // --- ChatMessage Tests (Lines 127-142) ---
+
+    fn create_sample_chat_message() -> ChatMessage {
+        ChatMessage {
+            id: Uuid::new_v4(),
+            session_id: Uuid::new_v4(),
+            message_type: MessageRole::User,
+            content: "Hello!".to_string(),
+            created_at: Utc::now(),
+        }
+    }
+
+    #[test]
+    fn test_debug_chat_message() {
+        let message = create_sample_chat_message();
+        let debug_output = format!("{:?}", message);
+        assert!(!debug_output.is_empty());
+        assert!(debug_output.contains("message_type: User"));
+        assert!(debug_output.contains("Hello!"));
+    }
+
+    #[test]
+    fn test_clone_chat_message() {
+        let message = create_sample_chat_message();
+        let cloned_message = message.clone();
+        // Basic field comparison (PartialEq not derived)
+        assert_eq!(message.id, cloned_message.id);
+        assert_eq!(message.session_id, cloned_message.session_id);
+        assert_eq!(message.message_type, cloned_message.message_type);
+        assert_eq!(message.content, cloned_message.content);
+        assert_eq!(message.created_at, cloned_message.created_at);
+    }
+
+    // --- NewChatMessage Tests (Lines 145-151) ---
+
+    fn create_sample_new_chat_message() -> NewChatMessage {
+        NewChatMessage {
+            session_id: Uuid::new_v4(),
+            message_type: MessageRole::Assistant,
+            content: "Hi there!".to_string(),
+        }
+    }
+
+    #[test]
+    fn test_debug_new_chat_message() {
+        let new_message = create_sample_new_chat_message();
+        let debug_output = format!("{:?}", new_message); // Requires Debug derive
+        assert!(!debug_output.is_empty());
+        assert!(debug_output.contains("message_type: Assistant"));
+        assert!(debug_output.contains("Hi there!"));
+    }
+
+    #[test]
+    fn test_clone_new_chat_message() {
+        let new_message = create_sample_new_chat_message();
+        let cloned_message = new_message.clone(); // Requires Clone derive
+        // Basic field comparison (PartialEq not derived)
+        assert_eq!(new_message.session_id, cloned_message.session_id);
+        assert_eq!(new_message.message_type, cloned_message.message_type);
+        assert_eq!(new_message.content, cloned_message.content);
+    }
+
+    // --- ChatSettingsResponse Tests (Lines 212-227) ---
+
+    fn create_sample_chat_settings_response() -> ChatSettingsResponse {
+        ChatSettingsResponse {
+            system_prompt: Some("Response system prompt".to_string()),
+            temperature: Some(bd("0.75")),
+            max_output_tokens: Some(512),
+            frequency_penalty: Some(bd("0.15")),
+            presence_penalty: Some(bd("0.25")),
+            top_k: Some(40),
+            top_p: Some(bd("0.95")),
+            repetition_penalty: Some(bd("1.15")),
+            min_p: Some(bd("0.06")),
+            top_a: Some(bd("0.85")),
+            seed: Some(54321),
+            logit_bias: Some(json!({ "another_token": -0.5 })),
+        }
+    }
+
+    #[test]
+    fn test_debug_chat_settings_response() {
+        let settings = create_sample_chat_settings_response();
+        let debug_output = format!("{:?}", settings);
+        assert!(!debug_output.is_empty());
+        assert!(debug_output.contains("Response system prompt"));
+        println!("ChatSettingsResponse Debug: {}", debug_output);
+        assert!(debug_output.contains("temperature: Some("));
+        assert!(debug_output.contains("logit_bias: Some(Object"));
+    }
+
+    #[test]
+    fn test_clone_chat_settings_response() {
+        let settings = create_sample_chat_settings_response();
+        let cloned_settings = settings.clone();
+        assert_eq!(settings, cloned_settings); // PartialEq is derived
+    }
+
+    // --- UpdateChatSettingsRequest Tests (Lines 231-247) ---
+
+    fn create_sample_update_chat_settings_request() -> UpdateChatSettingsRequest {
+        UpdateChatSettingsRequest {
+            system_prompt: Some("Updated system prompt".to_string()),
+            temperature: Some(bd("0.65")),
+            max_output_tokens: Some(1024),
+            frequency_penalty: None, // Test None
+            presence_penalty: Some(bd("0.3")),
+            top_k: Some(60),
+            top_p: None, // Test None
+            repetition_penalty: Some(bd("1.2")),
+            min_p: Some(bd("0.07")),
+            top_a: None, // Test None
+            seed: Some(98765),
+            logit_bias: Some(json!({ "updated_bias": 2.0 })),
+        }
+    }
+
+    // Note: Default is not derived for UpdateChatSettingsRequest, so no default test needed.
+
+    #[test]
+    fn test_debug_update_chat_settings_request() {
+        let settings = create_sample_update_chat_settings_request();
+        let debug_output = format!("{:?}", settings);
+        assert!(!debug_output.is_empty());
+        assert!(debug_output.contains("Updated system prompt"));
+        println!("UpdateChatSettingsRequest Debug: {}", debug_output);
+        assert!(debug_output.contains("temperature: Some("));
+        assert!(debug_output.contains("logit_bias: Some(Object"));
+    }
+
+    #[test]
+    fn test_clone_update_chat_settings_request() {
+        let update_settings = create_sample_update_chat_settings_request();
+        let cloned_settings = update_settings.clone();
+        assert_eq!(update_settings, cloned_settings); // PartialEq is derived
+    }
 }

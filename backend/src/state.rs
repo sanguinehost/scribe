@@ -12,7 +12,9 @@ use tokio::sync::Mutex; // Add Mutex for test tracking
 use crate::llm::AiClient;
 use crate::llm::EmbeddingClient; // Add this
 use crate::services::embedding_pipeline::EmbeddingPipelineServiceTrait;
-use crate::vector_db::QdrantClientService; // Add Qdrant service import // Import the new trait
+// Remove concrete service import, use trait
+// use crate::vector_db::QdrantClientService; 
+use crate::vector_db::qdrant_client::QdrantClientServiceTrait;
 
 // --- DB Connection Pool Type ---
 pub type DbPool = DeadpoolPool;
@@ -30,9 +32,10 @@ pub struct AppState {
     // pub mock_llm_response: std::sync::Arc<tokio::sync::Mutex<Option<String>>>, // Keep for now if other tests use it
     // Change to use the AiClient trait object
     pub ai_client: Arc<dyn AiClient + Send + Sync>,
-    pub embedding_client: Arc<dyn EmbeddingClient>, // Add this line
-    pub qdrant_service: Arc<QdrantClientService>,   // Add Qdrant service
-    pub embedding_pipeline_service: Arc<dyn EmbeddingPipelineServiceTrait>, // Add Embedding Pipeline service trait object
+    pub embedding_client: Arc<dyn EmbeddingClient + Send + Sync>, // Add Send + Sync
+    // Change to use the trait object for Qdrant service
+    pub qdrant_service: Arc<dyn QdrantClientServiceTrait + Send + Sync>,
+    pub embedding_pipeline_service: Arc<dyn EmbeddingPipelineServiceTrait + Send + Sync>, // Add Send + Sync
     // Remove #[cfg(test)]
     pub embedding_call_tracker: Arc<Mutex<Vec<uuid::Uuid>>>, // Track message IDs for embedding calls
 }
@@ -43,9 +46,10 @@ impl AppState {
         pool: DeadpoolPool,
         config: Arc<Config>,
         ai_client: Arc<dyn AiClient + Send + Sync>, // Use trait object Arc here
-        embedding_client: Arc<dyn EmbeddingClient>, // Add this parameter
-        qdrant_service: Arc<QdrantClientService>,   // Add Qdrant service parameter
-        embedding_pipeline_service: Arc<dyn EmbeddingPipelineServiceTrait>, // Add Embedding Pipeline service parameter
+        embedding_client: Arc<dyn EmbeddingClient + Send + Sync>, // Add Send + Sync
+        // Accept the trait object Arc for Qdrant service
+        qdrant_service: Arc<dyn QdrantClientServiceTrait + Send + Sync>,
+        embedding_pipeline_service: Arc<dyn EmbeddingPipelineServiceTrait + Send + Sync>, // Add Send + Sync
     ) -> Self {
         Self {
             pool,
@@ -54,7 +58,7 @@ impl AppState {
             // mock_llm_response: std::sync::Arc::new(tokio::sync::Mutex::new(None)),
             ai_client,                  // Assign the passed-in client Arc
             embedding_client,           // Add this assignment
-            qdrant_service,             // Add this assignment
+            qdrant_service,             // Assign the trait object
             embedding_pipeline_service, // Add this assignment
             // Remove #[cfg(test)]
             embedding_call_tracker: Arc::new(Mutex::new(Vec::new())), // Initialize tracker for tests

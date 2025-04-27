@@ -464,6 +464,57 @@ mod tests {
             _ => panic!("Expected ConfigError"),
         }
     }
+// Test for reqwest::Error during send()
+    #[tokio::test]
+    async fn test_embed_content_request_send_error() {
+        // Start a mock server
+        let server = MockServer::start();
+        let api_key = "test_api_key";
+
+        // Configure the mock to return a network error
+        let mock = server.mock(|when, then| {
+            when.method(POST)
+                .path("/v1beta/models/test-model:embedContent")
+                .query_param("key", api_key);
+            // Introduce a delay longer than the client timeout to cause send() to fail
+            then.status(204) // Status doesn't matter much, it won't be reached
+                .delay(Duration::from_millis(200)); // Delay > client timeout (100ms)
+        });
+
+        // Create a client pointing to the mock server
+        let config = create_test_config(Some(api_key.to_string()));
+        // Use a client with a short timeout to ensure the network error simulation triggers quickly if needed
+        let reqwest_client = ReqwestClient::builder()
+            .timeout(Duration::from_millis(100)) // Short timeout
+            .build()
+            .unwrap();
+
+        let client = RestGeminiEmbeddingClient {
+            reqwest_client,
+            config,
+            model_name: "models/test-model".to_string(),
+        };
+
+        // Call the custom function that uses the mock server URL
+        let result =
+            custom_embed_content(&client, &server.base_url(), "Test text", "RETRIEVAL_QUERY").await;
+
+        // Verify the mock was called (or attempted)
+        mock.assert(); // Asserts that the request matching the criteria was received
+
+        // Verify the result is an HttpRequestError
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            AppError::HttpRequestError(msg) => {
+                // The exact error message from reqwest might vary depending on the simulated error
+                println!("Received expected HttpRequestError: {}", msg);
+                assert!(!msg.is_empty(), "Error message should not be empty");
+            }
+            err => panic!("Expected HttpRequestError, got {:?}", err),
+        }
+    }
+
+    // --- Integration Tests (Require API Key and Network) ---
 
     #[tokio::test]
     #[ignore] // Integration test: requires network but should fail due to invalid key

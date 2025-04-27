@@ -437,4 +437,157 @@ mod tests {
         let calls = mock_rag.get_calls();
         assert!(calls.is_empty());
     }
+
+    // --- NEW TESTS START HERE ---
+
+    #[tokio::test]
+    async fn test_build_prompt_char_without_description() {
+        let (state, _mock_rag) = mock_app_state().await;
+        let session_id = Uuid::new_v4();
+        let history = vec![]; // Empty history, RAG won't be called
+        let char_meta = CharacterMetadata {
+            id: Uuid::new_v4(),
+            user_id: Uuid::new_v4(),
+            name: "Minimal Bot".to_string(),
+            description: None, // No description
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+            first_mes: None,
+        };
+
+        let prompt = build_prompt_with_rag(state, session_id, Some(&char_meta), &history)
+            .await
+            .unwrap();
+
+        assert!(prompt.contains("Character Name: Minimal Bot"));
+        assert!(!prompt.contains("Description:")); // Ensure description line is absent
+        assert!(prompt.contains("\nMinimal Bot:"));
+    }
+
+    #[tokio::test]
+    async fn test_build_prompt_with_system_message_in_history() {
+        let (state, mock_rag) = mock_app_state().await;
+        let session_id = Uuid::new_v4();
+        let history = vec![
+            ChatMessage {
+                id: Uuid::new_v4(),
+                session_id,
+                message_type: MessageRole::User,
+                content: "User query".to_string(),
+                created_at: Utc::now(),
+            },
+            ChatMessage {
+                id: Uuid::new_v4(),
+                session_id,
+                message_type: MessageRole::System, // System message
+                content: "System instruction".to_string(),
+                created_at: Utc::now(),
+            },
+            ChatMessage {
+                id: Uuid::new_v4(),
+                session_id,
+                message_type: MessageRole::Assistant,
+                content: "Assistant response".to_string(),
+                created_at: Utc::now(),
+            },
+        ];
+
+        // Mock RAG to return empty results based on the last message ("Assistant response")
+        mock_rag.set_retrieve_response(Ok(vec![]));
+
+        let prompt = build_prompt_with_rag(state, session_id, None, &history)
+            .await
+            .unwrap();
+
+        assert!(prompt.contains("---\nHistory:\n"));
+        assert!(prompt.contains("User: User query"));
+        assert!(prompt.contains("System: System instruction")); // Check for system message
+        assert!(prompt.contains("Assistant: Assistant response"));
+        assert!(prompt.contains("---\n"));
+        assert!(prompt.contains("\nCharacter:")); // Default character name
+
+        // Verify RAG call
+        let calls = mock_rag.get_calls();
+        assert!(!calls.is_empty());
+        if let Some(PipelineCall::RetrieveRelevantChunks { query_text, .. }) = calls.last() {
+            assert_eq!(query_text, "Assistant response");
+        } else {
+            panic!("Expected RetrieveRelevantChunks call");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_build_prompt_full_scenario_char_history_rag() {
+        let (state, mock_rag) = mock_app_state().await;
+        let session_id = Uuid::new_v4();
+        let char_meta = CharacterMetadata {
+            id: Uuid::new_v4(),
+            user_id: Uuid::new_v4(),
+            name: "Mega Bot".to_string(),
+            description: Some("The ultimate bot.".to_string()),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+            first_mes: Some("Mega greeting".to_string()),
+        };
+        let history = vec![
+            ChatMessage {
+                id: Uuid::new_v4(),
+                session_id,
+                message_type: MessageRole::User,
+                content: "First user message".to_string(),
+                created_at: Utc::now(),
+            },
+            ChatMessage {
+                id: Uuid::new_v4(),
+                session_id,
+                message_type: MessageRole::Assistant,
+                content: "Bot reply".to_string(),
+                created_at: Utc::now(),
+            },
+        ];
+        let mock_chunks = vec![RetrievedChunk {
+            score: 0.75,
+            text: "Relevant fact".to_string(),
+            metadata: EmbeddingMetadata {
+                message_id: Uuid::new_v4(),
+                session_id,
+                speaker: "user".to_string(),
+                timestamp: Utc::now(),
+                text: "Relevant fact".to_string(),
+            },
+        }];
+
+        // Mock RAG to return chunks based on the last message ("Bot reply")
+        mock_rag.set_retrieve_response(Ok(mock_chunks.clone()));
+
+        let prompt = build_prompt_with_rag(state, session_id, Some(&char_meta), &history)
+            .await
+            .unwrap();
+
+        // Check Character Details
+        assert!(prompt.contains("Character Name: Mega Bot"));
+        assert!(prompt.contains("Description: The ultimate bot."));
+
+        // Check RAG Context
+        assert!(prompt.contains("Relevant Historical Context:"));
+        assert!(prompt.contains("- (Score: 0.75) Relevant fact"));
+
+        // Check History
+        assert!(prompt.contains("---\nHistory:\n"));
+        assert!(prompt.contains("User: First user message"));
+        assert!(prompt.contains("Assistant: Bot reply"));
+        assert!(prompt.contains("---\n"));
+
+        // Check Final Line
+        assert!(prompt.contains("\nMega Bot:"));
+
+        // Verify RAG call
+        let calls = mock_rag.get_calls();
+        assert!(!calls.is_empty());
+        if let Some(PipelineCall::RetrieveRelevantChunks { query_text, .. }) = calls.last() {
+            assert_eq!(query_text, "Bot reply");
+        } else {
+            panic!("Expected RetrieveRelevantChunks call");
+        }
+    }
 }

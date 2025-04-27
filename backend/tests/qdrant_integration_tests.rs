@@ -437,3 +437,133 @@ async fn test_qdrant_upsert_empty_points() -> Result<(), AnyhowError> {
 
     Ok(())
 }
+
+use scribe_backend::vector_db::qdrant_client::QdrantClientServiceTrait; // Import the trait
+
+#[tokio::test]
+#[serial]
+#[ignore]
+async fn test_qdrant_ensure_collection_already_exists() -> Result<(), AnyhowError> {
+    cleanup_and_prepare_collection().await?; // Ensure clean state
+    // First call creates the collection
+    let service1 = create_test_qdrant_service().await?;
+    // Second call should find the existing collection (covers line 165 in qdrant_client.rs)
+    let service2 = create_test_qdrant_service().await?;
+    // Check if the collection still exists using the raw client for verification
+    let client = Qdrant::from_url("http://localhost:6334").build()?;
+    let exists = client.collection_exists(TEST_COLLECTION_NAME).await?;
+    assert!(exists, "Collection should still exist after second service creation");
+    Ok(())
+}
+
+#[tokio::test]
+#[serial]
+#[ignore]
+async fn test_qdrant_retrieve_points() -> Result<(), AnyhowError> {
+    cleanup_and_prepare_collection().await?; // Ensure clean state
+    let service = create_test_qdrant_service().await?;
+
+    // Generate and upsert test data
+    let test_vectors = generate_test_vectors(768, 2);
+    let point_id_1 = Uuid::new_v4();
+    let point_id_2 = Uuid::new_v4();
+    let payload_1 = json!({"retrieve_key": "value_a"});
+    let payload_2 = json!({"retrieve_key": "value_b"});
+    let point_1 = create_qdrant_point(point_id_1, test_vectors[0].clone(), Some(payload_1))?;
+    let point_2 = create_qdrant_point(point_id_2, test_vectors[1].clone(), Some(payload_2))?;
+    service.upsert_points(vec![point_1, point_2]).await?;
+    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await; // Allow indexing
+
+    // Create a filter to retrieve one point
+    let filter = Filter {
+        must: vec![Condition {
+            condition_one_of: Some(ConditionOneOf::Field(FieldCondition {
+                key: "retrieve_key".to_string(),
+                r#match: Some(Match {
+                    match_value: Some(MatchValue::Keyword("value_a".to_string())),
+                }),
+                ..Default::default()
+            })),
+        }],
+        ..Default::default()
+    };
+
+    // Retrieve points (covers lines 269, 300 in qdrant_client.rs)
+    let retrieved_points = service.retrieve_points(Some(filter), 5).await?;
+
+    assert_eq!(retrieved_points.len(), 1, "Expected to retrieve 1 point");
+    let retrieved_point = &retrieved_points[0];
+
+    // Verify ID and payload
+    let retrieved_id_str = match retrieved_point.id.as_ref().unwrap().point_id_options.as_ref().unwrap() {
+        qdrant_client::qdrant::point_id::PointIdOptions::Uuid(s) => s.clone(),
+        qdrant_client::qdrant::point_id::PointIdOptions::Num(n) => n.to_string(),
+    };
+    assert_eq!(retrieved_id_str, point_id_1.to_string());
+    assert!(retrieved_point.payload.contains_key("retrieve_key"));
+    assert_eq!(
+        retrieved_point.payload.get("retrieve_key").unwrap().kind,
+        Some(ValueKind::StringValue("value_a".to_string()))
+    );
+    // Also check vector is retrieved
+    assert!(retrieved_point.vectors.is_some(), "Vectors should be retrieved");
+
+    Ok(())
+}
+
+
+#[tokio::test]
+#[serial]
+#[ignore]
+async fn test_qdrant_trait_methods() -> Result<(), AnyhowError> {
+    cleanup_and_prepare_collection().await?; // Ensure clean state
+    let service = create_test_qdrant_service().await?;
+    // Get a trait object
+    let trait_service: Arc<dyn QdrantClientServiceTrait> = Arc::new(service);
+
+    // --- Test store_points (covers lines 746, 748) ---
+    let test_vectors = generate_test_vectors(768, 1);
+    let point_id_trait = Uuid::new_v4();
+    let payload_trait = json!({"trait_key": "trait_value"});
+    let point_trait = create_qdrant_point(point_id_trait, test_vectors[0].clone(), Some(payload_trait))?;
+    trait_service.store_points(vec![point_trait]).await?;
+    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await; // Allow indexing
+
+    // --- Test retrieve_points via trait (covers lines 767, 771, 773-774, 777-780, 784) ---
+    let filter_trait = Filter {
+        must: vec![Condition {
+            condition_one_of: Some(ConditionOneOf::Field(FieldCondition {
+                key: "trait_key".to_string(),
+                r#match: Some(Match {
+                    match_value: Some(MatchValue::Keyword("trait_value".to_string())),
+                }),
+                ..Default::default()
+            })),
+        }],
+        ..Default::default()
+    };
+    let retrieved_trait_points = trait_service.retrieve_points(Some(filter_trait), 5).await?;
+    assert_eq!(retrieved_trait_points.len(), 1, "Expected to retrieve 1 point via trait");
+    let retrieved_trait_point = &retrieved_trait_points[0];
+    // Verify ID (ScoredPoint has ID directly)
+     let retrieved_id_str_trait = match retrieved_trait_point.id.as_ref().unwrap().point_id_options.as_ref().unwrap() {
+        qdrant_client::qdrant::point_id::PointIdOptions::Uuid(s) => s.clone(),
+        qdrant_client::qdrant::point_id::PointIdOptions::Num(n) => n.to_string(),
+    };
+    assert_eq!(retrieved_id_str_trait, point_id_trait.to_string());
+    // Verify payload
+    assert!(retrieved_trait_point.payload.contains_key("trait_key"));
+    // Verify score (should be default 1.0 from conversion)
+    assert_eq!(retrieved_trait_point.score, 1.0);
+
+    // --- Test delete_points (covers lines 787, 790) ---
+    // Note: The current implementation is a no-op, so this just tests it doesn't error.
+    let point_id_qdrant = qdrant_client::qdrant::PointId::from(point_id_trait.to_string());
+    trait_service.delete_points(vec![point_id_qdrant]).await?;
+
+    // --- Test update_collection_settings (covers lines 793, 796) ---
+    // Note: The current implementation is a no-op, so this just tests it doesn't error.
+    trait_service.update_collection_settings().await?;
+
+    Ok(())
+}

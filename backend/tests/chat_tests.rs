@@ -1,5 +1,7 @@
 // Integration tests for chat routes
 
+#![cfg(test)]
+
 use std::env; // <<< ADDED for RUN_INTEGRATION_TESTS check
 // Removed unused import: use scribe_backend::services::embedding_pipeline::process_and_embed_message;
 use axum::{
@@ -29,21 +31,34 @@ use tracing::error; // Added error import
 use uuid::Uuid;
 
 // Crate imports
-use scribe_backend::models::chats::ChatMessage; // Add missing import
+use scribe_backend::models::chats::{
+    ChatMessage,
+    // ADDED Chat related types
+    ChatSession,
+    MessageRole,
+    // Remove unused NewChatSession
+    // NewChatSession,
+    ChatSettingsResponse, // Removed NewChatSession,
+    // Removed NewChatMessage, SettingsTuple, DbInsertableChatMessage,
+    NewChatMessageRequest,
+    UpdateChatSettingsRequest,
+};
 use scribe_backend::test_helpers::MockEmbeddingPipelineService;
 use scribe_backend::{
     errors::AppError, // Keep AiClient, EmbeddingClient
-    models::chats::{
-        ChatSession,
-        ChatSettingsResponse, // Removed NewChatSession,
-        // Removed NewChatMessage, SettingsTuple, DbInsertableChatMessage,
-        MessageRole,
-        NewChatMessageRequest,
-        UpdateChatSettingsRequest,
-    },
     services::embedding_pipeline::{EmbeddingMetadata, RetrievedChunk}, // Add RAG imports // Added EmbeddingPipelineServiceTrait
     test_helpers::{self, PipelineCall},                                // Added QdrantClientService
 }; // Add missing import
+
+// Comment out unused import
+// use scribe_backend::models::chats::DbInsertableChatMessage;
+// Comment out unresolved import
+// use scribe_backend::test_helpers::setup_test_environment_with_character;
+
+use anyhow::{Error as AnyhowError}; // Add Error as AnyhowError
+
+// Define a struct matching the expected JSON structure from the list endpoint
+// ... existing code ...
 
 // Helper function to parse SSE stream manually
 async fn collect_sse_data(body: axum::body::Body) -> Vec<String> {
@@ -2198,7 +2213,7 @@ async fn generate_chat_response_non_streaming_success() {
     assert_eq!(ai_msg.content, mock_ai_content);
 }
 #[tokio::test]
-#[ignore] // Added ignore for CI
+// #[ignore] // Added ignore for CI
 async fn test_generate_chat_response_triggers_embeddings() {
     let context = test_helpers::setup_test_app().await;
     let (auth_cookie, user) = test_helpers::auth::create_test_user_and_login(
@@ -2251,11 +2266,30 @@ async fn test_generate_chat_response_triggers_embeddings() {
     // Consume the body to ensure the request is fully processed
     let _ = response.into_body().collect().await.unwrap().to_bytes();
 
-    // Wait for background embedding tasks to potentially run and update the tracker
-    tokio::time::sleep(Duration::from_millis(200)).await; // Adjust if needed
+    // Poll the tracker until the expected count is reached or timeout
+    let tracker = context.app.embedding_call_tracker.clone();
+    let start_time = std::time::Instant::now();
+    let timeout = Duration::from_secs(2); // 2-second timeout
 
-    // Assert that the embedding function was called twice
-    let tracker = context.app.embedding_call_tracker.clone(); // Access tracker directly from TestApp
+    loop {
+        let calls = tracker.lock().await;
+        if calls.len() >= 2 {
+            break; // Expected count reached
+        }
+        drop(calls); // Release lock before sleeping
+
+        if start_time.elapsed() > timeout {
+            let calls = tracker.lock().await; // Re-lock to get final count for panic message
+            panic!(
+                "Timeout waiting for embedding tracker count to reach 2. Current count: {}",
+                calls.len()
+            );
+        }
+
+        tokio::time::sleep(Duration::from_millis(10)).await; // Poll every 10ms
+    }
+
+    // Assert that the embedding function was called twice (after polling)
     let calls = tracker.lock().await;
     assert_eq!(
         calls.len(),
@@ -2288,7 +2322,7 @@ async fn test_generate_chat_response_triggers_embeddings() {
 }
 
 #[tokio::test]
-#[ignore] // Added ignore for CI
+// #[ignore] // Added ignore for CI
 async fn test_generate_chat_response_triggers_embeddings_with_existing_session() {
     let context = test_helpers::setup_test_app().await;
     let (auth_cookie, user) = test_helpers::auth::create_test_user_and_login(
@@ -2331,12 +2365,33 @@ async fn test_generate_chat_response_triggers_embeddings_with_existing_session()
 
     assert_eq!(response.status(), StatusCode::OK);
 
-    // Wait a bit for the background task to potentially complete
-    tokio::time::sleep(Duration::from_millis(200)).await; // Increased delay slightly
+    // Poll the tracker until the expected count is reached or timeout
+    let tracker = context.app.embedding_call_tracker.clone();
+    let start_time = std::time::Instant::now();
+    let timeout = Duration::from_secs(2); // 2-second timeout
 
-    let calls = context.app.embedding_call_tracker.lock().await;
-    // Expect *two* calls: one for the "Second user message..." and one for the AI response
-    // The first message embedding is triggered by the *previous* request in a real scenario, not this one.
+    loop {
+        let calls = tracker.lock().await;
+        // Expect *two* calls: one for the "Second user message..." and one for the AI response
+        // The first message embedding is triggered by the *previous* request in a real scenario, not this one.
+        if calls.len() >= 2 {
+            break; // Expected count reached
+        }
+        drop(calls); // Release lock before sleeping
+
+        if start_time.elapsed() > timeout {
+             let calls = tracker.lock().await; // Re-lock to get final count for panic message
+             panic!(
+                 "Timeout waiting for embedding tracker count to reach 2. Current count: {}",
+                 calls.len()
+             );
+        }
+
+        tokio::time::sleep(Duration::from_millis(10)).await; // Poll every 10ms
+    }
+
+    // Assert that the embedding function was called twice (after polling)
+    let calls = tracker.lock().await;
     assert_eq!(
         calls.len(),
         2,
@@ -2460,6 +2515,11 @@ async fn test_rag_context_injection_in_prompt() {
         last_user_content.ends_with(query_text),
         "User message content should end with the original query"
     );
+
+    // Verify AI options (should be defaults as none were set in DB)
+    let last_options = context.app.mock_ai_client.get_last_options().expect("No options recorded");
+    assert_eq!(last_options.temperature, Some(1.0), "Default temperature mismatch");
+    assert_eq!(last_options.max_tokens, Some(512), "Default max_tokens mismatch");
 }
 
 #[tokio::test]
@@ -2640,3 +2700,1132 @@ async fn test_get_chat_messages_forbidden() {
 }
 
 // --- End New Tests ---
+
+// --- New Tests for Increased Coverage ---
+
+#[tokio::test]
+#[ignore] // Ignore for CI unless DB is guaranteed
+async fn generate_chat_response_non_streaming_ai_error() {
+    let context = test_helpers::setup_test_app().await;
+    let (auth_cookie, user) = test_helpers::auth::create_test_user_and_login(
+        &context.app,
+        "non_stream_err_user",
+        "password",
+    )
+    .await;
+    let character = test_helpers::db::create_test_character(
+        &context.app.db_pool,
+        user.id,
+        "Non-Stream Err Char",
+    )
+    .await;
+    let session =
+        test_helpers::db::create_test_chat_session(&context.app.db_pool, user.id, character.id)
+            .await;
+
+    // Mock the AI client to return an error for the non-streaming call
+    context
+        .app
+        .mock_ai_client
+        .set_response(Err(AppError::GenerationError(
+            "Mock AI exec_chat failure".to_string(),
+        )));
+
+    let payload = NewChatMessageRequest {
+        content: "User message for non-streaming error".to_string(),
+        model: Some("test-non-stream-err-model".to_string()),
+    };
+
+    let request = Request::builder()
+        .method(Method::POST)
+        .uri(format!("/api/chats/{}/generate", session.id))
+        .header(header::COOKIE, &auth_cookie)
+        .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
+        // NO Accept: text/event-stream header
+        .body(Body::from(serde_json::to_vec(&payload).unwrap()))
+        .unwrap();
+
+    let response = context.app.router.clone().oneshot(request).await.unwrap();
+
+    // Assert status and headers - Expecting 502 Bad Gateway as per handler logic
+    assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
+    assert_eq!(
+        response.headers().get(header::CONTENT_TYPE).unwrap(),
+        mime::APPLICATION_JSON.as_ref(),
+        "Content-Type should be application/json"
+    );
+
+    // Assert response body structure and content
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let body_json: Value = serde_json::from_slice(&body_bytes)
+        .expect("Failed to deserialize non-streaming error response body as JSON");
+
+    assert!(
+        body_json["error"].is_string(),
+        "Error response should contain error string"
+    );
+    assert_eq!(body_json["error"], "AI service request failed");
+    assert!(
+        body_json["detail"]
+            .as_str()
+            .unwrap()
+            .contains("Mock AI exec_chat failure"),
+        "Error detail mismatch"
+    );
+
+    // Assert no AI message was saved
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    let messages =
+        test_helpers::db::get_chat_messages_from_db(&context.app.db_pool, session.id).await;
+    // Only the user message should be saved
+    assert_eq!(
+        messages.len(),
+        1,
+        "Should only have user message saved after AI error"
+    );
+    assert_eq!(messages[0].message_type, MessageRole::User);
+}
+
+#[tokio::test]
+#[ignore] // Ignore for CI unless DB is guaranteed
+async fn generate_chat_response_non_streaming_empty_content() {
+    let context = test_helpers::setup_test_app().await;
+    let (auth_cookie, user) = test_helpers::auth::create_test_user_and_login(
+        &context.app,
+        "non_stream_empty_user",
+        "password",
+    )
+    .await;
+    let character = test_helpers::db::create_test_character(
+        &context.app.db_pool,
+        user.id,
+        "Non-Stream Empty Char",
+    )
+    .await;
+    let session =
+        test_helpers::db::create_test_chat_session(&context.app.db_pool, user.id, character.id)
+            .await;
+
+    // Mock the AI response with None content (simulates safety block etc.)
+    let mock_response = ChatResponse {
+        model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-1.5-flash-latest"),
+        provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-1.5-flash-latest"),
+        content: None, // Simulate no content returned
+        reasoning_content: None,
+        usage: Usage::default(),
+    };
+    context.app.mock_ai_client.set_response(Ok(mock_response));
+
+    let payload = NewChatMessageRequest {
+        content: "User message for empty content response".to_string(),
+        model: Some("test-non-stream-empty-model".to_string()),
+    };
+
+    let request = Request::builder()
+        .method(Method::POST)
+        .uri(format!("/api/chats/{}/generate", session.id))
+        .header(header::COOKIE, &auth_cookie)
+        .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
+        .body(Body::from(serde_json::to_vec(&payload).unwrap()))
+        .unwrap();
+
+    let response = context.app.router.clone().oneshot(request).await.unwrap();
+
+    // Assert status and headers - Expecting 502 Bad Gateway as per handler logic for content extraction failure
+    assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
+    assert_eq!(
+        response.headers().get(header::CONTENT_TYPE).unwrap(),
+        mime::APPLICATION_JSON.as_ref(),
+        "Content-Type should be application/json"
+    );
+
+    // Assert response body structure and content
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let body_json: Value = serde_json::from_slice(&body_bytes)
+        .expect("Failed to deserialize non-streaming empty content error response body as JSON");
+
+    assert_eq!(body_json["error"], "Generation failed");
+    assert!(
+        body_json["detail"]
+            .as_str()
+            .unwrap()
+            .contains("Gemini response was empty or missing text content"),
+        "Error detail mismatch"
+    );
+
+    // Assert no AI message was saved
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    let messages =
+        test_helpers::db::get_chat_messages_from_db(&context.app.db_pool, session.id).await;
+    assert_eq!(
+        messages.len(),
+        1,
+        "Should only have user message saved after empty AI content"
+    );
+    assert_eq!(messages[0].message_type, MessageRole::User);
+}
+
+#[tokio::test]
+#[ignore] // Ignore for CI unless DB is guaranteed
+async fn generate_chat_response_non_streaming_empty_string_content() {
+    let context = test_helpers::setup_test_app().await;
+    let (auth_cookie, user) = test_helpers::auth::create_test_user_and_login(
+        &context.app,
+        "non_stream_empty_str_user",
+        "password",
+    )
+    .await;
+    let character = test_helpers::db::create_test_character(
+        &context.app.db_pool,
+        user.id,
+        "Non-Stream Empty Str Char",
+    )
+    .await;
+    let session =
+        test_helpers::db::create_test_chat_session(&context.app.db_pool, user.id, character.id)
+            .await;
+
+    // Mock the AI response with empty string content
+    let mock_response = ChatResponse {
+        model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-1.5-flash-latest"),
+        provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-1.5-flash-latest"),
+        content: Some(MessageContent::Text("".to_string())), // Empty string
+        reasoning_content: None,
+        usage: Usage::default(),
+    };
+    context.app.mock_ai_client.set_response(Ok(mock_response));
+
+    let payload = NewChatMessageRequest {
+        content: "User message for empty string response".to_string(),
+        model: Some("test-non-stream-empty-str-model".to_string()),
+    };
+
+    let request = Request::builder()
+        .method(Method::POST)
+        .uri(format!("/api/chats/{}/generate", session.id))
+        .header(header::COOKIE, &auth_cookie)
+        .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
+        .body(Body::from(serde_json::to_vec(&payload).unwrap()))
+        .unwrap();
+
+    let response = context.app.router.clone().oneshot(request).await.unwrap();
+
+    // Assert status and headers - Expecting 200 OK
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response.headers().get(header::CONTENT_TYPE).unwrap(),
+        mime::APPLICATION_JSON.as_ref(),
+        "Content-Type should be application/json"
+    );
+
+    // Assert response body structure and content
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let body_json: Value = serde_json::from_slice(&body_bytes)
+        .expect("Failed to deserialize non-streaming empty string response body as JSON");
+
+    assert!(
+        body_json["message_id"].is_string(),
+        "Response should contain message_id string"
+    );
+    assert_eq!(
+        body_json["content"].as_str(),
+        Some(""),
+        "Response content should be an empty string"
+    );
+    let saved_ai_message_id = Uuid::parse_str(body_json["message_id"].as_str().unwrap()).unwrap();
+
+    // Assert background save
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    let messages =
+        test_helpers::db::get_chat_messages_from_db(&context.app.db_pool, session.id).await;
+    assert_eq!(
+        messages.len(),
+        2,
+        "Should have user and empty AI message saved"
+    );
+    let ai_msg = messages
+        .iter()
+        .find(|m| m.message_type == MessageRole::Assistant)
+        .expect("Assistant message not found");
+    assert_eq!(ai_msg.id, saved_ai_message_id);
+    assert_eq!(ai_msg.content, ""); // Verify saved content is empty string
+}
+
+#[tokio::test]
+#[ignore] // Ignore for CI unless DB is guaranteed
+async fn generate_chat_response_streaming_initiation_error() {
+    let context = test_helpers::setup_test_app().await;
+    let (auth_cookie, user) = test_helpers::auth::create_test_user_and_login(
+        &context.app,
+        "stream_init_err_user",
+        "password",
+    )
+    .await;
+    let character = test_helpers::db::create_test_character(
+        &context.app.db_pool,
+        user.id,
+        "Stream Init Err Char",
+    )
+    .await;
+    let session =
+        test_helpers::db::create_test_chat_session(&context.app.db_pool, user.id, character.id)
+            .await;
+
+    // Mock the AI client's stream_chat method to return an error immediately
+    // Use set_stream_response with an immediate error
+    let mock_stream_items = vec![Err(AppError::GenerationError(
+        "Mock stream initiation failure".to_string(),
+    ))];
+    context
+        .app
+        .mock_ai_client
+        .set_stream_response(mock_stream_items);
+
+    let payload = NewChatMessageRequest {
+        content: "User message for stream initiation error".to_string(),
+        model: Some("test-stream-init-err-model".to_string()),
+    };
+
+    let request = Request::builder()
+        .method(Method::POST)
+        .uri(format!("/api/chats/{}/generate", session.id))
+        .header(header::COOKIE, &auth_cookie)
+        .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
+        .header(header::ACCEPT, mime::TEXT_EVENT_STREAM.as_ref())
+        .body(Body::from(serde_json::to_vec(&payload).unwrap()))
+        .unwrap();
+
+    let response = context.app.router.clone().oneshot(request).await.unwrap();
+
+    // Assert status - Should be OK because headers are sent before the stream error
+    assert_eq!(response.status(), StatusCode::OK);
+    // Assert Content-Type is text/event-stream
+    assert_eq!(
+        response.headers().get(header::CONTENT_TYPE).unwrap(),
+        mime::TEXT_EVENT_STREAM.as_ref(),
+        "Content-Type should be text/event-stream even on initiation error"
+    );
+
+    // Consume the stream and check for the error event
+    let body = response.into_body();
+    let mut stream = body.into_data_stream();
+    let mut received_error_event = false;
+    let mut error_event_data: Option<String> = None;
+    let mut current_event: Option<String> = None;
+    let mut current_data = String::new();
+
+    while let Some(chunk_result) = stream.next().await {
+        let chunk = chunk_result.expect("Stream chunk error");
+        let chunk_str = str::from_utf8(&chunk).unwrap();
+        for line in chunk_str.lines() {
+            if line.starts_with("event: ") {
+                current_event = Some(line.strip_prefix("event: ").unwrap().trim().to_string());
+            } else if line.starts_with("data: ") {
+                current_data.push_str(line.strip_prefix("data: ").unwrap());
+            } else if line.is_empty() {
+                if let Some(event_type) = current_event.take() {
+                    if event_type == "error" {
+                        received_error_event = true;
+                        error_event_data = Some(current_data.trim().to_string());
+                    }
+                    // We should not receive 'content' or 'done' events
+                }
+                current_data.clear();
+            }
+        }
+    }
+
+    assert!(received_error_event, "Should have received an 'error' event in the stream");
+    assert!(error_event_data.unwrap().contains("Mock stream initiation failure"), "Error event data mismatch");
+
+    // Assert no AI message was saved
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    let messages =
+        test_helpers::db::get_chat_messages_from_db(&context.app.db_pool, session.id).await;
+    assert_eq!(
+        messages.len(),
+        1,
+        "Should only have user message saved after stream initiation error"
+    );
+}
+
+#[tokio::test]
+#[ignore] // Ignore for CI unless DB is guaranteed
+async fn generate_chat_response_streaming_error_before_content() {
+    let context = test_helpers::setup_test_app().await;
+    let (auth_cookie, user) = test_helpers::auth::create_test_user_and_login(
+        &context.app,
+        "stream_err_b4_content_user",
+        "password",
+    )
+    .await;
+    let character = test_helpers::db::create_test_character(
+        &context.app.db_pool,
+        user.id,
+        "Stream Err B4 Content Char",
+    )
+    .await;
+    let session =
+        test_helpers::db::create_test_chat_session(&context.app.db_pool, user.id, character.id)
+            .await;
+
+    // Mock the AI client stream: Start -> Error
+    let mock_stream_items = vec![
+        Ok(ChatStreamEvent::Start),
+        Err(AppError::GeminiError(
+            "Mock AI error before content".to_string(),
+        )),
+    ];
+    context
+        .app
+        .mock_ai_client
+        .set_stream_response(mock_stream_items);
+
+    let payload = NewChatMessageRequest {
+        content: "User message for error before content".to_string(),
+        model: Some("test-stream-err-b4-content-model".to_string()),
+    };
+
+    let request = Request::builder()
+        .method(Method::POST)
+        .uri(format!("/api/chats/{}/generate", session.id))
+        .header(header::COOKIE, &auth_cookie)
+        .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
+        .header(header::ACCEPT, mime::TEXT_EVENT_STREAM.as_ref())
+        .body(Body::from(serde_json::to_vec(&payload).unwrap()))
+        .unwrap();
+
+    let response = context.app.router.clone().oneshot(request).await.unwrap();
+
+    // Assert headers
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response.headers().get(header::CONTENT_TYPE).unwrap(),
+        mime::TEXT_EVENT_STREAM.as_ref()
+    );
+
+    // Consume and assert stream content
+    let body = response.into_body();
+    let mut stream = body.into_data_stream();
+    let mut received_error_event = false;
+    let mut error_event_data: Option<String> = None;
+    let mut received_content_event = false;
+    let mut current_event: Option<String> = None;
+    let mut current_data = String::new();
+
+    while let Some(chunk_result) = stream.next().await {
+        let chunk = chunk_result.expect("Stream chunk error");
+        let chunk_str = str::from_utf8(&chunk).unwrap();
+        for line in chunk_str.lines() {
+            if line.starts_with("event: ") {
+                current_event = Some(line.strip_prefix("event: ").unwrap().trim().to_string());
+            } else if line.starts_with("data: ") {
+                current_data.push_str(line.strip_prefix("data: ").unwrap());
+            } else if line.is_empty() {
+                if let Some(event_type) = current_event.take() {
+                    if event_type == "error" {
+                        received_error_event = true;
+                        error_event_data = Some(current_data.trim().to_string());
+                    } else if event_type == "content" {
+                        received_content_event = true;
+                    }
+                }
+                current_data.clear();
+            }
+        }
+    }
+
+    assert!(received_error_event, "Should have received an 'error' event");
+    assert!(
+        error_event_data
+            .unwrap()
+            .contains("Mock AI error before content"),
+        "Error event data mismatch"
+    );
+    assert!(
+        !received_content_event,
+        "Should NOT have received any 'content' event"
+    );
+
+    // Assert background save (wait a bit)
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    let messages =
+        test_helpers::db::get_chat_messages_from_db(&context.app.db_pool, session.id).await;
+    assert_eq!(
+        messages.len(),
+        1,
+        "Should only have user message saved after stream error before content"
+    );
+    assert_eq!(messages[0].message_type, MessageRole::User);
+}
+
+#[tokio::test]
+#[ignore] // Ignore for CI unless DB is guaranteed
+async fn generate_chat_response_streaming_empty_response() {
+    let context = test_helpers::setup_test_app().await;
+    let (auth_cookie, user) = test_helpers::auth::create_test_user_and_login(
+        &context.app,
+        "stream_empty_resp_user",
+        "password",
+    )
+    .await;
+    let character = test_helpers::db::create_test_character(
+        &context.app.db_pool,
+        user.id,
+        "Stream Empty Resp Char",
+    )
+    .await;
+    let session =
+        test_helpers::db::create_test_chat_session(&context.app.db_pool, user.id, character.id)
+            .await;
+
+    // Mock the AI client stream: Start -> End
+    use genai::chat::StreamEnd;
+    let mock_stream_items = vec![
+        Ok(ChatStreamEvent::Start),
+        Ok(ChatStreamEvent::End(StreamEnd::default())),
+    ];
+    context
+        .app
+        .mock_ai_client
+        .set_stream_response(mock_stream_items);
+
+    let payload = NewChatMessageRequest {
+        content: "User message for empty stream response".to_string(),
+        model: Some("test-stream-empty-resp-model".to_string()),
+    };
+
+    let request = Request::builder()
+        .method(Method::POST)
+        .uri(format!("/api/chats/{}/generate", session.id))
+        .header(header::COOKIE, &auth_cookie)
+        .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
+        .header(header::ACCEPT, mime::TEXT_EVENT_STREAM.as_ref())
+        .body(Body::from(serde_json::to_vec(&payload).unwrap()))
+        .unwrap();
+
+    let response = context.app.router.clone().oneshot(request).await.unwrap();
+
+    // Assert headers
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response.headers().get(header::CONTENT_TYPE).unwrap(),
+        mime::TEXT_EVENT_STREAM.as_ref()
+    );
+
+    // Consume and assert stream content
+    let body = response.into_body();
+    let mut stream = body.into_data_stream();
+    let mut received_done_event = false;
+    let mut received_content_event = false;
+    let mut current_event: Option<String> = None;
+    let mut current_data = String::new();
+
+    while let Some(chunk_result) = stream.next().await {
+        let chunk = chunk_result.expect("Stream chunk error");
+        let chunk_str = str::from_utf8(&chunk).unwrap();
+        for line in chunk_str.lines() {
+            if line.starts_with("event: ") {
+                current_event = Some(line.strip_prefix("event: ").unwrap().trim().to_string());
+            } else if line.starts_with("data: ") {
+                current_data.push_str(line.strip_prefix("data: ").unwrap());
+            } else if line.is_empty() {
+                if let Some(event_type) = current_event.take() {
+                    if event_type == "done" {
+                        received_done_event = true;
+                    } else if event_type == "content" {
+                        received_content_event = true;
+                    }
+                }
+                current_data.clear();
+            }
+        }
+    }
+
+    assert!(received_done_event, "Should have received a 'done' event");
+    assert!(
+        !received_content_event,
+        "Should NOT have received any 'content' event"
+    );
+
+    // Assert background save (wait a bit)
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    let messages =
+        test_helpers::db::get_chat_messages_from_db(&context.app.db_pool, session.id).await;
+    assert_eq!(
+        messages.len(),
+        1,
+        "Should only have user message saved after empty stream response"
+    );
+    assert_eq!(messages[0].message_type, MessageRole::User);
+}
+
+#[tokio::test]
+#[ignore] // Ignore for CI unless DB is guaranteed
+async fn generate_chat_response_streaming_reasoning_chunk() {
+    let context = test_helpers::setup_test_app().await;
+    let (auth_cookie, user) = test_helpers::auth::create_test_user_and_login(
+        &context.app,
+        "stream_reasoning_user",
+        "password",
+    )
+    .await;
+    let character = test_helpers::db::create_test_character(
+        &context.app.db_pool,
+        user.id,
+        "Stream Reasoning Char",
+    )
+    .await;
+    let session =
+        test_helpers::db::create_test_chat_session(&context.app.db_pool, user.id, character.id)
+            .await;
+
+    // Mock the AI client stream: Start -> Reasoning -> Chunk -> End
+    // Import the necessary structs/enums directly
+    use genai::chat::{StreamChunk, StreamEnd};
+    // ReasoningChunk is part of ChatStreamEvent enum, not a separate struct to import
+    let mock_stream_items = vec![
+        Ok(ChatStreamEvent::Start),
+        Ok(ChatStreamEvent::ReasoningChunk(StreamChunk {
+            content: "Thinking about the query...".to_string(),
+        })),
+        Ok(ChatStreamEvent::Chunk(StreamChunk {
+            content: "Final answer.".to_string(),
+        })),
+        Ok(ChatStreamEvent::End(StreamEnd::default())),
+    ];
+    context
+        .app
+        .mock_ai_client
+        .set_stream_response(mock_stream_items);
+
+    let payload = NewChatMessageRequest {
+        content: "User message for reasoning chunk".to_string(),
+        model: Some("test-stream-reasoning-model".to_string()),
+    };
+
+    let request = Request::builder()
+        .method(Method::POST)
+        .uri(format!("/api/chats/{}/generate", session.id))
+        .header(header::COOKIE, &auth_cookie)
+        .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
+        .header(header::ACCEPT, mime::TEXT_EVENT_STREAM.as_ref())
+        .body(Body::from(serde_json::to_vec(&payload).unwrap()))
+        .unwrap();
+
+    let response = context.app.router.clone().oneshot(request).await.unwrap();
+
+    // Assert headers
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response.headers().get(header::CONTENT_TYPE).unwrap(),
+        mime::TEXT_EVENT_STREAM.as_ref()
+    );
+
+    // Consume and assert stream content
+    let body = response.into_body();
+    let mut stream = body.into_data_stream();
+    let mut received_thinking_event = false;
+    let mut thinking_event_data: Option<String> = None;
+    let mut received_content_event = false;
+    let mut content_event_data: Option<String> = None;
+    let mut received_done_event = false;
+    let mut current_event: Option<String> = None;
+    let mut current_data = String::new();
+
+    while let Some(chunk_result) = stream.next().await {
+        let chunk = chunk_result.expect("Stream chunk error");
+        let chunk_str = str::from_utf8(&chunk).unwrap();
+        for line in chunk_str.lines() {
+            if line.starts_with("event: ") {
+                current_event = Some(line.strip_prefix("event: ").unwrap().trim().to_string());
+            } else if line.starts_with("data: ") {
+                current_data.push_str(line.strip_prefix("data: ").unwrap());
+            } else if line.is_empty() {
+                if let Some(event_type) = current_event.take() {
+                    if event_type == "thinking" {
+                        received_thinking_event = true;
+                        thinking_event_data = Some(current_data.trim().to_string());
+                    } else if event_type == "content" {
+                        received_content_event = true;
+                        content_event_data = Some(current_data.trim().to_string());
+                    } else if event_type == "done" {
+                        received_done_event = true;
+                    }
+                }
+                current_data.clear();
+            }
+        }
+    }
+
+    assert!(
+        received_thinking_event,
+        "Should have received a 'thinking' event"
+    );
+    assert_eq!(
+        thinking_event_data.as_deref(),
+        Some("Thinking about the query...")
+    );
+    assert!(
+        received_content_event,
+        "Should have received a 'content' event"
+    );
+    assert_eq!(content_event_data.as_deref(), Some("Final answer."));
+    assert!(received_done_event, "Should have received a 'done' event");
+
+    // Assert background save
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    let messages =
+        test_helpers::db::get_chat_messages_from_db(&context.app.db_pool, session.id).await;
+    assert_eq!(
+        messages.len(),
+        2,
+        "Should have user and AI message saved"
+    );
+    let ai_msg = messages.last().unwrap();
+    assert_eq!(ai_msg.content, "Final answer.");
+}
+
+#[tokio::test]
+#[ignore] // Ignore for CI unless DB is guaranteed
+async fn generate_chat_response_rag_retrieval_error() {
+    let context = test_helpers::setup_test_app().await;
+    let (auth_cookie, user) = test_helpers::auth::create_test_user_and_login(
+        &context.app,
+        "rag_retrieval_err_user",
+        "password",
+    )
+    .await;
+    let character = test_helpers::db::create_test_character(
+        &context.app.db_pool,
+        user.id,
+        "RAG Retrieval Err Char",
+    )
+    .await;
+    let session =
+        test_helpers::db::create_test_chat_session(&context.app.db_pool, user.id, character.id)
+            .await;
+
+    // Mock RAG service to return an error
+    context
+        .app
+        .mock_embedding_pipeline_service
+        .set_retrieve_response(Err(AppError::VectorDbError(
+            "Mock Qdrant retrieval failure".to_string(),
+        )));
+
+    // Mock AI response (it should still be called, just without RAG context)
+    let mock_ai_content = "Response without RAG context.";
+    let mock_response = ChatResponse {
+        model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-1.5-flash-latest"),
+        provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-1.5-flash-latest"),
+        content: Some(MessageContent::Text(mock_ai_content.to_string())),
+        reasoning_content: None,
+        usage: Usage::default(),
+    };
+    context.app.mock_ai_client.set_response(Ok(mock_response));
+
+    let payload = NewChatMessageRequest {
+        content: "User message for RAG error test".to_string(),
+        model: Some("test-rag-err-model".to_string()),
+    };
+
+    let request = Request::builder()
+        .method(Method::POST)
+        .uri(format!("/api/chats/{}/generate", session.id))
+        .header(header::COOKIE, &auth_cookie)
+        .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
+        .body(Body::from(serde_json::to_vec(&payload).unwrap()))
+        .unwrap();
+
+    let response = context.app.router.clone().oneshot(request).await.unwrap();
+
+    // Assert status is OK, as RAG failure is handled gracefully
+    assert_eq!(response.status(), StatusCode::OK);
+
+    // Verify the AI request was made and did NOT contain RAG context
+    let last_request = context
+        .app
+        .mock_ai_client
+        .get_last_request()
+        .expect("Mock AI client did not receive a request");
+
+    let last_message_content = last_request.messages.last().unwrap().content.clone();
+    let prompt_text = match last_message_content {
+        MessageContent::Text(text) => text,
+        _ => panic!("Expected last message content to be text"),
+    };
+
+    assert!(
+        !prompt_text.contains("<RAG_CONTEXT>"),
+        "Prompt should NOT contain RAG_CONTEXT start tag after retrieval error"
+    );
+    assert!(
+        !prompt_text.contains("</RAG_CONTEXT>"),
+        "Prompt should NOT contain RAG_CONTEXT end tag after retrieval error"
+    );
+    // Ensure the original user message is still there
+    assert_eq!(prompt_text, "User message for RAG error test");
+
+    // Assert background save
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    let messages =
+        test_helpers::db::get_chat_messages_from_db(&context.app.db_pool, session.id).await;
+    assert_eq!(
+        messages.len(),
+        2,
+        "Should have user and AI message saved even after RAG error"
+    );
+    let ai_msg = messages.last().unwrap();
+    assert_eq!(ai_msg.content, mock_ai_content);
+}
+
+// --- End New Tests ---
+
+// --- Tests for chat_service.rs Coverage ---
+
+#[tokio::test]
+#[ignore] // Ignore for CI unless DB is guaranteed
+async fn test_create_chat_session_with_empty_first_mes() -> Result<(), AnyhowError> {
+    // Revert incorrect change, restore original setup logic
+    let context = test_helpers::setup_test_app().await;
+    let (auth_cookie, user) = test_helpers::auth::create_test_user_and_login(
+        &context.app,
+        "empty_first_mes_user",
+        "password",
+    )
+    .await;
+
+    // Create character with empty first_mes
+    let character = test_helpers::db::create_test_character(
+        &context.app.db_pool, // Use context
+        user.id, // Use user from setup
+        "Empty First Mes Char",
+    )
+    .await;
+
+    // Manually update first_mes to whitespace
+    let char_id = character.id;
+    let pool = context.app.db_pool.clone(); // Use context
+    let conn = pool.get().await.expect("Failed to get DB conn for update");
+    conn.interact(move |conn| {
+        // Use the full path for imports inside interact
+        use scribe_backend::schema::characters::dsl::*;
+        use diesel::prelude::*; // Import necessary traits for .filter() and .eq()
+        diesel::update(characters.filter(id.eq(char_id)))
+            .set(first_mes.eq(Some("   ".to_string())))
+            .execute(conn)
+    })
+    .await
+    .expect("Interact failed")
+    .expect("Failed to update character first_mes");
+
+
+    let request_body = json!({ "character_id": char_id });
+
+    let request = Request::builder()
+        .method(Method::POST)
+        .uri("/api/chats")
+        .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
+        .header(header::COOKIE, auth_cookie) // Use auth_cookie from setup
+        .body(Body::from(serde_json::to_vec(&request_body).unwrap()))
+        .unwrap();
+    let response = context.app.router.oneshot(request).await.unwrap(); // Use context
+
+    assert_eq!(response.status(), StatusCode::CREATED);
+    let body = response.into_body().collect().await.unwrap().to_bytes();
+    let session: ChatSession =
+        serde_json::from_slice(&body).expect("Failed to deserialize response");
+
+    // Verify no initial message was created
+    let messages =
+        test_helpers::db::get_chat_messages_from_db(&context.app.db_pool, session.id).await; // Use context
+    assert!(
+        messages.is_empty(),
+        "No initial message should be created for empty first_mes"
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore] // Ignore for CI unless DB is guaranteed
+async fn test_create_chat_session_with_null_first_mes() {
+    // Covers chat_service.rs line 118
+    let context = test_helpers::setup_test_app().await;
+    let (auth_cookie, user) = test_helpers::auth::create_test_user_and_login(
+        &context.app,
+        "null_first_mes_user",
+        "password",
+    )
+    .await;
+
+    // Create character with null first_mes (default)
+    let character = test_helpers::db::create_test_character(
+        &context.app.db_pool,
+        user.id,
+        "Null First Mes Char",
+    )
+    .await;
+
+    // Manually update first_mes to NULL in DB
+    let char_id = character.id;
+    let pool = context.app.db_pool.clone();
+    let conn = pool.get().await.expect("Failed to get DB conn for update");
+    conn.interact(move |conn| {
+        use scribe_backend::schema::characters::dsl::*;
+        use diesel::prelude::*;
+        diesel::update(characters.filter(id.eq(char_id)))
+            .set(first_mes.eq(None::<String>)) // Set to None
+            .execute(conn)
+    })
+    .await
+    .expect("Interact failed")
+    .expect("Failed to update character first_mes to NULL");
+
+    // Removed the assertion checking character.first_mes immediately after creation
+
+    let request_body = json!({ "character_id": char_id });
+
+    let request = Request::builder()
+        .method(Method::POST)
+        .uri("/api/chats")
+        .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
+        .header(header::COOKIE, auth_cookie)
+        .body(Body::from(serde_json::to_vec(&request_body).unwrap()))
+        .unwrap();
+    let response = context.app.router.oneshot(request).await.unwrap();
+
+    assert_eq!(response.status(), StatusCode::CREATED);
+    let body = response.into_body().collect().await.unwrap().to_bytes();
+    let session: ChatSession =
+        serde_json::from_slice(&body).expect("Failed to deserialize response");
+
+    // Verify no initial message was created
+    let messages =
+        test_helpers::db::get_chat_messages_from_db(&context.app.db_pool, session.id).await;
+    assert!(
+        messages.is_empty(),
+        "No initial message should be created for null first_mes"
+    );
+}
+
+// Removed tests for background embedding success/failure (lines 247-251) as they are
+// difficult to test reliably via integration tests without more complex mocking/log capture.
+
+#[tokio::test]
+#[ignore] // Ignore for CI unless DB is guaranteed
+async fn test_get_chat_settings_not_found() {
+    // Covers chat_service.rs lines 392, 425-426
+    let context = test_helpers::setup_test_app().await;
+    let (auth_cookie, _user) = test_helpers::auth::create_test_user_and_login(
+        &context.app,
+        "get_settings_404_user",
+        "password",
+    )
+    .await;
+    let non_existent_session_id = Uuid::new_v4();
+
+    let request = Request::builder()
+        .method(Method::GET)
+        .uri(format!("/api/chats/{}/settings", non_existent_session_id))
+        .header(header::COOKIE, auth_cookie)
+        .body(Body::empty())
+        .unwrap();
+
+    let response = context.app.router.oneshot(request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+#[ignore] // Ignore for CI unless DB is guaranteed
+async fn test_get_chat_settings_forbidden() {
+    // Covers chat_service.rs lines 392, 425-426
+    let context = test_helpers::setup_test_app().await;
+    // User A creates a session
+    let (_auth_cookie_a, user_a) = test_helpers::auth::create_test_user_and_login(
+        &context.app,
+        "get_settings_forbid_user_a",
+        "password",
+    )
+    .await;
+    let char_a = test_helpers::db::create_test_character(
+        &context.app.db_pool,
+        user_a.id,
+        "Get Settings Forbidden Char A",
+    )
+    .await;
+    let session_a = test_helpers::db::create_test_chat_session(
+        &context.app.db_pool,
+        user_a.id,
+        char_a.id,
+    )
+    .await;
+
+    // User B logs in
+    let (auth_cookie_b, _user_b) = test_helpers::auth::create_test_user_and_login(
+        &context.app,
+        "get_settings_forbid_user_b",
+        "password",
+    )
+    .await;
+
+    let request = Request::builder()
+        .method(Method::GET)
+        .uri(format!("/api/chats/{}/settings", session_a.id)) // User B requests User A's settings
+        .header(header::COOKIE, auth_cookie_b)
+        .body(Body::empty())
+        .unwrap();
+
+    let response = context.app.router.oneshot(request).await.unwrap();
+    // The service layer returns NotFound when the filter `user_id.eq(user_id)` fails
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+}
+
+// --- End Coverage Tests ---
+
+#[tokio::test]
+#[ignore] // Ignore for CI unless DB is guaranteed
+async fn test_data_guard_cleanup() {
+    // Use a separate DB for this test to avoid interference
+    let pool = test_helpers::db::setup_test_database(Some("guard_cleanup")).await;
+    let mut guard = test_helpers::TestDataGuard::new(pool.clone());
+
+    // Create test data
+    let user = test_helpers::db::create_test_user(&pool, "guard_user", "password").await;
+    let character = test_helpers::db::create_test_character(&pool, user.id, "Guard Char").await;
+    let session = test_helpers::db::create_test_chat_session(&pool, user.id, character.id).await;
+    let message = test_helpers::db::create_test_chat_message(
+        &pool,
+        session.id,
+        user.id,
+        MessageRole::User,
+        "Guard message",
+    )
+    .await;
+
+    // Add IDs to the guard
+    guard.add_user(user.id);
+    guard.add_character(character.id);
+    guard.add_session(session.id);
+
+    // Store IDs for verification later
+    let user_id = user.id;
+    let character_id = character.id;
+    let session_id = session.id;
+    let message_id = message.id;
+
+    // Perform cleanup
+    guard.cleanup().await.expect("TestDataGuard cleanup failed");
+
+    // Verify data is deleted
+    let conn = pool.get().await.expect("Failed to get DB conn for verification");
+
+    // Verify message deleted
+    let deleted_message: Option<scribe_backend::models::chats::ChatMessage> = conn.interact(move |conn| {
+        use scribe_backend::schema::chat_messages::dsl::*;
+        use diesel::prelude::*;
+        chat_messages
+            .filter(id.eq(message_id))
+            .select(scribe_backend::models::chats::ChatMessage::as_select()) // Explicitly select matching columns
+            .first(conn)
+            .optional()
+    }).await.expect("Interact failed").expect("Query failed");
+    assert!(deleted_message.is_none(), "Test message should be deleted by guard");
+
+    // Verify session deleted
+    let deleted_session: Option<scribe_backend::models::chats::ChatSession> = conn.interact(move |conn| {
+        use scribe_backend::schema::chat_sessions::dsl::*;
+        use diesel::prelude::*;
+        chat_sessions.filter(id.eq(session_id)).first(conn).optional()
+    }).await.expect("Interact failed").expect("Query failed");
+    assert!(deleted_session.is_none(), "Test session should be deleted by guard");
+
+    // Verify character deleted
+    let deleted_character: Option<scribe_backend::models::characters::Character> = conn.interact(move |conn| {
+        use scribe_backend::schema::characters::dsl::*;
+        use diesel::prelude::*;
+        characters.filter(id.eq(character_id)).first(conn).optional()
+    }).await.expect("Interact failed").expect("Query failed");
+    assert!(deleted_character.is_none(), "Test character should be deleted by guard");
+
+    // Verify user deleted
+    let deleted_user: Option<scribe_backend::models::users::User> = conn.interact(move |conn| {
+        use scribe_backend::schema::users::dsl::*;
+        use diesel::prelude::*;
+        users.filter(id.eq(user_id)).first(conn).optional()
+    }).await.expect("Interact failed").expect("Query failed");
+    assert!(deleted_user.is_none(), "Test user should be deleted by guard");
+}
+
+
+#[tokio::test]
+async fn test_app_state_builder_defaults_and_overrides() {
+    use scribe_backend::config::Config;
+    // Add MockQdrantClientService to imports
+    use scribe_backend::test_helpers::{AppStateBuilder, MockAiClient, MockQdrantClientService};
+    use scribe_backend::llm::AiClient;
+    use scribe_backend::errors::AppError; // Import AppError
+    use std::sync::Arc;
+    use scribe_backend::vector_db::qdrant_client::QdrantClientServiceTrait; // Import the trait
+
+    // 1. Create specific components to provide
+    let specific_config = Arc::new(Config {
+        database_url: Some("specific_db_url_for_builder".to_string()),
+        qdrant_url: Some("specific_qdrant_url_for_builder".to_string()),
+        ..Default::default()
+    });
+    let specific_ai_client = Arc::new(MockAiClient::new());
+    specific_ai_client.set_response(Err(AppError::GenerationError("Specific AI Client Used".to_string())));
+
+    let mock_qdrant_service = Arc::new(MockQdrantClientService::new());
+    // Remove attempt to set response, as mock impl always returns Ok
+    // mock_qdrant_service.set_ensure_collection_response(Ok(()));
+
+    let builder = AppStateBuilder::new()
+        .with_config(specific_config.clone())
+        .with_ai_client(specific_ai_client.clone() as Arc<dyn AiClient + Send + Sync>)
+        .with_qdrant_service(mock_qdrant_service.clone()); // Provide the mock
+        // Intentionally do not provide embedding_client or embedding_pipeline_service
+
+    // 3. Build the AppState
+    let app_state_result = builder.build_for_test().await;
+    assert!(app_state_result.is_ok(), "Failed to build AppState: {:?}", app_state_result.err());
+    let app_state = app_state_result.unwrap();
+
+    // 4. Assertions
+
+    // Check that the provided config was used
+    assert_eq!(app_state.config.database_url, Some("specific_db_url_for_builder".to_string()));
+    assert_eq!(app_state.config.qdrant_url, Some("specific_qdrant_url_for_builder".to_string()));
+
+    // Check that the provided AI client was used by invoking it
+    let ai_result = app_state.ai_client.exec_chat("test-model", Default::default(), None).await;
+    assert!(ai_result.is_err(), "Expected error from specific AI client");
+    assert!(ai_result.err().unwrap().to_string().contains("Specific AI Client Used"), "Error message mismatch, wrong AI client used?");
+
+    // Check that default mocks were used for other components by invoking them and checking default behavior
+    // Embedding Client (Default mock returns Ok(vec![0.0; 768]))
+    let embed_result = app_state.embedding_client.embed_content("test", "retrieval_query").await;
+    assert!(embed_result.is_ok(), "Default embedding client should return Ok");
+    assert_eq!(embed_result.unwrap().len(), 768, "Default embedding vector dimension mismatch"); // Default dimension is 768 in mock
+
+    // Embedding Pipeline Service (Default mock returns Ok(vec![]))
+    let pipeline_result = app_state.embedding_pipeline_service.retrieve_relevant_chunks(app_state.clone(), Uuid::new_v4(), "test query", 3).await;
+    assert!(pipeline_result.is_ok(), "Default pipeline service should return Ok");
+    assert!(pipeline_result.unwrap().is_empty(), "Default pipeline service should return empty vec");
+
+    // Qdrant Service (Now using the provided mock)
+    // Cast to the trait to call the method
+    let qdrant_trait = app_state.qdrant_service.clone() as Arc<dyn QdrantClientServiceTrait + Send + Sync>;
+    let qdrant_ensure_result = qdrant_trait.ensure_collection_exists().await;
+    // Assert based on the mock's configured response
+    assert!(qdrant_ensure_result.is_ok(), "Mock Qdrant service ensure_collection_exists should return Ok");
+    // Remove check for call count, as it's not implemented on the mock
+    // assert_eq!(mock_qdrant_service.get_ensure_collection_call_count(), 1, "ensure_collection_exists call count mismatch");
+
+
+    // Check pool was created (default)
+    // Fix E0599: Check if getting a connection works
+    assert!(app_state.pool.get().await.is_ok(), "Default pool should be created and healthy");
+}

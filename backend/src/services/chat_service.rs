@@ -244,12 +244,28 @@ pub async fn save_message(
         let message_clone = saved_message.clone(); // Clone the message data for the task
         tokio::spawn(async move {
             info!(message_id = %message_clone.id, "Spawning background task for message embedding");
-            if let Err(e) = process_and_embed_message(state_clone, message_clone).await {
+            // Extract services from state_clone
+            let embedding_client = state_clone.embedding_client.clone();
+            let qdrant_service = state_clone.qdrant_service.clone();
+
+            let message_id_for_tracker = message_clone.id; // Extract ID first
+            if let Err(e) = process_and_embed_message(
+                embedding_client,
+                qdrant_service,
+                message_clone).await { // Move happens here
                 error!(error = %e, "Background embedding task failed");
                 // TODO: Consider adding monitoring or retry logic for failed background tasks
             } else {
                 info!("Background embedding task completed successfully");
             }
+
+            // Tracker logic
+             // Tracker logic
+             let tracker_arc = state_clone.embedding_call_tracker.clone(); // Clone the Arc directly
+             tracker_arc.lock().await.push(message_id_for_tracker); // Use the extracted ID
+             info!(message_id = %message_id_for_tracker, "Notified embedding tracker"); // Revert to original log line
+             // -----------------------------
+
         });
     }
 

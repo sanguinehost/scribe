@@ -649,6 +649,83 @@ async fn test_verify_credentials_invalid_hash_in_db() -> AnyhowResult<()> {
     Ok(())
 }
 #[tokio::test]
+#[ignore] // Requires DB access via pool
+async fn test_login_hashing_error_in_db() -> AnyhowResult<()> {
+    // Covers line 110 in routes/auth.rs (Err(e) from auth_session.authenticate)
+    let pool = create_test_pool();
+    let mut guard = TestDataGuard::new(pool.clone());
+    let app = build_test_app(pool.clone()).await;
+
+    let username = format!("login_hash_err_{}", Uuid::new_v4());
+    let password = "password123";
+    let invalid_hash = "this_is_not_a_valid_bcrypt_hash";
+
+    // 1. Insert user with a valid hash initially
+    let user = run_db_op(&pool, {
+        let username = username.clone();
+        let password = password.to_string();
+        move |conn| insert_test_user_direct(conn, &username, &password)
+    })
+    .await
+    .with_context(|| format!("Failed to insert test user '{}'", username))?;
+    guard.add_user(user.id);
+    info!(user_id = %user.id, %username, "Test user created for login hashing error test");
+
+    // 2. Manually update the hash in the DB to an invalid one
+    let update_result = run_db_op(&pool, {
+        let user_id = user.id;
+        move |conn| {
+            diesel::update(users::table.find(user_id))
+                .set(users::password_hash.eq(invalid_hash))
+                .execute(conn)
+        }
+    })
+    .await;
+    update_result.context("Failed to update user hash to invalid string")?;
+    info!(user_id = %user.id, %username, "Updated password hash to invalid string in DB");
+
+    // 3. Attempt to login via the API endpoint
+    let credentials = json!({
+        "username": username,
+        "password": password
+    });
+
+    let request = Request::builder()
+        .method(Method::POST)
+        .uri("/api/auth/login")
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(serde_json::to_vec(&credentials)?))?;
+
+    info!(%username, "Sending login request via oneshot with invalid hash in DB...");
+    let response = app.oneshot(request).await?;
+
+    // 4. Assertions
+    let status = response.status();
+    info!(%status, headers = ?response.headers(), "Received login response for invalid hash");
+
+    assert_eq!(
+        status,
+        StatusCode::INTERNAL_SERVER_ERROR,
+        "Login with invalid hash in DB should return 500 Internal Server Error"
+    );
+
+    // Verify error message (check for the generic internal server error message)
+    let (body_status, error_body) = get_json_body::<Value>(response).await?;
+    assert_eq!(body_status, StatusCode::INTERNAL_SERVER_ERROR);
+    let error_message = error_body["error"].as_str().unwrap_or("");
+    // Check for the generic error message returned by AppError::InternalServerError
+    assert_eq!(
+        error_message,
+        "An unexpected error occurred",
+        "Error message mismatch. Got: {}", error_message
+    );
+
+
+    // Cleanup
+    guard.cleanup().await?;
+    Ok(())
+}
+#[tokio::test]
 #[ignore] // Added ignore for CI
 async fn test_logout_success() -> AnyhowResult<()> {
     let pool = create_test_pool();

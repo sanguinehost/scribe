@@ -1,7 +1,8 @@
+#![allow(dead_code)]
+
 use chrono::{DateTime, Utc}; // Add DateTime and Utc
 use diesel::prelude::*;
-use diesel_json::Json; // Import Json wrapper
-use diesel_json::Json as DieselJson; // Alias Json to avoid conflict with serde_json::Json
+use diesel_json::Json;
 use serde::{Deserialize, Deserializer, Serialize}; // Added Deserializer
 use serde_json::Value; // Using Value for flexibility in extensions and mixed types like id
 use serde_json::Value as JsonValue;
@@ -865,5 +866,363 @@ mod tests {
         assert_eq!(processed_content7, "@@ \nContent");
     }
 
+// --- Tests for Default Implementations ---
+
+    #[test]
+    fn test_character_card_v3_default() {
+        let card = CharacterCardV3::default();
+        assert_eq!(card.spec, "");
+        assert_eq!(card.spec_version, "");
+        assert!(card.data.name.is_none()); // CharacterCardDataV3 default
+    }
+
+    #[test]
+    fn test_character_card_data_v3_default() {
+        let data = CharacterCardDataV3::default();
+        assert!(data.name.is_none());
+        assert_eq!(data.description, "");
+        assert_eq!(data.personality, "");
+        assert_eq!(data.scenario, "");
+        assert_eq!(data.first_mes, "");
+        assert_eq!(data.mes_example, "");
+        assert_eq!(data.creator_notes, "");
+        assert_eq!(data.system_prompt, "");
+        assert_eq!(data.post_history_instructions, "");
+        assert!(data.alternate_greetings.is_empty());
+        assert!(data.tags.is_empty());
+        assert_eq!(data.creator, "");
+        assert_eq!(data.character_version, "");
+        assert!(data.extensions.is_empty());
+        assert!(data.character_book.is_none());
+        assert!(data.assets.is_none());
+        assert!(data.nickname.is_none());
+        assert!(data.creator_notes_multilingual.is_none());
+        assert!(data.source.is_none());
+        assert!(data.group_only_greetings.is_empty());
+        assert!(data.creation_date.is_none());
+        assert!(data.modification_date.is_none());
+    }
+
+    #[test]
+    fn test_lorebook_default() {
+        let book = Lorebook::default();
+        assert!(book.name.is_none());
+        assert!(book.description.is_none());
+        assert!(book.scan_depth.is_none());
+        assert!(book.token_budget.is_none());
+        assert!(book.recursive_scanning.is_none());
+        assert!(book.extensions.is_empty());
+        assert!(book.entries.is_empty());
+    }
+
+    #[test]
+    fn test_new_character_default() {
+        let new_char = NewCharacter::default();
+        // user_id is not Default, so it won't be set here.
+        // We are just testing the #[derive(Default)] part.
+        assert_eq!(new_char.spec, "");
+        assert_eq!(new_char.spec_version, "");
+        assert_eq!(new_char.name, "");
+        // Other fields are Option or Vec, default is None/empty
+        assert!(new_char.description.is_none());
+        assert!(new_char.personality.is_none());
+        assert!(new_char.scenario.is_none());
+        // ... etc for all Option fields
+        assert!(new_char.extensions.is_none());
+    }
+
+    // --- Tests for Debug Implementations ---
+
+    #[test]
+    fn test_debug_format_does_not_panic() {
+        // Test Debug impl for various structs by formatting them
+        // We don't assert the exact output, just that formatting works.
+
+        // V3 Card
+        let card_v3 = CharacterCardV3::default();
+        let _ = format!("{:?}", card_v3);
+        let data_v3 = CharacterCardDataV3::default();
+        let _ = format!("{:?}", data_v3);
+
+        // Asset
+        let asset = Asset {
+            r#type: "image".to_string(),
+            uri: "uri".to_string(),
+            name: "name".to_string(),
+            ext: "png".to_string(),
+        };
+        let _ = format!("{:?}", asset);
+
+        // Lorebook
+        let book = Lorebook::default();
+        let _ = format!("{:?}", book);
+
+        // Decorator
+        let decorator = Decorator {
+            name: "test".to_string(),
+            value: Some("value".to_string()),
+            fallbacks: vec![],
+        };
+        let _ = format!("{:?}", decorator);
+
+        // LorebookEntry (needs manual construction due to custom Deserialize)
+        let entry = LorebookEntry {
+            keys: vec!["key".to_string()],
+            content: "content".to_string(),
+            extensions: Default::default(),
+            enabled: true,
+            insertion_order: 0,
+            case_sensitive: None,
+            use_regex: false,
+            constant: None,
+            name: None,
+            priority: None,
+            id: None,
+            comment: None,
+            selective: None,
+            secondary_keys: vec![],
+            position: None,
+            parsed_decorators: vec![], // skip field
+            processed_content: "content".to_string(), // skip field
+        };
+        let _ = format!("{:?}", entry);
+
+        // LorebookEntryPosition
+        let pos = LorebookEntryPosition::BeforeChar;
+        let _ = format!("{:?}", pos);
+
+        // StandaloneLorebook
+        let standalone_book = StandaloneLorebook {
+            spec: "lorebook_v3".to_string(),
+            data: Lorebook::default(),
+        };
+        let _ = format!("{:?}", standalone_book);
+
+        // NewCharacter (needs user_id)
+        let new_char = NewCharacter {
+            user_id: Uuid::new_v4(),
+            ..Default::default()
+        };
+        let _ = format!("{:?}", new_char);
+
+        // CharacterAsset (needs id, character_id)
+        let char_asset = CharacterAsset {
+            id: 1,
+            character_id: Uuid::new_v4(),
+            asset_type: "image".to_string(),
+            uri: "uri".to_string(),
+            name: "name".to_string(),
+            ext: "png".to_string(),
+        };
+        let _ = format!("{:?}", char_asset);
+
+        // NewCharacterAsset (needs character_id)
+        let new_char_asset = NewCharacterAsset {
+            character_id: Uuid::new_v4(),
+            asset_type: "image".to_string(),
+            uri: "uri".to_string(),
+            name: "name".to_string(),
+            ext: "png".to_string(),
+        };
+        let _ = format!("{:?}", new_char_asset);
+
+        // DbLorebook (needs id, character_id)
+        let db_book = DbLorebook {
+            id: 1,
+            character_id: Uuid::new_v4(),
+            name: None,
+            description: None,
+            scan_depth: None,
+            token_budget: None,
+            recursive_scanning: None,
+            extensions: None,
+        };
+        let _ = format!("{:?}", db_book);
+
+        // NewDbLorebook (needs character_id)
+        let new_db_book = NewDbLorebook {
+            character_id: Uuid::new_v4(),
+            name: None,
+            description: None,
+            scan_depth: None,
+            token_budget: None,
+            recursive_scanning: None,
+            extensions: None,
+        };
+        let _ = format!("{:?}", new_db_book);
+
+        // DbLorebookEntry (needs id, lorebook_id)
+        let db_entry = DbLorebookEntry {
+            id: 1,
+            lorebook_id: 1,
+            keys: vec![],
+            content: "content".to_string(),
+            extensions: None,
+            enabled: true,
+            insertion_order: 0,
+            case_sensitive: None,
+            use_regex: false,
+            constant: None,
+            name: None,
+            priority: None,
+            entry_id: None,
+            comment: None,
+            selective: None,
+            secondary_keys: None,
+            position: None,
+        };
+        let _ = format!("{:?}", db_entry);
+
+        // NewDbLorebookEntry (needs lorebook_id)
+        let new_db_entry = NewDbLorebookEntry {
+            lorebook_id: 1,
+            keys: vec![],
+            content: "content".to_string(),
+            extensions: None,
+            enabled: true,
+            insertion_order: 0,
+            case_sensitive: None,
+            use_regex: false,
+            constant: None,
+            name: None,
+            priority: None,
+            entry_id: None,
+            comment: None,
+            selective: None,
+            secondary_keys: None,
+            position: None,
+        };
+        let _ = format!("{:?}", new_db_entry);
+    }
+
+    // --- Test for LorebookEntry Deserialize (covering lines 346-347) ---
+    #[test]
+    fn test_lorebook_entry_deserialize_with_decorators() {
+        let json = r#"{
+            "keys": ["key1"],
+            "content": "@@role system\nActual content.",
+            "enabled": true
+        }"#;
+
+        let entry: Result<LorebookEntry, _> = serde_json::from_str(json);
+        assert!(entry.is_ok());
+        let entry = entry.unwrap();
+
+        assert_eq!(entry.content, "@@role system\nActual content."); // Raw content preserved
+        assert_eq!(entry.processed_content, "Actual content."); // Decorators stripped
+        assert_eq!(entry.parsed_decorators.len(), 1); // Decorator parsed
+        assert_eq!(entry.parsed_decorators[0].name, "role");
+        assert_eq!(entry.parsed_decorators[0].value, Some("system".to_string()));
+    }
+
+    // --- Tests for NewCharacter::from_parsed_card (covering lines 433, 451, 457, 468, 471, 477-478, 528, 533) ---
+
+    // Helper struct to simulate V2 data for testing V2Fallback path
+    // In reality, this would likely be defined elsewhere if needed outside tests
+    #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+    struct CharacterCardDataV2Sim {
+        name: Option<String>,
+        description: String,
+        personality: String,
+        scenario: String,
+        first_mes: String,
+        mes_example: String,
+        creator_notes: String,
+        system_prompt: String,
+        post_history_instructions: String,
+        alternate_greetings: Vec<String>,
+        tags: Vec<String>,
+        creator: String,
+        character_version: String,
+        // Add other V2 fields if necessary for more specific tests
+    }
+
+
+    #[test]
+    fn test_from_parsed_card_v3_fields() {
+        let user_id = Uuid::new_v4();
+        let mut data_v3 = CharacterCardDataV3::default();
+        data_v3.name = Some("Test V3".to_string());
+        data_v3.tags = vec!["tag1".to_string(), "tag2".to_string()];
+        data_v3.source = Some(vec!["source1".to_string()]);
+        data_v3.group_only_greetings = vec!["group_greet1".to_string()];
+        data_v3.creation_date = Some(1678886400); // Example timestamp
+        data_v3.modification_date = Some(1678887400);
+        data_v3.creator_notes_multilingual = Some(HashMap::from([("es".to_string(), "nota".to_string())]));
+        data_v3.extensions = HashMap::from([("ext_key".to_string(), Value::String("ext_val".to_string()))]);
+
+
+        let card_v3 = CharacterCardV3 {
+            spec: "chara_card_v3".to_string(),
+            spec_version: "3.0".to_string(),
+            data: data_v3,
+        };
+        // Box the card data as expected by ParsedCharacterCard::V3
+        // Pass the card directly, not boxed
+        let parsed = ParsedCharacterCard::V3(card_v3);
+
+        let new_char = NewCharacter::from_parsed_card(&parsed, user_id);
+
+        assert_eq!(new_char.user_id, user_id);
+        assert_eq!(new_char.name, "Test V3");
+        assert_eq!(new_char.spec, "chara_card_v3");
+        assert_eq!(new_char.spec_version, "3.0");
+
+        // Test V3 Vec<String> -> Option<Vec<Option<String>>> conversion (lines 433, 451, 457)
+        assert_eq!(new_char.tags, Some(vec![Some("tag1".to_string()), Some("tag2".to_string())]));
+        assert_eq!(new_char.source, Some(vec![Some("source1".to_string())]));
+        assert_eq!(new_char.group_only_greetings, Some(vec![Some("group_greet1".to_string())]));
+
+        // Test timestamp conversion (lines 468, 471)
+        assert!(new_char.creation_date.is_some());
+        assert!(new_char.modification_date.is_some());
+        assert_eq!(new_char.creation_date.unwrap().timestamp(), 1678886400);
+        assert_eq!(new_char.modification_date.unwrap().timestamp(), 1678887400);
+
+        // Test HashMap -> Json conversion (line 477-478 for multilingual, 481-489 for extensions)
+        assert!(new_char.creator_notes_multilingual.is_some());
+        let multi_notes_json = new_char.creator_notes_multilingual.unwrap().0; // Extract Value from Json wrapper
+        assert!(multi_notes_json.is_object());
+        assert_eq!(multi_notes_json.get("es").unwrap().as_str().unwrap(), "nota");
+
+        assert!(new_char.extensions.is_some());
+        let extensions_json = new_char.extensions.unwrap().0; // Extract Value from Json wrapper
+        assert!(extensions_json.is_object());
+        assert_eq!(extensions_json.get("ext_key").unwrap().as_str().unwrap(), "ext_val");
+    }
+
+    #[test]
+    fn test_from_parsed_card_v2_fallback_fields() {
+        let user_id = Uuid::new_v4();
+        // Create a CharacterCardDataV3 instance populated with V2-like data
+        let mut data_v2_as_v3 = CharacterCardDataV3::default();
+        data_v2_as_v3.name = Some("Test V2".to_string());
+        data_v2_as_v3.tags = vec!["v2tag1".to_string()];
+        data_v2_as_v3.alternate_greetings = vec!["v2greet1".to_string()];
+        // Populate other fields as needed if the V2Fallback variant expects them
+
+        // Pass the V3 struct directly, not boxed
+        let parsed = ParsedCharacterCard::V2Fallback(data_v2_as_v3);
+
+        let new_char = NewCharacter::from_parsed_card(&parsed, user_id);
+
+        assert_eq!(new_char.user_id, user_id);
+        assert_eq!(new_char.name, "Test V2");
+        assert_eq!(new_char.spec, "chara_card_v2_fallback"); // Check fallback spec
+        assert_eq!(new_char.spec_version, "2.0"); // Check fallback version
+
+        // Test V2 Vec<String> -> Option<Vec<Option<String>>> conversion (lines 528, 533)
+        assert_eq!(new_char.tags, Some(vec![Some("v2tag1".to_string())]));
+        assert_eq!(new_char.alternate_greetings, Some(vec![Some("v2greet1".to_string())]));
+
+        // Check that V3 specific fields are None
+        assert!(new_char.nickname.is_none());
+        assert!(new_char.creator_notes_multilingual.is_none());
+        assert!(new_char.source.is_none());
+        assert!(new_char.group_only_greetings.is_none());
+        assert!(new_char.creation_date.is_none());
+        assert!(new_char.modification_date.is_none());
+        assert!(new_char.extensions.is_none());
+    }
     // TODO: Add other tests for character_card.rs structs/impls here if needed
 }

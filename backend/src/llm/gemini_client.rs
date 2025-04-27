@@ -1,10 +1,8 @@
 use async_trait::async_trait;
 use futures::StreamExt;
 use genai::{
-    adapter::AdapterKind,
-    chat::{ChatMessage, ChatOptions, ChatRequest, ChatResponse, MessageContent, Usage},
+    chat::{ChatMessage, ChatOptions, ChatRequest, ChatResponse},
     Client, ClientBuilder,
-    ModelIden, ModelName,
 };
 use std::sync::Arc;
 
@@ -104,14 +102,10 @@ pub async fn generate_simple_response(
 mod tests {
     use super::*;
     use dotenvy::dotenv;
-    use genai::chat::{ChatStreamEvent, Usage}; // Usage is under chat
-    // Import types directly from genai
-    use genai::{ModelIden, ModelName}; // Keep ModelIden, Add ModelName
-    use genai::adapter::AdapterKind; // Add AdapterKind
-    use genai::chat::MessageContent; // Add MessageContent
+    use genai::{ModelIden, adapter};
+    use genai::chat::ChatStreamEvent;
     use futures::stream;
     use std::sync::atomic::{AtomicBool, Ordering};
-    // Removed FromStr import
 
     // --- Existing Integration Tests (Keep them) ---
     #[tokio::test]
@@ -214,9 +208,9 @@ mod tests {
                 content: None,
                 reasoning_content: None,
                 // Use ModelIden::new with AdapterKind::Gemini
-                model_iden: ModelIden::new(AdapterKind::Gemini, "mock-model-empty"),
-                provider_model_iden: ModelIden::new(AdapterKind::Gemini, "mock-model-empty"),
-                usage: Usage::default(),
+                model_iden: ModelIden::new(adapter::AdapterKind::Gemini, "mock-model-empty"),
+                provider_model_iden: ModelIden::new(adapter::AdapterKind::Gemini, "mock-model-empty"),
+                usage: genai::chat::Usage::default(),
             }
         }
 
@@ -224,12 +218,12 @@ mod tests {
         fn create_text_chat_response(text: &str) -> ChatResponse {
             ChatResponse {
                 // Use MessageContent::from_text
-                content: Some(MessageContent::from_text(text)),
+                content: Some(genai::chat::MessageContent::from_text(text)),
                 reasoning_content: None,
                 // Use ModelIden::new with AdapterKind::Gemini
-                model_iden: ModelIden::new(AdapterKind::Gemini, "mock-model-text"),
-                provider_model_iden: ModelIden::new(AdapterKind::Gemini, "mock-model-text"),
-                usage: Usage::default(),
+                model_iden: ModelIden::new(adapter::AdapterKind::Gemini, "mock-model-text"),
+                provider_model_iden: ModelIden::new(adapter::AdapterKind::Gemini, "mock-model-text"),
+                usage: genai::chat::Usage::default(),
             }
         }
     }

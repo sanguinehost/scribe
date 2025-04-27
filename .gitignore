@@ -34,7 +34,8 @@ tarpaulin-report.json
 
 # Temp files
 /temp
+/reports
 
 # Cursor rules
 .cursorrules
-.cursor 
+.cursor

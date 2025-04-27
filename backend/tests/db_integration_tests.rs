@@ -896,3 +896,87 @@ async fn test_chat_message_insert_and_query() -> Result<(), AnyhowError> {
 // TODO: Implement proper transaction management for test isolation. (Consider TestDataGuard sufficient for now)
 // TODO: Use a dedicated TEST_DATABASE_URL.
 // TODO: Replace placeholder password hashing in tests with actual hashing.
+
+// --- Tests for test_helpers::db functions ---
+
+#[tokio::test]
+#[ignore] // Ignore for CI unless DB is guaranteed
+async fn test_get_chat_session_from_db_helper() -> Result<(), AnyhowError> {
+    // Use the test_helpers db module directly
+    use scribe_backend::test_helpers::db;
+
+    let pool = db::setup_test_database(Some("get_session_helper")).await;
+    let mut guard = scribe_backend::test_helpers::TestDataGuard::new(pool.clone());
+
+    // Setup data
+    let user = db::create_test_user(&pool, "get_session_user", "password").await;
+    guard.add_user(user.id);
+    let character = db::create_test_character(&pool, user.id, "Get Session Char").await;
+    guard.add_character(character.id);
+    let session = db::create_test_chat_session(&pool, user.id, character.id).await;
+    guard.add_session(session.id); // Add session to guard
+
+    // Test finding existing session
+    let found_session = db::get_chat_session_from_db(&pool, session.id).await;
+    assert!(found_session.is_some(), "Should find the created session");
+    assert_eq!(found_session.unwrap().id, session.id, "Found session ID mismatch");
+
+    // Test finding non-existent session
+    let not_found_session = db::get_chat_session_from_db(&pool, Uuid::new_v4()).await;
+    assert!(not_found_session.is_none(), "Should not find non-existent session");
+
+    // Cleanup
+    guard.cleanup().await?;
+    Ok(())
+}
+
+
+#[tokio::test]
+#[ignore] // Ignore for CI unless DB is guaranteed
+async fn test_update_test_chat_settings_helper() -> Result<(), AnyhowError> {
+    // Use the test_helpers db module directly
+    use scribe_backend::test_helpers::db;
+    use bigdecimal::BigDecimal;
+    use std::str::FromStr;
+
+    let pool = db::setup_test_database(Some("update_settings_helper")).await;
+    let mut guard = scribe_backend::test_helpers::TestDataGuard::new(pool.clone());
+
+    // Setup data
+    let user = db::create_test_user(&pool, "update_settings_user_helper", "password").await;
+    guard.add_user(user.id);
+    let character = db::create_test_character(&pool, user.id, "Update Settings Char Helper").await;
+    guard.add_character(character.id);
+    let session = db::create_test_chat_session(&pool, user.id, character.id).await;
+    guard.add_session(session.id); // Add session to guard
+
+    // Define new settings
+    let new_prompt = Some("Updated System Prompt".to_string());
+    let new_temp = Some(BigDecimal::from_str("0.75").unwrap());
+    let new_tokens = Some(512_i32);
+
+    // Call the helper function to update settings
+    db::update_test_chat_settings(
+        &pool,
+        session.id,
+        new_prompt.clone(),
+        new_temp.clone(),
+        new_tokens,
+    ).await;
+
+    // Verify the update using get_chat_session_from_db
+    let updated_session = db::get_chat_session_from_db(&pool, session.id)
+        .await
+        .expect("Updated session not found");
+
+    assert_eq!(updated_session.system_prompt, new_prompt, "System prompt mismatch after update");
+    assert_eq!(updated_session.temperature, new_temp, "Temperature mismatch after update");
+    assert_eq!(updated_session.max_output_tokens, new_tokens, "Max output tokens mismatch after update");
+
+    // Cleanup
+    guard.cleanup().await?;
+    Ok(())
+}
+
+// --- End test_helpers::db tests ---
+
