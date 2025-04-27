@@ -13,4 +13,4 @@ For tests we run:
 `cargo test`
 
 And for a full test run (including integration/external tests):
-`cargo test -- --ignored` 
+`cargo tarpaulin --all-targets --exclude-files "*/main.rs" --out html -- --include-ignored`
