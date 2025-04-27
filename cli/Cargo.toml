@@ -35,6 +35,8 @@ qdrant-client = "1.10.0"
 # Add dev dependencies if needed for CLI-specific tests
 tempfile = "3.19.1"
 chrono = { version = "0.4", features = ["serde"] }
+httptest = "0.16.3" # Corrected version for mocking HTTP requests
+bigdecimal = { version = "0.4", features = ["serde"] } # Added for ChatSession testing
 
 [[bin]]
 name = "scribe-cli"

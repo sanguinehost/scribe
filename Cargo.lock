@@ -736,6 +736,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "bstr"
+version = "1.12.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "234113d19d0d7d613b40e86fb654acf958910802bcceab913a4f9e7cda03b1a4"
+dependencies = [
+ "memchr",
+ "regex-automata 0.4.9",
+ "serde",
+]
+
+[[package]]
 name = "bumpalo"
 version = "3.17.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1114,6 +1125,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a97769d94ddab943e4510d138150169a2758b5ef3eb191a9ee688de3e23ef7b3"
 dependencies = [
  "cfg-if",
+]
+
+[[package]]
+name = "crossbeam-channel"
+version = "0.5.15"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "82b8f8f868b36967f9606790d1903570de9ceaf870a7bf9fbbd3016d636a2cb2"
+dependencies = [
+ "crossbeam-utils",
 ]
 
 [[package]]
@@ -2168,6 +2188,30 @@ dependencies = [
  "similar",
  "tokio",
  "url",
+]
+
+[[package]]
+name = "httptest"
+version = "0.16.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bde82de3ef9bd882493c6a5edbc3363ad928925b30ccecc0f2ddeb42601b3021"
+dependencies = [
+ "bstr",
+ "bytes",
+ "crossbeam-channel",
+ "form_urlencoded",
+ "futures",
+ "http 1.3.1",
+ "http-body-util",
+ "hyper 1.6.0",
+ "hyper-util",
+ "log",
+ "once_cell",
+ "regex",
+ "serde",
+ "serde_json",
+ "serde_urlencoded",
+ "tokio",
 ]
 
 [[package]]
@@ -4515,10 +4559,12 @@ dependencies = [
  "anyhow",
  "async-stream",
  "async-trait",
+ "bigdecimal",
  "chrono",
  "clap",
  "futures-util",
  "genai",
+ "httptest",
  "qdrant-client",
  "reqwest",
  "reqwest-eventsource",
