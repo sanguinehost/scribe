@@ -137,6 +137,7 @@ pub struct ChatMessage {
     pub message_type: MessageRole,
     pub content: String,
     pub created_at: DateTime<Utc>,
+    pub user_id: Uuid,              // Changed to non-optional Uuid to match schema
     // pub embedding: Option<Vec<f32>>, // Maybe store embeddings here later? Or Qdrant?
     // pub token_count: Option<i32>,
 }

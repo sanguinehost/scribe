@@ -810,7 +810,8 @@ pub mod db {
             diesel::insert_into(schema::chat_messages::table)
                 .values(&new_message)
                 .returning(ChatMessage::as_returning())
-                .get_result(conn)
+                // Specify type for get_result after returning based on error E0277
+                .get_result::<ChatMessage>(conn)
         })
         .await
         .expect("Interact failed")
@@ -888,7 +889,7 @@ pub mod db {
             chat_messages
                 .filter(session_id.eq(_session_id))
                 .order(created_at.asc())
-                .select(ChatMessage::as_select())
+                .select(ChatMessage::as_select()) // Re-added select based on error E0277
                 .load::<ChatMessage>(conn)
         })
         .await

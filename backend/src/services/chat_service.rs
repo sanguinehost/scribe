@@ -47,17 +47,18 @@ pub type GenerationDataWithUnsavedUserMessage = (
 );
 
 /// Creates a new chat session, verifies character ownership, and adds the character's first message if available.
-#[instrument(skip(pool), err)]
+#[instrument(skip(state), err)]
 pub async fn create_session_and_maybe_first_message(
-    pool: &DbPool,
+    state: Arc<AppState>, // Changed pool to state
     user_id: Uuid,
     character_id: Uuid,
 ) -> Result<ChatSession, AppError> {
+    let pool = state.pool.clone(); // Get pool from state
     let conn = pool.get().await?;
-    conn.interact(move |conn| {
+    let (created_session, first_mes_opt) = conn.interact(move |conn| { // Capture result tuple
         conn.transaction(|transaction_conn| {
             info!(%character_id, %user_id, "Verifying character ownership");
-            let character_owner_id = characters::table
+            let character_owner_id: Option<Uuid> = characters::table // Fetch owner_id and first_mes
                 .filter(characters::id.eq(character_id))
                 .select(characters::user_id)
                 .first::<Uuid>(transaction_conn)
@@ -66,7 +67,7 @@ pub async fn create_session_and_maybe_first_message(
             match character_owner_id {
                 Some(owner_id) => {
                     if owner_id != user_id {
-                        error!(%character_id, %user_id, owner_id=%owner_id, "User does not own character");
+                        error!(%character_id, %user_id, %owner_id, "User does not own character");
                         return Err(AppError::Forbidden);
                     }
                     info!(%character_id, %user_id, "Inserting new chat session");
@@ -94,30 +95,7 @@ pub async fn create_session_and_maybe_first_message(
                             }
                         })?;
 
-                    if let Some(first_message_content) = character.first_mes {
-                        if !first_message_content.trim().is_empty() {
-                            info!(session_id = %created_session.id, "Character has first_mes, adding as initial assistant message");
-                            let first_message = DbInsertableChatMessage::new(
-                                created_session.id,
-                                user_id,
-                                MessageRole::Assistant,
-                                first_message_content,
-                            );
-                            diesel::insert_into(chat_messages::table)
-                                .values(&first_message)
-                                .execute(transaction_conn)
-                                .map_err(|e| {
-                                    error!(error = ?e, session_id = %created_session.id, "Failed to insert first_mes");
-                                    AppError::DatabaseQueryError(e.to_string())
-                                })?;
-                            info!(session_id = %created_session.id, "Successfully inserted first_mes");
-                        } else {
-                            info!(session_id = %created_session.id, "Character first_mes is empty, skipping initial message.");
-                        }
-                    } else {
-                         info!(session_id = %created_session.id, "Character first_mes is None, skipping initial message.");
-                    }
-                    Ok(created_session)
+                    Ok((created_session, character.first_mes)) // Return session and optional message
                 }
                 None => {
                     error!(%character_id, "Character not found during session creation");
@@ -126,7 +104,29 @@ pub async fn create_session_and_maybe_first_message(
             }
         })
     })
-    .await? // Propagate interact error
+    .await??; // Propagate interact error and inner Result error
+
+    // Handle first_mes outside the transaction using save_message
+    if let Some(first_message_content) = first_mes_opt {
+        if !first_message_content.trim().is_empty() {
+            info!(session_id = %created_session.id, "Character has non-empty first_mes, saving via save_message");
+            // Call save_message - this handles DB insert and triggers embedding
+            let _ = save_message( // We don't strictly need the saved message result here
+                state.clone(), // Pass the state Arc
+                created_session.id,
+                user_id, // Pass the session owner's user_id
+                MessageRole::Assistant,
+                first_message_content,
+            ).await?; // Propagate error if save_message fails
+            info!(session_id = %created_session.id, "Successfully called save_message for first_mes");
+        } else {
+            info!(session_id = %created_session.id, "Character first_mes is empty, skipping save.");
+        }
+    } else {
+        info!(session_id = %created_session.id, "Character first_mes is None, skipping save.");
+    }
+
+    Ok(created_session) // Return the created session
 }
 
 /// Lists chat sessions for a given user.
@@ -172,8 +172,10 @@ pub async fn get_messages_for_session(
                 } else {
                     chat_messages::table
                         .filter(chat_messages::session_id.eq(session_id))
-                        .select(DbChatMessage::as_select())
+                        // Add explicit type annotation for select as per E0283
+                        .select(<DbChatMessage as SelectableHelper<diesel::pg::Pg>>::as_select())
                         .order(chat_messages::created_at.asc())
+                        // Removed redundant select from line 177
                         .load::<DbChatMessage>(conn)
                         .map_err(|e| {
                             error!("Failed to load messages for session {}: {}", session_id, e);
@@ -197,7 +199,8 @@ fn save_chat_message_internal(
     match diesel::insert_into(chat_messages::table)
         .values(&message)
         .returning(DbChatMessage::as_select())
-        .get_result(conn)
+        // Specify type for get_result after returning based on error E0277
+        .get_result::<DbChatMessage>(conn)
     {
         Ok(inserted_message) => {
             // Corrected chat_id to session_id

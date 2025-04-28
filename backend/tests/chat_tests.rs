@@ -3610,6 +3610,87 @@ async fn test_create_chat_session_with_null_first_mes() {
     );
 }
 
+#[tokio::test]
+#[ignore] // Ignore for CI unless DB is guaranteed
+async fn test_create_session_saves_first_mes() -> Result<(), AnyhowError> {
+    // Covers chat_service.rs lines 118-126 where first_mes is saved
+    let context = test_helpers::setup_test_app().await;
+    let (_auth_cookie, user) = test_helpers::auth::create_test_user_and_login(
+        &context.app,
+        "save_first_mes_user",
+        "password",
+    )
+    .await;
+
+    // Create character with a default first_mes (which might be null or empty)
+    let character = test_helpers::db::create_test_character(
+        &context.app.db_pool,
+        user.id,
+        "Save First Mes Char",
+    )
+    .await;
+
+    // Manually update first_mes to a non-empty value
+    let char_id = character.id;
+    let first_mes_content = "Hello from the character!".to_string();
+    let pool = context.app.db_pool.clone();
+    let conn = pool.get().await.expect("Failed to get DB conn for update");
+    conn.interact(move |conn| {
+        use scribe_backend::schema::characters::dsl::*;
+        use diesel::prelude::*;
+        diesel::update(characters.filter(id.eq(char_id)))
+            .set(first_mes.eq(Some(first_mes_content.clone()))) // Set the specific message
+            .execute(conn)
+    })
+    .await
+    .expect("Interact failed")
+    .expect("Failed to update character first_mes");
+
+    // Re-fetch character to pass to the service function (optional, could pass IDs)
+    // Or just use the char_id directly if the service function allows
+    // For simplicity, let's assume we pass IDs or the service fetches internally.
+
+    // Action: Construct AppState and call the service function directly
+    let app_state = scribe_backend::state::AppState::new(
+        context.app.db_pool.clone(),
+        Arc::new(scribe_backend::config::Config::default()), // Use default config or load if needed
+        context.app.mock_ai_client.clone(),
+        context.app.mock_embedding_client.clone(),
+        context.app.qdrant_service.clone(), // Use the real Qdrant service from TestApp
+        context.app.mock_embedding_pipeline_service.clone(),
+    );
+    let result = scribe_backend::services::chat_service::create_session_and_maybe_first_message(
+        Arc::new(app_state), // Pass the constructed AppState
+        user.id,
+        char_id,
+    )
+    .await;
+
+    // Verification
+    assert!(result.is_ok(), "create_session_and_maybe_first_message failed: {:?}", result.err());
+    let session = result.unwrap();
+
+    // Verify the session was created correctly
+    assert_eq!(session.user_id, user.id);
+    assert_eq!(session.character_id, char_id);
+
+    // Verify the initial message was created via save_message
+    let messages =
+        test_helpers::db::get_chat_messages_from_db(&context.app.db_pool, session.id).await;
+
+    assert_eq!(messages.len(), 1, "Expected exactly one initial message");
+    let initial_message = &messages[0];
+    assert_eq!(initial_message.content, "Hello from the character!");
+    assert_eq!(initial_message.message_type, MessageRole::Assistant); // first_mes is from Assistant
+    assert_eq!(initial_message.user_id, user.id, "Initial message user_id should match session owner");
+    assert_eq!(initial_message.session_id, session.id, "Initial message session_id should match");
+
+    // Optional: Check embedding tracker if save_message reliably triggers it synchronously
+    // Note: Embedding is background, so direct check might be flaky.
+    // Relying on DB state is the primary verification here.
+
+    Ok(())
+}
 // Removed tests for background embedding success/failure (lines 247-251) as they are
 // difficult to test reliably via integration tests without more complex mocking/log capture.
 

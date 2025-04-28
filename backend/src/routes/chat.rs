@@ -48,7 +48,7 @@ pub async fn create_chat_session(
 
     // Call the service function to handle database operations
     let created_session =
-        chat_service::create_session_and_maybe_first_message(&state.pool, user_id, character_id)
+        chat_service::create_session_and_maybe_first_message(state.clone().into(), user_id, character_id)
             .await?;
 
     info!(session_id = %created_session.id, "Chat session creation successful");

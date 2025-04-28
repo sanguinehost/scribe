@@ -26,10 +26,6 @@ pub fn chunk_text(text: &str) -> Result<Vec<TextChunk>, AppError> {
         return Ok(vec![]);
     }
 
-    // Use the segmenter directly, relying on its compiled_data feature.
-    // Remove the explicit provider fetching.
-    // let provider = icu_testdata::get_provider(); // REMOVED
-
     // Create segmenters using the auto constructor which leverages compiled data
     // These constructors return Self directly, not Result, assuming compiled data is available.
     let sentence_segmenter = icu_segmenter::SentenceSegmenter::new();
@@ -819,7 +815,7 @@ She walks towards a boarded-up entrance to the side building. With minimal appar
 #[test]
     fn test_chunk_long_paragraph_with_empty_sentence_segments() {
         // Create a paragraph longer than max_size with extra spaces between sentences
-        // to potentially trigger the empty trimmed_sentence check (lines 74-75)
+        // to potentially trigger the empty trimmed_sentence check
         let sentence1 = "This is the first sentence.";
         let sentence2 = "This is the second sentence.";
         // Use spaces to ensure the paragraph length exceeds the limit
@@ -829,7 +825,6 @@ She walks towards a boarded-up entrance to the side building. With minimal appar
         let result = chunk_text(&text).unwrap();
 
         // Expecting the paragraph to be split into sentences because it's too long.
-        // The empty segment check (lines 74-75) should be hit due to "   ",
         // but the final output should contain the two main sentences.
         // Depending on ICU and truncation, the long spaces might form their own chunk(s) or be truncated.
         // We expect exactly 2 chunks containing the original sentences.
@@ -854,7 +849,6 @@ She walks towards a boarded-up entrance to the side building. With minimal appar
 
     #[test]
     fn test_chunk_no_chunks_from_non_empty_input_scenario() {
-        // Attempt to trigger lines 106, 109-110.
         // Create input > max_size consisting only of whitespace and sentence terminators
         // that *might* lead ICU to produce only empty segments.
         let text = ". . . ".repeat(DEFAULT_MAX_CHUNK_SIZE_CHARS); // Long string of dots and spaces
@@ -868,10 +862,7 @@ She walks towards a boarded-up entrance to the side building. With minimal appar
         // 4. ICU likely splits it into many "." sentences.
         // 5. Each "." sentence fits the size limit.
         // Therefore, we expect many chunks, each containing ".".
-        // The warn condition at line 106 is unlikely to be hit.
 
-        // If the logic somehow *did* result in no chunks (e.g., if ICU returned nothing),
-        // then lines 109-110 would execute, adding the trimmed input as one chunk.
         // Let's assert based on the *expected* behavior (many "." chunks).
         assert!(
             !result.is_empty(),
@@ -885,9 +876,4 @@ She walks towards a boarded-up entrance to the side building. With minimal appar
             result.iter().all(|c| !c.content.trim().is_empty()),
             "Expected all chunks to be non-empty after trimming"
         );
-
-        // This test primarily confirms the current behavior and that lines 106/109-110
-        // are difficult to reach. If tarpaulin still shows them uncovered, it might
-        // indicate a scenario not reproducible via ICU's standard behavior or
-        // a theoretical path not hit by current tests.
     }
