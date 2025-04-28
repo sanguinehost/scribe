@@ -3,7 +3,7 @@
 use crate::errors::AppError;
 use crate::models::character_card::NewCharacter;
 use crate::models::characters::{Character, CharacterMetadata};
-use crate::models::users::User;
+// use crate::models::users::User; // Removed unused import
 use crate::schema::characters::dsl::*; // DSL needed for table/columns
 use crate::services::character_parser::{self};
 use crate::state::AppState;
@@ -11,7 +11,7 @@ use axum::{
     Router,
     body::Body,
     debug_handler,
-    extract::{Extension, Path, State, multipart::Multipart},
+    extract::{Path, State, multipart::Multipart}, // Removed unused Extension
     http::StatusCode,
     response::{IntoResponse, Json, Response},
     routing::{delete, get, post},
@@ -315,19 +315,27 @@ pub fn characters_router(state: AppState) -> Router {
         .route("/{id}", get(get_character_handler))
         .route("/{id}", delete(delete_character_handler))
         .route("/generate", post(generate_character_handler))
+        .route("/{id}/image", get(get_character_image)) // Add image route
         .with_state(state)
 }
 
 #[debug_handler]
+#[instrument(skip(_state, auth_session), err)] // Add instrument macro
 pub async fn get_character_image(
     Path(character_id): Path<Uuid>,
     State(_state): State<AppState>,
-    Extension(user): Extension<User>,
+    auth_session: CurrentAuthSession, // Use AuthSession
 ) -> Result<Response<Body>, AppError> {
-    tracing::info!(%character_id, user_id = %user.id, "Fetching character image");
+    // Get the user from the session
+    let user = auth_session
+        .user
+        .ok_or_else(|| AppError::Unauthorized("Authentication required".to_string()))?;
+    let local_user_id = user.id; // Get ID from the user struct
+
+    tracing::info!(%character_id, %local_user_id, "Fetching character image for user"); // Update log
 
     // TODO: Implement actual logic to fetch the image data
-    // This would involve querying the database or file storage based on character_id and user_id
+    // This would involve querying the database or file storage based on character_id and local_user_id
     // For now, return a placeholder response or error
 
     Err(AppError::NotImplemented(

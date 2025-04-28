@@ -1346,33 +1346,39 @@ mod tests {
         guard.add_character(character.id);
 
         // Act: Make request to the image endpoint
-        // NOTE: The route in characters.rs doesn't seem to be nested under /api/characters
-        // It might be at the root or intended to be added elsewhere. Assuming root for now.
-        // If this fails, the route definition needs checking.
-        // UPDATE: The route definition `get_character_image` is NOT added to the router in characters.rs
-        // This test will fail until the route is actually mounted.
-        // For now, let's comment out the actual request and assert failure conceptually.
+        // Act: Make request to the image endpoint (now mounted under /api/characters)
+         let base_url = format!("http://{}", server_addr); // Define base_url
+         let image_url = format!("{}/api/characters/{}/image", base_url, character.id); // Use base_url and correct path
+         tracing::info!("Attempting to get image from: {}", image_url);
+         let response = client.get(&image_url).send().await?;
 
-        /*
-        let image_url = format!("http://{}/characters/{}/image", server_addr, character.id); // Assuming this path structure
-        tracing::info!("Attempting to get image from: {}", image_url);
-        let response = client.get(&image_url).send().await?;
-
-        // Assert: Check for Not Implemented status (or potentially 404 if route isn't mounted)
-        // assert_eq!(response.status(), ReqwestStatusCode::NOT_IMPLEMENTED);
-        assert!(
-             response.status() == ReqwestStatusCode::NOT_IMPLEMENTED || response.status() == ReqwestStatusCode::NOT_FOUND,
-             "Expected 501 Not Implemented or 404 Not Found, got {}", response.status()
-        );
-        if response.status() == ReqwestStatusCode::NOT_IMPLEMENTED {
-            let body_text = response.text().await?;
-            assert!(body_text.contains("Character image retrieval not yet implemented"));
-        }
-        */
-        tracing::warn!("Skipping image endpoint test as the route is not currently mounted in characters_router.");
+        // Assert: Check for Not Implemented status
+        assert_eq!(response.status(), ReqwestStatusCode::NOT_IMPLEMENTED, "Expected 501 Not Implemented, got {}", response.status());
+        let body_text = response.text().await?;
+        assert!(body_text.contains("Character image retrieval not yet implemented"));
 
 
         guard.cleanup().await?;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_get_character_image_unauthorized() -> Result<(), anyhow::Error> {
+        ensure_tracing_initialized();
+        let pool = create_test_pool();
+        let _guard = TestDataGuard::new(pool.clone());
+        let app = build_test_app_for_characters(pool).await;
+        let server_addr = spawn_app(app).await;
+        let client = Client::new(); // Client without cookie jar
+
+        let character_id = Uuid::new_v4(); // Doesn't need to exist
+        let image_url = format!("http://{}/api/characters/{}/image", server_addr, character_id);
+
+        // Act: Make request without authentication
+        let response = client.get(&image_url).send().await?;
+
+        // Assert: Check for Unauthorized status
+        assert_eq!(response.status(), ReqwestStatusCode::UNAUTHORIZED);
         Ok(())
     }
     #[tokio::test]
@@ -1529,9 +1535,9 @@ mod tests {
 
     // --- End New Tests ---
 
-    // Placeholder/TODO tests from implementation plan
+    // Placeholder/TODO tests from implementation plan (Some now covered)
     // #[tokio::test]
-    // async fn test_get_character_success() -> Result<(), anyhow::Error> { Ok(()) } // Already covered by test_get_character_manual_cleanup
+    // async fn test_get_character_success() -> Result<(), anyhow::Error> { Ok(()) } // Covered by test_get_character_manual_cleanup
     // #[tokio::test]
     // async fn test_get_character_auth_failure() -> Result<(), anyhow::Error> { Ok(()) } // Covered by test_get_unauthorized
     // #[tokio::test]
