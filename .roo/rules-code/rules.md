@@ -3,7 +3,14 @@ description:
 globs: 
 alwaysApply: true
 ---
-Follow this TDD-focused process for all Scribe changes:
+
+If you are having difficulties making edits (repeated failure), just provide the entire codeblock or even entire file back instead.
+
+The user prefers you just 'do it' instead of constantly asking him to run commands for you.
+
+When committing, use conventional commit style. Do not use backticks and for multiple lines you can use several -m in sequence.
+
+Follow this TDD-focused process for all changes:
 
 1.  **Analyze & Plan:**
     * Understand the request and problem.
@@ -16,7 +23,7 @@ Follow this TDD-focused process for all Scribe changes:
     * Cover success, failure, and edge cases.
 
 3.  **Implement & Iterate:**
-    * Write minimal, clean Rust code to pass tests for one abstraction at a time.
+    * Write minimal, clean code to pass tests for one abstraction at a time.
     * Refactor for clarity and best practices.
     * Repeat iteratively until the feature/fix is complete.
 
