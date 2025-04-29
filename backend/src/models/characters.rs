@@ -208,17 +208,6 @@ pub struct CharacterMetadata {
     // ... other fields extracted from the card
 }
 
-// Structure for inserting a new character metadata record
-#[derive(Insertable)]
-#[diesel(table_name = characters)]
-pub struct NewCharacterMetadata<'a> {
-    pub user_id: Uuid,
-    pub name: &'a str,
-    pub description: Option<&'a str>,
-    // Add other required fields that come directly from the parsed card
-    // e.g., pub persona: Option<&'a str>,
-}
-
 // Helper function to create a dummy Character instance
     fn create_dummy_character() -> Character {
         let now = Utc::now();

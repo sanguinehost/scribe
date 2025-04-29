@@ -272,8 +272,8 @@ Only mark a task checkbox (`- [x]`) when all these conditions are satisfied.
     - [x] Update `main.rs` to use these centralized settings consistently
 
 - [ ] **Task 6.4: Minor Improvements (BE)**
-    - [ ] Decide if character `first_mes` should be embedded for RAG context and implement in `chat_service::create_session_and_maybe_first_message` to call `chat_service::save_message` instead of direct insertion
-    - [ ] Standardize authentication method in `get_character_image` route to use `AuthSession` instead of `Extension<User>`
+    - [x] Decide if character `first_mes` should be embedded for RAG context and implement in `chat_service::create_session_and_maybe_first_message` to call `chat_service::save_message` instead of direct insertion
+    - [x] Standardize authentication method in `get_character_image` route to use `AuthSession` instead of `Extension<User>`
     - [ ] Remove redundant code:
         - [ ] Remove unused async `verify_password` helper from `auth/mod.rs`
         - [ ] Consider removing unused `NewCharacterMetadata` struct from `models/characters.rs`

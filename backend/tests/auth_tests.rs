@@ -982,7 +982,7 @@ async fn test_cookie_layer_sets_cookie() -> AnyhowResult<()> {
 
 // --- Unit Tests for auth module helpers ---
 
-use scribe_backend::auth::{AuthError, verify_password};
+use scribe_backend::auth::{AuthError};
 use deadpool_diesel::InteractError;
 use secrecy::Secret;
 
@@ -997,27 +997,6 @@ fn test_auth_error_from_interact_error() {
     // let panic_error = InteractError::Panic(std::panic::Location::caller().to_string()); // Requires more setup
     // let auth_error_panic = AuthError::from(panic_error);
     // assert!(matches!(auth_error_panic, AuthError::InteractError(_)));
-}
-
-#[tokio::test]
-async fn test_verify_password_invalid_hash() {
-    let password = Secret::new("correct_password".to_string());
-    let invalid_hash = "this_is_not_a_valid_bcrypt_hash";
-
-    let result = verify_password(invalid_hash, password).await;
-
-    assert!(result.is_err(), "Verification should fail for invalid hash");
-    match result {
-        Err(AuthError::HashingError) => {
-            // Correct error type, test passes
-        }
-        Err(e) => {
-            panic!("Expected AuthError::HashingError, but got {:?}", e);
-        }
-        Ok(_) => {
-            panic!("Expected an error, but verification succeeded unexpectedly");
-        }
-    }
 }
 
 // --- Tests for DieselSessionStore ---
