@@ -348,15 +348,15 @@ mod tests {
     use super::*;
     use crate::models::chats::MessageRole;
     // Corrected mock import
-    use crate::config::Config;
+    // Removed unused import: use crate::config::Config;
     use crate::test_helpers::{
-        AppStateBuilder, MockAiClient, MockEmbeddingClient, MockQdrantClientService,
+        MockEmbeddingClient, MockQdrantClientService, // Removed unused: AppStateBuilder, MockAiClient
     };
     use crate::vector_db::qdrant_client::ScoredPoint; // Import ScoredPoint
     use std::sync::Arc;
     // use tokio::sync::Mutex; // Removed unused import
     // Correct Payload import
-    use qdrant_client::qdrant::{PointId, Value};
+    use qdrant_client::qdrant::Value; // Removed unused: PointId
     // Import Payload from correct location
     use chrono::Utc;
     use std::collections::HashMap;
@@ -504,6 +504,7 @@ mod tests {
             message_type: MessageRole::User,
             content: "Chunk one. Chunk two.".to_string(),
             created_at: Utc::now(),
+            user_id: Uuid::new_v4(), // Add dummy user_id for test data
         };
 
         let mock_embedding = vec![0.1; 768]; // Use appropriate dimension
@@ -550,6 +551,7 @@ mod tests {
             message_type: MessageRole::User,
             content: "".to_string(), // Empty content leads to Ok(()) return
             created_at: Utc::now(),
+            user_id: Uuid::new_v4(), // Add dummy user_id for test data
         };
 
         // No need to set mock responses as they shouldn't be called
@@ -582,6 +584,7 @@ mod tests {
             message_type: MessageRole::User,
             content: "Some content".to_string(),
             created_at: Utc::now(),
+            user_id: Uuid::new_v4(), // Add dummy user_id for test data
         };
 
         // Mock embedding client to return an error
@@ -622,6 +625,7 @@ mod tests {
             message_type: MessageRole::User,
             content: "Some content".to_string(),
             created_at: Utc::now(),
+            user_id: Uuid::new_v4(), // Add dummy user_id for test data
         };
 
         // Mock embedding success

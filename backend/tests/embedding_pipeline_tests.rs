@@ -68,6 +68,7 @@ async fn test_process_and_embed_message_integration() {
         // finish_reason: None, // REMOVED
         created_at: Utc::now(),
         // updated_at: Utc::now(), // REMOVED
+        user_id: Uuid::new_v4(), // Add dummy user_id for test data
     };
 
     // Configure mock embedding client response
@@ -202,6 +203,7 @@ async fn test_process_and_embed_message_all_chunks_fail_embedding() {
         message_type: MessageRole::User,
         content: test_content.clone(),
         created_at: Utc::now(),
+        user_id: Uuid::new_v4(), // Add dummy user_id for test data
     };
 
     // Configure mock embedding client to always return an error

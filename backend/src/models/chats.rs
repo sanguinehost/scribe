@@ -347,6 +347,7 @@ mod tests {
             message_type: MessageRole::User,
             content: "Hello, how are you?".to_string(),
             created_at: Utc::now(),
+            user_id: Uuid::new_v4(), // Add dummy user_id for test data
         }
     }
 

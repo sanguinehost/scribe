@@ -189,6 +189,7 @@ mod tests {
                 message_type: MessageRole::User,
                 content: "Hello!".to_string(),
                 created_at: Utc::now(),
+                user_id: Uuid::new_v4(), // Add dummy user_id for test data
             },
             ChatMessage {
                 id: Uuid::new_v4(),
@@ -196,6 +197,7 @@ mod tests {
                 message_type: MessageRole::Assistant,
                 content: "Hi there!".to_string(),
                 created_at: Utc::now(),
+                user_id: Uuid::new_v4(), // Add dummy user_id for test data
             },
         ];
 
@@ -257,6 +259,7 @@ mod tests {
             message_type: MessageRole::User,
             content: "Tell me about dogs".to_string(),
             created_at: Utc::now(),
+            user_id: Uuid::new_v4(), // Add dummy user_id for test data
         }];
 
         let mock_chunks = vec![
@@ -359,6 +362,7 @@ mod tests {
             message_type: MessageRole::User,
             content: "Query that causes error".to_string(),
             created_at: Utc::now(),
+            user_id: Uuid::new_v4(), // Add dummy user_id for test data
         }];
 
         // Setup the mock to simulate a retrieval error
@@ -475,6 +479,7 @@ mod tests {
                 message_type: MessageRole::User,
                 content: "User query".to_string(),
                 created_at: Utc::now(),
+                user_id: Uuid::new_v4(), // Add dummy user_id for test data
             },
             ChatMessage {
                 id: Uuid::new_v4(),
@@ -482,6 +487,7 @@ mod tests {
                 message_type: MessageRole::System, // System message
                 content: "System instruction".to_string(),
                 created_at: Utc::now(),
+                user_id: Uuid::new_v4(), // Add dummy user_id for test data (System messages might not have a real user_id, but the field is required)
             },
             ChatMessage {
                 id: Uuid::new_v4(),
@@ -489,6 +495,7 @@ mod tests {
                 message_type: MessageRole::Assistant,
                 content: "Assistant response".to_string(),
                 created_at: Utc::now(),
+                user_id: Uuid::new_v4(), // Add dummy user_id for test data
             },
         ];
 
@@ -536,6 +543,7 @@ mod tests {
                 message_type: MessageRole::User,
                 content: "First user message".to_string(),
                 created_at: Utc::now(),
+                user_id: Uuid::new_v4(), // Add dummy user_id for test data
             },
             ChatMessage {
                 id: Uuid::new_v4(),
@@ -543,6 +551,7 @@ mod tests {
                 message_type: MessageRole::Assistant,
                 content: "Bot reply".to_string(),
                 created_at: Utc::now(),
+                user_id: Uuid::new_v4(), // Add dummy user_id for test data
             },
         ];
         let mock_chunks = vec![RetrievedChunk {

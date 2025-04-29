@@ -10,18 +10,13 @@ use qdrant_client::qdrant::{
     Condition, CreateCollection, Distance, FieldCondition, Filter, VectorParams, VectorsConfig,
     vectors_config::Config as QdrantVectorsConfig,
 };
-// Import MatchValue from its specific module
 use qdrant_client::qdrant::r#match::MatchValue;
-// Import ConditionOneOf from its specific module
 use qdrant_client::qdrant::condition::ConditionOneOf;
-// Import Match
 use qdrant_client::qdrant::Match;
-// Removed duplicate/unused imports from scribe_backend::vector_db::qdrant_client
 use scribe_backend::vector_db::qdrant_client::Kind as ValueKind;
 use serde_json::json;
 use std::sync::Arc;
 use uuid::Uuid;
-// Add serial_test import
 use serial_test::serial;
 
 // Define a shared collection name
@@ -446,9 +441,9 @@ use scribe_backend::vector_db::qdrant_client::QdrantClientServiceTrait; // Impor
 async fn test_qdrant_ensure_collection_already_exists() -> Result<(), AnyhowError> {
     cleanup_and_prepare_collection().await?; // Ensure clean state
     // First call creates the collection
-    let service1 = create_test_qdrant_service().await?;
+    let _service1 = create_test_qdrant_service().await?;
     // Second call should find the existing collection (covers line 165 in qdrant_client.rs)
-    let service2 = create_test_qdrant_service().await?;
+    let _service2 = create_test_qdrant_service().await?;
     // Check if the collection still exists using the raw client for verification
     let client = Qdrant::from_url("http://localhost:6334").build()?;
     let exists = client.collection_exists(TEST_COLLECTION_NAME).await?;
