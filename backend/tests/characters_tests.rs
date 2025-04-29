@@ -9,7 +9,7 @@ use axum_login::{
     AuthManagerLayerBuilder,
     tower_sessions::{Expiry, SessionManagerLayer, cookie::SameSite},
 };
-use deadpool_diesel::postgres::Pool; // Removed unused Manager, Runtime
+use deadpool_diesel::postgres::Pool;
 use diesel::{PgConnection, RunQueryDsl};
 use scribe_backend::{
     auth::{session_store::DieselSessionStore, user_store::Backend as AuthBackend},
@@ -20,44 +20,30 @@ use scribe_backend::{
     },
     routes::auth::login_handler as auth_login_handler,
     routes::characters::characters_router,
-    schema::users, // Removed unused characters alias
+    schema::users,
     state::AppState,
-    // llm::EmbeddingClient, // Removed unused import
-    // test_helpers::MockEmbeddingClient, // Removed old mock import
     test_helpers::{MockEmbeddingClient, MockEmbeddingPipelineService},
     vector_db::QdrantClientService,
 };
 use tower_cookies::CookieManagerLayer;
 use uuid::Uuid;
-// use std::sync::Once; // Removed unused import
-// use tracing_subscriber::{EnvFilter, fmt}; // Removed unused
-// use secrecy::{Secret, ExposeSecret}; // Unused
 use bcrypt;
 use http_body_util::BodyExt;
 use mime;
 use serde_json::json;
 use time;
-// use dotenvy::dotenv; // Removed unused
-// use std::env; // Removed unused
 use anyhow::Context;
 use base64::{Engine as _, engine::general_purpose::STANDARD as base64_standard};
 use crc32fast;
 use diesel::prelude::*;
 use reqwest::StatusCode as ReqwestStatusCode;
 use std::sync::Arc;
-// use scribe_backend::models::characters::Character as DbCharacter; // Removed duplicate import
 use scribe_backend::models::auth::Credentials as UserCredentials; // Correct path for Credentials, remove duplicate User import
-// use scribe_backend::auth::user_store::Backend as AuthBackend; // Removed duplicate import
-// use scribe_backend::state::AppState; // Remove duplicate AppState import
-// use scribe_backend::test_helpers::{create_test_pool, ensure_tracing_initialized, TestDataGuard}; // Unused import (helpers defined locally or not used)
 use reqwest::Client;
 use reqwest::cookie::Jar;
-// use tower::ServiceExt; // Unused
-// use axum_login::AuthSession; // Unused
-// use std::collections::HashMap; // Unused
 
 // Global static for ensuring tracing is initialized only once
-// static TRACING_INIT: Once = Once::new(); // Removed unused static
+// static TRACING_INIT: Once = Once::new();
 
 // Helper function to initialize tracing safely
 // Removed local definitions of ensure_tracing_initialized, create_test_pool, and TestDataGuard
