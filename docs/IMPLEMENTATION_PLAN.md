@@ -274,16 +274,16 @@ Only mark a task checkbox (`- [x]`) when all these conditions are satisfied.
 - [ ] **Task 6.4: Minor Improvements (BE)**
     - [x] Decide if character `first_mes` should be embedded for RAG context and implement in `chat_service::create_session_and_maybe_first_message` to call `chat_service::save_message` instead of direct insertion
     - [x] Standardize authentication method in `get_character_image` route to use `AuthSession` instead of `Extension<User>`
-    - [ ] Remove redundant code:
-        - [ ] Remove unused async `verify_password` helper from `auth/mod.rs`
-        - [ ] Consider removing unused `NewCharacterMetadata` struct from `models/characters.rs`
+    - [x] Remove redundant code:
+        - [x] Remove unused async `verify_password` helper from `auth/mod.rs`
+        - [x] Consider removing unused `NewCharacterMetadata` struct from `models/characters.rs`
     - [ ] Address TODOs:
         - [ ] TODOs in `text_processing/chunking.rs` regarding token-based chunking
         - [ ] TODOs for handling overly long sentences in chunking
         - [ ] TODOs in `vector_db/qdrant_client.rs` for configurable parameters
-    - [ ] Make CLI more robust:
-        - [ ] Fix CLI test card path to be workspace-relative (using manifest dir) instead of CLI directory-relative
-        - [ ] Remove unnecessary `#[async_trait]` from `cli/src/io.rs::IoHandler` since methods are synchronous
+    - [x] Make CLI more robust:
+        - [x] Fix CLI test card path to be workspace-relative (using manifest dir) instead of CLI directory-relative
+        - [x] Remove unnecessary `#[async_trait]` from `cli/src/io.rs::IoHandler` since methods are synchronous
 
 
 ## MVP Definition

@@ -18,11 +18,12 @@ use std::fs;
 use std::path::Path;
 use std::pin::Pin;
 use uuid::Uuid; // Added Pin
-use httptest::{matchers::*, responders::*, Expectation, ServerPool, ServerHandle};
+use httptest::{responders::*};
 use tokio;
-use chrono::Utc; // Added Utc
 use tempfile::NamedTempFile;
 use std::io::Write;
+use bigdecimal::BigDecimal;
+use std::str::FromStr;
 
 // Define the expected response structure from the /health endpoint (matching backend)
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
@@ -86,6 +87,7 @@ async fn handle_non_streaming_chat_response(response: Response) -> Result<ChatMe
                 Ok(ChatMessage {
                     id: body.message_id,
                     session_id: Uuid::nil(), // Not provided by this endpoint, set to nil
+                    user_id: Uuid::nil(), // Use Uuid::nil() for CLI context
                     message_type: scribe_backend::models::chats::MessageRole::Assistant,
                     content: body.content,
                     created_at: chrono::Utc::now(), // Use current time
@@ -523,8 +525,7 @@ impl HttpClient for ReqwestClientWrapper {
 mod tests {
     use super::*;
     use httptest::{
-        matchers::{self, json_decoded, all_of, request, contains, key, any}, // Add any
-        responders::*,
+        matchers::{all_of, request, contains, key}, // Add any
         Expectation, ServerPool, ServerHandle,
     };
     use scribe_backend::models::auth::Credentials;
@@ -1126,8 +1127,6 @@ mod tests {
         let user_id_mock = Uuid::new_v4();
         let char_id_mock = Uuid::new_v4();
         let now = Utc::now();
-        use bigdecimal::BigDecimal;
-        use std::str::FromStr;
         use serde_json::json;
 
         let mock_sessions = vec![
@@ -1246,6 +1245,7 @@ mod tests {
             ChatMessage {
                 id: Uuid::new_v4(),
                 session_id,
+                user_id: Uuid::nil(), // Use Uuid::nil() for test context
                 message_type: MessageRole::User,
                 content: "Hello there".to_string(),
                 created_at: now,
@@ -1253,6 +1253,7 @@ mod tests {
             ChatMessage {
                 id: Uuid::new_v4(),
                 session_id,
+                user_id: Uuid::nil(), // Use Uuid::nil() for test context
                 message_type: MessageRole::Assistant,
                 content: "General Kenobi!".to_string(),
                 created_at: now + chrono::Duration::seconds(1),
@@ -1338,8 +1339,6 @@ mod tests {
         let user_id_mock = Uuid::new_v4();
         let session_id = Uuid::new_v4();
         let now = Utc::now();
-        use bigdecimal::BigDecimal;
-        use std::str::FromStr;
         use scribe_backend::models::chats::ChatSession; // Import ChatSession
         use serde_json::json; // Import json!
 

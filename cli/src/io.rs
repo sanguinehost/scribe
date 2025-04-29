@@ -2,7 +2,6 @@ use crate::error::CliError;
 use std::io::{Write, stdin, stdout}; // For reading user input
 
 /// Trait for handling Command Line Input/Output to allow mocking in tests.
-#[async_trait::async_trait] // Added async_trait if methods become async
 pub trait IoHandler {
     // Made pub
     // Changed return type to use crate::error::CliError

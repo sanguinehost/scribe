@@ -1,8 +1,5 @@
 // cli/src/main.rs
 
-// Relative path to the test card image - Keep this constant here if only used by main loop logic
-const TEST_CARD_PATH: &str = "test_data/test_card.png";
-
 // Declare modules
 mod chat;
 mod client;
@@ -16,6 +13,7 @@ use clap::Parser;
 use reqwest::Client as ReqwestClient;
 use reqwest::cookie::Jar;
 use scribe_backend::models::users::User; // Keep User if used for logged_in_user state
+use std::path::PathBuf;
 use std::sync::Arc;
 use tracing;
 use tracing_subscriber::{EnvFilter, fmt};
@@ -287,10 +285,28 @@ async fn main() -> Result<()> {
                     // Create Test Character
                     io_handler.write_line("\nCreating test character...")?;
                     const CHARACTER_NAME: &str = "Test Character CLI";
-                    // Use the constant path defined at the top
+
+                    // Construct the path relative to the workspace root
+                    let manifest_dir = env!("CARGO_MANIFEST_DIR");
+                    let manifest_path = PathBuf::from(manifest_dir); // Create owned PathBuf
+                    let workspace_root = manifest_path.parent().ok_or_else(|| { // Borrow from manifest_path
+                        CliError::Internal(format!(
+                            "Could not get parent directory of manifest dir: {}",
+                            manifest_dir
+                        ))
+                    })?;
+                    let test_card_path_buf = workspace_root.join("test_data/test_card.png");
+                    let test_card_path_str =
+                        test_card_path_buf.to_str().ok_or_else(|| {
+                            CliError::Internal(format!(
+                                "Constructed test card path is not valid UTF-8: {:?}",
+                                test_card_path_buf
+                            ))
+                        })?;
+
                     // Note: This directly calls the client method, not a handler. Could create a handler if needed.
                     match http_client
-                        .upload_character(CHARACTER_NAME, TEST_CARD_PATH)
+                        .upload_character(CHARACTER_NAME, test_card_path_str) // Use the constructed path
                         .await
                     {
                         Ok(character) => {
@@ -302,12 +318,15 @@ async fn main() -> Result<()> {
                         }
                         Err(CliError::Io(io_err)) => {
                             // Provide more context for common IO errors
-                            tracing::error!(error = ?io_err, path = TEST_CARD_PATH, "Failed to read test character card file");
+                            tracing::error!(error = ?io_err, path = %test_card_path_buf.display(), "Failed to read test character card file"); // Log PathBuf
                             io_handler.write_line(&format!(
                                 "Error reading test character card file '{}': {}",
-                                TEST_CARD_PATH, io_err
+                                test_card_path_buf.display(), // Display PathBuf
+                                io_err
                             ))?;
-                            io_handler.write_line("Please ensure the file exists relative to the CLI executable or workspace root.")?;
+                            io_handler.write_line(
+                                "Please ensure the file exists in test_data/ at the workspace root.", // Updated help message
+                            )?;
                         }
                         Err(e) => {
                             tracing::error!(error = ?e, "Failed to create test character");

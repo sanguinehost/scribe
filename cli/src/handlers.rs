@@ -780,6 +780,7 @@ mod tests {
         ChatMessage {
             id,
             session_id,
+            user_id: Uuid::nil(), // Use Uuid::nil() for test context
             message_type: role,
             content: content.to_string(),
             created_at: Utc::now(),

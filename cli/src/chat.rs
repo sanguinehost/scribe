@@ -121,6 +121,5 @@ pub async fn run_stream_test_loop<IO: IoHandler, Http: HttpClient>(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     // Remove failing test code
 }
