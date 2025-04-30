@@ -25,6 +25,8 @@ pub struct QdrantClientService {
     client: Arc<Qdrant>, // Update client type
     collection_name: String,
     embedding_dimension: u64,
+    distance_metric: Distance, // Added from config
+    on_disk: Option<bool>,     // Added from config
 }
 
 #[async_trait]
@@ -70,10 +72,33 @@ impl QdrantClientService {
         let embedding_dimension = config.embedding_dimension;
         info!(embedding_dimension, "Using embedding dimension from config");
 
+        // Parse distance metric from config
+        let distance_metric_str = &config.qdrant_distance_metric;
+        let distance_metric = match distance_metric_str.to_lowercase().as_str() {
+            "cosine" => Distance::Cosine,
+            "euclid" => Distance::Euclid,
+            "dot" => Distance::Dot,
+            _ => {
+                error!("Invalid QDRANT_DISTANCE_METRIC configured: '{}'. Must be one of 'Cosine', 'Euclid', 'Dot'.", distance_metric_str);
+                return Err(AppError::ConfigError(format!(
+                    "Invalid QDRANT_DISTANCE_METRIC: {}",
+                    distance_metric_str
+                )));
+            }
+        };
+        info!(?distance_metric, "Using distance metric from config");
+
+        // Get on_disk setting from config
+        let on_disk = config.qdrant_on_disk;
+        info!(?on_disk, "Using on_disk setting from config");
+
+
         let service = Self {
             client: Arc::new(qdrant_client),
             collection_name,
             embedding_dimension,
+            distance_metric,
+            on_disk,
         };
 
         // Ensure the collection exists on startup
@@ -101,6 +126,8 @@ impl QdrantClientService {
             ),
             collection_name: DEFAULT_COLLECTION_NAME.to_string(), // Keep default for dummy
             embedding_dimension: 768, // Use a reasonable default (e.g., 768) for the dummy instance
+            distance_metric: Distance::Cosine, // Default for dummy
+            on_disk: None,                   // Default for dummy
         }
     }
 
@@ -127,10 +154,10 @@ impl QdrantClientService {
                     vectors_config: Some(VectorsConfig {
                         config: Some(QdrantVectorsConfig::Params(VectorParams {
                             size: self.embedding_dimension,
-                            distance: Distance::Cosine.into(),
+                            distance: self.distance_metric.into(), // Use configured distance
                             hnsw_config: None,
                             quantization_config: None,
-                            on_disk: None,
+                            on_disk: self.on_disk, // Use configured on_disk setting
                             datatype: None,
                             multivector_config: None,
                         })),

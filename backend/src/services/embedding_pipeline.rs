@@ -523,6 +523,8 @@ mod tests {
             chunking_metric: "char".to_string(), // Default for test state
             chunking_max_size: 500,
             chunking_overlap: 50,
+            qdrant_distance_metric: "Cosine".to_string(), // Added default for test
+            qdrant_on_disk: None,                       // Added default for test
         });
         // Create dummy pool and AI client (not used directly by process_and_embed_message)
         let pool = crate::test_helpers::create_test_pool();

@@ -22,6 +22,10 @@ pub struct Config {
     pub qdrant_collection_name: String,
     #[serde(default = "default_embedding_dimension")]
     pub embedding_dimension: u64, // Added
+    #[serde(default = "default_qdrant_distance_metric")]
+    pub qdrant_distance_metric: String, // Added
+    #[serde(default = "default_qdrant_on_disk")]
+    pub qdrant_on_disk: Option<bool>, // Added
 
     // Chunking Config - Added
     #[serde(default = "default_chunking_metric")]
@@ -37,6 +41,8 @@ fn default_port() -> u16 { 8080 }
 fn default_session_cookie_secure() -> bool { true } // Default to secure
 fn default_qdrant_collection_name() -> String { "scribe_embeddings".to_string() }
 fn default_embedding_dimension() -> u64 { 768 } // Default for gemini-embedding-exp-03-07
+fn default_qdrant_distance_metric() -> String { "Cosine".to_string() } // Added
+fn default_qdrant_on_disk() -> Option<bool> { None } // Added
 fn default_chunking_metric() -> String { "word".to_string() }
 fn default_chunking_max_size() -> usize { 200 } // Default for word metric
 fn default_chunking_overlap() -> usize { 20 } // Default for word metric
@@ -70,6 +76,8 @@ impl Default for Config {
             qdrant_url: None,
             qdrant_collection_name: default_qdrant_collection_name(),
             embedding_dimension: default_embedding_dimension(),
+            qdrant_distance_metric: default_qdrant_distance_metric(), // Added
+            qdrant_on_disk: default_qdrant_on_disk(), // Added
             chunking_metric: default_chunking_metric(),
             chunking_max_size: default_chunking_max_size(),
             chunking_overlap: default_chunking_overlap(),
