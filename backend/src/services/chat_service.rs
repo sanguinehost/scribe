@@ -18,7 +18,6 @@ use crate::{
         },
     },
     schema::{characters, chat_messages, chat_sessions}, // Removed self
-    services::embedding_pipeline::process_and_embed_message, // Import the pipeline function
     state::{AppState, DbPool},                          // Use DbPool from state, Add AppState
 };
 use std::sync::Arc; // Add Arc for AppState
@@ -248,14 +247,10 @@ pub async fn save_message(
         tokio::spawn(async move {
             info!(message_id = %message_clone.id, "Spawning background task for message embedding");
             // Extract services from state_clone
-            let embedding_client = state_clone.embedding_client.clone();
-            let qdrant_service = state_clone.qdrant_service.clone();
+            let embedding_pipeline_service = state_clone.embedding_pipeline_service.clone();
 
             let message_id_for_tracker = message_clone.id; // Extract ID first
-            if let Err(e) = process_and_embed_message(
-                embedding_client,
-                qdrant_service,
-                message_clone).await { // Move happens here
+            if let Err(e) = embedding_pipeline_service.process_and_embed_message(state_clone.clone(), message_clone).await {
                 error!(error = %e, "Background embedding task failed");
                 // TODO: Consider adding monitoring or retry logic for failed background tasks
             } else {

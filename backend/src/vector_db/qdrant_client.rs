@@ -18,7 +18,7 @@ use uuid::Uuid;
 
 // Constants
 pub const DEFAULT_COLLECTION_NAME: &str = "chat_embeddings";
-pub const EMBEDDING_DIMENSION: u64 = 3072; // Updated dimension based on error logs (likely text-embedding-004 or similar)
+// Removed hardcoded EMBEDDING_DIMENSION constant
 
 #[derive(Clone)]
 pub struct QdrantClientService {
@@ -64,12 +64,11 @@ impl QdrantClientService {
             AppError::VectorDbError(format!("Failed to build Qdrant client: {}", e))
         })?;
 
-        let collection_name = config
-            .qdrant_collection_name
-            .clone()
-            .unwrap_or_else(|| DEFAULT_COLLECTION_NAME.to_string());
-        // TODO: Make embedding dimension configurable or derive from embedding client
-        let embedding_dimension = EMBEDDING_DIMENSION;
+        let collection_name = config.qdrant_collection_name.clone(); // Access directly from config
+
+        // Use embedding dimension from config
+        let embedding_dimension = config.embedding_dimension;
+        info!(embedding_dimension, "Using embedding dimension from config");
 
         let service = Self {
             client: Arc::new(qdrant_client),
@@ -100,8 +99,8 @@ impl QdrantClientService {
                     .build()
                     .expect("Failed to build dummy Qdrant client"),
             ),
-            collection_name: DEFAULT_COLLECTION_NAME.to_string(),
-            embedding_dimension: EMBEDDING_DIMENSION,
+            collection_name: DEFAULT_COLLECTION_NAME.to_string(), // Keep default for dummy
+            embedding_dimension: 768, // Use a reasonable default (e.g., 768) for the dummy instance
         }
     }
 
@@ -543,7 +542,7 @@ mod tests {
         let dummy_service = QdrantClientService::new_test_dummy();
         // Basic assertion to ensure it runs without panic and fields are initialized
         assert_eq!(dummy_service.collection_name, DEFAULT_COLLECTION_NAME);
-        assert_eq!(dummy_service.embedding_dimension, EMBEDDING_DIMENSION);
+        assert_eq!(dummy_service.embedding_dimension, 768); // Check against the dummy default
         // We don't assert on the client itself as it's expected to be non-functional.
     }
     // --- Integration Tests (Require running Qdrant instance) ---

@@ -278,8 +278,8 @@ Only mark a task checkbox (`- [x]`) when all these conditions are satisfied.
         - [x] Remove unused async `verify_password` helper from `auth/mod.rs`
         - [x] Consider removing unused `NewCharacterMetadata` struct from `models/characters.rs`
     - [ ] Address TODOs:
-        - [ ] TODOs in `text_processing/chunking.rs` regarding token-based chunking
-        - [ ] TODOs for handling overly long sentences in chunking
+        - [x] TODOs in `text_processing/chunking.rs` regarding token-based chunking
+        - [x] TODOs for handling overly long sentences in chunking
         - [ ] TODOs in `vector_db/qdrant_client.rs` for configurable parameters
     - [x] Make CLI more robust:
         - [x] Fix CLI test card path to be workspace-relative (using manifest dir) instead of CLI directory-relative

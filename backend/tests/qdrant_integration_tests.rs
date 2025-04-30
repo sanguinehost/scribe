@@ -32,7 +32,7 @@ async fn create_test_qdrant_service() -> Result<QdrantClientService, AppError> {
     let mut config = Config::default();
     config.qdrant_url = Some("http://localhost:6334".to_string());
     // Use the constant test collection name
-    config.qdrant_collection_name = Some(TEST_COLLECTION_NAME.to_string());
+    config.qdrant_collection_name = TEST_COLLECTION_NAME.to_string();
 
     // Create the service
     // NOTE: This will *still* call ensure_collection_exists internally, but because the name

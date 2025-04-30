@@ -240,6 +240,10 @@ pub enum PipelineCall {
         query_text: String,
         limit: u64,
     },
+    ProcessAndEmbedMessage {
+        message_id: Uuid,
+        session_id: Uuid,
+    },
     // Add other calls if the mock needs to track more interactions
 }
 
@@ -270,6 +274,24 @@ impl MockEmbeddingPipelineService {
 
 #[async_trait]
 impl EmbeddingPipelineServiceTrait for MockEmbeddingPipelineService {
+    async fn process_and_embed_message(
+        &self,
+        _state: Arc<AppState>,
+        message: ChatMessage,
+    ) -> Result<(), AppError> {
+        // Record the call
+        self.calls
+            .lock()
+            .unwrap()
+            .push(PipelineCall::ProcessAndEmbedMessage {
+                message_id: message.id,
+                session_id: message.session_id,
+            });
+
+        // For mock implementation, just return success
+        Ok(())
+    }
+
     async fn retrieve_relevant_chunks(
         &self,
         _state: Arc<AppState>,
@@ -1325,7 +1347,7 @@ pub mod qdrant {
     // Use the higher-level Qdrant client
     use qdrant_client::Qdrant;
     // Import needed protobuf types separately
-    use crate::vector_db::qdrant_client::{DEFAULT_COLLECTION_NAME, EMBEDDING_DIMENSION};
+    use crate::vector_db::qdrant_client::DEFAULT_COLLECTION_NAME;
     use qdrant_client::qdrant::vectors_config::Config as QdrantVectorsConfig;
     use qdrant_client::qdrant::{CreateCollection, Distance, VectorParams, VectorsConfig};
     use tracing::{info, warn};
@@ -1350,7 +1372,7 @@ pub mod qdrant {
                             collection_name: collection_name.to_string(),
                             vectors_config: Some(VectorsConfig {
                                 config: Some(QdrantVectorsConfig::Params(VectorParams {
-                                    size: EMBEDDING_DIMENSION, // Use constant
+                                    size: 768, // Use a default value
                                     distance: Distance::Cosine.into(),
                                     ..Default::default()
                                 })),

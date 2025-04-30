@@ -38,13 +38,14 @@ use scribe_backend::config::Config; // Import Config instead
 use std::sync::Arc;
 use time; // Used for tower_sessions::Expiry
 use tower_cookies::CookieManagerLayer; // Re-add CookieManagerLayer
-use tower_sessions::{Expiry, SessionManagerLayer, cookie::SameSite}; // Add Arc for config
+use tower_sessions::{cookie::SameSite, Expiry, SessionManagerLayer}; // Add Arc for config
 // Import the builder function
 use scribe_backend::llm::gemini_client::build_gemini_client; // Import the async builder
 use scribe_backend::llm::gemini_embedding_client::build_gemini_embedding_client; // Add this
 use scribe_backend::services::embedding_pipeline::{
     EmbeddingPipelineService, EmbeddingPipelineServiceTrait,
 };
+use scribe_backend::text_processing::chunking::{ChunkConfig, ChunkingMetric}; // Import chunking config structs
 use scribe_backend::vector_db::QdrantClientService; // Add Qdrant service import // Add embedding pipeline service import
 
 // Define the embedded migrations macro
@@ -102,7 +103,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Build the session manager layer (handles session data)
     let session_manager_layer = SessionManagerLayer::new(session_store)
-        .with_secure(config.session_cookie_secure.unwrap_or(false)) // Use config value, default to false
+        .with_secure(config.session_cookie_secure) // Use config value directly
         .with_same_site(SameSite::Lax)
         // Use with_signed to enable signed cookies with the key
         .with_signed(cookie_signing_key)
@@ -114,9 +115,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Build the auth layer, passing the SessionManagerLayer
     let auth_layer = AuthManagerLayerBuilder::new(auth_backend, session_manager_layer).build();
 
+    // -- Create Chunking Config from main Config --
+    let chunk_metric = match config.chunking_metric.to_lowercase().as_str() {
+        "word" => ChunkingMetric::Word,
+        "char" | _ => ChunkingMetric::Char, // Default to Char if invalid or not "word"
+    };
+    let chunk_config = ChunkConfig {
+        metric: chunk_metric,
+        max_size: config.chunking_max_size,
+        overlap: config.chunking_overlap,
+    };
+    tracing::info!(?chunk_config, "Using chunking configuration");
+
     // -- Create Embedding Pipeline Service --
-    let embedding_pipeline_service =
-        Arc::new(EmbeddingPipelineService {}) as Arc<dyn EmbeddingPipelineServiceTrait>; // Instantiate the service
+    let embedding_pipeline_service = Arc::new(EmbeddingPipelineService::new(chunk_config))
+        as Arc<dyn EmbeddingPipelineServiceTrait>; // Instantiate with config
 
     // -- Create AppState --
     let app_state = AppState::new(
@@ -170,7 +183,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
 
     // Use port from config, default to 3000
-    let port = config.port.unwrap_or(3000);
+    let port = config.port;
     let addr_str = format!("0.0.0.0:{}", port);
     let addr: SocketAddr = addr_str.parse().expect("Invalid address format");
 

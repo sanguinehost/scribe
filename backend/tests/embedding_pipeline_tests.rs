@@ -1,3 +1,4 @@
+use scribe_backend::services::embedding_pipeline::EmbeddingPipelineServiceTrait;
 use chrono::Utc;
 use log;
 use mockall::predicate::*;
@@ -5,12 +6,13 @@ use qdrant_client::qdrant::{PointId, RetrievedPoint, Value, point_id::PointIdOpt
 use scribe_backend::{
     models::chats::{ChatMessage, MessageRole},
     services::embedding_pipeline::{
-        EmbeddingMetadata, EmbeddingPipelineService, process_and_embed_message,
-        retrieve_relevant_chunks,
+        EmbeddingMetadata, EmbeddingPipelineService,
     },
-    test_helpers::{MockAiClient, MockEmbeddingClient, MockQdrantClientService, config, db},
+    test_helpers::{AppStateBuilder, MockAiClient, MockEmbeddingClient, MockQdrantClientService, config, db}, // Added AppStateBuilder
     vector_db::qdrant_client::{QdrantClientService, ScoredPoint, create_message_id_filter, QdrantClientServiceTrait},
+     text_processing::chunking::{ChunkConfig, ChunkingMetric}, // Added import
     llm::EmbeddingClient,
+    state::AppState, // Added AppState
 };
 use serial_test::serial;
 use std::convert::TryFrom; // Needed for EmbeddingMetadata::try_from
@@ -38,18 +40,23 @@ async fn test_process_and_embed_message_integration() {
             .expect("Failed to create QdrantClientService for test"),
     );
 
-    // Instantiate the real EmbeddingPipelineService (Not needed for calling the standalone func)
-    // let embedding_pipeline_service = Arc::new(EmbeddingPipelineService);
+    // Instantiate the real EmbeddingPipelineService
+    let test_chunk_config = ChunkConfig { metric: ChunkingMetric::Char, max_size: 500, overlap: 50 };
+    let embedding_pipeline_service = Arc::new(EmbeddingPipelineService::new(test_chunk_config));
 
-    // Create AppState using the constructor (Still needed if other parts use it, but not for this call)
-    /* let app_state = Arc::new(AppState::new(
-        pool.clone(),
+    // Create AppState directly for integration test
+    // Note: AppState::new expects concrete service types wrapped in Arc,
+    // but the AppState struct itself holds Arc<dyn Trait + Send + Sync>.
+    // We provide the concrete types here.
+    let app_state = Arc::new(AppState::new(
+        _pool.clone(),
         config.clone(),
-        mock_ai_client.clone(),
-        mock_embedding_client.clone() as Arc<dyn EmbeddingClient + Send + Sync>, // Cast needed for AppState::new
-        qdrant_service.clone(),
-        embedding_pipeline_service.clone(),
-    )); */
+        Arc::new(MockAiClient::new()), // Use mock AI client
+        mock_embedding_client.clone(), // Use mock Embedding client
+        qdrant_service.clone(),        // Use REAL Qdrant service
+        embedding_pipeline_service.clone(), // Use REAL Embedding Pipeline service
+    ));
+
 
     // 2. Prepare test data
     let test_message_id = Uuid::new_v4();
@@ -72,14 +79,15 @@ async fn test_process_and_embed_message_integration() {
     };
 
     // Configure mock embedding client response
-    let embedding_dimension = 3072; // Match Qdrant collection dimension
+    let embedding_dimension = 768; // Changed from 3072 to match Qdrant collection dimension
     let mock_embedding = vec![0.1; embedding_dimension];
     mock_embedding_client.set_response(Ok(mock_embedding.clone()));
 
-    // 3. Call the function under test (Updated call)
-    let result = process_and_embed_message(
-        mock_embedding_client.clone() as Arc<dyn EmbeddingClient + Send + Sync>,
-        qdrant_service.clone() as Arc<dyn QdrantClientServiceTrait + Send + Sync>,
+    // 3. Call the function under test (Updated call to method)
+    // Service instance already created above
+
+    let result = embedding_pipeline_service.process_and_embed_message(
+        app_state.clone(), // Pass AppState
         test_message.clone()
     ).await;
     assert!(
@@ -106,7 +114,9 @@ async fn test_process_and_embed_message_integration() {
     );
 
     // Use the actual chunking function for reliable assertion
-    let expected_chunks = scribe_backend::text_processing::chunking::chunk_text(&test_content)
+    // Replace ChunkConfig::default() with manual instantiation
+    let test_chunk_config = ChunkConfig { metric: ChunkingMetric::Char, max_size: 500, overlap: 50 };
+    let expected_chunks = scribe_backend::text_processing::chunking::chunk_text(&test_content, &test_chunk_config, None, 0)
         .expect("Failed to chunk test content for verification");
     let expected_num_chunks = expected_chunks.len();
 
@@ -172,23 +182,25 @@ async fn test_process_and_embed_message_integration() {
 #[tokio::test]
 async fn test_process_and_embed_message_all_chunks_fail_embedding() {
     // 1. Setup dependencies using AppStateBuilder for mocks
-    let mock_embedding_client = MockEmbeddingClient::new();
-    let mock_qdrant_service = MockQdrantClientService::new();
+    let mock_embedding_client = Arc::new(MockEmbeddingClient::new()); // Create Arc here
+    let mock_qdrant_service = Arc::new(MockQdrantClientService::new()); // Create Arc here
     let mock_ai_client = Arc::new(MockAiClient::new());
-    // Instantiate the real EmbeddingPipelineService
-    let embedding_pipeline_service = Arc::new(EmbeddingPipelineService);
-
-    // Clone mocks and create Arcs *before* passing to builder
-    let mock_embedding_client_arc = Arc::new(mock_embedding_client.clone());
-    let mock_qdrant_service_arc = Arc::new(mock_qdrant_service.clone());
+    // Create a chunk config for the service
+    let test_chunk_config = ChunkConfig {
+        metric: ChunkingMetric::Char,
+        max_size: 500,
+        overlap: 50,
+    };
+    // Instantiate the real EmbeddingPipelineService (Removed stray '+')
+    let embedding_pipeline_service = Arc::new(EmbeddingPipelineService::new(test_chunk_config));
 
     // Use AppStateBuilder from test_helpers
-    let app_state = scribe_backend::test_helpers::AppStateBuilder::new()
+    let app_state = AppStateBuilder::new()
         .with_config(Arc::new(scribe_backend::config::Config::default())) // Provide dummy config
         .with_ai_client(mock_ai_client)
-        .with_embedding_client(mock_embedding_client_arc as Arc<dyn scribe_backend::llm::EmbeddingClient>)
+        .with_embedding_client(mock_embedding_client.clone() as Arc<dyn scribe_backend::llm::EmbeddingClient>) // Use cloned Arc
         .with_embedding_pipeline_service(embedding_pipeline_service.clone() as Arc<dyn scribe_backend::services::embedding_pipeline::EmbeddingPipelineServiceTrait>)
-        .with_qdrant_service(mock_qdrant_service_arc) // Pass Arc directly
+        .with_qdrant_service(mock_qdrant_service.clone()) // Use cloned Arc
         .build_for_test() // Use build_for_test which doesn't require DB pool
         .await
         .expect("Failed to build mock AppState");
@@ -208,27 +220,16 @@ async fn test_process_and_embed_message_all_chunks_fail_embedding() {
 
     // Configure mock embedding client to always return an error
     let embedding_error = scribe_backend::errors::AppError::EmbeddingError("Simulated embedding failure".to_string());
-    mock_embedding_client.set_response(Err(embedding_error));
+    mock_embedding_client.set_response(Err(embedding_error)); // Set response on the original mock Arc
 
     // Mock Qdrant upsert (it should NOT be called)
-    // Use expect_upsert_points().never() to assert it's not called.
-    // Removed: mock_qdrant_service.expect_upsert_points().never();
-// Explicitly mock the upsert call even though it shouldn't be reached
-    mock_qdrant_service.set_upsert_response(Ok(()));
+    mock_qdrant_service.set_upsert_response(Ok(())); // Set response on the original mock Arc
     // The test logic ensures upsert isn't called if embeddings fail.
 
     // 3. Call the function under test
-    // Extract services from AppState to call the refactored function
-    let embedding_client = app_state.embedding_client.clone();
-    // Need to cast the concrete AppState service to the trait object
-    // Note: This assumes AppState holds a service that implements the trait.
-    // If AppState holds the *mock* directly, this cast might need adjustment.
-    // However, AppStateBuilder now puts the mock (as trait) or dummy (as concrete) correctly.
-    let qdrant_service_trait = app_state.qdrant_service.clone() as Arc<dyn QdrantClientServiceTrait + Send + Sync>;
-
-    let result = process_and_embed_message(
-        embedding_client,
-        qdrant_service_trait,
+    // Call the method on the service instance, passing the AppState
+    let result = embedding_pipeline_service.process_and_embed_message(
+        app_state.clone(), // Pass AppState
         test_message.clone()
     ).await;
 
@@ -240,7 +241,9 @@ async fn test_process_and_embed_message_all_chunks_fail_embedding() {
     );
 
     // Verify embedding client was called for each chunk
-    let expected_chunks = scribe_backend::text_processing::chunking::chunk_text(&test_content)
+    // Replace ChunkConfig::default() with manual instantiation
+    let test_chunk_config = ChunkConfig { metric: ChunkingMetric::Char, max_size: 500, overlap: 50 };
+    let expected_chunks = scribe_backend::text_processing::chunking::chunk_text(&test_content, &test_chunk_config, None, 0)
         .expect("Failed to chunk test content for verification")
         .into_iter()
         .map(|c| (c.content, "RETRIEVAL_DOCUMENT".to_string())) // Match expected call format
@@ -306,11 +309,11 @@ fn create_mock_scored_point(
 #[tokio::test]
 async fn test_retrieve_relevant_chunks_success() {
     // Setup: Create mocks
-    let mock_embedding_client = MockEmbeddingClient::new();
-    let mock_qdrant_service = MockQdrantClientService::new();
+    let mock_embedding_client = Arc::new(MockEmbeddingClient::new()); // Create Arc
+    let mock_qdrant_service = Arc::new(MockQdrantClientService::new()); // Create Arc
 
     // Configure mock embedding client response
-    let embedding_dimension = 3072; // Example dimension
+    let embedding_dimension = 768; // Changed from 3072 to match Qdrant collection dimension
     let mock_query_embedding = vec![0.5; embedding_dimension];
     mock_embedding_client.set_response(Ok(mock_query_embedding.clone()));
 
@@ -346,17 +349,25 @@ async fn test_retrieve_relevant_chunks_success() {
     // Use set_search_response instead of expect_search_points
     mock_qdrant_service.set_search_response(Ok(mock_scored_points.clone()));
 
-    // Clone mocks *before* creating Arcs to pass to the function
-    let mock_qdrant_arc = Arc::new(mock_qdrant_service.clone());
-    let mock_embedding_arc = Arc::new(mock_embedding_client.clone());
+    // Instantiate the service
+    let test_chunk_config = ChunkConfig { metric: ChunkingMetric::Char, max_size: 500, overlap: 50 };
+    let embedding_pipeline_service = Arc::new(EmbeddingPipelineService::new(test_chunk_config));
 
-    // Pass the Arcs to the function
-    let result = retrieve_relevant_chunks(
-        mock_qdrant_arc,
-        mock_embedding_arc,
+    // Create AppState
+    let app_state = AppStateBuilder::new()
+        .with_embedding_client(mock_embedding_client.clone() as Arc<dyn EmbeddingClient + Send + Sync>)
+        .with_qdrant_service(mock_qdrant_service.clone())
+        .with_embedding_pipeline_service(embedding_pipeline_service.clone() as Arc<dyn EmbeddingPipelineServiceTrait + Send + Sync>)
+        .build_for_test()
+        .await
+        .expect("Failed to build AppState");
+
+    // Pass AppState to the method
+    let result = embedding_pipeline_service.retrieve_relevant_chunks(
+        app_state.clone(), // Pass AppState
         session_id,
         query, // No to_string() call
-        limit,
+        limit
     )
     .await;
 
@@ -406,8 +417,8 @@ async fn test_retrieve_relevant_chunks_success() {
 #[tokio::test]
 async fn test_retrieve_relevant_chunks_no_results() {
     // 1. Setup Mocks
-    let mock_embedding_client = MockEmbeddingClient::new();
-    let mock_qdrant_service = MockQdrantClientService::new();
+    let mock_embedding_client = Arc::new(MockEmbeddingClient::new()); // Create Arc
+    let mock_qdrant_service = Arc::new(MockQdrantClientService::new()); // Create Arc
 
     let query_text = "A query that finds nothing";
     let session_id = Uuid::new_v4();
@@ -420,13 +431,25 @@ async fn test_retrieve_relevant_chunks_no_results() {
     // Use set_search_response for the mock
     mock_qdrant_service.set_search_response(Ok(Vec::new()));
 
-    // 2. Call the function - no need for trait type conversion
-    let result = retrieve_relevant_chunks(
-        Arc::new(mock_qdrant_service),
-        Arc::new(mock_embedding_client),
+    // Instantiate the service
+    let test_chunk_config = ChunkConfig { metric: ChunkingMetric::Char, max_size: 500, overlap: 50 };
+    let embedding_pipeline_service = Arc::new(EmbeddingPipelineService::new(test_chunk_config));
+
+    // Create AppState
+    let app_state = AppStateBuilder::new()
+        .with_embedding_client(mock_embedding_client.clone() as Arc<dyn EmbeddingClient + Send + Sync>)
+        .with_qdrant_service(mock_qdrant_service.clone())
+        .with_embedding_pipeline_service(embedding_pipeline_service.clone() as Arc<dyn EmbeddingPipelineServiceTrait + Send + Sync>)
+        .build_for_test()
+        .await
+        .expect("Failed to build AppState");
+
+    // 2. Call the method
+    let result = embedding_pipeline_service.retrieve_relevant_chunks(
+        app_state.clone(), // Pass AppState
         session_id,
         query_text, // No to_string() call
-        limit,
+        limit
     )
     .await;
 
@@ -446,8 +469,8 @@ async fn test_retrieve_relevant_chunks_no_results() {
 #[tokio::test]
 async fn test_retrieve_relevant_chunks_qdrant_error() {
     // 1. Setup Mocks
-    let mock_embedding_client = MockEmbeddingClient::new();
-    let mock_qdrant_service = MockQdrantClientService::new();
+    let mock_embedding_client = Arc::new(MockEmbeddingClient::new()); // Create Arc
+    let mock_qdrant_service = Arc::new(MockQdrantClientService::new()); // Create Arc
 
     let query_text = "Query leading to Qdrant error";
     let session_id = Uuid::new_v4();
@@ -462,13 +485,25 @@ async fn test_retrieve_relevant_chunks_qdrant_error() {
         "Simulated Qdrant search failure".to_string(),
     )));
 
-    // 2. Call the function
-    let result = retrieve_relevant_chunks(
-        Arc::new(mock_qdrant_service),
-        Arc::new(mock_embedding_client),
+    // Instantiate the service
+    let test_chunk_config = ChunkConfig { metric: ChunkingMetric::Char, max_size: 500, overlap: 50 };
+    let embedding_pipeline_service = Arc::new(EmbeddingPipelineService::new(test_chunk_config));
+
+    // Create AppState
+    let app_state = AppStateBuilder::new()
+        .with_embedding_client(mock_embedding_client.clone() as Arc<dyn EmbeddingClient + Send + Sync>)
+        .with_qdrant_service(mock_qdrant_service.clone())
+        .with_embedding_pipeline_service(embedding_pipeline_service.clone() as Arc<dyn EmbeddingPipelineServiceTrait + Send + Sync>)
+        .build_for_test()
+        .await
+        .expect("Failed to build AppState");
+
+    // 2. Call the method
+    let result = embedding_pipeline_service.retrieve_relevant_chunks(
+        app_state.clone(), // Pass AppState
         session_id,
         query_text,
-        limit,
+        limit
     ).await;
 
     // 3. Assertions
@@ -488,8 +523,8 @@ async fn test_retrieve_relevant_chunks_qdrant_error() {
 #[tokio::test]
 async fn test_retrieve_relevant_chunks_metadata_invalid_uuid() {
     // 1. Setup Mocks
-    let mock_embedding_client = MockEmbeddingClient::new();
-    let mock_qdrant_service = MockQdrantClientService::new();
+    let mock_embedding_client = Arc::new(MockEmbeddingClient::new()); // Create Arc
+    let mock_qdrant_service = Arc::new(MockQdrantClientService::new()); // Create Arc
 
     let query_text = "Query for invalid UUID metadata";
     let session_id = Uuid::new_v4();
@@ -514,13 +549,25 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_uuid() {
 
     mock_qdrant_service.set_search_response(Ok(vec![mock_invalid_point]));
 
-    // 2. Call the function
-    let result = retrieve_relevant_chunks(
-        Arc::new(mock_qdrant_service),
-        Arc::new(mock_embedding_client),
+    // Instantiate the service
+    let test_chunk_config = ChunkConfig { metric: ChunkingMetric::Char, max_size: 500, overlap: 50 };
+    let embedding_pipeline_service = Arc::new(EmbeddingPipelineService::new(test_chunk_config));
+
+    // Create AppState
+    let app_state = AppStateBuilder::new()
+        .with_embedding_client(mock_embedding_client.clone() as Arc<dyn EmbeddingClient + Send + Sync>)
+        .with_qdrant_service(mock_qdrant_service.clone())
+        .with_embedding_pipeline_service(embedding_pipeline_service.clone() as Arc<dyn EmbeddingPipelineServiceTrait + Send + Sync>)
+        .build_for_test()
+        .await
+        .expect("Failed to build AppState");
+
+    // 2. Call the method
+    let result = embedding_pipeline_service.retrieve_relevant_chunks(
+        app_state.clone(), // Pass AppState
         session_id,
         query_text,
-        limit,
+        limit
     ).await;
 
     // 3. Assertions
@@ -534,8 +581,8 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_uuid() {
 #[tokio::test]
 async fn test_retrieve_relevant_chunks_metadata_invalid_timestamp() {
     // 1. Setup Mocks
-    let mock_embedding_client = MockEmbeddingClient::new();
-    let mock_qdrant_service = MockQdrantClientService::new();
+    let mock_embedding_client = Arc::new(MockEmbeddingClient::new()); // Create Arc
+    let mock_qdrant_service = Arc::new(MockQdrantClientService::new()); // Create Arc
 
     let query_text = "Query for invalid timestamp metadata";
     let session_id = Uuid::new_v4();
@@ -560,13 +607,25 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_timestamp() {
 
     mock_qdrant_service.set_search_response(Ok(vec![mock_invalid_point]));
 
-    // 2. Call the function
-    let result = retrieve_relevant_chunks(
-        Arc::new(mock_qdrant_service),
-        Arc::new(mock_embedding_client),
+    // Instantiate the service
+    let test_chunk_config = ChunkConfig { metric: ChunkingMetric::Char, max_size: 500, overlap: 50 };
+    let embedding_pipeline_service = Arc::new(EmbeddingPipelineService::new(test_chunk_config));
+
+    // Create AppState
+    let app_state = AppStateBuilder::new()
+        .with_embedding_client(mock_embedding_client.clone() as Arc<dyn EmbeddingClient + Send + Sync>)
+        .with_qdrant_service(mock_qdrant_service.clone())
+        .with_embedding_pipeline_service(embedding_pipeline_service.clone() as Arc<dyn EmbeddingPipelineServiceTrait + Send + Sync>)
+        .build_for_test()
+        .await
+        .expect("Failed to build AppState");
+
+    // 2. Call the method
+    let result = embedding_pipeline_service.retrieve_relevant_chunks(
+        app_state.clone(), // Pass AppState
         session_id,
         query_text,
-        limit,
+        limit
     ).await;
 
     // 3. Assertions
@@ -579,8 +638,8 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_timestamp() {
 #[tokio::test]
 async fn test_retrieve_relevant_chunks_metadata_missing_field() {
     // 1. Setup Mocks
-    let mock_embedding_client = MockEmbeddingClient::new();
-    let mock_qdrant_service = MockQdrantClientService::new();
+    let mock_embedding_client = Arc::new(MockEmbeddingClient::new()); // Create Arc
+    let mock_qdrant_service = Arc::new(MockQdrantClientService::new()); // Create Arc
 
     let query_text = "Query for missing metadata field";
     let session_id = Uuid::new_v4();
@@ -605,13 +664,25 @@ async fn test_retrieve_relevant_chunks_metadata_missing_field() {
 
     mock_qdrant_service.set_search_response(Ok(vec![mock_invalid_point]));
 
-    // 2. Call the function
-    let result = retrieve_relevant_chunks(
-        Arc::new(mock_qdrant_service),
-        Arc::new(mock_embedding_client),
+    // Instantiate the service
+    let test_chunk_config = ChunkConfig { metric: ChunkingMetric::Char, max_size: 500, overlap: 50 };
+    let embedding_pipeline_service = Arc::new(EmbeddingPipelineService::new(test_chunk_config));
+
+    // Create AppState
+    let app_state = AppStateBuilder::new()
+        .with_embedding_client(mock_embedding_client.clone() as Arc<dyn EmbeddingClient + Send + Sync>)
+        .with_qdrant_service(mock_qdrant_service.clone())
+        .with_embedding_pipeline_service(embedding_pipeline_service.clone() as Arc<dyn EmbeddingPipelineServiceTrait + Send + Sync>)
+        .build_for_test()
+        .await
+        .expect("Failed to build AppState");
+
+    // 2. Call the method
+    let result = embedding_pipeline_service.retrieve_relevant_chunks(
+        app_state.clone(), // Pass AppState
         session_id,
         query_text,
-        limit,
+        limit
     ).await;
 
     // 3. Assertions
@@ -623,8 +694,8 @@ async fn test_retrieve_relevant_chunks_metadata_missing_field() {
 #[tokio::test]
 async fn test_retrieve_relevant_chunks_metadata_wrong_type() {
     // 1. Setup Mocks
-    let mock_embedding_client = MockEmbeddingClient::new();
-    let mock_qdrant_service = MockQdrantClientService::new();
+    let mock_embedding_client = Arc::new(MockEmbeddingClient::new()); // Create Arc
+    let mock_qdrant_service = Arc::new(MockQdrantClientService::new()); // Create Arc
 
     let query_text = "Query for wrong metadata type";
     let session_id = Uuid::new_v4();
@@ -650,13 +721,25 @@ async fn test_retrieve_relevant_chunks_metadata_wrong_type() {
 
     mock_qdrant_service.set_search_response(Ok(vec![mock_invalid_point]));
 
-    // 2. Call the function
-    let result = retrieve_relevant_chunks(
-        Arc::new(mock_qdrant_service),
-        Arc::new(mock_embedding_client),
+    // Instantiate the service
+    let test_chunk_config = ChunkConfig { metric: ChunkingMetric::Char, max_size: 500, overlap: 50 };
+    let embedding_pipeline_service = Arc::new(EmbeddingPipelineService::new(test_chunk_config));
+
+    // Create AppState
+    let app_state = AppStateBuilder::new()
+        .with_embedding_client(mock_embedding_client.clone() as Arc<dyn EmbeddingClient + Send + Sync>)
+        .with_qdrant_service(mock_qdrant_service.clone())
+        .with_embedding_pipeline_service(embedding_pipeline_service.clone() as Arc<dyn EmbeddingPipelineServiceTrait + Send + Sync>)
+        .build_for_test()
+        .await
+        .expect("Failed to build AppState");
+
+    // 2. Call the method
+    let result = embedding_pipeline_service.retrieve_relevant_chunks(
+        app_state.clone(), // Pass AppState
         session_id,
         query_text,
-        limit,
+        limit
     ).await;
 
     // 3. Assertions
