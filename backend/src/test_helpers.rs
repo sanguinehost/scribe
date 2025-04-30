@@ -69,6 +69,9 @@ pub struct MockAiClient {
     response_to_return: std::sync::Arc<std::sync::Mutex<Result<ChatResponse, AppError>>>,
     stream_to_return:
         std::sync::Arc<std::sync::Mutex<Option<Vec<Result<ChatStreamEvent, AppError>>>>>,
+    // Field to capture the messages sent to the stream_chat method
+    last_received_messages:
+        std::sync::Arc<std::sync::Mutex<Option<Vec<genai::chat::ChatMessage>>>>,
 }
 
 impl MockAiClient {
@@ -94,6 +97,7 @@ impl MockAiClient {
                 usage: Default::default(),
             }))),
             stream_to_return: Default::default(),
+            last_received_messages: Default::default(), // Initialize the new field
         }
     }
 
@@ -106,6 +110,11 @@ impl MockAiClient {
     pub fn get_last_options(&self) -> Option<ChatOptions> {
         // TODO: Implement mock logic
         self.last_options.lock().unwrap().clone()
+    }
+
+    // Method to retrieve the captured messages
+    pub fn get_last_received_messages(&self) -> Option<Vec<genai::chat::ChatMessage>> {
+        self.last_received_messages.lock().unwrap().clone()
     }
 
     pub fn set_response(&self, response: Result<ChatResponse, AppError>) {
@@ -128,8 +137,10 @@ impl AiClient for MockAiClient {
         request: ChatRequest,
         config_override: Option<ChatOptions>,
     ) -> Result<ChatResponse, AppError> {
-        *self.last_request.lock().unwrap() = Some(request);
+        *self.last_request.lock().unwrap() = Some(request.clone()); // Clone request
         *self.last_options.lock().unwrap() = config_override;
+        // Capture messages for exec_chat as well, if needed, though stream_chat is primary for this task
+        *self.last_received_messages.lock().unwrap() = Some(request.messages);
         // TODO: Implement proper mock logic using stored response
         self.response_to_return.lock().unwrap().clone()
         // unimplemented!("MockAiClient exec_chat not implemented")
@@ -140,8 +151,10 @@ impl AiClient for MockAiClient {
         request: ChatRequest,
         config_override: Option<ChatOptions>,
     ) -> Result<ChatStream, AppError> {
-        *self.last_request.lock().unwrap() = Some(request);
+        *self.last_request.lock().unwrap() = Some(request.clone()); // Clone request before moving messages
         *self.last_options.lock().unwrap() = config_override;
+        // Capture the incoming messages
+        *self.last_received_messages.lock().unwrap() = Some(request.messages);
 
         // Manually reconstruct the stream items because ChatStreamEvent is not Clone
         let items = {
@@ -863,6 +876,9 @@ pub mod db {
         .expect("Failed to update settings");
     }
 
+    // Import UpdateChatSettingsRequest for the helper function
+    use crate::models::chats::UpdateChatSettingsRequest;
+
     pub async fn update_all_chat_settings(
         pool: &PgPool,
         session_id: Uuid,
@@ -878,25 +894,35 @@ pub mod db {
         new_top_a: Option<BigDecimal>,
         new_seed: Option<i32>,
         new_logit_bias: Option<Value>,
+        // Add the new history management fields
+        new_history_management_strategy: Option<String>,
+        new_history_management_limit: Option<i32>,
     ) {
         use crate::schema::chat_sessions::dsl::*;
+
+        // Create an UpdateChatSettingsRequest struct from the arguments
+        let update_request = UpdateChatSettingsRequest {
+            system_prompt: new_system_prompt,
+            temperature: new_temperature,
+            max_output_tokens: new_max_output_tokens,
+            frequency_penalty: new_frequency_penalty,
+            presence_penalty: new_presence_penalty,
+            top_k: new_top_k,
+            top_p: new_top_p,
+            repetition_penalty: new_repetition_penalty,
+            min_p: new_min_p,
+            top_a: new_top_a,
+            seed: new_seed,
+            logit_bias: new_logit_bias,
+            history_management_strategy: new_history_management_strategy,
+            history_management_limit: new_history_management_limit,
+        };
+
         let conn = pool.get().await.expect("Failed to get DB conn");
         conn.interact(move |conn| {
+            // Use the AsChangeset implementation of UpdateChatSettingsRequest
             diesel::update(chat_sessions.filter(id.eq(session_id)))
-                .set((
-                    system_prompt.eq(new_system_prompt),
-                    temperature.eq(new_temperature),
-                    max_output_tokens.eq(new_max_output_tokens),
-                    frequency_penalty.eq(new_frequency_penalty),
-                    presence_penalty.eq(new_presence_penalty),
-                    top_k.eq(new_top_k),
-                    top_p.eq(new_top_p),
-                    repetition_penalty.eq(new_repetition_penalty),
-                    min_p.eq(new_min_p),
-                    top_a.eq(new_top_a),
-                    seed.eq(new_seed),
-                    logit_bias.eq(new_logit_bias),
-                ))
+                .set(&update_request) // Pass the struct directly
                 .execute(conn)
         })
         .await
@@ -919,20 +945,23 @@ pub mod db {
         .expect("Query failed")
     }
 
-    // Define the settings tuple type alias within the module as well if needed, or import it.
+    // Define the settings tuple type alias to match the one in models/chats.rs
     type SettingsTuple = (
-        Option<String>,
-        Option<BigDecimal>,
-        Option<i32>,
-        Option<BigDecimal>,
-        Option<BigDecimal>,
-        Option<i32>,
-        Option<BigDecimal>,
-        Option<BigDecimal>,
-        Option<BigDecimal>,
-        Option<BigDecimal>,
-        Option<i32>,
-        Option<Value>,
+        Option<String>,     // system_prompt
+        Option<BigDecimal>, // temperature
+        Option<i32>,        // max_output_tokens
+        Option<BigDecimal>, // frequency_penalty
+        Option<BigDecimal>, // presence_penalty
+        Option<i32>,        // top_k
+        Option<BigDecimal>, // top_p
+        Option<BigDecimal>, // repetition_penalty
+        Option<BigDecimal>, // min_p
+        Option<BigDecimal>, // top_a
+        Option<i32>,        // seed
+        Option<Value>,      // logit_bias
+        // History Management Fields
+        String,             // history_management_strategy
+        i32,                // history_management_limit
     );
 
     pub async fn get_chat_session_settings(
@@ -957,8 +986,11 @@ pub mod db {
                     top_a,
                     seed,
                     logit_bias,
+                    // Select the new history management fields
+                    history_management_strategy,
+                    history_management_limit,
                 ))
-                .first::<SettingsTuple>(conn)
+                .first::<SettingsTuple>(conn) // Use the corrected SettingsTuple
                 .optional()
         })
         .await

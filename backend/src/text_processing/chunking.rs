@@ -591,23 +591,6 @@ fn apply_overlap(
      trace!("Overlap application finished.");
 }
 
-// Helper function to find the nearest character boundary <= index
-fn find_char_boundary(text: &str, index: usize) -> usize {
-    if index >= text.len() {
-        return text.len();
-    }
-    // Find the nearest boundary <= index
-    let mut boundary = index;
-    while boundary > 0 && !text.is_char_boundary(boundary) {
-        boundary -= 1;
-    }
-    // If the original index wasn't a boundary, log the adjustment
-    if index != boundary && !text.is_char_boundary(index) {
-         trace!("Adjusted index {} to char boundary {}", index, boundary);
-    }
-    boundary
-}
-
 // Helper function to count ICU words (moved from tests module)
 // Takes segmenter to avoid recreating it repeatedly.
 fn count_icu_words(text: &str, word_segmenter: &WordSegmenter) -> usize {

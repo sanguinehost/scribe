@@ -153,6 +153,8 @@ diesel::table! {
         top_a -> Nullable<Numeric>,
         seed -> Nullable<Int4>,
         logit_bias -> Nullable<Jsonb>,
+        history_management_strategy -> Text,
+        history_management_limit -> Int4,
     }
 }
 

@@ -23,6 +23,7 @@ use serde::Deserialize;
 use serde_json::json;
 use tracing::{debug, error, info, instrument, warn};
 use uuid::Uuid;
+use validator::Validate;
 
 const DEFAULT_MODEL_NAME: &str = "gemini-1.5-flash-latest";
 
@@ -129,6 +130,9 @@ pub async fn generate_chat_response(
     let user_id = user.id;
     let user_message_content = req.content;
 
+// --- INFO LOG ---
+    info!(session_id = %session_id, "Attempting to get session data for generation");
+    // --- END INFO LOG ---
     // --- 1. Get Settings, History, and Prepare User Message Struct ---
     let (
         prompt_history, // History *before* the current user message
@@ -146,6 +150,9 @@ pub async fn generate_chat_response(
         logit_bias,
         model_name,
         user_message_to_save, // Get the unsaved user message struct
+        // Destructure history management settings (even if not used directly here)
+        _history_management_strategy, // Use underscore prefix as it's not used directly
+        _history_management_limit,    // Use underscore prefix as it's not used directly
     ) = chat_service::get_session_data_for_generation(
         &app_state.pool,
         user_id,
@@ -154,7 +161,9 @@ pub async fn generate_chat_response(
         DEFAULT_MODEL_NAME.to_string(),
     )
     .await?;
-
+// --- INFO LOG ---
+    info!(session_id = %session_id, history_len = prompt_history.len(), "Received history from service");
+    // --- END INFO LOG ---
     // --- 1a. Save User Message (and trigger its embedding) ---
     let saved_user_message = chat_service::save_message(
         app_state.clone().into(),
@@ -204,26 +213,29 @@ pub async fn generate_chat_response(
 
     // --- 2. Assemble Prompt ---
     // Convert DB history to ChatMessage format
-    let genai_messages: Vec<ChatMessage> = prompt_history
+    let mut genai_messages: Vec<ChatMessage> = prompt_history // Make mutable
         .into_iter()
         .map(|(role, content)| match role {
             MessageRole::User => ChatMessage::user(content),
             MessageRole::Assistant => ChatMessage::assistant(content),
-            MessageRole::System => ChatMessage::system(content),
+            MessageRole::System => ChatMessage::system(content), // Keep system messages from history if any
         })
         .collect();
+
+    // Prepend system prompt if it exists
+    if let Some(system) = system_prompt {
+        if !system.trim().is_empty() {
+             genai_messages.insert(0, ChatMessage::system(system)); // Insert at the beginning
+        }
+    }
 
     // Prepend RAG context to the *current* user message content
     let user_message_with_rag = format!("{}{}", rag_context_string, user_message_content);
 
-    let mut genai_request_builder = ChatRequest::default()
-        .append_messages(genai_messages) // History messages
+    // Build the request
+    let genai_request = ChatRequest::default()
+        .append_messages(genai_messages) // History messages (now potentially including system prompt)
         .append_message(ChatMessage::user(user_message_with_rag)); // User message with RAG prepended
-
-    if let Some(system) = system_prompt {
-        genai_request_builder = genai_request_builder.with_system(system);
-    }
-    let genai_request = genai_request_builder;
 
     // Apply defaults if settings are None
     let default_temperature = 1.0;
@@ -507,6 +519,7 @@ pub async fn update_chat_settings(
         AppError::Unauthorized("Authentication required".to_string())
     })?;
     let user_id = user.id;
+payload.validate()?; // Trigger model-level validation
 
     // --- Input Validation ---
     // BigDecimal helpers for comparisons

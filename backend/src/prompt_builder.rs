@@ -10,7 +10,7 @@ use std::sync::Arc;
 use tracing::{info, warn};
 use uuid::Uuid;
 
-const RAG_CHUNK_LIMIT: u64 = 3;
+const RAG_CHUNK_LIMIT: u64 = 7; // Increased from 3
 
 /// Assembles the prompt for the LLM, incorporating RAG context.
 pub async fn build_prompt_with_rag(
@@ -24,12 +24,25 @@ pub async fn build_prompt_with_rag(
 
     // --- RAG Context Retrieval ---
     let mut rag_context_section = String::new();
-    if let Some(last_message) = history.last() {
-        let query_text = &last_message.content;
-        info!(%session_id, "Retrieving RAG context for prompt building");
+    // --- RAG Query Text Construction ---
+    // Use the last user message and the last assistant message (if available) for better context
+    let query_text = {
+        let last_user = history.iter().filter(|m| m.message_type == MessageRole::User).last();
+        let last_assistant = history.iter().filter(|m| m.message_type == MessageRole::Assistant).last();
+
+        match (last_user, last_assistant) {
+            (Some(user), Some(assistant)) => format!("{}\n{}", user.content, assistant.content),
+            (Some(user), None) => user.content.clone(),
+            (None, Some(assistant)) => assistant.content.clone(), // Should ideally not happen in normal flow but handle defensively
+            (None, None) => String::new(), // No messages to query with
+        }
+    };
+
+    if !query_text.is_empty() {
+        info!(%session_id, "Retrieving RAG context for prompt building using combined query");
         match state
             .embedding_pipeline_service
-            .retrieve_relevant_chunks(state.clone(), session_id, query_text, RAG_CHUNK_LIMIT)
+            .retrieve_relevant_chunks(state.clone(), session_id, &query_text, RAG_CHUNK_LIMIT)
             .await
         {
             Ok(retrieved_chunks) => {
@@ -240,12 +253,13 @@ mod tests {
             "Expected at least one call to retrieve_relevant_chunks"
         );
 
-        // Verify the call parameters
-        if let Some(PipelineCall::RetrieveRelevantChunks { query_text, .. }) = calls.last() {
+        // Verify the call parameters - now combines last user and assistant
+        if let Some(PipelineCall::RetrieveRelevantChunks { query_text, limit, .. }) = calls.last() {
             assert_eq!(
-                query_text, "Hi there!",
-                "Query text does not match expected value"
+                query_text, "Hello!\nHi there!",
+                "Query text should combine last user and assistant messages"
             );
+            assert_eq!(*limit, RAG_CHUNK_LIMIT, "RAG limit passed to service should match constant");
         }
     }
 
@@ -341,12 +355,13 @@ mod tests {
             "Expected at least one call to retrieve_relevant_chunks"
         );
 
-        // Verify the call parameters
-        if let Some(PipelineCall::RetrieveRelevantChunks { query_text, .. }) = calls.last() {
+        // Verify the call parameters - only last user message exists
+        if let Some(PipelineCall::RetrieveRelevantChunks { query_text, limit, .. }) = calls.last() {
             assert_eq!(
                 query_text, "Tell me about dogs",
-                "Query text does not match expected value"
+                "Query text should be the last user message when no assistant message exists"
             );
+             assert_eq!(*limit, RAG_CHUNK_LIMIT, "RAG limit passed to service should match constant");
         } else {
             panic!("Expected RetrieveRelevantChunks call");
         }
@@ -415,12 +430,13 @@ mod tests {
             "Expected at least one call to retrieve_relevant_chunks"
         );
 
-        // Verify the call parameters
-        if let Some(PipelineCall::RetrieveRelevantChunks { query_text, .. }) = calls.last() {
+        // Verify the call parameters - only last user message exists
+        if let Some(PipelineCall::RetrieveRelevantChunks { query_text, limit, .. }) = calls.last() {
             assert_eq!(
                 query_text, "Query that causes error",
-                "Query text does not match expected value"
+                "Query text should be the last user message when no assistant message exists"
             );
+             assert_eq!(*limit, RAG_CHUNK_LIMIT, "RAG limit passed to service should match constant");
         } else {
             panic!("Expected RetrieveRelevantChunks call");
         }
@@ -513,11 +529,12 @@ mod tests {
         assert!(prompt.contains("---\n"));
         assert!(prompt.contains("\nCharacter:")); // Default character name
 
-        // Verify RAG call
+        // Verify RAG call - uses last user ("User query") and last assistant ("Assistant response")
         let calls = mock_rag.get_calls();
         assert!(!calls.is_empty());
-        if let Some(PipelineCall::RetrieveRelevantChunks { query_text, .. }) = calls.last() {
-            assert_eq!(query_text, "Assistant response");
+        if let Some(PipelineCall::RetrieveRelevantChunks { query_text, limit, .. }) = calls.last() {
+            assert_eq!(query_text, "User query\nAssistant response");
+             assert_eq!(*limit, RAG_CHUNK_LIMIT, "RAG limit passed to service should match constant");
         } else {
             panic!("Expected RetrieveRelevantChunks call");
         }
@@ -590,11 +607,12 @@ mod tests {
         // Check Final Line
         assert!(prompt.contains("\nMega Bot:"));
 
-        // Verify RAG call
+        // Verify RAG call - uses last user ("First user message") and last assistant ("Bot reply")
         let calls = mock_rag.get_calls();
         assert!(!calls.is_empty());
-        if let Some(PipelineCall::RetrieveRelevantChunks { query_text, .. }) = calls.last() {
-            assert_eq!(query_text, "Bot reply");
+        if let Some(PipelineCall::RetrieveRelevantChunks { query_text, limit, .. }) = calls.last() {
+            assert_eq!(query_text, "First user message\nBot reply");
+             assert_eq!(*limit, RAG_CHUNK_LIMIT, "RAG limit passed to service should match constant");
         } else {
             panic!("Expected RetrieveRelevantChunks call");
         }

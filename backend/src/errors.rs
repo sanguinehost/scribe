@@ -8,7 +8,7 @@ use axum::{
 use serde_json::json;
 use thiserror::Error;
 use tracing::error;
-// use validator::ValidationErrors;
+use validator::ValidationErrors;
 
 // Corrected and Consolidated Imports
 use crate::auth::user_store::Backend as AuthBackend;
@@ -166,6 +166,9 @@ pub enum AppError {
     // Character Parsing Error (NEW)
     #[error("Character parsing error: {0}")]
     CharacterParsingError(String),
+
+    #[error("Validation error: {0}")]
+    ValidationError(String),
 }
 
 // This helper enum is necessary because axum_login::Error requires the UserStore::Error
@@ -481,6 +484,10 @@ impl IntoResponse for AppError {
                     "Failed to parse character data".to_string(),
                 )
             }
+
+            AppError::ValidationError(msg) => {
+                (StatusCode::BAD_REQUEST, format!("Validation error: {}", msg))
+            },
         };
 
         let body = Json(json!({
@@ -1388,5 +1395,11 @@ impl From<crate::auth::AuthError> for AppError {
             crate::auth::AuthError::PoolError(e) => AppError::DbPoolError(e.to_string()),
             crate::auth::AuthError::InteractError(s) => AppError::DbInteractError(s),
         }
+    }
+}
+
+impl From<ValidationErrors> for AppError {
+    fn from(errors: ValidationErrors) -> Self {
+        AppError::ValidationError(errors.to_string())
     }
 }

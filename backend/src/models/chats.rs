@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tracing::error;
 use uuid::Uuid; // Add import for JSON value
+use validator::{Validate, ValidationError}; // Import validator
 
 // Import necessary Diesel traits for manual enum mapping
 use diesel::deserialize::{self, FromSql};
@@ -43,6 +44,9 @@ pub struct ChatSession {
     pub top_a: Option<BigDecimal>,
     pub seed: Option<i32>,
     pub logit_bias: Option<Value>, // JSONB maps to serde_json::Value
+    // History Management Fields
+    pub history_management_strategy: String,
+    pub history_management_limit: i32,
 }
 
 // Type alias for the tuple returned when querying chat session settings
@@ -59,6 +63,9 @@ pub type SettingsTuple = (
     Option<BigDecimal>, // top_a
     Option<i32>,        // seed
     Option<Value>,      // logit_bias
+    // History Management Fields
+    String,             // history_management_strategy
+    i32,                // history_management_limit
 );
 
 // For creating a new chat session
@@ -225,11 +232,14 @@ pub struct ChatSettingsResponse {
     pub top_a: Option<BigDecimal>,
     pub seed: Option<i32>,
     pub logit_bias: Option<Value>,
+    // History Management Fields
+    pub history_management_strategy: String,
+    pub history_management_limit: i32,
 }
 
 /// Request body for PUT /api/chats/{id}/settings
 /// All fields are optional to allow partial updates.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, AsChangeset)] // Added AsChangeset
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, AsChangeset, Validate, Default)] // Added AsChangeset, Validate & Default
 #[diesel(table_name = crate::schema::chat_sessions)] // Specify target table
 pub struct UpdateChatSettingsRequest {
     pub system_prompt: Option<String>,
@@ -245,10 +255,26 @@ pub struct UpdateChatSettingsRequest {
     pub top_a: Option<BigDecimal>,
     pub seed: Option<i32>,
     pub logit_bias: Option<Value>,
+    // History Management Fields
+    #[validate(custom(function = "validate_optional_history_strategy"))]
+    pub history_management_strategy: Option<String>,
+    #[validate(range(min = 1))]
+    pub history_management_limit: Option<i32>,
 }
+
+// Custom validation function for history_management_strategy (called only when Some)
+fn validate_optional_history_strategy(strategy: &String) -> Result<(), ValidationError> {
+    match strategy.as_str() {
+        "sliding_window_tokens" | "sliding_window_messages" | "truncate_tokens" | "none" => Ok(()),
+        _ => Err(ValidationError::new("invalid_history_strategy")),
+    }
+    // No need to handle None case here, validator only calls this for Some(value)
+}
+
 
 #[cfg(test)]
 mod tests {
+    use validator::Validate; // Import the Validate trait for tests
     use super::*;
     use bigdecimal::BigDecimal; // Import BigDecimal
     use chrono::Utc;
@@ -282,6 +308,8 @@ mod tests {
             top_a: Some(bd("0.0")),
             seed: Some(12345),
             logit_bias: Some(json!({"50256": -100})),
+            history_management_strategy: "none".to_string(), // Add default test value
+            history_management_limit: 4096,                 // Add default test value
         }
     }
 
@@ -292,13 +320,14 @@ mod tests {
         assert!(debug_str.contains("ChatSession"));
         assert!(debug_str.contains(&session.id.to_string()));
         assert!(debug_str.contains("Test Chat"));
+        assert!(debug_str.contains("history_management_strategy: \"none\"")); // Check new field
     }
 
     #[test]
     fn test_clone_chat_session() {
         let original = create_sample_chat_session();
         let cloned = original.clone();
-        
+
         assert_eq!(original.id, cloned.id);
         assert_eq!(original.user_id, cloned.user_id);
         assert_eq!(original.character_id, cloned.character_id);
@@ -316,6 +345,9 @@ mod tests {
         assert_eq!(original.top_a, cloned.top_a);
         assert_eq!(original.seed, cloned.seed);
         assert_eq!(original.logit_bias, cloned.logit_bias);
+        // Add assertions for new fields
+        assert_eq!(original.history_management_strategy, cloned.history_management_strategy);
+        assert_eq!(original.history_management_limit, cloned.history_management_limit);
     }
 
     #[test]
@@ -364,12 +396,13 @@ mod tests {
     fn test_clone_chat_message() {
         let original = create_sample_chat_message();
         let cloned = original.clone();
-        
+
         assert_eq!(original.id, cloned.id);
         assert_eq!(original.session_id, cloned.session_id);
         assert_eq!(original.message_type, cloned.message_type);
         assert_eq!(original.content, cloned.content);
         assert_eq!(original.created_at, cloned.created_at);
+        assert_eq!(original.user_id, cloned.user_id); // Assert user_id
     }
 
     #[test]
@@ -377,11 +410,14 @@ mod tests {
         let message = create_sample_chat_message();
         let serialized = serde_json::to_string(&message).expect("Serialization failed");
         let deserialized: ChatMessage = serde_json::from_str(&serialized).expect("Deserialization failed");
-        
+
         assert_eq!(message.id, deserialized.id);
         assert_eq!(message.session_id, deserialized.session_id);
         assert_eq!(message.message_type, deserialized.message_type);
         assert_eq!(message.content, deserialized.content);
+        // Note: DateTime<Utc> might have precision differences after serde
+        // assert_eq!(message.created_at, deserialized.created_at);
+        assert_eq!(message.user_id, deserialized.user_id); // Assert user_id
     }
 
     // Helper function to create a sample new chat message
@@ -406,7 +442,7 @@ mod tests {
     fn test_clone_new_chat_message() {
         let original = create_sample_new_chat_message();
         let cloned = original.clone();
-        
+
         assert_eq!(original.session_id, cloned.session_id);
         assert_eq!(original.message_type, cloned.message_type);
         assert_eq!(original.content, cloned.content);
@@ -418,9 +454,9 @@ mod tests {
         let user_id = Uuid::new_v4();
         let role = MessageRole::User;
         let content = "Test message";
-        
+
         let message = DbInsertableChatMessage::new(chat_id, user_id, role, content.to_string());
-        
+
         assert_eq!(message.chat_id, chat_id);
         assert_eq!(message.user_id, user_id);
         assert_eq!(message.role, role);
@@ -442,6 +478,9 @@ mod tests {
             top_a: Some(bd("0.0")),
             seed: Some(12345),
             logit_bias: Some(json!({"50256": -100})),
+            // Add new fields to response helper
+            history_management_strategy: "none".to_string(),
+            history_management_limit: 4096,
         }
     }
 
@@ -452,16 +491,20 @@ mod tests {
         assert!(debug_str.contains("ChatSettingsResponse"));
         assert!(debug_str.contains("You are a helpful assistant"));
         assert!(debug_str.contains("temperature: Some"));
+        assert!(debug_str.contains("history_management_strategy: \"none\"")); // Check new field
     }
 
     #[test]
     fn test_clone_chat_settings_response() {
         let original = create_sample_chat_settings_response();
         let cloned = original.clone();
-        
+
         assert_eq!(original.system_prompt, cloned.system_prompt);
         assert_eq!(original.temperature, cloned.temperature);
         assert_eq!(original.max_output_tokens, cloned.max_output_tokens);
+        // Add assertions for new fields
+        assert_eq!(original.history_management_strategy, cloned.history_management_strategy);
+        assert_eq!(original.history_management_limit, cloned.history_management_limit);
     }
 
     // Helper function to create a sample update chat settings request
@@ -479,6 +522,9 @@ mod tests {
             top_a: Some(bd("0.1")),
             seed: Some(54321),
             logit_bias: Some(json!({"50256": -50})),
+            // Add new fields to request helper
+            history_management_strategy: Some("sliding_window_tokens".to_string()),
+            history_management_limit: Some(2000),
         }
     }
 
@@ -489,16 +535,20 @@ mod tests {
         assert!(debug_str.contains("UpdateChatSettingsRequest"));
         assert!(debug_str.contains("You are a helpful assistant"));
         assert!(debug_str.contains("temperature: Some"));
+        assert!(debug_str.contains("history_management_strategy: Some(\"sliding_window_tokens\")")); // Check new field
     }
 
     #[test]
     fn test_clone_update_chat_settings_request() {
         let original = create_sample_update_chat_settings_request();
         let cloned = original.clone();
-        
+
         assert_eq!(original.system_prompt, cloned.system_prompt);
         assert_eq!(original.temperature, cloned.temperature);
         assert_eq!(original.max_output_tokens, cloned.max_output_tokens);
+        // Add assertions for new fields
+        assert_eq!(original.history_management_strategy, cloned.history_management_strategy);
+        assert_eq!(original.history_management_limit, cloned.history_management_limit);
     }
 
     #[test]
@@ -506,10 +556,13 @@ mod tests {
         let settings = create_sample_chat_settings_response();
         let serialized = serde_json::to_string(&settings).expect("Serialization failed");
         let deserialized: ChatSettingsResponse = serde_json::from_str(&serialized).expect("Deserialization failed");
-        
+
         assert_eq!(settings.system_prompt, deserialized.system_prompt);
         assert_eq!(settings.temperature, deserialized.temperature);
         assert_eq!(settings.max_output_tokens, deserialized.max_output_tokens);
+        // Add assertions for new fields
+        assert_eq!(settings.history_management_strategy, deserialized.history_management_strategy);
+        assert_eq!(settings.history_management_limit, deserialized.history_management_limit);
     }
 
     #[test]
@@ -517,10 +570,13 @@ mod tests {
         let settings = create_sample_update_chat_settings_request();
         let serialized = serde_json::to_string(&settings).expect("Serialization failed");
         let deserialized: UpdateChatSettingsRequest = serde_json::from_str(&serialized).expect("Deserialization failed");
-        
+
         assert_eq!(settings.system_prompt, deserialized.system_prompt);
         assert_eq!(settings.temperature, deserialized.temperature);
         assert_eq!(settings.max_output_tokens, deserialized.max_output_tokens);
+        // Add assertions for new fields
+        assert_eq!(settings.history_management_strategy, deserialized.history_management_strategy);
+        assert_eq!(settings.history_management_limit, deserialized.history_management_limit);
     }
 
     #[test]
@@ -529,10 +585,10 @@ mod tests {
             content: "Hello AI".to_string(),
             model: Some("gpt-4".to_string()),
         };
-        
+
         let serialized = serde_json::to_string(&original).expect("Serialization failed");
         let deserialized: NewChatMessageRequest = serde_json::from_str(&serialized).expect("Deserialization failed");
-        
+
         assert_eq!(original.content, deserialized.content);
         assert_eq!(original.model, deserialized.model);
     }
@@ -543,10 +599,10 @@ mod tests {
             content: "Hello human".to_string(),
             model: Some("gpt-4".to_string()),
         };
-        
+
         let serialized = serde_json::to_string(&original).expect("Serialization failed");
         let deserialized: GenerateResponsePayload = serde_json::from_str(&serialized).expect("Deserialization failed");
-        
+
         assert_eq!(original.content, deserialized.content);
         assert_eq!(original.model, deserialized.model);
     }
@@ -555,10 +611,19 @@ mod tests {
     fn test_partial_eq_chat_settings_response() {
         let settings1 = create_sample_chat_settings_response();
         let mut settings2 = settings1.clone();
-        
+
         assert_eq!(settings1, settings2);
-        
+
         settings2.temperature = Some(bd("0.9"));
+        assert_ne!(settings1, settings2);
+
+        // Add test for new fields inequality
+        settings2 = settings1.clone();
+        settings2.history_management_limit = 1000;
+        assert_ne!(settings1, settings2);
+
+        settings2 = settings1.clone();
+        settings2.history_management_strategy = "sliding_window_messages".to_string();
         assert_ne!(settings1, settings2);
     }
 
@@ -566,10 +631,77 @@ mod tests {
     fn test_partial_eq_update_chat_settings_request() {
         let settings1 = create_sample_update_chat_settings_request();
         let mut settings2 = settings1.clone();
-        
+
         assert_eq!(settings1, settings2);
-        
+
         settings2.temperature = Some(bd("0.7"));
         assert_ne!(settings1, settings2);
+
+        // Add test for new fields inequality
+        settings2 = settings1.clone();
+        settings2.history_management_strategy = Some("none".to_string());
+        assert_ne!(settings1, settings2);
+
+        settings2 = settings1.clone();
+        settings2.history_management_limit = Some(100);
+        assert_ne!(settings1, settings2);
+    }
+
+    #[test]
+    fn test_update_chat_settings_request_validation() {
+        // Valid
+        let valid_settings = UpdateChatSettingsRequest {
+            history_management_strategy: Some("sliding_window_tokens".to_string()),
+            history_management_limit: Some(1000),
+            ..Default::default() // Use default for other fields
+        };
+        assert!(valid_settings.validate().is_ok());
+
+        let valid_settings_none = UpdateChatSettingsRequest {
+            history_management_strategy: Some("none".to_string()),
+            history_management_limit: Some(1), // Min limit
+            ..Default::default()
+        };
+        assert!(valid_settings_none.validate().is_ok());
+
+        // Invalid strategy
+        let invalid_strategy = UpdateChatSettingsRequest {
+            history_management_strategy: Some("invalid_strategy".to_string()),
+            history_management_limit: Some(1000),
+            ..Default::default()
+        };
+        let err = invalid_strategy.validate().unwrap_err();
+        assert!(err.field_errors().contains_key("history_management_strategy"));
+        assert_eq!(err.field_errors()["history_management_strategy"][0].code, "invalid_history_strategy");
+
+
+        // Invalid limit (zero)
+        let invalid_limit_zero = UpdateChatSettingsRequest {
+            history_management_strategy: Some("none".to_string()),
+            history_management_limit: Some(0),
+            ..Default::default()
+        };
+         let err = invalid_limit_zero.validate().unwrap_err();
+        assert!(err.field_errors().contains_key("history_management_limit"));
+        assert_eq!(err.field_errors()["history_management_limit"][0].code, "range");
+
+
+        // Invalid limit (negative)
+        let invalid_limit_neg = UpdateChatSettingsRequest {
+            history_management_strategy: Some("none".to_string()),
+            history_management_limit: Some(-100),
+            ..Default::default()
+        };
+        let err = invalid_limit_neg.validate().unwrap_err();
+        assert!(err.field_errors().contains_key("history_management_limit"));
+        assert_eq!(err.field_errors()["history_management_limit"][0].code, "range");
+
+        // Test optional fields being None (should be valid)
+        let none_settings = UpdateChatSettingsRequest {
+            history_management_strategy: None,
+            history_management_limit: None,
+            ..Default::default()
+        };
+        assert!(none_settings.validate().is_ok());
     }
 }
