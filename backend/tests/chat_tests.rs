@@ -2466,22 +2466,38 @@ async fn test_rag_context_injection_in_prompt() {
 
     // Verify RAG service was called correctly
     let pipeline_calls = context.app.mock_embedding_pipeline_service.get_calls();
-    assert_eq!(
-        pipeline_calls.len(),
-        1,
-        "Expected exactly one call to the pipeline service"
+    
+    // Check for the RetrieveRelevantChunks call
+    let retrieve_call = pipeline_calls.iter().find(|call| {
+        matches!(call, PipelineCall::RetrieveRelevantChunks { .. })
+    });
+    
+    assert!(
+        retrieve_call.is_some(),
+        "Expected at least one RetrieveRelevantChunks call to the pipeline service"
     );
-    match &pipeline_calls[0] {
-        PipelineCall::RetrieveRelevantChunks {
-            chat_id,
-            query_text: called_query,
-            limit,
-        } => {
-            assert_eq!(*chat_id, session.id);
-            assert_eq!(called_query, query_text);
-            assert_eq!(*limit, 3); // Check the default limit used in the route
-        } // _ => panic!("Unexpected call variant found in pipeline mock"),
+    
+    if let Some(PipelineCall::RetrieveRelevantChunks {
+        chat_id,
+        query_text: called_query,
+        limit,
+    }) = retrieve_call {
+        assert_eq!(*chat_id, session.id);
+        assert_eq!(*called_query, query_text);
+        assert_eq!(*limit, 3); // Check the default limit used in the route
     }
+    
+    // Check for any ProcessAndEmbedMessage calls
+    let process_calls: Vec<_> = pipeline_calls
+        .iter()
+        .filter(|call| matches!(call, PipelineCall::ProcessAndEmbedMessage { .. }))
+        .collect();
+    
+    // We expect at least one ProcessAndEmbedMessage call for storing the user's query
+    assert!(
+        !process_calls.is_empty(),
+        "Expected at least one ProcessAndEmbedMessage call to the pipeline service"
+    );
 
     // Verify the AI prompt included the RAG context
     let last_ai_request = context
