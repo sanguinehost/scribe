@@ -12,6 +12,8 @@ services:
       - "5432:5432" # Map host port 5432 to container port 5432
     volumes:
       - postgres_data:/var/lib/postgresql/data # Persistent volume for data
+      - ./postgres-custom.conf:/etc/postgresql/postgresql.conf
+    command: postgres -c config_file=/etc/postgresql/postgresql.conf
     restart: unless-stopped
 
   qdrant:

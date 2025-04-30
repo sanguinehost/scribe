@@ -768,6 +768,8 @@ mod tests {
             top_a: None,
             seed: None,
             logit_bias: None,
+            history_management_strategy: "window".to_string(),
+            history_management_limit: 20,
         }
     }
 

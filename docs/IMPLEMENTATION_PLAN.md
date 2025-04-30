@@ -119,11 +119,19 @@ Only mark a task checkbox (`- [x]`) when all these conditions are satisfied.
     - [x] **(BE) Data Retrieval:** Implement logic to get character details (from DB), system prompt (from DB - see Task 4.2), and recent chat messages (from DB).
     - [x] **(BE) Prompt Formatting:** Combine retrieved data into a single prompt string according to Gemini API requirements.
     - [x] *TDD (BE):* Unit tests for prompt assembly logic with various inputs (different character data, history lengths, system prompts).
+- [x] **Task 2.4.1: Implement Configurable History Management (BE)** - ***Requires Task 2.2 Completion***
+- [x] **(BE) History Retrieval Modification:** Update logic that fetches chat history (currently implicit in Task 2.4/2.5) to retrieve messages *before* applying management strategies.
+- [x] **(BE) Implement Strategies:** In `chat_service.rs` (or a dedicated module), implement history management logic that runs *before* history is passed to `prompt_builder.rs`. Support initial strategies:
+- **Sliding Window:** Keep only the most recent N messages or tokens (configurable per session/globally).
+- **Simple Truncation:** Limit the total token count of the history sent (configurable).
+- [x] **(BE) Configuration:** Integrate configuration options for selecting and parameterizing the history management strategy (e.g., via session settings - potentially extending Task 4.1/4.2).
+- [x] *TDD (BE):* Unit tests for sliding window and truncation logic with various history sizes and configurations.
+- *Note:* This step is crucial for handling long conversations within token limits. Future work (Post-MVP) could involve more advanced summarization techniques here.
 - [x] **Task 2.5: Generation API Endpoint (BE)** - ***Requires Task 2.2, 2.3, 2.4 Completion***
     - [x] **(BE) Orchestration Logic:** Implement handler for `POST /api/chats/{id}/generate`. **Support streaming responses (e.g., Server-Sent Events).**
         - [x] Verify session ownership by *authenticated user*.
         - [x] Get user message from request body. Save user message (using Task 2.2 logic/service).
-        - [x] Assemble prompt (using Task 2.4 logic).
+        - [x] Retrieve and manage history (Task 2.4.1), then assemble prompt (Task 2.4 logic).
         - [x] Call Gemini client (Task 2.3), **handling potential streaming.**
         - [x] Save AI response (using Task 2.2 logic/service) **(potentially after stream completion or incrementally if feasible)**.
         - [x] Return AI response **(as stream or complete response)**.
@@ -175,8 +183,11 @@ Only mark a task checkbox (`- [x]`) when all these conditions are satisfied.
     - [x] **(BE) Pipeline Logic:** Implement function that takes saved messages, chunks them (Task 3.3), embeds chunks (Task 3.1), and upserts vectors/payloads to Qdrant (Task 3.2). Associate vectors with session ID and user ID in Qdrant payload for filtering. *(Implemented via `process_and_embed_message` using `chunk_text`)*
     - [x] *TDD (BE):* Integration test for the end-to-end embedding pipeline (mocking Gemini Embedding API, interacting with real Qdrant). *(Verified via `test_process_and_embed_message_integration`)*
 - [x] **Task 3.5: RAG Query Logic (BE)** - ***Requires Task 3.1, 3.2 Completion***
-    - [x] **(BE) Context Embedding:** Embed the user's latest message (or recent conversational turn) using Task 3.1. *(Implemented in `retrieve_relevant_chunks`)*
+    - [x] **(BE) Context Embedding:** Embed the user's latest message (or potentially a summary/derived intent from recent turns - *See Enhancement Note*) using Task 3.1. *(Implemented in `retrieve_relevant_chunks`)*
     - [x] **(BE) Qdrant Search:** Implement logic to query Qdrant (Task 3.2) using the generated embedding. Filter by relevant session ID / user ID. Retrieve top N relevant chunks. *(Implemented in `retrieve_relevant_chunks`)*
+    - [ ] **(BE) Enhancement Note (Post-MVP/Future):** Explore improving query relevance by:
+        - Querying based on a summary or extracted intent of the last few turns, not just the raw last message.
+        - Retrieving a larger number or different *types* of chunks (e.g., retrieving specific character lore/details alongside conversational history chunks based on query analysis).
     - [x] *TDD (BE):* Unit/Integration tests for the RAG query process (mocking embedding API, using real Qdrant). *(Verified - Integration tests now passing)*
 - [x] **Task 3.6: RAG Context Injection (BE)** - ***Requires Task 2.4, 3.5 Completion***
     - [x] **(BE) Modify Prompt Assembly:** Update Task 2.4 logic. Before generating the final prompt, execute RAG query (Task 3.5). Prepend retrieved context chunks (formatted appropriately) to the main prompt section. *(Implemented in `build_prompt_with_rag`)*
@@ -271,16 +282,16 @@ Only mark a task checkbox (`- [x]`) when all these conditions are satisfied.
         - [x] Add session cookie `secure` flag configuration (`SESSION_COOKIE_SECURE`)
     - [x] Update `main.rs` to use these centralized settings consistently
 
-- [ ] **Task 6.4: Minor Improvements (BE)**
+- [x] **Task 6.4: Minor Improvements (BE)**
     - [x] Decide if character `first_mes` should be embedded for RAG context and implement in `chat_service::create_session_and_maybe_first_message` to call `chat_service::save_message` instead of direct insertion
     - [x] Standardize authentication method in `get_character_image` route to use `AuthSession` instead of `Extension<User>`
     - [x] Remove redundant code:
         - [x] Remove unused async `verify_password` helper from `auth/mod.rs`
         - [x] Consider removing unused `NewCharacterMetadata` struct from `models/characters.rs`
-    - [ ] Address TODOs:
+    - [x] Address TODOs:
         - [x] TODOs in `text_processing/chunking.rs` regarding token-based chunking
         - [x] TODOs for handling overly long sentences in chunking
-        - [ ] TODOs in `vector_db/qdrant_client.rs` for configurable parameters
+        - [x] TODOs in `vector_db/qdrant_client.rs` for configurable parameters
     - [x] Make CLI more robust:
         - [x] Fix CLI test card path to be workspace-relative (using manifest dir) instead of CLI directory-relative
         - [x] Remove unnecessary `#[async_trait]` from `cli/src/io.rs::IoHandler` since methods are synchronous
@@ -314,19 +325,14 @@ The MVP is complete when a user can:
 *   **Local Models:** Support for local models (Llama.cpp, Ollama).
 *   **Advanced Prompt Controls:** Advanced prompt controls (Jailbreaks, Author's Notes, Instruct Mode).
 *   **UI for Managing RAG Memories:** UI for managing RAG memories ("forgetting").
-*   **More Sophisticated Chunking/Summarization Strategies:** More sophisticated chunking/summarization strategies for RAG.
-*   **Character Editing Interface:** Character editing interface.
-
-*   Support for local models (Llama.cpp, Ollama).
-*   Advanced prompt controls (Jailbreaks, Author's Notes, Instruct Mode).
-*   UI for managing RAG memories ("forgetting").
-*   More sophisticated chunking/summarization strategies for RAG.
-*   Character editing interface.
-*   UI Polish and Theming.
-*   Group Chats, World Info (Static).
-*   Streaming improvements/alternatives (WebSockets).
-*   More robust error handling and user feedback.
-*   **Security Enhancements:** Separate User DB, Advanced Microsegmentation, Refresh Tokens, Rate Limiting, Account Lockout, MFA, External IdP Integration, Audit Logging.
+    *   **Advanced History Summarization:** Implement techniques (e.g., abstractive summarization) within the chat history management (Epic 2) to retain long-term context more effectively than simple truncation/windowing.
+    *   **More Sophisticated Chunking/Summarization Strategies for RAG:** Improve RAG effectiveness with better chunking methods or summarizing retrieved context before injection.
+    *   **Character Editing Interface:** Character editing interface.
+    *   **UI Polish and Theming:** UI Polish and Theming.
+    *   **Group Chats, World Info (Static).**
+    *   **Streaming improvements/alternatives (WebSockets).**
+    *   **More robust error handling and user feedback.**
+    *   **Security Enhancements:** Separate User DB, Advanced Microsegmentation, Refresh Tokens, Rate Limiting, Account Lockout, MFA, External IdP Integration, Audit Logging.
 
 ### Epic 7 – Post‑MVP Seeds (scaffolding only)
 

@@ -1149,6 +1149,8 @@ mod tests {
                 top_a: None,
                 seed: None,
                 logit_bias: None,
+                history_management_strategy: "window".to_string(),
+                history_management_limit: 20,
             },
             ChatSession {
                 id: session2_id,
@@ -1169,6 +1171,8 @@ mod tests {
                 top_a: None,
                 seed: Some(123),
                 logit_bias: Some(json!({ "token_id": -1.0 })),
+                history_management_strategy: "window".to_string(),
+                history_management_limit: 20,
             },
         ];
 
@@ -1361,6 +1365,8 @@ mod tests {
             top_a: None,
             seed: None,
             logit_bias: None,
+            history_management_strategy: "window".to_string(),
+            history_management_limit: 20,
         };
 
         let request_payload = json!({ "character_id": character_id });
