@@ -40,7 +40,7 @@ pub struct Config {
 fn default_port() -> u16 { 8080 }
 fn default_session_cookie_secure() -> bool { true } // Default to secure
 fn default_qdrant_collection_name() -> String { "scribe_embeddings".to_string() }
-fn default_embedding_dimension() -> u64 { 768 } // Default for gemini-embedding-exp-03-07
+fn default_embedding_dimension() -> u64 { 3072 } // Default for gemini-embedding-exp-03-07
 fn default_qdrant_distance_metric() -> String { "Cosine".to_string() } // Added
 fn default_qdrant_on_disk() -> Option<bool> { None } // Added
 fn default_chunking_metric() -> String { "word".to_string() }

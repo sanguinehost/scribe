@@ -16,6 +16,7 @@ use std::convert::TryFrom;
 use std::sync::Arc;
 use tracing::{error, info, instrument, warn};
 use uuid::Uuid;
+use tokio::time::{sleep, Duration}; // Added for rate limiting delay
 
 // Define metadata to store alongside vectors
 // TODO: Finalize required metadata fields
@@ -206,6 +207,9 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
                     continue; // Skip this chunk for now
                 }
             };
+
+            // Add a small delay to mitigate potential rate limiting
+            sleep(Duration::from_millis(6100)).await;
 
             // 2b. Prepare metadata
             let speaker_str = format!("{:?}", message.message_type);

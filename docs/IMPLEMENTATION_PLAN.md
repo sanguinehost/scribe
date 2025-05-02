@@ -230,29 +230,29 @@ Only mark a task checkbox (`- [x]`) when all these conditions are satisfied.
 
 *Methodology Note: This epic will leverage Markdown descriptions, Mermaid diagrams (for flows, states, structure), and potentially JSON/YAML (for component props/themes) as outlined in the UX/UI communication guidelines.*
 
-- [ ] **Task 5.1: Define Overall Layout, Navigation & Theme**
-    - [ ] **Task 5.1.1:** Document the main application layout (e.g., sidebar, main content area).
-    - [ ] **Task 5.1.2:** Define primary navigation structure.
-    - [ ] **Task 5.1.3:** Establish a basic visual theme: colors (hex/rgb), typography (fonts, sizes, weights), spacing units using Markdown and potentially a JSON/YAML theme definition.
-- [ ] **Task 5.2: Document Core UI Components**
+- [x] **Task 5.1: Define Overall Layout, Navigation & Theme**
+    - [x] **Task 5.1.1:** Document the main application layout (e.g., sidebar, main content area).
+    - [x] **Task 5.1.2:** Define primary navigation structure.
+    - [x] **Task 5.1.3:** Establish a basic visual theme: colors (hex/rgb), typography (fonts, sizes, weights), spacing units using Markdown and potentially a JSON/YAML theme definition.
+- [x] **Task 5.2: Document Core UI Components**
     *   For each key component (e.g., Button, InputField, ChatBubble, CharacterCard, Modal, SettingsInput):
-        - [ ] Provide Markdown descriptions of appearance and behavior.
-        - [ ] Define states (default, hover, focus, active, disabled, loading, error) with visual descriptions.
-        - [ ] Use JSON/YAML to list component props (name, type, default, description).
-        - [ ] Use Mermaid `stateDiagram-v2` where helpful to visualize complex component states.
-- [ ] **Task 5.3: Map User Flows**
+        - [x] Provide Markdown descriptions of appearance and behavior.
+        - [x] Define states (default, hover, focus, active, disabled, loading, error) with visual descriptions.
+        - [x] Use JSON/YAML to list component props (name, type, default, description).
+        - [x] Use Mermaid `stateDiagram-v2` where helpful to visualize complex component states.
+- [x] **Task 5.3: Map User Flows**
     *   Create Mermaid `graph TD` or `flowchart TD` diagrams for key user flows:
-        - [ ] Registration & Login Flow.
-        - [ ] Character Upload & Selection Flow.
-        - [ ] Starting a New Chat Session.
-        - [ ] Sending/Receiving Messages within a Chat.
-        - [ ] Accessing and Modifying Chat Settings.
-- [ ] **Task 5.4: Specify Key Screens/Views**
+        - [x] Registration & Login Flow.
+        - [x] Character Upload & Selection Flow.
+        - [x] Starting a New Chat Session.
+        - [x] Sending/Receiving Messages within a Chat.
+        - [x] Accessing and Modifying Chat Settings.
+- [x] **Task 5.4: Specify Key Screens/Views**
     *   For each main screen (Login/Register, Dashboard/Character List, Chat View, Settings Panel):
-        - [ ] Provide detailed Markdown description of layout and elements present.
-        - [ ] List the core components used on the screen (linking back to Task 5.2 definitions).
-        - [ ] Describe key interactions and state changes specific to the screen.
-        - [ ] Optionally include references to wireframe images (e.g., `login-view.png`) stored elsewhere, but ensure the Markdown is the source of truth.
+        - [x] Provide detailed Markdown description of layout and elements present.
+        - [x] List the core components used on the screen (linking back to Task 5.2 definitions).
+        - [x] Describe key interactions and state changes specific to the screen.
+        - [x] Optionally include references to wireframe images (e.g., `login-view.png`) stored elsewhere, but ensure the Markdown is the source of truth.
 
 ---
 

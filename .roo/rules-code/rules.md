@@ -4,6 +4,10 @@ globs:
 alwaysApply: true
 ---
 
+Keep chats under 200k tokens. If you reach that limit, complete your current subtask with a summary of what you have done and ask for a new subtask.
+
+Prefer creating several smaller subtasks instead of one large one.
+
 If you are having difficulties making edits (repeated failure), just provide the entire codeblock or even entire file back instead.
 
 The user prefers you just 'do it' instead of constantly asking him to run commands for you.

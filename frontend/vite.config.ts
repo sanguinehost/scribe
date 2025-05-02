@@ -26,8 +26,9 @@ export default defineConfig({
 					environment: 'node',
 					include: ['src/**/*.{test,spec}.{js,ts}'],
 					exclude: [
-						'src/**/*.svelte.{test,spec}.{js,ts}',
-						'src/routes/**/*.{test,spec}.{js,ts}'
+						'src/**/*.svelte.{test,spec}.{js,ts}', // Files like Component.svelte.test.ts
+						'src/routes/**/*.{test,spec}.{js,ts}', // Tests for routes (often client-side)
+						'src/lib/components/**/*.{test,spec}.{js,ts}' // Exclude component tests from server env
 					]
 				}
 			}

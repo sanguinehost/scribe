@@ -1,6 +1,6 @@
 import { describe, test, expect, vi, beforeEach } from 'vitest';
 import '@testing-library/jest-dom/vitest';
-import { render, screen, waitFor } from '@testing-library/svelte';
+import { render, screen } from '@testing-library/svelte'; // Removed unused waitFor
 import Page from './+page.svelte';
 
 beforeEach(() => {
@@ -8,25 +8,17 @@ beforeEach(() => {
 });
 
 describe('/+page.svelte', () => {
-	test('should render h1 and fetch health', async () => {
-		const mockFetch = vi.fn().mockResolvedValue({
-			ok: true,
-			json: async () => ({ status: 'ok' })
-		});
-		vi.stubGlobal('fetch', mockFetch);
-
+	test('should render static welcome content', () => {
+		// No need to mock fetch as the page is static now
 		render(Page);
 
-		expect(screen.getByText(/Checking.../)).toBeInTheDocument();
+		// Check for the main heading
+		const heading = screen.getByRole('heading', { level: 1, name: /Welcome to Scribe/i });
+		expect(heading).toBeInTheDocument();
 
-		await waitFor(() => {
-			expect(mockFetch).toHaveBeenCalledOnce();
-			expect(mockFetch).toHaveBeenCalledWith('/api/health');
-		});
-
-		await waitFor(() => {
-			expect(screen.getByRole('heading', { level: 1 })).toBeInTheDocument();
-			expect(screen.getByText(/Backend Health Status:/)).toHaveTextContent('ok');
-		});
+		// Check for some paragraph text
+		expect(screen.getByText(/This is the root page./)).toBeInTheDocument();
+		expect(screen.getByText(/If logged in, you should typically be redirected to \/characters./)).toBeInTheDocument();
+		expect(screen.getByText(/If logged out, you should typically be redirected to \/login./)).toBeInTheDocument();
 	});
 });

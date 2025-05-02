@@ -4389,7 +4389,7 @@ async fn test_history_management_and_rag_integration() {
 
     // 3. Ensure RAG Context Exists (Manually Insert Vectors)
     // Assuming vector dimensionality is 768 (common default, adjust if needed)
-    let vector_dim = 768;
+    let vector_dim = 3072; // Updated dimension to match config
     let points_to_insert = vec![
         PointStruct::new(
             Uuid::new_v4().to_string(), // Unique ID for the point

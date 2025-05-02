@@ -1,67 +1,21 @@
-import { render, screen, waitFor } from '@testing-library/svelte';
-import { expect, test, vi, beforeEach } from 'vitest';
+import { render, screen } from '@testing-library/svelte'; // Removed waitFor
+import { expect, test } from 'vitest'; // Removed vi, beforeEach
 import Page from './+page.svelte';
 
-beforeEach(() => {
-	// Reset mocks before each test
-	vi.resetAllMocks();
-});
+// Removed beforeEach as mocks are no longer needed
 
-test('fetches and displays backend health status', async () => {
-	// Mock the global fetch function
-	const mockFetch = vi.fn().mockResolvedValue({
-		ok: true,
-		json: async () => ({ status: 'ok' }) // Simulate successful response
-	});
-	vi.stubGlobal('fetch', mockFetch);
-
-	// Render the component
+test('should render static welcome content', () => {
+	// No need to mock fetch as the page is static now
 	render(Page);
 
-	// Check initial state
-	expect(screen.getByText(/Checking.../)).toBeInTheDocument();
+	// Check for the main heading
+	const heading = screen.getByRole('heading', { level: 1, name: /Welcome to Scribe/i });
+	expect(heading).toBeInTheDocument();
 
-	// Wait for the fetch call to be made and the component to update
-	await waitFor(() => {
-		expect(mockFetch).toHaveBeenCalledOnce();
-		expect(mockFetch).toHaveBeenCalledWith('/api/health');
-	});
-
-	// Wait for the component to update with the fetched status
-	await waitFor(() => {
-		// Check for the final state (use a flexible query)
-		const statusElement = screen.getByText(/Backend Health Status:/);
-		expect(statusElement).toBeInTheDocument();
-		// Check that the strong tag contains 'ok'
-		const strongElement = statusElement.querySelector('strong');
-		expect(strongElement).toHaveTextContent('ok');
-		// Ensure error message is not present
-		expect(screen.queryByText(/Error details:/)).not.toBeInTheDocument();
-	});
+	// Check for some paragraph text
+	expect(screen.getByText(/This is the root page./)).toBeInTheDocument();
+	expect(screen.getByText(/If logged in, you should typically be redirected to \/characters./)).toBeInTheDocument();
+	expect(screen.getByText(/If logged out, you should typically be redirected to \/login./)).toBeInTheDocument();
 });
 
-test('displays error message on failed health check', async () => {
-	// Mock fetch to simulate an error
-	const mockFetch = vi.fn().mockRejectedValue(new Error('Network failure'));
-	vi.stubGlobal('fetch', mockFetch);
-
-	render(Page);
-
-	// Check initial state
-	expect(screen.getByText(/Checking.../)).toBeInTheDocument();
-
-	// Wait for the fetch call to be made and the component to update
-	await waitFor(() => {
-		expect(mockFetch).toHaveBeenCalledOnce();
-	});
-
-	// Wait for the component to update with the error state
-	await waitFor(() => {
-		const statusElement = screen.getByText(/Backend Health Status:/);
-		expect(statusElement).toBeInTheDocument();
-		const strongElement = statusElement.querySelector('strong');
-		expect(strongElement).toHaveTextContent('Error'); // Component should show 'Error'
-		expect(screen.getByText(/Error details:/)).toBeInTheDocument(); // Error message should appear
-		expect(screen.getByText(/Network failure/)).toBeInTheDocument(); // Specific error message
-	});
-});
+// Removed the second test ('displays error message on failed health check') as it's no longer relevant
