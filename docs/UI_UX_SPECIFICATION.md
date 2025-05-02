@@ -1,322 +1,322 @@
 # Scribe - UI/UX Specification (MVP)
 
-## 1. Introduction
+This document outlines the User Interface (UI) and User Experience (UX) design for the Scribe MVP. It follows the methodology described in Epic 5 of the `IMPLEMENTATION_PLAN.md`.
 
-This document outlines the planned User Experience (UX) and User Interface (UI) design for the Scribe MVP. It draws inspiration from existing platforms like SillyTavern but will be implemented using the **Skeleton UI toolkit** ([https://www.skeleton.dev/](https://www.skeleton.dev/)) on top of SvelteKit and TailwindCSS. Skeleton provides pre-built components, themes, and utility classes that will accelerate development and ensure a consistent, modern look and feel.
+## 1. Overall Layout, Navigation & Theme (Task 5.1)
 
-The goal is to create an intuitive, performant, and extensible UI that effectively supports the core features: chat interaction, V2 character card management, basic prompt settings, and interaction with the underlying RAG context system.
+### 1.1 Main Application Layout (Task 5.1.1)
 
-This document corresponds to **Epic 5** in the `IMPLEMENTATION_PLAN.md`. It will utilize Markdown descriptions, Mermaid diagrams, and potentially JSON/YAML definitions for components/themes as the design evolves.
+The application will use a standard two-column layout:
 
-## 2. Overall Layout, Navigation & Theme (Task 5.1)
+1.  **Sidebar (Left):**
+    *   Collapsible (optional for MVP, but good for future).
+    *   Contains primary navigation elements (e.g., Character List link, potentially list of recent chats).
+    *   May contain global actions like "New Chat" or user profile/logout access.
+    *   Width: Fixed width when expanded (e.g., `~250px-300px`), minimal width when collapsed (showing icons only).
+2.  **Main Content Area (Right):**
+    *   Takes the remaining horizontal space.
+    *   Displays the currently active view based on navigation (e.g., Character List grid, Chat Window, Settings Page).
 
-### 2.1. Proposed Layout
+### 1.2 Primary Navigation (Task 5.1.2)
 
-Scribe will adopt a multi-panel layout, likely consisting of:
+Navigation primarily occurs via the **Sidebar**.
 
-*   **Collapsible Left Sidebar:** Primary navigation between major sections (Chats, Characters, Settings). Provides a clean look when collapsed.
-*   **Main Content Area:** Displays the currently active view based on sidebar selection (e.g., the Chat interface, the Character Management grid, the Settings forms).
-*   **Contextual Right Sidebar (Possibly Optional/Collapsible):** Display relevant information or controls based on the main content area. For the MVP, this could show:
-    *   Character details and basic settings when in the Chat View (similar to the right panel in SillyTavern Image 1).
-    *   Generation parameters (Temperature, Max Tokens, System Prompt - see Epic 4) when in the Chat View (similar to the left panel in SillyTavern Image 1, potentially integrated into the right panel or a modal).
+*   **Core Links (Visible when logged in):**
+    *   **Characters:** Navigates the Main Content Area to the Character List/Dashboard view (`/characters`). This is likely the default view after login.
+    *   **Settings:** (Optional for MVP, could be integrated elsewhere) If present, navigates to a dedicated Settings page or opens a settings modal.
+*   **Contextual Navigation:**
+    *   **Chat Sessions:** Selecting a character from the Character List or potentially a list of recent chats in the sidebar will navigate the Main Content Area to the Chat View (`/chat/{sessionId}`). The sidebar might highlight the active chat session.
+*   **Authentication Links:**
+    *   **Logged Out:** The UI (potentially replacing the sidebar or in a header) will show links/buttons for "Login" (`/login`) and "Register" (`/register`).
+    *   **Logged In:** A "Logout" button/link will be available, likely within the sidebar or a user profile dropdown.
+*   **Initial View:**
+    *   If logged in, the initial view should be the Character List (`/characters`).
+    *   If logged out, the initial view should redirect to the Login page (`/login`).
 
-### 2.2. Navigation
+### 1.3 Visual Theme (Task 5.1.3)
 
-The primary navigation (Left Sidebar) will include links to:
+The theme will be configured using CSS variables, following the `shadcn-svelte` methodology, primarily defined in `src/app.pcss`. The Sanguine palette (Black, Maroon, Gold) will be integrated alongside neutrals for balance.
 
-*   `Chats`: View list of past chat sessions / Start new chats.
-*   `Characters`: Manage uploaded character cards (View list, Upload new).
-*   `Settings`: Manage application settings (e.g., API Keys, user preferences).
-*   `Logout`: End user session.
+*   **Color Palette (HSL Format):**
+    *   **Core Sanguine:**
+        *   Maroon: `0 55% 35%` (Used for Primary/Destructive)
+        *   Maroon Foreground: `0 0% 98%` (Light text/icons on Maroon)
+        *   Gold: `40 80% 55%` (Used for Accent/Ring)
+        *   Gold Foreground: `40 100% 15%` (Dark text/icons on Gold)
+    *   **Neutrals (Based on Zinc):**
+        *   `--neutral-50: 240 5.9% 90%`
+        *   `--neutral-100: 240 6% 80%`
+        *   `--neutral-200: 240 6% 70%`
+        *   `--neutral-300: 240 5% 60%`
+        *   `--neutral-400: 240 4.8% 50%`
+        *   `--neutral-500: 240 5% 40%`
+        *   `--neutral-600: 240 5% 30%`
+        *   `--neutral-700: 240 6% 20%`
+        *   `--neutral-800: 240 7% 10%`
+        *   `--neutral-900: 240 8% 5%`
+        *   `--neutral-950: 240 10% 3.9%`
+    *   **`shadcn-svelte` Variable Mapping:**
+        *   **Light Mode (`:root`)**
+            *   `--background: 0 0% 100%;` /* White */
+            *   `--foreground: var(--neutral-950);` /* Near Black */
+            *   `--card: 0 0% 100%;`
+            *   `--card-foreground: var(--neutral-950);`
+            *   `--popover: 0 0% 100%;`
+            *   `--popover-foreground: var(--neutral-950);`
+            *   `--primary: 0 55% 35%;` /* Maroon */
+            *   `--primary-foreground: 0 0% 98%;` /* Light */
+            *   `--secondary: var(--neutral-100);` /* Light Gray */
+            *   `--secondary-foreground: var(--neutral-800);` /* Dark Gray */
+            *   `--muted: var(--neutral-100);`
+            *   `--muted-foreground: var(--neutral-500);`
+            *   `--accent: 40 80% 55%;` /* Gold */
+            *   `--accent-foreground: 40 100% 15%;` /* Dark */
+            *   `--destructive: 0 55% 35%;` /* Maroon */
+            *   `--destructive-foreground: 0 0% 98%;` /* Light */
+            *   `--border: var(--neutral-200);`
+            *   `--input: var(--neutral-200);`
+            *   `--ring: 40 80% 55%;` /* Gold */
+        *   **Dark Mode (`.dark`)**
+            *   `--background: var(--neutral-950);` /* Near Black */
+            *   `--foreground: var(--neutral-50);` /* Light Gray */
+            *   `--card: var(--neutral-900);`
+            *   `--card-foreground: var(--neutral-50);`
+            *   `--popover: var(--neutral-900);`
+            *   `--popover-foreground: var(--neutral-50);`
+            *   `--primary: 0 55% 35%;` /* Maroon */
+            *   `--primary-foreground: 0 0% 98%;` /* Light */
+            *   `--secondary: var(--neutral-800);`
+            *   `--secondary-foreground: var(--neutral-50);`
+            *   `--muted: var(--neutral-800);`
+            *   `--muted-foreground: var(--neutral-400);`
+            *   `--accent: 40 80% 55%;` /* Gold */
+            *   `--accent-foreground: 40 100% 15%;` /* Dark */
+            *   `--destructive: 0 55% 35%;` /* Maroon */
+            *   `--destructive-foreground: 0 0% 98%;` /* Light */
+            *   `--border: var(--neutral-800);`
+            *   `--input: var(--neutral-800);`
+            *   `--ring: 40 80% 55%;` /* Gold */
+*   **Typography:**
+    *   **Font Family:** Define primary sans-serif font stack in `tailwind.config.js`. Example: `Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji"`
+    *   **Base Font Size:** Typically `16px` (browser default), managed by Tailwind's relative units (`rem`).
+    *   **Headings:** Utilize Tailwind's font size utilities (e.g., `text-lg`, `text-xl`, `text-2xl`) and weight utilities (e.g., `font-semibold`, `font-bold`). Define specific styles if needed.
+*   **Spacing:**
+    *   Adhere to Tailwind CSS's default spacing scale (multiples of `0.25rem`). Use utilities like `p-4`, `m-2`, `gap-4`, etc.
+*   **Border Radius:**
+    *   Define `--radius` CSS variable (e.g., `0.5rem`). `shadcn-svelte` components will use this variable.
 
-### 2.3. Theme
+## 2. Core UI Components (Task 5.2)
 
-*   **Aesthetic:** Aim for a clean, modern look and feel, leveraging Skeleton's theming capabilities to implement the "Sanguine" theme.
-    *   **Skeleton Theme:** A custom Skeleton theme will be created or an existing preset adapted. This theme will define the core color palette, typography, spacing, and component styles.
-    *   **Target Palette (Sanguine Theme):**
-        *   Primary: Dark Red/Maroon (e.g., `#8B0000` base, with Skeleton generating shades)
-        *   Accent: Gold (e.g., `#DAA520` base)
-        *   Backgrounds: Very Dark Grey/Near Black (e.g., `#1A1A1A`)
-        *   Text: Light Greys/Off-Whites for contrast on dark backgrounds.
-        *   Error: Bright Red.
-    *   **Symbol:** The Scribe symbol (golden sceptre over maroon horned moon) could potentially be used as a favicon or subtle branding element.
-*   **Typography & Spacing:** Will primarily rely on Skeleton's theme settings, configured to use a clean sans-serif font (like 'Inter', 'Lato', or 'Roboto') and consistent spacing scales provided by Skeleton/Tailwind.
-*   **(Implementation Note:** The custom Skeleton theme configuration in `tailwind.config.js` and potentially `app.html` or layout files will be the central point for theme definition.)
+*(Document key custom components and significantly styled shadcn-svelte components)*
 
-## 3. Key Screens/Views (Task 5.4)
+### 2.1 Button (`<Button />` from `shadcn-svelte`)
 
-*(Initial descriptions based on MVP requirements and SillyTavern inspiration)*
+*   **Description:** Used for primary actions (Submit, Save, Upload), secondary actions (Cancel, Close), and potentially icon-only buttons (Settings, Logout).
+*   **Variants:** Utilize standard `shadcn-svelte` variants (`default`, `destructive`, `outline`, `secondary`, `ghost`, `link`) as appropriate for the action's importance and context.
+*   **States:** Standard `shadcn-svelte` visual states for default, hover, focus, active, and disabled will be used. Loading states might involve disabling the button and showing a spinner icon.
+*   **Props:** Standard `shadcn-svelte` props apply. Key props include `variant`, `size`, `disabled`.
 
-### 3.1. Login / Register View
-*   Standard full-page forms for user authentication.
-*   Inputs: Username/Email, Password, Confirm Password (for registration).
-*   Actions: Submit, Link to toggle between Login and Register.
+### 2.2 InputField (`<Input />` from `shadcn-svelte`)
 
-### 3.2. Character Management View (`/characters`)
-*   **Layout:** Main content area displays a grid or list of uploaded character cards.
-*   **Elements:**
-    *   Each character represented by a `CharacterCard` component (showing avatar preview, name).
-    *   Prominent "Upload Character" button/area (Task 1.3).
-    *   Selection mechanism (clicking a card might navigate to a detail view or select it for chat).
-    *   Search/Filter controls (Post-MVP?).
-*   **(Inspired by Right Panel of SillyTavern Image 1)**
+*   **Description:** Standard text input field used in forms (Login, Register, Settings).
+*   **States:** Standard `shadcn-svelte` visual states for default, hover, focus, disabled, and error (indicated by ring color, potentially `ring-destructive`).
+*   **Props:** Standard `shadcn-svelte` props apply. Key props include `type` (text, password, email, number), `placeholder`, `disabled`, `value`. Input validation state will be managed externally and reflected visually (e.g., adding a specific class or relying on form library integration).
 
-### 3.3. Chat View (`/chats/{id}`)
-*   **Layout:** Main content area focused on the conversation. Contextual Right Sidebar shows character/settings.
-*   **Elements:**
-    *   **Chat History:** Central area displaying scrollable `MessageBubble` components for user and AI messages (Task 2.6).
-    *   **Message Input:** Text area at the bottom with a Send button (Task 2.6).
-    *   **Character Display:** Character Avatar and Name prominently displayed, perhaps at the top of the chat or in the right sidebar.
-    *   **Settings Access:** Clear way to access/view chat-specific settings (System Prompt, Temp, Max Tokens - Task 4.3), likely in the Right Sidebar.
-*   **(Inspired by Center/Left/Right Panels of SillyTavern Image 1)**
+### 2.3 ChatBubble (`<ChatBubble />` - Custom Component)
 
-### 3.4. Settings View (`/settings`)
-*   **Layout:** Form-based view in the main content area.
-*   **Elements:**
-    *   Section for API Key Management (initially Google Gemini - Input field, Save button, potentially masking). (Inspired by SillyTavern Image 2).
-    *   User profile settings (e.g., change password - Post-MVP?).
-    *   Application preferences (e.g., theme selection - Post-MVP?).
-
-### 3.5. User Persona Management View (`/personas`)
-*   **Layout:** Main content area for managing user-defined personas.
-*   **Elements:**
-    *   List/Grid view of existing user personas (similar structure to Character Management).
-    *   "Create Persona" button.
-    *   Form for creating/editing a persona:
-        *   Persona Name input.
-        *   Persona Description/Definition textarea (how the user should be portrayed).
-    *   Mechanism to select the active persona for chats (perhaps a dropdown in the Chat View or global setting).
-*   **(Inspired by SillyTavern Image 4)**
-
-## 4. Core UI Components (Task 5.2)
-
-This section outlines the core UI elements needed. Implementation will leverage **Skeleton UI components** where possible (e.g., `<button>`, `<input>`, `<textarea>`, `<card>`, `<avatar>`, `<modal>`, etc.), applying the custom Sanguine theme via Skeleton's utility classes and theme configuration. Custom Svelte components will be created only when Skeleton doesn't provide a suitable base or specific complex behavior is required. Props listed below are conceptual; actual implementation will map to Skeleton component props or custom component props as needed.
-
-### 4.1. `Button`
-
-*   **Description:** Standard interactive button.
-*   **Visuals & States:**
-    *   **Default:** Background (Maroon), Text (Light Text).
-    *   **Hover:** Background lightens slightly or gets a subtle Gold border.
-    *   **Active/Pressed:** Background darkens slightly.
-    *   **Disabled:** Background (Greyed-out Maroon/Dark Grey), Text (Muted Grey). Non-interactive.
-    *   **Loading:** Shows `Spinner` component inside, text might be hidden or replaced. Background (Maroon), Non-interactive.
+*   **Description:** Represents a single message within the chat log. It visually distinguishes between messages sent by the user and messages received from the AI. It must smoothly render incoming text chunks for streaming AI responses.
+*   **Appearance:**
+    *   **User Messages:** Typically aligned to the right, potentially with a primary brand color background.
+    *   **AI Messages:** Typically aligned to the left, potentially with a secondary or neutral background color.
+    *   Content area should wrap text appropriately.
+    *   May include sender avatar/icon (optional for MVP).
+*   **States:**
+    *   **Default:** Fully rendered message.
+    *   **Streaming (AI only):** Text content updates dynamically as new chunks arrive. May display a subtle visual indicator (e.g., a blinking cursor or subtle animation) while streaming is active.
+    *   **Error:** (Optional) Could have a distinct visual state if a message failed to send or generate completely.
 *   **Props:**
-    ```json
-    {
-      "props": [
-        { "name": "variant", "type": "'primary' | 'secondary'", "default": "'primary'", "description": "Primary uses Maroon BG, Secondary might use Gold outline or subtle dark BG." },
-        { "name": "size", "type": "'small' | 'medium' | 'large'", "default": "'medium'", "description": "Adjusts padding and font size." },
-        { "name": "disabled", "type": "boolean", "default": "false" },
-        { "name": "isLoading", "type": "boolean", "default": "false" },
-        { "name": "onClick", "type": "() => void", "description": "Callback function for click event." }
-      ]
-    }
+    ```yaml
+    - name: messageContent
+      type: string
+      description: The textual content of the message. For streaming messages, this prop will be updated reactively.
+    - name: sender
+      type: "'user' | 'ai'"
+      required: true
+      description: Determines the alignment and styling of the bubble.
+    - name: isStreaming # Optional, could be inferred if messageContent updates frequently
+      type: boolean
+      default: false
+      description: Explicitly indicates if the AI message is currently being streamed. Helps manage visual cues like loading indicators.
+    - name: error # Optional
+      type: string | null
+      default: null
+      description: If present, displays an error state/message associated with this bubble.
+    # - name: timestamp # Optional for MVP
+    #   type: Date | string
+    #   description: Time the message was sent/received.
+    # - name: avatarSrc # Optional for MVP
+    #   type: string | null
+    #   description: URL for the sender's avatar image.
     ```
 
-### 4.2. `InputField`
+### 2.4 CharacterCard (`<CharacterCard />` - Custom Component)
 
-*   **Description:** Form input field for text, password, number.
-*   **Visuals & States:**
-    *   **Default:** Dark BG slightly lighter than main BG, Light Text, subtle border (Muted Grey or Maroon).
-    *   **Focus:** Border highlights with Gold color.
-    *   **Error:** Border becomes Error Red (`#FF4C4C`), optional error message text below.
-    *   **Disabled:** Greyed-out appearance.
+*   **Description:** A card element used to represent a single character in a list or grid format. Displays key information (avatar, name, short description) and acts as the entry point to start a chat session with that character. Likely uses `<Card />` from `shadcn-svelte` as its base.
+*   **Appearance:**
+    *   Contains an Avatar image (using `<Avatar />` from `shadcn-svelte`).
+    *   Displays the character's `name` prominently.
+    *   Shows a truncated version of the character's description or greeting (`descriptionSnippet`).
+    *   The entire card should be clickable.
+*   **States:**
+    *   **Default:** Standard card appearance.
+    *   **Hover:** Subtle visual feedback (e.g., slight scale increase, border highlight, or background change) to indicate interactivity.
+    *   **Focus:** Visible focus ring when navigated via keyboard.
+    *   **Selected (Optional):** If needed to show which character corresponds to the *current* chat session, a distinct visual style (e.g., border color) could be applied.
 *   **Props:**
-    ```json
-    {
-      "props": [
-        { "name": "type", "type": "'text' | 'password' | 'number' | 'email'", "default": "'text'" },
-        { "name": "value", "type": "string | number", "description": "Bound value using bind:value." },
-        { "name": "placeholder", "type": "string", "default": "" },
-        { "name": "label", "type": "string", "default": "", "description": "Optional label displayed above the field." },
-        { "name": "disabled", "type": "boolean", "default": "false" },
-        { "name": "error", "type": "string | null", "default": "null", "description": "Displays error state and message if not null." }
-      ]
-    }
+    ```yaml
+    - name: character # Pass the whole character object or individual fields
+      type: object # Or define specific fields below
+      required: true
+      description: Contains the data for the character to display.
+      # Example sub-fields if passing an object:
+      #   - id: string
+      #   - name: string
+      #   - description: string
+      #   - greeting: string # Could be used for snippet
+      #   - avatar_url: string # Path to fetch avatar
+    - name: isSelected # Optional
+      type: boolean
+      default: false
+      description: If true, applies the 'Selected' visual state.
     ```
+*   **Interaction:** Clicking the card should trigger an action (likely via an event handler passed down or a store action) to start a chat session with the corresponding `character.id`.
 
-### 4.3. `ChatBubble`
+### 2.5 Modal / Dialog / Drawer (`shadcn-svelte` Components)
 
-*   **Description:** Displays a single message in the chat history.
-*   **Visuals:**
-    *   **User Message:** Aligned to the right, background color (e.g., dark Maroon or dark Gold nuance).
-    *   **AI Message:** Aligned to the left, background color (e.g., slightly lighter dark grey than main BG).
-    *   Contains message text, potentially timestamp.
-    *   Rounded corners.
-*   **Props:**
-    ```json
-    {
-      "props": [
-        { "name": "sender", "type": "'user' | 'ai'", "required": true },
-        { "name": "message", "type": "string", "required": true },
-        { "name": "timestamp", "type": "string | Date", "optional": true }
-      ]
-    }
-    ```
+*   **Description:** Used for displaying content that requires focused user interaction, such as the Settings Panel or potentially the Character Uploader. We will primarily use `Dialog` for centered modal content or `Drawer` for slide-over panels, depending on the specific context and amount of content.
+*   **Components:** Leverage `<Dialog />` or `<Drawer />` components from `shadcn-svelte`.
+*   **States:** Open, Closed. Managed via component props/state.
+*   **Props:** Standard `shadcn-svelte` props for `Dialog` or `Drawer` apply (e.g., `open`, `onOpenChange`).
 
-### 4.4. `CharacterCard`
+### 2.6 Settings Inputs (Collection of `shadcn-svelte` Components)
 
-*   **Description:** Represents a character in the management list/grid.
-*   **Visuals:**
-    *   Displays character avatar (fetched from card or placeholder).
-    *   Displays character name.
-    *   Card background (dark grey), subtle hover effect (e.g., Gold border).
-    *   Clickable to select.
-*   **Props:**
-    ```json
-    {
-      "props": [
-        { "name": "characterId", "type": "string | number", "required": true },
-        { "name": "name", "type": "string", "required": true },
-        { "name": "avatarUrl", "type": "string | null", "description": "URL to avatar image or null for placeholder." },
-        { "name": "onClick", "type": "(id) => void", "description": "Callback when card is clicked." }
-      ]
-    }
-    ```
+*   **Description:** This refers to the collection of input components used within the `SettingsPanel` to control various chat parameters. Specific `shadcn-svelte` components will be used for each setting type.
+*   **Examples:**
+    *   **System Prompt:** `<Textarea />`
+    *   **Temperature:** `<Slider />` (range 0-1 or 0-2, step 0.1) or `<Input type="number" />` with validation.
+    *   **Max Output Tokens:** `<Input type="number" />` with validation.
+    *   **Penalties (Frequency/Presence/Repetition):** `<Slider />` (range -2 to 2 or 0 to 2, step 0.1) or `<Input type="number" />`.
+    *   **Top K/P/A, Min P:** `<Input type="number" />` or `<Slider />` where applicable.
+    *   **Seed:** `<Input type="number" />`.
+    *   **Logit Bias:** Likely a more complex input, potentially `<Textarea />` for JSON input or a dedicated custom component (Post-MVP concern if too complex).
+*   **Props:** Each underlying `shadcn-svelte` component (`Textarea`, `Slider`, `Input`) will use its standard props. Labels (`<Label />`) will be associated with each input.
 
-*(Placeholders for other components like Slider, ToggleSwitch, Modal, SettingsInput, SidebarNavItem, Spinner remain. Further details can be added as needed.)*
+## 3. User Flows (Task 5.3)
 
-## 5. User Flows (Task 5.3)
+*(Use Mermaid diagrams)*
 
-This section contains Mermaid diagrams illustrating key user interactions.
-
-### 5.1. Registration & Login Flow
+### 3.1 Registration & Login Flow
 
 ```mermaid
 graph TD
-    A[User visits Landing Page/Login] --> B{Has Account?};
-    B -- No --> REG1[Clicks 'Register'];
-    REG1 --> REG_FORM(Displays Registration Form);
-    REG_FORM -- Enters Details --> REG_SUBMIT[Clicks 'Register' Button];
-    REG_SUBMIT --> REG_VALID{Frontend Validation};
-    REG_VALID -- Valid --> REG_API[API Call: /api/auth/register];
-    REG_API -- Success --> LOGIN_FORM(Displays Login Form with message);
-    REG_API -- Failure --> REG_ERROR[Show Registration Error];
-    REG_ERROR --> REG_FORM;
-    REG_VALID -- Invalid --> REG_HIGHLIGHT[Highlight Invalid Fields];
-    REG_HIGHLIGHT --> REG_FORM;
-    
-    B -- Yes --> LOGIN_FORM(Displays Login Form);
-    LOGIN_FORM -- Enters Credentials --> LOGIN_SUBMIT[Clicks 'Login' Button];
-    LOGIN_SUBMIT --> LOGIN_VALID{Frontend Validation};
-    LOGIN_VALID -- Valid --> LOGIN_API[API Call: /api/auth/login];
-    LOGIN_API -- Success --> DASH[Redirect to /characters or /chats];
-    LOGIN_API -- Failure --> LOGIN_ERROR[Show Login Error];
-    LOGIN_ERROR --> LOGIN_FORM;
-    LOGIN_VALID -- Invalid --> LOGIN_HIGHLIGHT[Highlight Invalid Fields];
-    LOGIN_HIGHLIGHT --> LOGIN_FORM;
+    A["User visits /"] --> B{"Not Logged In?"};
+    B -- Yes --> C["Show Login/Register Options"];
+    C --> D["Selects Register"];
+    D --> E["Register Page: Enters Details"];
+    E --> F{"Clicks Register"};
+    F --> G["API Request: /api/auth/register"];
+    G -- Success --> H["Redirect to Character List"];
+    G -- Failure --> I["Show Error on Register Page"];
+    C --> J["Selects Login"];
+    J --> K["Login Page: Enters Credentials"];
+    K --> L{"Clicks Login"};
+    L --> M["API Request: /api/auth/login"];
+    M -- Success --> H;
+    M -- Failure --> N["Show Error on Login Page"];
+    B -- No --> O["Redirect to Character List"];
 ```
 
-### 5.2. Character Upload & Selection Flow
+### 3.2 Character Upload & Selection Flow
 
 ```mermaid
 graph TD
-    subgraph CharMgmtView ["Character Management View (/characters)"]
-        A[User views Character List] --> B[Clicks 'Upload Character'];
-        B --> C{Selects PNG File}; 
-        C --> D[Frontend Reads File];
-        D --> E[API Call: POST /api/characters/upload];
-        E -- Success --> F[Character Added to List];
-        E -- Failure --> G[Show Upload Error];
-        F --> A;
-        G --> A;
-        A --> H{Selects Character Card};
-        H --> I[Application State Updated];
-        I --> J[Navigate to /chats/new or activate selection];
-    end
+    A["User on Character List Page"] --> B["Clicks Upload Character Button"];
+    B --> C["Shows File Input / Uploader Component"];
+    C --> D{"Selects PNG file"};
+    D --> E{"Clicks Upload"};
+    E --> F["API Request: /api/characters/upload"];
+    F -- Success --> G["Refresh Character List, Show New Card"];
+    F -- Failure --> H["Show Error Message"];
+    A --> I{"Clicks on a CharacterCard"};
+    I --> J["Start New Chat Session (API Call)"];
+    J -- Success --> K["Navigate to Chat View for session"];
+    J -- Failure --> L["Show Error Message"];
 ```
 
-### 5.3. Starting a New Chat Session
+### 3.3 Starting a New Chat Session
+
+*(This flow is initiated by selecting a character as shown in Flow 3.2. No separate dedicated "Start Chat" screen is planned for MVP.)*
+
+### 3.4 Sending/Receiving Messages within a Chat
 
 ```mermaid
 graph TD
-    A{User has Selected Character} --> B["Clicks 'Start New Chat' Button (or similar action)"];
-    B --> C[API Call: POST /api/chats];
-    C -- Returns new chat ID --> D["Redirect to /chats/{id}"];
-    C -- Failure --> E[Show Error Starting Chat];
-    D --> F(Chat View Loads);
+    A["User in Chat View"] --> B["Types message in MessageInput"];
+    B --> C{"Presses Send"};
+    C --> D["Display User MessageBubble (Optimistic)"];
+    C --> E["API Request: /api/chats/{id}/generate"];
+    E --> F["Show Loading Indicator"];
+    F -- Stream Start --> G["Create/Update AI MessageBubble"];
+    G -- Stream Chunk --> H["Append text to AI MessageBubble"];
+    H -- Stream End --> I["Finalize AI MessageBubble, Hide Loading"];
+    E -- Error --> J["Show Error Message"];
 ```
 
-### 5.4. Sending/Receiving Messages Flow
-
-```mermaid
-sequenceDiagram
-    participant User
-    participant Frontend
-    participant Backend
-    participant GeminiAPI
-    participant Qdrant
-
-    User->>Frontend: Types message in Input Box
-    User->>Frontend: Clicks 'Send'
-    Frontend->>Backend: POST /api/chats/{id}/messages (Save User Msg)
-    Backend->>PostgreSQL: Save user message
-    Backend-->>Frontend: Confirm User Msg Saved (Optional)
-    Frontend->>Frontend: Display User Message Bubble
-    
-    %% Trigger Generation & RAG (can be parallel/async)
-    Backend->>Backend: Trigger Generation Process
-    Backend->>PostgreSQL: Retrieve recent history
-    Backend->>PostgreSQL: Retrieve character/settings
-    Backend->>GeminiAPI: Get embedding for recent context
-    GeminiAPI-->>Backend: Return context embedding
-    Backend->>Qdrant: Search similar chunks with embedding
-    Qdrant-->>Backend: Return relevant history chunks (RAG Context)
-    Backend->>Backend: Assemble Final Prompt (Char + Settings + History + RAG Context)
-    Backend->>GeminiAPI: Send assembled prompt for generation
-
-    %% Handle Response Stream
-    GeminiAPI-->>Backend: Stream response chunks
-    Backend-->>Frontend: Stream response chunks (e.g., via SSE)
-    Frontend->>Frontend: Update AI Message Bubble incrementally
-    GeminiAPI-->>Backend: End of stream
-    Backend-->>Frontend: Signal end of stream
-    Backend->>PostgreSQL: Save final AI response
-    
-    %% Async Context Processing for *New* Messages (User+AI)
-    Backend->>Backend: Trigger Context Processor (Async)
-    Backend->>Backend: Chunk new message(s)
-    Backend->>GeminiAPI: Get embeddings for chunks
-    GeminiAPI-->>Backend: Return chunk embeddings
-    Backend->>Qdrant: Store new vectors + metadata
-    
-```
-
-### 5.5. Accessing & Modifying Chat Settings Flow
+### 3.5 Accessing and Modifying Chat Settings
 
 ```mermaid
 graph TD
-    subgraph ChatSettingsView ["Chat View (/chats/{id})"]
-        A[User views Chat] --> B["Clicks Settings Icon/Button (in Right Sidebar?)"]
-        B --> C(Displays Settings Inputs: System Prompt, Temp, Max Tokens);
-        C -- Modifies Setting --> D[Input Value Changes];
-        D --> E{Auto-Save or Save Button?};
-        E -- Save Button Clicked --> F["API Call: PUT /api/chats/{id}/settings"];
-        E -- Auto-Save (on blur/debounce) --> F;
-        F -- Success --> G["Show Success Indicator (briefly)"];
-        F -- Failure --> H[Show Save Error];
-        G --> C;
-        H --> C;
-    end
+    A["User in Chat View"] --> B["Clicks Settings Button"];
+    B --> C["Open SettingsPanel (Modal/Drawer)"];
+    C --> D["API Request: GET /api/chats/{id}/settings"];
+    D -- Success --> E["Populate Settings Inputs"];
+    D -- Failure --> F["Show Error in Panel"];
+    E --> G{"User modifies a setting"};
+    G --> H["Clicks Save / Auto-saves"];
+    H --> I["API Request: PUT /api/chats/{id}/settings"];
+    I -- Success --> J["Show Success Indicator, Close Panel?"];
+    I -- Failure --> K["Show Error in Panel"];
+    E --> L["Clicks Close/Cancel"];
+    L --> M["Close SettingsPanel"];
+    J --> M;
 ```
 
-## 6. Memory / Context Visualization & Management (Potential Post-MVP aspects)
+## 4. Key Screens/Views (Task 5.4)
 
-*Goal: Provide users insight into the RAG system's knowledge base for a given chat.* 
+### 4.1 Login/Register Screen
 
-### 6.1. MVP Considerations
-*   **Transparency:** At a minimum, the UI could indicate *when* RAG context is being retrieved and injected (e.g., a subtle indicator near the AI response or input bar).
-*   **Debugging Info:** Perhaps a simple log view (accessible via dev tools or a specific debug mode) showing the text of retrieved chunks for troubleshooting.
+*   **Layout:** Centered form on the page.
+*   **Components:** `InputField` (for username/password), `Button` (for submit), Links (to switch between Login/Register).
+*   **Interactions:** Form submission triggers API calls. Error messages displayed near fields or form.
+*   **State Changes:** Button disabled during submission.
 
-### 6.2. Post-MVP / Advanced Ideas
-*   **Dedicated Memory View:** A screen linked from a specific chat session.
-    *   **Visualization:** Display retrieved memories (vector embeddings from Qdrant) related to the current chat context. This could be:
-        *   A simple list of text chunks.
-        *   A more visual map (e.g., timeline-based, graph-based showing clusters - technically challenging).
-    *   **Interaction:**
-        *   View metadata associated with each chunk (source message IDs, timestamp).
-        *   Search/Filter memories.
-        *   **Manual Control (Advanced):** Ability to 'pin' certain memories, explicitly 'forget' (delete) specific chunks, or manually add new facts/memories (requires backend support).
-        *   **Threshold Control:** Sliders or inputs to adjust similarity search thresholds or the number (K) of chunks retrieved (requires backend support).
-*   **(Inspired by the need for RAG transparency, less directly by SillyTavern images which focus more on static Lorebooks - Image 3)** 
+### 4.2 Dashboard/Character List Screen
+
+*   **Layout:** Main content area displaying a grid or list of `CharacterCard`s. An "Upload Character" `Button` is present. Maybe a simple header.
+*   **Components:** `CharacterCard` (repeated), `Button` (Upload).
+*   **Interactions:** Clicking Upload opens uploader. Clicking a card navigates to chat.
+*   **State Changes:** List updates after successful upload. Loading state while fetching initial list.
+
+### 4.3 Chat View Screen
+
+*   **Layout:** Main area for `MessageBubble` list, `MessageInput` fixed at the bottom. Optional header showing character name/avatar. Settings button.
+*   **Components:** `MessageBubble` (repeated), `MessageInput`, `Button` (Settings).
+*   **Interactions:** Typing and sending messages. Scrolling through history. Opening settings.
+*   **State Changes:** Message list updates with new messages. Input disabled during generation. Loading indicators. Streaming text updates in AI bubbles.
+
+### 4.4 Settings Panel Screen
+
+*   **Layout:** Modal or SlideOver containing various `SettingsInput` controls. Save/Close buttons.
+*   **Components:** `Modal`/`SlideOver`, `SettingsInput` (Sliders, Textarea, etc.), `Button` (Save, Close).
+*   **Interactions:** Modifying input values. Saving changes triggers API call. Closing dismisses the panel.
+*   **State Changes:** Loading state during fetch/save. Error messages displayed on failure.
