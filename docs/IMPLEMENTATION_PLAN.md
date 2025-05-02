@@ -41,7 +41,7 @@ Only mark a task checkbox (`- [x]`) when all these conditions are satisfied.
 - [ ] **Task 0.2: Frontend Project Setup (FE)**
     - [x] Initialize SvelteKit project (`npm create svelte@latest scribe-frontend`). Choose Skeleton project with TypeScript.
     - [x] Setup basic project structure (routes, components, stores, lib). *(Created missing folders)*
-    - [ ] **Configure Styling:** Install and configure **Skeleton UI** ([https://www.skeleton.dev/](https://www.skeleton.dev/)) including its Tailwind plugin and themes. Set up the base Sanguine theme. *(Partially done: Tailwind config exists, Skeleton needs integration)*
+    - [ ] **Configure Styling:** Install and configure **shadcn-svelte** ([https://www.shadcn-svelte.com/docs/installation/manual](https://www.shadcn-svelte.com/docs/installation/manual)) following the manual installation guide. *(Requires shadcn-svelte setup)*
     - [x] *TDD:* Setup Vitest and write basic component rendering tests (e.g., for a placeholder component). *(Verified)*
 - [x] **Task 0.3: Database Setup (DevOps/BE)**
     - [x] Create `docker-compose.yml` for PostgreSQL and Qdrant services. *(Verified)*

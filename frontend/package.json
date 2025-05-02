@@ -51,5 +51,12 @@
 		"onlyBuiltDependencies": [
 			"esbuild"
 		]
+	},
+	"dependencies": {
+		"@lucide/svelte": "^0.503.0",
+		"clsx": "^2.1.1",
+		"tailwind-merge": "^3.2.0",
+		"tailwind-variants": "^1.0.0",
+		"tailwindcss-animate": "^1.0.7"
 	}
 }

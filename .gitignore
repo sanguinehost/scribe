@@ -35,3 +35,7 @@ tarpaulin-report.json
 # Temp files
 /temp
 /reports
+
+# Claude stuff
+.claude
+CLAUDE.md
