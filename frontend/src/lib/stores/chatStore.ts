@@ -68,6 +68,8 @@ function createChatStore() {
 			update((state) => ({ ...state, isGeneratingResponse: generating })),
 		setError: (error: string | null) => update((state) => ({ ...state, error })),
 		reset: () => set(initialState),
+		// Function to get active session ID
+		getActiveSessionId: () => get(chatStore).sessionId,
 
 		// New function to handle sending messages and receiving streamed responses
 		sendMessage: async (content: string) => {
@@ -196,3 +198,6 @@ function createChatStore() {
 }
 
 export const chatStore = createChatStore();
+
+// Helper function to get active session ID outside of component context
+export const getActiveSessionId = () => get(chatStore).sessionId;

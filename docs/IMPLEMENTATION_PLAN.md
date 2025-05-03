@@ -39,7 +39,7 @@ Only mark a task checkbox (`- [x]`) when all these conditions are satisfied.
     - [x] *TDD:* Implement `/api/health` endpoint.
     - [x] *TDD:* Write integration test for `/api/health`. *(Verified)*
 - [ ] **Task 0.2: Frontend Project Setup (FE)**
-    - [x] Initialize SvelteKit project (`npm create svelte@latest scribe-frontend`). Choose Skeleton project with TypeScript.
+    - [x] Initialize SvelteKit project (`npm create svelte@latest scribe-frontend`). Choose TypeScript project template.
     - [x] Setup basic project structure (routes, components, stores, lib). *(Created missing folders)*
     - [x] **Configure Styling:** Install and configure **shadcn-svelte** ([https://www.shadcn-svelte.com/docs/installation/manual](https://www.shadcn-svelte.com/docs/installation/manual)) following the manual installation guide. *(Requires shadcn-svelte setup)*
     - [ ] **Configure SPA Architecture:** Set up the main application as a Single Page Application (SPA) with client-side routing, keeping only authentication pages (login/register) as separate routes.
@@ -66,9 +66,9 @@ Only mark a task checkbox (`- [x]`) when all these conditions are satisfied.
     - [x] **(BE) Logout Endpoint:** Implement `/api/auth/logout` handler (use `AuthSession::logout`). *(Verified)*
     - [x] **(BE) Me Endpoint:** Implement optional `/api/auth/me` handler (return current user data). *(Verified)*
     - [x] **(BE) Router Integration:** Integrate `AuthManagerLayer` and session store layer into the main Axum router. *(Verified)*
-    - [ ] **(FE) Login/Register Forms:** Create Svelte components (`LoginForm.svelte`, `RegisterForm.svelte`). *(Missing)*
-    - [ ] **(FE) API Calls:** Implement frontend functions to call `/api/auth/register`, `/api/auth/login`, `/api/auth/logout`, `/api/auth/me`. *(Missing)*
-    - [ ] **(FE) Auth State Management:** Implement a Svelte store (`authStore`) to manage user state (logged in status, user info). Implement guards/redirects based on auth state. *(Missing)*
+    - [x] **(FE) Login/Register Forms:** Create Svelte components (`LoginForm.svelte`, `RegisterForm.svelte`). *(Functionally Implemented)*
+    - [x] **(FE) API Calls:** Implement frontend functions to call `/api/auth/register`, `/api/auth/login`, `/api/auth/logout`, `/api/auth/me`. *(Functionally Implemented)*
+    - [x] **(FE) Auth State Management:** Implement a Svelte store (`authStore`) to manage user state (logged in status, user info). Implement guards/redirects based on auth state. *(Functionally Implemented)*
     - [x] *TDD (BE):* Unit tests for password hashing/verification. Unit tests for user store functions. API integration tests for auth endpoints. *(Verified)*
     - [ ] *TDD (FE):* Component tests for `LoginForm`, `RegisterForm`. E2E tests (e.g., using Playwright) for the full registration and login flow. *(Missing)*
 
@@ -89,8 +89,8 @@ Only mark a task checkbox (`- [x]`) when all these conditions are satisfied.
     - [x] *TDD (BE):* API integration tests for `GET /characters` (success, auth failure, empty list). *(Verified)*
     - [x] *TDD (BE):* API integration tests for `GET /characters/{id}` (success, auth failure, not found, forbidden/wrong user). *(Verified)*
 - [ ] **Task 1.3: Character UI (FE)** - ***Requires Task 1.2 Completion***
-    - [ ] **(FE) Character List Component:** Create `CharacterList.svelte` as a SPA panel/view component (Leverage Skeleton components like `<Card>`, `<Avatar>`, grid utilities). Fetch data from `GET /api/characters` on mount. Display characters. Implement selection mechanism to transition to chat view within the SPA. *(Missing)*
-    - [ ] **(FE) Character Uploader Component:** Create `CharacterUploader.svelte` (Leverage Skeleton form components, file input handling). Call `POST /api/characters/upload`. Handle states. Refresh list. *(Missing)*
+    - [x] **(FE) Character List Component:** Create `CharacterList.svelte` as a SPA panel/view component (Leverage shadcn-svelte components like `<Card>`, `<Avatar>`, grid utilities). Fetch data from `GET /api/characters` on mount. Display characters. Implement selection mechanism to transition to chat view within the SPA. *(Functionally Implemented)*
+    - [x] **(FE) Character Uploader Component:** Create `CharacterUploader.svelte` (Leverage shadcn-svelte form components, file input handling). Call `POST /api/characters/upload`. Handle states. Refresh list. *(Functionally Implemented)*
     - [ ] *TDD (FE):* Component tests for `CharacterList` (rendering mock data, selection interaction). *(Missing)*
     - [ ] *TDD (FE):* Component tests for `CharacterUploader` (file input simulation, form submission simulation). *(Missing)*
     - [ ] *E2E (FE):* Test uploading a character and seeing it appear in the list. *(Missing)*
@@ -138,14 +138,14 @@ Only mark a task checkbox (`- [x]`) when all these conditions are satisfied.
         - [x] Return AI response **(as stream or complete response)**.
     - [x] *TDD (BE):* API integration tests for `POST /chats/{id}/generate` (mocking the Gemini client call). Test success case (both streaming and non-streaming), auth failure, session not found, downstream errors (saving message, assembling prompt). **Verify stream format (e.g., SSE).**
 - [ ] **Task 2.6: Chat UI Components (FE)**
-    - [ ] **(FE) Chat Window:** Create `ChatWindow.svelte` as a primary SPA view/panel (main container, potentially using Skeleton layout components like `AppShell`).
-    - [ ] **(FE) Message Bubble:** Create `MessageBubble.svelte` (display individual user/AI messages, style using Skeleton theme/utilities). **Must support rendering incrementally updating text for streaming.**
-    - [ ] **(FE) Message Input:** Create `MessageInput.svelte` (Leverage Skeleton `<textarea>`, `<button>`).
+    - [x] **(FE) Chat Window:** Create `ChatWindow.svelte` as a primary SPA view/panel (main container, potentially using shadcn-svelte layout components like `Sheet` or a custom layout component).
+    - [x] **(FE) Message Bubble:** Create `MessageBubble.svelte` (display individual user/AI messages, style using shadcn-svelte theme/utilities). **Must support rendering incrementally updating text for streaming.**
+    - [x] **(FE) Message Input:** Create `MessageInput.svelte` (Leverage shadcn-svelte `<Textarea>`, `<Button>`).
     - [ ] *TDD (FE):* Component tests for each component (rendering props, basic interactions like button click). **Add tests for incremental text updates in `MessageBubble`.**
 - [ ] **Task 2.7: Frontend Chat Logic (FE)** - ***Requires BE APIs (Task 2.1, 2.2, 2.5) Completion***
-    - [ ] **(FE) Chat Store:** Implement Svelte store (`chatStore`) to manage current session ID, messages, loading state, and view transitions within the SPA.
-    - [ ] **(FE) API Calls:** Implement functions to: create session (`POST /api/chats`), fetch messages (`GET /api/chats/{id}/messages`), send message & trigger generation (`POST /api/chats/{id}/generate`). **Handle streaming responses (e.g., using `EventSource` for SSE).**
-    - [ ] **(FE) UI Integration:** Connect `ChatWindow`, `MessageInput` to the store and API functions. Display messages. **Update messages incrementally during streaming.** Handle loading indicators. Handle errors from API calls.
+    - [x] **(FE) Chat Store:** Implement Svelte store (`chatStore`) to manage current session ID, messages, loading state, and view transitions within the SPA.
+    - [x] **(FE) API Calls:** Implement functions to: create session (`POST /api/chats`), fetch messages (`GET /api/chats/{id}/messages`), send message & trigger generation (`POST /api/chats/{id}/generate`). **Handle streaming responses (e.g., using `EventSource` for SSE).**
+    - [x] **(FE) UI Integration:** Connect `ChatWindow`, `MessageInput` to the store and API functions. Display messages. **Update messages incrementally during streaming.** Handle loading indicators. Handle errors from API calls.
     - [ ] *TDD (FE):* Add tests for handling streaming responses and updating the store/UI correctly.
 - [x] **Task 2.8: Basic CLI Test Client (BE/DevTool)** - ***Requires BE APIs (Task 2.1, 2.2, 2.5) Completion***
    - [x] **(BE/CLI) Create Rust Binary:** Set up a separate Rust binary project or a binary target within the backend (`scribe-cli`). Add necessary dependencies (e.g., `reqwest`, `tokio`, `serde`, `clap` for arg parsing).
@@ -215,11 +215,11 @@ Only mark a task checkbox (`- [x]`) when all these conditions are satisfied.
     - [x] *TDD (BE):* Update Unit tests for Prompt Assembly (Task 2.4) to verify system prompt usage. *(Verified)*
     - [x] *TDD (BE):* Update Unit tests/Integration tests for Generation Endpoint (Task 2.5) to verify **all applicable settings** are passed to the mocked Gemini client. *(Verified)*
 - [ ] **Task 4.3: Settings UI (FE)** - ***Requires Task 4.2 Completion***
-    - [ ] **(FE) Settings Panel Component:** Create `SettingsPanel.svelte` as an integrated SPA panel/view (Leverage Skeleton components like `<Modal>`, `<SlideOver>`, or integrate into `AppShell`).
-    - [ ] **(FE) Input Components:** Use Skeleton form components (`<textarea>`, `<input type="range">`, `<input type="number">`, sliders, text inputs as appropriate) for System Prompt, Temperature, Max Output Tokens, **Frequency/Presence Penalty, Top K/P/A, Repetition Penalty, Min P, Seed, Logit Bias editor (potentially complex)**.
-    - [ ] **(FE) API Calls:** Implement logic to fetch current settings using `GET /api/chats/{id}/settings` when the panel opens for the current chat session. Implement logic to save settings using `PUT /api/chats/{id}/settings` on change or via a save button. Handle loading/success/error states. **Ensure all settings are fetched/saved.**
-    - [ ] *TDD (FE):* Component tests for `SettingsPanel` (rendering inputs, handling input changes, simulating API calls for fetch/save). **Verify all settings inputs.**
-- [x] **Task 4.4: Investigate Gemini API Support (BE)** - ***Requires consulting `genai` / Google Gemini docs***
+    - [x] **(FE) Settings Panel Component:** Create `SettingsPanel.svelte` as an integrated SPA panel/view (Leverage shadcn-svelte components like `<Dialog>`, `<Sheet>`, or integrate into a custom layout component).
+    - [x] **(FE) Input Components:** Use shadcn-svelte form components (`<Textarea>`, `<Slider>`, `<Input>`, and other form elements as appropriate) for System Prompt, Temperature, Max Output Tokens, **Frequency/Presence Penalty, Top K/P/A, Repetition Penalty, Min P, Seed, Logit Bias editor (potentially complex)**.
+    - [x] **(FE) API Calls:** Implement logic to fetch current settings using `GET /api/chats/{id}/settings` when the panel opens for the current chat session. Implement logic to save settings using `PUT /api/chats/{id}/settings` on change or via a save button. Handle loading/success/error states. **Ensure all settings are fetched/saved.**
+    - [x] *TDD (FE):* Component tests for `SettingsPanel` (rendering inputs, handling input changes, simulating API calls for fetch/save). **Verify all settings inputs.**
+   - [x] **Task 4.4: Investigate Gemini API Support (BE)** - ***Requires consulting `genai` / Google Gemini docs***
     - [x] **(BE) Research:** Systematically check the `genai` crate and official Google Gemini API documentation to confirm which of the newly added settings (`frequency_penalty`, `presence_penalty`, `top_k`, `top_p`, `repetition_penalty`, `min_p`, `top_a`, `seed`, `logit_bias`) are directly supported via API parameters in `ChatOptions` or `GenerationConfig`. *(Findings documented via comments/logs in chat.rs)*
     - [x] **(BE) Document Findings:** Update comments in the code or relevant documentation (`docs/LLM_INTEGRATION.md`?) to note which settings are supported, which might require workarounds (if any), and which are unsupported by the Gemini API. *(In-code comments/logs suffice for MVP)*
 
@@ -389,7 +389,7 @@ The MVP is complete when a user can:
 *   **Transparency Reporting:** Automating the generation and publication of moderation transparency reports.
 *   **Authentication:** Implementing a more secure and flexible authentication system (e.g., OAuth, JWT, external IdP integration such as Google, Okta, etc.).
 *   **Local Models:** Support for local models (Llama.cpp, Ollama).
-*   **Advanced Prompt Controls:** Advanced prompt controls (Jailbreaks, Author's Notes, Instruct Mode).
+*   **Advanced Prompt Controls:** Advanced prompt controls (Jailbreaks, Author's Notes, Instruct oeMode).
 *   **UI for Managing RAG Memories:** UI for managing RAG memories ("forgetting").
     *   **Advanced History Summarization:** Implement techniques (e.g., abstractive summarization) within the chat history management (Epic 2) to retain long-term context more effectively than simple truncation/windowing.
     *   **More Sophisticated Chunking/Summarization Strategies for RAG:** Improve RAG effectiveness with better chunking methods or summarizing retrieved context before injection.

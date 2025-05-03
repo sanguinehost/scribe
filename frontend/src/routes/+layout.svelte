@@ -41,7 +41,7 @@
 		// Don't redirect while initial check is loading or if path isn't set yet
 		if (isLoading || !currentPath) return;
 
-		const protectedRoutes = ['/characters', '/chat']; // Add base paths of protected areas
+		const protectedRoutes = ['/characters', '/chat', '/settings']; // Add settings to protected areas
 		const authRoutes = ['/login', '/register'];
 		const isProtectedRoute = protectedRoutes.some(route => currentPath.startsWith(route)) || currentPath === '/'; // Treat root as protected for logged-in users
 		const isAuthRoute = authRoutes.includes(currentPath);
@@ -83,7 +83,7 @@
 			{#if isAuthenticated}
 				<a href="/characters" class="block px-3 py-2 rounded-md hover:bg-[hsl(var(--sidebar-accent))] hover:text-[hsl(var(--sidebar-accent-foreground))]" class:font-bold={currentPath.startsWith('/characters')}>Characters</a>
 				<!-- Removed Chat placeholder link, navigation via character list -->
-				<a href="/settings" class="block px-3 py-2 rounded-md hover:bg-[hsl(var(--sidebar-accent))] hover:text-[hsl(var(--sidebar-accent-foreground))]" class:font-bold={currentPath.startsWith('/settings')}>Settings (Placeholder)</a>
+				<a href="/settings" class="block px-3 py-2 rounded-md hover:bg-[hsl(var(--sidebar-accent))] hover:text-[hsl(var(--sidebar-accent-foreground))]" class:font-bold={currentPath.startsWith('/settings')}>Settings</a>
 			{/if}
 			<!-- Auth links shown when logged out -->
 			{#if !isAuthenticated}
