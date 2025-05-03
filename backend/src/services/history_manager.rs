@@ -89,86 +89,78 @@ fn apply_truncate_tokens(
     limit: usize,
 ) -> Vec<DbChatMessage> {
     debug!("apply_truncate_tokens: got {} messages with limit {}", history.len(), limit);
-    
-    // If history is empty, return empty result
-    if history.is_empty() {
+
+    // Handle edge cases: empty history or zero limit
+    if history.is_empty() || limit == 0 {
+        debug!("History empty or limit is 0, returning empty vec.");
         return Vec::new();
     }
 
-    // Clone the messages since we'll be modifying them
-    let mut messages = history;
-    let total_messages = messages.len();
+    let mut result = Vec::new();
+    let mut current_tokens = 0;
 
-    // Log the original message content and tokens
-    for (i, msg) in messages.iter().enumerate() {
-        debug!("Original message {}: {:?} - {} tokens", 
-               i, 
-               msg.content, 
-               msg.content.chars().count());
-    }
+    // Iterate backwards through messages (newest to oldest)
+    for message in history.into_iter().rev() {
+        // Use character count as token approximation
+        // TODO: Replace character count with a proper tokenizer (e.g., tiktoken-rs)
+        let message_tokens = message.content.chars().count();
 
-    // First calculate total tokens (character count) in all messages
-    let total_tokens: usize = messages.iter()
-        .map(|m| m.content.chars().count())
-        .sum();
+        if current_tokens + message_tokens <= limit {
+            // This message fits entirely within the remaining limit
+            current_tokens += message_tokens;
+            result.push(message); // Add the original message
+            debug!("Added full message ({} tokens, total {}): '{}'", message_tokens, current_tokens, result.last().unwrap().content);
+        } else {
+            // This message would exceed the limit if added fully.
+            // Calculate remaining space and truncate the *beginning* of this message if possible.
+            let remaining_limit = limit - current_tokens;
+            if remaining_limit > 0 {
+                // We have some space left, truncate the message
+                let mut truncated_message = message.clone(); // Clone needed as we might modify content
+                let content_len = truncated_message.content.chars().count();
 
-    debug!("Total tokens: {}, limit: {}", total_tokens, limit);
+                if content_len > remaining_limit {
+                    // Truncate the beginning to fit exactly remaining_limit
+                    let skip_chars = content_len - remaining_limit;
+                    truncated_message.content = truncated_message.content.chars().skip(skip_chars).collect();
+                    let truncated_len = truncated_message.content.chars().count(); // Should be == remaining_limit
+                    debug!("Truncated message from {} to {} chars (fits remaining {}), total {}: '{}'",
+                           content_len, truncated_len, remaining_limit, limit, truncated_message.content);
+                    // current_tokens += truncated_len; // This assignment is unused as we break immediately after
+                    result.push(truncated_message);
+                } else {
+                    // This case should not be logically reachable if message_tokens > remaining_limit,
+                    // but if it happens (e.g., due to char vs byte issues not handled here),
+                    // add the message as is if it fits the remaining limit.
+                    // If it doesn't fit, it means remaining_limit was 0, handled below.
+                     debug!("Message ({}) already fits remaining limit ({}), adding as is. Total: {}", content_len, remaining_limit, current_tokens + content_len);
+                     // current_tokens += content_len; // This assignment is unused as we break immediately after
+                     result.push(truncated_message); // Add the original message clone
+                }
 
-    // If total tokens are already within limit, just return the original history
-    if total_tokens <= limit {
-        debug!("No truncation needed, returning original {} messages", messages.len());
-        return messages;
-    }
-
-    // We need to truncate, starting with the oldest messages
-    let excess_tokens = total_tokens - limit;
-    let mut tokens_to_remove = excess_tokens;
-    
-    debug!("Need to remove {} tokens", tokens_to_remove);
-    
-    // Start with the oldest messages (lowest indices) and truncate as needed
-    for i in 0..total_messages {
-        let msg_tokens = messages[i].content.chars().count();
-        
-        if tokens_to_remove > 0 {
-            // Need to truncate this message
-            if msg_tokens <= tokens_to_remove {
-                // This message would be truncated entirely, but we need to keep at least 1 character
-                let truncated_content: String = messages[i].content.chars().take(1).collect();
-                debug!("Message {}: Truncated from {} to 1 char: '{}'", 
-                       i, msg_tokens, truncated_content);
-                messages[i].content = truncated_content;
-                tokens_to_remove -= msg_tokens - 1; // Subtract tokens removed (all but 1)
             } else {
-                // Can truncate part of this message
-                let keep_chars = msg_tokens - tokens_to_remove;
-                // Keep the *first* keep_chars characters
-                // let skip_chars = msg_tokens - keep_chars; // No longer needed
-                let truncated_content: String = messages[i].content.chars().take(keep_chars).collect();
-                debug!("Message {}: Truncated from {} to {} chars: '{}'", 
-                       i, msg_tokens, keep_chars, truncated_content);
-                messages[i].content = truncated_content;
-                tokens_to_remove = 0; // All needed truncation done
+                 // No space left (limit was already reached by newer messages)
+                 debug!("No remaining limit ({} tokens used >= limit {}), stopping.", current_tokens, limit);
             }
-        }
-        
-        // Stop once we've removed enough tokens
-        if tokens_to_remove == 0 {
-            debug!("Removed sufficient tokens, stopping truncation");
+            // Stop processing older messages once we've had to truncate or couldn't fit the next one
             break;
         }
     }
 
-    // Log the final message content and tokens
-    debug!("After truncation, returning {} messages:", messages.len());
-    for (i, msg) in messages.iter().enumerate() {
-        debug!("Final message {}: {:?} - {} tokens", 
-               i, 
-               msg.content, 
+    // Restore original chronological order (oldest first)
+    result.reverse();
+
+    // Log the final state
+    let final_token_count: usize = result.iter().map(|m| m.content.chars().count()).sum();
+    debug!("Truncation complete. Returning {} messages with total tokens: {} (limit: {})", result.len(), final_token_count, limit);
+    for (i, msg) in result.iter().enumerate() {
+        debug!("Final message {}: '{}' ({} tokens)",
+               i,
+               msg.content,
                msg.content.chars().count());
     }
 
-    messages
+    result
 }
 
 

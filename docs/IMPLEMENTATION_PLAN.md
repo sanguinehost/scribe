@@ -296,6 +296,63 @@ Only mark a task checkbox (`- [x]`) when all these conditions are satisfied.
         - [x] Fix CLI test card path to be workspace-relative (using manifest dir) instead of CLI directory-relative
         - [x] Remove unnecessary `#[async_trait]` from `cli/src/io.rs::IoHandler` since methods are synchronous
 
+### Epic 7: Secure Markdown Rendering
+
+*Goal: Implement a secure system for rendering Markdown in the Svelte frontend with the Rust backend, focusing on preventing Cross-Site Scripting (XSS) attacks from user-generated content.*
+
+- [ ] **Task 7.1: Client-Side Sanitization (FE)**
+    - [ ] **(FE) DOMPurify Integration:** Add `DOMPurify` to the frontend dependencies and create a wrapper utility function for sanitizing HTML.
+    - [ ] **(FE) Markdown Parser Setup:** Install and configure a Markdown parser (e.g., `marked`) to convert Markdown to HTML.
+    - [ ] **(FE) Create Secure Markdown Component:** Implement `SecureMarkdown.svelte` component that:
+        - [ ] Takes Markdown content as input
+        - [ ] Converts Markdown to HTML using the parser
+        - [ ] Sanitizes the HTML with DOMPurify using strict configuration
+        - [ ] Renders the sanitized HTML using Svelte's `{@html}` tag
+    - [ ] *TDD (FE):* Write component tests for `SecureMarkdown.svelte` that verify:
+        - [ ] Regular Markdown renders correctly
+        - [ ] Potentially malicious content (e.g., script tags, event handlers) is properly sanitized
+
+- [ ] **Task 7.2: Server-Side Validation and Sanitization (BE)**
+    - [ ] **(BE) Add Sanitization Dependency:** Add the `ammonia` crate to `Cargo.toml` for HTML sanitization.
+    - [ ] **(BE) Create Markdown Validation Service:** Implement a Rust service with:
+        - [ ] Input validation functions (length limits, pattern checks)
+        - [ ] Markdown sanitization using `ammonia` with configurable rules
+    - [ ] **(BE) API Integration:** Add sanitization to any API endpoints that accept Markdown content.
+    - [ ] *TDD (BE):* Write unit and integration tests for the Markdown validation service, covering:
+        - [ ] Valid input passes through with expected modifications
+        - [ ] Potentially malicious content is properly sanitized
+        - [ ] Input that violates pattern/length constraints is rejected
+
+- [ ] **Task 7.3: Content Security Policy Implementation (BE)**
+    - [ ] **(BE) Define CSP Policy:** Create a strict Content Security Policy that:
+        - [ ] Blocks inline scripts
+        - [ ] Restricts script sources
+        - [ ] Defines allowed content sources
+    - [ ] **(BE) Implement CSP Middleware:** Add an Axum middleware to apply the CSP header to responses.
+    - [ ] *TDD (BE):* Write tests verifying CSP headers are correctly applied to responses.
+
+- [ ] **Task 7.4: End-to-End Security Testing**
+    - [ ] **(QA) Define Test Cases:** Create a suite of test cases with various Markdown inputs, including:
+        - [ ] Regular formatting (headings, lists, etc.)
+        - [ ] Links and images
+        - [ ] XSS attack vectors (script tags, event handlers, etc.)
+    - [ ] **(QA) Implement E2E Tests:** Write end-to-end tests (e.g., using Playwright) that:
+        - [ ] Submit Markdown content to the backend
+        - [ ] Verify the content is properly sanitized and rendered
+        - [ ] Attempt exploits and verify they're blocked
+    - [ ] **(QA) Security Audit:** Perform a systematic audit of the Markdown rendering flow, documenting vulnerabilities found and mitigations implemented.
+
+
+### Post‑MVP Seeds (scaffolding only)
+
+- [ ] **Task POST.1 Tagging Migration (BE)**  
+      *Add `content_rating` column (ENUM) to characters, chat_sessions, chat_messages; default `SFW`.*
+
+- [ ] **Task POST.2 Plugin SDK Stub (BE)**  
+      *Expose `/api/tools/invoke` → currently logs request; write unit test for accepted payload.*
+
+- [ ] **Task POST.3 Federation Proof‑of‑Concept (DevOps)**  
+      *Spin up a second docker‑compose stack (`node‑B`) with different BASE_URL; export a character from node‑A, import into node‑B with signature verification.*
 
 ## MVP Definition
 
@@ -333,14 +390,3 @@ The MVP is complete when a user can:
     *   **Streaming improvements/alternatives (WebSockets).**
     *   **More robust error handling and user feedback.**
     *   **Security Enhancements:** Separate User DB, Advanced Microsegmentation, Refresh Tokens, Rate Limiting, Account Lockout, MFA, External IdP Integration, Audit Logging.
-
-### Epic 7 – Post‑MVP Seeds (scaffolding only)
-
-- [ ] **Task 7.1 Tagging Migration (BE)**  
-      *Add `content_rating` column (ENUM) to characters, chat_sessions, chat_messages; default `SFW`.*
-
-- [ ] **Task 7.2 Plugin SDK Stub (BE)**  
-      *Expose `/api/tools/invoke` → currently logs request; write unit test for accepted payload.*
-
-- [ ] **Task 7.3 Federation Proof‑of‑Concept (DevOps)**  
-      *Spin up a second docker‑compose stack (`node‑B`) with different BASE_URL; export a character from node‑A, import into node‑B with signature verification.*
