@@ -6,12 +6,13 @@ COMMAND=$1
 
 # Function to print usage
 usage() {
-  echo "Usage: $0 {up|down|reset|logs|ps}"
-  echo "  up    : Start containers in detached mode and run initial DB migrations (docker compose up -d && diesel migration run)"
-  echo "  down  : Stop containers (docker compose down)"
-  echo "  reset : Stop containers and remove volumes (docker compose down -v)"
-  echo "  logs  : Follow logs for all services (docker compose logs -f)"
-  echo "  ps    : List running containers (docker compose ps)"
+  echo "Usage: $0 {up|down|reset|reset-up|logs|ps}"
+  echo "  up      : Start containers in detached mode and run initial DB migrations (docker compose up -d && diesel migration run)"
+  echo "  down    : Stop containers (docker compose down)"
+  echo "  reset   : Stop containers and remove volumes (docker compose down -v)"
+  echo "  reset-up: Reset containers and volumes, then start them up again"
+  echo "  logs    : Follow logs for all services (docker compose logs -f)"
+  echo "  ps      : List running containers (docker compose ps)"
   exit 1
 }
 
@@ -73,6 +74,38 @@ case "$COMMAND" in
   reset)
     echo "Stopping services and removing volumes (clearing data)..."
     $DC_CMD down -v
+    ;;
+  reset-up)
+    echo "Stopping services and removing volumes (clearing data)..."
+    $DC_CMD down -v
+    
+    echo "Starting services in detached mode..."
+    $DC_CMD up -d
+    UP_STATUS=$?
+    if [ $UP_STATUS -ne 0 ]; then
+        echo "Docker compose up failed!"
+        exit $UP_STATUS
+    fi
+
+    # Wait a few seconds for DB to be ready
+    echo "Waiting for database to initialize..."
+    sleep 5
+
+    echo "Running database migrations..."
+    # Ensure we run diesel from the backend directory
+    if command -v diesel &> /dev/null; then
+        (cd "$PROJECT_ROOT/backend" && DATABASE_URL=$DATABASE_URL diesel migration run) 
+        MIGRATION_STATUS=$?
+    else 
+        echo "Warning: 'diesel' command not found. Skipping migrations."
+        echo "Ensure diesel-cli is installed and in your PATH (e.g., via .idx/dev.nix or cargo install)."
+        MIGRATION_STATUS=0 # Avoid hard failure if diesel isn't there yet
+    fi
+
+    if [ $MIGRATION_STATUS -ne 0 ]; then
+        echo "Database migrations failed!"
+        exit $MIGRATION_STATUS
+    fi
     ;;
   logs)
     echo "Following logs (Ctrl+C to stop)..."
