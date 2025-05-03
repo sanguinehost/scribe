@@ -42,6 +42,7 @@ Only mark a task checkbox (`- [x]`) when all these conditions are satisfied.
     - [x] Initialize SvelteKit project (`npm create svelte@latest scribe-frontend`). Choose Skeleton project with TypeScript.
     - [x] Setup basic project structure (routes, components, stores, lib). *(Created missing folders)*
     - [x] **Configure Styling:** Install and configure **shadcn-svelte** ([https://www.shadcn-svelte.com/docs/installation/manual](https://www.shadcn-svelte.com/docs/installation/manual)) following the manual installation guide. *(Requires shadcn-svelte setup)*
+    - [ ] **Configure SPA Architecture:** Set up the main application as a Single Page Application (SPA) with client-side routing, keeping only authentication pages (login/register) as separate routes.
     - [x] *TDD:* Setup Vitest and write basic component rendering tests (e.g., for a placeholder component). *(Verified)*
 - [x] **Task 0.3: Database Setup (DevOps/BE)**
     - [x] Create `docker-compose.yml` for PostgreSQL and Qdrant services. *(Verified)*
@@ -88,7 +89,7 @@ Only mark a task checkbox (`- [x]`) when all these conditions are satisfied.
     - [x] *TDD (BE):* API integration tests for `GET /characters` (success, auth failure, empty list). *(Verified)*
     - [x] *TDD (BE):* API integration tests for `GET /characters/{id}` (success, auth failure, not found, forbidden/wrong user). *(Verified)*
 - [ ] **Task 1.3: Character UI (FE)** - ***Requires Task 1.2 Completion***
-    - [ ] **(FE) Character List Component:** Create `CharacterList.svelte` (Leverage Skeleton components like `<Card>`, `<Avatar>`, grid utilities). Fetch data from `GET /api/characters` on mount. Display characters. Implement selection mechanism. *(Missing)*
+    - [ ] **(FE) Character List Component:** Create `CharacterList.svelte` as a SPA panel/view component (Leverage Skeleton components like `<Card>`, `<Avatar>`, grid utilities). Fetch data from `GET /api/characters` on mount. Display characters. Implement selection mechanism to transition to chat view within the SPA. *(Missing)*
     - [ ] **(FE) Character Uploader Component:** Create `CharacterUploader.svelte` (Leverage Skeleton form components, file input handling). Call `POST /api/characters/upload`. Handle states. Refresh list. *(Missing)*
     - [ ] *TDD (FE):* Component tests for `CharacterList` (rendering mock data, selection interaction). *(Missing)*
     - [ ] *TDD (FE):* Component tests for `CharacterUploader` (file input simulation, form submission simulation). *(Missing)*
@@ -137,12 +138,12 @@ Only mark a task checkbox (`- [x]`) when all these conditions are satisfied.
         - [x] Return AI response **(as stream or complete response)**.
     - [x] *TDD (BE):* API integration tests for `POST /chats/{id}/generate` (mocking the Gemini client call). Test success case (both streaming and non-streaming), auth failure, session not found, downstream errors (saving message, assembling prompt). **Verify stream format (e.g., SSE).**
 - [ ] **Task 2.6: Chat UI Components (FE)**
-    - [ ] **(FE) Chat Window:** Create `ChatWindow.svelte` (main container, potentially using Skeleton layout components like `AppShell`).
+    - [ ] **(FE) Chat Window:** Create `ChatWindow.svelte` as a primary SPA view/panel (main container, potentially using Skeleton layout components like `AppShell`).
     - [ ] **(FE) Message Bubble:** Create `MessageBubble.svelte` (display individual user/AI messages, style using Skeleton theme/utilities). **Must support rendering incrementally updating text for streaming.**
     - [ ] **(FE) Message Input:** Create `MessageInput.svelte` (Leverage Skeleton `<textarea>`, `<button>`).
     - [ ] *TDD (FE):* Component tests for each component (rendering props, basic interactions like button click). **Add tests for incremental text updates in `MessageBubble`.**
 - [ ] **Task 2.7: Frontend Chat Logic (FE)** - ***Requires BE APIs (Task 2.1, 2.2, 2.5) Completion***
-    - [ ] **(FE) Chat Store:** Implement Svelte store (`chatStore`) to manage current session ID, messages, loading state.
+    - [ ] **(FE) Chat Store:** Implement Svelte store (`chatStore`) to manage current session ID, messages, loading state, and view transitions within the SPA.
     - [ ] **(FE) API Calls:** Implement functions to: create session (`POST /api/chats`), fetch messages (`GET /api/chats/{id}/messages`), send message & trigger generation (`POST /api/chats/{id}/generate`). **Handle streaming responses (e.g., using `EventSource` for SSE).**
     - [ ] **(FE) UI Integration:** Connect `ChatWindow`, `MessageInput` to the store and API functions. Display messages. **Update messages incrementally during streaming.** Handle loading indicators. Handle errors from API calls.
     - [ ] *TDD (FE):* Add tests for handling streaming responses and updating the store/UI correctly.
@@ -214,7 +215,7 @@ Only mark a task checkbox (`- [x]`) when all these conditions are satisfied.
     - [x] *TDD (BE):* Update Unit tests for Prompt Assembly (Task 2.4) to verify system prompt usage. *(Verified)*
     - [x] *TDD (BE):* Update Unit tests/Integration tests for Generation Endpoint (Task 2.5) to verify **all applicable settings** are passed to the mocked Gemini client. *(Verified)*
 - [ ] **Task 4.3: Settings UI (FE)** - ***Requires Task 4.2 Completion***
-    - [ ] **(FE) Settings Panel Component:** Create `SettingsPanel.svelte` (Leverage Skeleton components like `<Modal>`, `<SlideOver>`, or integrate into `AppShell`).
+    - [ ] **(FE) Settings Panel Component:** Create `SettingsPanel.svelte` as an integrated SPA panel/view (Leverage Skeleton components like `<Modal>`, `<SlideOver>`, or integrate into `AppShell`).
     - [ ] **(FE) Input Components:** Use Skeleton form components (`<textarea>`, `<input type="range">`, `<input type="number">`, sliders, text inputs as appropriate) for System Prompt, Temperature, Max Output Tokens, **Frequency/Presence Penalty, Top K/P/A, Repetition Penalty, Min P, Seed, Logit Bias editor (potentially complex)**.
     - [ ] **(FE) API Calls:** Implement logic to fetch current settings using `GET /api/chats/{id}/settings` when the panel opens for the current chat session. Implement logic to save settings using `PUT /api/chats/{id}/settings` on change or via a save button. Handle loading/success/error states. **Ensure all settings are fetched/saved.**
     - [ ] *TDD (FE):* Component tests for `SettingsPanel` (rendering inputs, handling input changes, simulating API calls for fetch/save). **Verify all settings inputs.**
@@ -253,6 +254,14 @@ Only mark a task checkbox (`- [x]`) when all these conditions are satisfied.
         - [x] List the core components used on the screen (linking back to Task 5.2 definitions).
         - [x] Describe key interactions and state changes specific to the screen.
         - [x] Optionally include references to wireframe images (e.g., `login-view.png`) stored elsewhere, but ensure the Markdown is the source of truth.
+- [ ] **Task 5.5: SPA Layout & Navigation Implementation (FE)**
+    - [ ] **(FE) Main Layout Component:** Create a `MainLayout.svelte` component that serves as the container for all SPA views/panels.
+    - [ ] **(FE) Panel/View System:** Implement a flexible panel/view system within the SPA layout to support dynamic transitions between character list, chat, and settings panels.
+    - [ ] **(FE) Client-Side Router Integration:** Configure client-side routing to handle view transitions without page reloads, while maintaining proper URL patterns.
+    - [ ] **(FE) View Transitions:** Implement smooth transitions between panels (character selection to chat, chat to settings, etc.).
+    - [ ] **(FE) Responsive Layout:** Ensure the SPA layout works on both desktop and mobile viewports.
+    - [ ] *TDD (FE):* Component tests for `MainLayout` and view transition logic.
+    - [ ] *E2E (FE):* End-to-end tests for the full SPA navigation flow.
 
 ---
 

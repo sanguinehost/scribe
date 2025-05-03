@@ -6,32 +6,38 @@ This document outlines the User Interface (UI) and User Experience (UX) design f
 
 ### 1.1 Main Application Layout (Task 5.1.1)
 
-The application will use a standard two-column layout:
+The application will implement a Single Page Application (SPA) architecture with the following layout:
 
-1.  **Sidebar (Left):**
-    *   Collapsible (optional for MVP, but good for future).
-    *   Contains primary navigation elements (e.g., Character List link, potentially list of recent chats).
-    *   May contain global actions like "New Chat" or user profile/logout access.
-    *   Width: Fixed width when expanded (e.g., `~250px-300px`), minimal width when collapsed (showing icons only).
-2.  **Main Content Area (Right):**
-    *   Takes the remaining horizontal space.
-    *   Displays the currently active view based on navigation (e.g., Character List grid, Chat Window, Settings Page).
+1.  **Authentication Pages (Separate Routes):**
+    * Login and Registration pages will exist as separate routes outside the main SPA.
+    * After successful authentication, users will be directed to the main SPA.
+
+2.  **Main SPA (Post-Authentication):**
+    * **Sidebar (Left):**
+        *   Collapsible (optional for MVP, but good for future).
+        *   Contains primary navigation elements (e.g., Character List link, potentially list of recent chats).
+        *   May contain global actions like "New Chat" or user profile/logout access.
+        *   Width: Fixed width when expanded (e.g., `~250px-300px`), minimal width when collapsed (showing icons only).
+    * **Main Content Area (Right):**
+        *   Takes the remaining horizontal space.
+        *   Dynamically displays different views/panels (Character List, Chat Window, Settings) without page reloads.
+        *   Views transition smoothly within this container as users navigate the application.
 
 ### 1.2 Primary Navigation (Task 5.1.2)
 
-Navigation primarily occurs via the **Sidebar**.
+Navigation primarily occurs via the **Sidebar** and triggers view changes within the SPA.
 
-*   **Core Links (Visible when logged in):**
-    *   **Characters:** Navigates the Main Content Area to the Character List/Dashboard view (`/characters`). This is likely the default view after login.
-    *   **Settings:** (Optional for MVP, could be integrated elsewhere) If present, navigates to a dedicated Settings page or opens a settings modal.
+*   **Core Navigation (Within SPA):**
+    *   **Characters:** Changes the Main Content Area to the Character List/Dashboard view without a page reload. This is likely the default view after login.
+    *   **Settings:** (Optional for MVP, could be integrated elsewhere) If present, changes the Main Content Area to a settings view or opens a settings panel.
 *   **Contextual Navigation:**
-    *   **Chat Sessions:** Selecting a character from the Character List or potentially a list of recent chats in the sidebar will navigate the Main Content Area to the Chat View (`/chat/{sessionId}`). The sidebar might highlight the active chat session.
+    *   **Chat Sessions:** Selecting a character from the Character List or potentially a list of recent chats in the sidebar will change the Main Content Area to the Chat View without a page reload. The sidebar might highlight the active chat session.
 *   **Authentication Links:**
-    *   **Logged Out:** The UI (potentially replacing the sidebar or in a header) will show links/buttons for "Login" (`/login`) and "Register" (`/register`).
+    *   **Logged Out:** Redirects to the separate Login page (`/login`) or Register page (`/register`).
     *   **Logged In:** A "Logout" button/link will be available, likely within the sidebar or a user profile dropdown.
 *   **Initial View:**
-    *   If logged in, the initial view should be the Character List (`/characters`).
-    *   If logged out, the initial view should redirect to the Login page (`/login`).
+    *   If logged in, the initial SPA view should be the Character List.
+    *   If logged out, the application should redirect to the Login page (`/login`).
 
 ### 1.3 Visual Theme (Task 5.1.3)
 
@@ -225,7 +231,7 @@ graph TD
     D --> E["Register Page: Enters Details"];
     E --> F{"Clicks Register"};
     F --> G["API Request: /api/auth/register"];
-    G -- Success --> H["Redirect to Character List"];
+    G -- Success --> H["Redirect to SPA (Character List View)"];
     G -- Failure --> I["Show Error on Register Page"];
     C --> J["Selects Login"];
     J --> K["Login Page: Enters Credentials"];
@@ -233,35 +239,35 @@ graph TD
     L --> M["API Request: /api/auth/login"];
     M -- Success --> H;
     M -- Failure --> N["Show Error on Login Page"];
-    B -- No --> O["Redirect to Character List"];
+    B -- No --> O["Load SPA (Character List View)"];
 ```
 
 ### 3.2 Character Upload & Selection Flow
 
 ```mermaid
 graph TD
-    A["User on Character List Page"] --> B["Clicks Upload Character Button"];
+    A["User in Character List View (SPA)"] --> B["Clicks Upload Character Button"];
     B --> C["Shows File Input / Uploader Component"];
     C --> D{"Selects PNG file"};
     D --> E{"Clicks Upload"};
     E --> F["API Request: /api/characters/upload"];
-    F -- Success --> G["Refresh Character List, Show New Card"];
+    F -- Success --> G["Refresh Character List View, Show New Card"];
     F -- Failure --> H["Show Error Message"];
     A --> I{"Clicks on a CharacterCard"};
     I --> J["Start New Chat Session (API Call)"];
-    J -- Success --> K["Navigate to Chat View for session"];
+    J -- Success --> K["Transition to Chat View within SPA"];
     J -- Failure --> L["Show Error Message"];
 ```
 
 ### 3.3 Starting a New Chat Session
 
-*(This flow is initiated by selecting a character as shown in Flow 3.2. No separate dedicated "Start Chat" screen is planned for MVP.)*
+*(This flow is initiated by selecting a character as shown in Flow 3.2. The view transition happens within the SPA.)*
 
 ### 3.4 Sending/Receiving Messages within a Chat
 
 ```mermaid
 graph TD
-    A["User in Chat View"] --> B["Types message in MessageInput"];
+    A["User in Chat View (SPA)"] --> B["Types message in MessageInput"];
     B --> C{"Presses Send"};
     C --> D["Display User MessageBubble (Optimistic)"];
     C --> E["API Request: /api/chats/{id}/generate"];
@@ -276,7 +282,7 @@ graph TD
 
 ```mermaid
 graph TD
-    A["User in Chat View"] --> B["Clicks Settings Button"];
+    A["User in Chat View (SPA)"] --> B["Clicks Settings Button"];
     B --> C["Open SettingsPanel (Modal/Drawer)"];
     C --> D["API Request: GET /api/chats/{id}/settings"];
     D -- Success --> E["Populate Settings Inputs"];
@@ -295,6 +301,7 @@ graph TD
 
 ### 4.1 Login/Register Screen
 
+*   **Architecture:** Separate routes outside the main SPA.
 *   **Layout:** Centered form on the page.
 *   **Components:** `InputField` (for username/password), `Button` (for submit), Links (to switch between Login/Register).
 *   **Interactions:** Form submission triggers API calls. Error messages displayed near fields or form.
@@ -302,13 +309,15 @@ graph TD
 
 ### 4.2 Dashboard/Character List Screen
 
+*   **Architecture:** View within the main SPA.
 *   **Layout:** Main content area displaying a grid or list of `CharacterCard`s. An "Upload Character" `Button` is present. Maybe a simple header.
 *   **Components:** `CharacterCard` (repeated), `Button` (Upload).
-*   **Interactions:** Clicking Upload opens uploader. Clicking a card navigates to chat.
+*   **Interactions:** Clicking Upload opens uploader. Clicking a card transitions to chat view.
 *   **State Changes:** List updates after successful upload. Loading state while fetching initial list.
 
 ### 4.3 Chat View Screen
 
+*   **Architecture:** View within the main SPA.
 *   **Layout:** Main area for `MessageBubble` list, `MessageInput` fixed at the bottom. Optional header showing character name/avatar. Settings button.
 *   **Components:** `MessageBubble` (repeated), `MessageInput`, `Button` (Settings).
 *   **Interactions:** Typing and sending messages. Scrolling through history. Opening settings.
@@ -316,6 +325,7 @@ graph TD
 
 ### 4.4 Settings Panel Screen
 
+*   **Architecture:** Panel/modal within the main SPA.
 *   **Layout:** Modal or SlideOver containing various `SettingsInput` controls. Save/Close buttons.
 *   **Components:** `Modal`/`SlideOver`, `SettingsInput` (Sliders, Textarea, etc.), `Button` (Save, Close).
 *   **Interactions:** Modifying input values. Saving changes triggers API call. Closing dismisses the panel.
