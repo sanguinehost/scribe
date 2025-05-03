@@ -1,174 +1,157 @@
-// frontend/src/lib/components/chat/MessageInput.spec.ts
-import { render, screen, fireEvent, cleanup } from '@testing-library/svelte';
-import { describe, it, expect, afterEach, vi, beforeEach, type Mock } from 'vitest';
-import { tick } from 'svelte';
-import { writable } from 'svelte/store'; // Import writable for mocking
-
-// Define Message type locally if needed
-interface Message {
-	id: string;
-	sender: 'user' | 'ai';
-	content: string;
-	timestamp: number;
-}
-
-// Mock the chatStore module
-vi.mock('$lib/stores/chatStore', () => {
-	const mockSendMessage = vi.fn();
-	const mockIsLoading = writable(false); // Mock loading state
-	const mockError = writable<string | null>(null); // Mock error state
-	const mockMessages = writable<Message[]>([]); // Mock messages with correct type
-	const mockCurrentSessionId = writable<string | null>(null); // Mock session ID if needed
-
-	// Mock the actual store structure and methods used by the component
-	const mockChatStore = {
-		subscribe: vi.fn((run) => {
-			// Combine mocked states for subscription - Explicitly type state
-			const state: { isLoading: boolean; error: string | null; messages: Message[]; currentSessionId: string | null } = {
-				isLoading: false,
-				error: null,
-				messages: [], // Use Message[] type
-				currentSessionId: null
-			};
-			const unsubLoading = mockIsLoading.subscribe(val => { state.isLoading = val; run(state); });
-			const unsubError = mockError.subscribe(val => { state.error = val; run(state); });
-			const unsubMessages = mockMessages.subscribe(val => { state.messages = val; run(state); });
-			const unsubSession = mockCurrentSessionId.subscribe(val => { state.currentSessionId = val; run(state); });
-			return () => { unsubLoading(); unsubError(); unsubMessages(); unsubSession(); }; // Unsubscribe function
-		}),
-		sendMessage: mockSendMessage,
-		// Add mocks for other methods if MessageInput uses them
-		loadMessages: vi.fn(),
-		set: vi.fn(), // Mock set if used directly
-		update: vi.fn(), // Mock update if used directly
-		// Expose mocks for manipulation in tests
-		__mocks: {
-			sendMessage: mockSendMessage,
-			isLoading: mockIsLoading,
-			error: mockError,
-			messages: mockMessages,
-			currentSessionId: mockCurrentSessionId
-		}
-	};
-	return { chatStore: mockChatStore };
-});
-
-// Import component AFTER mocking
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import { render, fireEvent, screen, cleanup } from '@testing-library/svelte';
 import MessageInput from './MessageInput.svelte';
 
-// Get access to the mocks - Use Mock type
-const { __mocks: chatStoreMocks } = vi.mocked(
-	await import('$lib/stores/chatStore')
-).chatStore as unknown as { __mocks: { 
-	sendMessage: Mock,
-	isLoading: ReturnType<typeof writable<boolean>>,
-	error: ReturnType<typeof writable<string | null>>,
-	messages: ReturnType<typeof writable<Message[]>>,
-	currentSessionId: ReturnType<typeof writable<string | null>> 
-}};
+describe('MessageInput', () => {
+	afterEach(() => cleanup()); // Clean up DOM after each test
 
-describe('MessageInput.svelte', () => {
-	beforeEach(() => {
-		// Reset mocks before each test
-		vi.clearAllMocks();
-		chatStoreMocks.sendMessage.mockClear();
-		chatStoreMocks.isLoading.set(false); // Reset loading state
+	it('renders the textarea and button', () => {
+		render(MessageInput);
+		expect(screen.getByPlaceholderText('Type your message...')).toBeInTheDocument();
+		expect(screen.getByRole('button', { name: /send message/i })).toBeInTheDocument();
 	});
 
-	afterEach(() => cleanup());
-
-	it('renders the textarea and send button', () => {
+	it('updates input value on typing', async () => {
 		render(MessageInput);
-		expect(screen.getByPlaceholderText('Type your message here...')).toBeInTheDocument();
-		expect(screen.getByRole('button', { name: /send/i })).toBeInTheDocument();
-	});
-
-	it('updates the textarea value on input', async () => {
-		render(MessageInput);
-		const textarea = screen.getByPlaceholderText('Type your message here...') as HTMLTextAreaElement;
+		const textarea = screen.getByPlaceholderText('Type your message...') as HTMLTextAreaElement;
 		await fireEvent.input(textarea, { target: { value: 'Test message' } });
 		expect(textarea.value).toBe('Test message');
 	});
 
-	it('calls chatStore.sendMessage on send button click', async () => {
-		render(MessageInput);
-		const textarea = screen.getByPlaceholderText('Type your message here...') as HTMLTextAreaElement;
-		const sendButton = screen.getByRole('button', { name: /send/i });
-		const testMessage = 'Hello AI!';
+	it('emits sendMessage event with trimmed message on button click', async () => {
+		const handleMessage = vi.fn();
+		render<MessageInput>(MessageInput, { 
+			props: {},
+			events: {
+				sendMessage: (e: CustomEvent<string>) => handleMessage(e.detail)
+			}
+		});
 
-		// Input text and click send
-		await fireEvent.input(textarea, { target: { value: testMessage } });
-		await tick(); // Allow component state to update
-		await fireEvent.click(sendButton);
+		const textarea = screen.getByPlaceholderText('Type your message...') as HTMLTextAreaElement;
+		const button = screen.getByRole('button', { name: /send message/i });
 
-		// Check if the mocked store method was called correctly
-		expect(chatStoreMocks.sendMessage).toHaveBeenCalledTimes(1);
-		expect(chatStoreMocks.sendMessage).toHaveBeenCalledWith(testMessage);
-	});
+		// Test with whitespace
+		await fireEvent.input(textarea, { target: { value: '  Hello there!  ' } });
+		await fireEvent.click(button);
 
-	it('clears the textarea after sending a message', async () => {
-		render(MessageInput);
-		const textarea = screen.getByPlaceholderText('Type your message here...') as HTMLTextAreaElement;
-		const sendButton = screen.getByRole('button', { name: /send/i });
-
-		await fireEvent.input(textarea, { target: { value: 'Message to clear' } });
-		await tick(); // Allow state update
-		expect(textarea.value).toBe('Message to clear');
-
-		await fireEvent.click(sendButton);
-		await tick(); // Allow component to process send and clear
-
+		expect(handleMessage).toHaveBeenCalledTimes(1);
+		expect(handleMessage).toHaveBeenCalledWith('Hello there!');
 		// Textarea should be cleared after sending
 		expect(textarea.value).toBe('');
 	});
 
-	it('disables the send button when the input is empty or only whitespace', async () => {
-		render(MessageInput);
-		const textarea = screen.getByPlaceholderText('Type your message here...') as HTMLTextAreaElement;
-		const sendButton = screen.getByRole('button', { name: /send/i });
+    it('does not emit sendMessage event if message is empty or only whitespace on button click', async () => {
+		const handleMessage = vi.fn();
+		render<MessageInput>(MessageInput, { 
+			props: {},
+			events: {
+				sendMessage: (e: CustomEvent<string>) => handleMessage(e.detail)
+			}
+		});
 
-		// Initially empty, should be disabled
-		expect(sendButton).toBeDisabled();
+		const textarea = screen.getByPlaceholderText('Type your message...') as HTMLTextAreaElement;
+		const button = screen.getByRole('button', { name: /send message/i });
 
-		// Type whitespace, should still be disabled
-		await fireEvent.input(textarea, { target: { value: '   \n  ' } });
-		await tick(); // Allow state update
-		expect(sendButton).toBeDisabled();
+        // Test empty
+		await fireEvent.click(button);
+        expect(handleMessage).not.toHaveBeenCalled();
 
-		// Type actual text, should be enabled
-		await fireEvent.input(textarea, { target: { value: '  Valid text ' } });
-		await tick(); // Allow state update
-		expect(sendButton).not.toBeDisabled();
-
-		// Clear text, should be disabled again
-		await fireEvent.input(textarea, { target: { value: '' } });
-		await tick(); // Allow state update
-		expect(sendButton).toBeDisabled();
+        // Test whitespace only
+        await fireEvent.input(textarea, { target: { value: '   \n  ' } });
+        await fireEvent.click(button);
+		expect(handleMessage).not.toHaveBeenCalled();
+        expect(textarea.value).toBe('   \n  '); // Value should remain
 	});
 
-	it('disables send button while message is being sent', async () => {
-		render(MessageInput);
-		const textarea = screen.getByPlaceholderText('Type your message here...') as HTMLTextAreaElement;
-		const sendButton = screen.getByRole('button', { name: /send/i });
 
-		await fireEvent.input(textarea, { target: { value: 'Test during send' } });
-		await tick();
-		expect(sendButton).not.toBeDisabled(); // Should be enabled before sending
+	it('emits sendMessage event on Enter press (without Shift)', async () => {
+		const handleMessage = vi.fn();
+		render<MessageInput>(MessageInput, { 
+			props: {},
+			events: {
+				sendMessage: (e: CustomEvent<string>) => handleMessage(e.detail)
+			}
+		});
 
-		// Simulate loading state starting
-		chatStoreMocks.isLoading.set(true);
-		await tick(); // Allow component to react to store change
+		const textarea = screen.getByPlaceholderText('Type your message...') as HTMLTextAreaElement;
 
-		// Get the button again since it might have changed after state updates
-		const disabledButton = screen.getByRole('button', { name: /send/i });
-		expect(disabledButton).toBeDisabled();
+		await fireEvent.input(textarea, { target: { value: 'Send via Enter' } });
+		// Simulate Enter key press
+		await fireEvent.keyDown(textarea, { key: 'Enter', code: 'Enter' });
 
-		// Simulate loading finished and restore input
-		chatStoreMocks.isLoading.set(false);
-		await fireEvent.input(textarea, { target: { value: 'Text restored' } });
-		await tick();
-		
-		// Button should be enabled again 
-		expect(screen.getByRole('button', { name: /send/i })).not.toBeDisabled();
+		expect(handleMessage).toHaveBeenCalledTimes(1);
+		expect(handleMessage).toHaveBeenCalledWith('Send via Enter');
+		expect(textarea.value).toBe(''); // Should clear after sending
 	});
+
+    it('does not emit sendMessage event on Enter press if message is empty', async () => {
+		const handleMessage = vi.fn();
+		render<MessageInput>(MessageInput, { 
+			props: {},
+			events: {
+				sendMessage: (e: CustomEvent<string>) => handleMessage(e.detail)
+			}
+		});
+
+		const textarea = screen.getByPlaceholderText('Type your message...') as HTMLTextAreaElement;
+
+		// Simulate Enter key press on empty textarea
+		await fireEvent.keyDown(textarea, { key: 'Enter', code: 'Enter' });
+
+		expect(handleMessage).not.toHaveBeenCalled();
+	});
+
+    it('allows newline with Shift+Enter without sending', async () => {
+		const handleMessage = vi.fn();
+		render<MessageInput>(MessageInput, { 
+			props: {},
+			events: {
+				sendMessage: (e: CustomEvent<string>) => handleMessage(e.detail)
+			}
+		});
+
+		const textarea = screen.getByPlaceholderText('Type your message...') as HTMLTextAreaElement;
+
+        await fireEvent.input(textarea, { target: { value: 'Line 1' } });
+        // Simulate Shift+Enter key press
+		await fireEvent.keyDown(textarea, { key: 'Enter', code: 'Enter', shiftKey: true });
+
+        // Check if default was prevented (hard to test directly, but check side effects)
+        expect(handleMessage).not.toHaveBeenCalled();
+        // Value might have newline depending on browser simulation, but shouldn't be cleared
+        expect(textarea.value).toContain('Line 1');
+    });
+
+	it('disables input and button when disabled prop is true', () => {
+		render(MessageInput, { props: { disabled: true } });
+
+		const textarea = screen.getByPlaceholderText('Type your message...');
+		const button = screen.getByRole('button', { name: /send message/i });
+
+		expect(textarea).toBeDisabled();
+		expect(button).toBeDisabled();
+	});
+
+    it('does not emit sendMessage when disabled', async () => {
+		const handleMessage = vi.fn();
+		render<MessageInput>(MessageInput, { 
+			props: { disabled: true },
+			events: {
+				sendMessage: (e: CustomEvent<string>) => handleMessage(e.detail)
+			}
+		});
+
+		const textarea = screen.getByPlaceholderText('Type your message...') as HTMLTextAreaElement;
+		const button = screen.getByRole('button', { name: /send message/i });
+
+        await fireEvent.input(textarea, { target: { value: 'Cannot send' } });
+
+        // Try clicking button
+        await fireEvent.click(button);
+        expect(handleMessage).not.toHaveBeenCalled();
+
+        // Try pressing Enter
+        await fireEvent.keyDown(textarea, { key: 'Enter', code: 'Enter' });
+        expect(handleMessage).not.toHaveBeenCalled();
+    });
 });

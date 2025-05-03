@@ -11,8 +11,10 @@ export const load: PageLoad = async ({ params }) => { // Type inference should w
 		throw error(400, 'Session ID is required');
 	}
 
-	// Update the store using chatStore.update()
-	chatStore.update((state) => ({ ...state, currentSessionId: sessionId, isLoading: true, error: null }));
+	// Set initial state using store methods
+	chatStore.setSessionId(sessionId);
+	chatStore.setLoadingHistory(true); // Use setLoadingHistory for loading state
+	chatStore.setError(null); // Clear any previous errors
 
 	try {
 		// Fetch initial messages
@@ -20,21 +22,16 @@ export const load: PageLoad = async ({ params }) => { // Type inference should w
 		const initialMessages = await fetchChatMessages(sessionId);
 		console.log(`Fetched ${initialMessages.length} messages.`);
 		// Update store with messages and reset loading/error states
-		chatStore.update((state) => ({
-			...state,
-			messages: initialMessages,
-			isLoading: false,
-			error: null
-		}));
+		chatStore.loadMessages(initialMessages); // Use loadMessages
+		// setLoadingHistory(false) is implicitly handled by loadMessages in the store, but we can be explicit if preferred:
+		// chatStore.setLoadingHistory(false);
+		// chatStore.setError(null); // Also handled by loadMessages
 	} catch (err) {
 		console.error('Error fetching initial chat messages:', err);
 		const errorMessage = err instanceof Error ? err.message : 'Failed to load chat history';
 		// Update store with error state
-		chatStore.update((state) => ({
-			...state,
-			isLoading: false,
-			error: errorMessage
-		}));
+		chatStore.setError(errorMessage); // Use setError
+		chatStore.setLoadingHistory(false); // Ensure loading is set to false on error
 		// Optionally, re-throw a SvelteKit error to show an error page,
 		// or let the component handle the error state from the store.
 		// For now, we'll let the component handle it via the store.

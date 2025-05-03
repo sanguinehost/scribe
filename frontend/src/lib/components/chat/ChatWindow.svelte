@@ -1,86 +1,82 @@
 <script lang="ts">
-	import { ScrollArea } from '$lib/components/ui/scroll-area';
-	import MessageInput from './MessageInput.svelte';
-	import { onMount } from 'svelte';
-	import { chatStore, type Message } from '$lib/stores/chatStore';
+	import { onMount, afterUpdate } from 'svelte';
+	import type { ChatMessage } from '$lib/stores/chatStore';
 	import MessageBubble from './MessageBubble.svelte';
-	import { Button } from '$lib/components/ui/button';
-	import SettingsPanel from '$lib/components/settings/SettingsPanel.svelte';
-	import Settings from 'lucide-svelte/icons/settings'; // Icon for the button
+	import MessageInput from './MessageInput.svelte';
+	import ScrollArea from '$lib/components/ui/scroll-area/scroll-area.svelte'; // Using shadcn ScrollArea
+    import { Skeleton } from '$lib/components/ui/skeleton'; // For loading state
 
-	// Props
-	export let sessionId: string;
+	export let messages: ChatMessage[] = [];
+	export let isLoadingHistory: boolean = false;
+	export let isGeneratingResponse: boolean = false;
+    export let error: string | null = null; // Display general chat errors
 
-	// Subscribe to store values
-	$: messages = $chatStore.messages;
-	$: isLoading = $chatStore.isLoading;
+    // Reference to the scroll area viewport for scrolling control
+    let scrollViewport: HTMLElement | null = null;
+    let shouldScrollToBottom = false; // Flag to scroll after update
 
-	// State for settings panel visibility
-	let isSettingsOpen = false;
+    // Scroll to bottom when new messages are added or component mounts
+    function scrollToBottom() {
+        if (scrollViewport) {
+            scrollViewport.scrollTop = scrollViewport.scrollHeight;
+        }
+    }
 
-	// Load messages when the component mounts and sessionId is available
-	onMount(() => {
-		if (sessionId) {
-			console.log(`ChatWindow mounted with sessionId: ${sessionId}`);
-			chatStore.loadMessages(sessionId);
-		} else {
-			console.warn('ChatWindow mounted without a sessionId.');
-		}
-	});
+    onMount(() => {
+        scrollToBottom();
+    });
 
-	// Reactive statement to reload messages if sessionId changes after mount
-	// This might be redundant if the page navigation handles this, but added for robustness
-	$: if (sessionId && $chatStore.currentSessionId !== sessionId && typeof window !== 'undefined') {
-		console.log(`SessionId changed to: ${sessionId}, reloading messages.`);
-		chatStore.loadMessages(sessionId);
-	}
+    // Use afterUpdate to scroll after the DOM has been updated with new messages
+    afterUpdate(() => {
+        if (shouldScrollToBottom) {
+            scrollToBottom();
+            shouldScrollToBottom = false; // Reset flag
+        }
+    });
 
-	// TODO: Implement auto-scrolling to the bottom when new messages arrive
+    // Watch messages length to trigger scroll on next update cycle
+    $: {
+        if (messages.length) {
+            shouldScrollToBottom = true;
+        }
+    }
+
 </script>
 
-<div class="flex flex-col h-full border rounded-lg overflow-hidden" data-testid="chat-window-container">
-	<!-- Header with Settings Button -->
-	<div class="flex items-center justify-between p-2 border-b">
-		<h2 class="text-lg font-semibold">Chat</h2>
-		<Button variant="ghost" size="icon" on:click={() => (isSettingsOpen = true)}>
-			<Settings class="h-5 w-5" />
-			<span class="sr-only">Open Settings</span>
-		</Button>
-	</div>
-
-	<ScrollArea class="flex-1 p-4 space-y-4"> <!-- Added space-y-4 for spacing -->
-		{#if messages.length === 0 && !isLoading}
-			<div class="text-muted-foreground text-center py-10">
-				Start the conversation by typing a message below.
+<div class="flex flex-col h-full border rounded-lg overflow-hidden">
+	{#if isLoadingHistory}
+		<!-- Loading Skeleton -->
+		<div class="flex-1 p-4 space-y-4 overflow-y-auto">
+            <Skeleton class="h-12 w-3/4" />
+            <Skeleton class="h-12 w-3/4 ml-auto" />
+            <Skeleton class="h-16 w-1/2" />
+            <Skeleton class="h-12 w-3/4 ml-auto" />
+        </div>
+	{:else if error}
+        <!-- Error Display -->
+        <div class="flex-1 p-4 flex items-center justify-center text-destructive">
+            <p>Error loading chat: {error}</p>
+        </div>
+    {:else}
+		<!-- Message List -->
+		<ScrollArea class="flex-1">
+			<div class="p-4 space-y-2" bind:this={scrollViewport}>
+				{#if messages.length === 0}
+					<p class="text-center text-muted-foreground">No messages yet. Start the conversation!</p>
+				{:else}
+					{#each messages as message (message.id)}
+						<MessageBubble
+							messageContent={message.content}
+							sender={message.sender}
+							isStreaming={message.isStreaming}
+                            error={message.error}
+						/>
+					{/each}
+				{/if}
 			</div>
-		{:else}
-			{#each messages as message (message.id)}
-				<MessageBubble
-					sender={message.sender}
-					messageContent={message.content}
-					isStreaming={message.isStreaming ?? false}
-				/>
-			{/each}
-		{/if}
+		</ScrollArea>
+	{/if}
 
-		{#if isLoading && messages.length === 0} <!-- Show loading only if no messages yet -->
-			<div class="text-muted-foreground text-center py-10" data-testid="chat-loading-indicator">Loading chat...</div>
-		{/if}
-		{#if isLoading && messages.length > 0 && messages[messages.length - 1]?.sender === 'user'} <!-- Show indicator when AI is *about* to type (after user sends) -->
-			<!-- Optionally show a thinking indicator here -->
-			<!-- <MessageBubble sender="ai" messageContent="..." isStreaming={true} /> -->
-            <!-- The actual streaming bubble is added by the store itself -->
-		{/if}
-
-		{#if $chatStore.error}
-			<div class="text-red-500 text-center py-4" data-testid="chat-error-message">
-				Error: {$chatStore.error}
-			</div>
-		{/if}
-	</ScrollArea>
-
-	<MessageInput /> <!-- MessageInput will handle sending -->
-
-	<!-- Settings Panel (Dialog) -->
-	<SettingsPanel bind:open={isSettingsOpen} />
+	<!-- Message Input Area -->
+	<MessageInput disabled={isGeneratingResponse} on:sendMessage />
 </div>

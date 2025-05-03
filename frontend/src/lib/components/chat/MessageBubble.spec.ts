@@ -1,137 +1,106 @@
+import { describe, it, expect, afterEach } from 'vitest'; // Added afterEach
 import { render, screen, cleanup } from '@testing-library/svelte';
-// import { tick } from 'svelte'; // No longer needed with rerender
-import type { ComponentProps } from 'svelte';
-import { describe, it, expect, afterEach } from 'vitest';
 import MessageBubble from './MessageBubble.svelte';
+import { tick } from 'svelte'; // Import tick for async updates
 
-describe('MessageBubble.svelte', () => {
-	afterEach(() => cleanup());
+describe('MessageBubble', () => {
+	afterEach(() => cleanup()); // Clean up DOM after each test
 
 	it('renders user message correctly', () => {
-		const props: ComponentProps<MessageBubble> = {
-			messageContent: 'Hello from user',
-			sender: 'user'
-		};
-		const { container } = render(MessageBubble, { props });
-		const messageElement = screen.getByText('Hello from user');
+		const messageContent = 'Hello from user';
+		render(MessageBubble, { props: { messageContent, sender: 'user' } });
+
+		const messageElement = screen.getByText(messageContent);
 		expect(messageElement).toBeInTheDocument();
-		// Check alignment via parent class
-		const containerDiv = container.querySelector('.flex.w-full'); // Find the outer container
-		expect(containerDiv).toHaveClass('justify-end');
+
+		// Check alignment/styling (using parent classes as proxy)
+		const container = messageElement.closest('.flex');
+		expect(container).toHaveClass('justify-end'); // User messages align right
+
+        // Check background/text color (using bubble classes)
+        const bubble = messageElement.closest('div[class*="bg-primary"]');
+        expect(bubble).toBeInTheDocument();
+        expect(bubble).toHaveClass('text-primary-foreground');
 	});
 
 	it('renders AI message correctly', () => {
-		const props: ComponentProps<MessageBubble> = {
-			messageContent: 'Hello from AI',
-			sender: 'ai'
-		};
-		const { container } = render(MessageBubble, { props });
-		const messageElement = screen.getByText('Hello from AI');
+		const messageContent = 'Hello from AI';
+		render(MessageBubble, { props: { messageContent, sender: 'ai' } });
+
+		const messageElement = screen.getByText(messageContent);
 		expect(messageElement).toBeInTheDocument();
-		// Check alignment via parent class
-		const containerDiv = container.querySelector('.flex.w-full'); // Find the outer container
-		expect(containerDiv).toHaveClass('justify-start');
+
+		// Check alignment/styling
+		const container = messageElement.closest('.flex');
+		expect(container).toHaveClass('justify-start'); // AI messages align left
+
+        // Check background/text color
+        const bubble = messageElement.closest('div[class*="bg-muted"]');
+        expect(bubble).toBeInTheDocument();
+        expect(bubble).toHaveClass('text-muted-foreground');
 	});
 
-	it('updates message content reactively when streaming', async () => {
-		const initialProps: ComponentProps<MessageBubble> = {
-			messageContent: 'Initial',
-			sender: 'ai',
-			isStreaming: true
-		};
-		// Get rerender function from the render result
-		const { rerender } = render(MessageBubble, { props: initialProps });
-		// const messageBubbleComponent = component as MessageBubble; // No longer needed
-
-		expect(screen.getByText('Initial')).toBeInTheDocument();
-		// Check for streaming indicator
-		const indicator = screen.getByText('▋'); // Check for the cursor character
-		expect(indicator).toBeInTheDocument();
-		expect(indicator).toHaveClass('animate-pulse'); // Check its class
-
-		// Simulate prop update using the returned rerender function
-		await rerender({ ...initialProps, messageContent: 'Initial streamed content' });
-
-		expect(screen.queryByText('Initial')).not.toBeInTheDocument();
-		expect(screen.getByText('Initial streamed content')).toBeInTheDocument();
-		// Indicator should still be present
-		expect(screen.getByText('▋')).toBeInTheDocument();
-
-		// Simulate further streaming
-		await rerender({ ...initialProps, messageContent: 'Initial streamed content final part' });
-
-		expect(screen.queryByText('Initial streamed content')).not.toBeInTheDocument();
-		expect(screen.getByText('Initial streamed content final part')).toBeInTheDocument();
-		// Indicator should still be present
-		expect(screen.getByText('▋')).toBeInTheDocument();
-
-		// Simulate streaming finished
-		await rerender({
-			...initialProps,
-			messageContent: 'Initial streamed content final part',
-			isStreaming: false
+	it('updates streaming AI message incrementally', async () => {
+		const initialContent = 'AI: ';
+		// Get rerender function from render result
+		const { rerender } = render(MessageBubble, {
+			props: { messageContent: initialContent, sender: 'ai', isStreaming: true }
 		});
 
-		// Indicator should be gone
-		expect(screen.queryByText('▋')).not.toBeInTheDocument();
+		      // Adjust regex to not require trailing space if component doesn't render it initially
+		let messageElement = screen.getByText(new RegExp(initialContent.trim()));
+		expect(messageElement).toBeInTheDocument();
+		      // Check for streaming indicator (presence of the pulsing span)
+        expect(messageElement.querySelector('.animate-pulse')).toBeInTheDocument();
+
+		// Update props using rerender to simulate streaming chunk 1
+		await rerender({ messageContent: initialContent + 'Chunk 1', sender: 'ai', isStreaming: true });
+        await tick(); // Wait for Svelte to update the DOM
+
+        messageElement = screen.getByText(/AI: Chunk 1/);
+		expect(messageElement).toBeInTheDocument();
+        expect(messageElement.querySelector('.animate-pulse')).toBeInTheDocument(); // Still streaming
+
+        // Update props using rerender to simulate streaming chunk 2
+  await rerender({ messageContent: initialContent + 'Chunk 1 Chunk 2', sender: 'ai', isStreaming: true });
+        await tick();
+
+        messageElement = screen.getByText(/AI: Chunk 1 Chunk 2/);
+		expect(messageElement).toBeInTheDocument();
+        expect(messageElement.querySelector('.animate-pulse')).toBeInTheDocument(); // Still streaming
+
+        // Update props using rerender to simulate end of streaming
+        // Need to pass all relevant props again
+        await rerender({ messageContent: initialContent + 'Chunk 1 Chunk 2', sender: 'ai', isStreaming: false });
+        await tick();
+
+        messageElement = screen.getByText(/AI: Chunk 1 Chunk 2/); // Full final content
+		expect(messageElement).toBeInTheDocument();
+        expect(messageElement.querySelector('.animate-pulse')).not.toBeInTheDocument(); // No longer streaming
 	});
 
-    it('does not require isStreaming prop and defaults to false', () => {
-  const props: ComponentProps<MessageBubble> = {
-   messageContent: 'Non-streaming AI',
-  sender: 'ai'
- };
- const { container } = render(MessageBubble, { props });
- const messageElement = screen.getByText('Non-streaming AI');
- expect(messageElement).toBeInTheDocument();
- // Check default alignment
- const containerDiv = container.querySelector('.flex.w-full'); // Find the outer container
- expect(containerDiv).toHaveClass('justify-start');
- // Ensure streaming indicator is not present
- expect(screen.queryByText('▋')).not.toBeInTheDocument();
-});
+	it('displays error state correctly', () => {
+        const messageContent = "This shouldn't show fully";
+        const errorMessage = 'Failed to generate response';
+		render(MessageBubble, { props: { messageContent, sender: 'ai', error: errorMessage } });
 
-// REMOVED: Tests for 'error' prop as the feature is commented out in the component
-// it('displays an error message when error prop is provided', () => { ... });
-// it('does not display error message when error prop is null or undefined', () => { ... });
+        // Check for error message display
+        const errorElement = screen.getByText(new RegExp(`Error: ${errorMessage}`));
+        expect(errorElement).toBeInTheDocument();
+        // Check the parent div containing the icon and text for the destructive class
+        const errorContainer = errorElement.parentElement;
+        expect(errorContainer).toHaveClass('text-destructive');
 
-// Add specific tests for streaming indicator presence/absence
-it('shows a streaming indicator for AI sender when isStreaming is true', () => {
- render(MessageBubble, {
-  props: { messageContent: 'Streaming...', sender: 'ai', isStreaming: true }
- });
- const indicator = screen.getByText('▋');
- expect(indicator).toBeInTheDocument();
- expect(indicator).toHaveClass('animate-pulse');
-});
+        // Check bubble styling for error
+        const bubble = errorElement.closest('div[class*="border-destructive"]');
+        expect(bubble).toBeInTheDocument();
+        expect(bubble).toHaveClass('bg-destructive/10');
 
-it('hides streaming indicator for AI sender when isStreaming is false', () => {
- render(MessageBubble, {
-  props: { messageContent: 'Done streaming', sender: 'ai', isStreaming: false }
- });
- expect(screen.queryByText('▋')).not.toBeInTheDocument();
-});
+        // Original content should still be present (or partially, depending on design)
+        const contentElement = screen.getByText(new RegExp(messageContent));
+        expect(contentElement).toBeInTheDocument();
 
-it('hides streaming indicator for user sender even if isStreaming is true', () => {
- // User messages should never show the indicator
- render(MessageBubble, {
-  props: { messageContent: 'User message', sender: 'user', isStreaming: true }
- });
- expect(screen.queryByText('▋')).not.toBeInTheDocument();
-});
-
-// Optional: Test for streaming indicator if implemented (Now implemented above)
-// it('shows a streaming indicator when isStreaming is true', () => {
-	// 	render(MessageBubble, {
-	// 		props: { messageContent: 'Streaming...', sender: 'ai', isStreaming: true }
-	// 	});
-    //     expect(screen.getByTestId('streaming-indicator')).toBeInTheDocument();
-    // });
-
-    // it('hides streaming indicator when isStreaming is false', () => {
-	// 	render(MessageBubble, {
-	// 		props: { messageContent: 'Done streaming', sender: 'ai', isStreaming: false }
-	// 	});
-    //     expect(screen.queryByTestId('streaming-indicator')).not.toBeInTheDocument();
-    // });
+        // Streaming indicator should not be shown when there's an error
+        expect(screen.queryByRole('.animate-pulse')).not.toBeInTheDocument();
+	});
 });

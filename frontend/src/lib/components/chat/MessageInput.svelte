@@ -1,45 +1,43 @@
 <script lang="ts">
-	import { Button } from '$lib/components/ui/button';
-	import { Textarea } from '$lib/components/ui/textarea';
-	import { chatStore } from '$lib/stores/chatStore';
+	import { createEventDispatcher } from 'svelte';
+	import Textarea from '$lib/components/ui/textarea/textarea.svelte';
+	import Button from '$lib/components/ui/button/button.svelte';
+	import { Send } from 'lucide-svelte';
 
-	let messageContent = '';
+	export let disabled: boolean = false; // To disable input during AI response
 
-	// Subscribe to loading state to disable input/button
-	$: isLoading = $chatStore.isLoading;
+	let messageText: string = '';
 
-	function handleSend() {
-		if (!messageContent.trim() || isLoading) {
-			return; // Don't send empty messages or while loading
+	const dispatch = createEventDispatcher<{ sendMessage: string }>();
+
+	function sendMessage() {
+		const trimmedMessage = messageText.trim();
+		if (trimmedMessage && !disabled) {
+			dispatch('sendMessage', trimmedMessage);
+			messageText = ''; // Clear input after sending
 		}
-		console.log('Sending message:', messageContent); // Debug log
-		chatStore.sendMessage(messageContent);
-		messageContent = ''; // Clear the input field
 	}
 
-	// Handle Enter key press (Shift+Enter for newline)
 	function handleKeydown(event: KeyboardEvent) {
+		// Optional: Send on Enter, prevent default newline
 		if (event.key === 'Enter' && !event.shiftKey) {
-			event.preventDefault(); // Prevent default newline insertion
-			handleSend();
+			event.preventDefault(); // Prevent adding a newline
+			sendMessage();
 		}
 	}
 </script>
 
-<div class="flex w-full items-center space-x-2 p-2 border-t" data-testid="message-input">
+<div class="flex items-center p-2 border-t gap-2">
 	<Textarea
-		placeholder="Type your message here..."
+		bind:value={messageText}
+		placeholder="Type your message..."
 		class="flex-1 resize-none"
-		bind:value={messageContent}
+		rows={1}
 		on:keydown={handleKeydown}
-		disabled={isLoading}
-		rows={1} 
-		data-testid="message-input-textarea" />
-	<Button 
-		type="submit" 
-		on:click={handleSend} 
-		disabled={isLoading || !messageContent.trim()}
-		data-testid="message-input-button">
-		Send
+		{disabled}
+	/>
+	<Button on:click={sendMessage} {disabled} size="icon">
+		<Send class="w-4 h-4" />
+		<span class="sr-only">Send message</span>
 	</Button>
 </div>

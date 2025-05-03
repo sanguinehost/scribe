@@ -1,8 +1,8 @@
 // frontend/src/lib/services/apiClient.ts
-import type { Message } from '$lib/stores/chatStore'; // Keep type import
+import type { ChatMessage } from '$lib/stores/chatStore'; // Keep type import
 
 // Re-export Message type for convenience if it's defined in chatStore
-export type { Message };
+export type { ChatMessage };
 
 const API_BASE = '/api'; // Or load from environment variables
 
@@ -45,7 +45,7 @@ export async function createChatSession(characterId: string): Promise<{ sessionI
  * @param sessionId - The ID of the chat session.
  * @returns A promise resolving to an array of messages.
  */
-export async function fetchChatMessages(sessionId: string): Promise<Message[]> {
+export async function fetchChatMessages(sessionId: string): Promise<ChatMessage[]> {
 	if (!sessionId) {
 		throw new Error('Session ID is required to fetch messages.');
 	}
@@ -68,7 +68,7 @@ export async function fetchChatMessages(sessionId: string): Promise<Message[]> {
 
 	// Assuming the backend returns an array of messages compatible with the Message interface
 	// Add validation if necessary
-	const messages: Message[] = await response.json();
+	const messages: ChatMessage[] = await response.json();
 	return messages;
 }
 
@@ -191,21 +191,22 @@ export async function generateChatResponse(
 export interface User {
 	id: string; // Or number, depending on backend
 	username: string;
-	// Add other relevant user fields if returned by the API (e.g., email, roles)
+	email?: string; // Add email if backend returns it
+	// Add other relevant user fields if returned by the API (e.g., roles)
 }
 
 /**
- * Attempts to log in a user.
- * @param username - The user's username.
- * @param password - The user's password.
- * @returns A promise resolving to the user data upon successful login.
- * @throws An error if login fails.
- */
+	* Attempts to log in a user using username and password.
+	* @param username - The user's username.
+	* @param password - The user's password.
+	* @returns A promise resolving to the user data upon successful login.
+	* @throws An error if login fails.
+	*/
 export async function login(username: string, password: string): Promise<User> {
- const response = await fetch(`${API_BASE}/auth/login`, {
- 	method: 'POST',
- 	headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-		body: JSON.stringify({ username, password }),
+	const response = await fetch(`${API_BASE}/auth/login`, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+		body: JSON.stringify({ username, password }), // Use username for login
 		credentials: 'include', // Send cookies
 	});
 
@@ -218,21 +219,22 @@ export async function login(username: string, password: string): Promise<User> {
 }
 
 /**
- * Attempts to register a new user.
+ * Attempts to register a new user with username, email, and password.
  * @param username - The desired username.
+ * @param email - The user's email address.
  * @param password - The desired password.
  * @returns A promise resolving to the user data upon successful registration.
  * @throws An error if registration fails.
  */
-export async function register(username: string, password: string): Promise<User> {
+export async function register(username: string, email: string, password: string): Promise<User> {
  const response = await fetch(`${API_BASE}/auth/register`, {
  	method: 'POST',
  	headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-		body: JSON.stringify({ username, password }),
-		credentials: 'include', // Send cookies if needed for session creation immediately
-	});
+ 	body: JSON.stringify({ username, email, password }), // Add email to registration payload
+ 	credentials: 'include', // Send cookies if needed for session creation immediately
+ });
 
-	if (!response.ok) {
+ if (!response.ok) {
         const errorData = await response.json().catch(() => ({ message: 'Registration failed' })); // Try to parse error, fallback
 		throw new Error(errorData.message || `Registration failed: ${response.status}`);
 	}

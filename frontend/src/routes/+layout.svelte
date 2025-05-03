@@ -75,14 +75,15 @@
 	<!-- Main Layout -->
 	<div class="flex min-h-screen bg-background text-foreground">
 		<!-- Sidebar (Left Column) -->
-	<aside class="w-64 flex-shrink-0 border-r border-border bg-card p-4">
-		<!-- Placeholder for Sidebar Content -->
-		<h2 class="text-lg font-semibold mb-4 text-card-foreground">Scribe</h2>
-		<nav class="space-y-2">
+	<!-- Use specific sidebar background/foreground variables from app.pcss -->
+	<aside class="w-64 flex-shrink-0 border-r border-[hsl(var(--sidebar-border))] bg-[hsl(var(--sidebar-background))] p-4 flex flex-col">
+		<!-- Sidebar Content -->
+		<h2 class="text-lg font-semibold mb-4 text-[hsl(var(--sidebar-foreground))]">Scribe</h2>
+		<nav class="space-y-2 text-[hsl(var(--sidebar-foreground))]">
 			{#if isAuthenticated}
-				<a href="/characters" class="block px-3 py-2 rounded-md hover:bg-muted" class:font-bold={currentPath.startsWith('/characters')}>Characters</a>
-				<a href="/chat" class="block px-3 py-2 rounded-md hover:bg-muted" class:font-bold={currentPath.startsWith('/chat')}>Chat (Placeholder)</a>
-				<a href="/settings" class="block px-3 py-2 rounded-md hover:bg-muted" class:font-bold={currentPath.startsWith('/settings')}>Settings (Placeholder)</a>
+				<a href="/characters" class="block px-3 py-2 rounded-md hover:bg-[hsl(var(--sidebar-accent))] hover:text-[hsl(var(--sidebar-accent-foreground))]" class:font-bold={currentPath.startsWith('/characters')}>Characters</a>
+				<!-- Removed Chat placeholder link, navigation via character list -->
+				<a href="/settings" class="block px-3 py-2 rounded-md hover:bg-[hsl(var(--sidebar-accent))] hover:text-[hsl(var(--sidebar-accent-foreground))]" class:font-bold={currentPath.startsWith('/settings')}>Settings (Placeholder)</a>
 			{/if}
 			<!-- Auth links shown when logged out -->
 			{#if !isAuthenticated}
@@ -90,15 +91,16 @@
 				<a href="/register" class="block px-3 py-2 rounded-md hover:bg-muted" class:font-bold={currentPath === '/register'}>Register</a>
 			{/if}
 		</nav>
-		<div class="mt-auto pt-4 border-t border-border">
+		<!-- Ensure this section is pushed to the bottom -->
+		<div class="mt-auto pt-4 border-t border-[hsl(var(--sidebar-border))]">
 			{#if isAuthenticated}
 				<!-- User Info & Logout Button -->
-				<p class="text-sm text-muted-foreground mb-2">Logged in as: {$authStore.user?.username ?? 'User'}</p>
-				<button onclick={handleLogout} class="w-full px-3 py-2 rounded-md text-left text-sm text-red-500 hover:bg-muted">
+				<p class="text-sm text-[hsl(var(--sidebar-foreground))] opacity-75 mb-2">Logged in as: {$authStore.user?.username ?? 'User'}</p>
+				<button onclick={handleLogout} class="w-full px-3 py-2 rounded-md text-left text-sm text-destructive hover:bg-[hsl(var(--sidebar-accent))] hover:text-[hsl(var(--sidebar-accent-foreground))]">
 					Logout
 				</button>
 			{:else}
-				<p class="text-sm text-muted-foreground">Not logged in</p>
+				<p class="text-sm text-[hsl(var(--sidebar-foreground))] opacity-75">Not logged in</p>
 			{/if}
 		</div>
 	</aside>

@@ -1,91 +1,99 @@
-<!-- frontend/src/lib/components/characters/CharacterList.svelte -->
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { listCharacters, createChatSession, type Character } from '$lib/services/apiClient'; // Add createChatSession
+	import { apiClient } from '$lib/services/apiClient';
+	import type { Character } from '$lib/services/apiClient';
 	import CharacterCard from './CharacterCard.svelte';
+	import * as Alert from '$lib/components/ui/alert';
 	import { AlertCircle, Loader2 } from 'lucide-svelte';
-	import { Alert, AlertDescription, AlertTitle } from '$lib/components/ui/alert';
-	import { goto } from '$app/navigation'; // Add goto for navigation
+	import { goto } from '$app/navigation'; // For navigation on select
 
-	let characters: Character[] = [];
-	let isLoading = true;
-	let error: string | null = null; // Error for loading list
-	let isCreatingSession = false; // Loading state for session creation
-	let sessionError: string | null = null; // Error for session creation
+	// --- State ---
+	let characters = $state<Character[]>([]);
+	let isLoading = $state(true);
+	let error = $state<string | null>(null);
+	let selectedCharacterId = $state<string | null>(null); // Track selected character
 
-	async function loadCharacters() {
+	// --- Fetching Logic ---
+	const fetchCharacters = async () => {
 		isLoading = true;
 		error = null;
 		try {
-			characters = await listCharacters();
+			characters = await apiClient.listCharacters();
 		} catch (err: any) {
 			console.error('Failed to load characters:', err);
-			error = err.message || 'Failed to load characters. Please try again later.';
-			characters = []; // Clear characters on error
+			error = err.message || 'An unknown error occurred while fetching characters.';
 		} finally {
 			isLoading = false;
 		}
-	}
+	};
 
-	// Public function to allow parent components to trigger a refresh
-	export async function refreshList() {
-		await loadCharacters();
-	}
-
+	// --- Lifecycle ---
 	onMount(() => {
-		loadCharacters();
+		fetchCharacters();
 	});
 
-	async function handleCharacterSelect(event: CustomEvent<string>) {
-const characterId = event.detail;
-		isCreatingSession = true;
-		sessionError = null;
-		console.log(`Selected character: ${characterId}`); // Debug log
-
+	// --- Event Handlers ---
+	const handleSelectCharacter = async (characterId: string) => {
+		selectedCharacterId = characterId;
+		console.log(`Character selected: ${characterId}`);
 		try {
-			const { sessionId } = await createChatSession(characterId);
-			console.log(`Created session: ${sessionId}`); // Debug log
+			// Create/get the chat session for the selected character
+			const { sessionId } = await apiClient.createChatSession(characterId);
+			console.log(`Obtained session ID: ${sessionId}. Navigating...`);
+			// Navigate to the chat page using the obtained session ID
 			await goto(`/chat/${sessionId}`);
-			// Navigation happens, component might unmount, no need to set isCreatingSession = false here
-		} catch (err: any) {
-			console.error('Failed to create chat session:', err);
-			sessionError = err.message || 'Failed to start chat. Please try again.';
-			isCreatingSession = false; // Reset loading state on error
+		} catch (err) {
+			console.error('Failed to initiate or navigate to chat session:', err);
+			// TODO: Implement user-friendly error handling (e.g., show a toast notification)
+			error = `Could not start chat with character: ${err instanceof Error ? err.message : 'Unknown error'}`;
 		}
-		// No finally block needed as success leads to navigation
-	}
+	};
+
+	// --- Expose refresh function for parent components (like uploader) ---
+	// Note: Svelte 5 runes don't have a direct 'export function' equivalent for component methods easily.
+	// A common pattern is to pass down a callback or use a store/context if complex interaction is needed.
+	// For simplicity here, we'll assume the parent page will trigger a re-render or call fetchCharacters
+	// if needed after an upload. If direct method call is required, refactoring might be needed.
+	// export const refresh = fetchCharacters; // This syntax is not standard for runes $state/$props
+
 </script>
 
-<div class="space-y-4">
+<div>
 	{#if isLoading}
-		<div class="flex items-center justify-center text-muted-foreground py-8">
+		<div class="flex items-center justify-center p-10 text-muted-foreground">
 			<Loader2 class="mr-2 h-5 w-5 animate-spin" />
-			<span>Loading characters...</span>
+			<span>Loading Characters...</span>
 		</div>
-	{:else if error}
-		<Alert variant="destructive">
+	{/if}
+
+	{#if error}
+		<Alert.Root variant="destructive" class="mb-4">
 			<AlertCircle class="h-4 w-4" />
-			<AlertTitle>Error</AlertTitle>
-			<AlertDescription>{error}</AlertDescription>
-		</Alert>
-	{:else if characters.length === 0}
-		<p class="text-center text-muted-foreground py-8">No characters found. Upload one to get started!</p>
-	{:else}
-		{#if sessionError}
-			<Alert variant="destructive" class="my-4">
-				<AlertCircle class="h-4 w-4" />
-				<AlertTitle>Error Starting Chat</AlertTitle>
-				<AlertDescription>{sessionError}</AlertDescription>
-			</Alert>
+			<Alert.Title>Error Loading Characters</Alert.Title>
+			<Alert.Description>{error}</Alert.Description>
+		</Alert.Root>
+	{/if}
+
+	{#if !isLoading && !error}
+		{#if characters.length === 0}
+			<p class="text-center text-muted-foreground p-10">
+				No characters found. Upload one to get started!
+			</p>
+		{:else}
+			<div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+				{#each characters as character (character.id)}
+					<button 
+						type="button" 
+						class="w-full text-left"
+						onclick={() => handleSelectCharacter(character.id)}
+						onkeydown={(e) => e.key === 'Enter' && handleSelectCharacter(character.id)}>
+						<CharacterCard
+							{character}
+							isSelected={selectedCharacterId === character.id}
+						/>
+					</button>
+				{/each}
+			</div>
 		{/if}
-		<div
-			class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4"
-			class:opacity-50={isCreatingSession}
-			class:pointer-events-none={isCreatingSession}
-		>
-			{#each characters as character (character.id)}
-				<CharacterCard {character} on:select={handleCharacterSelect} />
-			{/each}
-		</div>
 	{/if}
 </div>

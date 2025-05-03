@@ -1,121 +1,149 @@
-<!-- frontend/src/lib/components/characters/CharacterUploader.svelte -->
 <script lang="ts">
-	import { createEventDispatcher } from 'svelte';
-	import { uploadCharacter } from '$lib/services/apiClient';
 	import { Button } from '$lib/components/ui/button';
-	import { Input } from '$lib/components/ui/input'; // Using Input for file selection
-	import { Alert, AlertDescription, AlertTitle } from '$lib/components/ui/alert';
-	import { AlertCircle, CheckCircle, Loader2, Upload } from 'lucide-svelte';
+	import { Input } from '$lib/components/ui/input';
+	import { Label } from '$lib/components/ui/label';
+	import { apiClient } from '$lib/services/apiClient';
+	import * as Alert from '$lib/components/ui/alert';
+	import { AlertCircle, CheckCircle2, Loader2, Upload } from 'lucide-svelte';
 
-	let selectedFile: File | null = null;
-	let isUploading = false;
-	let error: string | null = null;
-	let successMessage: string | null = null;
-	let fileInput: HTMLInputElement; // To programmatically clear the input
+	// --- Props ---
+	let { onUploadSuccess }: { onUploadSuccess: () => void } = $props();
 
-	const dispatch = createEventDispatcher();
+	// --- State ---
+	let selectedFile = $state<File | null>(null);
+	let isLoading = $state(false);
+	let error = $state<string | null>(null);
+	let successMessage = $state<string | null>(null);
+	let dragOver = $state(false); // For drag-and-drop visual feedback
 
-	function handleFileChange(event: Event) {
+	// --- Event Handlers ---
+	const handleFileChange = (event: Event) => {
 		const target = event.target as HTMLInputElement;
 		if (target.files && target.files.length > 0) {
-			selectedFile = target.files[0];
-			error = null; // Clear previous errors on new file selection
-			successMessage = null; // Clear previous success messages
+			if (target.files[0].type === 'image/png') {
+				selectedFile = target.files[0];
+				error = null; // Clear error if a valid file is selected
+				successMessage = null; // Clear previous success
+			} else {
+				selectedFile = null;
+				error = 'Invalid file type. Please select a PNG file.';
+				successMessage = null;
+			}
 		} else {
 			selectedFile = null;
 		}
-	}
+	};
 
-	async function handleUpload() {
+	const handleUpload = async () => {
 		if (!selectedFile) {
-			error = 'Please select a PNG file to upload.';
+			error = 'No file selected.';
 			return;
 		}
 
-		if (selectedFile.type !== 'image/png') {
-			error = 'Invalid file type. Only PNG files are accepted.';
-			return;
-		}
-
-		isUploading = true;
+		isLoading = true;
 		error = null;
 		successMessage = null;
 
 		const formData = new FormData();
-		// The backend expects the file under the key 'character_card'
-		formData.append('character_card', selectedFile, selectedFile.name);
+		formData.append('character_card', selectedFile); // Backend expects 'character_card'
 
 		try {
-			const newCharacter = await uploadCharacter(formData);
+			const newCharacter = await apiClient.uploadCharacter(formData);
 			successMessage = `Character "${newCharacter.name}" uploaded successfully!`;
-			dispatch('uploadSuccess'); // Notify parent component
 			selectedFile = null; // Clear selection after successful upload
-            if (fileInput) {
-                fileInput.value = ''; // Reset the file input visually
-            }
+			if (onUploadSuccess) {
+				onUploadSuccess(); // Notify parent component (e.g., CharacterList)
+			}
 		} catch (err: any) {
 			console.error('Upload failed:', err);
-			error = err.message || 'Failed to upload character. Please try again.';
+			error = err.message || 'An unknown error occurred during upload.';
 		} finally {
-			isUploading = false;
+			isLoading = false;
 		}
-	}
+	};
+
+	// --- Drag and Drop Handlers ---
+	const handleDragOver = (event: DragEvent) => {
+		event.preventDefault(); // Necessary to allow drop
+		dragOver = true;
+	};
+
+	const handleDragLeave = () => {
+		dragOver = false;
+	};
+
+	const handleDrop = (event: DragEvent) => {
+		event.preventDefault();
+		dragOver = false;
+		if (event.dataTransfer?.files && event.dataTransfer.files.length > 0) {
+			const file = event.dataTransfer.files[0];
+			if (file.type === 'image/png') {
+				selectedFile = file;
+				error = null;
+				successMessage = null;
+			} else {
+				selectedFile = null;
+				error = 'Invalid file type. Please drop a PNG file.';
+				successMessage = null;
+			}
+		}
+	};
+
 </script>
 
-<div class="space-y-4 p-4 border rounded-lg">
-	<h3 class="text-lg font-medium">Upload New Character Card</h3>
-	<p class="text-sm text-muted-foreground">Select a PNG character card file to upload.</p>
+<div role="button" tabindex="0" class="border border-dashed rounded-lg p-6 text-center"
+	 class:border-primary={dragOver}
+	 ondragover={handleDragOver}
+	 ondragleave={handleDragLeave}
+	 ondrop={handleDrop}
+>
+	<Upload class="mx-auto h-12 w-12 text-muted-foreground" />
+	<Label for="character-card-input" class="mt-4 block text-sm font-medium text-foreground">
+		Character Card (.png)
+	</Label>
+	<p class="mt-1 text-xs text-muted-foreground">
+		Drag & drop a PNG file here, or click to select
+	</p>
+	<Input
+		id="character-card-input"
+		type="file"
+		accept=".png"
+		class="sr-only"
+		onchange={handleFileChange}
+		disabled={isLoading}
+	/>
 
-	<div class="flex flex-col sm:flex-row gap-2 items-start">
-		<Input
-            bind:this={fileInput}
-			type="file"
-			accept="image/png"
-			on:change={handleFileChange}
-			disabled={isUploading}
-			class="flex-grow"
-		/>
-		<Button on:click={handleUpload} disabled={!selectedFile || isUploading} class="w-full sm:w-auto">
-			{#if isUploading}
-				<Loader2 class="mr-2 h-4 w-4 animate-spin" /> Uploading...
-			{:else}
-				<Upload class="mr-2 h-4 w-4" /> Upload
-			{/if}
-		</Button>
-	</div>
-
-	{#if successMessage}
-		<Alert variant="success">
-			<CheckCircle class="h-4 w-4" />
-			<AlertTitle>Success</AlertTitle>
-			<AlertDescription>{successMessage}</AlertDescription>
-		</Alert>
+	{#if selectedFile}
+		<p class="mt-2 text-sm text-foreground">Selected: {selectedFile.name}</p>
 	{/if}
 
 	{#if error}
-		<Alert variant="destructive">
+		<Alert.Root variant="destructive" class="mt-4 text-left">
 			<AlertCircle class="h-4 w-4" />
-			<AlertTitle>Error</AlertTitle>
-			<AlertDescription>{error}</AlertDescription>
-		</Alert>
+			<Alert.Title>Upload Failed</Alert.Title>
+			<Alert.Description>{error}</Alert.Description>
+		</Alert.Root>
 	{/if}
-</div>
 
-<!-- Add success variant style if not already present -->
-<style>
-	/* Assuming you might need to add custom styles for variants like 'success' if not built-in */
-	/* Check your shadcn-svelte setup or global CSS */
-	:global(.dark [data-variant="success"]) {
-		/* Example dark mode success styles */
-		border-color: hsl(var(--success-border-dark));
-		background-color: hsl(var(--success-bg-dark));
-		color: hsl(var(--success-text-dark));
-	}
-	:global([data-variant="success"]) {
-		/* Example light mode success styles */
-		border-color: hsl(var(--success-border));
-		background-color: hsl(var(--success-bg));
-		color: hsl(var(--success-text));
-	}
-	/* Define --success variables in your global CSS or :root */
-</style>
+	{#if successMessage}
+		<Alert.Root variant="default" class="mt-4 text-left bg-green-100 dark:bg-green-900 border-green-300 dark:border-green-700">
+			<CheckCircle2 class="h-4 w-4 text-green-700 dark:text-green-300" />
+			<Alert.Title class="text-green-800 dark:text-green-200">Success</Alert.Title>
+			<Alert.Description class="text-green-700 dark:text-green-300">{successMessage}</Alert.Description>
+		</Alert.Root>
+	{/if}
+
+	<Button
+		class="mt-6 w-full"
+		onclick={handleUpload}
+		disabled={!selectedFile || isLoading}
+	>
+		{#if isLoading}
+			<Loader2 class="mr-2 h-4 w-4 animate-spin" />
+			Uploading...
+		{:else}
+			<Upload class="mr-2 h-4 w-4" />
+			Upload
+		{/if}
+	</Button>
+</div>

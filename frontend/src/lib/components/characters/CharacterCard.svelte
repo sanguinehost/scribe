@@ -1,42 +1,45 @@
-<!-- frontend/src/lib/components/characters/CharacterCard.svelte -->
 <script lang="ts">
 	import type { Character } from '$lib/services/apiClient';
 	import { getCharacterImageUrl } from '$lib/services/apiClient';
-	import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '$lib/components/ui/card';
-	import { Avatar, AvatarFallback, AvatarImage } from '$lib/components/ui/avatar';
-	import { createEventDispatcher } from 'svelte'; // Add this import
+	import * as Card from '$lib/components/ui/card';
+	import * as Avatar from '$lib/components/ui/avatar';
+	import { cn } from '$lib/utils'; // For conditional classes
 
-	export let character: Character;
+	// --- Props ---
+	let { character, isSelected = false }: { character: Character; isSelected?: boolean } = $props();
 
-	const dispatch = createEventDispatcher<{ select: string }>(); // Create dispatcher with type hint
+	// --- Computed ---
+	const imageUrl = $derived(getCharacterImageUrl(character.id));
+	const fallbackText = $derived(character.name.substring(0, 2).toUpperCase());
+	// Simple description snippet logic (can be refined)
+	const descriptionSnippet = $derived(
+		character.description?.length > 100
+			? character.description.substring(0, 97) + '...'
+			: character.description ?? character.greeting ?? 'No description available.' // Use greeting as fallback
+	);
 
-	$: imageUrl = getCharacterImageUrl(character.id);
-	$: fallbackName = character.name.substring(0, 2).toUpperCase(); // Simple fallback for avatar
+	// --- Classes ---
+	// Apply a primary border if selected
+	const cardClasses = $derived(cn(
+		'transition-all hover:shadow-md hover:scale-[1.02] cursor-pointer', // Base styles
+		isSelected && 'border-primary ring-2 ring-primary ring-offset-2' // Selected styles
+	));
 
-	function handleClick() {
-// console.log(`Character clicked: ${character.id} - ${character.name}`); // Keep for debugging if needed, but commented out
-		dispatch('select', character.id); // Dispatch the event with character ID
-	}
 </script>
 
-<Card class="cursor-pointer hover:shadow-lg transition-shadow" on:click={handleClick}>
-	<CardHeader class="flex flex-row items-center gap-4 p-4">
-		<Avatar class="h-12 w-12">
-			<AvatarImage src={imageUrl} alt={character.name} />
-			<AvatarFallback>{fallbackName}</AvatarFallback>
-		</Avatar>
+<Card.Root class={cardClasses}>
+	<Card.Header class="flex flex-row items-center gap-4 pb-2">
+		<Avatar.Root class="h-12 w-12">
+			<Avatar.Image src={imageUrl} alt={character.name} />
+			<Avatar.Fallback>{fallbackText}</Avatar.Fallback>
+		</Avatar.Root>
 		<div class="flex-1">
-			<CardTitle class="text-lg">{character.name}</CardTitle>
-			<!-- Optionally show a short description or greeting -->
-			{#if character.greeting}
-				<CardDescription class="text-sm truncate">{character.greeting}</CardDescription>
-			{:else if character.description}
-                <CardDescription class="text-sm truncate">{character.description}</CardDescription>
-            {/if}
+			<Card.Title>{character.name}</Card.Title>
 		</div>
-	</CardHeader>
-	<!-- CardContent could be used for more details if needed later -->
-	<!-- <CardContent class="p-4 pt-0">
-		<p class="text-sm text-muted-foreground truncate">{character.description || 'No description available.'}</p>
-	</CardContent> -->
-</Card>
+	</Card.Header>
+	<Card.Content>
+		<p class="text-sm text-muted-foreground">{descriptionSnippet}</p>
+	</Card.Content>
+	<!-- Footer could be added later if needed for actions like 'Edit' or 'Delete' -->
+	<!-- <Card.Footer>...</Card.Footer> -->
+</Card.Root>
