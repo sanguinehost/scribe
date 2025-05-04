@@ -14,18 +14,18 @@ use tower_http::trace::{DefaultMakeSpan, TraceLayer};
 // Use modules from the library crate
 use scribe_backend::auth::session_store::DieselSessionStore;
 use scribe_backend::logging::init_subscriber;
-use scribe_backend::routes::auth::{login_handler, logout_handler, me_handler, register_handler}; // Import auth handlers
-use scribe_backend::routes::health::health_check; // Import from new location
+use scribe_backend::routes::auth::auth_routes;
+use scribe_backend::routes::health::health_check;
 use scribe_backend::routes::{
     characters::{get_character_handler, list_characters_handler, upload_character_handler},
     chat::chat_routes,
+    chats_api,
+    documents_api::document_routes,
 };
-use scribe_backend::state::AppState; // Import DieselSessionStore
-// Import User model
+use scribe_backend::state::AppState;
 use anyhow::Context;
 use anyhow::Result;
 use scribe_backend::auth::user_store::Backend as AuthBackend;
-// Import PgPool from the library crate
 use scribe_backend::PgPool;
 // Make sure AppError is in scope
 
@@ -143,9 +143,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // --- Define Protected Routes ---
     let protected_api_routes = Router::new()
-        // Authentication routes (require login)
-        .route("/auth/me", get(me_handler))
-        .route("/auth/logout", post(logout_handler))
         // Character routes (require login)
         // TODO: Consolidate character route definition here instead of merging below?
         .nest(
@@ -157,14 +154,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         )
         // Chat routes (require login)
         .nest("/chats", chat_routes()) // Mount the chat router
+        .nest("/chats-api", chats_api::chat_routes()) // Mount the old chats API router at a different path
+        // Mount document API routes
+        .merge(document_routes()) 
         // Add other protected API routes here...
         .route_layer(login_required!(AuthBackend)); // Apply login required, return 401 on failure
 
     // --- Define Public Routes ---
     let public_api_routes = Router::new()
         .route("/health", get(health_check)) // Use imported health_check
-        .route("/auth/register", post(register_handler))
-        .route("/auth/login", post(login_handler));
+        .merge(Router::new().nest("/auth", auth_routes())); // Mount all auth routes
 
     // Combine routers and add layers
     let app = Router::new()

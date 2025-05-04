@@ -77,6 +77,7 @@ icu_testdata = "1.5"
 icu_locid = "1.5"
 
 validator = { version = "0.18", features = ["derive"] }
+regex = "1.10.4"
 # Add missing dependencies needed by test_helpers
 tonic = "0.12.3"
 testcontainers = "0.23.3"

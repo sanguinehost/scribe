@@ -35,6 +35,9 @@ pub enum AppError {
     #[error("Username Taken")]
     UsernameTaken, // Specific registration error
 
+    #[error("Email Taken")]
+    EmailTaken, // Add Email Taken variant
+
     #[error("Unauthorized: {0}")]
     Unauthorized(String), // General unauthorized access
 
@@ -247,6 +250,10 @@ impl IntoResponse for AppError {
             AppError::UsernameTaken => (
                 StatusCode::CONFLICT,
                 "Username is already taken".to_string(),
+            ), // 409 Conflict
+            AppError::EmailTaken => (
+                StatusCode::CONFLICT,
+                "Email is already taken".to_string(),
             ), // 409 Conflict
             AppError::InvalidInput(msg) => {
                 (StatusCode::BAD_REQUEST, format!("Invalid input: {}", msg))
@@ -590,6 +597,16 @@ mod tests {
         assert_eq!(response.status(), StatusCode::CONFLICT);
         let body = get_body_json(response).await;
         assert_eq!(body["error"], "Username is already taken");
+    }
+
+    #[tokio::test]
+    async fn test_email_taken_response() {
+        let error = AppError::EmailTaken;
+        let response = error.into_response();
+
+        assert_eq!(response.status(), StatusCode::CONFLICT);
+        let body = get_body_json(response).await;
+        assert_eq!(body["error"], "Email is already taken");
     }
 
     // --- Tests for Specific Error Conversions -> Response ---
@@ -1387,11 +1404,10 @@ impl From<crate::auth::AuthError> for AppError {
         match err {
             crate::auth::AuthError::WrongCredentials => AppError::InvalidCredentials,
             crate::auth::AuthError::UsernameTaken => AppError::UsernameTaken,
-            crate::auth::AuthError::HashingError => {
-                AppError::PasswordHashingFailed("Password hashing failed".to_string())
-            }
+            crate::auth::AuthError::EmailTaken => AppError::EmailTaken,
+            crate::auth::AuthError::HashingError => AppError::PasswordHashingFailed("Bcrypt hashing failed".to_string()),
             crate::auth::AuthError::UserNotFound => AppError::UserNotFound,
-            crate::auth::AuthError::DatabaseError(s) => AppError::DatabaseQueryError(s),
+            crate::auth::AuthError::DatabaseError(msg) => AppError::DatabaseQueryError(msg),
             crate::auth::AuthError::PoolError(e) => AppError::DbPoolError(e.to_string()),
             crate::auth::AuthError::InteractError(s) => AppError::DbInteractError(s),
         }

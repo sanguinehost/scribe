@@ -14,7 +14,7 @@ use crate::{
     models::{
         character_card::NewCharacter,
         characters::Character,
-        chats::{ChatMessage, ChatSession, MessageRole},
+        chats::{Chat, ChatMessage, MessageRole}, // Renamed ChatSession to Chat
         users::{NewUser, User},
     },
     routes::{
@@ -657,14 +657,14 @@ pub mod db {
     // Re-import necessary types within the module
     use diesel::prelude::*;
     use diesel_migrations::MigrationHarness;
-    // Import common types from super, explicitly add NewChatSession from crate::models
+    // Import common types from super, explicitly add NewChat from crate::models
     use super::{
-        BigDecimal, Character, ChatMessage, ChatSession, DeadpoolManager, DeadpoolPool,
+        BigDecimal, Character, Chat, ChatMessage, DeadpoolManager, DeadpoolPool, // Renamed ChatSession to Chat
         DeadpoolRuntime, MIGRATIONS, MessageRole, NewCharacter, NewUser, PgPool, RunQueryDsl,
         SelectableHelper, User, Uuid, Value, schema,
     };
     use crate::models::chats::DbInsertableChatMessage;
-    use crate::models::chats::NewChatSession; // <<< Add this import
+    use crate::models::chats::NewChat; // Renamed NewChatSession to NewChat
     // Import specifics needed within this module
     use bcrypt;
     use dotenvy::dotenv;
@@ -737,6 +737,7 @@ pub mod db {
             bcrypt::hash(password, bcrypt::DEFAULT_COST).expect("Failed to hash password");
         let new_user = NewUser {
             username: username.to_string(),
+            email: format!("{}@example.com", username), // Generate email from username
             password_hash: hashed_password,
         };
         let conn = pool.get().await.expect("Failed to get DB conn");
@@ -794,16 +795,23 @@ pub mod db {
         pool: &PgPool,
         user_id: Uuid,
         character_id: Uuid,
-    ) -> ChatSession {
-        let new_session = NewChatSession {
-            user_id,
-            character_id,
+    ) -> Chat { // Renamed ChatSession to Chat
+        let new_session = NewChat { // Renamed NewChatSession to NewChat
+             id: Uuid::new_v4(), // NewChat needs an ID
+             user_id,
+             character_id,
+             title: None, // Add default fields for NewChat
+             created_at: chrono::Utc::now(),
+             updated_at: chrono::Utc::now(),
+             history_management_strategy: "message_window".to_string(), // Default
+             history_management_limit: 20, // Default
+             visibility: Some("private".to_string()), // Default
         };
         let conn = pool.get().await.expect("Failed to get DB conn");
         conn.interact(move |conn| {
             diesel::insert_into(schema::chat_sessions::table)
                 .values(&new_session)
-                .returning(ChatSession::as_returning())
+                .returning(Chat::as_select()) // Use as_select for returning the struct
                 .get_result(conn)
         })
         .await
@@ -811,13 +819,13 @@ pub mod db {
         .expect("Failed to insert chat session")
     }
 
-    pub async fn get_chat_session_from_db(pool: &PgPool, session_id: Uuid) -> Option<ChatSession> {
+    pub async fn get_chat_session_from_db(pool: &PgPool, session_id: Uuid) -> Option<Chat> { // Renamed ChatSession to Chat
         use crate::schema::chat_sessions::dsl::*;
         let conn = pool.get().await.expect("Failed to get DB conn");
         conn.interact(move |conn| {
             chat_sessions
                 .filter(id.eq(session_id))
-                .select(ChatSession::as_select())
+                .select(Chat::as_select()) // Renamed ChatSession to Chat
                 .first(conn)
                 .optional()
         })
@@ -844,7 +852,7 @@ pub mod db {
         conn.interact(move |conn| {
             diesel::insert_into(schema::chat_messages::table)
                 .values(&new_message)
-                .returning(ChatMessage::as_returning())
+                .returning(ChatMessage::as_select()) // Use as_select for returning the struct
                 // Specify type for get_result after returning based on error E0277
                 .get_result::<ChatMessage>(conn)
         })
@@ -1069,7 +1077,7 @@ impl TestContext {
     }
 
     /// Inserts a chat session directly into the database for test setup.
-    pub async fn insert_chat_session(&mut self, user_id: Uuid, character_id: Uuid) -> ChatSession {
+    pub async fn insert_chat_session(&mut self, user_id: Uuid, character_id: Uuid) -> Chat { // Renamed ChatSession to Chat
         db::create_test_chat_session(&self.app.db_pool, user_id, character_id).await // Use pool from TestApp
     }
 

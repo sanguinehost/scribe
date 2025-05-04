@@ -1,2 +1,11 @@
-// frontend/src/lib/components/ui/separator/index.ts
-export { default as Separator } from './separator.svelte'; 
+import type { ComponentProps } from 'svelte';
+import Root from './separator.svelte';
+
+type SeparatorProps = ComponentProps<typeof Root>;
+
+export {
+	Root,
+	//
+	Root as Separator,
+	type SeparatorProps
+};

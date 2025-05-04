@@ -13,6 +13,7 @@ use uuid::Uuid;
 pub struct User {
     pub id: Uuid,
     pub username: String,
+    pub email: String,
     #[serde(skip_serializing, skip_deserializing)]
     pub password_hash: String,
     pub created_at: DateTime<Utc>,
@@ -37,6 +38,7 @@ impl AuthUser for User {
 #[diesel(table_name = users)]
 pub struct NewUser {
     pub username: String,
+    pub email: String,
     pub password_hash: String,
 }
 
@@ -52,10 +54,11 @@ mod tests {
     use chrono::Utc;
 
     impl User {
-        fn new_test_user(id: Uuid, username: &str, password_hash: &str) -> Self {
+        fn new_test_user(id: Uuid, username: &str, email: &str, password_hash: &str) -> Self {
             User {
                 id,
                 username: username.to_string(),
+                email: email.to_string(),
                 password_hash: password_hash.to_string(),
                 created_at: chrono::Utc::now(),
                 updated_at: chrono::Utc::now(),
@@ -67,9 +70,10 @@ mod tests {
     fn test_user_struct_and_auth_impl() {
         let user_id = Uuid::new_v4();
         let _now = Utc::now();
-        let user = User::new_test_user(user_id, "testuser", "hashed_password");
+        let user = User::new_test_user(user_id, "testuser", "test@example.com", "hashed_password");
 
         assert_eq!(user.username, "testuser");
+        assert_eq!(user.email, "test@example.com");
         assert_eq!(user.password_hash, "hashed_password");
 
         assert_eq!(axum_login::AuthUser::id(&user), user_id);
@@ -79,13 +83,16 @@ mod tests {
     #[test]
     fn test_new_user_struct() {
         let username = "newuser".to_string();
+        let email = "new@example.com".to_string();
         let password_hash = "new_hashed_password".to_string();
         let new_user = NewUser {
             username: username.clone(),
+            email: email.clone(),
             password_hash: password_hash.clone(),
         };
 
         assert_eq!(new_user.username, username);
+        assert_eq!(new_user.email, email);
         assert_eq!(new_user.password_hash, password_hash);
     }
 

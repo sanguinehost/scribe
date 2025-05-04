@@ -1,4 +1,6 @@
 pub mod auth;
-pub mod characters;
 pub mod chat;
+pub mod characters;
 pub mod health;
+pub mod chats_api;
+pub mod documents_api;

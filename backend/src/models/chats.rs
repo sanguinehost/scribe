@@ -1,6 +1,4 @@
-use crate::models::characters::CharacterMetadata;
-use crate::models::users::User;
-use crate::schema::{chat_messages, chat_sessions};
+use crate::schema::{chat_messages, chat_sessions}; // Removed votes
 use bigdecimal::BigDecimal; // Add import
 use chrono::{DateTime, Utc};
 use diesel::prelude::*;
@@ -17,39 +15,9 @@ use diesel::serialize::{self, IsNull, Output, ToSql};
 use diesel::{AsExpression, FromSqlRow};
 use std::io::Write;
 
-// Represents a chat session in the database
-#[derive(
-    Queryable, Selectable, Identifiable, Associations, Debug, Clone, Serialize, Deserialize,
-)]
-#[diesel(belongs_to(User, foreign_key = user_id))]
-#[diesel(belongs_to(CharacterMetadata, foreign_key = character_id))]
-#[diesel(table_name = chat_sessions)]
-pub struct ChatSession {
-    pub id: Uuid,
-    pub user_id: Uuid,
-    pub character_id: Uuid,
-    pub title: Option<String>,
-    pub system_prompt: Option<String>,
-    pub temperature: Option<BigDecimal>, // Changed f32 to BigDecimal to match NUMERIC
-    pub max_output_tokens: Option<i32>,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
-    // New generation settings fields
-    pub frequency_penalty: Option<BigDecimal>,
-    pub presence_penalty: Option<BigDecimal>,
-    pub top_k: Option<i32>,
-    pub top_p: Option<BigDecimal>,
-    pub repetition_penalty: Option<BigDecimal>,
-    pub min_p: Option<BigDecimal>,
-    pub top_a: Option<BigDecimal>,
-    pub seed: Option<i32>,
-    pub logit_bias: Option<Value>, // JSONB maps to serde_json::Value
-    // History Management Fields
-    pub history_management_strategy: String,
-    pub history_management_limit: i32,
-}
-
-// Type alias for the tuple returned when querying chat session settings
+// Main Chat model (similar to the frontend Chat type)
+// Type alias for the tuple returned when selecting/returning chat settings
+// NOTE: Derives moved to the Chat struct below.
 pub type SettingsTuple = (
     Option<String>,     // system_prompt
     Option<BigDecimal>, // temperature
@@ -63,18 +31,137 @@ pub type SettingsTuple = (
     Option<BigDecimal>, // top_a
     Option<i32>,        // seed
     Option<Value>,      // logit_bias
-    // History Management Fields
     String,             // history_management_strategy
     i32,                // history_management_limit
 );
-
-// For creating a new chat session
-#[derive(Insertable)]
+#[derive(Queryable, Selectable, Identifiable, Serialize, Deserialize, Debug, Clone)]
 #[diesel(table_name = chat_sessions)]
-pub struct NewChatSession {
+#[diesel(check_for_backend(diesel::pg::Pg))]
+pub struct Chat {
+    pub id: Uuid,
     pub user_id: Uuid,
     pub character_id: Uuid,
-    // Add initial settings if needed
+    pub title: Option<String>,
+    pub system_prompt: Option<String>,
+    pub temperature: Option<bigdecimal::BigDecimal>,
+    pub max_output_tokens: Option<i32>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    pub frequency_penalty: Option<bigdecimal::BigDecimal>,
+    pub presence_penalty: Option<bigdecimal::BigDecimal>,
+    pub top_k: Option<i32>,
+    pub top_p: Option<bigdecimal::BigDecimal>,
+    pub repetition_penalty: Option<bigdecimal::BigDecimal>,
+    pub min_p: Option<bigdecimal::BigDecimal>,
+    pub top_a: Option<bigdecimal::BigDecimal>,
+    pub seed: Option<i32>,
+    pub logit_bias: Option<serde_json::Value>,
+    pub history_management_strategy: String,
+    pub history_management_limit: i32,
+    pub visibility: Option<String>, // Added based on migration 2025-05-10-100002
+}
+
+// New Chat for insertion
+#[derive(Insertable, Debug)]
+#[diesel(table_name = chat_sessions)]
+pub struct NewChat {
+    pub id: Uuid,
+    pub user_id: Uuid,
+    pub character_id: Uuid,
+    pub title: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    pub history_management_strategy: String,
+    pub history_management_limit: i32,
+    pub visibility: Option<String>,
+}
+
+// Chat Message model
+#[derive(Queryable, Selectable, Identifiable, Serialize, Deserialize, Debug, Clone)]
+#[diesel(table_name = chat_messages)]
+#[diesel(check_for_backend(diesel::pg::Pg))]
+pub struct Message {
+    pub id: Uuid,
+    pub session_id: Uuid,
+    pub message_type: MessageRole, // Changed String to MessageRole
+    pub content: String,
+    pub rag_embedding_id: Option<Uuid>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    pub user_id: Uuid,
+    pub role: Option<String>,
+    pub parts: Option<serde_json::Value>,
+    pub attachments: Option<serde_json::Value>,
+}
+
+// New Message for insertion
+#[derive(Insertable, Debug)]
+#[diesel(table_name = chat_messages)]
+pub struct NewMessage {
+    pub id: Uuid,
+    pub session_id: Uuid,
+    pub message_type: MessageRole, // Changed String to MessageRole
+    pub content: String,
+    pub user_id: Uuid,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    pub role: Option<String>,
+    pub parts: Option<serde_json::Value>,
+    pub attachments: Option<serde_json::Value>,
+}
+
+// Request/Response DTOs
+#[derive(Deserialize, Debug)]
+pub struct CreateChatRequest {
+    pub title: String,
+    pub character_id: Uuid,
+}
+
+#[derive(Serialize, Debug)]
+pub struct ChatResponse {
+    pub id: Uuid,
+    pub title: String,
+    pub created_at: DateTime<Utc>,
+    pub user_id: Uuid,
+    pub visibility: Option<String>,
+}
+
+#[derive(Deserialize, Debug)]
+pub struct CreateMessageRequest {
+    pub role: String,
+    pub content: String,
+    pub parts: Option<serde_json::Value>,
+    pub attachments: Option<serde_json::Value>,
+}
+
+#[derive(Serialize, Debug)]
+pub struct MessageResponse {
+    pub id: Uuid,
+    pub chat_id: Uuid,
+    pub role: String,
+    pub parts: serde_json::Value,
+    pub attachments: serde_json::Value,
+    pub created_at: DateTime<Utc>,
+}
+
+// Vote model
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct Vote {
+    pub chat_id: Uuid,
+    pub message_id: Uuid,
+    pub is_upvoted: bool,
+}
+
+#[derive(Deserialize, Debug)]
+pub struct VoteRequest {
+    pub message_id: Uuid,
+    pub type_: String, // "up" or "down"
+}
+
+// Visibility update
+#[derive(Deserialize, Debug)]
+pub struct UpdateChatVisibilityRequest {
+    pub visibility: String, // "public" or "private"
 }
 
 // Enum to represent the role of the sender
@@ -134,7 +221,7 @@ impl std::fmt::Display for MessageRole {
 #[derive(
     Queryable, Selectable, Identifiable, Associations, Debug, Clone, Serialize, Deserialize,
 )]
-#[diesel(belongs_to(ChatSession, foreign_key = session_id))]
+#[diesel(belongs_to(Chat, foreign_key = session_id))] // Renamed ChatSession to Chat
 #[diesel(table_name = chat_messages)]
 pub struct ChatMessage {
     pub id: Uuid,
@@ -288,8 +375,8 @@ mod tests {
     }
 
     // Helper function to create a sample chat session
-    fn create_sample_chat_session() -> ChatSession {
-        ChatSession {
+    fn create_sample_chat_session() -> Chat { // Renamed ChatSession to Chat
+        Chat { // Renamed ChatSession to Chat
             id: Uuid::new_v4(),
             user_id: Uuid::new_v4(),
             character_id: Uuid::new_v4(),
@@ -317,7 +404,7 @@ mod tests {
     fn test_debug_chat_session() {
         let session = create_sample_chat_session();
         let debug_str = format!("{:?}", session);
-        assert!(debug_str.contains("ChatSession"));
+        assert!(debug_str.contains("Chat {")); // Renamed ChatSession to Chat
         assert!(debug_str.contains(&session.id.to_string()));
         assert!(debug_str.contains("Test Chat"));
         assert!(debug_str.contains("history_management_strategy: \"none\"")); // Check new field

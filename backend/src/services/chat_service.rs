@@ -2,6 +2,7 @@
 
 use bigdecimal::BigDecimal;
 use diesel::prelude::*;
+use diesel::{RunQueryDsl, SelectableHelper}; // Added RunQueryDsl and SelectableHelper
 use diesel::result::{DatabaseErrorKind, Error as DieselError};
 use serde_json::Value;
 use tracing::{debug, error, info, instrument, warn}; // Added debug
@@ -12,8 +13,8 @@ use crate::{
     models::{
         characters::Character,
         chats::{
-            ChatMessage as DbChatMessage, ChatSession, ChatSettingsResponse,
-            DbInsertableChatMessage, MessageRole, NewChatSession, SettingsTuple,
+            Chat, ChatMessage as DbChatMessage, ChatSettingsResponse, // Renamed ChatSession to Chat
+            DbInsertableChatMessage, MessageRole, NewChat, SettingsTuple, // Renamed NewChatSession to NewChat, Added SettingsTuple
             UpdateChatSettingsRequest,
         },
     },
@@ -56,7 +57,7 @@ pub async fn create_session_and_maybe_first_message(
     state: Arc<AppState>,
     user_id: Uuid,
     character_id: Uuid,
-) -> Result<ChatSession, AppError> {
+) -> Result<Chat, AppError> { // Renamed ChatSession to Chat
     let pool = state.pool.clone();
     let conn = pool.get().await?;
     let (created_session, first_mes_opt) = conn.interact(move |conn| {
@@ -72,13 +73,23 @@ pub async fn create_session_and_maybe_first_message(
                 Some(owner_id) => {
                     if owner_id != user_id {
                         error!(%character_id, %user_id, %owner_id, "User does not own character");
-                        return Err(AppError::Forbidden);
+                        return Err(AppError::Forbidden); // Keep as unit variant
                     }
                     info!(%character_id, %user_id, "Inserting new chat session");
-                    let new_session = NewChatSession { user_id, character_id };
-                    let created_session: ChatSession = diesel::insert_into(chat_sessions::table)
+                    let new_session = NewChat { // Renamed NewChatSession to NewChat
+                        id: Uuid::new_v4(), // NewChat needs an ID
+                        user_id,
+                        character_id,
+                        title: None, // Add default fields for NewChat
+                        created_at: chrono::Utc::now(),
+                        updated_at: chrono::Utc::now(),
+                        history_management_strategy: "message_window".to_string(), // Default
+                        history_management_limit: 20, // Default
+                        visibility: Some("private".to_string()), // Default
+                    };
+                    let created_session: Chat = diesel::insert_into(chat_sessions::table) // Renamed ChatSession to Chat
                         .values(&new_session)
-                        .returning(ChatSession::as_select())
+                        .returning(Chat::as_select()) // Renamed ChatSession to Chat
                         .get_result(transaction_conn)
                         .map_err(|e| {
                             error!(error = ?e, "Failed to insert new chat session");
@@ -136,14 +147,14 @@ pub async fn create_session_and_maybe_first_message(
 pub async fn list_sessions_for_user(
     pool: &DbPool,
     user_id: Uuid,
-) -> Result<Vec<ChatSession>, AppError> {
+) -> Result<Vec<Chat>, AppError> { // Renamed ChatSession to Chat
     let conn = pool.get().await?;
     conn.interact(move |conn| {
         chat_sessions::table
             .filter(chat_sessions::user_id.eq(user_id))
-            .select(ChatSession::as_select())
+            .select(Chat::as_select()) // Renamed ChatSession to Chat
             .order(chat_sessions::updated_at.desc())
-            .load::<ChatSession>(conn)
+            .load::<Chat>(conn) // Renamed ChatSession to Chat
             .map_err(|e| {
                 error!("Failed to load chat sessions for user {}: {}", user_id, e);
                 AppError::DatabaseQueryError(e.to_string())
@@ -170,7 +181,7 @@ pub async fn get_messages_for_session(
         match session_owner_id {
             Some(owner_id) => {
                 if owner_id != user_id {
-                    Err(AppError::Forbidden)
+                    Err(AppError::Forbidden) // Keep as unit variant
                 } else {
                     chat_messages::table
                         .filter(chat_messages::session_id.eq(session_id))
@@ -287,7 +298,7 @@ pub async fn get_session_data_for_generation(
             }
             Some(owner_id) if owner_id != user_id => {
                 warn!(%session_id, %user_id, owner_id=%owner_id, "User mismatch for generation");
-                return Err(AppError::Forbidden);
+                return Err(AppError::Forbidden); // Keep as unit variant
             }
             Some(_) => {
                 info!(%session_id, %user_id, "Session ownership verified for generation");
@@ -485,7 +496,7 @@ pub async fn update_session_settings(
                             "User {} attempted to update settings for session {} owned by {}",
                             user_id, session_id, owner_id
                         );
-                        return Err(AppError::Forbidden);
+                        return Err(AppError::Forbidden); // Keep as unit variant
                     }
 
                     let update_target =
@@ -509,7 +520,7 @@ pub async fn update_session_settings(
                             chat_sessions::history_management_strategy,
                             chat_sessions::history_management_limit,
                         ))
-                        .get_result(transaction_conn)
+                        .get_result::<SettingsTuple>(transaction_conn) // Explicit type annotation
                         .map_err(|e| {
                             error!(error = ?e, "Failed to update chat session settings");
                             AppError::DatabaseQueryError(e.to_string())

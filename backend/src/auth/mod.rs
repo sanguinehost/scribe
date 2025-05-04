@@ -21,6 +21,8 @@ pub enum AuthError {
     WrongCredentials,
     #[error("Username already taken")]
     UsernameTaken,
+    #[error("Email already taken")] // Add EmailTaken variant
+    EmailTaken,
     #[error("Password hashing failed")]
     HashingError,
     #[error("User not found")]
@@ -46,21 +48,24 @@ impl From<InteractError> for AuthError {
 pub fn create_user(
     conn: &mut PgConnection,
     username: String,
+    email: String, // Add email parameter
     password: Secret<String>, // This password should now be the hash from the handler
 ) -> Result<User, AuthError> {
-    // --- Log username explicitly ---
-    info!(username = %username, "Attempting to create user");
+    // --- Log username and email explicitly ---
+    info!(%username, %email, "Attempting to create user");
 
     let username_clone = username.clone(); // Clone for error message
+    let email_clone = email.clone(); // Clone email
 
     // 2. Create a NewUser instance
     let new_user = NewUser {
         username: username_clone, // Pass ownership of username
+        email: email_clone,       // Add email field
         password_hash: password.expose_secret().to_string(), // Use the provided hash directly
     };
 
     // --- Log before DB insert ---
-    debug!(username = %new_user.username, "Inserting new user into database...");
+    debug!(username = %new_user.username, email = %new_user.email, "Inserting new user into database...");
     // 3. Insert into the database
     let insert_result = diesel::insert_into(users::table)
         .values(&new_user)
@@ -70,19 +75,29 @@ pub fn create_user(
     // --- Log DB result ---
     match insert_result {
         Ok(user) => {
-            info!(username = %user.username, user_id = %user.id, "User created successfully in DB.");
+            info!(username = %user.username, email = %user.email, user_id = %user.id, "User created successfully in DB.");
             Ok(user)
         }
         Err(e) => {
-            error!(username = %new_user.username, error = ?e, "Database error creating user");
+            error!(username = %new_user.username, email = %new_user.email, error = ?e, "Database error creating user");
             // Check for unique violation (specific error code for PostgreSQL)
             if let diesel::result::Error::DatabaseError(
                 diesel::result::DatabaseErrorKind::UniqueViolation,
-                _,
+                db_info, // Capture db_info
             ) = e
             {
-                warn!(username = %new_user.username, "Username already taken (UniqueViolation).");
-                Err(AuthError::UsernameTaken)
+                // Check which constraint was violated
+                if db_info.constraint_name() == Some("users_username_key") {
+                    warn!(username = %new_user.username, "Username already taken (UniqueViolation).");
+                    Err(AuthError::UsernameTaken)
+                } else if db_info.constraint_name() == Some("users_email_key") { // Assuming constraint name is users_email_key
+                    warn!(email = %new_user.email, "Email already taken (UniqueViolation).");
+                    Err(AuthError::EmailTaken)
+                } else {
+                    // Handle other unique constraints if any, or return a generic DB error
+                    error!(username = %new_user.username, email = %new_user.email, constraint = ?db_info.constraint_name(), "Unknown unique constraint violation during user creation.");
+                    Err(AuthError::DatabaseError(format!("Unique constraint violation: {:?}", db_info.constraint_name())))
+                }
             } else {
                 Err(AuthError::DatabaseError(e.to_string()))
             }
@@ -140,30 +155,45 @@ pub fn get_user(conn: &mut PgConnection, user_id: Uuid) -> Result<User, AuthErro
 #[instrument(skip(conn, password), err)]
 pub fn verify_credentials(
     conn: &mut PgConnection,
-    username: &str,
+    identifier: &str, // Changed from username to identifier
     password: Secret<String>,
 ) -> Result<User, AuthError> {
-    // --- Log username explicitly ---
-    info!(%username, "Verifying credentials");
-    let user = get_user_by_username(conn, username)?;
+    // --- Log identifier explicitly ---
+    info!(%identifier, "Verifying credentials");
+
+    // Find user by username OR email
+    let user = users::table
+        .filter(users::username.eq(identifier).or(users::email.eq(identifier))) // Query by username OR email
+        .select(User::as_select())
+        .first(conn)
+        .map_err(|e| match e {
+            diesel::result::Error::NotFound => {
+                debug!(%identifier, "User not found by identifier.");
+                AuthError::UserNotFound // Return UserNotFound if neither matches
+            }
+            _ => {
+                error!(%identifier, error = ?e, "Database error finding user by identifier.");
+                AuthError::DatabaseError(e.to_string())
+            }
+        })?;
 
     // Perform bcrypt verification synchronously within the function
     // This avoids potential issues with nested spawn_blocking inside interact
     // --- Log before verify ---
-    debug!(username = %user.username, user_id = %user.id, "Verifying password hash...");
+    debug!(identifier = %identifier, username = %user.username, email = %user.email, user_id = %user.id, "Verifying password hash...");
     let is_valid = bcrypt::verify(password.expose_secret(), &user.password_hash)
         .map_err(|e| {
-            error!(username = %user.username, user_id = %user.id, error = ?e, "Bcrypt verification failed");
+            error!(identifier = %identifier, username = %user.username, email = %user.email, user_id = %user.id, error = ?e, "Bcrypt verification failed");
             AuthError::HashingError // Map bcrypt errors to HashingError
         })?;
 
     if is_valid {
         // --- Log success ---
-        debug!(username = %user.username, user_id = %user.id, "Password verification successful.");
+        debug!(identifier = %identifier, username = %user.username, email = %user.email, user_id = %user.id, "Password verification successful.");
         Ok(user)
     } else {
         // --- Log failure ---
-        warn!(username = %user.username, user_id = %user.id, "Password verification failed (wrong password).");
+        warn!(identifier = %identifier, username = %user.username, email = %user.email, user_id = %user.id, "Password verification failed (wrong password).");
         Err(AuthError::WrongCredentials)
     }
 }

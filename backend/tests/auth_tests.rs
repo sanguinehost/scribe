@@ -27,7 +27,10 @@ use scribe_backend::{
     auth::{session_store::DieselSessionStore, user_store::Backend as AuthBackend},
     config::Config,
     errors::AppError,
-    models::{users::NewUser, users::User}, // Import NewUser
+    models::{
+        auth::{AuthResponse, LoginPayload, RegisterPayload}, // Updated auth models
+        users::{NewUser, User},
+    },
     auth::session_store::SessionRecord, // Import SessionRecord correctly
     routes::auth::{login_handler, logout_handler, me_handler, register_handler},
     schema::{users, sessions}, // Import sessions schema
@@ -164,9 +167,10 @@ where
 fn insert_test_user_direct(
     conn: &mut PgConnection,
     username: &str,
+    email: &str, // Add email parameter
     password: &str, // Take plain password
 ) -> Result<User, diesel::result::Error> {
-    info!(%username, "Inserting test user directly (sync hash)");
+    info!(%username, %email, "Inserting test user directly (sync hash)");
 
     // Hash synchronously within the test helper
     let hashed_password = bcrypt::hash(password, bcrypt::DEFAULT_COST).map_err(|e| {
@@ -177,6 +181,7 @@ fn insert_test_user_direct(
 
     let new_user = NewUser {
         username: username.to_string(),
+        email: email.to_string(), // Add email
         password_hash: hashed_password,
     };
 
@@ -185,7 +190,7 @@ fn insert_test_user_direct(
         .returning(User::as_returning())
         .get_result(conn)
         .map_err(|e| {
-            error!(username = %username, error=?e, "DB insert failed in test helper");
+            error!(username = %username, email = %email, error=?e, "DB insert failed in test helper");
             e // Return original Diesel error
         })
 }
@@ -274,10 +279,13 @@ async fn test_register_success() -> AnyhowResult<()> {
     let app = build_test_app(pool.clone()).await;
 
     let username = format!("register_success_{}", Uuid::new_v4());
+    let email = format!("{}@test.com", username); // Use unique email
     let password = "password123";
 
-    let credentials = json!({
+    // Use RegisterPayload
+    let payload = json!({
         "username": username,
+        "email": email,
         "password": password
     });
 
@@ -285,7 +293,7 @@ async fn test_register_success() -> AnyhowResult<()> {
         .method(Method::POST)
         .uri("/api/auth/register")
         .header(header::CONTENT_TYPE, "application/json")
-        .body(Body::from(serde_json::to_vec(&credentials)?))?;
+        .body(Body::from(serde_json::to_vec(&payload)?))?;
 
     let response = app.oneshot(request).await?;
 
@@ -296,22 +304,28 @@ async fn test_register_success() -> AnyhowResult<()> {
         "Registration should succeed"
     );
 
-    // Assert response body (should contain the created user, excluding password)
-    let (status, user_body) = get_json_body::<User>(response).await?;
+    // Assert response body (should match AuthResponse)
+    let (status, auth_response) = get_json_body::<AuthResponse>(response).await?;
     assert_eq!(status, StatusCode::CREATED);
-    assert_eq!(user_body.username, username);
+    assert_eq!(auth_response.username, username);
+    assert_eq!(auth_response.email, email); // Check email in response
 
     // Add user ID to guard for cleanup
-    guard.add_user(user_body.id);
+    guard.add_user(auth_response.user_id);
 
     // Verify user exists in DB (optional, but good practice)
-    let fetched_user = run_db_op(&pool, move |conn| {
-        users::table
-            .filter(users::username.eq(username))
-            .first::<User>(conn)
+    let fetched_user = run_db_op(&pool, {
+        let user_id = auth_response.user_id; // Clone for closure
+        move |conn| {
+            users::table
+                .find(user_id) // Find by ID
+                .first::<User>(conn)
+        }
     })
     .await?;
-    assert_eq!(fetched_user.id, user_body.id);
+    assert_eq!(fetched_user.id, auth_response.user_id);
+    assert_eq!(fetched_user.username, username);
+    assert_eq!(fetched_user.email, email); // Verify email in DB
 
     // Cleanup test data
     guard.cleanup().await?;
@@ -326,33 +340,40 @@ async fn test_register_duplicate_username() -> AnyhowResult<()> {
     let app = build_test_app(pool.clone()).await;
 
     let username = format!("register_duplicate_{}", Uuid::new_v4());
+    let email = format!("{}@test.com", username); // Unique email for this user
     let password = "password123";
 
     // --- First registration (should succeed) ---
-    let credentials = json!({
+    let payload1 = json!({
         "username": username,
+        "email": email,
         "password": password
     });
     let request1 = Request::builder()
         .method(Method::POST)
         .uri("/api/auth/register")
         .header(header::CONTENT_TYPE, "application/json")
-        .body(Body::from(serde_json::to_vec(&credentials)?))?;
+        .body(Body::from(serde_json::to_vec(&payload1)?))?;
     let response1 = app.clone().oneshot(request1).await?;
     assert_eq!(
         response1.status(),
         StatusCode::CREATED,
         "First registration failed"
     );
-    let (_, user_body) = get_json_body::<User>(response1).await?;
-    guard.add_user(user_body.id); // Ensure cleanup
+    let (_, auth_response) = get_json_body::<AuthResponse>(response1).await?;
+    guard.add_user(auth_response.user_id); // Ensure cleanup
 
-    // --- Second registration (should fail with 409 Conflict) ---
+    // --- Second registration (same username, different email - should fail) ---
+    let payload2 = json!({
+        "username": username, // Same username
+        "email": format!("another_{}", email), // Different email
+        "password": password
+    });
     let request2 = Request::builder()
         .method(Method::POST)
         .uri("/api/auth/register")
         .header(header::CONTENT_TYPE, "application/json")
-        .body(Body::from(serde_json::to_vec(&credentials)?))?;
+        .body(Body::from(serde_json::to_vec(&payload2)?))?;
     let response2 = app.oneshot(request2).await?;
 
     // Assert status code is 409 Conflict
@@ -374,6 +395,69 @@ async fn test_register_duplicate_username() -> AnyhowResult<()> {
 
 #[tokio::test]
 #[ignore] // Added ignore for CI
+async fn test_register_duplicate_email() -> AnyhowResult<()> {
+    let pool = create_test_pool();
+    let mut guard = TestDataGuard::new(pool.clone());
+    let app = build_test_app(pool.clone()).await;
+
+    let username1 = format!("register_dup_email1_{}", Uuid::new_v4());
+    let username2 = format!("register_dup_email2_{}", Uuid::new_v4());
+    let email = format!("duplicate_email_{}@test.com", Uuid::new_v4()); // Same email
+    let password = "password123";
+
+    // --- First registration (should succeed) ---
+    let payload1 = json!({
+        "username": username1,
+        "email": email,
+        "password": password
+    });
+    let request1 = Request::builder()
+        .method(Method::POST)
+        .uri("/api/auth/register")
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(serde_json::to_vec(&payload1)?))?;
+    let response1 = app.clone().oneshot(request1).await?;
+    assert_eq!(
+        response1.status(),
+        StatusCode::CREATED,
+        "First registration failed"
+    );
+    let (_, auth_response) = get_json_body::<AuthResponse>(response1).await?;
+    guard.add_user(auth_response.user_id); // Ensure cleanup
+
+    // --- Second registration (different username, same email - should fail) ---
+    let payload2 = json!({
+        "username": username2, // Different username
+        "email": email,       // Same email
+        "password": password
+    });
+    let request2 = Request::builder()
+        .method(Method::POST)
+        .uri("/api/auth/register")
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(serde_json::to_vec(&payload2)?))?;
+    let response2 = app.oneshot(request2).await?;
+
+    // Assert status code is 409 Conflict
+    assert_eq!(
+        response2.status(),
+        StatusCode::CONFLICT,
+        "Duplicate email registration did not return 409"
+    );
+
+    // Assert error message
+    let (status, error_body) = get_json_body::<Value>(response2).await?;
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert_eq!(error_body["error"], "Email is already taken"); // Check for email taken error
+
+    // Cleanup test data
+    guard.cleanup().await?;
+    Ok(())
+}
+
+
+#[tokio::test]
+#[ignore] // Added ignore for CI
 async fn test_login_success() -> AnyhowResult<()> {
     let pool = create_test_pool();
     let mut guard = TestDataGuard::new(pool.clone());
@@ -381,32 +465,35 @@ async fn test_login_success() -> AnyhowResult<()> {
     let app = build_test_app(pool.clone()).await;
 
     let username = format!("test_login_{}", Uuid::new_v4().to_string()[..8].to_string());
+    let email = format!("{}@test.com", username);
     let password = "testPassword123";
     let user = run_db_op(&pool, {
         let username = username.clone(); // Clone for the closure
+        let email = email.clone(); // Clone email
         let password = password.to_string(); // Convert password to String for closure
-        move |conn| insert_test_user_direct(conn, &username, &password)
+        move |conn| insert_test_user_direct(conn, &username, &email, &password) // Add email
     })
     .await
     .context(format!(
-        "Failed to insert test user '{}' for login",
-        username
+        "Failed to insert test user '{}'/'{}' for login",
+        username, email
     ))?;
     guard.add_user(user.id);
-    info!(user_id = %user.id, %username, "Test user created for login");
+    info!(user_id = %user.id, %username, %email, "Test user created for login");
 
     // --- Use app.oneshot() ---
-    let login_credentials = json!({
-        "username": username, // Use the generated unique username
+    // Use LoginPayload with username as identifier
+    let login_payload = json!({
+        "identifier": username, // Use username as identifier
         "password": password,
     });
 
-    info!(%username, "Sending login request via oneshot...");
+    info!(identifier = %username, "Sending login request via oneshot...");
     let request = Request::builder()
         .method(Method::POST)
         .uri("/api/auth/login")
         .header(header::CONTENT_TYPE, "application/json")
-        .body(Body::from(serde_json::to_vec(&login_credentials)?))?;
+        .body(Body::from(serde_json::to_vec(&login_payload)?))?;
 
     let response = app.oneshot(request).await?; // Use oneshot here
 
@@ -433,29 +520,25 @@ async fn test_login_success() -> AnyhowResult<()> {
         );
     }
 
-    // Check response body (optional, but good practice)
-    // Use the get_json_body helper
-    let (body_status, body): (StatusCode, Value) = get_json_body(response)
+    // Check response body (should match AuthResponse)
+    let (body_status, auth_response): (StatusCode, AuthResponse) = get_json_body(response)
         .await
         .context("Failed to parse login response JSON")?;
-    assert_eq!(body_status, StatusCode::OK, "Body status code mismatch"); // Ensure body status also OK
+    assert_eq!(body_status, StatusCode::OK, "Body status code mismatch");
 
-    // Assert the structure of the returned User object
+    // Assert the structure of the returned AuthResponse object
     assert_eq!(
-        body["username"], username,
+        auth_response.username, username,
         "Response body username mismatch"
     );
     assert_eq!(
-        body["id"],
-        user.id.to_string(),
+        auth_response.email, email, // Check email
+        "Response body email mismatch"
+    );
+    assert_eq!(
+        auth_response.user_id, user.id,
         "Response body user ID mismatch"
     );
-    assert!(
-        body.get("password_hash").is_none(),
-        "Password hash should not be present in response"
-    );
-    assert!(body.get("created_at").is_some(), "created_at field missing");
-    assert!(body.get("updated_at").is_some(), "updated_at field missing");
 
     info!("Login successful and Set-Cookie header present.");
 
@@ -463,6 +546,89 @@ async fn test_login_success() -> AnyhowResult<()> {
     guard.cleanup().await.context("Failed during cleanup")?;
     Ok(())
 }
+
+
+#[tokio::test]
+#[ignore] // Added ignore for CI
+async fn test_login_success_with_email() -> AnyhowResult<()> {
+    let pool = create_test_pool();
+    let mut guard = TestDataGuard::new(pool.clone());
+    let app = build_test_app(pool.clone()).await;
+
+    let username = format!("test_login_email_{}", Uuid::new_v4().to_string()[..8].to_string());
+    let email = format!("{}@test.com", username);
+    let password = "testPassword123";
+    let user = run_db_op(&pool, {
+        let username = username.clone();
+        let email = email.clone();
+        let password = password.to_string();
+        move |conn| insert_test_user_direct(conn, &username, &email, &password)
+    })
+    .await
+    .context(format!(
+        "Failed to insert test user '{}'/'{}' for email login",
+        username, email
+    ))?;
+    guard.add_user(user.id);
+    info!(user_id = %user.id, %username, %email, "Test user created for email login");
+
+    // --- Use app.oneshot() ---
+    // Use LoginPayload with email as identifier
+    let login_payload = json!({
+        "identifier": email, // Use email as identifier
+        "password": password,
+    });
+
+    info!(identifier = %email, "Sending login request via oneshot using email...");
+    let request = Request::builder()
+        .method(Method::POST)
+        .uri("/api/auth/login")
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(serde_json::to_vec(&login_payload)?))?;
+
+    let response = app.oneshot(request).await?;
+
+    // --- Assertions ---
+    let status = response.status();
+    info!(%status, headers = ?response.headers(), "Received email login response");
+
+    assert_eq!(status, StatusCode::OK, "Email login request did not return OK");
+
+    // Check for Set-Cookie header
+    let set_cookie_header = response.headers().get(header::SET_COOKIE);
+    assert!(
+        set_cookie_header.is_some(),
+        "Set-Cookie header was not found in the email login response. Headers: {:?}",
+        response.headers()
+    );
+
+    // Check response body (should match AuthResponse)
+    let (body_status, auth_response): (StatusCode, AuthResponse) = get_json_body(response)
+        .await
+        .context("Failed to parse email login response JSON")?;
+    assert_eq!(body_status, StatusCode::OK, "Body status code mismatch");
+
+    // Assert the structure of the returned AuthResponse object
+    assert_eq!(
+        auth_response.username, username,
+        "Response body username mismatch"
+    );
+    assert_eq!(
+        auth_response.email, email,
+        "Response body email mismatch"
+    );
+    assert_eq!(
+        auth_response.user_id, user.id,
+        "Response body user ID mismatch"
+    );
+
+    info!("Email login successful and Set-Cookie header present.");
+
+    // Cleanup
+    guard.cleanup().await.context("Failed during cleanup")?;
+    Ok(())
+}
+
 
 #[tokio::test]
 #[ignore] // Added ignore for CI
@@ -472,22 +638,24 @@ async fn test_login_wrong_password() -> AnyhowResult<()> {
     let app = build_test_app(pool.clone()).await;
 
     let username = format!("login_wrong_pass_{}", Uuid::new_v4());
+    let email = format!("{}@test.com", username);
     let correct_password = "password123";
     let wrong_password = "wrongpassword";
 
     // Insert user directly
     let user = run_db_op(&pool, {
         let username = username.clone();
+        let email = email.clone();
         let password = correct_password.to_string();
-        move |conn| insert_test_user_direct(conn, &username, &password)
+        move |conn| insert_test_user_direct(conn, &username, &email, &password) // Add email
     })
     .await
-    .with_context(|| format!("Failed to insert test user '{}' directly into DB", username))?;
+    .with_context(|| format!("Failed to insert test user '{}'/'{}' directly into DB", username, email))?;
     guard.add_user(user.id); // Ensure cleanup
 
-    // Attempt Login with wrong password
-    let credentials = json!({
-        "username": username,
+    // Attempt Login with wrong password (using username as identifier)
+    let payload = json!({
+        "identifier": username, // Use username as identifier
         "password": wrong_password
     });
 
@@ -495,7 +663,7 @@ async fn test_login_wrong_password() -> AnyhowResult<()> {
         .method(Method::POST)
         .uri("/api/auth/login")
         .header(header::CONTENT_TYPE, "application/json")
-        .body(Body::from(serde_json::to_vec(&credentials)?))?;
+        .body(Body::from(serde_json::to_vec(&payload)?))?;
 
     let response = app.oneshot(request).await?;
 
@@ -509,7 +677,7 @@ async fn test_login_wrong_password() -> AnyhowResult<()> {
     // Verify error message (depends on AppError mapping)
     let (status, error_body) = get_json_body::<Value>(response).await?;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
-    assert_eq!(error_body["error"], "Invalid username or password"); // Updated expected error message
+    assert_eq!(error_body["error"], "Invalid identifier or password"); // Updated expected error message
 
     guard.cleanup().await?;
     Ok(())
@@ -521,12 +689,12 @@ async fn test_login_user_not_found() -> AnyhowResult<()> {
     let pool = create_test_pool();
     let _app = build_test_app(pool.clone()).await;
 
-    let username = format!("login_nonexistent_{}", Uuid::new_v4());
+    let identifier = format!("login_nonexistent_{}", Uuid::new_v4()); // Could be username or email
     let password = "password123";
 
     // Attempt Login with non-existent user
-    let credentials = json!({
-        "username": username,
+    let payload = json!({
+        "identifier": identifier,
         "password": password
     });
 
@@ -534,7 +702,7 @@ async fn test_login_user_not_found() -> AnyhowResult<()> {
         .method(Method::POST)
         .uri("/api/auth/login")
         .header(header::CONTENT_TYPE, "application/json")
-        .body(Body::from(serde_json::to_vec(&credentials)?))?;
+        .body(Body::from(serde_json::to_vec(&payload)?))?;
 
     let response = _app.oneshot(request).await?;
 
@@ -548,7 +716,7 @@ async fn test_login_user_not_found() -> AnyhowResult<()> {
     // Verify error message
     let (status, error_body) = get_json_body::<Value>(response).await?;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
-    assert_eq!(error_body["error"], "Invalid username or password"); // Updated expected error message
+    assert_eq!(error_body["error"], "Invalid identifier or password"); // Updated expected error message
 
     Ok(())
 }
@@ -561,19 +729,21 @@ async fn test_verify_credentials_invalid_hash_in_db() -> AnyhowResult<()> {
     let mut guard = TestDataGuard::new(pool.clone());
 
     let username = format!("verify_invalid_hash_{}", Uuid::new_v4());
+    let email = format!("{}@test.com", username);
     let password = "password123";
     let invalid_hash = "this_is_not_a_valid_bcrypt_hash";
 
     // 1. Insert user with a valid hash initially (using the helper)
     let user = run_db_op(&pool, {
         let username = username.clone();
+        let email = email.clone();
         let password = password.to_string();
-        move |conn| insert_test_user_direct(conn, &username, &password)
+        move |conn| insert_test_user_direct(conn, &username, &email, &password) // Add email
     })
     .await
-    .with_context(|| format!("Failed to insert test user '{}'", username))?;
+    .with_context(|| format!("Failed to insert test user '{}'/'{}'", username, email))?;
     guard.add_user(user.id);
-    info!(user_id = %user.id, %username, "Test user created");
+    info!(user_id = %user.id, %username, %email, "Test user created");
 
     // 2. Manually update the hash in the DB to an invalid one
     let update_result = run_db_op(&pool, {
@@ -588,12 +758,12 @@ async fn test_verify_credentials_invalid_hash_in_db() -> AnyhowResult<()> {
     update_result.context("Failed to update user hash to invalid string")?;
     info!(user_id = %user.id, %username, "Updated password hash to invalid string in DB");
 
-    // 3. Attempt to verify credentials - should fail during bcrypt::verify
+    // 3. Attempt to verify credentials using username as identifier - should fail during bcrypt::verify
     let verification_result = run_db_op(&pool, {
-        let username = username.clone();
+        let identifier = username.clone(); // Use username as identifier
         let password = Secret::new(password.to_string()); // Wrap password in Secret
         move |conn| {
-            scribe_backend::auth::verify_credentials(conn, &username, password)
+            scribe_backend::auth::verify_credentials(conn, &identifier, password) // Pass identifier
                 // Map AuthError to a Diesel error variant for run_db_op compatibility
                 .map_err(|auth_err| diesel::result::Error::QueryBuilderError(Box::new(auth_err)))
         }
@@ -657,19 +827,21 @@ async fn test_login_hashing_error_in_db() -> AnyhowResult<()> {
     let app = build_test_app(pool.clone()).await;
 
     let username = format!("login_hash_err_{}", Uuid::new_v4());
+    let email = format!("{}@test.com", username);
     let password = "password123";
     let invalid_hash = "this_is_not_a_valid_bcrypt_hash";
 
     // 1. Insert user with a valid hash initially
     let user = run_db_op(&pool, {
         let username = username.clone();
+        let email = email.clone();
         let password = password.to_string();
-        move |conn| insert_test_user_direct(conn, &username, &password)
+        move |conn| insert_test_user_direct(conn, &username, &email, &password) // Add email
     })
     .await
-    .with_context(|| format!("Failed to insert test user '{}'", username))?;
+    .with_context(|| format!("Failed to insert test user '{}'/'{}'", username, email))?;
     guard.add_user(user.id);
-    info!(user_id = %user.id, %username, "Test user created for login hashing error test");
+    info!(user_id = %user.id, %username, %email, "Test user created for login hashing error test");
 
     // 2. Manually update the hash in the DB to an invalid one
     let update_result = run_db_op(&pool, {
@@ -684,9 +856,9 @@ async fn test_login_hashing_error_in_db() -> AnyhowResult<()> {
     update_result.context("Failed to update user hash to invalid string")?;
     info!(user_id = %user.id, %username, "Updated password hash to invalid string in DB");
 
-    // 3. Attempt to login via the API endpoint
-    let credentials = json!({
-        "username": username,
+    // 3. Attempt to login via the API endpoint (using username as identifier)
+    let payload = json!({
+        "identifier": username, // Use username as identifier
         "password": password
     });
 
@@ -694,7 +866,7 @@ async fn test_login_hashing_error_in_db() -> AnyhowResult<()> {
         .method(Method::POST)
         .uri("/api/auth/login")
         .header(header::CONTENT_TYPE, "application/json")
-        .body(Body::from(serde_json::to_vec(&credentials)?))?;
+        .body(Body::from(serde_json::to_vec(&payload)?))?;
 
     info!(%username, "Sending login request via oneshot with invalid hash in DB...");
     let response = app.oneshot(request).await?;
@@ -733,28 +905,30 @@ async fn test_logout_success() -> AnyhowResult<()> {
     let app = build_test_app(pool.clone()).await;
 
     let username = format!("logout_success_{}", Uuid::new_v4());
+    let email = format!("{}@test.com", username);
     let password = "password123";
 
     // Insert user
     let user = run_db_op(&pool, {
         let username = username.clone();
+        let email = email.clone();
         let password = password.to_string();
-        move |conn| insert_test_user_direct(conn, &username, &password)
+        move |conn| insert_test_user_direct(conn, &username, &email, &password) // Add email
     })
     .await
     .with_context(|| "Failed to insert user")?;
     guard.add_user(user.id);
 
-    // --- Log in first ---
-    let login_credentials = json!({
-        "username": username,
+    // --- Log in first (using username as identifier) ---
+    let login_payload = json!({
+        "identifier": username, // Use username as identifier
         "password": password
     });
     let login_request = Request::builder()
         .method(Method::POST)
         .uri("/api/auth/login")
         .header(header::CONTENT_TYPE, "application/json")
-        .body(Body::from(serde_json::to_vec(&login_credentials)?))?;
+        .body(Body::from(serde_json::to_vec(&login_payload)?))?;
     let login_response = app.clone().oneshot(login_request).await?;
     assert_eq!(
         login_response.status(),
@@ -851,28 +1025,30 @@ async fn test_me_success() -> AnyhowResult<()> {
     let app = build_test_app(pool.clone()).await;
 
     let username = format!("me_success_{}", Uuid::new_v4());
+    let email = format!("{}@test.com", username);
     let password = "password123";
 
     // Insert user
     let user = run_db_op(&pool, {
         let username = username.clone();
+        let email = email.clone();
         let password = password.to_string();
-        move |conn| insert_test_user_direct(conn, &username, &password)
+        move |conn| insert_test_user_direct(conn, &username, &email, &password) // Add email
     })
     .await
     .with_context(|| "Failed to insert user")?;
     guard.add_user(user.id);
 
-    // --- Log in ---
-    let login_credentials = json!({
-        "username": username,
+    // --- Log in (using username as identifier) ---
+    let login_payload = json!({
+        "identifier": username, // Use username as identifier
         "password": password
     });
     let login_request = Request::builder()
         .method(Method::POST)
         .uri("/api/auth/login")
         .header(header::CONTENT_TYPE, "application/json")
-        .body(Body::from(serde_json::to_vec(&login_credentials)?))?;
+        .body(Body::from(serde_json::to_vec(&login_payload)?))?;
     let login_response = app.clone().oneshot(login_request).await?;
     assert_eq!(
         login_response.status(),
@@ -899,10 +1075,12 @@ async fn test_me_success() -> AnyhowResult<()> {
     // Assertions
     assert_eq!(me_response.status(), StatusCode::OK, "/me request failed");
 
-    let (status, user_body) = get_json_body::<User>(me_response).await?;
+    // Assert response body matches AuthResponse
+    let (status, auth_response) = get_json_body::<AuthResponse>(me_response).await?;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(user_body.id, user.id);
-    assert_eq!(user_body.username, user.username);
+    assert_eq!(auth_response.user_id, user.id);
+    assert_eq!(auth_response.username, user.username);
+    assert_eq!(auth_response.email, user.email); // Check email
 
     guard.cleanup().await?;
     Ok(())
@@ -1200,11 +1378,13 @@ async fn test_auth_backend_get_user_not_found() -> AnyhowResult<()> {
     assert!(user_option.is_none(), "get_user should return None for a non-existent user ID");
 
     Ok(())
-}
-
-use scribe_backend::models::users::UserCredentials; // Add import for UserCredentials
-
-#[tokio::test]
+    }
+    
+    // Remove UserCredentials import if no longer needed
+    // use scribe_backend::models::users::UserCredentials;
+    use scribe_backend::models::auth::LoginPayload; // Import LoginPayload
+    
+    #[tokio::test]
 #[ignore] // Requires DB access via pool
 async fn test_auth_backend_authenticate_hashing_error() -> AnyhowResult<()> {
     // Covers lines 81, 83-84 in user_store.rs (Err(e) path in authenticate)
@@ -1213,19 +1393,21 @@ async fn test_auth_backend_authenticate_hashing_error() -> AnyhowResult<()> {
     let backend = AuthBackend::new(pool.clone());
 
     let username = format!("auth_backend_hash_err_{}", Uuid::new_v4());
+    let email = format!("{}@test.com", username);
     let password = "password123";
     let invalid_hash = "this_is_not_a_valid_bcrypt_hash";
 
     // 1. Insert user with a valid hash initially
     let user = run_db_op(&pool, {
         let username = username.clone();
+        let email = email.clone();
         let password = password.to_string();
-        move |conn| insert_test_user_direct(conn, &username, &password)
+        move |conn| insert_test_user_direct(conn, &username, &email, &password) // Add email
     })
     .await
-    .with_context(|| format!("Failed to insert test user '{}'", username))?;
+    .with_context(|| format!("Failed to insert test user '{}'/'{}'", username, email))?;
     guard.add_user(user.id);
-    info!(user_id = %user.id, %username, "Test user created for hashing error test");
+    info!(user_id = %user.id, %username, %email, "Test user created for hashing error test");
 
     // 2. Manually update the hash in the DB to an invalid one
     let update_result = run_db_op(&pool, {
@@ -1240,15 +1422,15 @@ async fn test_auth_backend_authenticate_hashing_error() -> AnyhowResult<()> {
     update_result.context("Failed to update user hash to invalid string")?;
     info!(user_id = %user.id, %username, "Updated password hash to invalid string in DB");
 
-    // 3. Attempt to authenticate using the AuthBackend
-    let credentials = UserCredentials {
-        username: username.clone(),
-        password: Secret::new(password.to_string()), // Use Secret here as authenticate expects it
+    // 3. Attempt to authenticate using the AuthBackend (using username as identifier)
+    let payload = LoginPayload {
+        identifier: username.clone(), // Use username as identifier
+        password: Secret::new(password.to_string()),
     };
 
-    info!(%username, "Attempting authentication via AuthBackend with invalid hash in DB");
-    let auth_result = backend.authenticate(credentials).await;
-    info!(%username, ?auth_result, "Result from AuthBackend::authenticate");
+    info!(identifier = %username, "Attempting authentication via AuthBackend with invalid hash in DB");
+    let auth_result = backend.authenticate(payload).await;
+    info!(identifier = %username, ?auth_result, "Result from AuthBackend::authenticate");
 
     // 4. Assert that the error is HashingError
     assert!(auth_result.is_err(), "Authentication should fail with invalid hash in DB");

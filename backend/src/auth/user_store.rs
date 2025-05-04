@@ -6,9 +6,10 @@ use std::fmt::{self, Debug};
 use tracing::{debug, error, info, instrument, warn};
 
 use crate::auth::AuthError;
+use crate::models::auth::LoginPayload; // Import LoginPayload
 use crate::models::users::User; // Assuming your User model is here
-use crate::models::users::UserCredentials;
-use crate::state::DbPool; // Assuming you use a DbPool // <-- ADD import for model's credentials
+// Remove UserCredentials import if no longer needed elsewhere in this file
+use crate::state::DbPool; // Assuming you use a DbPool
 
 // Manually implement Debug because DbPool doesn't implement it.
 #[derive(Clone)]
@@ -36,7 +37,7 @@ impl Backend {
 #[async_trait]
 impl AuthnBackend for Backend {
     type User = User; // Your User struct
-    type Credentials = UserCredentials; // <-- USE the imported one
+    type Credentials = LoginPayload; // Use LoginPayload
     type Error = AuthError; // Your custom AuthError enum
 
     #[instrument(skip(self, creds), err)]
@@ -44,19 +45,23 @@ impl AuthnBackend for Backend {
         &self,
         creds: Self::Credentials,
     ) -> Result<Option<Self::User>, Self::Error> {
-        // Implementation using crate::auth::verify_credentials
+        // Implementation using crate::auth::verify_credentials (which will be updated)
         let pool = self.pool.clone();
-        let username = creds.username.clone();
+        let identifier = creds.identifier.clone(); // Use identifier from LoginPayload
         let password = creds.password.clone();
 
         // --- Log before interact ---
-        info!(username = %username, "AuthBackend: Authenticating via verify_credentials interact call...");
+        info!(identifier = %identifier, "AuthBackend: Authenticating via verify_credentials interact call...");
+
+        // Clone identifier for use after interact
+        let identifier_for_logging = identifier.clone();
 
         let verify_result = pool
             .get()
             .await
             .map_err(AuthError::PoolError)?
-            .interact(move |conn| crate::auth::verify_credentials(conn, &username, password))
+            // Pass identifier to verify_credentials
+            .interact(move |conn| crate::auth::verify_credentials(conn, &identifier, password))
             .await
             .map_err(AuthError::from)? // Use From trait for InteractError -> AuthError
             ;
@@ -65,22 +70,22 @@ impl AuthnBackend for Backend {
         match verify_result {
             Ok(user) => {
                 // --- Log success ---
-                info!(username = %user.username, user_id = %user.id, "AuthBackend: Authentication successful.");
+                info!(identifier = %identifier_for_logging, username = %user.username, email = %user.email, user_id = %user.id, "AuthBackend: Authentication successful.");
                 Ok(Some(user))
             }
             Err(AuthError::WrongCredentials) => {
                 // --- Log wrong creds ---
-                warn!(username = %creds.username, "AuthBackend: Authentication failed (Wrong Credentials).");
+                warn!(identifier = %identifier_for_logging, "AuthBackend: Authentication failed (Wrong Credentials).");
                 Ok(None)
             }
             Err(AuthError::UserNotFound) => {
                 // --- Log user not found ---
-                warn!(username = %creds.username, "AuthBackend: Authentication failed (User Not Found).");
+                warn!(identifier = %identifier_for_logging, "AuthBackend: Authentication failed (User Not Found).");
                 Ok(None)
             }
             Err(e) => {
                 // --- Log other error ---
-                error!(username = %creds.username, error = ?e, "AuthBackend: Authentication failed (Other Error).");
+                error!(identifier = %identifier_for_logging, error = ?e, "AuthBackend: Authentication failed (Other Error).");
                 Err(e)
             }
         }
