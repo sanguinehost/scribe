@@ -1,10 +1,14 @@
 import { error } from '@sveltejs/kit';
 import type { ScribeChatMessage, ScribeChatSession } from '$lib/types';
 
-export async function load({ params: { chatId }, fetch }) {
+export async function load({ params: { chatId }, fetch, cookies }) {
 	try {
+		const sessionCookie = cookies.get('session');
+		// Prepare headers for authenticated fetch calls
+		const headers = sessionCookie ? { Cookie: `session=${sessionCookie}` } : undefined;
+
 		// Fetch chat session details
-		const chatRes = await fetch(`/api/chats-api/${chatId}`);
+		const chatRes = await fetch(`/api/chats/${chatId}`, { headers });
 		if (!chatRes.ok) {
 			if (chatRes.status === 404) {
 				error(404, 'Chat not found');
@@ -21,7 +25,7 @@ export async function load({ params: { chatId }, fetch }) {
 		// }
 
 		// Fetch chat messages
-		const messagesRes = await fetch(`/api/chats-api/${chatId}/messages`);
+		const messagesRes = await fetch(`/api/chats/${chatId}/messages`, { headers });
 		if (!messagesRes.ok) {
 			console.error('Failed to fetch messages:', messagesRes.status, await messagesRes.text());
 			error(500, 'Failed to load chat messages');

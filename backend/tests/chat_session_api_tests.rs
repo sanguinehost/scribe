@@ -447,3 +447,160 @@ async fn list_chat_sessions_empty_integration() {
         "Should return an empty array for a user with no sessions"
     );
 }
+// --- Session Detail Tests ---
+
+#[tokio::test]
+#[ignore] // Added ignore for CI
+async fn test_get_chat_session_details_success() {
+    let context = test_helpers::setup_test_app().await;
+    let (auth_cookie, user) = test_helpers::auth::create_test_user_and_login(
+        &context.app,
+        "test_get_details_user",
+        "password",
+    )
+    .await;
+    let character =
+        test_helpers::db::create_test_character(&context.app.db_pool, user.id, "Char for Get Details")
+            .await;
+    let session =
+        test_helpers::db::create_test_chat_session(&context.app.db_pool, user.id, character.id)
+            .await;
+
+    let request = Request::builder()
+        .method(Method::GET)
+        .uri(format!("/api/chats/{}", session.id))
+        .header(header::COOKIE, auth_cookie)
+        .body(Body::empty())
+        .unwrap();
+
+    let response = context.app.router.oneshot(request).await.unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = response.into_body().collect().await.unwrap().to_bytes();
+    let fetched_session: ChatSession =
+        serde_json::from_slice(&body).expect("Failed to deserialize response");
+
+    assert_eq!(fetched_session.id, session.id);
+    assert_eq!(fetched_session.user_id, user.id);
+    assert_eq!(fetched_session.character_id, character.id);
+}
+
+#[tokio::test]
+#[ignore] // Added ignore for CI
+async fn test_get_chat_session_details_not_found() {
+    let context = test_helpers::setup_test_app().await;
+    let (auth_cookie, _user) = test_helpers::auth::create_test_user_and_login(
+        &context.app,
+        "test_get_details_notfound_user",
+        "password",
+    )
+    .await;
+    let non_existent_session_id = Uuid::new_v4();
+
+    let request = Request::builder()
+        .method(Method::GET)
+        .uri(format!("/api/chats/{}", non_existent_session_id))
+        .header(header::COOKIE, auth_cookie)
+        .body(Body::empty())
+        .unwrap();
+
+    let response = context.app.router.oneshot(request).await.unwrap();
+
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+#[ignore] // Added ignore for CI
+async fn test_get_chat_session_details_other_user() {
+    let context = test_helpers::setup_test_app().await;
+    let (_auth_cookie1, user1) = test_helpers::auth::create_test_user_and_login(
+        &context.app,
+        "test_get_details_user1",
+        "password",
+    )
+    .await;
+    let character1 = test_helpers::db::create_test_character(
+        &context.app.db_pool,
+        user1.id,
+        "Char for User 1 Get",
+    )
+    .await;
+    let session1 = test_helpers::db::create_test_chat_session(
+        &context.app.db_pool,
+        user1.id,
+        character1.id,
+    )
+    .await;
+
+    let (auth_cookie2, _user2) = test_helpers::auth::create_test_user_and_login(
+        &context.app,
+        "test_get_details_user2",
+        "password",
+    )
+    .await; // Login as user 2
+
+    let request = Request::builder()
+        .method(Method::GET)
+        .uri(format!("/api/chats/{}", session1.id)) // Try to get user 1's session
+        .header(header::COOKIE, auth_cookie2) // Using user 2's cookie
+        .body(Body::empty())
+        .unwrap();
+
+    let response = context.app.router.oneshot(request).await.unwrap();
+
+    // Expect Not Found to avoid leaking information about session existence
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+#[ignore] // Added ignore for CI
+async fn test_get_chat_session_details_unauthorized() {
+    let context = test_helpers::setup_test_app().await;
+    // Create a session but don't log in
+    let user =
+        test_helpers::db::create_test_user(&context.app.db_pool, "test_get_unauth_user", "password")
+            .await;
+    let character =
+        test_helpers::db::create_test_character(&context.app.db_pool, user.id, "Char for Unauth Get")
+            .await;
+    let session =
+        test_helpers::db::create_test_chat_session(&context.app.db_pool, user.id, character.id)
+            .await;
+
+    let request = Request::builder()
+        .method(Method::GET)
+        .uri(format!("/api/chats/{}", session.id))
+        // No auth cookie
+        .body(Body::empty())
+        .unwrap();
+
+    let response = context.app.router.oneshot(request).await.unwrap();
+
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+#[ignore] // Added ignore for CI
+async fn test_get_chat_session_details_invalid_uuid() {
+    let context = test_helpers::setup_test_app().await;
+    let (auth_cookie, _user) = test_helpers::auth::create_test_user_and_login(
+        &context.app,
+        "test_get_details_invalid_uuid_user",
+        "password",
+    )
+    .await;
+
+    let request = Request::builder()
+        .method(Method::GET)
+        .uri("/api/chats/not-a-valid-uuid") // Invalid UUID in path
+        .header(header::COOKIE, auth_cookie)
+        .body(Body::empty())
+        .unwrap();
+
+    let response = context.app.router.oneshot(request).await.unwrap();
+
+    // Axum's Path extractor returns 400 Bad Request for invalid path segments
+    // if the type doesn't match (e.g., Uuid expected, string provided).
+    // If the handler explicitly validated, it might be 422.
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+}

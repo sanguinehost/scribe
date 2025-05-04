@@ -163,6 +163,47 @@ pub async fn list_sessions_for_user(
     .await?
 }
 
+/// Gets a specific chat session by ID, verifying ownership.
+#[instrument(skip(pool), err)]
+pub async fn get_chat_session_by_id(
+    pool: &DbPool,
+    user_id: Uuid,
+    session_id: Uuid,
+) -> Result<Chat, AppError> {
+    let conn = pool.get().await?;
+    conn.interact(move |conn| {
+        info!(%session_id, %user_id, "Attempting to fetch chat session details by ID");
+        let session_result = chat_sessions::table
+            .filter(chat_sessions::id.eq(session_id))
+            .select(Chat::as_select())
+            .first::<Chat>(conn) // Use first to get a single result
+            .optional()?; // Use optional to handle not found case gracefully
+
+        match session_result {
+            Some(session) => {
+                if session.user_id == user_id {
+                    info!(%session_id, %user_id, "Session found and ownership verified");
+                    Ok(session)
+                } else {
+                    // User does not own the session, treat as not found
+                    warn!(%session_id, %user_id, owner_id=%session.user_id, "User attempted to access session owned by another user");
+                    Err(AppError::NotFound(
+                        "Chat session not found or permission denied".into(),
+                    ))
+                }
+            }
+            None => {
+                // Session ID does not exist
+                warn!(%session_id, %user_id, "Chat session not found by ID");
+                Err(AppError::NotFound(
+                    "Chat session not found or permission denied".into(),
+                ))
+            }
+        }
+    })
+    .await? // First '?' handles InteractError
+    // Second '?' handles the AppError from the inner closure (Ok/Err)
+}
 /// Gets messages for a specific chat session, verifying ownership.
 #[instrument(skip(pool), err)]
 pub async fn get_messages_for_session(

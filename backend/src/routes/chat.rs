@@ -1,7 +1,7 @@
 use crate::{
     auth::user_store::Backend as AuthBackend,
     errors::AppError,
-    models::chats::{MessageRole, NewChatMessageRequest, UpdateChatSettingsRequest},
+    models::chats::{Chat, MessageRole, NewChatMessageRequest, UpdateChatSettingsRequest}, // Added Chat
     services::chat_service,
     state::AppState,
 };
@@ -25,7 +25,7 @@ use tracing::{debug, error, info, instrument, warn};
 use uuid::Uuid;
 use validator::Validate;
 
-const DEFAULT_MODEL_NAME: &str = "gemini-1.5-flash-latest";
+const DEFAULT_MODEL_NAME: &str = "gemini-2.5-pro-exp-03-25";
 
 #[derive(Deserialize)]
 pub struct CreateChatRequest {
@@ -71,6 +71,28 @@ pub async fn list_chat_sessions(
     let sessions = chat_service::list_sessions_for_user(&state.pool, user_id).await?;
 
     Ok(Json(sessions))
+}
+
+#[debug_handler]
+#[instrument(skip(state, auth_session), fields(user_id = ?auth_session.user.as_ref().map(|u| u.id), %session_id), err)]
+pub async fn get_chat_session_details(
+    State(state): State<AppState>,
+    auth_session: AuthSession<AuthBackend>,
+    Path(session_id): Path<Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    info!("Fetching chat session details");
+    let user = auth_session.user.ok_or_else(|| {
+        error!("Authentication required for get_chat_session_details");
+        AppError::Unauthorized("Authentication required".to_string())
+    })?;
+    let user_id = user.id;
+
+    // Call the service function (assuming it will be created)
+    // This function needs to verify ownership (user_id against session_id)
+    let session = chat_service::get_chat_session_by_id(&state.pool, user_id, session_id).await?;
+
+    info!(%session_id, "Successfully fetched chat session details");
+    Ok(Json(session))
 }
 
 #[debug_handler]
@@ -650,6 +672,7 @@ payload.validate()?; // Trigger model-level validation
 pub fn chat_routes() -> Router<AppState> {
     Router::new()
         .route("/", post(create_chat_session).get(list_chat_sessions))
+        .route("/{session_id}", get(get_chat_session_details)) // Corrected path parameter syntax
         .route("/{session_id}/messages", get(get_chat_messages))
         .route("/{session_id}/generate", post(generate_chat_response))
         .route(
