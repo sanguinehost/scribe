@@ -376,7 +376,22 @@ pub async fn generate_chat_response(
                                        warn!(%session_id_clone, "Stream errored before any content was generated, not saving AI message.");
                                     }
                                 });
-                                yield Ok::<_, AppError>(Event::default().event("error").data(e.to_string()));
+
+                                // Check for the specific Gemini parsing error and provide a user-friendly message
+                                let error_message = e.to_string();
+                                let specific_error_pattern = "PropertyNotFound(\"/candidates/0/content/parts/0\")";
+                                let user_friendly_error = if error_message.contains(specific_error_pattern) {
+                                    // Suggest switching models if the default is the experimental one causing issues
+                                    if DEFAULT_MODEL_NAME == "gemini-2.5-pro-exp-03-25" {
+                                        "LLM stream error: Failed to parse response chunk from the experimental model. This might be due to API rate limits or content filtering. Consider switching to a non-experimental model (like gemini-2.5-pro-preview-03-25 or gemini-2.5-flash-preview-04-17) in settings or try again later.".to_string()
+                                    } else {
+                                        "LLM stream error: Failed to parse response chunk. This might be due to API rate limits or content filtering. Please try again later.".to_string()
+                                    }
+                                } else {
+                                    error_message // Use original error message for other errors
+                                };
+
+                                yield Ok::<_, AppError>(Event::default().event("error").data(user_friendly_error));
                                 stream_error_occurred = true; // Set flag
                                 break; // Error exit
                             }

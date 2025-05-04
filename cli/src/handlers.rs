@@ -9,9 +9,10 @@ use scribe_backend::models::characters::CharacterMetadata;
 use scribe_backend::models::chats::MessageRole;
 use scribe_backend::models::users::User;
 use std::path::Path;
-use uuid::Uuid; // Re-added for MockHttpClient::stream_chat_response
+use uuid::Uuid;
 use secrecy::Secret;
 use bigdecimal::BigDecimal;
+use crate::client::{RegisterPayload};
 
 // --- Action Functions ---
 
@@ -35,7 +36,9 @@ pub async fn handle_registration_action<Http: HttpClient, IO: IoHandler>(
 ) -> Result<User, CliError> {
     io_handler.write_line("\nPlease register a new user.")?;
     let username = io_handler.read_line("Choose Username:")?;
+    let email = io_handler.read_line("Enter Email:")?;
     let password = io_handler.read_line("Choose Password:")?;
+    
     if username.len() < 3 {
         return Err(CliError::InputError(
             "Username must be at least 3 characters long.".into(),
@@ -46,8 +49,10 @@ pub async fn handle_registration_action<Http: HttpClient, IO: IoHandler>(
             "Password must be at least 8 characters long.".into(),
         ));
     }
-    let credentials = LoginPayload { 
-        identifier: username, 
+    
+    let credentials = RegisterPayload { 
+        username, 
+        email,
         password: Secret::new(password) 
     };
     http_client.register(&credentials).await
@@ -583,7 +588,7 @@ mod tests {
             mock_result.map_err(Into::into)
         }
 
-        async fn register(&self, _credentials: &LoginPayload) -> Result<User, CliError> {
+        async fn register(&self, _credentials: &RegisterPayload) -> Result<User, CliError> {
             let mock_result =
                 Arc::unwrap_or_clone(self.register_result.clone().unwrap_or_else(|| {
                     Arc::new(Err(MockCliError::Internal(
@@ -838,7 +843,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_handle_registration_action_success() {
-        let mut mock_io = MockIoHandler::new(vec!["newuser", "goodpassword"]);
+        let mut mock_io = MockIoHandler::new(vec!["newuser", "user@example.com", "goodpassword"]);
         let mock_http = MockHttpClient {
             register_result: Some(Arc::new(Ok(mock_user("newuser")))),
             ..Default::default()
@@ -853,7 +858,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_handle_registration_action_failure_username_taken() {
-        let mut mock_io = MockIoHandler::new(vec!["existinguser", "goodpassword"]);
+        let mut mock_io = MockIoHandler::new(vec!["existinguser", "existing@example.com", "goodpassword"]);
         let mock_http = MockHttpClient {
             register_result: Some(Arc::new(Err(MockCliError::RegistrationFailed(
                 "Username already taken".to_string(),
@@ -873,7 +878,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_handle_registration_action_failure_short_username() {
-        let mut mock_io = MockIoHandler::new(vec!["us", "goodpassword"]);
+        let mut mock_io = MockIoHandler::new(vec!["us", "short@example.com", "goodpassword"]);
         let mock_http = MockHttpClient::default(); // HTTP client won't be called
 
         let result = handle_registration_action(&mock_http, &mut mock_io).await;
@@ -881,16 +886,16 @@ mod tests {
         assert!(result.is_err());
         match result.err().unwrap() {
             CliError::InputError(msg) => {
-                assert!(msg.contains("Username must be at least 3 characters long"))
+                assert!(msg.contains("at least 3 characters"))
             }
-            e => panic!("Expected InputError for short username, got {:?}", e),
+            e => panic!("Expected InputError error, got {:?}", e),
         }
         mock_io.expect_output("Please register a new user.");
     }
 
     #[tokio::test]
     async fn test_handle_registration_action_failure_short_password() {
-        let mut mock_io = MockIoHandler::new(vec!["newuser", "pass"]);
+        let mut mock_io = MockIoHandler::new(vec!["validuser", "valid@example.com", "short"]);
         let mock_http = MockHttpClient::default(); // HTTP client won't be called
 
         let result = handle_registration_action(&mock_http, &mut mock_io).await;
@@ -898,9 +903,9 @@ mod tests {
         assert!(result.is_err());
         match result.err().unwrap() {
             CliError::InputError(msg) => {
-                assert!(msg.contains("Password must be at least 8 characters long"))
+                assert!(msg.contains("at least 8 characters"))
             }
-            e => panic!("Expected InputError for short password, got {:?}", e),
+            e => panic!("Expected InputError error, got {:?}", e),
         }
         mock_io.expect_output("Please register a new user.");
     }

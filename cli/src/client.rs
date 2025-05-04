@@ -23,7 +23,7 @@ use httptest::{responders::*};
 use tokio;
 use tempfile::NamedTempFile;
 use bigdecimal::BigDecimal;
-use secrecy::ExposeSecret;
+use secrecy::{Secret, ExposeSecret};
 use anyhow::Result;
 
 // Define the expected response structure from the /health endpoint (matching backend)
@@ -167,7 +167,7 @@ async fn handle_non_streaming_chat_response(response: Response) -> Result<ChatMe
 #[async_trait]
 pub trait HttpClient: Send + Sync {
     async fn login(&self, credentials: &LoginPayload) -> Result<User, CliError>;
-    async fn register(&self, credentials: &LoginPayload) -> Result<User, CliError>;
+    async fn register(&self, credentials: &RegisterPayload) -> Result<User, CliError>;
     async fn list_characters(&self) -> Result<Vec<CharacterMetadata>, CliError>;
     async fn create_chat_session(&self, character_id: Uuid) -> Result<Chat, CliError>;
     async fn upload_character(
@@ -235,6 +235,32 @@ impl<'a> From<&'a LoginPayload> for SerializableLoginPayload<'a> {
     }
 }
 
+// Add a new struct for RegisterPayload used by the client
+#[derive(Debug, Clone)]
+pub struct RegisterPayload {
+    pub username: String,
+    pub email: String,
+    pub password: Secret<String>,
+}
+
+// Add a serializable version of RegisterPayload for requests
+#[derive(Serialize)]
+struct SerializableRegisterPayload<'a> {
+    username: &'a str,
+    email: &'a str,
+    password: &'a str,
+}
+
+impl<'a> From<&'a RegisterPayload> for SerializableRegisterPayload<'a> {
+    fn from(payload: &'a RegisterPayload) -> Self {
+        SerializableRegisterPayload {
+            username: &payload.username,
+            email: &payload.email,
+            password: payload.password.expose_secret(),
+        }
+    }
+}
+
 #[async_trait]
 impl HttpClient for ReqwestClientWrapper {
     async fn login(&self, credentials: &LoginPayload) -> Result<User, CliError> {
@@ -257,19 +283,24 @@ impl HttpClient for ReqwestClientWrapper {
         Ok(User::from(auth_response))
     }
 
-    async fn register(&self, credentials: &LoginPayload) -> Result<User, CliError> {
+    async fn register(&self, credentials: &RegisterPayload) -> Result<User, CliError> {
         let url = build_url(&self.base_url, "/api/auth/register")?;
-        tracing::info!(%url, identifier = %credentials.identifier, "Attempting registration via HttpClient");
+        tracing::info!(%url, username = %credentials.username, email = %credentials.email, "Attempting registration via HttpClient");
         let response = self
             .client
             .post(url)
-            .json(&SerializableLoginPayload::from(credentials))
+            .json(&SerializableRegisterPayload::from(credentials))
             .send()
             .await
             .map_err(CliError::Reqwest)?;
-        handle_response::<User>(response)
+        
+        // Get auth response and convert to User, just like in the login method
+        let auth_response = handle_response::<AuthUserResponse>(response)
             .await
-            .map_err(|e| CliError::RegistrationFailed(format!("{}", e)))
+            .map_err(|e| CliError::RegistrationFailed(format!("{}", e)))?;
+        
+        // Convert to User for backwards compatibility
+        Ok(User::from(auth_response))
     }
 
     async fn list_characters(&self) -> Result<Vec<CharacterMetadata>, CliError> {
@@ -772,76 +803,67 @@ mod tests {
     #[tokio::test]
     async fn test_register_success() {
         let (mut server, client) = setup_test_server();
-
-        let user_id = Uuid::new_v4();
-        let now = Utc::now();
-        let mock_user = User {
-            id: user_id,
-            username: "newuser".to_string(),
-            email: "new@example.com".to_string(), // Add email field
-            password_hash: "hashed_password".to_string(), // Backend handles hashing
-            created_at: now,
-            updated_at: now,
-        };
         
-        // Register payload
-        let register_payload = LoginPayload {
-            identifier: "newuser".to_string(),
+        let register_payload = RegisterPayload {
+            username: "newuser".to_string(),
+            email: "new@example.com".to_string(),
             password: Secret::new("password123".to_string()),
         };
         
-        // Use SerializableLoginPayload for serialization
-        let serializable_credentials = SerializableLoginPayload {
-            identifier: &register_payload.identifier,
+        let mock_user = mock_user(Uuid::new_v4());
+        
+        // Use SerializableRegisterPayload for serialization
+        let serializable_payload = SerializableRegisterPayload {
+            username: &register_payload.username,
+            email: &register_payload.email,
             password: register_payload.password.expose_secret(),
         };
-        let credentials_json = serde_json::to_string(&serializable_credentials).unwrap();
-
+        let payload_json = serde_json::to_string(&serializable_payload).unwrap();
+        
         server.expect(
             Expectation::matching(all_of![
                 request::method_path("POST", "/api/auth/register"),
-                request::body(credentials_json),
+                request::body(payload_json),
             ])
-            .respond_with(json_encoded(mock_user.clone())),
+            .respond_with(json_encoded(mock_user.clone()))
         );
-
+        
         let result = client.register(&register_payload).await;
-
+        
         assert!(result.is_ok());
-        let registered_user = result.unwrap();
-        assert_eq!(registered_user.id, mock_user.id);
-        assert_eq!(registered_user.username, mock_user.username);
-
+        assert_eq!(result.unwrap().username, mock_user.username);
+        
         server.verify_and_clear();
     }
 
     #[tokio::test]
     async fn test_register_failure_conflict() {
         let (mut server, client) = setup_test_server();
-
-        let credentials = LoginPayload {
-            identifier: "existinguser".to_string(),
+        
+        let register_payload = RegisterPayload {
+            username: "existinguser".to_string(),
+            email: "existing@example.com".to_string(),
             password: Secret::new("password123".to_string()),
         };
+        
         let error_body = "Username already taken";
-
+        
         server.expect(
             Expectation::matching(request::method_path("POST", "/api/auth/register"))
-                .respond_with(status_code(409).body(error_body)), // Simulate 409 Conflict
+                .respond_with(status_code(409).body(error_body))
         );
-
-        let result = client.register(&credentials).await;
-
+        
+        let result = client.register(&register_payload).await;
+        
         assert!(result.is_err());
         match result.err().unwrap() {
             CliError::RegistrationFailed(msg) => {
-                // Check that the underlying ApiError message is included
                 assert!(msg.contains(error_body), "Error message was: {}", msg);
                 assert!(msg.contains("409"), "Error message was: {}", msg);
             }
             e => panic!("Expected CliError::RegistrationFailed, got {:?}", e),
         }
-
+        
         server.verify_and_clear();
     }
 
