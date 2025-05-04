@@ -4,12 +4,16 @@ use crate::client::HttpClient; // Added StreamEvent
 use crate::error::CliError;
 use crate::io::IoHandler;
 // Added missing Stream trait import
-use scribe_backend::models::auth::Credentials;
+use scribe_backend::models::auth::LoginPayload;
 use scribe_backend::models::characters::CharacterMetadata;
 use scribe_backend::models::chats::MessageRole;
 use scribe_backend::models::users::User;
 use std::path::Path;
 use uuid::Uuid; // Re-added for MockHttpClient::stream_chat_response
+use secrecy::{Secret, ExposeSecret};
+use scribe_backend::models::chats::{ChatMessage, Chat};
+use bigdecimal::BigDecimal;
+use std::str::FromStr;
 
 // --- Action Functions ---
 
@@ -20,7 +24,10 @@ pub async fn handle_login_action<Http: HttpClient, IO: IoHandler>(
     io_handler.write_line("\nPlease log in.")?;
     let username = io_handler.read_line("Username:")?;
     let password = io_handler.read_line("Password:")?;
-    let credentials = Credentials { username, password };
+    let credentials = LoginPayload { 
+        identifier: username, 
+        password: Secret::new(password) 
+    };
     http_client.login(&credentials).await
 }
 
@@ -41,7 +48,10 @@ pub async fn handle_registration_action<Http: HttpClient, IO: IoHandler>(
             "Password must be at least 8 characters long.".into(),
         ));
     }
-    let credentials = Credentials { username, password };
+    let credentials = LoginPayload { 
+        identifier: username, 
+        password: Secret::new(password) 
+    };
     http_client.register(&credentials).await
 }
 
@@ -442,9 +452,9 @@ mod tests {
     use async_trait::async_trait;
     use chrono::Utc;
     use futures_util::Stream; // Added Stream trait import
-    use scribe_backend::models::auth::Credentials;
+    use scribe_backend::models::auth::LoginPayload;
     use scribe_backend::models::characters::CharacterMetadata;
-    use scribe_backend::models::chats::{ChatMessage, ChatSession, MessageRole};
+    use scribe_backend::models::chats::{ChatMessage, Chat, MessageRole};
     use scribe_backend::models::users::User;
     use std::cell::RefCell;
     use std::collections::VecDeque;
@@ -555,9 +565,9 @@ mod tests {
         upload_character_result: Option<Arc<Result<CharacterMetadata, MockCliError>>>,
         list_characters_result: Option<Arc<Result<Vec<CharacterMetadata>, MockCliError>>>,
         get_character_result: Option<Arc<Result<CharacterMetadata, MockCliError>>>,
-        list_chat_sessions_result: Option<Arc<Result<Vec<ChatSession>, MockCliError>>>,
+        list_chat_sessions_result: Option<Arc<Result<Vec<Chat>, MockCliError>>>,
         get_chat_messages_result: Option<Arc<Result<Vec<ChatMessage>, MockCliError>>>,
-        create_chat_session_result: Option<Arc<Result<ChatSession, MockCliError>>>, // Added
+        create_chat_session_result: Option<Arc<Result<Chat, MockCliError>>>, // Added
         generate_response_result: Option<Arc<Result<ChatMessage, MockCliError>>>,
         logout_result: Option<Arc<Result<(), MockCliError>>>, // Added
         me_result: Option<Arc<Result<User, MockCliError>>>,   // Added
@@ -565,7 +575,7 @@ mod tests {
 
     #[async_trait]
     impl HttpClient for MockHttpClient {
-        async fn login(&self, _credentials: &Credentials) -> Result<User, CliError> {
+        async fn login(&self, _credentials: &LoginPayload) -> Result<User, CliError> {
             let mock_result =
                 Arc::unwrap_or_clone(self.login_result.clone().unwrap_or_else(|| {
                     Arc::new(Err(MockCliError::Internal(
@@ -575,7 +585,7 @@ mod tests {
             mock_result.map_err(Into::into)
         }
 
-        async fn register(&self, _credentials: &Credentials) -> Result<User, CliError> {
+        async fn register(&self, _credentials: &LoginPayload) -> Result<User, CliError> {
             let mock_result =
                 Arc::unwrap_or_clone(self.register_result.clone().unwrap_or_else(|| {
                     Arc::new(Err(MockCliError::Internal(
@@ -594,7 +604,7 @@ mod tests {
                 }));
             mock_result.map_err(Into::into)
         }
-        async fn create_chat_session(&self, _character_id: Uuid) -> Result<ChatSession, CliError> {
+        async fn create_chat_session(&self, _character_id: Uuid) -> Result<Chat, CliError> {
             let mock_result = Arc::unwrap_or_clone(
                 self.create_chat_session_result.clone().unwrap_or_else(|| {
                     Arc::new(Err(MockCliError::Internal(
@@ -652,7 +662,7 @@ mod tests {
                 }));
             mock_result.map_err(Into::into)
         }
-        async fn list_chat_sessions(&self) -> Result<Vec<ChatSession>, CliError> {
+        async fn list_chat_sessions(&self) -> Result<Vec<Chat>, CliError> {
             let mock_result =
                 Arc::unwrap_or_clone(self.list_chat_sessions_result.clone().unwrap_or_else(|| {
                     Arc::new(Err(MockCliError::Internal(
@@ -729,6 +739,7 @@ mod tests {
         User {
             id: Uuid::new_v4(),
             username: username.to_string(),
+            email: "user@example.com".to_string(),
             password_hash: "hashed_password".to_string(), // Mocked
             created_at: Utc::now(),
             updated_at: Utc::now(),
@@ -747,29 +758,29 @@ mod tests {
         }
     }
 
-    fn mock_chat_session(id: Uuid, character_id: Uuid) -> ChatSession {
-        ChatSession {
+    fn mock_chat_session(id: Uuid, character_id: Uuid) -> Chat {
+        Chat {
             id,
             user_id: Uuid::new_v4(),
             character_id,
-            title: None,
+            title: Some("Mock Chat".to_string()),
             created_at: Utc::now(),
             updated_at: Utc::now(),
-            system_prompt: None,
-            temperature: None,
-            max_output_tokens: None,
-            // New generation settings fields
-            frequency_penalty: None,
-            presence_penalty: None,
-            top_k: None,
-            top_p: None,
-            repetition_penalty: None,
+            system_prompt: Some("You are a helpful mock assistant".to_string()),
+            temperature: Some(BigDecimal::from_str("0.7").unwrap()),
+            max_output_tokens: Some(1024),
+            frequency_penalty: Some(BigDecimal::from_str("0").unwrap()),
+            presence_penalty: Some(BigDecimal::from_str("0").unwrap()),
+            top_k: Some(40),
+            top_p: Some(BigDecimal::from_str("0.95").unwrap()),
+            repetition_penalty: Some(BigDecimal::from_str("1.03").unwrap()),
             min_p: None,
             top_a: None,
             seed: None,
             logit_bias: None,
             history_management_strategy: "window".to_string(),
             history_management_limit: 20,
+            visibility: Some("private".to_string()),
         }
     }
 

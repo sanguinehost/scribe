@@ -397,6 +397,7 @@ mod tests {
             logit_bias: Some(json!({"50256": -100})),
             history_management_strategy: "none".to_string(), // Add default test value
             history_management_limit: 4096,                 // Add default test value
+visibility: Some("private".to_string()), // Added default test value
         }
     }
 

@@ -38,7 +38,7 @@ use crc32fast;
 use diesel::prelude::*;
 use reqwest::StatusCode as ReqwestStatusCode;
 use std::sync::Arc;
-use scribe_backend::models::auth::Credentials as UserCredentials; // Correct path for Credentials, remove duplicate User import
+use scribe_backend::models::auth::LoginPayload; // Use LoginPayload for login data
 use reqwest::Client;
 use reqwest::cookie::Jar;
 
@@ -267,10 +267,12 @@ fn insert_test_user_with_password(
 ) -> Result<User, diesel::result::Error> {
     let new_user = NewUser {
         username: username.to_string(),
+        email: format!("{}@example.com", username), // Add missing email field
         password_hash: hash_test_password(password), // Corrected (removed &)
     };
     diesel::insert_into(users::table)
         .values(&new_user)
+        .returning(User::as_returning()) // Add returning clause for User model
         .get_result(conn)
 }
 
@@ -405,13 +407,9 @@ mod tests {
         let app = build_test_app_for_characters(pool.clone()).await;
 
         // -- Simulate Login ---
-        let login_credentials = UserCredentials {
-            username: test_username.clone(),
-            password: test_password.to_string(), // Use plain string
-        };
         let login_body = json!({
-            "username": login_credentials.username,
-            "password": login_credentials.password // Use plain string
+            "identifier": test_username.clone(),
+            "password": test_password
         });
         let login_request = Request::builder()
             .method(Method::POST)
@@ -475,13 +473,9 @@ mod tests {
         let app = build_test_app_for_characters(pool.clone()).await;
 
         // -- Simulate Login ---
-        let login_credentials = UserCredentials {
-            username: test_username.clone(),
-            password: test_password.to_string(), // Use plain string
-        };
         let login_body = json!({
-            "username": login_credentials.username,
-            "password": login_credentials.password // Use plain string
+            "identifier": test_username.clone(),
+            "password": test_password
         });
         let login_request = Request::builder()
             .method(Method::POST)
@@ -545,13 +539,9 @@ mod tests {
         let app = build_test_app_for_characters(pool.clone()).await;
 
         // -- Simulate Login ---
-        let login_credentials = UserCredentials {
-            username: test_username.clone(),
-            password: test_password.to_string(), // Use plain string
-        };
         let login_body = json!({
-            "username": login_credentials.username,
-            "password": login_credentials.password // Use plain string
+            "identifier": test_username.clone(),
+            "password": test_password
         });
         let login_request = Request::builder()
             .method(Method::POST)
@@ -702,15 +692,15 @@ mod tests {
             .context("Failed to build reqwest client")?;
 
         let login_url = format!("{}/auth/login", api_base_url); // Use API base
-        let login_credentials = json!({
-            "username": username,
+        let login_body = json!({
+            "identifier": username,
             "password": password,
         });
 
         tracing::info!(url = %login_url, %username, "Logging in user for generation test...");
         let login_response = client
             .post(&login_url)
-            .json(&login_credentials)
+            .json(&login_body)
             .send()
             .await
             .context("Failed to send login request")?;
@@ -838,12 +828,12 @@ mod tests {
             .context("Failed to build reqwest client")?;
 
         let login_url = format!("{}/auth/login", api_base_url);
-        let login_credentials = json!({ "username": username, "password": password });
+        let login_body = json!({ "identifier": username, "password": password });
 
         tracing::info!(url = %login_url, %username, "Logging in user for deletion test...");
         let login_response = client
             .post(&login_url)
-            .json(&login_credentials)
+            .json(&login_body)
             .send()
             .await
             .context("Failed to send login request")?;
@@ -963,10 +953,10 @@ mod tests {
         let login_url = format!("http://{}/api/auth/login", server_addr);
         let login_response = client
             .post(&login_url)
-            .json(&UserCredentials {
-                username: username.clone(),
-                password: password.to_string(),
-            })
+            .json(&json!({
+                "identifier": username.clone(),
+                "password": password
+            }))
             .send()
             .await?;
         assert_eq!(login_response.status(), ReqwestStatusCode::OK);
@@ -1048,10 +1038,10 @@ mod tests {
         let login_url = format!("http://{}/api/auth/login", server_addr);
         let login_response = client
             .post(&login_url)
-            .json(&UserCredentials {
-                username: username.clone(),
-                password: password.to_string(),
-            })
+            .json(&json!({
+                "identifier": username.clone(),
+                "password": password
+            }))
             .send()
             .await?;
         assert_eq!(login_response.status(), ReqwestStatusCode::OK);
@@ -1110,10 +1100,10 @@ mod tests {
         let login_url = format!("http://{}/api/auth/login", server_addr);
         let login_response = client
             .post(&login_url)
-            .json(&UserCredentials {
-                username: username_b.clone(),
-                password: password_b.to_string(),
-            })
+            .json(&json!({
+                "identifier": username_b.clone(),
+                "password": password_b
+            }))
             .send()
             .await?;
         assert_eq!(login_response.status(), ReqwestStatusCode::OK);
@@ -1192,10 +1182,10 @@ mod tests {
         let login_url = format!("http://{}/api/auth/login", server_addr);
         let login_response = client
             .post(&login_url)
-            .json(&UserCredentials {
-                username: username.clone(),
-                password: password.to_string(),
-            })
+            .json(&json!({
+                "identifier": username.clone(),
+                "password": password
+            }))
             .send()
             .await?;
         assert_eq!(login_response.status(), ReqwestStatusCode::OK);
@@ -1255,10 +1245,10 @@ mod tests {
         let login_url = format!("http://{}/api/auth/login", server_addr);
         let login_response = client
             .post(&login_url)
-            .json(&UserCredentials {
-                username: username_b.clone(),
-                password: password_b.to_string(),
-            })
+            .json(&json!({
+                "identifier": username_b.clone(),
+                "password": password_b
+            }))
             .send()
             .await?;
         assert_eq!(login_response.status(), ReqwestStatusCode::OK);
@@ -1277,10 +1267,10 @@ mod tests {
         let client_a = Client::builder().cookie_provider(cookie_jar_a.clone()).build()?;
         let login_response_a = client_a
             .post(&login_url)
-            .json(&UserCredentials {
-                username: username_a.clone(),
-                password: password_a.to_string(),
-            })
+            .json(&json!({
+                "identifier": username_a.clone(),
+                "password": password_a
+            }))
             .send()
             .await?;
         assert_eq!(login_response_a.status(), ReqwestStatusCode::OK);
@@ -1315,10 +1305,10 @@ mod tests {
         let login_url = format!("http://{}/api/auth/login", server_addr);
         let login_response = client
             .post(&login_url)
-            .json(&UserCredentials {
-                username: username.clone(),
-                password: password.to_string(),
-            })
+            .json(&json!({
+                "identifier": username.clone(),
+                "password": password
+            }))
             .send()
             .await?;
         assert_eq!(login_response.status(), ReqwestStatusCode::OK);
@@ -1409,10 +1399,10 @@ mod tests {
         let login_url = format!("http://{}/api/auth/login", server_addr);
         let login_response = client
             .post(&login_url)
-            .json(&UserCredentials {
-                username: username.clone(), // Use original username here
-                password: password.to_string(),
-            })
+            .json(&json!({
+                "identifier": username.clone(),
+                "password": password
+            }))
             .send()
             .await?;
         assert_eq!(login_response.status(), ReqwestStatusCode::OK);
@@ -1459,10 +1449,10 @@ mod tests {
         let login_url = format!("http://{}/api/auth/login", server_addr);
         let login_response = client
             .post(&login_url)
-            .json(&UserCredentials {
-                username: username.clone(), // Use original username here
-                password: password.to_string(),
-            })
+            .json(&json!({
+                "identifier": username.clone(),
+                "password": password
+            }))
             .send()
             .await?;
         assert_eq!(login_response.status(), ReqwestStatusCode::OK);

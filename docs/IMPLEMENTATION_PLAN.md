@@ -354,14 +354,20 @@ Only mark a task checkbox (`- [x]`) when all these conditions are satisfied.
 
 ### Post‑MVP Seeds (scaffolding only)
 
-- [ ] **Task POST.1 Tagging Migration (BE)**  
+- [ ] **Task POST.1 Tagging Migration (BE)**
       *Add `content_rating` column (ENUM) to characters, chat_sessions, chat_messages; default `SFW`.*
 
-- [ ] **Task POST.2 Plugin SDK Stub (BE)**  
+- [ ] **Task POST.2 Plugin SDK Stub (BE)**
       *Expose `/api/tools/invoke` → currently logs request; write unit test for accepted payload.*
 
-- [ ] **Task POST.3 Federation Proof‑of‑Concept (DevOps)**  
+- [ ] **Task POST.3 Federation Proof‑of‑Concept (DevOps)**
       *Spin up a second docker‑compose stack (`node‑B`) with different BASE_URL; export a character from node‑A, import into node‑B with signature verification.*
+
+- [ ] **Task POST.4: Explore A2A Protocol for Federation (BE/Arch)**
+      *Investigate using the Agent2Agent (A2A) protocol as a standard for inter-node communication (federation). Define Scribe's potential roles (A2A Server/Client) and map protocol features (Agent Card, Task execution) to Scribe's federation goals. Outline high-level API changes needed.*
+
+- [ ] **Task POST.5: Explore MCP Integration for Extensibility (BE/FE/Arch)**
+      *Investigate adopting the Model Context Protocol (MCP) for the plugin/tool system (`/api/tools/invoke`). Define Scribe's role as an MCP Host. Map MCP features (Resources, Tools, Prompts) to Scribe's extensibility goals (RAG enhancement, function calling, external data). Outline high-level backend (Host implementation) and frontend (managing connections/permissions) changes needed.*
 
 ## MVP Definition
 

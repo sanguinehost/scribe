@@ -4,14 +4,15 @@ use crate::error::CliError;
 use async_trait::async_trait;
 use reqwest::multipart;
 use reqwest::{Client as ReqwestClient, Response, StatusCode, Url};
-use scribe_backend::models::auth::Credentials;
+use scribe_backend::models::auth::LoginPayload;
 use scribe_backend::models::characters::CharacterMetadata;
 // Updated imports for chats models
 use futures_util::{Stream, StreamExt}; // Removed StreamExt, TryStreamExt // Add StreamExt back
 use reqwest_eventsource::{Event, EventSource}; // Added Event, EventSource
-use scribe_backend::models::chats::{ChatMessage, ChatSession, GenerateResponsePayload};
+use scribe_backend::models::chats::{ChatMessage, Chat, GenerateResponsePayload};
 use scribe_backend::models::users::User;
 use serde::Deserialize; // Added Deserialize
+use serde::Serialize; // Added for SerializableLoginPayload
 use serde::de::DeserializeOwned;
 use serde_json::json;
 use std::fs;
@@ -24,6 +25,8 @@ use tempfile::NamedTempFile;
 use std::io::Write;
 use bigdecimal::BigDecimal;
 use std::str::FromStr;
+use secrecy::{Secret, ExposeSecret};
+use anyhow::{anyhow, Context, Result};
 
 // Define the expected response structure from the /health endpoint (matching backend)
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
@@ -119,10 +122,10 @@ async fn handle_non_streaming_chat_response(response: Response) -> Result<ChatMe
 /// Trait for abstracting HTTP client interactions to allow mocking in tests.
 #[async_trait]
 pub trait HttpClient: Send + Sync {
-    async fn login(&self, credentials: &Credentials) -> Result<User, CliError>;
-    async fn register(&self, credentials: &Credentials) -> Result<User, CliError>;
+    async fn login(&self, credentials: &LoginPayload) -> Result<User, CliError>;
+    async fn register(&self, credentials: &LoginPayload) -> Result<User, CliError>;
     async fn list_characters(&self) -> Result<Vec<CharacterMetadata>, CliError>;
-    async fn create_chat_session(&self, character_id: Uuid) -> Result<ChatSession, CliError>;
+    async fn create_chat_session(&self, character_id: Uuid) -> Result<Chat, CliError>;
     async fn upload_character(
         &self,
         name: &str,
@@ -132,7 +135,7 @@ pub trait HttpClient: Send + Sync {
     async fn logout(&self) -> Result<(), CliError>;
     async fn me(&self) -> Result<User, CliError>;
     async fn get_character(&self, character_id: Uuid) -> Result<CharacterMetadata, CliError>;
-    async fn list_chat_sessions(&self) -> Result<Vec<ChatSession>, CliError>;
+    async fn list_chat_sessions(&self) -> Result<Vec<Chat>, CliError>;
     async fn get_chat_messages(&self, session_id: Uuid) -> Result<Vec<ChatMessage>, CliError>;
     async fn send_message(
         &self,
@@ -171,15 +174,32 @@ impl ReqwestClientWrapper {
     }
 }
 
+// Create a local wrapper for LoginPayload that implements Serialize
+#[derive(Serialize)]
+struct SerializableLoginPayload<'a> {
+    identifier: &'a str,
+    password: &'a str,
+}
+
+impl<'a> From<&'a LoginPayload> for SerializableLoginPayload<'a> {
+    fn from(payload: &'a LoginPayload) -> Self {
+        // Use the expose_secret method to get the password value
+        SerializableLoginPayload {
+            identifier: &payload.identifier,
+            password: payload.password.expose_secret(),
+        }
+    }
+}
+
 #[async_trait]
 impl HttpClient for ReqwestClientWrapper {
-    async fn login(&self, credentials: &Credentials) -> Result<User, CliError> {
+    async fn login(&self, credentials: &LoginPayload) -> Result<User, CliError> {
         let url = build_url(&self.base_url, "/api/auth/login")?;
-        tracing::info!(%url, username = %credentials.username, "Attempting login via HttpClient");
+        tracing::info!(%url, identifier = %credentials.identifier, "Attempting login via HttpClient");
         let response = self
             .client
             .post(url)
-            .json(credentials)
+            .json(&SerializableLoginPayload::from(credentials))
             .send()
             .await
             .map_err(CliError::Reqwest)?;
@@ -188,13 +208,13 @@ impl HttpClient for ReqwestClientWrapper {
             .map_err(|e| CliError::AuthFailed(format!("{}", e)))
     }
 
-    async fn register(&self, credentials: &Credentials) -> Result<User, CliError> {
+    async fn register(&self, credentials: &LoginPayload) -> Result<User, CliError> {
         let url = build_url(&self.base_url, "/api/auth/register")?;
-        tracing::info!(%url, username = %credentials.username, "Attempting registration via HttpClient");
+        tracing::info!(%url, identifier = %credentials.identifier, "Attempting registration via HttpClient");
         let response = self
             .client
             .post(url)
-            .json(credentials)
+            .json(&SerializableLoginPayload::from(credentials))
             .send()
             .await
             .map_err(CliError::Reqwest)?;
@@ -215,7 +235,7 @@ impl HttpClient for ReqwestClientWrapper {
         handle_response(response).await
     }
 
-    async fn create_chat_session(&self, character_id: Uuid) -> Result<ChatSession, CliError> {
+    async fn create_chat_session(&self, character_id: Uuid) -> Result<Chat, CliError> {
         let url = build_url(&self.base_url, "/api/chats")?;
         tracing::info!(%url, %character_id, "Creating chat session via HttpClient");
         let payload = json!({ "character_id": character_id });
@@ -339,7 +359,7 @@ impl HttpClient for ReqwestClientWrapper {
         handle_response(response).await
     }
 
-    async fn list_chat_sessions(&self) -> Result<Vec<ChatSession>, CliError> {
+    async fn list_chat_sessions(&self) -> Result<Vec<Chat>, CliError> {
         let url = build_url(&self.base_url, "/api/chats")?;
         tracing::info!(%url, "Listing chat sessions via HttpClient");
         let response = self
@@ -528,12 +548,24 @@ mod tests {
         matchers::{all_of, request, contains, key}, // Add any
         Expectation, ServerPool, ServerHandle,
     };
-    use scribe_backend::models::auth::Credentials;
+    use scribe_backend::models::auth::LoginPayload;
     use scribe_backend::models::users::User;
     use serde_json::json;
     use url::Url;
     use uuid::Uuid;
     use chrono::Utc;
+
+    // Helper function to create a mock User with all required fields
+    fn mock_user(id: Uuid) -> User {
+        User {
+            id,
+            username: "testuser".to_string(),
+            email: "test@example.com".to_string(), // Add required email field
+            password_hash: "hashed_password".to_string(),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        }
+    }
 
     // Shared setup for tests needing a mock server
     fn setup_test_server() -> (ServerHandle<'static>, ReqwestClientWrapper) {
@@ -586,15 +618,22 @@ mod tests {
         let mock_user = User {
             id: user_id,
             username: "testuser".to_string(),
+            email: "test@example.com".to_string(), // Add email field
             password_hash: "hashed_password".to_string(),
             created_at: now,
             updated_at: now,
         };
-        let credentials = Credentials {
-            username: "testuser".to_string(),
-            password: "password".to_string(),
+        let credentials = LoginPayload {
+            identifier: "testuser".to_string(),
+            password: Secret::new("password".to_string()),
         };
-        let credentials_json = serde_json::to_string(&credentials).unwrap();
+        
+        // Use SerializableLoginPayload for serialization
+        let serializable_credentials = SerializableLoginPayload {
+            identifier: &credentials.identifier,
+            password: credentials.password.expose_secret(),
+        };
+        let credentials_json = serde_json::to_string(&serializable_credentials).unwrap();
 
         server.expect(
             Expectation::matching(all_of![
@@ -618,9 +657,9 @@ mod tests {
     async fn test_login_failure_unauthorized() {
         let (mut server, client) = setup_test_server();
 
-        let credentials = Credentials {
-            username: "testuser".to_string(),
-            password: "wrongpassword".to_string(),
+        let credentials = LoginPayload {
+            identifier: "testuser".to_string(),
+            password: Secret::new("wrongpassword".to_string()),
         };
         let error_body = "Invalid credentials";
 
@@ -647,9 +686,9 @@ mod tests {
     async fn test_login_failure_rate_limit() {
         let (mut server, client) = setup_test_server();
 
-        let credentials = Credentials {
-            username: "testuser".to_string(),
-            password: "password".to_string(),
+        let credentials = LoginPayload {
+            identifier: "testuser".to_string(),
+            password: Secret::new("password".to_string()),
         };
 
         server.expect(
@@ -685,15 +724,24 @@ mod tests {
         let mock_user = User {
             id: user_id,
             username: "newuser".to_string(),
+            email: "new@example.com".to_string(), // Add email field
             password_hash: "hashed_password".to_string(), // Backend handles hashing
             created_at: now,
             updated_at: now,
         };
-        let credentials = Credentials {
-            username: "newuser".to_string(),
-            password: "password123".to_string(),
+        
+        // Register payload
+        let register_payload = LoginPayload {
+            identifier: "newuser".to_string(),
+            password: Secret::new("password123".to_string()),
         };
-        let credentials_json = serde_json::to_string(&credentials).unwrap();
+        
+        // Use SerializableLoginPayload for serialization
+        let serializable_credentials = SerializableLoginPayload {
+            identifier: &register_payload.identifier,
+            password: register_payload.password.expose_secret(),
+        };
+        let credentials_json = serde_json::to_string(&serializable_credentials).unwrap();
 
         server.expect(
             Expectation::matching(all_of![
@@ -703,7 +751,7 @@ mod tests {
             .respond_with(json_encoded(mock_user.clone())),
         );
 
-        let result = client.register(&credentials).await;
+        let result = client.register(&register_payload).await;
 
         assert!(result.is_ok());
         let registered_user = result.unwrap();
@@ -717,9 +765,9 @@ mod tests {
     async fn test_register_failure_conflict() {
         let (mut server, client) = setup_test_server();
 
-        let credentials = Credentials {
-            username: "existinguser".to_string(),
-            password: "password123".to_string(),
+        let credentials = LoginPayload {
+            identifier: "existinguser".to_string(),
+            password: Secret::new("password123".to_string()),
         };
         let error_body = "Username already taken";
 
@@ -1005,6 +1053,7 @@ mod tests {
         let mock_user = User {
             id: user_id,
             username: "currentuser".to_string(),
+            email: "user@example.com".to_string(),
             password_hash: "some_hash".to_string(), // The endpoint returns the full user
             created_at: now,
             updated_at: now,
@@ -1130,16 +1179,16 @@ mod tests {
         use serde_json::json;
 
         let mock_sessions = vec![
-            ChatSession {
+            Chat {
                 id: session1_id,
                 user_id: user_id_mock,
                 character_id: char_id_mock,
-                title: Some("Session One".to_string()),
+                title: Some("First Chat".to_string()),
+                created_at: now,
+                updated_at: now,
                 system_prompt: None,
                 temperature: Some(BigDecimal::from_str("0.8").unwrap()),
                 max_output_tokens: Some(512),
-                created_at: now,
-                updated_at: now,
                 frequency_penalty: None,
                 presence_penalty: None,
                 top_k: None,
@@ -1151,17 +1200,18 @@ mod tests {
                 logit_bias: None,
                 history_management_strategy: "window".to_string(),
                 history_management_limit: 20,
+                visibility: Some("private".to_string()),
             },
-            ChatSession {
+            Chat {
                 id: session2_id,
                 user_id: user_id_mock,
                 character_id: Uuid::new_v4(), // Different character
-                title: None,
+                title: Some("Second Chat".to_string()),
+                created_at: now,
+                updated_at: now,
                 system_prompt: Some("You are helpful.".to_string()),
                 temperature: None,
                 max_output_tokens: None,
-                created_at: now,
-                updated_at: now,
                 frequency_penalty: Some(BigDecimal::from_str("0.1").unwrap()),
                 presence_penalty: Some(BigDecimal::from_str("0.2").unwrap()),
                 top_k: Some(40),
@@ -1173,6 +1223,7 @@ mod tests {
                 logit_bias: Some(json!({ "token_id": -1.0 })),
                 history_management_strategy: "window".to_string(),
                 history_management_limit: 20,
+                visibility: Some("private".to_string()),
             },
         ];
 
@@ -1187,7 +1238,7 @@ mod tests {
         let sessions = result.unwrap();
         assert_eq!(sessions.len(), 2);
         assert_eq!(sessions[0].id, mock_sessions[0].id);
-        assert_eq!(sessions[1].title, mock_sessions[1].title);
+        assert_eq!(sessions[1].system_prompt, mock_sessions[1].system_prompt);
         assert_eq!(sessions[0].temperature, mock_sessions[0].temperature);
         assert_eq!(sessions[1].seed, mock_sessions[1].seed);
 
@@ -1198,7 +1249,7 @@ mod tests {
     async fn test_list_chat_sessions_success_empty() {
         let (mut server, client) = setup_test_server();
 
-        let mock_sessions: Vec<ChatSession> = vec![];
+        let mock_sessions: Vec<Chat> = vec![]; // Changed from ChatSession to Chat
 
         server.expect(
             Expectation::matching(request::method_path("GET", "/api/chats"))
@@ -1343,19 +1394,18 @@ mod tests {
         let user_id_mock = Uuid::new_v4();
         let session_id = Uuid::new_v4();
         let now = Utc::now();
-        use scribe_backend::models::chats::ChatSession; // Import ChatSession
         use serde_json::json; // Import json!
 
-        let mock_session = ChatSession {
+        let mock_session = Chat {
             id: session_id,
             user_id: user_id_mock, // Assuming backend returns this
             character_id,
-            title: None, // Usually starts untitled
+            title: Some("New Chat".to_string()),
+            created_at: now,
+            updated_at: now,
             system_prompt: None,
             temperature: None,
             max_output_tokens: None,
-            created_at: now,
-            updated_at: now,
             frequency_penalty: None,
             presence_penalty: None,
             top_k: None,
@@ -1367,6 +1417,7 @@ mod tests {
             logit_bias: None,
             history_management_strategy: "window".to_string(),
             history_management_limit: 20,
+            visibility: Some("private".to_string()),
         };
 
         let request_payload = json!({ "character_id": character_id });

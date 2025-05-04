@@ -4605,6 +4605,7 @@ dependencies = [
  "reqwest",
  "reqwest-eventsource",
  "scribe-backend",
+ "secrecy",
  "serde",
  "serde_json",
  "tempfile",

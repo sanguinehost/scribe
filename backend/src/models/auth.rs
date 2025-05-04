@@ -52,7 +52,7 @@ pub struct LoginPayload {
 }
 
 // Response for successful login/registration
-#[derive(Debug, Serialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct AuthResponse {
     pub user_id: uuid::Uuid,
     pub username: String,

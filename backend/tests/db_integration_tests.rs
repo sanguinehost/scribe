@@ -47,9 +47,9 @@ use scribe_backend::AppState; // ADDED AppState
 use scribe_backend::models::chats::{
     ChatMessage,
     // ADDED Chat related types
-    ChatSession,
+    Chat, // Renamed from Chat
     MessageRole,
-    NewChatSession,
+    NewChat, // Renamed from NewChat
 };
 use scribe_backend::state::DbPool; // ADDED DbPool
 
@@ -148,10 +148,12 @@ fn insert_test_user(conn: &mut PgConnection, prefix: &str) -> Result<User, Diese
     let test_username = format!("{}_{}", prefix, Uuid::new_v4());
     let new_user = NewUser {
         username: test_username.clone(),
+        email: format!("{}@example.com", test_username), // Added email
         password_hash: "test_hash".to_string(),
     };
     diesel::insert_into(schema::users::table)
         .values(&new_user)
+        .returning(User::as_returning()) // Added returning
         .get_result(conn)
     // .expect(&format!("Error inserting test user {}", test_username)) // Use Result instead
 }
@@ -282,11 +284,13 @@ fn test_user_character_insert_and_query() {
 
         let new_user = NewUser {
             username: test_username.clone(),
+            email: format!("{}@example.com", test_username), // Added email
             password_hash: test_password_hash.to_string(),
         };
 
         let inserted_user: User = diesel::insert_into(schema::users::table)
             .values(&new_user)
+            .returning(User::as_returning()) // Added returning
             .get_result(conn)?; // Use ? for error propagation
 
         assert_eq!(inserted_user.username, test_username);
@@ -360,10 +364,12 @@ fn insert_test_user_with_password(
     // Use the exact username provided rather than creating a new one
     let new_user = NewUser {
         username: username.to_string(),
+        email: format!("{}@example.com", username), // Added email
         password_hash: hash_test_password(password), // Use the test hasher
     };
     diesel::insert_into(schema::users::table)
         .values(&new_user)
+        .returning(User::as_returning()) // Added returning
         .get_result(conn)
 }
 
@@ -679,20 +685,26 @@ fn test_chat_session_insert_and_query() {
         let character = insert_test_character(conn, user.id, "Session Character")?;
 
         // --- Insert Chat Session ---
-        let new_session = NewChatSession {
+        let new_session = NewChat {
+            id: Uuid::new_v4(),
             user_id: user.id,
             character_id: character.id,
-            // Optional fields removed from NewChatSession
+            title: None,
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+            history_management_strategy: "message_window".to_string(),
+            history_management_limit: 20,
+            visibility: Some("private".to_string()),
+            // Optional fields removed from NewChat
             // system_prompt: Some("Test System Prompt".to_string()),
             // temperature: Some(BigDecimal::from_str("0.8").unwrap()), // Convert float to BigDecimal
             // max_output_tokens: Some(256),
-            // title: None, // Add missing title field
         };
 
-        let inserted_session: ChatSession = diesel::insert_into(chat_sessions::table)
+        let inserted_session: Chat = diesel::insert_into(chat_sessions::table)
             .values(&new_session)
-            // Explicitly return columns matching ChatSession
-            .returning(ChatSession::as_returning())
+            // Explicitly return columns matching Chat
+            .returning(Chat::as_returning())
             .get_result(conn)?;
 
         assert_eq!(inserted_session.user_id, user.id);
@@ -705,10 +717,10 @@ fn test_chat_session_insert_and_query() {
         // );
 
         // --- Query Chat Session ---
-        let found_session: ChatSession = chat_sessions::table
+        let found_session: Chat = chat_sessions::table
             .find(inserted_session.id)
-            // Explicitly select columns matching ChatSession
-            .select(ChatSession::as_select())
+            // Explicitly select columns matching Chat
+            .select(Chat::as_select())
             .first(conn)?;
 
         assert_eq!(found_session.id, inserted_session.id);
@@ -780,15 +792,22 @@ async fn test_chat_message_insert_and_query() -> Result<(), AnyhowError> {
         let char_id_clone = character.id;
         let interact_result = obj
             .interact(move |conn| {
-                let new_session = NewChatSession {
+                let new_session = NewChat {
+                    id: Uuid::new_v4(),
                     user_id: user_id_clone,
                     character_id: char_id_clone,
+                    title: None,
+                    created_at: chrono::Utc::now(),
+                    updated_at: chrono::Utc::now(),
+                    history_management_strategy: "message_window".to_string(),
+                    history_management_limit: 20,
+                    visibility: Some("private".to_string()),
                     // Removed ..Default::default() as it's not implemented and unnecessary
                 };
                 diesel::insert_into(chat_sessions::table)
                     .values(&new_session)
-                    .returning(ChatSession::as_returning())
-                    .get_result::<ChatSession>(conn)
+                    .returning(Chat::as_returning())
+                    .get_result::<Chat>(conn)
             })
             .await;
         // Manual handling of InteractError

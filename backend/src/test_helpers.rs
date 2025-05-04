@@ -1025,7 +1025,7 @@ pub mod auth {
         let user = create_test_user(&app.db_pool, username, password).await;
 
         let login_payload = json!({
-            "username": username,
+            "identifier": username,
             "password": password,
         });
 

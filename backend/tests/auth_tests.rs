@@ -28,7 +28,7 @@ use scribe_backend::{
     config::Config,
     errors::AppError,
     models::{
-        auth::{AuthResponse, LoginPayload, RegisterPayload}, // Updated auth models
+        auth::{AuthResponse, LoginPayload}, // Updated auth models
         users::{NewUser, User},
     },
     auth::session_store::SessionRecord, // Import SessionRecord correctly
@@ -319,6 +319,7 @@ async fn test_register_success() -> AnyhowResult<()> {
         move |conn| {
             users::table
                 .find(user_id) // Find by ID
+                .select(User::as_select()) // Select specific columns matching User struct
                 .first::<User>(conn)
         }
     })
@@ -1382,7 +1383,6 @@ async fn test_auth_backend_get_user_not_found() -> AnyhowResult<()> {
     
     // Remove UserCredentials import if no longer needed
     // use scribe_backend::models::users::UserCredentials;
-    use scribe_backend::models::auth::LoginPayload; // Import LoginPayload
     
     #[tokio::test]
 #[ignore] // Requires DB access via pool

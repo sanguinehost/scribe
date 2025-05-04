@@ -23,6 +23,7 @@ async-trait = "0.1"
 reqwest-eventsource = "0.6.0"
 futures-util = { version = "0.3", features = ["sink"] } # For StreamExt
 chrono = { version = "0.4.40" }
+secrecy = "0.8" # Add the secrecy crate for Secret<String>
 
 async-stream = "0.3" # For creating streams
 tokio-stream = "0.1" # Removed incorrect features

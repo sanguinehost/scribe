@@ -98,7 +98,7 @@ mod user_store_tests {
         let password_clone = password.clone();
         let create_result = obj
             .interact(move |conn| {
-                scribe_backend::auth::create_user(conn, username_clone, password_clone)
+                scribe_backend::auth::create_user(conn, username_clone, "test1@example.com".to_string(), password_clone)
             })
             .await
             .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
@@ -143,7 +143,7 @@ mod user_store_tests {
         let password_clone3 = secrecy::Secret::new("another_password".to_string());
         let duplicate_result = obj3
             .interact(move |conn| {
-                scribe_backend::auth::create_user(conn, username_clone3, password_clone3)
+                scribe_backend::auth::create_user(conn, username_clone3, "test2@example.com".to_string(), password_clone3)
             })
             .await
             .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
@@ -259,7 +259,7 @@ mod user_store_tests {
         let password_clone = password.clone();
         let create_result = obj
             .interact(move |conn| {
-                scribe_backend::auth::create_user(conn, username_clone, password_clone)
+                scribe_backend::auth::create_user(conn, username_clone, "test3@example.com".to_string(), password_clone)
             })
             .await
             .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
@@ -335,7 +335,7 @@ mod user_store_tests {
         // Pass the SECRET containing the HASH to create_user
         let create_result = obj
             .interact(move |conn| {
-                scribe_backend::auth::create_user(conn, username_clone, hashed_password_secret)
+                scribe_backend::auth::create_user(conn, username_clone, "test4@example.com".to_string(), hashed_password_secret)
             })
             .await
             .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;

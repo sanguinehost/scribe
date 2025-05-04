@@ -3,7 +3,6 @@ use crate::models::documents::{
     CreateDocumentRequest, CreateSuggestionRequest, Document, DocumentResponse, NewDocument,
     NewSuggestion, Suggestion,
 };
-use crate::schema::{old_documents, old_suggestions}; // Use old_ tables
 use axum::{
     extract::{Path, State},
     http::StatusCode,
