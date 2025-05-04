@@ -11,13 +11,59 @@
 	import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip';
 	import { goto } from '$app/navigation';
 	import PlusIcon from './icons/plus.svelte';
-	import type { User } from '$lib/types';
+	import type { User } from '$lib/types'; // Assuming User type is defined elsewhere or remove if not used directly here
 	import SidebarUserNav from './sidebar-user-nav.svelte';
-	import { SidebarHistory } from './sidebar-history';
+	// import { SidebarHistory } from './sidebar-history'; // Remove SidebarHistory import
+	import CharacterList from './CharacterList.svelte'; // Import the new CharacterList component
+	import CharacterUploader from './CharacterUploader.svelte'; // Import the uploader component
+	import { apiClient } from '$lib/api'; // Import the API client
+	import { toast } from 'svelte-sonner'; // Import toast for error handling
 
 	let { user }: { user?: User } = $props();
 
 	const context = useSidebar();
+	let isUploaderOpen = $state(false); // State for dialog visibility (Changed to $state)
+	let characterListComp: CharacterList; // Reference to CharacterList component instance
+
+	// Placeholder handlers for events from CharacterList
+	async function handleSelectCharacter(event: CustomEvent<{ characterId: string }>) {
+		const characterId = event.detail.characterId;
+		console.log('Character selected:', characterId);
+		context.setOpenMobile(false); // Close mobile sidebar on selection
+
+		try {
+			// Call API to create/get chat session
+			const result = await apiClient.createChat({ character_id: characterId, title: 'New Chat' }); // Use snake_case
+
+			if (result.isOk()) { // Check using isOk()
+				const chat = result.value; // Access value using .value
+				console.log('Chat session created/fetched:', chat.id);
+				goto(`/chat/${chat.id}`, { invalidateAll: true }); // Navigate to the chat page with the new chat ID
+			} else { // Error case
+				const apiError = result.error; // Access error using .error
+				console.error('Failed to create chat session:', apiError);
+				toast.error('Failed to start chat session', { description: apiError.message });
+				// Handle error - maybe show a toast notification
+			}
+		} catch (error) {
+			console.error('Error starting chat session:', error);
+			toast.error('An unexpected error occurred while starting the chat.');
+			// Handle unexpected errors
+		}
+	}
+
+	function handleUploadCharacter() {
+		console.log('Upload character triggered');
+		isUploaderOpen = true; // Open the dialog
+		context.setOpenMobile(false); // Close mobile sidebar
+	}
+
+	async function handleUploadSuccess() {
+		console.log('Upload successful, refreshing list...');
+		if (characterListComp) {
+			await characterListComp.refresh(); // Call refresh on the CharacterList instance
+		}
+	}
 </script>
 
 <Sidebar class="group-data-[side=left]:border-r-0">
@@ -32,33 +78,31 @@
 					class="flex flex-row items-center gap-3"
 				>
 					<span class="cursor-pointer rounded-md px-2 text-lg font-semibold hover:bg-muted">
-						Chatbot
+						Scribe
 					</span>
 				</a>
 				<Tooltip>
-					<TooltipTrigger>
-						{#snippet child({ props })}
-							<Button
-								{...props}
-								variant="ghost"
-								type="button"
-								class="h-fit p-2"
-								onclick={() => {
-									context.setOpenMobile(false);
-									goto('/', { invalidateAll: true });
-								}}
-							>
-								<PlusIcon />
-							</Button>
-						{/snippet}
+					<TooltipTrigger
+						class="ring-offset-background focus-visible:ring-ring inline-flex h-fit items-center justify-center whitespace-nowrap rounded-md p-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 hover:bg-accent hover:text-accent-foreground [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0"
+						onclick={() => {
+							context.setOpenMobile(false);
+							goto('/', { invalidateAll: true });
+						}}
+					>
+						<PlusIcon />
 					</TooltipTrigger>
 					<TooltipContent align="end">New Chat</TooltipContent>
 				</Tooltip>
 			</div>
 		</SidebarMenu>
 	</SidebarHeader>
-	<SidebarContent>
-		<SidebarHistory {user} />
+	<SidebarContent class="p-0">
+		<!-- Replace SidebarHistory with CharacterList -->
+		<CharacterList
+			bind:this={characterListComp}
+			on:selectCharacter={handleSelectCharacter}
+			on:uploadCharacter={handleUploadCharacter}
+		/>
 	</SidebarContent>
 	<SidebarFooter>
 		{#if user}
@@ -66,3 +110,10 @@
 		{/if}
 	</SidebarFooter>
 </Sidebar>
+
+<!-- Add the CharacterUploader component (Dialog) -->
+<CharacterUploader
+	bind:open={isUploaderOpen}
+	onOpenChange={(value) => { isUploaderOpen = value; }}
+	on:uploadSuccess={handleUploadSuccess}
+/>

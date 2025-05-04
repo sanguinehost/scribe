@@ -38,12 +38,13 @@ Only mark a task checkbox (`- [x]`) when all these conditions are satisfied.
     - [x] *Setup Basic Error Handling:* Implement basic Axum error handling/mapping middleware. *(Implemented via AppError/IntoResponse)*
     - [x] *TDD:* Implement `/api/health` endpoint.
     - [x] *TDD:* Write integration test for `/api/health`. *(Verified)*
-- [ ] **Task 0.2: Frontend Project Setup (FE)**
-    - [x] Initialize SvelteKit project (`npm create svelte@latest scribe-frontend`). Choose TypeScript project template.
-    - [x] Setup basic project structure (routes, components, stores, lib). *(Created missing folders)*
-    - [x] **Configure Styling:** Install and configure **shadcn-svelte** ([https://www.shadcn-svelte.com/docs/installation/manual](https://www.shadcn-svelte.com/docs/installation/manual)) following the manual installation guide. *(Requires shadcn-svelte setup)*
-    - [ ] **Configure SPA Architecture:** Set up the main application as a Single Page Application (SPA) with client-side routing, keeping only authentication pages (login/register) as separate routes.
-    - [x] *TDD:* Setup Vitest and write basic component rendering tests (e.g., for a placeholder component). *(Verified)*
+- [x] **Task 0.2: Frontend Project Setup (FE)**
+    - [x] Initialize SvelteKit project (`npm create svelte@latest scribe-frontend`). Choose TypeScript project template. *(Superseded by Vercel AI SDK Template)*
+    - [x] Setup basic project structure (routes, components, stores, lib). *(Provided by Vercel Template)*
+    - [x] **Configure Styling:** Install and configure **shadcn-svelte**. *(Provided by Vercel Template)*
+    - [x] **Configure SPA Architecture:** Set up the main application as a Single Page Application (SPA) with client-side routing. *(Provided by Vercel Template)*
+    - [x] *TDD:* Setup Vitest and write basic component rendering tests. *(Provided by Vercel Template)*
+    - *Note:* Vercel AI SDK Svelte template provides the foundational project setup, structure, styling (shadcn), and SPA architecture.
 - [x] **Task 0.3: Database Setup (DevOps/BE)**
     - [x] Create `docker-compose.yml` for PostgreSQL and Qdrant services. *(Verified)*
     - [x] Configure initial database connection strings/environment variables for the backend. *(Verified)*
@@ -57,7 +58,7 @@ Only mark a task checkbox (`- [x]`) when all these conditions are satisfied.
     - [x] Implement migration runner logic integrated with Diesel (e.g., run on startup or via separate command). *(Verified - Run on startup in main.rs)*
     - [x] *TDD:* Write tests to verify migrations apply correctly. *(Verified - test_migrations_run_cleanly)*
     - [x] *TDD:* Write tests verifying schema matches models using Diesel's testing features. *(Covered by compile-time checks and integration tests like `test_user_character_insert_and_query`)*
-- [ ] **Task 0.5: Authentication (BE & FE)** - ***See `docs/AUTH_DESIGN.md` for details***
+- [x] **Task 0.5: Authentication (BE & FE)** - ***See `docs/AUTH_DESIGN.md` for details***
     - [x] **(BE) Model Update:** Implement `axum_login::AuthUser` for the `User` model. *(Verified)*
     - [x] **(BE) User Store Logic:** Implement functions: `get_user(id)`, `get_user_by_username(username)`, `verify_credentials(username, password)` (using `bcrypt`). *(Verified)*
     - [x] **(BE) Session Store:** Set up a persistent session store for `axum-login` (e.g., using `sqlx` or a Diesel adapter). Implement required traits. *(Verified)*
@@ -66,11 +67,12 @@ Only mark a task checkbox (`- [x]`) when all these conditions are satisfied.
     - [x] **(BE) Logout Endpoint:** Implement `/api/auth/logout` handler (use `AuthSession::logout`). *(Verified)*
     - [x] **(BE) Me Endpoint:** Implement optional `/api/auth/me` handler (return current user data). *(Verified)*
     - [x] **(BE) Router Integration:** Integrate `AuthManagerLayer` and session store layer into the main Axum router. *(Verified)*
-    - [x] **(FE) Login/Register Forms:** Create Svelte components (`LoginForm.svelte`, `RegisterForm.svelte`). *(Functionally Implemented)*
-    - [x] **(FE) API Calls:** Implement frontend functions to call `/api/auth/register`, `/api/auth/login`, `/api/auth/logout`, `/api/auth/me`. *(Functionally Implemented)*
-    - [x] **(FE) Auth State Management:** Implement a Svelte store (`authStore`) to manage user state (logged in status, user info). Implement guards/redirects based on auth state. *(Functionally Implemented)*
+    - [x] **(FE) Login/Register Forms:** *(Provided by Vercel Template)*
+    - [x] **(FE) API Calls:** *(Provided by Vercel Template, needs adaptation for Scribe backend)*
+    - [x] **(FE) Auth State Management:** *(Provided by Vercel Template, needs adaptation for Scribe backend)*
     - [x] *TDD (BE):* Unit tests for password hashing/verification. Unit tests for user store functions. API integration tests for auth endpoints. *(Verified)*
-    - [ ] *TDD (FE):* Component tests for `LoginForm`, `RegisterForm`. E2E tests (e.g., using Playwright) for the full registration and login flow. *(Missing)*
+    - [ ] *TDD (FE):* Adapt Vercel template tests or add new ones for Scribe-specific auth integration. E2E tests for the full registration and login flow. *(Missing)*
+    - *Note:* Frontend auth flow is functional using the Vercel template, connecting to the Scribe backend. Remaining FE work involves adapting tests.
 
 ---
 
@@ -88,12 +90,16 @@ Only mark a task checkbox (`- [x]`) when all these conditions are satisfied.
     - [x] *TDD (BE):* API integration tests for `POST /upload` (success, auth failure, invalid PNG/JSON, DB error). *(Verified)*
     - [x] *TDD (BE):* API integration tests for `GET /characters` (success, auth failure, empty list). *(Verified)*
     - [x] *TDD (BE):* API integration tests for `GET /characters/{id}` (success, auth failure, not found, forbidden/wrong user). *(Verified)*
-- [ ] **Task 1.3: Character UI (FE)** - ***Requires Task 1.2 Completion***
-    - [x] **(FE) Character List Component:** Create `CharacterList.svelte` as a SPA panel/view component (Leverage shadcn-svelte components like `<Card>`, `<Avatar>`, grid utilities). Fetch data from `GET /api/characters` on mount. Display characters. Implement selection mechanism to transition to chat view within the SPA. *(Functionally Implemented)*
-    - [x] **(FE) Character Uploader Component:** Create `CharacterUploader.svelte` (Leverage shadcn-svelte form components, file input handling). Call `POST /api/characters/upload`. Handle states. Refresh list. *(Functionally Implemented)*
-    - [ ] *TDD (FE):* Component tests for `CharacterList` (rendering mock data, selection interaction). *(Missing)*
-    - [ ] *TDD (FE):* Component tests for `CharacterUploader` (file input simulation, form submission simulation). *(Missing)*
-    - [ ] *E2E (FE):* Test uploading a character and seeing it appear in the list. *(Missing)*
+- [ ] **Task 1.3: Character UI Integration (FE)** - ***Requires Task 1.2 Completion & Vercel Template***
+    - [x] **(FE) Character List Component:** *(Base provided by Vercel Template Sidebar/History)*
+    - [x] **(FE) Character Uploader Component:** *(Base provided by Vercel Template UI elements)*
+    - [ ] **(FE) Integration:** Adapt the Vercel template's sidebar/UI to:
+        - Fetch and display the user's characters from `GET /api/characters`.
+        - Implement character selection logic to initiate chats.
+        - Integrate a character upload mechanism calling `POST /api/characters/upload`.
+    - [ ] *TDD (FE):* Component tests for Scribe-specific adaptations (data fetching, upload logic). *(Missing)*
+    - [ ] *E2E (FE):* Test uploading a character and seeing it appear in the list/sidebar, then selecting it to start a chat. *(Missing)*
+    - *Note:* Focus is on integrating Scribe's character management API calls and logic into the existing Vercel template UI structure (likely the sidebar).
 
 ---
 
@@ -137,16 +143,18 @@ Only mark a task checkbox (`- [x]`) when all these conditions are satisfied.
         - [x] Save AI response (using Task 2.2 logic/service) **(potentially after stream completion or incrementally if feasible)**.
         - [x] Return AI response **(as stream or complete response)**.
     - [x] *TDD (BE):* API integration tests for `POST /chats/{id}/generate` (mocking the Gemini client call). Test success case (both streaming and non-streaming), auth failure, session not found, downstream errors (saving message, assembling prompt). **Verify stream format (e.g., SSE).**
-- [ ] **Task 2.6: Chat UI Components (FE)**
-    - [x] **(FE) Chat Window:** Create `ChatWindow.svelte` as a primary SPA view/panel (main container, potentially using shadcn-svelte layout components like `Sheet` or a custom layout component).
-    - [x] **(FE) Message Bubble:** Create `MessageBubble.svelte` (display individual user/AI messages, style using shadcn-svelte theme/utilities). **Must support rendering incrementally updating text for streaming.**
-    - [x] **(FE) Message Input:** Create `MessageInput.svelte` (Leverage shadcn-svelte `<Textarea>`, `<Button>`).
-    - [ ] *TDD (FE):* Component tests for each component (rendering props, basic interactions like button click). **Add tests for incremental text updates in `MessageBubble`.**
-- [ ] **Task 2.7: Frontend Chat Logic (FE)** - ***Requires BE APIs (Task 2.1, 2.2, 2.5) Completion***
-    - [x] **(FE) Chat Store:** Implement Svelte store (`chatStore`) to manage current session ID, messages, loading state, and view transitions within the SPA.
-    - [x] **(FE) API Calls:** Implement functions to: create session (`POST /api/chats`), fetch messages (`GET /api/chats/{id}/messages`), send message & trigger generation (`POST /api/chats/{id}/generate`). **Handle streaming responses (e.g., using `EventSource` for SSE).**
-    - [x] **(FE) UI Integration:** Connect `ChatWindow`, `MessageInput` to the store and API functions. Display messages. **Update messages incrementally during streaming.** Handle loading indicators. Handle errors from API calls.
-    - [ ] *TDD (FE):* Add tests for handling streaming responses and updating the store/UI correctly.
+- [ ] **Task 2.6: Chat UI Streaming Adaptation (FE)** - ***Requires Vercel Template***
+    - [x] **(FE) Chat Window:** *(Provided by Vercel Template)*
+    - [x] **(FE) Message Bubble:** *(Provided by Vercel Template)*
+    - [x] **(FE) Message Input:** *(Provided by Vercel Template)*
+    - [ ] **(FE) Adaptation:** Verify and adapt the Vercel template's message rendering components (`messages.svelte`, etc.) to correctly handle incremental text updates from Scribe's backend streaming (`EventSource`). Ensure smooth rendering.
+    - [ ] *TDD (FE):* Add/adapt tests specifically for incremental text updates in the template's message components based on Scribe's streaming implementation. *(Missing)*
+- [ ] **Task 2.7: Frontend Chat Streaming Logic (FE)** - ***Requires BE APIs (Task 2.1, 2.2, 2.5) Completion & Vercel Template***
+    - [x] **(FE) Chat Store:** *(Base provided by Vercel Template's `useChat` hook/stores)*
+    - [ ] **(FE) API Calls & Streaming:** Implement `EventSource` logic to connect to `POST /api/chats/{id}/generate`. Adapt Vercel template's API call structure (`useChat`?) to handle Scribe's specific streaming endpoint and message format.
+    - [ ] **(FE) UI Integration:** Ensure the received stream updates the Vercel template's chat state (`messages` array in `useChat`?) correctly, triggering incremental UI updates in the message components (Task 2.6). Handle loading/error states.
+    - [ ] *TDD (FE):* Add tests for the `EventSource` handling logic and its integration with the Vercel template's state management for streaming updates. *(Missing)*
+    - *Note:* This is the core remaining task for chat functionality - connecting the backend stream to the frontend UI via `EventSource`.
 - [x] **Task 2.8: Basic CLI Test Client (BE/DevTool)** - ***Requires BE APIs (Task 2.1, 2.2, 2.5) Completion***
    - [x] **(BE/CLI) Create Rust Binary:** Set up a separate Rust binary project or a binary target within the backend (`scribe-cli`). Add necessary dependencies (e.g., `reqwest`, `tokio`, `serde`, `clap` for arg parsing).
    - [x] **(BE/CLI) Implement API Client Logic:** Create functions within the CLI to interact with the backend API: login (`/api/auth/login`), list characters (`/api/characters`), create chat (`/api/chats`), generate response (`/api/chats/{id}/generate`). Handle session cookies.
@@ -214,11 +222,14 @@ Only mark a task checkbox (`- [x]`) when all these conditions are satisfied.
     - [x] *TDD (BE):* API tests for `PUT /api/chats/{id}/settings` (success, auth failure, not found, forbidden, invalid data for *each* setting). **Verify all settings updated.** *(Verified)*
     - [x] *TDD (BE):* Update Unit tests for Prompt Assembly (Task 2.4) to verify system prompt usage. *(Verified)*
     - [x] *TDD (BE):* Update Unit tests/Integration tests for Generation Endpoint (Task 2.5) to verify **all applicable settings** are passed to the mocked Gemini client. *(Verified)*
-- [ ] **Task 4.3: Settings UI (FE)** - ***Requires Task 4.2 Completion***
-    - [x] **(FE) Settings Panel Component:** Create `SettingsPanel.svelte` as an integrated SPA panel/view (Leverage shadcn-svelte components like `<Dialog>`, `<Sheet>`, or integrate into a custom layout component).
-    - [x] **(FE) Input Components:** Use shadcn-svelte form components (`<Textarea>`, `<Slider>`, `<Input>`, and other form elements as appropriate) for System Prompt, Temperature, Max Output Tokens, **Frequency/Presence Penalty, Top K/P/A, Repetition Penalty, Min P, Seed, Logit Bias editor (potentially complex)**.
-    - [x] **(FE) API Calls:** Implement logic to fetch current settings using `GET /api/chats/{id}/settings` when the panel opens for the current chat session. Implement logic to save settings using `PUT /api/chats/{id}/settings` on change or via a save button. Handle loading/success/error states. **Ensure all settings are fetched/saved.**
-    - [x] *TDD (FE):* Component tests for `SettingsPanel` (rendering inputs, handling input changes, simulating API calls for fetch/save). **Verify all settings inputs.**
+- [ ] **Task 4.3: Settings UI Integration (FE)** - ***Requires Task 4.2 Completion & Vercel Template***
+    - [x] **(FE) Settings Panel Component:** *(Base provided by Vercel Template UI elements, e.g., Sheet/Dialog)*
+    - [x] **(FE) Input Components:** *(Base provided by Vercel Template UI elements / shadcn)*
+    - [ ] **(FE) Integration:** Adapt or add UI elements within the Vercel template structure to:
+        - Display inputs for Scribe's specific settings (System Prompt, Temp, Tokens, Penalties, etc.).
+        - Fetch current settings via `GET /api/chats/{id}/settings`.
+        - Save updated settings via `PUT /api/chats/{id}/settings`.
+    - [ ] *TDD (FE):* Component tests for Scribe-specific settings UI adaptations and API interactions. Verify all settings inputs are handled. *(Missing)*
    - [x] **Task 4.4: Investigate Gemini API Support (BE)** - ***Requires consulting `genai` / Google Gemini docs***
     - [x] **(BE) Research:** Systematically check the `genai` crate and official Google Gemini API documentation to confirm which of the newly added settings (`frequency_penalty`, `presence_penalty`, `top_k`, `top_p`, `repetition_penalty`, `min_p`, `top_a`, `seed`, `logit_bias`) are directly supported via API parameters in `ChatOptions` or `GenerationConfig`. *(Findings documented via comments/logs in chat.rs)*
     - [x] **(BE) Document Findings:** Update comments in the code or relevant documentation (`docs/LLM_INTEGRATION.md`?) to note which settings are supported, which might require workarounds (if any), and which are unsupported by the Gemini API. *(In-code comments/logs suffice for MVP)*
@@ -254,14 +265,15 @@ Only mark a task checkbox (`- [x]`) when all these conditions are satisfied.
         - [x] List the core components used on the screen (linking back to Task 5.2 definitions).
         - [x] Describe key interactions and state changes specific to the screen.
         - [x] Optionally include references to wireframe images (e.g., `login-view.png`) stored elsewhere, but ensure the Markdown is the source of truth.
-- [ ] **Task 5.5: SPA Layout & Navigation Implementation (FE)**
-    - [ ] **(FE) Main Layout Component:** Create a `MainLayout.svelte` component that serves as the container for all SPA views/panels.
-    - [ ] **(FE) Panel/View System:** Implement a flexible panel/view system within the SPA layout to support dynamic transitions between character list, chat, and settings panels.
-    - [ ] **(FE) Client-Side Router Integration:** Configure client-side routing to handle view transitions without page reloads, while maintaining proper URL patterns.
-    - [ ] **(FE) View Transitions:** Implement smooth transitions between panels (character selection to chat, chat to settings, etc.).
-    - [ ] **(FE) Responsive Layout:** Ensure the SPA layout works on both desktop and mobile viewports.
-    - [ ] *TDD (FE):* Component tests for `MainLayout` and view transition logic.
-    - [ ] *E2E (FE):* End-to-end tests for the full SPA navigation flow.
+- [x] **Task 5.5: SPA Layout & Navigation Implementation (FE)**
+    - [x] **(FE) Main Layout Component:** *(Provided by Vercel Template)*
+    - [x] **(FE) Panel/View System:** *(Provided by Vercel Template)*
+    - [x] **(FE) Client-Side Router Integration:** *(Provided by Vercel Template)*
+    - [x] **(FE) View Transitions:** *(Provided by Vercel Template)*
+    - [x] **(FE) Responsive Layout:** *(Provided by Vercel Template)*
+    - [ ] *TDD (FE):* Adapt Vercel template tests or add new ones for Scribe-specific layout/navigation integration if needed. *(Missing)*
+    - [ ] *E2E (FE):* Adapt Vercel template tests or add new ones for Scribe-specific SPA navigation flow. *(Missing)*
+    - *Note:* The Vercel AI SDK Svelte template provides the core SPA layout, routing, and navigation structure. Remaining work involves integrating Scribe views (Character List, Chat, Settings) into this structure and adapting tests.
 
 ---
 

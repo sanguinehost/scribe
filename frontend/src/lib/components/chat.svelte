@@ -29,22 +29,21 @@
 	let error = $state<string | null>(null); // Add error state
 
 	// Removed attachments state as feature is disabled/not supported
-	// let attachments = $state<Attachment[]>([]);
-	// let attachments = $state<any[]>([]); // State for attachments (currently unused) - REMOVED
 	let chatInput = $state(''); // Input state managed here
 	let currentAbortController = $state<AbortController | null>(null); // For cancelling stream
 
 	// --- Scribe Backend Interaction Logic ---
 
 	async function sendMessage(content: string) {
-		if (!chat?.id || !user?.id) {
+		// Use user.user_id instead of user.id
+		if (!chat?.id || !user?.user_id) {
 			error = 'Chat session or user information is missing.';
 			toast.error(error);
 			return;
 		}
 
 		isLoading = true;
-		error = null;
+		error = null; // Reset error state at the beginning
 
 		// Add user message optimistically
 		const userMessage: ScribeChatMessage = {
@@ -53,7 +52,7 @@
 			message_type: 'User',
 			content: content,
 			created_at: new Date().toISOString(),
-			user_id: user.id,
+			user_id: user.user_id, // Use user.user_id
 			loading: false,
 		};
 		messages = [...messages, userMessage];
@@ -70,10 +69,12 @@
 			message_type: 'Assistant',
 			content: '', // Start empty, fill with stream
 			created_at: new Date().toISOString(), // Placeholder, backend might send final
-			user_id: '', // Placeholder, backend should provide if needed (usually not for assistant)
+			user_id: '', // Assistant messages don't have a user_id in the same way
 			loading: true,
 		};
 		messages = [...messages, assistantMessage];
+
+		let fetchError: any = null; // Variable to store error from fetch/parsing
 
 		try {
 			const response = await fetch(`/api/chats/${chat.id}/generate`, {
@@ -99,56 +100,84 @@
 			const reader = response.body.getReader();
 			const decoder = new TextDecoder();
 			let buffer = '';
+			let currentEvent = 'message'; // Default SSE event type
+			let currentData = '';
 
 			while (true) {
 				const { value, done } = await reader.read();
 				if (done) {
-					break;
+					break; // Exit loop when stream is done
 				}
 				buffer += decoder.decode(value, { stream: true });
 
 				// Process buffer line by line for SSE messages
-				const lines = buffer.split('\n');
-				buffer = lines.pop() ?? ''; // Keep potential partial line
+				// An SSE message block ends with double newline (\n\n)
+				let eventEndIndex;
+				while ((eventEndIndex = buffer.indexOf('\n\n')) !== -1) {
+					const messageBlock = buffer.substring(0, eventEndIndex);
+					buffer = buffer.substring(eventEndIndex + 2); // Consume block + \n\n
 
-				for (const line of lines) {
-					if (line.startsWith('data:')) {
-						const dataContent = line.substring(5).trim();
-						if (dataContent === '[DONE]') { // Check for a potential DONE signal if backend sends one
-							console.log('Stream finished with [DONE]');
-							break; // Or handle completion differently
+					// Reset for each block
+					currentEvent = 'message'; // Default if no event line
+					currentData = '';
+
+					for (const line of messageBlock.split('\n')) {
+						if (line.startsWith('event:')) {
+							currentEvent = line.substring(6).trim();
+						} else if (line.startsWith('data:')) {
+							// Append data, removing the 'data: ' prefix and leading space
+							// Handle potential multi-line data correctly
+							currentData += line.substring(5).trimStart() + (messageBlock.includes('\n') ? '\n' : '');
 						}
-						try {
-							const chunk = JSON.parse(dataContent);
-							if (chunk.delta) {
-								// Find the assistant message and append delta
-								messages = messages.map(msg =>
-									msg.id === assistantMessageId
-										? { ...msg, content: msg.content + chunk.delta }
-										: msg
-								);
-							}
-						} catch (e) {
-							console.error('Failed to parse SSE data chunk:', dataContent, e);
-						}
+					}
+					currentData = currentData.trimEnd(); // Trim trailing newline if added
+
+					// Process the completed event
+					if (currentEvent === 'content') {
+						messages = messages.map(msg =>
+							msg.id === assistantMessageId
+								? { ...msg, content: msg.content + currentData }
+								: msg
+						);
+					} else if (currentEvent === 'error') {
+						console.error('SSE Error Event:', currentData);
+						error = `Stream error: ${currentData}`; // Set local error state
+						toast.error(error);
+						reader.cancel('SSE error event received'); // Cancel the reader
+						throw new Error(error); // Throw to trigger catch block and stop processing
+					} else if (currentEvent === 'done' && currentData === '[DONE]') {
+						console.log('Stream finished with event: done, data: [DONE]');
+						// The loop will break naturally via reader.read() done flag
+					} else if (currentEvent === 'thinking') {
+						console.log('SSE Thinking Event:', currentData); // Log thinking steps if needed
+						// Optionally update UI to show thinking state
 					}
 				}
 			}
 
-			// Finalize assistant message state
+			// Handle any remaining data in the buffer after the loop (should be empty if stream ended cleanly)
+			if (buffer.trim()) {
+				console.warn('SSE stream ended with unprocessed buffer:', buffer);
+			}
+
+			// Finalize assistant message state only if no error occurred during fetch/parsing
 			messages = messages.map(msg =>
 				msg.id === assistantMessageId ? { ...msg, loading: false } : msg
 			);
 
 		} catch (err: any) {
+			fetchError = err; // Store the error
 			if (err.name === 'AbortError') {
 				console.log('Fetch aborted by user.');
 				toast.info('Generation stopped.');
 				// Remove the placeholder assistant message if aborted early
 				messages = messages.filter(msg => msg.id !== assistantMessageId);
 			} else {
-				error = err.message || 'An unexpected error occurred.';
-				toast.error(error ?? 'Unknown error'); // Ensure non-null string for toast
+				// Error might have been set by the 'error' event handler already
+				if (!error) { // Only set if not already set by SSE 'error' event
+					error = err.message || 'An unexpected error occurred.';
+					toast.error(error ?? 'Unknown error'); // Ensure non-null string for toast
+				}
 				// Remove placeholder assistant message on error
 				messages = messages.filter(msg => msg.id !== assistantMessageId);
 				// Optionally remove optimistic user message on error
@@ -157,7 +186,20 @@
 		} finally {
 			isLoading = false;
 			currentAbortController = null; // Clear the controller
-			await chatHistory.refetch(); // Refetch history after interaction
+
+			// Only refetch history if the operation wasn't aborted and didn't end in an error
+			let shouldRefetch = true;
+			if (fetchError && fetchError.name === 'AbortError') {
+				shouldRefetch = false;
+			}
+			// Check if 'error' state was set (either by catch or SSE event)
+			if (error) {
+				shouldRefetch = false;
+			}
+			if (shouldRefetch) {
+				// Use untrack to prevent refetch from triggering reactivity loops if history affects messages
+				untrack(() => chatHistory.refetch());
+			}
 		}
 	}
 

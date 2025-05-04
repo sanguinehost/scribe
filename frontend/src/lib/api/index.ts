@@ -109,6 +109,7 @@ class ApiClient {
 		try {
 			const response = await fetchFn(`${this.baseUrl}${endpoint}`, {
 				...options,
+				credentials: 'include',
 				headers: {
 					'Content-Type': 'application/json',
 					...options.headers

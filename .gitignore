@@ -39,3 +39,6 @@ tarpaulin-report.json
 # Claude stuff
 .claude
 CLAUDE.md
+
+# Certificates
+.certs/

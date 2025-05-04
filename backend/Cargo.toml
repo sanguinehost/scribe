@@ -82,6 +82,10 @@ regex = "1.10.4"
 tonic = "0.12.3"
 testcontainers = "0.23.3"
 
+axum-server = { version = "0.7.2", features = ["tls-rustls"] }
+rustls = { version = "0.23", default-features = false, features = ["ring"] }
+rustls-pki-types = "1.9.0" # <-- Keep this dependency
+
 [dev-dependencies]
 hyper-util = { version = "0.1.11", features = ["full"] }
 reqwest = { version = "0.12.15", features = ["json", "cookies"] }

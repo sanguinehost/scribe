@@ -39,6 +39,7 @@ use std::sync::Arc;
 use time; // Used for tower_sessions::Expiry
 use tower_cookies::CookieManagerLayer; // Re-add CookieManagerLayer
 use tower_sessions::{cookie::SameSite, Expiry, SessionManagerLayer}; // Add Arc for config
+// axum::http::{Method, header}; <-- REMOVE
 // Import the builder function
 use scribe_backend::llm::gemini_client::build_gemini_client; // Import the async builder
 use scribe_backend::llm::gemini_embedding_client::build_gemini_embedding_client; // Add this
@@ -47,18 +48,26 @@ use scribe_backend::services::embedding_pipeline::{
 };
 use scribe_backend::text_processing::chunking::{ChunkConfig, ChunkingMetric}; // Import chunking config structs
 use scribe_backend::vector_db::QdrantClientService; // Add Qdrant service import // Add embedding pipeline service import
+use tokio::net::TcpListener; // Keep this if needed elsewhere, but axum_server replaces direct binding
+use axum_server::tls_rustls::RustlsConfig; // <-- Add this
+use std::path::PathBuf; // <-- Add PathBuf import
+use rustls::crypto::ring; // <-- Import the ring provider module
 
 // Define the embedded migrations macro
 pub const MIGRATIONS: EmbeddedMigrations = embed_migrations!("./migrations");
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main() -> Result<()> {
+    // Install the default crypto provider (ring) for rustls FIRST.
+    // Get the default provider instance and then install it.
+    ring::default_provider().install_default();
+
     dotenvy::dotenv().ok();
     init_subscriber();
 
     tracing::info!("Starting Scribe backend server...");
 
-    let config = Arc::new(Config::load().expect("Failed to load configuration")); // Load Config into Arc
+    let config = Arc::new(Config::load().context("Failed to load configuration")?);
     let db_url = config
         .database_url
         .as_ref()
@@ -170,25 +179,46 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // Mount API routes under /api
         .nest("/api", public_api_routes)
         .nest("/api", protected_api_routes) // Mount protected routes also under /api
-        .layer(auth_layer) // Apply auth layer (handles session loading/user identification)
-        // Apply cookie management layer *after* the auth layer if it needs access to session data set by auth
-        // OR before if auth layer needs cookies set by it. Axum layers execute outside-in.
-        // Usually CookieManagerLayer goes near the outside.
-        .layer(CookieManagerLayer::new()) // Remove the key here
+        // Apply layers: Order matters! Outside-in execution.
+        .layer(CookieManagerLayer::new()) // 1. Manages request/response cookies
+        .layer(auth_layer) // 2. Uses cookies (via CookieManagerLayer) to load session/user
         .with_state(app_state)
         .layer(
             TraceLayer::new_for_http()
                 .make_span_with(DefaultMakeSpan::default().include_headers(true)),
-        );
+        ); // 3. Tracing (often near the outside)
 
-    // Use port from config, default to 3000
+    // --- Configure TLS --- <-- Add TLS Config Block
+    // Get the directory containing backend's Cargo.toml at compile time
+    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    // Navigate to project root (parent of backend dir)
+    let project_root = manifest_dir.parent().context("Failed to get project root from manifest dir")?;
+
+    let cert_path = project_root.join(".certs/cert.pem");
+    let key_path = project_root.join(".certs/key.pem");
+
+    tracing::info!(cert_path = %cert_path.display(), key_path = %key_path.display(), "Loading TLS certificates");
+
+    let tls_config = RustlsConfig::from_pem_file(
+        cert_path, // Use the constructed path
+        key_path   // Use the constructed path
+    )
+    .await
+    .context("Failed to load TLS certificate/key for Axum server")?;
+
+    // Use port from config, default to 8080 (adjust if needed)
     let port = config.port;
     let addr_str = format!("0.0.0.0:{}", port);
     let addr: SocketAddr = addr_str.parse().expect("Invalid address format");
 
-    tracing::info!("Listening on {}", addr);
-    let listener = tokio::net::TcpListener::bind(addr).await?;
-    axum::serve(listener, app).await?;
+    tracing::info!("Starting HTTPS server on {}", addr);
+
+    // --- Start HTTPS Server --- <-- Change server binding/serving
+    axum_server::bind_rustls(addr, tls_config)
+        .serve(app.into_make_service())
+        .await
+        .context("HTTPS server failed to start")?;
+
     Ok(())
 }
 

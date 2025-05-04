@@ -4,7 +4,7 @@ import type { ScribeChatMessage, ScribeChatSession } from '$lib/types';
 export async function load({ params: { chatId }, fetch }) {
 	try {
 		// Fetch chat session details
-		const chatRes = await fetch(`/api/chats/${chatId}`);
+		const chatRes = await fetch(`/api/chats-api/${chatId}`);
 		if (!chatRes.ok) {
 			if (chatRes.status === 404) {
 				error(404, 'Chat not found');
@@ -21,7 +21,7 @@ export async function load({ params: { chatId }, fetch }) {
 		// }
 
 		// Fetch chat messages
-		const messagesRes = await fetch(`/api/chats/${chatId}/messages`);
+		const messagesRes = await fetch(`/api/chats-api/${chatId}/messages`);
 		if (!messagesRes.ok) {
 			console.error('Failed to fetch messages:', messagesRes.status, await messagesRes.text());
 			error(500, 'Failed to load chat messages');

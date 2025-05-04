@@ -1,8 +1,8 @@
 <script lang="ts">
-	import * as Tooltip from '$lib/components/ui/tooltip/index.js';
+	import { browser } from '$app/environment';
 	import { cn } from '$lib/utils/shadcn.js';
-	import type { WithElementRef } from 'bits-ui';
 	import type { HTMLAttributes } from 'svelte/elements';
+	import { Tooltip as TooltipPrimitive } from 'bits-ui';
 	import {
 		SIDEBAR_COOKIE_MAX_AGE,
 		SIDEBAR_COOKIE_NAME,
@@ -19,7 +19,8 @@
 		style,
 		children,
 		...restProps
-	}: WithElementRef<HTMLAttributes<HTMLDivElement>> & {
+	}: HTMLAttributes<HTMLDivElement> & {
+		ref?: HTMLDivElement | null;
 		open?: boolean;
 		onOpenChange?: (open: boolean) => void;
 	} = $props();
@@ -38,7 +39,7 @@
 
 <svelte:window onkeydown={sidebar.handleShortcutKeydown} />
 
-<Tooltip.Provider delayDuration={0}>
+<TooltipPrimitive.Provider>
 	<div
 		style="--sidebar-width: {SIDEBAR_WIDTH}; --sidebar-width-icon: {SIDEBAR_WIDTH_ICON}; {style}"
 		class={cn(
@@ -50,4 +51,4 @@
 	>
 		{@render children?.()}
 	</div>
-</Tooltip.Provider>
+</TooltipPrimitive.Provider>
