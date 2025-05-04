@@ -8,6 +8,6 @@
 <Chat
 		chat={data.chat}
 		initialMessages={data.messages}
-		readonly={data.user?.id !== data.chat.user_id}
+		readonly={data.user?.user_id !== data.chat.user_id}
 		user={data.user}
 />

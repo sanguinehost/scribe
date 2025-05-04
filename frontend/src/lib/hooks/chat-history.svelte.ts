@@ -9,7 +9,7 @@ const contextKey = Symbol('ChatHistory');
 export class ChatHistory {
 	#loading = $state(false);
 	#revalidating = $state(false);
-	chats = $state<ScribeChatSession[]>([]); // Use Scribe type
+	chats = $state<ScribeChatSession[]>([]);
 
 	get loading() {
 		return this.#loading;
@@ -19,15 +19,10 @@ export class ChatHistory {
 		return this.#revalidating;
 	}
 
-	constructor(chatsPromise: Promise<ScribeChatSession[]>) { // Use Scribe type
+	constructor(initialChats: ScribeChatSession[]) {
 		this.#loading = true;
-		this.#revalidating = true;
-		chatsPromise
-			.then((chats) => (this.chats = chats))
-			.finally(() => {
-				this.#loading = false;
-				this.#revalidating = false;
-			});
+		this.chats = initialChats;
+		this.#loading = false;
 	}
 
 	getChatDetails = (chatId: string) => {
