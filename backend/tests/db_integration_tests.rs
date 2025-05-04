@@ -560,7 +560,7 @@ async fn test_list_characters_endpoint_manual_cleanup() -> Result<(), AnyhowErro
     };
     // Manually create JSON body, exposing secret only here
     let login_body = json!({
-        "username": login_credentials.username,
+        "identifier": login_credentials.username,
         "password": login_credentials.password.expose_secret()
     });
 

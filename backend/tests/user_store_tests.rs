@@ -82,11 +82,12 @@ mod user_store_tests {
     async fn test_create_user() -> Result<(), Box<dyn std::error::Error>> {
         let pool = get_test_pool()?;
 
-        // 1. Define username and password
+        // 1. Define username and email
         let username = format!(
             "testcreateuser_{}",
             uuid::Uuid::new_v4().to_string().split('-').next().unwrap()
         );
+        let email = format!("test1_{}@example.com", uuid::Uuid::new_v4().to_string().split('-').next().unwrap());
         let password = secrecy::Secret::new("password123".to_string());
 
         // 2. Call create_user
@@ -95,10 +96,11 @@ mod user_store_tests {
             .await
             .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
         let username_clone = username.clone();
+        let email_clone = email.clone();
         let password_clone = password.clone();
         let create_result = obj
             .interact(move |conn| {
-                scribe_backend::auth::create_user(conn, username_clone, "test1@example.com".to_string(), password_clone)
+                scribe_backend::auth::create_user(conn, username_clone, email_clone, password_clone)
             })
             .await
             .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
@@ -140,10 +142,11 @@ mod user_store_tests {
             .await
             .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
         let username_clone3 = username.clone();
+        let duplicate_email = format!("test2_{}@example.com", uuid::Uuid::new_v4().to_string().split('-').next().unwrap());
         let password_clone3 = secrecy::Secret::new("another_password".to_string());
         let duplicate_result = obj3
             .interact(move |conn| {
-                scribe_backend::auth::create_user(conn, username_clone3, "test2@example.com".to_string(), password_clone3)
+                scribe_backend::auth::create_user(conn, username_clone3, duplicate_email, password_clone3)
             })
             .await
             .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
@@ -180,12 +183,14 @@ mod user_store_tests {
 
         let insert_username = username.clone();
         let insert_password_hash = password_hash.clone();
+        let email = format!("{}@example.com", insert_username.clone());
         obj.interact(move |conn| {
             diesel::insert_into(scribe_backend::schema::users::table)
                 .values((
                     scribe_backend::schema::users::id.eq(user_id),
                     scribe_backend::schema::users::username.eq(insert_username),
                     scribe_backend::schema::users::password_hash.eq(insert_password_hash),
+                    scribe_backend::schema::users::email.eq(email),
                 ))
                 .execute(conn)
         })
@@ -249,6 +254,7 @@ mod user_store_tests {
             "testgetuser2_{}",
             uuid::Uuid::new_v4().to_string().split('-').next().unwrap()
         );
+        let email = format!("test3_{}@example.com", uuid::Uuid::new_v4().to_string().split('-').next().unwrap());
         let password = secrecy::Secret::new("password123".to_string());
 
         let obj = pool
@@ -256,10 +262,11 @@ mod user_store_tests {
             .await
             .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
         let username_clone = username.clone();
+        let email_clone = email.clone();
         let password_clone = password.clone();
         let create_result = obj
             .interact(move |conn| {
-                scribe_backend::auth::create_user(conn, username_clone, "test3@example.com".to_string(), password_clone)
+                scribe_backend::auth::create_user(conn, username_clone, email_clone, password_clone)
             })
             .await
             .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
@@ -318,6 +325,7 @@ mod user_store_tests {
         let pool = get_test_pool()?;
         let _auth_backend = AuthBackend::new(pool.clone());
         let username = format!("verify_user_{}", Uuid::new_v4());
+        let email = format!("test4_{}@example.com", Uuid::new_v4().to_string().split('-').next().unwrap());
         let password = "test_password".to_string();
 
         // 1. Hash the password first
@@ -332,10 +340,11 @@ mod user_store_tests {
             .await
             .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
         let username_clone = username.clone();
+        let email_clone = email.clone();
         // Pass the SECRET containing the HASH to create_user
         let create_result = obj
             .interact(move |conn| {
-                scribe_backend::auth::create_user(conn, username_clone, "test4@example.com".to_string(), hashed_password_secret)
+                scribe_backend::auth::create_user(conn, username_clone, email_clone, hashed_password_secret)
             })
             .await
             .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;

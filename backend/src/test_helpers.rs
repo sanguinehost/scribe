@@ -803,7 +803,7 @@ pub mod db {
              title: None, // Add default fields for NewChat
              created_at: chrono::Utc::now(),
              updated_at: chrono::Utc::now(),
-             history_management_strategy: "message_window".to_string(), // Default
+             history_management_strategy: "none".to_string(), // Default
              history_management_limit: 20, // Default
              visibility: Some("private".to_string()), // Default
         };

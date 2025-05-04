@@ -79,7 +79,7 @@ async fn test_process_and_embed_message_integration() {
     };
 
     // Configure mock embedding client response
-    let embedding_dimension = 768; // Changed from 3072 to match Qdrant collection dimension
+    let embedding_dimension = 3072; // Changed from 768 to match Qdrant collection dimension
     let mock_embedding = vec![0.1; embedding_dimension];
     mock_embedding_client.set_response(Ok(mock_embedding.clone()));
 

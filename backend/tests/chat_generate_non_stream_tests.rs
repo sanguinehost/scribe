@@ -250,7 +250,7 @@ async fn generate_chat_response_uses_session_settings() {
     assert_eq!(db_logit_bias, test_logit_bias); // logit_bias
     // Check history fields (should be defaults)
     assert_eq!(db_settings.12, "none"); // history_management_strategy
-    assert_eq!(db_settings.13, 4096); // history_management_limit
+    assert_eq!(db_settings.13, 20); // history_management_limit - updated to match actual default
 }
 
 #[tokio::test]
@@ -363,7 +363,7 @@ async fn generate_chat_response_uses_default_settings() {
     assert_eq!(db_settings.11, None); // logit_bias
     // Check history fields (should be defaults)
     assert_eq!(db_settings.12, "none"); // history_management_strategy
-    assert_eq!(db_settings.13, 4096); // history_management_limit
+    assert_eq!(db_settings.13, 20); // history_management_limit - updated to match actual default
 }
 
 #[tokio::test]

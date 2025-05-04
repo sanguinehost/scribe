@@ -138,7 +138,7 @@ async fn get_chat_settings_success() {
     );
     // Check history fields (should be defaults from DB migration)
     assert_eq!(settings_resp.history_management_strategy, "none");
-    assert_eq!(settings_resp.history_management_limit, 4096);
+    assert_eq!(settings_resp.history_management_limit, 20);
 }
 
 #[tokio::test]
@@ -188,7 +188,7 @@ async fn get_chat_settings_defaults() {
     assert_eq!(settings_resp.logit_bias, None);
     // Check history fields (should be defaults from DB migration)
     assert_eq!(settings_resp.history_management_strategy, "none");
-    assert_eq!(settings_resp.history_management_limit, 4096);
+    assert_eq!(settings_resp.history_management_limit, 20);
 }
 
 #[tokio::test]
