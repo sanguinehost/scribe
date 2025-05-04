@@ -22,16 +22,37 @@ use uuid::Uuid; // Added Pin
 use httptest::{responders::*};
 use tokio;
 use tempfile::NamedTempFile;
-use std::io::Write;
 use bigdecimal::BigDecimal;
-use std::str::FromStr;
-use secrecy::{Secret, ExposeSecret};
-use anyhow::{anyhow, Context, Result};
+use secrecy::ExposeSecret;
+use anyhow::Result;
 
 // Define the expected response structure from the /health endpoint (matching backend)
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
 pub struct HealthStatus {
     pub status: String,
+}
+
+// Create a struct to match the backend's auth response
+#[derive(Deserialize, Debug, Clone)]
+pub struct AuthUserResponse {
+    pub user_id: Uuid,
+    pub username: String,
+    pub email: String,
+}
+
+// Map AuthUserResponse to User for compatibility
+impl From<AuthUserResponse> for User {
+    fn from(auth: AuthUserResponse) -> Self {
+        User {
+            id: auth.user_id,
+            username: auth.username,
+            email: auth.email,
+            // Set default values for fields not returned by API
+            password_hash: String::new(),
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+        }
+    }
 }
 
 // Helper to join path to base URL
@@ -42,17 +63,40 @@ pub fn build_url(base: &Url, path: &str) -> Result<Url, CliError> {
 // Helper to handle API responses
 pub async fn handle_response<T: DeserializeOwned>(response: Response) -> Result<T, CliError> {
     let status = response.status();
+    
     if status.is_success() {
-        response.json::<T>().await.map_err(CliError::Reqwest)
+        // Get the response text first
+        let response_text = match response.text().await {
+            Ok(text) => text,
+            Err(e) => {
+                tracing::error!("Failed to get response text: {}", e);
+                return Err(CliError::Reqwest(e));
+            }
+        };
+        
+        // Log the response text for debugging
+        tracing::debug!("Raw response text: {}", response_text);
+        
+        // Try to deserialize the response text
+        match serde_json::from_str::<T>(&response_text) {
+            Ok(data) => Ok(data),
+            Err(e) => {
+                tracing::error!("Failed to deserialize successful response: {}", e);
+                tracing::error!("Response text was: {}", response_text);
+                Err(CliError::Internal(format!("Failed to deserialize response: {}", e)))
+            }
+        }
     } else {
         if status == StatusCode::TOO_MANY_REQUESTS {
             tracing::warn!("Received 429 Too Many Requests from backend");
             return Err(CliError::RateLimitExceeded);
         }
-        let error_text = response
-            .text()
-            .await
-            .unwrap_or_else(|_| "Failed to read error body".to_string());
+        
+        let error_text = match response.text().await {
+            Ok(text) => text,
+            Err(e) => format!("Failed to read error body: {}", e),
+        };
+        
         tracing::error!(%status, error_body = %error_text, "API request failed");
         Err(CliError::ApiError {
             status,
@@ -203,9 +247,14 @@ impl HttpClient for ReqwestClientWrapper {
             .send()
             .await
             .map_err(CliError::Reqwest)?;
-        handle_response::<User>(response)
+        
+        // Get auth response and convert to User
+        let auth_response = handle_response::<AuthUserResponse>(response)
             .await
-            .map_err(|e| CliError::AuthFailed(format!("{}", e)))
+            .map_err(|e| CliError::AuthFailed(format!("{}", e)))?;
+        
+        // Convert to User for backwards compatibility
+        Ok(User::from(auth_response))
     }
 
     async fn register(&self, credentials: &LoginPayload) -> Result<User, CliError> {
@@ -344,7 +393,12 @@ impl HttpClient for ReqwestClientWrapper {
             .send()
             .await
             .map_err(CliError::Reqwest)?;
-        handle_response(response).await
+        
+        // Get auth response and convert to User
+        let auth_response = handle_response::<AuthUserResponse>(response).await?;
+        
+        // Convert to User for backwards compatibility
+        Ok(User::from(auth_response))
     }
 
     async fn get_character(&self, character_id: Uuid) -> Result<CharacterMetadata, CliError> {

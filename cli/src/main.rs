@@ -35,7 +35,7 @@ struct Args {
         short,
         long,
         env = "SCRIBE_BASE_URL",
-        default_value = "http://127.0.0.1:3000"
+        default_value = "https://127.0.0.1:8080"
     )]
     base_url: Url,
 }
@@ -43,7 +43,7 @@ struct Args {
 #[tokio::main]
 async fn main() -> Result<()> {
     let filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| "scribe_cli=info,scribe_backend=warn".into());
+        .unwrap_or_else(|_| "scribe_cli=debug,scribe_cli::client=trace,scribe_backend=warn".into());
     fmt()
         .with_env_filter(filter)
         .with_target(true)
@@ -58,6 +58,7 @@ async fn main() -> Result<()> {
 
     let reqwest_client = ReqwestClient::builder()
         .cookie_provider(Arc::new(Jar::default()))
+        .danger_accept_invalid_certs(true) // Accept self-signed certificates for development
         .build()
         .context("Failed to build reqwest client")?;
 

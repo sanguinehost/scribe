@@ -10,10 +10,8 @@ use scribe_backend::models::chats::MessageRole;
 use scribe_backend::models::users::User;
 use std::path::Path;
 use uuid::Uuid; // Re-added for MockHttpClient::stream_chat_response
-use secrecy::{Secret, ExposeSecret};
-use scribe_backend::models::chats::{ChatMessage, Chat};
+use secrecy::Secret;
 use bigdecimal::BigDecimal;
-use std::str::FromStr;
 
 // --- Action Functions ---
 
