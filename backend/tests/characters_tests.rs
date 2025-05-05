@@ -38,7 +38,7 @@ use crc32fast;
 use diesel::prelude::*;
 use reqwest::StatusCode as ReqwestStatusCode;
 use std::sync::Arc;
-use scribe_backend::models::auth::LoginPayload; // Use LoginPayload for login data
+// Removed unused: use scribe_backend::models::auth::LoginPayload;
 use reqwest::Client;
 use reqwest::cookie::Jar;
 

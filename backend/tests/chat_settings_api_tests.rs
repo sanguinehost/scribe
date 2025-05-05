@@ -8,7 +8,7 @@ use axum::{
 use bigdecimal::BigDecimal;
 use http_body_util::BodyExt;
 use mime;
-use serde_json::{Value, json};
+// Removed unused: use serde_json::{Value, json};
 use std::str::FromStr;
 use tower::ServiceExt;
 use uuid::Uuid;
@@ -20,9 +20,9 @@ use scribe_backend::test_helpers;
 // --- Tests for GET /api/chats/{id}/settings ---
 
 #[tokio::test]
-#[ignore] // Added ignore for CI
+ // Added ignore for CI
 async fn get_chat_settings_success() {
-    let context = test_helpers::setup_test_app().await;
+    let context = test_helpers::setup_test_app(false).await;
     let (auth_cookie, user) = test_helpers::auth::create_test_user_and_login(
         &context.app,
         "get_settings_user",
@@ -56,6 +56,7 @@ async fn get_chat_settings_success() {
         // Add history fields for completeness, though not the focus of this test
         history_management_strategy: None,
         history_management_limit: None,
+        model_name: Some("gemini-2.5-flash-preview-04-17".to_string()),
     };
     
     test_helpers::db::update_all_chat_settings(
@@ -76,6 +77,7 @@ async fn get_chat_settings_success() {
         // Pass None for history fields as they are not being set here
         None,
         None,
+        update_data.model_name,
     )
     .await;
     
@@ -142,9 +144,9 @@ async fn get_chat_settings_success() {
 }
 
 #[tokio::test]
-#[ignore] // Added ignore for CI
+ // Added ignore for CI
 async fn get_chat_settings_defaults() {
-    let context = test_helpers::setup_test_app().await;
+    let context = test_helpers::setup_test_app(false).await;
     let (auth_cookie, user) = test_helpers::auth::create_test_user_and_login(
         &context.app,
         "get_defaults_user",
@@ -192,10 +194,10 @@ async fn get_chat_settings_defaults() {
 }
 
 #[tokio::test]
-#[ignore] // Ignore for CI unless DB is guaranteed
+ // Ignore for CI unless DB is guaranteed
 async fn test_get_chat_settings_not_found() {
     // Covers chat_service.rs lines 392, 425-426
-    let context = test_helpers::setup_test_app().await;
+    let context = test_helpers::setup_test_app(false).await;
     let (auth_cookie, _user) = test_helpers::auth::create_test_user_and_login(
         &context.app,
         "get_settings_404_user",
@@ -215,10 +217,10 @@ async fn test_get_chat_settings_not_found() {
 }
 
 #[tokio::test]
-#[ignore] // Ignore for CI unless DB is guaranteed
+ // Ignore for CI unless DB is guaranteed
 async fn test_get_chat_settings_forbidden() {
     // Covers chat_service.rs lines 392, 425-426
-    let context = test_helpers::setup_test_app().await;
+    let context = test_helpers::setup_test_app(false).await;
     // User A creates a session
     let (_auth_cookie_a, user_a) = test_helpers::auth::create_test_user_and_login(
         &context.app,
@@ -263,9 +265,9 @@ async fn test_get_chat_settings_forbidden() {
 // --- Tests for PUT /api/chats/{id}/settings ---
 
 #[tokio::test]
-#[ignore] // Added ignore for CI
+ // Added ignore for CI
 async fn update_chat_settings_success_full() {
-    let context = test_helpers::setup_test_app().await;
+    let context = test_helpers::setup_test_app(false).await;
     let (auth_cookie, user) = test_helpers::auth::create_test_user_and_login(
         &context.app,
         "update_settings_user",
@@ -314,6 +316,7 @@ async fn update_chat_settings_success_full() {
         // Add history fields for completeness
         history_management_strategy: Some("sliding_window_messages".to_string()),
         history_management_limit: Some(10),
+        model_name: None,
     };
     
     let request = Request::builder()
@@ -354,9 +357,9 @@ async fn update_chat_settings_success_full() {
 }
 
 #[tokio::test]
-#[ignore] // Added ignore for CI
+ // Added ignore for CI
 async fn update_chat_settings_success_partial() {
-    let context = test_helpers::setup_test_app().await;
+    let context = test_helpers::setup_test_app(false).await;
     let (auth_cookie, user) = test_helpers::auth::create_test_user_and_login(
         &context.app,
         "update_partial_user",
@@ -396,6 +399,7 @@ async fn update_chat_settings_success_partial() {
         // Add history fields for completeness
         history_management_strategy: None,
         history_management_limit: None,
+        model_name: None,
     };
     
     let request = Request::builder()
@@ -425,9 +429,9 @@ async fn update_chat_settings_success_partial() {
 }
 
 #[tokio::test]
-#[ignore] // Added ignore for CI
+ // Added ignore for CI
 async fn update_chat_settings_invalid_data() {
-    let context = test_helpers::setup_test_app().await;
+    let context = test_helpers::setup_test_app(false).await;
     let (auth_cookie, user) = test_helpers::auth::create_test_user_and_login(
         &context.app,
         "update_invalid_user",
@@ -461,6 +465,7 @@ async fn update_chat_settings_invalid_data() {
             logit_bias: None,
             history_management_strategy: None,
             history_management_limit: None,
+            model_name: None,
         },
         UpdateChatSettingsRequest {
             system_prompt: None,
@@ -477,6 +482,7 @@ async fn update_chat_settings_invalid_data() {
             logit_bias: None,
             history_management_strategy: None,
             history_management_limit: None,
+            model_name: None,
         },
         // Max tokens validation
         UpdateChatSettingsRequest {
@@ -494,6 +500,7 @@ async fn update_chat_settings_invalid_data() {
             logit_bias: None,
             history_management_strategy: None,
             history_management_limit: None,
+            model_name: None,
         },
         UpdateChatSettingsRequest {
             system_prompt: None,
@@ -510,6 +517,7 @@ async fn update_chat_settings_invalid_data() {
             logit_bias: None,
             history_management_strategy: None,
             history_management_limit: None,
+            model_name: None,
         },
         // Frequency penalty validation
         UpdateChatSettingsRequest {
@@ -527,6 +535,7 @@ async fn update_chat_settings_invalid_data() {
             logit_bias: None,
             history_management_strategy: None,
             history_management_limit: None,
+            model_name: None,
         },
         UpdateChatSettingsRequest {
             system_prompt: None,
@@ -543,6 +552,7 @@ async fn update_chat_settings_invalid_data() {
             logit_bias: None,
             history_management_strategy: None,
             history_management_limit: None,
+            model_name: None,
         },
         // Presence penalty validation
         UpdateChatSettingsRequest {
@@ -560,6 +570,7 @@ async fn update_chat_settings_invalid_data() {
             logit_bias: None,
             history_management_strategy: None,
             history_management_limit: None,
+            model_name: None,
         },
         UpdateChatSettingsRequest {
             system_prompt: None,
@@ -576,6 +587,7 @@ async fn update_chat_settings_invalid_data() {
             logit_bias: None,
             history_management_strategy: None,
             history_management_limit: None,
+            model_name: None,
         },
         // Top-k validation
         UpdateChatSettingsRequest {
@@ -593,6 +605,7 @@ async fn update_chat_settings_invalid_data() {
             logit_bias: None,
             history_management_strategy: None,
             history_management_limit: None,
+            model_name: None,
         },
         // Top-p validation
         UpdateChatSettingsRequest {
@@ -610,6 +623,7 @@ async fn update_chat_settings_invalid_data() {
             logit_bias: None,
             history_management_strategy: None,
             history_management_limit: None,
+            model_name: None,
         },
         UpdateChatSettingsRequest {
             system_prompt: None,
@@ -626,6 +640,7 @@ async fn update_chat_settings_invalid_data() {
             logit_bias: None,
             history_management_strategy: None,
             history_management_limit: None,
+            model_name: None,
         },
         // Repetition penalty validation
         UpdateChatSettingsRequest {
@@ -643,6 +658,7 @@ async fn update_chat_settings_invalid_data() {
             logit_bias: None,
             history_management_strategy: None,
             history_management_limit: None,
+            model_name: None,
         },
         // Min-p validation
         UpdateChatSettingsRequest {
@@ -660,6 +676,7 @@ async fn update_chat_settings_invalid_data() {
             logit_bias: None,
             history_management_strategy: None,
             history_management_limit: None,
+            model_name: None,
         },
         UpdateChatSettingsRequest {
             system_prompt: None,
@@ -676,6 +693,7 @@ async fn update_chat_settings_invalid_data() {
             logit_bias: None,
             history_management_strategy: None,
             history_management_limit: None,
+            model_name: None,
         },
         // Top-a validation
         UpdateChatSettingsRequest {
@@ -693,6 +711,7 @@ async fn update_chat_settings_invalid_data() {
             logit_bias: None,
             history_management_strategy: None,
             history_management_limit: None,
+            model_name: None,
         },
         UpdateChatSettingsRequest {
             system_prompt: None,
@@ -709,6 +728,7 @@ async fn update_chat_settings_invalid_data() {
             logit_bias: None,
             history_management_strategy: None,
             history_management_limit: None,
+            model_name: None,
         },
         // Invalid logit_bias format
         UpdateChatSettingsRequest {
@@ -726,6 +746,7 @@ async fn update_chat_settings_invalid_data() {
             logit_bias: Some(serde_json::json!(["invalid", "format"])), // Should be object
             history_management_strategy: None,
             history_management_limit: None,
+            model_name: None,
         },
         // History Management Validation
         UpdateChatSettingsRequest {
@@ -734,6 +755,7 @@ async fn update_chat_settings_invalid_data() {
             top_a: None, seed: None, logit_bias: None,
             history_management_strategy: Some("invalid-strategy".to_string()), // Invalid strategy name
             history_management_limit: Some(10),
+            model_name: None,
         },
         UpdateChatSettingsRequest {
             system_prompt: None, temperature: None, max_output_tokens: None, frequency_penalty: None,
@@ -741,6 +763,7 @@ async fn update_chat_settings_invalid_data() {
             top_a: None, seed: None, logit_bias: None,
             history_management_strategy: Some("none".to_string()),
             history_management_limit: Some(0), // Zero limit
+            model_name: None,
         },
         UpdateChatSettingsRequest {
             system_prompt: None, temperature: None, max_output_tokens: None, frequency_penalty: None,
@@ -748,6 +771,7 @@ async fn update_chat_settings_invalid_data() {
             top_a: None, seed: None, logit_bias: None,
             history_management_strategy: Some("none".to_string()),
             history_management_limit: Some(-5), // Negative limit
+            model_name: None,
         },
         ];
         
@@ -775,9 +799,9 @@ async fn update_chat_settings_invalid_data() {
 }
 
 #[tokio::test]
-#[ignore] // Added ignore for CI
+ // Added ignore for CI
 async fn update_chat_settings_forbidden() {
-    let context = test_helpers::setup_test_app().await;
+    let context = test_helpers::setup_test_app(false).await;
     let (_auth_cookie1, user1) = test_helpers::auth::create_test_user_and_login(
         &context.app,
         "update_settings_user1",
@@ -816,6 +840,7 @@ async fn update_chat_settings_forbidden() {
         // Add history fields for completeness
         history_management_strategy: None,
         history_management_limit: None,
+        model_name: None,
     };
     
     let request = Request::builder()
@@ -831,9 +856,9 @@ async fn update_chat_settings_forbidden() {
 }
 
 #[tokio::test]
-#[ignore] // Added ignore for CI
+ // Added ignore for CI
 async fn update_chat_settings_not_found() {
-    let context = test_helpers::setup_test_app().await;
+    let context = test_helpers::setup_test_app(false).await;
     let (auth_cookie, _user) = test_helpers::auth::create_test_user_and_login(
         &context.app,
         "update_settings_404_user",
@@ -858,6 +883,7 @@ async fn update_chat_settings_not_found() {
         // Add history fields for completeness
         history_management_strategy: None,
         history_management_limit: None,
+        model_name: None,
     };
     
     let request = Request::builder()
@@ -873,9 +899,9 @@ async fn update_chat_settings_not_found() {
 }
 
 #[tokio::test]
-#[ignore] // Added ignore for CI
+ // Added ignore for CI
 async fn update_chat_settings_unauthorized() {
-    let context = test_helpers::setup_test_app().await;
+    let context = test_helpers::setup_test_app(false).await;
     let session_id = Uuid::new_v4(); // Dummy ID
 
     let payload = UpdateChatSettingsRequest {
@@ -894,6 +920,7 @@ async fn update_chat_settings_unauthorized() {
         // Add history fields for completeness
         history_management_strategy: None,
         history_management_limit: None,
+        model_name: None,
     };
     
     let request = Request::builder()

@@ -44,7 +44,7 @@ pub type GenerationDataWithUnsavedUserMessage = (
     Option<BigDecimal>,      // top_a
     Option<i32>,             // seed
     Option<Value>,           // logit_bias
-    String,                  // model_name
+    String,                  // model_name (Fetched from DB)
     DbInsertableChatMessage, // The user message struct, ready to be saved
     // History Management Settings (still returned for potential future use/logging)
     String,                  // history_management_strategy
@@ -85,6 +85,7 @@ pub async fn create_session_and_maybe_first_message(
                         updated_at: chrono::Utc::now(),
                         history_management_strategy: "message_window".to_string(), // Default
                         history_management_limit: 20, // Default
+                        model_name: "gemini-2.5-pro-preview-03-25".to_string(), // Default
                         visibility: Some("private".to_string()), // Default
                     };
                     let created_session: Chat = diesel::insert_into(chat_sessions::table) // Renamed ChatSession to Chat
@@ -319,7 +320,7 @@ pub async fn get_session_data_for_generation(
     user_id: Uuid,
     session_id: Uuid,
     user_message_content: String,
-    default_model_name: String,
+    // Removed default_model_name parameter
 ) -> Result<GenerationDataWithUnsavedUserMessage, AppError> {
     let conn = pool.get().await?;
     conn.interact(move |conn| {
@@ -363,6 +364,7 @@ pub async fn get_session_data_for_generation(
             Option<Value>,      // logit_bias
             String,             // history_management_strategy
             i32,                // history_management_limit
+            String,             // model_name (Fetch this!)
         ) = chat_sessions::table
             .filter(chat_sessions::id.eq(session_id))
             .select((
@@ -380,10 +382,11 @@ pub async fn get_session_data_for_generation(
                 chat_sessions::logit_bias,
                 chat_sessions::history_management_strategy,
                 chat_sessions::history_management_limit,
+                chat_sessions::model_name, // Add model_name to select
             ))
             .first(conn)?;
 
-        let ( system_prompt, temperature, max_tokens, frequency_penalty, presence_penalty, top_k, top_p, repetition_penalty, min_p, top_a, seed, logit_bias, history_management_strategy, history_management_limit ) = settings;
+        let ( system_prompt, temperature, max_tokens, frequency_penalty, presence_penalty, top_k, top_p, repetition_penalty, min_p, top_a, seed, logit_bias, history_management_strategy, history_management_limit, model_name ) = settings; // Destructure model_name
 
         info!(%session_id, "Fetching full message history");
         // Fetch the full history as DbChatMessage structs
@@ -430,7 +433,7 @@ pub async fn get_session_data_for_generation(
             top_a,
             seed,
             logit_bias,
-            default_model_name,
+            model_name, // Return the fetched model_name
             user_db_message_to_save,
             history_management_strategy, // Still return these for logging/info
             history_management_limit,
@@ -466,6 +469,7 @@ pub async fn get_session_settings(
                 chat_sessions::logit_bias,
                 chat_sessions::history_management_strategy,
                 chat_sessions::history_management_limit,
+                chat_sessions::model_name,
             ))
             .first::<SettingsTuple>(conn)
             .optional()?;
@@ -487,6 +491,7 @@ pub async fn get_session_settings(
                         logit_bias,
                         history_management_strategy,
                         history_management_limit,
+                        model_name,
                     ) = tuple;
                     Ok(ChatSettingsResponse {
                         system_prompt,
@@ -503,6 +508,7 @@ pub async fn get_session_settings(
                         logit_bias,
                         history_management_strategy,
                         history_management_limit,
+                        model_name,
                     })
                 }
                 None => Err(AppError::NotFound(
@@ -560,6 +566,7 @@ pub async fn update_session_settings(
                             chat_sessions::logit_bias,
                             chat_sessions::history_management_strategy,
                             chat_sessions::history_management_limit,
+                            chat_sessions::model_name,
                         ))
                         .get_result::<SettingsTuple>(transaction_conn) // Explicit type annotation
                         .map_err(|e| {
@@ -584,6 +591,7 @@ pub async fn update_session_settings(
                         logit_bias,
                         history_management_strategy,
                         history_management_limit,
+                        model_name,
                     ) = updated_settings_tuple;
                     Ok(ChatSettingsResponse {
                         system_prompt,
@@ -600,6 +608,7 @@ pub async fn update_session_settings(
                         logit_bias,
                         history_management_strategy,
                         history_management_limit,
+                        model_name,
                     })
                 }
                 None => {

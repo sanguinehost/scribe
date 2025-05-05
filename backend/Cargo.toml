@@ -66,6 +66,9 @@ url = "2.5.4"
 futures = "0.3.31"
 async-stream = "0.3.6"
 
+# Added for TLS support
+axum-server = { version = "0.6", features = ["tls-rustls"] }
+
 # Added for sentence splitting (using ICU4X)
 icu_segmenter = { version = "1.5", features = ["compiled_data"] }
 icu_provider = "1.5"
@@ -82,7 +85,6 @@ regex = "1.10.4"
 tonic = "0.12.3"
 testcontainers = "0.23.3"
 
-axum-server = { version = "0.7.2", features = ["tls-rustls"] }
 rustls = { version = "0.23", default-features = false, features = ["ring"] }
 rustls-pki-types = "1.9.0" # <-- Keep this dependency
 

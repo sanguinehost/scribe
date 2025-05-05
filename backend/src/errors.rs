@@ -417,23 +417,23 @@ impl IntoResponse for AppError {
                 // Updated variant name
                 error!("LLM Generation Error: {}", msg);
                 (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "AI generation failed".to_string(),
+                    StatusCode::BAD_GATEWAY,
+                    "AI service request failed".to_string(),
                 )
             }
             AppError::EmbeddingError(msg) => {
                 // Updated variant name
                 error!("LLM Embedding Error: {}", msg);
                 (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "AI embedding failed".to_string(),
+                    StatusCode::BAD_GATEWAY,
+                    "AI embedding service request failed".to_string(),
                 )
             }
             AppError::VectorDbError(e) => {
                 error!("Vector DB error: {}", e);
                 (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "Vector database operation failed".to_string(),
+                    StatusCode::BAD_GATEWAY,
+                    "Failed to process embeddings".to_string(),
                 )
             }
 
@@ -763,7 +763,7 @@ mod tests {
     fn test_app_error_from_diesel_error() {
         let diesel_error = DieselError::NotFound;
         let app_error: AppError = diesel_error.into();
-        assert!(matches!(app_error, AppError::DatabaseQueryError(s) if s == DieselError::NotFound.to_string()));
+        assert!(matches!(app_error, AppError::NotFound(s) if s == "Resource not found".to_string()));
         // Covers lines 716-717
     }
 
@@ -1188,27 +1188,27 @@ mod tests {
     async fn test_generation_error_response() {
         let error = AppError::GenerationError("Content blocked".to_string()); // Line 140
         let response = error.into_response(); // Line 406, 408
-        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR); // Line 411
+        assert_eq!(response.status(), StatusCode::BAD_GATEWAY); // Line 411
         let body = get_body_json(response).await;
-        assert_eq!(body["error"], "AI generation failed"); // Line 411
+        assert_eq!(body["error"], "AI service request failed"); // Line 411
     }
 
     #[tokio::test]
     async fn test_embedding_error_response() {
         let error = AppError::EmbeddingError("Model dimension mismatch".to_string()); // Line 143
         let response = error.into_response(); // Line 414, 416
-        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR); // Line 419
+        assert_eq!(response.status(), StatusCode::BAD_GATEWAY); // Line 419
         let body = get_body_json(response).await;
-        assert_eq!(body["error"], "AI embedding failed"); // Line 419
+        assert_eq!(body["error"], "AI embedding service request failed"); // Line 419
     }
 
     #[tokio::test]
     async fn test_vector_db_error_response() {
-        let error = AppError::VectorDbError("Qdrant connection failed".to_string()); // Line 111
-        let response = error.into_response(); // Line 422
-        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR); // Line 426
+        let error = AppError::VectorDbError("Qdrant connection failed".to_string());
+        let response = error.into_response();
+        assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
         let body = get_body_json(response).await;
-        assert_eq!(body["error"], "Vector database operation failed"); // Line 426
+        assert_eq!(body["error"], "Failed to process embeddings");
     }
 
     #[tokio::test]
@@ -1298,7 +1298,14 @@ impl From<tower_sessions::session_store::Error> for AppError {
 
 impl From<diesel::result::Error> for AppError {
     fn from(err: diesel::result::Error) -> Self {
-        AppError::DatabaseQueryError(err.to_string())
+        match err {
+            DieselError::NotFound => AppError::NotFound("Resource not found".to_string()),
+            // Explicitly check the error message for "Record not found" as a fallback
+            ref e if e.to_string().contains("Record not found") => {
+                AppError::NotFound("Resource not found".to_string())
+            }
+            _ => AppError::DatabaseQueryError(err.to_string()),
+        }
     }
 }
 

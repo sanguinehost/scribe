@@ -6,13 +6,13 @@ use axum::{
     http::{Method, Request, StatusCode, header},
 };
 use http_body_util::BodyExt;
-use mime; // Although not directly used in requests, often needed indirectly or for consistency
+// Removed unused: use mime;
 use serde_json; // For deserializing the response
 use tower::ServiceExt;
 use uuid::Uuid;
 
 // Crate imports
-use scribe_backend::models::chats::{ChatMessage, MessageRole};
+use scribe_backend::models::chats::{ChatMessage, MessageResponse, MessageRole}; // Added MessageResponse
 use scribe_backend::test_helpers;
 
 // --- Tests for GET /api/chats/{id}/messages ---
@@ -20,7 +20,7 @@ use scribe_backend::test_helpers;
 #[tokio::test]
 #[ignore] // Added ignore for CI
 async fn get_chat_messages_success_integration() {
-    let context = test_helpers::setup_test_app().await;
+    let context = test_helpers::setup_test_app(false).await;
     let (auth_cookie, user) = test_helpers::auth::create_test_user_and_login(
         &context.app,
         "test_get_msgs_integ",
@@ -76,21 +76,23 @@ async fn get_chat_messages_success_integration() {
 
     assert_eq!(response.status(), StatusCode::OK);
     let body = response.into_body().collect().await.unwrap().to_bytes();
-    let messages: Vec<ChatMessage> =
+    let messages: Vec<MessageResponse> = // Changed ChatMessage to MessageResponse
         serde_json::from_slice(&body).expect("Failed to deserialize messages");
 
     assert_eq!(messages.len(), 2);
     assert_eq!(messages[0].message_type, MessageRole::User);
-    assert_eq!(messages[0].content, "Hello");
+    // Check content within the 'parts' field
+    assert_eq!(messages[0].parts[0]["text"].as_str().unwrap(), "Hello");
     assert_eq!(messages[1].message_type, MessageRole::Assistant);
-    assert_eq!(messages[1].content, "Hi");
+    // Check content within the 'parts' field
+    assert_eq!(messages[1].parts[0]["text"].as_str().unwrap(), "Hi");
 }
 
 
 #[tokio::test]
 #[ignore] // Ignore for CI unless DB is guaranteed
 async fn test_get_chat_messages_unauthorized() {
-    let context = test_helpers::setup_test_app().await;
+    let context = test_helpers::setup_test_app(false).await;
     let dummy_session_id = Uuid::new_v4();
 
     let request = Request::builder()
@@ -109,7 +111,7 @@ async fn test_get_chat_messages_unauthorized() {
 #[tokio::test]
 #[ignore] // Ignore for CI unless DB is guaranteed
 async fn test_get_chat_messages_not_found() {
-    let context = test_helpers::setup_test_app().await;
+    let context = test_helpers::setup_test_app(false).await;
     let (auth_cookie, _user) = test_helpers::auth::create_test_user_and_login(
         &context.app,
         "test_get_messages_not_found_user",
@@ -135,7 +137,7 @@ async fn test_get_chat_messages_not_found() {
 #[tokio::test]
 #[ignore] // Ignore for CI unless DB is guaranteed
 async fn test_get_chat_messages_forbidden() {
-    let context = test_helpers::setup_test_app().await;
+    let context = test_helpers::setup_test_app(false).await;
 
     // Arrange: User A creates a session
     let (_auth_cookie_a, user_a) = test_helpers::auth::create_test_user_and_login(

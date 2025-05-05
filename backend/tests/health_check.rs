@@ -8,14 +8,17 @@ use axum::{
 use http_body_util::BodyExt; // For `.collect()`
 use scribe_backend::test_helpers; // Assuming setup_test_app is here
 use tower::ServiceExt; // For `.oneshot`
+use reqwest;
 
 #[tokio::test]
 #[ignore] // Added ignore for CI
 async fn health_check_works() {
     // Arrange
-    // Use the test helper to get an app instance with the router
-    let context = test_helpers::setup_test_app().await;
+    // Spawn our application and get the context
+    // Pass `false` to use the mock AI client
+    let context = test_helpers::setup_test_app(false).await;
     let app = context.app; // Get the TestApp containing the router
+    let _client = reqwest::Client::new(); // Prefix unused variable
 
     // Build the request directly for the router
     let request = Request::builder()

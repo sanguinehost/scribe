@@ -695,6 +695,7 @@ fn test_chat_session_insert_and_query() {
             history_management_strategy: "message_window".to_string(),
             history_management_limit: 20,
             visibility: Some("private".to_string()),
+            model_name: "gemini-2.5-flash-preview-04-17".to_string(), // Added model_name field
             // Optional fields removed from NewChat
             // system_prompt: Some("Test System Prompt".to_string()),
             // temperature: Some(BigDecimal::from_str("0.8").unwrap()), // Convert float to BigDecimal
@@ -802,6 +803,7 @@ async fn test_chat_message_insert_and_query() -> Result<(), AnyhowError> {
                     history_management_strategy: "message_window".to_string(),
                     history_management_limit: 20,
                     visibility: Some("private".to_string()),
+                    model_name: "gemini-2.5-flash-preview-04-17".to_string(), // Added model_name field
                     // Removed ..Default::default() as it's not implemented and unnecessary
                 };
                 diesel::insert_into(chat_sessions::table)

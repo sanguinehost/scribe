@@ -48,7 +48,7 @@ use scribe_backend::services::embedding_pipeline::{
 };
 use scribe_backend::text_processing::chunking::{ChunkConfig, ChunkingMetric}; // Import chunking config structs
 use scribe_backend::vector_db::QdrantClientService; // Add Qdrant service import // Add embedding pipeline service import
-use tokio::net::TcpListener; // Keep this if needed elsewhere, but axum_server replaces direct binding
+// Removed unused: use tokio::net::TcpListener;
 use axum_server::tls_rustls::RustlsConfig; // <-- Add this
 use std::path::PathBuf; // <-- Add PathBuf import
 use rustls::crypto::ring; // <-- Import the ring provider module
@@ -60,7 +60,7 @@ pub const MIGRATIONS: EmbeddedMigrations = embed_migrations!("./migrations");
 async fn main() -> Result<()> {
     // Install the default crypto provider (ring) for rustls FIRST.
     // Get the default provider instance and then install it.
-    ring::default_provider().install_default();
+    let _ = ring::default_provider().install_default(); // Handle unused Result
 
     dotenvy::dotenv().ok();
     init_subscriber();

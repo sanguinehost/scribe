@@ -5,6 +5,7 @@
 use crate::errors::AppError;
 use crate::llm::{AiClient, ChatStream, EmbeddingClient}; // Add EmbeddingClient
 use crate::services::embedding_pipeline::{EmbeddingPipelineServiceTrait, RetrievedChunk};
+// Removed unused: ChunkConfig, ChunkingMetric
 use crate::vector_db::qdrant_client::{PointStruct, QdrantClientServiceTrait};
 use crate::{
     PgPool,
@@ -37,23 +38,24 @@ use axum::{
 use axum_login::{AuthManagerLayerBuilder, login_required};
 use bigdecimal::BigDecimal;
 use deadpool_diesel::postgres::{
-    Manager as DeadpoolManager, Pool as DeadpoolPool, PoolConfig, Runtime as DeadpoolRuntime,
+    Manager as DeadpoolManager, Pool as DeadpoolPool, Runtime as DeadpoolRuntime,
 };
 use diesel::RunQueryDsl;
 use diesel::SelectableHelper;
 use diesel::prelude::*;
-use diesel_migrations::{EmbeddedMigrations, MigrationHarness, embed_migrations};
+use diesel_migrations::{EmbeddedMigrations, embed_migrations}; // Removed unused: MigrationHarness
 use dotenvy::dotenv; // Removed var
 use genai::chat::ChatStreamEvent; // Add import for chatstream types
 use genai::chat::{ChatOptions, ChatRequest, ChatResponse};
 use qdrant_client::qdrant::{Filter, PointId, ScoredPoint};
 use serde_json::Value;
 use std::env;
-use std::net::TcpListener;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex}; // Add Mutex import
+use tokio::sync::Mutex as TokioMutex;
+use tokio::net::TcpListener;
 use tower::ServiceExt;
-use tower_cookies::CookieManagerLayer;
-use tower_sessions::{Expiry, SessionManagerLayer, cookie}; // Added cookie import here
+use tower_cookies::{CookieManagerLayer}; // Removed unused: Key as TowerCookieKey
+use tower_sessions::{Expiry, SessionManagerLayer};
 use tracing::warn;
 use uuid::Uuid;
 
@@ -497,157 +499,145 @@ pub struct TestApp {
     pub address: String,
     pub router: Router,
     pub db_pool: PgPool,
-    // Ensure mock clients fields exist
-    pub mock_ai_client: Arc<MockAiClient>,
-    pub mock_embedding_client: Arc<MockEmbeddingClient>, // Add mock embedding client
-    pub mock_embedding_pipeline_service: Arc<MockEmbeddingPipelineService>, // Add mock RAG service
-    pub qdrant_service: Arc<QdrantClientService>,        // Add Qdrant service
-    pub embedding_call_tracker: Arc<tokio::sync::Mutex<Vec<uuid::Uuid>>>, // Add tracker field
+    pub config: Arc<Config>, // Add config field
+    // Store the actual AI client being used (could be real or mock)
+    pub ai_client: Arc<dyn AiClient + Send + Sync>,
+    // Optionally store the mock client for tests that need mock-specific methods
+    pub mock_ai_client: Option<Arc<MockAiClient>>,
+    pub mock_embedding_client: Arc<MockEmbeddingClient>,
+    pub mock_embedding_pipeline_service: Arc<MockEmbeddingPipelineService>,
+    pub qdrant_service: Arc<dyn QdrantClientServiceTrait + Send + Sync>, // Use trait object
+    pub embedding_call_tracker: Arc<TokioMutex<Vec<uuid::Uuid>>>,
 }
 
-/// Sets up the application state and router for integration testing, WITHOUT spawning a server.
-pub async fn spawn_app() -> TestApp {
-    // Tracing initialization is handled by #[tracing_test::traced_test] on each test function
-    dotenv().ok(); // Load .env for test environment variables
+/// Spawns the application for testing.
+/// Takes a boolean flag to determine whether to use the real AI client.
+pub async fn spawn_app(use_real_ai: bool) -> TestApp {
+    // Ensure tracing is initialized for tests
+    ensure_tracing_initialized();
 
-    // --- Database Setup ---
-    let db_name = format!("test_db_{}", Uuid::new_v4());
-    let base_db_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set for testing");
-    let (main_db_url, _) = base_db_url
-        .rsplit_once('/')
-        .expect("Invalid DATABASE_URL format");
+    // Load configuration
+    dotenv().ok();
+    let config = config::initialize_test_config(None); // Use default Qdrant port for now
+    let config = Arc::new(config);
 
-    let manager_default =
-        DeadpoolManager::new(format!("{}/postgres", main_db_url), DeadpoolRuntime::Tokio1);
-    let pool_default = DeadpoolPool::builder(manager_default)
-        .max_size(1)
-        .build()
-        .expect("Failed to create default DB pool");
-    let conn_default = pool_default
-        .get()
-        .await
-        .expect("Failed to get default DB connection");
+    // Setup Database Pool
+    let db_pool = db::setup_test_database(Some("spawn_app")).await;
 
-    let db_name_clone = db_name.clone();
-    conn_default
-        .interact(move |conn| {
-            diesel::sql_query(format!("DROP DATABASE IF EXISTS \"{}\"", db_name_clone))
-                .execute(conn)
-                .expect("Failed to drop test DB");
-            diesel::sql_query(format!("CREATE DATABASE \"{}\"", db_name_clone))
-                .execute(conn)
-                .expect("Failed to create test DB");
-            Ok::<(), diesel::result::Error>(())
-        })
-        .await
-        .expect("DB interaction failed")
-        .expect("Failed to create test DB");
-
-    // Use the original db_name here
-    let test_db_url_unquoted = format!("{}/{}", main_db_url, db_name);
-    let manager = DeadpoolManager::new(test_db_url_unquoted.clone(), DeadpoolRuntime::Tokio1);
-    let pool_config = PoolConfig::default();
-    let db_pool = DeadpoolPool::builder(manager)
-        .config(pool_config)
-        .build()
-        .expect("Failed to create test DB pool");
-
-    // Run migrations on the test database
-    let conn = db_pool
-        .get()
-        .await
-        .expect("Failed to get test DB connection for migration");
-    conn.interact(|conn| conn.run_pending_migrations(MIGRATIONS).map(|_| ())) // Discard version info
-        .await
-        .expect("Migration interact task failed")
-        .expect("Failed to run migrations on test DB");
-
-    // --- Listener Setup ---
-    let listener = TcpListener::bind("127.0.0.1:0").expect("Failed to bind random port");
-    let port = listener.local_addr().unwrap().port();
-    let address = format!("http://127.0.0.1:{}", port);
-    // We get the address but don't actually use the listener to serve
-
-    // --- Auth Setup ---
-    let session_store = DieselSessionStore::new(db_pool.clone());
-    let session_manager_layer = SessionManagerLayer::new(session_store)
-        .with_secure(false) // Required for tests, SessionManagerLayer handles signing/encryption
-        .with_same_site(cookie::SameSite::Lax) // Use cookie::SameSite
-        .with_name("sid") // Use consistent cookie name
-        .with_path("/") // Set cookie path to root
-        .with_expiry(Expiry::OnInactivity(time::Duration::days(1)));
-
-    let auth_backend = AuthBackend::new(db_pool.clone()); // Create backend instance
-    let auth_layer = AuthManagerLayerBuilder::new(auth_backend, session_manager_layer).build();
-
-    // --- AppState ---
-    let config = Arc::new(Config::load().expect("Failed to load test configuration"));
-    // Ensure Mock AI Client is instantiated
-    let mock_ai_client = Arc::new(MockAiClient::new());
-    // Ensure Mock Embedding Client is instantiated
-    let mock_embedding_client = Arc::new(MockEmbeddingClient::new());
-    // Ensure Mock Embedding Pipeline Service is instantiated
-    let mock_embedding_pipeline_service = Arc::new(MockEmbeddingPipelineService::new());
-    // Create the real Qdrant service for tests (assuming Qdrant is running or mocked appropriately)
-    // If Qdrant isn't available during unit/integration tests, this might need mocking too.
+    // Setup Qdrant Service
+    // Create the Arc<Config> first
+    let config_for_qdrant = config.clone();
     let qdrant_service = Arc::new(
-        QdrantClientService::new(config.clone())
+        // Pass the Arc<Config> directly
+        QdrantClientService::new(config_for_qdrant)
+        .await
+        .expect("Failed to create QdrantClientService for testing"),
+    );
+
+    // Create AI Client (Real or Mock)
+    let (ai_client, mock_ai_client_opt): (
+        Arc<dyn AiClient + Send + Sync>,
+        Option<Arc<MockAiClient>>,
+    ) = if use_real_ai {
+        let real_client = crate::llm::gemini_client::build_gemini_client()
             .await
-            .expect("Failed to create QdrantClientService for test"),
-    );
+            .expect("Failed to build real Gemini client for testing");
+        (real_client, None)
+    } else {
+        let mock_client = Arc::new(MockAiClient::new());
+        (mock_client.clone(), Some(mock_client))
+    };
 
-    // Ensure AppState is created with the mock clients, real Qdrant service,
-    // and the tracker (only for test builds).
-    let app_state = AppState::new(
-        db_pool.clone(),
-        config.clone(), // Clone config Arc for AppState
-        mock_ai_client.clone(),
-        mock_embedding_client.clone(), // Pass mock embedding client
-        qdrant_service.clone(),        // Pass the real Qdrant service
-        mock_embedding_pipeline_service.clone(), // Pass mock RAG service
-    );
+    // Setup Mock Clients (keep these as mocks for isolating other parts)
+    let mock_embedding_client = Arc::new(MockEmbeddingClient::new());
+    let mock_embedding_pipeline_service = Arc::new(MockEmbeddingPipelineService::new());
 
-    // --- Router Setup (mirroring main.rs structure) ---
-    // Note: Imports moved to top of file
+    // Create tracker for embedding calls
+    let embedding_call_tracker = Arc::new(TokioMutex::new(Vec::new()));
 
-    let protected_api_routes = Router::new()
-        .route("/auth/me", axum::routing::get(me_handler))
-        .route("/auth/logout", axum::routing::post(logout_handler))
-        .nest(
-            "/characters",
-            Router::new()
-                .route("/upload", axum::routing::post(upload_character_handler))
-                .route("/", axum::routing::get(list_characters_handler))
-                .route("/{id}", axum::routing::get(get_character_handler)),
+    // Build AppState
+    let app_state_inner = AppState {
+        pool: db_pool.clone(),
+        config: config.clone(),
+        ai_client: ai_client.clone(),
+        embedding_client: mock_embedding_client.clone(),
+        embedding_pipeline_service: mock_embedding_pipeline_service.clone(),
+        qdrant_service: qdrant_service.clone(),
+        embedding_call_tracker: embedding_call_tracker.clone(),
+    };
+    // Create the Arc<AppState> after building the inner state
+    let app_state = Arc::new(app_state_inner);
+
+    // Session Management Setup
+    let session_store = DieselSessionStore::new(db_pool.clone()); // Pass the pool directly
+    let session_layer = SessionManagerLayer::new(session_store)
+        .with_name("id") // Explicitly set the cookie name to "id"
+        .with_secure(false)
+        .with_expiry(Expiry::OnInactivity(tower_sessions::cookie::time::Duration::days(1)));
+
+    // Auth Backend Setup - Needs the DbPool, not AppState
+    let auth_backend = AuthBackend::new(db_pool.clone()); // Get pool from db_pool variable
+    let auth_layer = AuthManagerLayerBuilder::new(auth_backend, session_layer).build();
+
+    // Build Router
+    let app = Router::new()
+        .route("/api/health", axum::routing::get(health_check))
+        // Auth routes
+        .route("/api/auth/register", axum::routing::post(register_handler))
+        .route("/api/auth/login", axum::routing::post(login_handler))
+        .route("/api/auth/logout", axum::routing::post(logout_handler))
+        .route("/api/auth/me", axum::routing::get(me_handler))
+        // Character routes (require auth)
+        .route(
+            "/api/characters",
+            axum::routing::get(list_characters_handler)
+                .post(upload_character_handler)
+                .layer(login_required!(AuthBackend, login_url = "/api/auth/login")),
         )
-        .nest("/chats", chat_routes())
-        .route_layer(login_required!(AuthBackend));
-
-    let public_api_routes = Router::new()
-        .route("/health", axum::routing::get(health_check))
-        .route("/auth/register", axum::routing::post(register_handler))
-        .route("/auth/login", axum::routing::post(login_handler));
-
-    let app_router = Router::new()
-        .nest("/api", public_api_routes)
-        .nest("/api", protected_api_routes)
+        .route(
+            "/api/characters/{id}", // Use {} syntax
+            axum::routing::get(get_character_handler)
+                .layer(login_required!(AuthBackend, login_url = "/api/auth/login")),
+        )
+        // Chat routes (require auth)
+        .nest("/api/chats", chat_routes())
+        // Apply layers BEFORE with_state
         .layer(CookieManagerLayer::new())
         .layer(auth_layer)
-        .with_state(app_state.clone());
+        // Pass the inner AppState, not the Arc
+        .with_state(app_state.as_ref().clone()); // Clone the inner AppState
 
-    // --- DO NOT Run Server (in background) ---
-    // The router will be called directly using oneshot
+    // Start the server on a random available port
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("Failed to bind random port");
+    let addr = listener.local_addr().unwrap();
+    let address = format!("http://{}", addr);
+    println!("Test server running on {}", address);
+
+    // Clone the router *before* moving it into the background task
+    let app_for_server = app.clone();
+
+    // Run the server in the background
+    tokio::spawn(async move {
+        // Use the cloned router for the server
+        axum::serve(listener, app_for_server.into_make_service())
+            .await
+            .unwrap();
+    });
 
     TestApp {
         address,
-        router: app_router,
+        router: app,
         db_pool,
-        // Ensure mock clients are stored
-        mock_ai_client,
-        mock_embedding_client,           // Store mock embedding client
-        mock_embedding_pipeline_service, // Store mock RAG service
-        qdrant_service,                  // Store Qdrant service
-        embedding_call_tracker: app_state.embedding_call_tracker.clone(),
+        config: config.clone(), // Populate the config field
+        ai_client, // Store the client actually used (real or mock)
+        // Store the Option<Arc<MockAiClient>>
+        mock_ai_client: mock_ai_client_opt,
+        mock_embedding_client,
+        mock_embedding_pipeline_service,
+        qdrant_service,
+        embedding_call_tracker,
     }
 }
 
@@ -805,6 +795,7 @@ pub mod db {
              updated_at: chrono::Utc::now(),
              history_management_strategy: "none".to_string(), // Default
              history_management_limit: 20, // Default
+             model_name: "gemini-2.5-pro-preview-03-25".to_string(), // Default model
              visibility: Some("private".to_string()), // Default
         };
         let conn = pool.get().await.expect("Failed to get DB conn");
@@ -905,6 +896,7 @@ pub mod db {
         // Add the new history management fields
         new_history_management_strategy: Option<String>,
         new_history_management_limit: Option<i32>,
+        new_model_name: Option<String>,
     ) {
         use crate::schema::chat_sessions::dsl::*;
 
@@ -924,6 +916,7 @@ pub mod db {
             logit_bias: new_logit_bias,
             history_management_strategy: new_history_management_strategy,
             history_management_limit: new_history_management_limit,
+            model_name: new_model_name,
         };
 
         let conn = pool.get().await.expect("Failed to get DB conn");
@@ -970,6 +963,7 @@ pub mod db {
         // History Management Fields
         String,             // history_management_strategy
         i32,                // history_management_limit
+        String,             // model_name
     );
 
     pub async fn get_chat_session_settings(
@@ -997,6 +991,7 @@ pub mod db {
                     // Select the new history management fields
                     history_management_strategy,
                     history_management_limit,
+                    model_name,
                 ))
                 .first::<SettingsTuple>(conn) // Use the corrected SettingsTuple
                 .optional()
@@ -1052,6 +1047,8 @@ pub mod auth {
         let cookie_str = cookie_header
             .to_str()
             .expect("Invalid characters in cookie header");
+        // Log the full Set-Cookie header received
+        tracing::debug!(set_cookie_header = %cookie_str, "Full Set-Cookie header received from login");
         // Simple parsing assuming single cookie: sid=...;
         let auth_cookie = cookie_str
             .split(';')
@@ -1103,9 +1100,9 @@ impl TestContext {
 }
 
 /// Sets up the test application and returns a TestContext.
-pub async fn setup_test_app() -> TestContext {
-    let test_app = spawn_app().await;
-    TestContext { app: test_app }
+pub async fn setup_test_app(use_real_ai: bool) -> TestContext {
+    let app = spawn_app(use_real_ai).await;
+    TestContext { app }
 }
 
 pub fn create_test_pool() -> DeadpoolPool {
@@ -1345,7 +1342,7 @@ impl AppStateBuilder {
             embedding_client, // This is already the correct type Arc<dyn...>
             qdrant_service, // Use the potentially mocked service
             embedding_pipeline_service,
-            embedding_call_tracker: Arc::new(tokio::sync::Mutex::new(Vec::new())),
+            embedding_call_tracker: Arc::new(TokioMutex::new(Vec::new())),
         }))
     }
 }

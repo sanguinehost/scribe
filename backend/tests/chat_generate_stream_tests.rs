@@ -1,14 +1,14 @@
 // backend/tests/chat_generate_stream_tests.rs
 #![cfg(test)]
 
-use std::env; // For RUN_INTEGRATION_TESTS check
+use std::env;
 use axum::{
     body::Body,
     http::{Method, Request, StatusCode, header},
 };
 use futures::{StreamExt, TryStreamExt};
-use genai::chat::{ChatStreamEvent, StreamChunk, StreamEnd}; // Specific stream imports
-use http_body_util::BodyExt;
+use genai::chat::{ChatStreamEvent, StreamChunk, StreamEnd};
+// Removed unused: use http_body_util::BodyExt;
 use mime;
 use serde_json::json;
 use std::{
@@ -54,7 +54,15 @@ async fn collect_sse_data(body: axum::body::Body) -> Vec<String> {
 #[tokio::test]
 #[ignore] // Added ignore for CI
 async fn generate_chat_response_streaming_success() {
-    let context = test_helpers::setup_test_app().await;
+    // Use mock AI
+    let context = test_helpers::setup_test_app(false).await;
+    
+    // Skip if running as integration test with real client
+    if std::env::var("RUN_INTEGRATION_TESTS").is_ok() {
+        println!("Skipping mock test with real client");
+        return;
+    }
+    
     let (auth_cookie, user) = test_helpers::auth::create_test_user_and_login(
         &context.app,
         "gen_resp_stream_user",
@@ -105,6 +113,8 @@ async fn generate_chat_response_streaming_success() {
     context
         .app
         .mock_ai_client
+        .as_ref()
+        .expect("Mock AI client should be present")
         .set_stream_response(mock_stream_items);
 
     let payload = NewChatMessageRequest {
@@ -164,7 +174,14 @@ async fn generate_chat_response_streaming_success() {
 #[tokio::test]
 #[ignore] // Added ignore for CI
 async fn generate_chat_response_streaming_ai_error() {
-    let context = test_helpers::setup_test_app().await;
+    let context = test_helpers::setup_test_app(false).await;
+    
+    // Skip if running as integration test with real client
+    if std::env::var("RUN_INTEGRATION_TESTS").is_ok() {
+        println!("Skipping mock test with real client");
+        return;
+    }
+    
     let (auth_cookie, user) = test_helpers::auth::create_test_user_and_login(
         &context.app,
         "gen_resp_stream_err_user",
@@ -196,6 +213,8 @@ async fn generate_chat_response_streaming_ai_error() {
     context
         .app
         .mock_ai_client
+        .as_ref()
+        .expect("Mock AI client should be present")
         .set_stream_response(mock_stream_items);
 
     let payload = NewChatMessageRequest {
@@ -333,7 +352,7 @@ async fn generate_chat_response_streaming_ai_error() {
 #[tokio::test]
 #[ignore] // Added ignore for CI
 async fn generate_chat_response_streaming_unauthorized() {
-    let context = test_helpers::setup_test_app().await;
+    let context = test_helpers::setup_test_app(false).await;
     let session_id = Uuid::new_v4(); // Dummy ID
 
     let payload = NewChatMessageRequest {
@@ -363,7 +382,7 @@ async fn generate_chat_response_streaming_unauthorized() {
 #[tokio::test]
 #[ignore] // Added ignore for CI
 async fn generate_chat_response_streaming_not_found() {
-    let context = test_helpers::setup_test_app().await;
+    let context = test_helpers::setup_test_app(false).await;
     let (auth_cookie, _user) =
         test_helpers::auth::create_test_user_and_login(&context.app, "stream_404_user", "password")
             .await;
@@ -396,7 +415,7 @@ async fn generate_chat_response_streaming_not_found() {
 #[tokio::test]
 #[ignore] // Added ignore for CI
 async fn generate_chat_response_streaming_forbidden() {
-    let context = test_helpers::setup_test_app().await;
+    let context = test_helpers::setup_test_app(false).await;
     let (_auth_cookie1, user1) = test_helpers::auth::create_test_user_and_login(
         &context.app,
         "stream_forbid_user1",
@@ -457,7 +476,7 @@ async fn test_rag_context_injection_real_ai() {
         return;
     }
 
-    let context = test_helpers::setup_test_app().await; // Use the helper
+    let context = test_helpers::setup_test_app(true).await; // Use the helper
     let (auth_cookie, user) =
         test_helpers::auth::create_test_user_and_login(&context.app, "rag_real_user", "password")
             .await;
@@ -533,7 +552,14 @@ async fn test_rag_context_injection_real_ai() {
 #[tokio::test]
 #[ignore] // Ignore for CI unless DB is guaranteed
 async fn generate_chat_response_streaming_initiation_error() {
-    let context = test_helpers::setup_test_app().await;
+    let context = test_helpers::setup_test_app(false).await;
+    
+    // Skip if running as integration test with real client
+    if std::env::var("RUN_INTEGRATION_TESTS").is_ok() {
+        println!("Skipping mock test with real client");
+        return;
+    }
+    
     let (auth_cookie, user) = test_helpers::auth::create_test_user_and_login(
         &context.app,
         "stream_init_err_user",
@@ -558,6 +584,8 @@ async fn generate_chat_response_streaming_initiation_error() {
     context
         .app
         .mock_ai_client
+        .as_ref()
+        .expect("Mock AI client should be present")
         .set_stream_response(mock_stream_items);
 
     let payload = NewChatMessageRequest {
@@ -631,7 +659,14 @@ async fn generate_chat_response_streaming_initiation_error() {
 #[tokio::test]
 #[ignore] // Ignore for CI unless DB is guaranteed
 async fn generate_chat_response_streaming_error_before_content() {
-    let context = test_helpers::setup_test_app().await;
+    let context = test_helpers::setup_test_app(false).await;
+    
+    // Skip if running as integration test with real client
+    if std::env::var("RUN_INTEGRATION_TESTS").is_ok() {
+        println!("Skipping mock test with real client");
+        return;
+    }
+    
     let (auth_cookie, user) = test_helpers::auth::create_test_user_and_login(
         &context.app,
         "stream_err_b4_content_user",
@@ -658,6 +693,8 @@ async fn generate_chat_response_streaming_error_before_content() {
     context
         .app
         .mock_ai_client
+        .as_ref()
+        .expect("Mock AI client should be present")
         .set_stream_response(mock_stream_items);
 
     let payload = NewChatMessageRequest {
@@ -741,7 +778,14 @@ async fn generate_chat_response_streaming_error_before_content() {
 #[tokio::test]
 #[ignore] // Ignore for CI unless DB is guaranteed
 async fn generate_chat_response_streaming_empty_response() {
-    let context = test_helpers::setup_test_app().await;
+    let context = test_helpers::setup_test_app(false).await;
+    
+    // Skip if running as integration test with real client
+    if std::env::var("RUN_INTEGRATION_TESTS").is_ok() {
+        println!("Skipping mock test with real client");
+        return;
+    }
+    
     let (auth_cookie, user) = test_helpers::auth::create_test_user_and_login(
         &context.app,
         "stream_empty_resp_user",
@@ -766,6 +810,8 @@ async fn generate_chat_response_streaming_empty_response() {
     context
         .app
         .mock_ai_client
+        .as_ref()
+        .expect("Mock AI client should be present")
         .set_stream_response(mock_stream_items);
 
     let payload = NewChatMessageRequest {
@@ -841,7 +887,14 @@ async fn generate_chat_response_streaming_empty_response() {
 #[tokio::test]
 #[ignore] // Ignore for CI unless DB is guaranteed
 async fn generate_chat_response_streaming_reasoning_chunk() {
-    let context = test_helpers::setup_test_app().await;
+    let context = test_helpers::setup_test_app(false).await;
+    
+    // Skip if running as integration test with real client
+    if std::env::var("RUN_INTEGRATION_TESTS").is_ok() {
+        println!("Skipping mock test with real client");
+        return;
+    }
+    
     let (auth_cookie, user) = test_helpers::auth::create_test_user_and_login(
         &context.app,
         "stream_reasoning_user",
@@ -873,6 +926,8 @@ async fn generate_chat_response_streaming_reasoning_chunk() {
     context
         .app
         .mock_ai_client
+        .as_ref()
+        .expect("Mock AI client should be present")
         .set_stream_response(mock_stream_items);
 
     let payload = NewChatMessageRequest {
@@ -886,6 +941,8 @@ async fn generate_chat_response_streaming_reasoning_chunk() {
         .header(header::COOKIE, &auth_cookie)
         .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
         .header(header::ACCEPT, mime::TEXT_EVENT_STREAM.as_ref())
+        // Add the header to request reasoning/thinking events
+        .header("X-Request-Thinking", "true")
         .body(Body::from(serde_json::to_vec(&payload).unwrap()))
         .unwrap();
 
@@ -960,4 +1017,332 @@ async fn generate_chat_response_streaming_reasoning_chunk() {
     );
     let ai_msg = messages.last().unwrap();
     assert_eq!(ai_msg.content, "Final answer.");
+}
+
+#[tokio::test]
+#[ignore] // Added ignore for CI
+async fn generate_chat_response_streaming_genai_json_error() {
+    let context = test_helpers::setup_test_app(false).await;
+    
+    // Skip if running as integration test with real client
+    if std::env::var("RUN_INTEGRATION_TESTS").is_ok() {
+        println!("Skipping mock test with real client");
+        return;
+    }
+    
+    let (auth_cookie, user) = test_helpers::auth::create_test_user_and_login(
+        &context.app,
+        "gen_resp_stream_json_err_user",
+        "password",
+    )
+    .await;
+    let character = test_helpers::db::create_test_character(
+        &context.app.db_pool,
+        user.id,
+        "Char for Stream JSON Err",
+    )
+    .await;
+    let session =
+        test_helpers::db::create_test_chat_session(&context.app.db_pool, user.id, character.id)
+            .await;
+
+    // Mock the AI client to return a specific error mimicking JsonValueExt
+    // We use GenerationError here as a proxy, as constructing the exact genai error is complex.
+    let mock_error_message = "JsonValueExt(PropertyNotFound(\"/candidates/0/content/parts/0\"))".to_string();
+    let mock_stream_items = vec![
+        Ok(ChatStreamEvent::Start),
+        Ok(ChatStreamEvent::Chunk(StreamChunk {
+            content: "Some initial content. ".to_string(),
+        })),
+        Err(AppError::GenerationError(mock_error_message.clone())), // Use GenerationError to wrap the message
+    ];
+    context
+        .app
+        .mock_ai_client
+        .as_ref()
+        .expect("Mock AI client should be present")
+        .set_stream_response(mock_stream_items);
+
+    let payload = NewChatMessageRequest {
+        content: "User message for JSON error stream".to_string(),
+        model: Some("test-stream-json-err-model".to_string()),
+    };
+
+    let request = Request::builder()
+        .method(Method::POST)
+        .uri(format!("/api/chats/{}/generate", session.id))
+        .header(header::COOKIE, &auth_cookie)
+        .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
+        .header(header::ACCEPT, mime::TEXT_EVENT_STREAM.as_ref())
+        .body(Body::from(serde_json::to_vec(&payload).unwrap()))
+        .unwrap();
+
+    let response = context.app.router.clone().oneshot(request).await.unwrap();
+
+    // Assert headers
+    assert_eq!(response.status(), StatusCode::OK); // SSE connection established
+    assert_eq!(
+        response.headers().get(header::CONTENT_TYPE).unwrap(),
+        mime::TEXT_EVENT_STREAM.as_ref()
+    );
+
+    // Read the SSE stream and verify the error event
+    let mut stream = response.into_body().into_data_stream();
+    let mut data_chunks = Vec::new();
+    let mut error_event_data: Option<String> = None;
+    let mut received_error_event = false;
+    let mut current_event: Option<String> = None;
+    let mut current_data = String::new();
+
+    while let Some(chunk_result) = stream.next().await {
+        match chunk_result {
+            Ok(chunk) => {
+                let chunk_str = str::from_utf8(chunk.as_ref()).expect("Invalid UTF-8");
+                for line in chunk_str.lines() {
+                    if line.starts_with("event: ") {
+                        current_event =
+                            Some(line.strip_prefix("event: ").unwrap().trim().to_string());
+                    } else if line.starts_with("data: ") {
+                        current_data.push_str(line.strip_prefix("data: ").unwrap());
+                    } else if line.trim().is_empty() {
+                        // End of an event
+                        if let Some(event_type) = current_event.take() {
+                             match event_type.as_str() {
+                                "content" => data_chunks.push(current_data.clone()),
+                                "error" => {
+                                    error_event_data = Some(current_data.clone());
+                                    received_error_event = true;
+                                }
+                                // Ignore other events like 'start', 'done' for this specific assertion
+                                _ => {}
+                            }
+                        }
+                        current_data.clear();
+                    }
+                }
+            }
+            Err(e) => panic!("Error reading stream chunk: {}", e),
+        }
+    }
+
+    // Assertions: Check that we received the content chunk AND the error event correctly formatted
+    assert_eq!(data_chunks, vec!["Some initial content. "]);
+    // Check that the error event data is correctly prefixed
+    let expected_error_prefix = "LLM API error: ";
+    assert!(received_error_event, "Did not receive the 'error' SSE event.");
+    assert!(
+        error_event_data.is_some(),
+        "Error event data was None."
+    );
+    let actual_error_data = error_event_data.unwrap();
+    assert!(
+        actual_error_data.starts_with(expected_error_prefix),
+        "Error event data '{}' did not start with prefix '{}'", actual_error_data, expected_error_prefix
+    );
+    assert!(
+        actual_error_data.contains(&mock_error_message),
+        "Error event data '{}' did not contain the original message '{}'", actual_error_data, mock_error_message
+    );
+
+    // Assert partial save (optional, but good practice)
+    tokio::time::sleep(Duration::from_millis(100)).await; // Wait for background task
+    let messages =
+        test_helpers::db::get_chat_messages_from_db(&context.app.db_pool, session.id).await;
+    assert_eq!(
+        messages.len(),
+        2, // User message + partial AI message
+        "Should have user message and partial AI message after JSON error"
+    );
+    assert_eq!(messages[1].content, "Some initial content. "); // Check partial content saved
+}
+
+#[tokio::test]
+#[ignore] // Integration test, relies on external services and specific failure condition
+async fn generate_chat_response_streaming_real_client_failure_repro() {
+    // This test attempts to reproduce the scenario where streaming fails with the real client.
+    // It assumes the real AI client might fail during the stream generation.
+    if env::var("RUN_INTEGRATION_TESTS").is_err() {
+        println!("Skipping real client streaming failure repro test: RUN_INTEGRATION_TESTS not set");
+        return;
+    }
+    
+    // Make sure we load the .env file first for API key
+    dotenvy::dotenv().ok();
+    
+    // Verify GOOGLE_API_KEY is present in environment - this is what genai ClientBuilder::default() uses
+    if env::var("GOOGLE_API_KEY").is_err() {
+        println!("Skipping test: GOOGLE_API_KEY environment variable not set");
+        return;
+    }
+    
+    println!("Running real client streaming failure repro test...");
+
+    let context = test_helpers::setup_test_app(true).await; // Should use real clients if RUN_INTEGRATION_TESTS is set
+    
+    // Print additional debug info
+    println!("Test app setup completed. Using real AI client when RUN_INTEGRATION_TESTS is set.");
+    
+    // For this test, we don't need to mock anything - we're intentionally testing with the real client
+    // to reproduce a potential streaming failure
+    
+    let (auth_cookie, user) = test_helpers::auth::create_test_user_and_login(
+        &context.app,
+        "stream_real_fail_user",
+        "password",
+    )
+    .await;
+    let character = test_helpers::db::create_test_character(
+        &context.app.db_pool,
+        user.id,
+        "Real Stream Fail Char",
+    )
+    .await;
+    let session =
+        test_helpers::db::create_test_chat_session(&context.app.db_pool, user.id, character.id)
+            .await;
+
+    let payload = NewChatMessageRequest {
+        content: "A simple prompt likely to succeed in non-streaming, but might fail in streaming.".to_string(),
+        model: Some("gemini-1.5-flash-latest".to_string()), // Explicitly specify a model
+    };
+
+    let request = Request::builder()
+        .method(Method::POST)
+        .uri(format!("/api/chats/{}/generate", session.id))
+        .header(header::COOKIE, &auth_cookie)
+        .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
+        .header(header::ACCEPT, mime::TEXT_EVENT_STREAM.as_ref()) // Request streaming
+        .body(Body::from(serde_json::to_vec(&payload).unwrap()))
+        .unwrap();
+
+    let response = context.app.router.clone().oneshot(request).await.unwrap();
+
+    // --- Assertions ---
+
+    // 1. Check headers - Should still be OK and SSE even if the stream fails later
+    assert_eq!(response.status(), StatusCode::OK, "Request should return OK status even if stream fails later");
+    assert_eq!(
+        response.headers().get(header::CONTENT_TYPE).unwrap(),
+        mime::TEXT_EVENT_STREAM.as_ref(),
+        "Content-Type should be text/event-stream"
+    );
+
+    // 2. Consume the stream and check for an error event
+    let body = response.into_body();
+    let mut stream = body.into_data_stream();
+    let mut received_error_event = false;
+    let mut received_done_event = false;
+    let mut error_event_data: Option<String> = None;
+    let mut accumulated_content = String::new();
+    let mut current_event: Option<String> = None;
+    let mut current_data = String::new();
+
+    println!("Starting to consume SSE stream for real client failure test...");
+
+    while let Some(chunk_result) = stream.next().await {
+        match chunk_result {
+            Ok(chunk) => {
+                let chunk_str = match str::from_utf8(chunk.as_ref()) {
+                    Ok(s) => s,
+                    Err(e) => {
+                        error!("Failed to decode chunk as UTF-8: {}", e);
+                        continue; // Skip invalid chunks
+                    }
+                };
+                 debug!("Received SSE chunk: {:?}", chunk_str); // Log received chunks
+
+                for line in chunk_str.lines() {
+                     debug!("Processing SSE line: '{}'", line);
+                    if line.starts_with("event: ") {
+                        current_event = Some(line.strip_prefix("event: ").unwrap().trim().to_string());
+                         debug!("Detected event type: {:?}", current_event);
+                    } else if line.starts_with("data: ") {
+                        // Append data, handling potential multi-line data fields simply
+                        current_data.push_str(line.strip_prefix("data: ").unwrap());
+                        // If the original line had more data after "data: ", it's captured.
+                        // If data spans multiple SSE lines, this basic parser might merge them without newlines.
+                        // For this test, we primarily care about the *presence* of events.
+                         debug!("Accumulated data: '{}'", current_data);
+                    } else if line.trim().is_empty() {
+                        // End of an event message
+                         debug!("Processing end of SSE event. Type: {:?}, Data: '{}'", current_event, current_data);
+                        if let Some(event_type) = current_event.take() {
+                            match event_type.as_str() {
+                                "error" => {
+                                    println!("Received 'error' event with data: {}", current_data);
+                                    received_error_event = true;
+                                    error_event_data = Some(current_data.trim().to_string());
+                                    // Don't break here, consume the rest of the stream in case of weirdness
+                                }
+                                "content" => {
+                                     println!("Received 'content' event chunk.");
+                                    accumulated_content.push_str(&current_data); // Accumulate content received before potential error
+                                }
+                                "done" => {
+                                     println!("Received 'done' event.");
+                                    received_done_event = true;
+                                }
+                                "thinking" => {
+                                     println!("Received 'thinking' event.");
+                                     // Ignore for this test's core assertion
+                                 }
+                                _ => {
+                                     println!("Received unknown event type: {}", event_type);
+                                 }
+                            }
+                        } else if !current_data.is_empty() {
+                             // Default 'message' event (treat as content for accumulation)
+                             println!("Received default 'message' event (treating as content).");
+                             accumulated_content.push_str(&current_data);
+                         }
+                        current_data.clear(); // Clear buffer for next event
+                    }
+                }
+            }
+            Err(e) => {
+                // This handles transport-level errors, not SSE application errors
+                error!("SSE stream transport terminated with error: {}", e);
+                // Depending on the test goal, this might be a failure or expected if the connection drops.
+                // For reproducing an *API* error during stream, this transport error is likely a test failure.
+                panic!("Test expectation failed: SSE stream transport errored unexpectedly: {}", e);
+            }
+        }
+    }
+
+    println!("Finished consuming SSE stream.");
+    println!("Received Error Event: {}", received_error_event);
+    println!("Received Done Event: {}", received_done_event);
+    println!("Error Data: {:?}", error_event_data);
+    println!("Accumulated Content before error (if any): '{}'", accumulated_content);
+
+
+    // 3. Assert that an error event was received
+    //    This is the core assertion for this test: did the stream yield an application error?
+    assert!(received_error_event, "Expected to receive an 'error' event during streaming with the real client, but did not.");
+
+    // 4. Assert that 'done' was likely NOT received if an error occurred
+    //    (The handler logic prevents sending 'done' if an error flag is set)
+    assert!(!received_done_event, "Expected NOT to receive a 'done' event when an 'error' event occurred.");
+
+    // 5. Check saved messages (optional but good)
+    //    Wait a bit for the background save task triggered on error.
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    let messages =
+        test_helpers::db::get_chat_messages_from_db(&context.app.db_pool, session.id).await;
+
+    // We expect the user message to always be saved.
+    // An assistant message *might* be saved if content was received before the error.
+    assert!(messages.len() >= 1, "At least the user message should be saved.");
+    assert_eq!(messages[0].message_type, MessageRole::User);
+
+    if messages.len() > 1 {
+        println!("Partial assistant message was saved.");
+        assert_eq!(messages[1].message_type, MessageRole::Assistant);
+        assert_eq!(messages[1].content, accumulated_content, "Saved partial content should match accumulated content from stream.");
+    } else {
+        println!("No partial assistant message was saved (error likely occurred early).");
+        assert!(accumulated_content.is_empty(), "If no AI message saved, accumulated stream content should also be empty.");
+    }
+
+     println!("Real client streaming failure repro test finished.");
 }

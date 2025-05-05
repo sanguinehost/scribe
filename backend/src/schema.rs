@@ -159,6 +159,8 @@ diesel::table! {
         logit_bias -> Nullable<Jsonb>,
         history_management_strategy -> Text,
         history_management_limit -> Int4,
+        #[max_length = 100]
+        model_name -> Varchar,
         #[max_length = 50]
         visibility -> Nullable<Varchar>,
     }

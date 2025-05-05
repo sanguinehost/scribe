@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use futures::StreamExt;
 use genai::{
-    chat::{ChatMessage, ChatOptions, ChatRequest, ChatResponse},
+    chat::{ChatOptions, ChatRequest, ChatResponse},
     Client, ClientBuilder,
 };
 use std::sync::Arc;
@@ -76,6 +76,7 @@ impl AiClient for Arc<ScribeGeminiClient> {
 }
 
 /// Builds the ScribeGeminiClient wrapper.
+/// Relies on genai::ClientBuilder::default() which typically checks GOOGLE_API_KEY env var.
 pub async fn build_gemini_client() -> Result<Arc<ScribeGeminiClient>, AppError> {
     let client = ClientBuilder::default().build();
     Ok(Arc::new(ScribeGeminiClient { inner: client }))
@@ -87,12 +88,13 @@ pub async fn generate_simple_response(
     user_message: String,
     model_name: &str,
 ) -> Result<String, AppError> {
-    let chat_request = ChatRequest::default().append_message(ChatMessage::user(user_message));
+    // Create a ChatRequest with a single user message
+    let chat_request = ChatRequest::from_user(user_message);
     tracing::debug!(%model_name, "Executing chat with specified model via trait");
     let response = client.exec_chat(model_name, chat_request, None).await?;
     let content = response
         .content_text_as_str()
-        .ok_or_else(|| AppError::BadRequest("No text content in LLM response".to_string()))? // Line 96 (Targeted)
+        .ok_or_else(|| AppError::BadRequest("No text content in LLM response".to_string()))?
         .to_string();
     Ok(content)
 }
@@ -101,16 +103,14 @@ pub async fn generate_simple_response(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dotenvy::dotenv;
     use genai::{ModelIden, adapter};
-    use genai::chat::ChatStreamEvent;
+    use genai::chat::{ChatStreamEvent}; // Removed unused ChatMessage
     use futures::stream;
     use std::sync::atomic::{AtomicBool, Ordering};
 
     // --- Existing Integration Tests (Keep them) ---
     #[tokio::test]
     async fn test_build_gemini_client_wrapper_ok() {
-        dotenv().ok();
         let result = build_gemini_client().await;
         assert!(result.is_ok(), "Failed to build Gemini client wrapper: {:?}", result.err());
     }
@@ -118,7 +118,6 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn test_generate_simple_response_integration_via_wrapper() {
-        dotenv().ok();
         let client_wrapper = build_gemini_client().await.expect("Failed to build Gemini client wrapper");
         let user_message = "Test Wrapper: Say hello!".to_string();
         let model_name_for_test = "gemini-1.5-flash-latest";
@@ -132,11 +131,10 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn test_stream_chat_integration_via_wrapper() {
-        dotenv().ok();
         let client_wrapper = build_gemini_client().await.expect("Failed to build Gemini client wrapper");
         let user_message = "Test Stream Wrapper: Say hello stream!".to_string();
         let model_name_for_test = "gemini-1.5-flash-latest";
-        let chat_request = ChatRequest::default().append_message(ChatMessage::user(user_message));
+        let chat_request = ChatRequest::from_user(user_message);
         let stream_result = client_wrapper.stream_chat(model_name_for_test, chat_request, None).await;
         match stream_result {
             Ok(mut stream) => {
@@ -165,7 +163,6 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn test_generate_simple_response_with_different_models() {
-        dotenv().ok();
         let client_wrapper = build_gemini_client().await.expect("Failed to build Gemini client wrapper");
         let models_to_test = vec!["gemini-1.5-pro-latest", "gemini-1.5-flash-latest"];
         for model_name in models_to_test {
@@ -264,7 +261,7 @@ mod tests {
         let client_arc_mock: Arc<MockAiClient> = Arc::new(mock_client);
         let client_trait_object: Arc<dyn AiClient> = client_arc_mock.clone();
 
-        let request = ChatRequest::default();
+        let request = ChatRequest::new(vec![]); // Use the new constructor
         let result = client_trait_object.exec_chat("test-model", request, None).await;
 
         assert!(result.is_ok());

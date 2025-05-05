@@ -33,6 +33,7 @@ pub type SettingsTuple = (
     Option<Value>,      // logit_bias
     String,             // history_management_strategy
     i32,                // history_management_limit
+    String,             // model_name
 );
 #[derive(Queryable, Selectable, Identifiable, Serialize, Deserialize, Debug, Clone)]
 #[diesel(table_name = chat_sessions)]
@@ -58,6 +59,7 @@ pub struct Chat {
     pub logit_bias: Option<serde_json::Value>,
     pub history_management_strategy: String,
     pub history_management_limit: i32,
+    pub model_name: String,
     pub visibility: Option<String>, // Added based on migration 2025-05-10-100002
 }
 
@@ -73,6 +75,7 @@ pub struct NewChat {
     pub updated_at: DateTime<Utc>,
     pub history_management_strategy: String,
     pub history_management_limit: i32,
+    pub model_name: String,
     pub visibility: Option<String>,
 }
 
@@ -113,6 +116,7 @@ pub struct NewMessage {
 // Request/Response DTOs
 #[derive(Deserialize, Debug)]
 pub struct CreateChatRequest {
+    #[serde(default)]
     pub title: String,
     pub character_id: Uuid,
 }
@@ -134,11 +138,12 @@ pub struct CreateMessageRequest {
     pub attachments: Option<serde_json::Value>,
 }
 
-#[derive(Serialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)] // Added Deserialize
 pub struct MessageResponse {
     pub id: Uuid,
-    pub chat_id: Uuid,
-    pub role: String,
+    pub session_id: Uuid, // Renamed from chat_id
+    pub message_type: MessageRole, // Added missing field
+    pub role: String, // TODO: Consider removing this if message_type covers it? Check usage.
     pub parts: serde_json::Value,
     pub attachments: serde_json::Value,
     pub created_at: DateTime<Utc>,
@@ -322,6 +327,30 @@ pub struct ChatSettingsResponse {
     // History Management Fields
     pub history_management_strategy: String,
     pub history_management_limit: i32,
+    // Model Name
+    pub model_name: String,
+}
+// Implement From<Chat> for ChatSettingsResponse
+impl From<Chat> for ChatSettingsResponse {
+    fn from(chat: Chat) -> Self {
+        ChatSettingsResponse {
+            system_prompt: chat.system_prompt,
+            temperature: chat.temperature,
+            max_output_tokens: chat.max_output_tokens,
+            frequency_penalty: chat.frequency_penalty,
+            presence_penalty: chat.presence_penalty,
+            top_k: chat.top_k,
+            top_p: chat.top_p,
+            repetition_penalty: chat.repetition_penalty,
+            min_p: chat.min_p,
+            top_a: chat.top_a,
+            seed: chat.seed,
+            logit_bias: chat.logit_bias,
+            history_management_strategy: chat.history_management_strategy,
+            history_management_limit: chat.history_management_limit,
+            model_name: chat.model_name,
+        }
+    }
 }
 
 /// Request body for PUT /api/chats/{id}/settings
@@ -330,23 +359,35 @@ pub struct ChatSettingsResponse {
 #[diesel(table_name = crate::schema::chat_sessions)] // Specify target table
 pub struct UpdateChatSettingsRequest {
     pub system_prompt: Option<String>,
+    #[validate(custom(function = "validate_optional_temperature"))]
     pub temperature: Option<BigDecimal>, // Changed f32 to BigDecimal
+    #[validate(range(min = 1))]
     pub max_output_tokens: Option<i32>,
     // New generation settings fields
+    #[validate(custom(function = "validate_optional_frequency_penalty"))]
     pub frequency_penalty: Option<BigDecimal>,
+    #[validate(custom(function = "validate_optional_presence_penalty"))]
     pub presence_penalty: Option<BigDecimal>,
+    #[validate(range(min = 0))]
     pub top_k: Option<i32>,
+    #[validate(custom(function = "validate_optional_top_p"))]
     pub top_p: Option<BigDecimal>,
+    #[validate(custom(function = "validate_optional_repetition_penalty"))]
     pub repetition_penalty: Option<BigDecimal>,
+    #[validate(custom(function = "validate_optional_min_p"))]
     pub min_p: Option<BigDecimal>,
+    #[validate(custom(function = "validate_optional_top_a"))]
     pub top_a: Option<BigDecimal>,
     pub seed: Option<i32>,
+    #[validate(custom(function = "validate_optional_logit_bias"))]
     pub logit_bias: Option<Value>,
     // History Management Fields
     #[validate(custom(function = "validate_optional_history_strategy"))]
     pub history_management_strategy: Option<String>,
     #[validate(range(min = 1))]
     pub history_management_limit: Option<i32>,
+    // Model Name
+    pub model_name: Option<String>,
 }
 
 // Custom validation function for history_management_strategy (called only when Some)
@@ -358,6 +399,104 @@ fn validate_optional_history_strategy(strategy: &String) -> Result<(), Validatio
     // No need to handle None case here, validator only calls this for Some(value)
 }
 
+// Custom validation function for optional temperature (0.0 to 2.0)
+fn validate_optional_temperature(temp: &BigDecimal) -> Result<(), ValidationError> {
+    let zero = BigDecimal::from(0);
+    let two = BigDecimal::from(2);
+    if *temp < zero || *temp > two {
+        let mut err = ValidationError::new("range");
+        err.add_param("min".into(), &0.0);
+        err.add_param("max".into(), &2.0);
+        return Err(err);
+    }
+    Ok(())
+}
+
+// Custom validation function for optional frequency penalty (-2.0 to 2.0)
+fn validate_optional_frequency_penalty(penalty: &BigDecimal) -> Result<(), ValidationError> {
+    let neg_two = BigDecimal::from(-2);
+    let two = BigDecimal::from(2);
+    if *penalty < neg_two || *penalty > two {
+        let mut err = ValidationError::new("range");
+        err.add_param("min".into(), &-2.0);
+        err.add_param("max".into(), &2.0);
+        return Err(err);
+    }
+    Ok(())
+}
+
+// Custom validation function for optional presence penalty (-2.0 to 2.0)
+fn validate_optional_presence_penalty(penalty: &BigDecimal) -> Result<(), ValidationError> {
+    let neg_two = BigDecimal::from(-2);
+    let two = BigDecimal::from(2);
+    if *penalty < neg_two || *penalty > two {
+        let mut err = ValidationError::new("range");
+        err.add_param("min".into(), &-2.0);
+        err.add_param("max".into(), &2.0);
+        return Err(err);
+    }
+    Ok(())
+}
+
+// Custom validation function for optional top-p (0.0 to 1.0)
+fn validate_optional_top_p(value: &BigDecimal) -> Result<(), ValidationError> {
+    let zero = BigDecimal::from(0);
+    let one = BigDecimal::from(1);
+    if *value < zero || *value > one {
+        let mut err = ValidationError::new("range");
+        err.add_param("min".into(), &0.0);
+        err.add_param("max".into(), &1.0);
+        return Err(err);
+    }
+    Ok(())
+}
+
+// Custom validation function for optional repetition penalty (> 0)
+fn validate_optional_repetition_penalty(value: &BigDecimal) -> Result<(), ValidationError> {
+    let zero = BigDecimal::from(0);
+    if *value <= zero {
+        let mut err = ValidationError::new("range");
+        err.add_param("min".into(), &"greater than 0");
+        return Err(err);
+    }
+    Ok(())
+}
+
+// Custom validation function for optional min-p (0.0 to 1.0)
+fn validate_optional_min_p(value: &BigDecimal) -> Result<(), ValidationError> {
+    let zero = BigDecimal::from(0);
+    let one = BigDecimal::from(1);
+    if *value < zero || *value > one {
+        let mut err = ValidationError::new("range");
+        err.add_param("min".into(), &0.0);
+        err.add_param("max".into(), &1.0);
+        return Err(err);
+    }
+    Ok(())
+}
+
+// Custom validation function for optional top-a (0.0 to 1.0)
+fn validate_optional_top_a(value: &BigDecimal) -> Result<(), ValidationError> {
+    let zero = BigDecimal::from(0);
+    let one = BigDecimal::from(1);
+    if *value < zero || *value > one {
+        let mut err = ValidationError::new("range");
+        err.add_param("min".into(), &0.0);
+        err.add_param("max".into(), &1.0);
+        return Err(err);
+    }
+    Ok(())
+}
+
+// Custom validation function for optional logit_bias (must be an object)
+fn validate_optional_logit_bias(value: &Value) -> Result<(), ValidationError> {
+    if !value.is_object() {
+        let mut err = ValidationError::new("type");
+        err.add_param("expected".into(), &"object");
+        return Err(err);
+    }
+    Ok(())
+}
 
 #[cfg(test)]
 mod tests {
@@ -397,7 +536,8 @@ mod tests {
             logit_bias: Some(json!({"50256": -100})),
             history_management_strategy: "none".to_string(), // Add default test value
             history_management_limit: 4096,                 // Add default test value
-visibility: Some("private".to_string()), // Added default test value
+            model_name: "gemini-2.5-flash-preview-04-17".to_string(),
+            visibility: Some("private".to_string()), // Added default test value
         }
     }
 
@@ -436,6 +576,8 @@ visibility: Some("private".to_string()), // Added default test value
         // Add assertions for new fields
         assert_eq!(original.history_management_strategy, cloned.history_management_strategy);
         assert_eq!(original.history_management_limit, cloned.history_management_limit);
+        assert_eq!(original.model_name, cloned.model_name);
+        assert_eq!(original.visibility, cloned.visibility);
     }
 
     #[test]
@@ -569,6 +711,7 @@ visibility: Some("private".to_string()), // Added default test value
             // Add new fields to response helper
             history_management_strategy: "none".to_string(),
             history_management_limit: 4096,
+            model_name: "gemini-2.5-flash-preview-04-17".to_string(),
         }
     }
 
@@ -593,26 +736,27 @@ visibility: Some("private".to_string()), // Added default test value
         // Add assertions for new fields
         assert_eq!(original.history_management_strategy, cloned.history_management_strategy);
         assert_eq!(original.history_management_limit, cloned.history_management_limit);
+        assert_eq!(original.model_name, cloned.model_name);
     }
 
     // Helper function to create a sample update chat settings request
     fn create_sample_update_chat_settings_request() -> UpdateChatSettingsRequest {
         UpdateChatSettingsRequest {
-            system_prompt: Some("You are a helpful assistant".to_string()),
-            temperature: Some(bd("0.8")),
-            max_output_tokens: Some(2048),
-            frequency_penalty: Some(bd("0.1")),
-            presence_penalty: Some(bd("0.1")),
+            system_prompt: Some("Test system prompt".to_string()),
+            temperature: Some(bd("0.7")),
+            max_output_tokens: Some(150),
+            frequency_penalty: Some(bd("0.5")),
+            presence_penalty: Some(bd("0.5")),
             top_k: Some(40),
             top_p: Some(bd("0.95")),
-            repetition_penalty: Some(bd("1.2")),
-            min_p: Some(bd("0.1")),
+            repetition_penalty: Some(bd("1.1")),
+            min_p: Some(bd("0.05")),
             top_a: Some(bd("0.1")),
-            seed: Some(54321),
-            logit_bias: Some(json!({"50256": -50})),
-            // Add new fields to request helper
+            seed: Some(42),
+            logit_bias: Some(json!({"50256": -100})),
             history_management_strategy: Some("sliding_window_tokens".to_string()),
             history_management_limit: Some(2000),
+            model_name: Some("gemini-2.5-pro-preview-03-25".to_string()),
         }
     }
 
@@ -621,7 +765,7 @@ visibility: Some("private".to_string()), // Added default test value
         let settings = create_sample_update_chat_settings_request();
         let debug_str = format!("{:?}", settings);
         assert!(debug_str.contains("UpdateChatSettingsRequest"));
-        assert!(debug_str.contains("You are a helpful assistant"));
+        assert!(debug_str.contains("Test system prompt"));
         assert!(debug_str.contains("temperature: Some"));
         assert!(debug_str.contains("history_management_strategy: Some(\"sliding_window_tokens\")")); // Check new field
     }
@@ -651,6 +795,7 @@ visibility: Some("private".to_string()), // Added default test value
         // Add assertions for new fields
         assert_eq!(settings.history_management_strategy, deserialized.history_management_strategy);
         assert_eq!(settings.history_management_limit, deserialized.history_management_limit);
+        assert_eq!(settings.model_name, deserialized.model_name);
     }
 
     #[test]
@@ -671,7 +816,7 @@ visibility: Some("private".to_string()), // Added default test value
     fn test_new_chat_message_request_serde() {
         let original = NewChatMessageRequest {
             content: "Hello AI".to_string(),
-            model: Some("gpt-4".to_string()),
+            model: Some("gemini-2.5-flash-preview-04-17".to_string()),
         };
 
         let serialized = serde_json::to_string(&original).expect("Serialization failed");
@@ -685,7 +830,7 @@ visibility: Some("private".to_string()), // Added default test value
     fn test_generate_response_payload_serde() {
         let original = GenerateResponsePayload {
             content: "Hello human".to_string(),
-            model: Some("gpt-4".to_string()),
+            model: Some("gemini-2.5-flash-preview-04-17".to_string()),
         };
 
         let serialized = serde_json::to_string(&original).expect("Serialization failed");
@@ -722,7 +867,7 @@ visibility: Some("private".to_string()), // Added default test value
 
         assert_eq!(settings1, settings2);
 
-        settings2.temperature = Some(bd("0.7"));
+        settings2.temperature = Some(bd("0.8"));
         assert_ne!(settings1, settings2);
 
         // Add test for new fields inequality

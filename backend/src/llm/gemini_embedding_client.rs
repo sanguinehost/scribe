@@ -157,7 +157,7 @@ mod tests {
     use dotenvy::dotenv;
     use httpmock::prelude::*;
     use serde_json::json;
-    use std::env;
+    // Removed unused: use std::env;
     use std::sync::Arc;
 
     // Helper to create a mock config with or without API key
@@ -517,15 +517,42 @@ mod tests {
     // --- Integration Tests (Require API Key and Network) ---
 
     #[tokio::test]
-    #[ignore] // Integration test: requires network but should fail due to invalid key
-    async fn test_embed_content_invalid_api_key_integration() {
-        // No need for dotenv here, we are providing an invalid key directly
-        let invalid_api_key = "invalid_test_api_key_string".to_string();
-        let config = create_test_config(Some(invalid_api_key)); // Should be accessible now
+    #[ignore] // Requires GEMINI_API_KEY
+    async fn test_embed_content_success_integration() {
+        // Correctly load config using dotenv and build the client
+        dotenv().ok(); // Load .env for GEMINI_API_KEY
+        let config = Arc::new(Config::load().expect("Failed to load config for integration test")
+);
+        // Ensure config loaded the key
+        assert!(config.gemini_api_key.is_some(), "GEMINI_API_KEY must be set in .env or environment for this integration test");
 
-        // Use the builder to create the client
         let client = build_gemini_embedding_client(config)
             .expect("Failed to build client for integration test");
+
+        let text = "This is a test sentence for embedding.";
+        let task_type = "RETRIEVAL_DOCUMENT"; // Use a valid task type
+
+        let result = client.embed_content(text, task_type).await;
+
+        match result {
+            Ok(embedding) => {
+                assert!(!embedding.is_empty(), "Embedding vector should not be empty");
+                println!("Received embedding vector of dimension: {}", embedding.len());
+            }
+            Err(e) => {
+                panic!("Integration test failed: embed_content returned error: {:?}", e);
+            }
+        }
+    }
+
+    #[tokio::test]
+    #[ignore] // Requires Network, but not a valid API key
+    async fn test_embed_content_invalid_api_key_integration() {
+        // Create config with an explicitly invalid key, DO NOT modify env vars
+        let config = create_test_config(Some("invalid-key-for-test".to_string()));
+
+        let client = build_gemini_embedding_client(config)
+            .expect("Failed to build client with invalid key config");
 
         let text = "Test text for invalid key";
         let task_type = "RETRIEVAL_QUERY";
@@ -536,60 +563,15 @@ mod tests {
 
         match result.err().unwrap() {
             AppError::GeminiError(msg) => {
-                // Check if the error message indicates an API key issue (content may vary)
                 println!("Received expected GeminiError: {}", msg);
                 assert!(
-                    msg.contains("API key not valid")
-                        || msg.contains("invalid")
-                        || msg.contains("400"),
+                    msg.contains("API key not valid") || msg.contains("400"), // Gemini API might return 400 for invalid key
                     "Error message should indicate an invalid API key problem. Actual: {}",
                     msg
                 );
             }
             other_err => {
                 panic!("Expected AppError::GeminiError, but got {:?}", other_err);
-            }
-        }
-    }
-
-    #[tokio::test]
-    #[ignore] // Integration test: requires network and valid GEMINI_API_KEY env var
-    async fn test_embed_content_success_integration() {
-        dotenv().ok(); // Load .env file for API key
-
-        let api_key = env::var("GEMINI_API_KEY")
-            .expect("GEMINI_API_KEY must be set in environment for this integration test");
-
-        let config = create_test_config(Some(api_key));
-
-        // Use the builder to create the client for integration tests
-        let client = build_gemini_embedding_client(config)
-            .expect("Failed to build client for integration test");
-
-        let text = "This is a test sentence for embedding.";
-        // Use a valid task type from the Gemini docs
-        let task_type = "RETRIEVAL_DOCUMENT";
-
-        let result = client.embed_content(text, task_type).await;
-
-        match result {
-            Ok(embedding) => {
-                assert!(
-                    !embedding.is_empty(),
-                    "Embedding vector should not be empty"
-                );
-                // We don't know the exact dimension of gemini-embedding-exp-03-07,
-                // but we can check it's non-zero.
-                println!(
-                    "Received embedding vector of dimension: {}",
-                    embedding.len()
-                );
-            }
-            Err(e) => {
-                panic!(
-                    "Integration test failed: embed_content returned error: {:?}",
-                    e
-                );
             }
         }
     }
