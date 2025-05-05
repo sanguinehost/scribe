@@ -1,4 +1,4 @@
-export const DEFAULT_CHAT_MODEL: string = 'chat-model';
+export const DEFAULT_CHAT_MODEL: string = 'gemini-2.5-pro-preview-03-25';
 
 interface ChatModel {
 	id: string;
@@ -7,14 +7,14 @@ interface ChatModel {
 }
 
 export const chatModels: Array<ChatModel> = [
-	{
-		id: 'chat-model',
-		name: 'Chat model',
-		description: 'Primary model for all-purpose chat'
+    {
+		id: 'gemini-2.5-pro-preview-03-25',
+		name: 'Gemini 2.5 Pro Preview',
+		description: 'Stable preview of the Pro model'
 	},
-	{
-		id: 'chat-model-reasoning',
-		name: 'Reasoning model',
-		description: 'Uses advanced reasoning'
+    {
+		id: 'gemini-2.5-flash-preview-04-17',
+		name: 'Gemini 2.5 Flash Preview',
+		description: 'Fast and efficient preview model'
 	}
 ];

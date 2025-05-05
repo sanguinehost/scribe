@@ -1,5 +1,5 @@
 import { error } from '@sveltejs/kit';
-import type { ScribeChatMessage, ScribeChatSession } from '$lib/types';
+import type { ScribeChatMessage, ScribeChatSession, ScribeCharacter } from '$lib/types'; // Assuming ScribeCharacter type exists or will be added
 
 export async function load({ params: { chatId }, fetch, cookies }) {
 	try {
@@ -32,7 +32,29 @@ export async function load({ params: { chatId }, fetch, cookies }) {
 		}
 		const messages: ScribeChatMessage[] = await messagesRes.json();
 
-		return { chat, messages };
+		// Fetch character details using the character_id from the chat session
+		let character: ScribeCharacter | null = null;
+		if (chat.character_id) {
+			const characterRes = await fetch(`/api/characters/${chat.character_id}`, { headers });
+			if (characterRes.ok) {
+				character = await characterRes.json();
+			} else {
+				// Log error but don't fail the page load if character fetch fails
+				console.error(
+					'Failed to fetch character details:',
+					characterRes.status,
+					await characterRes.text()
+				);
+				// Optionally, you could return an error page here if character is essential
+				// error(500, 'Failed to load character details');
+			}
+		} else {
+			console.warn(`Chat session ${chatId} does not have an associated character_id.`);
+			// Handle cases where character_id might be missing if necessary
+		}
+
+
+		return { chat, messages, character }; // Return character along with chat and messages
 	} catch (e) {
 		console.error('Error loading chat data:', e);
 		error(500, 'An error occurred while processing your request');

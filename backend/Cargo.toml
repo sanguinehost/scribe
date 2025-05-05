@@ -67,7 +67,7 @@ futures = "0.3.31"
 async-stream = "0.3.6"
 
 # Added for TLS support
-axum-server = { version = "0.6", features = ["tls-rustls"] }
+axum-server = { version = "0.7.2", features = ["tls-rustls"] }
 
 # Added for sentence splitting (using ICU4X)
 icu_segmenter = { version = "1.5", features = ["compiled_data"] }

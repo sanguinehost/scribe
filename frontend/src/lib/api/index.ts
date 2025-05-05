@@ -1,7 +1,20 @@
 import { Result, err, ok } from 'neverthrow';
 import type { ApiError } from '$lib/errors/api';
 import { ApiResponseError, ApiNetworkError } from '$lib/errors/api';
-import type { User, Chat, Message, Vote, Suggestion, Session, AuthUser } from '$lib/types';
+import type { User, Message, Vote, Suggestion, Session, AuthUser, ScribeChatSession } from '$lib/types'; // Added ScribeChatSession, removed unused Chat
+
+// Placeholder for Character type - Define based on expected fields from GET /api/characters/{id}
+// Assuming these fields based on the task description and common patterns
+export interface Character {
+	id: string;
+	name: string; // Assuming name exists
+	description?: string; // Assuming description might exist
+	system_prompt?: string | null;
+	personality?: string | null;
+	scenario?: string | null;
+	// Add other fields as needed, e.g., avatar_url
+}
+
 
 // Type definitions for message parts
 export interface TextPart {
@@ -24,6 +37,9 @@ export interface MessageAttachment {
 export type CreateChatRequest = {
 	title: string;
 	character_id: string;
+	system_prompt?: string | null; // Added
+	personality?: string | null;   // Added
+	scenario?: string | null;      // Added
 };
 
 export type CreateMessageRequest = {
@@ -201,20 +217,34 @@ class ApiClient {
 	}
 
 	// Chat methods
-	async getChats(): Promise<Result<Chat[], ApiError>> {
-		return this.fetch<Chat[]>('/api/chats');
+	async getChats(): Promise<Result<ScribeChatSession[], ApiError>> { // Use ScribeChatSession from types.ts if it matches API response
+		return this.fetch<ScribeChatSession[]>('/api/chats');
 	}
 
-	async createChat(data: CreateChatRequest): Promise<Result<Chat, ApiError>> {
-		return this.fetch<Chat>('/api/chats', {
+	// Updated createChat to accept and send character details
+	async createChat(data: CreateChatRequest): Promise<Result<ScribeChatSession, ApiError>> { // Use ScribeChatSession
+		console.log(`[${new Date().toISOString()}] ApiClient.createChat: Creating chat with data:`, data);
+		return this.fetch<ScribeChatSession>('/api/chats', { // Use ScribeChatSession
 			method: 'POST',
 			body: JSON.stringify(data)
 		});
 	}
 
-	async getChatById(id: string): Promise<Result<Chat, ApiError>> {
-		return this.fetch<Chat>(`/api/chats/${id}`);
+	async getChatById(id: string): Promise<Result<ScribeChatSession, ApiError>> { // Use ScribeChatSession
+		return this.fetch<ScribeChatSession>(`/api/chats/${id}`); // Fixed type argument
 	}
+
+	// Character methods (Added)
+	async getCharacters(): Promise<Result<Character[], ApiError>> {
+		// Assuming an endpoint exists to list characters, adjust if needed
+		return this.fetch<Character[]>('/api/characters');
+	}
+
+	async getCharacter(id: string): Promise<Result<Character, ApiError>> {
+		console.log(`[${new Date().toISOString()}] ApiClient.getCharacter: Fetching character ${id}`);
+		return this.fetch<Character>(`/api/characters/${id}`);
+	}
+	// End Character methods
 
 	async deleteChatById(id: string): Promise<Result<void, ApiError>> {
 		return this.fetch<void>(`/api/chats/${id}`, {

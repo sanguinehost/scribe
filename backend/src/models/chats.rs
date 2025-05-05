@@ -306,6 +306,25 @@ pub struct GenerateResponse {
     pub ai_message: ChatMessage,
 }
 
+// --- Generate Endpoint Payload Structures ---
+
+/// Represents a single message within the chat history payload.
+#[derive(Deserialize, Serialize, Debug, Clone, Validate)]
+pub struct ApiChatMessage {
+    #[validate(length(min = 1))] // Role cannot be empty
+    pub role: String, // Expecting "user", "assistant", "system"
+    #[validate(length(min = 1))] // Content cannot be empty
+    pub content: String,
+}
+
+/// Request body for POST /api/chats/{session_id}/generate
+#[derive(Deserialize, Serialize, Debug, Validate)] // Added Validate
+pub struct GenerateChatRequest {
+    #[validate(length(min = 1))] // History must contain at least one message
+    #[validate(nested)] // Validate each ApiChatMessage within the Vec
+    pub history: Vec<ApiChatMessage>,
+    pub model: Option<String>, // Keep optional model override
+}
 // --- Chat Settings API Structures ---
 
 /// Response body for GET /api/chats/{id}/settings

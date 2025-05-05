@@ -32,18 +32,37 @@
 		context.setOpenMobile(false); // Close mobile sidebar on selection
 
 		try {
-			// Call API to create/get chat session
-			const result = await apiClient.createChat({ character_id: characterId, title: 'New Chat' }); // Use snake_case
+			// 1. Fetch full character details
+			const characterResult = await apiClient.getCharacter(characterId);
 
-			if (result.isOk()) { // Check using isOk()
-				const chat = result.value; // Access value using .value
+			if (characterResult.isErr()) {
+				console.error('Failed to fetch character details:', characterResult.error);
+				toast.error('Failed to load character details', { description: characterResult.error.message });
+				return; // Stop if character details can't be fetched
+			}
+
+			const character = characterResult.value;
+			const characterName = character.name || 'Character'; // Use fetched name or default
+
+			// 2. Call API to create chat session with character details
+			const createChatResult = await apiClient.createChat({
+				character_id: characterId,
+				title: `Chat with ${characterName}`, // Use character name in title
+				// Ensure null is passed if the properties are missing or null/undefined
+				system_prompt: character.system_prompt ?? null,
+				personality: character.personality ?? null,
+				scenario: character.scenario ?? null
+			});
+
+			if (createChatResult.isOk()) { // Check using isOk()
+				const chat = createChatResult.value; // Access value using .value
 				console.log('Chat session created/fetched:', chat.id);
 				goto(`/chat/${chat.id}`, { invalidateAll: true }); // Navigate to the chat page with the new chat ID
 			} else { // Error case
-				const apiError = result.error; // Access error using .error
+				const apiError = createChatResult.error; // Access error using .error
 				console.error('Failed to create chat session:', apiError);
 				toast.error('Failed to start chat session', { description: apiError.message });
-				// Handle error - maybe show a toast notification
+				// Handle error
 			}
 		} catch (error) {
 			console.error('Error starting chat session:', error);

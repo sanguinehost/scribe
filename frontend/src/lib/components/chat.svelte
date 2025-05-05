@@ -3,22 +3,24 @@
 	import { toast } from 'svelte-sonner';
 	import { ChatHistory } from '$lib/hooks/chat-history.svelte';
 	import ChatHeader from './chat-header.svelte';
-	import type { User } from '$lib/types'; // Updated import path
+	import type { User, ScribeCharacter } from '$lib/types'; // Updated import path & Add ScribeCharacter
 	import type { ScribeChatSession, ScribeChatMessage } from '$lib/types'; // Import Scribe types
 	import Messages from './messages.svelte';
 	import MultimodalInput from './multimodal-input.svelte';
-	import { untrack } from 'svelte';
+	import { untrack } from 'svelte'; // Remove incorrect effect import
 
 	let {
 		user,
 		chat,
 		readonly,
-		initialMessages
+		initialMessages,
+		character // Add character prop
 	}: {
 		user: User | undefined;
 		chat: ScribeChatSession | undefined;
 		initialMessages: ScribeChatMessage[];
 		readonly: boolean;
+		character: ScribeCharacter | null | undefined; // Define character prop type
 	} = $props();
 
 	const chatHistory = ChatHistory.fromContext();
@@ -31,6 +33,30 @@
 	// Removed attachments state as feature is disabled/not supported
 	let chatInput = $state(''); // Input state managed here
 	let currentAbortController = $state<AbortController | null>(null); // For cancelling stream
+
+	// Effect to add the character's first message if the chat is new/empty
+	$effect(() => { // Use the $effect rune directly
+		// Run this only once when the component initializes and messages state is set
+		// Check if the initialMessages prop was empty and we have a character with a first message
+		if (initialMessages.length === 0 && character?.first_mes) {
+			// Check if the message isn't already added (e.g., due to HMR or state restoration)
+			if (!messages.some(msg => msg.id === `first-message-${chat?.id}`)) {
+				const firstMessage: ScribeChatMessage = {
+					id: `first-message-${chat?.id}`, // Use chat ID for a stable temporary ID
+					session_id: chat?.id ?? 'unknown-session', // Handle potential undefined chat
+					message_type: 'Assistant',
+					content: character.first_mes,
+					created_at: chat?.created_at ?? new Date().toISOString(), // Use chat creation or current time
+					user_id: '', // Assistant messages don't have a user_id
+					loading: false
+				};
+				// Prepend the message to the state
+				messages = [firstMessage, ...messages];
+			}
+		}
+		// No cleanup needed, this effect runs once based on initial props
+	}); // Remove the dependency array, $effect tracks dependencies automatically
+
 
 	// --- Scribe Backend Interaction Logic ---
 
@@ -56,6 +82,26 @@
 			loading: false,
 		};
 		messages = [...messages, userMessage];
+
+		// --- Determine history to send ---
+		// Check if this is the first user message *before* adding the optimistic message
+		const isFirstUserMessage = messages.filter(m => m.message_type === 'User').length === 0;
+
+		// Map existing messages (excluding loading placeholders) to the API format
+		// Assuming backend expects { role: 'user' | 'assistant', content: string }
+		const existingHistoryForApi = messages
+			.filter(m => !m.loading && (m.message_type === 'User' || m.message_type === 'Assistant')) // Filter out non-user/assistant or loading
+			.map(m => ({
+				role: m.message_type === 'Assistant' ? 'assistant' : 'user',
+				content: m.content
+			}));
+
+		// Create the new user message object for the API history
+		const userMessageForApi = { role: 'user', content: content };
+
+		// Construct the final history to send
+		// The existingHistoryForApi already includes the character's first_mes if it was added by the $effect
+		const historyToSend = [...existingHistoryForApi, userMessageForApi];
 
 		// --- SSE Handling using Fetch API ---
 		currentAbortController = new AbortController();
@@ -83,7 +129,11 @@
 					'Content-Type': 'application/json',
 					'Accept': 'text/event-stream' // Indicate we want SSE
 				},
-				body: JSON.stringify({ content: content }),
+				// Send the constructed history instead of just the content
+				// NOTE: Sending BOTH history and top-level content based on the 422 error
+				// "missing field `content`". This suggests the running backend expects
+				// this structure, even if the current source code definition differs.
+				body: JSON.stringify({ content: content, history: historyToSend }), // Add top-level content field
 				signal: signal, // Pass the abort signal
 			});
 

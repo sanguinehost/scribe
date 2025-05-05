@@ -20,7 +20,7 @@ use tracing::{error, debug};
 use uuid::Uuid;
 
 // Crate imports
-use scribe_backend::models::chats::{MessageRole, NewChatMessageRequest};
+use scribe_backend::models::chats::{MessageRole, GenerateChatRequest, ApiChatMessage}; // Use GenerateChatRequest, ApiChatMessage
 use scribe_backend::errors::AppError;
 use scribe_backend::test_helpers::{self};
 
@@ -117,13 +117,19 @@ async fn generate_chat_response_streaming_success() {
         .expect("Mock AI client should be present")
         .set_stream_response(mock_stream_items);
 
-    let payload = NewChatMessageRequest {
-        content: "User message for stream".to_string(),
-        model: Some("test-stream-model".to_string()),
-    };
+   // Construct the new payload with history
+   let history = vec![
+       ApiChatMessage { role: "user".to_string(), content: "First prompt".to_string() },
+       ApiChatMessage { role: "assistant".to_string(), content: "First reply".to_string() },
+       ApiChatMessage { role: "user".to_string(), content: "User message for stream".to_string() },
+   ];
+   let payload = GenerateChatRequest {
+       history,
+       model: Some("test-stream-model".to_string()),
+   };
 
-    let request = Request::builder()
-        .method(Method::POST)
+   let request = Request::builder()
+       .method(Method::POST)
         .uri(format!("/api/chats/{}/generate", session.id))
         .header(header::COOKIE, &auth_cookie)
         .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
@@ -217,13 +223,17 @@ async fn generate_chat_response_streaming_ai_error() {
         .expect("Mock AI client should be present")
         .set_stream_response(mock_stream_items);
 
-    let payload = NewChatMessageRequest {
-        content: "User message for error stream".to_string(),
-        model: Some("test-stream-err-model".to_string()),
-    };
+   // Construct the new payload with history
+   let history = vec![
+       ApiChatMessage { role: "user".to_string(), content: "User message for error stream".to_string() },
+   ];
+   let payload = GenerateChatRequest {
+       history,
+       model: Some("test-stream-err-model".to_string()),
+   };
 
-    let request = Request::builder()
-        .method(Method::POST)
+   let request = Request::builder()
+       .method(Method::POST)
         .uri(format!("/api/chats/{}/generate", session.id))
         .header(header::COOKIE, &auth_cookie)
         .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
@@ -355,12 +365,16 @@ async fn generate_chat_response_streaming_unauthorized() {
     let context = test_helpers::setup_test_app(false).await;
     let session_id = Uuid::new_v4(); // Dummy ID
 
-    let payload = NewChatMessageRequest {
-        content: "test".to_string(),
-        model: None,
-    };
-    let request = Request::builder()
-        .method(Method::POST)
+   // Construct the new payload with history
+   let history = vec![
+       ApiChatMessage { role: "user".to_string(), content: "test".to_string() },
+   ];
+   let payload = GenerateChatRequest {
+       history,
+       model: None,
+   };
+   let request = Request::builder()
+       .method(Method::POST)
         .uri(format!("/api/chats/{}/generate", session_id))
         .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
         .body(Body::from(serde_json::to_vec(&payload).unwrap()))
@@ -388,12 +402,16 @@ async fn generate_chat_response_streaming_not_found() {
             .await;
     let non_existent_session_id = Uuid::new_v4();
 
-    let payload = NewChatMessageRequest {
-        content: "test".to_string(),
-        model: None,
-    };
-    let request = Request::builder()
-        .method(Method::POST)
+   // Construct the new payload with history
+   let history = vec![
+       ApiChatMessage { role: "user".to_string(), content: "test".to_string() },
+   ];
+   let payload = GenerateChatRequest {
+       history,
+       model: None,
+   };
+   let request = Request::builder()
+       .method(Method::POST)
         .uri(format!("/api/chats/{}/generate", non_existent_session_id))
         .header(header::COOKIE, &auth_cookie)
         .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
@@ -439,12 +457,16 @@ async fn generate_chat_response_streaming_forbidden() {
     )
     .await; // User who shouldn't have access
 
-    let payload = NewChatMessageRequest {
-        content: "test".to_string(),
-        model: None,
-    };
-    let request = Request::builder()
-        .method(Method::POST)
+// Construct the new payload with history
+let history = vec![
+ApiChatMessage { role: "user".to_string(), content: "test".to_string() },
+];
+let payload = GenerateChatRequest {
+history,
+model: None,
+};
+let request = Request::builder()
+.method(Method::POST)
         // User 2 tries to generate in User 1's session
         .uri(format!("/api/chats/{}/generate", session1.id))
         .header(header::COOKIE, auth_cookie2) // Use user 2's cookie
@@ -514,10 +536,24 @@ async fn test_rag_context_injection_real_ai() {
     tokio::time::sleep(Duration::from_secs(1)).await;
 
     let query_text = "What is Ouroboros in Greek mythology?"; // Query related to doc, but asks different question
-    let request_body = json!({ "content": query_text });
+    // Construct the new payload with history (including the RAG doc and the query)
+    let history = vec![
+        ApiChatMessage { role: "assistant".to_string(), content: document_content.to_string() }, // The RAG doc
+        ApiChatMessage { role: "user".to_string(), content: query_text.to_string() }, // The user query
+    ];
+    let payload = GenerateChatRequest {
+        history,
+        model: None, // Use default model
+    };
 
     let request = Request::builder()
         .method(Method::POST)
+        .uri(format!("/api/chats/{}/generate", session.id))
+        .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
+        .header(header::COOKIE, auth_cookie)
+        .header(header::ACCEPT, "text/event-stream") // Request streaming
+        .body(Body::from(serde_json::to_vec(&payload).unwrap())) // Use the new payload struct
+        .unwrap();
         .uri(format!("/api/chats/{}/generate", session.id))
         .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
         .header(header::COOKIE, auth_cookie)
@@ -588,13 +624,17 @@ async fn generate_chat_response_streaming_initiation_error() {
         .expect("Mock AI client should be present")
         .set_stream_response(mock_stream_items);
 
-    let payload = NewChatMessageRequest {
-        content: "User message for stream initiation error".to_string(),
-        model: Some("test-stream-init-err-model".to_string()),
-    };
+   // Construct the new payload with history
+   let history = vec![
+       ApiChatMessage { role: "user".to_string(), content: "User message for stream initiation error".to_string() },
+   ];
+   let payload = GenerateChatRequest {
+       history,
+       model: Some("test-stream-init-err-model".to_string()),
+   };
 
-    let request = Request::builder()
-        .method(Method::POST)
+   let request = Request::builder()
+       .method(Method::POST)
         .uri(format!("/api/chats/{}/generate", session.id))
         .header(header::COOKIE, &auth_cookie)
         .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
@@ -697,13 +737,17 @@ async fn generate_chat_response_streaming_error_before_content() {
         .expect("Mock AI client should be present")
         .set_stream_response(mock_stream_items);
 
-    let payload = NewChatMessageRequest {
-        content: "User message for error before content".to_string(),
-        model: Some("test-stream-err-b4-content-model".to_string()),
-    };
+   // Construct the new payload with history
+   let history = vec![
+       ApiChatMessage { role: "user".to_string(), content: "User message for error before content".to_string() },
+   ];
+   let payload = GenerateChatRequest {
+       history,
+       model: Some("test-stream-err-b4-content-model".to_string()),
+   };
 
-    let request = Request::builder()
-        .method(Method::POST)
+   let request = Request::builder()
+       .method(Method::POST)
         .uri(format!("/api/chats/{}/generate", session.id))
         .header(header::COOKIE, &auth_cookie)
         .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
@@ -814,13 +858,17 @@ async fn generate_chat_response_streaming_empty_response() {
         .expect("Mock AI client should be present")
         .set_stream_response(mock_stream_items);
 
-    let payload = NewChatMessageRequest {
-        content: "User message for empty stream response".to_string(),
-        model: Some("test-stream-empty-resp-model".to_string()),
-    };
+   // Construct the new payload with history
+   let history = vec![
+       ApiChatMessage { role: "user".to_string(), content: "User message for empty stream response".to_string() },
+   ];
+   let payload = GenerateChatRequest {
+       history,
+       model: Some("test-stream-empty-resp-model".to_string()),
+   };
 
-    let request = Request::builder()
-        .method(Method::POST)
+   let request = Request::builder()
+       .method(Method::POST)
         .uri(format!("/api/chats/{}/generate", session.id))
         .header(header::COOKIE, &auth_cookie)
         .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
@@ -930,13 +978,17 @@ async fn generate_chat_response_streaming_reasoning_chunk() {
         .expect("Mock AI client should be present")
         .set_stream_response(mock_stream_items);
 
-    let payload = NewChatMessageRequest {
-        content: "User message for reasoning chunk".to_string(),
-        model: Some("test-stream-reasoning-model".to_string()),
-    };
+   // Construct the new payload with history
+   let history = vec![
+       ApiChatMessage { role: "user".to_string(), content: "User message for reasoning chunk".to_string() },
+   ];
+   let payload = GenerateChatRequest {
+       history,
+       model: Some("test-stream-reasoning-model".to_string()),
+   };
 
-    let request = Request::builder()
-        .method(Method::POST)
+   let request = Request::builder()
+       .method(Method::POST)
         .uri(format!("/api/chats/{}/generate", session.id))
         .header(header::COOKIE, &auth_cookie)
         .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
@@ -1063,13 +1115,17 @@ async fn generate_chat_response_streaming_genai_json_error() {
         .expect("Mock AI client should be present")
         .set_stream_response(mock_stream_items);
 
-    let payload = NewChatMessageRequest {
-        content: "User message for JSON error stream".to_string(),
-        model: Some("test-stream-json-err-model".to_string()),
-    };
+   // Construct the new payload with history
+   let history = vec![
+       ApiChatMessage { role: "user".to_string(), content: "User message for JSON error stream".to_string() },
+   ];
+   let payload = GenerateChatRequest {
+       history,
+       model: Some("test-stream-json-err-model".to_string()),
+   };
 
-    let request = Request::builder()
-        .method(Method::POST)
+   let request = Request::builder()
+       .method(Method::POST)
         .uri(format!("/api/chats/{}/generate", session.id))
         .header(header::COOKIE, &auth_cookie)
         .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
@@ -1201,13 +1257,17 @@ async fn generate_chat_response_streaming_real_client_failure_repro() {
         test_helpers::db::create_test_chat_session(&context.app.db_pool, user.id, character.id)
             .await;
 
-    let payload = NewChatMessageRequest {
-        content: "A simple prompt likely to succeed in non-streaming, but might fail in streaming.".to_string(),
-        model: Some("gemini-1.5-flash-latest".to_string()), // Explicitly specify a model
-    };
+  // Construct the new payload with history
+  let history = vec![
+      ApiChatMessage { role: "user".to_string(), content: "A simple prompt likely to succeed in non-streaming, but might fail in streaming.".to_string() },
+  ];
+  let payload = GenerateChatRequest {
+      history,
+      model: Some("gemini-1.5-flash-latest".to_string()), // Explicitly specify a model
+  };
 
-    let request = Request::builder()
-        .method(Method::POST)
+  let request = Request::builder()
+      .method(Method::POST)
         .uri(format!("/api/chats/{}/generate", session.id))
         .header(header::COOKIE, &auth_cookie)
         .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())

@@ -53,6 +53,19 @@ export interface ScribeChatSession {
 	visibility: VisibilityType; // Added visibility property
 }
 
+/**
+ * Represents a character structure based on the Scribe backend API.
+ * (Minimal definition for now, add fields as needed)
+ */
+export interface ScribeCharacter {
+	id: string; // UUID
+	name: string;
+	first_mes: string;
+	system_prompt?: string | null; // Optional system prompt
+	personality?: string | null; // Optional personality description
+	scenario?: string | null; // Optional scenario description
+	// Add other relevant character fields here, e.g., description, avatar_url
+}
 // Add other shared types as needed...
 
 // Types for our application, previously defined in db/schema.ts

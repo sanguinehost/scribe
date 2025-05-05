@@ -11,11 +11,13 @@ use axum::{
 };
 use axum::http::header;
 use axum_login::AuthSession;
-use diesel::{QueryDsl, ExpressionMethods, RunQueryDsl, delete, BoolExpressionMethods};
-use crate::models::chats::{MessageRole, GenerateResponsePayload, ChatMessage};
+use diesel::{QueryDsl, ExpressionMethods, RunQueryDsl, delete, BoolExpressionMethods, SelectableHelper}; // Added SelectableHelper
+use crate::models::chats::{MessageRole, GenerateChatRequest, ApiChatMessage, ChatMessage, Chat}; // Use GenerateChatRequest, ApiChatMessage, add Chat
 use crate::errors::AppError;
-use crate::services::chat_service;
+use crate::services::chat_service; // Keep for now, might need parts later
 use crate::state::AppState;
+use crate::schema::chat_sessions; // Added chat_sessions schema
+use validator::Validate; // Added Validate
 use std::sync::Arc;
 use futures::StreamExt;
 use tracing::{debug, error, info, instrument, trace};
@@ -40,83 +42,84 @@ pub async fn generate_chat_response(
     auth_session: AuthSession<AuthBackend>,
     Path(session_id_str): Path<String>,
     headers: HeaderMap,
-    Json(payload): Json<GenerateResponsePayload>,
+    Json(payload): Json<GenerateChatRequest>, // <-- Use new payload struct
 ) -> Result<impl IntoResponse, AppError> {
-    info!("Received request to generate chat response");
-    trace!(payload = ?payload, "Received payload");
+    info!("Received request to generate chat response with history");
+    // Validate the incoming payload
+    payload.validate()?;
+    trace!(payload = ?payload, "Received validated payload");
 
     // We'll need to convert state to Arc<AppState> for consistent API
     let state = Arc::new(state);
-    
+
     // 1. Extract User and Validate Session ID
     let user = auth_session.user
         .ok_or_else(|| AppError::Unauthorized("User not found in session".to_string()))?;
-    let user_id_value = user.id; // Use the user ID from the session
+    let user_id_value = user.id;
     debug!(%user_id_value, "Extracted user from session");
 
     let session_id = Uuid::parse_str(&session_id_str)
         .map_err(|_| AppError::BadRequest("Invalid session UUID format".to_string()))?;
     debug!(%session_id, "Parsed session ID");
 
-    // 2. Authorization & Data Fetching
-    let generation_data = 
-        chat_service::get_session_data_for_generation(
-            &state.pool,
-            user_id_value,
-            session_id,
-            payload.content.clone(),
-        )
-        .await?; // Propagates NotFound, Forbidden, etc.
-    
-    // Unpack the data from the tuple
-    let (
-        history_for_generation,
-        system_prompt,
-        temperature,
-        max_output_tokens,
-        _frequency_penalty,
-        _presence_penalty,
-        _top_k,
-        top_p,
-        _repetition_penalty,
-        _min_p,
-        _top_a,
-        _seed,
-        _logit_bias,
-        model_name_from_settings,
-        _user_db_message_to_save,
-        _history_strategy,
-        _history_limit
-    ) = generation_data;
+    // 2. Authorization & Fetch Session Settings
+    // Fetch the chat session to check ownership and get settings
+    let chat_session = state.pool.get().await
+        .map_err(|e| AppError::DbPoolError(e.to_string()))?
+        .interact(move |conn| {
+            chat_sessions::table
+                .filter(chat_sessions::id.eq(session_id))
+                .select(Chat::as_select())
+                .first::<Chat>(conn)
+                .map_err(AppError::from) // Handles NotFound
+        })
+        .await
+        .map_err(|e| AppError::InternalServerError(format!("Interact error fetching chat: {}", e)))? // Handle interact error
+        ?; // Propagate NotFound error
+
+    // Check ownership
+    if chat_session.user_id != user_id_value {
+        return Err(AppError::Forbidden);
+    }
+    debug!(%session_id, "User authorized for chat session");
+
+    // Extract settings from the fetched chat session
+    let system_prompt = chat_session.system_prompt;
+    let temperature = chat_session.temperature;
+    let max_output_tokens = chat_session.max_output_tokens;
+    let top_p = chat_session.top_p;
+    let model_name_from_settings = chat_session.model_name;
+    // Note: Other settings like penalties, top_k etc. are not currently used by gemini_client but are available in chat_session
 
     // Use model from payload if provided, otherwise use the one from settings
-    let model_to_use = payload.model.unwrap_or(model_name_from_settings);
+    let model_to_use = payload.model.clone().unwrap_or(model_name_from_settings); // Clone payload model name
+    debug!(%model_to_use, "Determined model to use");
 
-    // 3. Prepare AI Request
-    let ai_client = state.ai_client.clone(); // Clone Arc<dyn AiServiceClient>
+    // 3. Prepare AI Request using history from payload
+    let ai_client = state.ai_client.clone();
 
-    // Map history to AI client's ChatMessage format
-    let mut messages_for_ai: Vec<genai::chat::ChatMessage> = history_for_generation
-        .into_iter()
-        .map(|(role, content)| genai::chat::ChatMessage {
-            role: match role {
-                MessageRole::User => genai::chat::ChatRole::User,
-                MessageRole::Assistant => genai::chat::ChatRole::Assistant,
-                MessageRole::System => genai::chat::ChatRole::System,
+    // Map history from payload (Vec<ApiChatMessage>) to AI client's format (Vec<genai::chat::ChatMessage>)
+    let mut messages_for_ai: Vec<genai::chat::ChatMessage> = payload.history
+        .iter()
+        .map(|msg| genai::chat::ChatMessage {
+            role: match msg.role.to_lowercase().as_str() {
+                "user" => genai::chat::ChatRole::User,
+                "assistant" | "model" => genai::chat::ChatRole::Assistant, // Treat "model" as "assistant"
+                "system" => genai::chat::ChatRole::System,
+                _ => genai::chat::ChatRole::User, // Default to user for unknown roles? Or error? Let's default for now.
             },
-            content: genai::chat::MessageContent::Text(content),
+            content: genai::chat::MessageContent::Text(msg.content.clone()),
             options: None,
         })
         .collect();
-    
-    // Add the current user message
-    messages_for_ai.push(genai::chat::ChatMessage {
-        role: genai::chat::ChatRole::User,
-        content: genai::chat::MessageContent::Text(payload.content.clone()),
-        options: None,
-    });
 
-    trace!(history_len = messages_for_ai.len(), %session_id, "Converted message history for AI");
+    // Validate that history is not empty (already done by payload validation)
+    if messages_for_ai.is_empty() {
+        error!(%session_id, "Payload history is empty after mapping");
+        return Err(AppError::BadRequest("Chat history cannot be empty".to_string()));
+    }
+
+    trace!(history_len = messages_for_ai.len(), %session_id, "Converted message history from payload for AI");
 
     // 4. Determine Response Type (SSE vs JSON) and Generate
     let accept_header = headers
@@ -158,9 +161,14 @@ pub async fn generate_chat_response(
                      let embedding_tracker = state.embedding_call_tracker.clone();
                      let session_id_sse = session_id;
                      let user_id_sse = user_id_value;
-                     let content_sse = payload.content.clone(); // Use original payload content
+                     // Get the last message from the history payload for saving
+                     let last_message_content_sse = payload.history.last().map(|m| m.content.clone()).unwrap_or_default();
 
                      tokio::spawn(async move {
+                         if last_message_content_sse.is_empty() {
+                             error!(session_id = %session_id_sse, "Cannot save empty user message (SSE)");
+                             return;
+                         }
                          let conn = match db_pool_sse.get().await {
                              Ok(conn) => conn,
                              Err(e) => {
@@ -175,7 +183,7 @@ pub async fn generate_chat_response(
                                      session_id_sse,
                                      user_id_sse,
                                      MessageRole::User,
-                                     content_sse,
+                                     last_message_content_sse, // Save last message content
                                  );
                                  diesel::insert_into(crate::schema::chat_messages::table)
                                      .values(&message)
@@ -469,11 +477,25 @@ pub async fn generate_chat_response(
             info!(%session_id, "Handling non-streaming JSON request");
             
             // --- Create and Save User Message (JSON path) ---
-            let user_message = crate::models::chats::DbInsertableChatMessage::new(
+            // Get the last message from the history payload
+            let last_user_message = payload.history.last()
+                .filter(|m| m.role.to_lowercase() == "user") // Ensure it's a user message
+                .ok_or_else(|| {
+                    error!(%session_id, "Last message in history is not from user or history is empty (JSON)");
+                    AppError::BadRequest("Last message in history must be from the user.".to_string())
+                })?;
+
+            let user_message_content = last_user_message.content.clone();
+            if user_message_content.is_empty() {
+                 error!(%session_id, "Cannot save empty user message (JSON)");
+                 return Err(AppError::BadRequest("User message content cannot be empty.".to_string()));
+            }
+
+            let user_message_to_save = crate::models::chats::DbInsertableChatMessage::new(
                 session_id,
                 user_id_value,
                 MessageRole::User,
-                payload.content.clone(),
+                user_message_content.clone(), // Use content from the last history message
             );
 
             // Save user message and get its ID
@@ -482,7 +504,7 @@ pub async fn generate_chat_response(
                     match conn
                         .interact(move |conn| {
                             diesel::insert_into(crate::schema::chat_messages::table)
-                                .values(&user_message)
+                                .values(&user_message_to_save) // Use the correct variable
                                 .returning(crate::schema::chat_messages::id)
                                 .get_result::<Uuid>(conn)
                         })
@@ -521,11 +543,11 @@ pub async fn generate_chat_response(
                 id: user_message_id,
                 session_id,
                 message_type: MessageRole::User,
-                content: payload.content.clone(),
-                created_at: chrono::Utc::now(),
+                content: user_message_content.clone(), // Use content from the last history message
+                created_at: chrono::Utc::now(), // Approximate time, DB has actual timestamp
                 user_id: user_id_value,
             };
-            
+
             let embedding_pipeline_service = state.embedding_pipeline_service.clone();
             match embedding_pipeline_service.process_and_embed_message(state.clone(), user_message_for_embedding).await {
                 Ok(_) => {
@@ -543,8 +565,8 @@ pub async fn generate_chat_response(
             let default_rag_limit = 3;
 
             let rag_context = match embedding_pipeline_service
-                .retrieve_relevant_chunks(state.clone(), session_id, &payload.content, default_rag_limit)
-                .await 
+                .retrieve_relevant_chunks(state.clone(), session_id, &user_message_content, default_rag_limit) // Use last user message content for RAG
+                .await
             {
                 Ok(chunks) => {
                     debug!(session_id = %session_id, chunk_count = chunks.len(), "Retrieved RAG chunks for non-streaming");
@@ -768,9 +790,14 @@ pub async fn generate_chat_response(
                          let embedding_tracker = state.embedding_call_tracker.clone();
                          let session_id_sse = session_id;
                          let user_id_sse = user_id_value;
-                         let content_sse = payload.content.clone(); // Use original payload content
+                         // Get the last message from the history payload for saving
+                         let last_message_content_sse_fallback = payload.history.last().map(|m| m.content.clone()).unwrap_or_default();
 
                          tokio::spawn(async move {
+                             if last_message_content_sse_fallback.is_empty() {
+                                 error!(session_id = %session_id_sse, "Cannot save empty user message (fallback SSE)");
+                                 return;
+                             }
                              let conn = match db_pool_sse.get().await {
                                  Ok(conn) => conn,
                                  Err(e) => {
@@ -785,7 +812,7 @@ pub async fn generate_chat_response(
                                          session_id_sse,
                                          user_id_sse,
                                          MessageRole::User,
-                                         content_sse,
+                                         last_message_content_sse_fallback, // Save last message content
                                      );
                                      diesel::insert_into(crate::schema::chat_messages::table)
                                          .values(&message)
@@ -1088,9 +1115,14 @@ pub async fn generate_chat_response(
                         let embedding_tracker = state.embedding_call_tracker.clone();
                         let session_id_sse = session_id;
                         let user_id_sse = user_id_value;
-                        let content_sse = payload.content.clone();
+                        // Get the last message from the history payload for saving
+                        let last_message_content_empty_fallback = payload.history.last().map(|m| m.content.clone()).unwrap_or_default();
 
                         tokio::spawn(async move {
+                            if last_message_content_empty_fallback.is_empty() {
+                                error!(session_id = %session_id_sse, "Cannot save empty user message (empty header fallback SSE)");
+                                return;
+                            }
                             let conn = match db_pool_sse.get().await {
                                 Ok(conn) => conn,
                                 Err(e) => {
@@ -1105,7 +1137,7 @@ pub async fn generate_chat_response(
                                         session_id_sse,
                                         user_id_sse,
                                         MessageRole::User,
-                                        content_sse,
+                                        last_message_content_empty_fallback, // Save last message content
                                     );
                                     diesel::insert_into(crate::schema::chat_messages::table)
                                         .values(&message)

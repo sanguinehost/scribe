@@ -10,4 +10,5 @@
 		initialMessages={data.messages}
 		readonly={data.user?.user_id !== data.chat.user_id}
 		user={data.user}
+		character={data.character}
 />

@@ -22,10 +22,10 @@ use tower::ServiceExt;
 use uuid::Uuid;
 
 // Crate imports
-use scribe_backend::models::chats::{MessageRole, NewChatMessageRequest, Chat};
+use scribe_backend::models::chats::{MessageRole, GenerateChatRequest, ApiChatMessage, Chat}; // Use GenerateChatRequest, ApiChatMessage
 use scribe_backend::errors::AppError;
 use scribe_backend::services::embedding_pipeline::{EmbeddingMetadata, RetrievedChunk};
-use scribe_backend::test_helpers::{self}; // Removed unused: PipelineCall
+use scribe_backend::test_helpers::{self};
 
 // Add a custom ChatCompletionResponse struct since there doesn't seem to be one in scribe_backend::models::chats
 #[derive(Debug, serde::Deserialize)]
@@ -131,13 +131,17 @@ async fn generate_chat_response_uses_session_settings() {
         .set_retrieve_response(Ok(mock_chunks));
     // --- End Mock RAG Response ---
 
-    let payload = NewChatMessageRequest {
-        content: "Hello, world!".to_string(),
-        model: Some("test-model".to_string()), // Provide a model name
-    };
+   // Construct the new payload with history
+   let history = vec![
+       ApiChatMessage { role: "user".to_string(), content: "Hello, world!".to_string() },
+   ];
+   let payload = GenerateChatRequest {
+       history,
+       model: Some("test-model".to_string()), // Provide a model name
+   };
 
-    let request = Request::builder()
-        .method(Method::POST)
+   let request = Request::builder()
+       .method(Method::POST)
         .uri(format!("/api/chats/{}/generate", session.id))
         .header(header::COOKIE, &auth_cookie)
         .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
@@ -303,14 +307,23 @@ async fn generate_chat_response_uses_default_settings() {
         .set_response(Ok(expected_response.clone()));
 
     // Request body
-    let request_body = NewChatMessageRequest {
-        // Use NewChatMessageRequest
-        content: "Tell me about defaults".to_string(), // Changed 'message' to 'content'
+    // Construct the new payload with history
+    let history = vec![
+        ApiChatMessage { role: "user".to_string(), content: "Tell me about defaults".to_string() },
+    ];
+    let payload = GenerateChatRequest {
+        history,
         model: Some("test-model-defaults".to_string()), // Added model field back based on struct def
     };
 
     let _request = Request::builder() // Prefix with _
         .method(Method::POST)
+        .uri(format!("/api/chats/{}/generate", session.id))
+        .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
+        .header(header::COOKIE, &auth_cookie)
+        .header(header::ACCEPT, mime::APPLICATION_JSON.as_ref()) // Add Accept header
+        .body(Body::from(serde_json::to_vec(&payload).unwrap())) // Use the new payload struct
+        .unwrap();
         .uri(format!("/api/chats/{}/generate", session.id))
         .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
         .header(header::COOKIE, &auth_cookie)
@@ -412,13 +425,17 @@ async fn generate_chat_response_forbidden() {
     )
     .await;
 
-    let payload = NewChatMessageRequest {
-        content: "Trying to generate...".to_string(),
-        model: Some("forbidden-model".to_string()),
-    };
+// Construct the new payload with history
+let history = vec![
+ApiChatMessage { role: "user".to_string(), content: "Trying to generate...".to_string() },
+];
+let payload = GenerateChatRequest {
+history,
+model: Some("forbidden-model".to_string()),
+};
 
-    let request = Request::builder()
-        .method(Method::POST)
+let request = Request::builder()
+.method(Method::POST)
         .uri(format!("/api/chats/{}/generate", session1.id)) // User 2 tries to generate in User 1's session
         .header(header::COOKIE, auth_cookie2)
         .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
@@ -458,12 +475,16 @@ async fn generate_chat_response_non_streaming_success() {
 
     // Since we're using the real AI client, we don't need to set up a mock response
 
-    let payload = NewChatMessageRequest {
-        content: "Hello, real Gemini!".to_string(),
-        model: Some("gemini-1.5-flash-latest".to_string()), // Or your desired model
-    };
- 
-    // Log the cookie being sent
+   // Construct the new payload with history
+   let history = vec![
+       ApiChatMessage { role: "user".to_string(), content: "Hello, real Gemini!".to_string() },
+   ];
+   let payload = GenerateChatRequest {
+       history,
+       model: Some("gemini-1.5-flash-latest".to_string()), // Or your desired model
+   };
+
+   // Log the cookie being sent
     tracing::debug!(auth_cookie = %auth_cookie, "Sending request with Cookie header");
  
     let request = Request::builder()
@@ -538,13 +559,17 @@ async fn generate_chat_response_json_stream_initiation_error() {
         .expect("Mock AI client should be present for this test")
         .set_stream_response(vec![Err(mock_error.clone())]);
 
-    let payload = NewChatMessageRequest {
-        content: "User message for non-streaming error".to_string(),
-        model: Some("test-non-stream-err-model".to_string()),
-    };
+   // Construct the new payload with history
+   let history = vec![
+       ApiChatMessage { role: "user".to_string(), content: "User message for non-streaming error".to_string() },
+   ];
+   let payload = GenerateChatRequest {
+       history,
+       model: Some("test-non-stream-err-model".to_string()),
+   };
 
-    let request = Request::builder()
-        .method(Method::POST)
+   let request = Request::builder()
+       .method(Method::POST)
         .uri(format!("/api/chats/{}/generate", session.id))
         .header(header::COOKIE, &auth_cookie)
         .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
@@ -619,8 +644,12 @@ async fn generate_chat_response_non_streaming_empty_content() {
         .set_response(Ok(mock_response));
 
     // Create the correct payload struct
-    let payload = NewChatMessageRequest {
-        content: "User message triggering empty AI response".to_string(),
+    // Construct the new payload with history
+    let history = vec![
+        ApiChatMessage { role: "user".to_string(), content: "User message triggering empty AI response".to_string() },
+    ];
+    let payload = GenerateChatRequest {
+        history,
         model: Some("test-non-stream-empty-content-model".to_string()),
     };
 
@@ -714,13 +743,17 @@ async fn generate_chat_response_non_streaming_empty_string_content() {
         .expect("Mock AI client should be present")
         .set_response(Ok(mock_response));
 
-    let payload = NewChatMessageRequest {
-        content: "User message for empty string response".to_string(),
-        model: Some("test-non-stream-empty-str-model".to_string()),
-    };
+   // Construct the new payload with history
+   let history = vec![
+       ApiChatMessage { role: "user".to_string(), content: "User message for empty string response".to_string() },
+   ];
+   let payload = GenerateChatRequest {
+       history,
+       model: Some("test-non-stream-empty-str-model".to_string()),
+   };
 
-    let request = Request::builder()
-        .method(Method::POST)
+   let request = Request::builder()
+       .method(Method::POST)
         .uri(format!("/api/chats/{}/generate", session.id))
         .header(header::COOKIE, &auth_cookie)
         .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
@@ -798,8 +831,12 @@ async fn generate_chat_response_sse_fallback_stream_initiation_error() {
         .set_stream_response(vec![Err(mock_error.clone())]);
 
     // Act: Make the generate request
-    let payload = NewChatMessageRequest {
-        content: "User message for non-streaming error".to_string(),
+    // Construct the new payload with history
+    let history = vec![
+        ApiChatMessage { role: "user".to_string(), content: "User message for non-streaming error".to_string() },
+    ];
+    let payload = GenerateChatRequest {
+        history,
         model: Some("test-non-stream-err-model".to_string()),
     };
 
@@ -873,8 +910,12 @@ async fn generate_chat_response_saves_message() {
         .set_response(Ok(mock_response));
 
     // Act: Make the generate request
-    let payload = NewChatMessageRequest {
-        content: "User message for non-streaming test".to_string(),
+    // Construct the new payload with history
+    let history = vec![
+        ApiChatMessage { role: "user".to_string(), content: "User message for non-streaming test".to_string() },
+    ];
+    let payload = GenerateChatRequest {
+        history,
         model: Some("test-non-stream-model".to_string()),
     };
 
@@ -993,13 +1034,17 @@ async fn generate_chat_response_triggers_embedding() {
         .mock_embedding_pipeline_service
         .set_retrieve_response(Ok(mock_chunks));
 
-    let payload = NewChatMessageRequest {
-        content: "User message for embedding test".to_string(),
-        model: Some("test-embedding-model".to_string()),
-    };
+   // Construct the new payload with history
+   let history = vec![
+       ApiChatMessage { role: "user".to_string(), content: "User message for embedding test".to_string() },
+   ];
+   let payload = GenerateChatRequest {
+       history,
+       model: Some("test-embedding-model".to_string()),
+   };
 
-    let request = Request::builder()
-        .method(Method::POST)
+   let request = Request::builder()
+       .method(Method::POST)
         .uri(format!("/api/chats/{}/generate", session.id))
         .header(header::COOKIE, &auth_cookie)
         .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
@@ -1097,9 +1142,15 @@ async fn generate_chat_response_embedding_fails_gracefully() {
         .mock_embedding_pipeline_service
         .set_retrieve_response(Err(mock_error.clone()));
 
-    // Now, make the generate request with a new (empty) message that will be ignored
-    let payload = NewChatMessageRequest {
-        content: "This message should not be saved".to_string(),
+    // Now, make the generate request with a new message. The handler should use the last message from history.
+    let history = vec![
+        // Include the original user message we saved earlier
+        ApiChatMessage { role: "user".to_string(), content: user_message.content.clone() },
+        // Add the new message that triggers the call (but whose content shouldn't be saved if RAG fails)
+        ApiChatMessage { role: "user".to_string(), content: "This message should trigger the call".to_string() },
+    ];
+    let payload = GenerateChatRequest {
+        history,
         model: Some("test-embedding-model".to_string()),
     };
 
