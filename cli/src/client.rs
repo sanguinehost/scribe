@@ -9,7 +9,7 @@ use scribe_backend::models::characters::CharacterMetadata;
 // Updated imports for chats models
 use futures_util::{Stream, StreamExt}; // Removed StreamExt, TryStreamExt // Add StreamExt back
 use reqwest_eventsource::{Event, EventSource}; // Added Event, EventSource
-use scribe_backend::models::chats::{ChatMessage, Chat, GenerateResponsePayload};
+use scribe_backend::models::chats::{ChatMessage, Chat, GenerateResponsePayload, ApiChatMessage}; // <-- Import ApiChatMessage
 use scribe_backend::models::users::User;
 use serde::Deserialize; // Added Deserialize
 use serde::Serialize; // Added for SerializableLoginPayload
@@ -163,6 +163,14 @@ async fn handle_non_streaming_chat_response(response: Response) -> Result<ChatMe
     }
 }
 
+// NEW: Struct for the streaming request payload, mirroring backend's GenerateChatRequest
+#[derive(Serialize)]
+struct CliGenerateChatRequest {
+    history: Vec<ApiChatMessage>,
+    // Add other fields like 'model' if the CLI needs to specify them
+    // model: Option<String>,
+}
+
 /// Trait for abstracting HTTP client interactions to allow mocking in tests.
 #[async_trait]
 pub trait HttpClient: Send + Sync {
@@ -192,7 +200,7 @@ pub trait HttpClient: Send + Sync {
     async fn stream_chat_response(
         &self,
         chat_id: Uuid,
-        message_content: &str,
+        history: Vec<ApiChatMessage>, // <-- Change parameter type and name
         request_thinking: bool,
     ) -> Result<Pin<Box<dyn Stream<Item = Result<StreamEvent, CliError>> + Send>>, CliError>;
 
@@ -510,7 +518,7 @@ impl HttpClient for ReqwestClientWrapper {
     async fn stream_chat_response(
         &self,
         chat_id: Uuid,
-        message_content: &str,
+        history: Vec<ApiChatMessage>, // <-- Change parameter type and name
         request_thinking: bool,
     ) -> Result<Pin<Box<dyn Stream<Item = Result<StreamEvent, CliError>> + Send>>, CliError> {
         // Build URL with query parameter for streaming
@@ -520,11 +528,8 @@ impl HttpClient for ReqwestClientWrapper {
 
         tracing::info!(%url, %chat_id, %request_thinking, "Initiating streaming chat response via HttpClient");
 
-        // Payload without request_thinking
-        let payload = GenerateResponsePayload {
-            content: message_content.to_string(),
-            model: None, // Model selection isn't part of this specific test endpoint for now
-        };
+        // Payload now includes history
+        let payload = CliGenerateChatRequest { history }; // <-- Use new payload struct
 
         // Build the request manually to use with EventSource
         let request_builder = self.client.post(url.clone()).json(&payload); // Clone URL, create builder

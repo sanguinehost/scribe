@@ -9,6 +9,8 @@ pub trait IoHandler {
     fn write_line(&mut self, line: &str) -> Result<(), CliError>;
     /// Writes a string to the output without appending a newline.
     fn write_raw(&mut self, text: &str) -> Result<(), CliError>;
+    /// Flushes the underlying output stream.
+    fn flush(&mut self) -> Result<(), CliError>;
     // Add other methods if needed, e.g., read_password
 }
 
@@ -34,6 +36,10 @@ impl IoHandler for StdIoHandler {
         print!("{}", text);
         stdout().flush().map_err(CliError::Io)?;
         Ok(())
+    }
+
+    fn flush(&mut self) -> Result<(), CliError> {
+        stdout().flush().map_err(CliError::Io)
     }
 }
 
@@ -82,6 +88,10 @@ mod tests {
         fn write_raw(&mut self, text: &str) -> Result<(), CliError> {
             write!(&mut self.output, "{}", text).map_err(CliError::Io)?;
             Ok(())
+        }
+
+        fn flush(&mut self) -> Result<(), CliError> {
+            Write::flush(&mut self.output).map_err(CliError::Io)
         }
     }
     

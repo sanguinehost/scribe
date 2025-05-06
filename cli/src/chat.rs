@@ -67,42 +67,74 @@ pub async fn run_chat_loop<IO: IoHandler, Http: HttpClient>(
 pub async fn run_stream_test_loop<IO: IoHandler, Http: HttpClient>(
     http_client: &Http,
     chat_id: Uuid,
-    user_message: &str,
+    initial_history: Vec<scribe_backend::models::chats::ApiChatMessage>, // <-- Change parameter type and add full path
     io_handler: &mut IO,
 ) -> Result<(), CliError> {
     let mut stream = http_client
-        .stream_chat_response(chat_id, user_message, true)
+        .stream_chat_response(chat_id, initial_history, true) // <-- Pass history
         .await?; // Request thinking
 
     let mut thinking_started = false;
     let mut content_started = false;
+    let mut current_line = String::new(); // Buffer for the current line
 
     while let Some(event_result) = stream.next().await {
         match event_result {
             Ok(StreamEvent::Thinking(step)) => {
                 if !thinking_started {
-                    io_handler.write_raw("\n[Thinking] ")?; // Start thinking block on new line
+                    io_handler.write_line("\n[Thinking]")?; // Start thinking block on new line
                     thinking_started = true;
                     content_started = false; // Reset content flag if thinking starts/resumes
+                    current_line.clear(); // Clear line buffer when switching modes
                 }
-                io_handler.write_raw(&format!("{}... ", step))?; // Print thinking step
+                // Print thinking steps immediately, maybe accumulate if they get long?
+                io_handler.write_line(&format!("- {}...", step))?; 
             }
             Ok(StreamEvent::Content(chunk)) => {
                 if thinking_started {
-                    io_handler.write_raw("\n")?; // End thinking block with a newline
+                    // Thinking steps were printed with write_line, so cursor is already on a new line.
                     thinking_started = false;
+                    current_line.clear(); // Clear buffer when switching from thinking to content
                 }
                 if !content_started {
-                    io_handler.write_raw("AI: ")?; // Prefix AI response only once
+                    io_handler.write_line("\nAI:")?; // Prefix AI response only once on a new line
                     content_started = true;
                 }
-                io_handler.write_raw(&chunk)?; // Print content chunk directly
+                
+                // Append the new chunk to the buffer
+                current_line.push_str(&chunk);
+                
+                // Process and print all complete lines found in the buffer
+                while let Some(newline_pos) = current_line.find('\n') {
+                    // Drain the line including the newline character
+                    let line_to_print = current_line.drain(..=newline_pos).collect::<String>();
+                    // Print the complete line using write_raw to preserve the newline
+                    io_handler.write_raw(&line_to_print)?;
+                }
+                
+                // After printing all complete lines, print any remaining partial line *without* a newline
+                // and leave it in the buffer for the next chunk to append to.
+                if !current_line.is_empty() {
+                     io_handler.write_raw(&current_line)?;
+                     io_handler.flush()?; // Flush to make the partial line visible
+                }
+                // DO NOT clear current_line here - let it accumulate
             }
             Ok(StreamEvent::Done) => {
-                io_handler.write_raw("\n")?; // Ensure a newline after the response is fully streamed
+                // Print any remaining buffered content before finishing
+                if !current_line.is_empty() {
+                    io_handler.write_raw(&current_line)?;
+                    io_handler.flush()?;
+                }
+                io_handler.write_raw("\n")?; // Ensure a final newline
                 break; // Stream finished successfully
             }
             Err(e) => {
+                 // Print any remaining buffered content before error message
+                if !current_line.is_empty() {
+                    io_handler.write_raw(&current_line)?;
+                    io_handler.flush()?;
+                }
                 if thinking_started || content_started {
                     io_handler.write_raw("\n")?; // Ensure newline if stream errors out mid-response
                 }
@@ -112,8 +144,13 @@ pub async fn run_stream_test_loop<IO: IoHandler, Http: HttpClient>(
             }
         }
     }
+    // Ensure a final newline if the loop finished cleanly but maybe without a Done event
     if thinking_started || content_started {
-        io_handler.write_raw("\n")?; // Ensure a final newline if the stream ended cleanly
+         if !current_line.is_empty() { // Print remaining buffer if loop exited unexpectedly
+             io_handler.write_raw(&current_line)?;
+             io_handler.flush()?;
+         }
+        io_handler.write_raw("\n")?;
     }
     io_handler.write_line("--------------------------------------------------")?;
     Ok(())

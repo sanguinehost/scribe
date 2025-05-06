@@ -43,10 +43,11 @@ struct Args {
 #[tokio::main]
 async fn main() -> Result<()> {
     let filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| "scribe_cli=debug,scribe_cli::client=trace,scribe_backend=warn".into());
+        .unwrap_or_else(|_| "scribe_cli=info,scribe_backend=warn".into()); // Less verbose default
     fmt()
         .with_env_filter(filter)
         .with_target(true)
+        .with_writer(std::io::stderr)
         .compact()
         .init();
 

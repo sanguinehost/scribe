@@ -5,7 +5,7 @@ use crate::error::CliError;
 use crate::io::IoHandler;
 // Added missing Stream trait import
 use scribe_backend::models::auth::LoginPayload;
-use scribe_backend::models::characters::CharacterMetadata;
+use scribe_backend::models::{characters::CharacterMetadata, chats::ApiChatMessage}; // <-- Import ApiChatMessage
 use scribe_backend::models::chats::MessageRole;
 use scribe_backend::models::users::User;
 use std::path::Path;
@@ -432,9 +432,17 @@ pub async fn handle_stream_test_action<Http: HttpClient, IO: IoHandler>(
         return Ok(());
     }
 
+    // +++ Construct initial history payload +++
+    let initial_history = vec![ApiChatMessage {
+        // Assuming ApiChatMessage has these fields based on backend usage
+        role: "user".to_string(), // Role should be "user"
+        content: user_message.clone(), // Clone the user message content
+    }];
+    // +++ End construction +++
+
     // 4. Run the Stream Test Loop (function to be defined in chat.rs)
     io_handler.write_line("\nInitiating streaming response...")?;
-    if let Err(e) = run_stream_test_loop(http_client, chat_id, &user_message, io_handler).await {
+    if let Err(e) = run_stream_test_loop(http_client, chat_id, initial_history, io_handler).await { // <-- Pass history
         tracing::error!(error = ?e, "Stream test loop failed");
         io_handler.write_line(&format!("Stream test encountered an error: {}", e))?;
         // Return Ok here as the action itself didn't fail, the loop did.
@@ -555,6 +563,12 @@ mod tests {
         fn write_raw(&mut self, text: &str) -> Result<(), CliError> {
             // For the mock, just store the raw text like write_line
             self.outputs.borrow_mut().push(text.to_string());
+            Ok(())
+        }
+
+        // Add dummy flush implementation for tests
+        fn flush(&mut self) -> Result<(), CliError> {
+            // No-op for mock handler, just return Ok
             Ok(())
         }
     }
