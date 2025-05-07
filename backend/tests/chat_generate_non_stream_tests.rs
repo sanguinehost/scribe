@@ -324,12 +324,6 @@ async fn generate_chat_response_uses_default_settings() {
         .header(header::ACCEPT, mime::APPLICATION_JSON.as_ref()) // Add Accept header
         .body(Body::from(serde_json::to_vec(&payload).unwrap())) // Use the new payload struct
         .unwrap();
-        .uri(format!("/api/chats/{}/generate", session.id))
-        .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
-        .header(header::COOKIE, &auth_cookie)
-        .header(header::ACCEPT, mime::APPLICATION_JSON.as_ref()) // Add Accept header
-        .body(Body::from(serde_json::to_vec(&request_body).unwrap()))
-        .unwrap();
 
     let response = context.app.router.clone().oneshot(_request).await.unwrap();
     assert_eq!(response.status(), StatusCode::OK);
@@ -604,7 +598,7 @@ async fn generate_chat_response_json_stream_initiation_error() {
         "Should save user message even if SSE stream initiation fails"
     );
     assert_eq!(messages[0].message_type, MessageRole::User);
-    assert_eq!(messages[0].content, payload.content);
+    assert_eq!(messages[0].content, payload.history.last().unwrap().content);
 }
 
 #[ignore = "Requires mock AI setup to return empty content, non-streaming path needs check"]

@@ -12,7 +12,7 @@ use tower::ServiceExt;
 use uuid::Uuid;
 
 // Crate imports
-use scribe_backend::models::chats::{ChatMessage, MessageResponse, MessageRole}; // Added MessageResponse
+use scribe_backend::models::chats::{MessageResponse, MessageRole}; // Added MessageResponse
 use scribe_backend::test_helpers;
 
 // --- Tests for GET /api/chats/{id}/messages ---

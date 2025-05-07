@@ -20,11 +20,9 @@ use uuid::Uuid;
 // Crate imports
 use scribe_backend::models::chats::{
     Chat, // Renamed from ChatSession
-    MessageRole,
-    // Remove unused NewChatSession
-    // NewChatSession,
-    // Removed NewChatSession, SettingsTuple, DbInsertableChatMessage,
-    NewChatMessageRequest,
+    MessageRole, // Keep for other tests if any
+    GenerateChatRequest,   // Add this
+    ApiChatMessage,        // Add this
     UpdateChatSettingsRequest,
 };
 use scribe_backend::test_helpers;
@@ -855,7 +853,7 @@ async fn generate_chat_response_history_sliding_window_messages() {
     }));
 
     // Generate response
-    let payload = NewChatMessageRequest { content: "User message 4".to_string(), model: None };
+    let payload = GenerateChatRequest { history: vec![ApiChatMessage { role: "user".to_string(), content: "User message 4".to_string() }], model: None };
     let request = Request::builder()
         .method(Method::POST)
         .uri(format!("/api/chats/{}/generate", session.id))
@@ -905,7 +903,7 @@ async fn generate_chat_response_history_sliding_window_tokens() {
     }));
 
     // Generate response
-    let payload = NewChatMessageRequest { content: "User message 3".to_string(), model: None };
+    let payload = GenerateChatRequest { history: vec![ApiChatMessage { role: "user".to_string(), content: "User message 3".to_string() }], model: None };
     let request = Request::builder()
         .method(Method::POST)
         .uri(format!("/api/chats/{}/generate", session.id))
@@ -951,7 +949,7 @@ async fn test_generate_chat_response_history_truncate_tokens() {
     }));
 
     // Generate response
-    let payload = NewChatMessageRequest { content: "User message 3".to_string(), model: None };
+    let payload = GenerateChatRequest { history: vec![ApiChatMessage { role: "user".to_string(), content: "User message 3".to_string() }], model: None };
     let request = Request::builder()
         .method(Method::POST)
         .uri(format!("/api/chats/{}/generate", session.id))
@@ -1035,7 +1033,7 @@ async fn generate_chat_response_history_none() {
     }));
 
     // Generate response
-    let payload = NewChatMessageRequest { content: "User message 2".to_string(), model: None };
+    let payload = GenerateChatRequest { history: vec![ApiChatMessage { role: "user".to_string(), content: "User message 2".to_string() }], model: None };
     let request = Request::builder()
         .method(Method::POST)
         .uri(format!("/api/chats/{}/generate", session.id))
@@ -1082,7 +1080,7 @@ async fn generate_chat_response_history_truncate_tokens_limit_30() {
     }));
 
     // Generate response
-    let payload = NewChatMessageRequest { content: "User message 3".to_string(), model: None };
+    let payload = GenerateChatRequest { history: vec![ApiChatMessage { role: "user".to_string(), content: "User message 3".to_string() }], model: None };
     let request = Request::builder()
         .method(Method::POST)
         .uri(format!("/api/chats/{}/generate", session.id))
@@ -1137,7 +1135,7 @@ async fn generate_chat_response_history_truncate_tokens_limit_25() {
     }));
 
     // Generate response
-    let payload = NewChatMessageRequest { content: "User message 3".to_string(), model: None };
+    let payload = GenerateChatRequest { history: vec![ApiChatMessage { role: "user".to_string(), content: "User message 3".to_string() }], model: None };
     let request = Request::builder()
         .method(Method::POST)
         .uri(format!("/api/chats/{}/generate", session.id))
@@ -1206,7 +1204,7 @@ async fn test_generate_chat_response_llm_error_streaming() {
         .set_stream_response(vec![Err(mock_error.clone())]); // Wrap the error in a vec!
 
     // Act: Make the generate stream request
-    let payload = NewChatMessageRequest { content: "User message 3".to_string(), model: None };
+    let payload = GenerateChatRequest { history: vec![ApiChatMessage { role: "user".to_string(), content: "User message 3".to_string() }], model: None };
     let request = Request::builder()
         .method(Method::POST)
         .uri(format!("/api/chats/{}/generate", session.id))

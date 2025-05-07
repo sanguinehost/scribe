@@ -58,6 +58,9 @@ use tower_cookies::{CookieManagerLayer}; // Removed unused: Key as TowerCookieKe
 use tower_sessions::{Expiry, SessionManagerLayer};
 use tracing::warn;
 use uuid::Uuid;
+use serde_json::json;
+use std::str::FromStr;
+use crate::models::chats::UpdateChatSettingsRequest;
 
 // --- START Placeholder Mock Definitions ---
 // TODO: Implement proper mocks based on required functionality
@@ -917,6 +920,9 @@ pub mod db {
             history_management_strategy: new_history_management_strategy,
             history_management_limit: new_history_management_limit,
             model_name: new_model_name,
+            // Add Gemini-specific options
+            gemini_thinking_budget: None,
+            gemini_enable_code_execution: None,
         };
 
         let conn = pool.get().await.expect("Failed to get DB conn");
@@ -960,10 +966,12 @@ pub mod db {
         Option<BigDecimal>, // top_a
         Option<i32>,        // seed
         Option<Value>,      // logit_bias
-        // History Management Fields
         String,             // history_management_strategy
         i32,                // history_management_limit
         String,             // model_name
+        // -- Gemini Specific Options --
+        Option<i32>,        // gemini_thinking_budget
+        Option<bool>,       // gemini_enable_code_execution
     );
 
     pub async fn get_chat_session_settings(
@@ -988,10 +996,12 @@ pub mod db {
                     top_a,
                     seed,
                     logit_bias,
-                    // Select the new history management fields
                     history_management_strategy,
                     history_management_limit,
                     model_name,
+                    // -- Gemini Specific Options --
+                    gemini_thinking_budget,
+                    gemini_enable_code_execution,
                 ))
                 .first::<SettingsTuple>(conn) // Use the corrected SettingsTuple
                 .optional()
@@ -1476,3 +1486,37 @@ pub mod config {
 }
 
 // ... rest of file (e.g., Mock Implementations if not already pub) ...
+
+pub async fn test_update_chat_settings_success(app: &TestApp, user_bearer_token: &str, chat_id: Uuid) {
+    let client = reqwest::Client::new();
+    let update_request = UpdateChatSettingsRequest {
+        system_prompt: Some("New system prompt for success test".to_string()),
+        temperature: Some(BigDecimal::from_str("0.85").unwrap()),
+        max_output_tokens: Some(2048),
+        frequency_penalty: Some(BigDecimal::from_str("0.1").unwrap()),
+        presence_penalty: Some(BigDecimal::from_str("0.2").unwrap()),
+        top_k: Some(60),
+        top_p: Some(BigDecimal::from_str("0.92").unwrap()),
+        repetition_penalty: Some(BigDecimal::from_str("1.05").unwrap()),
+        min_p: Some(BigDecimal::from_str("0.03").unwrap()),
+        top_a: Some(BigDecimal::from_str("0.01").unwrap()),
+        seed: Some(54321),
+        logit_bias: Some(json!({ "123": 10, "456": -10 })),
+        history_management_strategy: Some("truncate_tokens".to_string()),
+        history_management_limit: Some(3000),
+        model_name: Some("test-model-updated-success".to_string()),
+        gemini_thinking_budget: Some(1024),
+        gemini_enable_code_execution: Some(true),
+    };
+
+    // Execute request but prefix variables with underscore to indicate they are intentionally unused
+    // in this stub implementation
+    let _client = client;
+    let _update_request = update_request;
+    let _app = app;
+    let _user_bearer_token = user_bearer_token;
+    let _chat_id = chat_id;
+    
+    // Actual implementation would make an API call here
+    // For now, the function just demonstrates the structure of the UpdateChatSettingsRequest
+}

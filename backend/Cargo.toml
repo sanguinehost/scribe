@@ -46,7 +46,7 @@ mime = "0.3.17"
 password-auth = { version = "1.0.0", features = ["argon2"] }
 hex = "0.4.3"
 
-genai = "0.2.2"
+genai = { path = "/home/socol/Workspace/rust-genai" }
 
 reqwest = { version = "0.12.15", features = ["json", "cookies", "rustls-tls", "multipart"], default-features = false }
 reqwest-middleware = { version = "0.4.2" }

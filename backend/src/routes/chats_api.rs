@@ -23,6 +23,9 @@ use uuid::Uuid;
 use crate::state::AppState;
 use crate::models::characters::Character; // Added Character model
 use crate::schema::characters; // Added characters schema
+use tracing::{debug, error, info, instrument, trace}; // Ensure tracing is properly imported
+use std::sync::Arc;
+use crate::services::chat_service;
 
 // Shorthand for auth session
 type CurrentAuthSession = AuthSession<AuthBackend>;
@@ -73,66 +76,49 @@ pub async fn create_chat_handler(
     Json(payload): Json<CreateChatRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let user = auth_session.user.ok_or(AppError::Unauthorized("Not logged in".to_string()))?;
-    let pool = state.pool.clone();
-    let character_id_to_check = payload.character_id; // Store for use in interact closure
-    let user_id_to_check = user.id; // Store for use in interact closure
-
-    // --- Verify Character Existence and Ownership ---
-    let character = pool.get().await
-        .map_err(|e| AppError::DbPoolError(e.to_string()))?
-        .interact(move |conn| {
-            characters::table
-                .filter(characters::id.eq(character_id_to_check))
-                .select(Character::as_select())
-                .first::<Character>(conn)
-                .map_err(AppError::from) // Handles NotFound -> AppError::NotFound
-                .and_then(|character| {
-                    if character.user_id != user_id_to_check {
-                        Err(AppError::Forbidden) // Character exists but belongs to another user
-                    } else {
-                        Ok(character) // Return character if it exists and belongs to the user
-                    }
-                })
-        })
-        .await
-        .map_err(|e| AppError::InternalServerError(e.to_string()))? // Handle interact error
-        ?; // Propagate NotFound or Forbidden errors
-    // --- End Verification ---
-
-    // Generate a default title if none provided
-    let title = if payload.title.trim().is_empty() {
-        format!("Chat with {}", character.name)
-    } else {
-        payload.title
-    };
-
-    let new_chat = NewChat {
-        id: Uuid::new_v4(),
-        user_id: user.id,
-        character_id: payload.character_id,
-        title: Some(title),
-        created_at: Utc::now(),
-        updated_at: Utc::now(),
-        history_management_strategy: "message_window".to_string(), // Default value
-        history_management_limit: 20, // Default value
-        model_name: "gemini-2.5-pro-preview-03-25".to_string(), // Default model
-        visibility: Some("private".to_string()),
-    };
     
-    let chat = pool.get().await
-        .map_err(|e| AppError::DbPoolError(e.to_string()))?
-        .interact(move |conn| {
-            diesel::insert_into(chat_sessions::table)
-                .values(new_chat)
-                .returning(Chat::as_select()) // Use SelectableHelper trait
-                .get_result::<Chat>(conn) // Specify return type
-                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
-        })
-        .await
-        .map_err(|e| AppError::InternalServerError(e.to_string()))?
-        ?;
+    // First, verify the character exists and belongs to the user
+    tracing::info!(%user.id, character_id=%payload.character_id, "Creating chat session");
+    
+    // Use the service function that properly handles system_prompt and first_mes
+    let app_state = Arc::new(state.clone()); // Clone the state before moving it
+    let chat = chat_service::create_session_and_maybe_first_message(
+        app_state, 
+        user.id, 
+        payload.character_id
+    ).await?;
+    
+    // Generate a custom title if provided (default title is set by the service)
+    if !payload.title.trim().is_empty() {
+        let pool = state.pool.clone();
+        let session_id = chat.id;
+        let custom_title = payload.title.clone();
+        
+        // Update just the title field
+        pool.get().await
+            .map_err(|e| AppError::DbPoolError(e.to_string()))?
+            .interact(move |conn| {
+                diesel::update(chat_sessions::table.find(session_id))
+                    .set(chat_sessions::title.eq(Some(custom_title)))
+                    .execute(conn)
+                    .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
+            })
+            .await
+            .map_err(|e| AppError::InternalServerError(e.to_string()))?
+            ?;
+    }
+    
+    // Add detailed logging for debugging the chat session after creation
+    tracing::info!(
+        message = "Chat session created in handler",
+        chat_id = %chat.id,
+        character_id = %chat.character_id,
+        user_id = %chat.user_id,
+        system_prompt = ?chat.system_prompt,
+        chat = ?chat
+    );
 
-    // Return the full Chat struct directly
+    // Return the fully configured Chat struct
     Ok((StatusCode::CREATED, Json(chat)))
 }
 
@@ -688,24 +674,8 @@ pub async fn get_chat_settings_handler(
         return Err(AppError::NotFound(format!("Chat session {} not found for user {}", id, user.id)));
     }
 
-    // Construct the response from the Chat struct
-    let response = ChatSettingsResponse {
-        system_prompt: chat.system_prompt,
-        temperature: chat.temperature,
-        max_output_tokens: chat.max_output_tokens,
-        frequency_penalty: chat.frequency_penalty,
-        presence_penalty: chat.presence_penalty,
-        top_k: chat.top_k,
-        top_p: chat.top_p,
-        repetition_penalty: chat.repetition_penalty,
-        min_p: chat.min_p,
-        top_a: chat.top_a,
-        seed: chat.seed,
-        logit_bias: chat.logit_bias,
-        history_management_strategy: chat.history_management_strategy,
-        history_management_limit: chat.history_management_limit,
-        model_name: chat.model_name,
-    };
+    // Construct the response from the Chat struct using From trait
+    let response = ChatSettingsResponse::from(chat);
 
     Ok(Json(response))
 }

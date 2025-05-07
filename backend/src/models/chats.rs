@@ -17,7 +17,6 @@ use std::io::Write;
 
 // Main Chat model (similar to the frontend Chat type)
 // Type alias for the tuple returned when selecting/returning chat settings
-// NOTE: Derives moved to the Chat struct below.
 pub type SettingsTuple = (
     Option<String>,     // system_prompt
     Option<BigDecimal>, // temperature
@@ -34,6 +33,9 @@ pub type SettingsTuple = (
     String,             // history_management_strategy
     i32,                // history_management_limit
     String,             // model_name
+    // -- Gemini Specific Options --
+    Option<i32>,        // gemini_thinking_budget
+    Option<bool>,       // gemini_enable_code_execution
 );
 #[derive(Queryable, Selectable, Identifiable, Serialize, Deserialize, Debug, Clone)]
 #[diesel(table_name = chat_sessions)]
@@ -61,6 +63,9 @@ pub struct Chat {
     pub history_management_limit: i32,
     pub model_name: String,
     pub visibility: Option<String>, // Added based on migration 2025-05-10-100002
+    // -- Gemini Specific Options --
+    pub gemini_thinking_budget: Option<i32>,      // Corresponds to u32, but Diesel might prefer i32 for Option<INT4>
+    pub gemini_enable_code_execution: Option<bool>,
 }
 
 // New Chat for insertion
@@ -348,6 +353,9 @@ pub struct ChatSettingsResponse {
     pub history_management_limit: i32,
     // Model Name
     pub model_name: String,
+    // Gemini Specific Options
+    pub gemini_thinking_budget: Option<i32>,
+    pub gemini_enable_code_execution: Option<bool>,
 }
 // Implement From<Chat> for ChatSettingsResponse
 impl From<Chat> for ChatSettingsResponse {
@@ -368,6 +376,8 @@ impl From<Chat> for ChatSettingsResponse {
             history_management_strategy: chat.history_management_strategy,
             history_management_limit: chat.history_management_limit,
             model_name: chat.model_name,
+            gemini_thinking_budget: chat.gemini_thinking_budget,
+            gemini_enable_code_execution: chat.gemini_enable_code_execution,
         }
     }
 }
@@ -407,15 +417,22 @@ pub struct UpdateChatSettingsRequest {
     pub history_management_limit: Option<i32>,
     // Model Name
     pub model_name: Option<String>,
+    // Gemini Specific Options
+    pub gemini_thinking_budget: Option<i32>,
+    pub gemini_enable_code_execution: Option<bool>,
 }
 
 // Custom validation function for history_management_strategy (called only when Some)
 fn validate_optional_history_strategy(strategy: &String) -> Result<(), ValidationError> {
+    // Check if the strategy is a known value
     match strategy.as_str() {
-        "sliding_window_tokens" | "sliding_window_messages" | "truncate_tokens" | "none" => Ok(()),
-        _ => Err(ValidationError::new("invalid_history_strategy")),
+        "none" | "sliding_window_messages" | "sliding_window_tokens" | "truncate_tokens" | "message_window" => Ok(()),
+        _ => {
+            let mut err = ValidationError::new("unknown_strategy");
+            err.message = Some(format!("Unknown history management strategy: {}. Allowed values are: none, sliding_window_messages, message_window, sliding_window_tokens, truncate_tokens", strategy).into());
+            Err(err)
+        }
     }
-    // No need to handle None case here, validator only calls this for Some(value)
 }
 
 // Custom validation function for optional temperature (0.0 to 2.0)
@@ -557,6 +574,8 @@ mod tests {
             history_management_limit: 4096,                 // Add default test value
             model_name: "gemini-2.5-flash-preview-04-17".to_string(),
             visibility: Some("private".to_string()), // Added default test value
+            gemini_thinking_budget: Some(100),
+            gemini_enable_code_execution: Some(true),
         }
     }
 
@@ -597,6 +616,8 @@ mod tests {
         assert_eq!(original.history_management_limit, cloned.history_management_limit);
         assert_eq!(original.model_name, cloned.model_name);
         assert_eq!(original.visibility, cloned.visibility);
+        assert_eq!(original.gemini_thinking_budget, cloned.gemini_thinking_budget);
+        assert_eq!(original.gemini_enable_code_execution, cloned.gemini_enable_code_execution);
     }
 
     #[test]
@@ -731,6 +752,8 @@ mod tests {
             history_management_strategy: "none".to_string(),
             history_management_limit: 4096,
             model_name: "gemini-2.5-flash-preview-04-17".to_string(),
+            gemini_thinking_budget: Some(1000),
+            gemini_enable_code_execution: Some(true),
         }
     }
 
@@ -756,6 +779,8 @@ mod tests {
         assert_eq!(original.history_management_strategy, cloned.history_management_strategy);
         assert_eq!(original.history_management_limit, cloned.history_management_limit);
         assert_eq!(original.model_name, cloned.model_name);
+        assert_eq!(original.gemini_thinking_budget, cloned.gemini_thinking_budget);
+        assert_eq!(original.gemini_enable_code_execution, cloned.gemini_enable_code_execution);
     }
 
     // Helper function to create a sample update chat settings request
@@ -776,6 +801,8 @@ mod tests {
             history_management_strategy: Some("sliding_window_tokens".to_string()),
             history_management_limit: Some(2000),
             model_name: Some("gemini-2.5-pro-preview-03-25".to_string()),
+            gemini_thinking_budget: Some(512),
+            gemini_enable_code_execution: Some(false),
         }
     }
 
@@ -800,6 +827,9 @@ mod tests {
         // Add assertions for new fields
         assert_eq!(original.history_management_strategy, cloned.history_management_strategy);
         assert_eq!(original.history_management_limit, cloned.history_management_limit);
+        assert_eq!(original.model_name, cloned.model_name);
+        assert_eq!(original.gemini_thinking_budget, cloned.gemini_thinking_budget);
+        assert_eq!(original.gemini_enable_code_execution, cloned.gemini_enable_code_execution);
     }
 
     #[test]
@@ -815,6 +845,8 @@ mod tests {
         assert_eq!(settings.history_management_strategy, deserialized.history_management_strategy);
         assert_eq!(settings.history_management_limit, deserialized.history_management_limit);
         assert_eq!(settings.model_name, deserialized.model_name);
+        assert_eq!(settings.gemini_thinking_budget, deserialized.gemini_thinking_budget);
+        assert_eq!(settings.gemini_enable_code_execution, deserialized.gemini_enable_code_execution);
     }
 
     #[test]
@@ -829,6 +861,9 @@ mod tests {
         // Add assertions for new fields
         assert_eq!(settings.history_management_strategy, deserialized.history_management_strategy);
         assert_eq!(settings.history_management_limit, deserialized.history_management_limit);
+        assert_eq!(settings.model_name, deserialized.model_name);
+        assert_eq!(settings.gemini_thinking_budget, deserialized.gemini_thinking_budget);
+        assert_eq!(settings.gemini_enable_code_execution, deserialized.gemini_enable_code_execution);
     }
 
     #[test]
@@ -877,6 +912,16 @@ mod tests {
         settings2 = settings1.clone();
         settings2.history_management_strategy = "sliding_window_messages".to_string();
         assert_ne!(settings1, settings2);
+        
+        settings2 = settings1.clone();
+        settings2.gemini_thinking_budget = Some(0);
+        assert_ne!(settings1, settings2);
+
+        settings2 = settings1.clone();
+        settings2.gemini_enable_code_execution = Some(false);
+        // If original sample has true, this will be assert_ne. Check sample.
+        // create_sample_chat_settings_response has gemini_enable_code_execution: Some(true)
+        assert_ne!(settings1, settings2);
     }
 
     #[test]
@@ -896,6 +941,15 @@ mod tests {
 
         settings2 = settings1.clone();
         settings2.history_management_limit = Some(100);
+        assert_ne!(settings1, settings2);
+
+        settings2 = settings1.clone();
+        settings2.gemini_thinking_budget = Some(1024);
+        assert_ne!(settings1, settings2);
+
+        settings2 = settings1.clone();
+        settings2.gemini_enable_code_execution = Some(true);
+        // create_sample_update_chat_settings_request has gemini_enable_code_execution: Some(false)
         assert_ne!(settings1, settings2);
     }
 
@@ -924,7 +978,7 @@ mod tests {
         };
         let err = invalid_strategy.validate().unwrap_err();
         assert!(err.field_errors().contains_key("history_management_strategy"));
-        assert_eq!(err.field_errors()["history_management_strategy"][0].code, "invalid_history_strategy");
+        assert_eq!(err.field_errors()["history_management_strategy"][0].code, "unknown_strategy");
 
 
         // Invalid limit (zero)

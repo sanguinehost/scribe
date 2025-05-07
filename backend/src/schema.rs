@@ -163,6 +163,8 @@ diesel::table! {
         model_name -> Varchar,
         #[max_length = 50]
         visibility -> Nullable<Varchar>,
+        gemini_thinking_budget -> Nullable<Int4>,
+        gemini_enable_code_execution -> Nullable<Bool>,
     }
 }
 

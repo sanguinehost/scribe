@@ -2,19 +2,17 @@
 
 use axum::{
     extract::{Path, State},
-    http::{HeaderMap, StatusCode},
+    http::{HeaderMap},
     response::{sse::Event, sse::KeepAlive, Sse, IntoResponse},
-    Json, 
+    Json,
     routing::{get, post},
     Router,
-    body::Body,
 };
-use axum::http::header;
 use axum_login::AuthSession;
-use diesel::{QueryDsl, ExpressionMethods, RunQueryDsl, delete, BoolExpressionMethods, SelectableHelper}; // Added SelectableHelper
-use crate::models::chats::{MessageRole, GenerateChatRequest, ApiChatMessage, ChatMessage, Chat}; // Use GenerateChatRequest, ApiChatMessage, add Chat
+use diesel::{QueryDsl, ExpressionMethods, RunQueryDsl, BoolExpressionMethods, SelectableHelper}; // Added SelectableHelper
+use crate::models::chats::{MessageRole, GenerateChatRequest, ChatMessage, Chat}; // Use GenerateChatRequest, add Chat, ApiChatMessage
 use crate::errors::AppError;
-use crate::services::chat_service; // Keep for now, might need parts later
+use crate::services::chat_service; // Added chat_service
 use crate::state::AppState;
 use crate::schema::chat_sessions; // Added chat_sessions schema
 use validator::Validate; // Added Validate
@@ -34,7 +32,6 @@ use crate::routes::chats_api::{
     get_chat_settings_handler,
     update_chat_settings_handler,
 };
-use crate::llm::AiClient;
 
 #[instrument(skip(state, auth_session, payload), fields(session_id = %session_id_str))]
 pub async fn generate_chat_response(
@@ -95,31 +92,74 @@ pub async fn generate_chat_response(
     let model_to_use = payload.model.clone().unwrap_or(model_name_from_settings); // Clone payload model name
     debug!(%model_to_use, "Determined model to use");
 
-    // 3. Prepare AI Request using history from payload
+    // 3. Fetch and Manage History, then prepare AI Request
     let ai_client = state.ai_client.clone();
 
-    // Map history from payload (Vec<ApiChatMessage>) to AI client's format (Vec<genai::chat::ChatMessage>)
-    let mut messages_for_ai: Vec<genai::chat::ChatMessage> = payload.history
-        .iter()
-        .map(|msg| genai::chat::ChatMessage {
-            role: match msg.role.to_lowercase().as_str() {
-                "user" => genai::chat::ChatRole::User,
-                "assistant" | "model" => genai::chat::ChatRole::Assistant, // Treat "model" as "assistant"
-                "system" => genai::chat::ChatRole::System,
-                _ => genai::chat::ChatRole::User, // Default to user for unknown roles? Or error? Let's default for now.
+    // Extract the current user message from the payload.
+    // We assume the payload.history contains the current turn, typically one user message.
+    let current_user_api_message = payload.history.last().cloned().ok_or_else(|| {
+        error!(%session_id, "Payload history is empty, cannot extract current user message.");
+        AppError::BadRequest("Request payload must contain at least one message.".to_string())
+    })?;
+
+    if current_user_api_message.role.to_lowercase() != "user" {
+        error!(%session_id, "Last message in payload history is not from user.");
+        return Err(AppError::BadRequest("The last message in the payload's history must be from the 'user'.".to_string()));
+    }
+    let current_user_content = current_user_api_message.content.clone();
+
+    // Fetch existing session data, including managed history from the database
+    let (
+        managed_history_tuples, // This is Vec<(MessageRole, String)>
+        _db_system_prompt, // System prompt is already handled from chat_session
+        _db_temperature,   // Temperature is already handled from chat_session
+        _db_max_tokens,    // Max tokens is already handled from chat_session
+        _db_freq_penalty,
+        _db_pres_penalty,
+        _db_top_k,
+        _db_top_p,
+        _db_rep_penalty,
+        _db_min_p,
+        _db_top_a,
+        _db_seed,
+        _db_logit_bias,
+        _db_model_name,
+        // -- Gemini Specific Options --
+        gemini_thinking_budget,
+        gemini_enable_code_execution,
+        _user_db_message_to_save,
+        _hist_strategy,
+        _hist_limit,
+    ) = chat_service::get_session_data_for_generation(
+        &state.pool,
+        user_id_value,
+        session_id,
+        current_user_content.clone(), // Pass current user message content for get_session_data_for_generation
+    )
+    .await?;
+
+    // Convert managed_history_tuples to Vec<genai::chat::ChatMessage>
+    let mut messages_for_ai: Vec<genai::chat::ChatMessage> = managed_history_tuples
+        .into_iter()
+        .map(|(role, content)| genai::chat::ChatMessage {
+            role: match role {
+                MessageRole::User => genai::chat::ChatRole::User,
+                MessageRole::Assistant => genai::chat::ChatRole::Assistant,
+                MessageRole::System => genai::chat::ChatRole::System,
             },
-            content: genai::chat::MessageContent::Text(msg.content.clone()),
+            content: genai::chat::MessageContent::Text(content),
             options: None,
         })
         .collect();
 
-    // Validate that history is not empty (already done by payload validation)
-    if messages_for_ai.is_empty() {
-        error!(%session_id, "Payload history is empty after mapping");
-        return Err(AppError::BadRequest("Chat history cannot be empty".to_string()));
-    }
-
-    trace!(history_len = messages_for_ai.len(), %session_id, "Converted message history from payload for AI");
+    // Append the current user message (already extracted as current_user_api_message)
+    messages_for_ai.push(genai::chat::ChatMessage {
+        role: genai::chat::ChatRole::User, // We've validated it's a user message
+        content: genai::chat::MessageContent::Text(current_user_content),
+        options: None,
+    });
+    
+    trace!(history_len = messages_for_ai.len(), %session_id, "Prepared final message list for AI (DB history + current payload message)");
 
     // 4. Determine Response Type (SSE vs JSON) and Generate
     let accept_header = headers
@@ -141,17 +181,38 @@ pub async fn generate_chat_response(
             // +++ Create ChatRequest and ChatOptions INSIDE the SSE branch +++
             let chat_request = genai::chat::ChatRequest::new(messages_for_ai.clone()) // Clone messages for this branch
                 .with_system(system_prompt.clone().unwrap_or_default()); // Clone system prompt
-            let chat_options = genai::chat::ChatOptions::default()
-                .with_temperature(temperature.map(|t| t.to_f32().unwrap_or(0.7) as f64).unwrap_or(0.7))
-                .with_max_tokens(max_output_tokens.map(|t| t as u32).unwrap_or(1024))
-                .with_top_p(top_p.map(|p| p.to_f32().unwrap_or(0.95) as f64).unwrap_or(0.95));
+            
+            let mut genai_chat_options = genai::chat::ChatOptions::default();
+            if let Some(temp_val) = temperature {
+                if let Some(f_val) = temp_val.to_f32() { // genai takes f32 for temperature
+                    genai_chat_options = genai_chat_options.with_temperature(f_val.into());
+                }
+            }
+            if let Some(tokens) = max_output_tokens {
+                genai_chat_options = genai_chat_options.with_max_tokens(tokens as u32);
+            }
+            if let Some(p_val) = top_p {
+                if let Some(f_val) = p_val.to_f32() { // genai takes f32 for top_p
+                    genai_chat_options = genai_chat_options.with_top_p(f_val.into());
+                }
+            }
+
+            // Add new Gemini options
+            if let Some(budget) = gemini_thinking_budget {
+                if budget > 0 { // gemini_thinking_budget in rust-genai takes u32
+                    genai_chat_options = genai_chat_options.with_gemini_thinking_budget(budget as u32);
+                }
+            }
+            if let Some(enable_exec) = gemini_enable_code_execution {
+                genai_chat_options = genai_chat_options.with_gemini_enable_code_execution(enable_exec);
+            }
             // +++ End Creation +++
 
             // ++ Logging: Log the prepared chat request ++
-            trace!(%session_id, chat_request = ?chat_request, "Prepared ChatRequest for AI (SSE)");
+            trace!(%session_id, chat_request = ?chat_request, genai_options = ?genai_chat_options, "Prepared ChatRequest and Options for AI (SSE)");
             // ++ End Logging ++
 
-            let genai_stream: crate::llm::ChatStream = match ai_client.stream_chat(model_to_use.as_str(), chat_request, Some(chat_options)).await {
+            let genai_stream: crate::llm::ChatStream = match ai_client.stream_chat(model_to_use.as_str(), chat_request, Some(genai_chat_options)).await {
                  Ok(s) => {
                      debug!(%session_id, "Successfully initiated AI stream");
 
@@ -237,64 +298,30 @@ pub async fn generate_chat_response(
                 let mut accumulated_content = String::new();
                 let mut stream_error_occurred = false;
 
-                // Pin the stream for use in the loop
                 futures::pin_mut!(genai_stream);
-
-                // ++ Logging: Log entering the main loop ++
                 trace!(%session_id, "Entering SSE async_stream! processing loop");
-                // ++ End Logging ++
-
-                // Send a 'start' event if requested (or by default if not specified)
-                // Note: We'll reconsider if 'start' event is truly needed. For now, keep logic simple.
-                // if request_thinking { // Simplification: Removed explicit 'start' event for now
-                //     debug!(%session_id, "Sending SSE 'start' event");
-                //     yield Ok::<_, AppError>(Event::default().event("start").data("Processing request..."));
-                // }
 
                 while let Some(event_result) = genai_stream.next().await {
-                    // ++ Logging: Log every event received from genai ++
                     trace!(%session_id, "Received event from genai_stream: {:?}", event_result);
-                    // ++ End Logging ++
                     match event_result {
                         Ok(ChatStreamEvent::Start) => {
-                            debug!(%session_id, "Received Start event from AI stream (no SSE sent)");
-                            // Optional: Send a 'thinking' or 'start' event if useful
-                            // For now, we don't send anything specific for genai's Start event
-                            if request_thinking {
-                                 // ++ Logging: Log sending thinking event ++
-                                 debug!(%session_id, "Sending SSE 'thinking' event (triggered by AI Start)");
-                                 // ++ End Logging ++
-                                 yield Ok::<_, AppError>(Event::default().event("thinking").data("AI Processing Started"));
-                             }
+                            debug!(%session_id, "Received Start event from AI stream");
+                            // No need to send anything to the client for this event
+                            continue;
                         }
                         Ok(ChatStreamEvent::Chunk(chunk)) => {
-                            debug!(%session_id, content_chunk_len = chunk.content.len(), "Received Content chunk from AI stream"); // Log length instead of full content
-                            trace!(%session_id, content_chunk = %chunk.content, "Full content chunk data"); // Trace full content
+                            debug!(%session_id, content_chunk_len = chunk.content.len(), "Received Content chunk from AI stream");
                             if !chunk.content.is_empty() {
                                 accumulated_content.push_str(&chunk.content);
-                                // ++ Logging: Log sending content event ++
-                                trace!(%session_id, "Sending SSE 'content' event");
-                                // ++ End Logging ++
                                 yield Ok::<_, AppError>(Event::default().event("content").data(chunk.content));
                             } else {
-                                 // ++ Logging: Log skipping empty chunk ++
                                  trace!(%session_id, "Skipping empty content chunk from AI");
-                                 // ++ End Logging ++
                              }
                         }
                         Ok(ChatStreamEvent::ReasoningChunk(chunk)) => {
-                            debug!(%session_id, content_chunk_len = chunk.content.len(), "Received Reasoning chunk from AI stream");
-                            trace!(%session_id, content = %chunk.content, "Full reasoning chunk data");
-                            if request_thinking {
-                                // Since we don't have label separately anymore, just send the content directly
-                                // ++ Logging: Log sending thinking event (reasoning) ++
-                                trace!(%session_id, "Sending SSE 'thinking' event (Reasoning)");
-                                // ++ End Logging ++
-                                yield Ok::<_, AppError>(Event::default().event("thinking").data(chunk.content));
-                            } else {
-                                // ++ Logging: Log skipping reasoning chunk ++
-                                trace!(%session_id, "Skipping Reasoning chunk (request_thinking=false)");
-                                // ++ End Logging ++
+                            debug!(%session_id, reasoning_chunk_len = chunk.content.len(), "Received ReasoningChunk from AI stream");
+                            if !chunk.content.is_empty() {
+                                yield Ok::<_, AppError>(Event::default().event("reasoning_chunk").data(chunk.content));
                             }
                         }
                         Ok(ChatStreamEvent::End(_)) => {
@@ -444,28 +471,26 @@ pub async fn generate_chat_response(
                             }
                         }
                     });
-                    // Send the final "done" event ONLY if no error occurred AND content was generated
-                    // ++ Logging: Log sending done event ++
-                    trace!(%session_id, "Sending SSE 'done' event");
+                    // Send the final "[DONE]" data event ONLY if no error occurred
+                    // ++ Logging: Log sending [DONE] event ++
+                    trace!(%session_id, "Sending SSE event: done, data: [DONE]");
                     // ++ End Logging ++
-                    yield Ok::<_, AppError>(Event::default().event("done"));
-                } else if !stream_error_occurred && accumulated_content.is_empty() {
-                     // Handle case where stream ended successfully but produced no content (rare?)
-                     debug!(%session_id, "AI stream finished successfully but produced no content. Sending 'done'.");
-                    // Still send done, but don't save anything.
-                    // ++ Logging: Log sending done (empty) ++
-                    trace!(%session_id, "Sending SSE 'done' event (empty content)");
+                    yield Ok::<_, AppError>(Event::default().event("done").data("[DONE]"));
+                } else if stream_error_occurred {
+                    // If an error occurred, we might have already sent an error event.
+                    // Consider if a different termination is needed or if the error event is sufficient.
+                    // For now, we don't send [DONE] if an error was already sent.
+                    // ++ Logging: Log [DONE] not sent due to error ++
+                    trace!(%session_id, "[DONE] not sent due to stream_error_occurred=true");
                     // ++ End Logging ++
-                    yield Ok::<_, AppError>(Event::default().event("done"));
-                 } else {
-                    // Error occurred, 'error' event was already sent in the loop. Do nothing more.
-                    // ++ Logging: Log stream finished after error ++
-                    debug!(%session_id, "Stream finished after an error. No 'done' event sent.");
+                } else if accumulated_content.is_empty() && !stream_error_occurred {
+                    // Case: Stream finished, no errors, but also no content was accumulated (e.g., LLM returned empty)
+                    // Still send [DONE] to signify graceful completion.
+                    // ++ Logging: Log sending [DONE] for empty successful response ++
+                    trace!(%session_id, "Sending SSE event: done, data: [DONE] (empty successful response)");
                     // ++ End Logging ++
-                 }
-                 // ++ Logging: Log finishing the stream block ++
-                 trace!(%session_id, "Finished SSE async_stream! block");
-                 // ++ End Logging ++
+                    yield Ok::<_, AppError>(Event::default().event("done").data("[DONE]"));
+                }
             };
 
             // Return the SSE response
@@ -770,17 +795,37 @@ pub async fn generate_chat_response(
                 // +++ Create ChatRequest and ChatOptions INSIDE the fallback SSE branch +++
                 let chat_request = genai::chat::ChatRequest::new(messages_for_ai.clone())
                     .with_system(system_prompt.clone().unwrap_or_default());
-                let chat_options = genai::chat::ChatOptions::default()
-                    .with_temperature(temperature.map(|t| t.to_f32().unwrap_or(0.7) as f64).unwrap_or(0.7))
-                    .with_max_tokens(max_output_tokens.map(|t| t as u32).unwrap_or(1024))
-                    .with_top_p(top_p.map(|p| p.to_f32().unwrap_or(0.95) as f64).unwrap_or(0.95));
+                
+                let mut genai_chat_options_fallback = genai::chat::ChatOptions::default();
+                if let Some(temp_val) = temperature {
+                    if let Some(f_val) = temp_val.to_f32() {
+                        genai_chat_options_fallback = genai_chat_options_fallback.with_temperature(f_val.into());
+                    }
+                }
+                if let Some(tokens) = max_output_tokens {
+                    genai_chat_options_fallback = genai_chat_options_fallback.with_max_tokens(tokens as u32);
+                }
+                if let Some(p_val) = top_p {
+                    if let Some(f_val) = p_val.to_f32() {
+                        genai_chat_options_fallback = genai_chat_options_fallback.with_top_p(f_val.into());
+                    }
+                }
+                // Add new Gemini options for fallback SSE
+                if let Some(budget) = gemini_thinking_budget {
+                    if budget > 0 {
+                        genai_chat_options_fallback = genai_chat_options_fallback.with_gemini_thinking_budget(budget as u32);
+                    }
+                }
+                if let Some(enable_exec) = gemini_enable_code_execution {
+                    genai_chat_options_fallback = genai_chat_options_fallback.with_gemini_enable_code_execution(enable_exec);
+                }
                 // +++ End Creation +++
 
                 // ++ Logging: Log the prepared chat request ++
-                trace!(%session_id, chat_request = ?chat_request, "Prepared ChatRequest for AI (fallback SSE)");
+                trace!(%session_id, chat_request = ?chat_request, genai_options = ?genai_chat_options_fallback, "Prepared ChatRequest and Options for AI (fallback SSE)");
                 // ++ End Logging ++
 
-                let genai_stream: crate::llm::ChatStream = match ai_client.stream_chat(model_to_use.as_str(), chat_request, Some(chat_options)).await {
+                let genai_stream: crate::llm::ChatStream = match ai_client.stream_chat(model_to_use.as_str(), chat_request, Some(genai_chat_options_fallback)).await {
                      Ok(s) => {
                          debug!(%session_id, "Successfully initiated AI stream (fallback SSE)");
 
@@ -866,56 +911,30 @@ pub async fn generate_chat_response(
                     let mut accumulated_content = String::new();
                     let mut stream_error_occurred = false;
 
-                    // Pin the stream for use in the loop
                     futures::pin_mut!(genai_stream);
-
-                    // ++ Logging: Log entering the main loop ++
                     trace!(%session_id, "Entering fallback SSE async_stream! processing loop");
-                    // ++ End Logging ++
 
                     while let Some(event_result) = genai_stream.next().await {
-                        // ++ Logging: Log every event received from genai ++
                         trace!(%session_id, "Received event from genai_stream (fallback): {:?}", event_result);
-                        // ++ End Logging ++
                         match event_result {
                             Ok(ChatStreamEvent::Start) => {
-                                debug!(%session_id, "Received Start event from AI stream (fallback, no SSE sent)");
-                                // Optional: Send a 'thinking' or 'start' event if useful
-                                // For now, we don't send anything specific for genai's Start event
-                                if request_thinking {
-                                     // ++ Logging: Log sending thinking event ++
-                                     debug!(%session_id, "Sending fallback SSE 'thinking' event (triggered by AI Start)");
-                                     // ++ End Logging ++
-                                     yield Ok::<_, AppError>(Event::default().event("thinking").data("AI Processing Started"));
-                                 }
+                                debug!(%session_id, "Received Start event from AI stream (fallback)");
+                                // No need to send anything to the client for this event
+                                continue;
                             }
                             Ok(ChatStreamEvent::Chunk(chunk)) => {
                                 debug!(%session_id, content_chunk_len = chunk.content.len(), "Received Content chunk from AI stream (fallback)");
-                                trace!(%session_id, content_chunk = %chunk.content, "Full content chunk data (fallback)");
                                 if !chunk.content.is_empty() {
                                     accumulated_content.push_str(&chunk.content);
-                                    // ++ Logging: Log sending content event ++
-                                    trace!(%session_id, "Sending fallback SSE 'content' event");
-                                    // ++ End Logging ++
                                     yield Ok::<_, AppError>(Event::default().event("content").data(chunk.content));
                                 } else {
-                                     // ++ Logging: Log skipping empty chunk ++
                                      trace!(%session_id, "Skipping empty content chunk from AI (fallback)");
-                                     // ++ End Logging ++
                                  }
                             }
                             Ok(ChatStreamEvent::ReasoningChunk(chunk)) => {
-                                debug!(%session_id, content_chunk_len = chunk.content.len(), "Received Reasoning chunk from AI stream (fallback)");
-                                trace!(%session_id, content = %chunk.content, "Full reasoning chunk data (fallback)");
-                                if request_thinking {
-                                    // ++ Logging: Log sending thinking event (reasoning) ++
-                                    trace!(%session_id, "Sending fallback SSE 'thinking' event (Reasoning)");
-                                    // ++ End Logging ++
-                                    yield Ok::<_, AppError>(Event::default().event("thinking").data(chunk.content));
-                                } else {
-                                    // ++ Logging: Log skipping reasoning chunk ++
-                                    trace!(%session_id, "Skipping Reasoning chunk in fallback (request_thinking=false)");
-                                    // ++ End Logging ++
+                                debug!(%session_id, reasoning_chunk_len = chunk.content.len(), "Received ReasoningChunk from AI stream (fallback)");
+                                if !chunk.content.is_empty() {
+                                    yield Ok::<_, AppError>(Event::default().event("reasoning_chunk").data(chunk.content));
                                 }
                             }
                             Ok(ChatStreamEvent::End(_)) => {
@@ -1063,19 +1082,19 @@ pub async fn generate_chat_response(
                                 }
                             }
                         });
-                        // Send the final "done" event ONLY if no error occurred AND content was generated
-                        // ++ Logging: Log sending done event ++
-                        trace!(%session_id, "Sending fallback SSE 'done' event");
+                        // Send the final "[DONE]" data event ONLY if no error occurred
+                        // ++ Logging: Log sending [DONE] event ++
+                        trace!(%session_id, "Sending fallback SSE data: [DONE]");
                         // ++ End Logging ++
-                        yield Ok::<_, AppError>(Event::default().event("done"));
+                        yield Ok::<_, AppError>(Event::default().data("[DONE]"));
                     } else if !stream_error_occurred && accumulated_content.is_empty() {
-                         // Handle case where stream ended successfully but produced no content (rare?)
-                         debug!(%session_id, "AI stream finished successfully but produced no content in fallback. Sending 'done'.");
-                        // Still send done, but don't save anything.
-                        // ++ Logging: Log sending done (empty) ++
-                        trace!(%session_id, "Sending fallback SSE 'done' event (empty content)");
+                         // Handle case where stream ended successfully but produced no content
+                         debug!(%session_id, "AI stream finished successfully but produced no content in fallback. Sending '[DONE]'.");
+                        // Still send [DONE], but don't save anything.
+                        // ++ Logging: Log sending [DONE] (empty) ++
+                        trace!(%session_id, "Sending fallback SSE data: [DONE] (empty content)");
                         // ++ End Logging ++
-                        yield Ok::<_, AppError>(Event::default().event("done"));
+                        yield Ok::<_, AppError>(Event::default().data("[DONE]"));
                      } else {
                         // Error occurred, 'error' event was already sent in the loop. Do nothing more.
                         // ++ Logging: Log stream finished after error ++
@@ -1096,17 +1115,37 @@ pub async fn generate_chat_response(
                 // +++ Create ChatRequest and ChatOptions INSIDE the final fallback SSE branch +++
                 let chat_request = genai::chat::ChatRequest::new(messages_for_ai.clone())
                     .with_system(system_prompt.clone().unwrap_or_default());
-                let chat_options = genai::chat::ChatOptions::default()
-                    .with_temperature(temperature.map(|t| t.to_f32().unwrap_or(0.7) as f64).unwrap_or(0.7))
-                    .with_max_tokens(max_output_tokens.map(|t| t as u32).unwrap_or(1024))
-                    .with_top_p(top_p.map(|p| p.to_f32().unwrap_or(0.95) as f64).unwrap_or(0.95));
+                
+                let mut genai_chat_options_empty_fallback = genai::chat::ChatOptions::default();
+                if let Some(temp_val) = temperature {
+                    if let Some(f_val) = temp_val.to_f32() {
+                        genai_chat_options_empty_fallback = genai_chat_options_empty_fallback.with_temperature(f_val.into());
+                    }
+                }
+                if let Some(tokens) = max_output_tokens {
+                    genai_chat_options_empty_fallback = genai_chat_options_empty_fallback.with_max_tokens(tokens as u32);
+                }
+                if let Some(p_val) = top_p {
+                    if let Some(f_val) = p_val.to_f32() {
+                        genai_chat_options_empty_fallback = genai_chat_options_empty_fallback.with_top_p(f_val.into());
+                    }
+                }
+                // Add new Gemini options for empty header fallback SSE
+                if let Some(budget) = gemini_thinking_budget {
+                    if budget > 0 {
+                        genai_chat_options_empty_fallback = genai_chat_options_empty_fallback.with_gemini_thinking_budget(budget as u32);
+                    }
+                }
+                if let Some(enable_exec) = gemini_enable_code_execution {
+                    genai_chat_options_empty_fallback = genai_chat_options_empty_fallback.with_gemini_enable_code_execution(enable_exec);
+                }
                 // +++ End Creation +++
 
                 // ++ Logging: Log the prepared chat request ++
-                trace!(%session_id, chat_request = ?chat_request, "Prepared ChatRequest for AI (empty header fallback SSE)");
+                trace!(%session_id, chat_request = ?chat_request, genai_options = ?genai_chat_options_empty_fallback, "Prepared ChatRequest and Options for AI (empty header fallback SSE)");
                 // ++ End Logging ++
 
-                let genai_stream: crate::llm::ChatStream = match ai_client.stream_chat(model_to_use.as_str(), chat_request, Some(chat_options)).await {
+                let genai_stream: crate::llm::ChatStream = match ai_client.stream_chat(model_to_use.as_str(), chat_request, Some(genai_chat_options_empty_fallback)).await {
                     Ok(s) => {
                         debug!(%session_id, "Successfully initiated AI stream (empty header fallback SSE)");
 
@@ -1192,31 +1231,23 @@ pub async fn generate_chat_response(
                         trace!(%session_id, "Received event from genai_stream (empty header fallback): {:?}", event_result);
                         match event_result {
                             Ok(ChatStreamEvent::Start) => {
-                                debug!(%session_id, "Received Start event from AI stream (empty header fallback, no SSE sent)");
-                                if request_thinking {
-                                    debug!(%session_id, "Sending empty header fallback SSE 'thinking' event (triggered by AI Start)");
-                                    yield Ok::<_, AppError>(Event::default().event("thinking").data("AI Processing Started"));
-                                }
+                                debug!(%session_id, "Received Start event from AI stream (empty header fallback)");
+                                // No need to send anything to the client for this event
+                                continue;
                             }
                             Ok(ChatStreamEvent::Chunk(chunk)) => {
                                 debug!(%session_id, content_chunk_len = chunk.content.len(), "Received Content chunk from AI stream (empty header fallback)");
-                                trace!(%session_id, content_chunk = %chunk.content, "Full content chunk data (empty header fallback)");
                                 if !chunk.content.is_empty() {
                                     accumulated_content.push_str(&chunk.content);
-                                    trace!(%session_id, "Sending empty header fallback SSE 'content' event");
                                     yield Ok::<_, AppError>(Event::default().event("content").data(chunk.content));
                                 } else {
                                     trace!(%session_id, "Skipping empty content chunk from AI (empty header fallback)");
                                 }
                             }
                             Ok(ChatStreamEvent::ReasoningChunk(chunk)) => {
-                                debug!(%session_id, content_chunk_len = chunk.content.len(), "Received Reasoning chunk from AI stream (empty header fallback)");
-                                trace!(%session_id, content = %chunk.content, "Full reasoning chunk data (empty header fallback)");
-                                if request_thinking {
-                                    trace!(%session_id, "Sending empty header fallback SSE 'thinking' event (Reasoning)");
-                                    yield Ok::<_, AppError>(Event::default().event("thinking").data(chunk.content));
-                                } else {
-                                    trace!(%session_id, "Skipping Reasoning chunk in empty header fallback (request_thinking=false)");
+                                debug!(%session_id, reasoning_chunk_len = chunk.content.len(), "Received ReasoningChunk from AI stream (empty header fallback)");
+                                if !chunk.content.is_empty() {
+                                    yield Ok::<_, AppError>(Event::default().event("reasoning_chunk").data(chunk.content));
                                 }
                             }
                             Ok(ChatStreamEvent::End(_)) => {
@@ -1335,14 +1366,14 @@ pub async fn generate_chat_response(
                                 }
                             }
                         });
-                        trace!(%session_id, "Sending empty header fallback SSE 'done' event");
-                        yield Ok::<_, AppError>(Event::default().event("done"));
+                        trace!(%session_id, "Sending empty header fallback SSE data: [DONE]");
+                        yield Ok::<_, AppError>(Event::default().data("[DONE]"));
                     } else if !stream_error_occurred && accumulated_content.is_empty() {
-                        debug!(%session_id, "AI stream finished successfully but produced no content in empty header fallback. Sending 'done'.");
-                        trace!(%session_id, "Sending empty header fallback SSE 'done' event (empty content)");
-                        yield Ok::<_, AppError>(Event::default().event("done"));
+                        debug!(%session_id, "AI stream finished successfully but produced no content in empty header fallback. Sending '[DONE]'.");
+                        trace!(%session_id, "Sending empty header fallback SSE data: [DONE] (empty content)");
+                        yield Ok::<_, AppError>(Event::default().data("[DONE]"));
                     } else {
-                        debug!(%session_id, "Empty header fallback stream finished after an error. No 'done' event sent.");
+                        debug!(%session_id, "Empty header fallback stream finished after an error. No '[DONE]' event sent.");
                     }
                     trace!(%session_id, "Finished empty header fallback SSE async_stream! block");
                 };
@@ -1373,39 +1404,3 @@ pub fn chat_routes() -> Router<AppState> {
         // Login required middleware is applied globally in spawn_app
 }
 
-// Helper function to generate the chat response
-async fn generate_ai_response(
-    ai_client: Arc<dyn AiClient>,
-    system_prompt: &Option<String>,
-    messages_for_ai: &[genai::chat::ChatMessage],
-    model: &str,
-    temperature: Option<bigdecimal::BigDecimal>,
-    max_output_tokens: Option<i32>,
-    top_p: Option<bigdecimal::BigDecimal>,
-) -> Result<String, AppError> {
-    // Build ChatRequest
-    let chat_request = genai::chat::ChatRequest::new(messages_for_ai.to_vec())
-        .with_system(system_prompt.clone().unwrap_or_default());
-
-    // Configure options
-    let chat_options = genai::chat::ChatOptions::default()
-        .with_temperature(temperature.map(|t| t.to_f32().unwrap_or(0.7) as f64).unwrap_or(0.7))
-        .with_max_tokens(max_output_tokens.map(|t| t as u32).unwrap_or(1024))
-        .with_top_p(top_p.map(|p| p.to_f32().unwrap_or(0.95) as f64).unwrap_or(0.95));
-
-    // Call AI
-    let response = ai_client.exec_chat(model, chat_request, Some(chat_options)).await?;
-
-    // Extract content
-    match response.content {
-        Some(genai::chat::MessageContent::Text(text)) => {
-            Ok(text)
-        }
-        Some(other) => {
-            Err(AppError::InternalServerError(format!("Unexpected message content type: {:?}", other)))
-        }
-        None => {
-            Err(AppError::InternalServerError("AI returned no content".to_string()))
-        }
-    }
-}

@@ -12,7 +12,7 @@ use genai::{
 };
 use http_body_util::BodyExt;
 use mime;
-use serde_json::{json, Value};
+use serde_json::Value;
 use std::sync::Arc;
 use std::time::Duration;
 use tower::ServiceExt;
@@ -21,7 +21,7 @@ use uuid::Uuid;
 // Crate imports
 use scribe_backend::{
     errors::AppError,
-    models::{chats::{MessageRole, NewChatMessageRequest}, users::User, characters::Character, chats::Chat},
+    models::{chats::{MessageRole, GenerateChatRequest, ApiChatMessage}, users::User, characters::Character, chats::Chat}, // Use GenerateChatRequest and ApiChatMessage
     services::embedding_pipeline::{EmbeddingMetadata, RetrievedChunk}, // Added missing imports
     test_helpers::{self, MockEmbeddingPipelineService, PipelineCall}, // Corrected path and added PipelineCall
 };
@@ -70,8 +70,11 @@ async fn test_generate_chat_response_triggers_embeddings() {
     };
     context.app.mock_ai_client.as_ref().expect("Mock client required").set_response(Ok(mock_response));
 
-    let payload = NewChatMessageRequest {
-        content: "User message to trigger embedding".to_string(),
+    let payload = GenerateChatRequest {
+        history: vec![ApiChatMessage {
+            role: "user".to_string(),
+            content: "User message to trigger embedding".to_string(),
+        }],
         model: Some("test-embed-trigger-model".to_string()),
     };
 
@@ -174,7 +177,13 @@ async fn test_generate_chat_response_triggers_embeddings_with_existing_session()
     )
     .await;
 
-    let request_body = json!({ "content": "Second user message to trigger embedding" });
+    let payload = GenerateChatRequest {
+        history: vec![ApiChatMessage {
+            role: "user".to_string(),
+            content: "Second user message to trigger embedding".to_string(),
+        }],
+        model: None, // Or specify a model if needed for the test
+    };
 
     let request = Request::builder()
         .method(Method::POST)
@@ -182,7 +191,7 @@ async fn test_generate_chat_response_triggers_embeddings_with_existing_session()
         .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
         .header(header::COOKIE, auth_cookie)
         .header(header::ACCEPT, mime::APPLICATION_JSON.as_ref())
-        .body(Body::from(serde_json::to_vec(&request_body).unwrap()))
+        .body(Body::from(serde_json::to_vec(&payload).unwrap()))
         .unwrap();
 
     // Reset tracker before the call
@@ -279,7 +288,13 @@ async fn test_rag_context_injection_in_prompt() {
         .set_response(Ok(mock_ai_response));
 
     let query_text = "What is the secret code?";
-    let request_body = json!({ "content": query_text });
+    let payload = GenerateChatRequest {
+        history: vec![ApiChatMessage {
+            role: "user".to_string(),
+            content: query_text.to_string(),
+        }],
+        model: None, // Or specify a model
+    };
 
     let request = Request::builder()
         .method(Method::POST)
@@ -287,7 +302,7 @@ async fn test_rag_context_injection_in_prompt() {
         .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
         .header(header::COOKIE, auth_cookie)
         .header(header::ACCEPT, mime::APPLICATION_JSON.as_ref())
-        .body(Body::from(serde_json::to_vec(&request_body).unwrap()))
+        .body(Body::from(serde_json::to_vec(&payload).unwrap()))
         .unwrap();
 
     let response = context.app.router.oneshot(request).await.unwrap();
@@ -416,8 +431,11 @@ async fn generate_chat_response_rag_retrieval_error() {
     };
     context.app.mock_ai_client.as_ref().expect("Mock client required").set_response(Ok(mock_response));
 
-    let payload = NewChatMessageRequest {
-        content: "User message for RAG error test".to_string(),
+    let payload = GenerateChatRequest {
+        history: vec![ApiChatMessage {
+            role: "user".to_string(),
+            content: "User message for RAG error test".to_string(),
+        }],
         model: Some("test-rag-err-model".to_string()),
     };
 
@@ -507,8 +525,16 @@ async fn setup_test_data(use_real_ai: bool) -> RagTestContext {
         mock_client.set_response(Ok(mock_response));
     }
 
-    let payload = NewChatMessageRequest {
-        content: "User message to trigger embedding".to_string(),
+    // This setup_test_data function is used by multiple tests.
+    // The original payload was NewChatMessageRequest.
+    // We need to adapt it to GenerateChatRequest for the /generate endpoint.
+    // The key is to ensure the `history` field is correctly populated.
+    let user_message_content = "User message to trigger embedding";
+    let payload = GenerateChatRequest {
+        history: vec![ApiChatMessage {
+            role: "user".to_string(),
+            content: user_message_content.to_string(),
+        }],
         model: Some("test-embed-trigger-model".to_string()),
     };
 
@@ -612,8 +638,11 @@ async fn generate_chat_response_rag_success() {
         .set_response(Ok(mock_response));
 
     // Create a chat session
-    let payload = NewChatMessageRequest {
-        content: "Mock AI response to RAG query".to_string(),
+    let payload = GenerateChatRequest {
+        history: vec![ApiChatMessage {
+            role: "user".to_string(),
+            content: "Mock AI response to RAG query".to_string(),
+        }],
         model: Some("gemini-1.5-flash-latest".to_string()),
     };
 
@@ -669,8 +698,11 @@ async fn generate_chat_response_rag_empty_history_success() {
         .set_response(Ok(mock_response));
 
     // Create a chat session
-    let payload = NewChatMessageRequest {
-        content: "Mock AI response to RAG query".to_string(),
+    let payload = GenerateChatRequest {
+        history: vec![ApiChatMessage {
+            role: "user".to_string(),
+            content: "Mock AI response to RAG query".to_string(),
+        }],
         model: Some("gemini-1.5-flash-latest".to_string()),
     };
 
@@ -731,8 +763,11 @@ async fn generate_chat_response_rag_no_relevant_chunks_found() {
         .set_retrieve_response(Ok(vec![]));
 
     // Create a chat session
-    let payload = NewChatMessageRequest {
-        content: "Mock AI response to RAG query".to_string(),
+    let payload = GenerateChatRequest {
+        history: vec![ApiChatMessage {
+            role: "user".to_string(),
+            content: "Mock AI response to RAG query".to_string(),
+        }],
         model: Some("gemini-1.5-flash-latest".to_string()),
     };
 

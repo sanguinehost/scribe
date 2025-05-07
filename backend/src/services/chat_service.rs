@@ -2,10 +2,10 @@
 
 use bigdecimal::BigDecimal;
 use diesel::prelude::*;
-use diesel::{RunQueryDsl, SelectableHelper}; // Added RunQueryDsl and SelectableHelper
+use diesel::{RunQueryDsl, SelectableHelper};
 use diesel::result::{DatabaseErrorKind, Error as DieselError};
 use serde_json::Value;
-use tracing::{debug, error, info, instrument, warn}; // Added debug
+use tracing::{debug, error, info, instrument, warn};
 use uuid::Uuid;
 
 use crate::{
@@ -13,13 +13,13 @@ use crate::{
     models::{
         characters::Character,
         chats::{
-            Chat, ChatMessage as DbChatMessage, ChatSettingsResponse, // Renamed ChatSession to Chat
-            DbInsertableChatMessage, MessageRole, NewChat, SettingsTuple, // Renamed NewChatSession to NewChat, Added SettingsTuple
+            Chat, ChatMessage as DbChatMessage, ChatSettingsResponse,
+            DbInsertableChatMessage, MessageRole, NewChat, SettingsTuple,
             UpdateChatSettingsRequest,
         },
     },
     schema::{characters, chat_messages, chat_sessions},
-    services::history_manager, // Import the new service
+    services::history_manager,
     state::{AppState, DbPool},
 };
 use std::sync::Arc;
@@ -45,6 +45,9 @@ pub type GenerationDataWithUnsavedUserMessage = (
     Option<i32>,             // seed
     Option<Value>,           // logit_bias
     String,                  // model_name (Fetched from DB)
+    // -- Gemini Specific Options --
+    Option<i32>,             // gemini_thinking_budget
+    Option<bool>,            // gemini_enable_code_execution
     DbInsertableChatMessage, // The user message struct, ready to be saved
     // History Management Settings (still returned for potential future use/logging)
     String,                  // history_management_strategy
@@ -57,70 +60,129 @@ pub async fn create_session_and_maybe_first_message(
     state: Arc<AppState>,
     user_id: Uuid,
     character_id: Uuid,
-) -> Result<Chat, AppError> { // Renamed ChatSession to Chat
+) -> Result<Chat, AppError> {
     let pool = state.pool.clone();
     let conn = pool.get().await?;
     let (created_session, first_mes_opt) = conn.interact(move |conn| {
         conn.transaction(|transaction_conn| {
-            info!(%character_id, %user_id, "Verifying character ownership");
-            let character_owner_id: Option<Uuid> = characters::table
+            info!(%character_id, %user_id, "Verifying character ownership and fetching character details");
+            // Fetch the full character first to get all necessary details
+            let character_result: Result<Character, DieselError> = characters::table
                 .filter(characters::id.eq(character_id))
-                .select(characters::user_id)
-                .first::<Uuid>(transaction_conn)
-                .optional()?;
+                .select(Character::as_select())
+                .first::<Character>(transaction_conn);
 
-            match character_owner_id {
-                Some(owner_id) => {
-                    if owner_id != user_id {
-                        error!(%character_id, %user_id, %owner_id, "User does not own character");
-                        return Err(AppError::Forbidden); // Keep as unit variant
-                    }
-                    info!(%character_id, %user_id, "Inserting new chat session");
-                    let new_session = NewChat { // Renamed NewChatSession to NewChat
-                        id: Uuid::new_v4(), // NewChat needs an ID
-                        user_id,
-                        character_id,
-                        title: None, // Add default fields for NewChat
-                        created_at: chrono::Utc::now(),
-                        updated_at: chrono::Utc::now(),
-                        history_management_strategy: "message_window".to_string(), // Default
-                        history_management_limit: 20, // Default
-                        model_name: "gemini-2.5-pro-preview-03-25".to_string(), // Default
-                        visibility: Some("private".to_string()), // Default
-                    };
-                    let created_session: Chat = diesel::insert_into(chat_sessions::table) // Renamed ChatSession to Chat
-                        .values(&new_session)
-                        .returning(Chat::as_select()) // Renamed ChatSession to Chat
-                        .get_result(transaction_conn)
-                        .map_err(|e| {
-                            error!(error = ?e, "Failed to insert new chat session");
-                            AppError::DatabaseQueryError(e.to_string())
-                        })?;
-                    info!(session_id = %created_session.id, "Chat session created");
-
-                    info!(%character_id, session_id = %created_session.id, "Fetching character details for first_mes");
-                    let character: Character = characters::table
-                        .filter(characters::id.eq(character_id))
-                        .select(Character::as_select())
-                        .first::<Character>(transaction_conn)
-                        .map_err(|e| {
-                            error!(error = ?e, %character_id, "Failed to fetch full character details during session creation");
-                            match e {
-                                DieselError::NotFound => AppError::InternalServerError(anyhow::anyhow!("Character inconsistency during session creation").to_string()),
-                                _ => AppError::DatabaseQueryError(e.to_string()),
-                            }
-                        })?;
-
-                    Ok((created_session, character.first_mes))
+            let character: Character = match character_result {
+                Ok(char) => {
+                    info!(character_id=%char.id, ?char.description, ?char.persona, ?char.system_prompt, "Fetched character details");
+                    char
                 }
-                None => {
+                Err(DieselError::NotFound) => {
                     error!(%character_id, "Character not found during session creation");
-                    Err(AppError::NotFound("Character not found".into()))
+                    return Err(AppError::NotFound("Character not found".into()));
                 }
+                Err(e) => {
+                    error!(error = ?e, %character_id, "Failed to fetch character details during session creation");
+                    return Err(AppError::DatabaseQueryError(e.to_string()));
+                }
+            };
+
+            // Verify ownership
+            if character.user_id != user_id {
+                error!(%character_id, %user_id, owner_id=%character.user_id, "User does not own character");
+                return Err(AppError::Forbidden);
             }
+
+            info!(%character_id, %user_id, "Inserting new chat session");
+            let new_session_id = Uuid::new_v4(); // Generate ID upfront
+            let new_chat_for_insert = NewChat {
+                id: new_session_id, // Use pre-generated ID
+                user_id,
+                character_id,
+                title: Some(character.name.clone()), // Use character name as default title, wrapped in Some()
+                created_at: chrono::Utc::now(),
+                updated_at: chrono::Utc::now(),
+                history_management_strategy: "message_window".to_string(), // Default
+                history_management_limit: 20, // Default
+                // Use a sensible default model or if Character had a preferred model, use that.
+                // For now, keeping the existing default from NewChat.
+                // If Character model is extended with a default_model_name, it could be used here:
+                // model_name: character.default_model_name.clone().unwrap_or_else(|| "gemini-2.5-pro-preview-03-25".to_string()),
+                model_name: "gemini-2.5-pro-preview-03-25".to_string(),
+                visibility: Some("private".to_string()), // Default
+            };
+
+            // Insert the new chat session record
+            diesel::insert_into(chat_sessions::table)
+                .values(&new_chat_for_insert)
+                .execute(transaction_conn)
+                .map_err(|e| {
+                    error!(error = ?e, "Failed to insert new chat session initial record");
+                    AppError::DatabaseQueryError(e.to_string())
+                })?;
+            
+            info!(session_id = %new_session_id, "Initial chat session record inserted.");
+
+            // Determine the effective system prompt for the session
+            // Priority: character.system_prompt > character.persona > character.description
+            let effective_system_prompt = character.system_prompt.clone()
+                .or_else(|| character.persona.clone())
+                .or_else(|| character.description.clone());
+
+            info!(?effective_system_prompt, "Determined effective system prompt for new session.");
+
+            // Update the newly created session with the character's system_prompt
+            if let Some(prompt_to_set) = &effective_system_prompt { // Borrow prompt_to_set
+                if !prompt_to_set.trim().is_empty() {
+                    match diesel::update(chat_sessions::table.filter(chat_sessions::id.eq(new_session_id)))
+                        .set(chat_sessions::system_prompt.eq(prompt_to_set)) // Pass borrowed
+                        .execute(transaction_conn) {
+                            Ok(rows_updated) => info!(session_id = %new_session_id, %rows_updated, "DB system_prompt update successful."),
+                            Err(e) => {
+                                error!(error = ?e, session_id = %new_session_id, "Failed to update session with character system_prompt");
+                                return Err(AppError::DatabaseQueryError(e.to_string()));
+                            }
+                        }
+                } else {
+                    info!(session_id = %new_session_id, "Effective system prompt was empty/whitespace, DB update for system_prompt skipped.");
+                }
+            } else {
+                info!(session_id = %new_session_id, "No effective system prompt derived, DB update for system_prompt skipped.");
+            }
+            
+            // Fetch the fully constituted session (now including the system_prompt)
+            let mut fully_created_session: Chat = chat_sessions::table
+                .filter(chat_sessions::id.eq(new_session_id))
+                .select(Chat::as_select())
+                .first(transaction_conn)
+                .map_err(|e| {
+                    error!(error = ?e, session_id = %new_session_id, "Failed to fetch newly created/updated session");
+                    AppError::DatabaseQueryError(e.to_string())
+                })?;
+            
+            info!(db_system_prompt_after_fetch = ?fully_created_session.system_prompt, "Chat session system_prompt from DB after fetch/update attempt.");
+
+            // Manually set the system_prompt in the returned object if it was derived and set in DB
+            // This ensures the returned object is consistent with the DB state immediately after this transaction.
+            if let Some(ref esp_content) = effective_system_prompt {
+                if !esp_content.trim().is_empty() {
+                    fully_created_session.system_prompt = Some(esp_content.clone()); // Explicit clone of esp_content
+                    info!(final_struct_system_prompt = ?fully_created_session.system_prompt, "Assigned non-empty effective_system_prompt to struct.");
+                } else {
+                    // Effective prompt was Some(" ") or Some(""), ensure struct reflects None
+                    fully_created_session.system_prompt = None;
+                    info!(final_struct_system_prompt = ?fully_created_session.system_prompt, "Effective_system_prompt was empty/whitespace, struct prompt set to None.");
+                }
+            } else {
+                // Effective prompt was None, struct prompt (from DB) should be None
+                info!(final_struct_system_prompt = ?fully_created_session.system_prompt, "Effective_system_prompt was None, struct prompt remains as fetched from DB (should be None).");
+            }
+            
+            info!(session_id = %fully_created_session.id, "Chat session fully created and configured in DB, returning.");
+            Ok((fully_created_session, character.first_mes))
         })
     })
-    .await??;
+    .await??; // Double '?' for InteractError and then AppError from closure
 
     if let Some(first_message_content) = first_mes_opt {
         if !first_message_content.trim().is_empty() {
@@ -365,6 +427,9 @@ pub async fn get_session_data_for_generation(
             String,             // history_management_strategy
             i32,                // history_management_limit
             String,             // model_name (Fetch this!)
+            // -- Gemini Specific Options --
+            Option<i32>,        // gemini_thinking_budget
+            Option<bool>,       // gemini_enable_code_execution
         ) = chat_sessions::table
             .filter(chat_sessions::id.eq(session_id))
             .select((
@@ -383,10 +448,13 @@ pub async fn get_session_data_for_generation(
                 chat_sessions::history_management_strategy,
                 chat_sessions::history_management_limit,
                 chat_sessions::model_name, // Add model_name to select
+                // -- Gemini Specific Options --
+                chat_sessions::gemini_thinking_budget,
+                chat_sessions::gemini_enable_code_execution,
             ))
             .first(conn)?;
 
-        let ( system_prompt, temperature, max_tokens, frequency_penalty, presence_penalty, top_k, top_p, repetition_penalty, min_p, top_a, seed, logit_bias, history_management_strategy, history_management_limit, model_name ) = settings; // Destructure model_name
+        let ( system_prompt, temperature, max_tokens, frequency_penalty, presence_penalty, top_k, top_p, repetition_penalty, min_p, top_a, seed, logit_bias, history_management_strategy, history_management_limit, model_name, gemini_thinking_budget, gemini_enable_code_execution ) = settings; // Destructure model_name and new Gemini fields
 
         info!(%session_id, "Fetching full message history");
         // Fetch the full history as DbChatMessage structs
@@ -400,7 +468,7 @@ pub async fn get_session_data_for_generation(
         // Clone full_db_history here to avoid moving it before the debug log below.
         let managed_db_history = history_manager::manage_history(
             full_db_history.clone(), // Clone here
-            &history_management_strategy,
+            &history_management_strategy, // Pass as reference
             history_management_limit,
         );
         debug!(%session_id, strategy=%history_management_strategy, limit=%history_management_limit, original_len=full_db_history.len(), managed_len=managed_db_history.len(), "History management applied");
@@ -416,7 +484,7 @@ pub async fn get_session_data_for_generation(
             session_id,
             user_id,
             MessageRole::User,
-            user_message_content,
+            user_message_content, // This is String
         );
 
         Ok((
@@ -433,9 +501,12 @@ pub async fn get_session_data_for_generation(
             top_a,
             seed,
             logit_bias,
-            model_name, // Return the fetched model_name
+            model_name.clone(), // Explicitly clone String
+            // -- Gemini Specific Options --
+            gemini_thinking_budget,
+            gemini_enable_code_execution,
             user_db_message_to_save,
-            history_management_strategy, // Still return these for logging/info
+            history_management_strategy.clone(), // Explicitly clone String
             history_management_limit,
         ))
     })
@@ -470,6 +541,9 @@ pub async fn get_session_settings(
                 chat_sessions::history_management_strategy,
                 chat_sessions::history_management_limit,
                 chat_sessions::model_name,
+                // -- Gemini Specific Options --
+                chat_sessions::gemini_thinking_budget,
+                chat_sessions::gemini_enable_code_execution,
             ))
             .first::<SettingsTuple>(conn)
             .optional()?;
@@ -492,6 +566,9 @@ pub async fn get_session_settings(
                         history_management_strategy,
                         history_management_limit,
                         model_name,
+                        // -- Gemini Specific Options --
+                        gemini_thinking_budget,
+                        gemini_enable_code_execution,
                     ) = tuple;
                     Ok(ChatSettingsResponse {
                         system_prompt,
@@ -509,6 +586,9 @@ pub async fn get_session_settings(
                         history_management_strategy,
                         history_management_limit,
                         model_name,
+                        // -- Gemini Specific Options --
+                        gemini_thinking_budget,
+                        gemini_enable_code_execution,
                     })
                 }
                 None => Err(AppError::NotFound(
@@ -567,6 +647,9 @@ pub async fn update_session_settings(
                             chat_sessions::history_management_strategy,
                             chat_sessions::history_management_limit,
                             chat_sessions::model_name,
+                            // -- Gemini Specific Options --
+                            chat_sessions::gemini_thinking_budget,
+                            chat_sessions::gemini_enable_code_execution,
                         ))
                         .get_result::<SettingsTuple>(transaction_conn) // Explicit type annotation
                         .map_err(|e| {
@@ -592,6 +675,9 @@ pub async fn update_session_settings(
                         history_management_strategy,
                         history_management_limit,
                         model_name,
+                        // -- Gemini Specific Options --
+                        gemini_thinking_budget,
+                        gemini_enable_code_execution,
                     ) = updated_settings_tuple;
                     Ok(ChatSettingsResponse {
                         system_prompt,
@@ -609,6 +695,9 @@ pub async fn update_session_settings(
                         history_management_strategy,
                         history_management_limit,
                         model_name,
+                        // -- Gemini Specific Options --
+                        gemini_thinking_budget,
+                        gemini_enable_code_execution,
                     })
                 }
                 None => {

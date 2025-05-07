@@ -27,7 +27,7 @@ pub fn manage_history(
     debug!(%strategy, %limit, initial_length = history.len(), "Applying history management");
 
     let managed_history = match strategy {
-        "sliding_window_messages" => apply_sliding_window_messages(history, limit as usize),
+        "sliding_window_messages" | "message_window" => apply_sliding_window_messages(history, limit as usize),
         "sliding_window_tokens" => apply_sliding_window_tokens(history, limit as usize),
         "truncate_tokens" => apply_truncate_tokens(history, limit as usize),
         "none" | _ => {
