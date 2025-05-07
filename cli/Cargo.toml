@@ -29,7 +29,7 @@ async-stream = "0.3" # For creating streams
 tokio-stream = "0.1" # Removed incorrect features
 
 # Added missing dependencies for handlers
-genai = "0.2.2" 
+genai = { path = "/home/socol/Workspace/rust-genai" }
 qdrant-client = "1.10.0"
 
 # Moved from dev-dependencies

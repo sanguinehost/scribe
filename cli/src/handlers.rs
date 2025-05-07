@@ -5,13 +5,12 @@ use crate::error::CliError;
 use crate::io::IoHandler;
 // Added missing Stream trait import
 use scribe_backend::models::auth::LoginPayload;
-use scribe_backend::models::{characters::CharacterMetadata, chats::ApiChatMessage}; // <-- Import ApiChatMessage
+use scribe_backend::models::{characters::CharacterMetadata, chats::ApiChatMessage, chats::UpdateChatSettingsRequest}; // <-- Import ApiChatMessage and UpdateChatSettingsRequest
 use scribe_backend::models::chats::MessageRole;
 use scribe_backend::models::users::User;
 use std::path::Path;
 use uuid::Uuid;
 use secrecy::Secret;
-use bigdecimal::BigDecimal;
 use crate::client::{RegisterPayload};
 
 // --- Action Functions ---
@@ -425,6 +424,54 @@ pub async fn handle_stream_test_action<Http: HttpClient, IO: IoHandler>(
     tracing::info!(%chat_id, "Chat session created for streaming test");
     io_handler.write_line(&format!("Chat session created (ID: {}).", chat_id))?;
 
+    // +++ Optional: Set Gemini-specific settings for this test session +++
+    let mut settings_to_update = UpdateChatSettingsRequest { 
+        gemini_thinking_budget: None,
+        gemini_enable_code_execution: None,
+        // Initialize other fields from UpdateChatSettingsRequest to None or their defaults if any
+        system_prompt: None,
+        temperature: None,
+        max_output_tokens: None,
+        frequency_penalty: None,
+        presence_penalty: None,
+        top_k: None,
+        top_p: None,
+        repetition_penalty: None,
+        min_p: None,
+        top_a: None,
+        seed: None,
+        logit_bias: None,
+        history_management_strategy: None,
+        history_management_limit: None,
+        model_name: None, 
+    };
+
+    let budget_str = io_handler.read_line("Set Gemini Thinking Budget (optional, integer, e.g. 1024, press Enter to skip):")?;
+    if !budget_str.trim().is_empty() {
+        match budget_str.trim().parse::<i32>() {
+            Ok(budget) => settings_to_update.gemini_thinking_budget = Some(budget),
+            Err(_) => io_handler.write_line("Invalid budget, skipping.")?,
+        }
+    }
+
+    let exec_str = io_handler.read_line("Enable Gemini Code Execution (optional, true/false, press Enter to skip):")?;
+    if !exec_str.trim().is_empty() {
+        match exec_str.trim().to_lowercase().as_str() {
+            "true" => settings_to_update.gemini_enable_code_execution = Some(true),
+            "false" => settings_to_update.gemini_enable_code_execution = Some(false),
+            _ => io_handler.write_line("Invalid input, skipping code execution setting.")?,
+        }
+    }
+
+    if settings_to_update.gemini_thinking_budget.is_some() || settings_to_update.gemini_enable_code_execution.is_some() {
+        io_handler.write_line("Updating session with Gemini-specific settings for this test...")?;
+        match http_client.update_chat_settings(chat_id, &settings_to_update).await {
+            Ok(_) => io_handler.write_line("Test session settings updated.")?,
+            Err(e) => io_handler.write_line(&format!("Warning: Failed to update test session settings: {}. Proceeding with defaults.", e))?,
+        }
+    }
+    // +++ End Gemini settings for test +++
+
     // 3. Get User's Initial Message
     let user_message = io_handler.read_line("Enter your message to start the stream test:")?;
     if user_message.trim().is_empty() {
@@ -736,7 +783,7 @@ mod tests {
         async fn stream_chat_response(
             &self,
             _chat_id: Uuid,
-            _message_content: &str,
+            _history: Vec<ApiChatMessage>,
             _request_thinking: bool,
         ) -> Result<Pin<Box<dyn Stream<Item = Result<StreamEvent, CliError>> + Send>>, CliError>
         {
@@ -798,6 +845,7 @@ mod tests {
             history_management_strategy: "window".to_string(),
             history_management_limit: 20,
             visibility: Some("private".to_string()),
+            model_name: "default-model".to_string(), // Added missing field
         }
     }
 

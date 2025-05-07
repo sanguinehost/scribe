@@ -1976,14 +1976,13 @@ dependencies = [
 
 [[package]]
 name = "genai"
-version = "0.2.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0f845eb241a89a88497d54cca944333ce6255a00b6ff22001f088bd1dd3a6276"
+version = "0.2.4-WIP"
 dependencies = [
  "bytes",
  "derive_more 2.0.1",
  "eventsource-stream",
  "futures",
+ "futures-util",
  "reqwest",
  "reqwest-eventsource",
  "serde",

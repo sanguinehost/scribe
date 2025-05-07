@@ -182,25 +182,43 @@
 					}
 					currentData = currentData.trimEnd(); // Trim trailing newline if added
 
-					// Process the completed event
-					if (currentEvent === 'content') {
-						messages = messages.map(msg =>
-							msg.id === assistantMessageId
-								? { ...msg, content: msg.content + currentData }
-								: msg
-						);
+					// Process the completed event data
+					if (currentData === '[DONE]') {
+						console.log('SSE stream finished with [DONE] signal.');
+						// Finalize the message state after the loop finishes naturally
+						// No need to break here, let reader.read() return done: true
 					} else if (currentEvent === 'error') {
+						// Handle explicit error events from the backend
 						console.error('SSE Error Event:', currentData);
 						error = `Stream error: ${currentData}`; // Set local error state
 						toast.error(error);
 						reader.cancel('SSE error event received'); // Cancel the reader
 						throw new Error(error); // Throw to trigger catch block and stop processing
-					} else if (currentEvent === 'done' && currentData === '[DONE]') {
-						console.log('Stream finished with event: done, data: [DONE]');
-						// The loop will break naturally via reader.read() done flag
 					} else if (currentEvent === 'thinking') {
-						console.log('SSE Thinking Event:', currentData); // Log thinking steps if needed
-						// Optionally update UI to show thinking state
+						// Handle thinking events if backend sends them (currently it doesn't)
+						console.log('SSE Thinking Event:', currentData);
+					} else if (currentData) {
+						// Assume any other non-empty data is our JSON payload
+						try {
+							const parsedData = JSON.parse(currentData);
+							if (parsedData && typeof parsedData.text === 'string') {
+								messages = messages.map(msg =>
+									msg.id === assistantMessageId
+										? { ...msg, content: msg.content + parsedData.text }
+										: msg
+								);
+							} else {
+								console.warn('Received SSE data object without expected "text" field:', parsedData);
+							}
+						} catch (parseError: any) {
+							console.error('Failed to parse SSE data as JSON:', currentData, parseError);
+							// Decide how to handle parse errors: stop stream or log and continue?
+							// For now, log and continue, but consider stopping if it's critical.
+							// error = `Stream error: Invalid data format received.`;
+							// toast.error(error);
+							// reader.cancel('Invalid SSE data format');
+							// throw new Error(error);
+						}
 					}
 				}
 			}
