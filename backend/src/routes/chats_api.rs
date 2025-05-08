@@ -1,8 +1,8 @@
 use crate::errors::AppError;
 use crate::models::chats::{
-    Chat, CreateChatRequest, CreateMessageRequest, Message, MessageResponse, NewChat,
+    Chat, CreateChatRequest, CreateMessageRequest, Message, MessageResponse,
+    ChatSettingsResponse, UpdateChatSettingsRequest,
     NewMessage, UpdateChatVisibilityRequest, Vote, VoteRequest, MessageRole,
-    ChatSettingsResponse, UpdateChatSettingsRequest, // <-- Add UpdateChatSettingsRequest
 };
 use crate::schema::{chat_messages, chat_sessions}; // Removed unused old_votes
 use axum::{
@@ -17,13 +17,11 @@ use crate::auth::user_store::Backend as AuthBackend;
 // Removed incorrect ValidatedJson import
 use validator::Validate;
 use chrono::Utc;
-use diesel::{QueryDsl, ExpressionMethods, RunQueryDsl, SelectableHelper}; // Removed BelongingToDsl
+use diesel::{QueryDsl, ExpressionMethods, RunQueryDsl, SelectableHelper};
 use serde_json::json;
 use uuid::Uuid;
 use crate::state::AppState;
-use crate::models::characters::Character; // Added Character model
-use crate::schema::characters; // Added characters schema
-use tracing::{debug, error, info, instrument, trace}; // Ensure tracing is properly imported
+use tracing::info;
 use std::sync::Arc;
 use crate::services::chat_service;
 
@@ -78,7 +76,7 @@ pub async fn create_chat_handler(
     let user = auth_session.user.ok_or(AppError::Unauthorized("Not logged in".to_string()))?;
     
     // First, verify the character exists and belongs to the user
-    tracing::info!(%user.id, character_id=%payload.character_id, "Creating chat session");
+    info!(%user.id, character_id=%payload.character_id, "Creating chat session");
     
     // Use the service function that properly handles system_prompt and first_mes
     let app_state = Arc::new(state.clone()); // Clone the state before moving it
@@ -109,7 +107,7 @@ pub async fn create_chat_handler(
     }
     
     // Add detailed logging for debugging the chat session after creation
-    tracing::info!(
+    info!(
         message = "Chat session created in handler",
         chat_id = %chat.id,
         character_id = %chat.character_id,

@@ -3,53 +3,41 @@
 	import { fly } from 'svelte/transition';
 	// import { replaceState } from '$app/navigation'; // No longer needed here
 	import type { User } from '$lib/types';
-	// Removed Chat type import
 
-	// Accept sendMessage function instead of chatClient object
-	let { user, sendMessage }: { user: User | undefined; sendMessage: (content: string) => Promise<void> } = $props();
+	// Accept sendMessage function and dynamic actions
+	let {
+		user,
+		sendMessage,
+		actions
+	}: {
+		user: User | undefined;
+		sendMessage: (content: string) => Promise<void>;
+		actions: Array<{ action: string }>; // Expecting array of {action: string}
+	} = $props();
 
-	const suggestedActions = [
-		{
-			title: 'What are the advantages',
-			label: 'of using SvelteKit?',
-			action: 'What are the advantages of using SvelteKit?'
-		},
-		{
-			title: 'Write code to',
-			label: `demonstrate djikstra's algorithm`,
-			action: `Write code to demonstrate djikstra's algorithm`
-		},
-		{
-			title: 'Help me write an essay',
-			label: `about silicon valley`,
-			action: `Help me write an essay about silicon valley`
-		},
-		{
-			title: 'What is the weather like',
-			label: 'in San Francisco?',
-			action: 'What is the weather like in San Francisco?'
-		}
-	];
+	// Removed the static 'suggestedActions' array
 </script>
 
 <div class="grid w-full gap-2 sm:grid-cols-2">
-	{#each suggestedActions as suggestedAction, i (suggestedAction.title)}
+	{#each actions as suggestedItem, i (suggestedItem.action)}
 		<div
 			in:fly|global={{ opacity: 0, y: 20, delay: 50 * i, duration: 400 }}
 			class={i > 1 ? 'hidden sm:block' : 'block'}
 		>
+			<!--
+				Display logic: Show first two items always.
+				Show items 3 and 4 only on 'sm' screens and up.
+			-->
 			<Button
 				variant="ghost"
 				onclick={async () => {
-					// Use the passed sendMessage function
-					await sendMessage(suggestedAction.action);
+					await sendMessage(suggestedItem.action);
 				}}
-				class="h-auto w-full flex-1 items-start justify-start gap-1 rounded-xl border px-4 py-3.5 text-left text-sm sm:flex-col"
+				class="h-auto w-full flex-1 items-start justify-start gap-1 rounded-xl border px-4 py-3.5 text-left text-sm"
+				aria-label={`Suggested action: ${suggestedItem.action}`}
 			>
-				<span class="font-medium">{suggestedAction.title}</span>
-				<span class="text-muted-foreground">
-					{suggestedAction.label}
-				</span>
+				<span class="font-medium">{suggestedItem.action}</span>
+				<!-- Removed the second span for 'label' -->
 			</Button>
 		</div>
 	{/each}

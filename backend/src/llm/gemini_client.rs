@@ -23,6 +23,12 @@ impl AiClient for ScribeGeminiClient {
         request: ChatRequest,
         config_override: Option<ChatOptions>,
     ) -> Result<ChatResponse, AppError> {
+        tracing::trace!(
+            target: "gemini_client",
+            model_name = %model_name,
+            request = ?request,
+            config_override = ?config_override,
+            "ScribeGeminiClient::exec_chat - Calling genai_client.exec_chat with model_name");
         self.inner
             .exec_chat(model_name, request, config_override.as_ref())
             .await

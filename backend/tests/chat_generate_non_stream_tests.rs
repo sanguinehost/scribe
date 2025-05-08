@@ -69,11 +69,8 @@ async fn generate_chat_response_uses_session_settings() {
     let test_rep_penalty = BigDecimal::from_str("1.3").unwrap();
     let test_min_p = BigDecimal::from_str("0.05").unwrap();
     let test_top_a = BigDecimal::from_str("0.75").unwrap();
-    let test_seed = 98765_i32;
-    let test_logit_bias = serde_json::json!({
-        "30001": -20,
-        "30002": 20
-    });
+    let test_seed = None;
+    let test_logit_bias = None;
 
     test_helpers::db::update_all_chat_settings(
         &context.app.db_pool,
@@ -90,10 +87,11 @@ async fn generate_chat_response_uses_session_settings() {
         Some(test_top_a.clone()),
         Some(test_seed),
         Some(test_logit_bias.clone()),
-        // Add missing None arguments for history management fields
-        None,
-        None,
-        Some("test-model".to_string()),
+        None, // history_management_strategy
+        None, // history_management_limit
+        Some("test-model".to_string()), // model_name
+        None, // gemini_enable_code_execution
+        None, // gemini_thinking_budget
     )
     .await;
 

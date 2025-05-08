@@ -9,21 +9,27 @@ use axum::{
     Router,
 };
 use axum_login::AuthSession;
-use diesel::{QueryDsl, ExpressionMethods, RunQueryDsl, BoolExpressionMethods, SelectableHelper}; // Added SelectableHelper
-use crate::models::chats::{MessageRole, GenerateChatRequest, ChatMessage, Chat}; // Use GenerateChatRequest, add Chat, ApiChatMessage
+use diesel::{QueryDsl, ExpressionMethods, RunQueryDsl, SelectableHelper};
+use crate::models::chats::{
+    MessageRole, GenerateChatRequest, Chat, SuggestedActionsRequest,
+    SuggestedActionItem, SuggestedActionsResponse,
+};
 use crate::errors::AppError;
-use crate::services::chat_service; // Added chat_service
+use crate::services::chat_service;
 use crate::state::AppState;
-use crate::schema::chat_sessions; // Added chat_sessions schema
-use validator::Validate; // Added Validate
+use crate::schema::chat_sessions;
+use validator::Validate;
 use std::sync::Arc;
 use futures::StreamExt;
 use tracing::{debug, error, info, instrument, trace};
 use uuid::Uuid;
-use genai::chat::ChatStreamEvent;
 use bigdecimal::ToPrimitive;
 use serde_json::json;
 use crate::auth::user_store::Backend as AuthBackend;
+use genai::chat::{
+    ChatRequest, ChatOptions, ChatMessage as GenAiChatMessage, ChatRole, MessageContent,
+    ChatResponseFormat, JsonSpec, ChatStreamEvent
+};
 use crate::routes::chats_api::{
     create_chat_handler,
     get_chats_handler,
@@ -39,17 +45,14 @@ pub async fn generate_chat_response(
     auth_session: AuthSession<AuthBackend>,
     Path(session_id_str): Path<String>,
     headers: HeaderMap,
-    Json(payload): Json<GenerateChatRequest>, // <-- Use new payload struct
+    Json(payload): Json<GenerateChatRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     info!("Received request to generate chat response with history");
-    // Validate the incoming payload
     payload.validate()?;
     trace!(payload = ?payload, "Received validated payload");
 
-    // We'll need to convert state to Arc<AppState> for consistent API
     let state = Arc::new(state);
 
-    // 1. Extract User and Validate Session ID
     let user = auth_session.user
         .ok_or_else(|| AppError::Unauthorized("User not found in session".to_string()))?;
     let user_id_value = user.id;
@@ -59,8 +62,6 @@ pub async fn generate_chat_response(
         .map_err(|_| AppError::BadRequest("Invalid session UUID format".to_string()))?;
     debug!(%session_id, "Parsed session ID");
 
-    // 2. Authorization & Fetch Session Settings
-    // Fetch the chat session to check ownership and get settings
     let chat_session = state.pool.get().await
         .map_err(|e| AppError::DbPoolError(e.to_string()))?
         .interact(move |conn| {
@@ -68,35 +69,26 @@ pub async fn generate_chat_response(
                 .filter(chat_sessions::id.eq(session_id))
                 .select(Chat::as_select())
                 .first::<Chat>(conn)
-                .map_err(AppError::from) // Handles NotFound
+                .map_err(AppError::from)
         })
         .await
-        .map_err(|e| AppError::InternalServerError(format!("Interact error fetching chat: {}", e)))? // Handle interact error
-        ?; // Propagate NotFound error
+        .map_err(|e| AppError::InternalServerError(format!("Interact error fetching chat: {}", e)))?
+        ?;
 
-    // Check ownership
     if chat_session.user_id != user_id_value {
         return Err(AppError::Forbidden);
     }
     debug!(%session_id, "User authorized for chat session");
 
-    // Extract settings from the fetched chat session
     let system_prompt = chat_session.system_prompt;
     let temperature = chat_session.temperature;
     let max_output_tokens = chat_session.max_output_tokens;
     let top_p = chat_session.top_p;
     let model_name_from_settings = chat_session.model_name;
-    // Note: Other settings like penalties, top_k etc. are not currently used by gemini_client but are available in chat_session
 
-    // Use model from payload if provided, otherwise use the one from settings
-    let model_to_use = payload.model.clone().unwrap_or(model_name_from_settings); // Clone payload model name
+    let model_to_use = payload.model.clone().unwrap_or(model_name_from_settings);
     debug!(%model_to_use, "Determined model to use");
 
-    // 3. Fetch and Manage History, then prepare AI Request
-    let ai_client = state.ai_client.clone();
-
-    // Extract the current user message from the payload.
-    // We assume the payload.history contains the current turn, typically one user message.
     let current_user_api_message = payload.history.last().cloned().ok_or_else(|| {
         error!(%session_id, "Payload history is empty, cannot extract current user message.");
         AppError::BadRequest("Request payload must contain at least one message.".to_string())
@@ -108,12 +100,11 @@ pub async fn generate_chat_response(
     }
     let current_user_content = current_user_api_message.content.clone();
 
-    // Fetch existing session data, including managed history from the database
     let (
-        managed_history_tuples, // This is Vec<(MessageRole, String)>
-        _db_system_prompt, // System prompt is already handled from chat_session
-        _db_temperature,   // Temperature is already handled from chat_session
-        _db_max_tokens,    // Max tokens is already handled from chat_session
+        managed_history_tuples,
+        _db_system_prompt,
+        _db_temperature,
+        _db_max_tokens,
         _db_freq_penalty,
         _db_pres_penalty,
         _db_top_k,
@@ -124,7 +115,6 @@ pub async fn generate_chat_response(
         _db_seed,
         _db_logit_bias,
         _db_model_name,
-        // -- Gemini Specific Options --
         gemini_thinking_budget,
         gemini_enable_code_execution,
         _user_db_message_to_save,
@@ -134,57 +124,84 @@ pub async fn generate_chat_response(
         &state.pool,
         user_id_value,
         session_id,
-        current_user_content.clone(), // Pass current user message content for get_session_data_for_generation
+        current_user_content.clone(),
     )
     .await?;
 
-    // Convert managed_history_tuples to Vec<genai::chat::ChatMessage>
-    let mut messages_for_ai: Vec<genai::chat::ChatMessage> = managed_history_tuples
+    let mut messages_for_ai: Vec<GenAiChatMessage> = managed_history_tuples
         .into_iter()
-        .map(|(role, content)| genai::chat::ChatMessage {
+        .map(|(role, content)| GenAiChatMessage {
             role: match role {
-                MessageRole::User => genai::chat::ChatRole::User,
-                MessageRole::Assistant => genai::chat::ChatRole::Assistant,
-                MessageRole::System => genai::chat::ChatRole::System,
+                MessageRole::User => ChatRole::User,
+                MessageRole::Assistant => ChatRole::Assistant,
+                MessageRole::System => ChatRole::System,
             },
-            content: genai::chat::MessageContent::Text(content),
+            content: MessageContent::Text(content),
             options: None,
         })
         .collect();
 
-    // Append the current user message (already extracted as current_user_api_message)
-    messages_for_ai.push(genai::chat::ChatMessage {
-        role: genai::chat::ChatRole::User, // We've validated it's a user message
-        content: genai::chat::MessageContent::Text(current_user_content),
+    messages_for_ai.push(GenAiChatMessage {
+        role: ChatRole::User,
+        content: MessageContent::Text(current_user_content.clone()),
         options: None,
     });
     
     trace!(history_len = messages_for_ai.len(), %session_id, "Prepared final message list for AI (DB history + current payload message)");
 
-    // 4. Determine Response Type (SSE vs JSON) and Generate
     let accept_header = headers
         .get(axum::http::header::ACCEPT)
         .and_then(|value| value.to_str().ok())
-        .unwrap_or(""); // Default to empty string if header missing or invalid
+        .unwrap_or("");
 
     let request_thinking = headers
         .get("X-Request-Thinking")
         .map(|v| v.to_str().unwrap_or("false") == "true")
-        .unwrap_or(false); // Default to false if header is missing
+        .unwrap_or(false);
 
+    let enable_rag = headers
+        .get("X-Scribe-Enable-RAG")
+        .map(|v| v.to_str().unwrap_or("false") == "true")
+        .unwrap_or(false);
+
+    let _rag_context: Option<String> = None;
+
+    if enable_rag {
+        if !current_user_content.is_empty() {
+            info!(%session_id, "RAG enabled, attempting to retrieve context for user message.");
+
+            let user_message_id = Uuid::new_v4();
+            
+            let user_message_for_embedding = crate::models::chats::ChatMessage { 
+                id: user_message_id,
+                session_id,
+                message_type: MessageRole::User,
+                content: current_user_content.clone(), 
+                created_at: chrono::Utc::now(),
+                user_id: user_id_value,
+            };
+
+            match state.embedding_pipeline_service.process_and_embed_message(state.clone(), user_message_for_embedding).await {
+                Ok(()) => {
+                    info!(%session_id, "RAG pre-processing (process_and_embed_message) completed for current user message.");
+                }
+                Err(e) => {
+                    error!(error = ?e, session_id = %session_id, "Failed to process and embed user message for RAG context preparation");
+                }
+            }
+        }
+    }
 
     match accept_header {
         v if v.contains(mime::TEXT_EVENT_STREAM.as_ref()) => {
-            // --- Streaming SSE response ---
             info!(%session_id, "Handling streaming SSE request. request_thinking={}", request_thinking);
 
-            // +++ Create ChatRequest and ChatOptions INSIDE the SSE branch +++
-            let chat_request = genai::chat::ChatRequest::new(messages_for_ai.clone()) // Clone messages for this branch
-                .with_system(system_prompt.clone().unwrap_or_default()); // Clone system prompt
+            let chat_request = genai::chat::ChatRequest::new(messages_for_ai.clone())
+                .with_system(system_prompt.clone().unwrap_or_default());
             
             let mut genai_chat_options = genai::chat::ChatOptions::default();
             if let Some(temp_val) = temperature {
-                if let Some(f_val) = temp_val.to_f32() { // genai takes f32 for temperature
+                if let Some(f_val) = temp_val.to_f32() {
                     genai_chat_options = genai_chat_options.with_temperature(f_val.into());
                 }
             }
@@ -192,37 +209,30 @@ pub async fn generate_chat_response(
                 genai_chat_options = genai_chat_options.with_max_tokens(tokens as u32);
             }
             if let Some(p_val) = top_p {
-                if let Some(f_val) = p_val.to_f32() { // genai takes f32 for top_p
+                if let Some(f_val) = p_val.to_f32() {
                     genai_chat_options = genai_chat_options.with_top_p(f_val.into());
                 }
             }
 
-            // Add new Gemini options
             if let Some(budget) = gemini_thinking_budget {
-                if budget > 0 { // gemini_thinking_budget in rust-genai takes u32
+                if budget > 0 {
                     genai_chat_options = genai_chat_options.with_gemini_thinking_budget(budget as u32);
                 }
             }
             if let Some(enable_exec) = gemini_enable_code_execution {
                 genai_chat_options = genai_chat_options.with_gemini_enable_code_execution(enable_exec);
             }
-            // +++ End Creation +++
 
-            // ++ Logging: Log the prepared chat request ++
             trace!(%session_id, chat_request = ?chat_request, genai_options = ?genai_chat_options, "Prepared ChatRequest and Options for AI (SSE)");
-            // ++ End Logging ++
 
-            let genai_stream: crate::llm::ChatStream = match ai_client.stream_chat(model_to_use.as_str(), chat_request, Some(genai_chat_options)).await {
+            let genai_stream: crate::llm::ChatStream = match state.ai_client.stream_chat(model_to_use.as_str(), chat_request, Some(genai_chat_options)).await {
                  Ok(s) => {
                      debug!(%session_id, "Successfully initiated AI stream");
 
-                     // --- Save User Message (SSE Branch - AFTER Successful AI Stream Initiation) ---
-                     // Clone necessary data for the background task
                      let db_pool_sse = state.pool.clone();
                      let embedding_tracker = state.embedding_call_tracker.clone();
                      let session_id_sse = session_id;
                      let user_id_sse = user_id_value;
-                     // Get the last message from the history payload for saving
                      let last_message_content_sse = payload.history.last().map(|m| m.content.clone()).unwrap_or_default();
 
                      tokio::spawn(async move {
@@ -244,7 +254,7 @@ pub async fn generate_chat_response(
                                      session_id_sse,
                                      user_id_sse,
                                      MessageRole::User,
-                                     last_message_content_sse, // Save last message content
+                                     last_message_content_sse,
                                  );
                                  diesel::insert_into(crate::schema::chat_messages::table)
                                      .values(&message)
@@ -257,7 +267,6 @@ pub async fn generate_chat_response(
                              Ok(Ok(message_id)) => {
                                  debug!(session_id = %session_id_sse, message_id = %message_id, "Successfully saved user message in background (SSE)");
                                  
-                                 // Add user message to embedding call tracker
                                  match embedding_tracker.lock().await {
                                      mut tracker => {
                                          tracker.push(message_id);
@@ -273,18 +282,14 @@ pub async fn generate_chat_response(
                              }
                          }
                      });
-                     // --- End Save User Message (SSE Branch) ---
 
                      s
                  },
                  Err(e) => {
                      error!(error = ?e, %session_id, "Failed to initiate AI stream");
-                     // Immediately return an error stream if initiation fails
                      let error_stream = async_stream::stream! {
-                         // ++ Logging: Log sending initiation error ++
                          let error_msg = format!("LLM API error: Failed to initiate stream - {}", e);
                          trace!(%session_id, error_message = %error_msg, "Sending SSE 'error' event (initiation failed)");
-                         // ++ End Logging ++
                          yield Ok::<_, AppError>(Event::default().event("error").data(error_msg));
                      };
                      return Ok(Sse::new(Box::pin(error_stream)).keep_alive(KeepAlive::default()).into_response());
@@ -293,7 +298,6 @@ pub async fn generate_chat_response(
 
             debug!(%session_id, "Starting SSE generation loop");
 
-            // Use async_stream! to build the SSE stream
             let stream = async_stream::stream! {
                 let mut accumulated_content = String::new();
                 let mut stream_error_occurred = false;
@@ -306,7 +310,6 @@ pub async fn generate_chat_response(
                     match event_result {
                         Ok(ChatStreamEvent::Start) => {
                             debug!(%session_id, "Received Start event from AI stream");
-                            // No need to send anything to the client for this event
                             continue;
                         }
                         Ok(ChatStreamEvent::Chunk(chunk)) => {
@@ -326,27 +329,19 @@ pub async fn generate_chat_response(
                         }
                         Ok(ChatStreamEvent::End(_)) => {
                             debug!(%session_id, "Received End event from AI stream");
-                            // Don't break here yet, wait for the stream to naturally end (None)
-                            // or handle final cleanup after the loop
                         }
                         Err(e) => {
-                            // ++ Logging: Log the raw error from the stream ++
                             error!(error = ?e, %session_id, "Error during AI stream processing (inside loop)");
-                            // ++ End Logging ++
-                            stream_error_occurred = true; // Set flag
+                            stream_error_occurred = true;
 
-                            // --- Save Partial Response on Error ---
-                            let partial_content_clone = accumulated_content.clone(); // Clone for background task
-                            let db_pool_clone = state.pool.clone(); // Clone DB pool
+                            let partial_content_clone = accumulated_content.clone();
+                            let db_pool_clone = state.pool.clone();
                             let error_session_id = session_id;
                             let error_user_id = user_id_value;
 
                             tokio::spawn(async move {
                                 if !partial_content_clone.is_empty() {
-                                    // ++ Logging: Log saving partial response ++
                                     trace!(session_id = %error_session_id, "Attempting to save partial AI response after stream error");
-                                    // ++ End Logging ++
-                                    
                                     let conn = match db_pool_clone.get().await {
                                         Ok(conn) => conn,
                                         Err(e) => {
@@ -381,52 +376,35 @@ pub async fn generate_chat_response(
                                         }
                                     }
                                 } else {
-                                     // ++ Logging: Log no partial content ++
                                      trace!(session_id = %error_session_id, "No partial content to save after stream error");
-                                     // ++ End Logging ++
                                  }
                             });
-                            // --- End Save Partial Response ---
 
-
-                            // Log the detailed error server-side
                             let detailed_error = e.to_string();
                             error!(error = %detailed_error, %session_id, "Detailed error during SSE stream processing");
 
-                            // Send the detailed error message to the client via SSE
-                            // Check if the error already contains "LLM API error:" to avoid double prefixing
                             let client_error_message = if detailed_error.contains("LLM API error:") {
                                 detailed_error
                             } else {
                                 format!("LLM API error: {}", detailed_error)
                             };
-                            // ++ Logging: Log sending error event ++
                             trace!(%session_id, error_message = %client_error_message, "Sending SSE 'error' event");
-                            // ++ End Logging ++
                             yield Ok::<_, AppError>(Event::default().event("error").data(client_error_message));
-                            break; // Error exit from loop
+                            break;
                         }
                     }
                 }
 
-                // ++ Logging: Log exiting the loop ++
                 trace!(%session_id, "Exited SSE processing loop. stream_error_occurred={}", stream_error_occurred);
-                // ++ End Logging ++
 
-                // --- Final processing after loop ---
                 if !stream_error_occurred && !accumulated_content.is_empty() {
-                    // Save the full successful response
-                    // ++ Logging: Log saving full response ++
                     debug!(%session_id, "Attempting to save full successful AI response");
-                    // ++ End Logging ++
 
-                    // Clone everything needed for the background task
                     let state_clone = state.clone();
                     let session_id_clone = session_id;
                     let user_id_clone = user_id_value;
                     let accumulated_content_clone = accumulated_content.clone();
 
-                    // Spawn a task to save the message to the database
                     tokio::spawn(async move {
                         let conn = match state_clone.pool.get().await {
                             Ok(conn) => conn,
@@ -455,7 +433,6 @@ pub async fn generate_chat_response(
                             Ok(Ok(message_id)) => {
                                 debug!(session_id = %session_id_clone, message_id = %message_id, "Successfully saved AI message");
                                 
-                                // Add AI message to embedding call tracker
                                 match state_clone.embedding_call_tracker.lock().await {
                                     mut tracker => {
                                         tracker.push(message_id);
@@ -471,204 +448,74 @@ pub async fn generate_chat_response(
                             }
                         }
                     });
-                    // Send the final "[DONE]" data event ONLY if no error occurred
-                    // ++ Logging: Log sending [DONE] event ++
                     trace!(%session_id, "Sending SSE event: done, data: [DONE]");
-                    // ++ End Logging ++
                     yield Ok::<_, AppError>(Event::default().event("done").data("[DONE]"));
                 } else if stream_error_occurred {
-                    // If an error occurred, we might have already sent an error event.
-                    // Consider if a different termination is needed or if the error event is sufficient.
-                    // For now, we don't send [DONE] if an error was already sent.
-                    // ++ Logging: Log [DONE] not sent due to error ++
                     trace!(%session_id, "[DONE] not sent due to stream_error_occurred=true");
-                    // ++ End Logging ++
                 } else if accumulated_content.is_empty() && !stream_error_occurred {
-                    // Case: Stream finished, no errors, but also no content was accumulated (e.g., LLM returned empty)
-                    // Still send [DONE] to signify graceful completion.
-                    // ++ Logging: Log sending [DONE] for empty successful response ++
                     trace!(%session_id, "Sending SSE event: done, data: [DONE] (empty successful response)");
-                    // ++ End Logging ++
                     yield Ok::<_, AppError>(Event::default().event("done").data("[DONE]"));
                 }
             };
 
-            // Return the SSE response
             Ok(Sse::new(Box::pin(stream)).keep_alive(KeepAlive::default()).into_response())
         }
-        // --- Non-streaming JSON response ---
         v if v.contains(mime::APPLICATION_JSON.as_ref()) => {
-            // --- JSON response ---
-            info!(%session_id, "Handling non-streaming JSON request");
+            info!(%session_id, "Handling non-streaming JSON request. request_thinking={}", request_thinking);
             
-            // --- Create and Save User Message (JSON path) ---
-            // Get the last message from the history payload
-            let last_user_message = payload.history.last()
-                .filter(|m| m.role.to_lowercase() == "user") // Ensure it's a user message
-                .ok_or_else(|| {
-                    error!(%session_id, "Last message in history is not from user or history is empty (JSON)");
-                    AppError::BadRequest("Last message in history must be from the user.".to_string())
-                })?;
-
-            let user_message_content = last_user_message.content.clone();
-            if user_message_content.is_empty() {
-                 error!(%session_id, "Cannot save empty user message (JSON)");
-                 return Err(AppError::BadRequest("User message content cannot be empty.".to_string()));
+            let last_user_message_in_payload = payload.history.last()
+                .filter(|m| m.role.to_lowercase() == "user")
+                .ok_or_else(|| AppError::BadRequest("Last message in history must be from the user (JSON).".to_string()))?;
+            
+            let user_message_content_for_json_path = last_user_message_in_payload.content.clone();
+            if user_message_content_for_json_path.is_empty() {
+                 return Err(AppError::BadRequest("User message content cannot be empty (JSON).".to_string()));
             }
 
-            let user_message_to_save = crate::models::chats::DbInsertableChatMessage::new(
+            let user_message_to_save_json = crate::models::chats::DbInsertableChatMessage::new(
                 session_id,
                 user_id_value,
                 MessageRole::User,
-                user_message_content.clone(), // Use content from the last history message
+                user_message_content_for_json_path.clone(),
             );
-
-            // Save user message and get its ID
-            let user_message_id = match state.pool.get().await {
-                Ok(conn) => {
-                    match conn
-                        .interact(move |conn| {
-                            diesel::insert_into(crate::schema::chat_messages::table)
-                                .values(&user_message_to_save) // Use the correct variable
-                                .returning(crate::schema::chat_messages::id)
-                                .get_result::<Uuid>(conn)
-                        })
-                        .await
-                    {
-                        Ok(Ok(id)) => {
-                            debug!(message_id = %id, session_id = %session_id, "Successfully saved user message (JSON)");
-                            id
-                        },
-                        Ok(Err(e)) => {
-                            error!(error = ?e, session_id = %session_id, "Database error saving user message (JSON)");
-                            return Err(AppError::InternalServerError(format!("Failed to save user message: {}", e)));
-                        },
-                        Err(e) => {
-                            error!(error = ?e, session_id = %session_id, "Interact error saving user message (JSON)");
-                            return Err(AppError::InternalServerError(format!("Failed to save user message: {}", e)));
-                        }
-                    }
-                },
-                Err(e) => {
-                    error!(error = ?e, session_id = %session_id, "Failed to get DB connection to save user message (JSON)");
-                    return Err(AppError::InternalServerError(format!("Connection error: {}", e)));
-                }
-            };
             
-            // Add user message to embedding call tracker
-            match state.embedding_call_tracker.lock().await {
-                mut tracker => {
-                    tracker.push(user_message_id);
-                    debug!(session_id = %session_id, message_id = %user_message_id, "Added user message to embedding call tracker (JSON)");
+            let user_message_id_json = state.pool.get().await?.interact(move |conn| {
+                diesel::insert_into(crate::schema::chat_messages::table)
+                    .values(&user_message_to_save_json)
+                    .returning(crate::schema::chat_messages::id)
+                    .get_result::<Uuid>(conn)
+            }).await??;
+            debug!(message_id = %user_message_id_json, session_id = %session_id, "Successfully saved user message (JSON)");
+            state.embedding_call_tracker.lock().await.push(user_message_id_json);
+
+            if enable_rag {
+                if !user_message_content_for_json_path.is_empty() {
+                    let user_message_for_embedding_json = crate::models::chats::ChatMessage {
+                        id: user_message_id_json,
+                        session_id,
+                        message_type: MessageRole::User,
+                        content: user_message_content_for_json_path.clone(),
+                        created_at: chrono::Utc::now(),
+                        user_id: user_id_value,
+                    };
+
+                    match state.embedding_pipeline_service.process_and_embed_message(state.clone(), user_message_for_embedding_json).await {
+                        Ok(()) => {
+                            info!(%session_id, "RAG pre-processing (JSON branch) completed for current user message.");
+                        }
+                        Err(e) => {
+                            error!(error = ?e, session_id = %session_id, "Failed to process and embed user message for RAG (JSON branch)");
+                        }
+                    }
                 }
             }
 
-            // Process and embed the user message
-            let user_message_for_embedding = ChatMessage {
-                id: user_message_id,
-                session_id,
-                message_type: MessageRole::User,
-                content: user_message_content.clone(), // Use content from the last history message
-                created_at: chrono::Utc::now(), // Approximate time, DB has actual timestamp
-                user_id: user_id_value,
-            };
+            let rag_context_json: Option<String> = None;
 
-            let embedding_pipeline_service = state.embedding_pipeline_service.clone();
-            match embedding_pipeline_service.process_and_embed_message(state.clone(), user_message_for_embedding).await {
-                Ok(_) => {
-                    debug!(session_id = %session_id, message_id = %user_message_id, "Successfully started processing and embedding user message");
-                }
-                Err(e) => {
-                    error!(error = ?e, session_id = %session_id, message_id = %user_message_id, "Failed to process and embed user message");
-                    // Continue execution even if embedding fails - don't return error to user
-                }
-            }
-            // --- End Save User Message ---
-
-            // --- RAG Logic (Added for non-streaming) ---
-            // Use the EmbeddingPipelineService from the state
-            let default_rag_limit = 3;
-
-            let rag_context = match embedding_pipeline_service
-                .retrieve_relevant_chunks(state.clone(), session_id, &user_message_content, default_rag_limit) // Use last user message content for RAG
-                .await
-            {
-                Ok(chunks) => {
-                    debug!(session_id = %session_id, chunk_count = chunks.len(), "Retrieved RAG chunks for non-streaming");
-                    if chunks.is_empty() {
-                        None
-                    } else {
-                        let context_string = chunks
-                            .into_iter()
-                            .map(|c| format!("- {}", c.text))
-                            .collect::<Vec<_>>()
-                            .join("\n");
-                        Some(format!("<RAG_CONTEXT>\n{}\n</RAG_CONTEXT>", context_string))
-                    }
-                }
-                Err(e) => {
-                    error!(error = ?e, session_id = %session_id, "Failed to retrieve RAG chunks for non-streaming");
-                    
-                    // Delete the saved user message if RAG retrieval fails
-                    let delete_result = state.pool.get().await.map(|conn| {
-                        let message_id_to_delete = user_message_id;
-                        let session_id_for_delete = session_id;
-                        async move {
-                            conn.interact(move |conn| {
-                                use crate::schema::chat_messages::dsl::*;
-                                diesel::delete(
-                                    chat_messages.filter(
-                                        id.eq(message_id_to_delete)
-                                        .and(session_id.eq(session_id_for_delete))
-                                    )
-                                ).execute(conn)
-                            }).await
-                        }
-                    });
-                    
-                    match delete_result {
-                        Ok(future) => {
-                            match future.await {
-                                Ok(Ok(rows_deleted)) => {
-                                    info!(message_id = %user_message_id, session_id = %session_id, rows = %rows_deleted,
-                                          "Successfully deleted user message after RAG retrieval error");
-                                    
-                                    // Also remove the message from the embedding call tracker
-                                    if let Ok(mut tracker) = state.embedding_call_tracker.try_lock() {
-                                        if let Some(pos) = tracker.iter().position(|&id| id == user_message_id) {
-                                            tracker.remove(pos);
-                                            debug!(session_id = %session_id, message_id = %user_message_id, 
-                                                   "Removed user message from embedding call tracker after RAG error");
-                                        }
-                                    }
-                                }
-                                Ok(Err(db_err)) => {
-                                    error!(error = ?db_err, message_id = %user_message_id, session_id = %session_id, 
-                                           "Database error when deleting user message after RAG retrieval error");
-                                }
-                                Err(interact_err) => {
-                                    error!(error = ?interact_err, message_id = %user_message_id, session_id = %session_id, 
-                                           "Interaction error when deleting user message after RAG retrieval error");
-                                }
-                            }
-                        }
-                        Err(pool_err) => {
-                            error!(error = ?pool_err, message_id = %user_message_id, session_id = %session_id, 
-                                   "Pool error when deleting user message after RAG retrieval error");
-                        }
-                    }
-                    
-                    // Propagate the embedding error (will be mapped to 502 by IntoResponse)
-                    return Err(e);
-                }
-            };
-
-            // Inject RAG context into the message list if available
-            if let Some(context) = rag_context {
-                // Prepend context to the *last* user message
+            if let Some(context) = rag_context_json {
                 if let Some(last_message) = messages_for_ai.last_mut() {
-                    if matches!(last_message.role, genai::chat::ChatRole::User) {
-                        if let genai::chat::MessageContent::Text(text) = &mut last_message.content {
+                    if matches!(last_message.role, ChatRole::User) {
+                        if let MessageContent::Text(text) = &mut last_message.content {
                             let original_content = text.clone();
                             *text = format!("{}\n\n{}", context, original_content);
                             trace!(session_id = %session_id, "Injected RAG context into user message (non-streaming)");
@@ -676,9 +523,7 @@ pub async fn generate_chat_response(
                     }
                 } 
             }
-            // --- End RAG Logic ---
 
-            // Create ChatRequest and ChatOptions
             let chat_request = genai::chat::ChatRequest::new(messages_for_ai)
                 .with_system(system_prompt.unwrap_or_default());
             let chat_options = genai::chat::ChatOptions::default()
@@ -686,44 +531,34 @@ pub async fn generate_chat_response(
                 .with_max_tokens(max_output_tokens.map(|t| t as u32).unwrap_or(1024))
                 .with_top_p(top_p.map(|p| p.to_f32().unwrap_or(0.95) as f64).unwrap_or(0.95));
 
-            // +++ Logging: Log the prepared chat request +++
             trace!(%session_id, chat_request = ?chat_request, "Prepared ChatRequest for AI (non-streaming, post-RAG)");
-            // +++ End Logging ++
-            match ai_client
-                .exec_chat(model_to_use.as_str(), chat_request, Some(chat_options))
+            match state.ai_client.exec_chat(model_to_use.as_str(), chat_request, Some(chat_options))
                 .await
             {
                 Ok(chat_response) => {
                     debug!(%session_id, "Received successful non-streaming AI response");
                     
-                    // Extract the text content from ChatResponse
                     let response_content = match chat_response.content {
                         Some(genai::chat::MessageContent::Text(text)) => text,
-                        // Keep treating non-text/None as empty string for response payload,
-                        // but don't error out if the actual text *is* an empty string.
                         Some(_) => String::new(),
                         None => String::new(),
                     };
 
                     trace!(%session_id, ?response_content, "Full non-streaming AI response");
                     
-                    // --- Save AI Message (JSON Branch - After Successful AI Call) ---
                     let db_pool_ai_save = state.pool.clone();
                     let ai_save_session_id = session_id;
                     let ai_save_user_id = user_id_value;
-                    let ai_content_to_save = response_content.clone(); // AI response
+                    let ai_content_to_save = response_content.clone();
 
-                    // Save the AI response message and get its ID
                     tokio::spawn(async move {
-                        // Prepare AI message outside interact
                         let ai_message = crate::models::chats::DbInsertableChatMessage::new(
                             ai_save_session_id,
-                            ai_save_user_id, // AI message is associated with the user who prompted it
+                            ai_save_user_id,
                             MessageRole::Assistant,
-                            ai_content_to_save, // This might be empty, which is fine
+                            ai_content_to_save,
                         );
 
-                        // Get connection
                         let conn_result = db_pool_ai_save.get().await;
                         let conn = match conn_result {
                             Ok(c) => c,
@@ -733,11 +568,10 @@ pub async fn generate_chat_response(
                             }
                         };
 
-                        // Execute insert and get the ID
                         let ai_save_result = conn
                             .interact(move |conn_tx| {
                                 diesel::insert_into(crate::schema::chat_messages::table)
-                                    .values(&ai_message) // Use reference
+                                    .values(&ai_message)
                                     .returning(crate::schema::chat_messages::id)
                                     .get_result::<Uuid>(conn_tx)
                             })
@@ -747,7 +581,6 @@ pub async fn generate_chat_response(
                             Ok(Ok(ai_message_id)) => {
                                 debug!(session_id = %ai_save_session_id, message_id = %ai_message_id, "Successfully saved AI message (JSON)");
                                 
-                                // Add AI message to embedding call tracker
                                 match state.embedding_call_tracker.lock().await {
                                     mut tracker => {
                                         tracker.push(ai_message_id);
@@ -763,36 +596,25 @@ pub async fn generate_chat_response(
                             }
                         }
                     });
-                    // --- End Save AI Message ---
                     
-                    // Construct the non-streaming response payload
                     let response_payload = json!({
-                        "message_id": Uuid::new_v4(), // Generate a placeholder ID for the response message
+                        "message_id": Uuid::new_v4(),
                         "content": response_content
                     });
-                    // ++ Logging: Log sending JSON response ++
                     trace!(%session_id, response_payload = ?response_payload, "Sending non-streaming JSON response");
-                    // ++ End Logging ++
 
                     Ok(Json(response_payload).into_response())
                 }
                 Err(e) => {
-                    // ++ Logging: Log non-streaming AI error ++
                     error!(error = ?e, %session_id, "AI generation failed for non-streaming request");
-                    // ++ End Logging ++
-                    Err(e) // Propagate the AppError
+                    Err(e)
                 }
             }
         }
-        // --- Fallback to SSE ---
         _ => { 
-            // Check if this is actually a deliberate JSON request that had an error,
-            // or a request without a proper Accept header that should fall back to SSE
             if !accept_header.is_empty() && !accept_header.contains(mime::APPLICATION_JSON.as_ref()) {
-                // This is a true SSE fallback case - use the streaming approach
                 info!(%session_id, "Accept header '{}' not recognized as JSON, defaulting to SSE.", accept_header);
                 
-                // +++ Create ChatRequest and ChatOptions INSIDE the fallback SSE branch +++
                 let chat_request = genai::chat::ChatRequest::new(messages_for_ai.clone())
                     .with_system(system_prompt.clone().unwrap_or_default());
                 
@@ -810,7 +632,6 @@ pub async fn generate_chat_response(
                         genai_chat_options_fallback = genai_chat_options_fallback.with_top_p(f_val.into());
                     }
                 }
-                // Add new Gemini options for fallback SSE
                 if let Some(budget) = gemini_thinking_budget {
                     if budget > 0 {
                         genai_chat_options_fallback = genai_chat_options_fallback.with_gemini_thinking_budget(budget as u32);
@@ -819,23 +640,17 @@ pub async fn generate_chat_response(
                 if let Some(enable_exec) = gemini_enable_code_execution {
                     genai_chat_options_fallback = genai_chat_options_fallback.with_gemini_enable_code_execution(enable_exec);
                 }
-                // +++ End Creation +++
 
-                // ++ Logging: Log the prepared chat request ++
                 trace!(%session_id, chat_request = ?chat_request, genai_options = ?genai_chat_options_fallback, "Prepared ChatRequest and Options for AI (fallback SSE)");
-                // ++ End Logging ++
 
-                let genai_stream: crate::llm::ChatStream = match ai_client.stream_chat(model_to_use.as_str(), chat_request, Some(genai_chat_options_fallback)).await {
+                let genai_stream: crate::llm::ChatStream = match state.ai_client.stream_chat(model_to_use.as_str(), chat_request, Some(genai_chat_options_fallback)).await {
                      Ok(s) => {
                          debug!(%session_id, "Successfully initiated AI stream (fallback SSE)");
 
-                         // --- Save User Message (fallback SSE Branch - AFTER Successful AI Stream Initiation) ---
-                         // Clone necessary data for the background task
                          let db_pool_sse = state.pool.clone();
                          let embedding_tracker = state.embedding_call_tracker.clone();
                          let session_id_sse = session_id;
                          let user_id_sse = user_id_value;
-                         // Get the last message from the history payload for saving
                          let last_message_content_sse_fallback = payload.history.last().map(|m| m.content.clone()).unwrap_or_default();
 
                          tokio::spawn(async move {
@@ -857,7 +672,7 @@ pub async fn generate_chat_response(
                                          session_id_sse,
                                          user_id_sse,
                                          MessageRole::User,
-                                         last_message_content_sse_fallback, // Save last message content
+                                         last_message_content_sse_fallback,
                                      );
                                      diesel::insert_into(crate::schema::chat_messages::table)
                                          .values(&message)
@@ -870,7 +685,6 @@ pub async fn generate_chat_response(
                                  Ok(Ok(message_id)) => {
                                      debug!(session_id = %session_id_sse, message_id = %message_id, "Successfully saved user message in background (fallback SSE)");
                                      
-                                     // Add user message to embedding call tracker
                                      match embedding_tracker.lock().await {
                                          mut tracker => {
                                              tracker.push(message_id);
@@ -886,18 +700,14 @@ pub async fn generate_chat_response(
                                  }
                              }
                          });
-                         // --- End Save User Message (fallback SSE Branch) ---
 
                          s
                      },
                      Err(e) => {
                          error!(error = ?e, %session_id, "Failed to initiate AI stream (fallback SSE)");
-                         // Immediately return an error stream if initiation fails
                          let error_stream = async_stream::stream! {
-                             // ++ Logging: Log sending initiation error ++
                              let error_msg = format!("LLM API error: Failed to initiate stream - {}", e);
                              trace!(%session_id, error_message = %error_msg, "Sending fallback SSE 'error' event (initiation failed)");
-                             // ++ End Logging ++
                              yield Ok::<_, AppError>(Event::default().event("error").data(error_msg));
                          };
                          return Ok(Sse::new(Box::pin(error_stream)).keep_alive(KeepAlive::default()).into_response());
@@ -906,7 +716,6 @@ pub async fn generate_chat_response(
 
                 debug!(%session_id, "Starting fallback SSE generation loop");
 
-                // Use async_stream! to build the SSE stream
                 let stream = async_stream::stream! {
                     let mut accumulated_content = String::new();
                     let mut stream_error_occurred = false;
@@ -919,7 +728,6 @@ pub async fn generate_chat_response(
                         match event_result {
                             Ok(ChatStreamEvent::Start) => {
                                 debug!(%session_id, "Received Start event from AI stream (fallback)");
-                                // No need to send anything to the client for this event
                                 continue;
                             }
                             Ok(ChatStreamEvent::Chunk(chunk)) => {
@@ -939,26 +747,19 @@ pub async fn generate_chat_response(
                             }
                             Ok(ChatStreamEvent::End(_)) => {
                                 debug!(%session_id, "Received End event from AI stream (fallback)");
-                                // Don't break here yet, wait for the stream to naturally end (None)
                             }
                             Err(e) => {
-                                // ++ Logging: Log the raw error from the stream ++
                                 error!(error = ?e, %session_id, "Error during AI stream processing (fallback loop)");
-                                // ++ End Logging ++
-                                stream_error_occurred = true; // Set flag
+                                stream_error_occurred = true;
 
-                                // --- Save Partial Response on Error ---
-                                let partial_content_clone = accumulated_content.clone(); // Clone for background task
-                                let db_pool_clone = state.pool.clone(); // Clone DB pool
+                                let partial_content_clone = accumulated_content.clone();
+                                let db_pool_clone = state.pool.clone();
                                 let error_session_id = session_id;
                                 let error_user_id = user_id_value;
 
                                 tokio::spawn(async move {
                                     if !partial_content_clone.is_empty() {
-                                        // ++ Logging: Log saving partial response ++
                                         trace!(session_id = %error_session_id, "Attempting to save partial AI response after stream error (fallback)");
-                                        // ++ End Logging ++
-                                        
                                         let conn = match db_pool_clone.get().await {
                                             Ok(conn) => conn,
                                             Err(e) => {
@@ -993,51 +794,35 @@ pub async fn generate_chat_response(
                                             }
                                         }
                                     } else {
-                                         // ++ Logging: Log no partial content ++
                                          trace!(session_id = %error_session_id, "No partial content to save after stream error (fallback)");
-                                         // ++ End Logging ++
                                      }
                                 });
-                                // --- End Save Partial Response ---
 
-                                // Log the detailed error server-side
                                 let detailed_error = e.to_string();
                                 error!(error = %detailed_error, %session_id, "Detailed error during fallback SSE stream processing");
 
-                                // Send the detailed error message to the client via SSE
-                                // Check if the error already contains "LLM API error:" to avoid double prefixing
                                 let client_error_message = if detailed_error.contains("LLM API error:") {
                                     detailed_error
                                 } else {
                                     format!("LLM API error: {}", detailed_error)
                                 };
-                                // ++ Logging: Log sending error event ++
                                 trace!(%session_id, error_message = %client_error_message, "Sending fallback SSE 'error' event");
-                                // ++ End Logging ++
                                 yield Ok::<_, AppError>(Event::default().event("error").data(client_error_message));
-                                break; // Error exit from loop
+                                break;
                             }
                         }
                     }
 
-                    // ++ Logging: Log exiting the loop ++
                     trace!(%session_id, "Exited fallback SSE processing loop. stream_error_occurred={}", stream_error_occurred);
-                    // ++ End Logging ++
 
-                    // --- Final processing after loop ---
                     if !stream_error_occurred && !accumulated_content.is_empty() {
-                        // Save the full successful response
-                        // ++ Logging: Log saving full response ++
                         debug!(%session_id, "Attempting to save full successful AI response (fallback)");
-                        // ++ End Logging ++
 
-                        // Clone everything needed for the background task
                         let state_clone = state.clone();
                         let session_id_clone = session_id;
                         let user_id_clone = user_id_value;
                         let accumulated_content_clone = accumulated_content.clone();
 
-                        // Spawn a task to save the message to the database
                         tokio::spawn(async move {
                             let conn = match state_clone.pool.get().await {
                                 Ok(conn) => conn,
@@ -1066,7 +851,6 @@ pub async fn generate_chat_response(
                                 Ok(Ok(message_id)) => {
                                     debug!(session_id = %session_id_clone, message_id = %message_id, "Successfully saved AI message (fallback)");
                                     
-                                    // Add AI message to embedding call tracker
                                     match state_clone.embedding_call_tracker.lock().await {
                                         mut tracker => {
                                             tracker.push(message_id);
@@ -1082,37 +866,22 @@ pub async fn generate_chat_response(
                                 }
                             }
                         });
-                        // Send the final "[DONE]" data event ONLY if no error occurred
-                        // ++ Logging: Log sending [DONE] event ++
                         trace!(%session_id, "Sending fallback SSE data: [DONE]");
-                        // ++ End Logging ++
                         yield Ok::<_, AppError>(Event::default().data("[DONE]"));
                     } else if !stream_error_occurred && accumulated_content.is_empty() {
-                         // Handle case where stream ended successfully but produced no content
                          debug!(%session_id, "AI stream finished successfully but produced no content in fallback. Sending '[DONE]'.");
-                        // Still send [DONE], but don't save anything.
-                        // ++ Logging: Log sending [DONE] (empty) ++
                         trace!(%session_id, "Sending fallback SSE data: [DONE] (empty content)");
-                        // ++ End Logging ++
                         yield Ok::<_, AppError>(Event::default().data("[DONE]"));
                      } else {
-                        // Error occurred, 'error' event was already sent in the loop. Do nothing more.
-                        // ++ Logging: Log stream finished after error ++
                         debug!(%session_id, "Fallback stream finished after an error. No 'done' event sent.");
-                        // ++ End Logging ++
                      }
-                     // ++ Logging: Log finishing the stream block ++
                      trace!(%session_id, "Finished fallback SSE async_stream! block");
-                     // ++ End Logging ++
                 };
 
-                // Return the SSE response
                 Ok(Sse::new(Box::pin(stream)).keep_alive(KeepAlive::default()).into_response())
             } else {
-                // This case handles when the accept_header is empty. Default to SSE.
                 info!(%session_id, "Accept header is empty, defaulting to SSE.");
 
-                // +++ Create ChatRequest and ChatOptions INSIDE the final fallback SSE branch +++
                 let chat_request = genai::chat::ChatRequest::new(messages_for_ai.clone())
                     .with_system(system_prompt.clone().unwrap_or_default());
                 
@@ -1130,7 +899,6 @@ pub async fn generate_chat_response(
                         genai_chat_options_empty_fallback = genai_chat_options_empty_fallback.with_top_p(f_val.into());
                     }
                 }
-                // Add new Gemini options for empty header fallback SSE
                 if let Some(budget) = gemini_thinking_budget {
                     if budget > 0 {
                         genai_chat_options_empty_fallback = genai_chat_options_empty_fallback.with_gemini_thinking_budget(budget as u32);
@@ -1139,22 +907,17 @@ pub async fn generate_chat_response(
                 if let Some(enable_exec) = gemini_enable_code_execution {
                     genai_chat_options_empty_fallback = genai_chat_options_empty_fallback.with_gemini_enable_code_execution(enable_exec);
                 }
-                // +++ End Creation +++
 
-                // ++ Logging: Log the prepared chat request ++
                 trace!(%session_id, chat_request = ?chat_request, genai_options = ?genai_chat_options_empty_fallback, "Prepared ChatRequest and Options for AI (empty header fallback SSE)");
-                // ++ End Logging ++
 
-                let genai_stream: crate::llm::ChatStream = match ai_client.stream_chat(model_to_use.as_str(), chat_request, Some(genai_chat_options_empty_fallback)).await {
+                let genai_stream: crate::llm::ChatStream = match state.ai_client.stream_chat(model_to_use.as_str(), chat_request, Some(genai_chat_options_empty_fallback)).await {
                     Ok(s) => {
                         debug!(%session_id, "Successfully initiated AI stream (empty header fallback SSE)");
 
-                        // --- Save User Message (empty header fallback SSE Branch) ---
                         let db_pool_sse = state.pool.clone();
                         let embedding_tracker = state.embedding_call_tracker.clone();
                         let session_id_sse = session_id;
                         let user_id_sse = user_id_value;
-                        // Get the last message from the history payload for saving
                         let last_message_content_empty_fallback = payload.history.last().map(|m| m.content.clone()).unwrap_or_default();
 
                         tokio::spawn(async move {
@@ -1176,7 +939,7 @@ pub async fn generate_chat_response(
                                         session_id_sse,
                                         user_id_sse,
                                         MessageRole::User,
-                                        last_message_content_empty_fallback, // Save last message content
+                                        last_message_content_empty_fallback,
                                     );
                                     diesel::insert_into(crate::schema::chat_messages::table)
                                         .values(&message)
@@ -1204,7 +967,6 @@ pub async fn generate_chat_response(
                                 }
                             }
                         });
-                        // --- End Save User Message ---
                         s
                     },
                     Err(e) => {
@@ -1220,7 +982,6 @@ pub async fn generate_chat_response(
 
                 debug!(%session_id, "Starting empty header fallback SSE generation loop");
 
-                // Use async_stream! to build the SSE stream
                 let stream = async_stream::stream! {
                     let mut accumulated_content = String::new();
                     let mut stream_error_occurred = false;
@@ -1232,7 +993,6 @@ pub async fn generate_chat_response(
                         match event_result {
                             Ok(ChatStreamEvent::Start) => {
                                 debug!(%session_id, "Received Start event from AI stream (empty header fallback)");
-                                // No need to send anything to the client for this event
                                 continue;
                             }
                             Ok(ChatStreamEvent::Chunk(chunk)) => {
@@ -1257,7 +1017,6 @@ pub async fn generate_chat_response(
                                 error!(error = ?e, %session_id, "Error during AI stream processing (empty header fallback loop)");
                                 stream_error_occurred = true;
 
-                                // --- Save Partial Response on Error ---
                                 let partial_content_clone = accumulated_content.clone();
                                 let db_pool_clone = state.pool.clone();
                                 let error_session_id = session_id;
@@ -1301,7 +1060,6 @@ pub async fn generate_chat_response(
                                         trace!(session_id = %error_session_id, "No partial content to save after stream error (empty header fallback)");
                                     }
                                 });
-                                // --- End Save Partial Response ---
 
                                 let detailed_error = e.to_string();
                                 error!(error = %detailed_error, %session_id, "Detailed error during empty header fallback SSE stream processing");
@@ -1384,23 +1142,142 @@ pub async fn generate_chat_response(
     }
 }
 
+#[instrument(skip(state, auth_session, payload), fields(chat_id = %chat_id_str))]
+async fn generate_suggested_actions(
+    State(state): State<AppState>,
+    auth_session: AuthSession<AuthBackend>,
+    Path(chat_id_str): Path<String>,
+    Json(payload): Json<SuggestedActionsRequest>,
+) -> Result<Json<SuggestedActionsResponse>, AppError> {
+    let chat_id = Uuid::parse_str(&chat_id_str)
+        .map_err(|_| AppError::BadRequest("Invalid chat UUID format".to_string()))?;
+    debug!(%chat_id, "Received request to generate suggested actions");
 
-/// Creates a router with the chat endpoints.
+    let user = auth_session.user.ok_or_else(|| {
+        error!(%chat_id, "User not found in session for suggested actions");
+        AppError::Unauthorized("User not found in session".to_string())
+    })?;
+    let user_id_value = user.id;
+    debug!(%chat_id, %user_id_value, "Extracted user for suggested actions");
+
+    let chat_session = state.pool.get().await
+        .map_err(|e| AppError::DbPoolError(e.to_string()))?
+        .interact(move |conn| {
+            chat_sessions::table
+                .filter(chat_sessions::id.eq(chat_id))
+                .select(Chat::as_select())
+                .first::<Chat>(conn)
+                .map_err(AppError::from)
+        })
+        .await
+        .map_err(|e| AppError::InternalServerError(format!("Interact error fetching chat: {}", e)))?
+        ?;
+
+    if chat_session.user_id != user_id_value {
+        return Err(AppError::Forbidden);
+    }
+    debug!(%chat_id, "User authorized for chat session");
+
+    let prompt_text = format!(
+        "Given the following start of a conversation:\n\nCharacter Introduction: \"{}\"\n\nUser's First Message: \"{}\"\n\nAI's First Response: \"{}\"\n\n\nGenerate 2-4 short, contextually relevant follow-up actions or questions that the user might want to take next.\n\nEach action should be a concise sentence suitable for display in a small button.",
+        payload.character_first_message,
+        payload.user_first_message.as_deref().unwrap_or(""),
+        payload.ai_first_response.as_deref().unwrap_or("")
+    );
+    trace!(%chat_id, "Constructed prompt for Gemini suggested actions: {}", prompt_text);
+
+    let messages = vec![GenAiChatMessage {
+        role: ChatRole::User,
+        content: MessageContent::Text(prompt_text),
+        options: None,
+    }];
+
+    let chat_request = ChatRequest::new(messages);
+
+    let suggested_actions_schema_value = json!({
+        "type": "ARRAY",
+        "items": {
+            "type": "OBJECT",
+            "properties": {
+                "action": {
+                    "type": "STRING",
+                    "description": "A concise suggested action or question."
+                }
+            },
+            "required": ["action"]
+        }
+    });
+
+    let chat_options = ChatOptions::default()
+        .with_temperature(0.7)
+        .with_max_tokens(150)
+        .with_response_format(ChatResponseFormat::JsonSpec(JsonSpec {
+            name: "suggested_actions".to_string(),
+            description: Some("A list of suggested follow-up actions or questions.".to_string()),
+            schema: suggested_actions_schema_value,
+        }));
+
+    trace!(%chat_id, model = "gemini-2.5-flash-preview-04-17", ?chat_request, ?chat_options, "Sending request to Gemini for suggested actions (manual JSON parsing)");
+
+    let gemini_response = state
+        .ai_client
+        .exec_chat(
+            "gemini-1.5-flash-latest", // Use stable model for suggested actions
+            chat_request,
+            Some(chat_options),
+        )
+        .await
+        .map_err(|e| {
+            error!(%chat_id, "Gemini API error for suggested actions: {:?}", e);
+            AppError::AiServiceError(format!("Gemini API error: {}", e))
+        })?;
+    
+    debug!(%chat_id, "Received response from Gemini for suggested actions");
+    trace!(%chat_id, ?gemini_response, "Full Gemini response object for suggested actions");
+
+    let response_text = match gemini_response.content {
+        Some(MessageContent::Text(text)) => text,
+        _ => {
+            error!(%chat_id, "Gemini response for suggested actions did not contain text content or was empty.");
+            return Err(AppError::InternalServerError(
+                "AI response was empty or not in the expected format".to_string(),
+            ));
+        }
+    };
+    trace!(%chat_id, "Gemini response text for suggested actions: {}", response_text);
+
+    let suggestions: Vec<SuggestedActionItem> =
+        serde_json::from_str(&response_text).map_err(|e| {
+            error!(
+                %chat_id,
+                "Failed to parse Gemini JSON response into expected structure for suggested actions: {:?}. Response text: {}", 
+                e,
+                response_text
+            );
+            AppError::InternalServerError("Failed to parse structured response from AI".to_string())
+        })?;
+    
+    info!(%chat_id, "Successfully generated {} suggested actions", suggestions.len());
+
+    Ok(Json(SuggestedActionsResponse { suggestions }))
+}
+
 pub fn chat_routes() -> Router<AppState> {
     Router::new()
-        // Use handler names from chats_api.rs
         .route("/", post(create_chat_handler).get(get_chats_handler))
         .route("/{session_id}", get(get_chat_by_id_handler))
         .route("/{session_id}/messages", get(get_messages_by_chat_id_handler))
         .route(
-            "/{session_id}/generate", // Use {} syntax
-            post(generate_chat_response), // This one is defined in this file
+            "/{session_id}/generate",
+            post(generate_chat_response),
         )
         .route(
-            "/{session_id}/settings", // Use {} syntax
-            // Assuming get_chat_settings and update_chat_settings will be defined below
+            "/{session_id}/suggested-actions",
+            post(generate_suggested_actions),
+        )
+        .route(
+            "/{session_id}/settings",
             get(get_chat_settings_handler).put(update_chat_settings_handler),
         )
-        // Login required middleware is applied globally in spawn_app
 }
 

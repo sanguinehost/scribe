@@ -734,6 +734,8 @@ async fn set_history_settings(
         seed: None,
         logit_bias: None,
         model_name: None, // Added model_name field
+        gemini_enable_code_execution: None,
+        gemini_thinking_budget: None,
     };
 
     let request = Request::builder()

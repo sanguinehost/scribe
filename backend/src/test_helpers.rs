@@ -658,11 +658,14 @@ pub mod db {
     };
     use crate::models::chats::DbInsertableChatMessage;
     use crate::models::chats::NewChat; // Renamed NewChatSession to NewChat
+    use crate::models::chats::UpdateChatSettingsRequest;
     // Import specifics needed within this module
     use bcrypt;
     use dotenvy::dotenv;
     use std::env;
-    // Removed duplicate diesel::SelectableHelper import
+    use tracing::error;
+    
+    use crate::errors::AppError;
 
     /// Sets up a clean test database with migrations run.
     pub async fn setup_test_database(db_name_suffix: Option<&str>) -> PgPool {
@@ -878,63 +881,64 @@ pub mod db {
         .expect("Failed to update settings");
     }
 
-    // Import UpdateChatSettingsRequest for the helper function
-    use crate::models::chats::UpdateChatSettingsRequest;
-
+    /// Helper to update ALL optional settings for a chat session in the database.
+    /// This is useful for tests setting specific states.
     pub async fn update_all_chat_settings(
         pool: &PgPool,
         session_id: Uuid,
-        new_system_prompt: Option<String>,
-        new_temperature: Option<BigDecimal>,
-        new_max_output_tokens: Option<i32>,
-        new_frequency_penalty: Option<BigDecimal>,
-        new_presence_penalty: Option<BigDecimal>,
-        new_top_k: Option<i32>,
-        new_top_p: Option<BigDecimal>,
-        new_repetition_penalty: Option<BigDecimal>,
-        new_min_p: Option<BigDecimal>,
-        new_top_a: Option<BigDecimal>,
-        new_seed: Option<i32>,
-        new_logit_bias: Option<Value>,
-        // Add the new history management fields
-        new_history_management_strategy: Option<String>,
-        new_history_management_limit: Option<i32>,
-        new_model_name: Option<String>,
-    ) {
-        use crate::schema::chat_sessions::dsl::*;
-
-        // Create an UpdateChatSettingsRequest struct from the arguments
-        let update_request = UpdateChatSettingsRequest {
-            system_prompt: new_system_prompt,
-            temperature: new_temperature,
-            max_output_tokens: new_max_output_tokens,
-            frequency_penalty: new_frequency_penalty,
-            presence_penalty: new_presence_penalty,
-            top_k: new_top_k,
-            top_p: new_top_p,
-            repetition_penalty: new_repetition_penalty,
-            min_p: new_min_p,
-            top_a: new_top_a,
-            seed: new_seed,
-            logit_bias: new_logit_bias,
-            history_management_strategy: new_history_management_strategy,
-            history_management_limit: new_history_management_limit,
-            model_name: new_model_name,
-            // Add Gemini-specific options
-            gemini_thinking_budget: None,
-            gemini_enable_code_execution: None,
+        system_prompt: Option<String>,
+        temperature: Option<BigDecimal>,
+        max_output_tokens: Option<i32>,
+        frequency_penalty: Option<BigDecimal>,
+        presence_penalty: Option<BigDecimal>,
+        top_k: Option<i32>,
+        top_p: Option<BigDecimal>,
+        repetition_penalty: Option<BigDecimal>,
+        min_p: Option<BigDecimal>,
+        top_a: Option<BigDecimal>,
+        seed: Option<i32>,
+        logit_bias: Option<Value>,
+        history_management_strategy: Option<String>,
+        history_management_limit: Option<i32>,
+        model_name: Option<String>,
+        gemini_enable_code_execution: Option<bool>,
+        gemini_thinking_budget: Option<i32>,
+    ) -> Result<(), AppError> {
+        // Construct the changeset struct which handles Options correctly via AsChangeset
+        let changeset = UpdateChatSettingsRequest {
+            system_prompt,
+            temperature,
+            max_output_tokens,
+            frequency_penalty,
+            presence_penalty,
+            top_k,
+            top_p,
+            repetition_penalty,
+            min_p,
+            top_a,
+            seed,
+            logit_bias,
+            history_management_strategy,
+            history_management_limit,
+            model_name,
+            gemini_enable_code_execution,
+            gemini_thinking_budget,
         };
 
-        let conn = pool.get().await.expect("Failed to get DB conn");
+        let conn = pool.get().await?;
         conn.interact(move |conn| {
-            // Use the AsChangeset implementation of UpdateChatSettingsRequest
-            diesel::update(chat_sessions.filter(id.eq(session_id)))
-                .set(&update_request) // Pass the struct directly
+            use crate::schema::chat_sessions::dsl::*;
+            diesel::update(chat_sessions.find(session_id))
+                .set(&changeset) // Use the changeset struct
                 .execute(conn)
+                .map(|_| ()) // Discard rows affected count
+                .map_err(|e| {
+                    error!(error = %e, %session_id, "Failed to update chat settings via test helper");
+                    AppError::DatabaseQueryError(e.to_string())
+                })
         })
-        .await
-        .expect("Interact failed")
-        .expect("Failed to update all settings");
+        .await??;
+        Ok(())
     }
 
     pub async fn get_chat_messages_from_db(pool: &PgPool, _session_id: Uuid) -> Vec<ChatMessage> {

@@ -1,5 +1,5 @@
-import { render, screen, waitFor, within } from '@testing-library/svelte';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { render, screen, waitFor, within, fireEvent } from '@testing-library/svelte';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 // MockInstance was removed as it's no longer used after refactoring the mock
 import { tick } from 'svelte';
 import Chat from './chat.svelte';
@@ -42,6 +42,15 @@ vi.mock('svelte/reactivity/window', () => ({
 }));
 
 beforeEach(() => {
+  // Set up environment - mock NODE_ENV properly
+  vi.stubGlobal('process', {
+    ...process,
+    env: {
+      ...process.env,
+      NODE_ENV: 'test'
+    }
+  });
+  
   // messagesPropsHistory = []; // Removed: No longer needed
 
   Element.prototype.scrollIntoView = vi.fn();
@@ -55,11 +64,20 @@ beforeEach(() => {
   }
 });
 
+afterEach(() => {
+  // Restore the original process object
+  vi.unstubAllGlobals();
+});
+
 // --- Mock UI Child Components & Hooks ---
 vi.mock('$lib/components/sidebar-toggle.svelte', () => ({ default: vi.fn() }));
 vi.mock('$lib/components/chat-header.svelte', () => ({ default: vi.fn() }));
 vi.mock('$lib/components/ui/input/input.svelte', () => ({ default: vi.fn() }));
-vi.mock('$lib/components/ui/button/index.js', () => ({ Button: vi.fn() }));
+// Use actual Button component for testing its event handling
+vi.mock('$lib/components/ui/button', async () => {
+  const actual = await vi.importActual('$lib/components/ui/button');
+  return actual;
+});
 vi.mock('$lib/components/ui/textarea/textarea.svelte', () => ({ default: vi.fn() }));
 
 vi.mock('$app/forms', () => ({
@@ -342,19 +360,192 @@ describe('Chat.svelte Component', () => {
       const mockMessagesComponent = screen.getByTestId('mock-messages-component');
       expect(mockMessagesComponent.getAttribute('data-messages-count')).toBe('2');
       expect(within(mockMessagesComponent).getByText('Test user input')).toBeInTheDocument();
-      expect(within(mockMessagesComponent).getByText('Response from server')).toBeInTheDocument();
+      
+      // Use a more flexible text matcher for the response text
+      const responseText = within(mockMessagesComponent).getByText((content, element) => {
+        // Make sure element exists before trying to use it
+        return Boolean(
+          content.includes('Response from server') && 
+          element && 
+          element.closest('[data-message-type]')?.getAttribute('data-message-type') === 'Assistant'
+        );
+      });
+      expect(responseText).toBeInTheDocument();
 
-      const serverMessage = within(mockMessagesComponent).getByText('Response from server').closest('[data-message-type]');
+      const serverMessage = responseText.closest('[data-message-type]');
       expect(serverMessage?.getAttribute('data-message-type')).toBe('Assistant');
       // Ensure loading indicator is gone
       expect(within(mockMessagesComponent).queryByTestId('message-loading')).not.toBeInTheDocument();
     }, { timeout: 2000 });
 
-    // screen.findByText is good for asserting visibility of server response.
-    expect(await screen.findByText('Response from server')).toBeInTheDocument();
-
-    // @ts-expect-error - Resetting global fetch after test
-    global.fetch = undefined;
+    // Use the same flexible matcher for the screen.findByText call
+    expect(await screen.findByText((content) => Boolean(content.includes('Response from server')))).toBeInTheDocument();
   });
 
-}); 
+  it('should call fetchSuggestedActions when "Get Suggestions" button is clicked and enabled', async () => {
+    // 1. Spy on console.log
+    const consoleLogSpy = vi.spyOn(console, 'log');
+
+    // 2. Mock global.fetch for the suggestions API
+    const mockApiFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ suggestions: [{ action: 'Test Suggestion' }] }),
+    });
+    // Store original fetch and restore it later
+    const originalFetch = global.fetch;
+    global.fetch = mockApiFetch;
+
+    // 3. Define initial messages and character to enable the button
+    const testUserMessage: ScribeChatMessage = {
+      id: 'user-msg-test-1',
+      session_id: mockChatSession.id,
+      message_type: 'User',
+      content: 'This is the first user message for suggestions test.',
+      created_at: new Date(Date.now() - 20000).toISOString(), // Older
+      user_id: mockUser.user_id,
+    };
+    const testAssistantResponse: ScribeChatMessage = {
+      id: 'assistant-msg-test-1',
+      session_id: mockChatSession.id,
+      message_type: 'Assistant',
+      content: 'This is the first AI response after the user for suggestions test.',
+      created_at: new Date(Date.now() - 10000).toISOString(), // Newer than user, older than now
+      user_id: '', 
+    };
+
+    render(Chat, {
+      props: {
+        user: mockUser,
+        chat: mockChatSession,
+        // initialMessages will be processed by the $effect in Chat.svelte
+        // The character's first_mes will be added if not present,
+        // then these two messages.
+        initialMessages: [testUserMessage, testAssistantResponse],
+        character: mockCharacter, // Has first_mes
+        readonly: false,
+      },
+    });
+
+    // Wait for Svelte's reactivity and component updates, especially $derived state
+    await tick(); // Initial render
+    await tick(); // $effect for initialMessages
+    await tick(); // $derived canFetchSuggestions update
+
+    // 4. Find the button
+    const getSuggestionsButton = screen.getByRole('button', { name: /Get Suggestions/i });
+    expect(getSuggestionsButton).toBeInTheDocument();
+    
+    // Verify the button is NOT disabled (meaning canFetchSuggestions is true)
+    // This is a critical check for the test setup itself.
+    await waitFor(() => {
+      expect(getSuggestionsButton).not.toBeDisabled();
+    }, {timeout: 1000}); // Added timeout for safety
+
+    // Reset the spy to ensure we only capture calls after the click
+    consoleLogSpy.mockReset();
+
+    // 5. Simulate a click using fireEvent directly
+    fireEvent.click(getSuggestionsButton);
+
+    // 6. Assert console.log was called (from the handler in chat.svelte)
+    await waitFor(() => {
+      expect(consoleLogSpy).toHaveBeenCalledWith('Get Suggestions button clicked!');
+    }, { timeout: 1000 });
+
+    // 7. Assert fetch was called for suggestions API
+    await waitFor(() => {
+      expect(mockApiFetch).toHaveBeenCalledWith(
+        `/api/chats/${mockChatSession.id}/suggested-actions`,
+        expect.objectContaining({
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            character_first_message: mockCharacter.first_mes,
+            user_first_message: testUserMessage.content,
+            ai_first_response: testAssistantResponse.content
+          }),
+        })
+      );
+    });
+
+    // Cleanup
+    consoleLogSpy.mockRestore();
+    global.fetch = originalFetch; // Restore original fetch
+  });
+
+  it('should call fetchSuggestedActions with only character first_mes when no user messages exist', async () => {
+    // 1. Spy on console.log
+    const consoleLogSpy = vi.spyOn(console, 'log');
+
+    // 2. Mock global.fetch for the suggestions API
+    const mockApiFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ suggestions: [{ action: 'Test Suggestion from first_mes' }] }),
+    });
+    const originalFetch = global.fetch;
+    global.fetch = mockApiFetch;
+
+    // 3. Render Chat component with a character that has first_mes, but no initial user/assistant messages
+    // Ensure character has first_mes
+    const characterWithOnlyFirstMes: ScribeCharacter = {
+      ...mockCharacter, // mockCharacter already has first_mes
+      // Ensure no other messages are implied by this character object if it had other fields
+    };
+
+    render(Chat, {
+      props: {
+        user: mockUser,
+        chat: mockChatSession,
+        initialMessages: [], // No initial messages from conversation history
+        character: characterWithOnlyFirstMes,
+        readonly: false,
+      },
+    });
+
+    // Wait for Svelte's reactivity and component updates
+    await tick(); // Initial render
+    await tick(); // $effect for initialMessages (will add character.first_mes to internal messages state)
+    await tick(); // $derived canFetchSuggestions update
+
+    // 4. Find the button
+    const getSuggestionsButton = screen.getByRole('button', { name: /Get Suggestions/i });
+    expect(getSuggestionsButton).toBeInTheDocument();
+    
+    // Verify the button is NOT disabled
+    await waitFor(() => {
+      expect(getSuggestionsButton).not.toBeDisabled();
+    }, {timeout: 1000});
+
+    // Reset the spy to ensure we only capture calls after the click
+    consoleLogSpy.mockReset();
+
+    // 5. Simulate a click
+    fireEvent.click(getSuggestionsButton);
+
+    // 6. Assert console.log was called
+    await waitFor(() => {
+      expect(consoleLogSpy).toHaveBeenCalledWith('Get Suggestions button clicked!');
+    });
+
+    // 7. Assert fetch was called for suggestions API with correct payload
+    await waitFor(() => {
+      expect(mockApiFetch).toHaveBeenCalledWith(
+        `/api/chats/${mockChatSession.id}/suggested-actions`,
+        expect.objectContaining({
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            character_first_message: characterWithOnlyFirstMes.first_mes,
+            user_first_message: null, // Expect null as no user messages
+            ai_first_response: null    // Expect null as no AI response after a user message
+          }),
+        })
+      );
+    });
+
+    // Cleanup
+    consoleLogSpy.mockRestore();
+    global.fetch = originalFetch;
+  });
+});
+

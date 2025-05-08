@@ -112,6 +112,10 @@ pub enum AppError {
 
     #[error("Vector DB Error: {0}")]
     VectorDbError(String),
+
+    #[error("AI Service Error: {0}")] // New variant for AI service specific errors
+    AiServiceError(String),
+
     // --- General/Internal Errors ---
     #[error("Configuration Error: {0}")]
     ConfigError(String),
@@ -434,6 +438,13 @@ impl IntoResponse for AppError {
                 (
                     StatusCode::BAD_GATEWAY,
                     "Failed to process embeddings".to_string(),
+                )
+            }
+            AppError::AiServiceError(e) => {
+                error!("AI Service Error: {}", e);
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    e,
                 )
             }
 

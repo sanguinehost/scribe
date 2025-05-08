@@ -57,6 +57,8 @@ async fn get_chat_settings_success() {
         history_management_strategy: None,
         history_management_limit: None,
         model_name: Some("gemini-2.5-flash-preview-04-17".to_string()),
+        gemini_enable_code_execution: None,
+        gemini_thinking_budget: None,
     };
     
     test_helpers::db::update_all_chat_settings(
@@ -78,8 +80,11 @@ async fn get_chat_settings_success() {
         None,
         None,
         update_data.model_name,
+        update_data.gemini_enable_code_execution,
+        update_data.gemini_thinking_budget,
     )
-    .await;
+    .await
+    .expect("Failed to update chat settings in test");
     
     let request = Request::builder()
         .method(Method::GET)
@@ -317,6 +322,8 @@ async fn update_chat_settings_success_full() {
         history_management_strategy: Some("sliding_window_messages".to_string()),
         history_management_limit: Some(10),
         model_name: None,
+        gemini_enable_code_execution: None,
+        gemini_thinking_budget: None,
     };
     
     let request = Request::builder()
@@ -400,6 +407,8 @@ async fn update_chat_settings_success_partial() {
         history_management_strategy: None,
         history_management_limit: None,
         model_name: None,
+        gemini_enable_code_execution: None,
+        gemini_thinking_budget: None,
     };
     
     let request = Request::builder()
@@ -466,6 +475,8 @@ async fn update_chat_settings_invalid_data() {
             history_management_strategy: None,
             history_management_limit: None,
             model_name: None,
+            gemini_enable_code_execution: None,
+            gemini_thinking_budget: None,
         },
         UpdateChatSettingsRequest {
             system_prompt: None,
@@ -483,6 +494,8 @@ async fn update_chat_settings_invalid_data() {
             history_management_strategy: None,
             history_management_limit: None,
             model_name: None,
+            gemini_enable_code_execution: None,
+            gemini_thinking_budget: None,
         },
         // Max tokens validation
         UpdateChatSettingsRequest {
@@ -501,6 +514,8 @@ async fn update_chat_settings_invalid_data() {
             history_management_strategy: None,
             history_management_limit: None,
             model_name: None,
+            gemini_enable_code_execution: None,
+            gemini_thinking_budget: None,
         },
         UpdateChatSettingsRequest {
             system_prompt: None,
@@ -518,6 +533,8 @@ async fn update_chat_settings_invalid_data() {
             history_management_strategy: None,
             history_management_limit: None,
             model_name: None,
+            gemini_enable_code_execution: None,
+            gemini_thinking_budget: None,
         },
         // Frequency penalty validation
         UpdateChatSettingsRequest {
@@ -536,6 +553,8 @@ async fn update_chat_settings_invalid_data() {
             history_management_strategy: None,
             history_management_limit: None,
             model_name: None,
+            gemini_enable_code_execution: None,
+            gemini_thinking_budget: None,
         },
         UpdateChatSettingsRequest {
             system_prompt: None,
@@ -553,6 +572,8 @@ async fn update_chat_settings_invalid_data() {
             history_management_strategy: None,
             history_management_limit: None,
             model_name: None,
+            gemini_enable_code_execution: None,
+            gemini_thinking_budget: None,
         },
         // Presence penalty validation
         UpdateChatSettingsRequest {
@@ -571,6 +592,8 @@ async fn update_chat_settings_invalid_data() {
             history_management_strategy: None,
             history_management_limit: None,
             model_name: None,
+            gemini_enable_code_execution: None,
+            gemini_thinking_budget: None,
         },
         UpdateChatSettingsRequest {
             system_prompt: None,
@@ -588,6 +611,8 @@ async fn update_chat_settings_invalid_data() {
             history_management_strategy: None,
             history_management_limit: None,
             model_name: None,
+            gemini_enable_code_execution: None,
+            gemini_thinking_budget: None,
         },
         // Top-k validation
         UpdateChatSettingsRequest {
@@ -606,6 +631,8 @@ async fn update_chat_settings_invalid_data() {
             history_management_strategy: None,
             history_management_limit: None,
             model_name: None,
+            gemini_enable_code_execution: None,
+            gemini_thinking_budget: None,
         },
         // Top-p validation
         UpdateChatSettingsRequest {
@@ -624,6 +651,8 @@ async fn update_chat_settings_invalid_data() {
             history_management_strategy: None,
             history_management_limit: None,
             model_name: None,
+            gemini_enable_code_execution: None,
+            gemini_thinking_budget: None,
         },
         UpdateChatSettingsRequest {
             system_prompt: None,
@@ -641,6 +670,8 @@ async fn update_chat_settings_invalid_data() {
             history_management_strategy: None,
             history_management_limit: None,
             model_name: None,
+            gemini_enable_code_execution: None,
+            gemini_thinking_budget: None,
         },
         // Repetition penalty validation
         UpdateChatSettingsRequest {
@@ -659,6 +690,8 @@ async fn update_chat_settings_invalid_data() {
             history_management_strategy: None,
             history_management_limit: None,
             model_name: None,
+            gemini_enable_code_execution: None,
+            gemini_thinking_budget: None,
         },
         // Min-p validation
         UpdateChatSettingsRequest {
@@ -677,6 +710,8 @@ async fn update_chat_settings_invalid_data() {
             history_management_strategy: None,
             history_management_limit: None,
             model_name: None,
+            gemini_enable_code_execution: None,
+            gemini_thinking_budget: None,
         },
         UpdateChatSettingsRequest {
             system_prompt: None,
@@ -694,6 +729,8 @@ async fn update_chat_settings_invalid_data() {
             history_management_strategy: None,
             history_management_limit: None,
             model_name: None,
+            gemini_enable_code_execution: None,
+            gemini_thinking_budget: None,
         },
         // Top-a validation
         UpdateChatSettingsRequest {
@@ -712,6 +749,8 @@ async fn update_chat_settings_invalid_data() {
             history_management_strategy: None,
             history_management_limit: None,
             model_name: None,
+            gemini_enable_code_execution: None,
+            gemini_thinking_budget: None,
         },
         UpdateChatSettingsRequest {
             system_prompt: None,
@@ -729,6 +768,8 @@ async fn update_chat_settings_invalid_data() {
             history_management_strategy: None,
             history_management_limit: None,
             model_name: None,
+            gemini_enable_code_execution: None,
+            gemini_thinking_budget: None,
         },
         // Invalid logit_bias format
         UpdateChatSettingsRequest {
@@ -747,6 +788,8 @@ async fn update_chat_settings_invalid_data() {
             history_management_strategy: None,
             history_management_limit: None,
             model_name: None,
+            gemini_enable_code_execution: None,
+            gemini_thinking_budget: None,
         },
         // History Management Validation
         UpdateChatSettingsRequest {
@@ -756,6 +799,8 @@ async fn update_chat_settings_invalid_data() {
             history_management_strategy: Some("invalid-strategy".to_string()), // Invalid strategy name
             history_management_limit: Some(10),
             model_name: None,
+            gemini_enable_code_execution: None,
+            gemini_thinking_budget: None,
         },
         UpdateChatSettingsRequest {
             system_prompt: None, temperature: None, max_output_tokens: None, frequency_penalty: None,
@@ -764,6 +809,8 @@ async fn update_chat_settings_invalid_data() {
             history_management_strategy: Some("none".to_string()),
             history_management_limit: Some(0), // Zero limit
             model_name: None,
+            gemini_enable_code_execution: None,
+            gemini_thinking_budget: None,
         },
         UpdateChatSettingsRequest {
             system_prompt: None, temperature: None, max_output_tokens: None, frequency_penalty: None,
@@ -772,10 +819,12 @@ async fn update_chat_settings_invalid_data() {
             history_management_strategy: Some("none".to_string()),
             history_management_limit: Some(-5), // Negative limit
             model_name: None,
+            gemini_enable_code_execution: None,
+            gemini_thinking_budget: None,
         },
-        ];
+    ];
         
-        for (i, payload) in invalid_payloads.iter().enumerate() {
+    for (i, payload) in invalid_payloads.iter().enumerate() {
         let request = Request::builder()
             .method(Method::PUT)
             .uri(format!("/api/chats/{}/settings", session.id))
@@ -841,6 +890,8 @@ async fn update_chat_settings_forbidden() {
         history_management_strategy: None,
         history_management_limit: None,
         model_name: None,
+        gemini_enable_code_execution: None,
+        gemini_thinking_budget: None,
     };
     
     let request = Request::builder()
@@ -884,6 +935,8 @@ async fn update_chat_settings_not_found() {
         history_management_strategy: None,
         history_management_limit: None,
         model_name: None,
+        gemini_enable_code_execution: None,
+        gemini_thinking_budget: None,
     };
     
     let request = Request::builder()
@@ -921,6 +974,8 @@ async fn update_chat_settings_unauthorized() {
         history_management_strategy: None,
         history_management_limit: None,
         model_name: None,
+        gemini_enable_code_execution: None,
+        gemini_thinking_budget: None,
     };
     
     let request = Request::builder()

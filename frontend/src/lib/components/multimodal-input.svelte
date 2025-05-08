@@ -111,7 +111,7 @@
 
 <div class="relative flex w-full flex-col gap-4">
 	{#if mounted && (!attachments || attachments.length === 0) && uploadQueue.length === 0}
-		<SuggestedActions {user} {sendMessage} />
+		<SuggestedActions {user} {sendMessage} actions={[]} />
 	{/if}
 
 	<input
@@ -148,7 +148,7 @@
 		placeholder="Send a message..."
 		bind:value
 		class={cn(
-			'max-h-[calc(75dvh)] min-h-[24px] resize-none overflow-hidden rounded-2xl bg-muted pb-10 !text-base dark:border-zinc-700',
+			'max-h-[calc(75dvh)] min-h-[24px] resize-none overflow-hidden rounded-2xl bg-muted pb-10 pl-2 pr-2 !text-base dark:border-zinc-700',
 			c
 		)}
 		rows={2}

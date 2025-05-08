@@ -534,6 +534,28 @@ fn validate_optional_logit_bias(value: &Value) -> Result<(), ValidationError> {
     Ok(())
 }
 
+// --- Suggested Actions API Structures ---
+
+/// Request body for suggested actions
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SuggestedActionsRequest {
+    pub character_first_message: String,
+    pub user_first_message: Option<String>,
+    pub ai_first_response: Option<String>,
+}
+
+/// Structure for a single suggested action
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SuggestedActionItem {
+    pub action: String,
+}
+
+/// Response structure for suggested actions API
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SuggestedActionsResponse {
+    pub suggestions: Vec<SuggestedActionItem>,
+}
+
 #[cfg(test)]
 mod tests {
     use validator::Validate; // Import the Validate trait for tests
