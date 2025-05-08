@@ -56,9 +56,9 @@
 				)}
 			>
 				<Markdown md={message.content} />
-+				{#if message.message_type === 'Assistant' && message.loading}
-+					<span class="ml-1 inline-block h-4 w-0.5 animate-pulse bg-foreground"></span>
-+				{/if}
+				{#if message.message_type === 'Assistant' && message.loading}
+					<span class="ml-1 inline-block h-4 w-0.5 animate-pulse bg-foreground"></span>
+				{/if}
 			</div>
 
 			<!-- TODO: Re-implement message actions if needed -->
