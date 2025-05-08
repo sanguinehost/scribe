@@ -108,3 +108,9 @@
 		src: url(/fonts/geist-mono.woff2) format('woff2');
 	}
 }
+
+@layer components {
+	.prose p + p { /* Target paragraphs that are directly preceded by another paragraph */
+		@apply mt-6; /* Equivalent to margin-top: 1.5rem; (6 * 0.25rem) */
+	}
+}

@@ -180,51 +180,71 @@
 						if (line.startsWith('event:')) {
 							currentEvent = line.substring(6).trim();
 						} else if (line.startsWith('data:')) {
-							// Append data, removing the 'data: ' prefix and leading space
-							// Handle potential multi-line data correctly
-							currentData += line.substring(5).trimStart() + (messageBlock.includes('\n') ? '\n' : '');
-						}
-					}
-					currentData = currentData.trimEnd(); // Trim trailing newline if added
-
-					// Process the completed event data
-					if (currentData === '[DONE]') {
-						console.log('SSE stream finished with [DONE] signal.');
-						// Finalize the message state after the loop finishes naturally
-						// No need to break here, let reader.read() return done: true
-					} else if (currentEvent === 'error') {
-						// Handle explicit error events from the backend
-						console.error('SSE Error Event:', currentData);
-						error = `Stream error: ${currentData}`; // Set local error state
-						toast.error(error);
-						reader.cancel('SSE error event received'); // Cancel the reader
-						throw new Error(error); // Throw to trigger catch block and stop processing
-					} else if (currentEvent === 'thinking') {
-						// Handle thinking events if backend sends them (currently it doesn't)
-						console.log('SSE Thinking Event:', currentData);
-					} else if (currentData) {
-						// Assume any other non-empty data is our JSON payload
-						try {
-							const parsedData = JSON.parse(currentData);
-							if (parsedData && typeof parsedData.text === 'string') {
-								messages = messages.map(msg =>
-									msg.id === assistantMessageId
-										? { ...msg, content: msg.content + parsedData.text }
-										: msg
-								);
-							} else {
-								console.warn('Received SSE data object without expected "text" field:', parsedData);
+							const dataLineContent = line.substring(5); // Remove "data:" prefix
+							// If currentData is not empty, it means this is a subsequent data line for the same event.
+							// Prepend a newline. SSE spec implies data lines are concatenated with a newline.
+							// The .trimStart() on the original line.substring(5).trimStart() was too aggressive.
+							// We should respect leading spaces if the data content itself has them,
+							// but the SSE spec says "If the field value is empty, dispatch the event."
+							// and "Otherwise, append the field value to a buffer for the field name,
+							// then append a single U+000A LINE FEED (LF) character to the buffer."
+							// This implies the data from `data: ` lines are effectively newline-separated.
+							if (currentData.length > 0) {
+								currentData += '\n';
 							}
-						} catch (parseError: any) {
-							console.error('Failed to parse SSE data as JSON:', currentData, parseError);
-							// Decide how to handle parse errors: stop stream or log and continue?
-							// For now, log and continue, but consider stopping if it's critical.
-							// error = `Stream error: Invalid data format received.`;
-							// toast.error(error);
-							// reader.cancel('Invalid SSE data format');
-							// throw new Error(error);
+							currentData += dataLineContent.startsWith(' ') ? dataLineContent.substring(1) : dataLineContent;
+
+						} else if (line.startsWith('id:')) {
+							// Optional: handle message ID if backend sends it
+							// console.log('SSE Message ID:', line.substring(3).trim());
 						}
+						// Ignore empty lines or lines that are not event, data, or id.
 					}
+					// currentData is now the complete data for the event.
+
+					// Process the completed event data based on event type
+					if (currentEvent === 'done' && currentData === '[DONE]') {
+						console.log('SSE stream finished with [DONE] signal.');
+						// Finalization happens after the loop
+					} else if (currentEvent === 'error') {
+						console.error('SSE Error Event:', currentData);
+						error = `Stream error: ${currentData}`;
+						toast.error(error);
+						reader.cancel('SSE error event received');
+						throw new Error(error); // Stop processing
+					} else if (currentEvent === 'content') {
+						if (currentData) {
+							messages = messages.map(msg =>
+								msg.id === assistantMessageId
+									? { ...msg, content: msg.content + currentData }
+									: msg
+							);
+						}
+					} else if (currentEvent === 'reasoning_chunk') {
+						if (currentData) {
+							console.log('SSE Reasoning Chunk:', currentData);
+							// TODO: Decide how to display reasoning chunks if needed.
+							// For now, we can append it to a separate field or log it.
+							// Example:
+							// messages = messages.map(msg =>
+							// 	msg.id === assistantMessageId
+							// 		? { ...msg, reasoning: (msg.reasoning || '') + currentData }
+							// 		: msg
+							// );
+						}
+					} else if (currentEvent === 'message' && currentData) {
+						// This is the default event if no 'event:' line is present.
+						// The backend now explicitly names events, so this might be less common,
+						// but good to handle as a fallback for simple text content.
+						console.warn('Received SSE data with default "message" event:', currentData);
+						// Assuming it's content if not otherwise specified by a known event
+						messages = messages.map(msg =>
+							msg.id === assistantMessageId
+								? { ...msg, content: msg.content + currentData }
+								: msg
+						);
+					}
+					// else: ignore unknown events or empty data for known events
 				}
 			}
 
