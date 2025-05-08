@@ -60,7 +60,7 @@ export interface ScribeChatSession {
 export interface ScribeCharacter {
 	id: string; // UUID
 	name: string;
-	first_mes: string;
+	first_mes: string | null | undefined;
 	system_prompt?: string | null; // Optional system prompt
 	personality?: string | null; // Optional personality description
 	scenario?: string | null; // Optional scenario description

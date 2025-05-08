@@ -13,56 +13,63 @@
 		user,
 		chat,
 		readonly,
-		initialMessages,
-		character // Add character prop
+		initialMessages: initialMessagesProp,
+		character: characterProp,
+		initialChatInputValue
 	}: {
 		user: User | undefined;
 		chat: ScribeChatSession | undefined;
 		initialMessages: ScribeChatMessage[];
 		readonly: boolean;
-		character: ScribeCharacter | null | undefined; // Define character prop type
+		character: ScribeCharacter | null | undefined; 
+		initialChatInputValue?: string;
 	} = $props();
+
+	// State variables
+	const currentInitialMessages = initialMessagesProp;
+	const currentCharacter = characterProp;
+	const currentChat = chat; // chat prop is also used in logic
 
 	const chatHistory = ChatHistory.fromContext();
 
 	// Scribe chat state management
-	let messages = $state<ScribeChatMessage[]>(initialMessages);
+	let messages = $state<ScribeChatMessage[]>([]); // Start with a truly empty array
+	let initialMessagesSet = $state(false); // Flag to ensure we only set initial messages once
+
+	$effect(() => {
+		if (!initialMessagesSet) {
+			let newInitialMessages: ScribeChatMessage[];
+			if (initialMessagesProp.length === 0 && characterProp?.first_mes) {
+				const firstMessageId = `first-message-${chat?.id ?? 'initial'}`;
+				newInitialMessages = [{
+					id: firstMessageId,
+					session_id: chat?.id ?? 'unknown-session',
+					message_type: 'Assistant',
+					content: characterProp.first_mes,
+					created_at: chat?.created_at ?? new Date().toISOString(),
+					user_id: '',
+					loading: false
+				}];
+			} else {
+				newInitialMessages = initialMessagesProp;
+			}
+			messages = newInitialMessages;
+			initialMessagesSet = true;
+		}
+	});
+
 	let isLoading = $state(false);
 	let error = $state<string | null>(null); // Add error state
 
 	// Removed attachments state as feature is disabled/not supported
-	let chatInput = $state(''); // Input state managed here
+	let chatInput = $state(initialChatInputValue || ''); // Initialize with prop
 	let currentAbortController = $state<AbortController | null>(null); // For cancelling stream
-
-	// Effect to add the character's first message if the chat is new/empty
-	$effect(() => { // Use the $effect rune directly
-		// Run this only once when the component initializes and messages state is set
-		// Check if the initialMessages prop was empty and we have a character with a first message
-		if (initialMessages.length === 0 && character?.first_mes) {
-			// Check if the message isn't already added (e.g., due to HMR or state restoration)
-			if (!messages.some(msg => msg.id === `first-message-${chat?.id}`)) {
-				const firstMessage: ScribeChatMessage = {
-					id: `first-message-${chat?.id}`, // Use chat ID for a stable temporary ID
-					session_id: chat?.id ?? 'unknown-session', // Handle potential undefined chat
-					message_type: 'Assistant',
-					content: character.first_mes,
-					created_at: chat?.created_at ?? new Date().toISOString(), // Use chat creation or current time
-					user_id: '', // Assistant messages don't have a user_id
-					loading: false
-				};
-				// Prepend the message to the state
-				messages = [firstMessage, ...messages];
-			}
-		}
-		// No cleanup needed, this effect runs once based on initial props
-	}); // Remove the dependency array, $effect tracks dependencies automatically
-
 
 	// --- Scribe Backend Interaction Logic ---
 
 	async function sendMessage(content: string) {
 		// Use user.user_id instead of user.id
-		if (!chat?.id || !user?.user_id) {
+		if (!currentChat?.id || !user?.user_id) {
 			error = 'Chat session or user information is missing.';
 			toast.error(error);
 			return;
@@ -74,7 +81,7 @@
 		// Add user message optimistically
 		const userMessage: ScribeChatMessage = {
 			id: crypto.randomUUID(),
-			session_id: chat.id,
+			session_id: currentChat.id,
 			message_type: 'User',
 			content: content,
 			created_at: new Date().toISOString(),
@@ -90,7 +97,7 @@
 		// Map existing messages (excluding loading placeholders) to the API format
 		// Assuming backend expects { role: 'user' | 'assistant', content: string }
 		const existingHistoryForApi = messages
-			.filter(m => !m.loading && (m.message_type === 'User' || m.message_type === 'Assistant')) // Filter out non-user/assistant or loading
+			.filter(m => !m.loading && (m.message_type === 'User' || m.message_type === 'Assistant'))
 			.map(m => ({
 				role: m.message_type === 'Assistant' ? 'assistant' : 'user',
 				content: m.content
@@ -111,7 +118,7 @@
 		const assistantMessageId = crypto.randomUUID();
 		let assistantMessage: ScribeChatMessage = {
 			id: assistantMessageId,
-			session_id: chat.id,
+			session_id: currentChat.id,
 			message_type: 'Assistant',
 			content: '', // Start empty, fill with stream
 			created_at: new Date().toISOString(), // Placeholder, backend might send final
@@ -123,17 +130,15 @@
 		let fetchError: any = null; // Variable to store error from fetch/parsing
 
 		try {
-			const response = await fetch(`/api/chats/${chat.id}/generate`, {
+			const response = await fetch(`/api/chats/${currentChat.id}/generate`, {
 				method: 'POST',
 				headers: {
 					'Content-Type': 'application/json',
 					'Accept': 'text/event-stream' // Indicate we want SSE
 				},
-				// Send the constructed history instead of just the content
-				// NOTE: Sending BOTH history and top-level content based on the 422 error
-				// "missing field `content`". This suggests the running backend expects
-				// this structure, even if the current source code definition differs.
-				body: JSON.stringify({ content: content, history: historyToSend }), // Add top-level content field
+				// Send the constructed history. The backend expects a 'history' field (Vec<ApiChatMessage>)
+				// and an optional 'model' field.
+				body: JSON.stringify({ history: historyToSend }), // Corrected body
 				signal: signal, // Pass the abort signal
 			});
 
@@ -224,9 +229,6 @@
 			}
 
 			// Handle any remaining data in the buffer after the loop (should be empty if stream ended cleanly)
-			if (buffer.trim()) {
-				console.warn('SSE stream ended with unprocessed buffer:', buffer);
-			}
 
 			// Finalize assistant message state only if no error occurred during fetch/parsing
 			messages = messages.map(msg =>
@@ -274,7 +276,6 @@
 	function stopGeneration() {
 		if (currentAbortController) {
 			currentAbortController.abort();
-			console.log('Aborting fetch request...');
 		} else {
 			console.warn('Stop generation called but no active request found.');
 		}

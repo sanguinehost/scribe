@@ -1,5 +1,17 @@
 import { error } from '@sveltejs/kit';
-import type { ScribeChatMessage, ScribeChatSession, ScribeCharacter } from '$lib/types'; // Assuming ScribeCharacter type exists or will be added
+import type { ScribeChatMessage, ScribeChatSession, ScribeCharacter, MessageRole } from '$lib/types'; // Assuming ScribeCharacter type exists or will be added
+
+// Define an interim type for the raw message structure from the API if it uses parts
+interface RawApiMessage {
+	id: string;
+	session_id: string;
+	message_type: MessageRole;
+	parts?: Array<{ text?: string }>; // text is optional, no other properties needed from parts for this transform
+	content?: string;
+	created_at: string;
+	user_id: string;
+	loading?: boolean;
+}
 
 export async function load({ params: { chatId }, fetch, cookies }) {
 	try {
@@ -30,7 +42,18 @@ export async function load({ params: { chatId }, fetch, cookies }) {
 			console.error('Failed to fetch messages:', messagesRes.status, await messagesRes.text());
 			error(500, 'Failed to load chat messages');
 		}
-		const messages: ScribeChatMessage[] = await messagesRes.json();
+		const messagesResponseJson: RawApiMessage[] = await messagesRes.json(); // Use defined interim type
+		const messages: ScribeChatMessage[] = messagesResponseJson.map((rawMsg): ScribeChatMessage => ({
+			id: rawMsg.id,
+			session_id: rawMsg.session_id,
+			message_type: rawMsg.message_type,
+			content: (rawMsg.parts && rawMsg.parts.length > 0 && typeof rawMsg.parts[0].text === 'string') 
+					 ? rawMsg.parts[0].text 
+					 : (typeof rawMsg.content === 'string' ? rawMsg.content : ''),
+			created_at: rawMsg.created_at,
+			user_id: rawMsg.user_id,
+			loading: rawMsg.loading || false
+		}));
 
 		// Fetch character details using the character_id from the chat session
 		let character: ScribeCharacter | null = null;
