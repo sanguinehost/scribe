@@ -7,6 +7,7 @@ use diesel::result::{DatabaseErrorKind, Error as DieselError};
 use serde_json::Value;
 use tracing::{debug, error, info, instrument, warn};
 use uuid::Uuid;
+use secrecy::{SecretBox, ExposeSecret};
 
 use crate::{
     errors::AppError,
@@ -55,151 +56,127 @@ pub type GenerationDataWithUnsavedUserMessage = (
 );
 
 /// Creates a new chat session, verifies character ownership, and adds the character's first message if available.
-#[instrument(skip(state), err)]
+#[instrument(skip(state, user_dek), err)]
 pub async fn create_session_and_maybe_first_message(
     state: Arc<AppState>,
     user_id: Uuid,
     character_id: Uuid,
+    user_dek: Option<&SecretBox<Vec<u8>>>,
 ) -> Result<Chat, AppError> {
     let pool = state.pool.clone();
     let conn = pool.get().await?;
-    let (created_session, first_mes_opt) = conn.interact(move |conn| {
+    let (created_session, first_mes_ciphertext_opt, first_mes_nonce_opt) = conn.interact(move |conn| {
         conn.transaction(|transaction_conn| {
             info!(%character_id, %user_id, "Verifying character ownership and fetching character details");
-            // Fetch the full character first to get all necessary details
-            let character_result: Result<Character, DieselError> = characters::table
+            let character: Character = characters::table
                 .filter(characters::id.eq(character_id))
                 .select(Character::as_select())
-                .first::<Character>(transaction_conn);
+                .first::<Character>(transaction_conn)
+                .map_err(|e| match e {
+                    DieselError::NotFound => AppError::NotFound("Character not found".into()),
+                    _ => AppError::DatabaseQueryError(e.to_string()),
+                })?;
 
-            let character: Character = match character_result {
-                Ok(char) => {
-                    info!(character_id=%char.id, ?char.description, ?char.persona, ?char.system_prompt, "Fetched character details");
-                    char
-                }
-                Err(DieselError::NotFound) => {
-                    error!(%character_id, "Character not found during session creation");
-                    return Err(AppError::NotFound("Character not found".into()));
-                }
-                Err(e) => {
-                    error!(error = ?e, %character_id, "Failed to fetch character details during session creation");
-                    return Err(AppError::DatabaseQueryError(e.to_string()));
-                }
-            };
-
-            // Verify ownership
             if character.user_id != user_id {
                 error!(%character_id, %user_id, owner_id=%character.user_id, "User does not own character");
                 return Err(AppError::Forbidden);
             }
 
             info!(%character_id, %user_id, "Inserting new chat session");
-            let new_session_id = Uuid::new_v4(); // Generate ID upfront
+            let new_session_id = Uuid::new_v4();
             let new_chat_for_insert = NewChat {
-                id: new_session_id, // Use pre-generated ID
+                id: new_session_id,
                 user_id,
                 character_id,
-                title: Some(character.name.clone()), // Use character name as default title, wrapped in Some()
+                title: Some(character.name.clone()),
                 created_at: chrono::Utc::now(),
                 updated_at: chrono::Utc::now(),
-                history_management_strategy: "message_window".to_string(), // Default
-                history_management_limit: 20, // Default
-                // Use a sensible default model or if Character had a preferred model, use that.
-                // For now, keeping the existing default from NewChat.
-                // If Character model is extended with a default_model_name, it could be used here:
-                // model_name: character.default_model_name.clone().unwrap_or_else(|| "gemini-2.5-pro-preview-03-25".to_string()),
+                history_management_strategy: "message_window".to_string(),
+                history_management_limit: 20,
                 model_name: "gemini-2.5-pro-preview-03-25".to_string(),
-                visibility: Some("private".to_string()), // Default
+                visibility: Some("private".to_string()),
             };
 
-            // Insert the new chat session record
             diesel::insert_into(chat_sessions::table)
                 .values(&new_chat_for_insert)
                 .execute(transaction_conn)
-                .map_err(|e| {
-                    error!(error = ?e, "Failed to insert new chat session initial record");
-                    AppError::DatabaseQueryError(e.to_string())
-                })?;
+                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
             
-            info!(session_id = %new_session_id, "Initial chat session record inserted.");
+            let effective_system_prompt = character.system_prompt.as_ref()
+                .and_then(|val| if val.is_empty() { None } else { Some(String::from_utf8_lossy(val).to_string()) })
+                .or_else(|| character.persona.as_ref().and_then(|val| if val.is_empty() { None } else { Some(String::from_utf8_lossy(val).to_string()) }))
+                .or_else(|| character.description.as_ref().and_then(|val| if val.is_empty() { None } else { Some(String::from_utf8_lossy(val).to_string()) }));
 
-            // Determine the effective system prompt for the session
-            // Priority: character.system_prompt > character.persona > character.description
-            let effective_system_prompt = character.system_prompt.clone()
-                .or_else(|| character.persona.clone())
-                .or_else(|| character.description.clone());
-
-            info!(?effective_system_prompt, "Determined effective system prompt for new session.");
-
-            // Update the newly created session with the character's system_prompt
-            if let Some(prompt_to_set) = &effective_system_prompt { // Borrow prompt_to_set
+            if let Some(prompt_to_set) = &effective_system_prompt {
                 if !prompt_to_set.trim().is_empty() {
-                    match diesel::update(chat_sessions::table.filter(chat_sessions::id.eq(new_session_id)))
-                        .set(chat_sessions::system_prompt.eq(prompt_to_set)) // Pass borrowed
-                        .execute(transaction_conn) {
-                            Ok(rows_updated) => info!(session_id = %new_session_id, %rows_updated, "DB system_prompt update successful."),
-                            Err(e) => {
-                                error!(error = ?e, session_id = %new_session_id, "Failed to update session with character system_prompt");
-                                return Err(AppError::DatabaseQueryError(e.to_string()));
-                            }
-                        }
-                } else {
-                    info!(session_id = %new_session_id, "Effective system prompt was empty/whitespace, DB update for system_prompt skipped.");
+                    diesel::update(chat_sessions::table.filter(chat_sessions::id.eq(new_session_id)))
+                        .set(chat_sessions::system_prompt.eq(prompt_to_set))
+                        .execute(transaction_conn)
+                        .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
                 }
-            } else {
-                info!(session_id = %new_session_id, "No effective system prompt derived, DB update for system_prompt skipped.");
             }
             
-            // Fetch the fully constituted session (now including the system_prompt)
             let mut fully_created_session: Chat = chat_sessions::table
                 .filter(chat_sessions::id.eq(new_session_id))
                 .select(Chat::as_select())
                 .first(transaction_conn)
-                .map_err(|e| {
-                    error!(error = ?e, session_id = %new_session_id, "Failed to fetch newly created/updated session");
-                    AppError::DatabaseQueryError(e.to_string())
-                })?;
-            
-            info!(db_system_prompt_after_fetch = ?fully_created_session.system_prompt, "Chat session system_prompt from DB after fetch/update attempt.");
+                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
 
-            // Manually set the system_prompt in the returned object if it was derived and set in DB
-            // This ensures the returned object is consistent with the DB state immediately after this transaction.
             if let Some(ref esp_content) = effective_system_prompt {
                 if !esp_content.trim().is_empty() {
-                    fully_created_session.system_prompt = Some(esp_content.clone()); // Explicit clone of esp_content
-                    info!(final_struct_system_prompt = ?fully_created_session.system_prompt, "Assigned non-empty effective_system_prompt to struct.");
+                    fully_created_session.system_prompt = Some(esp_content.clone());
                 } else {
-                    // Effective prompt was Some(" ") or Some(""), ensure struct reflects None
                     fully_created_session.system_prompt = None;
-                    info!(final_struct_system_prompt = ?fully_created_session.system_prompt, "Effective_system_prompt was empty/whitespace, struct prompt set to None.");
                 }
-            } else {
-                // Effective prompt was None, struct prompt (from DB) should be None
-                info!(final_struct_system_prompt = ?fully_created_session.system_prompt, "Effective_system_prompt was None, struct prompt remains as fetched from DB (should be None).");
             }
             
-            info!(session_id = %fully_created_session.id, "Chat session fully created and configured in DB, returning.");
-            Ok((fully_created_session, character.first_mes))
+            Ok((fully_created_session, character.first_mes, character.first_mes_nonce))
         })
     })
-    .await??; // Double '?' for InteractError and then AppError from closure
+    .await??;
 
-    if let Some(first_message_content) = first_mes_opt {
-        if !first_message_content.trim().is_empty() {
-            info!(session_id = %created_session.id, "Character has non-empty first_mes, saving via save_message");
-            let _ = save_message(
-                state.clone(),
-                created_session.id,
-                user_id,
-                MessageRole::Assistant,
-                first_message_content,
-            ).await?;
-            info!(session_id = %created_session.id, "Successfully called save_message for first_mes");
+    if let (Some(first_message_ciphertext), Some(first_message_nonce)) = (first_mes_ciphertext_opt, first_mes_nonce_opt) {
+        if !first_message_ciphertext.is_empty() && !first_message_nonce.is_empty() {
+            match user_dek {
+                Some(dek) => {
+                    match crate::crypto::decrypt_gcm(&first_message_ciphertext, &first_message_nonce, dek) {
+                        Ok(plaintext_secret_vec) => {
+                            match String::from_utf8(plaintext_secret_vec.expose_secret().to_vec()) {
+                                Ok(content_str) => {
+                                    if !content_str.trim().is_empty() {
+                                        info!(session_id = %created_session.id, "Character has non-empty decrypted first_mes, saving via save_message");
+                                        let _ = save_message(
+                                            state.clone(),
+                                            created_session.id,
+                                            user_id,
+                                            MessageRole::Assistant,
+                                            &content_str,
+                                            Some(dek),
+                                        ).await?;
+                                        info!(session_id = %created_session.id, "Successfully called save_message for first_mes");
+                                    } else {
+                                        info!(session_id = %created_session.id, "Character first_mes (decrypted) is empty, skipping save.");
+                                    }
+                                }
+                                Err(e) => {
+                                    error!(session_id = %created_session.id, error = ?e, "Failed to convert decrypted first_mes to UTF-8");
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            error!(session_id = %created_session.id, error = ?e, "Failed to decrypt character first_mes for new session");
+                        }
+                    }
+                }
+                None => {
+                    warn!(session_id = %created_session.id, "Character has encrypted first_mes but no user DEK provided. Skipping first_mes.");
+                }
+            }
         } else {
-            info!(session_id = %created_session.id, "Character first_mes is empty, skipping save.");
+            info!(session_id = %created_session.id, "Character first_mes ciphertext or nonce is empty, skipping save.");
         }
     } else {
-        info!(session_id = %created_session.id, "Character first_mes is None, skipping save.");
+        info!(session_id = %created_session.id, "Character first_mes or nonce is None, skipping save.");
     }
 
     Ok(created_session)
@@ -333,46 +310,91 @@ fn save_chat_message_internal(
 }
 
 /// Saves a single chat message (user or assistant) and triggers background embedding.
-#[instrument(skip(state), err)]
+#[instrument(skip(state, dek), err)]
 pub async fn save_message(
     state: Arc<AppState>,
     session_id: Uuid,
     user_id: Uuid,
     role: MessageRole,
-    content: String,
+    content: &str,
+    dek: Option<&SecretBox<Vec<u8>>>,
 ) -> Result<DbChatMessage, AppError> {
     let pool = state.pool.clone();
-    let saved_message_result = pool
-        .get()
-        .await?
-        .interact(move |conn| {
-            let new_message = DbInsertableChatMessage::new(session_id, user_id, role, content);
-            save_chat_message_internal(conn, new_message)
-        })
-        .await?;
+    let conn = pool.get().await?;
 
-    if let Ok(saved_message) = &saved_message_result {
-        let state_clone = state.clone();
-        let message_clone = saved_message.clone();
-        tokio::spawn(async move {
-            info!(message_id = %message_clone.id, "Spawning background task for message embedding");
-            let embedding_pipeline_service = state_clone.embedding_pipeline_service.clone();
+    // Placeholder: let dek: SecretVec<u8> = get_users_dek_from_somewhere(user_id, &state.session_store).await?;
+    // If DEK is not available (e.g., for unauthenticated contexts or if encryption is optional and off),
+    // this logic would need to adapt, possibly by storing plaintext if allowed by policy.
+    // For Sanguine Scribe, all user-generated content in messages should be encrypted.
+    
+    // TEMP: For now, if we can't get a DEK, we'll error out. Production code needs robust DEK handling.
+    // This will likely cause a compile error until DEK retrieval is implemented.
+    let dek_to_use = match dek {
+        Some(d) => d,
+        None => {
+            // This case should ideally not happen if messages are always to be encrypted
+            // and a DEK is expected. Handling it by returning an error for now.
+            error!(
+                session_id = %session_id,
+                "Attempted to save message but no DEK was provided in session for encryption."
+            );
+            return Err(AppError::InternalServerErrorGeneric(
+                "DEK not available for message encryption".to_string(),
+            ));
+        }
+    };
 
-            let message_id_for_tracker = message_clone.id;
-            if let Err(e) = embedding_pipeline_service.process_and_embed_message(state_clone.clone(), message_clone).await {
-                error!(error = %e, "Background embedding task failed");
-            } else {
-                info!("Background embedding task completed successfully");
+    let (encrypted_content, nonce_bytes) = if !content.is_empty() {
+        match crate::crypto::encrypt_gcm(content.as_bytes(), dek_to_use) {
+            Ok((ciphertext, nonce)) => (ciphertext, Some(nonce)),
+            Err(e) => {
+                error!(
+                    "Failed to encrypt chat message content for session {}: {}",
+                    session_id, e
+                );
+                return Err(AppError::CryptoError(format!(
+                    "Encryption failed for chat message: {}",
+                    e
+                )));
             }
+        }
+    } else {
+        (Vec::new(), None) // No encryption for empty content
+    };
 
-             let tracker_arc = state_clone.embedding_call_tracker.clone();
-             tracker_arc.lock().await.push(message_id_for_tracker);
-             info!(message_id = %message_id_for_tracker, "Notified embedding tracker");
+    let new_message_for_db = DbInsertableChatMessage {
+        chat_id: session_id,
+        user_id,
+        role,
+        content: encrypted_content,
+        content_nonce: nonce_bytes, // Store the nonce
+    };
 
-        });
-    }
+    conn.interact(move |conn_interaction| {
+        let saved_message_result = save_chat_message_internal(conn_interaction, new_message_for_db);
+        if let Ok(saved_message) = &saved_message_result {
+            let state_clone = state.clone();
+            let message_clone = saved_message.clone();
+            tokio::spawn(async move {
+                info!(message_id = %message_clone.id, "Spawning background task for message embedding");
+                let embedding_pipeline_service = state_clone.embedding_pipeline_service.clone();
 
-    saved_message_result
+                let message_id_for_tracker = message_clone.id;
+                if let Err(e) = embedding_pipeline_service.process_and_embed_message(state_clone.clone(), message_clone).await {
+                    error!(error = %e, "Background embedding task failed");
+                } else {
+                    info!("Background embedding task completed successfully");
+                }
+
+                 let tracker_arc = state_clone.embedding_call_tracker.clone();
+                 tracker_arc.lock().await.push(message_id_for_tracker);
+                 info!(message_id = %message_id_for_tracker, "Notified embedding tracker");
+
+            });
+        }
+        saved_message_result
+    })
+    .await?
 }
 
 /// Fetches session settings, history, applies history management, and prepares the user message struct.
@@ -473,10 +495,10 @@ pub async fn get_session_data_for_generation(
         );
         debug!(%session_id, strategy=%history_management_strategy, limit=%history_management_limit, original_len=full_db_history.len(), managed_len=managed_db_history.len(), "History management applied");
 
-        // Convert managed history to the tuple format needed for the prompt builder
-        let managed_history_for_prompt: HistoryForGeneration = managed_db_history
+        // Convert the managed history to the format expected by the generator
+        let history_for_generation: HistoryForGeneration = managed_db_history
             .into_iter()
-            .map(|msg| (msg.message_type, msg.content))
+            .map(|msg| (msg.message_type, String::from_utf8_lossy(&msg.content).to_string()))
             .collect();
 
         // Prepare the user message struct (don't save it here)
@@ -484,11 +506,12 @@ pub async fn get_session_data_for_generation(
             session_id,
             user_id,
             MessageRole::User,
-            user_message_content, // This is String
+            user_message_content.into(), // This is String
+            None, // Add None for the missing nonce argument
         );
 
         Ok((
-            managed_history_for_prompt, // Return the managed history
+            history_for_generation, // Return the managed history
             system_prompt,
             temperature,
             max_tokens,

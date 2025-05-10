@@ -16,8 +16,7 @@ async fn health_check_works() {
     // Arrange
     // Spawn our application and get the context
     // Pass `false` to use the mock AI client
-    let context = test_helpers::setup_test_app(false).await;
-    let app = context.app; // Get the TestApp containing the router
+    let test_app = test_helpers::spawn_app(false, false, false).await;
     let _client = reqwest::Client::new(); // Prefix unused variable
 
     // Build the request directly for the router
@@ -29,7 +28,7 @@ async fn health_check_works() {
 
     // Act
     // Send the request directly to the router using oneshot
-    let response = app
+    let response = test_app
         .router
         .oneshot(request)
         .await

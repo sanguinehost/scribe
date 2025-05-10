@@ -38,14 +38,14 @@ diesel::table! {
         spec_version -> Varchar,
         #[max_length = 255]
         name -> Varchar,
-        description -> Nullable<Text>,
-        personality -> Nullable<Text>,
-        scenario -> Nullable<Text>,
-        first_mes -> Nullable<Text>,
-        mes_example -> Nullable<Text>,
-        creator_notes -> Nullable<Text>,
-        system_prompt -> Nullable<Text>,
-        post_history_instructions -> Nullable<Text>,
+        description -> Nullable<Bytea>,
+        personality -> Nullable<Bytea>,
+        scenario -> Nullable<Bytea>,
+        first_mes -> Nullable<Bytea>,
+        mes_example -> Nullable<Bytea>,
+        creator_notes -> Nullable<Bytea>,
+        system_prompt -> Nullable<Bytea>,
+        post_history_instructions -> Nullable<Bytea>,
         tags -> Nullable<Array<Nullable<Text>>>,
         #[max_length = 255]
         creator -> Nullable<Varchar>,
@@ -61,12 +61,12 @@ diesel::table! {
         modification_date -> Nullable<Timestamptz>,
         created_at -> Timestamptz,
         updated_at -> Timestamptz,
-        persona -> Nullable<Text>,
-        world_scenario -> Nullable<Text>,
+        persona -> Nullable<Bytea>,
+        world_scenario -> Nullable<Bytea>,
         avatar -> Nullable<Text>,
         chat -> Nullable<Text>,
-        greeting -> Nullable<Text>,
-        definition -> Nullable<Text>,
+        greeting -> Nullable<Bytea>,
+        definition -> Nullable<Bytea>,
         default_voice -> Nullable<Text>,
         extensions -> Nullable<Jsonb>,
         data_id -> Nullable<Int4>,
@@ -75,7 +75,7 @@ diesel::table! {
         #[max_length = 50]
         definition_visibility -> Nullable<Varchar>,
         depth -> Nullable<Int4>,
-        example_dialogue -> Nullable<Text>,
+        example_dialogue -> Nullable<Bytea>,
         favorite -> Nullable<Bool>,
         #[max_length = 50]
         first_message_visibility -> Nullable<Varchar>,
@@ -83,7 +83,7 @@ diesel::table! {
         last_activity -> Nullable<Timestamptz>,
         #[max_length = 255]
         migrated_from -> Nullable<Varchar>,
-        model_prompt -> Nullable<Text>,
+        model_prompt -> Nullable<Bytea>,
         #[max_length = 50]
         model_prompt_visibility -> Nullable<Varchar>,
         model_temperature -> Nullable<Numeric>,
@@ -101,7 +101,7 @@ diesel::table! {
         system_tags -> Nullable<Array<Nullable<Text>>>,
         token_budget -> Nullable<Int4>,
         usage_hints -> Nullable<Jsonb>,
-        user_persona -> Nullable<Text>,
+        user_persona -> Nullable<Bytea>,
         #[max_length = 50]
         user_persona_visibility -> Nullable<Varchar>,
         #[max_length = 50]
@@ -109,6 +109,21 @@ diesel::table! {
         weight -> Nullable<Numeric>,
         #[max_length = 50]
         world_scenario_visibility -> Nullable<Varchar>,
+        description_nonce -> Nullable<Bytea>,
+        personality_nonce -> Nullable<Bytea>,
+        scenario_nonce -> Nullable<Bytea>,
+        first_mes_nonce -> Nullable<Bytea>,
+        mes_example_nonce -> Nullable<Bytea>,
+        creator_notes_nonce -> Nullable<Bytea>,
+        system_prompt_nonce -> Nullable<Bytea>,
+        persona_nonce -> Nullable<Bytea>,
+        world_scenario_nonce -> Nullable<Bytea>,
+        greeting_nonce -> Nullable<Bytea>,
+        definition_nonce -> Nullable<Bytea>,
+        example_dialogue_nonce -> Nullable<Bytea>,
+        model_prompt_nonce -> Nullable<Bytea>,
+        user_persona_nonce -> Nullable<Bytea>,
+        post_history_instructions_nonce -> Nullable<Bytea>,
     }
 }
 
@@ -121,11 +136,12 @@ diesel::table! {
         id -> Uuid,
         session_id -> Uuid,
         message_type -> MessageType,
-        content -> Text,
+        content -> Bytea,
         rag_embedding_id -> Nullable<Uuid>,
         created_at -> Timestamptz,
         updated_at -> Timestamptz,
         user_id -> Uuid,
+        content_nonce -> Nullable<Bytea>,
         #[max_length = 50]
         role -> Nullable<Varchar>,
         parts -> Nullable<Jsonb>,
@@ -161,10 +177,10 @@ diesel::table! {
         history_management_limit -> Int4,
         #[max_length = 100]
         model_name -> Varchar,
-        #[max_length = 50]
-        visibility -> Nullable<Varchar>,
         gemini_thinking_budget -> Nullable<Int4>,
         gemini_enable_code_execution -> Nullable<Bool>,
+        #[max_length = 50]
+        visibility -> Nullable<Varchar>,
     }
 }
 
@@ -282,6 +298,13 @@ diesel::table! {
         created_at -> Timestamptz,
         updated_at -> Timestamptz,
         email -> Varchar,
+        #[max_length = 128]
+        kek_salt -> Varchar,
+        encrypted_dek -> Bytea,
+        encrypted_dek_by_recovery -> Nullable<Bytea>,
+        recovery_kek_salt -> Nullable<Text>,
+        dek_nonce -> Bytea,
+        recovery_dek_nonce -> Nullable<Bytea>,
     }
 }
 

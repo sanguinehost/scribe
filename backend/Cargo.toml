@@ -4,25 +4,29 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-axum = { version = "^0.8.3", features = ["macros", "multipart"] }
+axum = { version = "0.7.5", features = ["macros", "multipart"] } # Align with tonic and axum-login ^0.7.0
+axum-server = { version = "0.7.0", features = ["tls-rustls"] } # Added for HTTPS serving
 tokio = { version = "1.44.2", features = ["full"] }
 serde = { version = "1.0.219", features = ["derive"] }
 serde_json = "1.0.140"
 png = "0.17.16"
 base64 = "0.22.1"
 thiserror = "2.0.12"
-diesel = { version = "2.2.9", features = ["postgres", "chrono", "r2d2", "uuid", "serde_json", "numeric", "64-column-tables"] }
+diesel = { version = "2.2.9", features = ["postgres", "chrono", "r2d2", "uuid", "serde_json", "numeric", "64-column-tables", "128-column-tables"] }
 diesel_migrations = { version = "2.2.0", features = ["postgres"] }
 dotenvy = "0.15.7"
 chrono = { version = "0.4.40", features = ["serde"] }
 diesel-derive-enum = { version = "2.1.0", features = ["postgres"] }
 uuid = { version = "1.16.0", features = ["v4", "serde"] }
 tower = { version = "0.5.2" }
-tower-http = { version = "0.6.2", features = ["trace", "cors"] }
-tower-sessions = { version = "0.14.0", features = ["signed"] }
-axum-login = "0.17.0"
+tower-http = { version = "0.5.2", features = ["trace", "cors"] } # Downgraded for axum 0.7.x compatibility
+tower-sessions = { version = "0.11.1", features = ["signed"] } # Aligned with axum-login 0.14.0
+axum-login = "0.14.0" # Compatible with axum 0.7.x
 bcrypt = "0.17.0"
-secrecy = { version = "0.8", features = ["serde"] }
+argon2 = { version = "0.5.3", features = ["std"] } # Ensure std feature for hash_raw if available, or check API
+secrecy = { version = "0.10.3", features = ["serde"] } # alloc feature removed as it's not standard
+aes-gcm = "0.10.3" # For AES-GCM encryption
+ring = "0.17.8" # Add ring
 zip = "2.6.1"
 tracing = "0.1.41"
 tracing-subscriber = { version = "0.3.19", features = ["env-filter", "json"] }
@@ -39,7 +43,7 @@ time = { version = "0.3.41", features = ["serde", "serde-well-known"] }
 
 rand = "0.9.1"
 cookie = { version = "0.18.1", features = ["secure"] }
-tower-cookies = "0.11.0"
+tower-cookies = { version = "0.10.0", features = ["signed"] } # Aligned with axum-login 0.14.0, added "signed" feature
 
 lettre = { version = "0.11.15" }
 mime = "0.3.17"
@@ -66,9 +70,6 @@ url = "2.5.4"
 futures = "0.3.31"
 async-stream = "0.3.6"
 
-# Added for TLS support
-axum-server = { version = "0.7.2", features = ["tls-rustls"] }
-
 # Added for sentence splitting (using ICU4X)
 icu_segmenter = { version = "1.5", features = ["compiled_data"] }
 icu_provider = "1.5"
@@ -87,6 +88,12 @@ testcontainers = "0.23.3"
 
 rustls = { version = "0.23", default-features = false, features = ["ring"] }
 rustls-pki-types = "1.9.0" # <-- Keep this dependency
+
+utf8_iter = "1.0.0" # Corrected crate name (underscore vs hyphen)
+
+# Add for new TLS setup
+rustls-pemfile = "2.1.2"
+tokio-rustls = "0.26.0"
 
 [dev-dependencies]
 hyper-util = { version = "0.1.11", features = ["full"] }
@@ -108,9 +115,7 @@ test-context = "0.4.1"
 lazy_static = "1.5.0"
 async-trait = "0.1.88"
 rstest = "0.25.0"
-
-# Add serial_test for controlling test execution order and setup
-serial_test = "3.0.0" # Check crates.io for latest version if needed
+serial_test = "3.0.0"
 log = "0.4" # Add log crate for testing
 
 # Testing utilities
@@ -129,3 +134,4 @@ path = "src/lib.rs"
 # name = "integration_tests" # Example name
 # path = "tests/integration.rs" # Example path
 # harness = true
+

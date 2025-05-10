@@ -1,101 +1,376 @@
 // backend/src/models/characters.rs
 #![allow(dead_code)] // Allow dead code for fields not yet actively used
-use std::str::FromStr; // <-- ADD THIS LINE
-use serde_json::json; // <-- ADD THIS LINE
 use chrono::{DateTime, Utc};
 use diesel::prelude::*;
+use serde::{Deserialize, Serialize};
+use serde_json::Value as JsonValue;
+use uuid::Uuid;
+use bigdecimal::BigDecimal;
+use diesel_json::Json;
+use secrecy::{ExposeSecret, SecretBox}; // Corrected: SecretVec -> SecretBox
+use crate::errors::AppError; // For error handling
+
 use crate::models::users::User;
 use crate::schema::characters;
 use crate::services::character_parser::ParsedCharacterCard;
-use bigdecimal::BigDecimal;
-use diesel_json::Json; // Import Json wrapper
-use serde::{Deserialize, Serialize};
-use serde_json::Value as JsonValue;
-use uuid::Uuid; // Added import
+// For encryption/decryption
+use crate::crypto::decrypt_gcm;
 
 #[derive(
-    Queryable, Selectable, Insertable, AsChangeset, Serialize, Deserialize, Debug, Clone, PartialEq,
+    Queryable, Selectable, Identifiable, Associations, Serialize, Deserialize, Debug, Clone, PartialEq,
 )]
+#[diesel(belongs_to(User, foreign_key = user_id))]
 #[diesel(table_name = crate::schema::characters)]
-#[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct Character {
-    pub id: Uuid,                             // PK
-    pub user_id: Uuid,                        // FK to users table
+    pub id: Uuid,
+    pub user_id: Uuid,
+    pub spec: String,
+    pub spec_version: String,
+    pub name: String,
+    pub description: Option<Vec<u8>>,
+    pub personality: Option<Vec<u8>>,
+    pub scenario: Option<Vec<u8>>,
+    pub first_mes: Option<Vec<u8>>,
+    pub mes_example: Option<Vec<u8>>,
+    pub creator_notes: Option<Vec<u8>>,
+    pub system_prompt: Option<Vec<u8>>,
+    pub post_history_instructions: Option<Vec<u8>>,
+    pub tags: Option<Vec<Option<String>>>,
+    pub creator: Option<String>,
+    pub character_version: Option<String>,
+    pub alternate_greetings: Option<Vec<Option<String>>>,
+    pub nickname: Option<String>,
+    pub creator_notes_multilingual: Option<serde_json::Value>,
+    pub source: Option<Vec<Option<String>>>,
+    pub group_only_greetings: Option<Vec<Option<String>>>,
+    pub creation_date: Option<DateTime<Utc>>,
+    pub modification_date: Option<DateTime<Utc>>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    pub persona: Option<Vec<u8>>,
+    pub world_scenario: Option<Vec<u8>>,
+    pub avatar: Option<String>,
+    pub chat: Option<String>,
+    pub greeting: Option<Vec<u8>>,
+    pub definition: Option<Vec<u8>>,
+    pub default_voice: Option<String>,
+    pub extensions: Option<serde_json::Value>,
+    pub data_id: Option<i32>,
+    pub category: Option<String>,
+    pub definition_visibility: Option<String>,
+    pub depth: Option<i32>,
+    pub example_dialogue: Option<Vec<u8>>,
+    pub favorite: Option<bool>,
+    pub first_message_visibility: Option<String>,
+    pub height: Option<BigDecimal>,
+    pub last_activity: Option<DateTime<Utc>>,
+    pub migrated_from: Option<String>,
+    pub model_prompt: Option<Vec<u8>>,
+    pub model_prompt_visibility: Option<String>,
+    pub model_temperature: Option<BigDecimal>,
+    pub num_interactions: Option<i64>,
+    pub permanence: Option<BigDecimal>,
+    pub persona_visibility: Option<String>,
+    pub revision: Option<i32>,
+    pub sharing_visibility: Option<String>,
+    pub status: Option<String>,
+    pub system_prompt_visibility: Option<String>,
+    pub system_tags: Option<Vec<Option<String>>>,
+    pub token_budget: Option<i32>,
+    pub usage_hints: Option<serde_json::Value>,
+    pub user_persona: Option<Vec<u8>>,
+    pub user_persona_visibility: Option<String>,
+    pub visibility: Option<String>,
+    pub weight: Option<BigDecimal>,
+    pub world_scenario_visibility: Option<String>,
+    pub description_nonce: Option<Vec<u8>>,
+    pub personality_nonce: Option<Vec<u8>>,
+    pub scenario_nonce: Option<Vec<u8>>,
+    pub first_mes_nonce: Option<Vec<u8>>,
+    pub mes_example_nonce: Option<Vec<u8>>,
+    pub creator_notes_nonce: Option<Vec<u8>>,
+    pub system_prompt_nonce: Option<Vec<u8>>,
+    pub persona_nonce: Option<Vec<u8>>,
+    pub world_scenario_nonce: Option<Vec<u8>>,
+    pub greeting_nonce: Option<Vec<u8>>,
+    pub definition_nonce: Option<Vec<u8>>,
+    pub example_dialogue_nonce: Option<Vec<u8>>,
+    pub model_prompt_nonce: Option<Vec<u8>>,
+    pub user_persona_nonce: Option<Vec<u8>>,
+    pub post_history_instructions_nonce: Option<Vec<u8>>,
+}
+
+impl Character {
+    /// Encrypts the description field if plaintext is provided and a DEK is available.
+    /// Updates self.description and self.description_nonce.
+    pub fn encrypt_description_field(
+        &mut self,
+        dek: &SecretBox<Vec<u8>>,
+        plaintext_opt: Option<String>,
+    ) -> Result<(), AppError> {
+        match plaintext_opt {
+            Some(plaintext) if !plaintext.is_empty() => {
+                let (ciphertext, nonce) = crate::crypto::encrypt_gcm(plaintext.as_bytes(), dek)
+                    .map_err(|e| AppError::EncryptionError(format!("Failed to encrypt description: {}", e)))?;
+                self.description = Some(ciphertext);
+                self.description_nonce = Some(nonce);
+            }
+            _ => {
+                // If plaintext is None or empty, clear the encrypted fields
+                self.description = None;
+                self.description_nonce = None;
+            }
+        }
+        Ok(())
+    }
+
+    /// Convert this Character into a json-friendly ClientCharacter response
+    /// If DEK is available, decrypt encrypted fields
+    pub fn into_client_character(self, dek: Option<&SecretBox<Vec<u8>>>) -> Result<ClientCharacter, AppError> {
+        let mut client_char = ClientCharacter {
+            id: self.id,
+            user_id: self.user_id,
+            name: self.name,
+            description: String::new(), // Will be populated below
+            concept: self.spec.clone(),
+            // Get system_prompt if available, otherwise empty string
+            voice_instructions: String::new(), // Will populate below
+            created_at: self.created_at,
+            updated_at: self.updated_at,
+            is_favorite: self.favorite.unwrap_or(false),
+            category: self.category.clone().unwrap_or_default(),
+            chat_history_limit: self.token_budget.unwrap_or(100),
+            system_prompt: String::new(), // Will populate below
+            avatar_id: None, // Will try to convert from self.avatar
+        };
+
+        // Attempt to convert avatar string to UUID if present
+        if let Some(avatar_str) = &self.avatar {
+            if let Ok(uuid) = Uuid::parse_str(avatar_str) {
+                client_char.avatar_id = Some(uuid);
+            }
+        }
+
+        // Decrypt system_prompt if available
+        if let (Some(dek), Some(system_prompt), Some(system_prompt_nonce)) = 
+            (dek, &self.system_prompt, &self.system_prompt_nonce) {
+            if !system_prompt.is_empty() {
+                let decrypted_bytes = decrypt_gcm(system_prompt, system_prompt_nonce, dek)
+                    .map_err(|e| AppError::EncryptionError(format!("Failed to decrypt system_prompt: {}", e)))?;
+                
+                client_char.system_prompt = String::from_utf8(decrypted_bytes.expose_secret().to_vec())
+                    .map_err(|e| AppError::EncryptionError(format!("Invalid UTF-8 in decrypted system_prompt: {}", e)))?;
+            }
+        } else if let Some(_system_prompt) = &self.system_prompt {
+            // If no DEK but we have system prompt, show encrypted placeholder
+            client_char.system_prompt = "[Encrypted]".to_string();
+        }
+
+        // Use voice_instructions or persona for client's voice_instructions
+        if let (Some(dek), Some(voice_data), Some(voice_nonce)) = 
+            (dek, &self.persona, &self.persona_nonce) {
+            if !voice_data.is_empty() {
+                let decrypted_bytes = decrypt_gcm(voice_data, voice_nonce, dek)
+                    .map_err(|e| AppError::EncryptionError(format!("Failed to decrypt voice data: {}", e)))?;
+                
+                client_char.voice_instructions = String::from_utf8(decrypted_bytes.expose_secret().to_vec())
+                    .map_err(|e| AppError::EncryptionError(format!("Invalid UTF-8 in decrypted voice data: {}", e)))?;
+            }
+        } else {
+            // Default voice instructions
+            client_char.voice_instructions = "Default voice settings".to_string();
+        }
+
+        // Only try to decrypt description if we have both encrypted data, a nonce, and the DEK
+        if let (Some(dek), Some(nonce), Some(description)) = (dek, self.description_nonce, self.description) {
+            if !description.is_empty() {
+                // Decrypt the description field
+                let decrypted_bytes = decrypt_gcm(&description, &nonce, dek)
+                    .map_err(|e| AppError::EncryptionError(format!("Failed to decrypt description: {}", e)))?;
+
+                // Convert bytes to UTF-8 string
+                let decrypted_text = String::from_utf8(decrypted_bytes.expose_secret().to_vec())
+                    .map_err(|e| AppError::EncryptionError(format!("Invalid UTF-8 in decrypted description: {}", e)))?;
+                
+                client_char.description = decrypted_text;
+            }
+        } else {
+            // If no DEK or no nonce or no description, use placeholder
+            client_char.description = "[Encrypted]".to_string();
+        }
+
+        Ok(client_char)
+    }
+
+    /// Convert this Character into a CharacterDataForClient response
+    /// This is similar to into_client_character but with a more detailed output format
+    pub fn into_decrypted_for_client(self, dek: Option<&SecretBox<Vec<u8>>>) -> Result<CharacterDataForClient, AppError> {
+        let mut client_char = CharacterDataForClient {
+            id: self.id,
+            user_id: self.user_id,
+            spec: self.spec,
+            spec_version: self.spec_version,
+            name: self.name,
+            description: None, // Will be populated below
+            personality: None,
+            scenario: None,
+            first_mes: None,
+            mes_example: None,
+            creator_notes: None,
+            system_prompt: None,
+            post_history_instructions: None,
+            tags: None,
+            creator: None,
+            character_version: None,
+            alternate_greetings: None,
+            nickname: None,
+            creator_notes_multilingual: None,
+            source: None,
+            group_only_greetings: None,
+            creation_date: None,
+            modification_date: None,
+            created_at: self.created_at,
+            updated_at: self.updated_at,
+            persona: None,
+            world_scenario: None,
+            avatar: None,
+            chat: None,
+            greeting: None,
+            definition: None,
+            default_voice: None,
+            extensions: None,
+            data_id: None,
+            category: None,
+            definition_visibility: None,
+            depth: None,
+            example_dialogue: None,
+            favorite: None,
+            first_message_visibility: None,
+            height: None,
+            last_activity: None,
+            migrated_from: None,
+            model_prompt: None,
+            model_prompt_visibility: None,
+            model_temperature: None,
+            num_interactions: None,
+            permanence: None,
+            persona_visibility: None,
+            revision: None,
+            sharing_visibility: None,
+            status: None,
+            system_prompt_visibility: None,
+            system_tags: None,
+            token_budget: None,
+            usage_hints: None,
+            user_persona: None,
+            user_persona_visibility: None,
+            visibility: None,
+            weight: None,
+            world_scenario_visibility: None,
+        };
+
+        // Only try to decrypt if we have both encrypted data, a nonce, and the DEK
+        if let (Some(dek), Some(nonce)) = (dek, self.description_nonce) {
+            if let Some(description) = self.description {
+                // Decrypt the description field
+                let decrypted_bytes = decrypt_gcm(&description, &nonce, dek)
+                    .map_err(|e| AppError::EncryptionError(format!("Failed to decrypt description: {}", e)))?;
+
+                // Convert bytes to UTF-8 string
+                let decrypted_text = String::from_utf8(decrypted_bytes.expose_secret().to_vec())
+                    .map_err(|e| AppError::EncryptionError(format!("Invalid UTF-8 in decrypted description: {}", e)))?;
+                
+                client_char.description = Some(decrypted_text);
+            }
+        } else {
+            // If no DEK or no nonce, keep encrypted (or send placeholder)
+            client_char.description = Some("[Encrypted]".to_string());
+        }
+
+        Ok(client_char)
+    }
+}
+
+// Represents the data structure for a character when sent to the client (frontend)
+// Fields that are encrypted in the DB should be String here (decrypted form).
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+pub struct CharacterDataForClient {
+    pub id: Uuid,
+    pub user_id: Uuid,
     pub spec: String,
     pub spec_version: String,
     pub name: String,
     pub description: Option<String>,
-    pub personality: Option<String>,          // Moved to match schema order
-    pub scenario: Option<String>,             // Moved to match schema order
-    pub first_mes: Option<String>,            // Moved to match schema order
-    pub mes_example: Option<String>,          // Moved to match schema order
-    pub creator_notes: Option<String>,        // Moved to match schema order
-    pub system_prompt: Option<String>,        // Moved to match schema order
-    pub post_history_instructions: Option<String>, // Moved to match schema order
-    pub tags: Option<Vec<Option<String>>>,    // Moved to match schema order
-    pub creator: Option<String>,              // Moved to match schema order
-    pub character_version: Option<String>,    // Moved to match schema order
-    pub alternate_greetings: Option<Vec<Option<String>>>, // Moved to match schema order
-    pub nickname: Option<String>,             // Added missing field
-    pub creator_notes_multilingual: Option<Json<JsonValue>>, // Moved to match schema order
-    pub source: Option<Vec<Option<String>>>, // Added missing field
-    pub group_only_greetings: Option<Vec<Option<String>>>, // Added missing field
-    pub creation_date: Option<DateTime<Utc>>, // Added missing field
-    pub modification_date: Option<DateTime<Utc>>, // Added missing field
-    pub created_at: DateTime<Utc>,            // Moved to match schema order
-    pub updated_at: DateTime<Utc>,            // Moved to match schema order
-    pub persona: Option<String>,              // Moved to match schema order
-    pub world_scenario: Option<String>,       // Moved to match schema order
-    pub avatar: Option<String>,               // Moved to match schema order
-    pub chat: Option<String>,                 // Moved to match schema order
-    pub greeting: Option<String>,             // Moved to match schema order
-    pub definition: Option<String>,           // Moved to match schema order
-    pub default_voice: Option<String>,        // Moved to match schema order
-    pub extensions: Option<Json<JsonValue>>,  // Moved to match schema order
-    pub data_id: Option<i32>,                 // Moved to match schema order
-    pub category: Option<String>,             // Moved to match schema order
-    pub definition_visibility: Option<String>, // Moved to match schema order
-    pub depth: Option<i32>,                   // Moved to match schema order
-    pub example_dialogue: Option<String>,     // Moved to match schema order
-    pub favorite: Option<bool>,               // Moved to match schema order
-    pub first_message_visibility: Option<String>, // Moved to match schema order
-    pub height: Option<BigDecimal>,           // Moved to match schema order
-    pub last_activity: Option<DateTime<Utc>>, // Moved to match schema order
-    pub migrated_from: Option<String>,        // Moved to match schema order
-    pub model_prompt: Option<String>,         // Moved to match schema order
-    pub model_prompt_visibility: Option<String>, // Moved to match schema order
-    pub model_temperature: Option<BigDecimal>, // Moved to match schema order
-    pub num_interactions: Option<i64>,        // Moved to match schema order
-    pub permanence: Option<BigDecimal>,       // Moved to match schema order
-    pub persona_visibility: Option<String>,   // Moved to match schema order
-    pub revision: Option<i32>,                // Moved to match schema order
-    pub sharing_visibility: Option<String>,   // Moved to match schema order
-    pub status: Option<String>,               // Moved to match schema order
-    pub system_prompt_visibility: Option<String>, // Moved to match schema order
-    pub system_tags: Option<Vec<Option<String>>>, // Moved to match schema order
-    pub token_budget: Option<i32>,            // Moved to match schema order
-    pub usage_hints: Option<Json<JsonValue>>, // Moved to match schema order
-    pub user_persona: Option<String>,         // Moved to match schema order
-    pub user_persona_visibility: Option<String>, // Moved to match schema order
-    pub visibility: Option<String>,           // Moved to match schema order
-    pub weight: Option<BigDecimal>,           // Moved to match schema order
-    pub world_scenario_visibility: Option<String>, // Moved to match schema order
+    pub personality: Option<String>,
+    pub scenario: Option<String>,
+    pub first_mes: Option<String>,
+    pub mes_example: Option<String>,
+    pub creator_notes: Option<String>,
+    pub system_prompt: Option<String>,
+    pub post_history_instructions: Option<String>,
+    pub tags: Option<Vec<Option<String>>>,
+    pub creator: Option<String>,
+    pub character_version: Option<String>,
+    pub alternate_greetings: Option<Vec<Option<String>>>,
+    pub nickname: Option<String>,
+    pub creator_notes_multilingual: Option<Json<JsonValue>>,
+    pub source: Option<Vec<Option<String>>>,
+    pub group_only_greetings: Option<Vec<Option<String>>>,
+    pub creation_date: Option<DateTime<Utc>>,
+    pub modification_date: Option<DateTime<Utc>>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    pub persona: Option<String>,
+    pub world_scenario: Option<String>,
+    pub avatar: Option<String>,
+    pub chat: Option<String>,
+    pub greeting: Option<String>,
+    pub definition: Option<String>,
+    pub default_voice: Option<String>,
+    pub extensions: Option<Json<JsonValue>>,
+    pub data_id: Option<i32>,
+    pub category: Option<String>,
+    pub definition_visibility: Option<String>,
+    pub depth: Option<i32>,
+    pub example_dialogue: Option<String>,
+    pub favorite: Option<bool>,
+    pub first_message_visibility: Option<String>,
+    pub height: Option<BigDecimal>,
+    pub last_activity: Option<DateTime<Utc>>,
+    pub migrated_from: Option<String>,
+    pub model_prompt: Option<String>,
+    pub model_prompt_visibility: Option<String>,
+    pub model_temperature: Option<BigDecimal>,
+    pub num_interactions: Option<i64>,
+    pub permanence: Option<BigDecimal>,
+    pub persona_visibility: Option<String>,
+    pub revision: Option<i32>,
+    pub sharing_visibility: Option<String>,
+    pub status: Option<String>,
+    pub system_prompt_visibility: Option<String>,
+    pub system_tags: Option<Vec<Option<String>>>,
+    pub token_budget: Option<i32>,
+    pub usage_hints: Option<Json<JsonValue>>,
+    pub user_persona: Option<String>,
+    pub user_persona_visibility: Option<String>,
+    pub visibility: Option<String>,
+    pub weight: Option<BigDecimal>,
+    pub world_scenario_visibility: Option<String>,
 }
 
 // Represents fields that can be updated from a parsed card
 // Using Option<&'a str> allows updating only provided fields
 // without allocating new Strings.
-#[derive(Debug, Default, AsChangeset)]
-#[diesel(table_name = crate::schema::characters)]
+#[derive(Debug, Default)]
 pub struct UpdatableCharacter<'a> {
     pub spec: Option<&'a str>,
     pub spec_version: Option<&'a str>,
     pub name: Option<&'a str>,
-    pub description: Option<&'a str>,
-    pub personality: Option<&'a str>,
-    pub first_mes: Option<&'a str>,
-    pub mes_example: Option<&'a str>,
-    pub scenario: Option<&'a str>,
+    pub description: Option<&'a [u8]>,
+    pub personality: Option<&'a [u8]>,
+    pub first_mes: Option<&'a [u8]>,
+    pub mes_example: Option<&'a [u8]>,
+    pub scenario: Option<&'a [u8]>,
     pub system_prompt: Option<&'a str>,
     pub creator_notes: Option<&'a str>,
     // Use Vec<&'a str> for slices of strings
@@ -113,6 +388,9 @@ impl<'a> From<&'a ParsedCharacterCard> for UpdatableCharacter<'a> {
         match parsed_card {
             ParsedCharacterCard::V3(card_v3) => {
                 // Corrected map_string helper
+                let map_bytes = |s: &'a String| -> Option<&'a [u8]> {
+                    if s.is_empty() { None } else { Some(s.as_bytes()) }
+                };
                 let map_string = |s: &'a String| -> Option<&'a str> {
                     if s.is_empty() { None } else { Some(s.as_str()) }
                 };
@@ -134,11 +412,11 @@ impl<'a> From<&'a ParsedCharacterCard> for UpdatableCharacter<'a> {
                     spec: Some(&card_v3.spec),
                     spec_version: Some(&card_v3.spec_version),
                     name: card_v3.data.name.as_deref(), // Correct: Option<String> -> Option<&str>
-                    description: map_string(&card_v3.data.description),
-                    personality: map_string(&card_v3.data.personality),
-                    first_mes: map_string(&card_v3.data.first_mes),
-                    mes_example: map_string(&card_v3.data.mes_example),
-                    scenario: map_string(&card_v3.data.scenario),
+                    description: map_bytes(&card_v3.data.description),
+                    personality: map_bytes(&card_v3.data.personality),
+                    first_mes: map_bytes(&card_v3.data.first_mes),
+                    mes_example: map_bytes(&card_v3.data.mes_example),
+                    scenario: map_bytes(&card_v3.data.scenario),
                     system_prompt: map_string(&card_v3.data.system_prompt),
                     // metadata_json: None,
                     creator_notes: map_string(&card_v3.data.creator_notes),
@@ -149,6 +427,9 @@ impl<'a> From<&'a ParsedCharacterCard> for UpdatableCharacter<'a> {
                 }
             }
             ParsedCharacterCard::V2Fallback(data_v2) => {
+                let map_bytes = |s: &'a String| -> Option<&'a [u8]> {
+                    if s.is_empty() { None } else { Some(s.as_bytes()) }
+                };
                 let map_string = |s: &'a String| -> Option<&'a str> {
                     if s.is_empty() { None } else { Some(s.as_str()) }
                 };
@@ -169,11 +450,11 @@ impl<'a> From<&'a ParsedCharacterCard> for UpdatableCharacter<'a> {
                     spec: None,
                     spec_version: None,
                     name: data_v2.name.as_deref(), // Correct: Option<String> -> Option<&str>
-                    description: map_string(&data_v2.description),
-                    personality: map_string(&data_v2.personality),
-                    first_mes: map_string(&data_v2.first_mes),
-                    mes_example: map_string(&data_v2.mes_example),
-                    scenario: map_string(&data_v2.scenario),
+                    description: map_bytes(&data_v2.description),
+                    personality: map_bytes(&data_v2.personality),
+                    first_mes: map_bytes(&data_v2.first_mes),
+                    mes_example: map_bytes(&data_v2.mes_example),
+                    scenario: map_bytes(&data_v2.scenario),
                     system_prompt: map_string(&data_v2.system_prompt),
                     // metadata_json: None,
                     creator_notes: map_string(&data_v2.creator_notes),
@@ -197,8 +478,8 @@ pub struct CharacterMetadata {
     pub id: Uuid,
     pub user_id: Uuid,
     pub name: String,
-    pub description: Option<String>,
-    pub first_mes: Option<String>,
+    pub description: Option<Vec<u8>>,
+    pub first_mes: Option<Vec<u8>>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     // Add other V2/V3 fields needed for listing/selection if necessary
@@ -209,80 +490,128 @@ pub struct CharacterMetadata {
 }
 
 // Helper function to create a dummy Character instance
-    fn create_dummy_character() -> Character {
-        let now = Utc::now();
-        let user_uuid = Uuid::new_v4();
-        Character {
-            id: Uuid::new_v4(),
-            user_id: user_uuid,
-            spec: "spec_v1".to_string(),
-            spec_version: "1.0".to_string(),
-            name: "Dummy Character".to_string(),
-            description: Some("A character for testing".to_string()),
-            personality: Some("Test personality".to_string()),
-            scenario: Some("Test scenario".to_string()),
-            first_mes: Some("Hello there!".to_string()),
-            mes_example: Some("An example message.".to_string()),
-            creator_notes: Some("Notes from creator.".to_string()),
-            system_prompt: Some("System prompt here.".to_string()),
-            post_history_instructions: Some("Instructions.".to_string()),
-            tags: Some(vec![Some("tag1".to_string()), Some("tag2".to_string())]),
-            creator: Some("Test Creator".to_string()),
-            character_version: Some("v1.0".to_string()),
-            alternate_greetings: Some(vec![Some("Hi".to_string()), Some("Hey".to_string())]),
-            nickname: Some("Dummy".to_string()),
-            creator_notes_multilingual: Some(Json(json!({"en": "English notes"}))),
-            source: Some(vec![Some("Source A".to_string())]),
-            group_only_greetings: Some(vec![Some("Group greeting".to_string())]),
-            creation_date: Some(now),
-            modification_date: Some(now),
-            created_at: now,
-            updated_at: now,
-            persona: Some("Test Persona".to_string()),
-            world_scenario: Some("Test World".to_string()),
-            avatar: Some("avatar.png".to_string()),
-            chat: Some("chat_id".to_string()),
-            greeting: Some("General Kenobi!".to_string()),
-            definition: Some("Definition text".to_string()),
-            default_voice: Some("voice_id".to_string()),
-            extensions: Some(Json(json!({"custom_field": "value"}))),
-            data_id: Some(123),
-            category: Some("Test Category".to_string()),
-            definition_visibility: Some("public".to_string()),
-            depth: Some(5),
-            example_dialogue: Some("Dialogue example.".to_string()),
-            favorite: Some(true),
-            first_message_visibility: Some("private".to_string()),
-            height: Some(BigDecimal::from(180)),
-            last_activity: Some(now),
-            migrated_from: Some("old_system".to_string()),
-            model_prompt: Some("Model prompt text.".to_string()),
-            model_prompt_visibility: Some("public".to_string()),
-            model_temperature: Some(BigDecimal::from_str("0.7").unwrap()),
-            num_interactions: Some(100),
-            permanence: Some(BigDecimal::from_str("0.5").unwrap()),
-            persona_visibility: Some("public".to_string()),
-            revision: Some(2),
-            sharing_visibility: Some("friends".to_string()),
-            status: Some("active".to_string()),
-            system_prompt_visibility: Some("private".to_string()),
-            system_tags: Some(vec![Some("system_tag".to_string())]),
-            token_budget: Some(2048),
-            usage_hints: Some(Json(json!({"hint": "Use carefully"}))),
-            user_persona: Some("User persona text.".to_string()),
-            user_persona_visibility: Some("private".to_string()),
-            visibility: Some("public".to_string()),
-            weight: Some(BigDecimal::from_str("75.5").unwrap()),
-            world_scenario_visibility: Some("public".to_string()),
-        }
+pub fn create_dummy_character() -> Character { // Made pub for potential use in other tests
+    let now = Utc::now();
+    let user_uuid = Uuid::new_v4();
+    Character {
+        id: Uuid::new_v4(),
+        user_id: user_uuid,
+        spec: "chara_card_v3_spec".to_string(),
+        spec_version: "1.0.0".to_string(),
+        name: "Dummy Character".to_string(),
+        description: None,
+        personality: None,
+        scenario: None,
+        first_mes: None,
+        mes_example: None,
+        creator_notes: None,
+        system_prompt: None,
+        post_history_instructions: None,
+        tags: None,
+        creator: None,
+        character_version: None,
+        alternate_greetings: None,
+        nickname: None,
+        creator_notes_multilingual: None,
+        source: None,
+        group_only_greetings: None,
+        creation_date: None,
+        modification_date: None,
+        created_at: now,
+        updated_at: now,
+        persona: None,
+        world_scenario: None,
+        avatar: None,
+        chat: None,
+        greeting: None,
+        definition: None,
+        default_voice: None,
+        extensions: None,
+        data_id: None,
+        category: None,
+        definition_visibility: None,
+        depth: None,
+        example_dialogue: None,
+        favorite: None,
+        first_message_visibility: None,
+        height: None,
+        last_activity: None,
+        migrated_from: None,
+        model_prompt: None,
+        model_prompt_visibility: None,
+        model_temperature: None,
+        num_interactions: None,
+        permanence: None,
+        persona_visibility: None,
+        revision: None,
+        sharing_visibility: None,
+        status: None,
+        system_prompt_visibility: None,
+        system_tags: None,
+        token_budget: None,
+        usage_hints: None,
+        user_persona: None,
+        user_persona_visibility: None,
+        visibility: None,
+        weight: None,
+        world_scenario_visibility: None,
+        description_nonce: None,
+        personality_nonce: None,
+        scenario_nonce: None,
+        first_mes_nonce: None,
+        mes_example_nonce: None,
+        creator_notes_nonce: None,
+        system_prompt_nonce: None,
+        persona_nonce: None,
+        world_scenario_nonce: None,
+        greeting_nonce: None,
+        definition_nonce: None,
+        example_dialogue_nonce: None,
+        model_prompt_nonce: None,
+        user_persona_nonce: None,
+        post_history_instructions_nonce: None,
+    }
+}
+
+// Client-side Character representation (for JSON responses)
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ClientCharacter {
+    pub id: Uuid,
+    pub user_id: Uuid,
+    pub name: String,
+    pub description: String,
+    pub concept: String,
+    pub voice_instructions: String,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    pub is_favorite: bool,
+    pub category: String,
+    pub chat_history_limit: i32,
+    pub system_prompt: String,
+    pub avatar_id: Option<Uuid>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::character_card::{CharacterCardDataV3, CharacterCardV3};
+    use crate::services::character_parser::ParsedCharacterCard;
+    use secrecy::SecretBox; // For testing encryption/decryption - Corrected import
+    use ring::rand::{SystemRandom, SecureRandom}; // For generating a dummy DEK
+
+    // Helper function to generate a dummy DEK for testing
+    fn generate_dummy_dek() -> SecretBox<Vec<u8>> { // Corrected return type
+        let mut key_bytes = vec![0u8; 32]; // AES-256-GCM needs a 32-byte key
+        let rng = SystemRandom::new();
+        rng.fill(&mut key_bytes).unwrap();
+        SecretBox::new(Box::new(key_bytes))
     }
 
     #[test]
     fn test_character_debug() {
         let character = create_dummy_character();
-        // Ensure Debug formatting doesn't panic
         let debug_output = format!("{:?}", character);
-        assert!(debug_output.contains("Dummy Character")); // Basic check
+        assert!(debug_output.contains("Dummy Character"));
         assert!(debug_output.starts_with("Character {"));
         assert!(debug_output.ends_with("}"));
     }
@@ -291,19 +620,102 @@ pub struct CharacterMetadata {
     fn test_character_clone() {
         let character1 = create_dummy_character();
         let character2 = character1.clone();
-        // Assert equality using derived PartialEq
         assert_eq!(character1, character2);
-        // Optionally, modify one and assert they are no longer equal
-        // let mut character3 = character1.clone();
-        // character3.name = "Modified Name".to_string();
-        // assert_ne!(character1, character3);
     }
 
-mod tests {
-    #[allow(unused_imports)] // <-- ADD THIS LINE
-    use super::*; // <-- RESTORE THIS LINE
-    use crate::models::character_card::{CharacterCardDataV3, CharacterCardV3};
-    use crate::services::character_parser::ParsedCharacterCard;
+    #[test]
+    fn test_description_encryption_and_decryption_via_client_conversion() {
+        // This test validates that:
+        // 1. A Character with plaintext data can be encrypted (setup part)
+        // 2. ClientCharacter conversion properly decrypts the encrypted fields
+        
+        // Create a DEK for encryption/decryption
+        let key_bytes = vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32]; // 32 bytes for AES-256
+        let dek = SecretBox::new(Box::new(key_bytes));
+        
+        // Test a normal case: plaintext -> encrypt -> ClientCharacter conversion with decryption
+        let plaintext = "This is a secret description";
+        let (ciphertext, nonce) = crate::crypto::encrypt_gcm(plaintext.as_bytes(), &dek).unwrap();
+        
+        let mut character = create_dummy_character();
+        character.description = Some(ciphertext);
+        character.description_nonce = Some(nonce);
+        
+        // Use the method to convert to client-side representation with decryption
+        let client_char = character.into_client_character(Some(&dek)).unwrap();
+        
+        // Validate that the description was correctly decrypted
+        assert_eq!(client_char.description, plaintext);
+        
+        // Test with an empty description
+        let empty_plaintext = "";
+        let (empty_ciphertext, empty_nonce) = crate::crypto::encrypt_gcm(empty_plaintext.as_bytes(), &dek).unwrap();
+        let mut char_empty_desc = create_dummy_character();
+        char_empty_desc.description = Some(empty_ciphertext);
+        char_empty_desc.description_nonce = Some(empty_nonce);
+        
+        let client_empty_desc = char_empty_desc.into_client_character(Some(&dek)).unwrap();
+        
+        // Validate that empty description comes through correctly
+        assert_eq!(client_empty_desc.description, empty_plaintext);
+        
+        // Test with missing nonce but present description - should result in encrypted placeholder
+        let mut char_inconsistent_nonce = create_dummy_character();
+        let (ct, _nnc) = crate::crypto::encrypt_gcm("inconsistent".as_bytes(), &dek).unwrap();
+        char_inconsistent_nonce.description = Some(ct);
+        char_inconsistent_nonce.description_nonce = None;
+        let client_inconsistent_nonce = char_inconsistent_nonce.into_client_character(Some(&dek)).unwrap();
+        assert_eq!(client_inconsistent_nonce.description, "[Encrypted]");
+        
+        // Test with None description - should come through as empty string
+        let mut char_none_desc = create_dummy_character();
+        char_none_desc.description = None;
+        char_none_desc.description_nonce = None;
+        let client_none_desc = char_none_desc.into_client_character(Some(&dek)).unwrap();
+        assert_eq!(client_none_desc.description, "[Encrypted]");
+        
+        // Test without DEK but with encrypted data - should keep data encrypted
+        let mut char_no_dek = create_dummy_character();
+        let (ct2, nnc2) = crate::crypto::encrypt_gcm("no dek test".as_bytes(), &dek).unwrap();
+        char_no_dek.description = Some(ct2);
+        char_no_dek.description_nonce = Some(nnc2);
+        let client_no_dek = char_no_dek.into_client_character(None).unwrap();
+        // Since there's no DEK, the encrypted data should remain encrypted
+        assert_eq!(client_no_dek.description, "[Encrypted]");
+        
+        // Test with both no DEK and no description - result should be placeholder or empty
+        let mut char_no_desc = create_dummy_character();
+        char_no_desc.description = None;
+        char_no_desc.description_nonce = None;
+        let client_no_desc = char_no_desc.into_client_character(None).unwrap();
+        assert_eq!(client_no_desc.description, "[Encrypted]");
+    }
+
+    #[test]
+    fn test_into_decrypted_for_client() {
+        let mut character = create_dummy_character();
+        let dek = generate_dummy_dek();
+        let original_description = "Client-facing description";
+
+        character.encrypt_description_field(&dek, Some(original_description.to_string())).unwrap();
+
+        // Test with DEK
+        let client_data_with_dek = character.clone().into_decrypted_for_client(Some(&dek)).unwrap();
+        assert_eq!(client_data_with_dek.description, Some(original_description.to_string()));
+
+        // Test without DEK (when description is encrypted)
+        let client_data_without_dek = character.clone().into_decrypted_for_client(None).unwrap();
+        assert_eq!(client_data_without_dek.description, None); // Or Some("[Encrypted]".to_string()) if that's the policy
+
+        // Test with no description initially
+        let mut char_no_desc = create_dummy_character();
+        char_no_desc.description = None;
+        let client_data_no_desc = char_no_desc.clone().into_decrypted_for_client(Some(&dek)).unwrap();
+        assert!(client_data_no_desc.description.is_none());
+        let client_data_no_desc_no_dek = char_no_desc.clone().into_decrypted_for_client(None).unwrap();
+        assert!(client_data_no_desc_no_dek.description.is_none());
+    }
+
 
     // Helper function to create a dummy V3 card
     fn create_dummy_v3_card() -> ParsedCharacterCard {
@@ -372,10 +784,10 @@ mod tests {
         assert_eq!(updatable.spec, Some("chara_card_v3_spec"));
         assert_eq!(updatable.spec_version, Some("1.0.0"));
         assert_eq!(updatable.name, Some("Test V3 Name"));
-        assert_eq!(updatable.description, Some("V3 Description"));
+        assert_eq!(updatable.description, Some("V3 Description".as_bytes()));
         assert_eq!(updatable.personality, None); // Empty string maps to None
-        assert_eq!(updatable.first_mes, Some("V3 First Message"));
-        assert_eq!(updatable.mes_example, Some("V3 Example"));
+        assert_eq!(updatable.first_mes, Some("V3 First Message".as_bytes()));
+        assert_eq!(updatable.mes_example, Some("V3 Example".as_bytes()));
         assert_eq!(updatable.scenario, None); // Empty string maps to None
         assert_eq!(updatable.system_prompt, Some("V3 System"));
         assert_eq!(updatable.creator_notes, Some("V3 Creator Notes"));
@@ -393,11 +805,11 @@ mod tests {
         assert_eq!(updatable.spec, None); // No spec in V2
         assert_eq!(updatable.spec_version, None); // No spec_version in V2
         assert_eq!(updatable.name, Some("Test V2 Name"));
-        assert_eq!(updatable.description, Some("V2 Description"));
-        assert_eq!(updatable.personality, Some("V2 Personality"));
+        assert_eq!(updatable.description, Some("V2 Description".as_bytes()));
+        assert_eq!(updatable.personality, Some("V2 Personality".as_bytes()));
         assert_eq!(updatable.first_mes, None); // Empty string maps to None
-        assert_eq!(updatable.mes_example, Some("V2 Example"));
-        assert_eq!(updatable.scenario, Some("V2 Scenario"));
+        assert_eq!(updatable.mes_example, Some("V2 Example".as_bytes()));
+        assert_eq!(updatable.scenario, Some("V2 Scenario".as_bytes()));
         assert_eq!(updatable.system_prompt, None); // Empty string maps to None
         assert_eq!(updatable.creator_notes, Some("V2 Creator Notes"));
         assert_eq!(updatable.tags, Some(vec!["v2tag1"]));
@@ -416,7 +828,7 @@ mod tests {
             id: uuid,
             user_id: user_uuid,
             name: "Test Character".to_string(),
-            description: Some("A test description".to_string()),
+            description: Some("A test description".as_bytes().to_vec()),
             first_mes: None,
             created_at: dt,
             updated_at: dt,

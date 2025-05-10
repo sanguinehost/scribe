@@ -30,9 +30,9 @@ use scribe_backend::PgPool;
 // Make sure AppError is in scope
 
 // Imports for axum-login and tower-sessions
-use axum_login::{AuthManagerLayerBuilder, login_required};
+use axum_login::{AuthManagerLayerBuilder, login_required}; // Modified
 // Import SessionManagerLayer directly from tower_sessions
-use cookie::Key as CookieKey; // Re-add for signing key variable
+use tower_sessions::cookie::Key; // Use Key from tower_sessions::cookie for with_signed
 use hex; // Added for hex::decode
 use scribe_backend::config::Config; // Import Config instead
 use std::sync::Arc;
@@ -49,7 +49,7 @@ use scribe_backend::services::embedding_pipeline::{
 use scribe_backend::text_processing::chunking::{ChunkConfig, ChunkingMetric}; // Import chunking config structs
 use scribe_backend::vector_db::QdrantClientService; // Add Qdrant service import // Add embedding pipeline service import
 // Removed unused: use tokio::net::TcpListener;
-use axum_server::tls_rustls::RustlsConfig; // <-- Add this
+use axum_server::tls_rustls::RustlsConfig; // <-- ADD this
 use std::path::PathBuf; // <-- Add PathBuf import
 use rustls::crypto::ring; // <-- Import the ring provider module
 
@@ -108,21 +108,22 @@ async fn main() -> Result<()> {
         .context("COOKIE_SIGNING_KEY must be set in config")?;
     let key_bytes =
         hex::decode(secret_key).context("Invalid COOKIE_SIGNING_KEY format in config (must be hex)")?;
-    let cookie_signing_key = CookieKey::from(&key_bytes); // Keep the original variable name
+    let _signing_key = Key::from(&key_bytes); // Key is now tower_sessions::cookie::Key (unused in current config)
 
     // Build the session manager layer (handles session data)
     let session_manager_layer = SessionManagerLayer::new(session_store)
         .with_secure(config.session_cookie_secure) // Use config value directly
         .with_same_site(SameSite::Lax)
-        // Use with_signed to enable signed cookies with the key
-        .with_signed(cookie_signing_key)
+        // .with_signed(signing_key.clone()) // CookieManagerLayer will handle signing
         .with_expiry(Expiry::OnInactivity(time::Duration::days(7)));
 
     // Configure the auth backend
     let auth_backend = AuthBackend::new(pool.clone());
 
     // Build the auth layer, passing the SessionManagerLayer
-    let auth_layer = AuthManagerLayerBuilder::new(auth_backend, session_manager_layer).build();
+    let auth_layer = AuthManagerLayerBuilder::new(auth_backend, session_manager_layer.clone())
+        // .with_login_key(SignedLoginKey::new(signing_key.clone())) // Removed: No longer part of axum-login API here
+        .build();
 
     // -- Create Chunking Config from main Config --
     let chunk_metric = match config.chunking_metric.to_lowercase().as_str() {
@@ -180,7 +181,7 @@ async fn main() -> Result<()> {
         .nest("/api", public_api_routes)
         .nest("/api", protected_api_routes) // Mount protected routes also under /api
         // Apply layers: Order matters! Outside-in execution.
-        .layer(CookieManagerLayer::new()) // 1. Manages request/response cookies
+        .layer(CookieManagerLayer::new()) // 1. Manages cookies. Session data security handled by axum-login.
         .layer(auth_layer) // 2. Uses cookies (via CookieManagerLayer) to load session/user
         .with_state(app_state)
         .layer(

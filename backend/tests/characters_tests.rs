@@ -16,7 +16,7 @@ use scribe_backend::{
     config::Config,
     models::{
         characters::Character as DbCharacter,
-        users::{NewUser, User},
+        users::{NewUser, User, UserDbQuery},
     },
     routes::auth::login_handler as auth_login_handler,
     routes::characters::characters_router,
@@ -24,6 +24,7 @@ use scribe_backend::{
     state::AppState,
     test_helpers::{MockEmbeddingClient, MockEmbeddingPipelineService},
     vector_db::QdrantClientService,
+    crypto,
 };
 use tower_cookies::CookieManagerLayer;
 use uuid::Uuid;
@@ -67,23 +68,19 @@ fn insert_test_character(
     struct NewDbCharacter<'a> {
         user_id: Uuid,
         name: &'a str,
-        // Add fields required by DB schema that aren't auto-generated
-        description: Option<&'a str>,
-        personality: Option<&'a str>,
+        description: Option<Vec<u8>>,
+        personality: Option<Vec<u8>>,
         spec: &'a str, // Add spec field (assuming it's non-nullable text)
         spec_version: &'a str, // Add spec_version field
-                       // Ensure all non-nullable fields in the DB characters table
-                       // without a default value are present here.
     }
 
     let new_character_for_insert = NewDbCharacter {
         user_id: user_uuid,
         name: name,
-        // Provide values for other required fields
-        description: Some("Default test description"), // Example
-        personality: Some("Default test personality"), // Example
-        spec: "chara_card_v3",                         // Provide a default spec value
-        spec_version: "1.0",                           // Provide a default spec_version value
+        description: Some("Default test description".as_bytes().to_vec()),
+        personality: Some("Default test personality".as_bytes().to_vec()),
+        spec: "chara_card_v3",
+        spec_version: "1.0",
     };
 
     diesel::insert_into(characters::table)
@@ -262,18 +259,36 @@ fn hash_test_password(password: &str) -> String {
 // Helper to insert a unique test user with a known password hash
 fn insert_test_user_with_password(
     conn: &mut PgConnection,
-    username: &str, // Changed from prefix to username
+    username: &str, 
     password: &str,
 ) -> Result<User, diesel::result::Error> {
+    let hashed_password = hash_test_password(password);
+    let email = format!("{}@example.com", username);
+
+    // Add missing fields for NewUser, similar to other test helpers
+    let kek_salt = crypto::generate_salt().expect("Failed to generate KEK salt for test user");
+    let dek = crypto::generate_dek().expect("Failed to generate DEK for test user");
+    // For simplicity in this test helper, we don't derive KEK and encrypt DEK.
+    // We just need plausible byte vectors. This might need adjustment if tests rely on decryptable DEKs.
+    let encrypted_dek_placeholder = vec![0u8; 32]; // 32 byte ciphertext
+    let dek_nonce_placeholder = vec![0u8; 12]; // 12 byte nonce
+
     let new_user = NewUser {
         username: username.to_string(),
-        email: format!("{}@example.com", username), // Add missing email field
-        password_hash: hash_test_password(password), // Corrected (removed &)
+        password_hash: hashed_password,
+        email,
+        kek_salt,
+        encrypted_dek: encrypted_dek_placeholder,
+        encrypted_dek_by_recovery: None,
+        recovery_kek_salt: None,
+        dek_nonce: dek_nonce_placeholder,
+        recovery_dek_nonce: None,
     };
     diesel::insert_into(users::table)
         .values(&new_user)
-        .returning(User::as_returning()) // Add returning clause for User model
-        .get_result(conn)
+        .returning(UserDbQuery::as_returning()) // Use UserDbQuery
+        .get_result::<UserDbQuery>(conn)      // Fetch as UserDbQuery
+        .map(User::from)                // Convert to User
 }
 
 // --- Helper to Build Test App (Similar to auth_tests) ---

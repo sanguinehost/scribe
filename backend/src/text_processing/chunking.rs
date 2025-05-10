@@ -1,3 +1,4 @@
+use crate::config::Config;
 use crate::errors::AppError;
 use icu_segmenter::{SentenceSegmenter, WordSegmenter}; // Added WordSegmenter
 use std::cmp::min;
@@ -37,6 +38,28 @@ pub struct ChunkConfig {
     pub metric: ChunkingMetric,
     pub max_size: usize,
     pub overlap: usize,
+}
+
+impl From<&Config> for ChunkConfig {
+    fn from(config: &Config) -> Self {
+        let metric = match config.chunking_metric.to_lowercase().as_str() {
+            "char" => ChunkingMetric::Char,
+            "word" => ChunkingMetric::Word,
+            unknown => {
+                warn!(
+                    "Unknown chunking_metric value '{}' in config. Defaulting to 'Word'.",
+                    unknown
+                );
+                ChunkingMetric::Word // Default to Word
+            }
+        };
+
+        ChunkConfig {
+            metric,
+            max_size: config.chunking_max_size,
+            overlap: config.chunking_overlap,
+        }
+    }
 }
 
 /// Recursively chunks text based on semantic separators and configured size/overlap.
@@ -1240,6 +1263,58 @@ mod tests {
      }
 
     // --- End New Tests ---
+
+    #[test]
+    fn test_chunk_config_from_config() {
+        // Test "char" metric
+        let config_char = Config {
+            chunking_metric: "char".to_string(),
+            chunking_max_size: 100,
+            chunking_overlap: 10,
+            ..Default::default()
+        };
+        let chunk_config_char = ChunkConfig::from(&config_char);
+        assert_eq!(chunk_config_char.metric, ChunkingMetric::Char);
+        assert_eq!(chunk_config_char.max_size, 100);
+        assert_eq!(chunk_config_char.overlap, 10);
+
+        // Test "word" metric
+        let config_word = Config {
+            chunking_metric: "word".to_string(),
+            chunking_max_size: 200,
+            chunking_overlap: 20,
+            ..Default::default()
+        };
+        let chunk_config_word = ChunkConfig::from(&config_word);
+        assert_eq!(chunk_config_word.metric, ChunkingMetric::Word);
+        assert_eq!(chunk_config_word.max_size, 200);
+        assert_eq!(chunk_config_word.overlap, 20);
+
+        // Test "Word" metric (case-insensitivity)
+        let config_word_caps = Config {
+            chunking_metric: "Word".to_string(),
+            chunking_max_size: 250,
+            chunking_overlap: 25,
+            ..Default::default()
+        };
+        let chunk_config_word_caps = ChunkConfig::from(&config_word_caps);
+        assert_eq!(chunk_config_word_caps.metric, ChunkingMetric::Word);
+        assert_eq!(chunk_config_word_caps.max_size, 250);
+        assert_eq!(chunk_config_word_caps.overlap, 25);
+        
+        // Test unknown metric (should default to Word and log a warning - warning not tested here)
+        let config_unknown = Config {
+            chunking_metric: "unknown_metric".to_string(),
+            chunking_max_size: 300,
+            chunking_overlap: 30,
+            ..Default::default()
+        };
+        let chunk_config_unknown = ChunkConfig::from(&config_unknown);
+        assert_eq!(chunk_config_unknown.metric, ChunkingMetric::Word); // Default
+        assert_eq!(chunk_config_unknown.max_size, 300);
+        assert_eq!(chunk_config_unknown.overlap, 30);
+    }
+
 // TODO: This test needs rework for the new recursive logic.
 // The old logic based on DEFAULT_MAX_CHUNK_SIZE_CHARS is no longer directly applicable.
 // #[test]

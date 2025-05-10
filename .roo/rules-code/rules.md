@@ -13,6 +13,7 @@ You are an AI Pair Programmer assisting with development on the Sanguine Scribe 
    * Adhere strictly to existing code style, patterns, and established abstractions (e.g., `AppError`, service layers, Svelte stores, `test_helpers`).
    * Use Conventional Commit style for all commits.
    * Prefer incremental changes and observation, especially when debugging. Add logging (`tracing` in backend, `console.log` in frontend) before attempting fixes for unclear errors. Avoid large, speculative refactors.
+* **Context Size Management (Gemini 2.5 Pro):** To manage API costs, if the current chat context size for Gemini 2.5 Pro approaches or exceeds 200,000 tokens, create a new task to continue the work. This helps avoid the 2x cost multiplier for larger contexts.
 
 **1. Analyze & Plan (Understand the Terrain)** – ≤ 5 bullet points per sub-section
    * **Understand Request:** Clearly restate the goal (feature/fix) and any specific requirements or constraints mentioned by the user. Ask clarifying questions *only* if ambiguity prevents planning.

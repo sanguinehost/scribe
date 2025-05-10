@@ -62,22 +62,22 @@ impl DieselSessionStore {
         error!(error = ?e, "Diesel operation failed");
         match e {
             DieselError::NotFound => session_store::Error::Backend(
-                "Session record not found in DB".into(), // Use Backend variant
+                "Session record not found in DB".into(),
             ),
-            _ => session_store::Error::Backend(e.to_string()), // Ensure it's Boxed Error
+            _ => session_store::Error::Backend(e.to_string()),
         }
     }
 
     // Helper to convert Deadpool pool error to session_store::Error
     fn map_pool_error(e: deadpool_diesel::PoolError) -> session_store::Error {
         error!(error = ?e, "Failed to get connection from pool");
-        session_store::Error::Backend(e.to_string()) // Ensure it's Boxed Error
+        session_store::Error::Backend(e.to_string())
     }
 
     // Helper to convert Interact error to session_store::Error
     fn map_interact_error(e: deadpool_diesel::InteractError) -> session_store::Error {
         error!(error = ?e, "Interact error during DB operation");
-        session_store::Error::Backend(e.to_string()) // Ensure it's Boxed Error
+        session_store::Error::Backend(e.to_string())
     }
 
     // Helper to convert JSON error to session_store::Error
@@ -288,27 +288,32 @@ impl SessionStore for DieselSessionStore {
                 // --- Log found ---
                 // Use the original session_id_str for logging here
                 debug!(session_id = %session_id_str, "Session record found in DB. Deserializing...");
-                let session_record = serde_json::from_str::<Record>(&record.session)
+                let mut session_from_json: Record = serde_json::from_str::<Record>(&record.session)
                     .map_err(Self::map_json_error)?;
 
                 // Convert chrono::DateTime<Utc> back to time::OffsetDateTime
-                let expiry_date = utc_to_offset(record.expires);
+                if let Some(expiry_offset) = utc_to_offset(record.expires) {
+                    session_from_json.expiry_date = expiry_offset;
 
-                // Update expiry_date in the deserialized record
-                let mut session_record: Record = session_record;
-                session_record.expiry_date = expiry_date.unwrap();
-
-                // Check if the session is expired based on the original OffsetDateTime
-                if session_record.expiry_date <= OffsetDateTime::now_utc() {
-                    // If expired based on OffsetDateTime, delete it and return None
-                    // Use the original session_id_str for logging here
-                    info!(session_id = %session_id_str, "Session loaded but expired, deleting.");
+                    // Check if the session is expired
+                    if session_from_json.expiry_date <= OffsetDateTime::now_utc() {
+                        // If expired based on OffsetDateTime, delete it and return None
+                        // Use the original session_id_str for logging here
+                        info!(session_id = %session_id_str, "Session loaded but expired, deleting.");
+                        self.delete(session_id).await?;
+                        Ok(None)
+                    } else {
+                        // --- Log success ---
+                        info!(session_id = %record.id, "Session loaded and deserialized successfully.");
+                        Ok(Some(session_from_json))
+                    }
+                } else {
+                    // If expiry could not be converted (e.g., was NULL in DB and conversion failed),
+                    // treat as invalid/unloadable.
+                    error!(session_id = %session_id_str, "Session loaded but expiry date is invalid or missing from DB record, treating as unloadable.");
+                    // Delete the problematic session record.
                     self.delete(session_id).await?;
                     Ok(None)
-                } else {
-                    // --- Log success ---
-                    info!(session_id = %record.id, "Session loaded and deserialized successfully.");
-                    Ok(Some(session_record))
                 }
             }
             None => {

@@ -31,9 +31,9 @@ pub async fn build_prompt_with_rag(
         let last_assistant = history.iter().filter(|m| m.message_type == MessageRole::Assistant).last();
 
         match (last_user, last_assistant) {
-            (Some(user), Some(assistant)) => format!("{}\n{}", user.content, assistant.content),
-            (Some(user), None) => user.content.clone(),
-            (None, Some(assistant)) => assistant.content.clone(), // Should ideally not happen in normal flow but handle defensively
+            (Some(user), Some(assistant)) => format!("{}\n{}", String::from_utf8_lossy(&user.content), String::from_utf8_lossy(&assistant.content)),
+            (Some(user), None) => String::from_utf8_lossy(&user.content).into_owned(),
+            (None, Some(assistant)) => String::from_utf8_lossy(&assistant.content).into_owned(), // Should ideally not happen in normal flow but handle defensively
             (None, None) => String::new(), // No messages to query with
         }
     };
@@ -75,8 +75,8 @@ pub async fn build_prompt_with_rag(
     // --- Character Details ---
     if let Some(char_data) = character {
         prompt.push_str(&format!("Character Name: {}\n", char_data.name));
-        if let Some(description) = &char_data.description {
-            prompt.push_str(&format!("Description: {}\n", description));
+        if let Some(description_vec) = &char_data.description { // Renamed to description_vec to avoid conflict
+            prompt.push_str(&format!("Description: {}\n", String::from_utf8_lossy(description_vec)));
         }
         prompt.push_str("\n");
     }
@@ -98,7 +98,9 @@ pub async fn build_prompt_with_rag(
                 MessageRole::Assistant => "Assistant:",
                 MessageRole::System => "System:",
             };
-            prompt.push_str(&format!("{} {}\n", prefix, message.content.trim()));
+            // Convert content to String for trimming and formatting
+            let content_str = String::from_utf8_lossy(&message.content);
+            prompt.push_str(&format!("{} {}\n", prefix, content_str.trim()));
         }
     }
     prompt.push_str("---\n");
@@ -130,7 +132,7 @@ mod tests {
         let mock_embedding_service = Arc::new(MockEmbeddingPipelineService::new());
 
         // Create a basic AppState with default values
-        let pool = crate::test_helpers::create_test_pool();
+        let pool = crate::test_helpers::db::setup_test_database(None).await;
         let config = Arc::new(crate::config::Config::default());
         let ai_client = Arc::new(crate::test_helpers::MockAiClient::new());
         let embedding_client = Arc::new(crate::test_helpers::MockEmbeddingClient::new());
@@ -176,10 +178,10 @@ mod tests {
             id: Uuid::new_v4(),
             user_id: Uuid::new_v4(),
             name: "Test Bot".to_string(),
-            description: Some("A friendly test bot.".to_string()),
+            description: Some("A friendly test bot.".as_bytes().to_vec()),
             created_at: Utc::now(),
             updated_at: Utc::now(),
-            first_mes: Some("Bot greeting".to_string()),
+            first_mes: Some("Bot greeting".as_bytes().to_vec()),
         };
 
         let prompt = build_prompt_with_rag(state, session_id, Some(&char_meta), &history)
@@ -200,7 +202,8 @@ mod tests {
                 id: Uuid::new_v4(),
                 session_id,
                 message_type: MessageRole::User,
-                content: "Hello!".to_string(),
+                content: "Hello!".as_bytes().to_vec(),
+                content_nonce: None,
                 created_at: Utc::now(),
                 user_id: Uuid::new_v4(), // Add dummy user_id for test data
             },
@@ -208,7 +211,8 @@ mod tests {
                 id: Uuid::new_v4(),
                 session_id,
                 message_type: MessageRole::Assistant,
-                content: "Hi there!".to_string(),
+                content: "Hi there!".as_bytes().to_vec(),
+                content_nonce: None,
                 created_at: Utc::now(),
                 user_id: Uuid::new_v4(), // Add dummy user_id for test data
             },
@@ -271,7 +275,8 @@ mod tests {
             id: Uuid::new_v4(),
             session_id,
             message_type: MessageRole::User,
-            content: "Tell me about dogs".to_string(),
+            content: "Tell me about dogs".as_bytes().to_vec(),
+            content_nonce: None,
             created_at: Utc::now(),
             user_id: Uuid::new_v4(), // Add dummy user_id for test data
         }];
@@ -375,7 +380,8 @@ mod tests {
             id: Uuid::new_v4(),
             session_id,
             message_type: MessageRole::User,
-            content: "Query that causes error".to_string(),
+            content: "Query that causes error".as_bytes().to_vec(),
+            content_nonce: None,
             created_at: Utc::now(),
             user_id: Uuid::new_v4(), // Add dummy user_id for test data
         }];
@@ -493,7 +499,8 @@ mod tests {
                 id: Uuid::new_v4(),
                 session_id,
                 message_type: MessageRole::User,
-                content: "User query".to_string(),
+                content: "User query".as_bytes().to_vec(),
+                content_nonce: None,
                 created_at: Utc::now(),
                 user_id: Uuid::new_v4(), // Add dummy user_id for test data
             },
@@ -501,7 +508,8 @@ mod tests {
                 id: Uuid::new_v4(),
                 session_id,
                 message_type: MessageRole::System, // System message
-                content: "System instruction".to_string(),
+                content: "System instruction".as_bytes().to_vec(),
+                content_nonce: None,
                 created_at: Utc::now(),
                 user_id: Uuid::new_v4(), // Add dummy user_id for test data (System messages might not have a real user_id, but the field is required)
             },
@@ -509,7 +517,8 @@ mod tests {
                 id: Uuid::new_v4(),
                 session_id,
                 message_type: MessageRole::Assistant,
-                content: "Assistant response".to_string(),
+                content: "Assistant response".as_bytes().to_vec(),
+                content_nonce: None,
                 created_at: Utc::now(),
                 user_id: Uuid::new_v4(), // Add dummy user_id for test data
             },
@@ -548,17 +557,18 @@ mod tests {
             id: Uuid::new_v4(),
             user_id: Uuid::new_v4(),
             name: "Mega Bot".to_string(),
-            description: Some("The ultimate bot.".to_string()),
+            description: Some("The ultimate bot.".as_bytes().to_vec()),
             created_at: Utc::now(),
             updated_at: Utc::now(),
-            first_mes: Some("Mega greeting".to_string()),
+            first_mes: Some("Mega greeting".as_bytes().to_vec()),
         };
         let history = vec![
             ChatMessage {
                 id: Uuid::new_v4(),
                 session_id,
                 message_type: MessageRole::User,
-                content: "First user message".to_string(),
+                content: "First user message".as_bytes().to_vec(),
+                content_nonce: None,
                 created_at: Utc::now(),
                 user_id: Uuid::new_v4(), // Add dummy user_id for test data
             },
@@ -566,7 +576,8 @@ mod tests {
                 id: Uuid::new_v4(),
                 session_id,
                 message_type: MessageRole::Assistant,
-                content: "Bot reply".to_string(),
+                content: "Bot reply".as_bytes().to_vec(),
+                content_nonce: None,
                 created_at: Utc::now(),
                 user_id: Uuid::new_v4(), // Add dummy user_id for test data
             },

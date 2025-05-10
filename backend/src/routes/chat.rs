@@ -21,11 +21,12 @@ use crate::schema::chat_sessions;
 use validator::Validate;
 use std::sync::Arc;
 use futures::StreamExt;
-use tracing::{debug, error, info, instrument, trace};
+use tracing::{debug, error, info, instrument, trace, warn};
 use uuid::Uuid;
 use bigdecimal::ToPrimitive;
 use serde_json::json;
 use crate::auth::user_store::Backend as AuthBackend;
+use crate::auth::session_dek::SessionDek; // Added for DEK conversion
 use genai::chat::{
     ChatRequest, ChatOptions, ChatMessage as GenAiChatMessage, ChatRole, MessageContent,
     ChatResponseFormat, JsonSpec, ChatStreamEvent
@@ -56,7 +57,8 @@ pub async fn generate_chat_response(
     let user = auth_session.user
         .ok_or_else(|| AppError::Unauthorized("User not found in session".to_string()))?;
     let user_id_value = user.id;
-    debug!(%user_id_value, "Extracted user from session");
+    let user_dek_owned: Option<SessionDek> = user.dek.map(SessionDek); // Convert Option<SecretBox<Vec<u8>>> to Option<SessionDek>
+    debug!(%user_id_value, "Extracted user and DEK (if present) from session");
 
     let session_id = Uuid::parse_str(&session_id_str)
         .map_err(|_| AppError::BadRequest("Invalid session UUID format".to_string()))?;
@@ -72,7 +74,7 @@ pub async fn generate_chat_response(
                 .map_err(AppError::from)
         })
         .await
-        .map_err(|e| AppError::InternalServerError(format!("Interact error fetching chat: {}", e)))?
+        .map_err(|e| AppError::InternalServerErrorGeneric(format!("Interact error fetching chat: {}", e)))?
         ?;
 
     if chat_session.user_id != user_id_value {
@@ -172,11 +174,12 @@ pub async fn generate_chat_response(
 
             let user_message_id = Uuid::new_v4();
             
-            let user_message_for_embedding = crate::models::chats::ChatMessage { 
+            let user_message_for_embedding = crate::models::chats::ChatMessage {
                 id: user_message_id,
                 session_id,
                 message_type: MessageRole::User,
-                content: current_user_content.clone(), 
+                content: current_user_content.clone().into(),
+                content_nonce: None,
                 created_at: chrono::Utc::now(),
                 user_id: user_id_value,
             };
@@ -229,58 +232,35 @@ pub async fn generate_chat_response(
                  Ok(s) => {
                      debug!(%session_id, "Successfully initiated AI stream");
 
-                     let db_pool_sse = state.pool.clone();
-                     let embedding_tracker = state.embedding_call_tracker.clone();
+                     let _db_pool_sse = state.pool.clone();
+                     let _embedding_tracker = state.embedding_call_tracker.clone();
                      let session_id_sse = session_id;
                      let user_id_sse = user_id_value;
                      let last_message_content_sse = payload.history.last().map(|m| m.content.clone()).unwrap_or_default();
+                     let dek_for_sse = user_dek_owned.clone();
+                     let state_for_sse = state.clone();
 
                      tokio::spawn(async move {
                          if last_message_content_sse.is_empty() {
                              error!(session_id = %session_id_sse, "Cannot save empty user message (SSE)");
                              return;
                          }
-                         let conn = match db_pool_sse.get().await {
-                             Ok(conn) => conn,
-                             Err(e) => {
-                                 error!(error = ?e, session_id = %session_id_sse, "Failed to get DB connection to save user message (SSE)");
-                                 return;
-                             }
-                         };
 
-                         let result = conn
-                             .interact(move |conn| {
-                                 let message = crate::models::chats::DbInsertableChatMessage::new(
-                                     session_id_sse,
-                                     user_id_sse,
-                                     MessageRole::User,
-                                     last_message_content_sse,
-                                 );
-                                 diesel::insert_into(crate::schema::chat_messages::table)
-                                     .values(&message)
-                                     .returning(crate::schema::chat_messages::id)
-                                     .get_result::<Uuid>(conn)
-                             })
-                             .await;
-
-                         match result {
-                             Ok(Ok(message_id)) => {
-                                 debug!(session_id = %session_id_sse, message_id = %message_id, "Successfully saved user message in background (SSE)");
-                                 
-                                 match embedding_tracker.lock().await {
-                                     mut tracker => {
-                                         tracker.push(message_id);
-                                         debug!(session_id = %session_id_sse, message_id = %message_id, "Added user message to embedding call tracker (SSE)");
-                                     }
-                                 }
-                             }
-                             Ok(Err(e)) => {
-                                 error!(error = ?e, session_id = %session_id_sse, "Database error saving user message (SSE)");
-                             }
-                             Err(e) => {
-                                 error!(error = ?e, session_id = %session_id_sse, "Interact error saving user message (SSE)");
-                             }
-                         }
+                         match chat_service::save_message(
+                            state_for_sse,
+                            session_id_sse,
+                            user_id_sse,
+                            MessageRole::User,
+                            &last_message_content_sse,
+                            dek_for_sse.as_ref().map(|s| &s.0),
+                        ).await {
+                            Ok(saved_message) => {
+                                debug!(session_id = %session_id_sse, message_id = %saved_message.id, "Successfully saved user message via chat_service (SSE)");
+                            }
+                            Err(e) => {
+                                error!(error = ?e, session_id = %session_id_sse, "Error saving user message via chat_service (SSE)");
+                            }
+                        }
                      });
 
                      s
@@ -335,44 +315,27 @@ pub async fn generate_chat_response(
                             stream_error_occurred = true;
 
                             let partial_content_clone = accumulated_content.clone();
-                            let db_pool_clone = state.pool.clone();
                             let error_session_id = session_id;
                             let error_user_id = user_id_value;
+                            let dek_for_partial_save = user_dek_owned.clone();
+                            let state_for_partial_save = state.clone();
 
                             tokio::spawn(async move {
                                 if !partial_content_clone.is_empty() {
                                     trace!(session_id = %error_session_id, "Attempting to save partial AI response after stream error");
-                                    let conn = match db_pool_clone.get().await {
-                                        Ok(conn) => conn,
-                                        Err(e) => {
-                                            error!(error = ?e, session_id = %error_session_id, "Failed to get DB connection to save partial response");
-                                            return;
-                                        }
-                                    };
-
-                                    let result = conn
-                                        .interact(move |conn| {
-                                            let message = crate::models::chats::DbInsertableChatMessage::new(
-                                                error_session_id,
-                                                error_user_id,
-                                                MessageRole::Assistant,
-                                                partial_content_clone,
-                                            );
-                                            diesel::insert_into(crate::schema::chat_messages::table)
-                                                .values(&message)
-                                                .execute(conn)
-                                        })
-                                        .await;
-
-                                    match result {
-                                        Ok(Ok(_)) => {
-                                            debug!(session_id = %error_session_id, "Successfully saved partial AI response after stream error");
-                                        }
-                                        Ok(Err(save_err)) => {
-                                            error!(error = ?save_err, session_id = %error_session_id, "Database error saving partial AI response");
+                                    match chat_service::save_message(
+                                        state_for_partial_save,
+                                        error_session_id,
+                                        error_user_id,
+                                        MessageRole::Assistant,
+                                        &partial_content_clone,
+                                        dek_for_partial_save.as_ref().map(|s| &s.0),
+                                    ).await {
+                                        Ok(saved_message) => {
+                                            debug!(session_id = %error_session_id, message_id = %saved_message.id, "Successfully saved partial AI response via chat_service after stream error");
                                         }
                                         Err(save_err) => {
-                                            error!(error = ?save_err, session_id = %error_session_id, "Interact error saving partial AI response");
+                                            error!(error = ?save_err, session_id = %error_session_id, "Error saving partial AI response via chat_service after stream error");
                                         }
                                     }
                                 } else {
@@ -400,56 +363,33 @@ pub async fn generate_chat_response(
                 if !stream_error_occurred && !accumulated_content.is_empty() {
                     debug!(%session_id, "Attempting to save full successful AI response");
 
-                    let state_clone = state.clone();
                     let session_id_clone = session_id;
                     let user_id_clone = user_id_value;
                     let accumulated_content_clone = accumulated_content.clone();
+                    let dek_for_ai_save = user_dek_owned.clone();
+                    let state_for_ai_save = state.clone();
 
                     tokio::spawn(async move {
-                        let conn = match state_clone.pool.get().await {
-                            Ok(conn) => conn,
-                            Err(e) => {
-                                error!(error = ?e, session_id = %session_id_clone, "Failed to get DB connection to save AI message");
-                                return;
-                            }
-                        };
-
-                        let result = conn
-                            .interact(move |conn| {
-                                let message = crate::models::chats::DbInsertableChatMessage::new(
-                                    session_id_clone,
-                                    user_id_clone,
-                                    MessageRole::Assistant,
-                                    accumulated_content_clone,
-                                );
-                                diesel::insert_into(crate::schema::chat_messages::table)
-                                    .values(&message)
-                                    .returning(crate::schema::chat_messages::id)
-                                    .get_result::<Uuid>(conn)
-                            })
-                            .await;
-
-                        match result {
-                            Ok(Ok(message_id)) => {
-                                debug!(session_id = %session_id_clone, message_id = %message_id, "Successfully saved AI message");
-                                
-                                match state_clone.embedding_call_tracker.lock().await {
-                                    mut tracker => {
-                                        tracker.push(message_id);
-                                        debug!(session_id = %session_id_clone, message_id = %message_id, "Added AI message to embedding call tracker (SSE)");
-                                    }
-                                }
-                            }
-                            Ok(Err(e)) => {
-                                error!(error = ?e, session_id = %session_id_clone, "Database error saving AI message");
+                        if accumulated_content_clone.is_empty() {
+                            warn!(session_id = %session_id_clone, "Skipping save for empty accumulated AI content (SSE)");
+                            return;
+                        }
+                        match chat_service::save_message(
+                            state_for_ai_save,
+                            session_id_clone,
+                            user_id_clone,
+                            MessageRole::Assistant,
+                            &accumulated_content_clone,
+                            dek_for_ai_save.as_ref().map(|s| &s.0),
+                        ).await {
+                            Ok(saved_message) => {
+                                debug!(session_id = %session_id_clone, message_id = %saved_message.id, "Successfully saved full AI response via chat_service (SSE)");
                             }
                             Err(e) => {
-                                error!(error = ?e, session_id = %session_id_clone, "Interact error saving AI message");
+                                error!(error = ?e, session_id = %session_id_clone, "Error saving full AI response via chat_service (SSE)");
                             }
                         }
                     });
-                    trace!(%session_id, "Sending SSE event: done, data: [DONE]");
-                    yield Ok::<_, AppError>(Event::default().event("done").data("[DONE]"));
                 } else if stream_error_occurred {
                     trace!(%session_id, "[DONE] not sent due to stream_error_occurred=true");
                 } else if accumulated_content.is_empty() && !stream_error_occurred {
@@ -472,21 +412,26 @@ pub async fn generate_chat_response(
                  return Err(AppError::BadRequest("User message content cannot be empty (JSON).".to_string()));
             }
 
-            let user_message_to_save_json = crate::models::chats::DbInsertableChatMessage::new(
+            let user_saved_message = match chat_service::save_message(
+                state.clone(),
                 session_id,
                 user_id_value,
                 MessageRole::User,
-                user_message_content_for_json_path.clone(),
-            );
+                &user_message_content_for_json_path,
+                user_dek_owned.as_ref().map(|s| &s.0),
+            ).await {
+                Ok(saved_msg) => {
+                    debug!(message_id = %saved_msg.id, session_id = %session_id, "Successfully saved user message via chat_service (JSON)");
+                    saved_msg
+                }
+                Err(e) => {
+                    error!(error = ?e, session_id = %session_id, "Error saving user message via chat_service (JSON)");
+                    return Err(e);
+                }
+            };
             
-            let user_message_id_json = state.pool.get().await?.interact(move |conn| {
-                diesel::insert_into(crate::schema::chat_messages::table)
-                    .values(&user_message_to_save_json)
-                    .returning(crate::schema::chat_messages::id)
-                    .get_result::<Uuid>(conn)
-            }).await??;
-            debug!(message_id = %user_message_id_json, session_id = %session_id, "Successfully saved user message (JSON)");
-            state.embedding_call_tracker.lock().await.push(user_message_id_json);
+            let user_message_id_json = user_saved_message.id;
+            // state.embedding_call_tracker.lock().await.push(user_message_id_json); // REMOVED - Handled by save_message
 
             if enable_rag {
                 if !user_message_content_for_json_path.is_empty() {
@@ -494,7 +439,8 @@ pub async fn generate_chat_response(
                         id: user_message_id_json,
                         session_id,
                         message_type: MessageRole::User,
-                        content: user_message_content_for_json_path.clone(),
+                        content: user_message_content_for_json_path.clone().into(),
+                        content_nonce: None,
                         created_at: chrono::Utc::now(),
                         user_id: user_id_value,
                     };
@@ -546,58 +492,34 @@ pub async fn generate_chat_response(
 
                     trace!(%session_id, ?response_content, "Full non-streaming AI response");
                     
-                    let db_pool_ai_save = state.pool.clone();
-                    let ai_save_session_id = session_id;
-                    let ai_save_user_id = user_id_value;
-                    let ai_content_to_save = response_content.clone();
+                    let state_for_ai_json_save = state.clone();
+                    let dek_for_ai_json_save = user_dek_owned.clone();
+                    let response_content_for_save = response_content.clone(); // Clone for the spawned task
 
                     tokio::spawn(async move {
-                        let ai_message = crate::models::chats::DbInsertableChatMessage::new(
-                            ai_save_session_id,
-                            ai_save_user_id,
+                        if response_content_for_save.is_empty() { // Use the clone
+                            warn!(session_id = %session_id, "Skipping save for empty AI content (JSON)");
+                            return;
+                        }
+                        match chat_service::save_message(
+                            state_for_ai_json_save,
+                            session_id,
+                            user_id_value,
                             MessageRole::Assistant,
-                            ai_content_to_save,
-                        );
-
-                        let conn_result = db_pool_ai_save.get().await;
-                        let conn = match conn_result {
-                            Ok(c) => c,
-                            Err(e) => {
-                                error!(error = ?e, session_id = %ai_save_session_id, "Failed to get DB connection to save AI message (JSON)");
-                                return;
-                            }
-                        };
-
-                        let ai_save_result = conn
-                            .interact(move |conn_tx| {
-                                diesel::insert_into(crate::schema::chat_messages::table)
-                                    .values(&ai_message)
-                                    .returning(crate::schema::chat_messages::id)
-                                    .get_result::<Uuid>(conn_tx)
-                            })
-                            .await;
-
-                        match ai_save_result {
-                            Ok(Ok(ai_message_id)) => {
-                                debug!(session_id = %ai_save_session_id, message_id = %ai_message_id, "Successfully saved AI message (JSON)");
-                                
-                                match state.embedding_call_tracker.lock().await {
-                                    mut tracker => {
-                                        tracker.push(ai_message_id);
-                                        debug!(session_id = %ai_save_session_id, message_id = %ai_message_id, "Added AI message to embedding call tracker (JSON)");
-                                    }
-                                }
-                            }
-                            Ok(Err(e)) => {
-                                error!(error = ?e, session_id = %ai_save_session_id, "Database error saving AI message (JSON)");
+                            &response_content_for_save, // Use the clone
+                            dek_for_ai_json_save.as_ref().map(|s| &s.0),
+                        ).await {
+                            Ok(saved_message) => {
+                                debug!(session_id = %session_id, message_id = %saved_message.id, "Successfully saved AI message via chat_service (JSON)");
+                                // Embedding tracker handled by save_message
                             }
                             Err(e) => {
-                                error!(error = ?e, session_id = %ai_save_session_id, "Interact error saving AI message (JSON)");
+                                error!(error = ?e, session_id = %session_id, "Error saving AI message via chat_service (JSON)");
                             }
                         }
                     });
                     
-                    let response_payload = json!({
+                    let response_payload = json!({ // Original response_content is still valid here
                         "message_id": Uuid::new_v4(),
                         "content": response_content
                     });
@@ -672,7 +594,8 @@ pub async fn generate_chat_response(
                                          session_id_sse,
                                          user_id_sse,
                                          MessageRole::User,
-                                         last_message_content_sse_fallback,
+                                         last_message_content_sse_fallback.into_bytes(),
+                                         None // Nonce is None as this is fallback/unencrypted
                                      );
                                      diesel::insert_into(crate::schema::chat_messages::table)
                                          .values(&message)
@@ -753,44 +676,27 @@ pub async fn generate_chat_response(
                                 stream_error_occurred = true;
 
                                 let partial_content_clone = accumulated_content.clone();
-                                let db_pool_clone = state.pool.clone();
                                 let error_session_id = session_id;
                                 let error_user_id = user_id_value;
+                                let dek_for_partial_save_fb = user_dek_owned.clone();
+                                let state_for_partial_save_fb = state.clone();
 
                                 tokio::spawn(async move {
                                     if !partial_content_clone.is_empty() {
                                         trace!(session_id = %error_session_id, "Attempting to save partial AI response after stream error (fallback)");
-                                        let conn = match db_pool_clone.get().await {
-                                            Ok(conn) => conn,
-                                            Err(e) => {
-                                                error!(error = ?e, session_id = %error_session_id, "Failed to get DB connection to save partial response (fallback)");
-                                                return;
-                                            }
-                                        };
-
-                                        let result = conn
-                                            .interact(move |conn| {
-                                                let message = crate::models::chats::DbInsertableChatMessage::new(
-                                                    error_session_id,
-                                                    error_user_id,
-                                                    MessageRole::Assistant,
-                                                    partial_content_clone,
-                                                );
-                                                diesel::insert_into(crate::schema::chat_messages::table)
-                                                    .values(&message)
-                                                    .execute(conn)
-                                            })
-                                            .await;
-
-                                        match result {
-                                            Ok(Ok(_)) => {
-                                                debug!(session_id = %error_session_id, "Successfully saved partial AI response after stream error (fallback)");
-                                            }
-                                            Ok(Err(save_err)) => {
-                                                error!(error = ?save_err, session_id = %error_session_id, "Database error saving partial AI response (fallback)");
+                                        match chat_service::save_message(
+                                            state_for_partial_save_fb,
+                                            error_session_id,
+                                            error_user_id,
+                                            MessageRole::Assistant,
+                                            &partial_content_clone,
+                                            dek_for_partial_save_fb.as_ref().map(|s| &s.0),
+                                        ).await {
+                                            Ok(saved_message) => {
+                                                debug!(session_id = %error_session_id, message_id = %saved_message.id, "Successfully saved partial AI response via chat_service after stream error (fallback)");
                                             }
                                             Err(save_err) => {
-                                                error!(error = ?save_err, session_id = %error_session_id, "Interact error saving partial AI response (fallback)");
+                                                error!(error = ?save_err, session_id = %error_session_id, "Error saving partial AI response via chat_service after stream error (fallback)");
                                             }
                                         }
                                     } else {
@@ -818,56 +724,33 @@ pub async fn generate_chat_response(
                     if !stream_error_occurred && !accumulated_content.is_empty() {
                         debug!(%session_id, "Attempting to save full successful AI response (fallback)");
 
-                        let state_clone = state.clone();
                         let session_id_clone = session_id;
                         let user_id_clone = user_id_value;
                         let accumulated_content_clone = accumulated_content.clone();
+                        let dek_for_ai_save = user_dek_owned.clone();
+                        let state_for_ai_save = state.clone();
 
                         tokio::spawn(async move {
-                            let conn = match state_clone.pool.get().await {
-                                Ok(conn) => conn,
-                                Err(e) => {
-                                    error!(error = ?e, session_id = %session_id_clone, "Failed to get DB connection to save AI message (fallback)");
-                                    return;
-                                }
-                            };
-
-                            let result = conn
-                                .interact(move |conn| {
-                                    let message = crate::models::chats::DbInsertableChatMessage::new(
-                                        session_id_clone,
-                                        user_id_clone,
-                                        MessageRole::Assistant,
-                                        accumulated_content_clone,
-                                    );
-                                    diesel::insert_into(crate::schema::chat_messages::table)
-                                        .values(&message)
-                                        .returning(crate::schema::chat_messages::id)
-                                        .get_result::<Uuid>(conn)
-                                })
-                                .await;
-
-                            match result {
-                                Ok(Ok(message_id)) => {
-                                    debug!(session_id = %session_id_clone, message_id = %message_id, "Successfully saved AI message (fallback)");
-                                    
-                                    match state_clone.embedding_call_tracker.lock().await {
-                                        mut tracker => {
-                                            tracker.push(message_id);
-                                            debug!(session_id = %session_id_clone, message_id = %message_id, "Added AI message to embedding call tracker (fallback)");
-                                        }
-                                    }
-                                }
-                                Ok(Err(e)) => {
-                                    error!(error = ?e, session_id = %session_id_clone, "Database error saving AI message (fallback)");
+                            if accumulated_content_clone.is_empty() {
+                                warn!(session_id = %session_id_clone, "Skipping save for empty accumulated AI content (SSE)");
+                                return;
+                            }
+                            match chat_service::save_message(
+                                state_for_ai_save,
+                                session_id_clone,
+                                user_id_clone,
+                                MessageRole::Assistant,
+                                &accumulated_content_clone,
+                                dek_for_ai_save.as_ref().map(|s| &s.0),
+                            ).await {
+                                Ok(saved_message) => {
+                                    debug!(session_id = %session_id_clone, message_id = %saved_message.id, "Successfully saved full AI response via chat_service (SSE)");
                                 }
                                 Err(e) => {
-                                    error!(error = ?e, session_id = %session_id_clone, "Interact error saving AI message (fallback)");
+                                    error!(error = ?e, session_id = %session_id_clone, "Error saving full AI response via chat_service (SSE)");
                                 }
                             }
                         });
-                        trace!(%session_id, "Sending fallback SSE data: [DONE]");
-                        yield Ok::<_, AppError>(Event::default().data("[DONE]"));
                     } else if !stream_error_occurred && accumulated_content.is_empty() {
                          debug!(%session_id, "AI stream finished successfully but produced no content in fallback. Sending '[DONE]'.");
                         trace!(%session_id, "Sending fallback SSE data: [DONE] (empty content)");
@@ -939,7 +822,8 @@ pub async fn generate_chat_response(
                                         session_id_sse,
                                         user_id_sse,
                                         MessageRole::User,
-                                        last_message_content_empty_fallback,
+                                        last_message_content_empty_fallback.into_bytes(),
+                                        None // Nonce is None as this is fallback/unencrypted
                                     );
                                     diesel::insert_into(crate::schema::chat_messages::table)
                                         .values(&message)
@@ -1038,7 +922,8 @@ pub async fn generate_chat_response(
                                                     error_session_id,
                                                     error_user_id,
                                                     MessageRole::Assistant,
-                                                    partial_content_clone,
+                                                    partial_content_clone.into_bytes(),
+                                                    None // Nonce is None as this is fallback/unencrypted
                                                 );
                                                 diesel::insert_into(crate::schema::chat_messages::table)
                                                     .values(&message)
@@ -1079,53 +964,33 @@ pub async fn generate_chat_response(
 
                     if !stream_error_occurred && !accumulated_content.is_empty() {
                         debug!(%session_id, "Attempting to save full successful AI response (empty header fallback)");
-                        let state_clone = state.clone();
                         let session_id_clone = session_id;
                         let user_id_clone = user_id_value;
                         let accumulated_content_clone = accumulated_content.clone();
+                        let dek_for_ai_save = user_dek_owned.clone();
+                        let state_for_ai_save = state.clone();
 
                         tokio::spawn(async move {
-                            let conn = match state_clone.pool.get().await {
-                                Ok(conn) => conn,
-                                Err(e) => {
-                                    error!(error = ?e, session_id = %session_id_clone, "Failed to get DB connection to save AI message (empty header fallback)");
-                                    return;
-                                }
-                            };
-                            let result = conn
-                                .interact(move |conn| {
-                                    let message = crate::models::chats::DbInsertableChatMessage::new(
-                                        session_id_clone,
-                                        user_id_clone,
-                                        MessageRole::Assistant,
-                                        accumulated_content_clone,
-                                    );
-                                    diesel::insert_into(crate::schema::chat_messages::table)
-                                        .values(&message)
-                                        .returning(crate::schema::chat_messages::id)
-                                        .get_result::<Uuid>(conn)
-                                })
-                                .await;
-                            match result {
-                                Ok(Ok(message_id)) => {
-                                    debug!(session_id = %session_id_clone, message_id = %message_id, "Successfully saved AI message (empty header fallback)");
-                                    match state_clone.embedding_call_tracker.lock().await {
-                                        mut tracker => {
-                                            tracker.push(message_id);
-                                            debug!(session_id = %session_id_clone, message_id = %message_id, "Added AI message to embedding call tracker (empty header fallback)");
-                                        }
-                                    }
-                                }
-                                Ok(Err(e)) => {
-                                    error!(error = ?e, session_id = %session_id_clone, "Database error saving AI message (empty header fallback)");
+                            if accumulated_content_clone.is_empty() {
+                                warn!(session_id = %session_id_clone, "Skipping save for empty accumulated AI content (SSE)");
+                                return;
+                            }
+                            match chat_service::save_message(
+                                state_for_ai_save,
+                                session_id_clone,
+                                user_id_clone,
+                                MessageRole::Assistant,
+                                &accumulated_content_clone,
+                                dek_for_ai_save.as_ref().map(|s| &s.0),
+                            ).await {
+                                Ok(saved_message) => {
+                                    debug!(session_id = %session_id_clone, message_id = %saved_message.id, "Successfully saved full AI response via chat_service (SSE)");
                                 }
                                 Err(e) => {
-                                    error!(error = ?e, session_id = %session_id_clone, "Interact error saving AI message (empty header fallback)");
+                                    error!(error = ?e, session_id = %session_id_clone, "Error saving full AI response via chat_service (SSE)");
                                 }
                             }
                         });
-                        trace!(%session_id, "Sending empty header fallback SSE data: [DONE]");
-                        yield Ok::<_, AppError>(Event::default().data("[DONE]"));
                     } else if !stream_error_occurred && accumulated_content.is_empty() {
                         debug!(%session_id, "AI stream finished successfully but produced no content in empty header fallback. Sending '[DONE]'.");
                         trace!(%session_id, "Sending empty header fallback SSE data: [DONE] (empty content)");
@@ -1170,7 +1035,7 @@ async fn generate_suggested_actions(
                 .map_err(AppError::from)
         })
         .await
-        .map_err(|e| AppError::InternalServerError(format!("Interact error fetching chat: {}", e)))?
+        .map_err(|e| AppError::InternalServerErrorGeneric(format!("Interact error fetching chat: {}", e)))?
         ?;
 
     if chat_session.user_id != user_id_value {
@@ -1239,7 +1104,7 @@ async fn generate_suggested_actions(
         Some(MessageContent::Text(text)) => text,
         _ => {
             error!(%chat_id, "Gemini response for suggested actions did not contain text content or was empty.");
-            return Err(AppError::InternalServerError(
+            return Err(AppError::InternalServerErrorGeneric(
                 "AI response was empty or not in the expected format".to_string(),
             ));
         }
@@ -1254,7 +1119,7 @@ async fn generate_suggested_actions(
                 e,
                 response_text
             );
-            AppError::InternalServerError("Failed to parse structured response from AI".to_string())
+            AppError::InternalServerErrorGeneric("Failed to parse structured response from AI".to_string())
         })?;
     
     info!(%chat_id, "Successfully generated {} suggested actions", suggestions.len());

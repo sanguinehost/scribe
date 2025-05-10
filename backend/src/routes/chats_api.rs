@@ -1,10 +1,12 @@
 use crate::errors::AppError;
 use crate::models::chats::{
     Chat, CreateChatRequest, CreateMessageRequest, Message, MessageResponse,
-    ChatSettingsResponse, UpdateChatSettingsRequest,
-    NewMessage, UpdateChatVisibilityRequest, Vote, VoteRequest, MessageRole,
+    ChatSettingsResponse, UpdateChatSettingsRequest, UpdateChatVisibilityRequest, Vote, VoteRequest, MessageRole, // Added ChatMessage and ChatMessageForClient
 };
-use crate::schema::{chat_messages, chat_sessions}; // Removed unused old_votes
+use crate::schema::{chat_messages, chat_sessions};
+use crate::auth::session_dek::SessionDek; // Added SessionDek
+use crate::crypto; // Added crypto for encryption/decryption
+use secrecy::ExposeSecret; // Added for expose_secret method
 use axum::{
     extract::{Path, State},
     http::StatusCode,
@@ -16,7 +18,6 @@ use axum_login::AuthSession; // <-- Removed unused UserId import
 use crate::auth::user_store::Backend as AuthBackend;
 // Removed incorrect ValidatedJson import
 use validator::Validate;
-use chrono::Utc;
 use diesel::{QueryDsl, ExpressionMethods, RunQueryDsl, SelectableHelper};
 use serde_json::json;
 use uuid::Uuid;
@@ -60,7 +61,7 @@ pub async fn get_chats_handler(
                 .map_err(|e| AppError::DatabaseQueryError(e.to_string())) // Added .to_string()
         })
         .await
-        .map_err(|e| AppError::InternalServerError(e.to_string()))?
+        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?
         ?;
 
     // Return the full Chat structs directly
@@ -74,16 +75,16 @@ pub async fn create_chat_handler(
     Json(payload): Json<CreateChatRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let user = auth_session.user.ok_or(AppError::Unauthorized("Not logged in".to_string()))?;
+    let user_dek = user.dek.as_ref(); // Get the DEK
     
-    // First, verify the character exists and belongs to the user
     info!(%user.id, character_id=%payload.character_id, "Creating chat session");
     
-    // Use the service function that properly handles system_prompt and first_mes
-    let app_state = Arc::new(state.clone()); // Clone the state before moving it
+    let app_state = Arc::new(state.clone());
     let chat = chat_service::create_session_and_maybe_first_message(
         app_state, 
         user.id, 
-        payload.character_id
+        payload.character_id,
+        user_dek, // Pass the DEK
     ).await?;
     
     // Generate a custom title if provided (default title is set by the service)
@@ -102,7 +103,7 @@ pub async fn create_chat_handler(
                     .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
             })
             .await
-            .map_err(|e| AppError::InternalServerError(e.to_string()))?
+            .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?
             ?;
     }
     
@@ -139,7 +140,7 @@ pub async fn get_chat_by_id_handler(
                 .map_err(AppError::from) // Use From trait to handle NotFound correctly
         })
         .await
-        .map_err(|e| AppError::InternalServerError(e.to_string()))?
+        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?
         ?;
     
     // Ensure the user owns this chat or it's public
@@ -171,7 +172,7 @@ pub async fn delete_chat_handler(
                 .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
         })
         .await
-        .map_err(|e| AppError::InternalServerError(e.to_string()))?
+        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?
         ?;
     
     if chat.user_id != user.id {
@@ -187,7 +188,7 @@ pub async fn delete_chat_handler(
                 .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
         })
         .await
-        .map_err(|e| AppError::InternalServerError(e.to_string()))?
+        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?
         ?;
 
     Ok(StatusCode::NO_CONTENT)
@@ -200,50 +201,57 @@ pub async fn get_messages_by_chat_id_handler(
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
     let user = auth_session.user.ok_or(AppError::Unauthorized("Not logged in".to_string()))?;
+    let user_dek = user.dek.as_ref(); // Get Option<&SecretVec<u8>> from user session
     let pool = state.pool.clone();
     
-    // First check if user can access the chat
     let chat = pool.get().await
         .map_err(|e| AppError::DbPoolError(e.to_string()))?
         .interact(move |conn| {
             chat_sessions::table
                 .filter(chat_sessions::id.eq(id))
-                .select(Chat::as_select()) // Use SelectableHelper trait
+                .select(Chat::as_select())
                 .first::<Chat>(conn)
-                .map_err(AppError::from) // Use From trait to handle NotFound correctly
+                .map_err(AppError::from)
         })
         .await
-        .map_err(|e| AppError::InternalServerError(e.to_string()))?
-        ?;
+        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
     
     if chat.user_id != user.id && chat.visibility != Some("public".to_string()) {
-        return Err(AppError::Forbidden); // Changed to unit variant
+        return Err(AppError::Forbidden);
     }
 
-    // Get all messages for the chat
-    let messages = pool.get().await
+    let messages_db: Vec<Message> = pool.get().await // Fetching Vec<Message> which includes 'parts'
         .map_err(|e| AppError::DbPoolError(e.to_string()))?
         .interact(move |conn| {
             chat_messages::table
                 .filter(chat_messages::session_id.eq(id))
                 .order_by(chat_messages::created_at.asc())
-                .select(Message::as_select()) // Use SelectableHelper trait
+                .select(Message::as_select())
                 .load::<Message>(conn)
                 .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
         })
         .await
-        .map_err(|e| AppError::InternalServerError(e.to_string()))?
-        ?;
+        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
     
-    let responses: Vec<MessageResponse> = messages.into_iter().map(|msg| MessageResponse {
-        id: msg.id,
-        session_id: msg.session_id, // Renamed from chat_id
-        message_type: msg.message_type, // Map the message_type field
-        role: msg.role.unwrap_or_else(|| "user".to_string()), // Keep role for now, might be used elsewhere
-        parts: msg.parts.unwrap_or_else(|| json!([{"text": msg.content}])),
-        attachments: msg.attachments.unwrap_or_else(|| json!([])),
-        created_at: msg.created_at,
-    }).collect();
+    let mut responses = Vec::new();
+    for msg_db in messages_db {
+        let decrypted_client_message = msg_db.clone().into_decrypted_for_client(user_dek)?;
+
+        // Now construct MessageResponse using fields from original msg_db and decrypted_client_message
+        let response_parts = msg_db.parts.unwrap_or_else(|| json!([{"text": decrypted_client_message.content}]));
+        let response_attachments = msg_db.attachments.unwrap_or_else(|| json!([]));
+        let response_role = msg_db.role.unwrap_or_else(|| decrypted_client_message.message_type.to_string());
+
+        responses.push(MessageResponse {
+            id: decrypted_client_message.id,
+            session_id: decrypted_client_message.session_id,
+            message_type: decrypted_client_message.message_type,
+            role: response_role,
+            parts: response_parts,
+            attachments: response_attachments,
+            created_at: decrypted_client_message.created_at,
+        });
+    }
 
     Ok(Json(responses))
 }
@@ -256,69 +264,73 @@ pub async fn create_message_handler(
     Json(payload): Json<CreateMessageRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let user = auth_session.user.ok_or(AppError::Unauthorized("Not logged in".to_string()))?;
-    let pool = state.pool.clone();
+    let user_dek = user.dek.as_ref(); // Get Option<&SecretVec<u8>> from user session
+    let _pool = state.pool.clone(); // Not strictly needed here if save_message handles its own pool access
     
-    // First check if user owns the chat
-    let chat = pool.get().await
+    // Verify chat session ownership (existing logic is fine)
+    let chat = state.pool.get().await // Keep this verification block
         .map_err(|e| AppError::DbPoolError(e.to_string()))?
         .interact(move |conn| {
             chat_sessions::table
                 .filter(chat_sessions::id.eq(chat_id))
-                .select(Chat::as_select()) // Use SelectableHelper trait
+                .select(Chat::as_select())
                 .first::<Chat>(conn)
                 .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
         })
         .await
-        .map_err(|e| AppError::InternalServerError(e.to_string()))?
-        ?;
+        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
     
     if chat.user_id != user.id {
-        return Err(AppError::Forbidden); // Changed to unit variant
+        return Err(AppError::Forbidden);
     }
 
-    let now = Utc::now();
-    // Parse role string into MessageRole enum
     let message_role = match payload.role.to_lowercase().as_str() {
         "user" => MessageRole::User,
         "assistant" => MessageRole::Assistant,
-        "system" => MessageRole::System, // Allow system role? Maybe restrict later.
+        "system" => MessageRole::System,
         _ => return Err(AppError::BadRequest(format!("Invalid role: {}", payload.role))),
     };
 
-    let new_message = NewMessage {
-        id: Uuid::new_v4(),
-        session_id: chat_id,
-        message_type: message_role, // Use the parsed enum
-        content: payload.content.clone(),
-        user_id: user.id,
-        created_at: now,
-        updated_at: now,
-        role: Some(payload.role),
-        parts: payload.parts,
-        attachments: payload.attachments.or(Some(json!([]))),
+    // Call chat_service::save_message
+    let saved_db_message = chat_service::save_message(
+        Arc::new(state), // Pass Arc<AppState>
+        chat_id,
+        user.id,
+        message_role,
+        &payload.content, // Pass content as &str
+        user_dek,       // Pass Option<&SecretVec<u8>>
+    ).await?;
+
+    // Convert DbChatMessage to ChatMessageForClient to get decrypted content
+    // saved_db_message is a ChatMessage. We need to construct a Message to call into_decrypted_for_client.
+    let message_for_decryption = Message {
+        id: saved_db_message.id,
+        session_id: saved_db_message.session_id,
+        message_type: saved_db_message.message_type,
+        content: saved_db_message.content, // This is Vec<u8>
+        content_nonce: saved_db_message.content_nonce,
+        rag_embedding_id: None,
+        created_at: saved_db_message.created_at,
+        updated_at: saved_db_message.created_at, // For a new message, updated_at is same as created_at
+        user_id: saved_db_message.user_id,
+        role: Some(payload.role.clone()),      // From the request payload
+        parts: payload.parts.clone(),          // From the request payload
+        attachments: payload.attachments.clone(), // From the request payload
     };
+    let client_message = message_for_decryption.into_decrypted_for_client(user_dek)?;
     
-    let message = pool.get().await
-        .map_err(|e| AppError::DbPoolError(e.to_string()))?
-        .interact(move |conn| {
-            diesel::insert_into(chat_messages::table)
-                .values(new_message)
-                .returning(Message::as_select()) // Use SelectableHelper trait
-                .get_result::<Message>(conn) // Specify return type
-                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
-        })
-        .await
-        .map_err(|e| AppError::InternalServerError(e.to_string()))?
-        ?;
-    
+    // Use client_message.content (String) for parts if payload.parts is None
+    let response_parts = payload.parts.unwrap_or_else(|| json!([{"text": client_message.content.clone()}]));
+    let response_attachments = payload.attachments.unwrap_or_else(|| json!([]));
+
     let response = MessageResponse {
-        id: message.id,
-        session_id: message.session_id,
-        message_type: message.message_type,
-        role: message.role.unwrap_or_else(|| "user".to_string()),
-        parts: message.parts.unwrap_or_else(|| json!([{"text": message.content}])),
-        attachments: message.attachments.unwrap_or_else(|| json!([])),
-        created_at: message.created_at,
+        id: client_message.id,
+        session_id: client_message.session_id, // Renamed from chat_id
+        message_type: client_message.message_type, 
+        role: payload.role, // Keep original role string from request for response consistency with frontend expectations
+        parts: response_parts,
+        attachments: response_attachments,
+        created_at: client_message.created_at,
     };
 
     Ok((StatusCode::CREATED, Json(response)))
@@ -328,50 +340,77 @@ pub async fn create_message_handler(
 pub async fn get_message_by_id_handler(
     auth_session: CurrentAuthSession,
     State(state): State<AppState>,
+    dek: SessionDek, // Added SessionDek
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
     let user = auth_session.user.ok_or(AppError::Unauthorized("Not logged in".to_string()))?;
     let pool = state.pool.clone();
     
-    let message = pool.get().await
+    let message_db: Message = pool.get().await // Fetches Message struct
         .map_err(|e| AppError::DbPoolError(e.to_string()))?
         .interact(move |conn| {
             chat_messages::table
                 .filter(chat_messages::id.eq(id))
-                .select(Message::as_select()) // Use SelectableHelper trait
+                .select(Message::as_select())
                 .first::<Message>(conn)
                 .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
         })
         .await
-        .map_err(|e| AppError::InternalServerError(e.to_string()))?
-        ?;
+        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
     
-    // Check if user has access to the chat this message belongs to
     let chat = pool.get().await
         .map_err(|e| AppError::DbPoolError(e.to_string()))?
         .interact(move |conn| {
             chat_sessions::table
-                .filter(chat_sessions::id.eq(message.session_id))
-                .select(Chat::as_select()) // Use SelectableHelper trait
+                .filter(chat_sessions::id.eq(message_db.session_id))
+                .select(Chat::as_select())
                 .first::<Chat>(conn)
                 .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
         })
         .await
-        .map_err(|e| AppError::InternalServerError(e.to_string()))?
-        ?;
+        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
     
     if chat.user_id != user.id && chat.visibility != Some("public".to_string()) {
-        return Err(AppError::Forbidden); // Changed to unit variant
+        return Err(AppError::Forbidden);
     }
 
+    let decrypted_content_string = if !message_db.content.is_empty() {
+        let nonce_bytes_ref = message_db.content_nonce.as_deref()
+            .ok_or_else(|| {
+                tracing::error!("Message ID {} content nonce is missing. Cannot decrypt.", message_db.id);
+                AppError::DecryptionError("Nonce missing for content decryption".to_string())
+            })?;
+
+        if nonce_bytes_ref.is_empty() {
+            tracing::error!("Message ID {} content nonce is present but empty. Cannot decrypt.", message_db.id);
+            return Err(AppError::DecryptionError("Nonce is empty for content decryption".to_string()));
+        }
+
+        crypto::decrypt_gcm(&message_db.content, nonce_bytes_ref, &dek.0)
+            .map_err(|e| {
+                tracing::error!("Failed to decrypt message content for get_message_by_id {}: {}", message_db.id, e);
+                AppError::DecryptionError(format!("Failed to decrypt content for message {}: {}", message_db.id, e))
+            })
+            .and_then(|secret_bytes| {
+                String::from_utf8(secret_bytes.expose_secret().to_vec()).map_err(|e| {
+                    tracing::error!("UTF-8 conversion error for decrypted message {}: {}", message_db.id, e);
+                    AppError::DecryptionError(format!("UTF-8 conversion error for message {}: {}", message_db.id, e))
+                })
+            })?
+    } else {
+        String::new()
+    };
+
+    let response_parts = message_db.parts.unwrap_or_else(|| json!([{"text": decrypted_content_string}]));
+
     let response = MessageResponse {
-        id: message.id,
-        session_id: message.session_id,
-        message_type: message.message_type,
-        role: message.role.unwrap_or_else(|| "user".to_string()),
-        parts: message.parts.unwrap_or_else(|| json!([{"text": message.content}])),
-        attachments: message.attachments.unwrap_or_else(|| json!([])),
-        created_at: message.created_at,
+        id: message_db.id,
+        session_id: message_db.session_id,
+        message_type: message_db.message_type,
+        role: message_db.role.unwrap_or_else(|| message_db.message_type.to_string()),
+        parts: response_parts,
+        attachments: message_db.attachments.unwrap_or_else(|| json!([])),
+        created_at: message_db.created_at,
     };
 
     Ok(Json(response))
@@ -398,7 +437,7 @@ pub async fn vote_message_handler(
                 .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
         })
         .await
-        .map_err(|e| AppError::InternalServerError(e.to_string()))?
+        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?
         ?;
     
     // Check if user has access to the chat
@@ -412,7 +451,7 @@ pub async fn vote_message_handler(
                 .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
         })
         .await
-        .map_err(|e| AppError::InternalServerError(e.to_string()))?
+        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?
         ?;
     
     if chat.user_id != user.id {
@@ -438,7 +477,7 @@ pub async fn vote_message_handler(
                 .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
         })
         .await
-        .map_err(|e| AppError::InternalServerError(e.to_string()))?
+        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?
         ?;
 
     Ok(StatusCode::OK)
@@ -464,7 +503,7 @@ pub async fn get_votes_by_chat_id_handler(
                 .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
         })
         .await
-        .map_err(|e| AppError::InternalServerError(e.to_string()))?
+        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?
         ?;
     
     if chat.user_id != user.id && chat.visibility != Some("public".to_string()) {
@@ -490,7 +529,7 @@ pub async fn get_votes_by_chat_id_handler(
                 .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
        })
        .await
-        .map_err(|e| AppError::InternalServerError(e.to_string()))?
+        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?
         ?;
 
     Ok(Json(votes))
@@ -516,7 +555,7 @@ pub async fn delete_trailing_messages_handler(
                 .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
         })
         .await
-        .map_err(|e| AppError::InternalServerError(e.to_string()))?
+        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?
         ?;
     
     // Check if user owns the chat
@@ -530,7 +569,7 @@ pub async fn delete_trailing_messages_handler(
                 .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
         })
         .await
-        .map_err(|e| AppError::InternalServerError(e.to_string()))?
+        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?
         ?;
     
     if chat.user_id != user.id {
@@ -552,7 +591,7 @@ pub async fn delete_trailing_messages_handler(
                 .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
         })
         .await
-        .map_err(|e| AppError::InternalServerError(e.to_string()))?
+        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?
         ?;
     
     if !message_ids.is_empty() {
@@ -572,7 +611,7 @@ pub async fn delete_trailing_messages_handler(
                 .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
             })
             .await
-            .map_err(|e| AppError::InternalServerError(e.to_string()))?
+            .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?
             ?;
         
         // Now delete the messages
@@ -588,7 +627,7 @@ pub async fn delete_trailing_messages_handler(
                 .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
             })
             .await
-            .map_err(|e| AppError::InternalServerError(e.to_string()))?
+            .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?
             ?;
     }
 
@@ -616,7 +655,7 @@ pub async fn update_chat_visibility_handler(
                 .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
         })
         .await
-        .map_err(|e| AppError::InternalServerError(e.to_string()))?
+        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?
         ?;
     if chat.user_id != user.id {
         return Err(AppError::Forbidden); // Changed to unit variant
@@ -638,7 +677,7 @@ pub async fn update_chat_visibility_handler(
                 .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
         })
         .await
-        .map_err(|e| AppError::InternalServerError(e.to_string()))?
+        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?
         ?;
 
     Ok(StatusCode::OK)
@@ -663,7 +702,7 @@ pub async fn get_chat_settings_handler(
                 .map_err(AppError::from) // Handles NotFound -> AppError::NotFound
         })
         .await
-        .map_err(|e| AppError::InternalServerError(e.to_string()))? // Handle interact error
+        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))? // Handle interact error
         ?; // Propagate NotFound error
 
     // Ensure the user owns this chat
@@ -703,7 +742,7 @@ pub async fn update_chat_settings_handler(
                 .map_err(AppError::from) // Handles NotFound -> AppError::NotFound
         })
         .await
-        .map_err(|e| AppError::InternalServerError(e.to_string()))? // Handle interact error
+        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))? // Handle interact error
         ?; // Propagate NotFound error
 
     // Ensure the user owns this chat
@@ -723,7 +762,7 @@ pub async fn update_chat_settings_handler(
                 .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
         })
         .await
-        .map_err(|e| AppError::InternalServerError(e.to_string()))? // Handle interact error
+        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))? // Handle interact error
         ?; // Propagate DB error
 
     // Construct the response from the updated Chat struct

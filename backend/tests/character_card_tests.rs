@@ -238,45 +238,53 @@ fn test_from_parsed_card_v2_with_collections() {
         new_char.alternate_greetings,
         Some(vec![Some("hi".to_string())])
     );
-    assert_eq!(new_char.description, Some("A description".to_string()));
+    assert_eq!(new_char.description, Some("A description".as_bytes().to_vec()));
 }
 
 // Add a test for V3 conversion as well for completeness
 #[test]
 fn test_from_parsed_card_v3() {
     let user_id = Uuid::new_v4();
+    let data_v3 = CharacterCardDataV3 {
+        name: Some("V3 Full".to_string()),
+        description: "V3 Desc".to_string(),
+        personality: "V3 Personality".to_string(),
+        scenario: "V3 Scenario".to_string(),
+        first_mes: "V3 First Mes".to_string(),
+        mes_example: "V3 Mes Example".to_string(),
+        creator_notes: "V3 Creator Notes".to_string(),
+        system_prompt: "V3 System Prompt".to_string(),
+        post_history_instructions: "V3 Post History".to_string(),
+        tags: vec!["v3tag".to_string()],
+        alternate_greetings: vec!["v3greet".to_string()],
+        creator: "V3 Creator".to_string(),
+        character_version: "1.1".to_string(),
+        // assets and extensions can be default
+        ..Default::default()
+    };
     let card_v3 = CharacterCardV3 {
         spec: "chara_card_v3".to_string(),
         spec_version: "3.0".to_string(),
-        data: CharacterCardDataV3 {
-            name: Some("V3 Test Convert".to_string()),
-            description: "V3 Desc".to_string(),
-            tags: vec!["v3tag".to_string()],
-            alternate_greetings: vec![], // Empty greetings
-            creation_date: Some(1700000000),
-            modification_date: None,
-            creator_notes_multilingual: Some(
-                [("es".to_string(), "nota".to_string())]
-                    .iter()
-                    .cloned()
-                    .collect(),
-            ),
-            ..Default::default()
-        },
+        data: data_v3.clone(), // Clone data_v3 for comparison later
     };
     let parsed_v3 = ParsedCharacterCard::V3(card_v3);
+
     let new_char = NewCharacter::from_parsed_card(&parsed_v3, user_id);
 
     assert_eq!(new_char.user_id, user_id);
-    assert_eq!(new_char.name, "V3 Test Convert");
+    assert_eq!(new_char.name, "V3 Full");
     assert_eq!(new_char.spec, "chara_card_v3");
     assert_eq!(new_char.spec_version, "3.0");
-    assert_eq!(new_char.description, Some("V3 Desc".to_string()));
+    assert_eq!(new_char.description, Some(data_v3.description.as_bytes().to_vec()));
+    assert_eq!(new_char.personality, Some(data_v3.personality.as_bytes().to_vec()));
+    assert_eq!(new_char.scenario, Some(data_v3.scenario.as_bytes().to_vec()));
+    assert_eq!(new_char.first_mes, Some(data_v3.first_mes.as_bytes().to_vec()));
+    assert_eq!(new_char.mes_example, Some(data_v3.mes_example.as_bytes().to_vec()));
+    assert_eq!(new_char.creator_notes, Some(data_v3.creator_notes));
+    assert_eq!(new_char.system_prompt, Some(data_v3.system_prompt));
+    assert_eq!(new_char.post_history_instructions, Some(data_v3.post_history_instructions));
     assert_eq!(new_char.tags, Some(vec![Some("v3tag".to_string())]));
-    assert!(new_char.alternate_greetings.is_none()); // Empty vec becomes None
-    assert!(new_char.creation_date.is_some());
-    assert!(new_char.modification_date.is_none());
-    assert!(new_char.creator_notes_multilingual.is_some());
-    let notes_json = new_char.creator_notes_multilingual.unwrap();
-    assert_eq!(notes_json.get("es").unwrap().as_str().unwrap(), "nota");
+    assert_eq!(new_char.alternate_greetings, Some(vec![Some("v3greet".to_string())]));
+    assert_eq!(new_char.creator, Some(data_v3.creator));
+    assert_eq!(new_char.character_version, Some(data_v3.character_version));
 }

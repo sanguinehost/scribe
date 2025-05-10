@@ -1,5 +1,6 @@
 pub mod auth; // Added auth module
 pub mod config; // Add config module
+pub mod crypto; // Added crypto module
 pub mod errors; // Corrected from 'error'
 pub mod llm; // Added llm module
 pub mod logging;

@@ -17,47 +17,122 @@ use std::sync::Arc;
 use std::time::Duration;
 use tower::ServiceExt;
 use uuid::Uuid;
+use chrono::Utc;
+
+// Diesel imports
+use diesel::prelude::*;
+use diesel::RunQueryDsl;
 
 // Crate imports
 use scribe_backend::{
     errors::AppError,
-    models::{chats::{MessageRole, GenerateChatRequest, ApiChatMessage}, users::User, characters::Character, chats::Chat}, // Use GenerateChatRequest and ApiChatMessage
-    services::embedding_pipeline::{EmbeddingMetadata, RetrievedChunk}, // Added missing imports
-    test_helpers::{self, MockEmbeddingPipelineService, PipelineCall}, // Corrected path and added PipelineCall
+    models::{
+        auth::LoginPayload,
+        chats::{MessageRole, GenerateChatRequest, ApiChatMessage, Chat as DbChat, NewChat, ChatMessage as DbChatMessage, NewMessage},
+        users::User,
+        characters::Character as DbCharacter, // Renamed to DbCharacter as per plan
+    },
+    schema, // Import the whole schema module
+    services::embedding_pipeline::{EmbeddingMetadata, RetrievedChunk},
+    test_helpers::{self, MockEmbeddingPipelineService, PipelineCall, TestApp},
 };
+use serde_json::json;
+use tower_cookies::Cookie;
+use anyhow::Context as _;
 
 // Add this struct definition after the imports
 pub struct RagTestContext {
     pub app: test_helpers::TestApp,
     pub auth_cookie: String,
     pub user: User,
-    pub character: Character,
-    pub session: Chat,
+    pub character: DbCharacter, // Updated to DbCharacter
+    pub session: DbChat,      // Updated to DbChat
 }
 
 #[tokio::test]
 // #[ignore] // Added ignore for CI
-async fn test_generate_chat_response_triggers_embeddings() {
-    // Pass false to use mock AI
-    let context = test_helpers::setup_test_app(false).await;
-    let (auth_cookie, user) = test_helpers::auth::create_test_user_and_login(
-        &context.app,
+async fn test_generate_chat_response_triggers_embeddings() -> anyhow::Result<()> {
+    // Pass false to use mock AI and mock embedding pipeline
+    let test_app = test_helpers::spawn_app(false, false).await;
+    let user = test_helpers::db::create_test_user( // This helper is assumed to still exist
+        &test_app.db_pool,
         "gen_resp_embed_trigger_user",
         "password",
     )
-    .await;
-    let character = test_helpers::db::create_test_character(
-        &context.app.db_pool,
-        user.id,
-        "Char for Embed Trigger",
-    )
-    .await;
-    let session =
-        test_helpers::db::create_test_chat_session(&context.app.db_pool, user.id, character.id)
-            .await; // RAG enabled by default in session
+    .await?;
 
-    // Create a mock embedding pipeline service
-    let _mock_embedding_service = Arc::new(MockEmbeddingPipelineService::new());
+    // API Login
+    let login_payload = json!({
+        "identifier": user.username,
+        "password": "password",
+    });
+    let login_request = Request::builder()
+        .method(Method::POST)
+        .uri("/api/auth/login")
+        .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
+        .body(Body::from(serde_json::to_string(&login_payload)?))?;
+    let login_response = test_app.router.clone().oneshot(login_request).await?;
+    assert_eq!(login_response.status(), StatusCode::OK, "Login failed");
+
+    let raw_cookie_header = login_response
+        .headers()
+        .get(header::SET_COOKIE)
+        .context("Set-Cookie header missing from login response")?
+        .to_str()?;
+    let parsed_cookie = Cookie::parse(raw_cookie_header.to_string())?;
+    assert_eq!(parsed_cookie.name(), "id", "Session cookie name is not 'id'");
+    let auth_cookie = format!("{}={}", parsed_cookie.name(), parsed_cookie.value());
+
+    let character_name = "Char for Embed Trigger".to_string();
+    let user_id_for_char = user.id;
+    let character = test_app.db_pool.get().await?.interact(move |conn| {
+        let now = Utc::now();
+        let new_character = DbCharacter {
+            id: Uuid::new_v4(),
+            user_id: user_id_for_char,
+            name: character_name,
+            card_data: None,
+            description: None,
+            system_prompt: None,
+            user_persona: None,
+            greeting: None,
+            avatar_uri: None,
+            visibility: "private".to_string(),
+            created_at: now,
+            updated_at: now,
+            temperature: Some(0.7),
+            top_p: Some(1.0),
+            top_k: None,
+            max_output_tokens: Some(1024),
+            rag_enabled: true,
+            encryption_key_id: None,
+            encrypted_dek: None,
+            dek_nonce: None,
+        };
+        diesel::insert_into(schema::characters::table)
+            .values(&new_character)
+            .get_result::<DbCharacter>(conn)
+    }).await??;
+
+
+    let user_id_for_session = user.id;
+    let character_id_for_session = character.id;
+    let session = test_app.db_pool.get().await?.interact(move |conn| {
+        let new_chat = NewChat {
+            id: Uuid::new_v4(),
+            user_id: user_id_for_session,
+            character_id: character_id_for_session,
+            title: Some(format!("Chat with char {}", character_id_for_session)),
+            settings: None,
+            model_name: None,
+            history_compression_threshold: None,
+            max_history_tokens: None,
+            rag_enabled: Some(true), // RAG enabled by default in session
+        };
+        diesel::insert_into(schema::chat_sessions::table)
+            .values(&new_chat)
+            .get_result::<DbChat>(conn)
+    }).await??;
 
     // Mock the AI response
     let mock_ai_content = "Response to trigger embedding.";
@@ -68,7 +143,7 @@ async fn test_generate_chat_response_triggers_embeddings() {
         reasoning_content: None,
         usage: Usage::default(),
     };
-    context.app.mock_ai_client.as_ref().expect("Mock client required").set_response(Ok(mock_response));
+    test_app.mock_ai_client.as_ref().expect("Mock client required").set_response(Ok(mock_response));
 
     let payload = GenerateChatRequest {
         history: vec![ApiChatMessage {
@@ -84,105 +159,109 @@ async fn test_generate_chat_response_triggers_embeddings() {
         .header(header::COOKIE, &auth_cookie)
         .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
         .header(header::ACCEPT, mime::APPLICATION_JSON.as_ref())
-        // Non-streaming request
-        .body(Body::from(serde_json::to_vec(&payload).unwrap()))
-        .unwrap();
+        .body(Body::from(serde_json::to_vec(&payload)?))?;
 
-    let response = context.app.router.clone().oneshot(request).await.unwrap();
+    let response = test_app.router.clone().oneshot(request).await?;
     assert_eq!(response.status(), StatusCode::OK);
 
-    // Consume the body to ensure the request is fully processed
-    let _ = response.into_body().collect().await.unwrap().to_bytes();
+    let _ = response.into_body().collect().await?.to_bytes();
 
-    // Poll the tracker until the expected count is reached or timeout
-    let tracker = context.app.embedding_call_tracker.clone();
+    let tracker = test_app.embedding_call_tracker.clone();
     let start_time = std::time::Instant::now();
-    let timeout = Duration::from_secs(2); // 2-second timeout
+    let timeout = Duration::from_secs(2);
 
     loop {
         let calls = tracker.lock().await;
-        if calls.len() >= 2 {
-            break; // Expected count reached
-        }
-        drop(calls); // Release lock before sleeping
-
+        if calls.len() >= 2 { break; }
+        drop(calls);
         if start_time.elapsed() > timeout {
-            let calls = tracker.lock().await; // Re-lock to get final count for panic message
-            panic!(
-                "Timeout waiting for embedding tracker count to reach 2. Current count: {}",
-                calls.len()
-            );
+            let calls = tracker.lock().await;
+            panic!("Timeout waiting for embedding tracker count to reach 2. Current count: {}", calls.len());
         }
-
-        tokio::time::sleep(Duration::from_millis(10)).await; // Poll every 10ms
+        tokio::time::sleep(Duration::from_millis(10)).await;
     }
 
-    // Assert that the embedding function was called twice (after polling)
     let calls = tracker.lock().await;
-    assert_eq!(
-        calls.len(),
-        2,
-        "Expected embedding function to be called twice (user + assistant)"
-    );
+    assert_eq!(calls.len(), 2, "Expected embedding function to be called twice (user + assistant)");
 
-    // Verify the IDs match the saved messages
-    let messages =
-        test_helpers::db::get_chat_messages_from_db(&context.app.db_pool, session.id).await;
+    let session_id_for_fetch = session.id;
+    let messages = test_app.db_pool.get().await?.interact(move |conn| {
+        schema::chat_messages::table
+            .filter(schema::chat_messages::chat_session_id.eq(session_id_for_fetch))
+            .order(schema::chat_messages::created_at.asc())
+            .load::<DbChatMessage>(conn)
+    }).await??;
     assert_eq!(messages.len(), 2, "Should have user and AI message saved");
 
-    let user_msg = messages
-        .iter()
-        .find(|m| m.message_type == MessageRole::User)
-        .expect("User message not found");
-    let ai_msg = messages
-        .iter()
-        .find(|m| m.message_type == MessageRole::Assistant)
-        .expect("Assistant message not found");
+    let user_msg = messages.iter().find(|m| m.message_type == MessageRole::User).expect("User message not found");
+    let ai_msg = messages.iter().find(|m| m.message_type == MessageRole::Assistant).expect("Assistant message not found");
 
-    assert!(
-        calls.contains(&user_msg.id),
-        "Embedding tracker should contain user message ID"
-    );
-    assert!(
-        calls.contains(&ai_msg.id),
-        "Embedding tracker should contain assistant message ID"
-    );
+    assert!(calls.contains(&user_msg.id), "Embedding tracker should contain user message ID");
+    assert!(calls.contains(&ai_msg.id), "Embedding tracker should contain assistant message ID");
+    Ok(())
 }
 
 #[tokio::test]
 // #[ignore] // Added ignore for CI
-async fn test_generate_chat_response_triggers_embeddings_with_existing_session() {
-    // Pass false to use mock AI
-    let context = test_helpers::setup_test_app(false).await;
-    let (auth_cookie, user) = test_helpers::auth::create_test_user_and_login(
-        &context.app,
-        "embed_existing_user",
-        "password",
-    )
-    .await;
-    let character =
-        test_helpers::db::create_test_character(&context.app.db_pool, user.id, "Embed Test Char")
-            .await;
-    let session =
-        test_helpers::db::create_test_chat_session(&context.app.db_pool, user.id, character.id)
-            .await;
+async fn test_generate_chat_response_triggers_embeddings_with_existing_session() -> anyhow::Result<()> {
+    let test_app = test_helpers::spawn_app(false, false).await;
+    let user = test_helpers::db::create_test_user(&test_app.db_pool, "embed_existing_user", "password").await?;
 
-    // Add an existing message (will trigger embedding in background after this request)
-    let _doc_message = test_helpers::db::create_test_chat_message(
-        &context.app.db_pool,
-        session.id,
-        user.id,
-        MessageRole::User,
-        "First message",
-    )
-    .await;
+    let login_payload = json!({ "identifier": user.username, "password": "password" });
+    let login_request = Request::builder()
+        .method(Method::POST)
+        .uri("/api/auth/login")
+        .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
+        .body(Body::from(serde_json::to_string(&login_payload)?))?;
+    let login_response = test_app.router.clone().oneshot(login_request).await?;
+    assert_eq!(login_response.status(), StatusCode::OK, "Login failed");
+    let raw_cookie_header = login_response.headers().get(header::SET_COOKIE).context("Set-Cookie header missing")?.to_str()?;
+    let parsed_cookie = Cookie::parse(raw_cookie_header.to_string())?;
+    assert_eq!(parsed_cookie.name(), "id");
+    let auth_cookie = format!("{}={}", parsed_cookie.name(), parsed_cookie.value());
+
+    let char_name = "Embed Test Char".to_string();
+    let user_id_for_char = user.id;
+    let character = test_app.db_pool.get().await?.interact(move |conn| {
+        let now = Utc::now();
+        let new_character = DbCharacter {
+            id: Uuid::new_v4(), user_id: user_id_for_char, name: char_name, card_data: None, description: None,
+            system_prompt: None, user_persona: None, greeting: None, avatar_uri: None,
+            visibility: "private".to_string(), created_at: now, updated_at: now, temperature: Some(0.7),
+            top_p: Some(1.0), top_k: None, max_output_tokens: Some(1024), rag_enabled: true,
+            encryption_key_id: None, encrypted_dek: None, dek_nonce: None,
+        };
+        diesel::insert_into(schema::characters::table).values(&new_character).get_result::<DbCharacter>(conn)
+    }).await??;
+
+    let user_id_for_session = user.id;
+    let char_id_for_session = character.id;
+    let session = test_app.db_pool.get().await?.interact(move |conn| {
+        let new_chat = NewChat {
+            id: Uuid::new_v4(), user_id: user_id_for_session, character_id: char_id_for_session,
+            title: Some(format!("Chat with char {}", char_id_for_session)), settings: None, model_name: None,
+            history_compression_threshold: None, max_history_tokens: None, rag_enabled: Some(true),
+        };
+        diesel::insert_into(schema::chat_sessions::table).values(&new_chat).get_result::<DbChat>(conn)
+    }).await??;
+
+    let session_id_for_msg = session.id;
+    let user_id_for_msg = user.id;
+    let msg_content = "First message".to_string();
+    let _doc_message = test_app.db_pool.get().await?.interact(move |conn| {
+        let new_message = NewMessage {
+            id: Uuid::new_v4(), chat_session_id: session_id_for_msg, user_id: user_id_for_msg,
+            message_type: MessageRole::User, content: msg_content, tool_calls: None, tool_call_id: None,
+        };
+        diesel::insert_into(schema::chat_messages::table).values(&new_message).get_result::<DbChatMessage>(conn)
+    }).await??;
 
     let payload = GenerateChatRequest {
         history: vec![ApiChatMessage {
             role: "user".to_string(),
             content: "Second user message to trigger embedding".to_string(),
         }],
-        model: None, // Or specify a model if needed for the test
+        model: None,
     };
 
     let request = Request::builder()
@@ -191,109 +270,93 @@ async fn test_generate_chat_response_triggers_embeddings_with_existing_session()
         .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
         .header(header::COOKIE, auth_cookie)
         .header(header::ACCEPT, mime::APPLICATION_JSON.as_ref())
-        .body(Body::from(serde_json::to_vec(&payload).unwrap()))
-        .unwrap();
+        .body(Body::from(serde_json::to_vec(&payload)?))?;
 
-    // Reset tracker before the call
-    context.app.embedding_call_tracker.lock().await.clear();
-
-    let response = context.app.router.oneshot(request).await.unwrap();
-
+    test_app.embedding_call_tracker.lock().await.clear();
+    let response = test_app.router.clone().oneshot(request).await?;
     assert_eq!(response.status(), StatusCode::OK);
 
-    // Poll the tracker until the expected count is reached or timeout
-    let tracker = context.app.embedding_call_tracker.clone();
+    let tracker = test_app.embedding_call_tracker.clone();
     let start_time = std::time::Instant::now();
-    let timeout = Duration::from_secs(2); // 2-second timeout
-
+    let timeout = Duration::from_secs(2);
     loop {
         let calls = tracker.lock().await;
-        // Expect *two* calls: one for the "Second user message..." and one for the AI response
-        // The first message embedding is triggered by the *previous* request in a real scenario, not this one.
-        if calls.len() >= 2 {
-            break; // Expected count reached
-        }
-        drop(calls); // Release lock before sleeping
-
+        if calls.len() >= 2 { break; }
+        drop(calls);
         if start_time.elapsed() > timeout {
-             let calls = tracker.lock().await; // Re-lock to get final count for panic message
-             panic!(
-                 "Timeout waiting for embedding tracker count to reach 2. Current count: {}",
-                 calls.len()
-             );
+            let calls = tracker.lock().await;
+            panic!("Timeout waiting for embedding tracker count to reach 2. Current count: {}", calls.len());
         }
-
-        tokio::time::sleep(Duration::from_millis(10)).await; // Poll every 10ms
+        tokio::time::sleep(Duration::from_millis(10)).await;
     }
 
-    // Assert that the embedding function was called twice (after polling)
     let calls = tracker.lock().await;
-    assert_eq!(
-        calls.len(),
-        2,
-        "Expected embedding calls for user message and AI response"
-    );
+    assert_eq!(calls.len(), 2, "Expected embedding calls for user message and AI response");
+    Ok(())
 }
 
 #[tokio::test]
 // Removed ignore: #[ignore] // Integration test, relies on external services
-async fn test_rag_context_injection_in_prompt() {
-    // Pass false to use mock AI and embedding services
-    let context = test_helpers::setup_test_app(false).await;
-    let (auth_cookie, user) =
-        test_helpers::auth::create_test_user_and_login(&context.app, "rag_user", "password").await;
-    let character =
-        test_helpers::db::create_test_character(&context.app.db_pool, user.id, "RAG Test Char")
-            .await;
-    let session =
-        test_helpers::db::create_test_chat_session(&context.app.db_pool, user.id, character.id)
-            .await;
+async fn test_rag_context_injection_in_prompt() -> anyhow::Result<()> {
+    let test_app = test_helpers::spawn_app(false, false).await;
+    let user = test_helpers::db::create_test_user(&test_app.db_pool, "rag_user", "password").await?;
 
-    // Configure mock RAG service to return a specific chunk
+    let login_payload = json!({ "identifier": user.username, "password": "password" });
+    let login_request = Request::builder().method(Method::POST).uri("/api/auth/login")
+        .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
+        .body(Body::from(serde_json::to_string(&login_payload)?))?;
+    let login_response = test_app.router.clone().oneshot(login_request).await?;
+    assert_eq!(login_response.status(), StatusCode::OK, "Login failed");
+    let raw_cookie_header = login_response.headers().get(header::SET_COOKIE).context("Set-Cookie missing")?.to_str()?;
+    let parsed_cookie = Cookie::parse(raw_cookie_header.to_string())?;
+    assert_eq!(parsed_cookie.name(), "id");
+    let auth_cookie = format!("{}={}", parsed_cookie.name(), parsed_cookie.value());
+
+    let char_name = "RAG Test Char".to_string();
+    let user_id_for_char = user.id;
+    let character = test_app.db_pool.get().await?.interact(move |conn| {
+        let now = Utc::now();
+        let new_character = DbCharacter {
+            id: Uuid::new_v4(), user_id: user_id_for_char, name: char_name, card_data: None, description: None,
+            system_prompt: None, user_persona: None, greeting: None, avatar_uri: None,
+            visibility: "private".to_string(), created_at: now, updated_at: now, temperature: Some(0.7),
+            top_p: Some(1.0), top_k: None, max_output_tokens: Some(1024), rag_enabled: true,
+            encryption_key_id: None, encrypted_dek: None, dek_nonce: None,
+        };
+        diesel::insert_into(schema::characters::table).values(&new_character).get_result::<DbCharacter>(conn)
+    }).await??;
+
+    let user_id_for_session = user.id;
+    let char_id_for_session = character.id;
+    let session = test_app.db_pool.get().await?.interact(move |conn| {
+        let new_chat = NewChat {
+            id: Uuid::new_v4(), user_id: user_id_for_session, character_id: char_id_for_session,
+            title: Some(format!("Chat with char {}", char_id_for_session)), settings: None, model_name: None,
+            history_compression_threshold: None, max_history_tokens: None, rag_enabled: Some(true),
+        };
+        diesel::insert_into(schema::chat_sessions::table).values(&new_chat).get_result::<DbChat>(conn)
+    }).await??;
+
     let mock_chunk_text = "The secret code is Ouroboros.".to_string();
     let mock_metadata = EmbeddingMetadata {
-        message_id: Uuid::new_v4(),
-        session_id: session.id,
-        speaker: "Assistant".to_string(),
-        timestamp: chrono::Utc::now(),
-        text: mock_chunk_text.clone(),
+        message_id: Uuid::new_v4(), session_id: session.id, speaker: "Assistant".to_string(),
+        timestamp: Utc::now(), text: mock_chunk_text.clone(),
     };
-    let mock_retrieved_chunk = RetrievedChunk {
-        score: 0.95,
-        text: mock_chunk_text.clone(),
-        metadata: mock_metadata,
-    };
-    context
-        .app
-        .mock_embedding_pipeline_service
-        .set_retrieve_response(Ok(vec![mock_retrieved_chunk]));
+    let mock_retrieved_chunk = RetrievedChunk { score: 0.95, text: mock_chunk_text.clone(), metadata: mock_metadata };
+    test_app.mock_embedding_pipeline_service.set_retrieve_response(Ok(vec![mock_retrieved_chunk]));
 
-    // Configure mock AI to just return a simple response
     let mock_ai_response = ChatResponse {
         model_iden: genai::ModelIden::new(genai::adapter::AdapterKind::Gemini, "mock-rag-model"),
-        provider_model_iden: genai::ModelIden::new(
-            genai::adapter::AdapterKind::Gemini,
-            "mock-rag-model",
-        ),
-        content: Some(genai::chat::MessageContent::Text(
-            "Mock AI response to RAG query".to_string(),
-        )),
-        reasoning_content: None,
-        usage: Default::default(),
+        provider_model_iden: genai::ModelIden::new(genai::adapter::AdapterKind::Gemini, "mock-rag-model"),
+        content: Some(genai::chat::MessageContent::Text("Mock AI response to RAG query".to_string())),
+        reasoning_content: None, usage: Default::default(),
     };
-    context
-        .app
-        .mock_ai_client
-        .as_ref().expect("Mock client required")
-        .set_response(Ok(mock_ai_response));
+    test_app.mock_ai_client.as_ref().expect("Mock client required").set_response(Ok(mock_ai_response));
 
     let query_text = "What is the secret code?";
     let payload = GenerateChatRequest {
-        history: vec![ApiChatMessage {
-            role: "user".to_string(),
-            content: query_text.to_string(),
-        }],
-        model: None, // Or specify a model
+        history: vec![ApiChatMessage { role: "user".to_string(), content: query_text.to_string() }],
+        model: None,
     };
 
     let request = Request::builder()
@@ -302,140 +365,97 @@ async fn test_rag_context_injection_in_prompt() {
         .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
         .header(header::COOKIE, auth_cookie)
         .header(header::ACCEPT, mime::APPLICATION_JSON.as_ref())
-        .body(Body::from(serde_json::to_vec(&payload).unwrap()))
-        .unwrap();
+        .body(Body::from(serde_json::to_vec(&payload)?))?;
 
-    let response = context.app.router.oneshot(request).await.unwrap();
-
+    let response = test_app.router.clone().oneshot(request).await?;
     assert_eq!(response.status(), StatusCode::OK);
 
-    // Verify RAG service was called correctly
-    let pipeline_calls = context.app.mock_embedding_pipeline_service.get_calls();
+    let pipeline_calls = test_app.mock_embedding_pipeline_service.get_calls();
+    let retrieve_call = pipeline_calls.iter().find(|call| matches!(call, PipelineCall::RetrieveRelevantChunks { .. }));
+    assert!(retrieve_call.is_some(), "Expected RetrieveRelevantChunks call");
 
-    // Check for the RetrieveRelevantChunks call
-    let retrieve_call = pipeline_calls.iter().find(|call| {
-        matches!(call, PipelineCall::RetrieveRelevantChunks { .. })
-    });
-
-    assert!(
-        retrieve_call.is_some(),
-        "Expected at least one RetrieveRelevantChunks call to the pipeline service"
-    );
-
-    if let Some(PipelineCall::RetrieveRelevantChunks {
-        chat_id,
-        query_text: called_query,
-        limit,
-    }) = retrieve_call {
+    if let Some(PipelineCall::RetrieveRelevantChunks { chat_id, query_text: called_query, limit }) = retrieve_call {
         assert_eq!(*chat_id, session.id);
         assert_eq!(*called_query, query_text);
-        assert_eq!(*limit, 3); // Check the default limit used in the route
+        assert_eq!(*limit, 3);
     }
 
-    // Check for any ProcessAndEmbedMessage calls
-    let process_calls: Vec<_> = pipeline_calls
-        .iter()
-        .filter(|call| matches!(call, PipelineCall::ProcessAndEmbedMessage { .. }))
-        .collect();
+    let process_calls: Vec<_> = pipeline_calls.iter().filter(|call| matches!(call, PipelineCall::ProcessAndEmbedMessage { .. })).collect();
+    assert!(!process_calls.is_empty(), "Expected ProcessAndEmbedMessage call");
 
-    // We expect at least one ProcessAndEmbedMessage call for storing the user's query
-    assert!(
-        !process_calls.is_empty(),
-        "Expected at least one ProcessAndEmbedMessage call to the pipeline service"
+    let last_ai_request = test_app.mock_ai_client.as_ref().expect("Mock client required").get_last_request().expect("AI client not called");
+    let user_with_rag = last_ai_request.messages.iter().find(|msg|
+        matches!(msg.role, genai::chat::ChatRole::User) &&
+        matches!(&msg.content, genai::chat::MessageContent::Text(text) if text.contains("<RAG_CONTEXT>"))
     );
-
-    // Verify the AI prompt included the RAG context
-    let last_ai_request = context
-        .app
-        .mock_ai_client
-        .as_ref().expect("Mock client required")
-        .get_last_request()
-        .expect("AI client was not called");
-
-    // Look for RAG context in the user message (correct behavior)
-    let user_with_rag = last_ai_request
-        .messages
-        .iter()
-        .find(|msg| matches!(msg.role, genai::chat::ChatRole::User) && 
-              matches!(&msg.content, genai::chat::MessageContent::Text(text) if text.contains("<RAG_CONTEXT>")));
-    
     assert!(user_with_rag.is_some(), "Expected user message with RAG context");
-    
     if let Some(message) = user_with_rag {
         if let genai::chat::MessageContent::Text(content) = &message.content {
             let expected_rag_content = format!("<RAG_CONTEXT>\n- {}\n</RAG_CONTEXT>", mock_chunk_text);
-            assert!(content.contains(&expected_rag_content), 
-                   "User message should contain the RAG context with the expected chunk");
-            
-            // Also verify that the original query is still in the message
-            assert!(content.contains(query_text), 
-                   "User message should also contain the original query text");
+            assert!(content.contains(&expected_rag_content), "User message should contain RAG context");
+            assert!(content.contains(query_text), "User message should also contain original query");
         }
     }
-    
-    // Check that the user message has both RAG context and the query
-    let last_user_message = last_ai_request
-        .messages
-        .last()
-        .expect("No messages in AI request");
-    
-    // Use matches! macro for enum comparison as ChatRole doesn't impl PartialEq
-    assert!(
-        matches!(last_user_message.role, genai::chat::ChatRole::User),
-        "Last message should be from User"
-    );
 
-    // Verify AI options (should be defaults as none were set in DB)
-    let last_options = context.app.mock_ai_client.as_ref().expect("Mock client required").get_last_options().expect("No options recorded");
-    assert_eq!(last_options.temperature, Some(0.7), "Default temperature mismatch");
-    assert_eq!(last_options.max_tokens, Some(1024), "Default max_tokens mismatch");
+    let last_user_message = last_ai_request.messages.last().expect("No messages in AI request");
+    assert!(matches!(last_user_message.role, genai::chat::ChatRole::User), "Last message should be User");
+
+    let last_options = test_app.mock_ai_client.as_ref().expect("Mock client required").get_last_options().expect("No options recorded");
+    assert_eq!(last_options.temperature, Some(0.7));
+    assert_eq!(last_options.max_tokens, Some(1024));
+    Ok(())
 }
 
 #[tokio::test]
 #[ignore] // Ignore for CI unless DB is guaranteed
-async fn generate_chat_response_rag_retrieval_error() {
-    // Pass false to use mock AI and embedding services
-    let context = test_helpers::setup_test_app(false).await;
-    let (auth_cookie, user) = test_helpers::auth::create_test_user_and_login(
-        &context.app,
-        "rag_retrieval_err_user",
-        "password",
-    )
-    .await;
-    let character = test_helpers::db::create_test_character(
-        &context.app.db_pool,
-        user.id,
-        "RAG Retrieval Err Char",
-    )
-    .await;
-    let session =
-        test_helpers::db::create_test_chat_session(&context.app.db_pool, user.id, character.id)
-            .await;
+async fn generate_chat_response_rag_retrieval_error() -> anyhow::Result<()> {
+    let test_app = test_helpers::spawn_app(false, false).await;
+    let user = test_helpers::db::create_test_user(&test_app.db_pool, "rag_retrieval_err_user", "password").await?;
 
-    // Mock RAG service to return an error
-    context
-        .app
-        .mock_embedding_pipeline_service
-        .set_retrieve_response(Err(AppError::VectorDbError( // Use imported AppError
-            "Mock Qdrant retrieval failure".to_string(),
-        )));
+    let login_payload = json!({ "identifier": user.username, "password": "password" });
+    let login_request = Request::builder().method(Method::POST).uri("/api/auth/login")
+        .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
+        .body(Body::from(serde_json::to_string(&login_payload)?))?;
+    let login_response = test_app.router.clone().oneshot(login_request).await?;
+    assert_eq!(login_response.status(), StatusCode::OK, "Login failed");
+    let raw_cookie_header = login_response.headers().get(header::SET_COOKIE).context("Set-Cookie missing")?.to_str()?;
+    let parsed_cookie = Cookie::parse(raw_cookie_header.to_string())?;
+    assert_eq!(parsed_cookie.name(), "id");
+    let auth_cookie = format!("{}={}", parsed_cookie.name(), parsed_cookie.value());
 
-    // Mock AI response (it should still be called, just without RAG context)
+    let char_name = "RAG Retrieval Err Char".to_string();
+    let user_id_for_char = user.id;
+    let character = test_app.db_pool.get().await?.interact(move |conn| {
+        let now = Utc::now();
+        let new_character = DbCharacter {
+            id: Uuid::new_v4(), user_id: user_id_for_char, name: char_name, card_data: None, description: None,
+            system_prompt: None, user_persona: None, greeting: None, avatar_uri: None,
+            visibility: "private".to_string(), created_at: now, updated_at: now, temperature: Some(0.7),
+            top_p: Some(1.0), top_k: None, max_output_tokens: Some(1024), rag_enabled: true,
+            encryption_key_id: None, encrypted_dek: None, dek_nonce: None,
+        };
+        diesel::insert_into(schema::characters::table).values(&new_character).get_result::<DbCharacter>(conn)
+    }).await??;
+
+    let user_id_for_session = user.id;
+    let char_id_for_session = character.id;
+    let session = test_app.db_pool.get().await?.interact(move |conn| {
+        let new_chat = NewChat {
+            id: Uuid::new_v4(), user_id: user_id_for_session, character_id: char_id_for_session,
+            title: Some(format!("Chat with char {}", char_id_for_session)), settings: None, model_name: None,
+            history_compression_threshold: None, max_history_tokens: None, rag_enabled: Some(true),
+        };
+        diesel::insert_into(schema::chat_sessions::table).values(&new_chat).get_result::<DbChat>(conn)
+    }).await??;
+
+    test_app.mock_embedding_pipeline_service.set_retrieve_response(Err(AppError::VectorDbError("Mock Qdrant retrieval failure".to_string())));
+
     let mock_ai_content = "Response without RAG context.";
-    let mock_response = ChatResponse {
-        model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-1.5-flash-latest"),
-        provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-1.5-flash-latest"),
-        content: Some(MessageContent::Text(mock_ai_content.to_string())),
-        reasoning_content: None,
-        usage: Usage::default(),
-    };
-    context.app.mock_ai_client.as_ref().expect("Mock client required").set_response(Ok(mock_response));
+    let mock_response = ChatResponse { /* ... */ content: Some(MessageContent::Text(mock_ai_content.to_string())), model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-1.5-flash-latest"), provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-1.5-flash-latest"), reasoning_content: None, usage: Usage::default() };
+    test_app.mock_ai_client.as_ref().expect("Mock client required").set_response(Ok(mock_response));
 
     let payload = GenerateChatRequest {
-        history: vec![ApiChatMessage {
-            role: "user".to_string(),
-            content: "User message for RAG error test".to_string(),
-        }],
+        history: vec![ApiChatMessage { role: "user".to_string(), content: "User message for RAG error test".to_string() }],
         model: Some("test-rag-err-model".to_string()),
     };
 
@@ -445,96 +465,85 @@ async fn generate_chat_response_rag_retrieval_error() {
         .header(header::COOKIE, &auth_cookie)
         .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
         .header(header::ACCEPT, mime::APPLICATION_JSON.as_ref())
-        .body(Body::from(serde_json::to_vec(&payload).unwrap()))
-        .unwrap();
+        .body(Body::from(serde_json::to_vec(&payload)?))?;
 
-    let response = context.app.router.clone().oneshot(request).await.unwrap();
-
-    // Assert status is 502 Bad Gateway when RAG retrieval fails
+    let response = test_app.router.clone().oneshot(request).await?;
     assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
-    assert_eq!(
-        response.headers().get(header::CONTENT_TYPE).unwrap(),
-        mime::APPLICATION_JSON.as_ref(),
-        "Content-Type should be application/json"
-    );
+    assert_eq!(response.headers().get(header::CONTENT_TYPE).unwrap(), mime::APPLICATION_JSON.as_ref());
 
-    // Check response body for the specific error message mapped from VectorDbError
-    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
-    let body_json: Value = serde_json::from_slice(&body_bytes)
-        .expect("Failed to deserialize RAG error response body as JSON");
+    let body_bytes = response.into_body().collect().await?.to_bytes();
+    let body_json: Value = serde_json::from_slice(&body_bytes)?;
+    assert_eq!(body_json.get("error").and_then(|v| v.as_str()), Some("Failed to process embeddings"));
 
-    assert_eq!(
-        body_json.get("error").and_then(|v| v.as_str()),
-        Some("Failed to process embeddings"), // Expect the mapped error
-        "Expected specific error message for RAG failure"
-    );
+    assert!(test_app.mock_ai_client.as_ref().expect("Mock client required").get_last_request().is_none(), "AI Client should NOT have been called");
 
-    // Verify the AI service was NOT called
-    assert!(
-        context.app.mock_ai_client.as_ref().expect("Mock client required").get_last_request().is_none(),
-        "AI Client should NOT have been called after RAG retrieval failure"
-    );
-
-    // Assert NO message was saved (since the handler errored out early)
     tokio::time::sleep(Duration::from_millis(100)).await;
-    let messages =
-        test_helpers::db::get_chat_messages_from_db(&context.app.db_pool, session.id).await;
-    assert_eq!(
-        messages.len(),
-        0, // Only the initial (empty) history, no user/AI messages saved
-        "Should have no messages saved after RAG retrieval failure"
-    );
+    let session_id_for_fetch = session.id;
+    let messages = test_app.db_pool.get().await?.interact(move |conn| {
+        schema::chat_messages::table
+            .filter(schema::chat_messages::chat_session_id.eq(session_id_for_fetch))
+            .load::<DbChatMessage>(conn)
+    }).await??;
+    assert_eq!(messages.len(), 0, "Should have no messages saved after RAG retrieval failure");
+    Ok(())
 }
 
-// Update the setup_test_data function signature and return type
-async fn setup_test_data(use_real_ai: bool) -> RagTestContext {
-    // Pass the flag down
-    let context = test_helpers::setup_test_app(use_real_ai).await;
+async fn setup_test_data(use_real_ai: bool) -> anyhow::Result<RagTestContext> {
+    // Pass false for use_real_embedding_pipeline by default for this helper
+    let test_app = test_helpers::spawn_app(use_real_ai, false).await;
 
-    let (auth_cookie, user) = test_helpers::auth::create_test_user_and_login(
-        &context.app,
-        "gen_resp_embed_trigger_user",
+    let user = test_helpers::db::create_test_user(
+        &test_app.db_pool,
+        "gen_resp_embed_trigger_user_setup", // Unique username for setup
         "password",
     )
-    .await;
-    let character = test_helpers::db::create_test_character(
-        &context.app.db_pool,
-        user.id,
-        "Char for Embed Trigger",
-    )
-    .await;
-    let session =
-        test_helpers::db::create_test_chat_session(&context.app.db_pool, user.id, character.id)
-            .await; // RAG enabled by default in session
+    .await?;
 
-    // Create a mock embedding pipeline service
-    let _mock_embedding_service = Arc::new(MockEmbeddingPipelineService::new());
+    let login_payload = json!({ "identifier": user.username, "password": "password" });
+    let login_request = Request::builder().method(Method::POST).uri("/api/auth/login")
+        .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
+        .body(Body::from(serde_json::to_string(&login_payload)?))?;
+    let login_response = test_app.router.clone().oneshot(login_request).await?;
+    assert_eq!(login_response.status(), StatusCode::OK, "Login failed in setup");
+    let raw_cookie_header = login_response.headers().get(header::SET_COOKIE).context("Set-Cookie missing in setup")?.to_str()?;
+    let parsed_cookie = Cookie::parse(raw_cookie_header.to_string())?;
+    assert_eq!(parsed_cookie.name(), "id");
+    let auth_cookie = format!("{}={}", parsed_cookie.name(), parsed_cookie.value());
 
-    // Mock the AI response
+    let char_name = "Char for Embed Trigger Setup".to_string();
+    let user_id_for_char = user.id;
+    let character = test_app.db_pool.get().await?.interact(move |conn| {
+        let now = Utc::now();
+        let new_character = DbCharacter {
+            id: Uuid::new_v4(), user_id: user_id_for_char, name: char_name, card_data: None, description: None,
+            system_prompt: None, user_persona: None, greeting: None, avatar_uri: None,
+            visibility: "private".to_string(), created_at: now, updated_at: now, temperature: Some(0.7),
+            top_p: Some(1.0), top_k: None, max_output_tokens: Some(1024), rag_enabled: true,
+            encryption_key_id: None, encrypted_dek: None, dek_nonce: None,
+        };
+        diesel::insert_into(schema::characters::table).values(&new_character).get_result::<DbCharacter>(conn)
+    }).await??;
+
+    let user_id_for_session = user.id;
+    let char_id_for_session = character.id;
+    let session = test_app.db_pool.get().await?.interact(move |conn| {
+        let new_chat = NewChat {
+            id: Uuid::new_v4(), user_id: user_id_for_session, character_id: char_id_for_session,
+            title: Some(format!("Chat with char {}", char_id_for_session)), settings: None, model_name: None,
+            history_compression_threshold: None, max_history_tokens: None, rag_enabled: Some(true),
+        };
+        diesel::insert_into(schema::chat_sessions::table).values(&new_chat).get_result::<DbChat>(conn)
+    }).await??;
+
     let mock_ai_content = "Response to trigger embedding.";
-    let mock_response = ChatResponse {
-        model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-1.5-flash-latest"),
-        provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-1.5-flash-latest"),
-        content: Some(MessageContent::Text(mock_ai_content.to_string())),
-        reasoning_content: None,
-        usage: Usage::default(),
-    };
-    
-    // Update to use Option method
-    if let Some(mock_client) = &context.app.mock_ai_client {
+    let mock_response = ChatResponse { /* ... */ content: Some(MessageContent::Text(mock_ai_content.to_string())), model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-1.5-flash-latest"), provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-1.5-flash-latest"), reasoning_content: None, usage: Usage::default() };
+    if let Some(mock_client) = &test_app.mock_ai_client {
         mock_client.set_response(Ok(mock_response));
     }
 
-    // This setup_test_data function is used by multiple tests.
-    // The original payload was NewChatMessageRequest.
-    // We need to adapt it to GenerateChatRequest for the /generate endpoint.
-    // The key is to ensure the `history` field is correctly populated.
     let user_message_content = "User message to trigger embedding";
     let payload = GenerateChatRequest {
-        history: vec![ApiChatMessage {
-            role: "user".to_string(),
-            content: user_message_content.to_string(),
-        }],
+        history: vec![ApiChatMessage { role: "user".to_string(), content: user_message_content.to_string() }],
         model: Some("test-embed-trigger-model".to_string()),
     };
 
@@ -544,105 +553,55 @@ async fn setup_test_data(use_real_ai: bool) -> RagTestContext {
         .header(header::COOKIE, &auth_cookie)
         .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
         .header(header::ACCEPT, mime::APPLICATION_JSON.as_ref())
-        // Non-streaming request
-        .body(Body::from(serde_json::to_vec(&payload).unwrap()))
-        .unwrap();
+        .body(Body::from(serde_json::to_vec(&payload)?))?;
 
-    let response = context.app.router.clone().oneshot(request).await.unwrap();
+    let response = test_app.router.clone().oneshot(request).await?;
     assert_eq!(response.status(), StatusCode::OK);
+    let _ = response.into_body().collect().await?.to_bytes();
 
-    // Consume the body to ensure the request is fully processed
-    let _ = response.into_body().collect().await.unwrap().to_bytes();
-
-    // Poll the tracker until the expected count is reached or timeout
-    let tracker = context.app.embedding_call_tracker.clone();
+    let tracker = test_app.embedding_call_tracker.clone();
     let start_time = std::time::Instant::now();
-    let timeout = Duration::from_secs(2); // 2-second timeout
-
+    let timeout = Duration::from_secs(2);
     loop {
         let calls = tracker.lock().await;
-        if calls.len() >= 2 {
-            break; // Expected count reached
-        }
-        drop(calls); // Release lock before sleeping
-
+        if calls.len() >= 2 { break; }
+        drop(calls);
         if start_time.elapsed() > timeout {
-            let calls = tracker.lock().await; // Re-lock to get final count for panic message
-            panic!(
-                "Timeout waiting for embedding tracker count to reach 2. Current count: {}",
-                calls.len()
-            );
+            let calls = tracker.lock().await;
+            panic!("Timeout in setup_test_data. Current count: {}", calls.len());
         }
-
-        tokio::time::sleep(Duration::from_millis(10)).await; // Poll every 10ms
+        tokio::time::sleep(Duration::from_millis(10)).await;
     }
-
-    // Assert that the embedding function was called twice (after polling)
     let calls = tracker.lock().await;
-    assert_eq!(
-        calls.len(),
-        2,
-        "Expected embedding function to be called twice (user + assistant)"
-    );
+    assert_eq!(calls.len(), 2, "Expected 2 embedding calls in setup");
 
-    // Verify the IDs match the saved messages
-    let messages =
-        test_helpers::db::get_chat_messages_from_db(&context.app.db_pool, session.id).await;
-    assert_eq!(messages.len(), 2, "Should have user and AI message saved");
+    let session_id_for_fetch = session.id;
+    let messages = test_app.db_pool.get().await?.interact(move |conn| {
+        schema::chat_messages::table
+            .filter(schema::chat_messages::chat_session_id.eq(session_id_for_fetch))
+            .order(schema::chat_messages::created_at.asc())
+            .load::<DbChatMessage>(conn)
+    }).await??;
+    assert_eq!(messages.len(), 2, "Should have 2 messages saved in setup");
 
-    let user_msg = messages
-        .iter()
-        .find(|m| m.message_type == MessageRole::User)
-        .expect("User message not found");
-    let ai_msg = messages
-        .iter()
-        .find(|m| m.message_type == MessageRole::Assistant)
-        .expect("Assistant message not found");
+    let user_msg = messages.iter().find(|m| m.message_type == MessageRole::User).expect("User msg not found in setup");
+    let ai_msg = messages.iter().find(|m| m.message_type == MessageRole::Assistant).expect("AI msg not found in setup");
+    assert!(calls.contains(&user_msg.id), "Tracker missing user msg ID in setup");
+    assert!(calls.contains(&ai_msg.id), "Tracker missing AI msg ID in setup");
 
-    assert!(
-        calls.contains(&user_msg.id),
-        "Embedding tracker should contain user message ID"
-    );
-    assert!(
-        calls.contains(&ai_msg.id),
-        "Embedding tracker should contain assistant message ID"
-    );
-
-    RagTestContext {
-        app: context.app,
-        auth_cookie,
-        user,
-        character,
-        session,
-    }
+    Ok(RagTestContext { app: test_app, auth_cookie, user, character, session })
 }
 
+
 #[tokio::test]
-async fn generate_chat_response_rag_success() {
-    // Use mock AI for this test
-    let context = setup_test_data(false).await;
+async fn generate_chat_response_rag_success() -> anyhow::Result<()> {
+    let context = setup_test_data(false).await?; // Use mock AI
 
-    // Ensure mock AI client is available and set response
-    let mock_response = genai::chat::ChatResponse {
-        model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-1.5-flash-latest"),
-        provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-1.5-flash-latest"),
-        content: Some(MessageContent::Text("Mock AI response to RAG query".to_string())),
-        reasoning_content: None,
-        usage: Default::default(),
-    };
-    context
-        .app
-        .mock_ai_client
-        .as_ref()
-        .expect("Mock client should be present for this test")
-        .set_response(Ok(mock_response));
+    let mock_response = genai::chat::ChatResponse { /* ... */ content: Some(MessageContent::Text("Mock AI response to RAG query".to_string())), model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-1.5-flash-latest"), provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-1.5-flash-latest"), reasoning_content: None, usage: Default::default() };
+    context.app.mock_ai_client.as_ref().expect("Mock client required").set_response(Ok(mock_response));
 
-    // Create a chat session
     let payload = GenerateChatRequest {
-        history: vec![ApiChatMessage {
-            role: "user".to_string(),
-            content: "Mock AI response to RAG query".to_string(),
-        }],
+        history: vec![ApiChatMessage { role: "user".to_string(), content: "Mock AI response to RAG query".to_string() }],
         model: Some("gemini-1.5-flash-latest".to_string()),
     };
 
@@ -652,231 +611,130 @@ async fn generate_chat_response_rag_success() {
         .header(header::COOKIE, &context.auth_cookie)
         .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
         .header(header::ACCEPT, mime::APPLICATION_JSON.as_ref())
-        .body(Body::from(serde_json::to_vec(&payload).unwrap()))
-        .unwrap();
+        .body(Body::from(serde_json::to_vec(&payload)?))?;
 
-    let response = context.app.router.clone().oneshot(request).await.unwrap();
-
+    let response = context.app.router.clone().oneshot(request).await?;
     assert_eq!(response.status(), StatusCode::OK);
 
-    // Verify the AI response
-    let last_request = context
-        .app
-        .mock_ai_client
-        .as_ref()
-        .expect("Mock client should be present for this test")
-        .get_last_request()
-        .expect("Mock AI client did not receive a request");
-
+    let last_request = context.app.mock_ai_client.as_ref().expect("Mock client required").get_last_request().expect("Mock AI not called");
     let last_message_content = last_request.messages.last().unwrap().content.clone();
     let prompt_text = match last_message_content {
         MessageContent::Text(text) => text,
-        _ => panic!("Expected last message content to be text"),
+        _ => panic!("Expected text content"),
     };
-
     assert_eq!(prompt_text, "Mock AI response to RAG query");
+    Ok(())
 }
 
 #[tokio::test]
-async fn generate_chat_response_rag_empty_history_success() {
-    // Use mock AI for this test
-    let context = setup_test_data(false).await;
+async fn generate_chat_response_rag_empty_history_success() -> anyhow::Result<()> {
+    let context = setup_test_data(false).await?;
 
-    // Ensure mock AI client is available and set response
-    let mock_response = genai::chat::ChatResponse {
-        model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-1.5-flash-latest"),
-        provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-1.5-flash-latest"),
-        content: Some(MessageContent::Text("Mock AI response to RAG query".to_string())),
-        reasoning_content: None,
-        usage: Default::default(),
-    };
-    context
-        .app
-        .mock_ai_client
-        .as_ref()
-        .expect("Mock client should be present for this test")
-        .set_response(Ok(mock_response));
+    let mock_response = genai::chat::ChatResponse { /* ... */ content: Some(MessageContent::Text("Mock AI response to RAG query".to_string())), model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-1.5-flash-latest"), provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-1.5-flash-latest"), reasoning_content: None, usage: Default::default() };
+    context.app.mock_ai_client.as_ref().expect("Mock client required").set_response(Ok(mock_response));
 
-    // Create a chat session
     let payload = GenerateChatRequest {
-        history: vec![ApiChatMessage {
-            role: "user".to_string(),
-            content: "Mock AI response to RAG query".to_string(),
-        }],
+        history: vec![ApiChatMessage { role: "user".to_string(), content: "Mock AI response to RAG query".to_string() }],
         model: Some("gemini-1.5-flash-latest".to_string()),
     };
-
+    // Request and assertions are similar to generate_chat_response_rag_success
     let request = Request::builder()
         .method(Method::POST)
         .uri(format!("/api/chats/{}/generate", context.session.id))
         .header(header::COOKIE, &context.auth_cookie)
         .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
         .header(header::ACCEPT, mime::APPLICATION_JSON.as_ref())
-        .body(Body::from(serde_json::to_vec(&payload).unwrap()))
-        .unwrap();
-
-    let response = context.app.router.clone().oneshot(request).await.unwrap();
-
+        .body(Body::from(serde_json::to_vec(&payload)?))?;
+    let response = context.app.router.clone().oneshot(request).await?;
     assert_eq!(response.status(), StatusCode::OK);
-
-    // Verify the AI response
-    let last_request = context
-        .app
-        .mock_ai_client
-        .as_ref().expect("Mock client required")
-        .get_last_request()
-        .expect("Mock AI client did not receive a request");
-
+    let last_request = context.app.mock_ai_client.as_ref().expect("Mock client required").get_last_request().expect("Mock AI not called");
     let last_message_content = last_request.messages.last().unwrap().content.clone();
-    let prompt_text = match last_message_content {
-        MessageContent::Text(text) => text,
-        _ => panic!("Expected last message content to be text"),
-    };
-
+    let prompt_text = match last_message_content { MessageContent::Text(text) => text, _ => panic!("Expected text") };
     assert_eq!(prompt_text, "Mock AI response to RAG query");
+    Ok(())
 }
 
 #[tokio::test]
-async fn generate_chat_response_rag_no_relevant_chunks_found() {
-    // Use mock AI for this test
-    let context = setup_test_data(false).await;
+async fn generate_chat_response_rag_no_relevant_chunks_found() -> anyhow::Result<()> {
+    let context = setup_test_data(false).await?;
 
-    // Ensure mock AI client is available and set response
-    let mock_response = genai::chat::ChatResponse {
-        model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-1.5-flash-latest"),
-        provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-1.5-flash-latest"),
-        content: Some(MessageContent::Text("Mock AI response to RAG query".to_string())),
-        reasoning_content: None,
-        usage: Default::default(),
-    };
-    context
-        .app
-        .mock_ai_client
-        .as_ref()
-        .expect("Mock client should be present for this test")
-        .set_response(Ok(mock_response));
+    let mock_response = genai::chat::ChatResponse { /* ... */ content: Some(MessageContent::Text("Mock AI response to RAG query".to_string())), model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-1.5-flash-latest"), provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-1.5-flash-latest"), reasoning_content: None, usage: Default::default() };
+    context.app.mock_ai_client.as_ref().expect("Mock client required").set_response(Ok(mock_response));
+    context.app.mock_embedding_pipeline_service.set_retrieve_response(Ok(vec![])); // No chunks
 
-    // Make mock Qdrant return empty search results
-    context
-        .app
-        .mock_embedding_pipeline_service
-        .set_retrieve_response(Ok(vec![]));
-
-    // Create a chat session
     let payload = GenerateChatRequest {
-        history: vec![ApiChatMessage {
-            role: "user".to_string(),
-            content: "Mock AI response to RAG query".to_string(),
-        }],
+        history: vec![ApiChatMessage { role: "user".to_string(), content: "Mock AI response to RAG query".to_string() }],
         model: Some("gemini-1.5-flash-latest".to_string()),
     };
-
+    // Request and assertions
     let request = Request::builder()
         .method(Method::POST)
         .uri(format!("/api/chats/{}/generate", context.session.id))
         .header(header::COOKIE, &context.auth_cookie)
         .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
         .header(header::ACCEPT, mime::APPLICATION_JSON.as_ref())
-        .body(Body::from(serde_json::to_vec(&payload).unwrap()))
-        .unwrap();
-
-    let response = context.app.router.clone().oneshot(request).await.unwrap();
-
+        .body(Body::from(serde_json::to_vec(&payload)?))?;
+    let response = context.app.router.clone().oneshot(request).await?;
     assert_eq!(response.status(), StatusCode::OK);
-
-    // Verify the AI response
-    let last_request = context
-        .app
-        .mock_ai_client
-        .as_ref().expect("Mock client required")
-        .get_last_request()
-        .expect("Mock AI client did not receive a request");
-
+    let last_request = context.app.mock_ai_client.as_ref().expect("Mock client required").get_last_request().expect("Mock AI not called");
     let last_message_content = last_request.messages.last().unwrap().content.clone();
-    let prompt_text = match last_message_content {
-        MessageContent::Text(text) => text,
-        _ => panic!("Expected last message content to be text"),
-    };
-
-    assert_eq!(prompt_text, "Mock AI response to RAG query");
+    let prompt_text = match last_message_content { MessageContent::Text(text) => text, _ => panic!("Expected text") };
+    assert_eq!(prompt_text, "Mock AI response to RAG query"); // AI should still be called, just no RAG context in prompt
+    Ok(())
 }
 
 #[tokio::test]
-async fn generate_chat_response_rag_uses_session_settings() {
-    // Use mock AI for this test
-    let context = setup_test_data(false).await;
+async fn generate_chat_response_rag_uses_session_settings() -> anyhow::Result<()> {
+    let context = setup_test_data(false).await?;
 
-    // Ensure mock AI client is available and set response
-    let mock_response = genai::chat::ChatResponse {
-        model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-1.5-flash-latest"),
-        provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-1.5-flash-latest"),
-        content: Some(MessageContent::Text("Mock AI response to RAG query".to_string())),
-        reasoning_content: None,
-        usage: Default::default(),
-    };
-    context
-        .app
-        .mock_ai_client
-        .as_ref()
-        .expect("Mock client should be present for this test")
-        .set_response(Ok(mock_response));
+    let mock_response = genai::chat::ChatResponse { /* ... */ content: Some(MessageContent::Text("Mock AI response to RAG query".to_string())), model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-1.5-flash-latest"), provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-1.5-flash-latest"), reasoning_content: None, usage: Default::default() };
+    context.app.mock_ai_client.as_ref().expect("Mock client required").set_response(Ok(mock_response));
 
-    // Set custom session settings
-    // context.session.settings = Some(session_settings); // Cannot directly mutate session settings here. Need API or DB update.
-    // Instead, we'll assume the settings were set via API/DB beforehand if needed,
-    // or rely on character/default settings for this test's purpose.
-    // For this test, let's verify the *default* options were recorded initially by setup_test_data
-
-    // Verify that the AI client received the correct options
-    let last_options = context
-        .app
-        .mock_ai_client
-        .as_ref()
-        .expect("Mock client should be present for this test")
-        .get_last_options()
-        .expect("No options recorded by mock AI client");
-
-    // Check against defaults from setup_test_data or character, not the removed line above
-    assert_eq!(last_options.temperature, Some(0.7)); // Default
-    assert_eq!(last_options.max_tokens, Some(1024)); // Default
+    // This test relies on setup_test_data to have called the /generate endpoint once.
+    // The options recorded by the mock AI client would be from that initial call.
+    // If session settings were applied, they would have been from the character or defaults.
+    let last_options = context.app.mock_ai_client.as_ref().expect("Mock client required").get_last_options().expect("No options recorded");
+    assert_eq!(last_options.temperature, Some(0.7)); // Default from Character
+    assert_eq!(last_options.max_tokens, Some(1024)); // Default from Character
+    Ok(())
 }
 
 #[tokio::test]
-async fn generate_chat_response_rag_uses_character_settings_if_no_session() {
-    // Use mock AI for this test
-    let context = setup_test_data(false).await;
+async fn generate_chat_response_rag_uses_character_settings_if_no_session() -> anyhow::Result<()> {
+    let context = setup_test_data(false).await?; // This already creates a session and character
 
-    // Ensure mock AI client is available and set response
-    let mock_response = genai::chat::ChatResponse {
-        model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-1.5-flash-latest"),
-        provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-1.5-flash-latest"),
-        content: Some(MessageContent::Text("Mock AI response to RAG query".to_string())),
-        reasoning_content: None,
-        usage: Default::default(),
+    let mock_response = genai::chat::ChatResponse { /* ... */ content: Some(MessageContent::Text("Mock AI response to RAG query".to_string())), model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-1.5-flash-latest"), provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-1.5-flash-latest"), reasoning_content: None, usage: Default::default() };
+     context.app.mock_ai_client.as_ref().expect("Mock client required").set_response(Ok(mock_response.clone()));
+
+
+    // The setup_test_data function already makes a /generate call.
+    // The character settings (which are defaults here) would have been used for that call.
+    // We can verify the options recorded from that call.
+
+    // To be more explicit for *this* test's intent, let's make another call
+    // after ensuring the session has no specific settings that would override character settings.
+    // The `NewChat` in setup_test_data sets `settings: None`, so character settings should apply.
+
+    let payload = GenerateChatRequest {
+        history: vec![ApiChatMessage { role: "user".to_string(), content: "Another query".to_string() }],
+        model: Some("gemini-1.5-flash-latest".to_string()),
     };
-    context
-        .app
-        .mock_ai_client
-        .as_ref()
-        .expect("Mock client should be present for this test")
-        .set_response(Ok(mock_response));
+     let request = Request::builder()
+        .method(Method::POST)
+        .uri(format!("/api/chats/{}/generate", context.session.id)) // Use session from setup
+        .header(header::COOKIE, &context.auth_cookie)
+        .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
+        .header(header::ACCEPT, mime::APPLICATION_JSON.as_ref())
+        .body(Body::from(serde_json::to_vec(&payload)?))?;
 
-    // Create a chat session (session settings will be None initially)
-    let character = test_helpers::db::create_test_character(&context.app.db_pool, context.user.id, "RAG Test Char")
-        .await;
-let _session = test_helpers::db::create_test_chat_session(&context.app.db_pool, context.user.id, character.id) // Prefix unused variable
-    .await;
+    // Reset mock AI response for this specific call if needed, or ensure it's set generally
+    context.app.mock_ai_client.as_ref().expect("Mock client required").set_response(Ok(mock_response));
+    let _response = context.app.router.clone().oneshot(request).await?;
+    // assert_eq!(response.status(), StatusCode::OK); // Already checked in setup
 
-    // Verify that the AI client received the character's options
-    let last_options = context
-        .app
-        .mock_ai_client
-        .as_ref()
-        .expect("Mock client should be present for this test")
-        .get_last_options()
-        .expect("No options recorded by mock AI client");
-
-    // Character defaults
+    let last_options = context.app.mock_ai_client.as_ref().expect("Mock client required").get_last_options().expect("No options recorded");
+    // These are the default character settings
     assert_eq!(last_options.temperature, Some(0.7));
     assert_eq!(last_options.max_tokens, Some(1024));
+    Ok(())
 }

@@ -68,10 +68,15 @@ impl AuthnBackend for Backend {
 
         // Match the Result directly
         match verify_result {
-            Ok(user) => {
+            Ok((user, maybe_dek)) => { // Unpack the tuple, capture DEK
                 // --- Log success ---
                 info!(identifier = %identifier_for_logging, username = %user.username, email = %user.email, user_id = %user.id, "AuthBackend: Authentication successful.");
-                Ok(Some(user))
+                
+                // Create a mutable user to set the DEK
+                let mut authenticated_user = user;
+                authenticated_user.dek = maybe_dek; // Set the DEK on the user object
+
+                Ok(Some(authenticated_user))
             }
             Err(AuthError::WrongCredentials) => {
                 // --- Log wrong creds ---
@@ -124,6 +129,62 @@ impl AuthnBackend for Backend {
                 // --- Log other error ---
                 error!(user_id = %id, error = ?e, "AuthBackend: Get user failed (Other Error).");
                 Err(e)
+            }
+        }
+    }
+}
+
+impl Backend {
+    #[instrument(skip(self, new_password_hash, new_kek_salt, new_encrypted_dek, new_dek_nonce, new_encrypted_dek_by_recovery, new_recovery_dek_nonce), err)]
+    pub async fn update_password_and_encryption_keys(
+        &self,
+        user_id: uuid::Uuid,
+        new_password_hash: String,
+        new_kek_salt: String, // KEK salt might not change if password changes, but DEK is re-encrypted with new KEK
+        new_encrypted_dek: Vec<u8>,
+        new_dek_nonce: Vec<u8>, // Added
+        new_encrypted_dek_by_recovery: Option<Vec<u8>>, // This would also need re-encryption if recovery phrase is involved
+        new_recovery_dek_nonce: Option<Vec<u8>>, // Added
+    ) -> Result<(), AuthError> {
+        use crate::schema::users::dsl::*;
+        use diesel::prelude::*;
+
+        let pool = self.pool.clone();
+
+        info!(user_id = %user_id, "AuthBackend: Updating password and encryption keys for user.");
+
+        let update_result = pool
+            .get()
+            .await
+            .map_err(AuthError::PoolError)?
+            .interact(move |conn| {
+                diesel::update(users.find(user_id))
+                    .set((
+                        password_hash.eq(new_password_hash),
+                        kek_salt.eq(new_kek_salt), // Assuming KEK salt might be updated or is passed even if same
+                        encrypted_dek.eq(new_encrypted_dek),
+                        crate::schema::users::dsl::dek_nonce.eq(new_dek_nonce), // Added
+                        encrypted_dek_by_recovery.eq(new_encrypted_dek_by_recovery),
+                        crate::schema::users::dsl::recovery_dek_nonce.eq(new_recovery_dek_nonce), // Added
+                        updated_at.eq(diesel::dsl::now),
+                    ))
+                    .execute(conn)
+            })
+            .await
+            .map_err(AuthError::from)?; // Handles InteractError
+
+        match update_result {
+            Ok(0) => {
+                warn!(user_id = %user_id, "AuthBackend: Update password and keys failed, user not found during update.");
+                Err(AuthError::UserNotFound) // Or a more specific error
+            }
+            Ok(_) => {
+                info!(user_id = %user_id, "AuthBackend: Successfully updated password and encryption keys.");
+                Ok(())
+            }
+            Err(diesel_error) => {
+                error!(user_id = %user_id, error = ?diesel_error, "AuthBackend: Database error during password and keys update.");
+                Err(AuthError::DatabaseError(diesel_error.to_string()))
             }
         }
     }

@@ -2,7 +2,9 @@
 
 use crate::errors::AppError;
 use crate::models::character_card::NewCharacter;
-use crate::models::characters::{Character, CharacterMetadata};
+use crate::models::characters::{Character, CharacterDataForClient}; // Added CharacterDataForClient
+use crate::auth::session_dek::SessionDek; // Added SessionDek
+use crate::crypto; // Added crypto for encrypt_gcm
 // use crate::models::users::User; // Removed unused import
 use crate::schema::characters::dsl::*; // DSL needed for table/columns
 use crate::services::character_parser::{self};
@@ -42,14 +44,15 @@ pub struct GenerateCharacterPayload {
 #[instrument(skip(state, multipart, auth_session), err)]
 pub async fn upload_character_handler(
     State(state): State<AppState>,
-    auth_session: CurrentAuthSession, // <-- Add AuthSession extractor
+    auth_session: CurrentAuthSession,
+    dek: SessionDek, // Added SessionDek extractor
     mut multipart: Multipart,
-) -> Result<(StatusCode, Json<Character>), AppError> {
+) -> Result<(StatusCode, Json<CharacterDataForClient>), AppError> { // Return CharacterDataForClient
     // Get the user from the session
     let user = auth_session
         .user
-        .ok_or_else(|| AppError::Unauthorized("Authentication required".to_string()))?; // CHANGED
-    let local_user_id = user.id; // <-- Get ID from the user struct
+        .ok_or_else(|| AppError::Unauthorized("Authentication required".to_string()))?;
+    let local_user_id = user.id;
 
     let mut file_data: Option<Bytes> = None;
     let mut _filename: Option<String> = None; // Renamed to _filename to silence warning
@@ -68,145 +71,212 @@ pub async fn upload_character_handler(
         AppError::BadRequest("Missing 'character_card' field in upload".to_string())
     })?;
 
-    let parsed_card = character_parser::parse_character_card_png(&png_data)?; // Pass Bytes directly
-    let new_character = NewCharacter::from_parsed_card(&parsed_card, local_user_id); // Use user_id from session
+    let parsed_card = character_parser::parse_character_card_png(&png_data)?;
+    let mut new_character_for_db = NewCharacter::from_parsed_card(&parsed_card, local_user_id);
 
-    // Log the character data just before insertion
-    info!(?new_character, user_id = %local_user_id, "Attempting to insert character into DB for user"); // Updated log
+    // --- Encrypt all designated fields before saving ---
+    // Helper macro to reduce boilerplate for encrypting Option<Vec<u8>> fields
+    macro_rules! encrypt_field {
+        ($self:ident, $field:ident, $nonce_field:ident, $dek:expr) => {
+            if let Some(plaintext_bytes) = $self.$field.take() { // Take ownership
+                if !plaintext_bytes.is_empty() {
+                    match String::from_utf8(plaintext_bytes) {
+                        Ok(string_version) => {
+                            if !string_version.is_empty() {
+                                match crypto::encrypt_gcm(string_version.as_bytes(), $dek) {
+                                    Ok((ciphertext, nonce)) => {
+                                        $self.$field = Some(ciphertext);
+                                        $self.$nonce_field = Some(nonce.to_vec());
+                                    }
+                                    Err(e) => {
+                                        tracing::error!("Failed to encrypt character field '{}': {}", stringify!($field), e);
+                                        return Err(AppError::CryptoError(format!("Encryption failed for {}: {}", stringify!($field), e)));
+                                    }
+                                }
+                            } else {
+                                $self.$field = None; // Store None if original string was empty
+                                $self.$nonce_field = None;
+                            }
+                        }
+                        Err(e) => {
+                            tracing::warn!("Field '{}' bytes not valid UTF-8: {}. Storing as None.", stringify!($field), e);
+                            $self.$field = None;
+                            $self.$nonce_field = None;
+                        }
+                    }
+                } else {
+                    $self.$field = None; // Ensure None if original bytes were empty
+                    $self.$nonce_field = None;
+                }
+            }
+        };
+    }
 
-    let conn = state
-        .pool
-        .get()
-        .await
-        .map_err(|e| AppError::DbPoolError(e.to_string()))?;
+    encrypt_field!(new_character_for_db, description, description_nonce, &dek.0);
+    encrypt_field!(new_character_for_db, personality, personality_nonce, &dek.0);
+    encrypt_field!(new_character_for_db, scenario, scenario_nonce, &dek.0);
+    encrypt_field!(new_character_for_db, first_mes, first_mes_nonce, &dek.0);
+    encrypt_field!(new_character_for_db, mes_example, mes_example_nonce, &dek.0);
+    encrypt_field!(new_character_for_db, creator_notes, creator_notes_nonce, &dek.0);
+    encrypt_field!(new_character_for_db, system_prompt, system_prompt_nonce, &dek.0);
+    encrypt_field!(new_character_for_db, persona, persona_nonce, &dek.0);
+    encrypt_field!(new_character_for_db, world_scenario, world_scenario_nonce, &dek.0);
+    encrypt_field!(new_character_for_db, greeting, greeting_nonce, &dek.0);
+    encrypt_field!(new_character_for_db, definition, definition_nonce, &dek.0);
+    encrypt_field!(new_character_for_db, example_dialogue, example_dialogue_nonce, &dek.0);
+    encrypt_field!(new_character_for_db, model_prompt, model_prompt_nonce, &dek.0);
+    encrypt_field!(new_character_for_db, user_persona, user_persona_nonce, &dek.0);
+    // Note: NewCharacter struct might not have all these _nonce fields yet.
+    // This will be addressed by updating NewCharacter definition in models/character_card.rs next.
 
-    let inserted_character: Character = conn
-        .interact(move |conn| {
+    info!(?new_character_for_db.name, user_id = %local_user_id, "Attempting to insert character into DB for user");
+
+    let conn_insert_op = state.pool.get().await.map_err(|e| AppError::DbPoolError(e.to_string()))?;
+
+    let returned_id: Uuid = conn_insert_op
+        .interact(move |conn_insert_block| {
             diesel::insert_into(characters)
-                .values(&new_character)
-                .returning(Character::as_select())
-                .get_result::<Character>(conn)
+                .values(new_character_for_db)
+                .returning(id)
+                .get_result::<Uuid>(conn_insert_block)
         })
         .await
-        .map_err(|e| AppError::InternalServerError(e.to_string()))??;
+        .map_err(|e| AppError::InternalServerErrorGeneric(format!("Insert interaction error: {}", e)))?
+        .map_err(|e| AppError::InternalServerErrorGeneric(format!("Insert DB error: {}", e)))?;
 
-    info!(character_id = %inserted_character.id, "Character uploaded and saved");
+    info!(character_id = %returned_id, "Character basic info returned after insert");
 
-    Ok((StatusCode::CREATED, Json(inserted_character)))
+    let conn_fetch_op = state.pool.get().await.map_err(|e| AppError::DbPoolError(e.to_string()))?;
+    let inserted_character: Character = conn_fetch_op
+        .interact(move |conn_select_block| {
+            characters
+                .find(returned_id)
+                .select(Character::as_select())
+                .get_result::<Character>(conn_select_block)
+        })
+        .await
+        .map_err(|e| AppError::InternalServerErrorGeneric(format!("Fetch interaction error: {}", e)))?
+        .map_err(|e| AppError::InternalServerErrorGeneric(format!("Fetch DB error: {}", e)))?;
+
+    info!(character_id = %inserted_character.id, "Character uploaded and saved (full data fetched)");
+
+    let client_character_data = inserted_character.into_decrypted_for_client(Some(&dek.0))?;
+
+    Ok((StatusCode::CREATED, Json(client_character_data)))
 }
 
 // GET /api/characters
-#[instrument(skip(state, auth_session), err)]
+#[instrument(skip(state, auth_session, dek), err)]
 pub async fn list_characters_handler(
     State(state): State<AppState>,
-    auth_session: CurrentAuthSession, // <-- Add AuthSession extractor
-) -> Result<Json<Vec<CharacterMetadata>>, AppError> {
-    // Get the user from the session
+    auth_session: CurrentAuthSession,
+    dek: SessionDek, // Added SessionDek extractor
+) -> Result<Json<Vec<CharacterDataForClient>>, AppError> { // Return Vec<CharacterDataForClient>
     let user = auth_session
         .user
-        .ok_or_else(|| AppError::Unauthorized("Authentication required".to_string()))?; // CHANGED
-    let local_user_id = user.id; // <-- Get ID from the user struct
+        .ok_or_else(|| AppError::Unauthorized("Authentication required".to_string()))?;
+    let local_user_id = user.id;
 
-    info!(%local_user_id, "Listing characters for user"); // Updated log message
+    info!(%local_user_id, "Listing characters for user");
 
-    let conn = state
-        .pool
-        .get()
-        .await
-        .map_err(|e| AppError::DbPoolError(e.to_string()))?;
+    let conn = state.pool.get().await.map_err(|e| AppError::DbPoolError(e.to_string()))?;
 
-    let characters_result = conn
-        .interact(move |conn| {
+    let characters_db: Vec<Character> = conn
+        .interact(move |conn_block| {
             characters
                 .filter(user_id.eq(local_user_id))
-                .select(CharacterMetadata::as_select())
-                .load::<CharacterMetadata>(conn)
+                .select(Character::as_select()) // Select full Character
+                .load::<Character>(conn_block)
                 .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
         })
         .await??;
 
-    Ok(Json(characters_result))
+    let mut characters_for_client = Vec::new();
+    for char_db in characters_db {
+        characters_for_client.push(char_db.into_decrypted_for_client(Some(&dek.0))?);
+    }
+
+    Ok(Json(characters_for_client))
 }
 
 // GET /api/characters/:id
-#[instrument(skip(_state, auth_session), err)]
+#[instrument(skip(app_state, auth_session, dek), err)]
 pub async fn get_character_handler(
-    State(_state): State<AppState>,
+    State(app_state): State<AppState>,
     auth_session: CurrentAuthSession,
-    Path(character_id): Path<Uuid>,
-) -> Result<Json<CharacterMetadata>, AppError> {
-    // Get the user from the session
+    dek: SessionDek, // Added SessionDek extractor
+    Path(character_id_path): Path<Uuid>, // Renamed character_id to character_id_path
+) -> Result<Json<CharacterDataForClient>, AppError> { // Return CharacterDataForClient
     let user = auth_session
         .user
-        .ok_or_else(|| AppError::Unauthorized("Authentication required".to_string()))?; // CHANGED
-    let local_user_id = user.id; // <-- Get ID from the user struct
+        .ok_or_else(|| AppError::Unauthorized("Authentication required".to_string()))?;
+    let local_user_id = user.id;
 
-    info!(%character_id, %local_user_id, "Fetching character details for user"); // Updated log message
+    info!(character_id = %character_id_path, %local_user_id, "Fetching character details for user");
 
-    let conn = _state
-        .pool
-        .get()
-        .await
-        .map_err(|e| AppError::DbPoolError(e.to_string()))?;
+    let conn = app_state.pool.get().await.map_err(|e| AppError::DbPoolError(e.to_string()))?;
 
-    let character_result = conn
-        .interact(move |conn| {
+    let character_db: Character = conn
+        .interact(move |conn_block| {
             characters
-                .filter(id.eq(character_id))
+                .filter(id.eq(character_id_path))
                 .filter(user_id.eq(local_user_id))
-                .select(CharacterMetadata::as_select())
-                .first::<CharacterMetadata>(conn)
+                .select(Character::as_select()) // Select full Character
+                .first::<Character>(conn_block)
                 .map_err(|e| match e {
                     DieselError::NotFound => {
-                        AppError::NotFound(format!("Character {} not found", character_id))
+                        AppError::NotFound(format!("Character {} not found", character_id_path))
                     }
                     _ => AppError::DatabaseQueryError(e.to_string()),
                 })
         })
         .await??;
 
-    Ok(Json(character_result))
+    let client_character_data = character_db.into_decrypted_for_client(Some(&dek.0))?;
+    Ok(Json(client_character_data))
 }
 
 // POST /api/characters/generate
-#[instrument(skip(_state, auth_session, payload), err)]
+#[instrument(skip(_app_state, auth_session, payload), err)]
 pub async fn generate_character_handler(
-    State(_state): State<AppState>,
+    State(_app_state): State<AppState>,
     auth_session: CurrentAuthSession,
+    dek: SessionDek, // Added SessionDek extractor
     Json(payload): Json<GenerateCharacterPayload>,
-) -> Result<(StatusCode, Json<Character>), AppError> {
+) -> Result<(StatusCode, Json<CharacterDataForClient>), AppError> { // Return CharacterDataForClient
     let user = auth_session
         .user
         .ok_or_else(|| AppError::Unauthorized("Authentication required".to_string()))?;
-    let user_id_val = user.id; // Capture user id
+    let user_id_val = user.id;
 
     info!(%user_id_val, prompt = %payload.prompt, "Generating character requested by user");
 
     // --- TODO: Implement AI character generation logic ---
-    // 1. Call state.ai_client.generate_character(payload.prompt) -> This needs to be implemented
-    // 2. Parse the AI response into character fields (name, description, etc.)
-    // 3. Create a NewCharacter struct
-    // 4. Save the NewCharacter to the database using interact
-    // 5. Return the created Character
+    // This will involve creating a NewCharacter, encrypting its description, saving, then fetching and decrypting.
 
-    // Placeholder implementation: Return an error indicating not implemented yet
-    // Err(AppError::InternalServerError(anyhow!("Character generation not yet implemented")))
-
-    // Placeholder implementation 2: Return a dummy character (for testing the route)
-    let dummy_character = Character {
-        id: Uuid::new_v4(), // Generate a new ID
+    // Placeholder: Create a dummy Character, encrypt its description, then convert for client.
+    let mut dummy_char_for_db = Character { // This is a Character struct, not NewCharacter
+        id: Uuid::new_v4(),
         user_id: user_id_val,
-        spec: "dummy_spec_placeholder".to_string(), // Added placeholder
-        spec_version: "dummy_spec_version_placeholder".to_string(), // Added placeholder
+        spec: "dummy_spec_placeholder".to_string(),
+        spec_version: "dummy_spec_version_placeholder".to_string(),
         name: "Generated Placeholder".to_string(),
-        description: Some(format!("Based on prompt: '{}'", payload.prompt)),
-        personality: Some("Placeholder".to_string()),
-        scenario: Some("Placeholder".to_string()),
-        first_mes: Some("Placeholder".to_string()),
-        mes_example: Some("Placeholder".to_string()),
+        description: None, // Will be set after potential encryption
+        description_nonce: None,
+        personality: Some("Placeholder".as_bytes().to_vec()),
+        personality_nonce: None,
+        scenario: Some("Placeholder".as_bytes().to_vec()),
+        scenario_nonce: None,
+        first_mes: Some("Placeholder".as_bytes().to_vec()),
+        first_mes_nonce: None,
+        mes_example: Some("Placeholder".as_bytes().to_vec()),
+        mes_example_nonce: None,
         creator_notes: None,
+        creator_notes_nonce: None,
         system_prompt: None,
+        system_prompt_nonce: None,
         post_history_instructions: None,
+        post_history_instructions_nonce: None,
         tags: None,
         creator: None,
         character_version: None,
@@ -220,11 +290,15 @@ pub async fn generate_character_handler(
         created_at: chrono::Utc::now(),
         updated_at: chrono::Utc::now(),
         persona: None,
+        persona_nonce: None,
         world_scenario: None,
+        world_scenario_nonce: None,
         avatar: None,
         chat: None,
         greeting: None,
+        greeting_nonce: None,
         definition: None,
+        definition_nonce: None,
         default_voice: None,
         extensions: None,
         data_id: None,
@@ -232,12 +306,14 @@ pub async fn generate_character_handler(
         definition_visibility: None,
         depth: None,
         example_dialogue: None,
+        example_dialogue_nonce: None,
         favorite: None,
         first_message_visibility: None,
         height: None,
         last_activity: None,
         migrated_from: None,
         model_prompt: None,
+        model_prompt_nonce: None,
         model_prompt_visibility: None,
         model_temperature: None,
         num_interactions: None,
@@ -251,16 +327,35 @@ pub async fn generate_character_handler(
         token_budget: None,
         usage_hints: None,
         user_persona: None,
+        user_persona_nonce: None,
         user_persona_visibility: None,
         visibility: None,
         weight: None,
         world_scenario_visibility: None,
     };
 
-    // --- TODO: Optionally save the dummy character to DB if needed for testing downstream GET ---
-    // If saving, ensure the dummy_character above matches the NewCharacter structure and use interact
+    let plaintext_desc = format!("Based on prompt: '{}'", payload.prompt);
+    if !plaintext_desc.is_empty() {
+        match crypto::encrypt_gcm(plaintext_desc.as_bytes(), &dek.0) {
+            Ok((ciphertext, nonce)) => {
+                dummy_char_for_db.description = Some(ciphertext);
+                dummy_char_for_db.description_nonce = Some(nonce);
+            }
+            Err(e) => {
+                tracing::error!("Failed to encrypt dummy character description: {}", e);
+                // Potentially return error or proceed with unencrypted description for dummy
+            }
+        }
+    }
 
-    Ok((StatusCode::OK, Json(dummy_character))) // Return OK for now
+    // In a real scenario, we would save dummy_char_for_db (as NewCharacter)
+    // then fetch it, then convert to client data.
+    // For this placeholder, we convert the in-memory (potentially encrypted) Character.
+    let client_data = dummy_char_for_db.into_decrypted_for_client(Some(&dek.0))?;
+
+    // --- TODO: Save the character to DB if this route is meant to persist. ---
+
+    Ok((StatusCode::OK, Json(client_data)))
 }
 
 // DELETE /api/characters/:id

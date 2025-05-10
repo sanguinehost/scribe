@@ -67,7 +67,7 @@ async fn create_document_handler(
                 .map_err(|e| AppError::DatabaseQueryError(e.to_string())) // Added .to_string()
         })
         .await
-        .map_err(|e| AppError::InternalServerError(e.to_string()))?
+        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?
         ?;
 
     let response = DocumentResponse {
@@ -112,7 +112,7 @@ async fn get_documents_by_id_handler(
             Ok(documents)
         })
         .await
-        .map_err(|e| AppError::InternalServerError(e.to_string()))?
+        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?
         ?;
 
     let responses: Vec<DocumentResponse> = documents
@@ -158,7 +158,7 @@ async fn get_document_by_id_handler(
             Ok(document)
         })
         .await
-        .map_err(|e| AppError::InternalServerError(e.to_string()))?
+        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?
         ?;
 
     let response = DocumentResponse {
@@ -208,7 +208,7 @@ async fn delete_documents_by_id_after_timestamp_handler(
             Ok(())
         })
         .await
-        .map_err(|e| AppError::InternalServerError(e.to_string()))?
+        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?
         ?;
 
     // Now perform the deletion
@@ -237,7 +237,7 @@ async fn delete_documents_by_id_after_timestamp_handler(
             .map_err(|e| AppError::DatabaseQueryError(e.to_string())) // Added .to_string()
         })
         .await
-        .map_err(|e| AppError::InternalServerError(e.to_string()))?
+        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?
         ?;
 
     Ok(StatusCode::NO_CONTENT)
@@ -279,7 +279,7 @@ async fn create_suggestion_handler(
             Ok(())
         })
         .await
-        .map_err(|e| AppError::InternalServerError(e.to_string()))?
+        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?
         ?;
 
     let new_suggestion = NewSuggestion {
@@ -306,7 +306,7 @@ async fn create_suggestion_handler(
                 .map_err(|e| AppError::DatabaseQueryError(e.to_string())) // Added .to_string()
         })
         .await
-        .map_err(|e| AppError::InternalServerError(e.to_string()))?
+        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?
         ?;
 
     Ok((StatusCode::CREATED, Json(suggestion)))
@@ -344,7 +344,7 @@ async fn get_suggestions_by_document_id_handler(
             Ok(())
         })
         .await
-        .map_err(|e| AppError::InternalServerError(e.to_string()))?
+        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?
         ?;
 
     // Get all suggestions for the document
@@ -359,7 +359,7 @@ async fn get_suggestions_by_document_id_handler(
                 .map_err(|e| AppError::DatabaseQueryError(e.to_string())) // Added .to_string()
         })
         .await
-        .map_err(|e| AppError::InternalServerError(e.to_string()))?
+        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?
         ?;
 
     Ok(Json(suggestions))

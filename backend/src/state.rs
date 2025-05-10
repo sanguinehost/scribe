@@ -7,7 +7,7 @@ use crate::config::Config; // Use Config instead
 // use genai::Client as GeminiApiClient; // Remove Gemini client for now
 use std::sync::Arc;
 // Removed #[cfg(test)] - Mutex needed unconditionally now for tracker
-use tokio::sync::Mutex; // Add Mutex for test tracking
+use tokio::sync::Mutex as TokioMutex; // Add Mutex for test tracking
 // Use the AiClient trait from our llm module
 use crate::llm::AiClient;
 use crate::llm::EmbeddingClient; // Add this
@@ -15,6 +15,10 @@ use crate::services::embedding_pipeline::EmbeddingPipelineServiceTrait;
 // Remove concrete service import, use trait
 // use crate::vector_db::QdrantClientService; 
 use crate::vector_db::qdrant_client::QdrantClientServiceTrait;
+// use crate::auth::user_store::Backend as AuthBackend; // For axum-login
+// use crate::services::email_service::EmailService; // For email service
+use uuid::Uuid; // For embedding_call_tracker
+use std::fmt; // For manual Debug impl
 
 // --- DB Connection Pool Type ---
 pub type DbPool = DeadpoolPool;
@@ -37,7 +41,22 @@ pub struct AppState {
     pub qdrant_service: Arc<dyn QdrantClientServiceTrait + Send + Sync>,
     pub embedding_pipeline_service: Arc<dyn EmbeddingPipelineServiceTrait + Send + Sync>, // Add Send + Sync
     // Remove #[cfg(test)]
-    pub embedding_call_tracker: Arc<Mutex<Vec<uuid::Uuid>>>, // Track message IDs for embedding calls
+    pub embedding_call_tracker: Arc<TokioMutex<Vec<Uuid>>>, // Track message IDs for embedding calls
+}
+
+// Manual Debug implementation for AppState
+impl fmt::Debug for AppState {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("AppState")
+            .field("pool", &"<DeadpoolPool>") // Placeholder for pool
+            .field("config", &self.config) // Config should be Debug
+            .field("ai_client", &"<Arc<dyn AiClient>>")
+            .field("embedding_client", &"<Arc<dyn EmbeddingClient>>")
+            .field("qdrant_service", &"<Arc<dyn QdrantClientServiceTrait>>")
+            .field("embedding_pipeline_service", &"<Arc<dyn EmbeddingPipelineServiceTrait>>")
+            .field("embedding_call_tracker", &"<Arc<TokioMutex<Vec<Uuid>>>>") // Or try to debug its contents if safe
+            .finish()
+    }
 }
 
 impl AppState {
@@ -61,7 +80,7 @@ impl AppState {
             qdrant_service,             // Assign the trait object
             embedding_pipeline_service, // Add this assignment
             // Remove #[cfg(test)]
-            embedding_call_tracker: Arc::new(Mutex::new(Vec::new())), // Initialize tracker for tests
+            embedding_call_tracker: Arc::new(TokioMutex::new(Vec::new())), // Initialize tracker for tests
         }
     }
 }

@@ -32,10 +32,10 @@ pub enum AppError {
     #[error("Password hashing failed: {0}")]
     PasswordHashingFailed(String), // Change to String instead of BcryptError
 
-    #[error("Username Taken")]
+    #[error("Username is already taken")]
     UsernameTaken, // Specific registration error
 
-    #[error("Email Taken")]
+    #[error("Email is already taken")]
     EmailTaken, // Add Email Taken variant
 
     #[error("Unauthorized: {0}")]
@@ -49,6 +49,21 @@ pub enum AppError {
 
     #[error("Session store error: {0}")]
     SessionStoreError(String), // Use String instead of tower_sessions::session_store::Error
+
+    #[error("Session not found")] // Added SessionNotFound variant
+    SessionNotFound,
+
+    #[error("Cryptography error: {0}")]
+    CryptoError(String),
+
+    #[error("Encryption error: {0}")]
+    EncryptionError(String),
+
+    #[error("Decryption error: {0}")]
+    DecryptionError(String),
+
+    #[error("Session operation error: {0}")]
+    SessionError(String),
 
     // --- Database Errors ---
     #[error("Database query error: {0}")]
@@ -127,7 +142,10 @@ pub enum AppError {
     SerializationError(String), // Use String instead of serde_json::Error
 
     #[error("Internal Server Error: {0}")]
-    InternalServerError(String), // Use String instead of AnyhowError
+    InternalServerErrorGeneric(String), // Renamed from InternalServerError
+
+    #[error("Internal Server Error: Password processing error.")]
+    PasswordProcessingError, // New specific variant
 
     // REMOVED DUPLICATE/REDUNDANT VARIANTS:
     // - DatabaseQueryError(String)
@@ -249,12 +267,12 @@ impl IntoResponse for AppError {
             AppError::Forbidden => (StatusCode::FORBIDDEN, "Forbidden".to_string()),
             AppError::BadRequest(msg) => (StatusCode::BAD_REQUEST, msg),
             AppError::NotFound(msg) => (StatusCode::NOT_FOUND, msg),
+            AppError::UserNotFound => (StatusCode::NOT_FOUND, "User not found".to_string()),
+            AppError::SessionNotFound => (StatusCode::UNAUTHORIZED, "Session not found or expired".to_string()),
             AppError::Conflict(msg) => (StatusCode::CONFLICT, msg),
-            AppError::UserNotFound => (StatusCode::NOT_FOUND, "User not found".to_string()), // Often treated as 404
-            AppError::UsernameTaken => (
-                StatusCode::CONFLICT,
-                "Username is already taken".to_string(),
-            ), // 409 Conflict
+            AppError::UsernameTaken => {
+                (StatusCode::CONFLICT, "Username is already taken".to_string())
+            }
             AppError::EmailTaken => (
                 StatusCode::CONFLICT,
                 "Email is already taken".to_string(),
@@ -290,11 +308,11 @@ impl IntoResponse for AppError {
             }
             AppError::AuthError(e) => {
                 // Corrected variant name
-                error!("Authentication framework error: {}", e);
+                error!("Authentication error: {}", e);
                 // Determine status based on underlying axum_login::Error if possible
                 // For now, default to UNAUTHORIZED or INTERNAL_SERVER_ERROR
                 // Note: axum_login::Error doesn't expose underlying easily without matching
-                (StatusCode::UNAUTHORIZED, "Authentication error".to_string())
+                (StatusCode::INTERNAL_SERVER_ERROR, "Authentication error".to_string())
             }
             AppError::SessionStoreError(e) => {
                 error!("Session store error: {}", e);
@@ -302,6 +320,22 @@ impl IntoResponse for AppError {
                     StatusCode::INTERNAL_SERVER_ERROR,
                     "Session management error".to_string(),
                 )
+            }
+            AppError::CryptoError(e) => {
+                error!("Cryptography error: {}", e);
+                (StatusCode::INTERNAL_SERVER_ERROR, "A cryptographic operation failed.".to_string())
+            }
+            AppError::EncryptionError(e) => {
+                error!("Encryption error: {}", e);
+                (StatusCode::INTERNAL_SERVER_ERROR, "Encryption operation failed.".to_string())
+            }
+            AppError::DecryptionError(e) => {
+                error!("Decryption error: {}", e);
+                (StatusCode::INTERNAL_SERVER_ERROR, "Data decryption failed.".to_string())
+            }
+            AppError::SessionError(e) => {
+                error!("Session operation error: {}", e);
+                (StatusCode::INTERNAL_SERVER_ERROR, "A session operation failed.".to_string())
             }
 
             // Added RateLimited mapping
@@ -448,8 +482,10 @@ impl IntoResponse for AppError {
                 )
             }
 
+            AppError::PasswordProcessingError => (StatusCode::INTERNAL_SERVER_ERROR, self.to_string()), // Handle new variant
+
             // Catch-all Internal Server Error MUST be last
-            AppError::InternalServerError(e) => {
+            AppError::InternalServerErrorGeneric(e) => { // Renamed variant
                 // Log the full error chain if possible
                 error!("Internal Server Error: {:?}", e); // Use debug formatting for Anyhow
                 (
@@ -458,7 +494,7 @@ impl IntoResponse for AppError {
                 )
             }
             AppError::Session(e) => {
-                error!("Session Error: {}", e);
+                error!("Session error: {}", e);
                 (
                     StatusCode::INTERNAL_SERVER_ERROR,
                     "Session management error".to_string(),
@@ -540,7 +576,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_internal_server_error_response() {
-        let error = AppError::InternalServerError("Something went very wrong".to_string());
+        let error = AppError::InternalServerErrorGeneric("Something went very wrong".to_string());
         let response = error.into_response();
         assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
         let body = get_body_json(response).await;
@@ -909,7 +945,7 @@ mod tests {
         let anyhow_error = anyhow::anyhow!("Simulated anyhow error");
         let error_string = anyhow_error.to_string();
         let app_error: AppError = anyhow_error.into(); // Use into() which calls From
-        assert!(matches!(app_error, AppError::InternalServerError(s) if s == error_string));
+        assert!(matches!(app_error, AppError::InternalServerErrorGeneric(s) if s == error_string));
         // Covers lines 806-807
     }
 
@@ -1286,6 +1322,42 @@ mod tests {
         let body = get_body_json(response).await;
         assert_eq!(body["error"], "Failed to parse character data"); // Line 481
     }
+
+    #[tokio::test]
+    async fn test_session_not_found_response() {
+        let app_error = AppError::SessionNotFound;
+        let response = app_error.into_response();
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        let body = get_body_json(response).await;
+        assert_eq!(body["error"], "Session not found or expired");
+    }
+
+    #[tokio::test]
+    async fn test_crypto_error_response() {
+        let app_error = AppError::CryptoError("Test crypto error".to_string());
+        let response = app_error.into_response();
+        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+        let body = get_body_json(response).await;
+        assert_eq!(body["error"], "A cryptographic operation failed.");
+    }
+
+    #[tokio::test]
+    async fn test_decryption_error_response() {
+        let app_error = AppError::DecryptionError("Test decryption error".to_string());
+        let response = app_error.into_response();
+        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+        let body = get_body_json(response).await;
+        assert_eq!(body["error"], "Data decryption failed.");
+    }
+
+    #[tokio::test]
+    async fn test_session_error_response_new() { // Renamed to avoid conflict
+        let app_error = AppError::SessionError("Test session op error".to_string());
+        let response = app_error.into_response();
+        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+        let body = get_body_json(response).await;
+        assert_eq!(body["error"], "A session operation failed.");
+    }
 }
 
 // Now add the From implementations to convert from actual errors to our string versions
@@ -1406,7 +1478,7 @@ impl From<serde_json::Error> for AppError {
 
 impl From<anyhow::Error> for AppError {
     fn from(err: anyhow::Error) -> Self {
-        AppError::InternalServerError(err.to_string())
+        AppError::InternalServerErrorGeneric(err.to_string()) // Use renamed variant
     }
 }
 
@@ -1423,11 +1495,15 @@ impl From<crate::auth::AuthError> for AppError {
             crate::auth::AuthError::WrongCredentials => AppError::InvalidCredentials,
             crate::auth::AuthError::UsernameTaken => AppError::UsernameTaken,
             crate::auth::AuthError::EmailTaken => AppError::EmailTaken,
-            crate::auth::AuthError::HashingError => AppError::PasswordHashingFailed("Bcrypt hashing failed".to_string()),
+            crate::auth::AuthError::HashingError => AppError::PasswordHashingFailed("Bcrypt hashing failed".to_string()), // This remains, not PasswordProcessingError, as From<AuthError> is generic
             crate::auth::AuthError::UserNotFound => AppError::UserNotFound,
             crate::auth::AuthError::DatabaseError(msg) => AppError::DatabaseQueryError(msg),
             crate::auth::AuthError::PoolError(e) => AppError::DbPoolError(e.to_string()),
             crate::auth::AuthError::InteractError(s) => AppError::DbInteractError(s),
+            crate::auth::AuthError::CryptoOperationFailed(crypto_err) => AppError::InternalServerErrorGeneric(format!("Cryptography operation failed: {}", crypto_err)), // Use renamed variant
+            crate::auth::AuthError::RecoveryNotSetup => AppError::BadRequest("Account recovery has not been set up for this user.".to_string()),
+            crate::auth::AuthError::InvalidRecoveryPhrase => AppError::BadRequest("The provided recovery phrase was invalid.".to_string()),
+            crate::auth::AuthError::SessionDeletionError(msg) => AppError::InternalServerErrorGeneric(format!("Failed to delete session: {}", msg)), // Use renamed variant
         }
     }
 }

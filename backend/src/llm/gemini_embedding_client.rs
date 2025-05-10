@@ -136,8 +136,9 @@ pub fn build_gemini_embedding_client(
         .timeout(Duration::from_secs(30)) // Example timeout
         .build()
         .map_err(|e| {
-            AppError::InternalServerError(format!("Failed to build Reqwest client: {}", e))
-        })?; // Use appropriate error
+            error!("Failed to build Reqwest client for Gemini: {}", e);
+            AppError::InternalServerErrorGeneric(format!("Failed to build Reqwest client: {}", e))
+        })?;
 
     // Potentially allow model name override via config later
     let model_name = DEFAULT_EMBEDDING_MODEL.to_string();
