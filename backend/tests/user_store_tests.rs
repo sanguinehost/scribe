@@ -17,13 +17,15 @@ mod user_store_tests {
     // use scribe_backend::state::DbPool; // Will get from TestApp
     use secrecy::{ExposeSecret, SecretString};
     // Use crate namespace for test helpers
-    use scribe_backend::auth::user_store::Backend as AuthBackend; // Use crate namespace and alias Backend
-    use scribe_backend::test_helpers::{self, TestApp, TestDataGuard}; // Added TestApp and TestDataGuard
+    use scribe_backend::test_helpers::{self, TestDataGuard}; // Removed TestApp
 
     use uuid::Uuid; // Added import for Uuid
 
+    // Add imports from scribe-backend packages
+    use scribe_backend::crypto; // Just import the crypto module
+
     // Moved from models/users.rs
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
     // This test is pure computation, no external services needed
     async fn test_password_hashing_and_verification() -> Result<(), Box<dyn std::error::Error>> {
         let password_string = "test_password123".to_string();
@@ -64,10 +66,10 @@ mod user_store_tests {
         Ok(())
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
     #[ignore] // Added ignore for CI (interacts with DB)
     async fn test_create_user() -> Result<(), Box<dyn std::error::Error>> {
-        let test_app = self::test_helpers::spawn_app(false, false).await;
+        let test_app = self::test_helpers::spawn_app(false, false, false).await;
         let pool = &test_app.db_pool;
         let mut guard = TestDataGuard::new(pool.clone());
 
@@ -94,14 +96,17 @@ mod user_store_tests {
         let create_result = obj
             .interact(move |conn| {
                 let register_payload = scribe_backend::models::auth::RegisterPayload {
+                   recovery_phrase: None,
                     username: username_clone,
                     email: email_clone,
                     password: password_clone,
                 };
-                scribe_backend::auth::create_user(
+                // Create a new Runtime for the blocking task to handle async in a sync context
+                let rt = tokio::runtime::Runtime::new().expect("Failed to create runtime in test");
+                rt.block_on(scribe_backend::auth::create_user(
                     conn,
                     register_payload,
-                )
+                ))
             })
             .await
             .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
@@ -155,14 +160,17 @@ mod user_store_tests {
         let duplicate_result = obj3
             .interact(move |conn| {
                 let register_payload = scribe_backend::models::auth::RegisterPayload {
+                   recovery_phrase: None,
                     username: username_clone3,
                     email: duplicate_email,
                     password: password_clone3,
                 };
-                scribe_backend::auth::create_user(
+                // Create a new Runtime for the blocking task to handle async in a sync context
+                let rt = tokio::runtime::Runtime::new().expect("Failed to create runtime in test");
+                rt.block_on(scribe_backend::auth::create_user(
                     conn,
                     register_payload,
-                )
+                ))
             })
             .await
             .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
@@ -179,10 +187,10 @@ mod user_store_tests {
         Ok(())
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
     #[ignore] // Added ignore for CI (interacts with DB)
     async fn test_get_user_by_username() -> Result<(), Box<dyn std::error::Error>> {
-        let test_app = self::test_helpers::spawn_app(false, false).await;
+        let test_app = self::test_helpers::spawn_app(false, false, false).await;
         let pool = &test_app.db_pool;
         let mut guard = TestDataGuard::new(pool.clone());
 
@@ -203,23 +211,27 @@ mod user_store_tests {
                 let username_c = username.clone(); // Renamed to avoid conflict
                 let email_c = email.clone(); // Renamed
                 let password_c = password.clone(); // Renamed
-                // REMOVED: let hashed_password_c = hashed_password.clone(); // Renamed
                 move |conn| {
                     let register_payload = scribe_backend::models::auth::RegisterPayload {
+                       recovery_phrase: None,
                         username: username_c,
                         email: email_c,
                         password: password_c,
                     };
-                    scribe_backend::auth::create_user(
+                    // Create a runtime to handle async in a sync context
+                    let rt = tokio::runtime::Runtime::new().expect("Failed to create runtime in test");
+                    rt.block_on(scribe_backend::auth::create_user(
                         conn,
                         register_payload,
-                    )
+                    ))
                 }
             })
-            .await??; // Propagate interact error then AuthError
-        guard.add_user(created_user_result.id);
+            .await?; // Handle interact error
 
-        let user_id = created_user_result.id;
+        let created_user = created_user_result?; // Handle AuthError
+        guard.add_user(created_user.id);
+
+        let user_id = created_user.id;
 
         // Test finding the existing user
         let obj2 = pool // Use pool
@@ -269,10 +281,10 @@ mod user_store_tests {
         Ok(())
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
     #[ignore] // Added ignore for CI (interacts with DB)
     async fn test_get_user() -> Result<(), Box<dyn std::error::Error>> {
-        let test_app = self::test_helpers::spawn_app(false, false).await;
+        let test_app = self::test_helpers::spawn_app(false, false, false).await;
         let pool = &test_app.db_pool;
         let mut guard = TestDataGuard::new(pool.clone());
 
@@ -292,15 +304,19 @@ mod user_store_tests {
                 let username_c = username_for_get.clone(); // Renamed
                 let email_c = email_for_get.clone(); // Renamed
                 let password_c = password_for_get.clone(); // Renamed
-                // REMOVED: let hashed_password_c = hashed_password_for_get.clone(); // Renamed
                 move |conn| {
-                    scribe_backend::auth::create_user(
+                    let register_payload = scribe_backend::models::auth::RegisterPayload {
+                        recovery_phrase: None,
+                        username: username_c,
+                        email: email_c,
+                        password: password_c,
+                    };
+                    // Create a runtime to handle async in a sync context
+                    let rt = tokio::runtime::Runtime::new().expect("Failed to create runtime in test");
+                    rt.block_on(scribe_backend::auth::create_user(
                         conn,
-                        username_c,
-                        email_c,
-                        password_c,
-                        // REMOVED: hashed_password_c,
-                    )
+                        register_payload,
+                    ))
                 }
             })
             .await??; // Propagate interact error then AuthError
@@ -338,10 +354,10 @@ mod user_store_tests {
         Ok(())
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
     #[ignore] // Added ignore for CI (interacts with DB)
     async fn test_verify_credentials() -> Result<(), Box<dyn std::error::Error>> {
-        let test_app = self::test_helpers::spawn_app(false, false).await;
+        let test_app = self::test_helpers::spawn_app(false, false, false).await;
         let pool = &test_app.db_pool;
         let mut guard = TestDataGuard::new(pool.clone());
 
@@ -363,12 +379,15 @@ mod user_store_tests {
             let password_secret_c = password_secret.clone();
             // REMOVED: let hashed_password_c = hashed_password.clone();
             let register_payload = scribe_backend::models::auth::RegisterPayload {
+               recovery_phrase: None,
                 username: username_c,
                 email: email_c,
                 password: password_secret_c,
             };
             obj_create.interact(move |conn| {
-                scribe_backend::auth::create_user(conn, register_payload)
+                // Create a runtime to handle async in a sync context
+                let rt = tokio::runtime::Runtime::new().expect("Failed to create runtime in test");
+                rt.block_on(scribe_backend::auth::create_user(conn, register_payload))
             }).await??
         };
         guard.add_user(created_user.id);
@@ -481,10 +500,10 @@ mod user_store_tests {
         Ok(())
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
     #[ignore] // Added ignore for CI (interacts with DB)
     async fn test_user_from_session_token_success() {
-        let test_app = self::test_helpers::spawn_app(false, false).await; // Use spawn_app
+        let test_app = self::test_helpers::spawn_app(false, false, false).await; // Use spawn_app
         let _pool = &test_app.db_pool; // Get pool from TestApp
         // let _user_store = AuthBackend::new(pool.clone()); // AuthBackend can be used if needed
         // let _auth_backend = AuthBackend::new(pool.clone()); // Redundant with above

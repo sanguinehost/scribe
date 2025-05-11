@@ -17,7 +17,7 @@ use std::io::Write;
 
 use secrecy::SecretBox; // For DEK (SecretBox<Vec<u8>>)
 use secrecy::ExposeSecret; // Added for ExposeSecret
-use crate::crypto::{encrypt_gcm, decrypt_gcm}; // For encryption/decryption
+use crate::crypto::{decrypt_gcm, encrypt_gcm}; // For encryption/decryption
 use crate::errors::AppError; // For error handling
 
 // Main Chat model (similar to the frontend Chat type)
@@ -74,7 +74,7 @@ pub struct Chat {
 }
 
 // New Chat for insertion
-#[derive(Insertable, Debug)]
+#[derive(Insertable, Debug, Clone)]
 #[diesel(table_name = chat_sessions)]
 pub struct NewChat {
     pub id: Uuid,
@@ -716,9 +716,13 @@ fn validate_optional_logit_bias(value: &Value) -> Result<(), ValidationError> {
 
 // --- Suggested Actions API Structures ---
 
-/// Request body for suggested actions
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// Payload for requesting suggested actions.
+#[derive(Debug, Serialize, Deserialize, Validate)] // Added Validate
 pub struct SuggestedActionsRequest {
+    /// The history of messages in the chat so far.
+    /// This provides context for generating relevant suggestions.
+    #[validate(length(min = 0))] // Example: allow empty history
+    pub message_history: Vec<ApiChatMessage>,
     pub character_first_message: String,
     pub user_first_message: Option<String>,
     pub ai_first_response: Option<String>,

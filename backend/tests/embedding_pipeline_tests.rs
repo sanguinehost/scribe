@@ -19,48 +19,51 @@ use serial_test::serial;
 use std::convert::TryFrom; // Needed for EmbeddingMetadata::try_from
 use std::{collections::HashMap, env, sync::Arc};
 use uuid::Uuid; // For mock assertions
+use std::time::Duration;
 
 // Comment out the test requiring a Qdrant instance setup via testcontainers
 #[tokio::test]
 #[ignore = "Integration test requires Qdrant instance"]
 async fn test_process_and_embed_message_integration() {
-    // 1. Setup dependencies using spawn_app
-    let test_app = test_helpers::spawn_app(false, false).await; // use_real_ai = false, use_real_qdrant = false
+    // Skip test if QDRANT_URL is not set (e.g., in CI without service)
+    if env::var("QDRANT_URL").is_err() {
+        log::warn!("Skipping Qdrant integration test: QDRANT_URL not set.");
+        return;
+    }
+    
+    // 1. Setup dependencies using spawn_app with use_real_qdrant = true
+    let test_app = test_helpers::spawn_app(false, false, true).await; // multi_thread = false, use_real_ai = false, use_real_qdrant = true
 
     // Get necessary components from test_app
     let mock_embedding_client = test_app.mock_embedding_client.clone();
-    // The qdrant_service from test_app is already the correct trait object (mock or real)
+    // The qdrant_service from test_app is now the real one, not a mock
     let qdrant_service_trait = test_app.qdrant_service.clone();
-    let embedding_pipeline_service_trait = test_app.mock_embedding_pipeline_service.clone(); // This remains a mock for this service
+    
+    // Create a real EmbeddingPipelineService
+    let embedding_pipeline_service = EmbeddingPipelineService::new(
+        ChunkConfig::from(test_app.config.as_ref())
+    );
+    
     let app_state = Arc::new(AppState::new(
         test_app.db_pool.clone(),
         test_app.config.clone(),
         test_app.mock_ai_client.clone().expect("Mock AI client should be present"),
         test_app.mock_embedding_client.clone(),
-        test_app.qdrant_service.clone(), // Use the qdrant_service from test_app
-        test_app.mock_embedding_pipeline_service.clone(),
-        // test_app.embedding_call_tracker.clone() // This is part of AppState internal construction now
+        test_app.qdrant_service.clone(), // Use the real qdrant_service from test_app
+        Arc::new(embedding_pipeline_service), // Use a real pipeline service
     ));
-
 
     // 2. Prepare test data
     let test_message_id = Uuid::new_v4();
     let test_session_id = Uuid::new_v4();
-    // let test_user_id = Uuid::new_v4(); // user_id field does not exist on ChatMessage
     let test_content = "This is a test message with multiple sentences. It should be chunked into pieces for storage.".to_string();
     let test_message = ChatMessage {
         id: test_message_id,
         session_id: test_session_id,
-        // user_id: test_user_id, // REMOVED
         message_type: MessageRole::User,
         content: test_content.clone().into(), // Convert String to Vec<u8>
         content_nonce: None,
-        // tokens: None, // REMOVED
-        // model_iden: None, // REMOVED
-        // provider_model_iden: None, // REMOVED
-        // finish_reason: None, // REMOVED
         created_at: Utc::now(),
-        // updated_at: Utc::now(), // REMOVED
         user_id: Uuid::new_v4(), // Add dummy user_id for test data
     };
 
@@ -70,7 +73,7 @@ async fn test_process_and_embed_message_integration() {
     mock_embedding_client.set_response(Ok(mock_embedding.clone()));
 
     // 3. Call the function under test
-    let result = embedding_pipeline_service_trait.process_and_embed_message(
+    let result = app_state.embedding_pipeline_service.process_and_embed_message(
         app_state.clone(), // Pass AppState
         test_message.clone()
     ).await;
@@ -85,7 +88,7 @@ async fn test_process_and_embed_message_integration() {
 
     // Use the new retrieve_points method with the message_id filter
     let filter = create_message_id_filter(test_message_id);
-    let retrieved_points: Vec<RetrievedPoint> = qdrant_service_trait
+    let retrieved_points: Vec<ScoredPoint> = qdrant_service_trait
         .retrieve_points(Some(filter), 10) // Limit retrieval to 10 points
         .await
         .expect("Failed to retrieve points from Qdrant");
@@ -161,30 +164,35 @@ async fn test_process_and_embed_message_integration() {
             expected_chunk.content
         );
     }
+    
+    // Clean up: Delete the test points
+    let _delete_filter = create_message_id_filter(test_message_id);
+    // If your QdrantClientService has a delete_by_filter method, use it
+    // Otherwise, we can't easily clean up the test data here
 }
 
 #[tokio::test]
 async fn test_process_and_embed_message_all_chunks_fail_embedding() {
     // 1. Setup dependencies using spawn_app
-    let test_app = test_helpers::spawn_app(false, false).await; // use_real_ai = false, use_real_qdrant = false
+    let test_app = test_helpers::spawn_app(false, false, false).await; // multi_thread = false, use_real_ai = false, use_real_qdrant = false
 
     // Get mock clients from test_app
     let mock_embedding_client = test_app.mock_embedding_client.clone();
     let mock_qdrant_service_concrete = test_app.mock_qdrant_service.clone().expect("Mock Qdrant service should be present");
 
-
-    // The EmbeddingPipelineService is now part of AppState provided by spawn_app
-    let embedding_pipeline_service_trait = test_app.mock_embedding_pipeline_service.clone();
+    // The actual service we'll call
+    let embedding_pipeline_service = EmbeddingPipelineService::new(
+        ChunkConfig::from(test_app.config.as_ref())
+    );
+    
     let app_state = Arc::new(AppState::new(
         test_app.db_pool.clone(),
         test_app.config.clone(),
         test_app.mock_ai_client.clone().expect("Mock AI client should be present"),
         test_app.mock_embedding_client.clone(),
         test_app.qdrant_service.clone(), // Use the qdrant_service from test_app (which is the mock)
-        test_app.mock_embedding_pipeline_service.clone(),
-        // test_app.embedding_call_tracker.clone()
+        Arc::new(embedding_pipeline_service), // Use the real service instead of the mock
     ));
-
 
     // 2. Prepare test data
     let test_message_id = Uuid::new_v4();
@@ -208,9 +216,8 @@ async fn test_process_and_embed_message_all_chunks_fail_embedding() {
     mock_qdrant_service_concrete.set_upsert_response(Ok(()));
     // The test logic ensures upsert isn't called if embeddings fail.
 
-    // 3. Call the function under test
-    // Call the method on the service instance, passing the AppState
-    let result = embedding_pipeline_service_trait.process_and_embed_message(
+    // 3. Call the function under test directly on the real EmbeddingPipelineService
+    let result = app_state.embedding_pipeline_service.process_and_embed_message(
         app_state.clone(), // Pass AppState
         test_message.clone()
     ).await;
@@ -234,8 +241,6 @@ async fn test_process_and_embed_message_all_chunks_fail_embedding() {
     let embed_calls = mock_embedding_client.get_calls();
     assert_eq!(embed_calls.len(), expected_chunks.len(), "Embedding client should be called for each chunk");
 
-    // The expect_upsert_points().never() assertion handles checking that Qdrant wasn't called.
-    // This implicitly covers line 225 where the log "No valid points generated for upserting" occurs.
     // Explicitly check call count
     assert_eq!(
         mock_qdrant_service_concrete.get_upsert_call_count(),
@@ -291,14 +296,18 @@ fn create_mock_scored_point(
 #[tokio::test]
 async fn test_retrieve_relevant_chunks_success() {
     // Setup: Use spawn_app
-    let test_app = test_helpers::spawn_app(false, false).await; // use_real_ai = false, use_real_qdrant = false
+    let test_app = test_helpers::spawn_app(false, false, false).await; // multi_thread = false, use_real_ai = false, use_real_qdrant = false
     let mock_embedding_client = test_app.mock_embedding_client.clone();
     
     let mock_qdrant_service = test_app.mock_qdrant_service.clone().expect("Mock Qdrant service should be present");
 
+    // Create a real service instance
+    let embedding_pipeline_service = EmbeddingPipelineService::new(
+        ChunkConfig::from(test_app.config.as_ref())
+    );
 
     // Configure mock embedding client response
-    let embedding_dimension = 768;
+    let embedding_dimension = 3072; // Updated from 768 to 3072
     let mock_query_embedding = vec![0.5; embedding_dimension];
     mock_embedding_client.set_response(Ok(mock_query_embedding.clone()));
 
@@ -333,23 +342,19 @@ async fn test_retrieve_relevant_chunks_success() {
 
     mock_qdrant_service.set_search_response(Ok(mock_scored_points.clone()));
 
-    // Instantiate the service under test
-    // The EmbeddingPipelineService is now part of AppState provided by spawn_app,
-    // so we use test_app.app_state.embedding_pipeline_service directly.
-    // let test_chunk_config = ChunkConfig { metric: ChunkingMetric::Char, max_size: 500, overlap: 50 };
-    // let embedding_pipeline_service = Arc::new(EmbeddingPipelineService::new(test_chunk_config));
+    // Create app state with the real service
+    let app_state = Arc::new(AppState::new(
+        test_app.db_pool.clone(),
+        test_app.config.clone(),
+        test_app.mock_ai_client.clone().expect("Mock AI client should be present"),
+        test_app.mock_embedding_client.clone(),
+        test_app.qdrant_service.clone(), // Use the qdrant_service from test_app
+        Arc::new(embedding_pipeline_service),
+    ));
 
-    // Call the method using app_state from TestApp
-    let result = test_app.mock_embedding_pipeline_service.retrieve_relevant_chunks(
-        Arc::new(AppState::new(
-            test_app.db_pool.clone(),
-            test_app.config.clone(),
-            test_app.mock_ai_client.clone().expect("Mock AI client should be present"),
-            test_app.mock_embedding_client.clone(),
-            test_app.qdrant_service.clone(), // Use the qdrant_service from test_app
-            test_app.mock_embedding_pipeline_service.clone(),
-            // test_app.embedding_call_tracker.clone()
-        )),
+    // Call the method on the real service
+    let result = app_state.embedding_pipeline_service.retrieve_relevant_chunks(
+        app_state.clone(),
         session_id,
         query,
         limit
@@ -402,7 +407,7 @@ async fn test_retrieve_relevant_chunks_success() {
 #[tokio::test]
 async fn test_retrieve_relevant_chunks_no_results() {
     // 1. Setup: Use spawn_app
-    let test_app = test_helpers::spawn_app(false, false).await; // use_real_ai = false, use_real_qdrant = false
+    let test_app = test_helpers::spawn_app(false, false, false).await; // multi_thread = false, use_real_ai = false, use_real_qdrant = false
     let mock_embedding_client = test_app.mock_embedding_client.clone();
     
     let mock_qdrant_service = test_app.mock_qdrant_service.clone().expect("Mock Qdrant service should be present");
@@ -456,11 +461,15 @@ async fn test_retrieve_relevant_chunks_no_results() {
 #[tokio::test]
 async fn test_retrieve_relevant_chunks_qdrant_error() {
     // 1. Setup: Use spawn_app
-    let test_app = test_helpers::spawn_app(false, false).await; // use_real_ai = false, use_real_qdrant = false
+    let test_app = test_helpers::spawn_app(false, false, false).await; // multi_thread = false, use_real_ai = false, use_real_qdrant = false
     let mock_embedding_client = test_app.mock_embedding_client.clone();
 
     let mock_qdrant_service = test_app.mock_qdrant_service.clone().expect("Mock Qdrant service should be present");
 
+    // Create a real service instance
+    let embedding_pipeline_service = EmbeddingPipelineService::new(
+        ChunkConfig::from(test_app.config.as_ref())
+    );
 
     let query_text = "Query leading to Qdrant error";
     let session_id = Uuid::new_v4();
@@ -470,26 +479,25 @@ async fn test_retrieve_relevant_chunks_qdrant_error() {
     // Configure mock embedding client response
     mock_embedding_client.set_response(Ok(mock_query_embedding.clone()));
 
-    // Use set_search_response for error
-    mock_qdrant_service.set_search_response(Err(scribe_backend::errors::AppError::VectorDbError(
-        "Simulated Qdrant search failure".to_string(),
-    )));
+    // Use set_search_response for error - make sure this happens AFTER embedding
+    let qdrant_error = scribe_backend::errors::AppError::VectorDbError(
+        "Simulated Qdrant search failure".to_string()
+    );
+    mock_qdrant_service.set_search_response(Err(qdrant_error));
 
-    // The EmbeddingPipelineService is now part of AppState provided by spawn_app
-    // let test_chunk_config = ChunkConfig { metric: ChunkingMetric::Char, max_size: 500, overlap: 50 };
-    // let embedding_pipeline_service = Arc::new(EmbeddingPipelineService::new(test_chunk_config));
+    // Create app state with the real service
+    let app_state = Arc::new(AppState::new(
+        test_app.db_pool.clone(),
+        test_app.config.clone(),
+        test_app.mock_ai_client.clone().expect("Mock AI client should be present"),
+        test_app.mock_embedding_client.clone(),
+        test_app.qdrant_service.clone(), // Use the qdrant_service from test_app
+        Arc::new(embedding_pipeline_service),
+    ));
 
-    // 2. Call the method using app_state from TestApp
-    let result = test_app.mock_embedding_pipeline_service.retrieve_relevant_chunks(
-        Arc::new(AppState::new(
-            test_app.db_pool.clone(),
-            test_app.config.clone(),
-            test_app.mock_ai_client.clone().expect("Mock AI client should be present"),
-            test_app.mock_embedding_client.clone(),
-            test_app.qdrant_service.clone(), // Use the qdrant_service from test_app
-            test_app.mock_embedding_pipeline_service.clone(),
-            // test_app.embedding_call_tracker.clone()
-        )),
+    // 2. Call the method on the real service
+    let result = app_state.embedding_pipeline_service.retrieve_relevant_chunks(
+        app_state.clone(),
         session_id,
         query_text,
         limit
@@ -509,10 +517,11 @@ async fn test_retrieve_relevant_chunks_qdrant_error() {
         assert!(e.to_string().contains("Simulated Qdrant search failure"));
     }
 }
+
 #[tokio::test]
 async fn test_retrieve_relevant_chunks_metadata_invalid_uuid() {
     // 1. Setup: Use spawn_app
-    let test_app = test_helpers::spawn_app(false, false).await; // use_real_ai = false, use_real_qdrant = false
+    let test_app = test_helpers::spawn_app(false, false, false).await; // multi_thread = false, use_real_ai = false, use_real_qdrant = false
     let mock_embedding_client = test_app.mock_embedding_client.clone();
 
     let mock_qdrant_service = test_app.mock_qdrant_service.clone().expect("Mock Qdrant service should be present");
@@ -572,7 +581,7 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_uuid() {
 #[tokio::test]
 async fn test_retrieve_relevant_chunks_metadata_invalid_timestamp() {
     // 1. Setup: Use spawn_app
-    let test_app = test_helpers::spawn_app(false, false).await; // use_real_ai = false, use_real_qdrant = false
+    let test_app = test_helpers::spawn_app(false, false, false).await; // multi_thread = false, use_real_ai = false, use_real_qdrant = false
     let mock_embedding_client = test_app.mock_embedding_client.clone();
 
     let mock_qdrant_service = test_app.mock_qdrant_service.clone().expect("Mock Qdrant service should be present");
@@ -631,7 +640,7 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_timestamp() {
 #[tokio::test]
 async fn test_retrieve_relevant_chunks_metadata_missing_field() {
     // 1. Setup: Use spawn_app
-    let test_app = test_helpers::spawn_app(false, false).await; // use_real_ai = false, use_real_qdrant = false
+    let test_app = test_helpers::spawn_app(false, false, false).await; // multi_thread = false, use_real_ai = false, use_real_qdrant = false
     let mock_embedding_client = test_app.mock_embedding_client.clone();
 
     let mock_qdrant_service = test_app.mock_qdrant_service.clone().expect("Mock Qdrant service should be present");
@@ -686,10 +695,11 @@ async fn test_retrieve_relevant_chunks_metadata_missing_field() {
     assert!(retrieved_chunks.is_empty(), "Expected no chunks due to metadata parsing error");
     // Covers lines like 44-46, 60-62, 76-77, 87-89, 105-106 and the logging on 343, 346, 348-350.
 }
+
 #[tokio::test]
 async fn test_retrieve_relevant_chunks_metadata_wrong_type() {
     // 1. Setup: Use spawn_app
-    let test_app = test_helpers::spawn_app(false, false).await; // use_real_ai = false, use_real_qdrant = false
+    let test_app = test_helpers::spawn_app(false, false, false).await; // multi_thread = false, use_real_ai = false, use_real_qdrant = false
     let mock_embedding_client = test_app.mock_embedding_client.clone();
 
     let mock_qdrant_service = test_app.mock_qdrant_service.clone().expect("Mock Qdrant service should be present");
@@ -758,18 +768,84 @@ async fn test_rag_context_injection_with_qdrant() {
         log::warn!("Skipping Qdrant integration test: QDRANT_URL not set.");
         return;
     }
-    // Setup: Initialize tracing, config, DB, Qdrant client
-    // Standardize setup using spawn_app
-    let _test_app = test_helpers::spawn_app(false, true).await; // use_real_ai = false, use_real_qdrant = true
-                                                         // Further setup specific to this test would go here,
-                                                         // potentially using _test_app components.
-
-    // Remove call to non-existent/commented-out function
-    // let qdrant_port = docker::run_qdrant_container().await;
-    // Use QDRANT_URL directly from environment for the test
-    let _qdrant_url = env::var("QDRANT_URL").expect("QDRANT_URL check failed after initial check");
-
-    // Setup: Initialize tracing, config, DB, Qdrant client
+    
+    // Setup: Initialize test environment with real Qdrant
+    let test_app = test_helpers::spawn_app(false, false, true).await; // multi_thread = false, use_real_ai = false, use_real_qdrant = true
+    
+    // Create a real EmbeddingPipelineService 
+    let embedding_pipeline_service = EmbeddingPipelineService::new(
+        ChunkConfig::from(test_app.config.as_ref())
+    );
+    
+    // Set up test data
+    let session_id = Uuid::new_v4();
+    let message_id = Uuid::new_v4();
+    let user_id = Uuid::new_v4();
+    let test_message = "This is a test message for RAG context injection using Qdrant.";
+    
+    // Create a valid ChatMessage to process
+    let chat_message = ChatMessage {
+        id: message_id,
+        session_id,
+        message_type: MessageRole::User,
+        content: test_message.as_bytes().to_vec(),
+        content_nonce: None,
+        created_at: Utc::now(),
+        user_id,
+    };
+    
+    // Configure mock embedding client to return deterministic embeddings
+    let mock_embedding_client = test_app.mock_embedding_client.clone();
+    let mock_embedding = vec![0.5; 3072]; // 3072-dimensional embedding vector
+    mock_embedding_client.set_response(Ok(mock_embedding.clone()));
+    
+    // Create app state to pass to the service methods
+    let app_state = Arc::new(AppState::new(
+        test_app.db_pool.clone(),
+        test_app.config.clone(),
+        test_app.mock_ai_client.clone().expect("Mock AI client should be present"),
+        mock_embedding_client.clone(),
+        test_app.qdrant_service.clone(),
+        test_app.mock_embedding_pipeline_service.clone(),
+    ));
+    
+    // Step 1: Process and embed a message to store in Qdrant
+    let process_result = embedding_pipeline_service.process_and_embed_message(
+        app_state.clone(),
+        chat_message,
+    ).await;
+    
+    assert!(process_result.is_ok(), "Failed to process and embed message: {:?}", process_result.err());
+    
+    // Give Qdrant a moment to index the data
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    
+    // Configure mock embedding client for the query embedding
+    let query_text = "test message";
+    let query_embedding = vec![0.5; 3072]; // Same embedding to ensure high similarity
+    mock_embedding_client.set_response(Ok(query_embedding));
+    
+    // Step 2: Retrieve relevant chunks using the service
+    let retrieve_result = embedding_pipeline_service.retrieve_relevant_chunks(
+        app_state.clone(),
+        session_id,  // Using session_id as chat_id
+        query_text,
+        5 // Limit
+    ).await;
+    
+    assert!(retrieve_result.is_ok(), "Failed to retrieve relevant chunks: {:?}", retrieve_result.err());
+    
+    let retrieved_chunks = retrieve_result.unwrap();
+    
+    // Assert that we got at least one chunk back
+    assert!(!retrieved_chunks.is_empty(), "Expected at least one chunk to be retrieved");
+    
+    // Verify content of first chunk
+    let first_chunk = &retrieved_chunks[0];
+    assert!(first_chunk.text.contains("test message"), "Retrieved chunk text doesn't contain expected content");
+    assert_eq!(first_chunk.metadata.session_id, session_id, "Session ID mismatch in retrieved chunk");
+    assert_eq!(first_chunk.metadata.message_id, message_id, "Message ID mismatch in retrieved chunk");
+    assert_eq!(first_chunk.metadata.speaker, "User", "Speaker mismatch in retrieved chunk");
 }
 
 // --- New Tests for MockQdrantClientService Coverage ---

@@ -39,6 +39,7 @@ use crate::routes::chats_api::{
     get_chat_settings_handler,
     update_chat_settings_handler,
 };
+use axum::http::StatusCode;
 
 #[instrument(skip(state, auth_session, payload), fields(session_id = %session_id_str))]
 pub async fn generate_chat_response(
@@ -1007,23 +1008,46 @@ pub async fn generate_chat_response(
     }
 }
 
-#[instrument(skip(state, auth_session, payload), fields(chat_id = %chat_id_str))]
-async fn generate_suggested_actions(
+pub fn chat_routes(state: AppState) -> Router<AppState> {
+    info!("Entering chat_routes");
+    Router::new()
+        .route(
+            "/:chat_id/suggested-actions",
+            post(generate_suggested_actions),
+        )
+        .route("/ping", get(ping_handler))
+        .with_state(state)
+}
+
+async fn ping_handler() -> &'static str {
+    "pong_from_chat_routes"
+}
+
+#[instrument(skip(state, auth_session, payload), fields(chat_id = %chat_id))]
+pub async fn generate_suggested_actions(
     State(state): State<AppState>,
     auth_session: AuthSession<AuthBackend>,
-    Path(chat_id_str): Path<String>,
+    Path(chat_id): Path<String>,
     Json(payload): Json<SuggestedActionsRequest>,
 ) -> Result<Json<SuggestedActionsResponse>, AppError> {
-    let chat_id = Uuid::parse_str(&chat_id_str)
-        .map_err(|_| AppError::BadRequest("Invalid chat UUID format".to_string()))?;
-    debug!(%chat_id, "Received request to generate suggested actions");
+    info!("Entering generate_suggested_actions");
+    tracing::info!("@@@ GENERATE_SUGGESTED_ACTIONS HANDLER ENTERED (chat_id: {}) @@@", chat_id);
+
+    info!("Received request for suggested actions (chat_id: {})", chat_id);
+    payload.validate()?;
 
     let user = auth_session.user.ok_or_else(|| {
-        error!(%chat_id, "User not found in session for suggested actions");
+        error!("User not found in session for suggested actions (chat_id: {})", chat_id);
         AppError::Unauthorized("User not found in session".to_string())
     })?;
-    let user_id_value = user.id;
-    debug!(%chat_id, %user_id_value, "Extracted user for suggested actions");
+    let user_id = user.id;
+    debug!(user_id = %user_id, chat_id = %chat_id, "User and chat_id extracted for suggested actions");
+
+    let chat_id = Uuid::parse_str(&chat_id).map_err(|_| {
+        error!("Invalid chat UUID format: {}", chat_id);
+        AppError::BadRequest("Invalid chat UUID format".to_string())
+    })?;
+    debug!(%chat_id, "Parsed chat_id from parameter");
 
     let chat_session = state.pool.get().await
         .map_err(|e| AppError::DbPoolError(e.to_string()))?
@@ -1038,7 +1062,7 @@ async fn generate_suggested_actions(
         .map_err(|e| AppError::InternalServerErrorGeneric(format!("Interact error fetching chat: {}", e)))?
         ?;
 
-    if chat_session.user_id != user_id_value {
+    if chat_session.user_id != user_id {
         return Err(AppError::Forbidden);
     }
     debug!(%chat_id, "User authorized for chat session");
@@ -1082,12 +1106,12 @@ async fn generate_suggested_actions(
             schema: suggested_actions_schema_value,
         }));
 
-    trace!(%chat_id, model = "gemini-2.5-flash-preview-04-17", ?chat_request, ?chat_options, "Sending request to Gemini for suggested actions (manual JSON parsing)");
+    trace!(%chat_id, model = "gemini-1.5-flash-latest", ?chat_request, ?chat_options, "Sending request to Gemini for suggested actions (manual JSON parsing)");
 
     let gemini_response = state
         .ai_client
         .exec_chat(
-            "gemini-1.5-flash-latest", // Use stable model for suggested actions
+            "gemini-1.5-flash-latest",
             chat_request,
             Some(chat_options),
         )
@@ -1125,24 +1149,5 @@ async fn generate_suggested_actions(
     info!(%chat_id, "Successfully generated {} suggested actions", suggestions.len());
 
     Ok(Json(SuggestedActionsResponse { suggestions }))
-}
-
-pub fn chat_routes() -> Router<AppState> {
-    Router::new()
-        .route("/", post(create_chat_handler).get(get_chats_handler))
-        .route("/{session_id}", get(get_chat_by_id_handler))
-        .route("/{session_id}/messages", get(get_messages_by_chat_id_handler))
-        .route(
-            "/{session_id}/generate",
-            post(generate_chat_response),
-        )
-        .route(
-            "/{session_id}/suggested-actions",
-            post(generate_suggested_actions),
-        )
-        .route(
-            "/{session_id}/settings",
-            get(get_chat_settings_handler).put(update_chat_settings_handler),
-        )
 }
 

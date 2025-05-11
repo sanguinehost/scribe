@@ -81,11 +81,10 @@ impl From<diesel::result::Error> for AuthError {
 }
 
 // Function to create a new user
-#[instrument(skip(conn, credentials, password_hash), err)] // Skip entire credentials struct for safety, Secret fields are not logged by Debug.
-pub fn create_user(
+#[instrument(skip(conn, credentials), err)] // Skip entire credentials struct for safety, Secret fields are not logged by Debug.
+pub async fn create_user(
     conn: &mut PgConnection,
     credentials: RegisterPayload, // Use RegisterPayload struct
-    password_hash: String,        // Pre-hashed password for storage
 ) -> Result<User, AuthError> {
     info!(username = %credentials.username, email = %credentials.email, "Attempting to create user with encryption");
 
@@ -126,7 +125,8 @@ pub fn create_user(
         // Similar process for recovery phrase: salt, derive key, encrypt
         let recovery_kek_salt = crypto::generate_salt()
             .map_err(AuthError::CryptoOperationFailed)?;
-        let recovery_key = crypto::derive_kek(&recovery_phrase, &recovery_kek_salt)
+        let recovery_secret = SecretString::new(recovery_phrase.into_boxed_str());
+        let recovery_key = crypto::derive_kek(&recovery_secret, &recovery_kek_salt)
             .map_err(AuthError::CryptoOperationFailed)?;
         let (encrypted_dek_by_recovery, recovery_dek_nonce) = crypto::encrypt_gcm(plaintext_dek_bytes.expose_secret(), &recovery_key)
             .map_err(AuthError::CryptoOperationFailed)?;
@@ -138,7 +138,7 @@ pub fn create_user(
     // 3. Create a NewUser instance
     let new_user = NewUser {
         username: credentials.username.clone(), // Clone username from credentials
-        password_hash,                          // Use the pre-hashed password
+        password_hash: hash_password(credentials.password.clone()).await?,                          // Use the pre-hashed password
         email: credentials.email.clone(),       // Clone email from credentials
         kek_salt,
         encrypted_dek,

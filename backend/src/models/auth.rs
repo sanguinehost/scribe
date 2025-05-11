@@ -1,5 +1,6 @@
 use secrecy::{SecretString, ExposeSecret};
 use serde::{Deserialize, Serialize};
+use serde::ser::{SerializeStruct, Serializer};
 use validator::{ValidationErrors, ValidationError};
 use regex;
 
@@ -9,7 +10,7 @@ pub struct RegisterPayload {
     pub username: String,
     pub email: String,
     pub password: SecretString, // Corrected: Was Secret<String>
-    pub recovery_phrase: Option<SecretString>, // Corrected: Was Option<Secret<String>>
+    pub recovery_phrase: Option<String>, // Corrected: Was Option<Secret<String>>
 }
 
 // Implement manual validation for RegisterPayload
@@ -45,11 +46,23 @@ impl RegisterPayload {
 }
 
 // Payload for user login (using either username or email)
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Clone)] // Removed Serialize derive
 pub struct LoginPayload {
     // Can be either username or email
     pub identifier: String,
     pub password: SecretString, // Corrected: Was Secret<String>
+}
+
+impl serde::Serialize for LoginPayload {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut state = serializer.serialize_struct("LoginPayload", 2)?;
+        state.serialize_field("identifier", &self.identifier)?;
+        state.serialize_field("password", self.password.expose_secret())?;
+        state.end()
+    }
 }
 
 // Response for successful login/registration

@@ -403,7 +403,7 @@ pub async fn delete_character_handler(
 }
 
 // --- Character Router ---
-pub fn characters_router(state: AppState) -> Router {
+pub fn characters_router(state: AppState) -> Router<AppState> {
     Router::new()
         .route("/upload", post(upload_character_handler))
         .route("/", get(list_characters_handler))

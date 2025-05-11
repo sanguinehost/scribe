@@ -72,15 +72,21 @@ pub async fn register_handler(
 
     // Hash the password asynchronously for storage
     // Clone the secret to pass to hash_password, original plaintext_password is moved to create_user
-    let pwd_hash = crate::auth::hash_password(plaintext_password.clone()).await?;
+    let _pwd_hash = crate::auth::hash_password(plaintext_password.clone()).await?;
 
     debug!(username = %reg_username, email = %reg_email, "Attempting to get DB connection from pool for registration..."); // Use renamed vars
     match pool.get().await {
         Ok(conn) => {
             debug!(username = %reg_username, email = %reg_email, "Got DB connection. Calling interact for create_user..."); // Use renamed vars
-            // Pass the original payload and pwd_hash to create_user
+            // Pass the original payload to create_user
             let user_result = conn
-                .interact(move |conn_inner| create_user(conn_inner, payload, pwd_hash)) // Pass payload and pwd_hash
+                .interact(move |conn_inner| {
+                    // Create a new Runtime for the blocking task
+                    let rt = tokio::runtime::Runtime::new().expect("Failed to create runtime in register handler");
+                    
+                    // Use the runtime to block on the async create_user call
+                    rt.block_on(create_user(conn_inner, payload))
+                })
                 .await;
 
             match user_result {

@@ -39,8 +39,6 @@ use std::sync::Arc;
 use time; // Used for tower_sessions::Expiry
 use tower_cookies::CookieManagerLayer; // Re-add CookieManagerLayer
 use tower_sessions::{cookie::SameSite, Expiry, SessionManagerLayer}; // Add Arc for config
-// axum::http::{Method, header}; <-- REMOVE
-// Import the builder function
 use scribe_backend::llm::gemini_client::build_gemini_client; // Import the async builder
 use scribe_backend::llm::gemini_embedding_client::build_gemini_embedding_client; // Add this
 use scribe_backend::services::embedding_pipeline::{
@@ -163,11 +161,10 @@ async fn main() -> Result<()> {
                 .route("/{id}", get(get_character_handler)),
         )
         // Chat routes (require login)
-        .nest("/chats", chat_routes()) // Mount the chat router
-        .nest("/chats-api", chats_api::chat_routes()) // Mount the old chats API router at a different path
+        .nest("/chats", chat_routes(app_state.clone())) // Correct: /api/chats
+        .nest("/chats-api", chats_api::chat_routes()) // Corrected: /api/chats-api
         // Mount document API routes
-        .merge(document_routes()) 
-        // Add other protected API routes here...
+        .nest("/documents", document_routes()) // Corrected: /api/documents
         .route_layer(login_required!(AuthBackend)); // Apply login required, return 401 on failure
 
     // --- Define Public Routes ---
@@ -178,12 +175,12 @@ async fn main() -> Result<()> {
     // Combine routers and add layers
     let app = Router::new()
         // Mount API routes under /api
-        .nest("/api", public_api_routes)
-        .nest("/api", protected_api_routes) // Mount protected routes also under /api
+        .nest("/api", public_api_routes) // public_api_routes should be defined to take AppState if its handlers need it.
+        .nest("/api", protected_api_routes) // protected_api_routes now internally handle their state.
         // Apply layers: Order matters! Outside-in execution.
-        .layer(CookieManagerLayer::new()) // 1. Manages cookies. Session data security handled by axum-login.
+        .layer(CookieManagerLayer::new()) // 1. Manages cookies.
         .layer(auth_layer) // 2. Uses cookies (via CookieManagerLayer) to load session/user
-        .with_state(app_state)
+        .with_state(app_state.clone()) // Keeping this for now, as public_api_routes (e.g. auth_routes) might rely on it.
         .layer(
             TraceLayer::new_for_http()
                 .make_span_with(DefaultMakeSpan::default().include_headers(true)),

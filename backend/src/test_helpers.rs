@@ -14,10 +14,12 @@ use crate::{
     // Ensure build_gemini_client is removed if present
     models::chats::ChatMessage,
     routes::{
-        auth::{login_handler, logout_handler, me_handler, register_handler},
-        characters::{get_character_handler, list_characters_handler, upload_character_handler},
         chat::chat_routes,
         health::health_check,
+        characters,
+        chats_api,
+        documents_api::{document_routes},
+        auth as auth_routes_module,
     },
     schema,
     state::AppState,
@@ -41,19 +43,8 @@ use tower_cookies::{CookieManagerLayer}; // Removed unused: Key as TowerCookieKe
 use tower_sessions::{Expiry, SessionManagerLayer};
 use tracing::warn;
 use uuid::Uuid;
- // Changed from scribe_backend::auth
- // Changed from scribe_backend::models::users, User is already imported above
- // Changed from crate::models::characters
- // Changed from NewChatSession
-// Removed: use scribe_backend::state::DbPool as PgPool; // This alias is redundant with crate::PgPool
- // Added for Secret type
-// use crate::schema::chats; // REMOVE THIS LINE - it was line 68 approx
 use std::fmt;
-// REMOVE: use crate::models::chats as chats_model_schema; // This was an earlier attempt
- // Import SecretBox, SecretString for create_test_user
-
-// --- START Placeholder Mock Definitions ---
-// TODO: Implement proper mocks based on required functionality
+use tower_http::trace::TraceLayer;
 
 #[derive(Clone)]
 pub struct MockAiClient {
@@ -599,28 +590,54 @@ pub async fn spawn_app(multi_thread: bool, use_real_ai: bool, use_real_qdrant: b
     let auth_backend = AuthBackend::new(db_pool.clone());
     let auth_layer = AuthManagerLayerBuilder::new(auth_backend, session_layer).build();
 
-    // Build Router
+    // --- Router Setup (mimicking main.rs) ---
+
+    let app_state_for_routes = app_state.as_ref().clone();
+
+    // Define protected_api_routes (paths are relative to the eventual /api mount)
+    // Start with a router that is explicitly Router<AppState> by nesting one component first.
+    let mut protected_api_routes: Router<AppState> = Router::new()
+        .nest(
+            "/characters",
+            characters::characters_router(app_state_for_routes.clone())
+        );
+
+    protected_api_routes = protected_api_routes.nest(
+            "/chats",
+            chat_routes(app_state_for_routes.clone())
+        );
+    
+    protected_api_routes = protected_api_routes.nest(
+            "/chats-api",
+            chats_api::chat_routes() // Assumes this returns Router<AppState>
+        );
+
+    protected_api_routes = protected_api_routes.nest(
+            "/documents",
+            document_routes() // Assumes this returns Router<AppState>
+        );
+        
+    // Apply route_layer at the end
+    let protected_api_routes_final = protected_api_routes
+        .route_layer(login_required!(AuthBackend, login_url = "/api/auth/login"));
+
+    // Define public_api_routes (paths are relative to the eventual /api mount)
+    let public_api_routes: Router<AppState> = Router::new()
+        .route("/health", axum::routing::get(health_check))
+        .merge(Router::new().nest("/auth", auth_routes_module::auth_routes()));
+
+
+    // Combine routers and add layers.
     let app = Router::new()
-        .route("/api/health", axum::routing::get(health_check))
-        .route("/api/auth/register", axum::routing::post(register_handler))
-        .route("/api/auth/login", axum::routing::post(login_handler))
-        .route("/api/auth/logout", axum::routing::post(logout_handler))
-        .route("/api/auth/me", axum::routing::get(me_handler))
-        .route(
-            "/api/characters",
-            axum::routing::get(list_characters_handler)
-                .post(upload_character_handler)
-                .layer(login_required!(AuthBackend, login_url = "/api/auth/login")),
+        .nest("/api", public_api_routes) // Mount public routes under /api
+        .nest("/api", protected_api_routes_final) // Mount protected routes under /api
+        .layer(CookieManagerLayer::new()) // Manages cookies, must be before auth_layer
+        .layer(auth_layer)                // Uses cookies to load session/user
+        .layer(
+            TraceLayer::new_for_http()
+                .make_span_with(tower_http::trace::DefaultMakeSpan::default().include_headers(true))
         )
-        .route(
-            "/api/characters/{id}",
-            axum::routing::get(get_character_handler)
-                .layer(login_required!(AuthBackend, login_url = "/api/auth/login")),
-        )
-        .nest("/api/chats", chat_routes())
-        .layer(CookieManagerLayer::new())
-        .layer(auth_layer)
-        .with_state(app_state.as_ref().clone());
+        .with_state(app_state.as_ref().clone()); // Provide AppState to all handlers
 
     // Start the server on a random available port
     let listener = TcpListener::bind("127.0.0.1:0")
@@ -639,7 +656,7 @@ pub async fn spawn_app(multi_thread: bool, use_real_ai: bool, use_real_qdrant: b
                 .unwrap();
         });
     } else {
-        tokio::task::spawn_local(async move {
+        tokio::spawn(async move {
             axum::serve(listener, app_for_server.into_make_service())
                 .await
                 .unwrap();
@@ -668,7 +685,7 @@ pub mod db {
     use diesel::prelude::*;
     use diesel_migrations::MigrationHarness; // Keep only this one
     use crate::models::users::User; // User was already imported, ensure UserDbQuery is correct
-     // Ensure this path is correct
+    use crate::errors::AppError; // Import AppError
     
     
     
@@ -747,48 +764,48 @@ pub mod db {
         pool
     }
 
-    pub async fn create_test_user(pool: &PgPool, username: &str, password_str: &str) -> User {
+    pub async fn create_test_user(pool: &PgPool, username: String, password_str: String) -> Result<User, AppError> {
         let email = format!("{}@example.com", username);
         let plaintext_password = SecretString::from(password_str.to_string());
 
         // Hash the password for storage using the auth module's helper
-        let password_hash = auth::hash_password(plaintext_password.clone())
+        let _password_hash = auth::hash_password(plaintext_password.clone())
             .await
             .expect("Failed to hash password in test_helper::create_test_user");
 
         let conn = pool.get().await.expect("Failed to get DB conn from pool in create_test_user");
 
-        // Call the real auth::create_user function which handles KEK derivation and DEK encryption
-        let user = conn
-            .interact({
-                let uname_clone = username.to_string(); // Clone for closure
-                let mail_clone = email.clone();       // Clone for closure
-                // Clone plaintext_password for KEK derivation inside create_user
-                let p_password_for_payload = plaintext_password.clone(); 
-                // password_hash is already a String, clone it for the closure
-                let p_hash_for_storage_clone = password_hash.clone();
+        let uname_clone = username.clone(); // Clone for closure
+        let mail_clone = email.clone(); // Clone for closure
+        // Clone plaintext_password for KEK derivation inside create_user
+        let p_password_for_payload = plaintext_password.clone();
 
-                move |conn_inner: &mut PgConnection| { // Specify conn_inner type
-                    let register_payload = RegisterPayload {
-                        username: uname_clone,
-                        email: mail_clone,
-                        password: p_password_for_payload,
-                        recovery_phrase: None, // Test users generally don't need recovery by default
-                    };
-                    auth::create_user( // This refers to crate::auth::create_user
-                        conn_inner,
-                        register_payload,
-                        p_hash_for_storage_clone,
-                    )
-                }
+        // Create the RegisterPayload outside 
+        let register_payload = RegisterPayload {
+            username: uname_clone,
+            email: mail_clone,
+            password: p_password_for_payload,
+            recovery_phrase: None,
+        };
+
+        // We need to use spawn_blocking since create_user is now async and interact expects a sync function
+        // This is a workaround for the test environment - real code shouldn't call async functions inside interact
+        let user = conn
+            .interact(move |conn_inner| {
+                // Create a new Runtime for the blocking task
+                let rt = tokio::runtime::Runtime::new().expect("Failed to create runtime for test_helpers");
+                // Execute async create_user in the runtime and return Result<User, AppError>
+                rt.block_on(crate::auth::create_user(
+                    conn_inner,
+                    register_payload,
+                ))
             })
             .await
-            .expect("Interact call for create_user failed in test_helper")
-            .expect("auth::create_user failed in test_helper");
+            .expect("Interact call for create_user failed in test_helper");
 
-        user // auth::create_user already returns a User
+        Ok(user?) // Return the user wrapped in Ok()
     }
-} // This closes pub mod db
+}
 
 // --- Auth Helper Functions ---
 
@@ -891,6 +908,8 @@ impl Drop for TestDataGuard {
 
             if !user_ids_clone.is_empty() || !character_ids_clone.is_empty() || !chat_ids_clone.is_empty() {
                 tracing::warn!("TestDataGuard dropped without explicit cleanup. Attempting synchronous cleanup (best effort).");
+                // Temporarily commented out for debugging test panics
+                /*
                 tokio::task::block_in_place(move || { // Use block_in_place if in async context
                     tokio::runtime::Handle::current().block_on(async move {
                         let conn_result = pool_clone.get().await;
@@ -962,6 +981,7 @@ impl Drop for TestDataGuard {
                         }
                     });
                 });
+                */
             }
         }
     }
