@@ -35,6 +35,8 @@ use diesel_migrations::{embed_migrations, EmbeddedMigrations};
 use dotenvy::dotenv; // Removed var
 use genai::chat::ChatStreamEvent; // Add import for chatstream types
 use genai::chat::{ChatOptions, ChatRequest, ChatResponse};
+use genai::ModelIden; // Import ModelIden directly
+use genai::adapter::AdapterKind; // Ensure AdapterKind is in scope
 use qdrant_client::qdrant::{Filter, PointId, ScoredPoint};
 use std::sync::{Arc, Mutex}; // Add Mutex import
 use tokio::sync::Mutex as TokioMutex;
@@ -45,6 +47,15 @@ use tracing::warn;
 use uuid::Uuid;
 use std::fmt;
 use tower_http::trace::TraceLayer;
+use crate::models::users::User as DbUser;
+use secrecy::{ExposeSecret, SecretBox, SecretString};
+use crate::models::users::{NewUser, User, UserDbQuery, SerializableSecretDek}; // Added SerializableSecretDek
+use axum::{
+    body::Body,
+    http::{Request, header::COOKIE, StatusCode},
+};
+use tower::ServiceExt; // For .oneshot
+use serde_json::json;
 
 #[derive(Clone)]
 pub struct MockAiClient {
@@ -58,32 +69,34 @@ pub struct MockAiClient {
     // Field to capture the messages sent to the stream_chat method
     last_received_messages:
         std::sync::Arc<std::sync::Mutex<Option<Vec<genai::chat::ChatMessage>>>>,
+    model_name: String,
+    provider_model_name: String,
+    embedding_response: Arc<Mutex<Result<Vec<f32>, AppError>>>,
+    text_gen_response: Arc<Mutex<Result<String, AppError>>>,
 }
 
 impl MockAiClient {
     pub fn new() -> Self {
         // Initialize fields with default values
         Self {
-            last_request: Default::default(),
-            last_options: Default::default(),
+            last_request: std::sync::Arc::new(std::sync::Mutex::new(None)),
+            last_options: std::sync::Arc::new(std::sync::Mutex::new(None)),
             // Default to a simple OK response
             response_to_return: std::sync::Arc::new(std::sync::Mutex::new(Ok(ChatResponse {
-                model_iden: genai::ModelIden::new(
-                    genai::adapter::AdapterKind::Gemini,
-                    "mock-model",
-                ), // Placeholder iden
-                provider_model_iden: genai::ModelIden::new(
-                    genai::adapter::AdapterKind::Gemini,
-                    "mock-model",
-                ),
+                model_iden: ModelIden::new(AdapterKind::Gemini, "gemini/mock-model"),
+                provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini/mock-model"),
                 content: Some(genai::chat::MessageContent::Text(
                     "Mock AI response".to_string(),
                 )),
                 reasoning_content: None,
                 usage: Default::default(),
             }))),
-            stream_to_return: Default::default(),
-            last_received_messages: Default::default(), // Initialize the new field
+            stream_to_return: std::sync::Arc::new(std::sync::Mutex::new(None)),
+            last_received_messages: std::sync::Arc::new(std::sync::Mutex::new(None)),
+            model_name: "gemini/mock-model".to_string(),
+            provider_model_name: "gemini/mock-model".to_string(),
+            embedding_response: Arc::new(Mutex::new(Ok(vec![0.1, 0.2, 0.3]))),
+            text_gen_response: Arc::new(Mutex::new(Ok("Mock text generation response".to_string()))),
         }
     }
 
@@ -111,6 +124,12 @@ impl MockAiClient {
     pub fn set_stream_response(&self, stream_items: Vec<Result<ChatStreamEvent, AppError>>) {
         // TODO: Implement mock logic
         *self.stream_to_return.lock().unwrap() = Some(stream_items);
+    }
+}
+
+impl Default for MockAiClient {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -619,7 +638,7 @@ pub async fn spawn_app(multi_thread: bool, use_real_ai: bool, use_real_qdrant: b
         
     // Apply route_layer at the end
     let protected_api_routes_final = protected_api_routes
-        .route_layer(login_required!(AuthBackend, login_url = "/api/auth/login"));
+        .route_layer(login_required!(AuthBackend));
 
     // Define public_api_routes (paths are relative to the eventual /api mount)
     let public_api_routes: Router<AppState> = Router::new()
@@ -683,9 +702,9 @@ pub async fn spawn_app(multi_thread: bool, use_real_ai: bool, use_real_qdrant: b
 pub mod db {
     // Add a comprehensive set of imports needed within the db module
     use diesel::prelude::*;
-    use diesel_migrations::MigrationHarness; // Keep only this one
-    use crate::models::users::User; // User was already imported, ensure UserDbQuery is correct
-    use crate::errors::AppError; // Import AppError
+    use diesel_migrations::MigrationHarness;
+    use crate::models::users::UserDbQuery; // User was already imported, ensure UserDbQuery is correct
+     // Import AppError
     
     
     
@@ -699,9 +718,14 @@ pub mod db {
     use dotenvy::dotenv; // For .env file loading
     use deadpool_diesel::postgres::{Manager as DeadpoolManager, Pool as DeadpoolPool, Runtime as DeadpoolRuntime};
     use super::MIGRATIONS; // Use super::MIGRATIONS since it's defined in the parent scope (test_helpers.rs)
-    use crate::auth; // Changed from scribe_backend::auth
-    use secrecy::SecretString; // Changed from Secret to SecretString
-    use crate::auth::RegisterPayload; // Ensure RegisterPayload is imported
+    use crate::auth::{self}; // Corrected: Added hash_password, auth for module items
+     // Ensure RegisterPayload is imported
+    use super::*; // To bring PgPool and DbUser etc. into scope
+     // Keep if CryptoError is used directly, else it comes via crate::crypto
+    use crate::models::users::{NewUser}; // Removed User as DbUser from here, already aliased DbUser at top
+                                       // and UserDbQuery is imported above
+    
+    
 
     /// Sets up a clean test database with migrations run.
     pub async fn setup_test_database(db_name_suffix: Option<&str>) -> PgPool {
@@ -764,46 +788,167 @@ pub mod db {
         pool
     }
 
-    pub async fn create_test_user(pool: &PgPool, username: String, password_str: String) -> Result<User, AppError> {
-        let email = format!("{}@example.com", username);
-        let plaintext_password = SecretString::from(password_str.to_string());
+    /// Creates a test user directly in the database.
+    /// Note: This helper bypasses any application logic for user creation (e.g., sending emails).
+    pub async fn create_test_user(
+        pool: &PgPool,
+        username: String,
+        password_str: String,
+    ) -> Result<DbUser, anyhow::Error> {
+        let conn = pool.get().await?;
+        let email = format!("{}@test.com", username); 
 
-        // Hash the password for storage using the auth module's helper
-        let _password_hash = auth::hash_password(plaintext_password.clone())
+        let password_str_for_kek = password_str.clone(); // Clone for KEK derivation
+        let username_clone_for_payload = username.clone(); // Clone for NewUser payload
+
+        let password_hash = auth::hash_password(SecretString::from(password_str.clone()))
             .await
-            .expect("Failed to hash password in test_helper::create_test_user");
+            .map_err(|e| anyhow::anyhow!("Password hashing failed: {}", e))?;
 
-        let conn = pool.get().await.expect("Failed to get DB conn from pool in create_test_user");
+        let kek_salt = crate::crypto::generate_salt()
+            .map_err(|e| anyhow::anyhow!("KEK salt generation failed: {}",e))?;
 
-        let uname_clone = username.clone(); // Clone for closure
-        let mail_clone = email.clone(); // Clone for closure
-        // Clone plaintext_password for KEK derivation inside create_user
-        let p_password_for_payload = plaintext_password.clone();
+        // Assuming generate_dek() now returns Result<SecretBox<Vec<u8>>, CryptoError>
+        let plaintext_dek_box: SecretBox<Vec<u8>> = crate::crypto::generate_dek()
+            .context("DEK generation failed in create_test_user")?;
 
-        // Create the RegisterPayload outside 
-        let register_payload = RegisterPayload {
-            username: uname_clone,
-            email: mail_clone,
-            password: p_password_for_payload,
-            recovery_phrase: None,
+        let kek = crate::crypto::derive_kek(&SecretString::from(password_str_for_kek), &kek_salt)
+            .map_err(|e| anyhow::anyhow!("KEK derivation failed: {}", e))?;
+
+        let (encrypted_dek_bytes, dek_nonce_bytes) =
+            crate::crypto::encrypt_gcm(plaintext_dek_box.expose_secret(), &kek) // expose_secret() on SecretBox<Vec<u8>> gives &Vec<u8>
+                    .map_err(|e| anyhow::anyhow!("DEK encryption failed: {}", e))?;
+
+        let new_user_payload = NewUser {
+            username: username_clone_for_payload,
+            password_hash,
+            email,
+            kek_salt,
+            encrypted_dek: encrypted_dek_bytes,
+            dek_nonce: dek_nonce_bytes,
+            encrypted_dek_by_recovery: None, 
+            recovery_kek_salt: None,        
+            recovery_dek_nonce: None,        
         };
 
-        // We need to use spawn_blocking since create_user is now async and interact expects a sync function
-        // This is a workaround for the test environment - real code shouldn't call async functions inside interact
-        let user = conn
-            .interact(move |conn_inner| {
-                // Create a new Runtime for the blocking task
-                let rt = tokio::runtime::Runtime::new().expect("Failed to create runtime for test_helpers");
-                // Execute async create_user in the runtime and return Result<User, AppError>
-                rt.block_on(crate::auth::create_user(
-                    conn_inner,
-                    register_payload,
-                ))
-            })
-            .await
-            .expect("Interact call for create_user failed in test_helper");
+        let user_from_db: UserDbQuery = conn.interact(move |conn_actual| {
+            diesel::insert_into(crate::schema::users::table)
+                .values(new_user_payload) // new_user_payload is moved here
+                .returning(UserDbQuery::as_returning()) 
+                .get_result::<UserDbQuery>(conn_actual) 
+        })
+        .await
+        .map_err(|interact_err| anyhow::anyhow!("DB interact error for create_test_user: {}", interact_err))??;
+        
+        // Convert to DbUser
+        let mut user: DbUser = user_from_db.into();
+        
+        // IMPORTANT: Set the plaintext DEK on the User object directly.
+        // This is what would happen in the normal login flow (verify_credentials -> authenticate).
+        // Without this, the SessionDek extractor won't be able to access the DEK for encryption.
+        
+        // user.dek is Option<SerializableSecretDek(SecretBox<Vec<u8>>)>
+        // plaintext_dek_box is SecretBox<Vec<u8>>
+        user.dek = Some(SerializableSecretDek(plaintext_dek_box));
+        
+        Ok(user)
+    }
 
-        Ok(user?) // Return the user wrapped in Ok()
+    /// Creates a test character directly in the database.
+    pub async fn create_test_character(
+        pool: &PgPool,
+        user_id: Uuid,
+        name: String,
+    ) -> Result<crate::models::characters::Character, anyhow::Error> {
+        use crate::models::character_card::NewCharacter;
+        use crate::models::characters::Character; // Already imported at top of file usually
+        // use crate::schema::characters; // Already imported at top of file usually
+        use chrono::Utc;
+
+        let conn = pool.get().await?;
+        let now = Utc::now();
+        let name_clone_for_payload = name.clone(); // Clone for payload and error message
+        let name_clone_for_error = name.clone();
+
+        let new_character_payload = NewCharacter {
+            user_id,
+            name: name_clone_for_payload.clone(), 
+            description: Some(format!("Test description for {}", name_clone_for_payload).into_bytes()),
+            greeting: Some(format!("Test greeting for {}", name_clone_for_payload).into_bytes()),
+            example_dialogue: Some(format!("Test example dialogue for {}", name_clone_for_payload).into_bytes()),
+            visibility: Some("private".to_string()),
+            character_version: Some("2.0".to_string()),
+            spec: "test_spec_v2.0".to_string(),
+            spec_version: "2.0".to_string(),
+            persona: Some(format!("Test persona for {}", name_clone_for_payload).into_bytes()),
+            world_scenario: Some(format!("Test world scenario for {}", name_clone_for_payload).into_bytes()),
+            avatar: None,
+            chat: None,
+            created_at: Some(now),
+            updated_at: Some(now),
+            creation_date: Some(now),
+            modification_date: Some(now),
+            creator_notes_multilingual: None,
+            nickname: None,
+            personality: None,
+            tags: None,
+            greeting_nonce: None,
+            definition: None,
+            default_voice: None,
+            extensions: None,
+            category: None,
+            definition_visibility: None,
+            example_dialogue_nonce: None,
+            favorite: None,
+            first_message_visibility: None,
+            migrated_from: None,
+            model_prompt: None,
+            model_prompt_visibility: None,
+            persona_visibility: None,
+            sharing_visibility: None,
+            status: None,
+            system_prompt_visibility: None,
+            system_tags: None,
+            token_budget: None,
+            usage_hints: None,
+            user_persona: None,
+            user_persona_visibility: None,
+            world_scenario_visibility: None,
+            description_nonce: None,
+            personality_nonce: None,
+            scenario_nonce: None,
+            first_mes_nonce: None,
+            mes_example_nonce: None,
+            creator_notes_nonce: None,
+            system_prompt_nonce: None,
+            persona_nonce: None,
+            world_scenario_nonce: None,
+            definition_nonce: None,
+            model_prompt_nonce: None,
+            user_persona_nonce: None,
+            post_history_instructions_nonce: None,
+            post_history_instructions: None,
+            scenario: None,
+            mes_example: None,
+            first_mes: None,
+            creator_notes: None,
+            system_prompt: None,
+            alternate_greetings: None,
+            creator: None,
+            source: None,
+            group_only_greetings: None,
+        };
+
+        let character: Character = conn.interact(move |conn_actual| {
+            diesel::insert_into(crate::schema::characters::table)
+                .values(new_character_payload) // new_character_payload is moved here
+                .returning(Character::as_returning())
+                .get_result::<Character>(conn_actual)
+        })
+        .await
+        .map_err(move |interact_err| anyhow::anyhow!("DB interact error for create_test_character '{}': {}", name_clone_for_error, interact_err))??;
+
+        Ok(character)
     }
 }
 
@@ -901,7 +1046,7 @@ impl Drop for TestDataGuard {
             // Use a blocking spawn for the async cleanup task
             // This is not ideal for drop, but better than panicking or doing nothing.
             // Consider making cleanup explicit in all tests.
-            let pool_clone = self.pool.clone();
+            let _pool_clone = self.pool.clone(); // Renamed pool_clone
             let user_ids_clone = self.user_ids.drain(..).collect::<Vec<_>>();
             let character_ids_clone = self.character_ids.drain(..).collect::<Vec<_>>();
             let chat_ids_clone = self.chat_ids.drain(..).collect::<Vec<_>>();
@@ -997,4 +1142,61 @@ pub fn db_specific_cleanup(conn: &mut PgConnection, test_data: &TestDataGuard) -
     }
     // ... other cleanup like characters, users
     Ok(())
+}
+
+pub async fn create_user_with_dek_in_session(
+    app_router: &Router, // Pass the app router to make login requests
+    pool: &PgPool,
+    username: String,
+    password_str: String,
+    plaintext_dek: Option<SecretString>, // Option to allow no DEK for some tests
+) -> Result<(User, String), anyhow::Error> { // Returns User and session cookie string
+    // 1. Create user in DB
+    let created_user_db_record = crate::auth::user_store::create_user_in_db(
+        pool,
+        &username,
+        &password_str,
+        &username, // email can be same as username for test
+        // For DEK related fields, create_user_in_db would handle generating them if plaintext_dek is provided
+        // or it takes them pre-encrypted. This part depends on create_user_in_db's signature.
+        // Assuming create_user_in_db handles KEK salt, encrypted DEK, nonce from plaintext_dek if provided.
+        // For simplicity, let's assume create_user_in_db now takes plaintext_dek and handles it internally.
+        plaintext_dek.clone(), // Pass a clone if create_user_in_db needs owned Option<SecretString>
+    ).await.context("Failed to create user in DB for session test")?;
+
+    // 2. Perform login to get session cookie
+    let login_payload = json!({
+        "identifier": username,
+        "password": password_str
+    });
+
+    let request = Request::builder()
+        .method("POST")
+        .uri("/api/auth/login")
+        .header("Content-Type", "application/json")
+        .body(Body::from(serde_json::to_vec(&login_payload)?))
+        .unwrap();
+
+    let response = app_router.clone().oneshot(request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK, "Login request failed");
+
+    let actual_cookie_value = response
+        .headers()
+        .get("set-cookie")
+        .ok_or_else(|| anyhow::anyhow!("No set-cookie header found after login"))?
+        .to_str()?
+        .to_string();
+    
+    // 3. Construct mock_user_for_assertion (this is the User struct, not UserDbQuery)
+    let mut mock_user_for_assertion = User::from(created_user_db_record.clone()); // Use the DB record from step 1
+    if let Some(pt_dek_string) = plaintext_dek { // Use the original plaintext_dek passed to function
+        let dek_bytes = pt_dek_string.expose_secret().as_bytes().to_vec();
+        let secret_box = SecretBox::new(Box::new(dek_bytes));
+        mock_user_for_assertion.dek = Some(SerializableSecretDek(secret_box));
+    } else {
+        mock_user_for_assertion.dek = None;
+    }
+
+    // 4. Return User and cookie
+    Ok((mock_user_for_assertion, actual_cookie_value)) // Use the cookie from step 2
 }

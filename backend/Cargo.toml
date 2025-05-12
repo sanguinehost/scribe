@@ -95,6 +95,8 @@ utf8_iter = "1.0.0" # Corrected crate name (underscore vs hyphen)
 rustls-pemfile = "2.1.2"
 tokio-rustls = "0.26.0"
 
+tokio-stream = "0.1"
+
 [dev-dependencies]
 hyper-util = { version = "0.1.11", features = ["full"] }
 reqwest = { version = "0.12.15", features = ["json", "cookies"] }

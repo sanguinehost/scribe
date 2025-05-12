@@ -16,8 +16,10 @@ use diesel::prelude::*;
 use scribe_backend::{
     models::{
         auth::LoginPayload,
-        characters::{Character as DbCharacter, NewCharacter},
-        chats::{ChatSession, MessageResponse, MessageRole, NewChat, NewMessage, ChatMessage},
+        characters::Character as DbCharacter,
+        chats::{MessageResponse, MessageRole, NewChat, NewMessage, ChatMessage},
+        character_card::NewCharacter,
+        chats::ChatSession,
         users::{NewUser, User},
     },
     schema::{characters, chat_messages, chat_sessions, users},

@@ -8,29 +8,27 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum_login::{AuthSession, AuthUser};
 // use secrecy::{ExposeSecret, Secret}; // Commenting out as they are unused now
-use secrecy::ExposeSecret; // Added for DEK handling
+use secrecy::ExposeSecret; // Added back for DEK length logging
 use serde_json::json;
 use tracing::{debug, error, info, instrument, warn};
-use base64::Engine; // Added for base64 encoding
+use serde::{Deserialize, Serialize};
+use axum::Router;
+use axum::routing::{post, get, delete};
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64}; // Add Base64 import
+ // For session DEK handling
+use tower_sessions::Session; // Import tower_sessions::Session
 
 use crate::auth::user_store::Backend as AuthBackend;
 type CurrentAuthSession = AuthSession<AuthBackend>;
 
-use crate::auth::SESSION_DEK_KEY; // Use the centrally defined key
-
 use crate::schema::sessions;
 use crate::schema::users::{self}; // Import users table (dsl::* is unused)
-use crate::models::users::{User, UserDbQuery}; // Added UserDbQuery, consolidated User import
+use crate::models::users::{User, UserDbQuery, SerializableSecretDek}; // Added SerializableSecretDek
 use diesel::{ExpressionMethods, QueryDsl, RunQueryDsl, SelectableHelper}; // Added SelectableHelper back
 use axum::{
     extract::Path,
 };
 use uuid::Uuid;
-use serde::{Deserialize, Serialize};
-use axum::Router;
-use axum::routing::{post, get, delete};
- // For session DEK handling
-use tower_sessions::Session; // Import tower_sessions::Session
 
 #[derive(Debug, Deserialize)]
 pub struct SessionRequest {
@@ -163,47 +161,114 @@ pub async fn login_handler(
             auth::verify_credentials(conn, &payload.identifier, payload.password)
         })
         .await
-        .map_err(|e| { // InteractError
+        .map_err(|e| {
             error!(identifier = %identifier_for_log, "Interact error during credential verification: {:?}", e);
             AppError::InternalServerErrorGeneric(format!("Credential verification process failed: {}", e))
         })?;
 
+    debug!(identifier = %identifier_for_log, "Credential verification successful");
+
     match verification_result {
-        Ok((user, maybe_dek)) => {
+        Ok((mut user, maybe_dek_secret_box)) => {
             let user_id = user.id;
             let login_username = user.username.clone();
             let login_email = user.email.clone();
             info!(username = %login_username, email = %login_email, %user_id, "Credential verification successful.");
 
-            if let Some(dek) = maybe_dek {
-                debug!(username = %login_username, %user_id, "DEK present, encoding and storing in session.");
-                let dek_bytes = dek.expose_secret();
-                let dek_base64 = base64::engine::general_purpose::STANDARD.encode(dek_bytes);
+            // Set the DEK on the user object
+            let dek_bytes_for_session = if let Some(dek_secret_box) = maybe_dek_secret_box {
+                user.dek = Some(SerializableSecretDek(dek_secret_box)); // Wrap in SerializableSecretDek
+                debug!(username = %login_username, %user_id, "DEK successfully set on user object before login.");
                 
-                // Store the DEK in the session using the directly extracted tower_sessions::Session
-                match session.insert(SESSION_DEK_KEY, dek_base64).await {
-                    Ok(_) => debug!("DEK stored in session successfully after login."),
-                    Err(e) => {
-                        error!("Failed to store DEK in session after login: {:?}", e);
-                        // This might be a critical error, depending on application requirements.
-                        // For now, we log it and proceed with the login response.
-                        // Consider returning an error if DEK storage is mandatory for a valid session.
-                    }
-                }
+                // Get the raw bytes for storing directly in the session
+                // Access inner SecretBox then expose_secret, or use helper
+                let dek_bytes = user.dek.as_ref().unwrap().expose_secret_bytes().to_vec();
+                Some(dek_bytes)
             } else {
                 info!(username = %login_username, %user_id, "No DEK present for this user or login type.");
+                None
+            };
+            
+            // Serialize the user object to see what's going into the session
+            match serde_json::to_string(&user) {
+                Ok(user_json) => {
+                    debug!(username = %login_username, %user_id, user_json = %user_json, "User object serialized before login");
+                },
+                Err(e) => {
+                    error!(username = %login_username, %user_id, error = ?e, "Failed to serialize user for debugging");
+                }
+            }
+            
+            // Log the session ID BEFORE auth_session.login
+            debug!(session_id = ?session.id(), user_id = %user_id, "Session ID BEFORE axum-login.login() call");
+            
+            // Debugging: Log DEK presence before login call
+            if let Some(ref wrapped_dek) = user.dek {
+                info!(username = %login_username, %user_id, "User.dek is PRESENT before auth_session.login() call. Length: {}", wrapped_dek.expose_secret_bytes().len());
+            } else {
+                warn!(username = %login_username, %user_id, "User.dek is MISSING before auth_session.login() call.");
             }
 
             // Proceed with axum-login's session login
-            info!(username = %login_username, email = %login_email, %user_id, "Attempting explicit axum-login session.login...");
+            info!(username = %login_username, email = %login_email, user_id = %user_id, "Attempting explicit axum-login session.login...");
             if let Err(e) = auth_session.login(&user).await {
-                error!(error = ?e, username = %login_username, email = %login_email, %user_id, "Explicit auth_session.login failed after successful credential verification");
+                error!(error = ?e, username = %login_username, email = %login_email, user_id = %user_id, "Explicit auth_session.login failed after successful credential verification: {:?}", e);
+            
                 return Err(AppError::InternalServerErrorGeneric(format!(
                     "Session login failed: {}",
                     e
                 )));
             }
+            
+            // ALSO store the DEK directly in the session for more reliable retrieval
+            if let Some(dek_bytes) = dek_bytes_for_session {
+                // Encode to base64 for storage in the session
+                let dek_base64 = BASE64.encode(&dek_bytes);
+                
+                // Store as direct session value for the SessionDek extractor to find
+                if let Err(e) = session.insert("user_dek", dek_base64).await {
+                    error!(username = %login_username, %user_id, error = ?e, "Failed to store DEK directly in session");
+                } else {
+                    info!(username = %login_username, %user_id, "Successfully stored DEK directly in session");
+                }
+            }
+            
             info!(username = %login_username, email = %login_email, %user_id, "Explicit auth_session.login successful");
+            
+            // Log the session ID AFTER auth_session.login
+            debug!(session_id = ?session.id(), user_id = %user_id, "Session ID AFTER axum-login.login() call");
+            
+            // Try to explicitly save the session (this might be redundant, but useful for debugging)
+            match session.save().await {
+                Ok(_) => debug!(session_id = ?session.id(), user_id = %user_id, "Explicitly called session.save() successfully"),
+                Err(e) => error!(session_id = ?session.id(), user_id = %user_id, error = ?e, "Explicit session.save() call failed: {:?}", e),
+            }
+            
+            // Debugging: Log DEK presence after login call (from auth_session.user)
+            if let Some(ref user_after_login) = auth_session.user {
+                if let Some(ref wrapped_dek_after_login) = user_after_login.dek {
+                    info!(username = %login_username, %user_id, "User.dek is PRESENT in auth_session.user AFTER login. Length: {}", wrapped_dek_after_login.expose_secret_bytes().len());
+                } else {
+                    error!(username = %login_username, %user_id, "User.dek is MISSING in auth_session.user AFTER login.");
+                }
+            } else {
+                error!(username = %login_username, %user_id, "auth_session.user is NONE after login.");
+            }
+
+            // Log the state of the tower_sessions::Session AFTER axum-login has done its work.
+            match session.get::<String>("axum-login.user").await {
+                Ok(Some(user_session_data_str)) => {
+                    debug!(session_id = ?session.id(), user_id = %user_id, "Raw 'axum-login.user' data (as string) after login: {}", user_session_data_str);
+                }
+                Ok(None) => {
+                    warn!(session_id = ?session.id(), user_id = %user_id, "'axum-login.user' key not found in session after login.");
+                }
+                Err(e) => {
+                    // This error means the key was found but couldn't be deserialized into String, 
+                    // or some other session store error occurred.
+                    error!(session_id = ?session.id(), user_id = %user_id, "Error trying to get/deserialize 'axum-login.user' as String from session after login: {:?}. This might indicate the data is not stored as a simple string (e.g., it might be binary).", e);
+                }
+            }
             
             let response_data = AuthResponse {
                 user_id: user.id,
@@ -243,7 +308,7 @@ pub async fn logout_handler(mut auth_session: CurrentAuthSession) -> Result<Resp
 
     debug!("Calling auth_session.logout().await...");
     if let Err(e) = auth_session.logout().await {
-        error!(error = ?e, "Failed to destroy session during logout via auth_session.logout()");
+        error!(error = ?e, "Failed to destroy session during logout via auth_session.logout(): {:?}", e);
         return Err(AppError::InternalServerErrorGeneric(format!(
             "Failed to clear session during logout: {}",
             e

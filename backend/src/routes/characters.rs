@@ -29,6 +29,8 @@ use diesel::RunQueryDsl;
 use diesel::SelectableHelper;
 use diesel::result::Error as DieselError; // Add import for DieselError
 use serde::Deserialize; // Add serde import
+use crate::services::encryption_service::EncryptionService; // Added import
+use secrecy::ExposeSecret; // Added for DEK expose
 
 // Define the type alias for the auth session specific to our AuthBackend
 // type CurrentAuthSession = AuthSession<AppState>;
@@ -78,34 +80,51 @@ pub async fn upload_character_handler(
     // Helper macro to reduce boilerplate for encrypting Option<Vec<u8>> fields
     macro_rules! encrypt_field {
         ($self:ident, $field:ident, $nonce_field:ident, $dek:expr) => {
-            if let Some(plaintext_bytes) = $self.$field.take() { // Take ownership
+            if let Some(plaintext_bytes) = $self.$field.take() {
                 if !plaintext_bytes.is_empty() {
                     match String::from_utf8(plaintext_bytes) {
                         Ok(string_version) => {
                             if !string_version.is_empty() {
-                                match crypto::encrypt_gcm(string_version.as_bytes(), $dek) {
+                                // Use the higher-level EncryptionService for encryption
+                                let enc_service = EncryptionService::new();
+                                match enc_service
+                                    .encrypt(&string_version, $dek.expose_secret())
+                                    .await
+                                {
                                     Ok((ciphertext, nonce)) => {
                                         $self.$field = Some(ciphertext);
-                                        $self.$nonce_field = Some(nonce.to_vec());
+                                        $self.$nonce_field = Some(nonce);
                                     }
                                     Err(e) => {
-                                        tracing::error!("Failed to encrypt character field '{}': {}", stringify!($field), e);
-                                        return Err(AppError::CryptoError(format!("Encryption failed for {}: {}", stringify!($field), e)));
+                                        tracing::error!(
+                                            "Failed to encrypt character field '{}': {}",
+                                            stringify!($field),
+                                            e
+                                        );
+                                        return Err(AppError::EncryptionError(format!(
+                                            "Encryption failed for {}: {}",
+                                            stringify!($field),
+                                            e
+                                        )));
                                     }
                                 }
                             } else {
-                                $self.$field = None; // Store None if original string was empty
+                                $self.$field = None;
                                 $self.$nonce_field = None;
                             }
                         }
                         Err(e) => {
-                            tracing::warn!("Field '{}' bytes not valid UTF-8: {}. Storing as None.", stringify!($field), e);
+                            tracing::warn!(
+                                "Field '{}' bytes not valid UTF-8: {}. Storing as None.",
+                                stringify!($field),
+                                e
+                            );
                             $self.$field = None;
                             $self.$nonce_field = None;
                         }
                     }
                 } else {
-                    $self.$field = None; // Ensure None if original bytes were empty
+                    $self.$field = None;
                     $self.$nonce_field = None;
                 }
             }
@@ -160,7 +179,7 @@ pub async fn upload_character_handler(
 
     info!(character_id = %inserted_character.id, "Character uploaded and saved (full data fetched)");
 
-    let client_character_data = inserted_character.into_decrypted_for_client(Some(&dek.0))?;
+    let client_character_data = inserted_character.into_decrypted_for_client(Some(&dek.0)).await?;
 
     Ok((StatusCode::CREATED, Json(client_character_data)))
 }
@@ -193,7 +212,7 @@ pub async fn list_characters_handler(
 
     let mut characters_for_client = Vec::new();
     for char_db in characters_db {
-        characters_for_client.push(char_db.into_decrypted_for_client(Some(&dek.0))?);
+        characters_for_client.push(char_db.into_decrypted_for_client(Some(&dek.0)).await?);
     }
 
     Ok(Json(characters_for_client))
@@ -232,7 +251,7 @@ pub async fn get_character_handler(
         })
         .await??;
 
-    let client_character_data = character_db.into_decrypted_for_client(Some(&dek.0))?;
+    let client_character_data = character_db.into_decrypted_for_client(Some(&dek.0)).await?;
     Ok(Json(client_character_data))
 }
 
@@ -351,7 +370,7 @@ pub async fn generate_character_handler(
     // In a real scenario, we would save dummy_char_for_db (as NewCharacter)
     // then fetch it, then convert to client data.
     // For this placeholder, we convert the in-memory (potentially encrypted) Character.
-    let client_data = dummy_char_for_db.into_decrypted_for_client(Some(&dek.0))?;
+    let client_data = dummy_char_for_db.into_decrypted_for_client(Some(&dek.0)).await?;
 
     // --- TODO: Save the character to DB if this route is meant to persist. ---
 

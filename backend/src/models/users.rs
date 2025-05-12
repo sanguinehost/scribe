@@ -3,9 +3,65 @@ use axum_login::AuthUser;
 use chrono::{DateTime, Utc};
 use diesel::Insertable;
 use diesel::prelude::*;
+use diesel::sql_types::Timestamp;
+use diesel::{AsChangeset, Identifiable, Queryable, Selectable};
+use secrecy::ExposeSecret;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use secrecy::{SecretBox, SecretString};
+use secrecy::zeroize::Zeroize;
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
+use serde::{Deserializer, Serializer};
+use serde::de;
+use tracing;
+
+// --- Newtype wrapper for DEK serialization ---
+#[derive(Debug)] // Manual Debug to redact SecretBox
+pub struct SerializableSecretDek(pub SecretBox<Vec<u8>>); // Made pub for access in User clone
+
+impl SerializableSecretDek {
+    // Helper to expose bytes, useful for clone or other operations
+    pub fn expose_secret_bytes(&self) -> &[u8] {
+        self.0.expose_secret()
+    }
+}
+
+// Manual Clone for SerializableSecretDek
+impl Clone for SerializableSecretDek {
+    fn clone(&self) -> Self {
+        SerializableSecretDek(SecretBox::new(Box::new(self.0.expose_secret().to_vec())))
+    }
+}
+
+impl Serialize for SerializableSecretDek {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where S: Serializer,
+    {
+        let dek_bytes = self.0.expose_secret();
+        let base64_encoded = BASE64.encode(dek_bytes);
+        serializer.serialize_str(&base64_encoded)
+    }
+}
+
+impl<'de> Deserialize<'de> for SerializableSecretDek {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        tracing::debug!("SerializableSecretDek::deserialize CALLED");
+        let s = String::deserialize(deserializer)?;
+        match BASE64.decode(s) {
+            Ok(bytes) => {
+                tracing::debug!("SerializableSecretDek::deserialize: Successfully decoded base64, byte length: {}", bytes.len());
+                Ok(SerializableSecretDek(SecretBox::new(Box::new(bytes))))
+            }
+            Err(e) => {
+                tracing::error!("SerializableSecretDek::deserialize: Failed to decode base64: {}", e);
+                Err(serde::de::Error::custom(format!("Base64 decode error for DEK: {}", e)))
+            }
+        }
+    }
+}
 
 // Helper struct for Diesel Querying - matches the DB schema exactly
 #[derive(Queryable, Selectable, Debug, Clone)]
@@ -41,15 +97,17 @@ pub struct User {
     #[serde(skip_serializing, skip_deserializing)]
     pub encrypted_dek: Vec<u8>,
     #[serde(skip_serializing, skip_deserializing)]
-    pub dek_nonce: Vec<u8>, // Added
+    pub dek_nonce: Vec<u8>,
     #[serde(skip_serializing, skip_deserializing)]
     pub encrypted_dek_by_recovery: Option<Vec<u8>>,
     #[serde(skip_serializing, skip_deserializing)]
     pub recovery_kek_salt: Option<String>,
     #[serde(skip_serializing, skip_deserializing)]
-    pub recovery_dek_nonce: Option<Vec<u8>>, // Added
-    #[serde(skip_serializing, skip_deserializing)]
-    pub dek: Option<SecretBox<Vec<u8>>>,
+    pub recovery_dek_nonce: Option<Vec<u8>>,
+    
+    // DEK field now uses the newtype wrapper
+    pub dek: Option<SerializableSecretDek>,
+    
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -64,11 +122,12 @@ impl std::fmt::Debug for User {
             .field("password_hash", &"<omitted>")
             .field("kek_salt", &self.kek_salt)
             .field("encrypted_dek", &"<omitted>")
-            .field("dek_nonce", &"<omitted>") // Added
+            .field("dek_nonce", &"<omitted>")
             .field("encrypted_dek_by_recovery", &self.encrypted_dek_by_recovery.as_ref().map(|_| "<omitted>"))
             .field("recovery_kek_salt", &self.recovery_kek_salt)
-            .field("recovery_dek_nonce", &self.recovery_dek_nonce.as_ref().map(|_| "<omitted>")) // Added
-            .field("dek", &self.dek.as_ref().map(|_| "<omitted>"))
+            .field("recovery_dek_nonce", &self.recovery_dek_nonce.as_ref().map(|_| "<omitted>"))
+            // Updated Debug for Option<SerializableSecretDek>
+            .field("dek", &self.dek.as_ref().map(|_wrapper| "<SerializableSecretDek_omitted>"))
             .field("created_at", &self.created_at)
             .field("updated_at", &self.updated_at)
             .finish()
@@ -96,8 +155,7 @@ impl From<UserDbQuery> for User {
     }
 }
 
-// Manual Clone implementation for User due to potential SecretBox clone issue
-// and to control how 'dek' is cloned (or not cloned if it remains an issue).
+// Manual Clone implementation for User
 impl Clone for User {
     fn clone(&self) -> Self {
         User {
@@ -107,12 +165,12 @@ impl Clone for User {
             password_hash: self.password_hash.clone(),
             kek_salt: self.kek_salt.clone(),
             encrypted_dek: self.encrypted_dek.clone(),
-            dek_nonce: self.dek_nonce.clone(), // Added
+            dek_nonce: self.dek_nonce.clone(),
             encrypted_dek_by_recovery: self.encrypted_dek_by_recovery.clone(),
             recovery_kek_salt: self.recovery_kek_salt.clone(),
-            recovery_dek_nonce: self.recovery_dek_nonce.clone(), // Added
-            // TEMPORARY WORKAROUND for SecretBox clone issue / until DEK is properly managed in session
-            dek: None,
+            recovery_dek_nonce: self.recovery_dek_nonce.clone(),
+            // Properly clone the Option<SerializableSecretDek>
+            dek: self.dek.clone(), // SerializableSecretDek implements Clone
             created_at: self.created_at,
             updated_at: self.updated_at,
         }
@@ -157,8 +215,7 @@ pub struct UserCredentials {
 mod tests {
     use super::*;
     use chrono::Utc;
-    use secrecy::SecretBox; // Ensure SecretBox is imported for tests
-    use secrecy::ExposeSecret; // Import ExposeSecret for expose_secret() method
+    use secrecy::ExposeSecret;
 
     impl User {
         #[allow(clippy::too_many_arguments)]
@@ -173,7 +230,7 @@ mod tests {
             recovery_kek_salt: Option<String>,
             dek_nonce: Vec<u8>,
             recovery_dek_nonce: Option<Vec<u8>>,
-            dek: Option<SecretBox<Vec<u8>>>,
+            dek: Option<SerializableSecretDek>,
         ) -> Self {
             User {
                 id,
@@ -199,9 +256,9 @@ mod tests {
         let _now = Utc::now();
         let test_kek_salt = "test_kek_salt".to_string();
         let test_encrypted_dek = vec![1, 2, 3];
-        let test_dek_nonce = vec![7,8,9,10,11,12,13,14,15,16,17,18]; // Example 12-byte nonce
-        let test_dek_bytes = vec![4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32]; // Example 32-byte DEK
-        let initial_test_dek = Some(SecretBox::new(Box::new(test_dek_bytes.clone())));
+        let test_dek_nonce = vec![7,8,9,10,11,12,13,14,15,16,17,18];
+        let test_dek_bytes = vec![4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32];
+        let initial_test_dek = Some(SerializableSecretDek(SecretBox::new(Box::new(test_dek_bytes.clone()))));
 
         let user = User::new_test_user(
             user_id,
@@ -213,7 +270,7 @@ mod tests {
             None,
             None,
             test_dek_nonce.clone(),
-            None, // Added for recovery_dek_nonce
+            None,
             initial_test_dek,
         );
 
@@ -222,16 +279,17 @@ mod tests {
         assert_eq!(user.password_hash, "hashed_password");
         assert_eq!(user.kek_salt, test_kek_salt);
         assert_eq!(user.encrypted_dek, test_encrypted_dek);
-        assert_eq!(user.dek_nonce, test_dek_nonce); // Added
+        assert_eq!(user.dek_nonce, test_dek_nonce);
         assert!(user.dek.is_some());
-        if let Some(dek) = &user.dek {
-             assert_eq!(dek.expose_secret(), &test_dek_bytes); // Compare with original bytes
+        if let Some(wrapped_dek) = &user.dek {
+             assert_eq!(wrapped_dek.expose_secret_bytes(), &test_dek_bytes);
         }
 
-        // Test clone behavior (dek will be None due to temporary workaround)
         let cloned_user = user.clone();
-        assert!(cloned_user.dek.is_none(), "Cloned user DEK should be None due to temporary workaround");
-
+        assert!(cloned_user.dek.is_some(), "Cloned user DEK should be preserved");
+        if let Some(wrapped_dek) = &cloned_user.dek {
+            assert_eq!(wrapped_dek.expose_secret_bytes(), &test_dek_bytes, "Cloned DEK should match original");
+        }
 
         assert_eq!(axum_login::AuthUser::id(&user), user_id);
         assert_eq!(user.session_auth_hash(), user.password_hash.as_bytes());

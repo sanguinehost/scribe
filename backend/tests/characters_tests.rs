@@ -361,7 +361,7 @@ async fn spawn_app(app: Router) -> SocketAddr {
 #[cfg(test)]
 mod tests {
     use scribe_backend::test_helpers::{
-        TestDataGuard, create_test_pool, ensure_tracing_initialized,
+        create_test_pool, TestDataGuard, ensure_tracing_initialized,
     };
 
     use super::*; // Import helpers from outer scope

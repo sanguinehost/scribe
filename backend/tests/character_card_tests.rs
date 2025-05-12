@@ -280,7 +280,7 @@ fn test_from_parsed_card_v3() {
     assert_eq!(new_char.scenario, Some(data_v3.scenario.as_bytes().to_vec()));
     assert_eq!(new_char.first_mes, Some(data_v3.first_mes.as_bytes().to_vec()));
     assert_eq!(new_char.mes_example, Some(data_v3.mes_example.as_bytes().to_vec()));
-    assert_eq!(new_char.creator_notes, Some(data_v3.creator_notes));
+    assert_eq!(new_char.creator_notes, Some(data_v3.creator_notes.as_bytes().to_vec()));
     assert_eq!(new_char.system_prompt, Some(data_v3.system_prompt));
     assert_eq!(new_char.post_history_instructions, Some(data_v3.post_history_instructions));
     assert_eq!(new_char.tags, Some(vec![Some("v3tag".to_string())]));

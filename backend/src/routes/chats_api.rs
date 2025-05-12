@@ -7,6 +7,7 @@ use crate::schema::{chat_messages, chat_sessions};
 use crate::auth::session_dek::SessionDek; // Added SessionDek
 use crate::crypto; // Added crypto for encryption/decryption
 use secrecy::ExposeSecret; // Added for expose_secret method
+use secrecy::SecretBox; // Ensure SecretBox is imported
 use axum::{
     extract::{Path, State},
     http::StatusCode,
@@ -14,7 +15,7 @@ use axum::{
     routing::{delete, get, post, put},
     Router,
 };
-use axum_login::AuthSession; // <-- Removed unused UserId import
+use axum_login::AuthSession;
 use crate::auth::user_store::Backend as AuthBackend;
 // Removed incorrect ValidatedJson import
 use validator::Validate;
@@ -25,6 +26,7 @@ use crate::state::AppState;
 use tracing::info;
 use std::sync::Arc;
 use crate::services::chat_service;
+use crate::models::users::User; // Ensure User is imported
 
 // Shorthand for auth session
 type CurrentAuthSession = AuthSession<AuthBackend>;
@@ -75,7 +77,7 @@ pub async fn create_chat_handler(
     Json(payload): Json<CreateChatRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let user = auth_session.user.ok_or(AppError::Unauthorized("Not logged in".to_string()))?;
-    let user_dek = user.dek.as_ref(); // Get the DEK
+    let user_dek_ref: Option<&SecretBox<Vec<u8>>> = user.dek.as_ref().map(|wrapped_dek| &wrapped_dek.0);
     
     info!(%user.id, character_id=%payload.character_id, "Creating chat session");
     
@@ -84,7 +86,7 @@ pub async fn create_chat_handler(
         app_state, 
         user.id, 
         payload.character_id,
-        user_dek, // Pass the DEK
+        user_dek_ref, // Pass the reference to the inner SecretBox
     ).await?;
     
     // Generate a custom title if provided (default title is set by the service)
@@ -201,7 +203,7 @@ pub async fn get_messages_by_chat_id_handler(
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
     let user = auth_session.user.ok_or(AppError::Unauthorized("Not logged in".to_string()))?;
-    let user_dek = user.dek.as_ref(); // Get Option<&SecretVec<u8>> from user session
+    let user_dek_ref: Option<&SecretBox<Vec<u8>>> = user.dek.as_ref().map(|wrapped_dek| &wrapped_dek.0);
     let pool = state.pool.clone();
     
     let chat = pool.get().await
@@ -235,7 +237,7 @@ pub async fn get_messages_by_chat_id_handler(
     
     let mut responses = Vec::new();
     for msg_db in messages_db {
-        let decrypted_client_message = msg_db.clone().into_decrypted_for_client(user_dek)?;
+        let decrypted_client_message = msg_db.clone().into_decrypted_for_client(user_dek_ref)?;
 
         // Now construct MessageResponse using fields from original msg_db and decrypted_client_message
         let response_parts = msg_db.parts.unwrap_or_else(|| json!([{"text": decrypted_client_message.content}]));
@@ -264,7 +266,7 @@ pub async fn create_message_handler(
     Json(payload): Json<CreateMessageRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let user = auth_session.user.ok_or(AppError::Unauthorized("Not logged in".to_string()))?;
-    let user_dek = user.dek.as_ref(); // Get Option<&SecretVec<u8>> from user session
+    let user_dek_ref: Option<&SecretBox<Vec<u8>>> = user.dek.as_ref().map(|wrapped_dek| &wrapped_dek.0);
     let _pool = state.pool.clone(); // Not strictly needed here if save_message handles its own pool access
     
     // Verify chat session ownership (existing logic is fine)
@@ -298,7 +300,7 @@ pub async fn create_message_handler(
         user.id,
         message_role,
         &payload.content, // Pass content as &str
-        user_dek,       // Pass Option<&SecretVec<u8>>
+        user_dek_ref,       // Pass Option<&SecretBox<Vec<u8>>>
     ).await?;
 
     // Convert DbChatMessage to ChatMessageForClient to get decrypted content
@@ -317,7 +319,7 @@ pub async fn create_message_handler(
         parts: payload.parts.clone(),          // From the request payload
         attachments: payload.attachments.clone(), // From the request payload
     };
-    let client_message = message_for_decryption.into_decrypted_for_client(user_dek)?;
+    let client_message = message_for_decryption.into_decrypted_for_client(user_dek_ref)?;
     
     // Use client_message.content (String) for parts if payload.parts is None
     let response_parts = payload.parts.unwrap_or_else(|| json!([{"text": client_message.content.clone()}]));
@@ -687,34 +689,20 @@ pub async fn update_chat_visibility_handler(
 pub async fn get_chat_settings_handler(
     auth_session: CurrentAuthSession,
     State(state): State<AppState>,
-    Path(id): Path<Uuid>,
+    Path(id): Path<Uuid>, // This is session_id
 ) -> Result<impl IntoResponse, AppError> {
     let user = auth_session.user.ok_or(AppError::Unauthorized("Not logged in".to_string()))?;
-    let pool = state.pool.clone();
+    
+    // Call the service function to get chat settings
+    // The service function handles ownership check and constructing the response
+    let chat_settings_response = chat_service::get_session_settings(
+        &state.pool,
+        user.id,
+        id, // session_id
+    )
+    .await?;
 
-    let chat = pool.get().await
-        .map_err(|e| AppError::DbPoolError(e.to_string()))?
-        .interact(move |conn| {
-            chat_sessions::table
-                .filter(chat_sessions::id.eq(id))
-                .select(Chat::as_select()) // Select the whole Chat struct
-                .first::<Chat>(conn)
-                .map_err(AppError::from) // Handles NotFound -> AppError::NotFound
-        })
-        .await
-        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))? // Handle interact error
-        ?; // Propagate NotFound error
-
-    // Ensure the user owns this chat
-    // Test `test_get_chat_settings_forbidden` expects NotFound if user doesn't own it.
-    if chat.user_id != user.id {
-        return Err(AppError::NotFound(format!("Chat session {} not found for user {}", id, user.id)));
-    }
-
-    // Construct the response from the Chat struct using From trait
-    let response = ChatSettingsResponse::from(chat);
-
-    Ok(Json(response))
+    Ok(Json(chat_settings_response))
 }
 
 // Update chat settings by ID

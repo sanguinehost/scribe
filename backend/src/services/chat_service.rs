@@ -18,6 +18,7 @@ use crate::{
             DbInsertableChatMessage, MessageRole, NewChat, SettingsTuple,
             UpdateChatSettingsRequest,
         },
+        users::SerializableSecretDek,
     },
     schema::{characters, chat_messages, chat_sessions},
     services::history_manager,
@@ -56,12 +57,12 @@ pub type GenerationDataWithUnsavedUserMessage = (
 );
 
 /// Creates a new chat session, verifies character ownership, and adds the character's first message if available.
-#[instrument(skip(state, user_dek), err)]
+#[instrument(skip(state, user_dek_secret_box), err)]
 pub async fn create_session_and_maybe_first_message(
     state: Arc<AppState>,
     user_id: Uuid,
     character_id: Uuid,
-    user_dek: Option<&SecretBox<Vec<u8>>>,
+    user_dek_secret_box: Option<&SecretBox<Vec<u8>>>,
 ) -> Result<Chat, AppError> {
     let pool = state.pool.clone();
     let conn = pool.get().await?;
@@ -137,9 +138,9 @@ pub async fn create_session_and_maybe_first_message(
 
     if let (Some(first_message_ciphertext), Some(first_message_nonce)) = (first_mes_ciphertext_opt, first_mes_nonce_opt) {
         if !first_message_ciphertext.is_empty() && !first_message_nonce.is_empty() {
-            match user_dek {
-                Some(dek) => {
-                    match crate::crypto::decrypt_gcm(&first_message_ciphertext, &first_message_nonce, dek) {
+            match user_dek_secret_box {
+                Some(dek_sb) => {
+                    match crate::crypto::decrypt_gcm(&first_message_ciphertext, &first_message_nonce, dek_sb) {
                         Ok(plaintext_secret_vec) => {
                             match String::from_utf8(plaintext_secret_vec.expose_secret().to_vec()) {
                                 Ok(content_str) => {
@@ -151,7 +152,7 @@ pub async fn create_session_and_maybe_first_message(
                                             user_id,
                                             MessageRole::Assistant,
                                             &content_str,
-                                            Some(dek),
+                                            Some(dek_sb),
                                         ).await?;
                                         info!(session_id = %created_session.id, "Successfully called save_message for first_mes");
                                     } else {
@@ -310,64 +311,45 @@ fn save_chat_message_internal(
 }
 
 /// Saves a single chat message (user or assistant) and triggers background embedding.
-#[instrument(skip(state, dek), err)]
+#[instrument(skip(state, user_dek_secret_box), err)]
 pub async fn save_message(
     state: Arc<AppState>,
     session_id: Uuid,
     user_id: Uuid,
     role: MessageRole,
     content: &str,
-    dek: Option<&SecretBox<Vec<u8>>>,
+    user_dek_secret_box: Option<&SecretBox<Vec<u8>>>,
 ) -> Result<DbChatMessage, AppError> {
     let pool = state.pool.clone();
     let conn = pool.get().await?;
 
-    // Placeholder: let dek: SecretVec<u8> = get_users_dek_from_somewhere(user_id, &state.session_store).await?;
-    // If DEK is not available (e.g., for unauthenticated contexts or if encryption is optional and off),
-    // this logic would need to adapt, possibly by storing plaintext if allowed by policy.
-    // For Sanguine Scribe, all user-generated content in messages should be encrypted.
-    
-    // TEMP: For now, if we can't get a DEK, we'll error out. Production code needs robust DEK handling.
-    // This will likely cause a compile error until DEK retrieval is implemented.
-    let dek_to_use = match dek {
-        Some(d) => d,
-        None => {
-            // This case should ideally not happen if messages are always to be encrypted
-            // and a DEK is expected. Handling it by returning an error for now.
-            error!(
-                session_id = %session_id,
-                "Attempted to save message but no DEK was provided in session for encryption."
-            );
-            return Err(AppError::InternalServerErrorGeneric(
-                "DEK not available for message encryption".to_string(),
-            ));
-        }
-    };
+    if user_dek_secret_box.is_none() && role == MessageRole::User {
+        // Or if it's an AI message that *must* be encrypted before saving (policy dependent)
+        error!("Attempted to save message but no DEK was provided in session for encryption. session_id={}", session_id);
+        return Err(AppError::InternalServerErrorGeneric("DEK not available for message encryption".to_string()));
+    }
 
-    let (encrypted_content, nonce_bytes) = if !content.is_empty() {
-        match crate::crypto::encrypt_gcm(content.as_bytes(), dek_to_use) {
-            Ok((ciphertext, nonce)) => (ciphertext, Some(nonce)),
+    let (final_content, content_nonce) = if let Some(dek_sb) = user_dek_secret_box {
+        match crate::crypto::encrypt_gcm(content.as_bytes(), dek_sb) {
+            Ok((ciphertext, nonce)) => (ciphertext, Some(nonce.to_vec())),
             Err(e) => {
-                error!(
-                    "Failed to encrypt chat message content for session {}: {}",
-                    session_id, e
-                );
-                return Err(AppError::CryptoError(format!(
-                    "Encryption failed for chat message: {}",
-                    e
-                )));
+                error!("Failed to encrypt message content: {:?}. session_id={}", e, session_id);
+                return Err(AppError::EncryptionError("Failed to encrypt message".to_string()));
             }
         }
     } else {
-        (Vec::new(), None) // No encryption for empty content
+        // Store plaintext if no DEK (e.g. AI message before first user message, or if policy allows for some unencrypted user messages)
+        // This branch might need adjustment based on strictness of encryption policy.
+        // If all user messages MUST be encrypted, this branch for MessageRole::User without DEK is an error handled above.
+        (content.as_bytes().to_vec(), None)
     };
 
     let new_message_for_db = DbInsertableChatMessage {
         chat_id: session_id,
         user_id,
         role,
-        content: encrypted_content,
-        content_nonce: nonce_bytes, // Store the nonce
+        content: final_content,
+        content_nonce: content_nonce, // Store the nonce
     };
 
     conn.interact(move |conn_interaction| {
@@ -540,14 +522,14 @@ pub async fn get_session_data_for_generation(
 #[instrument(skip(pool), err)]
 pub async fn get_session_settings(
     pool: &DbPool,
-    user_id: Uuid,
+    _user_id: Uuid,
     session_id: Uuid,
 ) -> Result<ChatSettingsResponse, AppError> {
     let conn = pool.get().await?;
     conn.interact(move |conn| {
         let settings_tuple = chat_sessions::table
             .filter(chat_sessions::id.eq(session_id))
-            .filter(chat_sessions::user_id.eq(user_id))
+            .filter(chat_sessions::user_id.eq(_user_id))
             .select((
                 chat_sessions::system_prompt,
                 chat_sessions::temperature,
@@ -731,4 +713,30 @@ pub async fn update_session_settings(
         })
     })
     .await?
+}
+
+#[instrument(skip_all, err)]
+pub async fn stream_ai_response_and_save_message(
+    _state: Arc<AppState>,
+    session_id: Uuid,
+    user_id: Uuid,
+    history_for_generation: HistoryForGeneration,
+    system_prompt: Option<String>,
+    temperature: Option<BigDecimal>,
+    max_output_tokens: Option<i32>,
+    frequency_penalty: Option<BigDecimal>,
+    presence_penalty: Option<BigDecimal>,
+    top_k: Option<i32>,
+    top_p: Option<BigDecimal>,
+    repetition_penalty: Option<BigDecimal>,
+    min_p: Option<BigDecimal>,
+    top_a: Option<BigDecimal>,
+    seed: Option<i32>,
+    logit_bias: Option<Value>,
+    model_name: String,
+    gemini_thinking_budget: Option<i32>,
+    gemini_enable_code_execution: Option<bool>,
+    _user_dek: Option<&SecretBox<Vec<u8>>>,
+) -> Result<(), AppError> {
+    Ok(())
 }

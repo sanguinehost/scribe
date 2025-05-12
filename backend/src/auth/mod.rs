@@ -211,35 +211,34 @@ pub fn verify_credentials(
         .first::<UserDbQuery>(conn)
         .map_err(AuthError::from)?;
     
-    let user = User::from(user_db_query); // Convert to User
+    // Convert UserDbQuery to User. This User object already contains encrypted_dek, kek_salt, dek_nonce
+    // if they were correctly populated in the database and UserDbQuery mapping.
+    let user = User::from(user_db_query.clone()); // Clone user_db_query if needed for User::from, or ensure User::from takes a ref
 
     // Perform bcrypt verification synchronously within the function
-    // This avoids potential issues with nested spawn_blocking inside interact
-    // --- Log before verify ---
     debug!(identifier = %identifier, username = %user.username, email = %user.email, user_id = %user.id, "Verifying password hash...");
     let is_valid = bcrypt::verify(password.expose_secret(), &user.password_hash)
         .map_err(|e| {
             error!(identifier = %identifier, username = %user.username, email = %user.email, user_id = %user.id, error = ?e, "Bcrypt verification failed");
-            AuthError::HashingError // Map bcrypt errors to HashingError
+            AuthError::HashingError
         })?;
 
     if is_valid {
-        // --- Log success ---
         debug!(identifier = %identifier, username = %user.username, email = %user.email, user_id = %user.id, "Password verification successful. Attempting DEK decryption...");
 
-        // a. kek_salt and encrypted_dek are already part of the `user` object.
+        // a. kek_salt, encrypted_dek, and dek_nonce are already part of the `user` object,
+        //    assuming they were loaded correctly from UserDbQuery into User.
+        //    It's critical that UserDbQuery -> User conversion populates these.
+        //    user.encrypted_dek and user.dek_nonce are Vec<u8>
+        //    user.kek_salt is String
+
         // b. Derive the Key Encryption Key (KEK)
-        let kek = crypto::derive_kek(&password, &user.kek_salt)
+        let kek = crypto::derive_kek(&password, &user.kek_salt) // user.kek_salt should be a &str
             .map_err(|e| {
                 error!(username = %user.username, user_id = %user.id, error = ?e, "Failed to derive KEK during login");
                 AuthError::CryptoOperationFailed(e)
             })?;
 
-        // c. Decrypt the user.encrypted_dek using the derived KEK
-        // Expose the secret KEK bytes for the decryption function
-
-        // Define NONCE_LEN (must match the length used in encrypt_gcm, which is 12)
-        // This const is mainly for conceptual clarity here, the crypto module enforces actual nonce length.
         info!(
             username = %user.username, 
             user_id = %user.id, 
@@ -248,47 +247,23 @@ pub fn verify_credentials(
             "DEK decryption attempt details"
         );
         
-        // Check if dek_nonce is present and appears valid before attempting decryption
-        if user.dek_nonce.is_empty() {
-            error!(username = %user.username, user_id = %user.id, "DEK nonce is missing.");
-            return Err(AuthError::CryptoOperationFailed(CryptoError::DecryptionFailed)); // Or a more specific error
-        }
-        // Optional: A more stringent check, though decrypt_gcm also validates nonce length.
-        // if user.dek_nonce.len() != EXPECTED_NONCE_LEN {
-        //     error!(username = %user.username, user_id = %user.id, dek_nonce_len = user.dek_nonce.len(), "DEK nonce has incorrect length.");
-        //     return Err(AuthError::CryptoOperationFailed(CryptoError::DecryptionFailed));
-        // }
-        if user.encrypted_dek.is_empty() {
-             error!(username = %user.username, user_id = %user.id, "Encrypted DEK is missing.");
-            return Err(AuthError::CryptoOperationFailed(CryptoError::DecryptionFailed));
-        }
-
-        // The actual ciphertext is user.encrypted_dek, and the nonce is user.dek_nonce.
-        let actual_ciphertext = &user.encrypted_dek;
-        let nonce_bytes = &user.dek_nonce;
+        // c. Decrypt the user.encrypted_dek using the derived KEK and user.dek_nonce
+        // crypto::decrypt_gcm returns Result<SecretBox<Vec<u8>>, CryptoError>
+        let decrypted_dek_secret_box = crypto::decrypt_gcm(
+            &user.encrypted_dek, 
+            &user.dek_nonce,     
+            &kek                 // Pass &kek directly, decrypt_gcm expects &SecretBox<Vec<u8>>
+        )
+        .map_err(|e| {
+            error!(username = %user.username, user_id = %user.id, error = ?e, "Failed to decrypt DEK during login. Check if KEK/DEK/Nonce are correct.");
+            AuthError::CryptoOperationFailed(e) 
+        })?;
         
-        info!(
-            username = %user.username,
-            user_id = %user.id,
-            nonce_bytes_len = nonce_bytes.len(),
-            actual_ciphertext_len = actual_ciphertext.len(),
-            "Using stored dek_nonce and encrypted_dek for decryption"
-        );
+        info!(username = %user.username, user_id = %user.id, "DEK decryption successful.");
 
-        let plaintext_dek_secret_box = crypto::decrypt_gcm(actual_ciphertext, nonce_bytes, &kek)
-            .map_err(|e| {
-                error!(username = %user.username, user_id = %user.id, error = ?e, "Failed to decrypt DEK during login");
-                AuthError::CryptoOperationFailed(e)
-            })?;
-
-        // plaintext_dek_secret_box is already SecretBox<Vec<u8>>
-        let decrypted_dek = Some(plaintext_dek_secret_box);
-        info!(username = %user.username, user_id = %user.id, "DEK decrypted successfully for user.");
-
-        Ok((user, decrypted_dek)) // Return user and DEK separately
+        Ok((user, Some(decrypted_dek_secret_box))) // Return the decrypted DEK directly
     } else {
-        // --- Log failure ---
-        warn!(identifier = %identifier, username = %user.username, email = %user.email, user_id = %user.id, "Password verification failed (wrong password).");
+        warn!(identifier = %identifier, "Password verification failed for user.");
         Err(AuthError::WrongCredentials)
     }
 }
@@ -297,8 +272,9 @@ pub mod session_dek; // Added session_dek module
 pub mod session_store;
 pub mod user_store;
 
-// Re-export for easier access
-pub use session_dek::{SessionDek, SESSION_DEK_KEY};
+pub use session_dek::{SessionDek}; // MODIFIED: Removed SESSION_DEK_KEY
+pub use session_store::DieselSessionStore;
+pub use user_store::Backend as AuthBackend;
 
 pub async fn hash_password(password: SecretString) -> Result<String, AuthError> { // Corrected: Was Secret<String>
     tokio::task::spawn_blocking(move || {

@@ -19,6 +19,7 @@ use secrecy::SecretBox; // For DEK (SecretBox<Vec<u8>>)
 use secrecy::ExposeSecret; // Added for ExposeSecret
 use crate::crypto::{decrypt_gcm, encrypt_gcm}; // For encryption/decryption
 use crate::errors::AppError; // For error handling
+use crate::models::users::SerializableSecretDek; // Import the newtype
 
 // Main Chat model (similar to the frontend Chat type)
 // Type alias for the tuple returned when selecting/returning chat settings
@@ -318,34 +319,47 @@ impl ChatMessage {
     }
 
     /// Convert this ChatMessage to a decrypted ClientChatMessage
-    pub fn into_decrypted_for_client(self, dek: Option<&SecretBox<Vec<u8>>>) -> Result<ClientChatMessage, AppError> {
-        let mut client_msg = ClientChatMessage {
-            id: self.id,
-            chat_id: self.session_id,
-            character_id: self.session_id,
-            content: String::new(), // Will be populated below
-            role: None,
-            created_at: self.created_at,
-            updated_at: self.created_at, // Using created_at as updated_at isn't available
-        };
-
-        // Only try to decrypt if we have both encrypted data, a nonce, and the DEK
-        if let (Some(dek), Some(nonce)) = (dek, self.content_nonce.as_ref()) {
-            if !self.content.is_empty() {
-                // Decrypt the content field
-                let decrypted_secret_bytes = decrypt_gcm(&self.content, nonce, dek)
-                    .map_err(|e| AppError::EncryptionError(format!("Failed to decrypt chat message: {}", e)))?;
-
-                // Convert bytes to UTF-8 string
-                client_msg.content = String::from_utf8(decrypted_secret_bytes.expose_secret().to_vec())
-                    .map_err(|e| AppError::EncryptionError(format!("Invalid UTF-8 in decrypted chat message: {}", e)))?;
+    pub fn into_decrypted_for_client(self, user_dek_secret_box: Option<&SecretBox<Vec<u8>>>) -> Result<ChatMessageForClient, AppError> {
+        let decrypted_content_result: Result<String, AppError> = if let Some(nonce) = &self.content_nonce {
+            if let Some(dek_sb) = user_dek_secret_box {
+                match crate::crypto::decrypt_gcm(&self.content, nonce, dek_sb) { 
+                    Ok(plaintext_secret_vec) => {
+                        String::from_utf8(plaintext_secret_vec.expose_secret().to_vec())
+                            .map_err(|e| {
+                                error!("UTF-8 conversion error for msg {}: {:?}", self.id, e);
+                                AppError::DecryptionError(format!("UTF-8 conversion: {}", e))
+                            })
+                    },
+                    Err(e) => {
+                        error!("Decryption failed for msg {}: {:?}", self.id, e);
+                        Err(AppError::DecryptionError(format!("Decryption failed: {}", e)))
+                    }
+                }
+            } else {
+                error!("Msg {} is encrypted but no DEK provided.", self.id);
+                // This case should probably be an error too if strict decryption is required.
+                // For now, matches previous behavior of returning placeholder.
+                Ok("[Content encrypted, DEK not available]".to_string()) 
             }
         } else {
-            // If no DEK or no nonce, keep encrypted (or send placeholder)
-            client_msg.content = "[Encrypted]".to_string();
-        }
+            // No nonce, assume plaintext
+            String::from_utf8(self.content.clone())
+                .map_err(|e| {
+                    error!("Invalid UTF-8 in plaintext for msg {}: {:?}", self.id, e);
+                    AppError::InternalServerErrorGeneric(format!("Invalid UTF-8: {}", e))
+                })
+        };
 
-        Ok(client_msg)
+        let final_decrypted_content = decrypted_content_result?;
+
+        Ok(ChatMessageForClient {
+            id: self.id,
+            session_id: self.session_id,
+            message_type: self.message_type, 
+            content: final_decrypted_content,
+            created_at: self.created_at,
+            user_id: self.user_id, 
+        })
     }
 }
 
@@ -606,10 +620,10 @@ pub struct UpdateChatSettingsRequest {
 fn validate_optional_history_strategy(strategy: &String) -> Result<(), ValidationError> {
     // Check if the strategy is a known value
     match strategy.as_str() {
-        "none" | "sliding_window_messages" | "sliding_window_tokens" | "truncate_tokens" | "message_window" => Ok(()),
+        "none" | "sliding_window_messages" | "sliding_window_tokens" | "truncate_tokens" | "message_window" | "token_limit" => Ok(()),
         _ => {
             let mut err = ValidationError::new("unknown_strategy");
-            err.message = Some(format!("Unknown history management strategy: {}. Allowed values are: none, sliding_window_messages, message_window, sliding_window_tokens, truncate_tokens", strategy).into());
+            err.message = Some(format!("Unknown history management strategy: {}. Allowed values are: none, sliding_window_messages, message_window, sliding_window_tokens, truncate_tokens, token_limit", strategy).into());
             Err(err)
         }
     }

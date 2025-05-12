@@ -1,15 +1,16 @@
 // backend/src/routes/chat.rs
 
 use axum::{
-    extract::{Path, State},
-    http::{HeaderMap},
-    response::{sse::Event, sse::KeepAlive, Sse, IntoResponse},
+    body::Body,
+    extract::{ConnectInfo, FromRequest, Path, Query, State},
+    http::{header, HeaderMap, Method, Request, StatusCode, Uri},
+    response::{IntoResponse, Response, Sse, sse::{Event, KeepAlive}},
     Json,
-    routing::{get, post},
     Router,
+    routing::{delete, get, post, put},
 };
 use axum_login::AuthSession;
-use diesel::{QueryDsl, ExpressionMethods, RunQueryDsl, SelectableHelper};
+use diesel::{QueryDsl, ExpressionMethods, RunQueryDsl, SelectableHelper, prelude::*};
 use crate::models::chats::{
     MessageRole, GenerateChatRequest, Chat, SuggestedActionsRequest,
     SuggestedActionItem, SuggestedActionsResponse,
@@ -20,7 +21,6 @@ use crate::state::AppState;
 use crate::schema::chat_sessions;
 use validator::Validate;
 use std::sync::Arc;
-use futures::StreamExt;
 use tracing::{debug, error, info, instrument, trace, warn};
 use uuid::Uuid;
 use bigdecimal::ToPrimitive;
@@ -31,20 +31,39 @@ use genai::chat::{
     ChatRequest, ChatOptions, ChatMessage as GenAiChatMessage, ChatRole, MessageContent,
     ChatResponseFormat, JsonSpec, ChatStreamEvent
 };
-use crate::routes::chats_api::{
-    create_chat_handler,
-    get_chats_handler,
-    get_chat_by_id_handler,
-    get_messages_by_chat_id_handler,
-    get_chat_settings_handler,
-    update_chat_settings_handler,
-};
-use axum::http::StatusCode;
+use crate::routes::chats_api::{get_chat_settings_handler, update_chat_settings_handler}; // Added back necessary imports
+use crate::models::users::{User, SerializableSecretDek}; // Ensure User & SerializableSecretDek are imported
+use secrecy::SecretBox; // Import SecretBox
+use std::net::SocketAddr;
+use futures_util::{Stream, StreamExt, TryStreamExt, stream::BoxStream};
+use async_stream::try_stream;
+use tokio::sync::mpsc;
+use serde::Serialize;
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
+use tokio_stream::wrappers::ReceiverStream;
+use tracing::field; // ADDED for instrument macro
 
-#[instrument(skip(state, auth_session, payload), fields(session_id = %session_id_str))]
+// Define CurrentAuthSession type alias
+type CurrentAuthSession = AuthSession<AuthBackend>;
+
+// Placeholder for response struct if it was missing
+#[derive(Serialize)]
+struct PlaceholderResponse { message: String }
+
+#[derive(Serialize, Debug)] // Added derive Debug
+pub struct ChatSessionWithDekResponse { // Made pub
+    pub id: Uuid,
+    pub user_id: Uuid,
+    pub character_id: Uuid,
+    pub title: Option<String>,
+    pub dek_present: bool, // Simpler representation of DEK presence
+}
+
+#[instrument(skip_all, fields(session_id = %session_id_str, user_id = field::Empty, chat_id = field::Empty, message_id = field::Empty))]
 pub async fn generate_chat_response(
     State(state): State<AppState>,
     auth_session: AuthSession<AuthBackend>,
+    session_dek: SessionDek,
     Path(session_id_str): Path<String>,
     headers: HeaderMap,
     Json(payload): Json<GenerateChatRequest>,
@@ -53,19 +72,23 @@ pub async fn generate_chat_response(
     payload.validate()?;
     trace!(payload = ?payload, "Received validated payload");
 
-    let state = Arc::new(state);
+    let state_arc = Arc::new(state);
 
     let user = auth_session.user
         .ok_or_else(|| AppError::Unauthorized("User not found in session".to_string()))?;
+    
+    tracing::debug!(user_id = %user.id, user_dek_from_auth_session_is_some = user.dek.is_some(), "generate_chat_response: Checked user.dek from auth_session (expected None or unused).");
+
     let user_id_value = user.id;
-    let user_dek_owned: Option<SessionDek> = user.dek.map(SessionDek); // Convert Option<SecretBox<Vec<u8>>> to Option<SessionDek>
-    debug!(%user_id_value, "Extracted user and DEK (if present) from session");
+    let user_dek_secret_box_ref: Option<&SecretBox<Vec<u8>>> = Some(&session_dek.0);
+    
+    debug!(%user_id_value, "Using SessionDek from extractor. user_dek_secret_box_ref.is_some(): {}", user_dek_secret_box_ref.is_some());
 
     let session_id = Uuid::parse_str(&session_id_str)
         .map_err(|_| AppError::BadRequest("Invalid session UUID format".to_string()))?;
     debug!(%session_id, "Parsed session ID");
 
-    let chat_session = state.pool.get().await
+    let chat_session = state_arc.pool.get().await
         .map_err(|e| AppError::DbPoolError(e.to_string()))?
         .interact(move |conn| {
             chat_sessions::table
@@ -124,7 +147,7 @@ pub async fn generate_chat_response(
         _hist_strategy,
         _hist_limit,
     ) = chat_service::get_session_data_for_generation(
-        &state.pool,
+        &state_arc.pool,
         user_id_value,
         session_id,
         current_user_content.clone(),
@@ -185,7 +208,7 @@ pub async fn generate_chat_response(
                 user_id: user_id_value,
             };
 
-            match state.embedding_pipeline_service.process_and_embed_message(state.clone(), user_message_for_embedding).await {
+            match state_arc.embedding_pipeline_service.process_and_embed_message(state_arc.clone(), user_message_for_embedding).await {
                 Ok(()) => {
                     info!(%session_id, "RAG pre-processing (process_and_embed_message) completed for current user message.");
                 }
@@ -229,23 +252,24 @@ pub async fn generate_chat_response(
 
             trace!(%session_id, chat_request = ?chat_request, genai_options = ?genai_chat_options, "Prepared ChatRequest and Options for AI (SSE)");
 
-            let genai_stream: crate::llm::ChatStream = match state.ai_client.stream_chat(model_to_use.as_str(), chat_request, Some(genai_chat_options)).await {
+            let genai_stream: crate::llm::ChatStream = match state_arc.ai_client.stream_chat(model_to_use.as_str(), chat_request, Some(genai_chat_options)).await {
                  Ok(s) => {
                      debug!(%session_id, "Successfully initiated AI stream");
 
-                     let _db_pool_sse = state.pool.clone();
-                     let _embedding_tracker = state.embedding_call_tracker.clone();
+                     let _db_pool_sse = state_arc.pool.clone();
+                     let _embedding_tracker = state_arc.embedding_call_tracker.clone();
                      let session_id_sse = session_id;
                      let user_id_sse = user_id_value;
                      let last_message_content_sse = payload.history.last().map(|m| m.content.clone()).unwrap_or_default();
-                     let dek_for_sse = user_dek_owned.clone();
-                     let state_for_sse = state.clone();
+                     let session_dek_for_user_save_sse = session_dek.clone();
+                     let state_for_sse = state_arc.clone();
 
                      tokio::spawn(async move {
                          if last_message_content_sse.is_empty() {
                              error!(session_id = %session_id_sse, "Cannot save empty user message (SSE)");
                              return;
                          }
+                         let dek_for_sse_ref: Option<&SecretBox<Vec<u8>>> = Some(&session_dek_for_user_save_sse.0);
 
                          match chat_service::save_message(
                             state_for_sse,
@@ -253,7 +277,7 @@ pub async fn generate_chat_response(
                             user_id_sse,
                             MessageRole::User,
                             &last_message_content_sse,
-                            dek_for_sse.as_ref().map(|s| &s.0),
+                            dek_for_sse_ref,
                         ).await {
                             Ok(saved_message) => {
                                 debug!(session_id = %session_id_sse, message_id = %saved_message.id, "Successfully saved user message via chat_service (SSE)");
@@ -282,6 +306,7 @@ pub async fn generate_chat_response(
             let stream = async_stream::stream! {
                 let mut accumulated_content = String::new();
                 let mut stream_error_occurred = false;
+                let session_dek_for_stream = session_dek.clone();
 
                 futures::pin_mut!(genai_stream);
                 trace!(%session_id, "Entering SSE async_stream! processing loop");
@@ -318,19 +343,20 @@ pub async fn generate_chat_response(
                             let partial_content_clone = accumulated_content.clone();
                             let error_session_id = session_id;
                             let error_user_id = user_id_value;
-                            let dek_for_partial_save = user_dek_owned.clone();
-                            let state_for_partial_save = state.clone();
+                            let session_dek_for_partial_save = session_dek_for_stream.clone();
+                            let state_for_partial_save = state_arc.clone();
 
                             tokio::spawn(async move {
                                 if !partial_content_clone.is_empty() {
                                     trace!(session_id = %error_session_id, "Attempting to save partial AI response after stream error");
+                                    let dek_for_partial_save_ref: Option<&SecretBox<Vec<u8>>> = Some(&session_dek_for_partial_save.0);
                                     match chat_service::save_message(
                                         state_for_partial_save,
                                         error_session_id,
                                         error_user_id,
                                         MessageRole::Assistant,
                                         &partial_content_clone,
-                                        dek_for_partial_save.as_ref().map(|s| &s.0),
+                                        dek_for_partial_save_ref,
                                     ).await {
                                         Ok(saved_message) => {
                                             debug!(session_id = %error_session_id, message_id = %saved_message.id, "Successfully saved partial AI response via chat_service after stream error");
@@ -367,21 +393,22 @@ pub async fn generate_chat_response(
                     let session_id_clone = session_id;
                     let user_id_clone = user_id_value;
                     let accumulated_content_clone = accumulated_content.clone();
-                    let dek_for_ai_save = user_dek_owned.clone();
-                    let state_for_ai_save = state.clone();
+                    let session_dek_for_ai_full_save = session_dek_for_stream.clone();
+                    let state_for_ai_save = state_arc.clone();
 
                     tokio::spawn(async move {
                         if accumulated_content_clone.is_empty() {
                             warn!(session_id = %session_id_clone, "Skipping save for empty accumulated AI content (SSE)");
                             return;
                         }
+                        let dek_for_ai_save_ref: Option<&SecretBox<Vec<u8>>> = Some(&session_dek_for_ai_full_save.0);
                         match chat_service::save_message(
                             state_for_ai_save,
                             session_id_clone,
                             user_id_clone,
                             MessageRole::Assistant,
                             &accumulated_content_clone,
-                            dek_for_ai_save.as_ref().map(|s| &s.0),
+                            dek_for_ai_save_ref,
                         ).await {
                             Ok(saved_message) => {
                                 debug!(session_id = %session_id_clone, message_id = %saved_message.id, "Successfully saved full AI response via chat_service (SSE)");
@@ -413,13 +440,14 @@ pub async fn generate_chat_response(
                  return Err(AppError::BadRequest("User message content cannot be empty (JSON).".to_string()));
             }
 
+            let session_dek_for_ai_json_save = session_dek.clone();
             let user_saved_message = match chat_service::save_message(
-                state.clone(),
+                state_arc.clone(),
                 session_id,
                 user_id_value,
                 MessageRole::User,
                 &user_message_content_for_json_path,
-                user_dek_owned.as_ref().map(|s| &s.0),
+                Some(&session_dek.0),
             ).await {
                 Ok(saved_msg) => {
                     debug!(message_id = %saved_msg.id, session_id = %session_id, "Successfully saved user message via chat_service (JSON)");
@@ -446,7 +474,7 @@ pub async fn generate_chat_response(
                         user_id: user_id_value,
                     };
 
-                    match state.embedding_pipeline_service.process_and_embed_message(state.clone(), user_message_for_embedding_json).await {
+                    match state_arc.embedding_pipeline_service.process_and_embed_message(state_arc.clone(), user_message_for_embedding_json).await {
                         Ok(()) => {
                             info!(%session_id, "RAG pre-processing (JSON branch) completed for current user message.");
                         }
@@ -479,7 +507,7 @@ pub async fn generate_chat_response(
                 .with_top_p(top_p.map(|p| p.to_f32().unwrap_or(0.95) as f64).unwrap_or(0.95));
 
             trace!(%session_id, chat_request = ?chat_request, "Prepared ChatRequest for AI (non-streaming, post-RAG)");
-            match state.ai_client.exec_chat(model_to_use.as_str(), chat_request, Some(chat_options))
+            match state_arc.ai_client.exec_chat(model_to_use.as_str(), chat_request, Some(chat_options))
                 .await
             {
                 Ok(chat_response) => {
@@ -493,8 +521,8 @@ pub async fn generate_chat_response(
 
                     trace!(%session_id, ?response_content, "Full non-streaming AI response");
                     
-                    let state_for_ai_json_save = state.clone();
-                    let dek_for_ai_json_save = user_dek_owned.clone();
+                    let state_for_ai_json_save = state_arc.clone();
+                    let dek_for_ai_json_save_ref: Option<&SecretBox<Vec<u8>>> = Some(&session_dek_for_ai_json_save.0);
                     let response_content_for_save = response_content.clone(); // Clone for the spawned task
 
                     tokio::spawn(async move {
@@ -502,13 +530,14 @@ pub async fn generate_chat_response(
                             warn!(session_id = %session_id, "Skipping save for empty AI content (JSON)");
                             return;
                         }
+                        let dek_for_ai_json_save_ref: Option<&SecretBox<Vec<u8>>> = Some(&session_dek_for_ai_json_save.0);
                         match chat_service::save_message(
                             state_for_ai_json_save,
                             session_id,
                             user_id_value,
                             MessageRole::Assistant,
                             &response_content_for_save, // Use the clone
-                            dek_for_ai_json_save.as_ref().map(|s| &s.0),
+                            dek_for_ai_json_save_ref,
                         ).await {
                             Ok(saved_message) => {
                                 debug!(session_id = %session_id, message_id = %saved_message.id, "Successfully saved AI message via chat_service (JSON)");
@@ -566,15 +595,16 @@ pub async fn generate_chat_response(
 
                 trace!(%session_id, chat_request = ?chat_request, genai_options = ?genai_chat_options_fallback, "Prepared ChatRequest and Options for AI (fallback SSE)");
 
-                let genai_stream: crate::llm::ChatStream = match state.ai_client.stream_chat(model_to_use.as_str(), chat_request, Some(genai_chat_options_fallback)).await {
+                let genai_stream: crate::llm::ChatStream = match state_arc.ai_client.stream_chat(model_to_use.as_str(), chat_request, Some(genai_chat_options_fallback)).await {
                      Ok(s) => {
                          debug!(%session_id, "Successfully initiated AI stream (fallback SSE)");
 
-                         let db_pool_sse = state.pool.clone();
-                         let embedding_tracker = state.embedding_call_tracker.clone();
+                         let db_pool_sse = state_arc.pool.clone();
+                         let embedding_tracker = state_arc.embedding_call_tracker.clone();
                          let session_id_sse = session_id;
                          let user_id_sse = user_id_value;
                          let last_message_content_sse_fallback = payload.history.last().map(|m| m.content.clone()).unwrap_or_default();
+                         let session_dek_for_user_save_fallback_sse = session_dek.clone();
 
                          tokio::spawn(async move {
                              if last_message_content_sse_fallback.is_empty() {
@@ -643,6 +673,7 @@ pub async fn generate_chat_response(
                 let stream = async_stream::stream! {
                     let mut accumulated_content = String::new();
                     let mut stream_error_occurred = false;
+                    let session_dek_for_fallback_stream = session_dek.clone();
 
                     futures::pin_mut!(genai_stream);
                     trace!(%session_id, "Entering fallback SSE async_stream! processing loop");
@@ -679,19 +710,20 @@ pub async fn generate_chat_response(
                                 let partial_content_clone = accumulated_content.clone();
                                 let error_session_id = session_id;
                                 let error_user_id = user_id_value;
-                                let dek_for_partial_save_fb = user_dek_owned.clone();
-                                let state_for_partial_save_fb = state.clone();
+                                let session_dek_for_partial_save_fallback = session_dek_for_fallback_stream.clone();
+                                let state_for_partial_save_fb = state_arc.clone();
 
                                 tokio::spawn(async move {
                                     if !partial_content_clone.is_empty() {
                                         trace!(session_id = %error_session_id, "Attempting to save partial AI response after stream error (fallback)");
+                                        let dek_for_partial_save_fb_ref: Option<&SecretBox<Vec<u8>>> = Some(&session_dek_for_partial_save_fallback.0);
                                         match chat_service::save_message(
                                             state_for_partial_save_fb,
                                             error_session_id,
                                             error_user_id,
                                             MessageRole::Assistant,
                                             &partial_content_clone,
-                                            dek_for_partial_save_fb.as_ref().map(|s| &s.0),
+                                            dek_for_partial_save_fb_ref,
                                         ).await {
                                             Ok(saved_message) => {
                                                 debug!(session_id = %error_session_id, message_id = %saved_message.id, "Successfully saved partial AI response via chat_service after stream error (fallback)");
@@ -728,21 +760,22 @@ pub async fn generate_chat_response(
                         let session_id_clone = session_id;
                         let user_id_clone = user_id_value;
                         let accumulated_content_clone = accumulated_content.clone();
-                        let dek_for_ai_save = user_dek_owned.clone();
-                        let state_for_ai_save = state.clone();
+                        let session_dek_for_ai_full_save_fallback = session_dek_for_fallback_stream.clone();
+                        let state_for_ai_save = state_arc.clone();
 
                         tokio::spawn(async move {
                             if accumulated_content_clone.is_empty() {
                                 warn!(session_id = %session_id_clone, "Skipping save for empty accumulated AI content (SSE)");
                                 return;
                             }
+                            let dek_for_ai_save_ref: Option<&SecretBox<Vec<u8>>> = Some(&session_dek_for_ai_full_save_fallback.0);
                             match chat_service::save_message(
                                 state_for_ai_save,
                                 session_id_clone,
                                 user_id_clone,
                                 MessageRole::Assistant,
                                 &accumulated_content_clone,
-                                dek_for_ai_save.as_ref().map(|s| &s.0),
+                                dek_for_ai_save_ref,
                             ).await {
                                 Ok(saved_message) => {
                                     debug!(session_id = %session_id_clone, message_id = %saved_message.id, "Successfully saved full AI response via chat_service (SSE)");
@@ -794,15 +827,16 @@ pub async fn generate_chat_response(
 
                 trace!(%session_id, chat_request = ?chat_request, genai_options = ?genai_chat_options_empty_fallback, "Prepared ChatRequest and Options for AI (empty header fallback SSE)");
 
-                let genai_stream: crate::llm::ChatStream = match state.ai_client.stream_chat(model_to_use.as_str(), chat_request, Some(genai_chat_options_empty_fallback)).await {
+                let genai_stream: crate::llm::ChatStream = match state_arc.ai_client.stream_chat(model_to_use.as_str(), chat_request, Some(genai_chat_options_empty_fallback)).await {
                     Ok(s) => {
                         debug!(%session_id, "Successfully initiated AI stream (empty header fallback SSE)");
 
-                        let db_pool_sse = state.pool.clone();
-                        let embedding_tracker = state.embedding_call_tracker.clone();
+                        let db_pool_sse = state_arc.pool.clone();
+                        let embedding_tracker = state_arc.embedding_call_tracker.clone();
                         let session_id_sse = session_id;
                         let user_id_sse = user_id_value;
                         let last_message_content_empty_fallback = payload.history.last().map(|m| m.content.clone()).unwrap_or_default();
+                        let session_dek_for_user_save_empty_fallback = session_dek.clone();
 
                         tokio::spawn(async move {
                             if last_message_content_empty_fallback.is_empty() {
@@ -870,6 +904,8 @@ pub async fn generate_chat_response(
                 let stream = async_stream::stream! {
                     let mut accumulated_content = String::new();
                     let mut stream_error_occurred = false;
+                    let session_dek_for_empty_fallback_stream = session_dek.clone();
+
                     futures::pin_mut!(genai_stream);
                     trace!(%session_id, "Entering empty header fallback SSE async_stream! processing loop");
 
@@ -903,9 +939,10 @@ pub async fn generate_chat_response(
                                 stream_error_occurred = true;
 
                                 let partial_content_clone = accumulated_content.clone();
-                                let db_pool_clone = state.pool.clone();
+                                let db_pool_clone = state_arc.pool.clone();
                                 let error_session_id = session_id;
                                 let error_user_id = user_id_value;
+                                let session_dek_for_partial_save_empty_fallback = session_dek_for_empty_fallback_stream.clone();
 
                                 tokio::spawn(async move {
                                     if !partial_content_clone.is_empty() {
@@ -968,21 +1005,22 @@ pub async fn generate_chat_response(
                         let session_id_clone = session_id;
                         let user_id_clone = user_id_value;
                         let accumulated_content_clone = accumulated_content.clone();
-                        let dek_for_ai_save = user_dek_owned.clone();
-                        let state_for_ai_save = state.clone();
+                        let session_dek_for_ai_full_save_empty_fallback = session_dek_for_empty_fallback_stream.clone();
+                        let state_for_ai_save = state_arc.clone();
 
                         tokio::spawn(async move {
                             if accumulated_content_clone.is_empty() {
                                 warn!(session_id = %session_id_clone, "Skipping save for empty accumulated AI content (SSE)");
                                 return;
                             }
+                            let dek_for_ai_save_ref: Option<&SecretBox<Vec<u8>>> = Some(&session_dek_for_ai_full_save_empty_fallback.0);
                             match chat_service::save_message(
                                 state_for_ai_save,
                                 session_id_clone,
                                 user_id_clone,
                                 MessageRole::Assistant,
                                 &accumulated_content_clone,
-                                dek_for_ai_save.as_ref().map(|s| &s.0),
+                                dek_for_ai_save_ref,
                             ).await {
                                 Ok(saved_message) => {
                                     debug!(session_id = %session_id_clone, message_id = %saved_message.id, "Successfully saved full AI response via chat_service (SSE)");
@@ -1016,6 +1054,14 @@ pub fn chat_routes(state: AppState) -> Router<AppState> {
             post(generate_suggested_actions),
         )
         .route("/ping", get(ping_handler))
+        .route(
+            "/:chat_id/settings",
+            get(get_chat_settings_handler).put(update_chat_settings_handler),
+        )
+        .route(
+            "/:session_id_str/generate",
+            post(generate_chat_response),
+        )
         .with_state(state)
 }
 
@@ -1149,5 +1195,42 @@ pub async fn generate_suggested_actions(
     info!(%chat_id, "Successfully generated {} suggested actions", suggestions.len());
 
     Ok(Json(SuggestedActionsResponse { suggestions }))
+}
+
+#[instrument(skip_all, err)]
+pub async fn get_chat_session_with_dek(
+    State(state): State<AppState>,
+    Path(chat_id): Path<Uuid>,
+    auth_session: CurrentAuthSession, // Use CurrentAuthSession
+) -> Result<Json<ChatSessionWithDekResponse>, AppError> {
+    let pool = state.pool.clone();
+    let user = auth_session.user.ok_or_else(|| {
+        error!("User not found in session for chat_id: {}", chat_id);
+        AppError::Unauthorized("User not found in session".to_string())
+    })?;
+
+    let chat_session_db = pool.get().await?
+        .interact(move |conn| {
+            crate::schema::chat_sessions::table
+                .filter(crate::schema::chat_sessions::id.eq(chat_id))
+                .filter(crate::schema::chat_sessions::user_id.eq(user.id))
+                .select(Chat::as_select())
+                .first::<Chat>(conn)
+                .optional()
+        })
+        .await??;
+
+    if let Some(session_db) = chat_session_db {
+        let dek_present = user.dek.is_some();
+        Ok(Json(ChatSessionWithDekResponse {
+            id: session_db.id,
+            user_id: session_db.user_id,
+            character_id: session_db.character_id,
+            title: session_db.title,
+            dek_present,
+        }))
+    } else {
+        Err(AppError::NotFound("Chat session not found".to_string()))
+    }
 }
 

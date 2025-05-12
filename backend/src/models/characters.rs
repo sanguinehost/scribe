@@ -14,7 +14,8 @@ use crate::models::users::User;
 use crate::schema::characters;
 use crate::services::character_parser::ParsedCharacterCard;
 // For encryption/decryption
-use crate::crypto::decrypt_gcm;
+// use crate::crypto::decrypt_gcm; // Will be replaced by EncryptionService
+use crate::services::encryption_service::EncryptionService; // Added
 
 #[derive(
     Queryable, Selectable, Identifiable, Associations, Serialize, Deserialize, Debug, Clone, PartialEq,
@@ -126,7 +127,9 @@ impl Character {
 
     /// Convert this Character into a json-friendly ClientCharacter response
     /// If DEK is available, decrypt encrypted fields
-    pub fn into_client_character(self, dek: Option<&SecretBox<Vec<u8>>>) -> Result<ClientCharacter, AppError> {
+    pub async fn into_client_character(self, dek: Option<&SecretBox<Vec<u8>>>) -> Result<ClientCharacter, AppError> {
+        let encryption_service = EncryptionService; // Instantiate service
+
         let mut client_char = ClientCharacter {
             id: self.id,
             user_id: self.user_id,
@@ -152,13 +155,16 @@ impl Character {
         }
 
         // Decrypt system_prompt if available
-        if let (Some(dek), Some(system_prompt), Some(system_prompt_nonce)) = 
-            (dek, &self.system_prompt, &self.system_prompt_nonce) {
-            if !system_prompt.is_empty() {
-                let decrypted_bytes = decrypt_gcm(system_prompt, system_prompt_nonce, dek)
+        if let (Some(dek_val), Some(system_prompt_data), Some(system_prompt_nonce_val)) =
+            (dek, &self.system_prompt, &self.system_prompt_nonce)
+        {
+            if !system_prompt_data.is_empty() {
+                let decrypted_bytes = encryption_service
+                    .decrypt(system_prompt_data, system_prompt_nonce_val, dek_val.expose_secret())
+                    .await
                     .map_err(|e| AppError::EncryptionError(format!("Failed to decrypt system_prompt: {}", e)))?;
                 
-                client_char.system_prompt = String::from_utf8(decrypted_bytes.expose_secret().to_vec())
+                client_char.system_prompt = String::from_utf8(decrypted_bytes)
                     .map_err(|e| AppError::EncryptionError(format!("Invalid UTF-8 in decrypted system_prompt: {}", e)))?;
             }
         } else if let Some(_system_prompt) = &self.system_prompt {
@@ -167,36 +173,46 @@ impl Character {
         }
 
         // Use voice_instructions or persona for client's voice_instructions
-        if let (Some(dek), Some(voice_data), Some(voice_nonce)) = 
-            (dek, &self.persona, &self.persona_nonce) {
+        if let (Some(dek_val), Some(voice_data), Some(voice_nonce)) =
+            (dek, &self.persona, &self.persona_nonce) 
+        {
             if !voice_data.is_empty() {
-                let decrypted_bytes = decrypt_gcm(voice_data, voice_nonce, dek)
+                let decrypted_bytes = encryption_service
+                    .decrypt(voice_data, voice_nonce, dek_val.expose_secret())
+                    .await
                     .map_err(|e| AppError::EncryptionError(format!("Failed to decrypt voice data: {}", e)))?;
                 
-                client_char.voice_instructions = String::from_utf8(decrypted_bytes.expose_secret().to_vec())
+                client_char.voice_instructions = String::from_utf8(decrypted_bytes)
                     .map_err(|e| AppError::EncryptionError(format!("Invalid UTF-8 in decrypted voice data: {}", e)))?;
             }
+        } else if let Some(_voice_data) = &self.persona { // Check if persona data exists even if no DEK
+             client_char.voice_instructions = "[Encrypted]".to_string();
         } else {
-            // Default voice instructions
+            // Default voice instructions if no persona data at all
             client_char.voice_instructions = "Default voice settings".to_string();
         }
 
         // Only try to decrypt description if we have both encrypted data, a nonce, and the DEK
-        if let (Some(dek), Some(nonce), Some(description)) = (dek, self.description_nonce, self.description) {
-            if !description.is_empty() {
+        if let (Some(dek_val), Some(nonce_val), Some(description_data)) = (dek, &self.description_nonce, &self.description) {
+            if !description_data.is_empty() {
                 // Decrypt the description field
-                let decrypted_bytes = decrypt_gcm(&description, &nonce, dek)
+                let decrypted_bytes = encryption_service
+                    .decrypt(description_data, nonce_val, dek_val.expose_secret())
+                    .await
                     .map_err(|e| AppError::EncryptionError(format!("Failed to decrypt description: {}", e)))?;
 
                 // Convert bytes to UTF-8 string
-                let decrypted_text = String::from_utf8(decrypted_bytes.expose_secret().to_vec())
+                let decrypted_text = String::from_utf8(decrypted_bytes)
                     .map_err(|e| AppError::EncryptionError(format!("Invalid UTF-8 in decrypted description: {}", e)))?;
                 
                 client_char.description = decrypted_text;
             }
-        } else {
-            // If no DEK or no nonce or no description, use placeholder
+        } else if self.description.is_some() && self.description_nonce.is_some() {
+             // If no DEK but data exists, show encrypted placeholder
             client_char.description = "[Encrypted]".to_string();
+        } else {
+            // If no data or no nonce, leave as empty or default (already initialized)
+            // client_char.description is already String::new()
         }
 
         Ok(client_char)
@@ -204,88 +220,95 @@ impl Character {
 
     /// Convert this Character into a CharacterDataForClient response
     /// This is similar to into_client_character but with a more detailed output format
-    pub fn into_decrypted_for_client(self, dek: Option<&SecretBox<Vec<u8>>>) -> Result<CharacterDataForClient, AppError> {
-        let mut client_char = CharacterDataForClient {
+    pub async fn into_decrypted_for_client(self, dek: Option<&SecretBox<Vec<u8>>>) -> Result<CharacterDataForClient, AppError> {
+        let encryption_service = EncryptionService; // Instantiate service
+
+        // Helper macro to reduce boilerplate for decryption
+        macro_rules! decrypt_field {
+            ($self_field:expr, $self_nonce:expr, $dek_opt:expr) => {
+                match ($self_field, $self_nonce, $dek_opt) {
+                    (Some(data), Some(nonce), Some(dek_val)) if !data.is_empty() => {
+                        let decrypted_bytes_res = encryption_service
+                            .decrypt(data, nonce, dek_val.expose_secret())
+                            .await;
+                        match decrypted_bytes_res {
+                            Ok(decrypted_bytes) => {
+                                String::from_utf8(decrypted_bytes)
+                                    .map(Some)
+                                    .map_err(|e| AppError::EncryptionError(format!("Invalid UTF-8 for field: {}", e)))
+                            }
+                            Err(e) => Err(e),
+                        }
+                    }
+                    (Some(data), Some(_), None) if !data.is_empty() => Ok(Some("[Encrypted]".to_string())),
+                    _ => Ok(None),
+                }
+            };
+        }
+
+        let client_char = CharacterDataForClient {
             id: self.id,
             user_id: self.user_id,
             spec: self.spec,
             spec_version: self.spec_version,
             name: self.name,
-            description: None, // Will be populated below
-            personality: None,
-            scenario: None,
-            first_mes: None,
-            mes_example: None,
-            creator_notes: None,
-            system_prompt: None,
-            post_history_instructions: None,
-            tags: None,
-            creator: None,
-            character_version: None,
-            alternate_greetings: None,
-            nickname: None,
-            creator_notes_multilingual: None,
-            source: None,
-            group_only_greetings: None,
-            creation_date: None,
-            modification_date: None,
+            description: decrypt_field!(&self.description, &self.description_nonce, dek)?,
+            personality: decrypt_field!(&self.personality, &self.personality_nonce, dek)?,
+            scenario: decrypt_field!(&self.scenario, &self.scenario_nonce, dek)?,
+            first_mes: decrypt_field!(&self.first_mes, &self.first_mes_nonce, dek)?,
+            mes_example: decrypt_field!(&self.mes_example, &self.mes_example_nonce, dek)?,
+            creator_notes: decrypt_field!(&self.creator_notes, &self.creator_notes_nonce, dek)?,
+            system_prompt: decrypt_field!(&self.system_prompt, &self.system_prompt_nonce, dek)?,
+            post_history_instructions: decrypt_field!(&self.post_history_instructions, &self.post_history_instructions_nonce, dek)?,
+            tags: self.tags,
+            creator: self.creator,
+            character_version: self.character_version,
+            alternate_greetings: self.alternate_greetings,
+            nickname: self.nickname,
+            creator_notes_multilingual: self.creator_notes_multilingual.map(Json),
+            source: self.source,
+            group_only_greetings: self.group_only_greetings,
+            creation_date: self.creation_date,
+            modification_date: self.modification_date,
             created_at: self.created_at,
             updated_at: self.updated_at,
-            persona: None,
-            world_scenario: None,
-            avatar: None,
-            chat: None,
-            greeting: None,
-            definition: None,
-            default_voice: None,
-            extensions: None,
-            data_id: None,
-            category: None,
-            definition_visibility: None,
-            depth: None,
-            example_dialogue: None,
-            favorite: None,
-            first_message_visibility: None,
-            height: None,
-            last_activity: None,
-            migrated_from: None,
-            model_prompt: None,
-            model_prompt_visibility: None,
-            model_temperature: None,
-            num_interactions: None,
-            permanence: None,
-            persona_visibility: None,
-            revision: None,
-            sharing_visibility: None,
-            status: None,
-            system_prompt_visibility: None,
-            system_tags: None,
-            token_budget: None,
-            usage_hints: None,
-            user_persona: None,
-            user_persona_visibility: None,
-            visibility: None,
-            weight: None,
-            world_scenario_visibility: None,
+            persona: decrypt_field!(&self.persona, &self.persona_nonce, dek)?,
+            world_scenario: decrypt_field!(&self.world_scenario, &self.world_scenario_nonce, dek)?,
+            avatar: self.avatar,
+            chat: self.chat,
+            greeting: decrypt_field!(&self.greeting, &self.greeting_nonce, dek)?,
+            definition: decrypt_field!(&self.definition, &self.definition_nonce, dek)?,
+            default_voice: self.default_voice,
+            extensions: self.extensions.map(Json),
+            data_id: self.data_id,
+            category: self.category,
+            definition_visibility: self.definition_visibility,
+            depth: self.depth,
+            example_dialogue: decrypt_field!(&self.example_dialogue, &self.example_dialogue_nonce, dek)?,
+            favorite: self.favorite,
+            first_message_visibility: self.first_message_visibility,
+            height: self.height,
+            last_activity: self.last_activity,
+            migrated_from: self.migrated_from,
+            model_prompt: decrypt_field!(&self.model_prompt, &self.model_prompt_nonce, dek)?,
+            model_prompt_visibility: self.model_prompt_visibility,
+            model_temperature: self.model_temperature,
+            num_interactions: self.num_interactions,
+            permanence: self.permanence,
+            persona_visibility: self.persona_visibility,
+            revision: self.revision,
+            sharing_visibility: self.sharing_visibility,
+            status: self.status,
+            system_prompt_visibility: self.system_prompt_visibility,
+            system_tags: self.system_tags,
+            token_budget: self.token_budget,
+            usage_hints: self.usage_hints.map(Json),
+            user_persona: decrypt_field!(&self.user_persona, &self.user_persona_nonce, dek)?,
+            user_persona_visibility: self.user_persona_visibility,
+            visibility: self.visibility,
+            weight: self.weight,
+            world_scenario_visibility: self.world_scenario_visibility,
         };
-
-        // Only try to decrypt if we have both encrypted data, a nonce, and the DEK
-        if let (Some(dek), Some(nonce)) = (dek, self.description_nonce) {
-            if let Some(description) = self.description {
-                // Decrypt the description field
-                let decrypted_bytes = decrypt_gcm(&description, &nonce, dek)
-                    .map_err(|e| AppError::EncryptionError(format!("Failed to decrypt description: {}", e)))?;
-
-                // Convert bytes to UTF-8 string
-                let decrypted_text = String::from_utf8(decrypted_bytes.expose_secret().to_vec())
-                    .map_err(|e| AppError::EncryptionError(format!("Invalid UTF-8 in decrypted description: {}", e)))?;
-                
-                client_char.description = Some(decrypted_text);
-            }
-        } else {
-            // If no DEK or no nonce, keep encrypted (or send placeholder)
-            client_char.description = Some("[Encrypted]".to_string());
-        }
 
         Ok(client_char)
     }
@@ -623,99 +646,90 @@ mod tests {
         assert_eq!(character1, character2);
     }
 
-    #[test]
-    fn test_description_encryption_and_decryption_via_client_conversion() {
-        // This test validates that:
-        // 1. A Character with plaintext data can be encrypted (setup part)
-        // 2. ClientCharacter conversion properly decrypts the encrypted fields
-        
-        // Create a DEK for encryption/decryption
-        let key_bytes = vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32]; // 32 bytes for AES-256
-        let dek = SecretBox::new(Box::new(key_bytes));
-        
-        // Test a normal case: plaintext -> encrypt -> ClientCharacter conversion with decryption
-        let plaintext = "This is a secret description";
-        let (ciphertext, nonce) = crate::crypto::encrypt_gcm(plaintext.as_bytes(), &dek).unwrap();
-        
-        let mut character = create_dummy_character();
-        character.description = Some(ciphertext);
-        character.description_nonce = Some(nonce);
-        
-        // Use the method to convert to client-side representation with decryption
-        let client_char = character.into_client_character(Some(&dek)).unwrap();
-        
-        // Validate that the description was correctly decrypted
-        assert_eq!(client_char.description, plaintext);
-        
-        // Test with an empty description
-        let empty_plaintext = "";
-        let (empty_ciphertext, empty_nonce) = crate::crypto::encrypt_gcm(empty_plaintext.as_bytes(), &dek).unwrap();
-        let mut char_empty_desc = create_dummy_character();
-        char_empty_desc.description = Some(empty_ciphertext);
-        char_empty_desc.description_nonce = Some(empty_nonce);
-        
-        let client_empty_desc = char_empty_desc.into_client_character(Some(&dek)).unwrap();
-        
-        // Validate that empty description comes through correctly
-        assert_eq!(client_empty_desc.description, empty_plaintext);
-        
-        // Test with missing nonce but present description - should result in encrypted placeholder
-        let mut char_inconsistent_nonce = create_dummy_character();
-        let (ct, _nnc) = crate::crypto::encrypt_gcm("inconsistent".as_bytes(), &dek).unwrap();
-        char_inconsistent_nonce.description = Some(ct);
-        char_inconsistent_nonce.description_nonce = None;
-        let client_inconsistent_nonce = char_inconsistent_nonce.into_client_character(Some(&dek)).unwrap();
-        assert_eq!(client_inconsistent_nonce.description, "[Encrypted]");
-        
-        // Test with None description - should come through as empty string
-        let mut char_none_desc = create_dummy_character();
-        char_none_desc.description = None;
-        char_none_desc.description_nonce = None;
-        let client_none_desc = char_none_desc.into_client_character(Some(&dek)).unwrap();
-        assert_eq!(client_none_desc.description, "[Encrypted]");
-        
-        // Test without DEK but with encrypted data - should keep data encrypted
-        let mut char_no_dek = create_dummy_character();
-        let (ct2, nnc2) = crate::crypto::encrypt_gcm("no dek test".as_bytes(), &dek).unwrap();
-        char_no_dek.description = Some(ct2);
-        char_no_dek.description_nonce = Some(nnc2);
-        let client_no_dek = char_no_dek.into_client_character(None).unwrap();
-        // Since there's no DEK, the encrypted data should remain encrypted
-        assert_eq!(client_no_dek.description, "[Encrypted]");
-        
-        // Test with both no DEK and no description - result should be placeholder or empty
-        let mut char_no_desc = create_dummy_character();
-        char_no_desc.description = None;
-        char_no_desc.description_nonce = None;
-        let client_no_desc = char_no_desc.into_client_character(None).unwrap();
-        assert_eq!(client_no_desc.description, "[Encrypted]");
-    }
-
-    #[test]
-    fn test_into_decrypted_for_client() {
+    #[tokio::test]
+    async fn test_description_encryption_and_decryption_via_client_conversion() {
         let mut character = create_dummy_character();
         let dek = generate_dummy_dek();
-        let original_description = "Client-facing description";
+        let original_description = "This is a secret description.".to_string();
 
-        character.encrypt_description_field(&dek, Some(original_description.to_string())).unwrap();
+        // Encrypt the description
+        character.encrypt_description_field(&dek, Some(original_description.clone())).unwrap();
 
-        // Test with DEK
-        let client_data_with_dek = character.clone().into_decrypted_for_client(Some(&dek)).unwrap();
-        assert_eq!(client_data_with_dek.description, Some(original_description.to_string()));
+        // Check that description and nonce are Some
+        assert!(character.description.is_some());
+        assert!(character.description_nonce.is_some());
 
-        // Test without DEK (when description is encrypted)
-        let client_data_without_dek = character.clone().into_decrypted_for_client(None).unwrap();
-        assert_eq!(client_data_without_dek.description, None); // Or Some("[Encrypted]".to_string()) if that's the policy
+        // Convert to ClientCharacter with DEK
+        let client_char = character.clone().into_client_character(Some(&dek)).await.unwrap();
+        assert_eq!(client_char.description, original_description);
 
-        // Test with no description initially
-        let mut char_no_desc = create_dummy_character();
-        char_no_desc.description = None;
-        let client_data_no_desc = char_no_desc.clone().into_decrypted_for_client(Some(&dek)).unwrap();
-        assert!(client_data_no_desc.description.is_none());
-        let client_data_no_desc_no_dek = char_no_desc.clone().into_decrypted_for_client(None).unwrap();
-        assert!(client_data_no_desc_no_dek.description.is_none());
+        // Test with empty description
+        let mut char_empty_desc = create_dummy_character();
+        char_empty_desc.encrypt_description_field(&dek, Some("".to_string())).unwrap();
+        assert!(char_empty_desc.description.is_none()); // Empty string leads to None
+        assert!(char_empty_desc.description_nonce.is_none());
+        let client_empty_desc = char_empty_desc.into_client_character(Some(&dek)).await.unwrap();
+        assert_eq!(client_empty_desc.description, "");
+
+        // Test with inconsistent nonce (simulated by no nonce)
+        let mut char_inconsistent_nonce = create_dummy_character();
+        char_inconsistent_nonce.encrypt_description_field(&dek, Some("data".to_string())).unwrap();
+        char_inconsistent_nonce.description_nonce = None; // Simulate missing nonce
+        let client_inconsistent_nonce = char_inconsistent_nonce.clone().into_client_character(Some(&dek)).await.unwrap();
+        // Expect placeholder because decryption should fail or be skipped due to missing nonce
+        assert_eq!(client_inconsistent_nonce.description, "[Encrypted]");
+
+        // Test with None description (after encryption was for Some(""))
+        let mut char_none_desc = create_dummy_character();
+        char_none_desc.encrypt_description_field(&dek, Some("".to_string())).unwrap(); // Clears fields
+        let client_none_desc = char_none_desc.into_client_character(Some(&dek)).await.unwrap();
+        assert_eq!(client_none_desc.description, ""); // Should be empty string
+
+        // Convert to ClientCharacter without DEK
+        let mut char_no_dek = create_dummy_character();
+        char_no_dek.encrypt_description_field(&dek, Some(original_description.clone())).unwrap();
+        let client_no_dek = char_no_dek.into_client_character(None).await.unwrap();
+        assert_eq!(client_no_dek.description, "[Encrypted]");
+
+        // Test with no description data at all
+        let char_no_desc = create_dummy_character(); // description and nonce are None by default
+        let client_no_desc = char_no_desc.into_client_character(None).await.unwrap();
+        assert_eq!(client_no_desc.description, ""); // Expect empty string, not "[Encrypted]"
     }
 
+    #[tokio::test]
+    async fn test_into_decrypted_for_client() {
+        let mut character = create_dummy_character();
+        let dek = generate_dummy_dek();
+        let original_description = "Test Description".to_string();
+        let original_persona = "Test Persona".to_string();
+
+        // Encrypt some fields directly for testing (as encrypt_field! macro would)
+        let (desc_ct, desc_n) = crate::crypto::encrypt_gcm(original_description.as_bytes(), &dek).unwrap();
+        character.description = Some(desc_ct);
+        character.description_nonce = Some(desc_n);
+
+        let (pers_ct, pers_n) = crate::crypto::encrypt_gcm(original_persona.as_bytes(), &dek).unwrap();
+        character.persona = Some(pers_ct);
+        character.persona_nonce = Some(pers_n);
+
+        // With DEK
+        let client_data_with_dek = character.clone().into_decrypted_for_client(Some(&dek)).await.unwrap();
+        assert_eq!(client_data_with_dek.description.as_deref(), Some(original_description.as_str()));
+        assert_eq!(client_data_with_dek.persona.as_deref(), Some(original_persona.as_str()));
+
+        // Without DEK
+        let client_data_without_dek = character.clone().into_decrypted_for_client(None).await.unwrap();
+        assert_eq!(client_data_without_dek.description.as_deref(), Some("[Encrypted]"));
+        assert_eq!(client_data_without_dek.persona.as_deref(), Some("[Encrypted]"));
+
+        // Test with no description data (should be None)
+        let mut char_no_desc = create_dummy_character(); // description and nonce are None by default
+        let client_data_no_desc = char_no_desc.clone().into_decrypted_for_client(Some(&dek)).await.unwrap();
+        assert_eq!(client_data_no_desc.description, None);
+        let client_data_no_desc_no_dek = char_no_desc.clone().into_decrypted_for_client(None).await.unwrap();
+        assert_eq!(client_data_no_desc_no_dek.description, None);
+    }
 
     // Helper function to create a dummy V3 card
     fn create_dummy_v3_card() -> ParsedCharacterCard {

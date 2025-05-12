@@ -387,8 +387,8 @@ mod tests {
         }];
 
         // Setup the mock to simulate a retrieval error
-        mock_rag.set_retrieve_response(Err(AppError::InternalServerError(
-            "RAG DB down".to_string(),
+        mock_rag.set_retrieve_response(Err(AppError::InternalServerErrorGeneric(
+            "Simulated RAG retrieval failure".to_string(),
         )));
 
         let prompt_result = build_prompt_with_rag(state, session_id, None, &history).await;
