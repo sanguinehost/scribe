@@ -182,9 +182,10 @@ async fn test_register_duplicate_username() -> AnyhowResult<()> {
     // Create first user with this username
     let first_user = test_helpers::db::create_test_user(
         &test_app.db_pool,
-        &username,
-        password,
-    ).await;
+        username.to_string(),
+        password.to_string(),
+    )
+    .await?;
     
     guard.add_user(first_user.id);
     
@@ -235,9 +236,10 @@ async fn test_register_duplicate_email() -> AnyhowResult<()> {
     
     let first_user = test_helpers::db::create_test_user(
         &test_app.db_pool,
-        &username1,
-        password,
-    ).await;
+        username1.to_string(),
+        password.to_string(),
+    )
+    .await?;
     
     // Update the email to our duplicate value (since create_test_user generates its own)
     let conn = test_app.db_pool.get().await?;
@@ -302,9 +304,10 @@ async fn test_login_success() -> AnyhowResult<()> {
     
     let user = test_helpers::db::create_test_user(
         &test_app.db_pool,
-        &username,
-        password,
-    ).await;
+        username.to_string(),
+        password.to_string(),
+    )
+    .await?;
     
     guard.add_user(user.id);
     info!(user_id = %user.id, %username, email = %user.email, "Test user created for login");
@@ -353,9 +356,10 @@ async fn test_login_success_with_email() -> AnyhowResult<()> {
     let password = "testPassword123";
     let user = test_helpers::db::create_test_user(
         &test_app.db_pool,
-        &username,
-        password,
-    ).await;
+        username.to_string(),
+        password.to_string(),
+    )
+    .await?;
     
     guard.add_user(user.id);
     info!(user_id = %user.id, %username, email = %user.email, "Test user created for email login");
@@ -403,12 +407,13 @@ async fn test_login_wrong_password() -> AnyhowResult<()> {
     let correct_password = "password123";
     let wrong_password = "wrongpassword";
 
-    // Insert user directly
+    // Use the test helper to create the user directly
     let user = test_helpers::db::create_test_user(
         &test_app.db_pool,
-        &username,
-        correct_password,
-    ).await;
+        username.to_string(),
+        correct_password.to_string(),
+    )
+    .await?;
     
     guard.add_user(user.id);
 
@@ -498,9 +503,10 @@ async fn test_verify_credentials_invalid_hash_in_db() -> AnyhowResult<()> {
     // 1. Insert user with a valid hash initially (using the helper)
     let user = test_helpers::db::create_test_user(
         &test_app.db_pool,
-        &username,
-        password,
-    ).await;
+        username.to_string(),
+        password.to_string(),
+    )
+    .await?;
     
     guard.add_user(user.id);
 
@@ -577,9 +583,10 @@ async fn test_login_hashing_error_in_db() -> AnyhowResult<()> {
     // 1. Insert user with a valid hash initially
     let user = test_helpers::db::create_test_user(
         &test_app.db_pool,
-        &username,
-        password,
-    ).await;
+        username.to_string(),
+        password.to_string(),
+    )
+    .await?;
     
     guard.add_user(user.id);
 
@@ -640,9 +647,10 @@ async fn test_logout_success() -> AnyhowResult<()> {
     // Insert user
     let user = test_helpers::db::create_test_user(
         &test_app.db_pool,
-        &username,
-        password,
-    ).await;
+        username.to_string(),
+        password.to_string(),
+    )
+    .await?;
     
     guard.add_user(user.id);
 
@@ -726,9 +734,10 @@ async fn test_me_success() -> AnyhowResult<()> {
     // Insert user
     let user = test_helpers::db::create_test_user(
         &test_app.db_pool,
-        &username,
-        password,
-    ).await;
+        username.to_string(),
+        password.to_string(),
+    )
+    .await?;
     
     guard.add_user(user.id);
 
@@ -1108,9 +1117,10 @@ async fn test_auth_backend_authenticate_hashing_error() -> AnyhowResult<()> {
     // 1. Insert user with a valid hash initially
     let user = test_helpers::db::create_test_user(
         &test_app.db_pool,
-        &username,
-        password,
-    ).await;
+        username.to_string(),
+        password.to_string(),
+    )
+    .await?;
     
     guard.add_user(user.id);
 
