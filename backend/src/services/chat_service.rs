@@ -18,7 +18,6 @@ use crate::{
             DbInsertableChatMessage, MessageRole, NewChat, SettingsTuple,
             UpdateChatSettingsRequest,
         },
-        users::SerializableSecretDek,
     },
     schema::{characters, chat_messages, chat_sessions},
     services::history_manager,
@@ -522,39 +521,60 @@ pub async fn get_session_data_for_generation(
 #[instrument(skip(pool), err)]
 pub async fn get_session_settings(
     pool: &DbPool,
-    _user_id: Uuid,
+    user_id: Uuid, // <-- Removed underscore
     session_id: Uuid,
 ) -> Result<ChatSettingsResponse, AppError> {
     let conn = pool.get().await?;
     conn.interact(move |conn| {
-        let settings_tuple = chat_sessions::table
+        // 1. Check if the session exists and get its owner_id
+        let owner_id_result = chat_sessions::table
             .filter(chat_sessions::id.eq(session_id))
-            .filter(chat_sessions::user_id.eq(_user_id))
-            .select((
-                chat_sessions::system_prompt,
-                chat_sessions::temperature,
-                chat_sessions::max_output_tokens,
-                chat_sessions::frequency_penalty,
-                chat_sessions::presence_penalty,
-                chat_sessions::top_k,
-                chat_sessions::top_p,
-                chat_sessions::repetition_penalty,
-                chat_sessions::min_p,
-                chat_sessions::top_a,
-                chat_sessions::seed,
-                chat_sessions::logit_bias,
-                chat_sessions::history_management_strategy,
-                chat_sessions::history_management_limit,
-                chat_sessions::model_name,
-                // -- Gemini Specific Options --
-                chat_sessions::gemini_thinking_budget,
-                chat_sessions::gemini_enable_code_execution,
-            ))
-            .first::<SettingsTuple>(conn)
+            .select(chat_sessions::user_id)
+            .first::<Uuid>(conn)
             .optional()?;
 
-            match settings_tuple {
-                Some(tuple) => {
+        match owner_id_result {
+            None => {
+                // Session does not exist
+                warn!(%session_id, %user_id, "Attempted to get settings for non-existent session");
+                Err(AppError::NotFound("Chat session not found".into()))
+            }
+            Some(owner_id) => {
+                // 2. Check if the requesting user owns the session
+                if owner_id != user_id {
+                    warn!(%session_id, %user_id, owner_id=%owner_id, "Forbidden attempt to get settings for session owned by another user");
+                    Err(AppError::Forbidden) // Correct error for unauthorized access
+                } else {
+                    // 3. Fetch the actual settings since ownership is confirmed
+                    info!(%session_id, %user_id, "Fetching settings for owned session");
+                    let settings_tuple = chat_sessions::table
+                        .filter(chat_sessions::id.eq(session_id)) // Filter only by session_id now
+                        .select((
+                            chat_sessions::system_prompt,
+                            chat_sessions::temperature,
+                            chat_sessions::max_output_tokens,
+                            chat_sessions::frequency_penalty,
+                            chat_sessions::presence_penalty,
+                            chat_sessions::top_k,
+                            chat_sessions::top_p,
+                            chat_sessions::repetition_penalty,
+                            chat_sessions::min_p,
+                            chat_sessions::top_a,
+                            chat_sessions::seed,
+                            chat_sessions::logit_bias,
+                            chat_sessions::history_management_strategy,
+                            chat_sessions::history_management_limit,
+                            chat_sessions::model_name,
+                            // -- Gemini Specific Options --
+                            chat_sessions::gemini_thinking_budget,
+                            chat_sessions::gemini_enable_code_execution,
+                        ))
+                        .first::<SettingsTuple>(conn) // Expect a result now
+                        .map_err(|e| {
+                            error!(%session_id, %user_id, error = ?e, "Failed to fetch settings after ownership check");
+                            AppError::DatabaseQueryError(e.to_string())
+                        })?;
+
                     let (
                         system_prompt,
                         temperature,
@@ -574,7 +594,8 @@ pub async fn get_session_settings(
                         // -- Gemini Specific Options --
                         gemini_thinking_budget,
                         gemini_enable_code_execution,
-                    ) = tuple;
+                    ) = settings_tuple;
+
                     Ok(ChatSettingsResponse {
                         system_prompt,
                         temperature,
@@ -596,10 +617,8 @@ pub async fn get_session_settings(
                         gemini_enable_code_execution,
                     })
                 }
-                None => Err(AppError::NotFound(
-                    "Chat session not found or permission denied".into(),
-                )),
             }
+        }
     })
     .await?
 }

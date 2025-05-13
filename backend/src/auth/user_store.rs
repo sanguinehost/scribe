@@ -78,6 +78,11 @@ impl AuthnBackend for Backend {
         let pool = self.pool.clone();
         let id: uuid::Uuid = *user_id;
 
+        // Added detailed logging for test_get_unauthorized debugging
+        tracing::warn!(target: "auth_debug", "AuthBackend::get_user called with user_id from session: {:?}", user_id);
+        tracing::warn!(target: "auth_debug", "AuthBackend::get_user (UUID): {}", id);
+
+
         info!(user_id = %id, "AuthBackend: Getting user via crate::auth::get_user...");
 
         // interact returns Result<Result<User, AuthError>, InteractError>

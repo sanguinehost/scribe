@@ -26,16 +26,20 @@ use crate::state::AppState;
 use tracing::info;
 use std::sync::Arc;
 use crate::services::chat_service;
-use crate::models::users::User; // Ensure User is imported
+ // Ensure User is imported
 
 // Shorthand for auth session
 type CurrentAuthSession = AuthSession<AuthBackend>;
 
 pub fn chat_routes() -> Router<crate::state::AppState> {
+    tracing::debug!("chat_routes: entering chat_routes function");
     Router::new()
         .route("/chats", get(get_chats_handler).post(create_chat_handler))
         .route("/chats/{id}", get(get_chat_by_id_handler).delete(delete_chat_handler))
-        .route("/chats/{id}/messages", get(get_messages_by_chat_id_handler).post(create_message_handler))
+        .route("/chats/{id}/messages", {
+            tracing::debug!("chat_routes: mapping /chats/{{id}}/messages to get_messages_by_chat_id_handler");
+            get(get_messages_by_chat_id_handler).post(create_message_handler)
+        })
         .route("/chats/{id}/visibility", put(update_chat_visibility_handler))
         .route("/chats/{id}/settings", get(get_chat_settings_handler).put(update_chat_settings_handler)) // <-- Add PUT handler
         .route("/messages/{id}", get(get_message_by_id_handler))
@@ -200,40 +204,106 @@ pub async fn delete_chat_handler(
 pub async fn get_messages_by_chat_id_handler(
     auth_session: CurrentAuthSession,
     State(state): State<AppState>,
-    Path(id): Path<Uuid>,
+    Path(id): Path<String>,
 ) -> Result<impl IntoResponse, AppError> {
+    tracing::debug!("get_messages_by_chat_id_handler: id (as String) = {}", id);
+    // Attempt to parse the string id to Uuid manually for now
+    let uuid_id = Uuid::parse_str(&id).map_err(|_| AppError::BadRequest("Invalid UUID format in path".to_string()))?;
+    tracing::debug!("get_messages_by_chat_id_handler: id (parsed as Uuid) = {}", uuid_id);
+
     let user = auth_session.user.ok_or(AppError::Unauthorized("Not logged in".to_string()))?;
+    tracing::debug!("get_messages_by_chat_id_handler: Authenticated user.id = {}", user.id);
     let user_dek_ref: Option<&SecretBox<Vec<u8>>> = user.dek.as_ref().map(|wrapped_dek| &wrapped_dek.0);
+    tracing::debug!("get_messages_by_chat_id_handler: user_dek_ref.is_some() = {}", user_dek_ref.is_some());
     let pool = state.pool.clone();
     
-    let chat = pool.get().await
-        .map_err(|e| AppError::DbPoolError(e.to_string()))?
+    tracing::debug!("get_messages_by_chat_id_handler: Attempting to fetch chat with uuid_id = {}", uuid_id);
+
+    // Fetch the chat session, ensuring NotFound is handled correctly
+    let chat: Chat = pool.get().await
+        .map_err(|e| {
+            tracing::error!("get_messages_by_chat_id_handler: Failed to get connection from pool: {}", e);
+            AppError::DbPoolError(e.to_string())
+        })?
         .interact(move |conn| {
-            chat_sessions::table
-                .filter(chat_sessions::id.eq(id))
+            tracing::debug!("get_messages_by_chat_id_handler: Inside interact closure, fetching chat for uuid_id = {}", uuid_id);
+            let result = chat_sessions::table
+                .filter(chat_sessions::id.eq(uuid_id))
                 .select(Chat::as_select())
-                .first::<Chat>(conn)
-                .map_err(AppError::from)
+                .first::<Chat>(conn);
+            
+            match &result {
+                Ok(chat) => tracing::debug!("get_messages_by_chat_id_handler: Successfully found chat with id={}, user_id={}", uuid_id, chat.user_id),
+                Err(e) => {
+                    tracing::error!("get_messages_by_chat_id_handler: Error fetching chat: {}", e);
+                    // Debug output for diesel errors and their type
+                    match e {
+                        diesel::result::Error::NotFound => {
+                            tracing::error!("get_messages_by_chat_id_handler: This is a diesel::NotFound error!");
+                        },
+                        _ => {
+                            tracing::error!("get_messages_by_chat_id_handler: This is another type of diesel error: {:?}", e);
+                        }
+                    }
+                }
+            }
+            
+            // Change direct mapping to explicit handling of NotFound
+            match result {
+                Ok(chat) => Ok(chat),
+                Err(diesel::result::Error::NotFound) => {
+                    tracing::error!("get_messages_by_chat_id_handler: Converting diesel::NotFound to AppError::NotFound explicitly");
+                    Err(AppError::NotFound(format!("Chat with id {} not found", uuid_id)))
+                },
+                Err(e) => {
+                    tracing::error!("get_messages_by_chat_id_handler: Converting other diesel error to DatabaseQueryError: {}", e);
+                    Err(AppError::DatabaseQueryError(e.to_string()))
+                }
+            }
         })
-        .await
-        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
+        .await // Evaluates the BlockingTask, returning Result<OutputOfClosure, JoinError>
+        .map_err(|join_error| { // Handle potential JoinError from the .await
+            tracing::error!("Interact task failed while fetching chat {}: {}", uuid_id, join_error);
+            AppError::InternalServerErrorGeneric(format!("Error processing chat request for {}: {}", uuid_id, join_error))
+        })? // Unwraps Result<_, JoinError> or returns AppError (if JoinError). Leaves Result<Chat, AppError>
+        ?; // Unwraps Result<Chat, AppError> or returns AppError (e.g. AppError::NotFound from closure)
+    
+    tracing::debug!("get_messages_by_chat_id_handler: chat fetched for id {} = {:?}", uuid_id, chat);
     
     if chat.user_id != user.id && chat.visibility != Some("public".to_string()) {
+        tracing::warn!("get_messages_by_chat_id_handler: Access forbidden. chat.user_id={}, user.id={}, chat.visibility={:?}",
+                      chat.user_id, user.id, chat.visibility);
         return Err(AppError::Forbidden);
     }
 
+    tracing::debug!("get_messages_by_chat_id_handler: Authorization passed, fetching messages for chat {}", uuid_id);
+    
     let messages_db: Vec<Message> = pool.get().await // Fetching Vec<Message> which includes 'parts'
-        .map_err(|e| AppError::DbPoolError(e.to_string()))?
+        .map_err(|e| {
+            tracing::error!("get_messages_by_chat_id_handler: Failed to get connection from pool for messages query: {}", e);
+            AppError::DbPoolError(e.to_string())
+        })?
         .interact(move |conn| {
-            chat_messages::table
-                .filter(chat_messages::session_id.eq(id))
+            tracing::debug!("get_messages_by_chat_id_handler: Inside interact closure for messages, fetching for session_id = {}", uuid_id);
+            let result = chat_messages::table
+                .filter(chat_messages::session_id.eq(uuid_id))
                 .order_by(chat_messages::created_at.asc())
                 .select(Message::as_select())
-                .load::<Message>(conn)
-                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
+                .load::<Message>(conn);
+                
+            match &result {
+                Ok(messages) => tracing::debug!("get_messages_by_chat_id_handler: Found {} messages for chat {}", messages.len(), uuid_id),
+                Err(e) => tracing::error!("get_messages_by_chat_id_handler: Error fetching messages: {}", e),
+            }
+            
+            result.map_err(|e| AppError::DatabaseQueryError(e.to_string()))
         })
         .await
-        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
+        .map_err(|e| {
+            tracing::error!("get_messages_by_chat_id_handler: Join error in messages query: {}", e);
+            AppError::InternalServerErrorGeneric(e.to_string())
+        })?
+        ?;
     
     let mut responses = Vec::new();
     for msg_db in messages_db {

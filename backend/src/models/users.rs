@@ -3,16 +3,13 @@ use axum_login::AuthUser;
 use chrono::{DateTime, Utc};
 use diesel::Insertable;
 use diesel::prelude::*;
-use diesel::sql_types::Timestamp;
-use diesel::{AsChangeset, Identifiable, Queryable, Selectable};
+use diesel::{Identifiable, Queryable, Selectable};
 use secrecy::ExposeSecret;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use secrecy::{SecretBox, SecretString};
-use secrecy::zeroize::Zeroize;
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use serde::{Deserializer, Serializer};
-use serde::de;
 use tracing;
 
 // --- Newtype wrapper for DEK serialization ---

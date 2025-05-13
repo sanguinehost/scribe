@@ -52,12 +52,12 @@ pub struct RagTestContext {
 #[tokio::test]
 // #[ignore] // Added ignore for CI
 async fn test_generate_chat_response_triggers_embeddings() -> anyhow::Result<()> {
-    // Pass false to use mock AI and mock embedding pipeline
-    let test_app = test_helpers::spawn_app(false, false).await;
+    // Pass false to use mock AI, mock embedding pipeline, and mock Qdrant
+    let test_app = test_helpers::spawn_app(false, false, false).await;
     let user = test_helpers::db::create_test_user( // This helper is assumed to still exist
         &test_app.db_pool,
-        "gen_resp_embed_trigger_user",
-        "password",
+        "gen_resp_embed_trigger_user".to_string(),
+        "password".to_string(),
     )
     .await?;
 
@@ -85,54 +85,124 @@ async fn test_generate_chat_response_triggers_embeddings() -> anyhow::Result<()>
 
     let character_name = "Char for Embed Trigger".to_string();
     let user_id_for_char = user.id;
-    let character = test_app.db_pool.get().await?.interact(move |conn| {
-        let now = Utc::now();
-        let new_character = DbCharacter {
-            id: Uuid::new_v4(),
-            user_id: user_id_for_char,
-            name: character_name,
-            card_data: None,
-            description: None,
-            system_prompt: None,
-            user_persona: None,
-            greeting: None,
-            avatar_uri: None,
-            visibility: "private".to_string(),
-            created_at: now,
-            updated_at: now,
-            temperature: Some(0.7),
-            top_p: Some(1.0),
-            top_k: None,
-            max_output_tokens: Some(1024),
-            rag_enabled: true,
-            encryption_key_id: None,
-            encrypted_dek: None,
-            dek_nonce: None,
-        };
-        diesel::insert_into(schema::characters::table)
-            .values(&new_character)
-            .get_result::<DbCharacter>(conn)
-    }).await??;
+    let character = test_app.db_pool.get().await
+        .map_err(|e| anyhow::anyhow!("Failed to get DB connection: {}", e))?
+        .interact(move |conn| {
+            let now = Utc::now();
+            // Match fields from DbCharacter definition in models/characters.rs
+            let new_character = DbCharacter {
+                id: Uuid::new_v4(),
+                user_id: user_id_for_char,
+                spec: "chara_card_v3_spec".to_string(), // Added default
+                spec_version: "1.0.0".to_string(), // Added default
+                name: character_name,
+                description: None,
+                personality: None,
+                scenario: None,
+                first_mes: None,
+                mes_example: None,
+                creator_notes: None,
+                system_prompt: None,
+                post_history_instructions: None,
+                tags: None,
+                creator: None,
+                character_version: None,
+                alternate_greetings: None,
+                nickname: None,
+                creator_notes_multilingual: None,
+                source: None,
+                group_only_greetings: None,
+                creation_date: None,
+                modification_date: None,
+                created_at: now,
+                updated_at: now,
+                persona: None,
+                world_scenario: None,
+                avatar: None, // Changed from avatar_uri
+                chat: None,
+                greeting: None,
+                definition: None,
+                default_voice: None,
+                extensions: None,
+                data_id: None,
+                category: None,
+                definition_visibility: None,
+                depth: None,
+                example_dialogue: None,
+                favorite: None,
+                first_message_visibility: None,
+                height: None,
+                last_activity: None,
+                migrated_from: None,
+                model_prompt: None,
+                model_prompt_visibility: None,
+                model_temperature: None,
+                num_interactions: None,
+                permanence: None,
+                persona_visibility: None,
+                revision: None,
+                sharing_visibility: None,
+                status: None,
+                system_prompt_visibility: None,
+                system_tags: None,
+                token_budget: None,
+                usage_hints: None,
+                user_persona: None,
+                user_persona_visibility: None,
+                visibility: Some("private".to_string()),
+                weight: None,
+                world_scenario_visibility: None,
+                description_nonce: None,
+                personality_nonce: None,
+                scenario_nonce: None,
+                first_mes_nonce: None,
+                mes_example_nonce: None,
+                creator_notes_nonce: None,
+                system_prompt_nonce: None,
+                persona_nonce: None,
+                world_scenario_nonce: None,
+                greeting_nonce: None,
+                definition_nonce: None,
+                example_dialogue_nonce: None,
+                model_prompt_nonce: None,
+                user_persona_nonce: None,
+                post_history_instructions_nonce: None,
+            };
+            diesel::insert_into(schema::characters::table)
+                .values(&new_character)
+                .get_result::<DbCharacter>(conn)
+        })
+        .await
+        .map_err(|e| anyhow::anyhow!("Database interaction failed (outer InteractError): {}", e))? // Handles InteractError
+        .map_err(|e| anyhow::anyhow!("Database query failed (inner diesel::result::Error): {}", e))?; // Handles diesel::result::Error
 
 
     let user_id_for_session = user.id;
     let character_id_for_session = character.id;
-    let session = test_app.db_pool.get().await?.interact(move |conn| {
-        let new_chat = NewChat {
-            id: Uuid::new_v4(),
-            user_id: user_id_for_session,
-            character_id: character_id_for_session,
-            title: Some(format!("Chat with char {}", character_id_for_session)),
-            settings: None,
-            model_name: None,
-            history_compression_threshold: None,
-            max_history_tokens: None,
-            rag_enabled: Some(true), // RAG enabled by default in session
-        };
-        diesel::insert_into(schema::chat_sessions::table)
-            .values(&new_chat)
-            .get_result::<DbChat>(conn)
-    }).await??;
+    let session = test_app.db_pool.get().await
+        .map_err(|e| anyhow::anyhow!("Failed to get DB connection: {}", e))?
+        .interact(move |conn| {
+            // Match fields from NewChat definition in models/chats.rs
+            let now = Utc::now();
+            let new_chat = NewChat {
+                id: Uuid::new_v4(),
+                user_id: user_id_for_session,
+                character_id: character_id_for_session,
+                title: Some(format!("Chat with char {}", character_id_for_session)),
+                created_at: now, // Added required field
+                updated_at: now, // Added required field
+                history_management_strategy: "none".to_string(), // Added required field
+                history_management_limit: 0, // Added required field
+                model_name: "default-test-model".to_string(),
+                visibility: Some("private".to_string()), // Added required field
+            };
+            diesel::insert_into(schema::chat_sessions::table)
+                .values(&new_chat)
+                .get_result::<DbChat>(conn)
+        })
+        .await
+        .map_err(|e| anyhow::anyhow!("Database interaction failed (outer InteractError): {}", e))? // Handles InteractError
+        .map_err(|e| anyhow::anyhow!("Database query failed (inner diesel::result::Error): {}", e))?; // Handles diesel::result::Error
 
     // Mock the AI response
     let mock_ai_content = "Response to trigger embedding.";
@@ -185,12 +255,18 @@ async fn test_generate_chat_response_triggers_embeddings() -> anyhow::Result<()>
     assert_eq!(calls.len(), 2, "Expected embedding function to be called twice (user + assistant)");
 
     let session_id_for_fetch = session.id;
-    let messages = test_app.db_pool.get().await?.interact(move |conn| {
-        schema::chat_messages::table
-            .filter(schema::chat_messages::chat_session_id.eq(session_id_for_fetch))
-            .order(schema::chat_messages::created_at.asc())
-            .load::<DbChatMessage>(conn)
-    }).await??;
+    let messages = test_app.db_pool.get().await
+        .map_err(|e| anyhow::anyhow!("Failed to get DB connection: {}", e))?
+        .interact(move |conn| {
+            schema::chat_messages::table
+                .filter(schema::chat_messages::session_id.eq(session_id_for_fetch))
+                .order(schema::chat_messages::created_at.asc())
+                .select(DbChatMessage::as_select()) // Select specific columns
+                .load::<DbChatMessage>(conn)
+        })
+        .await
+        .map_err(|e| anyhow::anyhow!("Database interaction failed (outer InteractError): {}", e))? // Handles InteractError
+        .map_err(|e| anyhow::anyhow!("Database query failed (inner diesel::result::Error): {}", e))?; // Handles diesel::result::Error
     assert_eq!(messages.len(), 2, "Should have user and AI message saved");
 
     let user_msg = messages.iter().find(|m| m.message_type == MessageRole::User).expect("User message not found");
@@ -204,8 +280,8 @@ async fn test_generate_chat_response_triggers_embeddings() -> anyhow::Result<()>
 #[tokio::test]
 // #[ignore] // Added ignore for CI
 async fn test_generate_chat_response_triggers_embeddings_with_existing_session() -> anyhow::Result<()> {
-    let test_app = test_helpers::spawn_app(false, false).await;
-    let user = test_helpers::db::create_test_user(&test_app.db_pool, "embed_existing_user", "password").await?;
+    let test_app = test_helpers::spawn_app(false, false, false).await;
+    let user = test_helpers::db::create_test_user(&test_app.db_pool, "embed_existing_user".to_string(), "password".to_string()).await?;
 
     let login_payload = json!({ "identifier": user.username, "password": "password" });
     let login_request = Request::builder()
@@ -222,39 +298,150 @@ async fn test_generate_chat_response_triggers_embeddings_with_existing_session()
 
     let char_name = "Embed Test Char".to_string();
     let user_id_for_char = user.id;
-    let character = test_app.db_pool.get().await?.interact(move |conn| {
-        let now = Utc::now();
-        let new_character = DbCharacter {
-            id: Uuid::new_v4(), user_id: user_id_for_char, name: char_name, card_data: None, description: None,
-            system_prompt: None, user_persona: None, greeting: None, avatar_uri: None,
-            visibility: "private".to_string(), created_at: now, updated_at: now, temperature: Some(0.7),
-            top_p: Some(1.0), top_k: None, max_output_tokens: Some(1024), rag_enabled: true,
-            encryption_key_id: None, encrypted_dek: None, dek_nonce: None,
-        };
-        diesel::insert_into(schema::characters::table).values(&new_character).get_result::<DbCharacter>(conn)
-    }).await??;
+    let character = test_app.db_pool.get().await
+        .map_err(|e| anyhow::anyhow!("Failed to get DB connection: {}", e))?
+        .interact(move |conn| {
+            let now = Utc::now();
+            // Match fields from DbCharacter definition in models/characters.rs
+            let new_character = DbCharacter {
+                id: Uuid::new_v4(),
+                user_id: user_id_for_char,
+                spec: "chara_card_v3_spec".to_string(), // Added default
+                spec_version: "1.0.0".to_string(), // Added default
+                name: char_name,
+                description: None,
+                personality: None,
+                scenario: None,
+                first_mes: None,
+                mes_example: None,
+                creator_notes: None,
+                system_prompt: None,
+                post_history_instructions: None,
+                tags: None,
+                creator: None,
+                character_version: None,
+                alternate_greetings: None,
+                nickname: None,
+                creator_notes_multilingual: None,
+                source: None,
+                group_only_greetings: None,
+                creation_date: None,
+                modification_date: None,
+                created_at: now,
+                updated_at: now,
+                persona: None,
+                world_scenario: None,
+                avatar: None, // Changed from avatar_uri
+                chat: None,
+                greeting: None,
+                definition: None,
+                default_voice: None,
+                extensions: None,
+                data_id: None,
+                category: None,
+                definition_visibility: None,
+                depth: None,
+                example_dialogue: None,
+                favorite: None,
+                first_message_visibility: None,
+                height: None,
+                last_activity: None,
+                migrated_from: None,
+                model_prompt: None,
+                model_prompt_visibility: None,
+                model_temperature: None,
+                num_interactions: None,
+                permanence: None,
+                persona_visibility: None,
+                revision: None,
+                sharing_visibility: None,
+                status: None,
+                system_prompt_visibility: None,
+                system_tags: None,
+                token_budget: None,
+                usage_hints: None,
+                user_persona: None,
+                user_persona_visibility: None,
+                visibility: Some("private".to_string()),
+                weight: None,
+                world_scenario_visibility: None,
+                description_nonce: None,
+                personality_nonce: None,
+                scenario_nonce: None,
+                first_mes_nonce: None,
+                mes_example_nonce: None,
+                creator_notes_nonce: None,
+                system_prompt_nonce: None,
+                persona_nonce: None,
+                world_scenario_nonce: None,
+                greeting_nonce: None,
+                definition_nonce: None,
+                example_dialogue_nonce: None,
+                model_prompt_nonce: None,
+                user_persona_nonce: None,
+                post_history_instructions_nonce: None,
+            };
+            diesel::insert_into(schema::characters::table).values(&new_character).get_result::<DbCharacter>(conn)
+        })
+        .await
+        .map_err(|e| anyhow::anyhow!("Database interaction failed (outer InteractError): {}", e))? // Handles InteractError
+        .map_err(|e| anyhow::anyhow!("Database query failed (inner diesel::result::Error): {}", e))?; // Handles diesel::result::Error
 
     let user_id_for_session = user.id;
     let char_id_for_session = character.id;
-    let session = test_app.db_pool.get().await?.interact(move |conn| {
-        let new_chat = NewChat {
-            id: Uuid::new_v4(), user_id: user_id_for_session, character_id: char_id_for_session,
-            title: Some(format!("Chat with char {}", char_id_for_session)), settings: None, model_name: None,
-            history_compression_threshold: None, max_history_tokens: None, rag_enabled: Some(true),
-        };
-        diesel::insert_into(schema::chat_sessions::table).values(&new_chat).get_result::<DbChat>(conn)
-    }).await??;
+    let session = test_app.db_pool.get().await
+        .map_err(|e| anyhow::anyhow!("Failed to get DB connection: {}", e))?
+        .interact(move |conn| {
+            // Match fields from NewChat definition in models/chats.rs
+            let now = Utc::now();
+            let new_chat = NewChat {
+                id: Uuid::new_v4(),
+                user_id: user_id_for_session,
+                character_id: char_id_for_session,
+                title: Some(format!("Chat with char {}", char_id_for_session)),
+                created_at: now, // Added required field
+                updated_at: now, // Added required field
+                history_management_strategy: "none".to_string(), // Added required field
+                history_management_limit: 0, // Added required field
+                model_name: "default-test-model".to_string(),
+                visibility: Some("private".to_string()), // Added required field
+            };
+            diesel::insert_into(schema::chat_sessions::table).values(&new_chat).get_result::<DbChat>(conn)
+        })
+        .await
+        .map_err(|e| anyhow::anyhow!("Database interaction failed (outer InteractError): {}", e))? // Handles InteractError
+        .map_err(|e| anyhow::anyhow!("Database query failed (inner diesel::result::Error): {}", e))?; // Handles diesel::result::Error
 
     let session_id_for_msg = session.id;
     let user_id_for_msg = user.id;
     let msg_content = "First message".to_string();
-    let _doc_message = test_app.db_pool.get().await?.interact(move |conn| {
-        let new_message = NewMessage {
-            id: Uuid::new_v4(), chat_session_id: session_id_for_msg, user_id: user_id_for_msg,
-            message_type: MessageRole::User, content: msg_content, tool_calls: None, tool_call_id: None,
-        };
-        diesel::insert_into(schema::chat_messages::table).values(&new_message).get_result::<DbChatMessage>(conn)
-    }).await??;
+    // Corrected block: Use let _ = ..., get_result, no select, double map_err
+    let _ = test_app.db_pool.get().await
+        .map_err(|e| anyhow::anyhow!("Failed to get DB connection: {}", e))?
+        .interact(move |conn| {
+            // Match fields from NewMessage definition in models/chats.rs
+            let now = Utc::now();
+            let new_message = NewMessage {
+                id: Uuid::new_v4(),
+                session_id: session_id_for_msg, // Changed from chat_session_id
+                user_id: user_id_for_msg,
+                message_type: MessageRole::User,
+                content: msg_content.as_bytes().to_vec(),
+                content_nonce: None,
+                created_at: now, // Added required field
+                updated_at: now, // Added required field
+                role: None, // Added optional field
+                parts: None, // Added optional field
+                attachments: None, // Added optional field
+            };
+            diesel::insert_into(schema::chat_messages::table)
+                .values(&new_message)
+                .returning(DbChatMessage::as_select()) // Added returning clause
+                .get_result::<DbChatMessage>(conn) // Use get_result
+        })
+        .await
+        .map_err(|e| anyhow::anyhow!("Database interaction failed (outer InteractError): {}", e))? // Handles InteractError
+        .map_err(|e| anyhow::anyhow!("Database query failed (inner diesel::result::Error): {}", e))?; // Handles diesel::result::Error
 
     let payload = GenerateChatRequest {
         history: vec![ApiChatMessage {
@@ -298,8 +485,8 @@ async fn test_generate_chat_response_triggers_embeddings_with_existing_session()
 #[tokio::test]
 // Removed ignore: #[ignore] // Integration test, relies on external services
 async fn test_rag_context_injection_in_prompt() -> anyhow::Result<()> {
-    let test_app = test_helpers::spawn_app(false, false).await;
-    let user = test_helpers::db::create_test_user(&test_app.db_pool, "rag_user", "password").await?;
+    let test_app = test_helpers::spawn_app(false, false, false).await;
+    let user = test_helpers::db::create_test_user(&test_app.db_pool, "rag_user".to_string(), "password".to_string()).await?;
 
     let login_payload = json!({ "identifier": user.username, "password": "password" });
     let login_request = Request::builder().method(Method::POST).uri("/api/auth/login")
@@ -314,35 +501,126 @@ async fn test_rag_context_injection_in_prompt() -> anyhow::Result<()> {
 
     let char_name = "RAG Test Char".to_string();
     let user_id_for_char = user.id;
-    let character = test_app.db_pool.get().await?.interact(move |conn| {
-        let now = Utc::now();
-        let new_character = DbCharacter {
-            id: Uuid::new_v4(), user_id: user_id_for_char, name: char_name, card_data: None, description: None,
-            system_prompt: None, user_persona: None, greeting: None, avatar_uri: None,
-            visibility: "private".to_string(), created_at: now, updated_at: now, temperature: Some(0.7),
-            top_p: Some(1.0), top_k: None, max_output_tokens: Some(1024), rag_enabled: true,
-            encryption_key_id: None, encrypted_dek: None, dek_nonce: None,
-        };
-        diesel::insert_into(schema::characters::table).values(&new_character).get_result::<DbCharacter>(conn)
-    }).await??;
+    let character = test_app.db_pool.get().await
+        .map_err(|e| anyhow::anyhow!("Failed to get DB connection: {}", e))?
+        .interact(move |conn| {
+            let now = Utc::now();
+            // Match fields from DbCharacter definition in models/characters.rs
+            let new_character = DbCharacter {
+                id: Uuid::new_v4(),
+                user_id: user_id_for_char,
+                spec: "chara_card_v3_spec".to_string(), // Added default
+                spec_version: "1.0.0".to_string(), // Added default
+                name: char_name,
+                description: None,
+                personality: None,
+                scenario: None,
+                first_mes: None,
+                mes_example: None,
+                creator_notes: None,
+                system_prompt: None,
+                post_history_instructions: None,
+                tags: None,
+                creator: None,
+                character_version: None,
+                alternate_greetings: None,
+                nickname: None,
+                creator_notes_multilingual: None,
+                source: None,
+                group_only_greetings: None,
+                creation_date: None,
+                modification_date: None,
+                created_at: now,
+                updated_at: now,
+                persona: None,
+                world_scenario: None,
+                avatar: None, // Changed from avatar_uri
+                chat: None,
+                greeting: None,
+                definition: None,
+                default_voice: None,
+                extensions: None,
+                data_id: None,
+                category: None,
+                definition_visibility: None,
+                depth: None,
+                example_dialogue: None,
+                favorite: None,
+                first_message_visibility: None,
+                height: None,
+                last_activity: None,
+                migrated_from: None,
+                model_prompt: None,
+                model_prompt_visibility: None,
+                model_temperature: None,
+                num_interactions: None,
+                permanence: None,
+                persona_visibility: None,
+                revision: None,
+                sharing_visibility: None,
+                status: None,
+                system_prompt_visibility: None,
+                system_tags: None,
+                token_budget: None,
+                usage_hints: None,
+                user_persona: None,
+                user_persona_visibility: None,
+                visibility: Some("private".to_string()),
+                weight: None,
+                world_scenario_visibility: None,
+                description_nonce: None,
+                personality_nonce: None,
+                scenario_nonce: None,
+                first_mes_nonce: None,
+                mes_example_nonce: None,
+                creator_notes_nonce: None,
+                system_prompt_nonce: None,
+                persona_nonce: None,
+                world_scenario_nonce: None,
+                greeting_nonce: None,
+                definition_nonce: None,
+                example_dialogue_nonce: None,
+                model_prompt_nonce: None,
+                user_persona_nonce: None,
+                post_history_instructions_nonce: None,
+            };
+            diesel::insert_into(schema::characters::table).values(&new_character).get_result::<DbCharacter>(conn)
+        })
+        .await
+        .map_err(|e| anyhow::anyhow!("Database interaction failed (outer InteractError): {}", e))? // Handles InteractError
+        .map_err(|e| anyhow::anyhow!("Database query failed (inner diesel::result::Error): {}", e))?; // Handles diesel::result::Error
 
     let user_id_for_session = user.id;
     let char_id_for_session = character.id;
-    let session = test_app.db_pool.get().await?.interact(move |conn| {
-        let new_chat = NewChat {
-            id: Uuid::new_v4(), user_id: user_id_for_session, character_id: char_id_for_session,
-            title: Some(format!("Chat with char {}", char_id_for_session)), settings: None, model_name: None,
-            history_compression_threshold: None, max_history_tokens: None, rag_enabled: Some(true),
-        };
-        diesel::insert_into(schema::chat_sessions::table).values(&new_chat).get_result::<DbChat>(conn)
-    }).await??;
+    let session = test_app.db_pool.get().await
+        .map_err(|e| anyhow::anyhow!("Failed to get DB connection: {}", e))?
+        .interact(move |conn| {
+            // Match fields from NewChat definition in models/chats.rs
+            let now = Utc::now();
+            let new_chat = NewChat {
+                id: Uuid::new_v4(),
+                user_id: user_id_for_session,
+                character_id: char_id_for_session,
+                title: Some(format!("Chat with char {}", char_id_for_session)),
+                created_at: now, // Added required field
+                updated_at: now, // Added required field
+                history_management_strategy: "none".to_string(), // Added required field
+                history_management_limit: 0, // Added required field
+                model_name: "default-test-model".to_string(),
+                visibility: Some("private".to_string()), // Added required field
+            };
+            diesel::insert_into(schema::chat_sessions::table).values(&new_chat).get_result::<DbChat>(conn)
+        })
+        .await
+        .map_err(|e| anyhow::anyhow!("Database interaction failed (outer InteractError): {}", e))? // Handles InteractError
+        .map_err(|e| anyhow::anyhow!("Database query failed (inner diesel::result::Error): {}", e))?; // Handles diesel::result::Error
 
     let mock_chunk_text = "The secret code is Ouroboros.".to_string();
     let mock_metadata = EmbeddingMetadata {
-        message_id: Uuid::new_v4(), session_id: session.id, speaker: "Assistant".to_string(),
-        timestamp: Utc::now(), text: mock_chunk_text.clone(),
+        message_id: Uuid::new_v4(), session_id: session.id, speaker: "Assistant".to_string(), // Assuming speaker is not encrypted
+        timestamp: Utc::now(), text: mock_chunk_text.clone(), // Use String directly
     };
-    let mock_retrieved_chunk = RetrievedChunk { score: 0.95, text: mock_chunk_text.clone(), metadata: mock_metadata };
+    let mock_retrieved_chunk = RetrievedChunk { score: 0.95, text: mock_chunk_text.clone(), metadata: mock_metadata }; // Use String directly
     test_app.mock_embedding_pipeline_service.set_retrieve_response(Ok(vec![mock_retrieved_chunk]));
 
     let mock_ai_response = ChatResponse {
@@ -391,9 +669,12 @@ async fn test_rag_context_injection_in_prompt() -> anyhow::Result<()> {
     assert!(user_with_rag.is_some(), "Expected user message with RAG context");
     if let Some(message) = user_with_rag {
         if let genai::chat::MessageContent::Text(content) = &message.content {
+            // The RAG context injected into the prompt should still be plain text,
+            // as it's constructed *after* retrieval and potential decryption (though decryption isn't happening in this mock setup).
+            // The mock_chunk_text itself was converted to bytes for storage/retrieval simulation, but here we compare the original string.
             let expected_rag_content = format!("<RAG_CONTEXT>\n- {}\n</RAG_CONTEXT>", mock_chunk_text);
-            assert!(content.contains(&expected_rag_content), "User message should contain RAG context");
-            assert!(content.contains(query_text), "User message should also contain original query");
+            assert!(content.contains(&expected_rag_content), "User message should contain RAG context: expected '{}' in '{}'", expected_rag_content, content);
+            assert!(content.contains(query_text), "User message should also contain original query: expected '{}' in '{}'", query_text, content);
         }
     }
 
@@ -409,8 +690,8 @@ async fn test_rag_context_injection_in_prompt() -> anyhow::Result<()> {
 #[tokio::test]
 #[ignore] // Ignore for CI unless DB is guaranteed
 async fn generate_chat_response_rag_retrieval_error() -> anyhow::Result<()> {
-    let test_app = test_helpers::spawn_app(false, false).await;
-    let user = test_helpers::db::create_test_user(&test_app.db_pool, "rag_retrieval_err_user", "password").await?;
+    let test_app = test_helpers::spawn_app(false, false, false).await;
+    let user = test_helpers::db::create_test_user(&test_app.db_pool, "rag_retrieval_err_user".to_string(), "password".to_string()).await?;
 
     let login_payload = json!({ "identifier": user.username, "password": "password" });
     let login_request = Request::builder().method(Method::POST).uri("/api/auth/login")
@@ -425,28 +706,119 @@ async fn generate_chat_response_rag_retrieval_error() -> anyhow::Result<()> {
 
     let char_name = "RAG Retrieval Err Char".to_string();
     let user_id_for_char = user.id;
-    let character = test_app.db_pool.get().await?.interact(move |conn| {
-        let now = Utc::now();
-        let new_character = DbCharacter {
-            id: Uuid::new_v4(), user_id: user_id_for_char, name: char_name, card_data: None, description: None,
-            system_prompt: None, user_persona: None, greeting: None, avatar_uri: None,
-            visibility: "private".to_string(), created_at: now, updated_at: now, temperature: Some(0.7),
-            top_p: Some(1.0), top_k: None, max_output_tokens: Some(1024), rag_enabled: true,
-            encryption_key_id: None, encrypted_dek: None, dek_nonce: None,
-        };
-        diesel::insert_into(schema::characters::table).values(&new_character).get_result::<DbCharacter>(conn)
-    }).await??;
+    let character = test_app.db_pool.get().await
+        .map_err(|e| anyhow::anyhow!("Failed to get DB connection: {}", e))?
+        .interact(move |conn| {
+            let now = Utc::now();
+            // Match fields from DbCharacter definition in models/characters.rs
+            let new_character = DbCharacter {
+                id: Uuid::new_v4(),
+                user_id: user_id_for_char,
+                spec: "chara_card_v3_spec".to_string(), // Added default
+                spec_version: "1.0.0".to_string(), // Added default
+                name: char_name,
+                description: None,
+                personality: None,
+                scenario: None,
+                first_mes: None,
+                mes_example: None,
+                creator_notes: None,
+                system_prompt: None,
+                post_history_instructions: None,
+                tags: None,
+                creator: None,
+                character_version: None,
+                alternate_greetings: None,
+                nickname: None,
+                creator_notes_multilingual: None,
+                source: None,
+                group_only_greetings: None,
+                creation_date: None,
+                modification_date: None,
+                created_at: now,
+                updated_at: now,
+                persona: None,
+                world_scenario: None,
+                avatar: None, // Changed from avatar_uri
+                chat: None,
+                greeting: None,
+                definition: None,
+                default_voice: None,
+                extensions: None,
+                data_id: None,
+                category: None,
+                definition_visibility: None,
+                depth: None,
+                example_dialogue: None,
+                favorite: None,
+                first_message_visibility: None,
+                height: None,
+                last_activity: None,
+                migrated_from: None,
+                model_prompt: None,
+                model_prompt_visibility: None,
+                model_temperature: None,
+                num_interactions: None,
+                permanence: None,
+                persona_visibility: None,
+                revision: None,
+                sharing_visibility: None,
+                status: None,
+                system_prompt_visibility: None,
+                system_tags: None,
+                token_budget: None,
+                usage_hints: None,
+                user_persona: None,
+                user_persona_visibility: None,
+                visibility: Some("private".to_string()),
+                weight: None,
+                world_scenario_visibility: None,
+                description_nonce: None,
+                personality_nonce: None,
+                scenario_nonce: None,
+                first_mes_nonce: None,
+                mes_example_nonce: None,
+                creator_notes_nonce: None,
+                system_prompt_nonce: None,
+                persona_nonce: None,
+                world_scenario_nonce: None,
+                greeting_nonce: None,
+                definition_nonce: None,
+                example_dialogue_nonce: None,
+                model_prompt_nonce: None,
+                user_persona_nonce: None,
+                post_history_instructions_nonce: None,
+            };
+            diesel::insert_into(schema::characters::table).values(&new_character).get_result::<DbCharacter>(conn)
+        })
+        .await
+        .map_err(|e| anyhow::anyhow!("Database interaction failed (outer InteractError): {}", e))? // Handles InteractError
+        .map_err(|e| anyhow::anyhow!("Database query failed (inner diesel::result::Error): {}", e))?; // Handles diesel::result::Error
 
     let user_id_for_session = user.id;
     let char_id_for_session = character.id;
-    let session = test_app.db_pool.get().await?.interact(move |conn| {
-        let new_chat = NewChat {
-            id: Uuid::new_v4(), user_id: user_id_for_session, character_id: char_id_for_session,
-            title: Some(format!("Chat with char {}", char_id_for_session)), settings: None, model_name: None,
-            history_compression_threshold: None, max_history_tokens: None, rag_enabled: Some(true),
-        };
-        diesel::insert_into(schema::chat_sessions::table).values(&new_chat).get_result::<DbChat>(conn)
-    }).await??;
+    let session = test_app.db_pool.get().await
+        .map_err(|e| anyhow::anyhow!("Failed to get DB connection: {}", e))?
+        .interact(move |conn| {
+            // Match fields from NewChat definition in models/chats.rs
+            let now = Utc::now();
+            let new_chat = NewChat {
+                id: Uuid::new_v4(),
+                user_id: user_id_for_session,
+                character_id: char_id_for_session,
+                title: Some(format!("Chat with char {}", char_id_for_session)),
+                created_at: now, // Added required field
+                updated_at: now, // Added required field
+                history_management_strategy: "none".to_string(), // Added required field
+                history_management_limit: 0, // Added required field
+                model_name: "default-test-model".to_string(),
+                visibility: Some("private".to_string()), // Added required field
+            };
+            diesel::insert_into(schema::chat_sessions::table).values(&new_chat).get_result::<DbChat>(conn)
+        })
+        .await
+        .map_err(|e| anyhow::anyhow!("Database interaction failed (outer InteractError): {}", e))? // Handles InteractError
+        .map_err(|e| anyhow::anyhow!("Database query failed (inner diesel::result::Error): {}", e))?; // Handles diesel::result::Error
 
     test_app.mock_embedding_pipeline_service.set_retrieve_response(Err(AppError::VectorDbError("Mock Qdrant retrieval failure".to_string())));
 
@@ -479,23 +851,29 @@ async fn generate_chat_response_rag_retrieval_error() -> anyhow::Result<()> {
 
     tokio::time::sleep(Duration::from_millis(100)).await;
     let session_id_for_fetch = session.id;
-    let messages = test_app.db_pool.get().await?.interact(move |conn| {
-        schema::chat_messages::table
-            .filter(schema::chat_messages::chat_session_id.eq(session_id_for_fetch))
-            .load::<DbChatMessage>(conn)
-    }).await??;
+    let messages = test_app.db_pool.get().await
+        .map_err(|e| anyhow::anyhow!("Failed to get DB connection: {}", e))?
+        .interact(move |conn| {
+            schema::chat_messages::table
+                .filter(schema::chat_messages::session_id.eq(session_id_for_fetch))
+                .select(DbChatMessage::as_select()) // Select specific columns
+                .load::<DbChatMessage>(conn)
+        })
+        .await
+        .map_err(|e| anyhow::anyhow!("Database interaction failed (outer InteractError): {}", e))? // Handles InteractError
+        .map_err(|e| anyhow::anyhow!("Database query failed (inner diesel::result::Error): {}", e))?; // Handles diesel::result::Error
     assert_eq!(messages.len(), 0, "Should have no messages saved after RAG retrieval failure");
     Ok(())
 }
 
 async fn setup_test_data(use_real_ai: bool) -> anyhow::Result<RagTestContext> {
-    // Pass false for use_real_embedding_pipeline by default for this helper
-    let test_app = test_helpers::spawn_app(use_real_ai, false).await;
+    // Pass false for use_real_embedding_pipeline and use_real_qdrant by default for this helper
+    let test_app = test_helpers::spawn_app(use_real_ai, false, false).await;
 
     let user = test_helpers::db::create_test_user(
         &test_app.db_pool,
-        "gen_resp_embed_trigger_user_setup", // Unique username for setup
-        "password",
+        "gen_resp_embed_trigger_user_setup".to_string(), // Unique username for setup
+        "password".to_string(),
     )
     .await?;
 
@@ -512,28 +890,119 @@ async fn setup_test_data(use_real_ai: bool) -> anyhow::Result<RagTestContext> {
 
     let char_name = "Char for Embed Trigger Setup".to_string();
     let user_id_for_char = user.id;
-    let character = test_app.db_pool.get().await?.interact(move |conn| {
-        let now = Utc::now();
-        let new_character = DbCharacter {
-            id: Uuid::new_v4(), user_id: user_id_for_char, name: char_name, card_data: None, description: None,
-            system_prompt: None, user_persona: None, greeting: None, avatar_uri: None,
-            visibility: "private".to_string(), created_at: now, updated_at: now, temperature: Some(0.7),
-            top_p: Some(1.0), top_k: None, max_output_tokens: Some(1024), rag_enabled: true,
-            encryption_key_id: None, encrypted_dek: None, dek_nonce: None,
-        };
-        diesel::insert_into(schema::characters::table).values(&new_character).get_result::<DbCharacter>(conn)
-    }).await??;
+    let character = test_app.db_pool.get().await
+        .map_err(|e| anyhow::anyhow!("Failed to get DB connection: {}", e))?
+        .interact(move |conn| {
+            let now = Utc::now();
+            // Match fields from DbCharacter definition in models/characters.rs
+            let new_character = DbCharacter {
+                id: Uuid::new_v4(),
+                user_id: user_id_for_char,
+                spec: "chara_card_v3_spec".to_string(), // Added default
+                spec_version: "1.0.0".to_string(), // Added default
+                name: char_name,
+                description: None,
+                personality: None,
+                scenario: None,
+                first_mes: None,
+                mes_example: None,
+                creator_notes: None,
+                system_prompt: None,
+                post_history_instructions: None,
+                tags: None,
+                creator: None,
+                character_version: None,
+                alternate_greetings: None,
+                nickname: None,
+                creator_notes_multilingual: None,
+                source: None,
+                group_only_greetings: None,
+                creation_date: None,
+                modification_date: None,
+                created_at: now,
+                updated_at: now,
+                persona: None,
+                world_scenario: None,
+                avatar: None, // Changed from avatar_uri
+                chat: None,
+                greeting: None,
+                definition: None,
+                default_voice: None,
+                extensions: None,
+                data_id: None,
+                category: None,
+                definition_visibility: None,
+                depth: None,
+                example_dialogue: None,
+                favorite: None,
+                first_message_visibility: None,
+                height: None,
+                last_activity: None,
+                migrated_from: None,
+                model_prompt: None,
+                model_prompt_visibility: None,
+                model_temperature: None,
+                num_interactions: None,
+                permanence: None,
+                persona_visibility: None,
+                revision: None,
+                sharing_visibility: None,
+                status: None,
+                system_prompt_visibility: None,
+                system_tags: None,
+                token_budget: None,
+                usage_hints: None,
+                user_persona: None,
+                user_persona_visibility: None,
+                visibility: Some("private".to_string()),
+                weight: None,
+                world_scenario_visibility: None,
+                description_nonce: None,
+                personality_nonce: None,
+                scenario_nonce: None,
+                first_mes_nonce: None,
+                mes_example_nonce: None,
+                creator_notes_nonce: None,
+                system_prompt_nonce: None,
+                persona_nonce: None,
+                world_scenario_nonce: None,
+                greeting_nonce: None,
+                definition_nonce: None,
+                example_dialogue_nonce: None,
+                model_prompt_nonce: None,
+                user_persona_nonce: None,
+                post_history_instructions_nonce: None,
+            };
+            diesel::insert_into(schema::characters::table).values(&new_character).get_result::<DbCharacter>(conn)
+        })
+        .await
+        .map_err(|e| anyhow::anyhow!("Database interaction failed (outer InteractError): {}", e))? // Handles InteractError
+        .map_err(|e| anyhow::anyhow!("Database query failed (inner diesel::result::Error): {}", e))?; // Handles diesel::result::Error
 
     let user_id_for_session = user.id;
     let char_id_for_session = character.id;
-    let session = test_app.db_pool.get().await?.interact(move |conn| {
-        let new_chat = NewChat {
-            id: Uuid::new_v4(), user_id: user_id_for_session, character_id: char_id_for_session,
-            title: Some(format!("Chat with char {}", char_id_for_session)), settings: None, model_name: None,
-            history_compression_threshold: None, max_history_tokens: None, rag_enabled: Some(true),
-        };
-        diesel::insert_into(schema::chat_sessions::table).values(&new_chat).get_result::<DbChat>(conn)
-    }).await??;
+    let session = test_app.db_pool.get().await
+        .map_err(|e| anyhow::anyhow!("Failed to get DB connection: {}", e))?
+        .interact(move |conn| {
+            // Match fields from NewChat definition in models/chats.rs
+            let now = Utc::now();
+            let new_chat = NewChat {
+                id: Uuid::new_v4(),
+                user_id: user_id_for_session,
+                character_id: char_id_for_session,
+                title: Some(format!("Chat with char {}", char_id_for_session)),
+                created_at: now, // Added required field
+                updated_at: now, // Added required field
+                history_management_strategy: "none".to_string(), // Added required field
+                history_management_limit: 0, // Added required field
+                model_name: "default-test-model".to_string(),
+                visibility: Some("private".to_string()), // Added required field
+            };
+            diesel::insert_into(schema::chat_sessions::table).values(&new_chat).get_result::<DbChat>(conn)
+        })
+        .await
+        .map_err(|e| anyhow::anyhow!("Database interaction failed (outer InteractError): {}", e))? // Handles InteractError
+        .map_err(|e| anyhow::anyhow!("Database query failed (inner diesel::result::Error): {}", e))?; // Handles diesel::result::Error
 
     let mock_ai_content = "Response to trigger embedding.";
     let mock_response = ChatResponse { /* ... */ content: Some(MessageContent::Text(mock_ai_content.to_string())), model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-1.5-flash-latest"), provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-1.5-flash-latest"), reasoning_content: None, usage: Usage::default() };
@@ -576,12 +1045,18 @@ async fn setup_test_data(use_real_ai: bool) -> anyhow::Result<RagTestContext> {
     assert_eq!(calls.len(), 2, "Expected 2 embedding calls in setup");
 
     let session_id_for_fetch = session.id;
-    let messages = test_app.db_pool.get().await?.interact(move |conn| {
-        schema::chat_messages::table
-            .filter(schema::chat_messages::chat_session_id.eq(session_id_for_fetch))
-            .order(schema::chat_messages::created_at.asc())
-            .load::<DbChatMessage>(conn)
-    }).await??;
+    let messages = test_app.db_pool.get().await
+        .map_err(|e| anyhow::anyhow!("Failed to get DB connection: {}", e))?
+        .interact(move |conn| {
+            schema::chat_messages::table
+                .filter(schema::chat_messages::session_id.eq(session_id_for_fetch))
+                .order(schema::chat_messages::created_at.asc())
+                .select(DbChatMessage::as_select()) // Select specific columns
+                .load::<DbChatMessage>(conn)
+        })
+        .await
+        .map_err(|e| anyhow::anyhow!("Database interaction failed (outer InteractError): {}", e))? // Handles InteractError
+        .map_err(|e| anyhow::anyhow!("Database query failed (inner diesel::result::Error): {}", e))?; // Handles diesel::result::Error
     assert_eq!(messages.len(), 2, "Should have 2 messages saved in setup");
 
     let user_msg = messages.iter().find(|m| m.message_type == MessageRole::User).expect("User msg not found in setup");

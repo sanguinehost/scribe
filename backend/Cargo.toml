@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-axum = { version = "0.7.5", features = ["macros", "multipart"] } # Align with tonic and axum-login ^0.7.0
+axum = { version = "0.7.5", features = ["macros", "multipart", "tokio"] } # Align with tonic and axum-login ^0.7.0, ADDED tokio feature
 axum-server = { version = "0.7.0", features = ["tls-rustls"] } # Added for HTTPS serving
 tokio = { version = "1.44.2", features = ["full"] }
 serde = { version = "1.0.219", features = ["derive"] }
@@ -19,8 +19,8 @@ chrono = { version = "0.4.40", features = ["serde"] }
 diesel-derive-enum = { version = "2.1.0", features = ["postgres"] }
 uuid = { version = "1.16.0", features = ["v4", "serde"] }
 tower = { version = "0.5.2" }
-tower-http = { version = "0.5.2", features = ["trace", "cors"] } # Downgraded for axum 0.7.x compatibility
-tower-sessions = { version = "0.11.1", features = ["signed"] } # Aligned with axum-login 0.14.0
+tower-http = { version = "0.5.2", features = ["trace", "cors"] }
+tower-sessions = { version = "0.11.1", features = ["signed"] }
 axum-login = "0.14.0" # Compatible with axum 0.7.x
 bcrypt = "0.17.0"
 argon2 = { version = "0.5.3", features = ["std"] } # Ensure std feature for hash_raw if available, or check API
@@ -98,6 +98,8 @@ tokio-rustls = "0.26.0"
 tokio-stream = "0.1"
 
 [dev-dependencies]
+axum = { version = "0.7.5", features = ["macros", "multipart", "tokio"] } # Mirror main deps features for tests, ADDED tokio feature
+axum-server = { version = "0.7.0", features = ["tls-rustls"] } # Mirror main deps features
 hyper-util = { version = "0.1.11", features = ["full"] }
 reqwest = { version = "0.12.15", features = ["json", "cookies"] }
 serde_json = "1.0.140"
@@ -125,6 +127,7 @@ httpc-test = "0.1.10" # For testing axum handlers
 mockito = "1.7.0"
 httpmock = "0.7.0" # For mocking HTTP requests
 mockall = "0.13.0" # Add mockall
+secrecy = { version = "0.10.3", features = ["serde"] } # Fix E0432: Add secrecy to dev-deps for tests
 
 # Specify the library target explicitly
 [lib]

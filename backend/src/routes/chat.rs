@@ -1,13 +1,12 @@
 // backend/src/routes/chat.rs
 
 use axum::{
-    body::Body,
-    extract::{ConnectInfo, FromRequest, Path, Query, State},
-    http::{header, HeaderMap, Method, Request, StatusCode, Uri},
-    response::{IntoResponse, Response, Sse, sse::{Event, KeepAlive}},
+    extract::{Path, State},
+    http::HeaderMap,
+    response::{IntoResponse, Sse, sse::{Event, KeepAlive}},
     Json,
     Router,
-    routing::{delete, get, post, put},
+    routing::{get, post},
 };
 use axum_login::AuthSession;
 use diesel::{QueryDsl, ExpressionMethods, RunQueryDsl, SelectableHelper, prelude::*};
@@ -32,15 +31,10 @@ use genai::chat::{
     ChatResponseFormat, JsonSpec, ChatStreamEvent
 };
 use crate::routes::chats_api::{get_chat_settings_handler, update_chat_settings_handler}; // Added back necessary imports
-use crate::models::users::{User, SerializableSecretDek}; // Ensure User & SerializableSecretDek are imported
+ // Ensure User & SerializableSecretDek are imported
 use secrecy::SecretBox; // Import SecretBox
-use std::net::SocketAddr;
-use futures_util::{Stream, StreamExt, TryStreamExt, stream::BoxStream};
-use async_stream::try_stream;
-use tokio::sync::mpsc;
+use futures_util::{StreamExt, TryStreamExt};
 use serde::Serialize;
-use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
-use tokio_stream::wrappers::ReceiverStream;
 use tracing::field; // ADDED for instrument macro
 
 // Define CurrentAuthSession type alias
@@ -1233,4 +1227,3 @@ pub async fn get_chat_session_with_dek(
         Err(AppError::NotFound("Chat session not found".to_string()))
     }
 }
-

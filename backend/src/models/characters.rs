@@ -18,7 +18,7 @@ use crate::services::character_parser::ParsedCharacterCard;
 use crate::services::encryption_service::EncryptionService; // Added
 
 #[derive(
-    Queryable, Selectable, Identifiable, Associations, Serialize, Deserialize, Debug, Clone, PartialEq,
+    Queryable, Selectable, Identifiable, Associations, Insertable, Serialize, Deserialize, Debug, Clone, PartialEq,
 )]
 #[diesel(belongs_to(User, foreign_key = user_id))]
 #[diesel(table_name = crate::schema::characters)]
@@ -207,8 +207,8 @@ impl Character {
                 
                 client_char.description = decrypted_text;
             }
-        } else if self.description.is_some() && self.description_nonce.is_some() {
-             // If no DEK but data exists, show encrypted placeholder
+        } else if self.description.is_some() { // Check only if description data exists
+             // If data exists but we couldn't decrypt (either missing DEK or missing nonce), show placeholder
             client_char.description = "[Encrypted]".to_string();
         } else {
             // If no data or no nonce, leave as empty or default (already initialized)
@@ -502,6 +502,7 @@ pub struct CharacterMetadata {
     pub user_id: Uuid,
     pub name: String,
     pub description: Option<Vec<u8>>,
+    pub description_nonce: Option<Vec<u8>>, // Added nonce field
     pub first_mes: Option<Vec<u8>>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -843,6 +844,7 @@ mod tests {
             user_id: user_uuid,
             name: "Test Character".to_string(),
             description: Some("A test description".as_bytes().to_vec()),
+            description_nonce: None, // Added missing field
             first_mes: None,
             created_at: dt,
             updated_at: dt,

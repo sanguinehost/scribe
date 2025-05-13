@@ -19,7 +19,7 @@ use secrecy::SecretBox; // For DEK (SecretBox<Vec<u8>>)
 use secrecy::ExposeSecret; // Added for ExposeSecret
 use crate::crypto::{decrypt_gcm, encrypt_gcm}; // For encryption/decryption
 use crate::errors::AppError; // For error handling
-use crate::models::users::SerializableSecretDek; // Import the newtype
+ // Import the newtype
 
 // Main Chat model (similar to the frontend Chat type)
 // Type alias for the tuple returned when selecting/returning chat settings
@@ -68,10 +68,10 @@ pub struct Chat {
     pub history_management_strategy: String,
     pub history_management_limit: i32,
     pub model_name: String,
-    pub visibility: Option<String>, // Added based on migration 2025-05-10-100002
-    // -- Gemini Specific Options --
-    pub gemini_thinking_budget: Option<i32>,      // Corresponds to u32, but Diesel might prefer i32 for Option<INT4>
+    // -- Gemini Specific Options -- (Moved before visibility to match schema)
+    pub gemini_thinking_budget: Option<i32>,
     pub gemini_enable_code_execution: Option<bool>,
+    pub visibility: Option<String>, // Moved to last
 }
 
 // New Chat for insertion
@@ -99,18 +99,18 @@ pub struct Message {
     pub session_id: Uuid,
     pub message_type: MessageRole, // Changed String to MessageRole
     pub content: Vec<u8>,
-    pub content_nonce: Option<Vec<u8>>, // Added nonce
-    pub rag_embedding_id: Option<Uuid>,
+    pub rag_embedding_id: Option<Uuid>, // Moved before content_nonce to match schema
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     pub user_id: Uuid,
+    pub content_nonce: Option<Vec<u8>>, // Moved after rag_embedding_id and user_id
     pub role: Option<String>,
     pub parts: Option<serde_json::Value>,
     pub attachments: Option<serde_json::Value>,
 }
 
 // New Message for insertion
-#[derive(Insertable, Debug)]
+#[derive(Insertable, Debug, Clone)]
 #[diesel(table_name = chat_messages)]
 pub struct NewMessage {
     pub id: Uuid,
@@ -322,7 +322,7 @@ impl ChatMessage {
     pub fn into_decrypted_for_client(self, user_dek_secret_box: Option<&SecretBox<Vec<u8>>>) -> Result<ChatMessageForClient, AppError> {
         let decrypted_content_result: Result<String, AppError> = if let Some(nonce) = &self.content_nonce {
             if let Some(dek_sb) = user_dek_secret_box {
-                match crate::crypto::decrypt_gcm(&self.content, nonce, dek_sb) { 
+                match decrypt_gcm(&self.content, nonce, dek_sb) { 
                     Ok(plaintext_secret_vec) => {
                         String::from_utf8(plaintext_secret_vec.expose_secret().to_vec())
                             .map_err(|e| {
@@ -447,7 +447,7 @@ pub struct NewChatMessage {
 }
 
 // For inserting a new chat message with better naming clarity
-#[derive(Insertable, Debug)]
+#[derive(Insertable, Debug, Clone)]
 #[diesel(table_name = chat_messages)]
 pub struct DbInsertableChatMessage {
     #[diesel(column_name = session_id)]
@@ -927,7 +927,7 @@ mod tests {
 
         // Test without DEK (when content is encrypted)
         let client_message_without_dek = message_db.clone().into_decrypted_for_client(None).unwrap();
-        assert_eq!(client_message_without_dek.content, "[Encrypted Content]"); // Or policy for this case
+        assert_eq!(client_message_without_dek.content, "[Content encrypted, DEK not available]"); // Match implementation
 
         // Test with initially empty content
         let mut empty_content_msg_db = create_sample_chat_message_db();

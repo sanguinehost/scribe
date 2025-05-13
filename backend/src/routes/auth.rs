@@ -8,7 +8,7 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum_login::{AuthSession, AuthUser};
 // use secrecy::{ExposeSecret, Secret}; // Commenting out as they are unused now
-use secrecy::ExposeSecret; // Added back for DEK length logging
+ // Added back for DEK length logging
 use serde_json::json;
 use tracing::{debug, error, info, instrument, warn};
 use serde::{Deserialize, Serialize};

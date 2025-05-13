@@ -27,7 +27,12 @@ use crate::{
 };
 use anyhow::Context; // Added for TestDataGuard cleanup
 use async_trait::async_trait;
-use axum::Router;
+use axum::{
+    body::HttpBody, // Removed boxed
+    middleware::{self, Next},
+    response::Response as AxumResponse, // Alias to avoid conflict if Response is used elsewhere
+    Router,
+};
 use axum_login::{AuthManagerLayerBuilder, login_required};
 use diesel::RunQueryDsl;
 use diesel::prelude::*;
@@ -43,16 +48,15 @@ use tokio::sync::Mutex as TokioMutex;
 use tokio::net::TcpListener;
 use tower_cookies::{CookieManagerLayer}; // Removed unused: Key as TowerCookieKey
 use tower_sessions::{Expiry, SessionManagerLayer};
-use tracing::warn;
+use tracing::{warn, instrument}; // Added instrument
 use uuid::Uuid;
 use std::fmt;
-use tower_http::trace::TraceLayer;
 use crate::models::users::User as DbUser;
 use secrecy::{ExposeSecret, SecretBox, SecretString};
-use crate::models::users::{NewUser, User, UserDbQuery, SerializableSecretDek}; // Added SerializableSecretDek
+use crate::models::users::{User, SerializableSecretDek}; // Added SerializableSecretDek
 use axum::{
     body::Body,
-    http::{Request, header::COOKIE, StatusCode},
+    http::{Request, StatusCode},
 };
 use tower::ServiceExt; // For .oneshot
 use serde_json::json;
@@ -498,16 +502,20 @@ pub const MIGRATIONS: EmbeddedMigrations = embed_migrations!("./migrations");
 
 // --- Tracing Initialization for Tests ---
 use std::sync::Once;
-use tracing_subscriber::{fmt as tracing_fmt, EnvFilter as TracingEnvFilter}; // Renamed for clarity
+use tracing_subscriber::{fmt as tracing_fmt, EnvFilter}; // Alias fmt to avoid collision with std::fmt
 
 static TRACING_INIT: Once = Once::new();
 
 // Helper function to ensure tracing is initialized (idempotent)
 // Made public to be accessible from integration tests
 pub fn ensure_tracing_initialized() {
+    // Use tracing_subscriber::fmt and EnvFilter directly, relying on RUST_LOG
     TRACING_INIT.call_once(|| {
-        tracing_fmt()
-            .with_env_filter(TracingEnvFilter::from_default_env())
+        // Attempt to initialize from RUST_LOG, default to "info" if not set or invalid
+        let filter = EnvFilter::try_from_default_env()
+            .unwrap_or_else(|_| EnvFilter::new("info"));
+        tracing_fmt() // Use the aliased tracing_fmt
+            .with_env_filter(filter)
             .try_init()
             .unwrap_or_else(|e| eprintln!("Failed to initialize tracing: {}", e));
     });
@@ -531,6 +539,18 @@ pub struct TestApp {
     // Optionally store the mock Qdrant client for tests that need mock-specific methods
     pub mock_qdrant_service: Option<Arc<MockQdrantClientService>>,
     pub embedding_call_tracker: Arc<TokioMutex<Vec<uuid::Uuid>>>,
+}
+
+#[instrument(skip_all, fields(uri = %req.uri()))]
+async fn auth_log_wrapper( // Removed generic <B>
+    req: axum::http::Request<axum::body::Body>, // Use concrete Body type
+    next: Next,
+) -> AxumResponse { // Removed where clause
+    tracing::warn!(target: "auth_middleware_debug", "ENTERING global auth protection layer for URI");
+    // let req = req.map(axum::body::Body::new); // No longer needed, from_fn handles it
+    let res = next.run(req).await;
+    tracing::warn!(target: "auth_middleware_debug", status = %res.status(), "EXITING global auth protection layer");
+    res
 }
 
 /// Spawns the application for testing.
@@ -620,43 +640,64 @@ pub async fn spawn_app(multi_thread: bool, use_real_ai: bool, use_real_qdrant: b
             "/characters",
             characters::characters_router(app_state_for_routes.clone())
         );
+    tracing::debug!(router = ?protected_api_routes, "Protected routes after /characters");
 
+    // Restore other protected routes
     protected_api_routes = protected_api_routes.nest(
             "/chats",
             chat_routes(app_state_for_routes.clone())
         );
+    tracing::debug!(router = ?protected_api_routes, "Protected routes after /chats (crate::routes::chat)");
     
     protected_api_routes = protected_api_routes.nest(
-            "/chats-api",
-            chats_api::chat_routes() // Assumes this returns Router<AppState>
+            "/chats-api", {
+                tracing::debug!("spawn_app: nesting chats_api::chat_routes() under /chats-api");
+                chats_api::chat_routes() // Assumes this returns Router<AppState>
+            }
         );
+    tracing::debug!(router = ?protected_api_routes, "Protected routes after /chats-api");
 
     protected_api_routes = protected_api_routes.nest(
             "/documents",
             document_routes() // Assumes this returns Router<AppState>
         );
+    tracing::debug!(router = ?protected_api_routes, "Protected routes after /documents");
         
     // Apply route_layer at the end
-    let protected_api_routes_final = protected_api_routes
+    let protected_api_routes_final = protected_api_routes // Now contains all nested protected routes
+        .route_layer(middleware::from_fn(auth_log_wrapper)) // ADD THIS LINE
         .route_layer(login_required!(AuthBackend));
+    tracing::debug!(router = ?protected_api_routes_final, "Protected routes final (after login_required and auth_log_wrapper)");
 
     // Define public_api_routes (paths are relative to the eventual /api mount)
     let public_api_routes: Router<AppState> = Router::new()
         .route("/health", axum::routing::get(health_check))
         .merge(Router::new().nest("/auth", auth_routes_module::auth_routes()));
 
+    // Combine public and protected routes under a single /api prefix
+    // let api_router = Router::new()
+    //     .merge(public_api_routes)
+    //     .merge(protected_api_routes_final); // protected_api_routes_final already has login_required applied
 
     // Combine routers and add layers.
+    // Apply CookieManagerLayer and auth_layer at the top level
+    // so they run before routing into /api.
+    // Temporarily bypass api_router and public_api_routes for this test.
+    // Mount ONLY the protected_api_routes_final under /api.
+    // auth_layer is crucial for login_required! to function.
+    // Reverting to nesting the full api_router under /api
+    // let api_router = Router::new()
+    //     .merge(public_api_routes) // Ensure public_api_routes is defined
+    //     .merge(protected_api_routes_final.clone());
+
     let app = Router::new()
-        .nest("/api", public_api_routes) // Mount public routes under /api
-        .nest("/api", protected_api_routes_final) // Mount protected routes under /api
+        .nest("/api", public_api_routes) // Nest public routes under /api
+        .nest("/api", protected_api_routes_final) // Nest protected routes under /api
         .layer(CookieManagerLayer::new()) // Manages cookies, must be before auth_layer
         .layer(auth_layer)                // Uses cookies to load session/user
-        .layer(
-            TraceLayer::new_for_http()
-                .make_span_with(tower_http::trace::DefaultMakeSpan::default().include_headers(true))
-        )
+        // Removed TraceLayer to avoid potential conflicts with global tracing setup
         .with_state(app_state.as_ref().clone()); // Provide AppState to all handlers
+    tracing::debug!(router = ?app, "Final app router structure");
 
     // Start the server on a random available port
     let listener = TcpListener::bind("127.0.0.1:0")

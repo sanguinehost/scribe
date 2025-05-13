@@ -179,6 +179,7 @@ mod tests {
             user_id: Uuid::new_v4(),
             name: "Test Bot".to_string(),
             description: Some("A friendly test bot.".as_bytes().to_vec()),
+            description_nonce: None, // Added missing field
             created_at: Utc::now(),
             updated_at: Utc::now(),
             first_mes: Some("Bot greeting".as_bytes().to_vec()),
@@ -476,6 +477,7 @@ mod tests {
             user_id: Uuid::new_v4(),
             name: "Minimal Bot".to_string(),
             description: None, // No description
+            description_nonce: None, // Added missing field
             created_at: Utc::now(),
             updated_at: Utc::now(),
             first_mes: None,
@@ -558,6 +560,7 @@ mod tests {
             user_id: Uuid::new_v4(),
             name: "Mega Bot".to_string(),
             description: Some("The ultimate bot.".as_bytes().to_vec()),
+            description_nonce: None, // Added missing field
             created_at: Utc::now(),
             updated_at: Utc::now(),
             first_mes: Some("Mega greeting".as_bytes().to_vec()),

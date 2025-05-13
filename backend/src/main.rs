@@ -1,6 +1,6 @@
 use axum::{
     Router,
-    routing::{get, post},
+    routing::get, // Remove post
 };
 use deadpool_diesel::postgres::{
     Manager as DeadpoolManager, PoolConfig, Runtime as DeadpoolRuntime,
@@ -17,7 +17,7 @@ use scribe_backend::logging::init_subscriber;
 use scribe_backend::routes::auth::auth_routes;
 use scribe_backend::routes::health::health_check;
 use scribe_backend::routes::{
-    characters::{get_character_handler, list_characters_handler, upload_character_handler},
+    characters::characters_router, // Use the router function import
     chat::chat_routes,
     chats_api,
     documents_api::document_routes,
@@ -27,9 +27,12 @@ use anyhow::Context;
 use anyhow::Result;
 use scribe_backend::auth::user_store::Backend as AuthBackend;
 use scribe_backend::PgPool;
-// Make sure AppError is in scope
-
-// Imports for axum-login and tower-sessions
+ // Removed unused AppError import
+ // Removed unused IntoResponse import
+ // Make sure AppError is in scope
+ // Removed unused AuthRejection import
+ 
+ // Imports for axum-login and tower-sessions
 use axum_login::{AuthManagerLayerBuilder, login_required}; // Modified
 // Import SessionManagerLayer directly from tower_sessions
 use tower_sessions::cookie::Key; // Use Key from tower_sessions::cookie for with_signed
@@ -53,6 +56,9 @@ use rustls::crypto::ring; // <-- Import the ring provider module
 
 // Define the embedded migrations macro
 pub const MIGRATIONS: EmbeddedMigrations = embed_migrations!("./migrations");
+
+// Removed custom rejection handler functions (handle_auth_rejection, handle_unauthorized_rejection)
+// Relying on default axum_login::Error -> AppError conversion via From trait
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -152,20 +158,14 @@ async fn main() -> Result<()> {
     // --- Define Protected Routes ---
     let protected_api_routes = Router::new()
         // Character routes (require login)
-        // TODO: Consolidate character route definition here instead of merging below?
-        .nest(
-            "/characters",
-            Router::new()
-                .route("/upload", post(upload_character_handler))
-                .route("/", get(list_characters_handler))
-                .route("/{id}", get(get_character_handler)),
-        )
+        // Use the dedicated characters_router function
+        .nest("/characters", characters_router(app_state.clone())) // Use the router function
         // Chat routes (require login)
         .nest("/chats", chat_routes(app_state.clone())) // Correct: /api/chats
         .nest("/chats-api", chats_api::chat_routes()) // Corrected: /api/chats-api
         // Mount document API routes
         .nest("/documents", document_routes()) // Corrected: /api/documents
-        .route_layer(login_required!(AuthBackend)); // Apply login required, return 401 on failure
+        .route_layer(login_required!(AuthBackend)); // Simplify macro: remove user type (i64)
 
     // --- Define Public Routes ---
     let public_api_routes = Router::new()
