@@ -531,43 +531,21 @@ pub async fn generate_character_handler(
 }
 
 // DELETE /api/characters/:id
+#[debug_handler]
 #[instrument(skip(state, auth_session), err)]
 pub async fn delete_character_handler(
     State(state): State<AppState>,
     auth_session: CurrentAuthSession,
     Path(character_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    trace!(target: "auth_debug", ">>> ENTERING delete_character_handler for character_id: {}", character_id);
-    
-    // --- BEGIN TEST LOGGING for test_delete_character_forbidden ---
-    let user_for_delete_opt = auth_session.user.clone(); // Clone to log
-    if let Some(ref user_for_delete) = user_for_delete_opt {
-        info!(
-            target: "test_log",
-            handler = "delete_character_handler_ENTRY",
-            requesting_user_id = %user_for_delete.id,
-            target_character_id = %character_id,
-            "User trying to DELETE character."
-        );
-    } else {
-        warn!(
-            target: "test_log",
-            handler = "delete_character_handler_ENTRY",
-            target_character_id = %character_id,
-            "No user in auth_session for DELETE request."
-        );
-    }
-    // --- END TEST LOGGING ---
+    info!(target: "handler_log", ">>> ENTERING delete_character_handler for character_id: {}", character_id);
 
     let user = auth_session
         .user
         .ok_or_else(|| AppError::Unauthorized("Authentication required".to_string()))?;
-    let user_id_val = user.id;
+    let local_user_id = user.id;
+    info!(target: "handler_log", user_id = %local_user_id, target_character_id = %character_id, "User attempting to DELETE character.");
 
-    // Add logging here
-    info!(target: "test_log", handler = "delete_character_handler", %character_id, %user_id_val, "Attempting delete query by authenticated user");
-
-    // First, verify the character exists at all
     let conn = state
         .pool
         .get()
@@ -596,7 +574,7 @@ pub async fn delete_character_handler(
     }
     
     // Character exists, now perform deletion with user_id filter
-    info!(%character_id, %user_id_val, "Character exists, performing delete for user");
+    info!(%character_id, %local_user_id, "Character exists, performing delete for user");
 
     let conn = state
         .pool
@@ -607,17 +585,17 @@ pub async fn delete_character_handler(
     let rows_deleted = conn
         .interact(move |conn_block| { // Renamed conn -> conn_block for clarity
             // Log inside interact block too, just in case
-            info!(target: "test_log", handler = "delete_character_handler", character_id = %character_id, user_id = %user_id_val, "Executing delete query in interact block"); // Log values used
+            info!(target: "test_log", handler = "delete_character_handler", character_id = %character_id, user_id = %local_user_id, "Executing delete query in interact block"); // Log values used
             let delete_result = diesel::delete(
                 characters
                     .filter(id.eq(character_id))
-                    .filter(user_id.eq(user_id_val)), // Ensure this user_id_val is correct
+                    .filter(user_id.eq(local_user_id)), // Ensure this user_id_val is correct
             );
             
             let execution_result = delete_result.execute(conn_block); // Use conn_block
-            info!(target: "test_log", handler = "delete_character_handler", character_id = %character_id, user_id = %user_id_val, ?execution_result, "Delete query execution result (inside interact)"); // Log result
+            info!(target: "test_log", handler = "delete_character_handler", character_id = %character_id, user_id = %local_user_id, ?execution_result, "Delete query execution result (inside interact)"); // Log result
             execution_result.map_err(|e| { // Map error after logging
-                error!(target: "test_log", handler = "delete_character_handler", character_id = %character_id, user_id = %user_id_val, "Delete query failed: {}", e); // Log DB error
+                error!(target: "test_log", handler = "delete_character_handler", character_id = %character_id, user_id = %local_user_id, "Delete query failed: {}", e); // Log DB error
                 // Convert DieselError to AppError before returning from interact
                 match e {
                     // Note: .execute() returns usize, not typically DieselError::NotFound directly unless the connection fails entirely.
@@ -631,16 +609,16 @@ pub async fn delete_character_handler(
         ?; // Second await for the Result<usize, AppError> inside interact
 
     // Log the result (rows_deleted)
-    info!(target: "test_log", handler = "delete_character_handler", character_id = %character_id, user_id = %user_id_val, rows_deleted = %rows_deleted, "Delete query completed (outside interact)");
+    info!(target: "test_log", handler = "delete_character_handler", character_id = %character_id, user_id = %local_user_id, rows_deleted = %rows_deleted, "Delete query completed (outside interact)");
 
     if rows_deleted == 0 {
         // Log why it's returning NotFound
         // This path should ideally not be hit if the query inside interact already returned AppError::NotFound
         // But keep it as a safeguard / for debugging potential logic flaws.
-        info!(target: "test_log", handler = "delete_character_handler", %character_id, %user_id_val, "Delete resulted in 0 rows deleted, returning NotFound (or Forbidden if applicable)");
+        info!(target: "test_log", handler = "delete_character_handler", %character_id, %local_user_id, "Delete resulted in 0 rows deleted, returning NotFound (or Forbidden if applicable)");
         Err(AppError::NotFound(format!(
             "Character {} not found or not owned by user {} (rows_deleted was 0)",
-            character_id, user_id_val
+            character_id, local_user_id
         )))
     } else {
         Ok(StatusCode::NO_CONTENT)

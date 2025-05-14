@@ -33,7 +33,7 @@ use axum::{
     response::Response as AxumResponse, // Alias to avoid conflict if Response is used elsewhere
     Router,
 };
-use axum_login::{AuthManagerLayerBuilder, login_required};
+use axum_login::{AuthManagerLayerBuilder, login_required, AuthSession};
 use diesel::RunQueryDsl;
 use diesel::prelude::*;
 use diesel_migrations::{embed_migrations, EmbeddedMigrations};
@@ -550,14 +550,27 @@ pub struct TestApp {
 }
 
 #[instrument(skip_all, fields(uri = %req.uri()))]
-async fn auth_log_wrapper( // Removed generic <B>
-    req: axum::http::Request<axum::body::Body>, // Use concrete Body type
+async fn auth_log_wrapper(
+    auth_session: AuthSession<AuthBackend>, // Extract AuthSession
+    req: axum::http::Request<axum::body::Body>,
     next: Next,
-) -> AxumResponse { // Removed where clause
-    tracing::warn!(target: "auth_middleware_debug", "ENTERING global auth protection layer for URI");
-    // let req = req.map(axum::body::Body::new); // No longer needed, from_fn handles it
+) -> AxumResponse {
+    let user_present = auth_session.user.is_some();
+    let original_uri = req.uri().clone(); // Clone URI before req is moved
+    tracing::warn!(
+        target: "auth_middleware_debug",
+        uri = %original_uri, // Use cloned URI
+        user_in_session = user_present,
+        "ENTERING auth_log_wrapper for protected routes"
+    );
     let res = next.run(req).await;
-    tracing::warn!(target: "auth_middleware_debug", status = %res.status(), "EXITING global auth protection layer");
+    tracing::warn!(
+        target: "auth_middleware_debug",
+        uri = %original_uri, // Use cloned URI
+        status = %res.status(),
+        user_in_session_after_next = user_present, // Log again to see if it changed (it shouldn't by next)
+        "EXITING auth_log_wrapper for protected routes"
+    );
     res
 }
 
@@ -673,8 +686,8 @@ pub async fn spawn_app(multi_thread: bool, use_real_ai: bool, use_real_qdrant: b
         
     // Apply route_layer at the end
     let protected_api_routes_final = protected_api_routes // Now contains all nested protected routes
-        .route_layer(middleware::from_fn(auth_log_wrapper)) // ADD THIS LINE
-        .route_layer(login_required!(AuthBackend));
+        .layer(middleware::from_fn(auth_log_wrapper)) // Log first
+        .layer(login_required!(AuthBackend));         // Then auth
     tracing::debug!(router = ?protected_api_routes_final, "Protected routes final (after login_required and auth_log_wrapper)");
 
     // Define public_api_routes (paths are relative to the eventual /api mount)
@@ -698,9 +711,13 @@ pub async fn spawn_app(multi_thread: bool, use_real_ai: bool, use_real_qdrant: b
     //     .merge(public_api_routes) // Ensure public_api_routes is defined
     //     .merge(protected_api_routes_final.clone());
 
+    // Merge public and protected routes into a single api_router
+    let api_router = Router::new()
+        .merge(public_api_routes)
+        .merge(protected_api_routes_final); // protected_api_routes_final already has login_required applied
+
     let app = Router::new()
-        .nest("/api", public_api_routes) // Nest public routes under /api
-        .nest("/api", protected_api_routes_final) // Nest protected routes under /api
+        .nest("/api", api_router) // Nest the combined api_router under /api
         .layer(CookieManagerLayer::new()) // Manages cookies, must be before auth_layer
         .layer(auth_layer)                // Uses cookies to load session/user
         // Removed TraceLayer to avoid potential conflicts with global tracing setup
