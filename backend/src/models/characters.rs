@@ -316,7 +316,7 @@ impl Character {
 
 // Represents the data structure for a character when sent to the client (frontend)
 // Fields that are encrypted in the DB should be String here (decrypted form).
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, PartialEq)] // Removed Debug
 pub struct CharacterDataForClient {
     pub id: Uuid,
     pub user_id: Uuid,
@@ -379,6 +379,74 @@ pub struct CharacterDataForClient {
     pub visibility: Option<String>,
     pub weight: Option<BigDecimal>,
     pub world_scenario_visibility: Option<String>,
+}
+
+impl std::fmt::Debug for CharacterDataForClient {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CharacterDataForClient")
+            .field("id", &self.id)
+            .field("user_id", &self.user_id)
+            .field("spec", &self.spec)
+            .field("spec_version", &self.spec_version)
+            .field("name", &"[REDACTED]") // Redacting name
+            .field("description", &self.description.as_ref().map(|_| "[REDACTED]"))
+            .field("personality", &self.personality.as_ref().map(|_| "[REDACTED]"))
+            .field("scenario", &self.scenario.as_ref().map(|_| "[REDACTED]"))
+            .field("first_mes", &self.first_mes.as_ref().map(|_| "[REDACTED]"))
+            .field("mes_example", &self.mes_example.as_ref().map(|_| "[REDACTED]"))
+            .field("creator_notes", &self.creator_notes.as_ref().map(|_| "[REDACTED]"))
+            .field("system_prompt", &self.system_prompt.as_ref().map(|_| "[REDACTED]"))
+            .field("post_history_instructions", &self.post_history_instructions.as_ref().map(|_| "[REDACTED]"))
+            .field("tags", &self.tags.as_ref().map(|_| "[REDACTED_LIST]"))
+            .field("creator", &self.creator.as_ref().map(|_| "[REDACTED]"))
+            .field("character_version", &self.character_version)
+            .field("alternate_greetings", &self.alternate_greetings.as_ref().map(|_| "[REDACTED_LIST]"))
+            .field("nickname", &self.nickname.as_ref().map(|_| "[REDACTED]"))
+            .field("creator_notes_multilingual", &self.creator_notes_multilingual.as_ref().map(|_| "[REDACTED_JSON]"))
+            .field("source", &self.source.as_ref().map(|_| "[REDACTED_LIST]"))
+            .field("group_only_greetings", &self.group_only_greetings.as_ref().map(|_| "[REDACTED_LIST]"))
+            .field("creation_date", &self.creation_date)
+            .field("modification_date", &self.modification_date)
+            .field("created_at", &self.created_at)
+            .field("updated_at", &self.updated_at)
+            .field("persona", &self.persona.as_ref().map(|_| "[REDACTED]"))
+            .field("world_scenario", &self.world_scenario.as_ref().map(|_| "[REDACTED]"))
+            .field("avatar", &self.avatar)
+            .field("chat", &self.chat.as_ref().map(|_| "[REDACTED]"))
+            .field("greeting", &self.greeting.as_ref().map(|_| "[REDACTED]"))
+            .field("definition", &self.definition.as_ref().map(|_| "[REDACTED]"))
+            .field("default_voice", &self.default_voice)
+            .field("extensions", &self.extensions.as_ref().map(|_| "[REDACTED_JSON]"))
+            .field("data_id", &self.data_id)
+            .field("category", &self.category)
+            .field("definition_visibility", &self.definition_visibility)
+            .field("depth", &self.depth)
+            .field("example_dialogue", &self.example_dialogue.as_ref().map(|_| "[REDACTED]"))
+            .field("favorite", &self.favorite)
+            .field("first_message_visibility", &self.first_message_visibility)
+            .field("height", &self.height)
+            .field("last_activity", &self.last_activity)
+            .field("migrated_from", &self.migrated_from)
+            .field("model_prompt", &self.model_prompt.as_ref().map(|_| "[REDACTED]"))
+            .field("model_prompt_visibility", &self.model_prompt_visibility)
+            .field("model_temperature", &self.model_temperature)
+            .field("num_interactions", &self.num_interactions)
+            .field("permanence", &self.permanence)
+            .field("persona_visibility", &self.persona_visibility)
+            .field("revision", &self.revision)
+            .field("sharing_visibility", &self.sharing_visibility)
+            .field("status", &self.status)
+            .field("system_prompt_visibility", &self.system_prompt_visibility)
+            .field("system_tags", &self.system_tags.as_ref().map(|_| "[REDACTED_LIST]"))
+            .field("token_budget", &self.token_budget)
+            .field("usage_hints", &self.usage_hints.as_ref().map(|_| "[REDACTED_JSON]"))
+            .field("user_persona", &self.user_persona.as_ref().map(|_| "[REDACTED]"))
+            .field("user_persona_visibility", &self.user_persona_visibility)
+            .field("visibility", &self.visibility)
+            .field("weight", &self.weight)
+            .field("world_scenario_visibility", &self.world_scenario_visibility)
+            .finish()
+    }
 }
 
 // Represents fields that can be updated from a parsed card

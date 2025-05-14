@@ -74,7 +74,28 @@ pub async fn handle_response<T: DeserializeOwned + std::fmt::Debug>(response: Re
     let response_body = match response.text().await {
         Ok(text) => {
             // Use eprintln for debug logging as requested
-            eprintln!("[Scribe-CLI Debug] Response for T={}: Status={}, Body='{}'", type_name, status, text);
+            // Attempt to parse the response body for safe logging.
+            // If T is CharacterDataForClient or Vec<CharacterDataForClient>,
+            // its Debug impl (now custom) will be used.
+            match serde_json::from_str::<T>(&text) {
+                Ok(parsed_data_for_log) => {
+                    eprintln!(
+                        "[Scribe-CLI Debug] Response for T={}: Status={}, ParsedBody={:?}",
+                        type_name, status, parsed_data_for_log
+                    );
+                }
+                Err(parse_err) => {
+                    // If parsing fails, log a redacted version of the body or a placeholder.
+                    // Also log the parsing error for debugging why it failed, but not the raw body.
+                    eprintln!(
+                        "[Scribe-CLI Debug] Response for T={}: Status={}, Body='[RAW_BODY_REDACTED_DUE_TO_PARSE_ERROR_FOR_LOGGING]' (Parse Error for logging: {})",
+                        type_name, status, parse_err
+                    );
+                    // Optionally, log a very short, non-sensitive prefix of the text if deemed necessary for some debugging,
+                    // but full redaction on parse error is safest for sensitive data.
+                    // e.g., eprintln!("Raw body prefix (first 30 chars): '{}...'", text.chars().take(30).collect::<String>());
+                }
+            }
             text
         }
         Err(e) => {
@@ -402,7 +423,7 @@ impl HttpClient for ReqwestClientWrapper {
         name: &str,
         file_path: &str,
     ) -> Result<CharacterDataForClient, CliError> {
-        tracing::info!(character_name = name, %file_path, "Attempting to upload character via HttpClient");
+        tracing::info!(%file_path, "Attempting to upload character via HttpClient from file");
  
         let file_bytes = fs::read(file_path).map_err(|e| {
             tracing::error!(error = ?e, %file_path, "Failed to read character card file");
