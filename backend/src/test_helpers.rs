@@ -28,7 +28,7 @@ use crate::{
 use anyhow::Context; // Added for TestDataGuard cleanup
 use async_trait::async_trait;
 use axum::{
-    body::HttpBody, // Removed boxed
+    // body::HttpBody, // Removed boxed - Removed unused
     middleware::{self, Next},
     response::Response as AxumResponse, // Alias to avoid conflict if Response is used elsewhere
     Router,
@@ -73,10 +73,10 @@ pub struct MockAiClient {
     // Field to capture the messages sent to the stream_chat method
     last_received_messages:
         std::sync::Arc<std::sync::Mutex<Option<Vec<genai::chat::ChatMessage>>>>,
-    model_name: String,
-    provider_model_name: String,
-    embedding_response: Arc<Mutex<Result<Vec<f32>, AppError>>>,
-    text_gen_response: Arc<Mutex<Result<String, AppError>>>,
+    // model_name: String, // Removed unused
+    // provider_model_name: String, // Removed unused
+    // embedding_response: Arc<Mutex<Result<Vec<f32>, AppError>>>, // Removed unused
+    // text_gen_response: Arc<Mutex<Result<String, AppError>>>, // Removed unused
 }
 
 impl MockAiClient {
@@ -97,10 +97,10 @@ impl MockAiClient {
             }))),
             stream_to_return: std::sync::Arc::new(std::sync::Mutex::new(None)),
             last_received_messages: std::sync::Arc::new(std::sync::Mutex::new(None)),
-            model_name: "gemini/mock-model".to_string(),
-            provider_model_name: "gemini/mock-model".to_string(),
-            embedding_response: Arc::new(Mutex::new(Ok(vec![0.1, 0.2, 0.3]))),
-            text_gen_response: Arc::new(Mutex::new(Ok("Mock text generation response".to_string()))),
+            // model_name: "gemini/mock-model".to_string(), // Removed unused
+            // provider_model_name: "gemini/mock-model".to_string(), // Removed unused
+            // embedding_response: Arc::new(Mutex::new(Ok(vec![0.1, 0.2, 0.3]))), // Removed unused
+            // text_gen_response: Arc::new(Mutex::new(Ok("Mock text generation response".to_string()))), // Removed unused
         }
     }
 
@@ -185,6 +185,14 @@ impl AiClient for MockAiClient {
                                     ChatStreamEvent::ReasoningChunk(chunk) => {
                                         ChatStreamEvent::ReasoningChunk(genai::chat::StreamChunk {
                                             content: chunk.content.clone(),
+                                        })
+                                    }
+                                    ChatStreamEvent::ToolCall(tool_call) => {
+                                        // Assuming genai::chat::ToolCall is effectively cloneable by its fields
+                                        ChatStreamEvent::ToolCall(genai::chat::ToolCall {
+                                            call_id: tool_call.call_id.clone(),
+                                            fn_name: tool_call.fn_name.clone(),
+                                            fn_arguments: tool_call.fn_arguments.clone(),
                                         })
                                     }
                                     ChatStreamEvent::End(_end_event) => {

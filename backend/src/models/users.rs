@@ -2,7 +2,6 @@ use crate::schema::users;
 use axum_login::AuthUser;
 use chrono::{DateTime, Utc};
 use diesel::Insertable;
-use diesel::prelude::*;
 use diesel::{Identifiable, Queryable, Selectable};
 use secrecy::ExposeSecret;
 use serde::{Deserialize, Serialize};
@@ -212,7 +211,7 @@ pub struct UserCredentials {
 mod tests {
     use super::*;
     use chrono::Utc;
-    use secrecy::ExposeSecret;
+    
 
     impl User {
         #[allow(clippy::too_many_arguments)]

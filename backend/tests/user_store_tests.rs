@@ -22,7 +22,7 @@ mod user_store_tests {
     use uuid::Uuid; // Added import for Uuid
 
     // Add imports from scribe-backend packages
-    use scribe_backend::crypto; // Just import the crypto module
+     // Just import the crypto module
 
     // Moved from models/users.rs
     #[tokio::test(flavor = "multi_thread", worker_threads = 1)]

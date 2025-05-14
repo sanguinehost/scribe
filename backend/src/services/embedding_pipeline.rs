@@ -361,17 +361,15 @@ mod tests {
     use super::*;
     use crate::{
         config::Config,
-        llm::{gemini_client::build_gemini_client},
         models::chats::MessageRole,
-        test_helpers::{db::setup_test_database, MockQdrantClientService, MockEmbeddingClient, MockAiClient},
-        vector_db::qdrant_client::PointStruct, // Keep this import
+        test_helpers::{db::setup_test_database, MockQdrantClientService, MockEmbeddingClient, MockAiClient}, // Keep this import
         text_processing::chunking::ChunkingMetric, // Keep this import
     };
     use chrono::Utc;
     use qdrant_client::qdrant::{PointId, ScoredPoint, Value};
-    use serde_json; // For creating test JSON values
-    use test_context::TestContext; // Ensure this is imported ONCE here
-    use std::collections::HashSet;
+     // For creating test JSON values
+     // Ensure this is imported ONCE here
+    
 
     // Helper to convert string to Qdrant String Value
     fn string_value(s: &str) -> Value {
@@ -507,15 +505,6 @@ mod tests {
             embedding_call_tracker: Arc::new(tokio::sync::Mutex::new(Vec::new())),
         });
         (app_state, mock_qdrant, mock_embed_client)
-    }
-
-     // Helper for default chunk config in tests
-     fn default_test_chunk_config() -> ChunkConfig {
-        ChunkConfig {
-            metric: ChunkingMetric::Char, 
-            max_size: 100, // Example values
-            overlap: 10,   // Example values
-        }
     }
 
     #[tokio::test]
@@ -711,19 +700,6 @@ mod tests {
     // --- Standalone function tests (can be removed if service tests cover sufficiently) ---
     // These are now mostly covered by the service method tests which use mocks for dependencies.
     // Keeping one or two simple ones for direct logic verification if desired.
-
-    // Re-add create_test_message and the test cases below, ensuring `content_nonce: None`
-    fn create_test_message(id: Uuid, session_id: Uuid, content: &str, role: MessageRole) -> ChatMessage {
-        ChatMessage {
-            id,
-            session_id,
-            message_type: role,
-            content: content.as_bytes().to_vec(),
-            content_nonce: None, // ENSURED
-            created_at: Utc::now(),
-            user_id: Uuid::new_v4(), // Dummy user_id
-        }
-    }
 
     #[tokio::test]
     async fn test_full_pipeline_new_message_no_docs_no_similar_messages() {

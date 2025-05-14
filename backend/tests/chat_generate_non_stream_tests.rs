@@ -2,7 +2,6 @@
 #![cfg(test)]
 
 
-use anyhow::Context as _;
 use axum::{
     body::Body,
     http::{header, Method, Request, StatusCode},
@@ -15,15 +14,10 @@ use http_body_util::BodyExt;
 use mime;
 use serde_json::{json, Value};
 use std::str::FromStr;
-use time::OffsetDateTime;
 use tower::ServiceExt;
 use tower_cookies::Cookie;
-use tower_sessions::session::{Id, Record};
 use uuid::Uuid;
-use base64::Engine;
 // Import for session DEK handling
-use tower_sessions::Session;
-use axum::Extension;
 use tokio::time::{sleep, Duration};
 use scribe_backend::errors::AppError;
 use scribe_backend::crypto::decrypt_gcm;
@@ -42,7 +36,7 @@ use scribe_backend::schema::{characters, chat_messages, chat_sessions, sessions}
 use scribe_backend::services::embedding_pipeline::{EmbeddingMetadata, RetrievedChunk};
 use scribe_backend::test_helpers::{self, TestDataGuard};
 use scribe_backend::test_helpers::db::create_test_user;
-use tracing::{debug, info, error, warn};
+use tracing::{info, error, warn};
 
 // Import the User model for deserialization
 use scribe_backend::models::users::User as AppUser; 
@@ -263,6 +257,7 @@ async fn generate_chat_response_uses_session_settings() -> Result<(), anyhow::Er
             .interact(move |conn_actual| {
                 diesel::insert_into(characters::table)
                     .values(&new_db_character)
+                    .returning(Character::as_select())
                     .get_result(conn_actual)
             })
             .await;
@@ -278,7 +273,7 @@ async fn generate_chat_response_uses_session_settings() -> Result<(), anyhow::Er
         title: Some("Test Chat Session for Settings".to_string()),
         history_management_strategy: "truncate_summary".to_string(), // Default
         history_management_limit: 20, // Default
-        model_name: "gemini-1.5-flash-latest".to_string(), // Default
+        model_name: "gemini-2.5-flash-preview-04-17".to_string(), // Default
         created_at: Utc::now(),
         updated_at: Utc::now(),
         visibility: Some("private".to_string()),
@@ -510,7 +505,7 @@ async fn generate_chat_response_uses_session_settings() -> Result<(), anyhow::Er
     assert_eq!(db_chat_settings.logit_bias, test_logit_bias);
     assert_eq!(Some(db_chat_settings.history_management_strategy.as_str()), Some("truncate_summary"));
     assert_eq!(db_chat_settings.history_management_limit, 20);
-    assert_eq!(Some(db_chat_settings.model_name.as_str()), Some("gemini-1.5-flash-latest"));
+    assert_eq!(Some(db_chat_settings.model_name.as_str()), Some("gemini-2.5-flash-preview-04-17"));
 
 
     let messages: Vec<DbChatMessage> = {
@@ -674,6 +669,7 @@ async fn generate_chat_response_json_stream_initiation_error() -> Result<(), any
             .interact(move |conn_actual| {
                 diesel::insert_into(characters::table)
                     .values(&new_db_character)
+                    .returning(Character::as_select())
                     .get_result(conn_actual)
             })
             .await;
@@ -688,7 +684,7 @@ async fn generate_chat_response_json_stream_initiation_error() -> Result<(), any
         title: Some("Test Chat Session for Settings".to_string()),
         history_management_strategy: "truncate_summary".to_string(), // Default
         history_management_limit: 20, // Default
-        model_name: "gemini-1.5-flash-latest".to_string(), // Default
+        model_name: "gemini-2.5-flash-preview-04-17".to_string(), // Default
         created_at: Utc::now(),
         updated_at: Utc::now(),
         visibility: Some("private".to_string()),
@@ -869,7 +865,7 @@ async fn generate_chat_response_json_stream_initiation_error() -> Result<(), any
     assert_eq!(db_chat_settings.logit_bias, test_logit_bias);
     assert_eq!(Some(db_chat_settings.history_management_strategy.as_str()), Some("truncate_summary"));
     assert_eq!(db_chat_settings.history_management_limit, 20);
-    assert_eq!(Some(db_chat_settings.model_name.as_str()), Some("gemini-1.5-flash-latest"));
+    assert_eq!(Some(db_chat_settings.model_name.as_str()), Some("gemini-2.5-flash-preview-04-17"));
 
     let messages: Vec<DbChatMessage> = {
         let interact_result = conn

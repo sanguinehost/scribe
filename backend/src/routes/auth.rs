@@ -14,7 +14,7 @@ use tracing::{debug, error, info, instrument, warn};
 use serde::{Deserialize, Serialize};
 use axum::Router;
 use axum::routing::{post, get, delete};
-use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64}; // Add Base64 import
+// use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64}; // Add Base64 import - Removed unused
  // For session DEK handling
 use tower_sessions::Session; // Import tower_sessions::Session
 
@@ -176,7 +176,7 @@ pub async fn login_handler(
             info!(username = %login_username, email = %login_email, %user_id, "Credential verification successful.");
 
             // Set the DEK on the user object
-            let dek_bytes_for_session = if let Some(dek_secret_box) = maybe_dek_secret_box {
+            let _dek_bytes_for_session = if let Some(dek_secret_box) = maybe_dek_secret_box {
                 user.dek = Some(SerializableSecretDek(dek_secret_box)); // Wrap in SerializableSecretDek
                 debug!(username = %login_username, %user_id, "DEK successfully set on user object before login.");
                 
@@ -211,29 +211,40 @@ pub async fn login_handler(
 
             // Proceed with axum-login's session login
             info!(username = %login_username, email = %login_email, user_id = %user_id, "Attempting explicit axum-login session.login...");
-            if let Err(e) = auth_session.login(&user).await {
-                error!(error = ?e, username = %login_username, email = %login_email, user_id = %user_id, "Explicit auth_session.login failed after successful credential verification: {:?}", e);
+            auth_session.login(&user).await.map_err(|e| {
+                error!(username = %login_username, user_id = %user_id, "axum-login session.login() failed: {}", e);
+                AppError::InternalServerErrorGeneric(format!("Login process failed for user {}: {}", login_username, e))
+            })?;
             
-                return Err(AppError::InternalServerErrorGeneric(format!(
-                    "Session login failed: {}",
-                    e
-                )));
-            }
-            
-            // ALSO store the DEK directly in the session for more reliable retrieval
-            if let Some(dek_bytes) = dek_bytes_for_session {
-                // Encode to base64 for storage in the session
-                let dek_base64 = BASE64.encode(&dek_bytes);
-                
-                // Store as direct session value for the SessionDek extractor to find
-                if let Err(e) = session.insert("user_dek", dek_base64).await {
-                    error!(username = %login_username, %user_id, error = ?e, "Failed to store DEK directly in session");
-                } else {
-                    info!(username = %login_username, %user_id, "Successfully stored DEK directly in session");
-                }
-            }
-            
-            info!(username = %login_username, email = %login_email, %user_id, "Explicit auth_session.login successful");
+            // MANUAL FIX: Explicitly insert axum-login.user key with user.id as a string since axum-login.login() appears to not be doing it
+            session
+                .insert("axum-login.user", user.id.to_string())
+                .await
+                .map_err(|e| {
+                    error!(
+                        username = %login_username,
+                        user_id = %user.id,
+                        "Failed to manually insert axum-login.user key into session: {}",
+                        e
+                    );
+                    AppError::SessionError(format!("Failed to store user ID in session: {}", e))
+                })?;
+
+            // --- Log session data immediately after axum_session.login() ---
+            let axum_login_user_key_after_login = session.get::<String>("axum-login.user").await;
+            let dek_session_key_str_after_login = format!("_user_dek_{}", user.id); // Reconstruct for logging
+            let our_dek_after_login = session.get::<SerializableSecretDek>(&dek_session_key_str_after_login).await;
+            info!(
+                username = %login_username,
+                user_id = %user.id,
+                session_id = ?session.id(),
+                axum_login_user_key_val = ?axum_login_user_key_after_login,
+                our_dek_key_val = ?our_dek_after_login,
+                "Session data immediately AFTER auth_session.login() (specific keys)"
+            );
+            // --- End log ---
+
+            info!(username = %login_username, user_id = %user.id, "Explicit auth_session.login successful");
             
             // Log the session ID AFTER auth_session.login
             debug!(session_id = ?session.id(), user_id = %user_id, "Session ID AFTER axum-login.login() call");
@@ -270,6 +281,45 @@ pub async fn login_handler(
                 }
             }
             
+            // Store the DEK directly in the session.
+            if let Some(dek_secret_box) = user.dek {
+                info!(username = %login_username, user_id = %user.id, "User.dek is PRESENT in auth_session.user AFTER login. Length: {}", dek_secret_box.expose_secret_bytes().len());
+
+                // Use a user-specific key format matching the SessionDek extractor's expectations
+                let user_specific_dek_key = format!("_user_dek_{}", user.id);
+                
+                // Store the DEK directly - SerializableSecretDek already implements Serialize/Deserialize correctly
+                session
+                    .insert(&user_specific_dek_key, dek_secret_box)  // Use the SerializableSecretDek directly
+                    .await
+                    .map_err(|e| {
+                        error!(
+                            username = %login_username,
+                            user_id = %user.id,
+                            "Failed to store DEK in session: {}",
+                            e
+                        );
+                        AppError::SessionError(format!("Failed to store DEK in session: {}", e))
+                    })?;
+
+                // --- Log session data immediately after our DEK insert ---
+                let axum_login_user_key_val = session.get::<String>("axum-login.user").await;
+                let our_dek_key_val = session.get::<SerializableSecretDek>(&user_specific_dek_key).await;
+                info!(
+                    username = %login_username,
+                    user_id = %user.id,
+                    session_id = ?session.id(),
+                    axum_login_user_key_val = ?axum_login_user_key_val,
+                    our_dek_key_val = ?our_dek_key_val,
+                    "Session data immediately AFTER our custom DEK insert (specific keys)"
+                );
+                // --- End log ---
+
+                info!(username = %login_username, user_id = %user.id, "Successfully stored DEK directly in session");
+            } else {
+                warn!(username = %login_username, user_id = %user.id, "User has no DEK in database. New account?");
+            }
+
             let response_data = AuthResponse {
                 user_id: user.id,
                 username: user.username,

@@ -42,11 +42,57 @@ impl AiClient for ScribeGeminiClient {
         request: ChatRequest,
         config_override: Option<ChatOptions>,
     ) -> Result<ChatStream, AppError> {
+        tracing::error!(
+            target: "gemini_client",
+            model_name = %model_name,
+            chat_request = ?request,
+            chat_options_override = ?config_override,
+            "ScribeGeminiClient::stream_chat - Attempting to call genai_client.exec_chat_stream"
+        );
         let chat_stream_response = self
             .inner
             .exec_chat_stream(model_name, request, config_override.as_ref())
             .await
-            .map_err(AppError::from)?; // Line 42 (Targeted) - Error mapping
+            .map_err(|gen_err: genai::Error| {
+                match &gen_err {
+                    genai::Error::StreamEventError { model_iden, body } => {
+                        // This body is a serde_json::Value containing the error from Gemini API
+                        tracing::error!(
+                            target: "gemini_client",
+                            model_iden = ?model_iden,
+                            "Gemini stream API request failed. Error body: {}. Full genai::Error: {:?}",
+                            serde_json::to_string_pretty(body).unwrap_or_else(|_| format!("{:?}", body)),
+                            gen_err
+                        );
+                    }
+                    genai::Error::ReqwestEventSource(event_source_error) => {
+                        tracing::error!(
+                            target: "gemini_client",
+                            "Gemini stream API request failed due to an EventSource error: {:?}. Full genai::Error: {:?}",
+                            event_source_error,
+                            gen_err
+                        );
+                    }
+                    genai::Error::StreamParse { model_iden, serde_error } => {
+                        tracing::error!(
+                            target: "gemini_client",
+                            model_iden = ?model_iden,
+                            "Failed to parse stream event from Gemini: {:?}. Full genai::Error: {:?}",
+                            serde_error,
+                            gen_err
+                        );
+                    }
+                    // Log other genai::Error variants generically
+                    _ => {
+                        tracing::error!(
+                            target: "gemini_client",
+                            "Gemini stream API request failed with an unhandled genai::Error type: {:?}",
+                            gen_err
+                        );
+                    }
+                }
+                AppError::from(gen_err)
+            })?;
 
         let inner_stream = chat_stream_response.stream;
         let mapped_stream = inner_stream.map(|result| result.map_err(AppError::from));
@@ -64,9 +110,8 @@ impl AiClient for Arc<ScribeGeminiClient> {
         request: ChatRequest,
         config_override: Option<ChatOptions>,
     ) -> Result<ChatResponse, AppError> {
-        (**self) // Line 64 (Targeted)
-            .exec_chat(model_name, request, config_override) // Line 65 (Targeted)
-            .await // Line 66 (Targeted)
+        // Correctly delegate to the AiClient trait method implemented on ScribeGeminiClient
+        AiClient::exec_chat(&**self, model_name, request, config_override).await
     }
 
     async fn stream_chat(
@@ -75,9 +120,8 @@ impl AiClient for Arc<ScribeGeminiClient> {
         request: ChatRequest,
         config_override: Option<ChatOptions>,
     ) -> Result<ChatStream, AppError> {
-        (**self)
-            .stream_chat(model_name, request, config_override)
-            .await
+        // Correctly delegate to the AiClient trait method implemented on ScribeGeminiClient
+        AiClient::stream_chat(&**self, model_name, request, config_override).await
     }
 }
 
@@ -126,7 +170,7 @@ mod tests {
     async fn test_generate_simple_response_integration_via_wrapper() {
         let client_wrapper = build_gemini_client().await.expect("Failed to build Gemini client wrapper");
         let user_message = "Test Wrapper: Say hello!".to_string();
-        let model_name_for_test = "gemini-1.5-flash-latest";
+        let model_name_for_test = "gemini-2.5-flash-preview-04-17";
         let result = generate_simple_response(&*client_wrapper, user_message, model_name_for_test).await;
         match result {
             Ok(response) => assert!(!response.is_empty(), "Gemini returned an empty response"),
@@ -139,7 +183,7 @@ mod tests {
     async fn test_stream_chat_integration_via_wrapper() {
         let client_wrapper = build_gemini_client().await.expect("Failed to build Gemini client wrapper");
         let user_message = "Test Stream Wrapper: Say hello stream!".to_string();
-        let model_name_for_test = "gemini-1.5-flash-latest";
+        let model_name_for_test = "gemini-2.5-flash-preview-04-17";
         let chat_request = ChatRequest::from_user(user_message);
         let stream_result = client_wrapper.stream_chat(model_name_for_test, chat_request, None).await;
         match stream_result {
@@ -170,7 +214,7 @@ mod tests {
     #[ignore]
     async fn test_generate_simple_response_with_different_models() {
         let client_wrapper = build_gemini_client().await.expect("Failed to build Gemini client wrapper");
-        let models_to_test = vec!["gemini-1.5-pro-latest", "gemini-1.5-flash-latest"];
+        let models_to_test = vec!["gemini-2.5-pro-preview-05-06", "gemini-2.5-flash-preview-04-17"];
         for model_name in models_to_test {
             let user_message = format!("Test Model [{}]: Say hello!", model_name);
             let result = generate_simple_response(&*client_wrapper, user_message, model_name).await;

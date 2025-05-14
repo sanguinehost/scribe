@@ -259,7 +259,7 @@ async fn get_chat_settings_defaults() {
     };
     let new_chat_data_clone = new_chat_data.clone();
     let session_conn_pool = conn_pool.clone();
-    let session: DbChat = session_conn_pool.get().await.unwrap().interact(move |actual_conn| {
+    let _session: DbChat = session_conn_pool.get().await.unwrap().interact(move |actual_conn| {
         diesel::insert_into(chat_sessions::table)
             .values(&new_chat_data_clone)
             .returning(DbChat::as_returning())
@@ -323,7 +323,7 @@ async fn get_chat_settings_defaults() {
 #[tokio::test]
 async fn test_get_chat_settings_not_found() {
     let test_app = test_helpers::spawn_app(false, false, false).await;
-    let user = test_helpers::db::create_test_user(
+    let _user = test_helpers::db::create_test_user(
         &test_app.db_pool,
         "get_settings_404_user".to_string(),
         "password".to_string(),
@@ -375,7 +375,7 @@ async fn test_get_chat_settings_forbidden() {
     )
     .await.expect("Failed to create user_a");
     
-    let user_b = test_helpers::db::create_test_user(
+    let _user_b = test_helpers::db::create_test_user(
         &test_app.db_pool,
         "get_settings_forbid_userb".to_string(),
         "password".to_string(),
@@ -794,7 +794,7 @@ async fn update_chat_settings_forbidden() {
     let user1 = test_helpers::db::create_test_user(
         &test_app.db_pool, "update_settings_user1".to_string(), "password".to_string()).await.expect("user1 creation failed");
     
-    let user2 = test_helpers::db::create_test_user(
+    let _user2 = test_helpers::db::create_test_user(
         &test_app.db_pool, "update_settings_user2".to_string(), "password".to_string()).await.expect("user2 creation failed");
 
     let login_payload2 = serde_json::json!({ "identifier": "update_settings_user2", "password": "password" });

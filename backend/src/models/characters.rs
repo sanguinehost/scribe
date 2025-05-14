@@ -725,7 +725,7 @@ mod tests {
         assert_eq!(client_data_without_dek.persona.as_deref(), Some("[Encrypted]"));
 
         // Test with no description data (should be None)
-        let mut char_no_desc = create_dummy_character(); // description and nonce are None by default
+        let char_no_desc = create_dummy_character(); // description and nonce are None by default
         let client_data_no_desc = char_no_desc.clone().into_decrypted_for_client(Some(&dek)).await.unwrap();
         assert_eq!(client_data_no_desc.description, None);
         let client_data_no_desc_no_dek = char_no_desc.clone().into_decrypted_for_client(None).await.unwrap();

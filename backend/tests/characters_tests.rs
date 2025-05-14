@@ -1175,7 +1175,7 @@ mod tests {
         let username_a = format!("get_forbidden_user_a_{}", Uuid::new_v4());
         let password_a = "passwordA";
         let username_a_closure = username_a.clone();
-        let (user_a, dek_a) = run_db_op(&pool, move |conn| { // Capture dek_a
+        let (user_a, dek_a) = run_db_op(&pool, move |conn| {
             insert_test_user_with_password(conn, &username_a_closure, password_a)
         })
         .await?;
@@ -1184,7 +1184,7 @@ mod tests {
         let username_b = format!("get_forbidden_user_b_{}", Uuid::new_v4());
         let password_b = "passwordB";
         let username_b_closure = username_b.clone();
-        let (user_b, _dek_b) = run_db_op(&pool, move |conn| { // Capture _dek_b (unused but needed for signature)
+        let (user_b, _dek_b) = run_db_op(&pool, move |conn| {
             insert_test_user_with_password(conn, &username_b_closure, password_b)
         })
         .await?;
@@ -1192,12 +1192,23 @@ mod tests {
 
         // Create a character for User A
         let user_a_id = user_a.id;
-        let character_a = run_db_op(&pool, { // Add block for dek clone
+        let character_a = run_db_op(&pool, {
             let dek_a = dek_a.clone(); // Clone dek_a for move closure
-            move |conn| insert_test_character(conn, user_a_id, "Character A", &dek_a) // Pass dek_a
+            move |conn| insert_test_character(conn, user_a_id, "Character A For Delete", &dek_a)
         })
         .await?;
-        // Don't add character_a to guard, let user cleanup handle it
+        guard.add_character(character_a.id);
+
+        // +++ TEST LOGGING: Log Character A's and User A's IDs at creation +++
+        tracing::info!(
+            target: "test_log",
+            test_event = "character_a_creation",
+            character_a_id = %character_a.id,
+            owner_user_a_id = %user_a_id,
+            character_a_name = %character_a.name,
+            "Character A created in test_delete_character_forbidden"
+        );
+        // +++ END TEST LOGGING +++
 
         // Log in as User B
         let login_url = format!("http://{}/api/auth/login", server_addr);
@@ -1329,7 +1340,7 @@ mod tests {
         let username_a = format!("delete_forbidden_user_a_{}", Uuid::new_v4());
         let password_a = "passwordA";
         let username_a_closure = username_a.clone();
-        let (user_a, dek_a) = run_db_op(&pool, move |conn| { // Capture dek_a
+        let (user_a, dek_a) = run_db_op(&pool, move |conn| {
             insert_test_user_with_password(conn, &username_a_closure, password_a)
         })
         .await?;
@@ -1338,7 +1349,7 @@ mod tests {
         let username_b = format!("delete_forbidden_user_b_{}", Uuid::new_v4());
         let password_b = "passwordB";
         let username_b_closure = username_b.clone();
-        let (user_b, _dek_b) = run_db_op(&pool, move |conn| { // Capture _dek_b
+        let (user_b, _dek_b) = run_db_op(&pool, move |conn| {
             insert_test_user_with_password(conn, &username_b_closure, password_b)
         })
         .await?;
@@ -1346,13 +1357,23 @@ mod tests {
 
         // Create a character for User A
         let user_a_id = user_a.id;
-        let character_a = run_db_op(&pool, { // Add block for dek clone
+        let character_a = run_db_op(&pool, {
             let dek_a = dek_a.clone(); // Clone dek_a for move closure
-            move |conn| insert_test_character(conn, user_a_id, "Character A For Delete", &dek_a) // Pass dek_a
+            move |conn| insert_test_character(conn, user_a_id, "Character A For Delete", &dek_a)
         })
         .await?;
-        // Add character to guard so it gets cleaned up if the delete fails
         guard.add_character(character_a.id);
+
+        // +++ TEST LOGGING: Log Character A's and User A's IDs at creation +++
+        tracing::info!(
+            target: "test_log",
+            test_event = "character_a_creation",
+            character_a_id = %character_a.id,
+            owner_user_a_id = %user_a_id,
+            character_a_name = %character_a.name,
+            "Character A created in test_delete_character_forbidden"
+        );
+        // +++ END TEST LOGGING +++
 
         // Log in as User B
         let login_url = format!("http://{}/api/auth/login", server_addr);
@@ -1410,7 +1431,7 @@ mod tests {
         let username = format!("get_image_user_{}", Uuid::new_v4());
         let password = "testpassword";
         let username_for_closure = username.clone();
-        let (user, dek) = run_db_op(&pool, move |conn| { // Capture dek
+        let (user, dek) = run_db_op(&pool, move |conn| {
             insert_test_user_with_password(conn, &username_for_closure, password)
         })
         .await?;

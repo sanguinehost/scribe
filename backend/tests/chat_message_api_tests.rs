@@ -13,17 +13,15 @@ use uuid::Uuid;
 use diesel::prelude::*;
 use scribe_backend::{
     models::{
-        auth::LoginPayload,
         characters::Character as DbCharacter,
-        chats::{MessageResponse, MessageRole, NewChat, NewMessage, ChatMessage, Chat},
+        chats::{MessageRole, NewChat, NewMessage, Chat},
         character_card::NewCharacter,
-        users::{NewUser, User, UserDbQuery},
+        users::User,
     },
-    schema::{characters, chat_messages, chat_sessions, users},
-    test_helpers::{self, TestApp},
-    crypto, // Added crypto for generate_salt
+    schema::{characters, chat_messages, chat_sessions},
+    test_helpers::{self}, // Added crypto for generate_salt
 };
-use bcrypt; // For password hashing
+ // For password hashing
 use mime; // For mime::APPLICATION_JSON
 use serde_json::json; // For login payload
 use anyhow::Context as _; // For .context() on Option/Result

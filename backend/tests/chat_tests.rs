@@ -4,6 +4,7 @@ use axum::{
     body::Body,
     http::{Method, Request, StatusCode, header},
 };
+use rand::TryRngCore; // Changed from rand_core::TryRngCore to rand::TryRngCore
 use http_body_util::BodyExt;
 use mime;
 use serde_json::json;
@@ -11,7 +12,6 @@ use std::sync::Arc;
 use tower::util::ServiceExt;
 use tracing::debug;
 use secrecy::{SecretBox, ExposeSecret};
-use rand::Rng;
 use scribe_backend::crypto;
 use uuid::Uuid;
 use chrono::Utc;
@@ -26,8 +26,7 @@ use scribe_backend::{
             MessageRole,
             GenerateChatRequest,
             ApiChatMessage,
-            UpdateChatSettingsRequest,
-            MessageResponse as ChatMessageResponse, // Alias for clarity
+            UpdateChatSettingsRequest, // Alias for clarity
             NewChat,
             NewMessage,
             Message as DbChatMessage, // Changed from ChatMessage to Message
@@ -414,7 +413,7 @@ async fn test_get_settings_success() -> anyhow::Result<()> {
         updated_at: Utc::now(),
         history_management_strategy: "none".to_string(),
         history_management_limit: 20, // Default from migration
-        model_name: "gemini-1.5-flash-latest".to_string(), // Default from migration
+        model_name: "gemini-2.5-flash-preview-04-17".to_string(), // Default from migration
         visibility: Some("private".to_string()),
     };
     
@@ -448,7 +447,7 @@ async fn test_get_settings_success() -> anyhow::Result<()> {
     assert_eq!(settings.temperature, None);
     assert_eq!(settings.history_management_strategy, "none");
     assert_eq!(settings.history_management_limit, 20);
-    assert_eq!(settings.model_name, "gemini-1.5-flash-latest");
+    assert_eq!(settings.model_name, "gemini-2.5-flash-preview-04-17");
 
 
     test_data_guard.cleanup().await?;
@@ -861,13 +860,15 @@ async fn test_create_session_saves_first_mes() -> Result<(), AnyhowError> {
     let first_mes_content = "Hello from the character!".to_string();
 
     // 1. Generate DEK
-    let mut rng = rand::thread_rng();
-    let dek_bytes: [u8; 32] = rng.random(); // Changed from gen() to random()
-    let user_dek = SecretBox::new(Box::new(dek_bytes.to_vec())); // Changed from Secret::new, added Box::new
+    let mut rng = rand::rngs::OsRng;
+    let mut dek_bytes = [0u8; 32];
+    rng.try_fill_bytes(&mut dek_bytes).expect("Failed to fill bytes for DEK"); // Changed from rng.random()
+    let user_dek_val = SecretBox::new(Box::new(dek_bytes.to_vec())); // DEK should be SecretBox<Vec<u8>>
+    let user_dek = Arc::new(user_dek_val);
 
     // 2. Encrypt first_mes_content
     let (encrypted_first_mes, first_mes_actual_nonce) =
-        crypto::encrypt_gcm(first_mes_content.as_bytes(), &user_dek) // Pass SecretBox directly
+        crypto::encrypt_gcm(first_mes_content.as_bytes(), user_dek.as_ref()) // Pass SecretBox directly
         .expect("Test: Failed to encrypt first_mes");
 
     let new_character = DbCharacter {
@@ -923,7 +924,7 @@ async fn test_create_session_saves_first_mes() -> Result<(), AnyhowError> {
         app_state_arc,
         user.id,
         character_id,
-        Some(&user_dek), // Pass the generated DEK
+        Some(user_dek.clone()), // Pass the generated DEK as an Arc
     )
     .await;
 
@@ -955,7 +956,7 @@ async fn test_create_session_saves_first_mes() -> Result<(), AnyhowError> {
 
     // Decrypt the message content before asserting
     let nonce = initial_message.content_nonce.as_ref().expect("Initial message should have a nonce");
-    let decrypted_content_secret = crypto::decrypt_gcm(&initial_message.content, nonce, &user_dek)
+    let decrypted_content_secret = crypto::decrypt_gcm(&initial_message.content, nonce, user_dek.as_ref())
         .expect("Failed to decrypt initial message content in test");
     let decrypted_content_bytes = decrypted_content_secret.expose_secret();
     let decrypted_content_string = String::from_utf8(decrypted_content_bytes.to_vec())

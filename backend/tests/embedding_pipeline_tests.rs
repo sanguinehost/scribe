@@ -2,17 +2,16 @@ use scribe_backend::services::embedding_pipeline::EmbeddingPipelineServiceTrait;
 use chrono::Utc;
 use log;
 use mockall::predicate::*;
-use mockall::Any; // Added for as_any()
-use qdrant_client::qdrant::{PointId, RetrievedPoint, Value, point_id::PointIdOptions};
+ // Added for as_any()
+use qdrant_client::qdrant::{PointId, Value, point_id::PointIdOptions};
 use scribe_backend::{
     models::chats::{ChatMessage, MessageRole},
     services::embedding_pipeline::{
         EmbeddingMetadata, EmbeddingPipelineService,
     },
-    test_helpers::{MockAiClient, MockEmbeddingClient, MockQdrantClientService, self}, // Removed AppStateBuilder, config. Added self for spawn_app
-    vector_db::qdrant_client::{QdrantClientService, ScoredPoint, create_message_id_filter, QdrantClientServiceTrait},
-     text_processing::chunking::{ChunkConfig, ChunkingMetric}, // Added import
-    llm::EmbeddingClient,
+    test_helpers::{MockQdrantClientService, self}, // Removed AppStateBuilder, config. Added self for spawn_app
+    vector_db::qdrant_client::{ScoredPoint, create_message_id_filter, QdrantClientServiceTrait},
+     text_processing::chunking::ChunkConfig,
     state::AppState, // Added AppState
 };
 use serial_test::serial;

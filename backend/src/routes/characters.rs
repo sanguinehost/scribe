@@ -19,7 +19,7 @@ use axum::{
     routing::{get, post},
 };
 use diesel::prelude::*; // Needed for .filter(), .load(), .first(), etc.
-use tracing::{info, instrument, trace}; // Use needed tracing macros
+use tracing::{info, instrument, trace, error, warn}; // Use needed tracing macros, ADDED error, warn
 use uuid::Uuid;
 // use anyhow::anyhow; // Unused import
 use crate::auth::user_store::Backend as AuthBackend; // <-- Import the backend type
@@ -219,20 +219,193 @@ pub async fn list_characters_handler(
 }
 
 // GET /api/characters/:id
-#[instrument(skip(auth_session, dek), err)] // Removed app_state from skip
+#[instrument(skip(state, auth_session, dek), err)]
 pub async fn get_character_handler(
-    // State(app_state): State<AppState>, // Temporarily removed
-    auth_session: CurrentAuthSession, // Keep for now to see if it's an extractor issue before auth layer
-    dek: SessionDek, // Keep for now
-    Path(character_id_path): Path<Uuid>,
-) -> Result<StatusCode, AppError> { // Return simple StatusCode
-    trace!(target: "auth_debug", ">>> ENTERING get_character_handler for character_id: {}", character_id_path); // ADDED TRACE
-    tracing::info!(target: "auth_debug", "Simplified get_character_handler called for character_id: {}", character_id_path);
-    // Ensure auth_session and dek are "used" to avoid compiler warnings during this test
-    // This doesn't actually use them but satisfies the compiler.
-    let _ = auth_session.user;
-    let _ = dek;
-    Ok(StatusCode::OK)
+    State(state): State<AppState>,
+    auth_session: CurrentAuthSession,
+    dek: SessionDek,
+    Path(character_id): Path<Uuid>,
+) -> Result<Json<CharacterDataForClient>, AppError> {
+    trace!(target: "auth_debug", ">>> ENTERING get_character_handler for character_id: {}", character_id);
+    
+    // --- BEGIN TEST LOGGING for test_delete_character_forbidden ---
+    let user_for_get_opt = auth_session.user.clone(); // Clone to log
+    if let Some(ref user_for_get) = user_for_get_opt {
+        info!(
+            target: "test_log",
+            handler = "get_character_handler_ENTRY",
+            requesting_user_id = %user_for_get.id,
+            target_character_id = %character_id,
+            dek_present = true, // If this handler is called, DEK was extracted
+            "User trying to GET character."
+        );
+        if let Some(ref dek_inner) = user_for_get.dek {
+             info!(
+                target: "test_log",
+                handler = "get_character_handler_ENTRY",
+                requesting_user_id = %user_for_get.id,
+                target_character_id = %character_id,
+                dek_bytes_len = dek_inner.expose_secret_bytes().len(),
+                "DEK details from auth_session.user.dek"
+            );
+        } else {
+            warn!(
+                target: "test_log",
+                handler = "get_character_handler_ENTRY",
+                requesting_user_id = %user_for_get.id,
+                target_character_id = %character_id,
+                "DEK is NONE in auth_session.user.dek"
+            );
+        }
+    } else {
+        warn!(
+            target: "test_log",
+            handler = "get_character_handler_ENTRY",
+            target_character_id = %character_id,
+            "No user in auth_session for GET request."
+        );
+    }
+    // --- END TEST LOGGING ---
+
+    let user = auth_session
+        .user
+        .ok_or_else(|| AppError::Unauthorized("Authentication required".to_string()))?;
+    let user_id_val = user.id;
+
+    // Add detailed logging
+    info!(target: "test_log", %character_id, %user_id_val, "Fetching character for user");
+
+    // First check if the character exists at all, regardless of user
+    let conn = state
+        .pool
+        .get()
+        .await
+        .map_err(|e| AppError::DbPoolError(e.to_string()))?;
+
+    let character_exists_at_all = conn
+        .interact(move |conn_block| {
+            tracing::info!(target: "test_log", %character_id, "Checking if character exists at all");
+            
+            let exists = characters
+                .filter(id.eq(character_id))
+                .select(id)  // Just select the ID for efficiency
+                .first::<Uuid>(conn_block)
+                .optional()
+                .map_err(|e| {
+                    tracing::error!(target: "test_log", %character_id, error = %e, "Character existence check failed");
+                    AppError::DatabaseQueryError(e.to_string())
+                });
+                
+            exists.map(|opt| opt.is_some())
+        })
+        .await
+        .map_err(|e| AppError::DbInteractError(format!("Interact error checking character existence: {}", e)))?;
+        
+    if !character_exists_at_all? {
+        info!(target: "test_log", %character_id, "Character does not exist at all");
+        return Err(AppError::NotFound(format!("Character {} not found", character_id)));
+    }
+    
+    info!(target: "test_log", %character_id, "Character exists in database, attempting to fetch for specific user");
+
+    // Now attempt to fetch the character if it's owned by this specific user
+    let conn_fetch = state
+        .pool
+        .get()
+        .await
+        .map_err(|e| AppError::DbPoolError(e.to_string()))?;
+
+    let character_owned_result = conn_fetch
+        .interact(move |conn_block| {
+            info!(
+                target: "test_log",
+                handler = "get_character_handler",
+                %character_id,
+                %user_id_val,
+                "Executing character query (ID and UserID combined using .and()) in interact block"
+            );
+
+            characters
+                .filter(id.eq(character_id).and(user_id.eq(user_id_val))) // Combined filter
+                .select(Character::as_select())
+                .first::<Character>(conn_block)
+                .optional() // Converts DieselError::NotFound to Ok(None), other errors to Err
+                .map_err(|e| {
+                    error!(
+                        target: "test_log",
+                        handler = "get_character_handler",
+                        %character_id,
+                        %user_id_val,
+                        error = %e,
+                        "DB error during combined (ID and UserID) character query."
+                    );
+                    // Ensure we map DieselError to our AppError type
+                    match e {
+                        DieselError::NotFound => {
+                            // This case should ideally be handled by .optional() resulting in Ok(None)
+                            // Logging it here if it somehow bypasses .optional() as an Err.
+                            warn!(
+                                target: "test_log",
+                                handler = "get_character_handler",
+                                %character_id,
+                                %user_id_val,
+                                "DieselError::NotFound encountered directly, though .optional() should prevent this."
+                            );
+                            // This path might not be strictly necessary if .optional() behaves as expected,
+                            // but doesn't hurt to map it for completeness if Diesel changes behavior.
+                            // However, for AppError::NotFound, we typically want to return Ok(None) from the closure.
+                            // The current .optional() should make this arm of the match unreachable for NotFound.
+                            // Let's rely on .optional() and map other errors to DatabaseQueryError.
+                            // If it's any other error, map it to DatabaseQueryError.
+                            AppError::DatabaseQueryError(e.to_string())
+                        }
+                        _ => AppError::DatabaseQueryError(e.to_string()),
+                    }
+                })
+        })
+        .await // For the outer Result from interact (e.g., PoolError)
+        .map_err(|interact_err| { // This handles errors from the .interact() call itself
+            error!(
+                target: "test_log",
+                handler = "get_character_handler",
+                %character_id,
+                %user_id_val,
+                error = ?interact_err,
+                "Interact error during combined character fetch."
+            );
+            AppError::DbInteractError(format!("Interact error during combined character fetch: {}", interact_err))
+        })?; // For the Result<_, DeadPoolError>
+
+    // character_owned_result is now Result<Option<Character>, AppError> (if interact succeeded)
+    // or this point is not reached if interact itself failed (e.g. pool error).
+    // The '?' above handles the interact error. So character_owned_result is the Result from the closure.
+
+    match character_owned_result {
+        Ok(Some(character)) => { // Character found and owned as per the combined query
+            info!(target: "test_log", handler = "get_character_handler", %character_id, %user_id_val, "Character (owned) retrieved via combined query, attempting decryption");
+            match character.into_decrypted_for_client(Some(&dek.0)).await {
+                Ok(character_for_client) => {
+                    info!(target: "test_log", handler = "get_character_handler", %character_id, %user_id_val, "Decryption SUCCESSFUL");
+                    Ok(Json(character_for_client))
+                }
+                Err(e) => { // This is AppError from decryption
+                    error!(target: "test_log", handler = "get_character_handler", %character_id, %user_id_val, error = ?e, "Decryption FAILED");
+                    Err(e)
+                }
+            }
+        }
+        Ok(None) => { // Character not found for this user by the combined query (due to .optional())
+            info!(target: "test_log", handler = "get_character_handler", %character_id, %user_id_val, "Character not found for user by combined query (or owner mismatch), returning NotFound");
+            Err(AppError::NotFound(format!(
+                "Character {} not found or not accessible by user {}", // Clearer message
+                character_id, user_id_val
+            )))
+        }
+        Err(app_err) => { // Error from the closure inside interact (e.g., mapped DatabaseQueryError)
+            error!(target: "test_log", handler = "get_character_handler", %character_id, %user_id_val, error = ?app_err, "Error from interact block (e.g. DB query error) with combined query, propagating");
+            Err(app_err)
+        }
+    }
 }
 
 // POST /api/characters/generate
@@ -364,16 +537,66 @@ pub async fn delete_character_handler(
     auth_session: CurrentAuthSession,
     Path(character_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    trace!(target: "auth_debug", ">>> ENTERING delete_character_handler for character_id: {}", character_id); // ADDED TRACE
+    trace!(target: "auth_debug", ">>> ENTERING delete_character_handler for character_id: {}", character_id);
+    
+    // --- BEGIN TEST LOGGING for test_delete_character_forbidden ---
+    let user_for_delete_opt = auth_session.user.clone(); // Clone to log
+    if let Some(ref user_for_delete) = user_for_delete_opt {
+        info!(
+            target: "test_log",
+            handler = "delete_character_handler_ENTRY",
+            requesting_user_id = %user_for_delete.id,
+            target_character_id = %character_id,
+            "User trying to DELETE character."
+        );
+    } else {
+        warn!(
+            target: "test_log",
+            handler = "delete_character_handler_ENTRY",
+            target_character_id = %character_id,
+            "No user in auth_session for DELETE request."
+        );
+    }
+    // --- END TEST LOGGING ---
+
     let user = auth_session
         .user
         .ok_or_else(|| AppError::Unauthorized("Authentication required".to_string()))?;
     let user_id_val = user.id;
 
     // Add logging here
-    info!(target: "test_log", %character_id, %user_id_val, "Attempting delete query");
+    info!(target: "test_log", handler = "delete_character_handler", %character_id, %user_id_val, "Attempting delete query by authenticated user");
 
-    info!(%character_id, %user_id_val, "Deleting character for user");
+    // First, verify the character exists at all
+    let conn = state
+        .pool
+        .get()
+        .await
+        .map_err(|e| AppError::DbPoolError(e.to_string()))?;
+
+    let character_exists = conn
+        .interact(move |conn_block| {
+            tracing::info!(target: "test_log", %character_id, "Checking if character exists at all");
+            
+            let exists = characters
+                .filter(id.eq(character_id))
+                .select(id)  // Just select the ID for efficiency
+                .first::<Uuid>(conn_block)
+                .optional()
+                .map_err(|e| AppError::DatabaseQueryError(e.to_string()));
+                
+            exists.map(|opt| opt.is_some())
+        })
+        .await
+        .map_err(|e| AppError::DbInteractError(format!("Interact error checking character: {}", e)))?;
+        
+    if !character_exists? {
+        info!(target: "test_log", %character_id, "Character does not exist at all");
+        return Err(AppError::NotFound(format!("Character {} not found", character_id)));
+    }
+    
+    // Character exists, now perform deletion with user_id filter
+    info!(%character_id, %user_id_val, "Character exists, performing delete for user");
 
     let conn = state
         .pool
@@ -384,16 +607,17 @@ pub async fn delete_character_handler(
     let rows_deleted = conn
         .interact(move |conn_block| { // Renamed conn -> conn_block for clarity
             // Log inside interact block too, just in case
-            tracing::info!(target: "test_log", character_id = %character_id, user_id = %user_id_val, "Executing delete query in interact block"); // Log values used
+            info!(target: "test_log", handler = "delete_character_handler", character_id = %character_id, user_id = %user_id_val, "Executing delete query in interact block"); // Log values used
             let delete_result = diesel::delete(
                 characters
                     .filter(id.eq(character_id))
                     .filter(user_id.eq(user_id_val)), // Ensure this user_id_val is correct
             );
+            
             let execution_result = delete_result.execute(conn_block); // Use conn_block
-            tracing::info!(target: "test_log", character_id = %character_id, user_id = %user_id_val, ?execution_result, "Delete query execution result"); // Log result
+            info!(target: "test_log", handler = "delete_character_handler", character_id = %character_id, user_id = %user_id_val, ?execution_result, "Delete query execution result (inside interact)"); // Log result
             execution_result.map_err(|e| { // Map error after logging
-                tracing::error!(target: "test_log", character_id = %character_id, user_id = %user_id_val, "Delete query failed: {}", e); // Log DB error
+                error!(target: "test_log", handler = "delete_character_handler", character_id = %character_id, user_id = %user_id_val, "Delete query failed: {}", e); // Log DB error
                 // Convert DieselError to AppError before returning from interact
                 match e {
                     // Note: .execute() returns usize, not typically DieselError::NotFound directly unless the connection fails entirely.
@@ -407,13 +631,13 @@ pub async fn delete_character_handler(
         ?; // Second await for the Result<usize, AppError> inside interact
 
     // Log the result (rows_deleted)
-    info!(target: "test_log", character_id = %character_id, user_id = %user_id_val, rows_deleted = %rows_deleted, "Delete query completed");
+    info!(target: "test_log", handler = "delete_character_handler", character_id = %character_id, user_id = %user_id_val, rows_deleted = %rows_deleted, "Delete query completed (outside interact)");
 
     if rows_deleted == 0 {
         // Log why it's returning NotFound
         // This path should ideally not be hit if the query inside interact already returned AppError::NotFound
         // But keep it as a safeguard / for debugging potential logic flaws.
-        info!(target: "test_log", %character_id, %user_id_val, "Delete resulted in 0 rows deleted (outside interact error handling), returning NotFound");
+        info!(target: "test_log", handler = "delete_character_handler", %character_id, %user_id_val, "Delete resulted in 0 rows deleted, returning NotFound (or Forbidden if applicable)");
         Err(AppError::NotFound(format!(
             "Character {} not found or not owned by user {} (rows_deleted was 0)",
             character_id, user_id_val

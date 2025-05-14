@@ -1,17 +1,16 @@
 use crate::chat::run_chat_loop; // Import the chat loop function
 use crate::chat::run_stream_test_loop; // Import the stream test loop function
-use crate::client::HttpClient; // Added StreamEvent
+use crate::client::HttpClient; // HttpClient is the trait, ScribeClient might be old
 use crate::error::CliError;
 use crate::io::IoHandler;
-// Added missing Stream trait import
 use scribe_backend::models::auth::LoginPayload;
-use scribe_backend::models::{characters::CharacterMetadata, chats::ApiChatMessage, chats::UpdateChatSettingsRequest}; // <-- Import ApiChatMessage and UpdateChatSettingsRequest
+use scribe_backend::models::{characters::CharacterDataForClient, chats::ApiChatMessage, chats::UpdateChatSettingsRequest}; // <-- Use CharacterDataForClient
 use scribe_backend::models::chats::MessageRole;
 use scribe_backend::models::users::User;
+use secrecy::SecretString; // Added SecretString
 use std::path::Path;
 use uuid::Uuid;
-use secrecy::Secret;
-use crate::client::{RegisterPayload};
+use crate::client::RegisterPayload; // This was correctly here
 
 // --- Action Functions ---
 
@@ -24,7 +23,7 @@ pub async fn handle_login_action<Http: HttpClient, IO: IoHandler>(
     let password = io_handler.read_line("Password:")?;
     let credentials = LoginPayload { 
         identifier: username, 
-        password: Secret::new(password) 
+        password: SecretString::new(password.into_boxed_str())
     };
     http_client.login(&credentials).await
 }
@@ -52,7 +51,7 @@ pub async fn handle_registration_action<Http: HttpClient, IO: IoHandler>(
     let credentials = RegisterPayload { 
         username, 
         email,
-        password: Secret::new(password) 
+        password: SecretString::new(password.into_boxed_str())
     };
     http_client.register(&credentials).await
 }
@@ -74,7 +73,7 @@ pub async fn handle_health_check_action<Http: HttpClient, IO: IoHandler>(
 pub async fn handle_upload_character_action<Http: HttpClient, IO: IoHandler>(
     http_client: &Http,
     io_handler: &mut IO,
-) -> Result<CharacterMetadata, CliError> {
+) -> Result<CharacterDataForClient, CliError> {
     io_handler.write_line("\nUpload a new character.")?;
     let name = io_handler.read_line("Character Name:")?;
     let file_path = io_handler.read_line("Path to Character Card (.png):")?;
@@ -116,10 +115,9 @@ pub async fn handle_view_character_details_action<Http: HttpClient, IO: IoHandle
         Ok(character) => {
             io_handler.write_line(&format!("--- Character Details (ID: {}) ---", character.id))?;
             io_handler.write_line(&format!("  Name: {}", character.name))?;
-            io_handler.write_line(&format!(
-                "  Description: {}",
-                character.description.as_deref().unwrap_or("N/A")
-            ))?;
+            // CharacterDataForClient has description as Option<String>
+            let desc_str = character.description.as_deref().unwrap_or("N/A");
+            io_handler.write_line(&format!("  Description: {}", desc_str))?;
             io_handler.write_line("------------------------------------")?;
             Ok(())
         }
@@ -209,7 +207,8 @@ pub async fn handle_view_chat_history_action<Http: HttpClient, IO: IoHandler>(
                         MessageRole::Assistant => "AI:",
                         MessageRole::System => "System:",
                     };
-                    io_handler.write_line(&format!("  {} {}", prefix, message.content))?;
+                    let content_str = String::from_utf8_lossy(&message.content).to_string();
+                    io_handler.write_line(&format!("  {} {}", prefix, content_str))?;
                 }
             }
             io_handler.write_line("------------------------------------")?;
@@ -279,7 +278,8 @@ pub async fn handle_resume_chat_session_action<Http: HttpClient, IO: IoHandler>(
                         MessageRole::Assistant => "AI:",
                         MessageRole::System => "System:",
                     };
-                    io_handler.write_line(&format!("  {} {}", prefix, message.content))?;
+                    let content_str = String::from_utf8_lossy(&message.content).to_string();
+                    io_handler.write_line(&format!("  {} {}", prefix, content_str))?;
                 }
             }
             io_handler.write_line("------------------------------------")?;
@@ -508,16 +508,18 @@ mod tests {
     use crate::error::CliError; // Need base CliError
     use crate::io::IoHandler; // Need IoHandler trait
     use async_trait::async_trait;
+    use bigdecimal::BigDecimal; // Added BigDecimal import
     use chrono::Utc;
     use futures_util::Stream; // Added Stream trait import
     use scribe_backend::models::auth::LoginPayload;
-    use scribe_backend::models::characters::CharacterMetadata;
+    use scribe_backend::models::characters::CharacterDataForClient; // Use CharacterDataForClient
     use scribe_backend::models::chats::{ChatMessage, Chat, MessageRole};
     use scribe_backend::models::users::User;
     use std::cell::RefCell;
     use std::collections::VecDeque;
     use std::fs; // Need fs for temp file writing
     use std::pin::Pin; // Added Pin
+    use std::str::FromStr; // Added FromStr import
     use std::sync::Arc;
     use tempfile::NamedTempFile;
     use uuid::Uuid; // Needed for mock impl
@@ -626,17 +628,18 @@ mod tests {
         login_result: Option<Arc<Result<User, MockCliError>>>,
         register_result: Option<Arc<Result<User, MockCliError>>>,
         health_check_result: Option<Arc<Result<HealthStatus, MockCliError>>>,
-        upload_character_result: Option<Arc<Result<CharacterMetadata, MockCliError>>>,
-        list_characters_result: Option<Arc<Result<Vec<CharacterMetadata>, MockCliError>>>,
-        get_character_result: Option<Arc<Result<CharacterMetadata, MockCliError>>>,
+        upload_character_result: Option<Arc<Result<CharacterDataForClient, MockCliError>>>,
+        list_characters_result: Option<Arc<Result<Vec<CharacterDataForClient>, MockCliError>>>,
+        get_character_result: Option<Arc<Result<CharacterDataForClient, MockCliError>>>,
         list_chat_sessions_result: Option<Arc<Result<Vec<Chat>, MockCliError>>>,
         get_chat_messages_result: Option<Arc<Result<Vec<ChatMessage>, MockCliError>>>,
         create_chat_session_result: Option<Arc<Result<Chat, MockCliError>>>, // Added
         generate_response_result: Option<Arc<Result<ChatMessage, MockCliError>>>,
         logout_result: Option<Arc<Result<(), MockCliError>>>, // Added
         me_result: Option<Arc<Result<User, MockCliError>>>,   // Added
+        update_chat_settings_result: Option<Arc<Result<scribe_backend::models::chats::ChatSettingsResponse, MockCliError>>>,
     }
-
+ 
     #[async_trait]
     impl HttpClient for MockHttpClient {
         async fn login(&self, _credentials: &LoginPayload) -> Result<User, CliError> {
@@ -658,8 +661,8 @@ mod tests {
                 }));
             mock_result.map_err(Into::into)
         }
-
-        async fn list_characters(&self) -> Result<Vec<CharacterMetadata>, CliError> {
+ 
+        async fn list_characters(&self) -> Result<Vec<CharacterDataForClient>, CliError> {
             let mock_result =
                 Arc::unwrap_or_clone(self.list_characters_result.clone().unwrap_or_else(|| {
                     Arc::new(Err(MockCliError::Internal(
@@ -682,7 +685,7 @@ mod tests {
             &self,
             _name: &str,
             _file_path: &str,
-        ) -> Result<CharacterMetadata, CliError> {
+        ) -> Result<CharacterDataForClient, CliError> {
             let mock_result =
                 Arc::unwrap_or_clone(self.upload_character_result.clone().unwrap_or_else(|| {
                     Arc::new(Err(MockCliError::Internal(
@@ -717,7 +720,7 @@ mod tests {
             }));
             mock_result.map_err(Into::into)
         }
-        async fn get_character(&self, _character_id: Uuid) -> Result<CharacterMetadata, CliError> {
+        async fn get_character(&self, _character_id: Uuid) -> Result<CharacterDataForClient, CliError> {
             let mock_result =
                 Arc::unwrap_or_clone(self.get_character_result.clone().unwrap_or_else(|| {
                     Arc::new(Err(MockCliError::Internal(
@@ -796,6 +799,17 @@ mod tests {
             // Or return an empty stream:
             // Ok(Box::pin(futures_util::stream::empty())) // Use futures_util::stream::empty
         }
+
+        async fn update_chat_settings(&self, _session_id: Uuid, _payload: &scribe_backend::models::chats::UpdateChatSettingsRequest) -> Result<scribe_backend::models::chats::ChatSettingsResponse, CliError> {
+            let mock_result = Arc::unwrap_or_clone(
+                self.update_chat_settings_result.clone().unwrap_or_else(|| {
+                    Arc::new(Err(MockCliError::Internal(
+                        "MockHttpClient: update_chat_settings result not set".into(),
+                    )))
+                }),
+            );
+            mock_result.map_err(Into::into)
+        }
     }
 
     // --- Helper Functions for Creating Mocks ---
@@ -805,23 +819,86 @@ mod tests {
             username: username.to_string(),
             email: "user@example.com".to_string(),
             password_hash: "hashed_password".to_string(), // Mocked
+            kek_salt: "mock_kek_salt".to_string(),
+            encrypted_dek: vec![],
+            dek_nonce: vec![0u8; 12], // Placeholder 12-byte nonce
+            encrypted_dek_by_recovery: None,
+            recovery_kek_salt: None,
+            recovery_dek_nonce: None,
+            dek: None, // Option<SerializableSecretDek>
             created_at: Utc::now(),
             updated_at: Utc::now(),
         }
     }
-
-    fn mock_character(id: Uuid, name: &str, description: Option<&str>) -> CharacterMetadata {
-        CharacterMetadata {
+ 
+    // Updated to return CharacterDataForClient and include more fields for comprehensive testing
+    fn mock_character_data_for_client(id: Uuid, name: &str, description: Option<&str>) -> CharacterDataForClient {
+        use scribe_backend::models::characters::CharacterDataForClient as BackendCharacterDataForClient;
+        BackendCharacterDataForClient {
             id,
             user_id: Uuid::new_v4(),
             name: name.to_string(),
             description: description.map(String::from),
+            spec: "spec_v3".to_string(),
+            spec_version: "1.0".to_string(),
+            personality: None,
+            scenario: None,
             first_mes: None,
+            mes_example: None,
+            creator_notes: None,
+            system_prompt: None,
+            post_history_instructions: None,
+            tags: None,
+            creator: None,
+            character_version: None,
+            alternate_greetings: None,
+            nickname: None,
+            creator_notes_multilingual: None,
+            source: None,
+            group_only_greetings: None,
+            creation_date: Some(Utc::now()),
+            modification_date: Some(Utc::now()),
             created_at: Utc::now(),
             updated_at: Utc::now(),
+            persona: None,
+            world_scenario: None,
+            avatar: None,
+            chat: None,
+            greeting: None,
+            definition: None,
+            default_voice: None,
+            extensions: None,
+            data_id: None,
+            category: None,
+            definition_visibility: None,
+            depth: None,
+            example_dialogue: None,
+            favorite: Some(false),
+            first_message_visibility: None,
+            height: None,
+            last_activity: None,
+            migrated_from: None,
+            model_prompt: None,
+            model_prompt_visibility: None,
+            model_temperature: None,
+            num_interactions: None,
+            permanence: None,
+            persona_visibility: None,
+            revision: None,
+            sharing_visibility: None,
+            status: None,
+            system_prompt_visibility: None,
+            system_tags: None,
+            token_budget: None,
+            usage_hints: None,
+            user_persona: None,
+            user_persona_visibility: None,
+            visibility: Some("private".to_string()),
+            weight: None,
+            world_scenario_visibility: None,
         }
     }
-
+ 
     fn mock_chat_session(id: Uuid, character_id: Uuid) -> Chat {
         Chat {
             id,
@@ -846,6 +923,8 @@ mod tests {
             history_management_limit: 20,
             visibility: Some("private".to_string()),
             model_name: "default-model".to_string(), // Added missing field
+            gemini_thinking_budget: None,
+            gemini_enable_code_execution: None,
         }
     }
 
@@ -860,7 +939,8 @@ mod tests {
             session_id,
             user_id: Uuid::nil(), // Use Uuid::nil() for test context
             message_type: role,
-            content: content.to_string(),
+            content: content.to_string().into_bytes(),
+            content_nonce: None,
             created_at: Utc::now(),
             // removed metadata, token_count
         }
@@ -1022,14 +1102,14 @@ mod tests {
         let mut mock_io = MockIoHandler::new(vec!["Test Char", &file_path_str]);
         let expected_char_id = Uuid::new_v4();
         let mock_http = MockHttpClient {
-            upload_character_result: Some(Arc::new(Ok(mock_character(
+            upload_character_result: Some(Arc::new(Ok(mock_character_data_for_client(
                 expected_char_id,
                 "Test Char",
                 Some("Uploaded char"),
             )))),
             ..Default::default()
         };
-
+ 
         let result = handle_upload_character_action(&mock_http, &mut mock_io).await;
 
         assert!(result.is_ok());
@@ -1099,14 +1179,14 @@ mod tests {
 
         let mut mock_io = MockIoHandler::new(vec!["Test Char", &file_path_str]);
         let mock_http = MockHttpClient {
-            upload_character_result: Some(Arc::new(Ok(mock_character(
+            upload_character_result: Some(Arc::new(Ok(mock_character_data_for_client(
                 Uuid::new_v4(),
                 "Test Char",
                 None,
             )))),
             ..Default::default()
         };
-
+ 
         let result = handle_upload_character_action(&mock_http, &mut mock_io).await;
 
         assert!(result.is_ok());
@@ -1149,18 +1229,18 @@ mod tests {
         let char1_id = Uuid::new_v4();
         let char2_id = Uuid::new_v4();
         let characters = vec![
-            mock_character(char1_id, "Char One", Some("Desc 1")),
-            mock_character(char2_id, "Char Two", None),
+            mock_character_data_for_client(char1_id, "Char One", Some("Desc 1")),
+            mock_character_data_for_client(char2_id, "Char Two", None),
         ];
-        let selected_char_details = mock_character(char1_id, "Char One", Some("Desc 1"));
-
+        let selected_char_details = mock_character_data_for_client(char1_id, "Char One", Some("Desc 1"));
+ 
         let mut mock_io = MockIoHandler::new(vec!["1"]); // User selects the first character
         let mock_http = MockHttpClient {
             list_characters_result: Some(Arc::new(Ok(characters))),
             get_character_result: Some(Arc::new(Ok(selected_char_details))),
             ..Default::default()
         };
-
+ 
         let result = handle_view_character_details_action(&mock_http, &mut mock_io).await;
 
         assert!(result.is_ok());
@@ -1216,15 +1296,15 @@ mod tests {
     #[tokio::test]
     async fn test_handle_view_character_details_get_api_error() {
         let char1_id = Uuid::new_v4();
-        let characters = vec![mock_character(char1_id, "Char One", None)];
-
+        let characters = vec![mock_character_data_for_client(char1_id, "Char One", None)];
+ 
         let mut mock_io = MockIoHandler::new(vec!["1"]); // User selects the first character
         let mock_http = MockHttpClient {
             list_characters_result: Some(Arc::new(Ok(characters))),
             get_character_result: Some(Arc::new(Err(MockCliError::NotFound))), // Simulate get error
             ..Default::default()
         };
-
+ 
         let result = handle_view_character_details_action(&mock_http, &mut mock_io).await;
 
         assert!(result.is_err());

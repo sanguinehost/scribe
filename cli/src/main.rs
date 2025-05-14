@@ -200,8 +200,8 @@ async fn main() -> Result<()> {
                                         "\n--- {} ---",
                                         character_metadata.name
                                     ))?;
-                                    if let Some(first_mes) = character_metadata.first_mes {
-                                        io_handler.write_line(&first_mes)?;
+                                    if let Some(first_mes_bytes) = character_metadata.first_mes {
+                                        io_handler.write_line(&String::from_utf8_lossy(first_mes_bytes.as_bytes()))?;
                                     } else {
                                         io_handler.write_line(
                                             "[Character has no first message defined]",

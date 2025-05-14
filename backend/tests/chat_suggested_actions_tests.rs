@@ -24,9 +24,7 @@ use scribe_backend::{
 };
 use anyhow::Context as _;
 use scribe_backend::models::auth::LoginPayload;
-use reqwest::{cookie::Jar as CookieJar};
 use secrecy::SecretString;
-use std::sync::Arc;
 
 #[tokio::test]
 async fn test_suggested_actions_success() -> anyhow::Result<()> {

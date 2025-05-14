@@ -268,11 +268,11 @@ pub fn verify_credentials(
     }
 }
 
-pub mod session_dek; // Added session_dek module
+pub mod session_dek;
 pub mod session_store;
 pub mod user_store;
 
-pub use session_dek::{SessionDek}; // MODIFIED: Removed SESSION_DEK_KEY
+pub use session_dek::{SessionDek};
 pub use session_store::DieselSessionStore;
 pub use user_store::Backend as AuthBackend;
 

@@ -5,7 +5,7 @@ use async_trait::async_trait;
 use reqwest::multipart;
 use reqwest::{Client as ReqwestClient, Response, StatusCode, Url};
 use scribe_backend::models::auth::LoginPayload;
-use scribe_backend::models::characters::CharacterMetadata;
+use scribe_backend::models::characters::{CharacterDataForClient}; // Import CharacterDataForClient
 // Updated imports for chats models
 use futures_util::{Stream, StreamExt}; // Removed StreamExt, TryStreamExt // Add StreamExt back
 use reqwest_eventsource::{Event, EventSource}; // Added Event, EventSource
@@ -21,7 +21,7 @@ use std::pin::Pin;
  // Added Write trait
  // Added FromStr trait
 use uuid::Uuid; // Added Pin
-use secrecy::{Secret, ExposeSecret};
+use secrecy::{ExposeSecret, SecretString}; // Added SecretString
 use anyhow::Result;
 
 // Define the expected response structure from the /health endpoint (matching backend)
@@ -45,8 +45,14 @@ impl From<AuthUserResponse> for User {
             id: auth.user_id,
             username: auth.username,
             email: auth.email,
-            // Set default values for fields not returned by API
-            password_hash: String::new(),
+            password_hash: String::new(), // Default empty string
+            kek_salt: String::new(),      // Default empty string
+            encrypted_dek: Vec::new(),    // Default empty Vec
+            dek_nonce: Vec::new(),        // Default empty Vec
+            encrypted_dek_by_recovery: None,
+            recovery_kek_salt: None,
+            recovery_dek_nonce: None,
+            dek: None,                    // Option<SerializableSecretDek>
             created_at: chrono::Utc::now(),
             updated_at: chrono::Utc::now(),
         }
@@ -186,7 +192,8 @@ async fn handle_non_streaming_chat_response(response: Response) -> Result<ChatMe
                     session_id: Uuid::nil(), // Not provided by this endpoint, set to nil
                     user_id: Uuid::nil(), // Use Uuid::nil() for CLI context
                     message_type: scribe_backend::models::chats::MessageRole::Assistant,
-                    content: body.content,
+                    content: body.content.into_bytes(), // Convert String to Vec<u8>
+                    content_nonce: None, // Add missing field
                     created_at: chrono::Utc::now(), // Use current time
                 })
             }
@@ -226,17 +233,17 @@ struct CliGenerateChatRequest {
 pub trait HttpClient: Send + Sync {
     async fn login(&self, credentials: &LoginPayload) -> Result<User, CliError>;
     async fn register(&self, credentials: &RegisterPayload) -> Result<User, CliError>;
-    async fn list_characters(&self) -> Result<Vec<CharacterMetadata>, CliError>;
+    async fn list_characters(&self) -> Result<Vec<CharacterDataForClient>, CliError>;
     async fn create_chat_session(&self, character_id: Uuid) -> Result<Chat, CliError>;
     async fn upload_character(
         &self,
         name: &str,
         file_path: &str,
-    ) -> Result<CharacterMetadata, CliError>;
+    ) -> Result<CharacterDataForClient, CliError>;
     async fn health_check(&self) -> Result<HealthStatus, CliError>;
     async fn logout(&self) -> Result<(), CliError>;
     async fn me(&self) -> Result<User, CliError>;
-    async fn get_character(&self, character_id: Uuid) -> Result<CharacterMetadata, CliError>;
+    async fn get_character(&self, character_id: Uuid) -> Result<CharacterDataForClient, CliError>;
     async fn list_chat_sessions(&self) -> Result<Vec<Chat>, CliError>;
     async fn get_chat_messages(&self, session_id: Uuid) -> Result<Vec<ChatMessage>, CliError>;
     async fn send_message(
@@ -255,9 +262,8 @@ pub trait HttpClient: Send + Sync {
     ) -> Result<Pin<Box<dyn Stream<Item = Result<StreamEvent, CliError>> + Send>>, CliError>;
 
     // NEW: Chat Settings methods
-    async fn get_chat_settings(&self, session_id: Uuid) -> Result<ChatSettingsResponse, CliError>;
     async fn update_chat_settings(&self, session_id: Uuid, payload: &UpdateChatSettingsRequest) -> Result<ChatSettingsResponse, CliError>;
-
+ 
     // Keep generate_response for mock compatibility if needed, but mark unused
     #[allow(dead_code)]
     async fn generate_response(
@@ -302,7 +308,7 @@ impl<'a> From<&'a LoginPayload> for SerializableLoginPayload<'a> {
 pub struct RegisterPayload {
     pub username: String,
     pub email: String,
-    pub password: Secret<String>,
+    pub password: SecretString,
 }
 
 // Add a serializable version of RegisterPayload for requests
@@ -364,8 +370,8 @@ impl HttpClient for ReqwestClientWrapper {
         // Convert to User for backwards compatibility
         Ok(User::from(auth_response))
     }
-
-    async fn list_characters(&self) -> Result<Vec<CharacterMetadata>, CliError> {
+ 
+    async fn list_characters(&self) -> Result<Vec<CharacterDataForClient>, CliError> {
         let url = build_url(&self.base_url, "/api/characters")?;
         tracing::info!(%url, "Listing characters via HttpClient");
         let response = self
@@ -395,9 +401,9 @@ impl HttpClient for ReqwestClientWrapper {
         &self,
         name: &str,
         file_path: &str,
-    ) -> Result<CharacterMetadata, CliError> {
+    ) -> Result<CharacterDataForClient, CliError> {
         tracing::info!(character_name = name, %file_path, "Attempting to upload character via HttpClient");
-
+ 
         let file_bytes = fs::read(file_path).map_err(|e| {
             tracing::error!(error = ?e, %file_path, "Failed to read character card file");
             CliError::Io(e)
@@ -493,8 +499,8 @@ impl HttpClient for ReqwestClientWrapper {
         // Convert to User for backwards compatibility
         Ok(User::from(auth_response))
     }
-
-    async fn get_character(&self, character_id: Uuid) -> Result<CharacterMetadata, CliError> {
+ 
+    async fn get_character(&self, character_id: Uuid) -> Result<CharacterDataForClient, CliError> {
         let url = build_url(&self.base_url, &format!("/api/characters/{}", character_id))?;
         tracing::info!(%url, %character_id, "Fetching character details via HttpClient");
         let response = self
@@ -685,15 +691,6 @@ impl HttpClient for ReqwestClientWrapper {
         Ok(Box::pin(stream))
     }
 
-    // NEW: Implement get_chat_settings
-    async fn get_chat_settings(&self, session_id: Uuid) -> Result<ChatSettingsResponse, CliError> {
-        let url = build_url(&self.base_url, &format!("/api/chats/{}/settings", session_id))?;
-        tracing::info!(%url, %session_id, "Fetching chat settings via HttpClient");
-
-        let response = self.client.get(url).send().await.map_err(CliError::Reqwest)?;
-        handle_response(response).await
-    }
-
     // NEW: Implement update_chat_settings
     async fn update_chat_settings(&self, session_id: Uuid, payload: &UpdateChatSettingsRequest) -> Result<ChatSettingsResponse, CliError> {
         let url = build_url(&self.base_url, &format!("/api/chats/{}/settings", session_id))?;
@@ -723,26 +720,19 @@ mod tests {
     use super::*;
     use httptest::{
         matchers::{all_of, request, contains, key}, // Add any
+        responders::{json_encoded, status_code}, // Added json_encoded and status_code
         Expectation, ServerPool, ServerHandle,
     };
     use scribe_backend::models::auth::LoginPayload;
-    use scribe_backend::models::users::User;
+    use scribe_backend::models::characters::CharacterMetadata; // Added import for tests
     use serde_json::json;
     use url::Url;
     use uuid::Uuid;
     use chrono::Utc;
-
-    // Helper function to create a mock User with all required fields
-    fn mock_user(id: Uuid) -> User {
-        User {
-            id,
-            username: "testuser".to_string(),
-            email: "test@example.com".to_string(), // Add required email field
-            password_hash: "hashed_password".to_string(),
-            created_at: Utc::now(),
-            updated_at: Utc::now(),
-        }
-    }
+    use tempfile::NamedTempFile; // Added NamedTempFile
+    use bigdecimal::BigDecimal; // Added BigDecimal
+    use std::io::Write; // Added Write for temp_file
+    use std::str::FromStr; // Added FromStr for BigDecimal
 
     // Shared setup for tests needing a mock server
     fn setup_test_server() -> (ServerHandle<'static>, ReqwestClientWrapper) {
@@ -805,7 +795,7 @@ mod tests {
 
         let credentials = LoginPayload {
             identifier: "testuser".to_string(),
-            password: Secret::from("password123".to_string()),
+            password: SecretString::new("password123".to_string().into()),
         };
         let result = client_wrapper.login(&credentials).await;
 
@@ -823,7 +813,7 @@ mod tests {
 
         let credentials = LoginPayload {
             identifier: "testuser".to_string(),
-            password: Secret::new("wrongpassword".to_string()),
+            password: SecretString::new("wrongpassword".to_string().into()),
         };
         let error_body = "Invalid credentials";
 
@@ -852,7 +842,7 @@ mod tests {
 
         let credentials = LoginPayload {
             identifier: "testuser".to_string(),
-            password: Secret::new("password".to_string()),
+            password: SecretString::new("password".to_string().into()),
         };
 
         server.expect(
@@ -899,7 +889,7 @@ mod tests {
         let credentials = RegisterPayload {
             username: "newuser".to_string(),
             email: "new@example.com".to_string(),
-            password: Secret::from("password123".to_string()),
+            password: SecretString::new("password123".to_string().into()),
         };
         let result = client_wrapper.register(&credentials).await;
 
@@ -918,7 +908,7 @@ mod tests {
         let register_payload = RegisterPayload {
             username: "existinguser".to_string(),
             email: "existing@example.com".to_string(),
-            password: Secret::new("password123".to_string()),
+            password: SecretString::new("password123".to_string().into()),
         };
         
         let error_body = "Username already taken";
@@ -956,8 +946,9 @@ mod tests {
                 id: char1_id,
                 user_id: user_id_mock,
                 name: "Character One".to_string(),
-                description: Some("Description One".to_string()),
-                first_mes: Some("Hello from Character One!".to_string()), // Added first_mes
+                description: Some("Description One".to_string().into_bytes()),
+                description_nonce: None,
+                first_mes: Some("Hello from Character One!".to_string().into_bytes()), // Added first_mes
                 created_at: now,
                 updated_at: now,
             },
@@ -966,6 +957,7 @@ mod tests {
                 user_id: user_id_mock,
                 name: "Character Two".to_string(),
                 description: None,
+                description_nonce: None,
                 first_mes: None, // Added first_mes (None case)
                 created_at: now,
                 updated_at: now,
@@ -984,7 +976,8 @@ mod tests {
         assert_eq!(characters.len(), 2);
         assert_eq!(characters[0].id, mock_characters[0].id);
         assert_eq!(characters[1].name, mock_characters[1].name);
-        assert_eq!(characters[0].first_mes, mock_characters[0].first_mes); // Verify new field
+        // Assuming CharacterDataForClient.first_mes is Option<String> and backend converts Vec<u8> to String
+        assert_eq!(characters[0].first_mes.as_deref().map(|s| s.as_bytes()), mock_characters[0].first_mes.as_deref()); // Verify new field
 
         server.verify_and_clear();
     }
@@ -1051,8 +1044,9 @@ mod tests {
             id: mock_response_id,
             user_id: mock_response_user_id,
             name: character_name.to_string(),
-            description: Some("Uploaded via test".to_string()),
-            first_mes: Some("Hello from upload!".to_string()),
+            description: Some("Uploaded via test".to_string().into_bytes()),
+            description_nonce: None,
+            first_mes: Some("Hello from upload!".to_string().into_bytes()),
             created_at: now,
             updated_at: now,
         };
@@ -1256,8 +1250,9 @@ mod tests {
             id: character_id,
             user_id: user_id_mock,
             name: "Specific Character".to_string(),
-            description: Some("Details here".to_string()),
-            first_mes: Some("Specific greeting".to_string()),
+            description: Some("Details here".to_string().into_bytes()),
+            description_nonce: None,
+            first_mes: Some("Specific greeting".to_string().into_bytes()),
             created_at: now,
             updated_at: now,
         };
@@ -1347,6 +1342,8 @@ mod tests {
                 history_management_limit: 20,
                 visibility: Some("private".to_string()),
                 model_name: "default-model".to_string(), // Added missing field
+                gemini_thinking_budget: None,
+                gemini_enable_code_execution: None,
             },
             Chat {
                 id: session2_id,
@@ -1371,6 +1368,8 @@ mod tests {
                 history_management_limit: 20,
                 visibility: Some("private".to_string()),
                 model_name: "default-model".to_string(), // Added missing field (already present, ensuring consistency)
+                gemini_thinking_budget: None,
+                gemini_enable_code_execution: None,
             },
         ];
 
@@ -1449,7 +1448,8 @@ mod tests {
                 session_id,
                 user_id: Uuid::nil(), // Use Uuid::nil() for test context
                 message_type: MessageRole::User,
-                content: "Hello there".to_string(),
+                content: "Hello there".to_string().into_bytes(),
+                content_nonce: None,
                 created_at: now,
             },
             ChatMessage {
@@ -1457,7 +1457,8 @@ mod tests {
                 session_id,
                 user_id: Uuid::nil(), // Use Uuid::nil() for test context
                 message_type: MessageRole::Assistant,
-                content: "General Kenobi!".to_string(),
+                content: "General Kenobi!".to_string().into_bytes(),
+                content_nonce: None,
                 created_at: now + chrono::Duration::seconds(1),
             },
         ];
@@ -1475,7 +1476,7 @@ mod tests {
         assert!(result.is_ok());
         let messages = result.unwrap();
         assert_eq!(messages.len(), 2);
-        assert_eq!(messages[0].content, mock_messages[0].content);
+        assert_eq!(messages[0].content, mock_messages[0].content); // content is Vec<u8>
         assert_eq!(messages[1].message_type, MessageRole::Assistant);
 
         server.verify_and_clear();
@@ -1566,9 +1567,11 @@ mod tests {
             history_management_limit: 20,
             visibility: Some("private".to_string()),
             model_name: "default-model".to_string(), // Added missing field (already present, ensuring consistency)
+            gemini_thinking_budget: None,
+            gemini_enable_code_execution: None,
         };
 
-        let request_payload = json!({ "character_id": character_id });
+    let request_payload = json!({ "character_id": character_id });
 
         server.expect(
             Expectation::matching(all_of![
@@ -1649,7 +1652,7 @@ mod tests {
         assert!(result.is_ok(), "send_message failed: {:?}", result.err());
         let response_message = result.unwrap();
         assert_eq!(response_message.id, response_message_id);
-        assert_eq!(response_message.content, response_content);
+        assert_eq!(response_message.content, response_content.as_bytes());
         assert_eq!(response_message.message_type, MessageRole::Assistant);
         assert_eq!(response_message.session_id, Uuid::nil());
 

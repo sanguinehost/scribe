@@ -27,8 +27,6 @@ use diesel::RunQueryDsl as _; // Alias for use within interact closures
 use scribe_backend::{
     errors::AppError,
     models::{
-        users::User,
-        character_card::NewCharacter, // Corrected import path for NewCharacter
         characters::Character as DbCharacter, // Added DbCharacter import
         chats::{
             MessageRole, GenerateChatRequest, ApiChatMessage, Chat as ChatSession, NewChat, // Renamed ChatSession to Chat here
@@ -2158,7 +2156,7 @@ async fn generate_chat_response_streaming_real_client_failure_repro() {
    ];
    let payload = GenerateChatRequest {
        history,
-        model: Some("gemini-1.5-flash-latest".to_string()), 
+        model: Some("gemini-2.5-flash-preview-04-17".to_string()), 
    };
 
    let request = Request::builder()

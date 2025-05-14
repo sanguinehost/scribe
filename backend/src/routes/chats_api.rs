@@ -81,7 +81,8 @@ pub async fn create_chat_handler(
     Json(payload): Json<CreateChatRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let user = auth_session.user.ok_or(AppError::Unauthorized("Not logged in".to_string()))?;
-    let user_dek_ref: Option<&SecretBox<Vec<u8>>> = user.dek.as_ref().map(|wrapped_dek| &wrapped_dek.0);
+    // Convert &SecretBox to Arc<SecretBox>
+    let user_dek_arc: Option<Arc<SecretBox<Vec<u8>>>> = user.dek.as_ref().map(|wrapped_dek| Arc::new(SecretBox::new(Box::new(wrapped_dek.0.expose_secret().clone()))));
     
     info!(%user.id, character_id=%payload.character_id, "Creating chat session");
     
@@ -90,7 +91,7 @@ pub async fn create_chat_handler(
         app_state, 
         user.id, 
         payload.character_id,
-        user_dek_ref, // Pass the reference to the inner SecretBox
+        user_dek_arc, // Pass Option<Arc<SecretBox>> instead of Option<&SecretBox>
     ).await?;
     
     // Generate a custom title if provided (default title is set by the service)
@@ -213,8 +214,8 @@ pub async fn get_messages_by_chat_id_handler(
 
     let user = auth_session.user.ok_or(AppError::Unauthorized("Not logged in".to_string()))?;
     tracing::debug!("get_messages_by_chat_id_handler: Authenticated user.id = {}", user.id);
-    let user_dek_ref: Option<&SecretBox<Vec<u8>>> = user.dek.as_ref().map(|wrapped_dek| &wrapped_dek.0);
-    tracing::debug!("get_messages_by_chat_id_handler: user_dek_ref.is_some() = {}", user_dek_ref.is_some());
+    let user_dek_arc: Option<Arc<SecretBox<Vec<u8>>>> = user.dek.as_ref().map(|wrapped_dek| Arc::new(SecretBox::new(Box::new(wrapped_dek.0.expose_secret().clone()))));
+    tracing::debug!("get_messages_by_chat_id_handler: user_dek_arc.is_some() = {}", user_dek_arc.is_some());
     let pool = state.pool.clone();
     
     tracing::debug!("get_messages_by_chat_id_handler: Attempting to fetch chat with uuid_id = {}", uuid_id);
@@ -307,7 +308,7 @@ pub async fn get_messages_by_chat_id_handler(
     
     let mut responses = Vec::new();
     for msg_db in messages_db {
-        let decrypted_client_message = msg_db.clone().into_decrypted_for_client(user_dek_ref)?;
+        let decrypted_client_message = msg_db.clone().into_decrypted_for_client(user_dek_arc.as_deref())?;
 
         // Now construct MessageResponse using fields from original msg_db and decrypted_client_message
         let response_parts = msg_db.parts.unwrap_or_else(|| json!([{"text": decrypted_client_message.content}]));
@@ -336,8 +337,10 @@ pub async fn create_message_handler(
     Json(payload): Json<CreateMessageRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let user = auth_session.user.ok_or(AppError::Unauthorized("Not logged in".to_string()))?;
-    let user_dek_ref: Option<&SecretBox<Vec<u8>>> = user.dek.as_ref().map(|wrapped_dek| &wrapped_dek.0);
-    let _pool = state.pool.clone(); // Not strictly needed here if save_message handles its own pool access
+    let user_id = user.id;
+    
+    // Convert &SecretBox to Arc<SecretBox>
+    let user_dek_arc: Option<Arc<SecretBox<Vec<u8>>>> = user.dek.as_ref().map(|wrapped_dek| Arc::new(SecretBox::new(Box::new(wrapped_dek.0.expose_secret().clone()))));
     
     // Verify chat session ownership (existing logic is fine)
     let chat = state.pool.get().await // Keep this verification block
@@ -356,21 +359,16 @@ pub async fn create_message_handler(
         return Err(AppError::Forbidden);
     }
 
-    let message_role = match payload.role.to_lowercase().as_str() {
-        "user" => MessageRole::User,
-        "assistant" => MessageRole::Assistant,
-        "system" => MessageRole::System,
-        _ => return Err(AppError::BadRequest(format!("Invalid role: {}", payload.role))),
-    };
+    let message_role = if payload.role == "user" { MessageRole::User } else { MessageRole::Assistant };
 
-    // Call chat_service::save_message
+    // Save the message
     let saved_db_message = chat_service::save_message(
-        Arc::new(state), // Pass Arc<AppState>
+        Arc::new(state.clone()),
         chat_id,
-        user.id,
+        user_id,
         message_role,
-        &payload.content, // Pass content as &str
-        user_dek_ref,       // Pass Option<&SecretBox<Vec<u8>>>
+        &payload.content,
+        user_dek_arc.clone(), // Clone the Arc to avoid moving it
     ).await?;
 
     // Convert DbChatMessage to ChatMessageForClient to get decrypted content
@@ -389,7 +387,7 @@ pub async fn create_message_handler(
         parts: payload.parts.clone(),          // From the request payload
         attachments: payload.attachments.clone(), // From the request payload
     };
-    let client_message = message_for_decryption.into_decrypted_for_client(user_dek_ref)?;
+    let client_message = message_for_decryption.into_decrypted_for_client(user_dek_arc.as_deref())?;
     
     // Use client_message.content (String) for parts if payload.parts is None
     let response_parts = payload.parts.unwrap_or_else(|| json!([{"text": client_message.content.clone()}]));

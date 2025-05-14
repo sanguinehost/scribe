@@ -1,7 +1,7 @@
 #![cfg(test)]
 
 use anyhow::{Context, Error as AnyhowError, anyhow}; // Consolidate anyhow imports
-use axum::body::Body; // For Body
+ // For Body
 // Removed duplicate axum::http imports
 use bcrypt; // Added bcrypt import
 use bigdecimal::BigDecimal; // Add this import
@@ -201,12 +201,6 @@ impl TestDataGuard {
     fn add_character(&mut self, character_id: Uuid) {
         self.character_ids.push(character_id);
     }
-
-    // Added method to track session IDs
-    fn add_session(&mut self, session_id: Uuid) {
-        self.session_ids.push(session_id);
-    }
-
 
     // Add an explicit async cleanup method to avoid using block_on in Drop
     async fn cleanup(self) -> Result<(), anyhow::Error> {

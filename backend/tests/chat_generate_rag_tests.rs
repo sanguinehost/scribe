@@ -13,7 +13,6 @@ use genai::{
 use http_body_util::BodyExt;
 use mime;
 use serde_json::Value;
-use std::sync::Arc;
 use std::time::Duration;
 use tower::ServiceExt;
 use uuid::Uuid;
@@ -27,14 +26,13 @@ use diesel::RunQueryDsl;
 use scribe_backend::{
     errors::AppError,
     models::{
-        auth::LoginPayload,
         chats::{MessageRole, GenerateChatRequest, ApiChatMessage, Chat as DbChat, NewChat, ChatMessage as DbChatMessage, NewMessage},
         users::User,
         characters::Character as DbCharacter, // Renamed to DbCharacter as per plan
     },
     schema, // Import the whole schema module
     services::embedding_pipeline::{EmbeddingMetadata, RetrievedChunk},
-    test_helpers::{self, MockEmbeddingPipelineService, PipelineCall, TestApp},
+    test_helpers::{self, PipelineCall},
 };
 use serde_json::json;
 use tower_cookies::Cookie;
@@ -207,8 +205,8 @@ async fn test_generate_chat_response_triggers_embeddings() -> anyhow::Result<()>
     // Mock the AI response
     let mock_ai_content = "Response to trigger embedding.";
     let mock_response = ChatResponse {
-        model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-1.5-flash-latest"),
-        provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-1.5-flash-latest"),
+        model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash-preview-04-17"),
+        provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash-preview-04-17"),
         content: Some(MessageContent::Text(mock_ai_content.to_string())),
         reasoning_content: None,
         usage: Usage::default(),
@@ -823,7 +821,7 @@ async fn generate_chat_response_rag_retrieval_error() -> anyhow::Result<()> {
     test_app.mock_embedding_pipeline_service.set_retrieve_response(Err(AppError::VectorDbError("Mock Qdrant retrieval failure".to_string())));
 
     let mock_ai_content = "Response without RAG context.";
-    let mock_response = ChatResponse { /* ... */ content: Some(MessageContent::Text(mock_ai_content.to_string())), model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-1.5-flash-latest"), provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-1.5-flash-latest"), reasoning_content: None, usage: Usage::default() };
+    let mock_response = ChatResponse { /* ... */ content: Some(MessageContent::Text(mock_ai_content.to_string())), model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash-preview-04-17"), provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash-preview-04-17"), reasoning_content: None, usage: Usage::default() };
     test_app.mock_ai_client.as_ref().expect("Mock client required").set_response(Ok(mock_response));
 
     let payload = GenerateChatRequest {
@@ -1005,7 +1003,7 @@ async fn setup_test_data(use_real_ai: bool) -> anyhow::Result<RagTestContext> {
         .map_err(|e| anyhow::anyhow!("Database query failed (inner diesel::result::Error): {}", e))?; // Handles diesel::result::Error
 
     let mock_ai_content = "Response to trigger embedding.";
-    let mock_response = ChatResponse { /* ... */ content: Some(MessageContent::Text(mock_ai_content.to_string())), model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-1.5-flash-latest"), provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-1.5-flash-latest"), reasoning_content: None, usage: Usage::default() };
+    let mock_response = ChatResponse { /* ... */ content: Some(MessageContent::Text(mock_ai_content.to_string())), model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash-preview-04-17"), provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash-preview-04-17"), reasoning_content: None, usage: Usage::default() };
     if let Some(mock_client) = &test_app.mock_ai_client {
         mock_client.set_response(Ok(mock_response));
     }
@@ -1072,12 +1070,12 @@ async fn setup_test_data(use_real_ai: bool) -> anyhow::Result<RagTestContext> {
 async fn generate_chat_response_rag_success() -> anyhow::Result<()> {
     let context = setup_test_data(false).await?; // Use mock AI
 
-    let mock_response = genai::chat::ChatResponse { /* ... */ content: Some(MessageContent::Text("Mock AI response to RAG query".to_string())), model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-1.5-flash-latest"), provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-1.5-flash-latest"), reasoning_content: None, usage: Default::default() };
+    let mock_response = genai::chat::ChatResponse { /* ... */ content: Some(MessageContent::Text("Mock AI response to RAG query".to_string())), model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash-preview-04-17"), provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash-preview-04-17"), reasoning_content: None, usage: Default::default() };
     context.app.mock_ai_client.as_ref().expect("Mock client required").set_response(Ok(mock_response));
 
     let payload = GenerateChatRequest {
         history: vec![ApiChatMessage { role: "user".to_string(), content: "Mock AI response to RAG query".to_string() }],
-        model: Some("gemini-1.5-flash-latest".to_string()),
+        model: Some("gemini-2.5-flash-preview-04-17".to_string()),
     };
 
     let request = Request::builder()
@@ -1105,12 +1103,12 @@ async fn generate_chat_response_rag_success() -> anyhow::Result<()> {
 async fn generate_chat_response_rag_empty_history_success() -> anyhow::Result<()> {
     let context = setup_test_data(false).await?;
 
-    let mock_response = genai::chat::ChatResponse { /* ... */ content: Some(MessageContent::Text("Mock AI response to RAG query".to_string())), model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-1.5-flash-latest"), provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-1.5-flash-latest"), reasoning_content: None, usage: Default::default() };
+    let mock_response = genai::chat::ChatResponse { /* ... */ content: Some(MessageContent::Text("Mock AI response to RAG query".to_string())), model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash-preview-04-17"), provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash-preview-04-17"), reasoning_content: None, usage: Default::default() };
     context.app.mock_ai_client.as_ref().expect("Mock client required").set_response(Ok(mock_response));
 
     let payload = GenerateChatRequest {
         history: vec![ApiChatMessage { role: "user".to_string(), content: "Mock AI response to RAG query".to_string() }],
-        model: Some("gemini-1.5-flash-latest".to_string()),
+        model: Some("gemini-2.5-flash-preview-04-17".to_string()),
     };
     // Request and assertions are similar to generate_chat_response_rag_success
     let request = Request::builder()
@@ -1133,13 +1131,13 @@ async fn generate_chat_response_rag_empty_history_success() -> anyhow::Result<()
 async fn generate_chat_response_rag_no_relevant_chunks_found() -> anyhow::Result<()> {
     let context = setup_test_data(false).await?;
 
-    let mock_response = genai::chat::ChatResponse { /* ... */ content: Some(MessageContent::Text("Mock AI response to RAG query".to_string())), model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-1.5-flash-latest"), provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-1.5-flash-latest"), reasoning_content: None, usage: Default::default() };
+    let mock_response = genai::chat::ChatResponse { /* ... */ content: Some(MessageContent::Text("Mock AI response to RAG query".to_string())), model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash-preview-04-17"), provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash-preview-04-17"), reasoning_content: None, usage: Default::default() };
     context.app.mock_ai_client.as_ref().expect("Mock client required").set_response(Ok(mock_response));
     context.app.mock_embedding_pipeline_service.set_retrieve_response(Ok(vec![])); // No chunks
 
     let payload = GenerateChatRequest {
         history: vec![ApiChatMessage { role: "user".to_string(), content: "Mock AI response to RAG query".to_string() }],
-        model: Some("gemini-1.5-flash-latest".to_string()),
+        model: Some("gemini-2.5-flash-preview-04-17".to_string()),
     };
     // Request and assertions
     let request = Request::builder()
@@ -1162,7 +1160,7 @@ async fn generate_chat_response_rag_no_relevant_chunks_found() -> anyhow::Result
 async fn generate_chat_response_rag_uses_session_settings() -> anyhow::Result<()> {
     let context = setup_test_data(false).await?;
 
-    let mock_response = genai::chat::ChatResponse { /* ... */ content: Some(MessageContent::Text("Mock AI response to RAG query".to_string())), model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-1.5-flash-latest"), provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-1.5-flash-latest"), reasoning_content: None, usage: Default::default() };
+    let mock_response = genai::chat::ChatResponse { /* ... */ content: Some(MessageContent::Text("Mock AI response to RAG query".to_string())), model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash-preview-04-17"), provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash-preview-04-17"), reasoning_content: None, usage: Default::default() };
     context.app.mock_ai_client.as_ref().expect("Mock client required").set_response(Ok(mock_response));
 
     // This test relies on setup_test_data to have called the /generate endpoint once.
@@ -1178,7 +1176,7 @@ async fn generate_chat_response_rag_uses_session_settings() -> anyhow::Result<()
 async fn generate_chat_response_rag_uses_character_settings_if_no_session() -> anyhow::Result<()> {
     let context = setup_test_data(false).await?; // This already creates a session and character
 
-    let mock_response = genai::chat::ChatResponse { /* ... */ content: Some(MessageContent::Text("Mock AI response to RAG query".to_string())), model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-1.5-flash-latest"), provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-1.5-flash-latest"), reasoning_content: None, usage: Default::default() };
+    let mock_response = genai::chat::ChatResponse { /* ... */ content: Some(MessageContent::Text("Mock AI response to RAG query".to_string())), model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash-preview-04-17"), provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash-preview-04-17"), reasoning_content: None, usage: Default::default() };
      context.app.mock_ai_client.as_ref().expect("Mock client required").set_response(Ok(mock_response.clone()));
 
 
@@ -1192,7 +1190,7 @@ async fn generate_chat_response_rag_uses_character_settings_if_no_session() -> a
 
     let payload = GenerateChatRequest {
         history: vec![ApiChatMessage { role: "user".to_string(), content: "Another query".to_string() }],
-        model: Some("gemini-1.5-flash-latest".to_string()),
+        model: Some("gemini-2.5-flash-preview-04-17".to_string()),
     };
      let request = Request::builder()
         .method(Method::POST)

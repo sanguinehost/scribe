@@ -1,7 +1,7 @@
 // backend/src/routes/chat.rs
 
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::HeaderMap,
     response::{IntoResponse, Sse, sse::{Event, KeepAlive}},
     Json,
@@ -15,7 +15,7 @@ use crate::models::chats::{
     SuggestedActionItem, SuggestedActionsResponse,
 };
 use crate::errors::AppError;
-use crate::services::chat_service;
+use crate::services::chat_service::{self, ScribeSseEvent};
 use crate::state::AppState;
 use crate::schema::chat_sessions;
 use validator::Validate;
@@ -25,24 +25,33 @@ use uuid::Uuid;
 use bigdecimal::ToPrimitive;
 use serde_json::json;
 use crate::auth::user_store::Backend as AuthBackend;
-use crate::auth::session_dek::SessionDek; // Added for DEK conversion
+use crate::auth::session_dek::SessionDek;
+use crate::models::characters::Character;
+use crate::models::chats::CreateChatSessionPayload;
+use crate::models::chats::NewChat;
+use chrono::Utc;
 use genai::chat::{
     ChatRequest, ChatOptions, ChatMessage as GenAiChatMessage, ChatRole, MessageContent,
-    ChatResponseFormat, JsonSpec, ChatStreamEvent
+    ChatResponseFormat, JsonSpec,
 };
-use crate::routes::chats_api::{get_chat_settings_handler, update_chat_settings_handler}; // Added back necessary imports
- // Ensure User & SerializableSecretDek are imported
-use secrecy::SecretBox; // Import SecretBox
-use futures_util::{StreamExt, TryStreamExt};
-use serde::Serialize;
-use tracing::field; // ADDED for instrument macro
+use crate::routes::chats_api::{get_chat_settings_handler, update_chat_settings_handler};
+use futures_util::{StreamExt};
+use serde::{Deserialize, Serialize};
+use tracing::field;
 
 // Define CurrentAuthSession type alias
 type CurrentAuthSession = AuthSession<AuthBackend>;
 
 // Placeholder for response struct if it was missing
-#[derive(Serialize)]
-struct PlaceholderResponse { message: String }
+// Removed unused struct PlaceholderResponse
+// #[derive(Serialize)]
+// struct PlaceholderResponse { message: String }
+
+#[derive(Deserialize, Debug)]
+struct ChatGenerateQueryParams {
+    #[serde(default)]
+    request_thinking: bool,
+}
 
 #[derive(Serialize, Debug)] // Added derive Debug
 pub struct ChatSessionWithDekResponse { // Made pub
@@ -53,18 +62,133 @@ pub struct ChatSessionWithDekResponse { // Made pub
     pub dek_present: bool, // Simpler representation of DEK presence
 }
 
+
+#[instrument(skip_all, fields(user_id = field::Empty, character_id = field::Empty))]
+pub async fn create_chat_session_handler(
+    State(state): State<AppState>,
+    auth_session: CurrentAuthSession,
+    _session_dek: SessionDek, // Mark as unused for now, will be used for character system prompt
+    Json(payload): Json<CreateChatSessionPayload>,
+) -> Result<Json<Chat>, AppError> {
+    info!("Attempting to create new chat session");
+
+    let user = auth_session.user.ok_or_else(|| {
+        error!("User not found in session during chat creation");
+        AppError::Unauthorized("User not found in session".to_string())
+    })?;
+    let user_id = user.id;
+    tracing::Span::current().record("user_id", &tracing::field::display(user_id));
+    tracing::Span::current().record("character_id", &tracing::field::display(payload.character_id));
+
+
+    debug!(user_id = %user_id, character_id = %payload.character_id, "User and character ID extracted");
+
+    // Fetch the character to ensure it exists and to get its name
+    let character = state.pool.get().await
+        .map_err(|e| AppError::DbPoolError(e.to_string()))?
+        .interact(move |conn| {
+            crate::schema::characters::table
+                .filter(crate::schema::characters::id.eq(payload.character_id))
+                .filter(crate::schema::characters::user_id.eq(user_id)) // Ensure user owns character
+                .select(Character::as_select())
+                .first::<Character>(conn)
+                .optional() // Use optional to handle not found case gracefully
+        })
+        .await
+        .map_err(|e| AppError::InternalServerErrorGeneric(format!("Interact error fetching character: {}", e)))? // First ? handles InteractError
+        ? // Second ? handles diesel::result::Error, converting it to AppError if necessary
+        .ok_or_else(|| {
+            error!(character_id = %payload.character_id, user_id = %user_id, "Character not found or user does not have access");
+            AppError::NotFound(format!("Character with ID {} not found or access denied.", payload.character_id))
+        })?;
+
+    debug!(character_name = %character.name, "Character fetched successfully");
+
+    let new_chat_id = Uuid::new_v4();
+    let chat_title = format!("Chat with {}", character.name);
+    let current_time = Utc::now();
+
+    // TODO: Inherit defaults from character (system_prompt, model_name, temperature, etc.)
+    // For now, using hardcoded defaults for simplicity.
+    // let character_system_prompt = if let (Some(sp_data), Some(sp_nonce)) = (&character.system_prompt, &character.system_prompt_nonce) {
+    //     if !sp_data.is_empty() && !sp_nonce.is_empty() {
+    //         // Assuming SessionDek holds the user's DEK needed for character field decryption
+    //         // This part needs careful handling of the DEK.
+    //         // For now, we'll skip decrypting and use a default or None.
+    //         // let decrypted_sp = crate::crypto::decrypt_gcm(sp_data, sp_nonce, session_dek.0.expose_secret())
+    //         //     .map_err(|e| {
+    //         //         error!("Failed to decrypt character system prompt: {}", e);
+    //         //         AppError::InternalServerErrorGeneric("Failed to decrypt character settings".to_string())
+    //         //     })
+    //         //     .and_then(|bytes| String::from_utf8(bytes).map_err(|e| {
+    //         //         error!("Invalid UTF-8 in decrypted character system prompt: {}", e);
+    //         //         AppError::InternalServerErrorGeneric("Invalid UTF-8 in character settings".to_string())
+    //         //     }));
+    //         // Some(decrypted_sp?)
+    //         None // Placeholder: Decryption logic to be added
+    //     } else { None }
+    // } else { None };
+
+    let new_chat_session_record = NewChat {
+        id: new_chat_id,
+        user_id,
+        character_id: character.id,
+        title: Some(chat_title.clone()),
+        created_at: current_time,
+        updated_at: current_time,
+        history_management_strategy: "sliding_window_messages".to_string(), // Default
+        history_management_limit: 20, // Default
+        model_name: "gemini-2.5-flash-preview-04-17".to_string(), // Default
+        visibility: Some("private".to_string()), // Default
+        // system_prompt, temperature, etc., are not in NewChat, they are part of Chat.
+        // These will be set by DB defaults or need an update after insert if derived from character.
+    };
+
+    let inserted_chat_id = state.pool.get().await
+        .map_err(|e| AppError::DbPoolError(e.to_string()))?
+        .interact(move |conn| {
+            diesel::insert_into(chat_sessions::table)
+                .values(&new_chat_session_record)
+                .returning(chat_sessions::id)
+                .get_result::<Uuid>(conn)
+                .map_err(AppError::from)
+        })
+        .await
+        .map_err(|e| AppError::InternalServerErrorGeneric(format!("Interact error inserting chat: {}", e)))??;
+
+    debug!(chat_id = %inserted_chat_id, "New chat session record inserted successfully");
+
+    // Fetch the full chat session to return
+    let created_chat_session = state.pool.get().await
+        .map_err(|e| AppError::DbPoolError(e.to_string()))?
+        .interact(move |conn| {
+            chat_sessions::table
+                .filter(chat_sessions::id.eq(inserted_chat_id))
+                .select(Chat::as_select())
+                .first::<Chat>(conn)
+                .map_err(AppError::from)
+        })
+        .await
+        .map_err(|e| AppError::InternalServerErrorGeneric(format!("Interact error fetching created chat: {}", e)))??;
+    
+    info!(chat_id = %created_chat_session.id, "Chat session created successfully");
+    Ok(Json(created_chat_session))
+}
+
+
 #[instrument(skip_all, fields(session_id = %session_id_str, user_id = field::Empty, chat_id = field::Empty, message_id = field::Empty))]
 pub async fn generate_chat_response(
     State(state): State<AppState>,
     auth_session: AuthSession<AuthBackend>,
     session_dek: SessionDek,
     Path(session_id_str): Path<String>,
+    Query(query_params): Query<ChatGenerateQueryParams>,
     headers: HeaderMap,
     Json(payload): Json<GenerateChatRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     info!("Received request to generate chat response with history");
     payload.validate()?;
-    trace!(payload = ?payload, "Received validated payload");
+    trace!(payload = ?payload, query_params = ?query_params, "Received validated payload and query params");
 
     let state_arc = Arc::new(state);
 
@@ -74,41 +198,39 @@ pub async fn generate_chat_response(
     tracing::debug!(user_id = %user.id, user_dek_from_auth_session_is_some = user.dek.is_some(), "generate_chat_response: Checked user.dek from auth_session (expected None or unused).");
 
     let user_id_value = user.id;
-    let user_dek_secret_box_ref: Option<&SecretBox<Vec<u8>>> = Some(&session_dek.0);
+    let session_dek_arc = Arc::new(session_dek.0); // MODIFIED: Create Arc for SessionDek
     
-    debug!(%user_id_value, "Using SessionDek from extractor. user_dek_secret_box_ref.is_some(): {}", user_dek_secret_box_ref.is_some());
+    debug!(%user_id_value, "Using SessionDek from extractor (now in Arc) for chat generation.");
 
     let session_id = Uuid::parse_str(&session_id_str)
         .map_err(|_| AppError::BadRequest("Invalid session UUID format".to_string()))?;
     debug!(%session_id, "Parsed session ID");
 
-    let chat_session = state_arc.pool.get().await
+    // Fetch chat session owner ID for authorization check
+    let chat_session_owner_id = state_arc.pool.get().await
         .map_err(|e| AppError::DbPoolError(e.to_string()))?
         .interact(move |conn| {
             chat_sessions::table
                 .filter(chat_sessions::id.eq(session_id))
-                .select(Chat::as_select())
-                .first::<Chat>(conn)
-                .map_err(AppError::from)
+                .select(chat_sessions::user_id)
+                .first::<Uuid>(conn)
+                // .map_err(AppError::from) // Let the outer error handling manage this
         })
         .await
-        .map_err(|e| AppError::InternalServerErrorGeneric(format!("Interact error fetching chat: {}", e)))?
-        ?;
+        .map_err(|e| AppError::InternalServerErrorGeneric(format!("Interact dispatch error checking session owner: {}", e)))? // Handle interact error
+        .map_err(|e_db| match e_db { // Handle DB error from the closure
+            diesel::result::Error::NotFound => AppError::NotFound(format!("Chat session {} not found.", session_id)),
+            _ => AppError::DatabaseQueryError(format!("Failed to query chat session owner for {}: {}", session_id, e_db)),
+        })?;
 
-    if chat_session.user_id != user_id_value {
+
+    if chat_session_owner_id != user_id_value {
+        error!(%session_id, expected_owner = %user_id_value, actual_owner = %chat_session_owner_id, "User forbidden from accessing chat session.");
         return Err(AppError::Forbidden);
     }
     debug!(%session_id, "User authorized for chat session");
 
-    let system_prompt = chat_session.system_prompt;
-    let temperature = chat_session.temperature;
-    let max_output_tokens = chat_session.max_output_tokens;
-    let top_p = chat_session.top_p;
-    let model_name_from_settings = chat_session.model_name;
-
-    let model_to_use = payload.model.clone().unwrap_or(model_name_from_settings);
-    debug!(%model_to_use, "Determined model to use");
-
+    // Extract the current user message content from the payload
     let current_user_api_message = payload.history.last().cloned().ok_or_else(|| {
         error!(%session_id, "Payload history is empty, cannot extract current user message.");
         AppError::BadRequest("Request payload must contain at least one message.".to_string())
@@ -119,432 +241,285 @@ pub async fn generate_chat_response(
         return Err(AppError::BadRequest("The last message in the payload's history must be from the 'user'.".to_string()));
     }
     let current_user_content = current_user_api_message.content.clone();
+    trace!(%session_id, "Extracted current user message content for generation.");
 
+    // Get comprehensive data for generation from chat_service
     let (
         managed_history_tuples,
-        _db_system_prompt,
-        _db_temperature,
-        _db_max_tokens,
-        _db_freq_penalty,
-        _db_pres_penalty,
-        _db_top_k,
-        _db_top_p,
-        _db_rep_penalty,
-        _db_min_p,
-        _db_top_a,
-        _db_seed,
-        _db_logit_bias,
-        _db_model_name,
-        gemini_thinking_budget,
-        gemini_enable_code_execution,
-        _user_db_message_to_save,
-        _hist_strategy,
-        _hist_limit,
+        system_prompt_from_service,
+        gen_temperature,
+        gen_max_output_tokens,
+        gen_frequency_penalty,
+        gen_presence_penalty,
+        gen_top_k,
+        gen_top_p,
+        gen_repetition_penalty,
+        gen_min_p,
+        gen_top_a,
+        gen_seed,
+        gen_logit_bias,
+        gen_model_name_from_service,
+        gen_gemini_thinking_budget,
+        gen_gemini_enable_code_execution,
+        _user_message_to_save_for_db, // This is DbInsertableChatMessage, its structure is used by service
+        _hist_management_strategy,
+        _hist_management_limit,
     ) = chat_service::get_session_data_for_generation(
         &state_arc.pool,
         user_id_value,
         session_id,
-        current_user_content.clone(),
+        current_user_content.clone(), 
+        Some(session_dek_arc.clone()), // MODIFIED: Use Arc clone
     )
     .await?;
 
-    let mut messages_for_ai: Vec<GenAiChatMessage> = managed_history_tuples
+    debug!(
+        %session_id,
+        system_prompt_len = system_prompt_from_service.as_ref().map_or(0, |s| s.len()),
+        gen_temp = ?gen_temperature,
+        gen_max_tokens = ?gen_max_output_tokens,
+        gen_top_p = ?gen_top_p,
+        gen_model_name = %gen_model_name_from_service,
+        "Retrieved data for generation from chat_service."
+    );
+    
+    // Determine the model to use: payload overrides service, otherwise use service's model
+    let model_to_use = payload.model.clone().unwrap_or(gen_model_name_from_service);
+    debug!(%model_to_use, "Determined final model to use for AI calls.");
+
+    // Prepare GenAI history (managed history + current user message)
+    let mut genai_history: Vec<GenAiChatMessage> = managed_history_tuples
         .into_iter()
-        .map(|(role, content)| GenAiChatMessage {
-            role: match role {
-                MessageRole::User => ChatRole::User,
-                MessageRole::Assistant => ChatRole::Assistant,
-                MessageRole::System => ChatRole::System,
-            },
-            content: MessageContent::Text(content),
-            options: None,
+        .map(|(role, content)| {
+            match role {
+                MessageRole::User => GenAiChatMessage::user(MessageContent::from_text(content)),
+                MessageRole::Assistant => GenAiChatMessage::assistant(MessageContent::from_text(content)),
+                MessageRole::System => GenAiChatMessage::system(MessageContent::from_text(content)), // MODIFIED: Handle System role
+            }
         })
         .collect();
-
-    messages_for_ai.push(GenAiChatMessage {
-        role: ChatRole::User,
-        content: MessageContent::Text(current_user_content.clone()),
-        options: None,
-    });
-    
-    trace!(history_len = messages_for_ai.len(), %session_id, "Prepared final message list for AI (DB history + current payload message)");
+    genai_history.push(GenAiChatMessage::user(MessageContent::from_text(current_user_content.clone())));
+    trace!(history_len = genai_history.len(), %session_id, "Prepared final message list for AI (service history + current payload message)");
 
     let accept_header = headers
         .get(axum::http::header::ACCEPT)
         .and_then(|value| value.to_str().ok())
         .unwrap_or("");
 
-    let request_thinking = headers
-        .get("X-Request-Thinking")
-        .map(|v| v.to_str().unwrap_or("false") == "true")
-        .unwrap_or(false);
+    let request_thinking = query_params.request_thinking;
+    debug!(%session_id, %request_thinking, "request_thinking value from query parameters");
 
+    // RAG related logic (keep as is for now, might need refinement later)
     let enable_rag = headers
         .get("X-Scribe-Enable-RAG")
         .map(|v| v.to_str().unwrap_or("false") == "true")
         .unwrap_or(false);
+    
+    let rag_context_for_json: Option<String> = None; // MODIFIED: Removed mut
 
-    let _rag_context: Option<String> = None;
-
-    if enable_rag {
+    if enable_rag && accept_header.contains(mime::APPLICATION_JSON.as_ref()) { // RAG for JSON path
         if !current_user_content.is_empty() {
-            info!(%session_id, "RAG enabled, attempting to retrieve context for user message.");
-
-            let user_message_id = Uuid::new_v4();
-            
-            let user_message_for_embedding = crate::models::chats::ChatMessage {
-                id: user_message_id,
-                session_id,
-                message_type: MessageRole::User,
-                content: current_user_content.clone().into(),
-                content_nonce: None,
-                created_at: chrono::Utc::now(),
-                user_id: user_id_value,
-            };
-
-            match state_arc.embedding_pipeline_service.process_and_embed_message(state_arc.clone(), user_message_for_embedding).await {
-                Ok(()) => {
-                    info!(%session_id, "RAG pre-processing (process_and_embed_message) completed for current user message.");
-                }
-                Err(e) => {
-                    error!(error = ?e, session_id = %session_id, "Failed to process and embed user message for RAG context preparation");
-                }
-            }
+            info!(%session_id, "RAG enabled for JSON path, attempting to retrieve context for user message.");
+            // Placeholder for RAG context retrieval logic for JSON path.
+            // This would typically involve calling a service. For now, assume it populates rag_context_for_json.
+            // Example: rag_context_for_json = state_arc.rag_service.get_context(&current_user_content).await;
+            // For this refactor, we'll assume the existing RAG embedding trigger via save_message is the main mechanism
+            // and this explicit context injection is a separate concern.
+            // The save_message call for user message happens below within JSON path.
         }
     }
+
 
     match accept_header {
         v if v.contains(mime::TEXT_EVENT_STREAM.as_ref()) => {
             info!(%session_id, "Handling streaming SSE request. request_thinking={}", request_thinking);
-
-            let chat_request = genai::chat::ChatRequest::new(messages_for_ai.clone())
-                .with_system(system_prompt.clone().unwrap_or_default());
             
-            let mut genai_chat_options = genai::chat::ChatOptions::default();
-            if let Some(temp_val) = temperature {
-                if let Some(f_val) = temp_val.to_f32() {
-                    genai_chat_options = genai_chat_options.with_temperature(f_val.into());
-                }
-            }
-            if let Some(tokens) = max_output_tokens {
-                genai_chat_options = genai_chat_options.with_max_tokens(tokens as u32);
-            }
-            if let Some(p_val) = top_p {
-                if let Some(f_val) = p_val.to_f32() {
-                    genai_chat_options = genai_chat_options.with_top_p(f_val.into());
-                }
-            }
+            // User message is saved by get_session_data_for_generation if new, or implicitly part of history.
+            // The assistant's message will be saved by stream_ai_response_and_save_message.
 
-            if let Some(budget) = gemini_thinking_budget {
-                if budget > 0 {
-                    genai_chat_options = genai_chat_options.with_gemini_thinking_budget(budget as u32);
-                }
-            }
-            if let Some(enable_exec) = gemini_enable_code_execution {
-                genai_chat_options = genai_chat_options.with_gemini_enable_code_execution(enable_exec);
-            }
+            let dek_for_stream_service = session_dek_arc.clone(); // MODIFIED: Use Arc clone
+            match chat_service::stream_ai_response_and_save_message(
+                state_arc.clone(),
+                session_id,
+                user_id_value,
+                genai_history, // Use the prepared history
+                system_prompt_from_service, // Use system prompt from service
+                gen_temperature,      // Use temperature from service
+                gen_max_output_tokens,// Use max_tokens from service
+                gen_frequency_penalty,
+                gen_presence_penalty,
+                gen_top_k,
+                gen_top_p,            // Use top_p from service
+                gen_repetition_penalty,
+                gen_min_p,
+                gen_top_a,
+                gen_seed,
+                gen_logit_bias,
+                model_to_use.clone(), // Use the resolved model
+                gen_gemini_thinking_budget,
+                gen_gemini_enable_code_execution,
+                request_thinking,
+                Some(dek_for_stream_service), // MODIFIED: Pass cloned SecretBox
+            )
+            .await
+            {
+                Ok(service_stream) => {
+                    debug!(%session_id, "Successfully obtained stream from chat_service::stream_ai_response_and_save_message");
+                    let final_stream = async_stream::stream! {
+                        let mut content_produced = false;
+                        let mut error_from_service_stream = false;
+                        futures::pin_mut!(service_stream);
 
-            trace!(%session_id, chat_request = ?chat_request, genai_options = ?genai_chat_options, "Prepared ChatRequest and Options for AI (SSE)");
-
-            let genai_stream: crate::llm::ChatStream = match state_arc.ai_client.stream_chat(model_to_use.as_str(), chat_request, Some(genai_chat_options)).await {
-                 Ok(s) => {
-                     debug!(%session_id, "Successfully initiated AI stream");
-
-                     let _db_pool_sse = state_arc.pool.clone();
-                     let _embedding_tracker = state_arc.embedding_call_tracker.clone();
-                     let session_id_sse = session_id;
-                     let user_id_sse = user_id_value;
-                     let last_message_content_sse = payload.history.last().map(|m| m.content.clone()).unwrap_or_default();
-                     let session_dek_for_user_save_sse = session_dek.clone();
-                     let state_for_sse = state_arc.clone();
-
-                     tokio::spawn(async move {
-                         if last_message_content_sse.is_empty() {
-                             error!(session_id = %session_id_sse, "Cannot save empty user message (SSE)");
-                             return;
-                         }
-                         let dek_for_sse_ref: Option<&SecretBox<Vec<u8>>> = Some(&session_dek_for_user_save_sse.0);
-
-                         match chat_service::save_message(
-                            state_for_sse,
-                            session_id_sse,
-                            user_id_sse,
-                            MessageRole::User,
-                            &last_message_content_sse,
-                            dek_for_sse_ref,
-                        ).await {
-                            Ok(saved_message) => {
-                                debug!(session_id = %session_id_sse, message_id = %saved_message.id, "Successfully saved user message via chat_service (SSE)");
-                            }
-                            Err(e) => {
-                                error!(error = ?e, session_id = %session_id_sse, "Error saving user message via chat_service (SSE)");
-                            }
-                        }
-                     });
-
-                     s
-                 },
-                 Err(e) => {
-                     error!(error = ?e, %session_id, "Failed to initiate AI stream");
-                     let error_stream = async_stream::stream! {
-                         let error_msg = format!("LLM API error: Failed to initiate stream - {}", e);
-                         trace!(%session_id, error_message = %error_msg, "Sending SSE 'error' event (initiation failed)");
-                         yield Ok::<_, AppError>(Event::default().event("error").data(error_msg));
-                     };
-                     return Ok(Sse::new(Box::pin(error_stream)).keep_alive(KeepAlive::default()).into_response());
-                 }
-             };
-
-            debug!(%session_id, "Starting SSE generation loop");
-
-            let stream = async_stream::stream! {
-                let mut accumulated_content = String::new();
-                let mut stream_error_occurred = false;
-                let session_dek_for_stream = session_dek.clone();
-
-                futures::pin_mut!(genai_stream);
-                trace!(%session_id, "Entering SSE async_stream! processing loop");
-
-                while let Some(event_result) = genai_stream.next().await {
-                    trace!(%session_id, "Received event from genai_stream: {:?}", event_result);
-                    match event_result {
-                        Ok(ChatStreamEvent::Start) => {
-                            debug!(%session_id, "Received Start event from AI stream");
-                            continue;
-                        }
-                        Ok(ChatStreamEvent::Chunk(chunk)) => {
-                            debug!(%session_id, content_chunk_len = chunk.content.len(), "Received Content chunk from AI stream");
-                            if !chunk.content.is_empty() {
-                                accumulated_content.push_str(&chunk.content);
-                                yield Ok::<_, AppError>(Event::default().event("content").data(chunk.content));
-                            } else {
-                                 trace!(%session_id, "Skipping empty content chunk from AI");
-                             }
-                        }
-                        Ok(ChatStreamEvent::ReasoningChunk(chunk)) => {
-                            debug!(%session_id, reasoning_chunk_len = chunk.content.len(), "Received ReasoningChunk from AI stream");
-                            if !chunk.content.is_empty() {
-                                yield Ok::<_, AppError>(Event::default().event("reasoning_chunk").data(chunk.content));
-                            }
-                        }
-                        Ok(ChatStreamEvent::End(_)) => {
-                            debug!(%session_id, "Received End event from AI stream");
-                        }
-                        Err(e) => {
-                            error!(error = ?e, %session_id, "Error during AI stream processing (inside loop)");
-                            stream_error_occurred = true;
-
-                            let partial_content_clone = accumulated_content.clone();
-                            let error_session_id = session_id;
-                            let error_user_id = user_id_value;
-                            let session_dek_for_partial_save = session_dek_for_stream.clone();
-                            let state_for_partial_save = state_arc.clone();
-
-                            tokio::spawn(async move {
-                                if !partial_content_clone.is_empty() {
-                                    trace!(session_id = %error_session_id, "Attempting to save partial AI response after stream error");
-                                    let dek_for_partial_save_ref: Option<&SecretBox<Vec<u8>>> = Some(&session_dek_for_partial_save.0);
-                                    match chat_service::save_message(
-                                        state_for_partial_save,
-                                        error_session_id,
-                                        error_user_id,
-                                        MessageRole::Assistant,
-                                        &partial_content_clone,
-                                        dek_for_partial_save_ref,
-                                    ).await {
-                                        Ok(saved_message) => {
-                                            debug!(session_id = %error_session_id, message_id = %saved_message.id, "Successfully saved partial AI response via chat_service after stream error");
+                        while let Some(event_result) = service_stream.next().await {
+                            match event_result {
+                                Ok(scribe_event) => {
+                                    let axum_sse_event = match scribe_event {
+                                        ScribeSseEvent::Content(data) => {
+                                            if !data.is_empty() { content_produced = true; }
+                                            Event::default().event("content").data(data)
                                         }
-                                        Err(save_err) => {
-                                            error!(error = ?save_err, session_id = %error_session_id, "Error saving partial AI response via chat_service after stream error");
+                                        ScribeSseEvent::Thinking(data) => {
+                                            Event::default().event("thinking").data(data)
                                         }
-                                    }
-                                } else {
-                                     trace!(session_id = %error_session_id, "No partial content to save after stream error");
-                                 }
-                            });
-
-                            let detailed_error = e.to_string();
-                            error!(error = %detailed_error, %session_id, "Detailed error during SSE stream processing");
-
-                            let client_error_message = if detailed_error.contains("LLM API error:") {
-                                detailed_error
+                                        ScribeSseEvent::Error(data) => {
+                                            error_from_service_stream = true;
+                                            Event::default().event("error").data(data)
+                                        }
+                                    };
+                                    yield Ok(axum_sse_event);
+                                }
+                                Err(e) => {
+                                    error_from_service_stream = true;
+                                    yield Err(e);
+                                }
+                            }
+                        }
+                        if !error_from_service_stream {
+                            if content_produced {
+                                 debug!(%session_id, "Service stream ended, sending [DONE] event because content was produced.");
+                                 yield Ok(Event::default().event("done").data("[DONE]"));
                             } else {
-                                format!("LLM API error: {}", detailed_error)
-                            };
-                            trace!(%session_id, error_message = %client_error_message, "Sending SSE 'error' event");
-                            yield Ok::<_, AppError>(Event::default().event("error").data(client_error_message));
-                            break;
-                        }
-                    }
-                }
-
-                trace!(%session_id, "Exited SSE processing loop. stream_error_occurred={}", stream_error_occurred);
-
-                if !stream_error_occurred && !accumulated_content.is_empty() {
-                    debug!(%session_id, "Attempting to save full successful AI response");
-
-                    let session_id_clone = session_id;
-                    let user_id_clone = user_id_value;
-                    let accumulated_content_clone = accumulated_content.clone();
-                    let session_dek_for_ai_full_save = session_dek_for_stream.clone();
-                    let state_for_ai_save = state_arc.clone();
-
-                    tokio::spawn(async move {
-                        if accumulated_content_clone.is_empty() {
-                            warn!(session_id = %session_id_clone, "Skipping save for empty accumulated AI content (SSE)");
-                            return;
-                        }
-                        let dek_for_ai_save_ref: Option<&SecretBox<Vec<u8>>> = Some(&session_dek_for_ai_full_save.0);
-                        match chat_service::save_message(
-                            state_for_ai_save,
-                            session_id_clone,
-                            user_id_clone,
-                            MessageRole::Assistant,
-                            &accumulated_content_clone,
-                            dek_for_ai_save_ref,
-                        ).await {
-                            Ok(saved_message) => {
-                                debug!(session_id = %session_id_clone, message_id = %saved_message.id, "Successfully saved full AI response via chat_service (SSE)");
+                                debug!(%session_id, "Service stream ended without producing content (and no error), sending [DONE_EMPTY] event.");
+                                yield Ok(Event::default().event("done").data("[DONE_EMPTY]"));
                             }
-                            Err(e) => {
-                                error!(error = ?e, session_id = %session_id_clone, "Error saving full AI response via chat_service (SSE)");
-                            }
+                        } else {
+                            debug!(%session_id, "Service stream ended with an error or an error event was already sent. Not sending additional [DONE] event.");
                         }
-                    });
-                } else if stream_error_occurred {
-                    trace!(%session_id, "[DONE] not sent due to stream_error_occurred=true");
-                } else if accumulated_content.is_empty() && !stream_error_occurred {
-                    trace!(%session_id, "Sending SSE event: done, data: [DONE] (empty successful response)");
-                    yield Ok::<_, AppError>(Event::default().event("done").data("[DONE]"));
+                    };
+                    Ok(Sse::new(Box::pin(final_stream)).keep_alive(KeepAlive::default()).into_response())
                 }
-            };
-
-            Ok(Sse::new(Box::pin(stream)).keep_alive(KeepAlive::default()).into_response())
+                Err(e) => {
+                    error!(error = ?e, %session_id, "Error calling chat_service::stream_ai_response_and_save_message");
+                    let error_stream = async_stream::stream! {
+                        let error_msg = format!("Service error: Failed to initiate AI processing - {}", e);
+                        trace!(%session_id, error_message = %error_msg, "Sending SSE 'error' event (service call failed)");
+                        yield Ok::<_, AppError>(Event::default().event("error").data(error_msg));
+                    };
+                    Ok(Sse::new(Box::pin(error_stream)).keep_alive(KeepAlive::default()).into_response())
+                }
+            }
         }
         v if v.contains(mime::APPLICATION_JSON.as_ref()) => {
             info!(%session_id, "Handling non-streaming JSON request. request_thinking={}", request_thinking);
             
-            let last_user_message_in_payload = payload.history.last()
-                .filter(|m| m.role.to_lowercase() == "user")
-                .ok_or_else(|| AppError::BadRequest("Last message in history must be from the user (JSON).".to_string()))?;
+            // _user_message_to_save_for_db from get_session_data_for_generation contains the structured user message.
+            // For JSON path, we save the user message explicitly before calling AI.
+            // The content is current_user_content.
             
-            let user_message_content_for_json_path = last_user_message_in_payload.content.clone();
-            if user_message_content_for_json_path.is_empty() {
-                 return Err(AppError::BadRequest("User message content cannot be empty (JSON).".to_string()));
-            }
-
-            let session_dek_for_ai_json_save = session_dek.clone();
-            let user_saved_message = match chat_service::save_message(
+            let dek_for_user_save_json = session_dek_arc.clone(); // MODIFIED: Use Arc clone
+            let _user_saved_message = match chat_service::save_message(
                 state_arc.clone(),
                 session_id,
                 user_id_value,
                 MessageRole::User,
-                &user_message_content_for_json_path,
-                Some(&session_dek.0),
+                &current_user_content, // Use the already extracted current_user_content
+                Some(dek_for_user_save_json), // MODIFIED: Pass Arc clone
             ).await {
                 Ok(saved_msg) => {
-                    debug!(message_id = %saved_msg.id, session_id = %session_id, "Successfully saved user message via chat_service (JSON)");
+                    debug!(message_id = %saved_msg.id, session_id = %session_id, "Successfully saved user message via chat_service (JSON path)");
                     saved_msg
                 }
                 Err(e) => {
-                    error!(error = ?e, session_id = %session_id, "Error saving user message via chat_service (JSON)");
+                    error!(error = ?e, session_id = %session_id, "Error saving user message via chat_service (JSON path)");
                     return Err(e);
                 }
             };
-            
-            let user_message_id_json = user_saved_message.id;
-            // state.embedding_call_tracker.lock().await.push(user_message_id_json); // REMOVED - Handled by save_message
 
-            if enable_rag {
-                if !user_message_content_for_json_path.is_empty() {
-                    let user_message_for_embedding_json = crate::models::chats::ChatMessage {
-                        id: user_message_id_json,
-                        session_id,
-                        message_type: MessageRole::User,
-                        content: user_message_content_for_json_path.clone().into(),
-                        content_nonce: None,
-                        created_at: chrono::Utc::now(),
-                        user_id: user_id_value,
-                    };
-
-                    match state_arc.embedding_pipeline_service.process_and_embed_message(state_arc.clone(), user_message_for_embedding_json).await {
-                        Ok(()) => {
-                            info!(%session_id, "RAG pre-processing (JSON branch) completed for current user message.");
-                        }
-                        Err(e) => {
-                            error!(error = ?e, session_id = %session_id, "Failed to process and embed user message for RAG (JSON branch)");
-                        }
-                    }
-                }
-            }
-
-            let rag_context_json: Option<String> = None;
-
-            if let Some(context) = rag_context_json {
-                if let Some(last_message) = messages_for_ai.last_mut() {
+            // RAG context injection for JSON path (if enabled and context was found)
+            // This modifies a copy of genai_history for this specific non-streaming call.
+            let mut history_for_json_call = genai_history.clone();
+            if let Some(context) = rag_context_for_json { // This context needs to be populated by actual RAG logic if used
+                if let Some(last_message) = history_for_json_call.last_mut() {
                     if matches!(last_message.role, ChatRole::User) {
-                        if let MessageContent::Text(text) = &mut last_message.content {
-                            let original_content = text.clone();
-                            *text = format!("{}\n\n{}", context, original_content);
-                            trace!(session_id = %session_id, "Injected RAG context into user message (non-streaming)");
+                        if let MessageContent::Text(text_content_string) = &mut last_message.content { // MODIFIED: Removed ref mut
+                            let original_content = text_content_string.clone();
+                            *text_content_string = format!("{}\n\n{}", context, original_content);
+                            trace!(session_id = %session_id, "Injected RAG context into user message (non-streaming JSON path)");
                         }
                     }
                 } 
             }
 
-            let chat_request = genai::chat::ChatRequest::new(messages_for_ai)
-                .with_system(system_prompt.unwrap_or_default());
-            let chat_options = genai::chat::ChatOptions::default()
-                .with_temperature(temperature.map(|t| t.to_f32().unwrap_or(0.7) as f64).unwrap_or(0.7))
-                .with_max_tokens(max_output_tokens.map(|t| t as u32).unwrap_or(1024))
-                .with_top_p(top_p.map(|p| p.to_f32().unwrap_or(0.95) as f64).unwrap_or(0.95));
+            let chat_request = ChatRequest::new(history_for_json_call) // Use potentially RAG-modified history
+                .with_system(system_prompt_from_service.unwrap_or_default()); // Use system prompt from service
+            
+            let mut chat_options = ChatOptions::default();
+            if let Some(temp) = gen_temperature { chat_options = chat_options.with_temperature(temp.to_f32().unwrap_or(0.7).into()); } // MODIFIED: .into()
+            if let Some(tokens) = gen_max_output_tokens { chat_options = chat_options.with_max_tokens(tokens as u32); }
+            if let Some(p) = gen_top_p { chat_options = chat_options.with_top_p(p.to_f32().unwrap_or(0.95).into()); } // MODIFIED: .into()
+            // Add other gen_... parameters to chat_options as needed (top_k, penalties etc.)
+            // For Gemini specific options via exec_chat, they might need to be part of a different options struct or handled by client
+            if let Some(budget) = gen_gemini_thinking_budget {
+                 if budget > 0 { chat_options = chat_options.with_gemini_thinking_budget(budget as u32); }
+            }
+            if let Some(enable_exec) = gen_gemini_enable_code_execution {
+                 chat_options = chat_options.with_gemini_enable_code_execution(enable_exec);
+            }
+            // Note: genai library's exec_chat might not support all tool/Gemini options directly in ChatOptions vs stream_chat.
+            // This might need adjustment based on genai library capabilities for non-streaming.
 
-            trace!(%session_id, chat_request = ?chat_request, "Prepared ChatRequest for AI (non-streaming, post-RAG)");
-            match state_arc.ai_client.exec_chat(model_to_use.as_str(), chat_request, Some(chat_options))
+            trace!(%session_id, chat_request = ?chat_request, chat_options = ?chat_options, "Prepared ChatRequest and Options for AI (non-streaming, JSON path)");
+            
+            match state_arc.ai_client.exec_chat(&model_to_use, chat_request, Some(chat_options))
                 .await
             {
                 Ok(chat_response) => {
-                    debug!(%session_id, "Received successful non-streaming AI response");
+                    debug!(%session_id, "Received successful non-streaming AI response (JSON path)");
                     
                     let response_content = match chat_response.content {
                         Some(genai::chat::MessageContent::Text(text)) => text,
-                        Some(_) => String::new(),
-                        None => String::new(),
+                        _ => String::new(),
                     };
 
-                    trace!(%session_id, ?response_content, "Full non-streaming AI response");
+                    trace!(%session_id, ?response_content, "Full non-streaming AI response (JSON path)");
                     
-                    let state_for_ai_json_save = state_arc.clone();
-                    let dek_for_ai_json_save_ref: Option<&SecretBox<Vec<u8>>> = Some(&session_dek_for_ai_json_save.0);
-                    let response_content_for_save = response_content.clone(); // Clone for the spawned task
-
-                    tokio::spawn(async move {
-                        if response_content_for_save.is_empty() { // Use the clone
-                            warn!(session_id = %session_id, "Skipping save for empty AI content (JSON)");
-                            return;
-                        }
-                        let dek_for_ai_json_save_ref: Option<&SecretBox<Vec<u8>>> = Some(&session_dek_for_ai_json_save.0);
-                        match chat_service::save_message(
-                            state_for_ai_json_save,
-                            session_id,
-                            user_id_value,
-                            MessageRole::Assistant,
-                            &response_content_for_save, // Use the clone
-                            dek_for_ai_json_save_ref,
-                        ).await {
-                            Ok(saved_message) => {
-                                debug!(session_id = %session_id, message_id = %saved_message.id, "Successfully saved AI message via chat_service (JSON)");
-                                // Embedding tracker handled by save_message
+                    if !response_content.is_empty() {
+                        let dek_for_ai_save_json = session_dek_arc.clone(); // MODIFIED: Use Arc clone
+                        let state_for_ai_save = state_arc.clone();
+                        let response_content_for_save = response_content.clone();
+                        tokio::spawn(async move {
+                            match chat_service::save_message(
+                                state_for_ai_save,
+                                session_id,
+                                user_id_value,
+                                MessageRole::Assistant,
+                                &response_content_for_save,
+                                Some(dek_for_ai_save_json),
+                            ).await {
+                                Ok(saved_message) => {
+                                    debug!(session_id = %session_id, message_id = %saved_message.id, "Successfully saved AI message via chat_service (JSON path)");
+                                }
+                                Err(e) => {
+                                    error!(error = ?e, session_id = %session_id, "Error saving AI message via chat_service (JSON path)");
+                                }
                             }
-                            Err(e) => {
-                                error!(error = ?e, session_id = %session_id, "Error saving AI message via chat_service (JSON)");
-                            }
-                        }
-                    });
+                        });
+                    } else {
+                        warn!(session_id = %session_id, "Skipping save for empty AI content (JSON path)");
+                    }
                     
-                    let response_payload = json!({ // Original response_content is still valid here
-                        "message_id": Uuid::new_v4(),
+                    let response_payload = json!({
+                        "message_id": Uuid::new_v4(), // This is a response ID, not related to DB message ID
                         "content": response_content
                     });
                     trace!(%session_id, response_payload = ?response_payload, "Sending non-streaming JSON response");
@@ -552,489 +527,94 @@ pub async fn generate_chat_response(
                     Ok(Json(response_payload).into_response())
                 }
                 Err(e) => {
-                    error!(error = ?e, %session_id, "AI generation failed for non-streaming request");
-                    Err(e)
+                    error!(error = ?e, %session_id, "AI generation failed for non-streaming request (JSON path)");
+                    Err(e) // Convert genai::Error to AppError
                 }
             }
         }
-        _ => { 
-            if !accept_header.is_empty() && !accept_header.contains(mime::APPLICATION_JSON.as_ref()) {
-                info!(%session_id, "Accept header '{}' not recognized as JSON, defaulting to SSE.", accept_header);
-                
-                let chat_request = genai::chat::ChatRequest::new(messages_for_ai.clone())
-                    .with_system(system_prompt.clone().unwrap_or_default());
-                
-                let mut genai_chat_options_fallback = genai::chat::ChatOptions::default();
-                if let Some(temp_val) = temperature {
-                    if let Some(f_val) = temp_val.to_f32() {
-                        genai_chat_options_fallback = genai_chat_options_fallback.with_temperature(f_val.into());
-                    }
-                }
-                if let Some(tokens) = max_output_tokens {
-                    genai_chat_options_fallback = genai_chat_options_fallback.with_max_tokens(tokens as u32);
-                }
-                if let Some(p_val) = top_p {
-                    if let Some(f_val) = p_val.to_f32() {
-                        genai_chat_options_fallback = genai_chat_options_fallback.with_top_p(f_val.into());
-                    }
-                }
-                if let Some(budget) = gemini_thinking_budget {
-                    if budget > 0 {
-                        genai_chat_options_fallback = genai_chat_options_fallback.with_gemini_thinking_budget(budget as u32);
-                    }
-                }
-                if let Some(enable_exec) = gemini_enable_code_execution {
-                    genai_chat_options_fallback = genai_chat_options_fallback.with_gemini_enable_code_execution(enable_exec);
-                }
+        _ => { // Fallback to SSE if Accept header is not recognized or empty
+            info!(%session_id, "Accept header '{}' not recognized or empty, defaulting to SSE.", accept_header);
+            
+            // This is largely a copy of the SSE path above.
+            let dek_for_fallback_stream_service = session_dek_arc.clone(); // MODIFIED: Use Arc clone
+            match chat_service::stream_ai_response_and_save_message(
+                state_arc.clone(),
+                session_id,
+                user_id_value,
+                genai_history, // Use the prepared history
+                system_prompt_from_service,
+                gen_temperature,
+                gen_max_output_tokens,
+                gen_frequency_penalty,
+                gen_presence_penalty,
+                gen_top_k,
+                gen_top_p,
+                gen_repetition_penalty,
+                gen_min_p,
+                gen_top_a,
+                gen_seed,
+                gen_logit_bias,
+                model_to_use,
+                gen_gemini_thinking_budget,
+                gen_gemini_enable_code_execution,
+                request_thinking,
+                Some(dek_for_fallback_stream_service), // MODIFIED: Pass Arc clone
+            )
+            .await 
+            {
+                 Ok(service_stream) => {
+                    debug!(%session_id, "Successfully obtained stream from chat_service (fallback SSE)");
+                     let final_stream = async_stream::stream! {
+                        let mut content_produced = false;
+                        let mut error_from_service_stream = false;
+                        futures::pin_mut!(service_stream);
 
-                trace!(%session_id, chat_request = ?chat_request, genai_options = ?genai_chat_options_fallback, "Prepared ChatRequest and Options for AI (fallback SSE)");
-
-                let genai_stream: crate::llm::ChatStream = match state_arc.ai_client.stream_chat(model_to_use.as_str(), chat_request, Some(genai_chat_options_fallback)).await {
-                     Ok(s) => {
-                         debug!(%session_id, "Successfully initiated AI stream (fallback SSE)");
-
-                         let db_pool_sse = state_arc.pool.clone();
-                         let embedding_tracker = state_arc.embedding_call_tracker.clone();
-                         let session_id_sse = session_id;
-                         let user_id_sse = user_id_value;
-                         let last_message_content_sse_fallback = payload.history.last().map(|m| m.content.clone()).unwrap_or_default();
-                         let session_dek_for_user_save_fallback_sse = session_dek.clone();
-
-                         tokio::spawn(async move {
-                             if last_message_content_sse_fallback.is_empty() {
-                                 error!(session_id = %session_id_sse, "Cannot save empty user message (fallback SSE)");
-                                 return;
-                             }
-                             let conn = match db_pool_sse.get().await {
-                                 Ok(conn) => conn,
-                                 Err(e) => {
-                                     error!(error = ?e, session_id = %session_id_sse, "Failed to get DB connection to save user message (fallback SSE)");
-                                     return;
-                                 }
-                             };
-
-                             let result = conn
-                                 .interact(move |conn| {
-                                     let message = crate::models::chats::DbInsertableChatMessage::new(
-                                         session_id_sse,
-                                         user_id_sse,
-                                         MessageRole::User,
-                                         last_message_content_sse_fallback.into_bytes(),
-                                         None // Nonce is None as this is fallback/unencrypted
-                                     );
-                                     diesel::insert_into(crate::schema::chat_messages::table)
-                                         .values(&message)
-                                         .returning(crate::schema::chat_messages::id)
-                                         .get_result::<Uuid>(conn)
-                                 })
-                                 .await;
-
-                             match result {
-                                 Ok(Ok(message_id)) => {
-                                     debug!(session_id = %session_id_sse, message_id = %message_id, "Successfully saved user message in background (fallback SSE)");
-                                     
-                                     match embedding_tracker.lock().await {
-                                         mut tracker => {
-                                             tracker.push(message_id);
-                                             debug!(session_id = %session_id_sse, message_id = %message_id, "Added user message to embedding call tracker (fallback SSE)");
-                                         }
-                                     }
-                                 }
-                                 Ok(Err(e)) => {
-                                     error!(error = ?e, session_id = %session_id_sse, "Database error saving user message (fallback SSE)");
-                                 }
-                                 Err(e) => {
-                                     error!(error = ?e, session_id = %session_id_sse, "Interact error saving user message (fallback SSE)");
-                                 }
-                             }
-                         });
-
-                         s
-                     },
-                     Err(e) => {
-                         error!(error = ?e, %session_id, "Failed to initiate AI stream (fallback SSE)");
-                         let error_stream = async_stream::stream! {
-                             let error_msg = format!("LLM API error: Failed to initiate stream - {}", e);
-                             trace!(%session_id, error_message = %error_msg, "Sending fallback SSE 'error' event (initiation failed)");
-                             yield Ok::<_, AppError>(Event::default().event("error").data(error_msg));
-                         };
-                         return Ok(Sse::new(Box::pin(error_stream)).keep_alive(KeepAlive::default()).into_response());
-                     }
-                 };
-
-                debug!(%session_id, "Starting fallback SSE generation loop");
-
-                let stream = async_stream::stream! {
-                    let mut accumulated_content = String::new();
-                    let mut stream_error_occurred = false;
-                    let session_dek_for_fallback_stream = session_dek.clone();
-
-                    futures::pin_mut!(genai_stream);
-                    trace!(%session_id, "Entering fallback SSE async_stream! processing loop");
-
-                    while let Some(event_result) = genai_stream.next().await {
-                        trace!(%session_id, "Received event from genai_stream (fallback): {:?}", event_result);
-                        match event_result {
-                            Ok(ChatStreamEvent::Start) => {
-                                debug!(%session_id, "Received Start event from AI stream (fallback)");
-                                continue;
-                            }
-                            Ok(ChatStreamEvent::Chunk(chunk)) => {
-                                debug!(%session_id, content_chunk_len = chunk.content.len(), "Received Content chunk from AI stream (fallback)");
-                                if !chunk.content.is_empty() {
-                                    accumulated_content.push_str(&chunk.content);
-                                    yield Ok::<_, AppError>(Event::default().event("content").data(chunk.content));
-                                } else {
-                                     trace!(%session_id, "Skipping empty content chunk from AI (fallback)");
-                                 }
-                            }
-                            Ok(ChatStreamEvent::ReasoningChunk(chunk)) => {
-                                debug!(%session_id, reasoning_chunk_len = chunk.content.len(), "Received ReasoningChunk from AI stream (fallback)");
-                                if !chunk.content.is_empty() {
-                                    yield Ok::<_, AppError>(Event::default().event("reasoning_chunk").data(chunk.content));
-                                }
-                            }
-                            Ok(ChatStreamEvent::End(_)) => {
-                                debug!(%session_id, "Received End event from AI stream (fallback)");
-                            }
-                            Err(e) => {
-                                error!(error = ?e, %session_id, "Error during AI stream processing (fallback loop)");
-                                stream_error_occurred = true;
-
-                                let partial_content_clone = accumulated_content.clone();
-                                let error_session_id = session_id;
-                                let error_user_id = user_id_value;
-                                let session_dek_for_partial_save_fallback = session_dek_for_fallback_stream.clone();
-                                let state_for_partial_save_fb = state_arc.clone();
-
-                                tokio::spawn(async move {
-                                    if !partial_content_clone.is_empty() {
-                                        trace!(session_id = %error_session_id, "Attempting to save partial AI response after stream error (fallback)");
-                                        let dek_for_partial_save_fb_ref: Option<&SecretBox<Vec<u8>>> = Some(&session_dek_for_partial_save_fallback.0);
-                                        match chat_service::save_message(
-                                            state_for_partial_save_fb,
-                                            error_session_id,
-                                            error_user_id,
-                                            MessageRole::Assistant,
-                                            &partial_content_clone,
-                                            dek_for_partial_save_fb_ref,
-                                        ).await {
-                                            Ok(saved_message) => {
-                                                debug!(session_id = %error_session_id, message_id = %saved_message.id, "Successfully saved partial AI response via chat_service after stream error (fallback)");
-                                            }
-                                            Err(save_err) => {
-                                                error!(error = ?save_err, session_id = %error_session_id, "Error saving partial AI response via chat_service after stream error (fallback)");
-                                            }
+                        while let Some(event_result) = service_stream.next().await {
+                            match event_result {
+                                Ok(scribe_event) => {
+                                    let axum_sse_event = match scribe_event {
+                                        ScribeSseEvent::Content(data) => {
+                                            if !data.is_empty() { content_produced = true; }
+                                            Event::default().event("content").data(data)
                                         }
-                                    } else {
-                                         trace!(session_id = %error_session_id, "No partial content to save after stream error (fallback)");
-                                     }
-                                });
-
-                                let detailed_error = e.to_string();
-                                error!(error = %detailed_error, %session_id, "Detailed error during fallback SSE stream processing");
-
-                                let client_error_message = if detailed_error.contains("LLM API error:") {
-                                    detailed_error
-                                } else {
-                                    format!("LLM API error: {}", detailed_error)
-                                };
-                                trace!(%session_id, error_message = %client_error_message, "Sending fallback SSE 'error' event");
-                                yield Ok::<_, AppError>(Event::default().event("error").data(client_error_message));
-                                break;
+                                        ScribeSseEvent::Thinking(data) => {
+                                            Event::default().event("thinking").data(data)
+                                        }
+                                        ScribeSseEvent::Error(data) => {
+                                            error_from_service_stream = true;
+                                            Event::default().event("error").data(data)
+                                        }
+                                    };
+                                    yield Ok(axum_sse_event);
+                                }
+                                Err(e) => {
+                                    error_from_service_stream = true;
+                                    yield Err(e);
+                                }
                             }
                         }
-                    }
-
-                    trace!(%session_id, "Exited fallback SSE processing loop. stream_error_occurred={}", stream_error_occurred);
-
-                    if !stream_error_occurred && !accumulated_content.is_empty() {
-                        debug!(%session_id, "Attempting to save full successful AI response (fallback)");
-
-                        let session_id_clone = session_id;
-                        let user_id_clone = user_id_value;
-                        let accumulated_content_clone = accumulated_content.clone();
-                        let session_dek_for_ai_full_save_fallback = session_dek_for_fallback_stream.clone();
-                        let state_for_ai_save = state_arc.clone();
-
-                        tokio::spawn(async move {
-                            if accumulated_content_clone.is_empty() {
-                                warn!(session_id = %session_id_clone, "Skipping save for empty accumulated AI content (SSE)");
-                                return;
-                            }
-                            let dek_for_ai_save_ref: Option<&SecretBox<Vec<u8>>> = Some(&session_dek_for_ai_full_save_fallback.0);
-                            match chat_service::save_message(
-                                state_for_ai_save,
-                                session_id_clone,
-                                user_id_clone,
-                                MessageRole::Assistant,
-                                &accumulated_content_clone,
-                                dek_for_ai_save_ref,
-                            ).await {
-                                Ok(saved_message) => {
-                                    debug!(session_id = %session_id_clone, message_id = %saved_message.id, "Successfully saved full AI response via chat_service (SSE)");
-                                }
-                                Err(e) => {
-                                    error!(error = ?e, session_id = %session_id_clone, "Error saving full AI response via chat_service (SSE)");
-                                }
-                            }
-                        });
-                    } else if !stream_error_occurred && accumulated_content.is_empty() {
-                         debug!(%session_id, "AI stream finished successfully but produced no content in fallback. Sending '[DONE]'.");
-                        trace!(%session_id, "Sending fallback SSE data: [DONE] (empty content)");
-                        yield Ok::<_, AppError>(Event::default().data("[DONE]"));
-                     } else {
-                        debug!(%session_id, "Fallback stream finished after an error. No 'done' event sent.");
-                     }
-                     trace!(%session_id, "Finished fallback SSE async_stream! block");
-                };
-
-                Ok(Sse::new(Box::pin(stream)).keep_alive(KeepAlive::default()).into_response())
-            } else {
-                info!(%session_id, "Accept header is empty, defaulting to SSE.");
-
-                let chat_request = genai::chat::ChatRequest::new(messages_for_ai.clone())
-                    .with_system(system_prompt.clone().unwrap_or_default());
-                
-                let mut genai_chat_options_empty_fallback = genai::chat::ChatOptions::default();
-                if let Some(temp_val) = temperature {
-                    if let Some(f_val) = temp_val.to_f32() {
-                        genai_chat_options_empty_fallback = genai_chat_options_empty_fallback.with_temperature(f_val.into());
-                    }
-                }
-                if let Some(tokens) = max_output_tokens {
-                    genai_chat_options_empty_fallback = genai_chat_options_empty_fallback.with_max_tokens(tokens as u32);
-                }
-                if let Some(p_val) = top_p {
-                    if let Some(f_val) = p_val.to_f32() {
-                        genai_chat_options_empty_fallback = genai_chat_options_empty_fallback.with_top_p(f_val.into());
-                    }
-                }
-                if let Some(budget) = gemini_thinking_budget {
-                    if budget > 0 {
-                        genai_chat_options_empty_fallback = genai_chat_options_empty_fallback.with_gemini_thinking_budget(budget as u32);
-                    }
-                }
-                if let Some(enable_exec) = gemini_enable_code_execution {
-                    genai_chat_options_empty_fallback = genai_chat_options_empty_fallback.with_gemini_enable_code_execution(enable_exec);
-                }
-
-                trace!(%session_id, chat_request = ?chat_request, genai_options = ?genai_chat_options_empty_fallback, "Prepared ChatRequest and Options for AI (empty header fallback SSE)");
-
-                let genai_stream: crate::llm::ChatStream = match state_arc.ai_client.stream_chat(model_to_use.as_str(), chat_request, Some(genai_chat_options_empty_fallback)).await {
-                    Ok(s) => {
-                        debug!(%session_id, "Successfully initiated AI stream (empty header fallback SSE)");
-
-                        let db_pool_sse = state_arc.pool.clone();
-                        let embedding_tracker = state_arc.embedding_call_tracker.clone();
-                        let session_id_sse = session_id;
-                        let user_id_sse = user_id_value;
-                        let last_message_content_empty_fallback = payload.history.last().map(|m| m.content.clone()).unwrap_or_default();
-                        let session_dek_for_user_save_empty_fallback = session_dek.clone();
-
-                        tokio::spawn(async move {
-                            if last_message_content_empty_fallback.is_empty() {
-                                error!(session_id = %session_id_sse, "Cannot save empty user message (empty header fallback SSE)");
-                                return;
-                            }
-                            let conn = match db_pool_sse.get().await {
-                                Ok(conn) => conn,
-                                Err(e) => {
-                                    error!(error = ?e, session_id = %session_id_sse, "Failed to get DB connection to save user message (empty header fallback SSE)");
-                                    return;
-                                }
-                            };
-
-                            let result = conn
-                                .interact(move |conn| {
-                                    let message = crate::models::chats::DbInsertableChatMessage::new(
-                                        session_id_sse,
-                                        user_id_sse,
-                                        MessageRole::User,
-                                        last_message_content_empty_fallback.into_bytes(),
-                                        None // Nonce is None as this is fallback/unencrypted
-                                    );
-                                    diesel::insert_into(crate::schema::chat_messages::table)
-                                        .values(&message)
-                                        .returning(crate::schema::chat_messages::id)
-                                        .get_result::<Uuid>(conn)
-                                })
-                                .await;
-
-                            match result {
-                                Ok(Ok(message_id)) => {
-                                    debug!(session_id = %session_id_sse, message_id = %message_id, "Successfully saved user message in background (empty header fallback SSE)");
-
-                                    match embedding_tracker.lock().await {
-                                        mut tracker => {
-                                            tracker.push(message_id);
-                                            debug!(session_id = %session_id_sse, message_id = %message_id, "Added user message to embedding call tracker (empty header fallback SSE)");
-                                        }
-                                    }
-                                }
-                                Ok(Err(e)) => {
-                                    error!(error = ?e, session_id = %session_id_sse, "Database error saving user message (empty header fallback SSE)");
-                                }
-                                Err(e) => {
-                                    error!(error = ?e, session_id = %session_id_sse, "Interact error saving user message (empty header fallback SSE)");
-                                }
-                            }
-                        });
-                        s
-                    },
-                    Err(e) => {
-                        error!(error = ?e, %session_id, "Failed to initiate AI stream (empty header fallback SSE)");
-                        let error_stream = async_stream::stream! {
-                            let error_msg = format!("LLM API error: Failed to initiate stream - {}", e);
-                            trace!(%session_id, error_message = %error_msg, "Sending empty header fallback SSE 'error' event (initiation failed)");
-                            yield Ok::<_, AppError>(Event::default().event("error").data(error_msg));
-                        };
-                        return Ok(Sse::new(Box::pin(error_stream)).keep_alive(KeepAlive::default()).into_response());
-                    }
-                };
-
-                debug!(%session_id, "Starting empty header fallback SSE generation loop");
-
-                let stream = async_stream::stream! {
-                    let mut accumulated_content = String::new();
-                    let mut stream_error_occurred = false;
-                    let session_dek_for_empty_fallback_stream = session_dek.clone();
-
-                    futures::pin_mut!(genai_stream);
-                    trace!(%session_id, "Entering empty header fallback SSE async_stream! processing loop");
-
-                    while let Some(event_result) = genai_stream.next().await {
-                        trace!(%session_id, "Received event from genai_stream (empty header fallback): {:?}", event_result);
-                        match event_result {
-                            Ok(ChatStreamEvent::Start) => {
-                                debug!(%session_id, "Received Start event from AI stream (empty header fallback)");
-                                continue;
-                            }
-                            Ok(ChatStreamEvent::Chunk(chunk)) => {
-                                debug!(%session_id, content_chunk_len = chunk.content.len(), "Received Content chunk from AI stream (empty header fallback)");
-                                if !chunk.content.is_empty() {
-                                    accumulated_content.push_str(&chunk.content);
-                                    yield Ok::<_, AppError>(Event::default().event("content").data(chunk.content));
-                                } else {
-                                    trace!(%session_id, "Skipping empty content chunk from AI (empty header fallback)");
-                                }
-                            }
-                            Ok(ChatStreamEvent::ReasoningChunk(chunk)) => {
-                                debug!(%session_id, reasoning_chunk_len = chunk.content.len(), "Received ReasoningChunk from AI stream (empty header fallback)");
-                                if !chunk.content.is_empty() {
-                                    yield Ok::<_, AppError>(Event::default().event("reasoning_chunk").data(chunk.content));
-                                }
-                            }
-                            Ok(ChatStreamEvent::End(_)) => {
-                                debug!(%session_id, "Received End event from AI stream (empty header fallback)");
-                            }
-                            Err(e) => {
-                                error!(error = ?e, %session_id, "Error during AI stream processing (empty header fallback loop)");
-                                stream_error_occurred = true;
-
-                                let partial_content_clone = accumulated_content.clone();
-                                let db_pool_clone = state_arc.pool.clone();
-                                let error_session_id = session_id;
-                                let error_user_id = user_id_value;
-                                let session_dek_for_partial_save_empty_fallback = session_dek_for_empty_fallback_stream.clone();
-
-                                tokio::spawn(async move {
-                                    if !partial_content_clone.is_empty() {
-                                        trace!(session_id = %error_session_id, "Attempting to save partial AI response after stream error (empty header fallback)");
-                                        let conn = match db_pool_clone.get().await {
-                                            Ok(conn) => conn,
-                                            Err(e) => {
-                                                error!(error = ?e, session_id = %error_session_id, "Failed to get DB connection to save partial response (empty header fallback)");
-                                                return;
-                                            }
-                                        };
-                                        let result = conn
-                                            .interact(move |conn| {
-                                                let message = crate::models::chats::DbInsertableChatMessage::new(
-                                                    error_session_id,
-                                                    error_user_id,
-                                                    MessageRole::Assistant,
-                                                    partial_content_clone.into_bytes(),
-                                                    None // Nonce is None as this is fallback/unencrypted
-                                                );
-                                                diesel::insert_into(crate::schema::chat_messages::table)
-                                                    .values(&message)
-                                                    .execute(conn)
-                                            })
-                                            .await;
-                                        match result {
-                                            Ok(Ok(_)) => {
-                                                debug!(session_id = %error_session_id, "Successfully saved partial AI response after stream error (empty header fallback)");
-                                            }
-                                            Ok(Err(save_err)) => {
-                                                error!(error = ?save_err, session_id = %error_session_id, "Database error saving partial AI response (empty header fallback)");
-                                            }
-                                            Err(save_err) => {
-                                                error!(error = ?save_err, session_id = %error_session_id, "Interact error saving partial AI response (empty header fallback)");
-                                            }
-                                        }
-                                    } else {
-                                        trace!(session_id = %error_session_id, "No partial content to save after stream error (empty header fallback)");
-                                    }
-                                });
-
-                                let detailed_error = e.to_string();
-                                error!(error = %detailed_error, %session_id, "Detailed error during empty header fallback SSE stream processing");
-                                let client_error_message = if detailed_error.contains("LLM API error:") {
-                                    detailed_error
-                                } else {
-                                    format!("LLM API error: {}", detailed_error)
-                                };
-                                trace!(%session_id, error_message = %client_error_message, "Sending empty header fallback SSE 'error' event");
-                                yield Ok::<_, AppError>(Event::default().event("error").data(client_error_message));
-                                break;
-                            }
+                        if !error_from_service_stream {
+                             if content_produced {
+                                 debug!(%session_id, "Service stream ended (fallback), sending [DONE] event.");
+                                 yield Ok(Event::default().event("done").data("[DONE]"));
+                             } else {
+                                 debug!(%session_id, "Service stream ended without content (fallback), sending [DONE_EMPTY] event.");
+                                 yield Ok(Event::default().event("done").data("[DONE_EMPTY]"));
+                             }
+                        } else {
+                             debug!(%session_id, "Service stream ended with error (fallback). Not sending additional [DONE] event.");
                         }
-                    }
-
-                    trace!(%session_id, "Exited empty header fallback SSE processing loop. stream_error_occurred={}", stream_error_occurred);
-
-                    if !stream_error_occurred && !accumulated_content.is_empty() {
-                        debug!(%session_id, "Attempting to save full successful AI response (empty header fallback)");
-                        let session_id_clone = session_id;
-                        let user_id_clone = user_id_value;
-                        let accumulated_content_clone = accumulated_content.clone();
-                        let session_dek_for_ai_full_save_empty_fallback = session_dek_for_empty_fallback_stream.clone();
-                        let state_for_ai_save = state_arc.clone();
-
-                        tokio::spawn(async move {
-                            if accumulated_content_clone.is_empty() {
-                                warn!(session_id = %session_id_clone, "Skipping save for empty accumulated AI content (SSE)");
-                                return;
-                            }
-                            let dek_for_ai_save_ref: Option<&SecretBox<Vec<u8>>> = Some(&session_dek_for_ai_full_save_empty_fallback.0);
-                            match chat_service::save_message(
-                                state_for_ai_save,
-                                session_id_clone,
-                                user_id_clone,
-                                MessageRole::Assistant,
-                                &accumulated_content_clone,
-                                dek_for_ai_save_ref,
-                            ).await {
-                                Ok(saved_message) => {
-                                    debug!(session_id = %session_id_clone, message_id = %saved_message.id, "Successfully saved full AI response via chat_service (SSE)");
-                                }
-                                Err(e) => {
-                                    error!(error = ?e, session_id = %session_id_clone, "Error saving full AI response via chat_service (SSE)");
-                                }
-                            }
-                        });
-                    } else if !stream_error_occurred && accumulated_content.is_empty() {
-                        debug!(%session_id, "AI stream finished successfully but produced no content in empty header fallback. Sending '[DONE]'.");
-                        trace!(%session_id, "Sending empty header fallback SSE data: [DONE] (empty content)");
-                        yield Ok::<_, AppError>(Event::default().data("[DONE]"));
-                    } else {
-                        debug!(%session_id, "Empty header fallback stream finished after an error. No '[DONE]' event sent.");
-                    }
-                    trace!(%session_id, "Finished empty header fallback SSE async_stream! block");
-                };
-
-                Ok(Sse::new(Box::pin(stream)).keep_alive(KeepAlive::default()).into_response())
+                    };
+                    Ok(Sse::new(Box::pin(final_stream)).keep_alive(KeepAlive::default()).into_response())
+                }
+                Err(e) => {
+                    error!(error = ?e, %session_id, "Error calling chat_service (fallback SSE)");
+                    let error_stream = async_stream::stream! {
+                        let error_msg = format!("Service error (fallback): Failed to initiate AI processing - {}", e);
+                        yield Ok::<_, AppError>(Event::default().event("error").data(error_msg));
+                    };
+                    Ok(Sse::new(Box::pin(error_stream)).keep_alive(KeepAlive::default()).into_response())
+                }
             }
         }
     }
@@ -1043,6 +623,7 @@ pub async fn generate_chat_response(
 pub fn chat_routes(state: AppState) -> Router<AppState> {
     info!("Entering chat_routes");
     Router::new()
+        .route("/", post(create_chat_session_handler)) // Added route for creating chat sessions
         .route(
             "/:chat_id/suggested-actions",
             post(generate_suggested_actions),
@@ -1146,12 +727,12 @@ pub async fn generate_suggested_actions(
             schema: suggested_actions_schema_value,
         }));
 
-    trace!(%chat_id, model = "gemini-1.5-flash-latest", ?chat_request, ?chat_options, "Sending request to Gemini for suggested actions (manual JSON parsing)");
+    trace!(%chat_id, model = "gemini-2.5-flash-preview-04-17", ?chat_request, ?chat_options, "Sending request to Gemini for suggested actions (manual JSON parsing)");
 
     let gemini_response = state
         .ai_client
         .exec_chat(
-            "gemini-1.5-flash-latest",
+            "gemini-2.5-flash-preview-04-17",
             chat_request,
             Some(chat_options),
         )

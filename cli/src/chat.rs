@@ -41,7 +41,8 @@ pub async fn run_chat_loop<IO: IoHandler, Http: HttpClient>(
             .await
         {
             Ok(ai_message) => {
-                io_handler.write_line(&format!("AI: {}", ai_message.content))?;
+                let content_str = String::from_utf8_lossy(&ai_message.content).to_string();
+                io_handler.write_line(&format!("AI: {}", content_str))?;
                 io_handler.write_line("--------------------------------------------------")?;
             }
             Err(CliError::RateLimitExceeded) => {

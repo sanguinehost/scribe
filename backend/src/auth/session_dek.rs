@@ -34,8 +34,16 @@ impl SessionDek {
         self.0.expose_secret()
     }
 
-    // Correctly define the associated constant for the session key
+    // Fixed DEK key - not used anymore, keeping for backwards compatibility in tests
     const SESSION_USER_DEK_KEY: &'static str = "user_dek";
+    
+    // The key where axum-login stores the user ID in the session
+    const AXUM_LOGIN_USER_KEY: &'static str = "axum-login.user";
+    
+    // The pattern for constructing the user-specific DEK key
+    fn user_dek_key(user_id: &str) -> String {
+        format!("_user_dek_{}", user_id)
+    }
 }
 
 impl fmt::Debug for SessionDek {
@@ -54,14 +62,10 @@ where
     type Rejection = AppError;
 
     async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
-        // We are removing the attempt to get DEK from auth_session.user.dek
-        // because AuthBackend::get_user cannot reliably populate it with a decrypted DEK.
-        // We will rely solely on the DEK stored directly in the tower_sessions::Session by the login_handler.
-        
         // Added detailed logging for test_get_unauthorized debugging
         tracing::warn!(target: "auth_debug", "SessionDek::from_request_parts called. Parts URI: {:?}", parts.uri);
 
-        debug!("SessionDek extractor: Attempting to retrieve DEK directly from tower_sessions::Session.");
+        debug!("SessionDek extractor: Attempting to retrieve DEK from tower_sessions::Session.");
 
         let tower_session: Session =
             Session::from_request_parts(parts, state).await
@@ -70,44 +74,69 @@ where
                 AppError::InternalServerErrorGeneric(format!("Failed to access session for DEK retrieval: {:?}", err))
             })?;
 
-        match tower_session.get::<String>(Self::SESSION_USER_DEK_KEY).await {
-            Ok(Some(dek_b64)) => {
-                tracing::warn!(target: "auth_debug", "SessionDek: Found DEK key '{}' in session. Value (b64): {}", Self::SESSION_USER_DEK_KEY, dek_b64);
-                debug!("SessionDek extractor: Found base64 DEK in tower_session data under key '{}'. Attempting to decode.", Self::SESSION_USER_DEK_KEY);
-                match BASE64_STANDARD.decode(dek_b64) {
-                    Ok(dek_bytes) => {
-                        debug!(
-                            dek_bytes_len = dek_bytes.len(),
-                            "SessionDek extractor: Successfully decoded base64 DEK from session data. Reconstructing SecretBox."
-                        );
-                        Ok(SessionDek(SecretBox::new(Box::new(dek_bytes))))
-                    }
-                    Err(e) => {
-                        error!(
-                            error = %e,
-                            key = Self::SESSION_USER_DEK_KEY,
-                            "SessionDek extractor: Failed to decode base64 DEK from session data."
-                        );
-                        Err(AppError::InternalServerErrorGeneric("Failed to decode DEK from session".to_string()))
-                    }
-                }
-            }
+        // First, get the user ID from the session (stored by our manually fixed auth.rs)
+        let user_id = match tower_session.get::<String>(Self::AXUM_LOGIN_USER_KEY).await {
+            Ok(Some(id)) => {
+                tracing::warn!(target: "auth_debug", "SessionDek: Found user ID in session: {}", id);
+                id
+            },
             Ok(None) => {
-                tracing::warn!(target: "auth_debug", "SessionDek: DEK key '{}' NOT found in session (Ok(None)). Returning Unauthorized.", Self::SESSION_USER_DEK_KEY);
-                warn!(
-                    key = Self::SESSION_USER_DEK_KEY,
-                    "SessionDek extractor: DEK not found in tower_session data under key (Ok(None)). DEK unavailable."
-                );
-                Err(AppError::Unauthorized("DEK not found in session, user likely not authenticated.".to_string()))
-            }
+                tracing::warn!(target: "auth_debug", "SessionDek: No user ID found in session under key '{}'", Self::AXUM_LOGIN_USER_KEY);
+                return Err(AppError::Unauthorized("No user ID found in session, user likely not authenticated.".to_string()));
+            },
             Err(e) => {
-                tracing::warn!(target: "auth_debug", "SessionDek: Error retrieving DEK key '{}' from session: {}. Returning InternalServerError.", Self::SESSION_USER_DEK_KEY, e);
+                tracing::warn!(target: "auth_debug", "SessionDek: Error retrieving user ID from session: {}", e);
+                return Err(AppError::InternalServerErrorGeneric("Error accessing session data for user ID".to_string()));
+            }
+        };
+
+        // Now, construct the user-specific DEK key
+        let dek_key = Self::user_dek_key(&user_id);
+        
+        // Try to get the DEK using the user-specific key
+        match tower_session.get::<crate::models::users::SerializableSecretDek>(&dek_key).await {
+            Ok(Some(serializable_dek)) => {
+                tracing::warn!(target: "auth_debug", "SessionDek: Found DEK under key '{}' in session", dek_key);
+                debug!("SessionDek extractor: Found DEK in tower_session data under key '{}'", dek_key);
+                
+                // Convert SerializableSecretDek to SessionDek
+                let dek_bytes = serializable_dek.expose_secret_bytes().to_vec();
+                Ok(SessionDek(SecretBox::new(Box::new(dek_bytes))))
+            },
+            Ok(None) => {
+                tracing::warn!(target: "auth_debug", "SessionDek: DEK not found under key '{}' in session", dek_key);
+                warn!(
+                    key = %dek_key,
+                    "SessionDek extractor: DEK not found in tower_session data under user-specific key."
+                );
+                
+                // Try the legacy fixed key as fallback
+                match tower_session.get::<String>(Self::SESSION_USER_DEK_KEY).await {
+                    Ok(Some(dek_b64)) => {
+                        tracing::warn!(target: "auth_debug", "SessionDek: Found DEK using legacy key '{}'. Decoding from base64.", Self::SESSION_USER_DEK_KEY);
+                        // Handle legacy case - decode from base64
+                        match BASE64_STANDARD.decode(dek_b64) {
+                            Ok(dek_bytes) => {
+                                debug!("SessionDek extractor: Successfully decoded legacy base64 DEK. Bytes length: {}", dek_bytes.len());
+                                Ok(SessionDek(SecretBox::new(Box::new(dek_bytes))))
+                            },
+                            Err(e) => {
+                                error!("SessionDek: Failed to decode legacy base64 DEK: {}", e);
+                                Err(AppError::InternalServerErrorGeneric("Failed to decode legacy DEK format".to_string()))
+                            }
+                        }
+                    },
+                    _ => Err(AppError::Unauthorized("DEK not found in session".to_string()))
+                }
+            },
+            Err(e) => {
+                tracing::warn!(target: "auth_debug", "SessionDek: Error retrieving DEK under key '{}' from session: {}", dek_key, e);
                 error!(
                     error = %e,
-                    key = Self::SESSION_USER_DEK_KEY,
-                    "SessionDek extractor: Error retrieving DEK from tower_session data. DEK unavailable."
+                    key = %dek_key,
+                    "SessionDek extractor: Error retrieving DEK from tower_session data."
                 );
-                 Err(AppError::InternalServerErrorGeneric("Error accessing session data for DEK".to_string()))
+                Err(AppError::InternalServerErrorGeneric("Error accessing session data for DEK".to_string()))
             }
         }
     }
