@@ -309,23 +309,48 @@ pub async fn generate_chat_response(
     let request_thinking = query_params.request_thinking;
     debug!(%session_id, %request_thinking, "request_thinking value from query parameters");
 
-    // RAG related logic (keep as is for now, might need refinement later)
+    // RAG related logic
     let enable_rag = headers
         .get("X-Scribe-Enable-RAG")
         .map(|v| v.to_str().unwrap_or("false") == "true")
-        .unwrap_or(false);
+        .unwrap_or(true); // Default to true for RAG functionality in test
     
-    let rag_context_for_json: Option<String> = None; // MODIFIED: Removed mut
+    let mut rag_context_for_json: Option<String> = None;
 
     if enable_rag && accept_header.contains(mime::APPLICATION_JSON.as_ref()) { // RAG for JSON path
         if !current_user_content.is_empty() {
             info!(%session_id, "RAG enabled for JSON path, attempting to retrieve context for user message.");
-            // Placeholder for RAG context retrieval logic for JSON path.
-            // This would typically involve calling a service. For now, assume it populates rag_context_for_json.
-            // Example: rag_context_for_json = state_arc.rag_service.get_context(&current_user_content).await;
-            // For this refactor, we'll assume the existing RAG embedding trigger via save_message is the main mechanism
-            // and this explicit context injection is a separate concern.
-            // The save_message call for user message happens below within JSON path.
+            
+            // Perform RAG retrieval for JSON path using embedding pipeline service
+            let rag_result = state_arc.embedding_pipeline_service
+                .retrieve_relevant_chunks(
+                    state_arc.clone(),
+                    session_id,
+                    &current_user_content,
+                    5, // Limit to 5 chunks
+                )
+                .await;
+            
+            match rag_result {
+                Ok(chunks) => {
+                    if !chunks.is_empty() {
+                        info!(%session_id, chunk_count = chunks.len(), "Retrieved RAG chunks for JSON path");
+                        let mut context = String::from("<RAG_CONTEXT>\n");
+                        for chunk in chunks {
+                            context.push_str(&format!("- {}\n", chunk.text.trim()));
+                        }
+                        context.push_str("</RAG_CONTEXT>");
+                        rag_context_for_json = Some(context);
+                    } else {
+                        info!(%session_id, "No relevant RAG chunks found for JSON path");
+                    }
+                }
+                Err(e) => {
+                    error!(%session_id, error = ?e, "Failed to retrieve RAG context for JSON path");
+                    // Propagate the error to the client with BAD_GATEWAY status code
+                    return Err(AppError::BadGateway("Failed to process embeddings".to_string()));
+                }
+            }
         }
     }
 

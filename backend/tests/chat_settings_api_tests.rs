@@ -360,6 +360,8 @@ async fn test_get_chat_settings_not_found() {
         .unwrap();
 
     let response = test_app.router.clone().oneshot(request).await.unwrap();
+    // For non-existent chat IDs (test case), the API returns NOT_FOUND
+    // (For existing chat IDs owned by someone else, it returns FORBIDDEN)
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
 }
 
@@ -447,7 +449,9 @@ async fn test_get_chat_settings_forbidden() {
         .unwrap();
 
     let response = test_app.router.clone().oneshot(request).await.unwrap();
-    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    // For existing chat IDs owned by someone else, the endpoint returns FORBIDDEN
+    // (For non-existent chat IDs, it returns NOT_FOUND)
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
 }
 
 

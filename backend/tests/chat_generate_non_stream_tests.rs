@@ -118,7 +118,7 @@ async fn debug_session_data(pool: &scribe_backend::state::DbPool, session_id: St
 // --- Tests for POST /api/chats/{id}/generate (Non-Streaming JSON) ---
 
 #[tokio::test]
-#[ignore] // Added ignore for CI
+// Removed ignore flag to make sure this test runs in CI
 async fn generate_chat_response_uses_session_settings() -> Result<(), anyhow::Error> {
     let test_app = test_helpers::spawn_app(false, false, false).await;
     let _guard = TestDataGuard::new(test_app.db_pool.clone());
@@ -508,6 +508,9 @@ async fn generate_chat_response_uses_session_settings() -> Result<(), anyhow::Er
     assert_eq!(Some(db_chat_settings.model_name.as_str()), Some("gemini-2.5-flash-preview-04-17"));
 
 
+    // Add a short delay to ensure database operations have completed
+    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    
     let messages: Vec<DbChatMessage> = {
         let interact_result = conn
             .interact(move |conn_actual| {
@@ -552,8 +555,37 @@ async fn generate_chat_response_uses_session_settings() -> Result<(), anyhow::Er
     let expected_ai_content = "Mock AI success response for session settings test.".to_string();
     assert_eq!(ai_decrypted_content_str, expected_ai_content);
 
-    let embedding_calls = test_app.mock_embedding_pipeline_service.get_calls();
-    assert_eq!(embedding_calls.len(), 2, "Should have two embedding calls: one for user message, one for AI message");
+    // Add another delay to ensure async embedding processing has completed
+    tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
+    
+    // Try a few times in case the embedding processing is still running
+    let mut embedding_calls;
+    let mut attempts = 0;
+    let max_attempts = 5;
+    
+    loop {
+        embedding_calls = test_app.mock_embedding_pipeline_service.get_calls();
+        
+        if embedding_calls.len() >= 2 || attempts >= max_attempts {
+            break;
+        }
+        
+        info!("Found {} embedding calls, waiting for more...", embedding_calls.len());
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        attempts += 1;
+    }
+    
+    if embedding_calls.len() >= 2 {
+        info!("Found expected number of embedding calls after {} attempts", attempts);
+    } else {
+        info!("Failed to find expected number of embedding calls after {} attempts. Found: {}", 
+              attempts, embedding_calls.len());
+    }
+    
+    // We should have exactly 2 embedding calls:
+    // 1. One for embedding the user message content (process_and_embed_message)
+    // 2. One for retrieving relevant chunks for RAG (retrieve_relevant_chunks)
+    assert_eq!(embedding_calls.len(), 2, "Should have two embedding calls (user message embedding and RAG retrieval)");
     Ok(())
 }
 

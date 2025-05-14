@@ -204,11 +204,9 @@ async fn test_suggested_actions_unauthorized() -> anyhow::Result<()> {
         .await
         .expect("Failed to execute request.");
 
-    // TEMPORARY: Change expected to 404 to see if the handler is being entered.
-    // If this passes, it means login_required! is not blocking unauthenticated requests,
-    // and the handler itself is returning a 404 because it can't find the random session_id.
-    // Original was 401.
-    assert_eq!(response.status().as_u16(), 422);
+    // Authentication is now properly checking for unauthorized access
+    // and returning 401 Unauthorized as expected
+    assert_eq!(response.status().as_u16(), 401);
 
     guard.cleanup().await?;
     Ok(())

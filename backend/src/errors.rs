@@ -25,6 +25,10 @@ pub enum AppError {
     // --- Authentication/Authorization Errors ---
     #[error("User not found")]
     UserNotFound, // Often used in auth flows
+    
+    // --- Gateway Errors ---
+    #[error("Bad Gateway: {0}")]
+    BadGateway(String), // For external service errors
 
     #[error("Invalid credentials")]
     InvalidCredentials, // Specific auth error
@@ -541,6 +545,11 @@ impl IntoResponse for AppError {
 
             AppError::ValidationError(msg) => {
                 (StatusCode::BAD_REQUEST, format!("Validation error: {}", msg))
+            },
+            
+            AppError::BadGateway(msg) => {
+                error!("Bad Gateway error: {}", msg);
+                (StatusCode::BAD_GATEWAY, msg)
             },
         };
 

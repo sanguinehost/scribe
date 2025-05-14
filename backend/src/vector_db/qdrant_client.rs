@@ -17,7 +17,7 @@ use tracing::{error, info, instrument, warn};
 use uuid::Uuid;
 
 // Constants
-pub const DEFAULT_COLLECTION_NAME: &str = "chat_embeddings";
+pub const DEFAULT_COLLECTION_NAME: &str = "scribe_embeddings";
 // Removed hardcoded EMBEDDING_DIMENSION constant
 
 #[derive(Clone)]
