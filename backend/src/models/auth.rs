@@ -5,12 +5,23 @@ use validator::{ValidationErrors, ValidationError};
 use regex;
 
 // Payload for user registration
-#[derive(Debug, Deserialize, Clone)] // Remove Validate derive
+#[derive(Deserialize, Clone)] // Remove Validate derive, Remove Debug
 pub struct RegisterPayload {
     pub username: String,
     pub email: String,
     pub password: SecretString, // Corrected: Was Secret<String>
     pub recovery_phrase: Option<String>, // Corrected: Was Option<Secret<String>>
+}
+
+impl std::fmt::Debug for RegisterPayload {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RegisterPayload")
+            .field("username", &self.username)
+            .field("email", &"[REDACTED]")
+            .field("password", &self.password) // SecretString handles its own redaction
+            .field("recovery_phrase", &self.recovery_phrase.as_ref().map(|_| "[REDACTED]"))
+            .finish()
+    }
 }
 
 // Implement manual validation for RegisterPayload
@@ -66,12 +77,22 @@ impl serde::Serialize for LoginPayload {
 }
 
 // Response for successful login/registration
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone)] // Removed Debug
 pub struct AuthResponse {
     pub user_id: uuid::Uuid,
     pub username: String,
     // Add other relevant fields if needed, e.g., email
     pub email: String,
+}
+
+impl std::fmt::Debug for AuthResponse {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AuthResponse")
+            .field("user_id", &self.user_id)
+            .field("username", &self.username)
+            .field("email", &"[REDACTED]")
+            .finish()
+    }
 }
 
 // Payload for changing password

@@ -11,7 +11,7 @@ use uuid::Uuid; // <-- Add Uuid import // Alias serde_json::Value
 use crate::models::characters::Character; // Add use statement for canonical Character struct
 
 // Main Character Card Structure (V3)
-#[derive(Serialize, Deserialize, Debug, Clone, Default)]
+#[derive(Serialize, Deserialize, Clone, Default)]
 pub struct CharacterCardV3 {
     #[serde(default)] // Use default for spec fields if missing in JSON
     pub spec: String,
@@ -21,8 +21,18 @@ pub struct CharacterCardV3 {
     pub data: CharacterCardDataV3,
 }
 
+impl std::fmt::Debug for CharacterCardV3 {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CharacterCardV3")
+            .field("spec", &"[REDACTED]")
+            .field("spec_version", &"[REDACTED]")
+            .field("data", &self.data) // Relies on CharacterCardDataV3's Debug
+            .finish()
+    }
+}
+
 // Character Card Data Payload (V3)
-#[derive(Serialize, Deserialize, Debug, Clone, Default)] // Add Default back
+#[derive(Serialize, Deserialize, Clone, Default)] // Add Default back
 #[serde(rename_all = "snake_case")]
 pub struct CharacterCardDataV3 {
     // --- Fields from V2 (or with V2 counterparts) ---
@@ -72,8 +82,37 @@ pub struct CharacterCardDataV3 {
     pub modification_date: Option<i64>, // Unix timestamp (seconds)
 }
 
+impl std::fmt::Debug for CharacterCardDataV3 {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CharacterCardDataV3")
+            .field("name", &"[REDACTED]")
+            .field("description", &"[REDACTED]")
+            .field("personality", &"[REDACTED]")
+            .field("scenario", &"[REDACTED]")
+            .field("first_mes", &"[REDACTED]")
+            .field("mes_example", &"[REDACTED]")
+            .field("creator_notes", &"[REDACTED]")
+            .field("system_prompt", &"[REDACTED]")
+            .field("post_history_instructions", &"[REDACTED]")
+            .field("alternate_greetings", &"[REDACTED]")
+            .field("tags", &"[REDACTED]")
+            .field("creator", &"[REDACTED]")
+            .field("character_version", &"[REDACTED]")
+            .field("extensions", &"[REDACTED]")
+            .field("character_book", &self.character_book) // Relies on Lorebook's Debug
+            .field("assets", &self.assets) // Relies on Asset's Debug
+            .field("nickname", &"[REDACTED]")
+            .field("creator_notes_multilingual", &"[REDACTED]")
+            .field("source", &"[REDACTED]")
+            .field("group_only_greetings", &"[REDACTED]")
+            .field("creation_date", &self.creation_date)
+            .field("modification_date", &self.modification_date)
+            .finish()
+    }
+}
+
 // Asset Definition (within assets array)
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct Asset {
     pub r#type: String, // Using r# prefix as 'type' is a Rust keyword
@@ -82,8 +121,19 @@ pub struct Asset {
     pub ext: String,
 }
 
+impl std::fmt::Debug for Asset {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Asset")
+            .field("r#type", &"[REDACTED]")
+            .field("uri", &"[REDACTED]")
+            .field("name", &"[REDACTED]")
+            .field("ext", &"[REDACTED]")
+            .finish()
+    }
+}
+
 // Lorebook Definition
-#[derive(Serialize, Deserialize, Debug, Clone, Default)]
+#[derive(Serialize, Deserialize, Clone, Default)]
 #[serde(rename_all = "snake_case")]
 pub struct Lorebook {
     pub name: Option<String>,
@@ -95,6 +145,20 @@ pub struct Lorebook {
     pub extensions: HashMap<String, Value>,
     #[serde(default)]
     pub entries: Vec<LorebookEntry>,
+}
+
+impl std::fmt::Debug for Lorebook {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Lorebook")
+            .field("name", &"[REDACTED]")
+            .field("description", &"[REDACTED]")
+            .field("scan_depth", &self.scan_depth)
+            .field("token_budget", &self.token_budget)
+            .field("recursive_scanning", &self.recursive_scanning)
+            .field("extensions", &"[REDACTED]")
+            .field("entries", &self.entries) // Relies on LorebookEntry's Debug
+            .finish()
+    }
 }
 
 // --- Lorebook Decorator Definitions ---
@@ -128,11 +192,21 @@ pub enum DecoratorUiPromptType {
     Unknown,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub struct Decorator {
     pub name: String,
     pub value: Option<String>,     // Store raw value string for flexibility
     pub fallbacks: Vec<Decorator>, // For @@@ fallback mechanism
+}
+
+impl std::fmt::Debug for Decorator {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Decorator")
+            .field("name", &"[REDACTED]")
+            .field("value", &"[REDACTED]")
+            .field("fallbacks", &self.fallbacks) // Relies on recursive Debug for Decorator
+            .finish()
+    }
 }
 
 // --- End Lorebook Decorator Definitions ---
@@ -250,7 +324,7 @@ fn parse_decorators_from_content(raw_content: &str) -> (Vec<Decorator>, String) 
 }
 
 // Lorebook Entry Definition
-#[derive(Serialize, Debug, Clone)] // Removed Deserialize temporarily, will add custom later
+#[derive(Serialize, Clone)] // Removed Deserialize temporarily, will add custom later, Removed Debug
 #[serde(rename_all = "snake_case")]
 pub struct LorebookEntry {
     #[serde(default)]
@@ -290,8 +364,32 @@ pub struct LorebookEntry {
     pub processed_content: String, // Content after decorators are stripped
 }
 
+impl std::fmt::Debug for LorebookEntry {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("LorebookEntry")
+            .field("keys", &"[REDACTED]")
+            .field("content", &"[REDACTED]")
+            .field("extensions", &"[REDACTED]")
+            .field("enabled", &self.enabled)
+            .field("insertion_order", &self.insertion_order)
+            .field("case_sensitive", &self.case_sensitive)
+            .field("use_regex", &self.use_regex)
+            .field("constant", &self.constant)
+            .field("name", &"[REDACTED]")
+            .field("priority", &self.priority)
+            .field("id", &self.id) // Value's Debug should be fine
+            .field("comment", &"[REDACTED]")
+            .field("selective", &self.selective)
+            .field("secondary_keys", &"[REDACTED]")
+            .field("position", &self.position) // Relies on LorebookEntryPosition's Debug
+            .field("parsed_decorators", &self.parsed_decorators) // Relies on Decorator's Debug
+            .field("processed_content", &"[REDACTED]")
+            .finish()
+    }
+}
+
 // We need a temporary struct for deserialization before processing decorators
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize)] // Removed Debug
 #[serde(rename_all = "snake_case")]
 struct RawLorebookEntry {
     #[serde(default)]
@@ -314,6 +412,28 @@ struct RawLorebookEntry {
     #[serde(default)]
     secondary_keys: Vec<String>,
     position: Option<LorebookEntryPosition>,
+}
+
+impl std::fmt::Debug for RawLorebookEntry {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RawLorebookEntry")
+            .field("keys", &"[REDACTED]")
+            .field("content", &"[REDACTED]")
+            .field("extensions", &"[REDACTED]")
+            .field("enabled", &self.enabled)
+            .field("insertion_order", &self.insertion_order)
+            .field("case_sensitive", &self.case_sensitive)
+            .field("use_regex", &self.use_regex)
+            .field("constant", &self.constant)
+            .field("name", &"[REDACTED]")
+            .field("priority", &self.priority)
+            .field("id", &self.id) // Value's Debug should be fine
+            .field("comment", &"[REDACTED]")
+            .field("selective", &self.selective)
+            .field("secondary_keys", &"[REDACTED]")
+            .field("position", &self.position) // Relies on LorebookEntryPosition's Debug
+            .finish()
+    }
 }
 
 // Custom Deserialize implementation for LorebookEntry to handle decorator parsing
@@ -362,10 +482,19 @@ pub enum LorebookEntryPosition {
 }
 
 // Standalone Lorebook Structure (for export/import)
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Clone)] // Removed Debug
 pub struct StandaloneLorebook {
     pub spec: String, // Should be "lorebook_v3"
     pub data: Lorebook,
+}
+
+impl std::fmt::Debug for StandaloneLorebook {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("StandaloneLorebook")
+            .field("spec", &"[REDACTED]")
+            .field("data", &self.data) // Relies on Lorebook's Debug
+            .finish()
+    }
 }
 
 // Test module declaration removed as tests are now in the /tests directory
@@ -385,7 +514,7 @@ use crate::schema::{character_assets, lorebook_entries, lorebooks};
 
 // Note: For Insertable, we might need a separate struct `NewCharacter`
 // if some fields (like id, created_at, updated_at) are not set manually during insertion.
-#[derive(Insertable, Debug, Default, Clone)] // Added Default and Clone
+#[derive(Insertable, Default, Clone)] // Added Default and Clone, Removed Debug
 #[diesel(table_name = crate::schema::characters)]
 pub struct NewCharacter {
     pub user_id: Uuid,
@@ -465,6 +594,79 @@ pub struct NewCharacter {
     // created_at and updated_at are typically handled by DB or set directly in handler
     pub created_at: Option<DateTime<Utc>>, // Make consistent with schema and Character struct
     pub updated_at: Option<DateTime<Utc>>,
+}
+
+impl std::fmt::Debug for NewCharacter {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("NewCharacter")
+            .field("user_id", &self.user_id)
+            .field("spec", &"[REDACTED]")
+            .field("spec_version", &"[REDACTED]")
+            .field("name", &"[REDACTED]")
+            .field("description", &"[REDACTED_BYTES]")
+            .field("description_nonce", &"[REDACTED_BYTES]")
+            .field("personality", &"[REDACTED_BYTES]")
+            .field("personality_nonce", &"[REDACTED_BYTES]")
+            .field("scenario", &"[REDACTED_BYTES]")
+            .field("scenario_nonce", &"[REDACTED_BYTES]")
+            .field("first_mes", &"[REDACTED_BYTES]")
+            .field("first_mes_nonce", &"[REDACTED_BYTES]")
+            .field("mes_example", &"[REDACTED_BYTES]")
+            .field("mes_example_nonce", &"[REDACTED_BYTES]")
+            .field("creator_notes", &"[REDACTED_BYTES]")
+            .field("creator_notes_nonce", &"[REDACTED_BYTES]")
+            .field("system_prompt", &"[REDACTED_BYTES]")
+            .field("system_prompt_nonce", &"[REDACTED_BYTES]")
+            .field("post_history_instructions", &"[REDACTED_BYTES]")
+            .field("post_history_instructions_nonce", &"[REDACTED_BYTES]")
+            .field("tags", &"[REDACTED]")
+            .field("creator", &"[REDACTED]")
+            .field("character_version", &"[REDACTED]")
+            .field("alternate_greetings", &"[REDACTED]")
+            .field("nickname", &"[REDACTED]")
+            .field("creator_notes_multilingual", &"[REDACTED_JSON]")
+            .field("source", &"[REDACTED]")
+            .field("group_only_greetings", &"[REDACTED]")
+            .field("creation_date", &self.creation_date)
+            .field("modification_date", &self.modification_date)
+            .field("extensions", &"[REDACTED_JSON]")
+            .field("persona", &"[REDACTED_BYTES]")
+            .field("persona_nonce", &"[REDACTED_BYTES]")
+            .field("world_scenario", &"[REDACTED_BYTES]")
+            .field("world_scenario_nonce", &"[REDACTED_BYTES]")
+            .field("avatar", &"[REDACTED]")
+            .field("chat", &"[REDACTED]")
+            .field("greeting", &"[REDACTED_BYTES]")
+            .field("greeting_nonce", &"[REDACTED_BYTES]")
+            .field("definition", &"[REDACTED_BYTES]")
+            .field("definition_nonce", &"[REDACTED_BYTES]")
+            .field("default_voice", &"[REDACTED]")
+            .field("category", &"[REDACTED]")
+            .field("definition_visibility", &"[REDACTED]")
+            .field("example_dialogue", &"[REDACTED_BYTES]")
+            .field("example_dialogue_nonce", &"[REDACTED_BYTES]")
+            .field("favorite", &self.favorite)
+            .field("first_message_visibility", &"[REDACTED]")
+            .field("migrated_from", &"[REDACTED]")
+            .field("model_prompt", &"[REDACTED_BYTES]")
+            .field("model_prompt_nonce", &"[REDACTED_BYTES]")
+            .field("model_prompt_visibility", &"[REDACTED]")
+            .field("persona_visibility", &"[REDACTED]")
+            .field("sharing_visibility", &"[REDACTED]")
+            .field("status", &"[REDACTED]")
+            .field("system_prompt_visibility", &"[REDACTED]")
+            .field("system_tags", &"[REDACTED]")
+            .field("token_budget", &self.token_budget)
+            .field("usage_hints", &"[REDACTED_JSON]")
+            .field("user_persona", &"[REDACTED_BYTES]")
+            .field("user_persona_nonce", &"[REDACTED_BYTES]")
+            .field("user_persona_visibility", &"[REDACTED]")
+            .field("visibility", &"[REDACTED]")
+            .field("world_scenario_visibility", &"[REDACTED]")
+            .field("created_at", &self.created_at)
+            .field("updated_at", &self.updated_at)
+            .finish()
+    }
 }
 
 // --- Conversion from Parsed Card to NewCharacter ---
@@ -713,7 +915,7 @@ impl NewCharacter {
     }
 }
 
-#[derive(Queryable, Selectable, Identifiable, Associations, Debug, Serialize)]
+#[derive(Queryable, Selectable, Identifiable, Associations, Serialize)]
 #[diesel(table_name = character_assets)]
 #[diesel(belongs_to(Character))] // Foreign key character_id -> characters(id)
 pub struct CharacterAsset {
@@ -727,7 +929,20 @@ pub struct CharacterAsset {
     pub ext: String,
 }
 
-#[derive(Insertable, Debug)]
+impl std::fmt::Debug for CharacterAsset {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CharacterAsset")
+            .field("id", &self.id)
+            .field("character_id", &self.character_id)
+            .field("asset_type", &"[REDACTED]")
+            .field("uri", &"[REDACTED]")
+            .field("name", &"[REDACTED]")
+            .field("ext", &self.ext)
+            .finish()
+    }
+}
+
+#[derive(Insertable)]
 #[diesel(table_name = character_assets)]
 pub struct NewCharacterAsset {
     #[diesel(serialize_as = Uuid)]
@@ -738,7 +953,19 @@ pub struct NewCharacterAsset {
     pub ext: String,
 }
 
-#[derive(Queryable, Selectable, Identifiable, Associations, Debug, Serialize)]
+impl std::fmt::Debug for NewCharacterAsset {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("NewCharacterAsset")
+            .field("character_id", &self.character_id)
+            .field("asset_type", &"[REDACTED]")
+            .field("uri", &"[REDACTED]")
+            .field("name", &"[REDACTED]")
+            .field("ext", &self.ext)
+            .finish()
+    }
+}
+
+#[derive(Queryable, Selectable, Identifiable, Associations, Serialize)]
 #[diesel(table_name = lorebooks)]
 #[diesel(belongs_to(Character))] // Foreign key character_id -> characters(id)
 pub struct DbLorebook {
@@ -753,7 +980,22 @@ pub struct DbLorebook {
     pub extensions: Option<Json<JsonValue>>, // JSONB
 }
 
-#[derive(Insertable, Debug)]
+impl std::fmt::Debug for DbLorebook {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DbLorebook")
+            .field("id", &self.id)
+            .field("character_id", &self.character_id)
+            .field("name", &"[REDACTED]")
+            .field("description", &"[REDACTED]")
+            .field("scan_depth", &self.scan_depth)
+            .field("token_budget", &self.token_budget)
+            .field("recursive_scanning", &self.recursive_scanning)
+            .field("extensions", &"[REDACTED_JSON]")
+            .finish()
+    }
+}
+
+#[derive(Insertable)]
 #[diesel(table_name = lorebooks)]
 pub struct NewDbLorebook {
     #[diesel(serialize_as = Uuid)]
@@ -766,7 +1008,21 @@ pub struct NewDbLorebook {
     pub extensions: Option<Json<JsonValue>>,
 }
 
-#[derive(Queryable, Selectable, Identifiable, Associations, Debug, Serialize)]
+impl std::fmt::Debug for NewDbLorebook {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("NewDbLorebook")
+            .field("character_id", &self.character_id)
+            .field("name", &"[REDACTED]")
+            .field("description", &"[REDACTED]")
+            .field("scan_depth", &self.scan_depth)
+            .field("token_budget", &self.token_budget)
+            .field("recursive_scanning", &self.recursive_scanning)
+            .field("extensions", &"[REDACTED_JSON]")
+            .finish()
+    }
+}
+
+#[derive(Queryable, Selectable, Identifiable, Associations, Serialize)]
 #[diesel(table_name = lorebook_entries)]
 #[diesel(belongs_to(DbLorebook, foreign_key = lorebook_id))] // Explicitly set foreign key
 pub struct DbLorebookEntry {
@@ -789,7 +1045,31 @@ pub struct DbLorebookEntry {
     pub position: Option<String>,
 }
 
-#[derive(Insertable, Debug)]
+impl std::fmt::Debug for DbLorebookEntry {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DbLorebookEntry")
+            .field("id", &self.id)
+            .field("lorebook_id", &self.lorebook_id)
+            .field("keys", &"[REDACTED]")
+            .field("content", &"[REDACTED]")
+            .field("extensions", &"[REDACTED_JSON]")
+            .field("enabled", &self.enabled)
+            .field("insertion_order", &self.insertion_order)
+            .field("case_sensitive", &self.case_sensitive)
+            .field("use_regex", &self.use_regex)
+            .field("constant", &self.constant)
+            .field("name", &"[REDACTED]")
+            .field("priority", &self.priority)
+            .field("entry_id", &"[REDACTED]")
+            .field("comment", &"[REDACTED]")
+            .field("selective", &self.selective)
+            .field("secondary_keys", &"[REDACTED]")
+            .field("position", &"[REDACTED]")
+            .finish()
+    }
+}
+
+#[derive(Insertable)]
 #[diesel(table_name = lorebook_entries)]
 pub struct NewDbLorebookEntry {
     pub lorebook_id: i32,
@@ -808,6 +1088,29 @@ pub struct NewDbLorebookEntry {
     pub selective: Option<bool>,
     pub secondary_keys: Option<Vec<Option<String>>>,
     pub position: Option<String>,
+}
+
+impl std::fmt::Debug for NewDbLorebookEntry {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("NewDbLorebookEntry")
+            .field("lorebook_id", &self.lorebook_id)
+            .field("keys", &"[REDACTED]")
+            .field("content", &"[REDACTED]")
+            .field("extensions", &"[REDACTED_JSON]")
+            .field("enabled", &self.enabled)
+            .field("insertion_order", &self.insertion_order)
+            .field("case_sensitive", &self.case_sensitive)
+            .field("use_regex", &self.use_regex)
+            .field("constant", &self.constant)
+            .field("name", &"[REDACTED]")
+            .field("priority", &self.priority)
+            .field("entry_id", &"[REDACTED]")
+            .field("comment", &"[REDACTED]")
+            .field("selective", &self.selective)
+            .field("secondary_keys", &"[REDACTED]")
+            .field("position", &"[REDACTED]")
+            .finish()
+    }
 }
 
 // --- Unit tests ---

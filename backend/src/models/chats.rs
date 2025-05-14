@@ -43,7 +43,7 @@ pub type SettingsTuple = (
     Option<i32>,        // gemini_thinking_budget
     Option<bool>,       // gemini_enable_code_execution
 );
-#[derive(Queryable, Selectable, Identifiable, Serialize, Deserialize, Debug, Clone)]
+#[derive(Queryable, Selectable, Identifiable, Serialize, Deserialize, Clone)] // Removed Debug
 #[diesel(table_name = chat_sessions)]
 #[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct Chat {
@@ -74,8 +74,39 @@ pub struct Chat {
     pub visibility: Option<String>, // Moved to last
 }
 
+impl std::fmt::Debug for Chat {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Chat")
+            .field("id", &self.id)
+            .field("user_id", &self.user_id)
+            .field("character_id", &self.character_id)
+            .field("title", &self.title.as_ref().map(|_| "[REDACTED]"))
+            .field("system_prompt", &self.system_prompt.as_ref().map(|_| "[REDACTED]"))
+            .field("temperature", &self.temperature)
+            .field("max_output_tokens", &self.max_output_tokens)
+            .field("created_at", &self.created_at)
+            .field("updated_at", &self.updated_at)
+            .field("frequency_penalty", &self.frequency_penalty)
+            .field("presence_penalty", &self.presence_penalty)
+            .field("top_k", &self.top_k)
+            .field("top_p", &self.top_p)
+            .field("repetition_penalty", &self.repetition_penalty)
+            .field("min_p", &self.min_p)
+            .field("top_a", &self.top_a)
+            .field("seed", &self.seed)
+            .field("logit_bias", &self.logit_bias.as_ref().map(|_| "[REDACTED_JSON]"))
+            .field("history_management_strategy", &self.history_management_strategy)
+            .field("history_management_limit", &self.history_management_limit)
+            .field("model_name", &self.model_name)
+            .field("gemini_thinking_budget", &self.gemini_thinking_budget)
+            .field("gemini_enable_code_execution", &self.gemini_enable_code_execution)
+            .field("visibility", &self.visibility)
+            .finish()
+    }
+}
+
 // New Chat for insertion
-#[derive(Insertable, Debug, Clone)]
+#[derive(Insertable, Clone)] // Removed Debug
 #[diesel(table_name = chat_sessions)]
 pub struct NewChat {
     pub id: Uuid,
@@ -90,8 +121,25 @@ pub struct NewChat {
     pub visibility: Option<String>,
 }
 
+impl std::fmt::Debug for NewChat {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("NewChat")
+            .field("id", &self.id)
+            .field("user_id", &self.user_id)
+            .field("character_id", &self.character_id)
+            .field("title", &self.title.as_ref().map(|_| "[REDACTED]"))
+            .field("created_at", &self.created_at)
+            .field("updated_at", &self.updated_at)
+            .field("history_management_strategy", &self.history_management_strategy)
+            .field("history_management_limit", &self.history_management_limit)
+            .field("model_name", &self.model_name)
+            .field("visibility", &self.visibility)
+            .finish()
+    }
+}
+
 // Chat Message model
-#[derive(Queryable, Selectable, Identifiable, Serialize, Deserialize, Debug, Clone)]
+#[derive(Queryable, Selectable, Identifiable, Serialize, Deserialize, Clone)] // Removed Debug
 #[diesel(table_name = chat_messages)]
 #[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct Message {
@@ -109,8 +157,27 @@ pub struct Message {
     pub attachments: Option<serde_json::Value>,
 }
 
+impl std::fmt::Debug for Message {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Message")
+            .field("id", &self.id)
+            .field("session_id", &self.session_id)
+            .field("message_type", &self.message_type)
+            .field("content", &"[REDACTED_BYTES]")
+            .field("rag_embedding_id", &self.rag_embedding_id)
+            .field("created_at", &self.created_at)
+            .field("updated_at", &self.updated_at)
+            .field("user_id", &self.user_id)
+            .field("content_nonce", &self.content_nonce.as_ref().map(|_| "[REDACTED_NONCE]"))
+            .field("role", &self.role)
+            .field("parts", &self.parts.as_ref().map(|_| "[REDACTED_JSON]"))
+            .field("attachments", &self.attachments.as_ref().map(|_| "[REDACTED_JSON]"))
+            .finish()
+    }
+}
+
 // New Message for insertion
-#[derive(Insertable, Debug, Clone)]
+#[derive(Insertable, Clone)] // Removed Debug
 #[diesel(table_name = chat_messages)]
 pub struct NewMessage {
     pub id: Uuid,
@@ -126,15 +193,42 @@ pub struct NewMessage {
     pub attachments: Option<serde_json::Value>,
 }
 
+impl std::fmt::Debug for NewMessage {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("NewMessage")
+            .field("id", &self.id)
+            .field("session_id", &self.session_id)
+            .field("message_type", &self.message_type)
+            .field("content", &"[REDACTED_BYTES]")
+            .field("content_nonce", &self.content_nonce.as_ref().map(|_| "[REDACTED_NONCE]"))
+            .field("user_id", &self.user_id)
+            .field("created_at", &self.created_at)
+            .field("updated_at", &self.updated_at)
+            .field("role", &self.role)
+            .field("parts", &self.parts.as_ref().map(|_| "[REDACTED_JSON]"))
+            .field("attachments", &self.attachments.as_ref().map(|_| "[REDACTED_JSON]"))
+            .finish()
+    }
+}
+
 // Request/Response DTOs
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize)] // Removed Debug
 pub struct CreateChatRequest {
     #[serde(default)]
     pub title: String,
     pub character_id: Uuid,
 }
 
-#[derive(Serialize, Debug)]
+impl std::fmt::Debug for CreateChatRequest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CreateChatRequest")
+            .field("title", &"[REDACTED]")
+            .field("character_id", &self.character_id)
+            .finish()
+    }
+}
+
+#[derive(Serialize)] // Removed Debug
 pub struct ChatResponse {
     pub id: Uuid,
     pub title: String,
@@ -143,7 +237,19 @@ pub struct ChatResponse {
     pub visibility: Option<String>,
 }
 
-#[derive(Deserialize, Debug)]
+impl std::fmt::Debug for ChatResponse {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ChatResponse")
+            .field("id", &self.id)
+            .field("title", &"[REDACTED]")
+            .field("created_at", &self.created_at)
+            .field("user_id", &self.user_id)
+            .field("visibility", &self.visibility)
+            .finish()
+    }
+}
+
+#[derive(Deserialize)] // Removed Debug
 pub struct CreateMessageRequest {
     pub role: String,
     pub content: String,
@@ -151,7 +257,18 @@ pub struct CreateMessageRequest {
     pub attachments: Option<serde_json::Value>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+impl std::fmt::Debug for CreateMessageRequest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CreateMessageRequest")
+            .field("role", &self.role)
+            .field("content", &"[REDACTED]")
+            .field("parts", &self.parts.as_ref().map(|_| "[REDACTED_JSON]"))
+            .field("attachments", &self.attachments.as_ref().map(|_| "[REDACTED_JSON]"))
+            .finish()
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone)] // Removed Debug
 pub struct MessageResponse {
     pub id: Uuid,
     pub session_id: Uuid, // Renamed from chat_id
@@ -162,24 +279,65 @@ pub struct MessageResponse {
     pub created_at: DateTime<Utc>,
 }
 
+impl std::fmt::Debug for MessageResponse {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("MessageResponse")
+            .field("id", &self.id)
+            .field("session_id", &self.session_id)
+            .field("message_type", &self.message_type)
+            .field("role", &self.role)
+            .field("parts", &"[REDACTED_JSON]")
+            .field("attachments", &"[REDACTED_JSON]")
+            .field("created_at", &self.created_at)
+            .finish()
+    }
+}
+
 // Vote model
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Clone)] // Removed Debug
 pub struct Vote {
     pub chat_id: Uuid,
     pub message_id: Uuid,
     pub is_upvoted: bool,
 }
 
-#[derive(Deserialize, Debug)]
+impl std::fmt::Debug for Vote {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Vote")
+            .field("chat_id", &self.chat_id)
+            .field("message_id", &self.message_id)
+            .field("is_upvoted", &self.is_upvoted)
+            .finish()
+    }
+}
+
+#[derive(Deserialize)] // Removed Debug
 pub struct VoteRequest {
     pub message_id: Uuid,
     pub type_: String, // "up" or "down"
 }
 
+impl std::fmt::Debug for VoteRequest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("VoteRequest")
+            .field("message_id", &self.message_id)
+            .field("type_", &self.type_)
+            .finish()
+    }
+}
+
 // Visibility update
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize)] // Removed Debug
 pub struct UpdateChatVisibilityRequest {
     pub visibility: String, // "public" or "private"
+}
+
+impl std::fmt::Debug for UpdateChatVisibilityRequest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("UpdateChatVisibilityRequest")
+            .field("visibility", &self.visibility)
+            .finish()
+    }
 }
 
 // Enum to represent the role of the sender
@@ -237,8 +395,8 @@ impl std::fmt::Display for MessageRole {
 
 // Represents a chat message in the database
 #[derive(
-    Queryable, Selectable, Identifiable, Associations, Debug, Clone, Serialize, Deserialize,
-)]
+    Queryable, Selectable, Identifiable, Associations, Clone, Serialize, Deserialize,
+)] // Removed Debug
 #[diesel(belongs_to(Chat, foreign_key = session_id))] // Renamed ChatSession to Chat
 #[diesel(table_name = chat_messages)]
 pub struct ChatMessage {
@@ -253,6 +411,20 @@ pub struct ChatMessage {
     pub user_id: Uuid,              // Changed to non-optional Uuid to match schema
     // pub embedding: Option<Vec<f32>>, // Maybe store embeddings here later? Or Qdrant?
     // pub token_count: Option<i32>,
+}
+
+impl std::fmt::Debug for ChatMessage {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ChatMessage")
+            .field("id", &self.id)
+            .field("session_id", &self.session_id)
+            .field("message_type", &self.message_type)
+            .field("content", &"[REDACTED_BYTES]")
+            .field("content_nonce", &self.content_nonce.as_ref().map(|_| "[REDACTED_NONCE]"))
+            .field("created_at", &self.created_at)
+            .field("user_id", &self.user_id)
+            .finish()
+    }
 }
 
 impl ChatMessage {
@@ -364,7 +536,7 @@ impl ChatMessage {
 }
 
 /// JSON-friendly structure for client responses
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Clone)] // Removed Debug
 pub struct ClientChatMessage {
     pub id: Uuid,
     pub chat_id: Uuid,
@@ -375,8 +547,22 @@ pub struct ClientChatMessage {
     pub updated_at: DateTime<Utc>,
 }
 
+impl std::fmt::Debug for ClientChatMessage {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ClientChatMessage")
+            .field("id", &self.id)
+            .field("chat_id", &self.chat_id)
+            .field("character_id", &self.character_id)
+            .field("content", &"[REDACTED]")
+            .field("role", &self.role)
+            .field("created_at", &self.created_at)
+            .field("updated_at", &self.updated_at)
+            .finish()
+    }
+}
+
 /// Structure for sending ChatMessage data to the client, with decrypted content.
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Clone)] // Removed Debug
 pub struct ChatMessageForClient {
     pub id: Uuid,
     pub session_id: Uuid,
@@ -388,6 +574,19 @@ pub struct ChatMessageForClient {
     // pub role: Option<String>, // from Message struct, if needed
     // pub parts: Option<serde_json::Value>, // from Message struct, if needed
     // pub attachments: Option<serde_json::Value>, // from Message struct, if needed
+}
+
+impl std::fmt::Debug for ChatMessageForClient {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ChatMessageForClient")
+            .field("id", &self.id)
+            .field("session_id", &self.session_id)
+            .field("message_type", &self.message_type)
+            .field("content", &"[REDACTED]")
+            .field("created_at", &self.created_at)
+            .field("user_id", &self.user_id)
+            .finish()
+    }
 }
 
 // Moved into_decrypted_for_client from ChatMessage to Message struct
@@ -436,7 +635,7 @@ impl Message {
 
 
 // For inserting a new chat message
-#[derive(Insertable, Default, Debug, Clone)]
+#[derive(Insertable, Default, Clone)] // Removed Debug
 #[diesel(table_name = chat_messages)]
 pub struct NewChatMessage {
     pub session_id: Uuid,
@@ -446,8 +645,18 @@ pub struct NewChatMessage {
     // pub user_id: Uuid, // Example, check schema and insertion logic
 }
 
+impl std::fmt::Debug for NewChatMessage {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("NewChatMessage")
+            .field("session_id", &self.session_id)
+            .field("message_type", &self.message_type)
+            .field("content", &"[REDACTED_BYTES]")
+            .finish()
+    }
+}
+
 // For inserting a new chat message with better naming clarity
-#[derive(Insertable, Debug, Clone)]
+#[derive(Insertable, Clone)] // Removed Debug
 #[diesel(table_name = chat_messages)]
 pub struct DbInsertableChatMessage {
     #[diesel(column_name = session_id)]
@@ -457,6 +666,18 @@ pub struct DbInsertableChatMessage {
     pub content: Vec<u8>,
     pub content_nonce: Option<Vec<u8>>, // Added nonce
     pub user_id: Uuid, // Add the user_id field
+}
+
+impl std::fmt::Debug for DbInsertableChatMessage {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DbInsertableChatMessage")
+            .field("chat_id", &self.chat_id)
+            .field("role", &self.role)
+            .field("content", &"[REDACTED_BYTES]")
+            .field("content_nonce", &self.content_nonce.as_ref().map(|_| "[REDACTED_NONCE]"))
+            .field("user_id", &self.user_id)
+            .finish()
+    }
 }
 
 impl DbInsertableChatMessage {
@@ -479,7 +700,7 @@ impl DbInsertableChatMessage {
 
 // Request body for sending a new message (used by generate endpoint)
 // Added Serialize for cases where it might be returned or logged
-#[derive(Deserialize, Serialize, Debug)]
+#[derive(Deserialize, Serialize)] // Removed Debug
 pub struct NewChatMessageRequest {
     pub content: String,
     // Add optional model field
@@ -487,28 +708,62 @@ pub struct NewChatMessageRequest {
     // Role is often implicit based on the sender/endpoint being called
 }
 
+impl std::fmt::Debug for NewChatMessageRequest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("NewChatMessageRequest")
+            .field("content", &"[REDACTED]")
+            .field("model", &self.model)
+            .finish()
+    }
+}
+
 // API Request/Response Structures
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize)] // Removed Debug
 pub struct CreateChatSessionPayload {
     pub character_id: Uuid,
 }
 
-#[derive(Deserialize, Serialize, Debug)] // Added Serialize
+impl std::fmt::Debug for CreateChatSessionPayload {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CreateChatSessionPayload")
+            .field("character_id", &self.character_id)
+            .finish()
+    }
+}
+
+#[derive(Deserialize, Serialize)] // Removed Debug
 pub struct GenerateResponsePayload {
     pub content: String,
     pub model: Option<String>, // Added optional model field
 }
 
-#[derive(Serialize, Debug)]
+impl std::fmt::Debug for GenerateResponsePayload {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("GenerateResponsePayload")
+            .field("content", &"[REDACTED]")
+            .field("model", &self.model)
+            .finish()
+    }
+}
+
+#[derive(Serialize)] // Removed Debug
 pub struct GenerateResponse {
     pub ai_message: ChatMessage,
+}
+
+impl std::fmt::Debug for GenerateResponse {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("GenerateResponse")
+            .field("ai_message", &self.ai_message) // ChatMessage already has custom Debug
+            .finish()
+    }
 }
 
 // --- Generate Endpoint Payload Structures ---
 
 /// Represents a single message within the chat history payload.
-#[derive(Deserialize, Serialize, Debug, Clone, Validate)]
+#[derive(Deserialize, Serialize, Clone, Validate)] // Removed Debug
 pub struct ApiChatMessage {
     #[validate(length(min = 1))] // Role cannot be empty
     pub role: String, // Expecting "user", "assistant", "system"
@@ -516,18 +771,36 @@ pub struct ApiChatMessage {
     pub content: String,
 }
 
+impl std::fmt::Debug for ApiChatMessage {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ApiChatMessage")
+            .field("role", &self.role)
+            .field("content", &"[REDACTED]")
+            .finish()
+    }
+}
+
 /// Request body for POST /api/chats/{session_id}/generate
-#[derive(Deserialize, Serialize, Debug, Validate)] // Added Validate
+#[derive(Deserialize, Serialize, Validate)] // Removed Debug
 pub struct GenerateChatRequest {
     #[validate(length(min = 1))] // History must contain at least one message
     #[validate(nested)] // Validate each ApiChatMessage within the Vec
     pub history: Vec<ApiChatMessage>,
     pub model: Option<String>, // Keep optional model override
 }
+
+impl std::fmt::Debug for GenerateChatRequest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("GenerateChatRequest")
+            .field("history", &self.history.iter().map(|_| "[REDACTED_ApiChatMessage]").collect::<Vec<_>>())
+            .field("model", &self.model)
+            .finish()
+    }
+}
 // --- Chat Settings API Structures ---
 
 /// Response body for GET /api/chats/{id}/settings
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, PartialEq)] // Removed Debug
 pub struct ChatSettingsResponse {
     pub system_prompt: Option<String>,
     pub temperature: Option<BigDecimal>, // Changed f32 to BigDecimal
@@ -550,6 +823,30 @@ pub struct ChatSettingsResponse {
     // Gemini Specific Options
     pub gemini_thinking_budget: Option<i32>,
     pub gemini_enable_code_execution: Option<bool>,
+}
+
+impl std::fmt::Debug for ChatSettingsResponse {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ChatSettingsResponse")
+            .field("system_prompt", &self.system_prompt.as_ref().map(|_| "[REDACTED]"))
+            .field("temperature", &self.temperature)
+            .field("max_output_tokens", &self.max_output_tokens)
+            .field("frequency_penalty", &self.frequency_penalty)
+            .field("presence_penalty", &self.presence_penalty)
+            .field("top_k", &self.top_k)
+            .field("top_p", &self.top_p)
+            .field("repetition_penalty", &self.repetition_penalty)
+            .field("min_p", &self.min_p)
+            .field("top_a", &self.top_a)
+            .field("seed", &self.seed)
+            .field("logit_bias", &self.logit_bias.as_ref().map(|_| "[REDACTED_JSON]"))
+            .field("history_management_strategy", &self.history_management_strategy)
+            .field("history_management_limit", &self.history_management_limit)
+            .field("model_name", &self.model_name)
+            .field("gemini_thinking_budget", &self.gemini_thinking_budget)
+            .field("gemini_enable_code_execution", &self.gemini_enable_code_execution)
+            .finish()
+    }
 }
 // Implement From<Chat> for ChatSettingsResponse
 impl From<Chat> for ChatSettingsResponse {
@@ -578,7 +875,7 @@ impl From<Chat> for ChatSettingsResponse {
 
 /// Request body for PUT /api/chats/{id}/settings
 /// All fields are optional to allow partial updates.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, AsChangeset, Validate, Default)] // Added AsChangeset, Validate & Default
+#[derive(Serialize, Deserialize, Clone, PartialEq, AsChangeset, Validate, Default)] // Removed Debug
 #[diesel(table_name = crate::schema::chat_sessions)] // Specify target table
 pub struct UpdateChatSettingsRequest {
     pub system_prompt: Option<String>,
@@ -614,6 +911,30 @@ pub struct UpdateChatSettingsRequest {
     // Gemini Specific Options
     pub gemini_thinking_budget: Option<i32>,
     pub gemini_enable_code_execution: Option<bool>,
+}
+
+impl std::fmt::Debug for UpdateChatSettingsRequest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("UpdateChatSettingsRequest")
+            .field("system_prompt", &self.system_prompt.as_ref().map(|_| "[REDACTED]"))
+            .field("temperature", &self.temperature)
+            .field("max_output_tokens", &self.max_output_tokens)
+            .field("frequency_penalty", &self.frequency_penalty)
+            .field("presence_penalty", &self.presence_penalty)
+            .field("top_k", &self.top_k)
+            .field("top_p", &self.top_p)
+            .field("repetition_penalty", &self.repetition_penalty)
+            .field("min_p", &self.min_p)
+            .field("top_a", &self.top_a)
+            .field("seed", &self.seed)
+            .field("logit_bias", &self.logit_bias.as_ref().map(|_| "[REDACTED_JSON]"))
+            .field("history_management_strategy", &self.history_management_strategy)
+            .field("history_management_limit", &self.history_management_limit)
+            .field("model_name", &self.model_name)
+            .field("gemini_thinking_budget", &self.gemini_thinking_budget)
+            .field("gemini_enable_code_execution", &self.gemini_enable_code_execution)
+            .finish()
+    }
 }
 
 // Custom validation function for history_management_strategy (called only when Some)
@@ -731,7 +1052,7 @@ fn validate_optional_logit_bias(value: &Value) -> Result<(), ValidationError> {
 // --- Suggested Actions API Structures ---
 
 /// Payload for requesting suggested actions.
-#[derive(Debug, Serialize, Deserialize, Validate)] // Added Validate
+#[derive(Serialize, Deserialize, Validate)] // Removed Debug
 pub struct SuggestedActionsRequest {
     /// The history of messages in the chat so far.
     /// This provides context for generating relevant suggestions.
@@ -742,16 +1063,43 @@ pub struct SuggestedActionsRequest {
     pub ai_first_response: Option<String>,
 }
 
+impl std::fmt::Debug for SuggestedActionsRequest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SuggestedActionsRequest")
+            .field("message_history", &self.message_history.iter().map(|_| "[REDACTED_ApiChatMessage]").collect::<Vec<_>>())
+            .field("character_first_message", &"[REDACTED]")
+            .field("user_first_message", &self.user_first_message.as_ref().map(|_| "[REDACTED]"))
+            .field("ai_first_response", &self.ai_first_response.as_ref().map(|_| "[REDACTED]"))
+            .finish()
+    }
+}
+
 /// Structure for a single suggested action
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)] // Removed Debug
 pub struct SuggestedActionItem {
     pub action: String,
 }
 
+impl std::fmt::Debug for SuggestedActionItem {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SuggestedActionItem")
+            .field("action", &"[REDACTED]")
+            .finish()
+    }
+}
+
 /// Response structure for suggested actions API
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)] // Removed Debug
 pub struct SuggestedActionsResponse {
     pub suggestions: Vec<SuggestedActionItem>,
+}
+
+impl std::fmt::Debug for SuggestedActionsResponse {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SuggestedActionsResponse")
+            .field("suggestions", &self.suggestions.iter().map(|_| "[REDACTED_SuggestedActionItem]").collect::<Vec<_>>())
+            .finish()
+    }
 }
 
 #[cfg(test)]
@@ -815,7 +1163,8 @@ mod tests {
         let debug_str = format!("{:?}", session);
         assert!(debug_str.contains("Chat {"));
         assert!(debug_str.contains(&session.id.to_string()));
-        assert!(debug_str.contains("Test Chat"));
+        assert!(debug_str.contains("title: Some(\"[REDACTED]\")"));
+        assert!(debug_str.contains("system_prompt: Some(\"[REDACTED]\")"));
         assert!(debug_str.contains("history_management_strategy: \"none\""));
     }
 
@@ -868,7 +1217,7 @@ mod tests {
         let debug_str = format!("{:?}", message);
         assert!(debug_str.contains("ChatMessage"));
         assert!(debug_str.contains(&message.id.to_string()));
-        assert!(debug_str.contains("content: [72, 101, 108, 108, 111, 44, 32, 104, 111, 119, 32, 97, 114, 101, 32, 121, 111, 117, 63]"));
+        assert!(debug_str.contains("content: \"[REDACTED_BYTES]\""));
     }
 
     #[test]
@@ -954,7 +1303,7 @@ mod tests {
         let debug_str = format!("{:?}", message);
         assert!(debug_str.contains("NewChatMessage"));
         assert!(debug_str.contains(&message.session_id.to_string()));
-        assert!(debug_str.contains("content: [72, 101, 108, 108, 111, 33]"));
+        assert!(debug_str.contains("content: \"[REDACTED_BYTES]\""));
     }
 
     #[test]
@@ -1010,7 +1359,7 @@ mod tests {
         let settings = create_sample_chat_settings_response();
         let debug_str = format!("{:?}", settings);
         assert!(debug_str.contains("ChatSettingsResponse"));
-        assert!(debug_str.contains("You are a helpful assistant"));
+        assert!(debug_str.contains("system_prompt: Some(\"[REDACTED]\")"));
         assert!(debug_str.contains("temperature: Some"));
         assert!(debug_str.contains("history_management_strategy: \"none\"")); // Check new field
     }
@@ -1059,7 +1408,7 @@ mod tests {
         let settings = create_sample_update_chat_settings_request();
         let debug_str = format!("{:?}", settings);
         assert!(debug_str.contains("UpdateChatSettingsRequest"));
-        assert!(debug_str.contains("Test system prompt"));
+        assert!(debug_str.contains("system_prompt: Some(\"[REDACTED]\")"));
         assert!(debug_str.contains("temperature: Some"));
         assert!(debug_str.contains("history_management_strategy: Some(\"sliding_window_tokens\")")); // Check new field
     }

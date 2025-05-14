@@ -3,7 +3,7 @@
 use serde::Deserialize;
 
 // Renamed from Settings to Config
-#[derive(Deserialize, Debug, Clone)] // Removed Default as we use serde defaults now
+#[derive(Deserialize, Clone)]
 pub struct Config {
     // Database & API Keys
     pub database_url: Option<String>,
@@ -34,6 +34,38 @@ pub struct Config {
     pub chunking_max_size: usize,
     #[serde(default = "default_chunking_overlap")]
     pub chunking_overlap: usize,
+}
+
+impl std::fmt::Debug for Config {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Config")
+            .field(
+                "database_url",
+                &self.database_url.as_ref().map(|_| "[REDACTED]"),
+            )
+            .field(
+                "gemini_api_key",
+                &self.gemini_api_key.as_ref().map(|_| "[REDACTED]"),
+            )
+            .field("port", &self.port)
+            .field(
+                "cookie_signing_key",
+                &self.cookie_signing_key.as_ref().map(|_| "[REDACTED]"),
+            )
+            .field("session_cookie_secure", &self.session_cookie_secure)
+            .field(
+                "qdrant_url",
+                &self.qdrant_url.as_ref().map(|_| "[REDACTED]"),
+            )
+            .field("qdrant_collection_name", &self.qdrant_collection_name)
+            .field("embedding_dimension", &self.embedding_dimension)
+            .field("qdrant_distance_metric", &self.qdrant_distance_metric)
+            .field("qdrant_on_disk", &self.qdrant_on_disk)
+            .field("chunking_metric", &self.chunking_metric)
+            .field("chunking_max_size", &self.chunking_max_size)
+            .field("chunking_overlap", &self.chunking_overlap)
+            .finish()
+    }
 }
 
 // Default value functions for serde

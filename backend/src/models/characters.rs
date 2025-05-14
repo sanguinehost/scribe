@@ -18,8 +18,8 @@ use crate::services::character_parser::ParsedCharacterCard;
 use crate::services::encryption_service::EncryptionService; // Added
 
 #[derive(
-    Queryable, Selectable, Identifiable, Associations, Insertable, Serialize, Deserialize, Debug, Clone, PartialEq,
-)]
+    Queryable, Selectable, Identifiable, Associations, Insertable, Serialize, Deserialize, Clone, PartialEq,
+)] // Removed Debug for custom impl
 #[diesel(belongs_to(User, foreign_key = user_id))]
 #[diesel(table_name = crate::schema::characters)]
 pub struct Character {
@@ -99,6 +99,89 @@ pub struct Character {
     pub model_prompt_nonce: Option<Vec<u8>>,
     pub user_persona_nonce: Option<Vec<u8>>,
     pub post_history_instructions_nonce: Option<Vec<u8>>,
+}
+
+impl std::fmt::Debug for Character {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Character")
+            .field("id", &self.id)
+            .field("user_id", &self.user_id)
+            .field("spec", &self.spec)
+            .field("spec_version", &self.spec_version)
+            .field("name", &"[REDACTED]")
+            .field("description", &self.description.as_ref().map(|_| "[REDACTED_BYTES]"))
+            .field("personality", &self.personality.as_ref().map(|_| "[REDACTED_BYTES]"))
+            .field("scenario", &self.scenario.as_ref().map(|_| "[REDACTED_BYTES]"))
+            .field("first_mes", &self.first_mes.as_ref().map(|_| "[REDACTED_BYTES]"))
+            .field("mes_example", &self.mes_example.as_ref().map(|_| "[REDACTED_BYTES]"))
+            .field("creator_notes", &self.creator_notes.as_ref().map(|_| "[REDACTED_BYTES]"))
+            .field("system_prompt", &self.system_prompt.as_ref().map(|_| "[REDACTED_BYTES]"))
+            .field("post_history_instructions", &self.post_history_instructions.as_ref().map(|_| "[REDACTED_BYTES]"))
+            .field("tags", &self.tags.as_ref().map(|_| "[REDACTED_LIST]"))
+            .field("creator", &self.creator.as_ref().map(|_| "[REDACTED]"))
+            .field("character_version", &self.character_version)
+            .field("alternate_greetings", &self.alternate_greetings.as_ref().map(|_| "[REDACTED_LIST]"))
+            .field("nickname", &self.nickname.as_ref().map(|_| "[REDACTED]"))
+            .field("creator_notes_multilingual", &self.creator_notes_multilingual.as_ref().map(|_| "[REDACTED_JSON]"))
+            .field("source", &self.source.as_ref().map(|_| "[REDACTED_LIST]"))
+            .field("group_only_greetings", &self.group_only_greetings.as_ref().map(|_| "[REDACTED_LIST]"))
+            .field("creation_date", &self.creation_date)
+            .field("modification_date", &self.modification_date)
+            .field("created_at", &self.created_at)
+            .field("updated_at", &self.updated_at)
+            .field("persona", &self.persona.as_ref().map(|_| "[REDACTED_BYTES]"))
+            .field("world_scenario", &self.world_scenario.as_ref().map(|_| "[REDACTED_BYTES]"))
+            .field("avatar", &self.avatar.as_ref().map(|_| "[REDACTED]")) // Avatar might be a filename/ID, but redact to be safe
+            .field("chat", &self.chat.as_ref().map(|_| "[REDACTED]")) // chat field seems to be a string, potentially sensitive
+            .field("greeting", &self.greeting.as_ref().map(|_| "[REDACTED_BYTES]"))
+            .field("definition", &self.definition.as_ref().map(|_| "[REDACTED_BYTES]"))
+            .field("default_voice", &self.default_voice)
+            .field("extensions", &self.extensions.as_ref().map(|_| "[REDACTED_JSON]"))
+            .field("data_id", &self.data_id)
+            .field("category", &self.category)
+            .field("definition_visibility", &self.definition_visibility)
+            .field("depth", &self.depth)
+            .field("example_dialogue", &self.example_dialogue.as_ref().map(|_| "[REDACTED_BYTES]"))
+            .field("favorite", &self.favorite)
+            .field("first_message_visibility", &self.first_message_visibility)
+            .field("height", &self.height)
+            .field("last_activity", &self.last_activity)
+            .field("migrated_from", &self.migrated_from)
+            .field("model_prompt", &self.model_prompt.as_ref().map(|_| "[REDACTED_BYTES]"))
+            .field("model_prompt_visibility", &self.model_prompt_visibility)
+            .field("model_temperature", &self.model_temperature)
+            .field("num_interactions", &self.num_interactions)
+            .field("permanence", &self.permanence)
+            .field("persona_visibility", &self.persona_visibility)
+            .field("revision", &self.revision)
+            .field("sharing_visibility", &self.sharing_visibility)
+            .field("status", &self.status)
+            .field("system_prompt_visibility", &self.system_prompt_visibility)
+            .field("system_tags", &self.system_tags.as_ref().map(|_| "[REDACTED_LIST]"))
+            .field("token_budget", &self.token_budget)
+            .field("usage_hints", &self.usage_hints.as_ref().map(|_| "[REDACTED_JSON]"))
+            .field("user_persona", &self.user_persona.as_ref().map(|_| "[REDACTED_BYTES]"))
+            .field("user_persona_visibility", &self.user_persona_visibility)
+            .field("visibility", &self.visibility)
+            .field("weight", &self.weight)
+            .field("world_scenario_visibility", &self.world_scenario_visibility)
+            .field("description_nonce", &self.description_nonce.as_ref().map(|_| "[REDACTED_NONCE]"))
+            .field("personality_nonce", &self.personality_nonce.as_ref().map(|_| "[REDACTED_NONCE]"))
+            .field("scenario_nonce", &self.scenario_nonce.as_ref().map(|_| "[REDACTED_NONCE]"))
+            .field("first_mes_nonce", &self.first_mes_nonce.as_ref().map(|_| "[REDACTED_NONCE]"))
+            .field("mes_example_nonce", &self.mes_example_nonce.as_ref().map(|_| "[REDACTED_NONCE]"))
+            .field("creator_notes_nonce", &self.creator_notes_nonce.as_ref().map(|_| "[REDACTED_NONCE]"))
+            .field("system_prompt_nonce", &self.system_prompt_nonce.as_ref().map(|_| "[REDACTED_NONCE]"))
+            .field("persona_nonce", &self.persona_nonce.as_ref().map(|_| "[REDACTED_NONCE]"))
+            .field("world_scenario_nonce", &self.world_scenario_nonce.as_ref().map(|_| "[REDACTED_NONCE]"))
+            .field("greeting_nonce", &self.greeting_nonce.as_ref().map(|_| "[REDACTED_NONCE]"))
+            .field("definition_nonce", &self.definition_nonce.as_ref().map(|_| "[REDACTED_NONCE]"))
+            .field("example_dialogue_nonce", &self.example_dialogue_nonce.as_ref().map(|_| "[REDACTED_NONCE]"))
+            .field("model_prompt_nonce", &self.model_prompt_nonce.as_ref().map(|_| "[REDACTED_NONCE]"))
+            .field("user_persona_nonce", &self.user_persona_nonce.as_ref().map(|_| "[REDACTED_NONCE]"))
+            .field("post_history_instructions_nonce", &self.post_history_instructions_nonce.as_ref().map(|_| "[REDACTED_NONCE]"))
+            .finish()
+    }
 }
 
 impl Character {
@@ -452,7 +535,7 @@ impl std::fmt::Debug for CharacterDataForClient {
 // Represents fields that can be updated from a parsed card
 // Using Option<&'a str> allows updating only provided fields
 // without allocating new Strings.
-#[derive(Debug, Default)]
+#[derive(Default)] // Removed Debug for custom impl
 pub struct UpdatableCharacter<'a> {
     pub spec: Option<&'a str>,
     pub spec_version: Option<&'a str>,
@@ -472,6 +555,27 @@ pub struct UpdatableCharacter<'a> {
     // JSON needs separate handling, maybe Option<&'a Value>?
     // pub metadata_json: Option<&'a Value>, // Correct type?
     // Map other DB fields if needed
+}
+
+impl<'a> std::fmt::Debug for UpdatableCharacter<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("UpdatableCharacter")
+            .field("spec", &self.spec.map(|_| "[REDACTED]"))
+            .field("spec_version", &self.spec_version.map(|_| "[REDACTED]"))
+            .field("name", &self.name.map(|_| "[REDACTED]"))
+            .field("description", &self.description.map(|_| "[REDACTED_BYTES]"))
+            .field("personality", &self.personality.map(|_| "[REDACTED_BYTES]"))
+            .field("first_mes", &self.first_mes.map(|_| "[REDACTED_BYTES]"))
+            .field("mes_example", &self.mes_example.map(|_| "[REDACTED_BYTES]"))
+            .field("scenario", &self.scenario.map(|_| "[REDACTED_BYTES]"))
+            .field("system_prompt", &self.system_prompt.map(|_| "[REDACTED]"))
+            .field("creator_notes", &self.creator_notes.map(|_| "[REDACTED]"))
+            .field("tags", &self.tags.as_ref().map(|_| "[REDACTED_LIST]"))
+            .field("creator", &self.creator.map(|_| "[REDACTED]"))
+            .field("character_version", &self.character_version.map(|_| "[REDACTED]"))
+            .field("alternate_greetings", &self.alternate_greetings.as_ref().map(|_| "[REDACTED_LIST]"))
+            .finish()
+    }
 }
 
 impl<'a> From<&'a ParsedCharacterCard> for UpdatableCharacter<'a> {
@@ -561,8 +665,8 @@ impl<'a> From<&'a ParsedCharacterCard> for UpdatableCharacter<'a> {
 
 // Represents the core metadata of a character, stored in the DB
 #[derive(
-    Queryable, Selectable, Identifiable, Associations, Serialize, Deserialize, Debug, Clone,
-)]
+    Queryable, Selectable, Identifiable, Associations, Serialize, Deserialize, Clone,
+)] // Removed Debug
 #[diesel(belongs_to(User, foreign_key = user_id))]
 #[diesel(table_name = characters)]
 pub struct CharacterMetadata {
@@ -579,6 +683,21 @@ pub struct CharacterMetadata {
     // pub greeting: Option<String>,
     // pub example_dialogue: Option<String>,
     // ... other fields extracted from the card
+}
+
+impl std::fmt::Debug for CharacterMetadata {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CharacterMetadata")
+            .field("id", &self.id)
+            .field("user_id", &self.user_id)
+            .field("name", &"[REDACTED]")
+            .field("description", &self.description.as_ref().map(|_| "[REDACTED_BYTES]"))
+            .field("description_nonce", &self.description_nonce.as_ref().map(|_| "[REDACTED_NONCE]"))
+            .field("first_mes", &self.first_mes.as_ref().map(|_| "[REDACTED_BYTES]"))
+            .field("created_at", &self.created_at)
+            .field("updated_at", &self.updated_at)
+            .finish()
+    }
 }
 
 // Helper function to create a dummy Character instance
@@ -666,7 +785,7 @@ pub fn create_dummy_character() -> Character { // Made pub for potential use in 
 }
 
 // Client-side Character representation (for JSON responses)
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone)] // Removed Debug
 pub struct ClientCharacter {
     pub id: Uuid,
     pub user_id: Uuid,
@@ -681,6 +800,26 @@ pub struct ClientCharacter {
     pub chat_history_limit: i32,
     pub system_prompt: String,
     pub avatar_id: Option<Uuid>,
+}
+
+impl std::fmt::Debug for ClientCharacter {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ClientCharacter")
+            .field("id", &self.id)
+            .field("user_id", &self.user_id)
+            .field("name", &"[REDACTED]")
+            .field("description", &"[REDACTED]")
+            .field("concept", &"[REDACTED]") // Assuming concept might contain sensitive user input
+            .field("voice_instructions", &"[REDACTED]")
+            .field("created_at", &self.created_at)
+            .field("updated_at", &self.updated_at)
+            .field("is_favorite", &self.is_favorite)
+            .field("category", &self.category) // Category is likely non-sensitive
+            .field("chat_history_limit", &self.chat_history_limit)
+            .field("system_prompt", &"[REDACTED]")
+            .field("avatar_id", &self.avatar_id)
+            .finish()
+    }
 }
 
 #[cfg(test)]
@@ -703,7 +842,7 @@ mod tests {
     fn test_character_debug() {
         let character = create_dummy_character();
         let debug_output = format!("{:?}", character);
-        assert!(debug_output.contains("Dummy Character"));
+        assert!(debug_output.contains("name: \"[REDACTED]\""));
         assert!(debug_output.starts_with("Character {"));
         assert!(debug_output.ends_with("}"));
     }

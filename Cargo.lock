@@ -1931,7 +1931,7 @@ dependencies = [
 
 [[package]]
 name = "genai"
-version = "0.2.4-WIP"
+version = "0.3.2-WIP"
 dependencies = [
  "bytes",
  "derive_more 2.0.1",

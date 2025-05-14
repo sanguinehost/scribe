@@ -60,7 +60,7 @@ impl<'de> Deserialize<'de> for SerializableSecretDek {
 }
 
 // Helper struct for Diesel Querying - matches the DB schema exactly
-#[derive(Queryable, Selectable, Debug, Clone)]
+#[derive(Queryable, Selectable, Clone)] // Removed Debug for custom impl
 #[diesel(table_name = users)]
 #[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct UserDbQuery {
@@ -76,6 +76,25 @@ pub struct UserDbQuery {
     pub recovery_kek_salt: Option<String>,
     pub dek_nonce: Vec<u8>,
     pub recovery_dek_nonce: Option<Vec<u8>>,
+}
+
+impl std::fmt::Debug for UserDbQuery {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("UserDbQuery")
+            .field("id", &self.id)
+            .field("username", &self.username)
+            .field("password_hash", &"<omitted>")
+            .field("created_at", &self.created_at)
+            .field("updated_at", &self.updated_at)
+            .field("email", &"<omitted>")
+            .field("kek_salt", &self.kek_salt)
+            .field("encrypted_dek", &"<omitted>")
+            .field("encrypted_dek_by_recovery", &self.encrypted_dek_by_recovery.as_ref().map(|_| "<omitted>"))
+            .field("recovery_kek_salt", &self.recovery_kek_salt)
+            .field("dek_nonce", &"<omitted>")
+            .field("recovery_dek_nonce", &self.recovery_dek_nonce.as_ref().map(|_| "<omitted>"))
+            .finish()
+    }
 }
 
 // Main User struct for application logic - includes non-DB 'dek' field
@@ -114,7 +133,7 @@ impl std::fmt::Debug for User {
         f.debug_struct("User")
             .field("id", &self.id)
             .field("username", &self.username)
-            .field("email", &self.email)
+            .field("email", &"<omitted>")
             .field("password_hash", &"<omitted>")
             .field("kek_salt", &self.kek_salt)
             .field("encrypted_dek", &"<omitted>")
@@ -187,7 +206,7 @@ impl AuthUser for User {
 }
 
 /// Represents data needed to create a new user.
-#[derive(Insertable, Debug)]
+#[derive(Insertable)] // Removed Debug for custom impl
 #[diesel(table_name = users)]
 pub struct NewUser {
     pub username: String,
@@ -199,6 +218,22 @@ pub struct NewUser {
     pub recovery_kek_salt: Option<String>,
     pub dek_nonce: Vec<u8>,
     pub recovery_dek_nonce: Option<Vec<u8>>,
+}
+
+impl std::fmt::Debug for NewUser {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("NewUser")
+            .field("username", &self.username)
+            .field("password_hash", &"<omitted>")
+            .field("email", &"<omitted>")
+            .field("kek_salt", &self.kek_salt)
+            .field("encrypted_dek", &"<omitted>")
+            .field("encrypted_dek_by_recovery", &self.encrypted_dek_by_recovery.as_ref().map(|_| "<omitted>"))
+            .field("recovery_kek_salt", &self.recovery_kek_salt)
+            .field("dek_nonce", &"<omitted>")
+            .field("recovery_dek_nonce", &self.recovery_dek_nonce.as_ref().map(|_| "<omitted>"))
+            .finish()
+    }
 }
 
 #[derive(Deserialize, Debug, Clone)]
