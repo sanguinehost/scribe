@@ -9,7 +9,7 @@ use scribe_backend::models::characters::{CharacterDataForClient}; // Import Char
 // Updated imports for chats models
 use futures_util::{Stream, StreamExt}; // Removed StreamExt, TryStreamExt // Add StreamExt back
 use reqwest_eventsource::{Event, EventSource}; // Added Event, EventSource
-use scribe_backend::models::chats::{ChatMessage, Chat, GenerateResponsePayload, ApiChatMessage, ChatSettingsResponse, UpdateChatSettingsRequest}; // <-- Added ChatSettingsResponse, UpdateChatSettingsRequest
+use scribe_backend::models::chats::{ChatMessage, Chat, ApiChatMessage, ChatSettingsResponse, UpdateChatSettingsRequest, GenerateChatRequest}; // Removed unused GenerateResponsePayload
 use scribe_backend::models::users::User;
 use serde::{Deserialize, Deserializer}; // Added Deserialize, Deserializer
 use serde::Serialize; // Added for SerializableLoginPayload
@@ -456,52 +456,158 @@ impl From<ClientCharacterDataForClient> for CharacterDataForClient {
 // NEW: Helper function specifically for handling the non-streaming chat response
 async fn handle_non_streaming_chat_response(response: Response) -> Result<ChatMessage, CliError> {
     let status = response.status();
-    if status.is_success() {
-        match response.json::<NonStreamingResponse>().await {
-            Ok(body) => {
-                // Construct a partial ChatMessage. The chat loop primarily needs the content.
-                // Other fields like created_at, session_id are not strictly needed by the loop
-                // but we can add them with default/dummy values if necessary elsewhere.
-                Ok(ChatMessage {
-                    id: body.message_id,
-                    session_id: Uuid::nil(), // Not provided by this endpoint, set to nil
-                    user_id: Uuid::nil(), // Use Uuid::nil() for CLI context
-                    message_type: scribe_backend::models::chats::MessageRole::Assistant,
-                    content: body.content.into_bytes(), // Convert String to Vec<u8>
-                    content_nonce: None, // Add missing field
-                    created_at: chrono::Utc::now(), // Use current time
-                })
-            }
-            Err(e) => {
-                tracing::error!(error = ?e, "Failed to decode non-streaming chat response");
-                Err(CliError::Reqwest(e))
-            }
-        }
-    } else {
-        // Reuse the existing error handling logic from handle_response
+    
+    // Get the content type to determine how to process the response
+    let content_type = response
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .map(|v| v.to_str().unwrap_or("").to_string())
+        .unwrap_or_default();
+        
+    if !status.is_success() {
+        // For error status codes, handle the same way as before
         if status == StatusCode::TOO_MANY_REQUESTS {
             tracing::warn!("Received 429 Too Many Requests from backend");
             return Err(CliError::RateLimitExceeded);
         }
+        
         let error_text = response
             .text()
             .await
             .unwrap_or_else(|_| "Failed to read error body".to_string());
         tracing::error!(%status, error_body = %error_text, "API request failed");
-        Err(CliError::ApiError {
+        return Err(CliError::ApiError {
             status,
             message: error_text,
-        })
+        });
+    }
+    
+    // Get the response text
+    let response_text = match response.text().await {
+        Ok(text) => {
+            if text.trim().is_empty() {
+                tracing::warn!("Received empty response body with success status");
+                return Err(CliError::Internal("Received empty response from server".to_string()));
+            }
+            text
+        },
+        Err(e) => {
+            tracing::error!(error = ?e, "Failed to get text from response");
+            return Err(CliError::Reqwest(e));
+        }
+    };
+    
+    tracing::debug!("Received response text: {}", response_text);
+    
+    // Check if we have an SSE response (text/event-stream or contains "event:" and "data:")
+    if content_type.contains("text/event-stream") || 
+       (response_text.contains("event:") && response_text.contains("data:")) {
+        tracing::debug!("Detected SSE format response");
+        
+        // Check for error event (including rate limit errors from Gemini)
+        if response_text.contains("event: error") {
+            let error_data = response_text
+                .lines()
+                .find(|line| line.starts_with("data:"))
+                .map(|line| line.trim_start_matches("data:").trim())
+                .unwrap_or("Unknown error in SSE stream");
+                
+            tracing::error!(error_data = %error_data, "SSE stream contained error event");
+            
+            // Check for rate limit errors (status code 429) in the error text
+            if error_data.contains("429") || error_data.contains("Too Many Requests") || error_data.contains("rate limit") {
+                return Err(CliError::RateLimitExceeded);
+            }
+            
+            return Err(CliError::Backend(format!("Server error: {}", error_data)));
+        }
+        
+        // Extract content from a successful response
+        // Look for "event: content" or "event: done" followed by data
+        let content = response_text
+            .lines()
+            .skip_while(|line| !line.contains("event: content"))
+            .skip(1) // Skip the "event: content" line
+            .take_while(|line| !line.contains("event:")) // Take until next event
+            .filter(|line| line.starts_with("data:"))
+            .map(|line| line.trim_start_matches("data:").trim())
+            .collect::<Vec<&str>>()
+            .join("");
+            
+        if content.is_empty() {
+            // If no content, check for done event with data
+            let done_data = response_text
+                .lines()
+                .skip_while(|line| !line.contains("event: done"))
+                .skip(1) // Skip the "event: done" line
+                .take_while(|line| !line.contains("event:"))
+                .filter(|line| line.starts_with("data:"))
+                .map(|line| line.trim_start_matches("data:").trim())
+                .collect::<Vec<&str>>()
+                .join("");
+                
+            if !done_data.is_empty() {
+                // Use the done event data
+                tracing::debug!(done_data = %done_data, "Using data from done event");
+                return Ok(ChatMessage {
+                    id: Uuid::new_v4(), // Generate an ID since we don't have one
+                    session_id: Uuid::nil(),
+                    user_id: Uuid::nil(),
+                    message_type: scribe_backend::models::chats::MessageRole::Assistant,
+                    content: done_data.into_bytes(),
+                    content_nonce: None,
+                    created_at: chrono::Utc::now(),
+                });
+            }
+            
+            tracing::warn!("No content found in SSE response");
+            return Err(CliError::Internal("No message content found in server response".to_string()));
+        }
+        
+        // Return the content we found
+        tracing::debug!(content_len = content.len(), "Found content in SSE response");
+        return Ok(ChatMessage {
+            id: Uuid::new_v4(), // Generate an ID since we don't have one
+            session_id: Uuid::nil(),
+            user_id: Uuid::nil(),
+            message_type: scribe_backend::models::chats::MessageRole::Assistant,
+            content: content.into_bytes(),
+            content_nonce: None,
+            created_at: chrono::Utc::now(),
+        });
+    }
+    
+    // If not SSE, try parsing as JSON (original implementation)
+    match serde_json::from_str::<NonStreamingResponse>(&response_text) {
+        Ok(body) => {
+            // Construct a partial ChatMessage. The chat loop primarily needs the content.
+            // Other fields like created_at, session_id are not strictly needed by the loop
+            // but we can add them with default/dummy values if necessary elsewhere.
+            Ok(ChatMessage {
+                id: body.message_id,
+                session_id: Uuid::nil(), // Not provided by this endpoint, set to nil
+                user_id: Uuid::nil(), // Use Uuid::nil() for CLI context
+                message_type: scribe_backend::models::chats::MessageRole::Assistant,
+                content: body.content.into_bytes(), // Convert String to Vec<u8>
+                content_nonce: None, // Add missing field
+                created_at: chrono::Utc::now(), // Use current time
+            })
+        }
+        Err(e) => {
+            tracing::error!(error = ?e, response_text = %response_text, "Failed to parse JSON in non-streaming chat response");
+            Err(CliError::Json(e))
+        }
     }
 }
 
 // NEW: Struct for the streaming request payload, mirroring backend's GenerateChatRequest
-#[derive(Serialize)]
-struct CliGenerateChatRequest {
-    history: Vec<ApiChatMessage>,
-    // Add other fields like 'model' if the CLI needs to specify them
-    // model: Option<String>,
-}
+// Using the backend's GenerateChatRequest directly instead of this local struct
+// #[derive(Serialize)]
+// struct CliGenerateChatRequest {
+//     history: Vec<ApiChatMessage>,
+//     // Add other fields like 'model' if the CLI needs to specify them
+//     // model: Option<String>,
+// }
 
 /// Trait for abstracting HTTP client interactions to allow mocking in tests.
 #[async_trait]
@@ -532,8 +638,9 @@ pub trait HttpClient: Send + Sync {
     async fn stream_chat_response(
         &self,
         chat_id: Uuid,
-        history: Vec<ApiChatMessage>, // <-- Change parameter type and name
+        history: Vec<ApiChatMessage>,
         request_thinking: bool,
+        model_name: Option<&str>,  // Add model_name parameter
     ) -> Result<Pin<Box<dyn Stream<Item = Result<StreamEvent, CliError>> + Send>>, CliError>;
 
     // NEW: Chat Settings methods
@@ -826,24 +933,41 @@ impl HttpClient for ReqwestClientWrapper {
         url.query_pairs_mut()
             .append_pair("request_thinking", "false");
 
-        // Use the backend model struct directly (without request_thinking)
-        let request_body = GenerateResponsePayload {
+        // Create a history with just the current user message in the format the backend expects
+        let message_history = vec![ApiChatMessage {
+            role: "user".to_string(),
             content: content.to_string(),
+        }];
+
+        // Use the updated GenerateChatRequest that includes the history field
+        let request_body = GenerateChatRequest {
+            history: message_history,
             model: model_name.map(|s| s.to_string()),
         };
 
         tracing::info!(%url, chat_id = %chat_id, model = ?model_name, "Sending non-streaming message via HttpClient");
 
-        let response = self
+        // Handle network errors or HTTP 429 errors directly
+        let response = match self
             .client
             .post(url.clone()) // Clone URL here
+            .header(reqwest::header::ACCEPT, "application/json") // Set Accept header to get JSON response
             .json(&request_body)
             .send()
-            .await
-            .map_err(|e| {
-                tracing::error!(error = ?e, "Network error sending message");
-                CliError::Network(e.to_string())
-            })?;
+            .await {
+                Ok(resp) => {
+                    // Check for HTTP 429 status code directly before processing response
+                    if resp.status() == StatusCode::TOO_MANY_REQUESTS {
+                        tracing::warn!("Received 429 Too Many Requests from backend API");
+                        return Err(CliError::RateLimitExceeded);
+                    }
+                    resp
+                },
+                Err(e) => {
+                    tracing::error!(error = ?e, "Network error sending message");
+                    return Err(CliError::Network(e.to_string()));
+                }
+            };
 
         // Use the NEW handler function specifically for this response type
         handle_non_streaming_chat_response(response).await
@@ -853,8 +977,9 @@ impl HttpClient for ReqwestClientWrapper {
     async fn stream_chat_response(
         &self,
         chat_id: Uuid,
-        history: Vec<ApiChatMessage>, // <-- Change parameter type and name
+        history: Vec<ApiChatMessage>, 
         request_thinking: bool,
+        model_name: Option<&str>,  // Add model_name parameter
     ) -> Result<Pin<Box<dyn Stream<Item = Result<StreamEvent, CliError>> + Send>>, CliError> {
         // Build URL with query parameter for streaming
         let mut url = build_url(&self.base_url, &format!("/api/chats/{}/generate", chat_id))?;
@@ -863,11 +988,16 @@ impl HttpClient for ReqwestClientWrapper {
 
         tracing::info!(%url, %chat_id, %request_thinking, "Initiating streaming chat response via HttpClient");
 
-        // Payload now includes history
-        let payload = CliGenerateChatRequest { history }; // <-- Use new payload struct
+        // Payload now includes history using the backend's struct directly
+        let payload = GenerateChatRequest { 
+            history,
+            model: model_name.map(|s| s.to_string())  // Use the model name provided or None
+        };
 
         // Build the request manually to use with EventSource
-        let request_builder = self.client.post(url.clone()).json(&payload); // Clone URL, create builder
+        let request_builder = self.client.post(url.clone())
+            .header(reqwest::header::ACCEPT, "text/event-stream") // Explicitly request SSE format
+            .json(&payload); // Clone URL, create builder
 
         // Create the EventSource from the RequestBuilder
         let mut es = EventSource::new(request_builder)
@@ -907,8 +1037,21 @@ impl HttpClient for ReqwestClientWrapper {
                             "error" => {
                                 // Handle potential errors sent via SSE 'error' event
                                 tracing::error!(sse_error_data = %message.data, "Received error event from backend stream");
-                                // Propagate as a general backend error, or create a specific variant if needed
-                                Err(CliError::Backend(format!("Stream error from server: {}", message.data)))
+                                
+                                // Check for rate limit errors in the error data
+                                if message.data.contains("429") || 
+                                   message.data.contains("Too Many Requests") || 
+                                   message.data.contains("rate limit") {
+                                    tracing::warn!("SSE error event contains rate limit indication: {}", message.data);
+                                    yield Err(CliError::RateLimitExceeded);
+                                    es.close(); // Close the source on error
+                                    break;
+                                } else {
+                                    // Propagate as a general backend error for other types of errors
+                                    yield Err(CliError::Backend(format!("Stream error from server: {}", message.data)));
+                                    es.close(); // Close the source on error
+                                    break;
+                                }
                             }
                             unknown_event => {
                                 tracing::warn!(%unknown_event, data = %message.data, "Received unknown SSE event type");
@@ -936,7 +1079,7 @@ impl HttpClient for ReqwestClientWrapper {
                     }
                     Err(e) => {
                         // Handle different EventSource errors
-                        let cli_error = match e {
+                        match e {
                             reqwest_eventsource::Error::StreamEnded => {
                                 tracing::debug!("SSE stream ended by the server.");
                                 // Don't yield an error, just break. The caller expects Done or an error.
@@ -945,18 +1088,35 @@ impl HttpClient for ReqwestClientWrapper {
                                 break; // Exit the loop cleanly
                             }
                             reqwest_eventsource::Error::InvalidStatusCode(status, resp) => {
+                                // Check for rate limit status code first
+                                if status == StatusCode::TOO_MANY_REQUESTS {
+                                    tracing::warn!("SSE request failed with 429 Too Many Requests");
+                                    yield Err(CliError::RateLimitExceeded);
+                                    es.close();
+                                    break;
+                                }
+                                
                                 let body = resp.text().await.unwrap_or_else(|_| "Failed to read error body".to_string());
                                 tracing::error!(%status, error_body = %body, "SSE request failed with status code");
-                                CliError::ApiError { status, message: body }
+                                yield Err(CliError::ApiError { status, message: body });
+                                es.close();
+                                break;
                             }
                             _ => {
                                 tracing::error!(error = ?e, "SSE stream error");
-                                CliError::Network(format!("SSE stream error: {}", e))
+                                // Check if the error message contains any indication of rate limiting
+                                let error_str = format!("{}", e);
+                                if error_str.contains("429") || error_str.contains("Too Many Requests") || error_str.contains("rate limit") {
+                                    tracing::warn!("SSE error appears to be a rate limit: {}", error_str);
+                                    yield Err(CliError::RateLimitExceeded);
+                                    es.close();
+                                    break;
+                                }
+                                yield Err(CliError::Network(format!("SSE stream error: {}", e)));
+                                es.close();
+                                break;
                             }
                         };
-                        yield Err(cli_error);
-                        es.close(); // Close the source on error
-                        break; // Stop processing on error
                     }
                 }
             }
@@ -1927,10 +2087,11 @@ mod tests {
         use serde_json::json;
         use httptest::matchers::{request, all_of, matches};
 
-        // Mock response structure
+        // Test both JSON and SSE response formats
+        
+        // 1. Test with JSON response format
         let mock_api_response = json!({ "message_id": response_message_id, "content": response_content });
-
-        // Create a matcher that checks the method and uses regex for the path
+        
         server.expect(
             Expectation::matching(all_of![
                 request::method("POST"),
@@ -1943,12 +2104,42 @@ mod tests {
             .send_message(session_id, message_content, None)
             .await;
 
-        assert!(result.is_ok(), "send_message failed: {:?}", result.err());
+        assert!(result.is_ok(), "send_message with JSON response failed: {:?}", result.err());
         let response_message = result.unwrap();
-        assert_eq!(response_message.id, response_message_id);
         assert_eq!(response_message.content, response_content.as_bytes());
         assert_eq!(response_message.message_type, MessageRole::Assistant);
+        
+        // For JSON format, we expect the message_id to match
+        assert_eq!(response_message.id, response_message_id);
         assert_eq!(response_message.session_id, Uuid::nil());
+
+        server.verify_and_clear();
+
+        // 2. Test with SSE response format
+        let sse_response = "event: content\ndata: Hello, user from SSE!\n\nevent: done\ndata: [DONE]\n";
+        
+        server.expect(
+            Expectation::matching(all_of![
+                request::method("POST"),
+                request::path(matches(format!("/api/chats/{}/generate.*", session_id)))
+            ])
+            .respond_with(
+                status_code(200)
+                    .append_header("content-type", "text/event-stream")
+                    .body(sse_response)
+            )
+        );
+
+        let result = client
+            .send_message(session_id, message_content, None)
+            .await;
+
+        assert!(result.is_ok(), "send_message with SSE response failed: {:?}", result.err());
+        let response_message = result.unwrap();
+        assert_eq!(response_message.content, "Hello, user from SSE!".as_bytes());
+        assert_eq!(response_message.message_type, MessageRole::Assistant);
+        assert_eq!(response_message.session_id, Uuid::nil());
+        // For SSE format, the ID is generated dynamically, so we can't compare it
 
         server.verify_and_clear();
     }
@@ -1985,6 +2176,56 @@ mod tests {
         }
 
         server.verify_and_clear();
+        
+        // Test SSE error response format
+        let sse_error_body = format!("event: error\ndata: Session {} not found", session_id);
+        
+        server.expect(
+            Expectation::matching(all_of![
+                request::method("POST"),
+                request::path(matches(format!("/api/chats/{}/generate.*", session_id)))
+            ])
+            .respond_with(
+                status_code(200) // The response is 200 OK, but contains an error event
+                    .append_header("content-type", "text/event-stream")
+                    .body(sse_error_body)
+            )
+        );
+
+        let result = client
+            .send_message(session_id, message_content, None)
+            .await;
+
+        assert!(result.is_err());
+        match result.err().unwrap() {
+            CliError::Backend(message) => {
+                assert!(message.contains("Session"));
+                assert!(message.contains("not found"));
+            }
+            e => panic!("Expected CliError::Backend for SSE error, got {:?}", e),
+        }
+
+        server.verify_and_clear();
+    }
+    
+    #[test]
+    fn test_generate_chat_request_serde() {
+        // Test the GenerateChatRequest structure we now use for messaging
+        let original = GenerateChatRequest {
+            history: vec![ApiChatMessage {
+                role: "user".to_string(),
+                content: "Hello AI".to_string(),
+            }],
+            model: Some("gemini-2.5-flash-preview-04-17".to_string()),
+        };
+
+        let serialized = serde_json::to_string(&original).expect("Serialization failed");
+        let deserialized: GenerateChatRequest = serde_json::from_str(&serialized).expect("Deserialization failed");
+
+        assert_eq!(original.history.len(), deserialized.history.len());
+        assert_eq!(original.history[0].role, deserialized.history[0].role);
+        assert_eq!(original.history[0].content, deserialized.history[0].content);
+        assert_eq!(original.model, deserialized.model);
     }
 
     // TODO: Add tests for handle_response if possible (requires mocking reqwest::Response)

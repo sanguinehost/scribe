@@ -71,8 +71,8 @@ async fn main() -> Result<()> {
 
     // Keep logged_in_user state here in the main loop
     let mut logged_in_user: Option<User> = None;
-    // Add state for the selected model - Use full name as default
-    let mut current_model: String = "gemini-2.5-pro-exp-03-25".to_string();
+    // Add state for the selected model - Use flash model as default instead of experimental
+    let mut current_model: String = "gemini-2.5-flash-preview-04-17".to_string();
 
     loop {
         if logged_in_user.is_none() {
@@ -487,7 +487,7 @@ async fn main() -> Result<()> {
                 "12" => {
                     // Test Streaming Chat
                     // Call a new handler function for the streaming test
-                    match handle_stream_test_action(&http_client, &mut io_handler).await {
+                    match handle_stream_test_action(&http_client, &mut io_handler, &current_model).await {
                         Ok(()) => { /* Test completed or error handled inside */ }
                         // Handle specific error from handler/select_character
                         Err(CliError::InputError(msg)) if msg.contains("No characters found") => {

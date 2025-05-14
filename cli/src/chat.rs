@@ -46,8 +46,8 @@ pub async fn run_chat_loop<IO: IoHandler, Http: HttpClient>(
                 io_handler.write_line("--------------------------------------------------")?;
             }
             Err(CliError::RateLimitExceeded) => {
-                io_handler
-                    .write_line("API rate limit exceeded. Please wait a moment and try again.")?;
+                io_handler.write_line("API rate limit exceeded: The Gemini model is currently receiving too many requests.")?;
+                io_handler.write_line("Please wait a moment before trying again or try a different model.")?;
                 io_handler.write_line("--------------------------------------------------")?;
             }
             Err(e) => {
@@ -70,10 +70,11 @@ pub async fn run_stream_test_loop<IO: IoHandler, Http: HttpClient>(
     chat_id: Uuid,
     initial_history: Vec<scribe_backend::models::chats::ApiChatMessage>,
     io_handler: &mut IO,
+    current_model: &str,  // Add current_model parameter
 ) -> Result<(), CliError> {
     let mut stream = http_client
-        .stream_chat_response(chat_id, initial_history, true)
-        .await?; // Request thinking
+        .stream_chat_response(chat_id, initial_history, true, Some(current_model))
+        .await?; // Request thinking with current model
 
     let mut thinking_started = false;
     let mut content_started = false;
@@ -195,13 +196,20 @@ pub async fn run_stream_test_loop<IO: IoHandler, Http: HttpClient>(
                 break; // Stream finished successfully
             }
             Err(e) => {
-                 // Print any remaining buffered content before error message
+                // Print any remaining buffered content before error message
                 if !current_line.is_empty() {
                     io_handler.write_raw(&current_line)?;
                     io_handler.write_raw("\n")?; // Ensure newline
                     current_line.clear();
                 }
-                io_handler.write_line(&format!("Error: {}", e))?;
+                
+                // Handle rate limit errors specially
+                if let CliError::RateLimitExceeded = e {
+                    io_handler.write_line("API rate limit exceeded: The Gemini model is currently receiving too many requests.")?;
+                    io_handler.write_line("Please wait a moment before trying again or try a different model.")?;
+                } else {
+                    io_handler.write_line(&format!("Error: {}", e))?;
+                }
                 break; // Stop on error
             }
         }

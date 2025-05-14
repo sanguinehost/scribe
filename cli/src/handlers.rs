@@ -309,9 +309,10 @@ pub async fn handle_model_settings_action<C: HttpClient, H: IoHandler>(
     io_handler: &mut H,
     current_model: &mut String,
 ) -> Result<(), CliError> {
-    // Define the full model names for clarity in prompts/examples if needed
-    const EXPERIMENTAL_MODEL: &str = "gemini-2.5-pro-exp-03-25";
-    const PAID_MODEL: &str = "gemini-2.5-pro-preview-03-25";
+    // Define the full model names for clarity in prompts/examples
+    const FLASH_MODEL: &str = "gemini-2.5-flash-preview-04-17";  // Recommended stable model
+    const PRO_PREVIEW_MODEL: &str = "gemini-2.5-pro-preview-05-06";  // Latest paid model with more capabilities
+    const EXPERIMENTAL_MODEL: &str = "gemini-2.5-pro-exp-03-25";  // Most likely to hit rate limits
 
     loop {
         io_handler.write_line("\n--- Model Settings ---")?;
@@ -332,21 +333,42 @@ pub async fn handle_model_settings_action<C: HttpClient, H: IoHandler>(
                     .write_line(&format!("The current model is set to: {}", current_model))?;
             }
             "2" => {
-                // Prompt for the full model name directly, providing examples
-                let prompt = format!(
-                    "Enter the full model name (e.g., '{}', '{}'):",
-                    EXPERIMENTAL_MODEL, PAID_MODEL
-                );
-                let new_model = io_handler.read_line(&prompt)?;
-                let trimmed_model = new_model.trim();
-
-                if trimmed_model.is_empty() {
+                // Offer specific model options
+                io_handler.write_line("Available models:")?;
+                io_handler.write_line(&format!("[1] {} (RECOMMENDED - stable, less rate limiting)", FLASH_MODEL))?;
+                io_handler.write_line(&format!("[2] {} (more capabilities, may have quota)", PRO_PREVIEW_MODEL))?;
+                io_handler.write_line(&format!("[3] {} (experimental, frequent rate limiting)", EXPERIMENTAL_MODEL))?;
+                io_handler.write_line("[4] Custom model name")?;
+                
+                let model_choice = io_handler.read_line("Select model (1-4):")?;
+                
+                let new_model = match model_choice.trim() {
+                    "1" => FLASH_MODEL.to_string(),
+                    "2" => PRO_PREVIEW_MODEL.to_string(),
+                    "3" => EXPERIMENTAL_MODEL.to_string(),
+                    "4" => {
+                        let custom_prompt = "Enter the full custom model name:";
+                        io_handler.read_line(custom_prompt)?.trim().to_string()
+                    }
+                    _ => {
+                        io_handler.write_line("Invalid selection. No changes made.")?;
+                        continue;
+                    }
+                };
+                
+                if new_model.is_empty() {
                     io_handler.write_line("Model name cannot be empty. No changes made.")?;
                 } else {
-                    // Store the exact name entered by the user
-                    *current_model = trimmed_model.to_string();
+                    // Store the model name
+                    *current_model = new_model;
                     tracing::info!(new_model = %current_model, "Chat model updated");
                     io_handler.write_line(&format!("Model updated to: {}", current_model))?;
+                    
+                    // Add warning for experimental model
+                    if current_model == EXPERIMENTAL_MODEL {
+                        io_handler.write_line("\nWARNING: You selected the experimental model which is most likely to hit rate limits.")?;
+                        io_handler.write_line("If you encounter '429 Too Many Requests' errors, please switch to the Flash model.")?;
+                    }
                 }
             }
             "b" | "B" => {
@@ -410,8 +432,10 @@ pub async fn select_character<Http: HttpClient, IO: IoHandler>(
 pub async fn handle_stream_test_action<Http: HttpClient, IO: IoHandler>(
     http_client: &Http,
     io_handler: &mut IO,
+    current_model: &str, // Add current_model parameter
 ) -> Result<(), CliError> {
     io_handler.write_line("\n--- Test Streaming Chat (with Thinking) ---")?;
+    io_handler.write_line(&format!("Using model: {}", current_model))?;
 
     // 1. Select Character
     let character_id = select_character(http_client, io_handler).await?;
@@ -428,7 +452,7 @@ pub async fn handle_stream_test_action<Http: HttpClient, IO: IoHandler>(
     let mut settings_to_update = UpdateChatSettingsRequest { 
         gemini_thinking_budget: None,
         gemini_enable_code_execution: None,
-        // Initialize other fields from UpdateChatSettingsRequest to None or their defaults if any
+        // Initialize other fields from UpdateChatSettingsRequest to None or their defaults
         system_prompt: None,
         temperature: None,
         max_output_tokens: None,
@@ -443,7 +467,7 @@ pub async fn handle_stream_test_action<Http: HttpClient, IO: IoHandler>(
         logit_bias: None,
         history_management_strategy: None,
         history_management_limit: None,
-        model_name: None, 
+        model_name: Some(current_model.to_string()), // Use the current model
     };
 
     let budget_str = io_handler.read_line("Set Gemini Thinking Budget (optional, integer, e.g. 1024, press Enter to skip):")?;
@@ -463,12 +487,11 @@ pub async fn handle_stream_test_action<Http: HttpClient, IO: IoHandler>(
         }
     }
 
-    if settings_to_update.gemini_thinking_budget.is_some() || settings_to_update.gemini_enable_code_execution.is_some() {
-        io_handler.write_line("Updating session with Gemini-specific settings for this test...")?;
-        match http_client.update_chat_settings(chat_id, &settings_to_update).await {
-            Ok(_) => io_handler.write_line("Test session settings updated.")?,
-            Err(e) => io_handler.write_line(&format!("Warning: Failed to update test session settings: {}. Proceeding with defaults.", e))?,
-        }
+    // Always update settings to use our configured model and any other settings
+    io_handler.write_line("Updating session with model and Gemini-specific settings for this test...")?;
+    match http_client.update_chat_settings(chat_id, &settings_to_update).await {
+        Ok(_) => io_handler.write_line("Test session settings updated.")?,
+        Err(e) => io_handler.write_line(&format!("Warning: Failed to update test session settings: {}. Proceeding with defaults.", e))?,
     }
     // +++ End Gemini settings for test +++
 
@@ -489,7 +512,7 @@ pub async fn handle_stream_test_action<Http: HttpClient, IO: IoHandler>(
 
     // 4. Run the Stream Test Loop (function to be defined in chat.rs)
     io_handler.write_line("\nInitiating streaming response...")?;
-    if let Err(e) = run_stream_test_loop(http_client, chat_id, initial_history, io_handler).await { // <-- Pass history
+    if let Err(e) = run_stream_test_loop(http_client, chat_id, initial_history, io_handler, current_model).await { // Pass current_model
         tracing::error!(error = ?e, "Stream test loop failed");
         io_handler.write_line(&format!("Stream test encountered an error: {}", e))?;
         // Return Ok here as the action itself didn't fail, the loop did.
