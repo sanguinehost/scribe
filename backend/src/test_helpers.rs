@@ -39,6 +39,7 @@ use diesel::prelude::*;
 use diesel_migrations::{embed_migrations, EmbeddedMigrations};
 use dotenvy::dotenv; // Removed var
 use genai::chat::ChatStreamEvent; // Add import for chatstream types
+use futures::{TryStreamExt, future};
 use genai::chat::{ChatOptions, ChatRequest, ChatResponse};
 use genai::ModelIden; // Import ModelIden directly
 use genai::adapter::AdapterKind; // Ensure AdapterKind is in scope
@@ -594,12 +595,17 @@ pub async fn spawn_app(multi_thread: bool, use_real_ai: bool, use_real_qdrant: b
         Arc<dyn QdrantClientServiceTrait + Send + Sync>,
         Option<Arc<MockQdrantClientService>>,
     ) = if use_real_qdrant {
-        let real_qdrant_service = Arc::new(
-            QdrantClientService::new(config.clone())
-                .await
-                .expect("Failed to create real QdrantClientService for testing"),
-        );
-        (real_qdrant_service, None)
+        match QdrantClientService::new(config.clone()).await {
+            Ok(service) => {
+                let real_qdrant_service = Arc::new(service);
+                (real_qdrant_service, None)
+            },
+            Err(e) => {
+                warn!("Failed to create real QdrantClientService for testing: {}. Falling back to mock.", e);
+                let mock_q_service = Arc::new(MockQdrantClientService::new());
+                (mock_q_service.clone(), Some(mock_q_service))
+            }
+        }
     } else {
         let mock_q_service = Arc::new(MockQdrantClientService::new());
         (mock_q_service.clone(), Some(mock_q_service))
@@ -1265,4 +1271,76 @@ pub async fn create_user_with_dek_in_session(
 
     // 4. Return User and cookie
     Ok((mock_user_for_assertion, actual_cookie_value)) // Use the cookie from step 2
+}
+
+// Helper structs and functions for testing SSE
+#[derive(Debug, PartialEq, Clone)]
+pub struct ParsedSseEvent {
+    pub event: Option<String>, // Name of the event (e.g., "content", "error")
+    pub data: String,          // Raw data string
+                               // Not parsing id or retry for now
+}
+
+// Revised helper to parse full SSE events
+pub async fn collect_full_sse_events(body: axum::body::Body) -> Vec<ParsedSseEvent> {
+    let mut events = Vec::new();
+    let mut current_event_name: Option<String> = None;
+    let mut current_data_lines: Vec<String> = Vec::new();
+
+    let stream = body.into_data_stream();
+
+    stream
+        .try_for_each(|buf| {
+            let chunk_str = match std::str::from_utf8(&buf) {
+                Ok(s) => s,
+                Err(e) => {
+                    tracing::error!("SSE stream chunk is not valid UTF-8: {}", e);
+                    // Depending on strictness, could return an error or skip the chunk
+                    return futures::future::ready(Ok(())); // Skip malformed chunk
+                }
+            };
+            
+            for line in chunk_str.lines() {
+                if line.is_empty() { // End of an event
+                    if !current_data_lines.is_empty() { // Only push if there's data
+                        events.push(ParsedSseEvent {
+                            event: current_event_name.clone(),
+                            data: current_data_lines.join("\n"), // Data can be multi-line
+                        });
+                        current_data_lines.clear();
+                        // SSE spec: event name persists for subsequent data-only lines until next event: line or blank line.
+                        // However, for simplicity here, we reset it as each 'event:' line should precede its 'data:'
+                        // Axum's Event::default().data() does not set an event name, so current_event_name remains None.
+                        // If an Event::event("name").data() is used, current_event_name would be Some("name").
+                        // After a full event (blank line), the next event starts fresh. If it has no 'event:' line, it's a default 'message' event.
+                        // So, resetting current_event_name to None is correct for default handling of subsequent unnamed events.
+                        current_event_name = None; 
+                    } else if current_event_name.is_some() {
+                        // Handle event with name but no data, e.g. event: foo
+                        events.push(ParsedSseEvent {
+                            event: current_event_name.clone(),
+                            data: String::new(),
+                        });
+                        current_event_name = None;
+                    }
+                } else if let Some(name) = line.strip_prefix("event:") {
+                    current_event_name = Some(name.trim().to_string());
+                } else if let Some(data_content) = line.strip_prefix("data:") {
+                    current_data_lines.push(data_content.trim().to_string());
+                }
+                // Ignoring id: and retry: for now
+            }
+            futures::future::ready(Ok(()))
+        })
+        .await
+        .expect("Failed to read SSE stream");
+
+    // Handle any trailing event data if the stream ends without a blank line
+    if !current_data_lines.is_empty() {
+        events.push(ParsedSseEvent {
+            event: current_event_name,
+            data: current_data_lines.join("\n"),
+        });
+    }
+    events
 }

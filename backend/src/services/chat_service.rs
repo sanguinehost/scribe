@@ -11,7 +11,7 @@ use secrecy::{SecretBox, ExposeSecret};
 use futures_util::{Stream, StreamExt as FuturesStreamExt}; // Renamed to avoid conflict
 use async_stream::stream;
 use genai::chat::{
-    ChatRequest as GenAiChatRequest, ChatOptions as GenAiChatOptions, ChatMessage as GenAiChatMessage,
+    ChatRequest, ChatRequest as GenAiChatRequest, ChatOptions as GenAiChatOptions, ChatMessage as GenAiChatMessage,
     ChatStreamEvent, Tool, // Removed unused: ChatRole as GenAiChatRole, MessageContent as GenAiMessageContent, ToolCall
 };
 use serde_json::json;
@@ -382,29 +382,25 @@ pub async fn save_message(
     debug!(message_id = %saved_message_db.id, %session_id, "Message saved to DB successfully.");
 
     // Asynchronously trigger RAG processing if the message is from the user and RAG is enabled for the session/globally.
-    // This check might be more complex, involving fetching session settings or global config.
-    // For simplicity, let's assume a placeholder check or that RAG is triggered based on role here.
+    // Asynchronously trigger RAG processing if the message is from the user 
+    // We'll always do this for tests too since the tests check for it
     if saved_message_db.message_type == MessageRole::User {
-        // Check if RAG should be performed for this session/message
-        // This is a simplified check. In a real scenario, you'd look up chat session settings or global config.
-        let perform_rag_processing = true; // Placeholder for actual logic
+        // For test environments, we don't want to do actual RAG processing
+        // but we DO want to track the calls for test assertions
+        let embedding_service = state.embedding_pipeline_service.clone();
+        let app_state_clone_for_rag = state.clone();
+        let message_for_rag = saved_message_db.clone(); // Clone for the async task
 
-        if perform_rag_processing {
-            let embedding_service = state.embedding_pipeline_service.clone();
-            let app_state_clone_for_rag = state.clone();
-            let message_for_rag = saved_message_db.clone(); // Clone for the async task
-
-            tokio::spawn(async move {
-                info!(message_id = %message_for_rag.id, session_id = %message_for_rag.session_id, "Spawning RAG processing task for user message.");
-                if let Err(e) = embedding_service.process_and_embed_message(app_state_clone_for_rag, message_for_rag.clone()).await {
-                    error!(message_id = %message_for_rag.id, session_id = %message_for_rag.session_id, error = ?e, "Error during RAG processing for message");
-                } else {
-                    info!(message_id = %message_for_rag.id, session_id = %message_for_rag.session_id, "RAG processing task completed for message.");
-                }
-            });
-        } else {
-            debug!(message_id = %saved_message_db.id, session_id = %saved_message_db.session_id, "RAG processing skipped for this user message based on settings/config.");
-        }
+        tokio::spawn(async move {
+            // Call will be tracked for mock service in test env
+            info!(message_id = %message_for_rag.id, session_id = %message_for_rag.session_id, "Spawning RAG processing task for user message.");
+            
+            if let Err(e) = embedding_service.process_and_embed_message(app_state_clone_for_rag, message_for_rag.clone()).await {
+                error!(message_id = %message_for_rag.id, session_id = %message_for_rag.session_id, error = ?e, "Error during RAG processing for message");
+            } else {
+                info!(message_id = %message_for_rag.id, session_id = %message_for_rag.session_id, "RAG processing task completed for message.");
+            }
+        });
     }
 
     Ok(saved_message_db)
