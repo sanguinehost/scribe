@@ -1,10 +1,10 @@
 use crate::chat::run_chat_loop; // Import the chat loop function
 use crate::chat::run_stream_test_loop; // Import the stream test loop function
-use crate::client::HttpClient; // HttpClient is the trait, ScribeClient might be old
+use crate::client::{HttpClient, ClientCharacterDataForClient}; // HttpClient is the trait, and our custom wrapper
 use crate::error::CliError;
 use crate::io::IoHandler;
 use scribe_backend::models::auth::LoginPayload;
-use scribe_backend::models::{characters::CharacterDataForClient, chats::ApiChatMessage, chats::UpdateChatSettingsRequest}; // <-- Use CharacterDataForClient
+use scribe_backend::models::{chats::ApiChatMessage, chats::UpdateChatSettingsRequest};
 use scribe_backend::models::chats::MessageRole;
 use scribe_backend::models::users::User;
 use secrecy::SecretString; // Added SecretString
@@ -73,7 +73,7 @@ pub async fn handle_health_check_action<Http: HttpClient, IO: IoHandler>(
 pub async fn handle_upload_character_action<Http: HttpClient, IO: IoHandler>(
     http_client: &Http,
     io_handler: &mut IO,
-) -> Result<CharacterDataForClient, CliError> {
+) -> Result<ClientCharacterDataForClient, CliError> {
     io_handler.write_line("\nUpload a new character.")?;
     let name = io_handler.read_line("Character Name:")?;
     let file_path = io_handler.read_line("Path to Character Card (.png):")?;
@@ -628,9 +628,9 @@ mod tests {
         login_result: Option<Arc<Result<User, MockCliError>>>,
         register_result: Option<Arc<Result<User, MockCliError>>>,
         health_check_result: Option<Arc<Result<HealthStatus, MockCliError>>>,
-        upload_character_result: Option<Arc<Result<CharacterDataForClient, MockCliError>>>,
-        list_characters_result: Option<Arc<Result<Vec<CharacterDataForClient>, MockCliError>>>,
-        get_character_result: Option<Arc<Result<CharacterDataForClient, MockCliError>>>,
+        upload_character_result: Option<Arc<Result<ClientCharacterDataForClient, MockCliError>>>,
+        list_characters_result: Option<Arc<Result<Vec<ClientCharacterDataForClient>, MockCliError>>>,
+        get_character_result: Option<Arc<Result<ClientCharacterDataForClient, MockCliError>>>,
         list_chat_sessions_result: Option<Arc<Result<Vec<Chat>, MockCliError>>>,
         get_chat_messages_result: Option<Arc<Result<Vec<ChatMessage>, MockCliError>>>,
         create_chat_session_result: Option<Arc<Result<Chat, MockCliError>>>, // Added
@@ -662,7 +662,7 @@ mod tests {
             mock_result.map_err(Into::into)
         }
  
-        async fn list_characters(&self) -> Result<Vec<CharacterDataForClient>, CliError> {
+        async fn list_characters(&self) -> Result<Vec<ClientCharacterDataForClient>, CliError> {
             let mock_result =
                 Arc::unwrap_or_clone(self.list_characters_result.clone().unwrap_or_else(|| {
                     Arc::new(Err(MockCliError::Internal(
@@ -685,7 +685,7 @@ mod tests {
             &self,
             _name: &str,
             _file_path: &str,
-        ) -> Result<CharacterDataForClient, CliError> {
+        ) -> Result<ClientCharacterDataForClient, CliError> {
             let mock_result =
                 Arc::unwrap_or_clone(self.upload_character_result.clone().unwrap_or_else(|| {
                     Arc::new(Err(MockCliError::Internal(
@@ -720,7 +720,7 @@ mod tests {
             }));
             mock_result.map_err(Into::into)
         }
-        async fn get_character(&self, _character_id: Uuid) -> Result<CharacterDataForClient, CliError> {
+        async fn get_character(&self, _character_id: Uuid) -> Result<ClientCharacterDataForClient, CliError> {
             let mock_result =
                 Arc::unwrap_or_clone(self.get_character_result.clone().unwrap_or_else(|| {
                     Arc::new(Err(MockCliError::Internal(
@@ -831,10 +831,9 @@ mod tests {
         }
     }
  
-    // Updated to return CharacterDataForClient and include more fields for comprehensive testing
-    fn mock_character_data_for_client(id: Uuid, name: &str, description: Option<&str>) -> CharacterDataForClient {
-        use scribe_backend::models::characters::CharacterDataForClient as BackendCharacterDataForClient;
-        BackendCharacterDataForClient {
+    // Updated to return ClientCharacterDataForClient
+    fn mock_character_data_for_client(id: Uuid, name: &str, description: Option<&str>) -> ClientCharacterDataForClient {
+        ClientCharacterDataForClient {
             id,
             user_id: Uuid::new_v4(),
             name: name.to_string(),

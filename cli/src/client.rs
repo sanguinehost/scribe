@@ -11,10 +11,10 @@ use futures_util::{Stream, StreamExt}; // Removed StreamExt, TryStreamExt // Add
 use reqwest_eventsource::{Event, EventSource}; // Added Event, EventSource
 use scribe_backend::models::chats::{ChatMessage, Chat, GenerateResponsePayload, ApiChatMessage, ChatSettingsResponse, UpdateChatSettingsRequest}; // <-- Added ChatSettingsResponse, UpdateChatSettingsRequest
 use scribe_backend::models::users::User;
-use serde::Deserialize; // Added Deserialize
+use serde::{Deserialize, Deserializer}; // Added Deserialize, Deserializer
 use serde::Serialize; // Added for SerializableLoginPayload
 use serde::de::DeserializeOwned;
-use serde_json::json;
+use serde_json::{json, Value};
 use std::fs;
 use std::path::Path;
 use std::pin::Pin;
@@ -23,6 +23,14 @@ use std::pin::Pin;
 use uuid::Uuid; // Added Pin
 use secrecy::{ExposeSecret, SecretString}; // Added SecretString
 use anyhow::Result;
+use chrono::{DateTime, Utc};
+use bigdecimal::BigDecimal;
+// Custom Json type to mirror backend's diesel_json::Json
+#[derive(Debug, Clone, Deserialize)]
+pub struct Json<T>(pub T);
+
+// Import the backend Json type directly for conversion
+use diesel_json::Json as DieselJson;
 
 // Define the expected response structure from the /health endpoint (matching backend)
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
@@ -199,6 +207,252 @@ struct NonStreamingResponse {
     content: String,
 }
 
+/// Client-side wrapper for CharacterDataForClient that can deserialize from the backend's encrypted format
+/// This handles the fact that some string fields are now returned as Vec<u8> from the backend
+#[derive(Debug, Clone, Deserialize, Default)]
+#[serde(default)]
+pub struct ClientCharacterDataForClient {
+    pub id: Uuid,
+    pub user_id: Uuid,
+    #[serde(default)]
+    pub spec: String,
+    #[serde(default)]
+    pub spec_version: String,
+    pub name: String,
+    #[serde(default, deserialize_with = "deserialize_option_bytes_to_string")]
+    pub description: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_option_bytes_to_string")]
+    pub personality: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_option_bytes_to_string")]
+    pub scenario: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_option_bytes_to_string")]
+    pub first_mes: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_option_bytes_to_string")]
+    pub mes_example: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_option_bytes_to_string")]
+    pub creator_notes: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_option_bytes_to_string")]
+    pub system_prompt: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_option_bytes_to_string")]
+    pub post_history_instructions: Option<String>,
+    #[serde(default)]
+    pub tags: Option<Vec<Option<String>>>,
+    #[serde(default)]
+    pub creator: Option<String>,
+    #[serde(default)]
+    pub character_version: Option<String>,
+    #[serde(default)]
+    pub alternate_greetings: Option<Vec<Option<String>>>,
+    #[serde(default)]
+    pub nickname: Option<String>,
+    #[serde(default)]
+    pub creator_notes_multilingual: Option<Json<Value>>,
+    #[serde(default)]
+    pub source: Option<Vec<Option<String>>>,
+    #[serde(default)]
+    pub group_only_greetings: Option<Vec<Option<String>>>,
+    #[serde(default)]
+    pub creation_date: Option<DateTime<Utc>>,
+    #[serde(default)]
+    pub modification_date: Option<DateTime<Utc>>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    #[serde(default, deserialize_with = "deserialize_option_bytes_to_string")]
+    pub persona: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_option_bytes_to_string")]
+    pub world_scenario: Option<String>,
+    #[serde(default)]
+    pub avatar: Option<String>,
+    #[serde(default)]
+    pub chat: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_option_bytes_to_string")]
+    pub greeting: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_option_bytes_to_string")]
+    pub definition: Option<String>,
+    #[serde(default)]
+    pub default_voice: Option<String>,
+    #[serde(default)]
+    pub extensions: Option<Json<Value>>,
+    #[serde(default)]
+    pub data_id: Option<i32>,
+    #[serde(default)]
+    pub category: Option<String>,
+    #[serde(default)]
+    pub definition_visibility: Option<String>,
+    #[serde(default)]
+    pub depth: Option<i32>,
+    #[serde(default, deserialize_with = "deserialize_option_bytes_to_string")]
+    pub example_dialogue: Option<String>,
+    #[serde(default)]
+    pub favorite: Option<bool>,
+    #[serde(default)]
+    pub first_message_visibility: Option<String>,
+    #[serde(default)]
+    pub height: Option<BigDecimal>,
+    #[serde(default)]
+    pub last_activity: Option<DateTime<Utc>>,
+    #[serde(default)]
+    pub migrated_from: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_option_bytes_to_string")]
+    pub model_prompt: Option<String>,
+    #[serde(default)]
+    pub model_prompt_visibility: Option<String>,
+    #[serde(default)]
+    pub model_temperature: Option<BigDecimal>,
+    #[serde(default)]
+    pub num_interactions: Option<i64>,
+    #[serde(default)]
+    pub permanence: Option<BigDecimal>,
+    #[serde(default)]
+    pub persona_visibility: Option<String>,
+    #[serde(default)]
+    pub revision: Option<i32>,
+    #[serde(default)]
+    pub sharing_visibility: Option<String>,
+    #[serde(default)]
+    pub status: Option<String>,
+    #[serde(default)]
+    pub system_prompt_visibility: Option<String>,
+    #[serde(default)]
+    pub system_tags: Option<Vec<Option<String>>>,
+    #[serde(default)]
+    pub token_budget: Option<i32>,
+    #[serde(default)]
+    pub usage_hints: Option<Json<Value>>,
+    #[serde(default, deserialize_with = "deserialize_option_bytes_to_string")]
+    pub user_persona: Option<String>,
+    #[serde(default)]
+    pub user_persona_visibility: Option<String>,
+    #[serde(default)]
+    pub visibility: Option<String>,
+    #[serde(default)]
+    pub weight: Option<BigDecimal>,
+    #[serde(default)]
+    pub world_scenario_visibility: Option<String>,
+}
+
+// Custom deserializer function that can handle both string and byte array formats
+fn deserialize_option_bytes_to_string<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    // First try deserializing as any value
+    let value = serde_json::Value::deserialize(deserializer)?;
+    
+    // Handle different value types
+    match value {
+        // Null - return None
+        serde_json::Value::Null => {
+            Ok(None)
+        }
+        // String - return the string wrapped in Some
+        serde_json::Value::String(s) => {
+            if s.is_empty() {
+                Ok(None)
+            } else {
+                Ok(Some(s))
+            }
+        }
+        // Array of integers (byte array) - convert to UTF-8 string
+        serde_json::Value::Array(arr) => {
+            // Convert the array of numbers to bytes
+            let bytes: Result<Vec<u8>, _> = arr.into_iter()
+                .map(|v| {
+                    if let serde_json::Value::Number(n) = v {
+                        if let Some(i) = n.as_u64() {
+                            if i <= 255 {
+                                return Ok(i as u8);
+                            }
+                        }
+                    }
+                    Err(serde::de::Error::custom(format!("Expected byte value 0-255")))
+                })
+                .collect();
+                
+            match bytes {
+                Ok(b) if b.is_empty() => Ok(None),
+                Ok(b) => {
+                    String::from_utf8(b)
+                        .map(Some)
+                        .map_err(|e| serde::de::Error::custom(format!("Invalid UTF-8: {}", e)))
+                }
+                Err(e) => Err(e)
+            }
+        }
+        // Any other value type - error
+        v => Err(serde::de::Error::custom(format!("Expected string, byte array, or null, got {:?}", v))),
+    }
+}
+
+// Implement From trait to convert ClientCharacterDataForClient to CharacterDataForClient
+impl From<ClientCharacterDataForClient> for CharacterDataForClient {
+    fn from(client: ClientCharacterDataForClient) -> Self {
+        CharacterDataForClient {
+            id: client.id,
+            user_id: client.user_id,
+            spec: client.spec,
+            spec_version: client.spec_version,
+            name: client.name,
+            description: client.description,
+            personality: client.personality,
+            scenario: client.scenario,
+            first_mes: client.first_mes,
+            mes_example: client.mes_example,
+            creator_notes: client.creator_notes,
+            system_prompt: client.system_prompt,
+            post_history_instructions: client.post_history_instructions,
+            tags: client.tags,
+            creator: client.creator,
+            character_version: client.character_version,
+            alternate_greetings: client.alternate_greetings,
+            nickname: client.nickname,
+            creator_notes_multilingual: client.creator_notes_multilingual.map(|json| DieselJson(json.0)),
+            source: client.source,
+            group_only_greetings: client.group_only_greetings,
+            creation_date: client.creation_date,
+            modification_date: client.modification_date,
+            created_at: client.created_at,
+            updated_at: client.updated_at,
+            persona: client.persona,
+            world_scenario: client.world_scenario,
+            avatar: client.avatar,
+            chat: client.chat,
+            greeting: client.greeting,
+            definition: client.definition,
+            default_voice: client.default_voice,
+            extensions: client.extensions.map(|json| DieselJson(json.0)),
+            data_id: client.data_id,
+            category: client.category,
+            definition_visibility: client.definition_visibility,
+            depth: client.depth,
+            example_dialogue: client.example_dialogue,
+            favorite: client.favorite,
+            first_message_visibility: client.first_message_visibility,
+            height: client.height,
+            last_activity: client.last_activity,
+            migrated_from: client.migrated_from,
+            model_prompt: client.model_prompt,
+            model_prompt_visibility: client.model_prompt_visibility,
+            model_temperature: client.model_temperature,
+            num_interactions: client.num_interactions,
+            permanence: client.permanence,
+            persona_visibility: client.persona_visibility,
+            revision: client.revision,
+            sharing_visibility: client.sharing_visibility,
+            status: client.status,
+            system_prompt_visibility: client.system_prompt_visibility,
+            system_tags: client.system_tags,
+            token_budget: client.token_budget,
+            usage_hints: client.usage_hints.map(|json| DieselJson(json.0)),
+            user_persona: client.user_persona,
+            user_persona_visibility: client.user_persona_visibility,
+            visibility: client.visibility,
+            weight: client.weight,
+            world_scenario_visibility: client.world_scenario_visibility,
+        }
+    }
+}
+
 // NEW: Helper function specifically for handling the non-streaming chat response
 async fn handle_non_streaming_chat_response(response: Response) -> Result<ChatMessage, CliError> {
     let status = response.status();
@@ -254,17 +508,17 @@ struct CliGenerateChatRequest {
 pub trait HttpClient: Send + Sync {
     async fn login(&self, credentials: &LoginPayload) -> Result<User, CliError>;
     async fn register(&self, credentials: &RegisterPayload) -> Result<User, CliError>;
-    async fn list_characters(&self) -> Result<Vec<CharacterDataForClient>, CliError>;
+    async fn list_characters(&self) -> Result<Vec<ClientCharacterDataForClient>, CliError>;
     async fn create_chat_session(&self, character_id: Uuid) -> Result<Chat, CliError>;
     async fn upload_character(
         &self,
         name: &str,
         file_path: &str,
-    ) -> Result<CharacterDataForClient, CliError>;
+    ) -> Result<ClientCharacterDataForClient, CliError>;
     async fn health_check(&self) -> Result<HealthStatus, CliError>;
     async fn logout(&self) -> Result<(), CliError>;
     async fn me(&self) -> Result<User, CliError>;
-    async fn get_character(&self, character_id: Uuid) -> Result<CharacterDataForClient, CliError>;
+    async fn get_character(&self, character_id: Uuid) -> Result<ClientCharacterDataForClient, CliError>;
     async fn list_chat_sessions(&self) -> Result<Vec<Chat>, CliError>;
     async fn get_chat_messages(&self, session_id: Uuid) -> Result<Vec<ChatMessage>, CliError>;
     async fn send_message(
@@ -392,7 +646,7 @@ impl HttpClient for ReqwestClientWrapper {
         Ok(User::from(auth_response))
     }
  
-    async fn list_characters(&self) -> Result<Vec<CharacterDataForClient>, CliError> {
+    async fn list_characters(&self) -> Result<Vec<ClientCharacterDataForClient>, CliError> {
         let url = build_url(&self.base_url, "/api/characters")?;
         tracing::info!(%url, "Listing characters via HttpClient");
         let response = self
@@ -422,7 +676,7 @@ impl HttpClient for ReqwestClientWrapper {
         &self,
         name: &str,
         file_path: &str,
-    ) -> Result<CharacterDataForClient, CliError> {
+    ) -> Result<ClientCharacterDataForClient, CliError> {
         tracing::info!(%file_path, "Attempting to upload character via HttpClient from file");
  
         let file_bytes = fs::read(file_path).map_err(|e| {
@@ -521,7 +775,7 @@ impl HttpClient for ReqwestClientWrapper {
         Ok(User::from(auth_response))
     }
  
-    async fn get_character(&self, character_id: Uuid) -> Result<CharacterDataForClient, CliError> {
+    async fn get_character(&self, character_id: Uuid) -> Result<ClientCharacterDataForClient, CliError> {
         let url = build_url(&self.base_url, &format!("/api/characters/{}", character_id))?;
         tracing::info!(%url, %character_id, "Fetching character details via HttpClient");
         let response = self
@@ -962,32 +1216,40 @@ mod tests {
         let user_id_mock = Uuid::new_v4(); // Mock user ID
         let now = Utc::now();
 
-        let mock_characters = vec![
-            CharacterMetadata {
-                id: char1_id,
-                user_id: user_id_mock,
-                name: "Character One".to_string(),
-                description: Some("Description One".to_string().into_bytes()),
-                description_nonce: None,
-                first_mes: Some("Hello from Character One!".to_string().into_bytes()), // Added first_mes
-                created_at: now,
-                updated_at: now,
-            },
-            CharacterMetadata {
-                id: char2_id,
-                user_id: user_id_mock,
-                name: "Character Two".to_string(),
-                description: None,
-                description_nonce: None,
-                first_mes: None, // Added first_mes (None case)
-                created_at: now,
-                updated_at: now,
-            },
-        ];
+        // Create mock responses that match the backend format (with Vec<u8> for encrypted fields)
+        let char1_response = json!({
+            "id": char1_id,
+            "user_id": user_id_mock,
+            "name": "Character One",
+            "spec": "chara_card_v3",
+            "spec_version": "1.0",
+            "description": "Description One".to_string().into_bytes(),
+            "description_nonce": null,
+            "first_mes": "Hello from Character One!".to_string().into_bytes(),
+            "first_mes_nonce": null,
+            "created_at": now,
+            "updated_at": now
+        });
+
+        let char2_response = json!({
+            "id": char2_id,
+            "user_id": user_id_mock,
+            "name": "Character Two",
+            "spec": "chara_card_v3",
+            "spec_version": "1.0",
+            "description": null,
+            "description_nonce": null,
+            "first_mes": null,
+            "first_mes_nonce": null,
+            "created_at": now,
+            "updated_at": now
+        });
+
+        let mock_response = json!([char1_response, char2_response]);
 
         server.expect(
             Expectation::matching(request::method_path("GET", "/api/characters"))
-                .respond_with(json_encoded(mock_characters.clone())),
+                .respond_with(json_encoded(mock_response)),
         );
 
         let result = client.list_characters().await;
@@ -995,10 +1257,13 @@ mod tests {
         assert!(result.is_ok());
         let characters = result.unwrap();
         assert_eq!(characters.len(), 2);
-        assert_eq!(characters[0].id, mock_characters[0].id);
-        assert_eq!(characters[1].name, mock_characters[1].name);
-        // Assuming CharacterDataForClient.first_mes is Option<String> and backend converts Vec<u8> to String
-        assert_eq!(characters[0].first_mes.as_deref().map(|s| s.as_bytes()), mock_characters[0].first_mes.as_deref()); // Verify new field
+        assert_eq!(characters[0].id, char1_id);
+        assert_eq!(characters[1].name, "Character Two");
+        // Now we can directly check the strings since our deserializer converts bytes to strings
+        assert_eq!(characters[0].description, Some("Description One".to_string()));
+        assert_eq!(characters[0].first_mes, Some("Hello from Character One!".to_string()));
+        assert_eq!(characters[1].description, None);
+        assert_eq!(characters[1].first_mes, None);
 
         server.verify_and_clear();
     }
@@ -1007,7 +1272,8 @@ mod tests {
     async fn test_list_characters_success_empty() {
         let (mut server, client) = setup_test_server();
 
-        let mock_characters: Vec<CharacterMetadata> = vec![];
+        // Empty JSON array response
+        let mock_characters: Vec<Value> = vec![];
 
         server.expect(
             Expectation::matching(request::method_path("GET", "/api/characters"))
@@ -1055,38 +1321,36 @@ mod tests {
         let character_name = "Test Character Upload";
         let file_content = "PNG image data or character card content";
         let mut temp_file = NamedTempFile::new().unwrap();
-        temp_file.write_all(file_content.as_bytes()).unwrap(); // Assuming Write trait is now in scope
+        temp_file.write_all(file_content.as_bytes()).unwrap();
         let temp_file_path = temp_file.path().to_str().unwrap().to_string();
 
         let mock_response_id = Uuid::new_v4();
         let mock_response_user_id = Uuid::new_v4();
         let now = Utc::now();
-        let mock_response = CharacterMetadata {
-            id: mock_response_id,
-            user_id: mock_response_user_id,
-            name: character_name.to_string(),
-            description: Some("Uploaded via test".to_string().into_bytes()),
-            description_nonce: None,
-            first_mes: Some("Hello from upload!".to_string().into_bytes()),
-            created_at: now,
-            updated_at: now,
-        };
+
+        // Create a response that matches the backend format with byte arrays
+        let mock_response = json!({
+            "id": mock_response_id,
+            "user_id": mock_response_user_id,
+            "name": character_name,
+            "spec": "chara_card_v3",
+            "spec_version": "1.0",
+            "description": "Uploaded via test".to_string().into_bytes(),
+            "description_nonce": null,
+            "first_mes": "Hello from upload!".to_string().into_bytes(),
+            "first_mes_nonce": null,
+            "created_at": now,
+            "updated_at": now
+        });
 
         // Define the expected multipart body parts
-        // Note: Exact boundary and formatting is tricky to match perfectly,
-        // httptest matchers might need adjusting or focus on essential parts.
-        // We will focus on method, path and presence of expected field names/filenames.
-
         server.expect(
             Expectation::matching(all_of![
                 request::method_path("POST", "/api/characters/upload"),
                 // Simplified: Check only for the presence of the Content-Type header key
                 request::headers(contains(key("content-type"))),
-                // More robust checks commented out
-                // request::body(contains(format!("name=\"{}\"", character_name))),
-                // request::body(contains(format!("filename=\"{}\"", temp_file_name))),
             ])
-            .respond_with(json_encoded(mock_response.clone())),
+            .respond_with(json_encoded(mock_response)),
         );
 
         let result = client
@@ -1097,6 +1361,8 @@ mod tests {
         let uploaded_char = result.unwrap();
         assert_eq!(uploaded_char.id, mock_response_id);
         assert_eq!(uploaded_char.name, character_name);
+        assert_eq!(uploaded_char.description, Some("Uploaded via test".to_string()));
+        assert_eq!(uploaded_char.first_mes, Some("Hello from upload!".to_string()));
 
         server.verify_and_clear();
     }
@@ -1267,16 +1533,21 @@ mod tests {
         let character_id = Uuid::new_v4();
         let user_id_mock = Uuid::new_v4();
         let now = Utc::now();
-        let mock_character = CharacterMetadata {
-            id: character_id,
-            user_id: user_id_mock,
-            name: "Specific Character".to_string(),
-            description: Some("Details here".to_string().into_bytes()),
-            description_nonce: None,
-            first_mes: Some("Specific greeting".to_string().into_bytes()),
-            created_at: now,
-            updated_at: now,
-        };
+        
+        // Create a response that matches the backend format with byte arrays
+        let mock_character = json!({
+            "id": character_id,
+            "user_id": user_id_mock,
+            "name": "Specific Character",
+            "spec": "chara_card_v3",
+            "spec_version": "1.0",
+            "description": "Details here".to_string().into_bytes(),
+            "description_nonce": null,
+            "first_mes": "Specific greeting".to_string().into_bytes(),
+            "first_mes_nonce": null,
+            "created_at": now,
+            "updated_at": now
+        });
 
         let path_string = format!("/api/characters/{}", character_id);
         let static_path_str: &'static str = Box::leak(path_string.into_boxed_str());
@@ -1285,15 +1556,17 @@ mod tests {
                 "GET",
                 static_path_str, // Pass &'static str
             ))
-            .respond_with(json_encoded(mock_character.clone())),
+            .respond_with(json_encoded(mock_character)),
         );
 
         let result = client.get_character(character_id).await;
 
         assert!(result.is_ok());
         let character = result.unwrap();
-        assert_eq!(character.id, mock_character.id);
-        assert_eq!(character.name, mock_character.name);
+        assert_eq!(character.id, character_id);
+        assert_eq!(character.name, "Specific Character");
+        assert_eq!(character.description, Some("Details here".to_string()));
+        assert_eq!(character.first_mes, Some("Specific greeting".to_string()));
 
         server.verify_and_clear();
     }
