@@ -195,6 +195,10 @@ pub enum AppError {
     // Character Parsing Error (NEW)
     #[error("Character parsing error: {0}")]
     CharacterParsingError(String),
+    
+    // Tokenization Error (NEW)
+    #[error("Text processing error: {0}")]
+    TextProcessingError(String),
 
     #[error("Validation error: {0}")]
     ValidationError(String),
@@ -540,6 +544,15 @@ impl IntoResponse for AppError {
                 (
                     StatusCode::BAD_REQUEST,
                     "Failed to parse character data".to_string(),
+                )
+            }
+            
+            // Tokenization Error
+            AppError::TextProcessingError(e) => {
+                error!("Text processing error: {}", e);
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Failed to process text".to_string(),
                 )
             }
 

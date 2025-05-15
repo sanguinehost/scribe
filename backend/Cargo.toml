@@ -97,6 +97,9 @@ tokio-rustls = "0.26.0"
 
 tokio-stream = "0.1"
 
+# Tokenization
+sentencepiece = "0.11.3"
+
 [dev-dependencies]
 axum = { version = "0.7.5", features = ["macros", "multipart", "tokio"] } # Mirror main deps features for tests, ADDED tokio feature
 axum-server = { version = "0.7.0", features = ["tls-rustls"] } # Mirror main deps features
