@@ -13,6 +13,7 @@ use crate::{
     config::Config,
     // Ensure build_gemini_client is removed if present
     models::chats::ChatMessage,
+    models::users::AccountStatus,
     routes::{
         chat::chat_routes,
         health::health_check,
@@ -39,7 +40,7 @@ use diesel::prelude::*;
 use diesel_migrations::{embed_migrations, EmbeddedMigrations};
 use dotenvy::dotenv; // Removed var
 use genai::chat::ChatStreamEvent; // Add import for chatstream types
-use futures::{TryStreamExt, future};
+use futures::{TryStreamExt};
 use genai::chat::{ChatOptions, ChatRequest, ChatResponse};
 use genai::ModelIden; // Import ModelIden directly
 use genai::adapter::AdapterKind; // Ensure AdapterKind is in scope
@@ -309,6 +310,7 @@ impl EmbeddingPipelineServiceTrait for MockEmbeddingPipelineService {
         &self,
         _state: Arc<AppState>,
         message: ChatMessage,
+        _session_dek: Option<&crate::auth::session_dek::SessionDek>, // Added session_dek parameter
     ) -> Result<(), AppError> {
         // Record the call
         self.calls
@@ -900,7 +902,9 @@ pub mod db {
             dek_nonce: dek_nonce_bytes,
             encrypted_dek_by_recovery: None, 
             recovery_kek_salt: None,        
-            recovery_dek_nonce: None,        
+            recovery_dek_nonce: None,
+            role: crate::models::users::UserRole::User, // Using User enum variant exactly as in DB
+            account_status: AccountStatus::Active, // Default to Active account status
         };
 
         let user_from_db: UserDbQuery = conn.interact(move |conn_actual| {

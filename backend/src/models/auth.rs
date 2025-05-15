@@ -81,8 +81,9 @@ impl serde::Serialize for LoginPayload {
 pub struct AuthResponse {
     pub user_id: uuid::Uuid,
     pub username: String,
-    // Add other relevant fields if needed, e.g., email
     pub email: String,
+    pub role: String, // Added role field
+    pub recovery_key: Option<String>, // Added recovery key field
 }
 
 impl std::fmt::Debug for AuthResponse {
@@ -91,6 +92,8 @@ impl std::fmt::Debug for AuthResponse {
             .field("user_id", &self.user_id)
             .field("username", &self.username)
             .field("email", &"[REDACTED]")
+            .field("role", &self.role)
+            .field("recovery_key", &self.recovery_key.as_ref().map(|_| "[REDACTED]"))
             .finish()
     }
 }

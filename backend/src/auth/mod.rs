@@ -1,7 +1,7 @@
 // This file defines the auth module, including user store logic.
 
 pub use crate::models::auth::RegisterPayload; // Added for RegisterPayload
-use crate::models::users::{NewUser, User, UserDbQuery};
+use crate::models::users::{AccountStatus, NewUser, User, UserDbQuery};
 use crate::schema::users;
 // Required imports for synchronous Diesel
 use diesel::{PgConnection, prelude::*};
@@ -33,6 +33,8 @@ pub enum AuthError {
     HashingError,
     #[error("User not found")]
     UserNotFound,
+    #[error("Account locked")]
+    AccountLocked,
     #[error("Database error during authentication: {0}")]
     DatabaseError(String),
     #[error("Database pool error: {0}")]
@@ -80,11 +82,30 @@ impl From<diesel::result::Error> for AuthError {
     }
 }
 
+/// Check if there are any users in the database
+#[instrument(skip(conn), err)]
+pub fn are_there_any_users(conn: &mut PgConnection) -> Result<bool, AuthError> {
+    use crate::schema::users::dsl::*;
+    use diesel::dsl::count;
+    
+    debug!("Checking if there are any users in the database");
+    let user_count: i64 = users
+        .select(count(id))
+        .first(conn)
+        .map_err(|e| {
+            error!(error = ?e, "Database error checking user count");
+            AuthError::from(e)
+        })?;
+    
+    debug!(user_count, "Found user count");
+    Ok(user_count > 0)
+}
+
 // Function to create a new user
 #[instrument(skip(conn, credentials), err)] // Skip entire credentials struct for safety, Secret fields are not logged by Debug.
 pub async fn create_user(
     conn: &mut PgConnection,
-    credentials: RegisterPayload, // Use RegisterPayload struct
+    mut credentials: RegisterPayload, // Use RegisterPayload struct, make it mutable
 ) -> Result<User, AuthError> {
     info!(username = %credentials.username, email = %credentials.email, "Attempting to create user with encryption");
 
@@ -120,21 +141,49 @@ pub async fn create_user(
         "Encrypted DEK for user creation"
     );
 
-    // Handle recovery phrase if provided
-    let (encrypted_dek_by_recovery, recovery_kek_salt, recovery_dek_nonce) = if let Some(recovery_phrase) = credentials.recovery_phrase {
+    // Generate a random recovery phrase if none was provided
+    let mut recovery_phrase_value = credentials.recovery_phrase.clone();
+    
+    // If no recovery phrase was provided, generate a random one using a secure algorithm
+    if recovery_phrase_value.is_none() {
+        // Use the crypto module's salt generation which uses secure randomness
+        let recovery_salt = crypto::generate_salt()
+            .map_err(AuthError::CryptoOperationFailed)?;
+        
+        // The salt is already base64url encoded, so use it directly
+        recovery_phrase_value = Some(recovery_salt);
+        
+        // Log that we generated a recovery phrase (but don't log the phrase itself)
+        info!(username = %credentials.username, "Generated random recovery phrase for user");
+    }
+    
+    // Process the recovery phrase (now guaranteed to exist)
+    let (encrypted_dek_by_recovery, recovery_kek_salt, recovery_dek_nonce) = {
         // Similar process for recovery phrase: salt, derive key, encrypt
         let recovery_kek_salt = crypto::generate_salt()
             .map_err(AuthError::CryptoOperationFailed)?;
-        let recovery_secret = SecretString::new(recovery_phrase.into_boxed_str());
+        let recovery_secret = SecretString::new(recovery_phrase_value.as_ref().unwrap().clone().into_boxed_str());
         let recovery_key = crypto::derive_kek(&recovery_secret, &recovery_kek_salt)
             .map_err(AuthError::CryptoOperationFailed)?;
         let (encrypted_dek_by_recovery, recovery_dek_nonce) = crypto::encrypt_gcm(plaintext_dek_bytes.expose_secret(), &recovery_key)
             .map_err(AuthError::CryptoOperationFailed)?;
         (Some(encrypted_dek_by_recovery), Some(recovery_kek_salt), Some(recovery_dek_nonce))
-    } else {
-        (None, None, None)
     };
+    
+    // Replace the credentials recovery_phrase with our generated one if needed
+    credentials.recovery_phrase = recovery_phrase_value;
 
+    // Check if this will be the first user in the system
+    let is_first_user = !are_there_any_users(conn)?;
+    
+    // If this is the first user, make them an administrator
+    let user_role = if is_first_user {
+        info!(username = %credentials.username, "Making first user an Administrator");
+        crate::models::users::UserRole::Administrator
+    } else {
+        crate::models::users::UserRole::User
+    };
+    
     // 3. Create a NewUser instance
     let new_user = NewUser {
         username: credentials.username.clone(), // Clone username from credentials
@@ -146,6 +195,8 @@ pub async fn create_user(
         recovery_kek_salt,
         dek_nonce,
         recovery_dek_nonce,
+        role: user_role, // Using appropriate role based on whether this is the first user
+        account_status: AccountStatus::Active, // Default to Active account status
     };
 
     debug!(username = %new_user.username, email = %new_user.email, "Inserting new user with encryption fields into database...");
@@ -157,7 +208,9 @@ pub async fn create_user(
 
     match insert_result {
         Ok(user_db_query) => {
-            let user = User::from(user_db_query); // Convert to User
+            let mut user = User::from(user_db_query); // Convert to User
+            // Add the recovery phrase to the returned user
+            user.recovery_phrase = credentials.recovery_phrase.clone();
             info!(username = %user.username, email = %user.email, user_id = %user.id, "User created successfully in DB.");
             Ok(user)
         }
@@ -224,6 +277,12 @@ pub fn verify_credentials(
         })?;
 
     if is_valid {
+        // Check account status
+        if user.account_status == Some("locked".to_string()) {
+            warn!(identifier = %identifier, username = %user.username, email = %user.email, user_id = %user.id, "Login attempt for locked account.");
+            return Err(AuthError::AccountLocked);
+        }
+
         debug!(identifier = %identifier, username = %user.username, email = %user.email, user_id = %user.id, "Password verification successful. Attempting DEK decryption...");
 
         // a. kek_salt, encrypted_dek, and dek_nonce are already part of the `user` object,
@@ -285,7 +344,6 @@ pub async fn hash_password(password: SecretString) -> Result<String, AuthError> 
     .map_err(|_e: BcryptError| AuthError::HashingError)
 }
 
-const NONCE_LEN: usize = 12; // Must match the length used in encrypt_gcm and decrypt_gcm
 
 #[instrument(skip(backend, current_db_user, current_password_payload, new_password_payload), err, fields(user_id = %user_id))]
 pub async fn change_user_password(
@@ -324,14 +382,10 @@ pub async fn change_user_password(
 
     // 3. Decrypt current encrypted_dek to get plaintext DEK
     debug!("Decrypting current DEK...");
-    if current_db_user.encrypted_dek.len() < NONCE_LEN {
-        error!("Current encrypted_dek is too short to contain nonce.");
-        return Err(AuthError::CryptoOperationFailed(CryptoError::DecryptionFailed));
-    }
-    let (old_nonce_bytes, old_ciphertext_dek) = current_db_user.encrypted_dek.split_at(NONCE_LEN);
-    let plaintext_dek_secret = crypto::decrypt_gcm(old_ciphertext_dek, old_nonce_bytes, &old_kek)
+    // Use the dedicated dek_nonce field
+    let plaintext_dek_secret = crypto::decrypt_gcm(&current_db_user.encrypted_dek, &current_db_user.dek_nonce, &old_kek)
         .map_err(|e| {
-            error!(error = ?e, "Failed to decrypt current DEK");
+            error!(error = ?e, "Failed to decrypt current DEK using dedicated nonce field");
             AuthError::CryptoOperationFailed(e)
         })?;
     debug!("Current DEK decrypted successfully.");
@@ -445,16 +499,18 @@ pub async fn recover_user_password_with_phrase(
 
     // 4. Decrypt encrypted_dek_by_recovery using RKEK to get plaintext DEK
     debug!("Decrypting DEK using RKEK...");
-    if encrypted_dek_by_recovery.len() < NONCE_LEN {
-        error!(user_id = %user.id, "Encrypted DEK by recovery is too short.");
-        return Err(AuthError::CryptoOperationFailed(CryptoError::DecryptionFailed));
-    }
-    let (nonce_bytes_recovery, ciphertext_dek_recovery) =
-        encrypted_dek_by_recovery.split_at(NONCE_LEN);
+    // Use the dedicated recovery_dek_nonce field
+    let recovery_dek_nonce_bytes = match &user.recovery_dek_nonce {
+        Some(nonce) => nonce,
+        None => {
+            error!(user_id = %user.id, "Recovery DEK nonce not found, but encrypted_dek_by_recovery exists. Inconsistent state.");
+            return Err(AuthError::CryptoOperationFailed(CryptoError::DecryptionFailed)); // Or a more specific error
+        }
+    };
     let plaintext_dek_secret =
-        crypto::decrypt_gcm(ciphertext_dek_recovery, nonce_bytes_recovery, &rkek)
+        crypto::decrypt_gcm(encrypted_dek_by_recovery, recovery_dek_nonce_bytes, &rkek)
             .map_err(|e| {
-                error!(user_id = %user.id, error = ?e, "Failed to decrypt DEK with RKEK. Likely invalid recovery phrase.");
+                error!(user_id = %user.id, error = ?e, "Failed to decrypt DEK with RKEK using dedicated nonce. Likely invalid recovery phrase.");
                 AuthError::InvalidRecoveryPhrase // If decryption fails, it's highly likely the phrase was wrong.
             })?;
     debug!("DEK decrypted successfully using RKEK.");

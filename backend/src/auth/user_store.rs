@@ -7,7 +7,7 @@ use tracing::{debug, error, info, instrument, warn};
 
 use crate::auth::AuthError;
 use crate::models::auth::LoginPayload; // Import LoginPayload
-use crate::models::users::{User, UserDbQuery, NewUser}; // Removed unused SerializableSecretDek, UserCredentials
+use crate::models::users::{AccountStatus, User, UserDbQuery, NewUser}; // Removed unused SerializableSecretDek, UserCredentials
 // Remove UserCredentials import if no longer needed elsewhere in this file
 use crate::state::DbPool; // Assuming you use a DbPool
 use diesel::SelectableHelper; // Added for as_returning
@@ -223,6 +223,8 @@ pub async fn create_user_in_db(
         encrypted_dek_by_recovery: None,
         recovery_kek_salt: None,
         recovery_dek_nonce: None,
+        role: crate::models::users::UserRole::User, // 'User' enum variant for DB
+        account_status: AccountStatus::Active, // Default to Active account status
     };
 
     let user_from_db: UserDbQuery = conn.interact(move |conn_actual| {

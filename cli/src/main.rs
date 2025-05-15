@@ -24,7 +24,6 @@ use chat::run_chat_loop; // Chat loop
 use client::{HttpClient, ReqwestClientWrapper}; // Client Abstraction
 use error::CliError; // Use our specific error type
 use handlers::*;
-use handlers::admin::*; // Import admin handlers specifically
 use io::{IoHandler, StdIoHandler}; // IO Abstraction // Import all action handlers
 
 /// A basic CLI client to test the Scribe backend API.

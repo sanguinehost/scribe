@@ -2,7 +2,7 @@ use argon2::{Algorithm, Argon2, Params, Version};
 use rand::rngs::OsRng;
 use rand::TryRngCore; // Corrected import for TryRngCore
 // Removed unused rand::RngCore
-use secrecy::{ExposeSecret, SecretBox, SecretString};
+use secrecy::{ExposeSecret, SecretBox, SecretString}; // Removed SecretVec
 use thiserror::Error;
 use base64::Engine as _;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
@@ -53,17 +53,28 @@ pub fn generate_salt() -> Result<String, CryptoError> {
 }
 
 /// Generates a cryptographically secure random Data Encryption Key (DEK).
-pub fn generate_dek() -> Result<SecretBox<Vec<u8>>, CryptoError> {
+fn generate_dek_bytes() -> Result<Vec<u8>, CryptoError> {
     let mut dek_bytes = vec![0u8; DEK_LEN];
     OsRng
         .try_fill_bytes(&mut dek_bytes)
         .map_err(|e| CryptoError::RandError(e.to_string()))?;
+    Ok(dek_bytes)
+}
+
+/// Generates a cryptographically secure random Data Encryption Key (DEK) wrapped in SecretBox.
+pub fn generate_dek() -> Result<SecretBox<Vec<u8>>, CryptoError> {
+    let dek_bytes = generate_dek_bytes()?;
     Ok(SecretBox::new(Box::new(dek_bytes)))
+}
+
+/// Public version of generate_dek for use in other modules.
+pub fn crypto_generate_dek() -> Result<SecretBox<Vec<u8>>, CryptoError> {
+    generate_dek()
 }
 
 /// Derives a Key Encryption Key (KEK) from a password and salt using Argon2id.
 /// The output key length will be DEK_LEN (32 bytes for AES-256).
-pub fn derive_kek(password: &SecretString, salt_str: &str) -> Result<SecretBox<Vec<u8>>, CryptoError> {
+pub fn derive_kek(password: &SecretString, salt_str: &str) -> Result<SecretBox<Vec<u8>>, CryptoError> { // Changed KEK to Vec<u8> for consistency if it's also a key
     let password_bytes = password.expose_secret().as_bytes();
     let salt_bytes = URL_SAFE_NO_PAD.decode(salt_str)?;
 
@@ -93,17 +104,17 @@ pub fn derive_kek(password: &SecretString, salt_str: &str) -> Result<SecretBox<V
 /// Key material must be 32 bytes.
 pub fn encrypt_gcm(
     plaintext: &[u8],
-    key_material: &SecretBox<Vec<u8>>,
+    key_material: &SecretBox<Vec<u8>>, // Reverted key_material type
 ) -> Result<(Vec<u8>, Vec<u8>), CryptoError> { // Returns (ciphertext, nonce_bytes)
-    let exposed_key = key_material.expose_secret();
-    if exposed_key.len() != DEK_LEN {
+    let exposed_key_slice = key_material.expose_secret(); // Single expose
+    if exposed_key_slice.len() != DEK_LEN {
         return Err(CryptoError::InvalidKeyLength);
     }
 
-    let unbound_key = UnboundKey::new(&AES_256_GCM, exposed_key).map_err(CryptoError::RingAeadError)?;
+    let unbound_key = UnboundKey::new(&AES_256_GCM, exposed_key_slice).map_err(CryptoError::RingAeadError)?;
     let key = LessSafeKey::new(unbound_key);
 
-    let mut nonce_bytes_arr = [0u8; NONCE_LEN]; // Changed variable name for clarity
+    let mut nonce_bytes_arr = [0u8; NONCE_LEN];
     OsRng
         .try_fill_bytes(&mut nonce_bytes_arr)
         .map_err(|e| CryptoError::RandError(e.to_string()))?;
@@ -124,20 +135,20 @@ pub fn encrypt_gcm(
 pub fn decrypt_gcm(
     ciphertext: &[u8], // Ciphertext + tag
     nonce_bytes: &[u8], // Separate nonce
-    key_material: &SecretBox<Vec<u8>>,
-) -> Result<SecretBox<Vec<u8>>, CryptoError> { // Changed return type
+    key_material: &SecretBox<Vec<u8>>, // Reverted key_material type
+) -> Result<SecretBox<Vec<u8>>, CryptoError> { // Reverted return type
     if nonce_bytes.len() != NONCE_LEN {
         return Err(CryptoError::RandError("Invalid nonce length".into()));
     }
     if ciphertext.len() < AES_256_GCM.tag_len() {
         return Err(CryptoError::CiphertextTooShort);
     }
-    let exposed_key = key_material.expose_secret();
-    if exposed_key.len() != DEK_LEN {
+    let exposed_key_slice = key_material.expose_secret(); // Single expose
+    if exposed_key_slice.len() != DEK_LEN {
         return Err(CryptoError::InvalidKeyLength);
     }
 
-    let unbound_key = UnboundKey::new(&AES_256_GCM, exposed_key).map_err(CryptoError::RingAeadError)?;
+    let unbound_key = UnboundKey::new(&AES_256_GCM, exposed_key_slice).map_err(CryptoError::RingAeadError)?;
     let key = LessSafeKey::new(unbound_key);
 
     let nonce_array: [u8; NONCE_LEN] = nonce_bytes
@@ -146,10 +157,10 @@ pub fn decrypt_gcm(
     let nonce = Nonce::assume_unique_for_key(nonce_array);
 
     let mut buffer = ciphertext.to_vec();
-    let plaintext_bytes = key.open_in_place(nonce, Aad::empty(), &mut buffer)
+    let plaintext_bytes_slice = key.open_in_place(nonce, Aad::empty(), &mut buffer)
         .map_err(|_| CryptoError::DecryptionFailed)?;
 
-    Ok(SecretBox::new(Box::new(plaintext_bytes.to_vec()))) // Return SecretBox<Vec<u8>> and use Box::new
+    Ok(SecretBox::new(Box::new(plaintext_bytes_slice.to_vec())))
 }
 
 

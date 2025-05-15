@@ -32,6 +32,7 @@ pub trait HttpClient: Send + Sync {
     async fn register(&self, credentials: &RegisterPayload) -> Result<User, CliError>;
     async fn logout(&self) -> Result<(), CliError>;
     async fn me(&self) -> Result<User, CliError>;
+    fn get_last_recovery_key(&self) -> Option<String>;
     
     // Characters
     async fn list_characters(&self) -> Result<Vec<ClientCharacterDataForClient>, CliError>;

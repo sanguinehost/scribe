@@ -22,13 +22,14 @@ pub struct HealthStatus {
     pub status: String,
 }
 
-// Update AuthUserResponse to include role (this is the version from lines 50-56)
+// Update AuthUserResponse to include role and recovery key
 #[derive(Deserialize, Debug, Clone)]
 pub struct AuthUserResponse {
     pub user_id: Uuid,
     pub username: String,
     pub email: String,
     pub role: String, // Changed from Option<String> to String since backend now always returns role
+    pub recovery_key: Option<String>, // Add recovery key field
 }
 
 // Map AuthUserResponse to User for compatibility
@@ -56,6 +57,7 @@ impl From<AuthUserResponse> for User {
             created_at: chrono::Utc::now(),
             updated_at: chrono::Utc::now(),
             role,                         // Add the role field
+            recovery_phrase: None,         // Add the recovery_phrase field
             account_status: Some("active".to_string()), // Default to active, may be overridden by login response
         }
     }

@@ -11,8 +11,8 @@ use secrecy::{SecretBox, ExposeSecret};
 use futures_util::{Stream, StreamExt as FuturesStreamExt}; // Renamed to avoid conflict
 use async_stream::stream;
 use genai::chat::{
-    ChatRequest, ChatRequest as GenAiChatRequest, ChatOptions as GenAiChatOptions, ChatMessage as GenAiChatMessage,
-    ChatStreamEvent, Tool, // Removed unused: ChatRole as GenAiChatRole, MessageContent as GenAiMessageContent, ToolCall
+    ChatRequest as GenAiChatRequest, ChatOptions as GenAiChatOptions, ChatMessage as GenAiChatMessage,
+    ChatStreamEvent, Tool,
 };
 use serde_json::json;
 use bigdecimal::ToPrimitive;
@@ -390,12 +390,35 @@ pub async fn save_message(
         let embedding_service = state.embedding_pipeline_service.clone();
         let app_state_clone_for_rag = state.clone();
         let message_for_rag = saved_message_db.clone(); // Clone for the async task
+        // Clone the DEK for the spawned task. user_dek_secret_box is Option<Arc<SecretBox<Vec<u8>>>>
+        let dek_for_rag_task = user_dek_secret_box.clone();
 
         tokio::spawn(async move {
             // Call will be tracked for mock service in test env
             info!(message_id = %message_for_rag.id, session_id = %message_for_rag.session_id, "Spawning RAG processing task for user message.");
             
-            if let Err(e) = embedding_service.process_and_embed_message(app_state_clone_for_rag, message_for_rag.clone()).await {
+            // Convert Option<Arc<SecretBox<Vec<u8>>>> to Option<&SessionDek>
+            // This requires SessionDek to be accessible and potentially a temporary SessionDek to be created.
+            // Assuming SessionDek can be constructed from SecretBox<Vec<u8>> or that we can pass the SecretBox directly
+            // For now, let's assume we need to pass the Option<&SecretBox<Vec<u8>>> if SessionDek is just a wrapper.
+            // The trait expects Option<&SessionDek>. SessionDek wraps SecretBox<Vec<u8>>.
+            // So, if dek_for_rag_task is Some(arc_secret_box), we need to pass Some(&SessionDek(*arc_secret_box))
+            // This is tricky due to lifetimes if SessionDek is created on the fly.
+            // A better approach might be to adjust process_and_embed_message to take Option<&SecretBox<Vec<u8>>>
+            // or ensure SessionDek can be easily passed.
+            // Given SessionDek is `pub struct SessionDek(pub SecretBox<Vec<u8>>);`
+            // we can create a temporary SessionDek if needed.
+
+            let session_dek_for_embedding: Option<crate::auth::session_dek::SessionDek> = dek_for_rag_task.map(|arc_sb| {
+                let secret_bytes = arc_sb.expose_secret().clone(); // Clone the Vec<u8>
+                crate::auth::session_dek::SessionDek(SecretBox::new(Box::new(secret_bytes))) // Create new SecretBox and SessionDek
+            });
+
+            if let Err(e) = embedding_service.process_and_embed_message(
+                app_state_clone_for_rag,
+                message_for_rag.clone(),
+                session_dek_for_embedding.as_ref(), // Pass as Option<&SessionDek>
+            ).await {
                 error!(message_id = %message_for_rag.id, session_id = %message_for_rag.session_id, error = ?e, "Error during RAG processing for message");
             } else {
                 info!(message_id = %message_for_rag.id, session_id = %message_for_rag.session_id, "RAG processing task completed for message.");

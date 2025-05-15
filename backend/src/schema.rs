@@ -2,8 +2,16 @@
 
 pub mod sql_types {
     #[derive(diesel::sql_types::SqlType)]
+    #[diesel(postgres_type(name = "account_status"))]
+    pub struct AccountStatus;
+
+    #[derive(diesel::sql_types::SqlType)]
     #[diesel(postgres_type(name = "message_type"))]
     pub struct MessageType;
+
+    #[derive(diesel::sql_types::SqlType)]
+    #[diesel(postgres_type(name = "user_role"))]
+    pub struct UserRole;
 }
 
 diesel::table! {
@@ -289,6 +297,8 @@ diesel::table! {
 diesel::table! {
     use diesel::sql_types::*;
     use diesel_derive_enum::DbEnum;
+    use super::sql_types::UserRole;
+    use super::sql_types::AccountStatus;
 
     users (id) {
         id -> Uuid,
@@ -305,6 +315,8 @@ diesel::table! {
         recovery_kek_salt -> Nullable<Text>,
         dek_nonce -> Bytea,
         recovery_dek_nonce -> Nullable<Bytea>,
+        role -> UserRole,
+        account_status -> AccountStatus,
     }
 }
 

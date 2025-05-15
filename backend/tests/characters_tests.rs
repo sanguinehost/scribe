@@ -17,8 +17,9 @@ use scribe_backend::{
     auth::{session_store::DieselSessionStore, user_store::Backend as AuthBackend},
     config::Config,
     models::{
+        users::UserRole,
         characters::Character as DbCharacter,
-        users::{NewUser, User, UserDbQuery},
+        users::{AccountStatus, NewUser, User, UserDbQuery},
     },
     routes::{
         characters::characters_router,
@@ -297,9 +298,11 @@ fn insert_test_user_with_password(
         kek_salt,
         encrypted_dek, // Use the actual encrypted DEK
         encrypted_dek_by_recovery: None,
+        role: UserRole::User,
         recovery_kek_salt: None,
         dek_nonce, // Use the actual nonce
         recovery_dek_nonce: None,
+        account_status: AccountStatus::Active, // Default to Active account status
     };
     diesel::insert_into(users::table)
         .values(&new_user)

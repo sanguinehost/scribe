@@ -3,8 +3,6 @@ use crate::client::HttpClient;
 use crate::error::CliError;
 use crate::io::IoHandler;
 use scribe_backend::models::chats::MessageRole;
-use uuid::Uuid;
-use crate::handlers::characters::select_character;
 
 /// Handler function for listing chat sessions
 pub async fn handle_list_chat_sessions_action<H: IoHandler, C: HttpClient>(

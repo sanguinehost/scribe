@@ -38,11 +38,16 @@ use super::util::{build_url, handle_response, handle_non_streaming_chat_response
 pub struct ReqwestClientWrapper {
     client: ReqwestClient,
     base_url: Url,
+    last_recovery_key: std::sync::Mutex<Option<String>>,
 }
 
 impl ReqwestClientWrapper {
     pub fn new(client: ReqwestClient, base_url: Url) -> Self {
-        Self { client, base_url }
+        Self { 
+            client, 
+            base_url,
+            last_recovery_key: std::sync::Mutex::new(None),
+        }
     }
 }
 
@@ -90,8 +95,19 @@ impl HttpClient for ReqwestClientWrapper {
             .await
             .map_err(|e| CliError::RegistrationFailed(format!("{}", e)))?;
         
+        // Store the recovery key in the client for later retrieval
+        if let Some(recovery_key) = &auth_response.recovery_key {
+            let mut guard = self.last_recovery_key.lock().unwrap();
+            *guard = Some(recovery_key.clone());
+        }
+        
         // Convert to User for backwards compatibility
         Ok(User::from(auth_response))
+    }
+    
+    fn get_last_recovery_key(&self) -> Option<String> {
+        let guard = self.last_recovery_key.lock().unwrap();
+        guard.clone()
     }
  
     async fn list_characters(&self) -> Result<Vec<ClientCharacterDataForClient>, CliError> {

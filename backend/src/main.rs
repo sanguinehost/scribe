@@ -14,6 +14,7 @@ use tower_http::trace::{DefaultMakeSpan, TraceLayer};
 // Use modules from the library crate
 use scribe_backend::auth::session_store::DieselSessionStore;
 use scribe_backend::logging::init_subscriber;
+use scribe_backend::routes::admin::admin_routes;
 use scribe_backend::routes::auth::auth_routes;
 use scribe_backend::routes::health::health_check;
 use scribe_backend::routes::{
@@ -165,6 +166,8 @@ async fn main() -> Result<()> {
         .nest("/chats-api", chats_api::chat_routes()) // Corrected: /api/chats-api
         // Mount document API routes
         .nest("/documents", document_routes()) // Corrected: /api/documents
+        // Admin routes (require login + admin role check in handlers)
+        .nest("/admin", admin_routes())
         .route_layer(login_required!(AuthBackend)); // Simplify macro: remove user type (i64)
 
     // --- Define Public Routes ---

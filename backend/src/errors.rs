@@ -1544,7 +1544,8 @@ impl From<crate::auth::AuthError> for AppError {
             crate::auth::AuthError::CryptoOperationFailed(crypto_err) => AppError::InternalServerErrorGeneric(format!("Cryptography operation failed: {}", crypto_err)), // Use renamed variant
             crate::auth::AuthError::RecoveryNotSetup => AppError::BadRequest("Account recovery has not been set up for this user.".to_string()),
             crate::auth::AuthError::InvalidRecoveryPhrase => AppError::BadRequest("The provided recovery phrase was invalid.".to_string()),
-            crate::auth::AuthError::SessionDeletionError(msg) => AppError::InternalServerErrorGeneric(format!("Failed to delete session: {}", msg)), // Use renamed variant
+            crate::auth::AuthError::SessionDeletionError(msg) => AppError::InternalServerErrorGeneric(format!("Failed to delete session: {}", msg)),
+            crate::auth::AuthError::AccountLocked => AppError::Unauthorized("Your account is locked. Please contact an administrator.".to_string())
         }
     }
 }

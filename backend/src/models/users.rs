@@ -11,6 +11,39 @@ use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use serde::{Deserializer, Serializer};
 use tracing;
 
+// User role enum
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, diesel_derive_enum::DbEnum)]
+#[ExistingTypePath = "crate::schema::sql_types::UserRole"]
+pub enum UserRole {
+    #[db_rename = "User"]
+    User,
+    #[db_rename = "Moderator"]
+    Moderator,
+    #[db_rename = "Administrator"]
+    Administrator,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, diesel_derive_enum::DbEnum)]
+#[ExistingTypePath = "crate::schema::sql_types::AccountStatus"]
+pub enum AccountStatus {
+    #[db_rename = "active"]
+    Active,
+    #[db_rename = "locked"]
+    Locked,
+}
+
+impl Default for UserRole {
+    fn default() -> Self {
+        UserRole::User
+    }
+}
+
+impl Default for AccountStatus {
+    fn default() -> Self {
+        AccountStatus::Active
+    }
+}
+
 // --- Newtype wrapper for DEK serialization ---
 #[derive(Debug)] // Manual Debug to redact SecretBox
 pub struct SerializableSecretDek(pub SecretBox<Vec<u8>>); // Made pub for access in User clone
@@ -76,6 +109,8 @@ pub struct UserDbQuery {
     pub recovery_kek_salt: Option<String>,
     pub dek_nonce: Vec<u8>,
     pub recovery_dek_nonce: Option<Vec<u8>>,
+    pub role: UserRole,
+    pub account_status: AccountStatus,
 }
 
 impl std::fmt::Debug for UserDbQuery {
@@ -93,6 +128,8 @@ impl std::fmt::Debug for UserDbQuery {
             .field("recovery_kek_salt", &self.recovery_kek_salt)
             .field("dek_nonce", &"<omitted>")
             .field("recovery_dek_nonce", &self.recovery_dek_nonce.as_ref().map(|_| "<omitted>"))
+            .field("role", &self.role)
+            .field("account_status", &self.account_status)
             .finish()
     }
 }
@@ -123,8 +160,14 @@ pub struct User {
     // DEK field now uses the newtype wrapper
     pub dek: Option<SerializableSecretDek>,
     
+    // Recovery phrase field for registration process (not stored in DB)
+    #[serde(skip_serializing, skip_deserializing)]
+    pub recovery_phrase: Option<String>,
+    
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    pub role: UserRole,
+    pub account_status: Option<String>, // Added for CLI compatibility
 }
 
 // Manual Debug implementation for User
@@ -143,8 +186,11 @@ impl std::fmt::Debug for User {
             .field("recovery_dek_nonce", &self.recovery_dek_nonce.as_ref().map(|_| "<omitted>"))
             // Updated Debug for Option<SerializableSecretDek>
             .field("dek", &self.dek.as_ref().map(|_wrapper| "<SerializableSecretDek_omitted>"))
+            .field("recovery_phrase", &self.recovery_phrase.as_ref().map(|_| "<recovery_phrase_omitted>"))
             .field("created_at", &self.created_at)
             .field("updated_at", &self.updated_at)
+            .field("role", &self.role)
+            .field("account_status", &self.account_status)
             .finish()
     }
 }
@@ -164,8 +210,11 @@ impl From<UserDbQuery> for User {
             dek_nonce: user_from_db.dek_nonce,
             recovery_dek_nonce: user_from_db.recovery_dek_nonce,
             dek: None,
+            recovery_phrase: None, // Not stored in DB
             created_at: user_from_db.created_at,
             updated_at: user_from_db.updated_at,
+            role: user_from_db.role,
+            account_status: Some(format!("{:?}", user_from_db.account_status).to_lowercase()),
         }
     }
 }
@@ -186,8 +235,11 @@ impl Clone for User {
             recovery_dek_nonce: self.recovery_dek_nonce.clone(),
             // Properly clone the Option<SerializableSecretDek>
             dek: self.dek.clone(), // SerializableSecretDek implements Clone
+            recovery_phrase: self.recovery_phrase.clone(),
             created_at: self.created_at,
             updated_at: self.updated_at,
+            role: self.role,
+            account_status: self.account_status.clone(),
         }
     }
 }
@@ -218,6 +270,8 @@ pub struct NewUser {
     pub recovery_kek_salt: Option<String>,
     pub dek_nonce: Vec<u8>,
     pub recovery_dek_nonce: Option<Vec<u8>>,
+    pub role: UserRole,
+    pub account_status: AccountStatus,
 }
 
 impl std::fmt::Debug for NewUser {
@@ -232,6 +286,8 @@ impl std::fmt::Debug for NewUser {
             .field("recovery_kek_salt", &self.recovery_kek_salt)
             .field("dek_nonce", &"<omitted>")
             .field("recovery_dek_nonce", &self.recovery_dek_nonce.as_ref().map(|_| "<omitted>"))
+            .field("role", &self.role)
+            .field("account_status", &self.account_status)
             .finish()
     }
 }
@@ -262,6 +318,7 @@ mod tests {
             dek_nonce: Vec<u8>,
             recovery_dek_nonce: Option<Vec<u8>>,
             dek: Option<SerializableSecretDek>,
+            role: UserRole,
         ) -> Self {
             User {
                 id,
@@ -277,6 +334,9 @@ mod tests {
                 dek,
                 created_at: chrono::Utc::now(),
                 updated_at: chrono::Utc::now(),
+                role,
+                account_status: Some("active".to_string()),
+                recovery_phrase: None, // Add the recovery_phrase field
             }
         }
     }
@@ -303,6 +363,7 @@ mod tests {
             test_dek_nonce.clone(),
             None,
             initial_test_dek,
+            UserRole::User,
         );
 
         assert_eq!(user.username, "testuser");
@@ -315,6 +376,7 @@ mod tests {
         if let Some(wrapped_dek) = &user.dek {
              assert_eq!(wrapped_dek.expose_secret_bytes(), &test_dek_bytes);
         }
+        assert_eq!(user.role, UserRole::User);
 
         let cloned_user = user.clone();
         assert!(cloned_user.dek.is_some(), "Cloned user DEK should be preserved");
@@ -345,6 +407,8 @@ mod tests {
             recovery_kek_salt: None,
             dek_nonce: dek_nonce.clone(),
             recovery_dek_nonce: None,
+            role: UserRole::User,
+            account_status: AccountStatus::Active,
         };
 
         assert_eq!(new_user.username, username);
@@ -353,6 +417,7 @@ mod tests {
         assert_eq!(new_user.kek_salt, kek_salt);
         assert_eq!(new_user.encrypted_dek, encrypted_dek);
         assert_eq!(new_user.dek_nonce, dek_nonce);
+        assert_eq!(new_user.role, UserRole::User);
     }
 
     // Cannot easily test AuthnBackend methods here without a pool/runtime

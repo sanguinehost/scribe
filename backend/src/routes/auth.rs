@@ -94,10 +94,13 @@ pub async fn register_handler(
                         Ok(user) => {
                             info!(username = %user.username, email = %user.email, user_id = %user.id, "User registration successful.");
                             // Use AuthResponse for success
+                            // The created user has the recovery phrase that was used
                             let response = AuthResponse {
                                 user_id: user.id,
                                 username: user.username,
                                 email: user.email,
+                                role: format!("{:?}", user.role),
+                                recovery_key: user.recovery_phrase.clone(), // Get recovery phrase from the returned user
                             };
                             Ok((StatusCode::CREATED, Json(response)).into_response())
                         }
@@ -324,12 +327,18 @@ pub async fn login_handler(
                 user_id: user.id,
                 username: user.username,
                 email: user.email,
+                role: format!("{:?}", user.role),
+                recovery_key: None, // Login response doesn't include recovery key
             };
             Ok((StatusCode::OK, Json(response_data)).into_response())
         }
         Err(AuthError::WrongCredentials) => {
             warn!(identifier = %identifier_for_log, "Login failed: Wrong credentials.");
             Err(AppError::Unauthorized("Invalid identifier or password".to_string()))
+        }
+        Err(AuthError::AccountLocked) => {
+            warn!(identifier = %identifier_for_log, "Login failed: Account locked.");
+            Err(AppError::Unauthorized("Your account is locked. Please contact an administrator.".to_string()))
         }
         Err(e) => {
             error!(identifier = %identifier_for_log, error = ?e, "Login failed due to an unexpected authentication error.");
@@ -380,6 +389,8 @@ pub async fn me_handler(auth_session: CurrentAuthSession) -> Result<Response, Ap
                 user_id: user.id,
                 username: user.username,
                 email: user.email,
+                role: format!("{:?}", user.role),
+                recovery_key: None, // /me endpoint doesn't return recovery key
             };
             Ok(Json(response).into_response())
         }
@@ -497,6 +508,8 @@ pub async fn get_session_handler(
                         user_id: user.id,
                         username: user.username.clone(), // Clone if User.username is String
                         email: user.email.clone(),       // Clone if User.email is String
+                        role: format!("{:?}", user.role),
+                        recovery_key: None, // Session response doesn't include recovery key
                     };
                     let response = SessionWithUserResponse {
                         session: SessionResponse { 

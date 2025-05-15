@@ -15,7 +15,7 @@ use dotenvy::dotenv;
 use scribe_backend::models::characters::Character; // Import canonical Character struct
 use scribe_backend::models::character_card::NewCharacter; // Keep NewCharacter import from card
 use scribe_backend::models::users::UserCredentials; // Add credentials import
-use scribe_backend::models::users::{NewUser, User, UserDbQuery};
+use scribe_backend::models::users::{AccountStatus, NewUser, User, UserDbQuery, UserRole};
 use scribe_backend::schema::{self, characters, users}; // Added schema imports
 use scribe_backend::schema::{chat_messages, chat_sessions};
 use secrecy::{ExposeSecret, SecretString}; // Use SecretString alias instead of non-existent Secret
@@ -148,6 +148,8 @@ fn insert_test_user(conn: &mut PgConnection, prefix: &str) -> Result<User, Diese
         recovery_kek_salt: None,
         dek_nonce: dummy_dek_nonce,
         recovery_dek_nonce: None,
+        role: UserRole::User,
+        account_status: AccountStatus::Active, // Default to Active account status
     };
     diesel::insert_into(schema::users::table)
         .values(&new_user)
@@ -346,8 +348,10 @@ fn test_user_character_insert_and_query() {
             encrypted_dek: vec![0u8; 32],                // Placeholder (32 DEK)
             encrypted_dek_by_recovery: None,
             recovery_kek_salt: None,
+            role: UserRole::User,
             dek_nonce: dummy_dek_nonce,
             recovery_dek_nonce: None,
+            account_status: AccountStatus::Active, // Default to Active account status
         };
 
         let inserted_user: User = diesel::insert_into(schema::users::table)
@@ -444,6 +448,8 @@ fn insert_test_user_with_password(
         recovery_kek_salt: None,
         dek_nonce: dummy_dek_nonce,
         recovery_dek_nonce: None,
+        role: UserRole::User,
+        account_status: AccountStatus::Active, // Default to Active account status
     };
 
     diesel::insert_into(users::table)

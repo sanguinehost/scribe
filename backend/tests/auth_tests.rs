@@ -156,6 +156,7 @@ async fn test_register_success() -> AnyhowResult<()> {
     
     assert_eq!(auth_response.username, username, "Username in response should match");
     assert_eq!(auth_response.email, email, "Email in response should match");
+    assert_eq!(auth_response.role, "User", "Role in response should be 'User'");
     
     // Now we have a user ID to clean up
     guard.add_user(auth_response.user_id);
@@ -335,6 +336,7 @@ async fn test_login_success() -> AnyhowResult<()> {
     assert_eq!(auth_response.username, username, "Username in response should match");
     assert_eq!(auth_response.email, user.email, "Email in response should match");
     assert_eq!(auth_response.user_id, user.id, "User ID in response should match");
+    assert_eq!(auth_response.role, "User", "Role in response should be 'User'");
     
     // Explicitly call cleanup before the end of the test
     guard.cleanup().await?;
@@ -386,6 +388,7 @@ async fn test_login_success_with_email() -> AnyhowResult<()> {
     assert_eq!(auth_response.username, username, "Username in response should match");
     assert_eq!(auth_response.email, user.email, "Email in response should match");
     assert_eq!(auth_response.user_id, user.id, "User ID in response should match");
+    assert_eq!(auth_response.role, "User", "Role in response should be 'User'");
     
     // Explicitly call cleanup before the end of the test
     guard.cleanup().await?;
@@ -781,6 +784,7 @@ async fn test_me_success() -> AnyhowResult<()> {
     // Verify user data
     assert_eq!(auth_response.username, username);
     assert_eq!(auth_response.email, user.email);
+    assert_eq!(auth_response.role, "User", "Role in response should be 'User'");
     
     guard.cleanup().await?;
     Ok(())

@@ -47,5 +47,22 @@ pub async fn handle_registration_action<H: IoHandler, C: HttpClient>(
         email,
         password: SecretString::new(password.into_boxed_str())
     };
-    client.register(&credentials).await
+    
+    // Register the user
+    let user = client.register(&credentials).await?;
+    
+    // Get the recovery key from the user
+    if let Some(recovery_key) = client.get_last_recovery_key() {
+        io_handler.write_line("\n┌─────────────────────────────────────────────────────────────┐")?;
+        io_handler.write_line("│ IMPORTANT: Save your recovery key in a secure location!      │")?;
+        io_handler.write_line("│ You will need this key to recover your account if you forget │")?;
+        io_handler.write_line("│ your password. This key will not be shown again.             │")?;
+        io_handler.write_line("└─────────────────────────────────────────────────────────────┘")?;
+        
+        io_handler.write_line(&format!("\nYour recovery key: {}", recovery_key))?;
+        io_handler.write_line("\nPress Enter to continue...")?;
+        let _ = io_handler.read_line("")?;
+    }
+    
+    Ok(user)
 }

@@ -1,4 +1,4 @@
-use secrecy::{ExposeSecret, SecretBox};
+use secrecy::{ExposeSecret, SecretBox}; // Removed SecretVec
 use axum::{
     extract::FromRequestParts,
     http::request::Parts
@@ -12,7 +12,7 @@ use tower_sessions::Session;
 
 /// Represents the session's Data Encryption Key (DEK).
 /// This struct is intended to be used as an Axum request extractor.
-pub struct SessionDek(pub SecretBox<Vec<u8>>);
+pub struct SessionDek(pub SecretBox<Vec<u8>>); // Reverted to Vec<u8>
 
 // Manual Clone implementation since Vec<u8> doesn't implement CloneableSecret
 impl Clone for SessionDek {
@@ -31,7 +31,7 @@ impl SessionDek {
 
     /// Access the inner DEK bytes
     pub fn expose_bytes(&self) -> &[u8] {
-        self.0.expose_secret()
+        self.0.expose_secret() // Single expose
     }
 
     // Fixed DEK key - not used anymore, keeping for backwards compatibility in tests
@@ -100,8 +100,9 @@ where
                 debug!("SessionDek extractor: Found DEK in tower_session data under key '{}'", dek_key);
                 
                 // Convert SerializableSecretDek to SessionDek
-                let dek_bytes = serializable_dek.expose_secret_bytes().to_vec();
-                Ok(SessionDek(SecretBox::new(Box::new(dek_bytes))))
+                // Assuming serializable_dek.expose_secret_bytes() returns Vec<u8>
+                let dek_bytes_vec = serializable_dek.expose_secret_bytes().to_vec();
+                Ok(SessionDek(SecretBox::new(Box::new(dek_bytes_vec))))
             },
             Ok(None) => {
                 tracing::warn!(target: "auth_debug", "SessionDek: DEK not found under key '{}' in session", dek_key);
@@ -116,9 +117,9 @@ where
                         tracing::warn!(target: "auth_debug", "SessionDek: Found DEK using legacy key '{}'. Decoding from base64.", Self::SESSION_USER_DEK_KEY);
                         // Handle legacy case - decode from base64
                         match BASE64_STANDARD.decode(dek_b64) {
-                            Ok(dek_bytes) => {
-                                debug!("SessionDek extractor: Successfully decoded legacy base64 DEK. Bytes length: {}", dek_bytes.len());
-                                Ok(SessionDek(SecretBox::new(Box::new(dek_bytes))))
+                            Ok(dek_bytes_vec) => {
+                                debug!("SessionDek extractor: Successfully decoded legacy base64 DEK. Bytes length: {}", dek_bytes_vec.len());
+                                Ok(SessionDek(SecretBox::new(Box::new(dek_bytes_vec))))
                             },
                             Err(e) => {
                                 error!("SessionDek: Failed to decode legacy base64 DEK: {}", e);
