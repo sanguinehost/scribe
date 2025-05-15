@@ -1,10 +1,62 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use image::GenericImageView;
 use sentencepiece::SentencePieceProcessor;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 
 use crate::errors::{AppError, Result};
+
+/// Represents a token count estimate with detailed breakdowns
+#[derive(Debug, Clone, Default)]
+pub struct TokenEstimate {
+    /// Total number of tokens (text + images + video + audio)
+    pub total: usize,
+    /// Number of tokens from text content
+    pub text: usize,
+    /// Number of tokens from image content
+    pub images: usize,
+    /// Number of tokens from video content
+    pub video: usize,
+    /// Number of tokens from audio content
+    pub audio: usize,
+    /// Indicates whether this is an exact count or an estimate
+    pub is_estimate: bool,
+}
+
+impl TokenEstimate {
+    /// Creates a new token estimate with only text tokens
+    pub fn new_text_only(count: usize) -> Self {
+        Self {
+            total: count,
+            text: count,
+            images: 0,
+            video: 0,
+            audio: 0,
+            is_estimate: false,
+        }
+    }
+    
+    /// Add counts from another estimate
+    pub fn combine(&mut self, other: &TokenEstimate) {
+        self.total += other.total;
+        self.text += other.text;
+        self.images += other.images;
+        self.video += other.video;
+        self.audio += other.audio;
+        // If either is an estimate, the combined result is an estimate
+        self.is_estimate = self.is_estimate || other.is_estimate;
+    }
+}
+
+/// Supported content types for token counting
+#[derive(Debug, Clone, PartialEq)]
+pub enum ContentType {
+    Text,
+    Image,
+    Video,
+    Audio,
+}
 
 /// Model-specific tokenizer for LLM operations
 /// 
@@ -128,6 +180,131 @@ impl TokenizerService {
         let tokens = self.encode(text)?;
         Ok(tokens.len())
     }
+    
+    /// Estimates tokens for text, returning a TokenEstimate object
+    pub fn estimate_text_tokens(&self, text: &str) -> Result<TokenEstimate> {
+        let token_count = self.count_tokens(text)?;
+        Ok(TokenEstimate::new_text_only(token_count))
+    }
+    
+    /// Estimates tokens for an image based on Gemini's image token counting rules
+    /// 
+    /// Gemini 2.0 counts images as follows:
+    /// - Images with both dimensions ≤ 384 pixels: 258 tokens
+    /// - Larger images: 258 tokens per 768x768 tile (scaled and cropped as needed)
+    pub fn estimate_image_tokens(&self, image_path: impl AsRef<Path>) -> Result<TokenEstimate> {
+        let path = image_path.as_ref();
+        
+        // Open the image to get dimensions
+        let img = image::open(path).map_err(|e| {
+            error!("Failed to open image at {}: {}", path.display(), e);
+            AppError::TextProcessingError(format!("Failed to open image for token estimation: {}", e))
+        })?;
+        
+        let (width, height) = img.dimensions();
+        
+        // Small images (both dimensions ≤ 384 pixels) are counted as 258 tokens
+        if width <= 384 && height <= 384 {
+            debug!("Small image ({}x{}): 258 tokens", width, height);
+            return Ok(TokenEstimate {
+                total: 258,
+                images: 258,
+                is_estimate: true,
+                ..Default::default()
+            });
+        }
+        
+        // Larger images are processed into 768x768 tiles
+        // Calculate how many tiles would be needed (ceiling division)
+        let tiles_x = (width as f64 / 768.0).ceil() as usize;
+        let tiles_y = (height as f64 / 768.0).ceil() as usize;
+        let total_tiles = tiles_x * tiles_y;
+        
+        // Each tile is 258 tokens
+        let token_count = total_tiles * 258;
+        
+        debug!("Large image ({}x{}): {} tiles, {} tokens", 
+               width, height, total_tiles, token_count);
+        
+        Ok(TokenEstimate {
+            total: token_count,
+            images: token_count,
+            is_estimate: true,
+            ..Default::default()
+        })
+    }
+    
+    /// Estimates tokens for video content based on Gemini's counting rules
+    /// 
+    /// For Gemini, video is counted at a fixed rate of 263 tokens per second
+    pub fn estimate_video_tokens(&self, duration_seconds: f64) -> TokenEstimate {
+        let token_count = (duration_seconds * 263.0).ceil() as usize;
+        
+        TokenEstimate {
+            total: token_count,
+            video: token_count,
+            is_estimate: true,
+            ..Default::default()
+        }
+    }
+    
+    /// Estimates tokens for audio content based on Gemini's counting rules
+    /// 
+    /// For Gemini, audio is counted at a fixed rate of 32 tokens per second
+    pub fn estimate_audio_tokens(&self, duration_seconds: f64) -> TokenEstimate {
+        let token_count = (duration_seconds * 32.0).ceil() as usize;
+        
+        TokenEstimate {
+            total: token_count,
+            audio: token_count,
+            is_estimate: true,
+            ..Default::default()
+        }
+    }
+    
+    /// Estimates total tokens for mixed content
+    pub fn estimate_content_tokens(&self, 
+                                  text: Option<&str>,
+                                  image_paths: Option<&[PathBuf]>,
+                                  video_duration: Option<f64>,
+                                  audio_duration: Option<f64>) -> Result<TokenEstimate> {
+        let mut total_estimate = TokenEstimate::default();
+        
+        // Add text tokens if provided
+        if let Some(text_content) = text {
+            let text_estimate = self.estimate_text_tokens(text_content)?;
+            total_estimate.combine(&text_estimate);
+        }
+        
+        // Add image tokens if provided
+        if let Some(images) = image_paths {
+            for image_path in images {
+                match self.estimate_image_tokens(image_path) {
+                    Ok(image_estimate) => {
+                        total_estimate.combine(&image_estimate);
+                    },
+                    Err(e) => {
+                        warn!("Failed to estimate tokens for image {}: {}", image_path.display(), e);
+                        // Continue with other images, don't fail the entire estimation
+                    }
+                }
+            }
+        }
+        
+        // Add video tokens if provided
+        if let Some(duration) = video_duration {
+            let video_estimate = self.estimate_video_tokens(duration);
+            total_estimate.combine(&video_estimate);
+        }
+        
+        // Add audio tokens if provided
+        if let Some(duration) = audio_duration {
+            let audio_estimate = self.estimate_audio_tokens(duration);
+            total_estimate.combine(&audio_estimate);
+        }
+        
+        Ok(total_estimate)
+    }
 }
 
 // Update AppError with TextProcessingError
@@ -144,6 +321,10 @@ mod tests {
 
     fn get_test_model_path() -> PathBuf {
         PathBuf::from("/home/socol/Workspace/sanguine-scribe/backend/resources/tokenizers/gemma.model")
+    }
+    
+    fn get_test_image_path() -> PathBuf {
+        PathBuf::from("/home/socol/Workspace/sanguine-scribe/test_data/test_card.png")
     }
 
     #[test]
@@ -192,5 +373,154 @@ mod tests {
         // The exact count will depend on the model, but should be reasonable
         assert!(token_count > 0);
         assert!(token_count < 10); // A short text shouldn't have too many tokens
+    }
+    
+    #[test]
+    fn test_token_estimate_text() {
+        let model_path = get_test_model_path();
+        let tokenizer = TokenizerService::new(model_path).expect("Failed to create tokenizer");
+        
+        let text = "This is a test of the token estimation functionality.";
+        let estimate = tokenizer.estimate_text_tokens(text).expect("Failed to estimate tokens");
+        
+        assert_eq!(estimate.images, 0);
+        assert_eq!(estimate.video, 0);
+        assert_eq!(estimate.audio, 0);
+        assert!(estimate.text > 0);
+        assert_eq!(estimate.total, estimate.text);
+        assert!(!estimate.is_estimate); // Text counting is exact, not an estimate
+    }
+    
+    #[test]
+    fn test_token_estimate_image() {
+        let model_path = get_test_model_path();
+        let tokenizer = TokenizerService::new(model_path).expect("Failed to create tokenizer");
+        
+        let image_path = get_test_image_path();
+        if !image_path.exists() {
+            println!("Test image not found at {}, skipping test", image_path.display());
+            return;
+        }
+        
+        let estimate = tokenizer.estimate_image_tokens(image_path).expect("Failed to estimate image tokens");
+        
+        assert_eq!(estimate.text, 0);
+        assert_eq!(estimate.video, 0);
+        assert_eq!(estimate.audio, 0);
+        assert!(estimate.images > 0);
+        assert_eq!(estimate.total, estimate.images);
+        assert!(estimate.is_estimate); // Image counting is an estimate
+        
+        // Basic check - should be either 258 (small image) or multiple of 258 (large image)
+        assert_eq!(estimate.images % 258, 0);
+    }
+    
+    #[test]
+    fn test_token_estimate_video() {
+        let model_path = get_test_model_path();
+        let tokenizer = TokenizerService::new(model_path).expect("Failed to create tokenizer");
+        
+        let duration = 10.5; // 10.5 seconds
+        let estimate = tokenizer.estimate_video_tokens(duration);
+        
+        assert_eq!(estimate.text, 0);
+        assert_eq!(estimate.images, 0);
+        assert_eq!(estimate.audio, 0);
+        assert!(estimate.video > 0);
+        assert_eq!(estimate.total, estimate.video);
+        assert!(estimate.is_estimate);
+        
+        // 10.5 seconds * 263 tokens/second = 2761.5, ceiling = 2762
+        assert_eq!(estimate.video, 2762);
+    }
+    
+    #[test]
+    fn test_token_estimate_audio() {
+        let model_path = get_test_model_path();
+        let tokenizer = TokenizerService::new(model_path).expect("Failed to create tokenizer");
+        
+        let duration = 60.0; // 60 seconds (1 minute)
+        let estimate = tokenizer.estimate_audio_tokens(duration);
+        
+        assert_eq!(estimate.text, 0);
+        assert_eq!(estimate.images, 0);
+        assert_eq!(estimate.video, 0);
+        assert!(estimate.audio > 0);
+        assert_eq!(estimate.total, estimate.audio);
+        assert!(estimate.is_estimate);
+        
+        // 60.0 seconds * 32 tokens/second = 1920
+        assert_eq!(estimate.audio, 1920);
+    }
+    
+    #[test]
+    fn test_token_estimate_mixed() {
+        let model_path = get_test_model_path();
+        let tokenizer = TokenizerService::new(model_path).expect("Failed to create tokenizer");
+        
+        let text = "This is a test message with an image and some audio.";
+        let image_path = get_test_image_path();
+        let image_paths = if image_path.exists() { Some(vec![image_path]) } else { None };
+        let video_duration = Some(5.0); // 5 seconds
+        let audio_duration = Some(30.0); // 30 seconds
+        
+        let estimate = tokenizer.estimate_content_tokens(
+            Some(text),
+            image_paths.as_deref(),
+            video_duration,
+            audio_duration
+        ).expect("Failed to estimate mixed tokens");
+        
+        // Text tokens should be greater than 0
+        assert!(estimate.text > 0);
+        
+        // If we had an image to test with
+        if image_paths.is_some() {
+            assert!(estimate.images > 0);
+            assert_eq!(estimate.images % 258, 0); // Should be multiple of 258
+        }
+        
+        // Video: 5.0 seconds * 263 tokens/second = 1315
+        assert_eq!(estimate.video, 1315);
+        
+        // Audio: 30.0 seconds * 32 tokens/second = 960
+        assert_eq!(estimate.audio, 960);
+        
+        // Total should be sum of all parts
+        assert_eq!(estimate.total, estimate.text + estimate.images + estimate.video + estimate.audio);
+        
+        // Mixed content should be marked as an estimate
+        assert!(estimate.is_estimate);
+    }
+    
+    #[test]
+    fn test_token_estimate_combine() {
+        let est1 = TokenEstimate {
+            total: 100,
+            text: 100,
+            images: 0,
+            video: 0,
+            audio: 0,
+            is_estimate: false,
+        };
+        
+        let est2 = TokenEstimate {
+            total: 258,
+            text: 0,
+            images: 258,
+            video: 0,
+            audio: 0,
+            is_estimate: true,
+        };
+        
+        let mut combined = est1.clone();
+        combined.combine(&est2);
+        
+        assert_eq!(combined.total, 358);
+        assert_eq!(combined.text, 100);
+        assert_eq!(combined.images, 258);
+        assert_eq!(combined.video, 0);
+        assert_eq!(combined.audio, 0);
+        assert!(combined.is_estimate); // Should be true if any component is an estimate
     }
 }

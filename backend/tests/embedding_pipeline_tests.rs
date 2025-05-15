@@ -74,7 +74,8 @@ async fn test_process_and_embed_message_integration() {
     // 3. Call the function under test
     let result = app_state.embedding_pipeline_service.process_and_embed_message(
         app_state.clone(), // Pass AppState
-        test_message.clone()
+        test_message.clone(),
+        None // No session DEK needed for tests
     ).await;
     assert!(
         result.is_ok(),
@@ -218,7 +219,8 @@ async fn test_process_and_embed_message_all_chunks_fail_embedding() {
     // 3. Call the function under test directly on the real EmbeddingPipelineService
     let result = app_state.embedding_pipeline_service.process_and_embed_message(
         app_state.clone(), // Pass AppState
-        test_message.clone()
+        test_message.clone(),
+        None // No session DEK needed for tests
     ).await;
 
     // 4. Assertions
@@ -812,6 +814,7 @@ async fn test_rag_context_injection_with_qdrant() {
     let process_result = embedding_pipeline_service.process_and_embed_message(
         app_state.clone(),
         chat_message,
+        None // No session DEK needed for tests
     ).await;
     
     assert!(process_result.is_ok(), "Failed to process and embed message: {:?}", process_result.err());
