@@ -11,6 +11,7 @@ use serde_json::json;
 use tower::ServiceExt;
 use uuid::Uuid;
 use chrono::Utc;
+use rand::TryRngCore;
 
 // Diesel imports
 use diesel::prelude::*;
@@ -22,6 +23,21 @@ use scribe_backend::models::character_card::NewCharacter;
 use scribe_backend::models::characters::Character as DbCharacter;
 use scribe_backend::schema::{characters, chat_sessions};
 use scribe_backend::test_helpers; // For spawn_app, create_test_user
+use anyhow::Error as AnyhowError;
+use secrecy::{ExposeSecret, SecretBox};
+use std::sync::Arc;
+use tracing::debug;
+
+use scribe_backend::crypto;
+use scribe_backend::models::{
+    // scribe_backend::models::chats::Chat is already aliased as DbChatSession in this file
+    chats::{Message as DbChatMessage, MessageRole, NewMessage},
+    users::User,
+};
+use scribe_backend::schema::chat_messages;
+use scribe_backend::services::chat_service;
+use scribe_backend::state::AppState;
+// scribe_backend::test_helpers is already imported. TestDataGuard will be used as test_helpers::TestDataGuard.
 
 // --- Session Creation Tests ---
 
@@ -746,4 +762,317 @@ async fn test_get_chat_session_details_invalid_uuid() {
     let response = test_app.router.oneshot(request).await.unwrap();
 
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn test_create_chat_session_with_empty_first_mes() -> Result<(), AnyhowError> {
+    let test_app = test_helpers::spawn_app(false, false, false).await;
+    let mut test_data_guard = test_helpers::TestDataGuard::new(test_app.db_pool.clone());
+    let username = "empty_first_mes_user";
+    let password = "password";
+    let user: User = test_helpers::db::create_test_user(&test_app.db_pool, username.to_string(), password.to_string()).await.expect("Failed to create test user");
+    test_data_guard.add_user(user.id);
+    let auth_cookie = test_helpers::login_user_via_api(&test_app, username, password).await;
+
+    let conn = test_app.db_pool.get().await?;
+
+    let character_id = Uuid::new_v4();
+    let new_character = DbCharacter {
+        id: character_id,
+        user_id: user.id,
+        name: "Empty First Mes Char".to_string(),
+        spec: "test_spec".to_string(),
+        spec_version: "1.0".to_string(),
+        created_at: Utc::now(),
+        updated_at: Utc::now(),
+        first_mes: Some("   ".as_bytes().to_vec()), // Set empty first_mes
+        description: None, personality: None, scenario: None, mes_example: None,
+        creator_notes: None, system_prompt: None, post_history_instructions: None, tags: None, creator: None,
+        character_version: None, alternate_greetings: None, nickname: None, creator_notes_multilingual: None,
+        source: None, group_only_greetings: None, creation_date: None, modification_date: None, persona: None,
+        world_scenario: None, avatar: None, chat: None, greeting: None, definition: None, default_voice: None,
+        extensions: None, data_id: None, category: None, definition_visibility: None, depth: None,
+        example_dialogue: None, favorite: None, first_message_visibility: None, height: None, last_activity: None,
+        migrated_from: None, model_prompt: None, model_prompt_visibility: None, model_temperature: None,
+        num_interactions: None, permanence: None, persona_visibility: None, revision: None, sharing_visibility: None,
+        status: None, system_prompt_visibility: None, system_tags: None, token_budget: None, usage_hints: None,
+        user_persona: None, user_persona_visibility: None, visibility: None, weight: None, world_scenario_visibility: None,
+        description_nonce: None, personality_nonce: None, scenario_nonce: None, first_mes_nonce: None,
+        mes_example_nonce: None, creator_notes_nonce: None, system_prompt_nonce: None, post_history_instructions_nonce: None,
+        persona_nonce: None, world_scenario_nonce: None, greeting_nonce: None, definition_nonce: None,
+        example_dialogue_nonce: None, model_prompt_nonce: None, user_persona_nonce: None,
+    };
+
+    let result = conn.interact(move |conn_inner| {
+        diesel::insert_into(characters::table)
+            .values(&new_character)
+            .execute(conn_inner)
+    }).await;
+    if let Err(e) = result {
+        return Err(anyhow::anyhow!("Failed to insert character: {}", e).into());
+    }
+    let insert_result = result.unwrap()?;
+    debug!("Inserted character: {} rows affected", insert_result);
+    test_data_guard.add_character(character_id);
+
+
+    let request_body = json!({ "character_id": character_id });
+
+    let request = Request::builder()
+        .method(Method::POST)
+        .uri("/api/chats-api/chats")
+        .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
+        .header(header::COOKIE, auth_cookie)
+        .body(Body::from(serde_json::to_vec(&request_body)?))?;
+    let response = test_app.router.clone().oneshot(request).await?;
+
+    assert_eq!(response.status(), StatusCode::CREATED);
+    let body = response.into_body().collect().await?.to_bytes();
+    let session: DbChatSession = // Changed from DbChat to DbChatSession
+        serde_json::from_slice(&body)?;
+    test_data_guard.add_chat(session.id);
+
+
+    let conn = test_app.db_pool.get().await?;
+    let messages_result = conn.interact(move |conn_inner| {
+        chat_messages::table
+            .filter(chat_messages::session_id.eq(session.id))
+            .select(DbChatMessage::as_select())
+            .load(conn_inner)
+    }).await;
+
+    if let Err(e) = messages_result {
+        return Err(anyhow::anyhow!("Failed to load messages: {}", e).into());
+    }
+
+    let messages: Vec<DbChatMessage> = messages_result.unwrap()?;
+
+    assert!(
+        messages.is_empty(),
+        "No initial message should be created for empty first_mes"
+    );
+
+    test_data_guard.cleanup().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_create_chat_session_with_null_first_mes() -> anyhow::Result<()> {
+    let test_app = test_helpers::spawn_app(false, false, false).await;
+    let mut test_data_guard = test_helpers::TestDataGuard::new(test_app.db_pool.clone());
+    let username = "null_first_mes_user";
+    let password = "password";
+    let user: User = test_helpers::db::create_test_user(&test_app.db_pool, username.to_string(), password.to_string()).await.expect("Failed to create test user");
+    test_data_guard.add_user(user.id);
+    let auth_cookie = test_helpers::login_user_via_api(&test_app, username, password).await;
+
+    let conn = test_app.db_pool.get().await?;
+
+    let character_id = Uuid::new_v4();
+    let new_character = DbCharacter {
+        id: character_id,
+        user_id: user.id,
+        name: "Null First Mes Char".to_string(),
+        spec: "test_spec".to_string(),
+        spec_version: "1.0".to_string(),
+        created_at: Utc::now(),
+        updated_at: Utc::now(),
+        first_mes: None, // Null first_mes
+        description: None, personality: None, scenario: None, mes_example: None,
+        creator_notes: None, system_prompt: None, post_history_instructions: None, tags: None, creator: None,
+        character_version: None, alternate_greetings: None, nickname: None, creator_notes_multilingual: None,
+        source: None, group_only_greetings: None, creation_date: None, modification_date: None, persona: None,
+        world_scenario: None, avatar: None, chat: None, greeting: None, definition: None, default_voice: None,
+        extensions: None, data_id: None, category: None, definition_visibility: None, depth: None,
+        example_dialogue: None, favorite: None, first_message_visibility: None, height: None, last_activity: None,
+        migrated_from: None, model_prompt: None, model_prompt_visibility: None, model_temperature: None,
+        num_interactions: None, permanence: None, persona_visibility: None, revision: None, sharing_visibility: None,
+        status: None, system_prompt_visibility: None, system_tags: None, token_budget: None, usage_hints: None,
+        user_persona: None, user_persona_visibility: None, visibility: None, weight: None, world_scenario_visibility: None,
+        description_nonce: None, personality_nonce: None, scenario_nonce: None, first_mes_nonce: None,
+        mes_example_nonce: None, creator_notes_nonce: None, system_prompt_nonce: None, post_history_instructions_nonce: None,
+        persona_nonce: None, world_scenario_nonce: None, greeting_nonce: None, definition_nonce: None,
+        example_dialogue_nonce: None, model_prompt_nonce: None, user_persona_nonce: None,
+    };
+
+    let result = conn.interact(move |conn_inner| {
+        diesel::insert_into(characters::table)
+            .values(&new_character)
+            .execute(conn_inner)
+    }).await;
+    if let Err(e) = result {
+        return Err(anyhow::anyhow!("Failed to insert character: {}", e));
+    }
+    let insert_result = result.unwrap()?;
+    debug!("Inserted character: {} rows affected", insert_result);
+    test_data_guard.add_character(character_id);
+
+    let request_body = json!({ "character_id": character_id });
+
+    let request = Request::builder()
+        .method(Method::POST)
+        .uri("/api/chats-api/chats")
+        .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
+        .header(header::COOKIE, auth_cookie)
+        .body(Body::from(serde_json::to_vec(&request_body)?))?;
+    let response = test_app.router.clone().oneshot(request).await?;
+
+    assert_eq!(response.status(), StatusCode::CREATED);
+    let body = response.into_body().collect().await?.to_bytes();
+    let session: DbChatSession = // Changed from DbChat to DbChatSession
+        serde_json::from_slice(&body)?;
+    test_data_guard.add_chat(session.id);
+
+    let conn = test_app.db_pool.get().await?;
+    let messages_result = conn.interact(move |conn_inner| {
+        chat_messages::table
+            .filter(chat_messages::session_id.eq(session.id))
+            .select(DbChatMessage::as_select())
+            .load(conn_inner)
+    }).await;
+
+    if let Err(e) = messages_result {
+        return Err(anyhow::anyhow!("Failed to load messages: {}", e));
+    }
+
+    let messages: Vec<DbChatMessage> = messages_result.unwrap()?;
+
+    assert!(
+        messages.is_empty(),
+        "No initial message should be created for null first_mes"
+    );
+    test_data_guard.cleanup().await?;
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore] // Ignore for CI unless DB is guaranteed
+async fn test_create_session_saves_first_mes() -> Result<(), AnyhowError> {
+    let test_app = test_helpers::spawn_app(false, false, false).await;
+    let mut test_data_guard = test_helpers::TestDataGuard::new(test_app.db_pool.clone());
+    let username = "save_first_mes_user";
+    let password = "password";
+    let user: User = test_helpers::db::create_test_user(&test_app.db_pool, username.to_string(), password.to_string()).await.expect("Failed to create test user");
+    test_data_guard.add_user(user.id);
+
+    let conn = test_app.db_pool.get().await?;
+
+    let character_id = Uuid::new_v4();
+    let first_mes_content = "Hello from the character!".to_string();
+
+    // 1. Generate DEK
+    let mut rng = rand::rngs::OsRng;
+    let mut dek_bytes = [0u8; 32];
+    rng.try_fill_bytes(&mut dek_bytes).expect("Failed to fill bytes for DEK");
+    let user_dek_val = SecretBox::new(Box::new(dek_bytes.to_vec()));
+    let user_dek = Arc::new(user_dek_val);
+
+    // 2. Encrypt first_mes_content
+    let (encrypted_first_mes, first_mes_actual_nonce) =
+        crypto::encrypt_gcm(first_mes_content.as_bytes(), user_dek.as_ref())
+        .expect("Test: Failed to encrypt first_mes");
+
+    let new_character = DbCharacter {
+        id: character_id,
+        user_id: user.id,
+        name: "Save First Mes Char".to_string(),
+        spec: "test_spec".to_string(),
+        spec_version: "1.0".to_string(),
+        created_at: Utc::now(),
+        updated_at: Utc::now(),
+        first_mes: Some(encrypted_first_mes), 
+        description: None, personality: None, scenario: None, mes_example: None,
+        creator_notes: None, system_prompt: None, post_history_instructions: None, tags: None, creator: None,
+        character_version: None, alternate_greetings: None, nickname: None, creator_notes_multilingual: None,
+        source: None, group_only_greetings: None, creation_date: None, modification_date: None, persona: None,
+        world_scenario: None, avatar: None, chat: None, greeting: None, definition: None, default_voice: None,
+        extensions: None, data_id: None, category: None, definition_visibility: None, depth: None,
+        example_dialogue: None, favorite: None, first_message_visibility: None, height: None, last_activity: None,
+        migrated_from: None, model_prompt: None, model_prompt_visibility: None, model_temperature: None,
+        num_interactions: None, permanence: None, persona_visibility: None, revision: None, sharing_visibility: None,
+        status: None, system_prompt_visibility: None, system_tags: None, token_budget: None, usage_hints: None,
+        user_persona: None, user_persona_visibility: None, visibility: None, weight: None, world_scenario_visibility: None,
+        description_nonce: None, personality_nonce: None, scenario_nonce: None,
+        first_mes_nonce: Some(first_mes_actual_nonce), 
+        mes_example_nonce: None, creator_notes_nonce: None, system_prompt_nonce: None, post_history_instructions_nonce: None,
+        persona_nonce: None, world_scenario_nonce: None, greeting_nonce: None, definition_nonce: None,
+        example_dialogue_nonce: None, model_prompt_nonce: None, user_persona_nonce: None,
+    };
+    
+    let result = conn.interact(move |conn_inner| {
+        diesel::insert_into(characters::table)
+            .values(&new_character)
+            .execute(conn_inner)
+    }).await;
+    if let Err(e) = result {
+        return Err(anyhow::anyhow!("Failed to insert character: {}", e).into());
+    }
+    let insert_result = result.unwrap()?;
+    debug!("Inserted character: {} rows affected", insert_result);
+    test_data_guard.add_character(character_id);
+
+
+    let app_state_arc = Arc::new(AppState {
+        pool: test_app.db_pool.clone(),
+        config: test_app.config.clone(),
+        ai_client: test_app.ai_client.clone(),
+        embedding_client: test_app.mock_embedding_client.clone(),
+        embedding_pipeline_service: test_app.mock_embedding_pipeline_service.clone(),
+        qdrant_service: test_app.qdrant_service.clone(),
+        embedding_call_tracker: test_app.embedding_call_tracker.clone(),
+        token_counter: Arc::new(scribe_backend::services::hybrid_token_counter::HybridTokenCounter::new_local_only(
+            scribe_backend::services::tokenizer_service::TokenizerService::new("/home/socol/Workspace/sanguine-scribe/backend/resources/tokenizers/gemma.model")
+                .expect("Failed to create tokenizer for test")))
+    });
+    // The function create_session_and_maybe_first_message returns Result<scribe_backend::models::chats::Chat, ...>
+    // In chat_session_api_tests.rs, DbChatSession is an alias for scribe_backend::models::chats::Chat.
+    // So, `session` will be of the correct type.
+    let result = scribe_backend::services::chat_service::create_session_and_maybe_first_message(
+        app_state_arc,
+        user.id,
+        character_id,
+        Some(user_dek.clone()), 
+    )
+    .await;
+
+    assert!(result.is_ok(), "create_session_and_maybe_first_message failed: {:?}", result.err());
+    let session: DbChatSession = result.unwrap(); // Explicitly type if needed, or let inference work.
+    test_data_guard.add_chat(session.id);
+
+
+    assert_eq!(session.user_id, user.id);
+    assert_eq!(session.character_id, character_id);
+
+    let conn = test_app.db_pool.get().await?;
+    let messages_result = conn.interact(move |conn_inner| {
+        chat_messages::table
+            .filter(chat_messages::session_id.eq(session.id))
+            .select(DbChatMessage::as_select())
+            .load(conn_inner)
+    }).await;
+    
+    if let Err(e) = messages_result {
+        return Err(anyhow::anyhow!("Failed to load messages: {}", e).into());
+    }
+    
+    let messages: Vec<DbChatMessage> = messages_result.unwrap()?;
+
+
+    assert_eq!(messages.len(), 1, "Expected exactly one initial message");
+    let initial_message = &messages[0];
+
+    let nonce = initial_message.content_nonce.as_ref().expect("Initial message should have a nonce");
+    let decrypted_content_secret = crypto::decrypt_gcm(&initial_message.content, nonce, user_dek.as_ref())
+        .expect("Failed to decrypt initial message content in test");
+    let decrypted_content_bytes = decrypted_content_secret.expose_secret();
+    let decrypted_content_string = String::from_utf8(decrypted_content_bytes.to_vec())
+        .expect("Decrypted content is not valid UTF-8");
+
+    assert_eq!(decrypted_content_string, "Hello from the character!");
+    assert_eq!(initial_message.message_type, MessageRole::Assistant);
+    assert_eq!(initial_message.user_id, user.id, "Initial message user_id should match session owner");
+    assert_eq!(initial_message.session_id, session.id, "Initial message session_id should match");
+
+    test_data_guard.cleanup().await?;
+    Ok(())
 }

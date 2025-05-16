@@ -331,6 +331,8 @@ async fn generate_chat_response_streaming_reasoning_chunk() {
             role: Some("user".to_string()),
             parts: None,
             attachments: None,
+            prompt_tokens: None,
+            completion_tokens: None,
         };
         diesel::insert_into(chat_messages_dsl::chat_messages)
             .values(&new_message)
@@ -612,6 +614,8 @@ async fn generate_chat_response_streaming_real_client_failure_repro() {
             role: Some("user".to_string()),
             parts: None,
             attachments: None,
+            prompt_tokens: None,
+            completion_tokens: None,
         };
         diesel::insert_into(chat_messages_dsl::chat_messages)
             .values(&new_message)

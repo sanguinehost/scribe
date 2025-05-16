@@ -195,6 +195,8 @@ mod tests {
             content_nonce: None, // Added missing field
             created_at: Utc::now(),
             user_id: Uuid::new_v4(),
+            prompt_tokens: None,
+            completion_tokens: None,
         }
     }
 

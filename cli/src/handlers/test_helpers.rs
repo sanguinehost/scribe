@@ -133,6 +133,7 @@ pub struct MockHttpClient {
     pub admin_update_user_role_result: Option<Arc<Result<AdminUserDetailResponse, MockCliError>>>,
     pub admin_lock_user_result: Option<Arc<Result<(), MockCliError>>>,
     pub admin_unlock_user_result: Option<Arc<Result<(), MockCliError>>>,
+    pub last_recovery_key: Option<String>,
 }
 
 #[async_trait]
@@ -380,6 +381,10 @@ impl HttpClient for MockHttpClient {
         );
         mock_result.map_err(Into::into)
     }
+    
+    fn get_last_recovery_key(&self) -> Option<String> {
+        self.last_recovery_key.clone()
+    }
 }
 
 // --- Helper Functions for Creating Mocks ---
@@ -402,6 +407,7 @@ pub fn mock_user(username: &str) -> User {
         updated_at: Utc::now(),
         role: scribe_backend::models::users::UserRole::User, // Default to User role
         account_status: Some("active".to_string()), // Default to active account
+        recovery_phrase: None, // Recovery phrase not stored in DB
     }
 }
 
@@ -517,5 +523,7 @@ pub fn mock_chat_message(
         content: content.to_string().into_bytes(),
         content_nonce: None,
         created_at: Utc::now(),
+        prompt_tokens: None,
+        completion_tokens: None,
     }
 }

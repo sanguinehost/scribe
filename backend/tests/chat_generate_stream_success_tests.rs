@@ -138,6 +138,8 @@ async fn generate_chat_response_streaming_success() {
             role: Some("user".to_string()),
             parts: None,
             attachments: None,
+            prompt_tokens: None,
+            completion_tokens: None,
         };
         diesel::insert_into(chat_messages_dsl::chat_messages)
             .values(&new_message1)
@@ -157,6 +159,8 @@ async fn generate_chat_response_streaming_success() {
             content_nonce: None,
             created_at: Utc::now(),
             updated_at: Utc::now(),
+            prompt_tokens: None,
+            completion_tokens: None,
             role: Some("assistant".to_string()),
             parts: None,
             attachments: None,

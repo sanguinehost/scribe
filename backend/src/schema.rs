@@ -154,6 +154,8 @@ diesel::table! {
         role -> Nullable<Varchar>,
         parts -> Nullable<Jsonb>,
         attachments -> Nullable<Jsonb>,
+        prompt_tokens -> Nullable<Int4>,
+        completion_tokens -> Nullable<Int4>,
     }
 }
 

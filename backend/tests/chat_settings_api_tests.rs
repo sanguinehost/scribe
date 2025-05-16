@@ -9,6 +9,7 @@ use bigdecimal::BigDecimal;
 use chrono::Utc;
 use http_body_util::BodyExt;
 use mime;
+use serde_json; // Added for to_vec in set_history_settings
 // Removed unused: use serde_json::{Value, json};
 use std::str::FromStr;
 use tower::ServiceExt;
@@ -29,6 +30,7 @@ use scribe_backend::test_helpers;
 use scribe_backend::services::chat_service;
 use std::sync::Arc;
 use scribe_backend::state::AppState;
+use anyhow; // Added for Result in set_history_settings
 
 // --- Tests for GET /api/chats/{id}/settings ---
 
@@ -275,6 +277,9 @@ async fn get_chat_settings_defaults() {
         qdrant_service: test_app.qdrant_service.clone(),
         embedding_pipeline_service: test_app.mock_embedding_pipeline_service.clone(),
         embedding_call_tracker: test_app.embedding_call_tracker.clone(),
+        token_counter: Arc::new(scribe_backend::services::hybrid_token_counter::HybridTokenCounter::new_local_only(
+            scribe_backend::services::tokenizer_service::TokenizerService::new("/home/socol/Workspace/sanguine-scribe/backend/resources/tokenizers/gemma.model")
+                .expect("Failed to create tokenizer for test"))),
     };
 
     let created_chat_session = chat_service::create_session_and_maybe_first_message(
@@ -912,6 +917,24 @@ async fn update_chat_settings_not_found() {
     let response = test_app.router.clone().oneshot(request).await.unwrap();
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
 }
+
+#[tokio::test]
+async fn get_chat_settings_unauthorized() {
+    let test_app = test_helpers::spawn_app(false, false, false).await;
+
+    let session_id_for_unauth = Uuid::new_v4();
+
+    let request = Request::builder()
+        .method(Method::GET)
+        .uri(format!("/api/chats/{}/settings", session_id_for_unauth))
+        .body(Body::empty())
+        .unwrap();
+
+    let response = test_app.router.clone().oneshot(request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+}
+
+// Helper to set history management settings via API
 
 #[tokio::test]
 async fn update_chat_settings_unauthorized() {

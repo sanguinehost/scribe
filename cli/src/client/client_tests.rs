@@ -783,6 +783,8 @@ async fn test_get_chat_messages_success() {
             content: "Hello there".to_string().into_bytes(),
             content_nonce: None,
             created_at: now,
+            prompt_tokens: None,
+            completion_tokens: None,
         },
         ChatMessage {
             id: Uuid::new_v4(),
@@ -792,6 +794,8 @@ async fn test_get_chat_messages_success() {
             content: "General Kenobi!".to_string().into_bytes(),
             content_nonce: None,
             created_at: now + chrono::Duration::seconds(1),
+            prompt_tokens: None,
+            completion_tokens: None,
         },
     ];
 

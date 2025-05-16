@@ -85,6 +85,7 @@ regex = "1.10.4"
 # Add missing dependencies needed by test_helpers
 tonic = "0.12.3"
 testcontainers = "0.23.3"
+http-body-util = { version = "0.1.3", features = ["full"] }
 
 rustls = { version = "0.23", default-features = false, features = ["ring"] }
 rustls-pki-types = "1.9.0" # <-- Keep this dependency
@@ -108,7 +109,6 @@ reqwest = { version = "0.12.15", features = ["json", "cookies"] }
 serde_json = "1.0.140"
 crc32fast = "1.4.2"
 mime = "0.3.17"
-http-body-util = "0.1.3"
 cargo-tarpaulin = "0.32.3"
 anyhow = "1.0.98"
 once_cell = "1.21.3"

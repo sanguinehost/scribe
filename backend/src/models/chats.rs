@@ -155,6 +155,8 @@ pub struct Message {
     pub role: Option<String>,
     pub parts: Option<serde_json::Value>,
     pub attachments: Option<serde_json::Value>,
+    pub prompt_tokens: Option<i32>, // Added
+    pub completion_tokens: Option<i32>, // Added
 }
 
 impl std::fmt::Debug for Message {
@@ -172,6 +174,8 @@ impl std::fmt::Debug for Message {
             .field("role", &self.role)
             .field("parts", &self.parts.as_ref().map(|_| "[REDACTED_JSON]"))
             .field("attachments", &self.attachments.as_ref().map(|_| "[REDACTED_JSON]"))
+            .field("prompt_tokens", &self.prompt_tokens) // Added
+            .field("completion_tokens", &self.completion_tokens) // Added
             .finish()
     }
 }
@@ -191,6 +195,8 @@ pub struct NewMessage {
     pub role: Option<String>,
     pub parts: Option<serde_json::Value>,
     pub attachments: Option<serde_json::Value>,
+    pub prompt_tokens: Option<i32>, // Added
+    pub completion_tokens: Option<i32>, // Added
 }
 
 impl std::fmt::Debug for NewMessage {
@@ -207,6 +213,8 @@ impl std::fmt::Debug for NewMessage {
             .field("role", &self.role)
             .field("parts", &self.parts.as_ref().map(|_| "[REDACTED_JSON]"))
             .field("attachments", &self.attachments.as_ref().map(|_| "[REDACTED_JSON]"))
+            .field("prompt_tokens", &self.prompt_tokens) // Added
+            .field("completion_tokens", &self.completion_tokens) // Added
             .finish()
     }
 }
@@ -411,6 +419,8 @@ pub struct ChatMessage {
     pub user_id: Uuid,              // Changed to non-optional Uuid to match schema
     // pub embedding: Option<Vec<f32>>, // Maybe store embeddings here later? Or Qdrant?
     // pub token_count: Option<i32>,
+    pub prompt_tokens: Option<i32>, // Added
+    pub completion_tokens: Option<i32>, // Added
 }
 
 impl std::fmt::Debug for ChatMessage {
@@ -423,6 +433,8 @@ impl std::fmt::Debug for ChatMessage {
             .field("content_nonce", &self.content_nonce.as_ref().map(|_| "[REDACTED_NONCE]"))
             .field("created_at", &self.created_at)
             .field("user_id", &self.user_id)
+            .field("prompt_tokens", &self.prompt_tokens) // Added
+            .field("completion_tokens", &self.completion_tokens) // Added
             .finish()
     }
 }
@@ -530,7 +542,9 @@ impl ChatMessage {
             message_type: self.message_type, 
             content: final_decrypted_content,
             created_at: self.created_at,
-            user_id: self.user_id, 
+            user_id: self.user_id,
+            prompt_tokens: self.prompt_tokens, // Added
+            completion_tokens: self.completion_tokens, // Added
         })
     }
 }
@@ -574,6 +588,8 @@ pub struct ChatMessageForClient {
     // pub role: Option<String>, // from Message struct, if needed
     // pub parts: Option<serde_json::Value>, // from Message struct, if needed
     // pub attachments: Option<serde_json::Value>, // from Message struct, if needed
+    pub prompt_tokens: Option<i32>, // Added
+    pub completion_tokens: Option<i32>, // Added
 }
 
 impl std::fmt::Debug for ChatMessageForClient {
@@ -585,6 +601,8 @@ impl std::fmt::Debug for ChatMessageForClient {
             .field("content", &"[REDACTED]")
             .field("created_at", &self.created_at)
             .field("user_id", &self.user_id)
+            .field("prompt_tokens", &self.prompt_tokens) // Added
+            .field("completion_tokens", &self.completion_tokens) // Added
             .finish()
     }
 }
@@ -629,6 +647,8 @@ impl Message {
             content: decrypted_content_string,
             created_at: self.created_at,
             user_id: self.user_id,
+            prompt_tokens: self.prompt_tokens, // Added
+            completion_tokens: self.completion_tokens, // Added
         })
     }
 }
@@ -666,6 +686,8 @@ pub struct DbInsertableChatMessage {
     pub content: Vec<u8>,
     pub content_nonce: Option<Vec<u8>>, // Added nonce
     pub user_id: Uuid, // Add the user_id field
+    pub prompt_tokens: Option<i32>, // Added
+    pub completion_tokens: Option<i32>, // Added
 }
 
 impl std::fmt::Debug for DbInsertableChatMessage {
@@ -676,6 +698,8 @@ impl std::fmt::Debug for DbInsertableChatMessage {
             .field("content", &"[REDACTED_BYTES]")
             .field("content_nonce", &self.content_nonce.as_ref().map(|_| "[REDACTED_NONCE]"))
             .field("user_id", &self.user_id)
+            .field("prompt_tokens", &self.prompt_tokens) // Added
+            .field("completion_tokens", &self.completion_tokens) // Added
             .finish()
     }
 }
@@ -687,6 +711,8 @@ impl DbInsertableChatMessage {
         role: MessageRole,
         text: Vec<u8>,
         nonce: Option<Vec<u8>>, // Added nonce parameter
+        prompt_tokens: Option<i32>, // Added
+        completion_tokens: Option<i32>, // Added
     ) -> Self {
         DbInsertableChatMessage {
             chat_id,
@@ -694,6 +720,8 @@ impl DbInsertableChatMessage {
             role,
             content: text,
             content_nonce: nonce, // Assign nonce
+            prompt_tokens, // Added
+            completion_tokens, // Added
         }
     }
 }
@@ -1208,6 +1236,8 @@ mod tests {
             content_nonce: None,
             created_at: Utc::now(),
             user_id: Uuid::new_v4(),
+            prompt_tokens: None,
+            completion_tokens: None,
         }
     }
 
@@ -1323,7 +1353,7 @@ mod tests {
         let content_str = "Test message";
         let content_vec = content_str.as_bytes().to_vec(); // Will be encrypted by handler
 
-        let message = DbInsertableChatMessage::new(chat_id, user_id, role, content_vec.clone(), None);
+        let message = DbInsertableChatMessage::new(chat_id, user_id, role, content_vec.clone(), None, None, None);
         assert_eq!(message.chat_id, chat_id);
         assert_eq!(message.user_id, user_id);
         assert_eq!(message.role, role);

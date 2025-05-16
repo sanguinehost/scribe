@@ -235,6 +235,8 @@ pub(super) async fn handle_non_streaming_chat_response(response: Response) -> Re
                     content: done_data.into_bytes(),
                     content_nonce: None,
                     created_at: chrono::Utc::now(),
+                    prompt_tokens: None,
+                    completion_tokens: None,
                 });
             }
             
@@ -252,6 +254,8 @@ pub(super) async fn handle_non_streaming_chat_response(response: Response) -> Re
             content: content.into_bytes(),
             content_nonce: None,
             created_at: chrono::Utc::now(),
+            prompt_tokens: None,
+            completion_tokens: None,
         });
     }
     
@@ -269,6 +273,8 @@ pub(super) async fn handle_non_streaming_chat_response(response: Response) -> Re
                 content: body.content.into_bytes(), // Convert String to Vec<u8>
                 content_nonce: None, // Add missing field
                 created_at: chrono::Utc::now(), // Use current time
+                prompt_tokens: None,
+                completion_tokens: None,
             })
         }
         Err(e) => {

@@ -137,6 +137,8 @@ async fn test_rag_context_injection_real_ai() {
             created_at: Utc::now(),
             updated_at: Utc::now(),
             role: Some("assistant".to_string()),
+            prompt_tokens: None,
+            completion_tokens: None,
             parts: None,
             attachments: None,
         };

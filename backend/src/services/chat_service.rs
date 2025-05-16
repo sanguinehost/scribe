@@ -32,6 +32,7 @@ use crate::{
     schema::{characters, chat_messages, chat_sessions},
     services::history_manager,
     state::{AppState, DbPool},
+    services::hybrid_token_counter::CountingMode, // Added for token counting
 };
 use std::sync::Arc;
 use std::pin::Pin;
@@ -171,6 +172,7 @@ pub async fn create_session_and_maybe_first_message(
                                             MessageRole::Assistant,
                                             &content_str,
                                             user_dek_secret_box.clone(),
+                                            &created_session.model_name, // Pass model_name
                                         ).await?;
                                         info!(session_id = %created_session.id, "Successfully called save_message for first_mes");
                                     } else {
@@ -336,20 +338,36 @@ pub async fn save_message(
     user_id: Uuid,
     role: MessageRole,
     content: &str,
-    user_dek_secret_box: Option<Arc<SecretBox<Vec<u8>>>>
+    user_dek_secret_box: Option<Arc<SecretBox<Vec<u8>>>>,
+    model_name: &str, // Added model_name parameter
 ) -> Result<DbChatMessage, AppError> {
-    trace!(%session_id, %user_id, %role, content_len = content.len(), dek_present = user_dek_secret_box.is_some(), "Attempting to save message");
+    trace!(%session_id, %user_id, %role, content_len = content.len(), dek_present = user_dek_secret_box.is_some(), %model_name, "Attempting to save message");
 
     if content.trim().is_empty() {
         warn!(%session_id, %user_id, %role, "Attempted to save an empty or whitespace-only message. Skipping.");
-        // Consider if an error should be returned or if a specific empty message representation is preferred.
-        // For now, returning an error as saving an empty message is likely not intended.
         return Err(AppError::BadRequest("Cannot save an empty message.".to_string()));
     }
 
+    // Calculate token counts
+    let mut prompt_tokens_val: Option<i32> = None;
+    let mut completion_tokens_val: Option<i32> = None;
+
+    if role == MessageRole::User {
+        match state.token_counter.count_tokens(content, CountingMode::LocalOnly, Some(model_name)).await {
+            Ok(estimate) => prompt_tokens_val = Some(estimate.total as i32),
+            Err(e) => warn!("Failed to count prompt tokens for user message: {}", e), // Log and continue
+        }
+    } else if role == MessageRole::Assistant {
+        match state.token_counter.count_tokens(content, CountingMode::LocalOnly, Some(model_name)).await {
+            Ok(estimate) => completion_tokens_val = Some(estimate.total as i32),
+            Err(e) => warn!("Failed to count completion tokens for assistant message: {}", e), // Log and continue
+        }
+    }
+    
+    trace!(prompt_tokens=?prompt_tokens_val, completion_tokens=?completion_tokens_val, "Calculated token counts for message");
+
     let (content_to_save, nonce_to_save) = match &user_dek_secret_box {
         Some(dek_arc) => {
-            // Encrypt the content
             trace!(%session_id, "User DEK present, encrypting message content.");
             let (ciphertext, nonce) = crate::crypto::encrypt_gcm(content.as_bytes(), &**dek_arc)
                 .map_err(|e| {
@@ -370,6 +388,8 @@ pub async fn save_message(
         role,
         content_to_save,
         nonce_to_save,
+        prompt_tokens_val,
+        completion_tokens_val,
     );
 
     let db_pool = state.pool.clone();
@@ -432,19 +452,33 @@ pub async fn save_message(
 /// Fetches session settings, history, applies history management, and prepares the user message struct.
 #[instrument(skip_all, err)]
 pub async fn get_session_data_for_generation(
-    pool: &DbPool,
+    state: Arc<AppState>, // Changed from pool to state
     user_id: Uuid,
     session_id: Uuid,
     user_message_content: String,
     user_dek_secret_box: Option<Arc<SecretBox<Vec<u8>>>>
 ) -> Result<GenerationDataWithUnsavedUserMessage, AppError> {
-    let conn = pool.get().await.map_err(|e| {
+    let conn = state.pool.get().await.map_err(|e| { // Use state.pool
         error!(error = ?e, "Failed to get DB connection from pool");
         AppError::DbPoolError(e.to_string())
     })?;
 
     // Clone the Arc for moving into the interact closure if it exists
     let dek_for_interact: Option<Arc<SecretBox<Vec<u8>>>> = user_dek_secret_box.clone();
+    
+    // Calculate prompt tokens for the current user message outside the interact block
+    let user_prompt_tokens = match state.token_counter.count_tokens(
+        &user_message_content,
+        CountingMode::LocalOnly,
+        None // We don't have model_name yet, will count with default
+    ).await {
+        Ok(estimate) => Some(estimate.total as i32),
+        Err(e) => {
+            warn!("Failed to count prompt tokens for new user message in get_session_data_for_generation: {}", e);
+            None
+        }
+    };
+    trace!(?user_prompt_tokens, "Calculated prompt tokens for current user message");
 
     conn.interact(move |conn_interaction| {
         info!(%session_id, %user_id, "Fetching session data for generation");
@@ -658,6 +692,8 @@ pub async fn get_session_data_for_generation(
                     content_nonce: None, 
                     created_at: chrono::Utc::now(), 
                     user_id,
+                    prompt_tokens: None,
+                    completion_tokens: None,
                 }
             })
             .collect();
@@ -677,15 +713,20 @@ pub async fn get_session_data_for_generation(
             .collect();
         
         trace!(%session_id, num_managed_history_items = managed_history.len(), "History management applied");
-
+    
+        // Token counting has been moved above and done outside the interact block
+        // We'll use the tokens that were already counted
+    
         let user_db_message_to_save = DbInsertableChatMessage::new(
             session_id,
-            user_id, 
+            user_id,
             MessageRole::User,
-            user_message_content.into_bytes(), 
-            None, 
+            user_message_content.into_bytes(),
+            None, // Nonce for user message (plaintext here, encrypted in save_message)
+            user_prompt_tokens, // prompt_tokens
+            None,               // completion_tokens (None for user message)
         );
-
+    
         Ok::<GenerationDataWithUnsavedUserMessage, AppError>((
             managed_history,
             final_system_prompt, // Use the newly constructed system prompt
@@ -954,6 +995,7 @@ pub async fn stream_ai_response_and_save_message(
     request_thinking: bool, // New parameter
     user_dek: Option<Arc<SecretBox<Vec<u8>>>>, // Changed to Option<Arc<SecretBox>>
 ) -> Result<Pin<Box<dyn Stream<Item = Result<ScribeSseEvent, AppError>> + Send>>, AppError> {
+    let service_model_name = model_name.clone(); // Clone for use in this function scope, esp. for save_message calls
     trace!(?system_prompt, "stream_ai_response_and_save_message received system_prompt");
     info!(%request_thinking, "Initiating AI stream and message saving process");
 
@@ -1132,6 +1174,7 @@ pub async fn stream_ai_response_and_save_message(
                     let error_user_id_clone = stream_user_id;
                     let user_dek_arc_clone_partial = user_dek.clone(); // Clone Option<Arc<SecretBox>>
                     let state_for_partial_save = stream_state.clone();
+                    let service_model_name_clone_partial = service_model_name.clone(); // Clone model name for this task
 
                     tokio::spawn(async move {
                         if !partial_content_clone.is_empty() {
@@ -1144,9 +1187,10 @@ pub async fn stream_ai_response_and_save_message(
                                 MessageRole::Assistant,
                                 &partial_content_clone,
                                 dek_ref_partial,
-                            ).await {
-                                Ok(saved_message) => {
-                                    debug!(session_id = %error_session_id_clone, message_id = %saved_message.id, "Successfully saved partial AI response via save_message after stream error (chat_service)");
+                                &service_model_name_clone_partial, // Pass cloned model_name
+                           ).await {
+                               Ok(saved_message) => {
+                                   debug!(session_id = %error_session_id_clone, message_id = %saved_message.id, "Successfully saved partial AI response via save_message after stream error (chat_service)");
                                 }
                                 Err(save_err) => {
                                     error!(error = ?save_err, session_id = %error_session_id_clone, "Error saving partial AI response via save_message after stream error (chat_service)");
@@ -1180,6 +1224,7 @@ pub async fn stream_ai_response_and_save_message(
             // user_dek is already Option<Arc<SecretBox>> and moved into this outer stream scope
             let user_dek_arc_clone_full = user_dek.clone(); // Clone Option<Arc<SecretBox>> for the spawned task
             let state_for_full_save = stream_state.clone(); // Use the already cloned state
+            let service_model_name_clone_full = service_model_name.clone(); // Clone model name for this task
 
             tokio::spawn(async move {
                 let dek_ref_full = user_dek_arc_clone_full.clone(); // Just clone the Option<Arc>
@@ -1190,6 +1235,7 @@ pub async fn stream_ai_response_and_save_message(
                     MessageRole::Assistant,
                     &accumulated_content, // accumulated_content is moved here
                     dek_ref_full,
+                    &service_model_name_clone_full, // Pass cloned model_name
                 ).await {
                     Ok(saved_message) => {
                         debug!(session_id = %full_session_id_clone, message_id = %saved_message.id, "Successfully saved full AI response via save_message (chat_service)");

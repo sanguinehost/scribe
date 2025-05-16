@@ -168,7 +168,7 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
         let embedding_client = state.embedding_client.clone();
         let qdrant_service = state.qdrant_service.clone();
 
-        let mut content_to_embed = String::new();
+        let mut content_to_embed = String::new(); // Will be populated based on encryption state
 
         match (&session_dek, &message.content_nonce) {
             (Some(dek), Some(nonce_bytes)) if !message.content.is_empty() && !nonce_bytes.is_empty() => {
@@ -557,6 +557,9 @@ mod tests {
             qdrant_service: mock_qdrant.clone(),       // Use mock for Qdrant here
             embedding_pipeline_service, // Use the real service
             embedding_call_tracker: Arc::new(tokio::sync::Mutex::new(Vec::new())),
+            token_counter: Arc::new(crate::services::hybrid_token_counter::HybridTokenCounter::new_local_only(
+                crate::services::tokenizer_service::TokenizerService::new("/home/socol/Workspace/sanguine-scribe/backend/resources/tokenizers/gemma.model")
+                    .expect("Failed to create tokenizer for test")))
         });
         (app_state, mock_qdrant, mock_embed_client)
     }
@@ -576,6 +579,8 @@ mod tests {
             content_nonce: None,
             created_at: Utc::now(),
             user_id: Uuid::new_v4(),
+            prompt_tokens: None,
+            completion_tokens: None,
         };
 
         // Mock Embedding Client to return a dummy vector
@@ -603,6 +608,8 @@ mod tests {
             content_nonce: None,
             created_at: Utc::now(),
             user_id: Uuid::new_v4(),
+            prompt_tokens: None,
+            completion_tokens: None,
         };
 
         mock_embed_client.set_response(Ok(vec![0.1, 0.2])); // Needs to be called for each chunk
@@ -631,6 +638,8 @@ mod tests {
             content_nonce: None,
             created_at: Utc::now(),
             user_id: Uuid::new_v4(),
+            prompt_tokens: None,
+            completion_tokens: None,
         };
     
         let result = state.embedding_pipeline_service.process_and_embed_message(state.clone(), test_message, None).await;
@@ -652,6 +661,8 @@ mod tests {
             content_nonce: None,
             created_at: Utc::now(),
             user_id: Uuid::new_v4(),
+            prompt_tokens: None,
+            completion_tokens: None,
         };
 
         mock_embed_client.set_response(Err(AppError::AiServiceError("Embedding failed".to_string())));
@@ -682,6 +693,8 @@ mod tests {
             content_nonce: None,
             created_at: Utc::now(),
             user_id: Uuid::new_v4(),
+            prompt_tokens: None,
+            completion_tokens: None,
         };
 
         mock_embed_client.set_response(Ok(vec![0.3, 0.4]));
@@ -769,6 +782,8 @@ mod tests {
             content_nonce: None, // ENSURED
             created_at: Utc::now(),
             user_id: Uuid::new_v4(),
+            prompt_tokens: None,
+            completion_tokens: None,
         };
 
         mock_qdrant.set_search_response(Ok(vec![]));
@@ -790,6 +805,8 @@ mod tests {
             content_nonce: None, // ENSURED
             created_at: Utc::now(),
             user_id: Uuid::new_v4(),
+            prompt_tokens: None,
+            completion_tokens: None,
         };
         mock_qdrant.set_search_response(Ok(vec![]));
         let result = state.embedding_pipeline_service.process_and_embed_message(state.clone(), test_message, None).await;
@@ -809,6 +826,8 @@ mod tests {
             content_nonce: None, // ENSURED
             created_at: Utc::now(),
             user_id: Uuid::new_v4(),
+            prompt_tokens: None,
+            completion_tokens: None,
         };
         mock_qdrant.set_search_response(Ok(vec![]));
         let result = state.embedding_pipeline_service.process_and_embed_message(state.clone(), test_message, None).await;
@@ -828,6 +847,8 @@ mod tests {
             content_nonce: None, // ENSURED
             created_at: Utc::now(),
             user_id: Uuid::new_v4(),
+            prompt_tokens: None,
+            completion_tokens: None,
         };
         mock_qdrant.set_search_response(Ok(vec![]));
         mock_embed_client.set_response(Err(AppError::AiServiceError("Simulated embedding error".to_string())));
@@ -849,6 +870,8 @@ mod tests {
             content_nonce: None, // ENSURED
             created_at: Utc::now(),
             user_id: Uuid::new_v4(),
+            prompt_tokens: None,
+            completion_tokens: None,
         };
         mock_qdrant.set_search_response(Ok(vec![]));
         mock_qdrant.set_upsert_response(Err(AppError::VectorDbError("Simulated Qdrant upsert error".to_string())));
@@ -880,6 +903,8 @@ mod tests {
                 content_nonce: Some(nonce),
                 created_at: Utc::now(),
                 user_id: Uuid::new_v4(),
+                prompt_tokens: None,
+                completion_tokens: None,
             };
     
             mock_embed_client.set_response(Ok(vec![0.1, 0.2]));
@@ -897,7 +922,7 @@ mod tests {
         async fn test_process_and_embed_plaintext_message_with_nonce_but_no_dek() {
             let (state, mock_qdrant, mock_embed_client) = setup_pipeline_test_env().await;
             
-            let original_content = "This is supposedly encrypted but no DEK.";
+            let original_content = "NoDEK"; // Shorter, simpler content
             // Simulate encrypted content and nonce, but we won't provide DEK
             let key_for_encryption_only = crate::crypto::crypto_generate_dek().expect("Failed to generate key for encryption only in test"); // Returns SecretBox<Vec<u8>>
             let (encrypted_content, nonce) = encrypt_gcm(original_content.as_bytes(), &key_for_encryption_only).expect("Encryption failed in test");
@@ -910,6 +935,8 @@ mod tests {
                 content_nonce: Some(nonce),
                 created_at: Utc::now(),
                 user_id: Uuid::new_v4(),
+                prompt_tokens: None,
+                completion_tokens: None,
             };
     
             mock_embed_client.set_response(Ok(vec![0.1, 0.2]));
@@ -929,12 +956,14 @@ mod tests {
         #[tokio::test]
         async fn test_process_and_embed_encrypted_message_decryption_failure() {
             let (state, mock_qdrant, mock_embed_client) = setup_pipeline_test_env().await;
-            
-            let dek_for_encryption = create_test_dek(); // Key used for encryption
-            let dek_for_decryption_attempt = create_test_dek(); // Different key, will cause decryption failure
-    
-            let original_content = "Secret message, wrong key.";
-            let (encrypted_content, nonce) = encrypt_gcm(original_content.as_bytes(), &dek_for_encryption.0).unwrap();
+            let user_dek = create_test_dek(); // User's actual DEK
+            let wrong_dek = create_test_dek(); // A different DEK for simulating decryption failure
+
+            // Shortened to ensure its lossy-converted ciphertext is unlikely to be chunked.
+            let original_content_text = "Test"; 
+
+            // Encrypt with the user's actual DEK
+            let (encrypted_content, nonce) = encrypt_gcm(original_content_text.as_bytes(), &user_dek.0).unwrap();
     
             let test_message = ChatMessage {
                 id: Uuid::new_v4(),
@@ -944,13 +973,15 @@ mod tests {
                 content_nonce: Some(nonce),
                 created_at: Utc::now(),
                 user_id: Uuid::new_v4(),
+                prompt_tokens: None,
+                completion_tokens: None,
             };
     
             mock_embed_client.set_response(Ok(vec![0.1, 0.2]));
             mock_qdrant.set_upsert_response(Ok(()));
     
             // Pass the "wrong" DEK for decryption
-            let result = state.embedding_pipeline_service.process_and_embed_message(state.clone(), test_message, Some(&dek_for_decryption_attempt)).await;
+            let result = state.embedding_pipeline_service.process_and_embed_message(state.clone(), test_message, Some(&wrong_dek)).await;
             assert!(result.is_ok(), "Processing message with decryption failure failed: {:?}", result.err());
     
             let calls = mock_embed_client.get_calls();
@@ -964,8 +995,8 @@ mod tests {
         async fn test_process_and_embed_encrypted_message_missing_nonce() {
             let (state, mock_qdrant, mock_embed_client) = setup_pipeline_test_env().await;
             let dek = create_test_dek();
-            // Shortened to reduce likelihood of chunking after lossy conversion
-            let original_content_text = "Secret, nonce missing.";
+            // Shortened to ensure its lossy-converted ciphertext is unlikely to be chunked.
+            let original_content_text = "Test"; 
             
             // Encrypt the content to simulate what would be in message.content
             let (encrypted_content_bytes, _nonce_that_will_be_ignored) = encrypt_gcm(original_content_text.as_bytes(), &dek.0).unwrap();
@@ -978,6 +1009,8 @@ mod tests {
                 content_nonce: None, // Crucially, nonce is None
                 created_at: Utc::now(),
                 user_id: Uuid::new_v4(),
+                prompt_tokens: None,
+                completion_tokens: None,
             };
 
             mock_embed_client.set_response(Ok(vec![0.1, 0.2]));
@@ -1009,6 +1042,8 @@ mod tests {
                 content_nonce: None, // No nonce, so it's plaintext
                 created_at: Utc::now(),
                 user_id: Uuid::new_v4(),
+                prompt_tokens: None,
+                completion_tokens: None,
             };
 
             mock_embed_client.set_response(Ok(vec![0.1, 0.2]));

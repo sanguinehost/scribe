@@ -683,6 +683,8 @@ async fn generate_chat_response_streaming_genai_json_error() {
             role: Some("user".to_string()),
             parts: None,
             attachments: None,
+            prompt_tokens: None,
+            completion_tokens: None,
         };
         diesel::insert_into(chat_messages_dsl::chat_messages)
             .values(&new_message)

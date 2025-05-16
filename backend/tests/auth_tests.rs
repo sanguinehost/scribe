@@ -130,6 +130,20 @@ async fn test_register_success() -> AnyhowResult<()> {
     // Ensure encryption columns exist
     ensure_encryption_columns_exist(&test_app.db_pool).await?;
 
+    // --- BEGIN PRIMER USER --- 
+    // Register a dummy user first to ensure the main test user is not the *first* user.
+    let primer_username = format!("primer_user_{}", Uuid::new_v4());
+    let primer_email = format!("{}@test.com", primer_username);
+    let _primer_response = test_helpers::db::create_test_user(
+        &test_app.db_pool,
+        primer_username.to_string(),
+        "password123".to_string(),
+    )
+    .await?;
+    // Optionally, clean up this primer user if TestDataGuard doesn't cover it or if it interferes.
+    // For now, we assume TestDataGuard or test isolation handles it.
+    // --- END PRIMER USER ---
+
     let username = format!("register_success_{}", Uuid::new_v4());
     let email = format!("{}@test.com", username); // Use unique email
     let password = "password123";

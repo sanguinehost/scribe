@@ -452,6 +452,8 @@ async fn test_generate_chat_response_triggers_embeddings_with_existing_session()
                 role: None, // Added optional field
                 parts: None, // Added optional field
                 attachments: None, // Added optional field
+                prompt_tokens: None,
+                completion_tokens: None,
             };
             diesel::insert_into(schema::chat_messages::table)
                 .values(&new_message)

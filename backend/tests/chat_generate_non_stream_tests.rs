@@ -2,6 +2,7 @@
 #![cfg(test)]
 
 
+use reqwest;
 use axum::{
     body::Body,
     http::{header, Method, Request, StatusCode},
@@ -26,20 +27,21 @@ use secrecy::ExposeSecret;
 // Crate imports
 use scribe_backend::models::{
     character_card::NewCharacter,
-    characters::Character,
+    characters::Character as DbCharacter, // Aliased for consistency with moved tests
+    characters::Character, // Import Character directly for old code that still uses it
     chats::{
-        ApiChatMessage, Chat as DbChat, ChatMessage as DbChatMessage, GenerateChatRequest,
-        MessageRole, NewChat,
-    }, // Though create_test_user is a helper
+        ApiChatMessage, Chat as DbChat, // DbChat is used for session
+        Message as DbChatMessage,      // DbChatMessage is used for message
+        GenerateChatRequest,
+        MessageRole, NewChat, NewMessage, // Added NewMessage
+    },
+    users::User, // Directly import User
 };
-use scribe_backend::schema::{characters, chat_messages, chat_sessions, sessions}; // users schema not directly used if create_test_user is a helper
+use scribe_backend::schema::{characters, chat_messages, chat_sessions, sessions};
 use scribe_backend::services::embedding_pipeline::{EmbeddingMetadata, RetrievedChunk};
 use scribe_backend::test_helpers::{self, TestDataGuard};
-use scribe_backend::test_helpers::db::create_test_user;
-use tracing::{info, error, warn};
-
-// Import the User model for deserialization
-use scribe_backend::models::users::User as AppUser; 
+use scribe_backend::test_helpers::db::create_test_user; // Already present
+use tracing::{info, error, warn, debug}; // Added debug
 
 // Add a custom ChatCompletionResponse struct since there doesn't seem to be one in scribe_backend::models::chats
 #[derive(Debug, serde::Deserialize)]
@@ -78,7 +80,7 @@ async fn debug_session_data(pool: &scribe_backend::state::DbPool, session_id: St
             if let Some(axum_login_user_val) = outer_session_data.get("axum-login.user") {
                 if let Some(user_json_string) = axum_login_user_val.as_str() {
                     info!("DEBUG: Found 'axum-login.user' string: {}", user_json_string);
-                    match serde_json::from_str::<AppUser>(user_json_string) {
+                    match serde_json::from_str::<scribe_backend::models::users::User>(user_json_string) {
                         Ok(user) => {
                             info!("DEBUG: Successfully deserialized User from session: {:?}", user);
                             if user.dek.is_some() {
@@ -937,3 +939,885 @@ async fn generate_chat_response_json_stream_initiation_error() -> Result<(), any
     Ok(())
 }
 
+// --- Tests for History Management in Generation ---
+
+// Helper to assert the history sent to the mock AI client
+
+#[tokio::test]
+#[ignore] // Ignore for CI unless DB is guaranteed
+async fn generate_chat_response_history_sliding_window_messages() -> anyhow::Result<()> {
+    let test_app = test_helpers::spawn_app(false, false, false).await;
+    let mut test_data_guard = TestDataGuard::new(test_app.db_pool.clone());
+    let conn = test_app.db_pool.get().await?;
+
+    let username = "hist_slide_msg_user";
+    let password = "password";
+    let user: User = test_helpers::db::create_test_user(&test_app.db_pool, username.to_string(), password.to_string()).await.expect("Failed to create test user");
+    test_data_guard.add_user(user.id);
+    let auth_cookie = test_helpers::login_user_via_api(&test_app, username, password).await;
+
+    let character_id = Uuid::new_v4();
+    let new_character = DbCharacter {
+        id: character_id, user_id: user.id, name: "Hist Slide Msg Char".to_string(), spec: "test".to_string(), spec_version: "1".to_string(), created_at: Utc::now(), updated_at: Utc::now(),
+        description: None, personality: None, scenario: None, first_mes: None, mes_example: None, creator_notes: None, system_prompt: None, post_history_instructions: None, tags: None, creator: None, character_version: None, alternate_greetings: None, nickname: None, creator_notes_multilingual: None, source: None, group_only_greetings: None, creation_date: None, modification_date: None, persona: None, world_scenario: None, avatar: None, chat: None, greeting: None, definition: None, default_voice: None, extensions: None, data_id: None, category: None, definition_visibility: None, depth: None, example_dialogue: None, favorite: None, first_message_visibility: None, height: None, last_activity: None, migrated_from: None, model_prompt: None, model_prompt_visibility: None, model_temperature: None, num_interactions: None, permanence: None, persona_visibility: None, revision: None, sharing_visibility: None, status: None, system_prompt_visibility: None, system_tags: None, token_budget: None, usage_hints: None, user_persona: None, user_persona_visibility: None, visibility: None, weight: None, world_scenario_visibility: None, description_nonce: None, personality_nonce: None, scenario_nonce: None, first_mes_nonce: None, mes_example_nonce: None, creator_notes_nonce: None, system_prompt_nonce: None, post_history_instructions_nonce: None, persona_nonce: None, world_scenario_nonce: None, greeting_nonce: None, definition_nonce: None, example_dialogue_nonce: None, model_prompt_nonce: None, user_persona_nonce: None,
+    };
+    
+    let result = conn.interact(move |conn_inner| { 
+        diesel::insert_into(characters::table)
+            .values(&new_character)
+            .execute(conn_inner) 
+    }).await;
+    if let Err(e) = result {
+        return Err(anyhow::anyhow!("Failed to insert character: {}", e));
+    }
+    let insert_result = result.unwrap()?;
+    debug!("Inserted character: {} rows affected", insert_result);
+    test_data_guard.add_character(character_id);
+
+    let session_id = Uuid::new_v4();
+    let new_session = NewChat {
+        id: session_id, user_id: user.id, character_id, title: Some("Hist Slide Session".to_string()), created_at: Utc::now(), updated_at: Utc::now(), history_management_strategy: "none".to_string(), history_management_limit: 10, model_name: "test".to_string(), visibility: None,
+    };
+    
+    let result = conn.interact(move |conn_inner| { 
+        diesel::insert_into(chat_sessions::table)
+            .values(&new_session)
+            .execute(conn_inner) 
+    }).await;
+    if let Err(e) = result {
+        return Err(anyhow::anyhow!("Failed to insert session: {}", e));
+    }
+    let insert_result = result.unwrap()?;
+    debug!("Inserted session: {} rows affected", insert_result);
+    test_data_guard.add_chat(session_id);
+
+    let common_msg_fields = |role: MessageRole, content: &str| NewMessage {
+        id: Uuid::new_v4(), session_id, user_id: user.id, message_type: role, content: content.as_bytes().to_vec(), content_nonce: None, created_at: Utc::now(), updated_at: Utc::now(), role: Some(role.to_string().to_lowercase()), parts: Some(json!([{"text": content}])), attachments: None, prompt_tokens: None, completion_tokens: None,
+    };
+    
+    // Insert message 1 (User)
+    let msg = common_msg_fields(MessageRole::User, "Msg 1");
+    let result = conn.interact(move |c| diesel::insert_into(chat_messages::table).values(&msg).execute(c)).await;
+    if let Err(e) = result {
+        return Err(anyhow::anyhow!("Failed to insert user message 1: {}", e));
+    }
+    let insert_result = result.unwrap()?;
+    debug!("Inserted message 1: {} rows affected", insert_result);
+    
+    // Insert reply 1 (Assistant)
+    let msg = common_msg_fields(MessageRole::Assistant, "Reply 1");
+    let result = conn.interact(move |c| diesel::insert_into(chat_messages::table).values(&msg).execute(c)).await;
+    if let Err(e) = result {
+        return Err(anyhow::anyhow!("Failed to insert assistant message 1: {}", e));
+    }
+    let insert_result = result.unwrap()?;
+    debug!("Inserted reply 1: {} rows affected", insert_result);
+    
+    // Insert message 2 (User)
+    let msg = common_msg_fields(MessageRole::User, "Msg 2");
+    let result = conn.interact(move |c| diesel::insert_into(chat_messages::table).values(&msg).execute(c)).await;
+    if let Err(e) = result {
+        return Err(anyhow::anyhow!("Failed to insert user message 2: {}", e));
+    }
+    let insert_result = result.unwrap()?;
+    debug!("Inserted message 2: {} rows affected", insert_result);
+    
+    // Insert reply 2 (Assistant)
+    let msg = common_msg_fields(MessageRole::Assistant, "Reply 2");
+    let result = conn.interact(move |c| diesel::insert_into(chat_messages::table).values(&msg).execute(c)).await;
+    if let Err(e) = result {
+        return Err(anyhow::anyhow!("Failed to insert assistant message 2: {}", e));
+    }
+    let insert_result = result.unwrap()?;
+    debug!("Inserted reply 2: {} rows affected", insert_result);
+    
+    // Insert message 3 (User)
+    let msg = common_msg_fields(MessageRole::User, "Msg 3");
+    let result = conn.interact(move |c| diesel::insert_into(chat_messages::table).values(&msg).execute(c)).await;
+    if let Err(e) = result {
+        return Err(anyhow::anyhow!("Failed to insert user message 3: {}", e));
+    }
+    let insert_result = result.unwrap()?;
+    debug!("Inserted message 3: {} rows affected", insert_result);
+
+    test_helpers::set_history_settings(&test_app, session_id, &auth_cookie, Some("sliding_window_messages".to_string()), Some(3)).await?;
+
+    test_app.mock_ai_client.as_ref().unwrap().set_response(Ok(genai::chat::ChatResponse {
+        model_iden: genai::ModelIden::new(genai::adapter::AdapterKind::Gemini, "mock-model"),
+        provider_model_iden: genai::ModelIden::new(genai::adapter::AdapterKind::Gemini, "mock-model"),
+        content: Some(genai::chat::MessageContent::Text("Mock response".to_string())),
+        reasoning_content: None,
+        usage: Default::default(),
+    }));
+
+    let payload = GenerateChatRequest { history: vec![ApiChatMessage { role: "user".to_string(), content: "User message 4".to_string() }], model: None };
+    let request = Request::builder()
+        .method(Method::POST)
+        .uri(format!("/api/chats/{}/generate", session_id))
+        .header(header::COOKIE, &auth_cookie)
+        .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
+        .body(Body::from(serde_json::to_string(&payload)?))?;
+    let response = test_app.router.clone().oneshot(request).await?;
+    assert_eq!(response.status(), StatusCode::OK);
+    let _ = response.into_body().collect().await?.to_bytes();
+
+    test_helpers::assert_ai_history(&test_app, vec![
+        ("User", "Msg 2"),
+        ("Assistant", "Reply 2"),
+        ("User", "Msg 3"),
+    ]);
+    test_data_guard.cleanup().await?;
+    Ok(())
+}
+
+
+#[tokio::test]
+#[ignore] // Ignore for CI unless DB is guaranteed
+async fn generate_chat_response_history_sliding_window_tokens() -> anyhow::Result<()> {
+    let test_app = test_helpers::spawn_app(false, false, false).await;
+    let mut test_data_guard = TestDataGuard::new(test_app.db_pool.clone());
+    let conn = test_app.db_pool.get().await?;
+
+    let username = "hist_slide_tok_user";
+    let password = "password";
+    let user: User = test_helpers::db::create_test_user(&test_app.db_pool, username.to_string(), password.to_string()).await.expect("Failed to create test user");
+    test_data_guard.add_user(user.id);
+    let auth_cookie = test_helpers::login_user_via_api(&test_app, username, password).await;
+
+    let character_id = Uuid::new_v4();
+    let new_character = DbCharacter {
+        id: character_id, user_id: user.id, name: "Hist Slide Tok Char".to_string(), spec: "test".to_string(), spec_version: "1".to_string(), created_at: Utc::now(), updated_at: Utc::now(),
+        description: None, personality: None, scenario: None, first_mes: None, mes_example: None, creator_notes: None, system_prompt: None, post_history_instructions: None, tags: None, creator: None, character_version: None, alternate_greetings: None, nickname: None, creator_notes_multilingual: None, source: None, group_only_greetings: None, creation_date: None, modification_date: None, persona: None, world_scenario: None, avatar: None, chat: None, greeting: None, definition: None, default_voice: None, extensions: None, data_id: None, category: None, definition_visibility: None, depth: None, example_dialogue: None, favorite: None, first_message_visibility: None, height: None, last_activity: None, migrated_from: None, model_prompt: None, model_prompt_visibility: None, model_temperature: None, num_interactions: None, permanence: None, persona_visibility: None, revision: None, sharing_visibility: None, status: None, system_prompt_visibility: None, system_tags: None, token_budget: None, usage_hints: None, user_persona: None, user_persona_visibility: None, visibility: None, weight: None, world_scenario_visibility: None, description_nonce: None, personality_nonce: None, scenario_nonce: None, first_mes_nonce: None, mes_example_nonce: None, creator_notes_nonce: None, system_prompt_nonce: None, post_history_instructions_nonce: None, persona_nonce: None, world_scenario_nonce: None, greeting_nonce: None, definition_nonce: None, example_dialogue_nonce: None, model_prompt_nonce: None, user_persona_nonce: None,
+    };
+    
+    let result = conn.interact(move |conn_inner| { 
+        diesel::insert_into(characters::table)
+            .values(&new_character)
+            .execute(conn_inner) 
+    }).await;
+    if let Err(e) = result {
+        return Err(anyhow::anyhow!("Failed to insert character: {}", e));
+    }
+    let insert_result = result.unwrap()?;
+    debug!("Inserted character: {} rows affected", insert_result);
+    test_data_guard.add_character(character_id);
+
+    let session_id = Uuid::new_v4();
+    let new_session = NewChat {
+        id: session_id, user_id: user.id, character_id, title: Some("Hist Slide Tok Session".to_string()), created_at: Utc::now(), updated_at: Utc::now(), history_management_strategy: "none".to_string(), history_management_limit: 10, model_name: "test".to_string(), visibility: None,
+    };
+    
+    let result = conn.interact(move |conn_inner| { 
+        diesel::insert_into(chat_sessions::table)
+            .values(&new_session)
+            .execute(conn_inner) 
+    }).await;
+    if let Err(e) = result {
+        return Err(anyhow::anyhow!("Failed to insert session: {}", e));
+    }
+    let insert_result = result.unwrap()?;
+    debug!("Inserted session: {} rows affected", insert_result);
+    test_data_guard.add_chat(session_id);
+
+    let common_msg_fields = |role: MessageRole, content: &str| NewMessage {
+        id: Uuid::new_v4(), session_id, user_id: user.id, message_type: role, content: content.as_bytes().to_vec(), content_nonce: None, created_at: Utc::now(), updated_at: Utc::now(), role: Some(role.to_string().to_lowercase()), parts: Some(json!([{"text": content}])), attachments: None, prompt_tokens: None, completion_tokens: None,
+    };
+    
+    // Insert message 1 (User)
+    let msg = common_msg_fields(MessageRole::User, "This is message one");
+    let result = conn.interact(move |c| diesel::insert_into(chat_messages::table).values(&msg).execute(c)).await;
+    if let Err(e) = result {
+        return Err(anyhow::anyhow!("Failed to insert user message 1: {}", e));
+    }
+    let insert_result = result.unwrap()?;
+    debug!("Inserted message 1: {} rows affected", insert_result);
+    
+    // Insert reply 1 (Assistant)
+    let msg = common_msg_fields(MessageRole::Assistant, "Reply one");
+    let result = conn.interact(move |c| diesel::insert_into(chat_messages::table).values(&msg).execute(c)).await;
+    if let Err(e) = result {
+        return Err(anyhow::anyhow!("Failed to insert assistant message 1: {}", e));
+    }
+    let insert_result = result.unwrap()?;
+    debug!("Inserted reply 1: {} rows affected", insert_result);
+    
+    // Insert message 2 (User)
+    let msg = common_msg_fields(MessageRole::User, "Message two");
+    let result = conn.interact(move |c| diesel::insert_into(chat_messages::table).values(&msg).execute(c)).await;
+    if let Err(e) = result {
+        return Err(anyhow::anyhow!("Failed to insert user message 2: {}", e));
+    }
+    let insert_result = result.unwrap()?;
+    debug!("Inserted message 2: {} rows affected", insert_result);
+    
+    // Insert reply 2 (Assistant)
+    let msg = common_msg_fields(MessageRole::Assistant, "Reply two");
+    let result = conn.interact(move |c| diesel::insert_into(chat_messages::table).values(&msg).execute(c)).await;
+    if let Err(e) = result {
+        return Err(anyhow::anyhow!("Failed to insert assistant message 2: {}", e));
+    }
+    let insert_result = result.unwrap()?;
+    debug!("Inserted reply 2: {} rows affected", insert_result);
+
+    test_helpers::set_history_settings(&test_app, session_id, &auth_cookie, Some("sliding_window_tokens".to_string()), Some(25)).await?;
+
+    test_app.mock_ai_client.as_ref().unwrap().set_response(Ok(genai::chat::ChatResponse {
+        model_iden: genai::ModelIden::new(genai::adapter::AdapterKind::Gemini, "mock-model"),
+        provider_model_iden: genai::ModelIden::new(genai::adapter::AdapterKind::Gemini, "mock-model"),
+        content: Some(genai::chat::MessageContent::Text("Mock response".to_string())),
+        reasoning_content: None,
+        usage: Default::default(),
+    }));
+
+    let payload = GenerateChatRequest { history: vec![ApiChatMessage { role: "user".to_string(), content: "User message 3".to_string() }], model: None };
+    let request = Request::builder()
+        .method(Method::POST)
+        .uri(format!("/api/chats/{}/generate", session_id))
+        .header(header::COOKIE, &auth_cookie)
+        .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
+        .body(Body::from(serde_json::to_string(&payload)?))?;
+    let response = test_app.router.clone().oneshot(request).await?;
+    assert_eq!(response.status(), StatusCode::OK);
+    let _ = response.into_body().collect().await?.to_bytes();
+
+    test_helpers::assert_ai_history(&test_app, vec![
+        ("User", "Message two"),
+        ("Assistant", "Reply two"),
+    ]);
+    test_data_guard.cleanup().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_generate_chat_response_history_truncate_tokens() -> anyhow::Result<()> {
+    let test_app = test_helpers::spawn_app(false, false, false).await;
+    let mut test_data_guard = TestDataGuard::new(test_app.db_pool.clone());
+    let conn = test_app.db_pool.get().await?;
+
+    let username = "hist_trunc_tok_user";
+    let password = "password";
+    let user: User = test_helpers::db::create_test_user(&test_app.db_pool, username.to_string(), password.to_string()).await.expect("Failed to create test user");
+    test_data_guard.add_user(user.id);
+    let auth_cookie = test_helpers::login_user_via_api(&test_app, username, password).await;
+
+    let character_id = Uuid::new_v4();
+    let new_character = DbCharacter {
+        id: character_id, user_id: user.id, name: "Hist Trunc Tok Char".to_string(), spec: "test".to_string(), spec_version: "1".to_string(), created_at: Utc::now(), updated_at: Utc::now(),
+        description: None, personality: None, scenario: None, first_mes: None, mes_example: None, creator_notes: None, system_prompt: None, post_history_instructions: None, tags: None, creator: None, character_version: None, alternate_greetings: None, nickname: None, creator_notes_multilingual: None, source: None, group_only_greetings: None, creation_date: None, modification_date: None, persona: None, world_scenario: None, avatar: None, chat: None, greeting: None, definition: None, default_voice: None, extensions: None, data_id: None, category: None, definition_visibility: None, depth: None, example_dialogue: None, favorite: None, first_message_visibility: None, height: None, last_activity: None, migrated_from: None, model_prompt: None, model_prompt_visibility: None, model_temperature: None, num_interactions: None, permanence: None, persona_visibility: None, revision: None, sharing_visibility: None, status: None, system_prompt_visibility: None, system_tags: None, token_budget: None, usage_hints: None, user_persona: None, user_persona_visibility: None, visibility: None, weight: None, world_scenario_visibility: None, description_nonce: None, personality_nonce: None, scenario_nonce: None, first_mes_nonce: None, mes_example_nonce: None, creator_notes_nonce: None, system_prompt_nonce: None, post_history_instructions_nonce: None, persona_nonce: None, world_scenario_nonce: None, greeting_nonce: None, definition_nonce: None, example_dialogue_nonce: None, model_prompt_nonce: None, user_persona_nonce: None,
+    };
+    
+    let result = conn.interact(move |conn_inner| { 
+        diesel::insert_into(characters::table)
+            .values(&new_character)
+            .execute(conn_inner) 
+    }).await;
+    if let Err(e) = result {
+        return Err(anyhow::anyhow!("Failed to insert character: {}", e));
+    }
+    let insert_result = result.unwrap()?;
+    debug!("Inserted character: {} rows affected", insert_result);
+    test_data_guard.add_character(character_id);
+
+    let session_id = Uuid::new_v4();
+    let new_session = NewChat {
+        id: session_id, user_id: user.id, character_id, title: Some("Hist Trunc Tok Session".to_string()), created_at: Utc::now(), updated_at: Utc::now(), history_management_strategy: "none".to_string(), history_management_limit: 10, model_name: "test".to_string(), visibility: None,
+    };
+    
+    let result = conn.interact(move |conn_inner| { 
+        diesel::insert_into(chat_sessions::table)
+            .values(&new_session)
+            .execute(conn_inner) 
+    }).await;
+    if let Err(e) = result {
+        return Err(anyhow::anyhow!("Failed to insert session: {}", e));
+    }
+    let insert_result = result.unwrap()?;
+    debug!("Inserted session: {} rows affected", insert_result);
+    test_data_guard.add_chat(session_id);
+
+    let common_msg_fields = |role: MessageRole, content: &str| NewMessage {
+        id: Uuid::new_v4(), session_id, user_id: user.id, message_type: role, content: content.as_bytes().to_vec(), content_nonce: None, created_at: Utc::now(), updated_at: Utc::now(), role: Some(role.to_string().to_lowercase()), parts: Some(json!([{"text": content}])), attachments: None, prompt_tokens: None, completion_tokens: None,
+    };
+    
+    // Insert message 1 (User)
+    let msg = common_msg_fields(MessageRole::User, "This is message one");
+    let result = conn.interact(move |c| diesel::insert_into(chat_messages::table).values(&msg).execute(c)).await;
+    if let Err(e) = result {
+        return Err(anyhow::anyhow!("Failed to insert user message 1: {}", e));
+    }
+    let insert_result = result.unwrap()?;
+    debug!("Inserted message 1: {} rows affected", insert_result);
+    
+    // Insert reply 1 (Assistant)
+    let msg = common_msg_fields(MessageRole::Assistant, "Reply one");
+    let result = conn.interact(move |c| diesel::insert_into(chat_messages::table).values(&msg).execute(c)).await;
+    if let Err(e) = result {
+        return Err(anyhow::anyhow!("Failed to insert assistant message 1: {}", e));
+    }
+    let insert_result = result.unwrap()?;
+    debug!("Inserted reply 1: {} rows affected", insert_result);
+    
+    // Insert message 2 (User)
+    let msg = common_msg_fields(MessageRole::User, "Message two");
+    let result = conn.interact(move |c| diesel::insert_into(chat_messages::table).values(&msg).execute(c)).await;
+    if let Err(e) = result {
+        return Err(anyhow::anyhow!("Failed to insert user message 2: {}", e));
+    }
+    let insert_result = result.unwrap()?;
+    debug!("Inserted message 2: {} rows affected", insert_result);
+    
+    // Insert reply 2 (Assistant)
+    let msg = common_msg_fields(MessageRole::Assistant, "Reply two");
+    let result = conn.interact(move |c| diesel::insert_into(chat_messages::table).values(&msg).execute(c)).await;
+    if let Err(e) = result {
+        return Err(anyhow::anyhow!("Failed to insert assistant message 2: {}", e));
+    }
+    let insert_result = result.unwrap()?;
+    debug!("Inserted reply 2: {} rows affected", insert_result);
+
+    test_helpers::set_history_settings(&test_app, session_id, &auth_cookie, Some("truncate_tokens".to_string()), Some(30)).await?;
+
+    test_app.mock_ai_client.as_ref().unwrap().set_response(Ok(genai::chat::ChatResponse {
+        model_iden: genai::ModelIden::new(genai::adapter::AdapterKind::Gemini, "mock-model"),
+        provider_model_iden: genai::ModelIden::new(genai::adapter::AdapterKind::Gemini, "mock-model"),
+        content: Some(genai::chat::MessageContent::Text("Mock response".to_string())),
+        reasoning_content: None,
+        usage: Default::default(),
+    }));
+
+    let payload = GenerateChatRequest { history: vec![ApiChatMessage { role: "user".to_string(), content: "User message 3".to_string() }], model: None };
+    let request = Request::builder()
+        .method(Method::POST)
+        .uri(format!("/api/chats/{}/generate", session_id))
+        .header(header::COOKIE, &auth_cookie)
+        .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
+        .body(Body::from(serde_json::to_string(&payload)?))?;
+    let response = test_app.router.clone().oneshot(request).await?;
+    assert_eq!(response.status(), StatusCode::OK);
+    let _ = response.into_body().collect().await?.to_bytes();
+
+    test_helpers::assert_ai_history(&test_app, vec![
+        ("User", "e"), // "This is message one" truncated to "e" (1 token) to fit 30 token limit with other messages
+        ("Assistant", "Reply one"),
+        ("User", "Message two"),
+        ("Assistant", "Reply two"),
+    ]);
+
+    // Test truncation case (second call with different limit)
+    test_helpers::set_history_settings(&test_app, session_id, &auth_cookie, Some("truncate_tokens".to_string()), Some(25)).await?;
+    // Mock AI response for the second call
+    test_app.mock_ai_client.as_ref().unwrap().set_response(Ok(genai::chat::ChatResponse {
+        model_iden: genai::ModelIden::new(genai::adapter::AdapterKind::Gemini, "mock-model"),
+        provider_model_iden: genai::ModelIden::new(genai::adapter::AdapterKind::Gemini, "mock-model"),
+        content: Some(genai::chat::MessageContent::Text("Mock response 2".to_string())),
+        reasoning_content: None,
+        usage: Default::default(),
+    }));
+    let request_2 = Request::builder()
+        .method(Method::POST)
+        .uri(format!("/api/chats/{}/generate", session_id))
+        .header(header::COOKIE, &auth_cookie)
+        .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
+        .body(Body::from(serde_json::to_string(&payload)?))?;// Same payload for simplicity
+    let response_2 = test_app.router.clone().oneshot(request_2).await?;
+    assert_eq!(response_2.status(), StatusCode::OK);
+    let _ = response_2.into_body().collect().await?.to_bytes();
+
+    // DB now has: M1, R1, M2, R2, "User message 3", "Mock response"
+    // History for AI (limit 25) should be: "y one", "Message two", "Reply two"
+    test_helpers::assert_ai_history(&test_app, vec![
+        ("Assistant", "y one"), // "Reply one" truncated to "y one"
+        ("User", "Message two"),
+        ("Assistant", "Reply two"),
+    ]);
+    test_data_guard.cleanup().await?;
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore] // Ignore for CI unless DB is guaranteed
+async fn generate_chat_response_history_none() -> anyhow::Result<()> {
+    let test_app = test_helpers::spawn_app(false, false, false).await;
+    let mut test_data_guard = TestDataGuard::new(test_app.db_pool.clone());
+    let conn = test_app.db_pool.get().await?;
+
+    let username = "hist_none_user";
+    let password = "password";
+    let user: User = test_helpers::db::create_test_user(&test_app.db_pool, username.to_string(), password.to_string()).await.expect("Failed to create test user");
+    test_data_guard.add_user(user.id);
+    let auth_cookie = test_helpers::login_user_via_api(&test_app, username, password).await;
+
+    let character_id = Uuid::new_v4();
+    let new_character = DbCharacter {
+        id: character_id, user_id: user.id, name: "Hist None Char".to_string(), spec: "test".to_string(), spec_version: "1".to_string(), created_at: Utc::now(), updated_at: Utc::now(),
+        description: None, personality: None, scenario: None, first_mes: None, mes_example: None, creator_notes: None, system_prompt: None, post_history_instructions: None, tags: None, creator: None, character_version: None, alternate_greetings: None, nickname: None, creator_notes_multilingual: None, source: None, group_only_greetings: None, creation_date: None, modification_date: None, persona: None, world_scenario: None, avatar: None, chat: None, greeting: None, definition: None, default_voice: None, extensions: None, data_id: None, category: None, definition_visibility: None, depth: None, example_dialogue: None, favorite: None, first_message_visibility: None, height: None, last_activity: None, migrated_from: None, model_prompt: None, model_prompt_visibility: None, model_temperature: None, num_interactions: None, permanence: None, persona_visibility: None, revision: None, sharing_visibility: None, status: None, system_prompt_visibility: None, system_tags: None, token_budget: None, usage_hints: None, user_persona: None, user_persona_visibility: None, visibility: None, weight: None, world_scenario_visibility: None, description_nonce: None, personality_nonce: None, scenario_nonce: None, first_mes_nonce: None, mes_example_nonce: None, creator_notes_nonce: None, system_prompt_nonce: None, post_history_instructions_nonce: None, persona_nonce: None, world_scenario_nonce: None, greeting_nonce: None, definition_nonce: None, example_dialogue_nonce: None, model_prompt_nonce: None, user_persona_nonce: None,
+    };
+    
+    let result = conn.interact(move |conn_inner| { 
+        diesel::insert_into(characters::table)
+            .values(&new_character)
+            .execute(conn_inner) 
+    }).await;
+    if let Err(e) = result {
+        return Err(anyhow::anyhow!("Failed to insert character: {}", e));
+    }
+    let insert_result = result.unwrap()?;
+    debug!("Inserted character: {} rows affected", insert_result);
+    test_data_guard.add_character(character_id);
+
+    let session_id = Uuid::new_v4();
+    let new_session = NewChat {
+        id: session_id, user_id: user.id, character_id, title: Some("Hist None Session".to_string()), created_at: Utc::now(), updated_at: Utc::now(), history_management_strategy: "none".to_string(), history_management_limit: 10, model_name: "test".to_string(), visibility: None,
+    };
+    
+    let result = conn.interact(move |conn_inner| { 
+        diesel::insert_into(chat_sessions::table)
+            .values(&new_session)
+            .execute(conn_inner) 
+    }).await;
+    if let Err(e) = result {
+        return Err(anyhow::anyhow!("Failed to insert session: {}", e));
+    }
+    let insert_result = result.unwrap()?;
+    debug!("Inserted session: {} rows affected", insert_result);
+    test_data_guard.add_chat(session_id);
+
+    let common_msg_fields = |role: MessageRole, content: &str| NewMessage {
+        id: Uuid::new_v4(), session_id, user_id: user.id, message_type: role, content: content.as_bytes().to_vec(), content_nonce: None, created_at: Utc::now(), updated_at: Utc::now(), role: Some(role.to_string().to_lowercase()), parts: Some(json!([{"text": content}])), attachments: None, prompt_tokens: None, completion_tokens: None,
+    };
+    
+    // Insert message 1 (User)
+    let msg = common_msg_fields(MessageRole::User, "Msg 1");
+    let result = conn.interact(move |c| diesel::insert_into(chat_messages::table).values(&msg).execute(c)).await;
+    if let Err(e) = result {
+        return Err(anyhow::anyhow!("Failed to insert user message 1: {}", e));
+    }
+    let insert_result = result.unwrap()?;
+    debug!("Inserted message 1: {} rows affected", insert_result);
+    
+    // Insert reply 1 (Assistant)
+    let msg = common_msg_fields(MessageRole::Assistant, "Reply 1");
+    let result = conn.interact(move |c| diesel::insert_into(chat_messages::table).values(&msg).execute(c)).await;
+    if let Err(e) = result {
+        return Err(anyhow::anyhow!("Failed to insert assistant message 1: {}", e));
+    }
+    let insert_result = result.unwrap()?;
+    debug!("Inserted reply 1: {} rows affected", insert_result);
+
+    test_helpers::set_history_settings(&test_app, session_id, &auth_cookie, Some("none".to_string()), Some(1)).await?;
+
+    test_app.mock_ai_client.as_ref().unwrap().set_response(Ok(genai::chat::ChatResponse {
+        model_iden: genai::ModelIden::new(genai::adapter::AdapterKind::Gemini, "mock-model"),
+        provider_model_iden: genai::ModelIden::new(genai::adapter::AdapterKind::Gemini, "mock-model"),
+        content: Some(genai::chat::MessageContent::Text("Mock response".to_string())),
+        reasoning_content: None,
+        usage: Default::default(),
+    }));
+
+    let payload = GenerateChatRequest { history: vec![ApiChatMessage { role: "user".to_string(), content: "User message 2".to_string() }], model: None };
+    let request = Request::builder()
+        .method(Method::POST)
+        .uri(format!("/api/chats/{}/generate", session_id))
+        .header(header::COOKIE, &auth_cookie)
+        .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
+        .body(Body::from(serde_json::to_string(&payload)?))?;
+    let response = test_app.router.clone().oneshot(request).await?;
+    assert_eq!(response.status(), StatusCode::OK);
+    let _ = response.into_body().collect().await?.to_bytes();
+
+    test_helpers::assert_ai_history(&test_app, vec![
+        ("User", "Msg 1"),
+        ("Assistant", "Reply 1"),
+    ]);
+    test_data_guard.cleanup().await?;
+    Ok(())
+}
+
+// --- Test for History Management and RAG Integration ---
+// These tests seem to be duplicates of the truncate_tokens tests above.
+// Keeping them as they were in the original file, but they test similar logic.
+
+#[tokio::test]
+async fn generate_chat_response_history_truncate_tokens_limit_30() -> anyhow::Result<()> {
+    let test_app = test_helpers::spawn_app(false, false, false).await;
+    let mut test_data_guard = TestDataGuard::new(test_app.db_pool.clone());
+    let conn = test_app.db_pool.get().await?;
+
+    let username = "hist_trunc_tok_user1_dup"; // Changed username to avoid conflict
+    let password = "password";
+    let user: User = test_helpers::db::create_test_user(&test_app.db_pool, username.to_string(), password.to_string()).await.expect("Failed to create test user");
+    test_data_guard.add_user(user.id);
+    let auth_cookie = test_helpers::login_user_via_api(&test_app, username, password).await;
+
+    let character_id = Uuid::new_v4();
+    let new_character = DbCharacter {
+        id: character_id, user_id: user.id, name: "Hist Trunc Tok Char".to_string(), spec: "test".to_string(), spec_version: "1".to_string(), created_at: Utc::now(), updated_at: Utc::now(),
+        description: None, personality: None, scenario: None, first_mes: None, mes_example: None, creator_notes: None, system_prompt: None, post_history_instructions: None, tags: None, creator: None, character_version: None, alternate_greetings: None, nickname: None, creator_notes_multilingual: None, source: None, group_only_greetings: None, creation_date: None, modification_date: None, persona: None, world_scenario: None, avatar: None, chat: None, greeting: None, definition: None, default_voice: None, extensions: None, data_id: None, category: None, definition_visibility: None, depth: None, example_dialogue: None, favorite: None, first_message_visibility: None, height: None, last_activity: None, migrated_from: None, model_prompt: None, model_prompt_visibility: None, model_temperature: None, num_interactions: None, permanence: None, persona_visibility: None, revision: None, sharing_visibility: None, status: None, system_prompt_visibility: None, system_tags: None, token_budget: None, usage_hints: None, user_persona: None, user_persona_visibility: None, visibility: None, weight: None, world_scenario_visibility: None, description_nonce: None, personality_nonce: None, scenario_nonce: None, first_mes_nonce: None, mes_example_nonce: None, creator_notes_nonce: None, system_prompt_nonce: None, post_history_instructions_nonce: None, persona_nonce: None, world_scenario_nonce: None, greeting_nonce: None, definition_nonce: None, example_dialogue_nonce: None, model_prompt_nonce: None, user_persona_nonce: None,
+    };
+    
+    let result = conn.interact(move |conn_inner| { 
+        diesel::insert_into(characters::table)
+            .values(&new_character)
+            .execute(conn_inner) 
+    }).await;
+    if let Err(e) = result {
+        return Err(anyhow::anyhow!("Failed to insert character: {}", e));
+    }
+    let insert_result = result.unwrap()?;
+    debug!("Inserted character: {} rows affected", insert_result);
+    test_data_guard.add_character(character_id);
+
+    let session_id = Uuid::new_v4();
+    let new_session = NewChat {
+        id: session_id, user_id: user.id, character_id, title: Some("Hist Trunc Tok Session".to_string()), created_at: Utc::now(), updated_at: Utc::now(), history_management_strategy: "none".to_string(), history_management_limit: 10, model_name: "test".to_string(), visibility: None,
+    };
+    
+    let result = conn.interact(move |conn_inner| { 
+        diesel::insert_into(chat_sessions::table)
+            .values(&new_session)
+            .execute(conn_inner) 
+    }).await;
+    if let Err(e) = result {
+        return Err(anyhow::anyhow!("Failed to insert session: {}", e));
+    }
+    let insert_result = result.unwrap()?;
+    debug!("Inserted session: {} rows affected", insert_result);
+    test_data_guard.add_chat(session_id);
+
+    let common_msg_fields = |role: MessageRole, content: &str| NewMessage {
+        id: Uuid::new_v4(), session_id, user_id: user.id, message_type: role, content: content.as_bytes().to_vec(), content_nonce: None, created_at: Utc::now(), updated_at: Utc::now(), role: Some(role.to_string().to_lowercase()), parts: Some(json!([{"text": content}])), attachments: None, prompt_tokens: None, completion_tokens: None,
+    };
+    
+    // Insert message 1 (User)
+    let msg = common_msg_fields(MessageRole::User, "This is message one");
+    let result = conn.interact(move |c| diesel::insert_into(chat_messages::table).values(&msg).execute(c)).await;
+    if let Err(e) = result {
+        return Err(anyhow::anyhow!("Failed to insert user message 1: {}", e));
+    }
+    let insert_result = result.unwrap()?;
+    debug!("Inserted message 1: {} rows affected", insert_result);
+    
+    // Insert reply 1 (Assistant)
+    let msg = common_msg_fields(MessageRole::Assistant, "Reply one");
+    let result = conn.interact(move |c| diesel::insert_into(chat_messages::table).values(&msg).execute(c)).await;
+    if let Err(e) = result {
+        return Err(anyhow::anyhow!("Failed to insert assistant message 1: {}", e));
+    }
+    let insert_result = result.unwrap()?;
+    debug!("Inserted reply 1: {} rows affected", insert_result);
+    
+    // Insert message 2 (User)
+    let msg = common_msg_fields(MessageRole::User, "Message two");
+    let result = conn.interact(move |c| diesel::insert_into(chat_messages::table).values(&msg).execute(c)).await;
+    if let Err(e) = result {
+        return Err(anyhow::anyhow!("Failed to insert user message 2: {}", e));
+    }
+    let insert_result = result.unwrap()?;
+    debug!("Inserted message 2: {} rows affected", insert_result);
+    
+    // Insert reply 2 (Assistant)
+    let msg = common_msg_fields(MessageRole::Assistant, "Reply two");
+    let result = conn.interact(move |c| diesel::insert_into(chat_messages::table).values(&msg).execute(c)).await;
+    if let Err(e) = result {
+        return Err(anyhow::anyhow!("Failed to insert assistant message 2: {}", e));
+    }
+    let insert_result = result.unwrap()?;
+    debug!("Inserted reply 2: {} rows affected", insert_result);
+
+    test_helpers::set_history_settings(&test_app, session_id, &auth_cookie, Some("truncate_tokens".to_string()), Some(30)).await?;
+
+    test_app.mock_ai_client.as_ref().unwrap().set_response(Ok(genai::chat::ChatResponse {
+        model_iden: genai::ModelIden::new(genai::adapter::AdapterKind::Gemini, "mock-model"),
+        provider_model_iden: genai::ModelIden::new(genai::adapter::AdapterKind::Gemini, "mock-model"),
+        content: Some(genai::chat::MessageContent::Text("Mock response".to_string())),
+        reasoning_content: None,
+        usage: Default::default(),
+    }));
+
+    let payload = GenerateChatRequest { history: vec![ApiChatMessage { role: "user".to_string(), content: "User message 3".to_string() }], model: None };
+    let request = Request::builder()
+        .method(Method::POST)
+        .uri(format!("/api/chats/{}/generate", session_id))
+        .header(header::COOKIE, &auth_cookie)
+        .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
+        .body(Body::from(serde_json::to_string(&payload)?))?;
+    let response = test_app.router.clone().oneshot(request).await?;
+    assert_eq!(response.status(), StatusCode::OK);
+    let _ = response.into_body().collect().await?.to_bytes();
+
+    test_helpers::assert_ai_history(&test_app, vec![
+        ("User", "e"), // "This is message one" truncated to "e" (1 token) to fit 30 token limit with other messages
+        ("Assistant", "Reply one"),
+        ("User", "Message two"),
+        ("Assistant", "Reply two"),
+    ]);
+
+    // Test truncation case (second call with different limit)
+    test_helpers::set_history_settings(&test_app, session_id, &auth_cookie, Some("truncate_tokens".to_string()), Some(25)).await?;
+    // Mock AI response for the second call
+    test_app.mock_ai_client.as_ref().unwrap().set_response(Ok(genai::chat::ChatResponse {
+        model_iden: genai::ModelIden::new(genai::adapter::AdapterKind::Gemini, "mock-model"),
+        provider_model_iden: genai::ModelIden::new(genai::adapter::AdapterKind::Gemini, "mock-model"),
+        content: Some(genai::chat::MessageContent::Text("Mock response 2".to_string())),
+        reasoning_content: None,
+        usage: Default::default(),
+    }));
+    let request_2 = Request::builder()
+        .method(Method::POST)
+        .uri(format!("/api/chats/{}/generate", session_id))
+        .header(header::COOKIE, &auth_cookie)
+        .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
+        .body(Body::from(serde_json::to_string(&payload)?))?;// Same payload for simplicity
+    let response_2 = test_app.router.clone().oneshot(request_2).await?;
+    assert_eq!(response_2.status(), StatusCode::OK);
+    let _ = response_2.into_body().collect().await?.to_bytes();
+
+    // DB now has: M1, R1, M2, R2, "User message 3", "Mock response"
+    // History for AI (limit 25) should be: "y one", "Message two", "Reply two"
+    test_helpers::assert_ai_history(&test_app, vec![
+        ("Assistant", "y one"), // "Reply one" truncated to "y one"
+        ("User", "Message two"),
+        ("Assistant", "Reply two"),
+    ]);
+    test_data_guard.cleanup().await?;
+    Ok(())
+}
+
+// --- Tests for GET /api/chats/{id}/messages ---
+// (Moved from chat_tests.rs)
+
+// Test: Get messages for a valid session owned by the user
+#[tokio::test]
+async fn test_get_chat_messages_success() -> anyhow::Result<()> {
+    let test_app = test_helpers::spawn_app(false, false, false).await;
+    let mut test_data_guard = TestDataGuard::new(test_app.db_pool.clone());
+    let username = "get_messages_user";
+    let password = "password";
+    tracing::info!("Creating test user");
+    let user: User = test_helpers::db::create_test_user(&test_app.db_pool, username.to_string(), password.to_string()).await.expect("Failed to create test user");
+    test_data_guard.add_user(user.id);
+    tracing::info!("Created test user with ID: {}", user.id);
+    let auth_cookie = test_helpers::login_user_via_api(&test_app, username, password).await;
+    tracing::info!("Logged in with auth cookie: {}", auth_cookie);
+
+    // Create a test character
+    tracing::info!("Creating test character");
+    let character_name = "Test Character".to_string();
+    let character = test_helpers::db::create_test_character(&test_app.db_pool, user.id, character_name).await?;
+    let character_id = character.id;
+    tracing::info!("Created test character with ID: {}", character_id);
+    test_data_guard.add_character(character_id);
+
+    tracing::info!("Creating chat session");
+    // Create a new chat session for this user
+    let session_id = Uuid::new_v4();
+    tracing::info!("Generated session_id: {}", session_id);
+    test_data_guard.add_chat(session_id);
+    
+    let conn = test_app.db_pool.get().await?;
+    let new_chat = NewChat {
+        id: session_id,
+        user_id: user.id,
+        character_id,
+        title: Some("Test Chat".to_string()),
+        created_at: Utc::now(),
+        updated_at: Utc::now(),
+        history_management_strategy: "none".to_string(),
+        history_management_limit: 10,
+        model_name: "test_model".to_string(),
+        visibility: Some("private".to_string()),
+    };
+    
+    let create_session_result = conn.interact(move |conn_inner| {
+        use scribe_backend::schema::chat_sessions::dsl::*;
+        diesel::insert_into(chat_sessions)
+            .values(&new_chat)
+            .execute(conn_inner)
+    }).await;
+    
+    if let Err(e) = create_session_result {
+        return Err(anyhow::anyhow!("Failed to create chat session: {}", e));
+    }
+    let create_session_rows = create_session_result.unwrap()?;
+    tracing::info!("Inserted {} chat session row(s)", create_session_rows);
+
+    // Add a message to the chat session
+    let message_id = Uuid::new_v4();
+    tracing::info!("Generated message_id: {}", message_id);
+    
+    let conn = test_app.db_pool.get().await?;
+    let new_message = NewMessage {
+        id: message_id,
+        session_id,
+        user_id: user.id,
+        message_type: MessageRole::User,
+        content: "Test message content".to_string().into_bytes(),
+        content_nonce: None,
+        created_at: Utc::now(),
+        updated_at: Utc::now(),
+        role: Some("user".to_string()),
+        parts: Some(serde_json::json!([{"text": "Test message content"}])),
+        attachments: None,
+        prompt_tokens: None,
+        completion_tokens: None,
+    };
+    
+    let create_message_result = conn.interact(move |conn_inner| {
+        use scribe_backend::schema::chat_messages::dsl::*;
+        diesel::insert_into(chat_messages)
+            .values(&new_message)
+            .execute(conn_inner)
+    }).await;
+    
+    if let Err(e) = create_message_result {
+        return Err(anyhow::anyhow!("Failed to create chat message: {}", e));
+    }
+    let create_message_rows = create_message_result.unwrap()?;
+    tracing::info!("Inserted {} chat message row(s)", create_message_rows);
+
+    // Verify that we can get the messages
+    tracing::info!("Making API request to /api/chats/{}/generate", session_id);
+    let response = reqwest::Client::new()
+        .post(&format!("{}/api/chats/{}/generate", test_app.address, session_id))
+        .header("Cookie", &auth_cookie)
+        .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
+        .body(serde_json::to_string(&json!({"history": [{"role": "user", "content": "Test message"}]})).unwrap())
+        .send()
+        .await?;
+    
+    let status = response.status();
+    let body = response.text().await?;
+    tracing::info!("Response status: {}, body: {}", status, body);
+    
+    assert_eq!(status, reqwest::StatusCode::OK); // Changed from 200 to reqwest::StatusCode::OK
+    
+    // Explicitly call cleanup to release test resources
+    test_data_guard.cleanup().await?;
+    
+    Ok(())
+}
+
+// Test: Get messages for a session owned by another user
+#[tokio::test]
+async fn test_get_chat_messages_forbidden() -> anyhow::Result<()> {
+    let test_app = test_helpers::spawn_app(false, false, false).await;
+    let mut test_data_guard = TestDataGuard::new(test_app.db_pool.clone());
+    let conn = test_app.db_pool.get().await?;
+
+    let username_a = "get_messages_user_a";
+    let password_a = "password_a";
+    let user_a: User = test_helpers::db::create_test_user(&test_app.db_pool, username_a.to_string(), password_a.to_string()).await.expect("Failed to create test user A");
+    test_data_guard.add_user(user_a.id);
+
+    let username_b = "get_messages_user_b";
+    let password_b = "password_b";
+    let user_b: User = test_helpers::db::create_test_user(&test_app.db_pool, username_b.to_string(), password_b.to_string()).await.expect("Failed to create test user B");
+    test_data_guard.add_user(user_b.id);
+    let auth_cookie_b = test_helpers::login_user_via_api(&test_app, username_b, password_b).await;
+
+    let character_a_id = Uuid::new_v4();
+    let new_character_a = DbCharacter { // Using DbCharacter alias
+        id: character_a_id,
+        user_id: user_a.id,
+        name: "User A Char".to_string(),
+        spec: "test_spec".to_string(),
+        spec_version: "1.0".to_string(),
+        created_at: Utc::now(),
+        updated_at: Utc::now(),
+        description: None, personality: None, scenario: None, first_mes: None, mes_example: None,
+        creator_notes: None, system_prompt: None, post_history_instructions: None, tags: None, creator: None,
+        character_version: None, alternate_greetings: None, nickname: None, creator_notes_multilingual: None,
+        source: None, group_only_greetings: None, creation_date: None, modification_date: None, persona: None,
+        world_scenario: None, avatar: None, chat: None, greeting: None, definition: None, default_voice: None,
+        extensions: None, data_id: None, category: None, definition_visibility: None, depth: None,
+        example_dialogue: None, favorite: None, first_message_visibility: None, height: None, last_activity: None,
+        migrated_from: None, model_prompt: None, model_prompt_visibility: None, model_temperature: None,
+        num_interactions: None, permanence: None, persona_visibility: None, revision: None, sharing_visibility: None,
+        status: None, system_prompt_visibility: None, system_tags: None, token_budget: None, usage_hints: None,
+        user_persona: None, user_persona_visibility: None, visibility: None, weight: None, world_scenario_visibility: None,
+        description_nonce: None, personality_nonce: None, scenario_nonce: None, first_mes_nonce: None,
+        mes_example_nonce: None, creator_notes_nonce: None, system_prompt_nonce: None, post_history_instructions_nonce: None,
+        persona_nonce: None, world_scenario_nonce: None, greeting_nonce: None, definition_nonce: None,
+        example_dialogue_nonce: None, model_prompt_nonce: None, user_persona_nonce: None,
+    };
+    
+    let result = conn.interact(move |conn_inner| { 
+        diesel::insert_into(characters::table)
+            .values(&new_character_a)
+            .execute(conn_inner) 
+    }).await;
+    if let Err(e) = result {
+        return Err(anyhow::anyhow!("Failed to insert character: {}", e));
+    }
+    let insert_result = result.unwrap()?;
+    debug!("Inserted character: {} rows affected", insert_result);
+    test_data_guard.add_character(character_a_id);
+
+    let session_a_id = Uuid::new_v4();
+    let new_session_a = NewChat {
+        id: session_a_id,
+        user_id: user_a.id,
+        character_id: character_a_id,
+        title: Some("User A Session".to_string()),
+        created_at: Utc::now(),
+        updated_at: Utc::now(),
+        history_management_strategy: "none".to_string(),
+        history_management_limit: 10,
+        model_name: "test_model".to_string(),
+        visibility: Some("private".to_string()),
+    };
+    
+    let conn_clone = test_app.db_pool.get().await?; // Re-acquire connection as it was moved
+    let result = conn_clone.interact(move |conn_inner| { 
+        diesel::insert_into(chat_sessions::table)
+            .values(&new_session_a)
+            .execute(conn_inner) 
+    }).await;
+    if let Err(e) = result {
+        return Err(anyhow::anyhow!("Failed to insert session: {}", e));
+    }
+    let insert_result = result.unwrap()?;
+    debug!("Inserted session: {} rows affected", insert_result);
+    test_data_guard.add_chat(session_a_id);
+
+    let payload = GenerateChatRequest {
+        history: vec![ApiChatMessage {
+            role: "user".to_string(),
+            content: "test".to_string(),
+        }],
+        model: None
+    };
+    let request = Request::builder()
+        .method(Method::POST)
+        .uri(format!("/api/chats/{}/generate", session_a_id)) // User B tries to access User A's session
+        .header(header::COOKIE, &auth_cookie_b)
+        .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
+        .body(Body::from(serde_json::to_string(&payload)?))?;
+    
+    let response = test_app.router.clone().oneshot(request).await?;
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    test_data_guard.cleanup().await?;
+    Ok(())
+}
+
+// Test: Get messages without authentication
+#[tokio::test]
+async fn test_get_chat_messages_unauthorized() -> Result<(), Box<dyn std::error::Error>> {
+    tracing::info!("Starting test_get_chat_messages_unauthorized");
+    let test_app = test_helpers::spawn_app(false, false, false).await;
+    let uuid = Uuid::new_v4(); // Some random UUID that won't be in the DB
+
+    // Try to get the messages without authentication
+    tracing::info!("Making API request to /api/chats/{}/generate without auth", uuid);
+    let payload = GenerateChatRequest { history: vec![], model: None };
+    let request = Request::builder()
+        .method(Method::POST)
+        .uri(format!("/api/chats/{}/generate", uuid))
+        .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
+        .body(Body::from(serde_json::to_string(&payload)?))?;
+    
+    let response = test_app.router.clone().oneshot(request).await?;
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    
+    Ok(())
+}

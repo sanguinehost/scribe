@@ -148,6 +148,9 @@ mod tests {
             qdrant_service,
             embedding_pipeline_service: mock_embedding_service.clone(),
             embedding_call_tracker: Arc::new(tokio::sync::Mutex::new(Vec::new())),
+            token_counter: Arc::new(crate::services::hybrid_token_counter::HybridTokenCounter::new_local_only(
+                crate::services::tokenizer_service::TokenizerService::new("/home/socol/Workspace/sanguine-scribe/backend/resources/tokenizers/gemma.model")
+                    .expect("Failed to create tokenizer for test")))
         });
 
         (app_state, mock_embedding_service)
@@ -207,6 +210,8 @@ mod tests {
                 content_nonce: None,
                 created_at: Utc::now(),
                 user_id: Uuid::new_v4(), // Add dummy user_id for test data
+                prompt_tokens: None,
+                completion_tokens: None,
             },
             ChatMessage {
                 id: Uuid::new_v4(),
@@ -216,6 +221,8 @@ mod tests {
                 content_nonce: None,
                 created_at: Utc::now(),
                 user_id: Uuid::new_v4(), // Add dummy user_id for test data
+                prompt_tokens: None,
+                completion_tokens: None,
             },
         ];
 
@@ -280,6 +287,8 @@ mod tests {
             content_nonce: None,
             created_at: Utc::now(),
             user_id: Uuid::new_v4(), // Add dummy user_id for test data
+            prompt_tokens: None,
+            completion_tokens: None,
         }];
 
         let mock_chunks = vec![
@@ -385,6 +394,8 @@ mod tests {
             content_nonce: None,
             created_at: Utc::now(),
             user_id: Uuid::new_v4(), // Add dummy user_id for test data
+            prompt_tokens: None,
+            completion_tokens: None,
         }];
 
         // Setup the mock to simulate a retrieval error
@@ -505,6 +516,8 @@ mod tests {
                 content_nonce: None,
                 created_at: Utc::now(),
                 user_id: Uuid::new_v4(), // Add dummy user_id for test data
+                prompt_tokens: None,
+                completion_tokens: None,
             },
             ChatMessage {
                 id: Uuid::new_v4(),
@@ -514,6 +527,8 @@ mod tests {
                 content_nonce: None,
                 created_at: Utc::now(),
                 user_id: Uuid::new_v4(), // Add dummy user_id for test data (System messages might not have a real user_id, but the field is required)
+                prompt_tokens: None,
+                completion_tokens: None,
             },
             ChatMessage {
                 id: Uuid::new_v4(),
@@ -523,6 +538,8 @@ mod tests {
                 content_nonce: None,
                 created_at: Utc::now(),
                 user_id: Uuid::new_v4(), // Add dummy user_id for test data
+                prompt_tokens: None,
+                completion_tokens: None,
             },
         ];
 
@@ -574,6 +591,8 @@ mod tests {
                 content_nonce: None,
                 created_at: Utc::now(),
                 user_id: Uuid::new_v4(), // Add dummy user_id for test data
+                prompt_tokens: None,
+                completion_tokens: None,
             },
             ChatMessage {
                 id: Uuid::new_v4(),
@@ -583,6 +602,8 @@ mod tests {
                 content_nonce: None,
                 created_at: Utc::now(),
                 user_id: Uuid::new_v4(), // Add dummy user_id for test data
+                prompt_tokens: None,
+                completion_tokens: None,
             },
         ];
         let mock_chunks = vec![RetrievedChunk {

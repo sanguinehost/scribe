@@ -50,6 +50,9 @@ async fn test_process_and_embed_message_integration() {
         test_app.mock_embedding_client.clone(),
         test_app.qdrant_service.clone(), // Use the real qdrant_service from test_app
         Arc::new(embedding_pipeline_service), // Use a real pipeline service
+        Arc::new(scribe_backend::services::hybrid_token_counter::HybridTokenCounter::new_local_only(
+            scribe_backend::services::tokenizer_service::TokenizerService::new("/home/socol/Workspace/sanguine-scribe/backend/resources/tokenizers/gemma.model")
+                .expect("Failed to create tokenizer for test")))
     ));
 
     // 2. Prepare test data
@@ -64,6 +67,8 @@ async fn test_process_and_embed_message_integration() {
         content_nonce: None,
         created_at: Utc::now(),
         user_id: Uuid::new_v4(), // Add dummy user_id for test data
+        prompt_tokens: None,
+        completion_tokens: None,
     };
 
     // Configure mock embedding client response
@@ -192,6 +197,9 @@ async fn test_process_and_embed_message_all_chunks_fail_embedding() {
         test_app.mock_embedding_client.clone(),
         test_app.qdrant_service.clone(), // Use the qdrant_service from test_app (which is the mock)
         Arc::new(embedding_pipeline_service), // Use the real service instead of the mock
+        Arc::new(scribe_backend::services::hybrid_token_counter::HybridTokenCounter::new_local_only(
+            scribe_backend::services::tokenizer_service::TokenizerService::new("/home/socol/Workspace/sanguine-scribe/backend/resources/tokenizers/gemma.model")
+                .expect("Failed to create tokenizer for test")))
     ));
 
     // 2. Prepare test data
@@ -206,6 +214,8 @@ async fn test_process_and_embed_message_all_chunks_fail_embedding() {
         content_nonce: None,
         created_at: Utc::now(),
         user_id: Uuid::new_v4(), // Add dummy user_id for test data
+        prompt_tokens: None,
+        completion_tokens: None,
     };
 
     // Configure mock embedding client to always return an error
@@ -351,6 +361,9 @@ async fn test_retrieve_relevant_chunks_success() {
         test_app.mock_embedding_client.clone(),
         test_app.qdrant_service.clone(), // Use the qdrant_service from test_app
         Arc::new(embedding_pipeline_service),
+        Arc::new(scribe_backend::services::hybrid_token_counter::HybridTokenCounter::new_local_only(
+            scribe_backend::services::tokenizer_service::TokenizerService::new("/home/socol/Workspace/sanguine-scribe/backend/resources/tokenizers/gemma.model")
+                .expect("Failed to create tokenizer for test")))
     ));
 
     // Call the method on the real service
@@ -438,7 +451,9 @@ async fn test_retrieve_relevant_chunks_no_results() {
             test_app.mock_embedding_client.clone(),
             test_app.qdrant_service.clone(), // Use the qdrant_service from test_app
             test_app.mock_embedding_pipeline_service.clone(),
-            // test_app.embedding_call_tracker.clone()
+            Arc::new(scribe_backend::services::hybrid_token_counter::HybridTokenCounter::new_local_only(
+                scribe_backend::services::tokenizer_service::TokenizerService::new("/home/socol/Workspace/sanguine-scribe/backend/resources/tokenizers/gemma.model")
+                    .expect("Failed to create tokenizer for test")))
         )),
         session_id,
         query_text,
@@ -494,6 +509,9 @@ async fn test_retrieve_relevant_chunks_qdrant_error() {
         test_app.mock_embedding_client.clone(),
         test_app.qdrant_service.clone(), // Use the qdrant_service from test_app
         Arc::new(embedding_pipeline_service),
+        Arc::new(scribe_backend::services::hybrid_token_counter::HybridTokenCounter::new_local_only(
+            scribe_backend::services::tokenizer_service::TokenizerService::new("/home/socol/Workspace/sanguine-scribe/backend/resources/tokenizers/gemma.model")
+                .expect("Failed to create tokenizer for test")))
     ));
 
     // 2. Call the method on the real service
@@ -564,7 +582,9 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_uuid() {
             test_app.mock_embedding_client.clone(),
             test_app.qdrant_service.clone(), // Use the qdrant_service from test_app
             test_app.mock_embedding_pipeline_service.clone(),
-            // test_app.embedding_call_tracker.clone()
+            Arc::new(scribe_backend::services::hybrid_token_counter::HybridTokenCounter::new_local_only(
+                scribe_backend::services::tokenizer_service::TokenizerService::new("/home/socol/Workspace/sanguine-scribe/backend/resources/tokenizers/gemma.model")
+                    .expect("Failed to create tokenizer for test")))
         )),
         session_id,
         query_text,
@@ -624,7 +644,9 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_timestamp() {
             test_app.mock_embedding_client.clone(),
             test_app.qdrant_service.clone(), // Use the qdrant_service from test_app
             test_app.mock_embedding_pipeline_service.clone(),
-            // test_app.embedding_call_tracker.clone()
+            Arc::new(scribe_backend::services::hybrid_token_counter::HybridTokenCounter::new_local_only(
+                scribe_backend::services::tokenizer_service::TokenizerService::new("/home/socol/Workspace/sanguine-scribe/backend/resources/tokenizers/gemma.model")
+                    .expect("Failed to create tokenizer for test")))
         )),
         session_id,
         query_text,
@@ -683,7 +705,9 @@ async fn test_retrieve_relevant_chunks_metadata_missing_field() {
             test_app.mock_embedding_client.clone(),
             test_app.qdrant_service.clone(), // Use the qdrant_service from test_app
             test_app.mock_embedding_pipeline_service.clone(),
-            // test_app.embedding_call_tracker.clone()
+            Arc::new(scribe_backend::services::hybrid_token_counter::HybridTokenCounter::new_local_only(
+                scribe_backend::services::tokenizer_service::TokenizerService::new("/home/socol/Workspace/sanguine-scribe/backend/resources/tokenizers/gemma.model")
+                    .expect("Failed to create tokenizer for test")))
         )),
         session_id,
         query_text,
@@ -743,7 +767,9 @@ async fn test_retrieve_relevant_chunks_metadata_wrong_type() {
             test_app.mock_embedding_client.clone(),
             test_app.qdrant_service.clone(), // Use the qdrant_service from test_app
             test_app.mock_embedding_pipeline_service.clone(),
-            // test_app.embedding_call_tracker.clone()
+            Arc::new(scribe_backend::services::hybrid_token_counter::HybridTokenCounter::new_local_only(
+                scribe_backend::services::tokenizer_service::TokenizerService::new("/home/socol/Workspace/sanguine-scribe/backend/resources/tokenizers/gemma.model")
+                    .expect("Failed to create tokenizer for test")))
         )),
         session_id,
         query_text,
@@ -793,6 +819,8 @@ async fn test_rag_context_injection_with_qdrant() {
         content_nonce: None,
         created_at: Utc::now(),
         user_id,
+        prompt_tokens: None,
+        completion_tokens: None,
     };
     
     // Configure mock embedding client to return deterministic embeddings
@@ -808,6 +836,9 @@ async fn test_rag_context_injection_with_qdrant() {
         mock_embedding_client.clone(),
         test_app.qdrant_service.clone(),
         test_app.mock_embedding_pipeline_service.clone(),
+        Arc::new(scribe_backend::services::hybrid_token_counter::HybridTokenCounter::new_local_only(
+            scribe_backend::services::tokenizer_service::TokenizerService::new("/home/socol/Workspace/sanguine-scribe/backend/resources/tokenizers/gemma.model")
+                .expect("Failed to create tokenizer for test")))
     ));
     
     // Step 1: Process and embed a message to store in Qdrant

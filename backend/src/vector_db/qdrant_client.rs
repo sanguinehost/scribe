@@ -680,6 +680,11 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn test_integration_search_with_filter() {
+        if std::env::var("RUN_INTEGRATION_TESTS").is_err() {
+            println!("Skipping Qdrant integration test: RUN_INTEGRATION_TESTS not set");
+            return;
+        }
+
         let service = setup_test_qdrant_client()
             .await
             .expect("Failed to setup Qdrant client");
@@ -710,13 +715,31 @@ mod tests {
         )
         .expect("Failed to create other point");
 
-        // Upsert points
-        let upsert_result = service.upsert_points(vec![point_filter, point_other]).await;
-        assert!(
-            upsert_result.is_ok(),
-            "Failed to upsert points for filter test: {:?}",
-            upsert_result.err()
-        );
+        // Add retry logic for the upsert operation
+        let points_to_upsert = vec![point_filter, point_other];
+        const MAX_RETRIES: u32 = 3;
+        let mut attempt = 0;
+        
+        loop {
+            attempt += 1;
+            match service.upsert_points(points_to_upsert.clone()).await {
+                Ok(_) => break, // Success
+                Err(e) => {
+                    if let AppError::VectorDbError(msg) = &e {
+                        if msg.contains("Collection") && (msg.contains("doesn't exist") || msg.contains("not found")) {
+                            if attempt < MAX_RETRIES {
+                                warn!("Upsert failed because collection was not found (attempt {}). Ensuring and retrying...", attempt);
+                                tokio::time::sleep(tokio::time::Duration::from_millis(100 * attempt as u64)).await; // Exponential backoff
+                                service.ensure_collection_exists().await.expect("Retry ensure_collection_exists failed");
+                                continue; // Retry upsert
+                            }
+                        }
+                    }
+                    // For other errors or max retries reached, panic with the original assertion message
+                    panic!("Failed to upsert points for filter test: {:?} (attempt {})", e, attempt);
+                }
+            }
+        }
 
         // Give Qdrant a moment
         tokio::time::sleep(tokio::time::Duration::from_millis(500)).await; // Increased sleep time slightly

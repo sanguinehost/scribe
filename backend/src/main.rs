@@ -28,10 +28,6 @@ use anyhow::Context;
 use anyhow::Result;
 use scribe_backend::auth::user_store::Backend as AuthBackend;
 use scribe_backend::PgPool;
- // Removed unused AppError import
- // Removed unused IntoResponse import
- // Make sure AppError is in scope
- // Removed unused AuthRejection import
  
  // Imports for axum-login and tower-sessions
 use axum_login::{AuthManagerLayerBuilder, login_required}; // Modified
@@ -48,6 +44,9 @@ use scribe_backend::llm::gemini_embedding_client::build_gemini_embedding_client;
 use scribe_backend::services::embedding_pipeline::{
     EmbeddingPipelineService, EmbeddingPipelineServiceTrait,
 };
+use scribe_backend::services::gemini_token_client::GeminiTokenClient; // Added
+use scribe_backend::services::hybrid_token_counter::HybridTokenCounter; // Added
+use scribe_backend::services::tokenizer_service::TokenizerService; // Added
 use scribe_backend::text_processing::chunking::{ChunkConfig, ChunkingMetric}; // Import chunking config structs
 use scribe_backend::vector_db::QdrantClientService; // Add Qdrant service import // Add embedding pipeline service import
 // Removed unused: use tokio::net::TcpListener;
@@ -103,6 +102,35 @@ async fn main() -> Result<()> {
     let qdrant_service_arc = Arc::new(qdrant_service);
     tracing::info!("Qdrant client service initialized.");
 
+    // --- Initialize Tokenizer Service ---
+    tracing::info!("Initializing TokenizerService...");
+    let tokenizer_model_path = config.tokenizer_model_path.as_ref().cloned()
+        .context("Tokenizer model path not set in config")?;
+    let tokenizer_service = TokenizerService::new(&tokenizer_model_path)
+        .context(format!("Failed to load tokenizer model from {}", tokenizer_model_path))?;
+    tracing::info!("TokenizerService initialized with model: {}", tokenizer_service.model_name());
+
+    // --- Initialize Gemini Token Client (Optional) ---
+    let gemini_token_client = if let Some(api_key) = config.gemini_api_key.as_ref() {
+        tracing::info!("Initializing GeminiTokenClient for token counting...");
+        Some(GeminiTokenClient::new(api_key.clone()))
+    } else {
+        tracing::warn!("GEMINI_API_KEY not set, GeminiTokenClient for token counting will not be available.");
+        None
+    };
+
+    // --- Initialize Hybrid Token Counter ---
+    tracing::info!("Initializing HybridTokenCounter...");
+    let token_counter_default_model = config.token_counter_default_model.as_ref().cloned()
+        .context("Token counter default model not set in config")?;
+    let hybrid_token_counter = HybridTokenCounter::new(
+        tokenizer_service,
+        gemini_token_client,
+        token_counter_default_model.clone(),
+    );
+    let hybrid_token_counter_arc = Arc::new(hybrid_token_counter);
+    tracing::info!("HybridTokenCounter initialized with default model: {}", token_counter_default_model);
+    
     // --- Session Store Setup ---
     // Ideally load from config/env, generating is okay for dev
     let session_store = DieselSessionStore::new(pool.clone());
@@ -154,6 +182,7 @@ async fn main() -> Result<()> {
         embedding_client_arc,
         qdrant_service_arc,
         embedding_pipeline_service, // Add the embedding pipeline service
+        hybrid_token_counter_arc, // Added
     );
 
     // --- Define Protected Routes ---

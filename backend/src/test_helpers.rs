@@ -12,7 +12,7 @@ use crate::{
     auth::{session_store::DieselSessionStore, user_store::Backend as AuthBackend}, // Use crate::auth and alias Backend, Added RegisterPayload
     config::Config,
     // Ensure build_gemini_client is removed if present
-    models::chats::ChatMessage,
+    models::chats::{ChatMessage, UpdateChatSettingsRequest}, // Added UpdateChatSettingsRequest
     models::users::AccountStatus,
     routes::{
         chat::chat_routes,
@@ -41,6 +41,8 @@ use diesel_migrations::{embed_migrations, EmbeddedMigrations};
 use dotenvy::dotenv; // Removed var
 use genai::chat::ChatStreamEvent; // Add import for chatstream types
 use futures::{TryStreamExt};
+use http_body_util::BodyExt; // Added for Body::collect
+use mime; // Added for mime::APPLICATION_JSON
 use genai::chat::{ChatOptions, ChatRequest, ChatResponse};
 use genai::ModelIden; // Import ModelIden directly
 use genai::adapter::AdapterKind; // Ensure AdapterKind is in scope
@@ -50,7 +52,7 @@ use tokio::sync::Mutex as TokioMutex;
 use tokio::net::TcpListener;
 use tower_cookies::{CookieManagerLayer}; // Removed unused: Key as TowerCookieKey
 use tower_sessions::{Expiry, SessionManagerLayer};
-use tracing::{warn, instrument}; // Added instrument
+use tracing::{warn, instrument, debug}; // Added debug
 use uuid::Uuid;
 use std::fmt;
 use crate::models::users::User as DbUser;
@@ -58,7 +60,7 @@ use secrecy::{ExposeSecret, SecretBox, SecretString};
 use crate::models::users::{User, SerializableSecretDek}; // Added SerializableSecretDek
 use axum::{
     body::Body,
-    http::{Request, StatusCode},
+    http::{Request, Method, StatusCode, header}, // Added Method and header
 };
 use tower::ServiceExt; // For .oneshot
 use serde_json::json;
@@ -643,6 +645,9 @@ pub async fn spawn_app(multi_thread: bool, use_real_ai: bool, use_real_qdrant: b
         embedding_pipeline_service: mock_embedding_pipeline_service.clone(),
         qdrant_service: qdrant_service.clone(), // This will be the real or mock service
         embedding_call_tracker: embedding_call_tracker.clone(),
+        token_counter: Arc::new(crate::services::hybrid_token_counter::HybridTokenCounter::new_local_only(
+            crate::services::tokenizer_service::TokenizerService::new("/home/socol/Workspace/sanguine-scribe/backend/resources/tokenizers/gemma.model")
+                .expect("Failed to create tokenizer for test")))
     };
     // Create the Arc<AppState> after building the inner state
     let app_state = Arc::new(app_state_inner);
@@ -1277,6 +1282,55 @@ pub async fn create_user_with_dek_in_session(
     Ok((mock_user_for_assertion, actual_cookie_value)) // Use the cookie from step 2
 }
 
+// Helper function for API-based login
+pub async fn login_user_via_api(test_app: &TestApp, username: &str, password: &str) -> String {
+    let login_payload = json!({
+        "identifier": username,
+        "password": password
+    });
+    let request = Request::builder()
+        .method(Method::POST)
+        .uri("/api/auth/login")
+        .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
+        .body(Body::from(serde_json::to_string(&login_payload).unwrap()))
+        .unwrap();
+
+    let response = test_app.router.clone().oneshot(request).await.unwrap();
+    if response.status() != StatusCode::OK {
+        let status = response.status();
+        let body_bytes = match response.into_body().collect().await {
+            Ok(collected) => collected.to_bytes(),
+            Err(e) => format!("Failed to collect body: {}", e).into_bytes().into(),
+        };
+        let body_str = String::from_utf8_lossy(&body_bytes);
+        panic!(
+            "API login failed for user '{}'. Status: {}. Body: {}",
+            username, status, body_str
+        );
+    }
+
+    response.headers()
+        .get_all(header::SET_COOKIE)
+        .iter()
+        .find_map(|v| {
+            let cookie_str = v.to_str().unwrap_or_else(|_| {
+                panic!("Invalid Set-Cookie header (not UTF-8) for user {}", username)
+            });
+            if cookie_str.starts_with("id=") { // Assuming session cookie name is "id"
+                cookie_str.split(';').next().map(String::from)
+            } else {
+                None
+            }
+        })
+        .unwrap_or_else(|| {
+            let headers_debug = format!("{:?}", response.headers());
+            panic!(
+                "Session cookie 'id' not found in login response for user {}. Headers: {}",
+                username, headers_debug
+            )
+        })
+}
+
 // Helper structs and functions for testing SSE
 #[derive(Debug, PartialEq, Clone)]
 pub struct ParsedSseEvent {
@@ -1347,4 +1401,117 @@ pub async fn collect_full_sse_events(body: axum::body::Body) -> Vec<ParsedSseEve
         });
     }
     events
+}
+
+// Helper to assert the history sent to the mock AI client
+pub fn assert_ai_history(
+    test_app: &TestApp,
+    expected_history: Vec<(&str, &str)>, // (Role, Content)
+) {
+    let last_request = test_app
+        .mock_ai_client
+        .as_ref()
+        .expect("Mock AI client should be present")
+        .get_last_request()
+        .expect("Mock AI client did not receive a request");
+
+    let mut history_start_index = 0;
+    if let Some(first_msg) = last_request.messages.first() {
+        if matches!(first_msg.role, genai::chat::ChatRole::System) {
+            history_start_index = 1;
+            debug!("[DEBUG] System prompt detected, starting history comparison from index 1.");
+        }
+    }
+    let history_end_index = last_request.messages.len().saturating_sub(1);
+    let history_start_index = history_start_index.min(history_end_index);
+    let history_sent_to_ai = &last_request.messages[history_start_index..history_end_index];
+
+    println!("\n[DEBUG] All messages sent to AI client (including system prompt and current prompt):");
+    for (i, msg) in last_request.messages.iter().enumerate() {
+        let role_str = match msg.role {
+            genai::chat::ChatRole::User => "User",
+            genai::chat::ChatRole::Assistant => "Assistant",
+            genai::chat::ChatRole::System => "System",
+            _ => "Unknown",
+        };
+        let content = match &msg.content {
+            genai::chat::MessageContent::Text(text) => text.as_str(),
+            _ => "<non-text content>",
+        };
+        println!("  [{}] {}: {}", i, role_str, content);
+    }
+
+    println!("\n[DEBUG] Comparing {} expected messages against {} actual messages in history (excluding current prompt)",
+             expected_history.len(), history_sent_to_ai.len());
+
+    assert_eq!(
+        history_sent_to_ai.len(),
+        expected_history.len(),
+        "Number of history messages sent to AI mismatch. Actual: {:?}, Expected: {:?}",
+        history_sent_to_ai.iter().map(|m| (format!("{:?}", m.role), if let genai::chat::MessageContent::Text(t) = &m.content { t.clone() } else { "".to_string() } )).collect::<Vec<_>>(),
+        expected_history
+    );
+
+    for (i, expected) in expected_history.iter().enumerate() {
+        let actual = &history_sent_to_ai[i];
+        let (expected_role_str, expected_content) = expected;
+
+        let actual_role_str = match actual.role {
+            genai::chat::ChatRole::User => "User",
+            genai::chat::ChatRole::Assistant => "Assistant",
+            genai::chat::ChatRole::System => "System",
+            _ => panic!("Unexpected role in AI history: {:?}", actual.role),
+        };
+        let actual_content = match &actual.content {
+            genai::chat::MessageContent::Text(text) => text.as_str(),
+            _ => panic!("Expected text content in AI history, got: {:?}", actual.content),
+        };
+
+        println!("[DEBUG] Compare message {}: Expected {}:'{}' vs Actual {}:'{}'",
+                 i, expected_role_str, expected_content, actual_role_str, actual_content);
+
+        assert_eq!(actual_role_str, *expected_role_str, "Role mismatch at index {}", i);
+        assert_eq!(actual_content, *expected_content, "Content mismatch at index {}", i);
+    }
+}
+
+// Helper to set history management settings via API
+pub async fn set_history_settings(
+    test_app: &TestApp,
+    session_id: Uuid,
+    auth_cookie: &str,
+    strategy: Option<String>,
+    limit: Option<i32>,
+) -> anyhow::Result<()> {
+    let payload = UpdateChatSettingsRequest {
+        history_management_strategy: strategy,
+        history_management_limit: limit,
+        system_prompt: None,
+        temperature: None,
+        max_output_tokens: None,
+        frequency_penalty: None,
+        presence_penalty: None,
+        top_k: None,
+        top_p: None,
+        repetition_penalty: None,
+        min_p: None,
+        top_a: None,
+        seed: None,
+        logit_bias: None,
+        model_name: None,
+        gemini_enable_code_execution: None,
+        gemini_thinking_budget: None,
+    };
+
+    let request = Request::builder()
+        .method(Method::PUT)
+        .uri(format!("/api/chats/{}/settings", session_id))
+        .header(header::COOKIE, auth_cookie)
+        .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
+        .body(Body::from(serde_json::to_vec(&payload)?))?;
+
+    let response = test_app.router.clone().oneshot(request).await?;
+    assert_eq!(response.status(), StatusCode::OK, "Failed to set history settings via API");
+    let _ = response.into_body().collect().await?.to_bytes();
+    Ok(())
 }

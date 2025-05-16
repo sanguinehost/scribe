@@ -34,6 +34,12 @@ pub struct Config {
     pub chunking_max_size: usize,
     #[serde(default = "default_chunking_overlap")]
     pub chunking_overlap: usize,
+
+    // Tokenizer Config - Added
+    #[serde(default = "default_tokenizer_model_path")]
+    pub tokenizer_model_path: Option<String>,
+    #[serde(default = "default_token_counter_default_model")]
+    pub token_counter_default_model: Option<String>,
 }
 
 impl std::fmt::Debug for Config {
@@ -64,6 +70,8 @@ impl std::fmt::Debug for Config {
             .field("chunking_metric", &self.chunking_metric)
             .field("chunking_max_size", &self.chunking_max_size)
             .field("chunking_overlap", &self.chunking_overlap)
+            .field("tokenizer_model_path", &self.tokenizer_model_path)
+            .field("token_counter_default_model", &self.token_counter_default_model)
             .finish()
     }
 }
@@ -78,6 +86,8 @@ fn default_qdrant_on_disk() -> Option<bool> { None } // Added
 fn default_chunking_metric() -> String { "word".to_string() }
 fn default_chunking_max_size() -> usize { 200 } // Default for word metric
 fn default_chunking_overlap() -> usize { 20 } // Default for word metric
+fn default_tokenizer_model_path() -> Option<String> { Some("backend/resources/tokenizers/gemma.model".to_string()) } // Added
+fn default_token_counter_default_model() -> Option<String> { Some("gemini-1.5-pro".to_string()) } // Added
 
 impl Config {
     // Placeholder function to load settings (e.g., from file or env)
@@ -113,6 +123,8 @@ impl Default for Config {
             chunking_metric: default_chunking_metric(),
             chunking_max_size: default_chunking_max_size(),
             chunking_overlap: default_chunking_overlap(),
+            tokenizer_model_path: default_tokenizer_model_path(),
+            token_counter_default_model: default_token_counter_default_model(),
         }
     }
 }

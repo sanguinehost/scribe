@@ -369,6 +369,7 @@ pub async fn create_message_handler(
         message_role,
         &payload.content,
         user_dek_arc.clone(), // Clone the Arc to avoid moving it
+        &chat.model_name, // Pass the model_name from the chat
     ).await?;
 
     // Convert DbChatMessage to ChatMessageForClient to get decrypted content
@@ -386,6 +387,8 @@ pub async fn create_message_handler(
         role: Some(payload.role.clone()),      // From the request payload
         parts: payload.parts.clone(),          // From the request payload
         attachments: payload.attachments.clone(), // From the request payload
+        prompt_tokens: saved_db_message.prompt_tokens,
+        completion_tokens: saved_db_message.completion_tokens,
     };
     let client_message = message_for_decryption.into_decrypted_for_client(user_dek_arc.as_deref())?;
     

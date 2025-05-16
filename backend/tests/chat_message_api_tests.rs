@@ -20,8 +20,7 @@ use scribe_backend::{
     },
     schema::{characters, chat_messages, chat_sessions},
     test_helpers::{self}, // Added crypto for generate_salt
-};
- // For password hashing
+}; // For password hashing
 use mime; // For mime::APPLICATION_JSON
 use serde_json::json; // For login payload
 use anyhow::Context as _; // For .context() on Option/Result
@@ -107,6 +106,8 @@ async fn get_chat_messages_success_integration() -> anyhow::Result<()> {
         attachments: None,
         created_at: chrono::Utc::now(),
         updated_at: chrono::Utc::now(),
+        prompt_tokens: None,
+        completion_tokens: None,
     };
 
     test_app.db_pool.get().await
@@ -162,4 +163,82 @@ async fn get_chat_messages_success_integration() -> anyhow::Result<()> {
         response.status()
     );
     Ok(())
+}
+// Test: Get messages for a session that doesn't exist
+#[tokio::test]
+async fn test_get_chat_messages_session_not_found() -> anyhow::Result<()> {
+    let test_app = test_helpers::spawn_app(false, false, false).await;
+    let mut test_data_guard = test_helpers::TestDataGuard::new(test_app.db_pool.clone());
+    let username = "get_messages_not_found_user";
+    let password = "password";
+    let user: User = test_helpers::db::create_test_user(&test_app.db_pool, username.to_string(), password.to_string()).await.expect("Failed to create test user");
+    test_data_guard.add_user(user.id);
+    let auth_cookie = test_helpers::login_user_via_api(&test_app, username, password).await;
+
+    let non_existent_session_id = Uuid::new_v4();
+
+    let request = Request::builder()
+        .method(Method::GET)
+        .uri(format!("/api/chats/{}/messages", non_existent_session_id))
+        .header(header::COOKIE, &auth_cookie)
+        .body(Body::empty())?;
+
+    let response = test_app.router.clone().oneshot(request).await?;
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    test_data_guard.cleanup().await?;
+    Ok(())
+}
+
+#[cfg(test)]
+#[cfg(feature = "delete_chat_message")]
+mod delete_chat_message {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_delete_chat_message_success() -> anyhow::Result<()> {
+        let test_app = TestApp::create_for_user_without_encryption_key(
+            false, false, false
+        ).await;
+        let username = "test_delete_chat_message_user";
+        let password = "password";
+        let user: User = test_helpers::db::create_test_user(&test_app.db_pool, username.to_string(), password.to_string()).await.expect("Failed to create test user");
+        let auth_cookie = test_helpers::login_user_via_api(&test_app, username, password).await;
+
+        let session_id = Uuid::new_v4();
+        let message_id = Uuid::new_v4();
+
+        let request = Request::builder()
+            .method(Method::DELETE)
+            .uri(format!("/api/chats/{}/messages/{}", session_id, message_id))
+            .header(header::COOKIE, &auth_cookie)
+            .body(Body::empty())?;
+
+        let response = test_app.router.clone().oneshot(request).await?;
+        assert_eq!(response.status(), StatusCode::NO_CONTENT);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_delete_chat_message_not_found() -> anyhow::Result<()> {
+        let test_app = TestApp::create_for_user_without_encryption_key(
+            false, false, false
+        ).await;
+        let username = "test_delete_chat_message_user";
+        let password = "password";
+        let user: User = test_helpers::db::create_test_user(&test_app.db_pool, username.to_string(), password.to_string()).await.expect("Failed to create test user");
+        let auth_cookie = test_helpers::login_user_via_api(&test_app, username, password).await;
+
+        let session_id = Uuid::new_v4();
+        let message_id = Uuid::new_v4();
+
+        let request = Request::builder()
+            .method(Method::DELETE)
+            .uri(format!("/api/chats/{}/messages/{}", session_id, message_id))
+            .header(header::COOKIE, &auth_cookie)
+            .body(Body::empty())?;
+
+        let response = test_app.router.clone().oneshot(request).await?;
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        Ok(())
+    }
 }

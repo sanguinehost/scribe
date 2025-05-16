@@ -265,11 +265,11 @@ pub async fn generate_chat_response(
         _hist_management_strategy,
         _hist_management_limit,
     ) = chat_service::get_session_data_for_generation(
-        &state_arc.pool,
+        state_arc.clone(),
         user_id_value,
         session_id,
         current_user_content.clone(), 
-        Some(session_dek_arc.clone()), // MODIFIED: Use Arc clone
+        Some(session_dek_arc.clone()), // Use Arc clone
     )
     .await?;
 
@@ -458,7 +458,8 @@ pub async fn generate_chat_response(
                 user_id_value,
                 MessageRole::User,
                 &current_user_content, // Use the already extracted current_user_content
-                Some(dek_for_user_save_json), // MODIFIED: Pass Arc clone
+                Some(dek_for_user_save_json), // Pass Arc clone
+                &model_to_use, // Pass model_name
             ).await {
                 Ok(saved_msg) => {
                     debug!(message_id = %saved_msg.id, session_id = %session_id, "Successfully saved user message via chat_service (JSON path)");
@@ -530,6 +531,7 @@ pub async fn generate_chat_response(
                                 MessageRole::Assistant,
                                 &response_content_for_save,
                                 Some(dek_for_ai_save_json),
+                                &model_to_use,
                             ).await {
                                 Ok(saved_message) => {
                                     debug!(session_id = %session_id, message_id = %saved_message.id, "Successfully saved AI message via chat_service (JSON path)");
