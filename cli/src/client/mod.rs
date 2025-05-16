@@ -17,14 +17,9 @@ pub use self::implementation::ReqwestClientWrapper; // Explicit self for clarity
 // These are types defined *within* this client module (primarily in types.rs)
 // that consumers of the client module (e.g., handlers) will need.
 pub use self::types::{ // Explicit self for clarity
-    HealthStatus,
-    AuthUserResponse, // The one with the role field, as decided
     StreamEvent,
     ClientCharacterDataForClient,
     RegisterPayload, // CLI specific payload for registration
-    AdminUserListResponse,
-    AdminUserDetailResponse,
-    UpdateUserRoleRequest,
     // Json<T> // Not typically part of public API unless methods return it directly and it's a client-specific Json wrapper
     // NonStreamingResponse // This is an internal detail for response handling, not for public consumption
 };

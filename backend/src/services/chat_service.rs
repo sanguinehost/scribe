@@ -1031,7 +1031,7 @@ pub async fn stream_ai_response_and_save_message(
     // NEW LOGIC FOR TOOL CONFIGURATION
     use genai::chat::{ToolConfig, FunctionCallingConfig, FunctionCallingMode};
     let mut tools_to_declare: Vec<Tool> = Vec::new();
-    let mut final_mode = FunctionCallingMode::None;
+    let final_mode: FunctionCallingMode;
 
     // Declare scribe_tool_invoker if thinking is requested or code execution is enabled
     // (as it's our stand-in for a generic tool for now when code execution is on)

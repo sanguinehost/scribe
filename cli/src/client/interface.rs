@@ -6,8 +6,8 @@ use futures_util::Stream;
 use scribe_backend::models::{
     auth::LoginPayload,
     users::User,
-    characters::CharacterDataForClient as BackendCharacterDataForClient, // Alias to avoid confusion if needed
-    chats::{Chat, ChatMessage, ApiChatMessage, ChatSettingsResponse, UpdateChatSettingsRequest, GenerateChatRequest},
+    // characters::CharacterDataForClient as BackendCharacterDataForClient, // Unused
+    chats::{Chat, ChatMessage, ApiChatMessage, ChatSettingsResponse, UpdateChatSettingsRequest}, // Removed GenerateChatRequest
 };
 use std::pin::Pin;
 use uuid::Uuid;

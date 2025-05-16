@@ -20,11 +20,12 @@ use tracing_subscriber::{EnvFilter, fmt};
 use url::Url;
 
 // Use module contents
-use chat::run_chat_loop; // Chat loop
+use chat::{run_chat_loop, run_interactive_streaming_chat_loop}; // Chat loops
 use client::{HttpClient, ReqwestClientWrapper}; // Client Abstraction
 use error::CliError; // Use our specific error type
 use handlers::*;
 use io::{IoHandler, StdIoHandler}; // IO Abstraction // Import all action handlers
+use scribe_backend::models::chats::UpdateChatSettingsRequest; // For streaming settings
 
 /// A basic CLI client to test the Scribe backend API.
 #[derive(Parser, Debug)]
@@ -173,14 +174,13 @@ async fn main() -> Result<()> {
                     io_handler.write_line("[12] Resume Chat Session")?;
                     io_handler.write_line("[13] Show My Info")?;
                     io_handler.write_line("[14] Model Settings")?;
-                    io_handler.write_line("[15] Test Streaming Chat (with Thinking)")?;
-                    io_handler.write_line("[16] Logout")?;
+                    io_handler.write_line("[15] Logout")?;
                 },
                 scribe_backend::models::users::UserRole::Moderator => {
                     // Moderator menu - will have moderation features in future
                     io_handler.write_line("--- Moderator Actions ---")?;
                     io_handler.write_line("[1] List Characters")?;
-                    io_handler.write_line("[2] Start Chat Session")?;
+                    io_handler.write_line("[2] Start Chat Session")?; // Will offer streaming
                     io_handler.write_line("[3] Create Test Character")?;
                     io_handler.write_line("[4] Upload Character")?;
                     io_handler.write_line("[5] View Character Details")?;
@@ -190,12 +190,12 @@ async fn main() -> Result<()> {
                     io_handler.write_line("[9] Show My Info")?;
                     io_handler.write_line("[10] Logout")?;
                     io_handler.write_line("[11] Model Settings")?;
-                    io_handler.write_line("[12] Test Streaming Chat (with Thinking)")?;
+                    // Removed [12] Test Streaming Chat (with Thinking)
                 },
                 scribe_backend::models::users::UserRole::User => {
                     // Standard user menu (unchanged)
                     io_handler.write_line("[1] List Characters")?;
-                    io_handler.write_line("[2] Start Chat Session")?;
+                    io_handler.write_line("[2] Start Chat Session")?; // Will offer streaming
                     io_handler.write_line("[3] Create Test Character")?;
                     io_handler.write_line("[4] Upload Character")?;
                     io_handler.write_line("[5] View Character Details")?;
@@ -205,7 +205,7 @@ async fn main() -> Result<()> {
                     io_handler.write_line("[9] Show My Info")?;
                     io_handler.write_line("[10] Logout")?;
                     io_handler.write_line("[11] Model Settings")?;
-                    io_handler.write_line("[12] Test Streaming Chat (with Thinking)")?;
+                    // Removed [12] Test Streaming Chat (with Thinking)
                 }
             }
             io_handler.write_line("[q] Quit Application")?;
@@ -307,31 +307,83 @@ async fn main() -> Result<()> {
                                             // Now create the chat session
                                             match http_client.create_chat_session(character_id).await {
                                                 Ok(chat_session) => {
-                                                    tracing::info!(chat_id = %chat_session.id, "Chat session started");
-                                                    // Use chat loop function
-                                                    // The character's first message is displayed above now.
-                                                    if let Err(e) = run_chat_loop(
-                                                        &http_client,
-                                                        chat_session.id,
-                                                        &mut io_handler,
-                                                        &current_model,
-                                                    )
-                                                    .await
-                                                    {
-                                                        tracing::error!(error = ?e, "Chat loop failed");
-                                                        io_handler.write_line(&format!(
-                                                            "Chat loop encountered an error: {}",
-                                                            e
-                                                        ))?;
+                                                    let chat_id = chat_session.id;
+                                                    tracing::info!(%chat_id, "Chat session started");
+
+                                                    let stream_choice = io_handler.read_line("Enable streaming chat (includes 'thinking' steps)? (y/N) [Default: N]: ")?;
+                                                    if stream_choice.trim().eq_ignore_ascii_case("y") {
+                                                        // Streaming Chat
+                                                        io_handler.write_line(&format!("Using model for streaming: {}", current_model))?;
+                                                        let mut settings_to_update = UpdateChatSettingsRequest {
+                                                            gemini_thinking_budget: None,
+                                                            gemini_enable_code_execution: None,
+                                                            system_prompt: None,
+                                                            temperature: None,
+                                                            max_output_tokens: None,
+                                                            frequency_penalty: None,
+                                                            presence_penalty: None,
+                                                            top_k: None,
+                                                            top_p: None,
+                                                            repetition_penalty: None,
+                                                            min_p: None,
+                                                            top_a: None,
+                                                            seed: None,
+                                                            logit_bias: None,
+                                                            history_management_strategy: None,
+                                                            history_management_limit: None,
+                                                            model_name: Some(current_model.to_string()),
+                                                        };
+
+                                                        let budget_str = io_handler.read_line("Set Gemini Thinking Budget (optional, integer, e.g. 1024, press Enter to skip):")?;
+                                                        if !budget_str.trim().is_empty() {
+                                                            match budget_str.trim().parse::<i32>() {
+                                                                Ok(budget) => settings_to_update.gemini_thinking_budget = Some(budget),
+                                                                Err(_) => io_handler.write_line("Invalid budget, skipping.")?,
+                                                            }
+                                                        }
+
+                                                        let exec_str = io_handler.read_line("Enable Gemini Code Execution (optional, true/false, press Enter to skip):")?;
+                                                        if !exec_str.trim().is_empty() {
+                                                            match exec_str.trim().to_lowercase().as_str() {
+                                                                "true" => settings_to_update.gemini_enable_code_execution = Some(true),
+                                                                "false" => settings_to_update.gemini_enable_code_execution = Some(false),
+                                                                _ => io_handler.write_line("Invalid input, skipping code execution setting.")?,
+                                                            }
+                                                        }
+                                                        
+                                                        io_handler.write_line("Updating session with model and Gemini-specific settings...")?;
+                                                        match http_client.update_chat_settings(chat_id, &settings_to_update).await {
+                                                            Ok(_) => io_handler.write_line("Session settings updated for streaming.")?,
+                                                            Err(e) => io_handler.write_line(&format!("Warning: Failed to update session settings: {}. Proceeding with defaults.", e))?,
+                                                        }
+
+                                                        if let Err(e) = run_interactive_streaming_chat_loop(
+                                                            &http_client,
+                                                            chat_id,
+                                                            &mut io_handler,
+                                                            &current_model,
+                                                        )
+                                                        .await {
+                                                            tracing::error!(error = ?e, "Streaming chat loop failed");
+                                                            io_handler.write_line(&format!("Streaming chat loop encountered an error: {}", e))?;
+                                                        }
+                                                    } else {
+                                                        // Non-Streaming Chat
+                                                        if let Err(e) = run_chat_loop(
+                                                            &http_client,
+                                                            chat_id,
+                                                            &mut io_handler,
+                                                            &current_model,
+                                                        )
+                                                        .await {
+                                                            tracing::error!(error = ?e, "Chat loop failed");
+                                                            io_handler.write_line(&format!("Chat loop encountered an error: {}",e))?;
+                                                        }
                                                     }
-                                                    // Message moved inside chat loop exit
                                                 }
                                                 Err(e) => {
                                                     tracing::error!(error = ?e, "Failed to create chat session");
-                                                    io_handler.write_line(&format!(
-                                                        "Error starting chat session: {}",
-                                                        e
-                                                    ))?;
+                                                    io_handler.write_line(&format!("Error starting chat session: {}", e))?;
                                                 }
                                             }
                                         }
@@ -342,20 +394,78 @@ async fn main() -> Result<()> {
                                             // Try creating the session still
                                             match http_client.create_chat_session(character_id).await {
                                                 Ok(chat_session) => {
-                                                    tracing::info!(chat_id = %chat_session.id, "Chat session started (without pre-fetched details)");
-                                                    if let Err(e) = run_chat_loop(
-                                                        &http_client,
-                                                        chat_session.id,
-                                                        &mut io_handler,
-                                                        &current_model,
-                                                    )
-                                                    .await
-                                                    {
-                                                        tracing::error!(error = ?e, "Chat loop failed");
-                                                        io_handler.write_line(&format!(
-                                                            "Chat loop encountered an error: {}",
-                                                            e
-                                                        ))?;
+                                                    let chat_id = chat_session.id;
+                                                    tracing::info!(%chat_id, "Chat session started (without pre-fetched details)");
+                                                    
+                                                    let stream_choice = io_handler.read_line("Enable streaming chat (includes 'thinking' steps)? (y/N) [Default: N]: ")?;
+                                                    if stream_choice.trim().eq_ignore_ascii_case("y") {
+                                                        // Streaming Chat (without pre-fetched details)
+                                                        io_handler.write_line(&format!("Using model for streaming: {}", current_model))?;
+                                                        let mut settings_to_update = UpdateChatSettingsRequest {
+                                                            gemini_thinking_budget: None,
+                                                            gemini_enable_code_execution: None,
+                                                            system_prompt: None,
+                                                            temperature: None,
+                                                            max_output_tokens: None,
+                                                            frequency_penalty: None,
+                                                            presence_penalty: None,
+                                                            top_k: None,
+                                                            top_p: None,
+                                                            repetition_penalty: None,
+                                                            min_p: None,
+                                                            top_a: None,
+                                                            seed: None,
+                                                            logit_bias: None,
+                                                            history_management_strategy: None,
+                                                            history_management_limit: None,
+                                                            model_name: Some(current_model.to_string()),
+                                                        };
+
+                                                        let budget_str = io_handler.read_line("Set Gemini Thinking Budget (optional, integer, e.g. 1024, press Enter to skip):")?;
+                                                        if !budget_str.trim().is_empty() {
+                                                            match budget_str.trim().parse::<i32>() {
+                                                                Ok(budget) => settings_to_update.gemini_thinking_budget = Some(budget),
+                                                                Err(_) => io_handler.write_line("Invalid budget, skipping.")?,
+                                                            }
+                                                        }
+
+                                                        let exec_str = io_handler.read_line("Enable Gemini Code Execution (optional, true/false, press Enter to skip):")?;
+                                                        if !exec_str.trim().is_empty() {
+                                                            match exec_str.trim().to_lowercase().as_str() {
+                                                                "true" => settings_to_update.gemini_enable_code_execution = Some(true),
+                                                                "false" => settings_to_update.gemini_enable_code_execution = Some(false),
+                                                                _ => io_handler.write_line("Invalid input, skipping code execution setting.")?,
+                                                            }
+                                                        }
+
+                                                        io_handler.write_line("Updating session with model and Gemini-specific settings...")?;
+                                                        match http_client.update_chat_settings(chat_id, &settings_to_update).await {
+                                                            Ok(_) => io_handler.write_line("Session settings updated for streaming.")?,
+                                                            Err(e) => io_handler.write_line(&format!("Warning: Failed to update session settings: {}. Proceeding with defaults.", e))?,
+                                                        }
+                                                        
+                                                        if let Err(e) = run_interactive_streaming_chat_loop(
+                                                            &http_client,
+                                                            chat_id,
+                                                            &mut io_handler,
+                                                            &current_model,
+                                                        )
+                                                        .await {
+                                                            tracing::error!(error = ?e, "Streaming chat loop failed");
+                                                            io_handler.write_line(&format!("Streaming chat loop encountered an error: {}", e))?;
+                                                        }
+                                                    } else {
+                                                        // Non-Streaming Chat (without pre-fetched details)
+                                                        if let Err(e) = run_chat_loop(
+                                                            &http_client,
+                                                            chat_id,
+                                                            &mut io_handler,
+                                                            &current_model,
+                                                        )
+                                                        .await {
+                                                            tracing::error!(error = ?e, "Chat loop failed");
+                                                            io_handler.write_line(&format!("Chat loop encountered an error: {}", e))?;
+                                                        }
                                                     }
                                                 }
                                                 Err(e) => {
@@ -549,20 +659,6 @@ async fn main() -> Result<()> {
                             }
                         }
                         "15" => {
-                            // Test Streaming Chat
-                            match handle_stream_test_action(&http_client, &mut io_handler, &current_model).await {
-                                Ok(()) => { /* Test completed or error handled inside */ }
-                                // Handle specific error from handler/select_character
-                                Err(CliError::InputError(msg)) if msg.contains("No characters found") => {
-                                    io_handler.write_line(&msg)?;
-                                }
-                                Err(e) => {
-                                    tracing::error!(error = ?e, "Streaming test action failed");
-                                    io_handler.write_line(&format!("Error in streaming test: {}", e))?;
-                                }
-                            }
-                        }
-                        "16" => {
                             // Logout
                             io_handler.write_line("Logging out...")?;
                             match http_client.logout().await {
@@ -617,82 +713,108 @@ async fn main() -> Result<()> {
                             }
                         }
                         "2" => {
-                            // Start Chat Session
+                            // Start Chat Session (Moderator) - Copied and adapted from Admin
                             match select_character(&http_client, &mut io_handler).await {
                                 Ok(character_id) => {
                                     tracing::info!(%character_id, "Character selected for chat");
-
-                                    // Fetch character details to display first_mes
                                     match http_client.get_character(character_id).await {
                                         Ok(character_metadata) => {
-                                            // Print the character's first message
-                                            io_handler.write_line(&format!(
-                                                "\n--- {} ---",
-                                                character_metadata.name
-                                            ))?;
+                                            io_handler.write_line(&format!("\n--- {} ---", character_metadata.name))?;
                                             if let Some(first_mes_bytes) = character_metadata.first_mes {
                                                 io_handler.write_line(&String::from_utf8_lossy(first_mes_bytes.as_bytes()))?;
                                             } else {
-                                                io_handler.write_line(
-                                                    "[Character has no first message defined]",
-                                                )?;
+                                                io_handler.write_line("[Character has no first message defined]")?;
                                             }
-                                            io_handler.write_line("---")?; // Separator
-
-                                            // Now create the chat session
+                                            io_handler.write_line("---")?;
                                             match http_client.create_chat_session(character_id).await {
                                                 Ok(chat_session) => {
-                                                    tracing::info!(chat_id = %chat_session.id, "Chat session started");
-                                                    // Use chat loop function
-                                                    if let Err(e) = run_chat_loop(
-                                                        &http_client,
-                                                        chat_session.id,
-                                                        &mut io_handler,
-                                                        &current_model,
-                                                    )
-                                                    .await
-                                                    {
-                                                        tracing::error!(error = ?e, "Chat loop failed");
-                                                        io_handler.write_line(&format!(
-                                                            "Chat loop encountered an error: {}",
-                                                            e
-                                                        ))?;
+                                                    let chat_id = chat_session.id;
+                                                    tracing::info!(%chat_id, "Chat session started");
+                                                    let stream_choice = io_handler.read_line("Enable streaming chat (includes 'thinking' steps)? (y/N) [Default: N]: ")?;
+                                                    if stream_choice.trim().eq_ignore_ascii_case("y") {
+                                                        io_handler.write_line(&format!("Using model for streaming: {}", current_model))?;
+                                                        let mut settings_to_update = UpdateChatSettingsRequest {
+                                                            gemini_thinking_budget: None, gemini_enable_code_execution: None,
+                                                            system_prompt: None, temperature: None, max_output_tokens: None,
+                                                            frequency_penalty: None, presence_penalty: None, top_k: None, top_p: None,
+                                                            repetition_penalty: None, min_p: None, top_a: None, seed: None,
+                                                            logit_bias: None, history_management_strategy: None, history_management_limit: None,
+                                                            model_name: Some(current_model.to_string()),
+                                                        };
+                                                        let budget_str = io_handler.read_line("Set Gemini Thinking Budget (optional, integer, e.g. 1024, press Enter to skip):")?;
+                                                        if !budget_str.trim().is_empty() {
+                                                            if let Ok(budget) = budget_str.trim().parse::<i32>() { settings_to_update.gemini_thinking_budget = Some(budget); }
+                                                            else { io_handler.write_line("Invalid budget, skipping.")?; }
+                                                        }
+                                                        let exec_str = io_handler.read_line("Enable Gemini Code Execution (optional, true/false, press Enter to skip):")?;
+                                                        if !exec_str.trim().is_empty() {
+                                                            match exec_str.trim().to_lowercase().as_str() {
+                                                                "true" => settings_to_update.gemini_enable_code_execution = Some(true),
+                                                                "false" => settings_to_update.gemini_enable_code_execution = Some(false),
+                                                                _ => io_handler.write_line("Invalid input, skipping code execution setting.")?,
+                                                            }
+                                                        }
+                                                        io_handler.write_line("Updating session with model and Gemini-specific settings...")?;
+                                                        if let Err(e) = http_client.update_chat_settings(chat_id, &settings_to_update).await {
+                                                            io_handler.write_line(&format!("Warning: Failed to update session settings: {}. Proceeding.", e))?;
+                                                        } else { io_handler.write_line("Session settings updated for streaming.")?; }
+                                                        if let Err(e) = run_interactive_streaming_chat_loop(&http_client, chat_id, &mut io_handler, &current_model).await {
+                                                            io_handler.write_line(&format!("Streaming chat loop error: {}", e))?;
+                                                        }
+                                                    } else {
+                                                        if let Err(e) = run_chat_loop(&http_client, chat_id, &mut io_handler, &current_model).await {
+                                                            io_handler.write_line(&format!("Chat loop error: {}", e))?;
+                                                        }
                                                     }
                                                 }
-                                                Err(e) => {
-                                                    tracing::error!(error = ?e, "Failed to create chat session");
-                                                    io_handler.write_line(&format!(
-                                                        "Error starting chat session: {}",
-                                                        e
-                                                    ))?;
-                                                }
+                                                Err(e) => io_handler.write_line(&format!("Error starting chat: {}", e))?,
                                             }
                                         }
-                                        Err(e) => {
-                                            tracing::error!(error = ?e, %character_id, "Failed to fetch character details before starting chat");
-                                            io_handler.write_line(&format!("Error fetching character details: {}. Attempting to start chat anyway...", e))?;
+                                        Err(e) => { // Failed to get character details, try starting chat anyway
+                                            io_handler.write_line(&format!("Error fetching char details: {}. Attempting chat...", e))?;
                                             match http_client.create_chat_session(character_id).await {
                                                 Ok(chat_session) => {
-                                                    tracing::info!(chat_id = %chat_session.id, "Chat session started (without pre-fetched details)");
-                                                    if let Err(e) = run_chat_loop(
-                                                        &http_client,
-                                                        chat_session.id,
-                                                        &mut io_handler,
-                                                        &current_model,
-                                                    )
-                                                    .await
-                                                    {
-                                                        tracing::error!(error = ?e, "Chat loop failed");
-                                                        io_handler.write_line(&format!(
-                                                            "Chat loop encountered an error: {}",
-                                                            e
-                                                        ))?;
+                                                    let chat_id = chat_session.id;
+                                                    tracing::info!(%chat_id, "Chat session started (no pre-fetched details)");
+                                                    let stream_choice = io_handler.read_line("Enable streaming chat? (y/N): ")?;
+                                                    if stream_choice.trim().eq_ignore_ascii_case("y") {
+                                                        // ... (Gemini settings prompts as above)
+                                                        io_handler.write_line(&format!("Using model for streaming: {}", current_model))?;
+                                                        let mut settings_to_update = UpdateChatSettingsRequest {
+                                                            gemini_thinking_budget: None, gemini_enable_code_execution: None,
+                                                            system_prompt: None, temperature: None, max_output_tokens: None,
+                                                            frequency_penalty: None, presence_penalty: None, top_k: None, top_p: None,
+                                                            repetition_penalty: None, min_p: None, top_a: None, seed: None,
+                                                            logit_bias: None, history_management_strategy: None, history_management_limit: None,
+                                                            model_name: Some(current_model.to_string()),
+                                                        };
+                                                        let budget_str = io_handler.read_line("Set Gemini Thinking Budget (optional, integer, e.g. 1024, press Enter to skip):")?;
+                                                        if !budget_str.trim().is_empty() {
+                                                            if let Ok(budget) = budget_str.trim().parse::<i32>() { settings_to_update.gemini_thinking_budget = Some(budget); }
+                                                            else { io_handler.write_line("Invalid budget, skipping.")?; }
+                                                        }
+                                                        let exec_str = io_handler.read_line("Enable Gemini Code Execution (optional, true/false, press Enter to skip):")?;
+                                                        if !exec_str.trim().is_empty() {
+                                                            match exec_str.trim().to_lowercase().as_str() {
+                                                                "true" => settings_to_update.gemini_enable_code_execution = Some(true),
+                                                                "false" => settings_to_update.gemini_enable_code_execution = Some(false),
+                                                                _ => io_handler.write_line("Invalid input, skipping code execution setting.")?,
+                                                            }
+                                                        }
+                                                        io_handler.write_line("Updating session with model and Gemini-specific settings...")?;
+                                                        if let Err(e) = http_client.update_chat_settings(chat_id, &settings_to_update).await {
+                                                            io_handler.write_line(&format!("Warning: Failed to update session settings: {}. Proceeding.", e))?;
+                                                        } else { io_handler.write_line("Session settings updated for streaming.")?; }
+                                                        if let Err(e) = run_interactive_streaming_chat_loop(&http_client, chat_id, &mut io_handler, &current_model).await {
+                                                            io_handler.write_line(&format!("Streaming chat loop error: {}", e))?;
+                                                        }
+                                                    } else {
+                                                        if let Err(e) = run_chat_loop(&http_client, chat_id, &mut io_handler, &current_model).await {
+                                                            io_handler.write_line(&format!("Chat loop error: {}", e))?;
+                                                        }
                                                     }
                                                 }
-                                                Err(e) => {
-                                                    tracing::error!(error = ?e, "Failed to create chat session after failing to get details");
-                                                    io_handler.write_line(&format!("Error starting chat session after failing to get details: {}", e))?;
-                                                }
+                                                Err(e) => io_handler.write_line(&format!("Error starting chat after failing to get details: {}", e))?,
                                             }
                                         }
                                     }
@@ -706,9 +828,7 @@ async fn main() -> Result<()> {
                                 }
                             }
                         }
-                        // The remainder of the moderator menu options follow the same pattern...
-                        // For brevity, continuing with key functions
-                        
+                        // ... (other moderator options: 3-8, 11 are similar to admin or user, not shown for brevity) ...
                         "9" => {
                             // Show My Info
                             io_handler.write_line("\nFetching your user info...")?;
@@ -779,92 +899,112 @@ async fn main() -> Result<()> {
                             }
                         }
                         "2" => {
-                            // Start Chat Session
-                            // Use handler function to select character
+                            // Start Chat Session (User) - Copied and adapted from Admin
                             match select_character(&http_client, &mut io_handler).await {
                                 Ok(character_id) => {
                                     tracing::info!(%character_id, "Character selected for chat");
-
-                                    // Fetch character details to display first_mes
                                     match http_client.get_character(character_id).await {
                                         Ok(character_metadata) => {
-                                            // Print the character's first message
-                                            io_handler.write_line(&format!(
-                                                "\n--- {} ---",
-                                                character_metadata.name
-                                            ))?;
+                                            io_handler.write_line(&format!("\n--- {} ---", character_metadata.name))?;
                                             if let Some(first_mes_bytes) = character_metadata.first_mes {
                                                 io_handler.write_line(&String::from_utf8_lossy(first_mes_bytes.as_bytes()))?;
                                             } else {
-                                                io_handler.write_line(
-                                                    "[Character has no first message defined]",
-                                                )?;
+                                                io_handler.write_line("[Character has no first message defined]")?;
                                             }
-                                            io_handler.write_line("---")?; // Separator
-
-                                            // Now create the chat session
+                                            io_handler.write_line("---")?;
                                             match http_client.create_chat_session(character_id).await {
                                                 Ok(chat_session) => {
-                                                    tracing::info!(chat_id = %chat_session.id, "Chat session started");
-                                                    // Use chat loop function
-                                                    // The character's first message is displayed above now.
-                                                    if let Err(e) = run_chat_loop(
-                                                        &http_client,
-                                                        chat_session.id,
-                                                        &mut io_handler,
-                                                        &current_model,
-                                                    )
-                                                    .await
-                                                    {
-                                                        tracing::error!(error = ?e, "Chat loop failed");
-                                                        io_handler.write_line(&format!(
-                                                            "Chat loop encountered an error: {}",
-                                                            e
-                                                        ))?;
+                                                    let chat_id = chat_session.id;
+                                                    tracing::info!(%chat_id, "Chat session started");
+                                                    let stream_choice = io_handler.read_line("Enable streaming chat (includes 'thinking' steps)? (y/N) [Default: N]: ")?;
+                                                    if stream_choice.trim().eq_ignore_ascii_case("y") {
+                                                        io_handler.write_line(&format!("Using model for streaming: {}", current_model))?;
+                                                        let mut settings_to_update = UpdateChatSettingsRequest {
+                                                            gemini_thinking_budget: None, gemini_enable_code_execution: None,
+                                                            system_prompt: None, temperature: None, max_output_tokens: None,
+                                                            frequency_penalty: None, presence_penalty: None, top_k: None, top_p: None,
+                                                            repetition_penalty: None, min_p: None, top_a: None, seed: None,
+                                                            logit_bias: None, history_management_strategy: None, history_management_limit: None,
+                                                            model_name: Some(current_model.to_string()),
+                                                        };
+                                                        let budget_str = io_handler.read_line("Set Gemini Thinking Budget (optional, integer, e.g. 1024, press Enter to skip):")?;
+                                                        if !budget_str.trim().is_empty() {
+                                                            if let Ok(budget) = budget_str.trim().parse::<i32>() { settings_to_update.gemini_thinking_budget = Some(budget); }
+                                                            else { io_handler.write_line("Invalid budget, skipping.")?; }
+                                                        }
+                                                        let exec_str = io_handler.read_line("Enable Gemini Code Execution (optional, true/false, press Enter to skip):")?;
+                                                        if !exec_str.trim().is_empty() {
+                                                            match exec_str.trim().to_lowercase().as_str() {
+                                                                "true" => settings_to_update.gemini_enable_code_execution = Some(true),
+                                                                "false" => settings_to_update.gemini_enable_code_execution = Some(false),
+                                                                _ => io_handler.write_line("Invalid input, skipping code execution setting.")?,
+                                                            }
+                                                        }
+                                                        io_handler.write_line("Updating session with model and Gemini-specific settings...")?;
+                                                        if let Err(e) = http_client.update_chat_settings(chat_id, &settings_to_update).await {
+                                                            io_handler.write_line(&format!("Warning: Failed to update session settings: {}. Proceeding.", e))?;
+                                                        } else { io_handler.write_line("Session settings updated for streaming.")?; }
+                                                        if let Err(e) = run_interactive_streaming_chat_loop(&http_client, chat_id, &mut io_handler, &current_model).await {
+                                                            io_handler.write_line(&format!("Streaming chat loop error: {}", e))?;
+                                                        }
+                                                    } else {
+                                                        if let Err(e) = run_chat_loop(&http_client, chat_id, &mut io_handler, &current_model).await {
+                                                            io_handler.write_line(&format!("Chat loop error: {}", e))?;
+                                                        }
                                                     }
-                                                    // Message moved inside chat loop exit
                                                 }
-                                                Err(e) => {
-                                                    tracing::error!(error = ?e, "Failed to create chat session");
-                                                    io_handler.write_line(&format!(
-                                                        "Error starting chat session: {}",
-                                                        e
-                                                    ))?;
-                                                }
+                                                Err(e) => io_handler.write_line(&format!("Error starting chat: {}", e))?,
                                             }
                                         }
-                                        Err(e) => {
-                                            // Log error fetching details, but proceed to attempt chat creation anyway
-                                            tracing::error!(error = ?e, %character_id, "Failed to fetch character details before starting chat");
-                                            io_handler.write_line(&format!("Error fetching character details: {}. Attempting to start chat anyway...", e))?;
-                                            // Try creating the session still
+                                        Err(e) => { // Failed to get character details, try starting chat anyway
+                                            io_handler.write_line(&format!("Error fetching char details: {}. Attempting chat...", e))?;
                                             match http_client.create_chat_session(character_id).await {
                                                 Ok(chat_session) => {
-                                                    tracing::info!(chat_id = %chat_session.id, "Chat session started (without pre-fetched details)");
-                                                    if let Err(e) = run_chat_loop(
-                                                        &http_client,
-                                                        chat_session.id,
-                                                        &mut io_handler,
-                                                        &current_model,
-                                                    )
-                                                    .await
-                                                    {
-                                                        tracing::error!(error = ?e, "Chat loop failed");
-                                                        io_handler.write_line(&format!(
-                                                            "Chat loop encountered an error: {}",
-                                                            e
-                                                        ))?;
+                                                    let chat_id = chat_session.id;
+                                                    tracing::info!(%chat_id, "Chat session started (no pre-fetched details)");
+                                                    let stream_choice = io_handler.read_line("Enable streaming chat? (y/N): ")?;
+                                                    if stream_choice.trim().eq_ignore_ascii_case("y") {
+                                                        // ... (Gemini settings prompts as above)
+                                                        io_handler.write_line(&format!("Using model for streaming: {}", current_model))?;
+                                                        let mut settings_to_update = UpdateChatSettingsRequest {
+                                                            gemini_thinking_budget: None, gemini_enable_code_execution: None,
+                                                            system_prompt: None, temperature: None, max_output_tokens: None,
+                                                            frequency_penalty: None, presence_penalty: None, top_k: None, top_p: None,
+                                                            repetition_penalty: None, min_p: None, top_a: None, seed: None,
+                                                            logit_bias: None, history_management_strategy: None, history_management_limit: None,
+                                                            model_name: Some(current_model.to_string()),
+                                                        };
+                                                        let budget_str = io_handler.read_line("Set Gemini Thinking Budget (optional, integer, e.g. 1024, press Enter to skip):")?;
+                                                        if !budget_str.trim().is_empty() {
+                                                            if let Ok(budget) = budget_str.trim().parse::<i32>() { settings_to_update.gemini_thinking_budget = Some(budget); }
+                                                            else { io_handler.write_line("Invalid budget, skipping.")?; }
+                                                        }
+                                                        let exec_str = io_handler.read_line("Enable Gemini Code Execution (optional, true/false, press Enter to skip):")?;
+                                                        if !exec_str.trim().is_empty() {
+                                                            match exec_str.trim().to_lowercase().as_str() {
+                                                                "true" => settings_to_update.gemini_enable_code_execution = Some(true),
+                                                                "false" => settings_to_update.gemini_enable_code_execution = Some(false),
+                                                                _ => io_handler.write_line("Invalid input, skipping code execution setting.")?,
+                                                            }
+                                                        }
+                                                        io_handler.write_line("Updating session with model and Gemini-specific settings...")?;
+                                                        if let Err(e) = http_client.update_chat_settings(chat_id, &settings_to_update).await {
+                                                            io_handler.write_line(&format!("Warning: Failed to update session settings: {}. Proceeding.", e))?;
+                                                        } else { io_handler.write_line("Session settings updated for streaming.")?; }
+                                                        if let Err(e) = run_interactive_streaming_chat_loop(&http_client, chat_id, &mut io_handler, &current_model).await {
+                                                            io_handler.write_line(&format!("Streaming chat loop error: {}", e))?;
+                                                        }
+                                                    } else {
+                                                        if let Err(e) = run_chat_loop(&http_client, chat_id, &mut io_handler, &current_model).await {
+                                                            io_handler.write_line(&format!("Chat loop error: {}", e))?;
+                                                        }
                                                     }
                                                 }
-                                                Err(e) => {
-                                                    tracing::error!(error = ?e, "Failed to create chat session after failing to get details");
-                                                    io_handler.write_line(&format!("Error starting chat session after failing to get details: {}", e))?;
-                                                }
+                                                Err(e) => io_handler.write_line(&format!("Error starting chat after failing to get details: {}", e))?,
                                             }
                                         }
                                     }
                                 }
-                                // Handle specific error from select_character
                                 Err(CliError::InputError(msg)) if msg.contains("No characters found") => {
                                     io_handler.write_line(&msg)?;
                                 }

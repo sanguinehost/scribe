@@ -337,7 +337,6 @@ pub struct AdminUserListResponse {
     pub username: String,
     pub role: String,
     pub account_status: String,
-    pub last_login: Option<DateTime<Utc>>,
 }
 
 // Admin User Detail Response DTO

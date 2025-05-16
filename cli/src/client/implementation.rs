@@ -2,7 +2,7 @@
 
 use async_trait::async_trait;
 use futures_util::{Stream, StreamExt};
-use reqwest::{multipart, Client as ReqwestClient, Response, StatusCode, Url};
+use reqwest::{multipart, Client as ReqwestClient, StatusCode, Url}; // Removed Response
 use reqwest_eventsource::{Event, EventSource};
 use scribe_backend::models::{
     auth::LoginPayload,
@@ -240,7 +240,7 @@ impl HttpClient for ReqwestClientWrapper {
     }
  
     async fn get_character(&self, character_id: Uuid) -> Result<ClientCharacterDataForClient, CliError> {
-        let url = build_url(&self.base_url, &format!("/api/characters/detail/{}", character_id))?;
+        let url = build_url(&self.base_url, &format!("/api/characters/{}", character_id))?;
         tracing::info!(target: "scribe_cli::client::implementation", %url, %character_id, "Fetching character details via HttpClient");
         let response = self
             .client

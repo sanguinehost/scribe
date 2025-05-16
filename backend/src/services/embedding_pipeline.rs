@@ -168,7 +168,7 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
         let embedding_client = state.embedding_client.clone();
         let qdrant_service = state.qdrant_service.clone();
 
-        let mut content_to_embed = String::new(); // Will be populated based on encryption state
+        let content_to_embed: String; // Will be populated based on encryption state
 
         match (&session_dek, &message.content_nonce) {
             (Some(dek), Some(nonce_bytes)) if !message.content.is_empty() && !nonce_bytes.is_empty() => {

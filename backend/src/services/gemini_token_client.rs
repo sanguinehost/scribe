@@ -71,41 +71,41 @@ struct GenerationConfig {
 struct CountTokensResponse {
     #[serde(rename = "totalTokens")]
     total_tokens: i32,
-    #[serde(rename = "promptTokensDetails", default)]
-    prompt_tokens_details: Vec<PromptTokensDetail>,
+    // prompt_tokens_details is not used.
+    // If it were, PromptTokensDetail struct would be needed.
 }
 
-#[derive(Debug, Deserialize)]
-struct PromptTokensDetail {
-    modality: String,
-    #[serde(rename = "tokenCount")]
-    token_count: i32,
-}
+// struct PromptTokensDetail {
+//     modality: String,
+//     #[serde(rename = "tokenCount")]
+//     token_count: i32,
+// }
 
 /// Response from generateContent API
 #[derive(Debug, Deserialize)]
 struct GenerateContentResponse {
-    candidates: Vec<Candidate>,
+    // candidates are not used.
+    // If they were, Candidate struct would be needed.
     #[serde(skip_serializing_if = "Option::is_none")]
     usage_metadata: Option<UsageMetadata>,
 }
 
-/// Candidate from generateContent response
-#[derive(Debug, Deserialize)]
-struct Candidate {
-    content: ContentBlock,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    finish_reason: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    safety_ratings: Option<Vec<SafetyRating>>,
-}
+// Candidate from generateContent response
+// #[derive(Debug, Deserialize)]
+// struct Candidate {
+//     content: ContentBlock, // Not used
+//     #[serde(skip_serializing_if = "Option::is_none")]
+//     finish_reason: Option<String>, // Not used
+//     #[serde(skip_serializing_if = "Option::is_none")]
+//     safety_ratings: Option<Vec<SafetyRating>>, // Not used
+// }
 
-/// Safety rating from generateContent response
-#[derive(Debug, Deserialize)]
-struct SafetyRating {
-    category: String,
-    probability: String,
-}
+// Safety rating from generateContent response
+// #[derive(Debug, Deserialize)]
+// struct SafetyRating {
+//     category: String, // Not used
+//     probability: String, // Not used
+// }
 
 /// Usage metadata from generateContent response
 #[derive(Debug, Deserialize)]

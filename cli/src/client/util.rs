@@ -30,27 +30,34 @@ pub(super) async fn handle_response<T: DeserializeOwned + std::fmt::Debug>(respo
             // its Debug impl (now custom) will be used.
             match serde_json::from_str::<T>(&text) {
                 Ok(parsed_data_for_log) => {
-                    eprintln!(
-                        "[Scribe-CLI Debug] Response for T={}: Status={}, ParsedBody={:?}",
-                        type_name, status, parsed_data_for_log
+                    tracing::trace!(
+                        target: "scribe_cli::client::util",
+                        type_name,
+                        %status,
+                        parsed_body = ?parsed_data_for_log,
+                        "Successfully parsed response body for logging"
                     );
                 }
                 Err(parse_err) => {
                     // If parsing fails, log a redacted version of the body or a placeholder.
                     // Also log the parsing error for debugging why it failed, but not the raw body.
-                    eprintln!(
-                        "[Scribe-CLI Debug] Response for T={}: Status={}, Body='[RAW_BODY_REDACTED_DUE_TO_PARSE_ERROR_FOR_LOGGING]' (Parse Error for logging: {})",
-                        type_name, status, parse_err
+                    tracing::trace!(
+                        target: "scribe_cli::client::util",
+                        type_name,
+                        %status,
+                        body = "[RAW_BODY_REDACTED_DUE_TO_PARSE_ERROR_FOR_LOGGING]",
+                        %parse_err,
+                        "Response body for T={} (raw, parse error for logging)", type_name
                     );
                     // Optionally, log a very short, non-sensitive prefix of the text if deemed necessary for some debugging,
                     // but full redaction on parse error is safest for sensitive data.
-                    // e.g., eprintln!("Raw body prefix (first 30 chars): '{}...'", text.chars().take(30).collect::<String>());
+                    // e.g., tracing::trace!("Raw body prefix (first 30 chars): '{}...'", text.chars().take(30).collect::<String>());
                 }
             }
             text
         }
         Err(e) => {
-            eprintln!("[Scribe-CLI Debug] Failed to get response text for T={}: {}", type_name, e);
+            tracing::debug!(target: "scribe_cli::client::util", %type_name, error = ?e, "Failed to get response text");
             // Existing tracing log, kept for consistency with other parts of the codebase if desired
             tracing::error!("Failed to get response text for T={}: {}", type_name, e);
             return Err(CliError::Reqwest(e));
@@ -60,11 +67,11 @@ pub(super) async fn handle_response<T: DeserializeOwned + std::fmt::Debug>(respo
     if status.is_success() {
         match serde_json::from_str::<T>(&response_body) {
             Ok(data) => {
-                eprintln!("[Scribe-CLI Debug] Successfully deserialized T={} into: {:?}", type_name, data);
+                tracing::trace!(target: "scribe_cli::client::util", %type_name, deserialized_data = ?data, "Successfully deserialized response");
                 Ok(data)
             }
             Err(e) => {
-                eprintln!("[Scribe-CLI Debug] Failed to deserialize T={} from body '{}': {}", type_name, response_body, e);
+                tracing::debug!(target: "scribe_cli::client::util", %type_name, body = %response_body, error = ?e, "Failed to deserialize response body");
                 // Existing tracing logs
                 tracing::error!("Failed to deserialize successful response for T={}: {}", type_name, e);
                 tracing::error!("Response text for T={} was: {}", type_name, response_body);
@@ -74,11 +81,12 @@ pub(super) async fn handle_response<T: DeserializeOwned + std::fmt::Debug>(respo
             }
         }
     } else {
-        eprintln!("[Scribe-CLI Debug] Non-success status for T={}: {}. Body: '{}'", type_name, status, response_body);
+        tracing::debug!(target: "scribe_cli::client::util", %type_name, %status, body = %response_body, "API request failed with non-success status");
 
         // IMPORTANT: Check for 429 Too Many Requests *before* trying to parse body
         if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
-            eprintln!("[Scribe-CLI Debug] Status is 429 Too Many Requests for T={}, returning CliError::RateLimitExceeded.", type_name);
+            tracing::warn!(target: "scribe_cli::client::util", %type_name, "Received 429 Too Many Requests, returning CliError::RateLimitExceeded.");
+            // The original tracing::warn is kept below, this one is more specific to the eprint replacement
             tracing::warn!("Received 429 Too Many Requests from backend for T={}", type_name);
             return Err(CliError::RateLimitExceeded);
         }
@@ -98,7 +106,7 @@ pub(super) async fn handle_response<T: DeserializeOwned + std::fmt::Debug>(respo
         let structured_error_result: Result<StructuredApiErrorResponse, _> = serde_json::from_str(&response_body);
 
         if let Ok(parsed_error) = structured_error_result {
-            eprintln!("[Scribe-CLI Debug] Successfully parsed structured API error for T={}: {:?}", type_name, parsed_error);
+            tracing::trace!(target: "scribe_cli::client::util", %type_name, parsed_error = ?parsed_error, "Successfully parsed structured API error");
             // Existing tracing log
             tracing::error!(
                 target: "scribe_cli::client::util", // Updated target
@@ -114,7 +122,7 @@ pub(super) async fn handle_response<T: DeserializeOwned + std::fmt::Debug>(respo
                 message: parsed_error.error.message,
             })
         } else {
-            eprintln!("[Scribe-CLI Debug] Failed to parse response body as StructuredApiErrorResponse for T={}. Error: {:?}. Body: '{}'", type_name, structured_error_result.err(), response_body);
+            tracing::debug!(target: "scribe_cli::client::util", %type_name, error = ?structured_error_result.err(), body = %response_body, "Failed to parse response body as StructuredApiErrorResponse");
             // Existing tracing log
             tracing::error!(
                 target: "scribe_cli::client::util", // Updated target

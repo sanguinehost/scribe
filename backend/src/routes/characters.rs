@@ -219,6 +219,7 @@ pub async fn list_characters_handler(
 }
 
 // GET /api/characters/:id
+#[debug_handler]
 #[instrument(skip(state, auth_session, dek), err)]
 pub async fn get_character_handler(
     State(state): State<AppState>,
