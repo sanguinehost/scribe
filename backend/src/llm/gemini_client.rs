@@ -9,6 +9,22 @@ use std::sync::Arc;
 use super::{AiClient, ChatStream};
 use crate::errors::AppError;
 
+#[derive(Debug)]
+struct ChatRequestLogSummary {
+    has_system_prompt: bool,
+    num_messages: usize,
+    has_tools: bool,
+}
+
+impl<'a> From<&'a genai::chat::ChatRequest> for ChatRequestLogSummary {
+    fn from(req: &'a genai::chat::ChatRequest) -> Self {
+        ChatRequestLogSummary {
+            has_system_prompt: req.system.is_some(),
+            num_messages: req.messages.len(),
+            has_tools: req.tools.is_some(),
+        }
+    }
+}
 /// Wrapper struct around the genai::Client to implement our AiClient trait.
 pub struct ScribeGeminiClient {
     inner: Client,
@@ -26,7 +42,7 @@ impl AiClient for ScribeGeminiClient {
         tracing::trace!(
             target: "gemini_client",
             model_name = %model_name,
-            request = ?request,
+            request_summary = ?ChatRequestLogSummary::from(&request),
             config_override = ?config_override,
             "ScribeGeminiClient::exec_chat - Calling genai_client.exec_chat with model_name");
         self.inner
@@ -45,7 +61,7 @@ impl AiClient for ScribeGeminiClient {
         tracing::error!(
             target: "gemini_client",
             model_name = %model_name,
-            chat_request = ?request,
+            request_summary = ?ChatRequestLogSummary::from(&request),
             chat_options_override = ?config_override,
             "ScribeGeminiClient::stream_chat - Attempting to call genai_client.exec_chat_stream"
         );

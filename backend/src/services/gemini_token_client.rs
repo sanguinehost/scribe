@@ -336,7 +336,7 @@ mod tests {
             
         let client = GeminiTokenClient::new(api_key);
         let text = "The quick brown fox jumps over the lazy dog.";
-        let model = "gemini-1.5-pro";
+        let model = "gemini-2.5-flash-preview-04-17";
         
         let result = client.count_tokens(text, model).await.expect("Failed to count tokens");
         
@@ -357,7 +357,7 @@ mod tests {
             ("model".to_string(), "Hi Bob!".to_string()),
             ("user".to_string(), "What is the meaning of life?".to_string()),
         ];
-        let model = "gemini-1.5-pro";
+        let model = "gemini-2.5-flash-preview-04-17";
         
         let result = client.count_tokens_chat(&messages, model).await.expect("Failed to count chat tokens");
         

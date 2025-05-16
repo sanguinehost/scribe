@@ -102,7 +102,7 @@ async fn test_hybrid_token_counter_api() {
     let counter = HybridTokenCounter::new(
         tokenizer,
         Some(api_client),
-        "gemini-1.5-pro".to_string(),
+        "gemini-2.5-flash-preview-04-17".to_string(),
     );
     
     // Test different text samples with API vs local counting

@@ -11,7 +11,7 @@ fn build_subscriber_builder() -> impl Subscriber { // Changed return type
     tracing_subscriber::registry()
         .with(
             EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "scribe_backend=info,tower_http=info".into()),
+                .unwrap_or_else(|_| "info,scribe_backend::routes=warn,scribe_backend::auth=warn,scribe_backend::services=warn,tower_http=warn,sqlx=warn,gemini_client=warn,auth_debug=error".into()),
         )
         .with(fmt::layer().json()) // Use JSON formatter
 }

@@ -53,7 +53,7 @@ impl HybridTokenCounter {
         Self {
             tokenizer,
             api_client: None,
-            default_model: "gemini-1.5-pro".to_string(), // Default model
+            default_model: "gemini-2.5-flash-preview-04-17".to_string(), // Default model
         }
     }
     
@@ -367,7 +367,7 @@ mod tests {
         let counter = HybridTokenCounter::new_local_only(tokenizer);
         
         assert!(counter.api_client.is_none());
-        assert_eq!(counter.default_model, "gemini-1.5-pro");
+        assert_eq!(counter.default_model, "gemini-2.5-flash-preview-04-17");
     }
     
     #[tokio::test]
@@ -475,7 +475,7 @@ mod tests {
         let model_path = get_test_model_path();
         let tokenizer = TokenizerService::new(model_path).expect("Failed to create tokenizer");
         let api_client = GeminiTokenClient::new(api_key);
-        let counter = HybridTokenCounter::new(tokenizer, Some(api_client), "gemini-1.5-pro");
+        let counter = HybridTokenCounter::new(tokenizer, Some(api_client), "gemini-2.5-flash-preview-04-17");
         
         let text = "The quick brown fox jumps over the lazy dog.";
         
