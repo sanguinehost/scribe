@@ -191,8 +191,8 @@ async fn main() -> Result<()> {
         // Use the dedicated characters_router function
         .nest("/characters", characters_router(app_state.clone())) // Use the router function
         // Chat routes (require login)
-        .nest("/chats", chat_routes(app_state.clone())) // Correct: /api/chats
-        .nest("/chats-api", chats_api::chat_routes()) // Corrected: /api/chats-api
+        .nest("/chats", chat_routes(app_state.clone())) // Static chat generation routes
+        .nest("/chats-api", chats_api::chat_routes()) // API routes for chat sessions - mounted at /api/chats-api
         // Mount document API routes
         .nest("/documents", document_routes()) // Corrected: /api/documents
         // Admin routes (require login + admin role check in handlers)

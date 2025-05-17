@@ -1,8 +1,9 @@
 use crate::chat::run_chat_loop;
+use crate::chat::run_interactive_streaming_chat_loop; // Add this import for streaming chat
 use crate::client::HttpClient;
 use crate::error::CliError;
 use crate::io::IoHandler;
-use scribe_backend::models::chats::MessageRole;
+use scribe_backend::models::chats::{MessageRole, UpdateChatSettingsRequest}; // Import UpdateChatSettingsRequest
 
 /// Handler function for listing chat sessions
 pub async fn handle_list_chat_sessions_action<H: IoHandler, C: HttpClient>(
@@ -175,9 +176,45 @@ pub async fn handle_resume_chat_session_action<H: IoHandler, C: HttpClient>(
         }
     }
 
+    // Configure streaming chat by default with standard settings
     tracing::info!(chat_id = %selected_session_id, "Resuming chat session");
-    if let Err(e) = run_chat_loop(client, selected_session_id, io_handler, current_model).await
-    {
+    io_handler.write_line(&format!("Using model for streaming: {}", current_model))?;
+    
+    // Setup default settings with thinking budget of 1024
+    let settings_to_update = UpdateChatSettingsRequest {
+        gemini_thinking_budget: Some(1024), // Default to 1024
+        gemini_enable_code_execution: None, // Not currently relevant
+        system_prompt: None,
+        temperature: None,
+        max_output_tokens: None,
+        frequency_penalty: None,
+        presence_penalty: None,
+        top_k: None,
+        top_p: None,
+        repetition_penalty: None,
+        min_p: None,
+        top_a: None,
+        seed: None,
+        logit_bias: None,
+        history_management_strategy: None,
+        history_management_limit: None,
+        model_name: Some(current_model.to_string()),
+    };
+    
+    // Update session settings
+    io_handler.write_line("Updating session with streaming settings...")?;
+    match client.update_chat_settings(selected_session_id, &settings_to_update).await {
+        Ok(_) => io_handler.write_line("Session settings updated for streaming.")?,
+        Err(e) => io_handler.write_line(&format!("Warning: Failed to update session settings: {}. Proceeding with defaults.", e))?,
+    }
+    
+    // Use streaming chat by default
+    if let Err(e) = run_interactive_streaming_chat_loop(
+        client,
+        selected_session_id,
+        io_handler,
+        current_model,
+    ).await {
         tracing::error!(error = ?e, "Chat loop failed");
         io_handler.write_line(&format!("Chat loop encountered an error: {}", e))?;
     }

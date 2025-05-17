@@ -252,7 +252,7 @@ impl HttpClient for ReqwestClientWrapper {
     }
 
     async fn list_chat_sessions(&self) -> Result<Vec<Chat>, CliError> {
-        let url = build_url(&self.base_url, "/api/chats")?;
+        let url = build_url(&self.base_url, "/api/chats-api/chats")?;
         tracing::info!(target: "scribe_cli::client::implementation", %url, "Listing chat sessions via HttpClient");
         let response = self
             .client

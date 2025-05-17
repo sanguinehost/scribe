@@ -1,0 +1,100 @@
+use crate::chat::run_interactive_streaming_chat_loop;
+use crate::client::HttpClient;
+use crate::error::CliError;
+use crate::handlers::characters::select_character;
+use crate::io::IoHandler;
+use scribe_backend::models::chats::UpdateChatSettingsRequest;
+use tracing;
+
+/// Handler function for starting a new chat session with improved UX
+pub async fn handle_start_chat_action<H: IoHandler, C: HttpClient>(
+    client: &C,
+    io_handler: &mut H,
+    current_model: &str,
+) -> Result<(), CliError> {
+    // 1. Select a character
+    let character_id = select_character(client, io_handler).await?;
+    tracing::info!(%character_id, "Character selected for chat");
+    
+    // Fetch character details to display information
+    let character_metadata = match client.get_character(character_id).await {
+        Ok(metadata) => {
+            // Print the character's description
+            io_handler.write_line(&format!("\n--- {} ---", metadata.name))?;
+            if let Some(first_mes_bytes) = metadata.first_mes.as_ref() {
+                io_handler.write_line(&String::from_utf8_lossy(first_mes_bytes.as_bytes()))?;
+            } else {
+                io_handler.write_line("[Character has no first message defined]")?;
+            }
+            io_handler.write_line("---")?; // Separator
+            metadata
+        }
+        Err(e) => {
+            tracing::error!(error = ?e, %character_id, "Failed to fetch character details");
+            io_handler.write_line(&format!("Warning: Could not fetch character details: {}. Proceeding with chat creation.", e))?;
+            return Err(e); // Return error as we need character details
+        }
+    };
+
+    // 2. Create the chat session
+    let chat_session = match client.create_chat_session(character_id).await {
+        Ok(session) => session,
+        Err(e) => {
+            tracing::error!(error = ?e, %character_id, "Failed to create chat session");
+            io_handler.write_line(&format!("Error creating chat session: {}", e))?;
+            return Err(e);
+        }
+    };
+    
+    let chat_id = chat_session.id;
+    tracing::info!(%chat_id, "Chat session created");
+    
+    // 3. Configure chat session with optimal defaults 
+    io_handler.write_line(&format!("Starting streaming chat with model: {}", current_model))?;
+    
+    // Setup default settings with thinking budget of 1024
+    let settings_to_update = UpdateChatSettingsRequest {
+        gemini_thinking_budget: Some(1024), // Default thinking budget is 1024
+        gemini_enable_code_execution: None, // Not currently relevant
+        system_prompt: None,
+        temperature: None,
+        max_output_tokens: None,
+        frequency_penalty: None,
+        presence_penalty: None,
+        top_k: None,
+        top_p: None,
+        repetition_penalty: None,
+        min_p: None,
+        top_a: None,
+        seed: None,
+        logit_bias: None,
+        history_management_strategy: None,
+        history_management_limit: None,
+        model_name: Some(current_model.to_string()),
+    };
+    
+    // Update session settings
+    io_handler.write_line("Setting up streaming chat session...")?;
+    match client.update_chat_settings(chat_id, &settings_to_update).await {
+        Ok(_) => {
+            io_handler.write_line("Session ready. You can now start chatting.")?;
+        },
+        Err(e) => {
+            io_handler.write_line(&format!("Warning: Failed to update session settings: {}. Proceeding with defaults.", e))?;
+        }
+    }
+    
+    // 4. Start streaming chat session
+    if let Err(e) = run_interactive_streaming_chat_loop(
+        client,
+        chat_id,
+        io_handler,
+        current_model,
+    ).await {
+        tracing::error!(error = ?e, "Streaming chat loop failed");
+        io_handler.write_line(&format!("Chat encountered an error: {}", e))?;
+    }
+    
+    io_handler.write_line("Chat session ended.")?;
+    Ok(())
+}

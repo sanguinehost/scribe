@@ -584,7 +584,7 @@ async fn test_get_character_success() {
         "updated_at": now
     });
 
-    let path_string = format!("/api/characters/detail/{}", character_id);
+    let path_string = format!("/api/characters/fetch/{}", character_id);
     server.expect(
         Expectation::matching(all_of![
             request::method("GET"),
@@ -616,7 +616,7 @@ async fn test_get_character_not_found() {
     });
 
 
-    let path_string = format!("/api/characters/detail/{}", character_id);
+    let path_string = format!("/api/characters/fetch/{}", character_id);
     server.expect(
         Expectation::matching(all_of![
             request::method("GET"),
@@ -705,7 +705,7 @@ async fn test_list_chat_sessions_success() {
     ];
 
     server.expect(
-        Expectation::matching(request::method_path("GET", "/api/chats"))
+        Expectation::matching(request::method_path("GET", "/api/chats-api/chats"))
             .respond_with(json_encoded(mock_sessions.clone())),
     );
 
@@ -728,7 +728,7 @@ async fn test_list_chat_sessions_success_empty() {
     let mock_sessions: Vec<Chat> = vec![];
 
     server.expect(
-        Expectation::matching(request::method_path("GET", "/api/chats"))
+        Expectation::matching(request::method_path("GET", "/api/chats-api/chats"))
             .respond_with(json_encoded(mock_sessions)),
     );
 
@@ -751,7 +751,7 @@ async fn test_list_chat_sessions_api_error() {
     });
 
     server.expect(
-        Expectation::matching(request::method_path("GET", "/api/chats"))
+        Expectation::matching(request::method_path("GET", "/api/chats-api/chats"))
             .respond_with(status_code(500).body(error_body.to_string())),
     );
 
