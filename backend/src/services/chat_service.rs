@@ -704,7 +704,7 @@ pub async fn get_session_data_for_generation(
             history_management_limit, 
         );
         
-        let managed_history: HistoryForGeneration = managed_history_msgs
+        let mut managed_history: HistoryForGeneration = managed_history_msgs
             .into_iter()
             .map(|msg| {
                 let content_str = String::from_utf8_lossy(&msg.content).to_string();
@@ -713,6 +713,19 @@ pub async fn get_session_data_for_generation(
             .collect();
         
         trace!(%session_id, num_managed_history_items = managed_history.len(), "History management applied");
+        
+        // Check if this is the first user message (no existing messages, empty history)
+        // If so, prepend the character's first_mes as the first assistant message
+        if managed_history.is_empty() {
+            info!(%session_id, "No existing messages found in history - checking for character's first_mes to include");
+            
+            if let Some(char_first_mes) = decrypt_char_field(character.first_mes.as_ref(), character.first_mes_nonce.as_ref(), "first_mes")? {
+                if !char_first_mes.is_empty() {
+                    info!(%session_id, "Adding character's first_mes to history before the first user message");
+                    managed_history.push((MessageRole::Assistant, char_first_mes));
+                }
+            }
+        }
     
         // Token counting has been moved above and done outside the interact block
         // We'll use the tokens that were already counted
