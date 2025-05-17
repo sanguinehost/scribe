@@ -1,5 +1,6 @@
-use crate::client::{
-    HealthStatus, HttpClient, StreamEvent, ClientCharacterDataForClient, RegisterPayload,
+use crate::client::HttpClient;
+use crate::client::types::{
+    HealthStatus, StreamEvent, ClientCharacterDataForClient, RegisterPayload,
     AdminUserListResponse, AdminUserDetailResponse
 };
 use crate::error::CliError;

@@ -16,10 +16,10 @@ use axum::{
     extract::{Path, State, multipart::Multipart}, // Removed unused Extension
     http::StatusCode,
     response::{IntoResponse, Json, Response},
-    routing::{get, post},
+    routing::{get, post, delete}, // ADDED delete here
 };
 use diesel::prelude::*; // Needed for .filter(), .load(), .first(), etc.
-use tracing::{info, instrument, trace, error, warn}; // Use needed tracing macros, ADDED error, warn
+use tracing::{info, instrument, trace, error}; // Use needed tracing macros, ADDED error, warn
 use uuid::Uuid;
 // use anyhow::anyhow; // Unused import
 use crate::auth::user_store::Backend as AuthBackend; // <-- Import the backend type
@@ -31,6 +31,7 @@ use diesel::result::Error as DieselError; // Add import for DieselError
 use serde::Deserialize; // Add serde import
 use crate::services::encryption_service::EncryptionService; // Added import
 use secrecy::ExposeSecret; // Added for DEK expose
+use crate::schema::chat_sessions; // Added for querying chat_sessions table
 
 // Define the type alias for the auth session specific to our AuthBackend
 // type CurrentAuthSession = AuthSession<AppState>;
@@ -229,182 +230,228 @@ pub async fn get_character_handler(
 ) -> Result<Json<CharacterDataForClient>, AppError> {
     trace!(target: "auth_debug", ">>> ENTERING get_character_handler for character_id: {}", character_id);
     
-    // --- BEGIN TEST LOGGING for test_delete_character_forbidden ---
-    let user_for_get_opt = auth_session.user.clone(); // Clone to log
-    if let Some(ref user_for_get) = user_for_get_opt {
-        info!(
-            target: "test_log",
-            handler = "get_character_handler_ENTRY",
-            requesting_user_id = %user_for_get.id,
-            target_character_id = %character_id,
-            dek_present = true, // If this handler is called, DEK was extracted
-            "User trying to GET character."
-        );
-        if let Some(ref dek_inner) = user_for_get.dek {
-             info!(
-                target: "test_log",
-                handler = "get_character_handler_ENTRY",
-                requesting_user_id = %user_for_get.id,
-                target_character_id = %character_id,
-                dek_bytes_len = dek_inner.expose_secret_bytes().len(),
-                "DEK details from auth_session.user.dek"
-            );
-        } else {
-            warn!(
-                target: "test_log",
-                handler = "get_character_handler_ENTRY",
-                requesting_user_id = %user_for_get.id,
-                target_character_id = %character_id,
-                "DEK is NONE in auth_session.user.dek"
-            );
-        }
-    } else {
-        warn!(
-            target: "test_log",
-            handler = "get_character_handler_ENTRY",
-            target_character_id = %character_id,
-            "No user in auth_session for GET request."
-        );
-    }
-    // --- END TEST LOGGING ---
-
     let user = auth_session
         .user
         .ok_or_else(|| AppError::Unauthorized("Authentication required".to_string()))?;
     let user_id_val = user.id;
 
-    // Add detailed logging
-    info!(target: "test_log", %character_id, %user_id_val, "Fetching character for user");
+    info!(target: "test_log", %character_id, %user_id_val, "Attempting to get character details for user (hybrid auth: direct owner OR session-based)");
 
-    // First check if the character exists at all, regardless of user
-    let conn = state
-        .pool
-        .get()
-        .await
-        .map_err(|e| AppError::DbPoolError(e.to_string()))?;
+    // --- Try 1: Direct Ownership Check ---
+    let conn_direct_owner_check = state.pool.get().await.map_err(|e| AppError::DbPoolError(e.to_string()))?;
+    let user_id_for_direct_clone = user_id_val;
+    let character_id_for_direct_clone = character_id;
 
-    let character_exists_at_all = conn
-        .interact(move |conn_block| {
-            tracing::info!(target: "test_log", %character_id, "Checking if character exists at all");
-            
-            let exists = characters
-                .filter(id.eq(character_id))
-                .select(id)  // Just select the ID for efficiency
-                .first::<Uuid>(conn_block)
+    let directly_owned_character_result: Result<Option<Character>, AppError> = conn_direct_owner_check
+        .interact(move |conn| {
+            characters
+                .filter(id.eq(character_id_for_direct_clone).and(user_id.eq(user_id_for_direct_clone)))
+                .select(Character::as_select())
+                .first::<Character>(conn)
                 .optional()
                 .map_err(|e| {
-                    tracing::error!(target: "test_log", %character_id, error = %e, "Character existence check failed");
+                    error!(
+                        target: "test_log",
+                        handler = "get_character_handler (direct ownership query)",
+                        %character_id_for_direct_clone,
+                        %user_id_for_direct_clone,
+                        error = %e,
+                        "DB error during direct ownership character query."
+                    );
                     AppError::DatabaseQueryError(e.to_string())
-                });
-                
-            exists.map(|opt| opt.is_some())
+                })
+        })
+        .await // For the outer Result from interact (e.g., PoolError)
+        .map_err(|interact_err| { 
+            error!(
+                target: "test_log",
+                handler = "get_character_handler (direct ownership interact)",
+                %character_id,
+                %user_id_val,
+                error = ?interact_err,
+                "Interact error during direct ownership character fetch."
+            );
+            AppError::DbInteractError(format!("Interact error during direct ownership character fetch: {}", interact_err))
+        })?;
+
+    match directly_owned_character_result {
+        Ok(Some(character)) => {
+            info!(target: "test_log", handler = "get_character_handler", %character_id, %user_id_val, "Character directly owned, attempting decryption");
+            return match character.into_decrypted_for_client(Some(&dek.0)).await {
+                Ok(character_for_client) => {
+                    info!(target: "test_log", handler = "get_character_handler", %character_id, %user_id_val, "Decryption SUCCESSFUL (direct ownership)");
+                    Ok(Json(character_for_client))
+                }
+                Err(e) => {
+                    error!(target: "test_log", handler = "get_character_handler", %character_id, %user_id_val, error = ?e, "Decryption FAILED (direct ownership)");
+                    Err(e)
+                }
+            };
+        }
+        Ok(None) => {
+            info!(target: "test_log", handler = "get_character_handler", %character_id, %user_id_val, "Not directly owned or not found by combined query. Checking session link...");
+            // Proceed to session link check
+        }
+        Err(app_err) => {
+            error!(target: "test_log", handler = "get_character_handler", %character_id, %user_id_val, error = ?app_err, "Error from direct ownership check, propagating");
+            return Err(app_err); // Propagate DB errors from direct ownership check
+        }
+    }
+
+    // --- Try 2: Session-Based Authorization Check (if not directly owned) ---
+    info!(target: "test_log", %character_id, %user_id_val, "Attempting session-based auth for character details");
+    let conn_auth_check = state.pool.get().await.map_err(|e| AppError::DbPoolError(e.to_string()))?;
+    
+    let user_id_for_session_clone = user_id_val;
+    let character_id_for_session_clone = character_id;
+
+    let has_session_with_character: bool = conn_auth_check
+        .interact(move |conn| {
+            diesel::select(diesel::dsl::exists(
+                chat_sessions::table
+                    .filter(chat_sessions::user_id.eq(user_id_for_session_clone))
+                    .filter(chat_sessions::character_id.eq(character_id_for_session_clone))
+            ))
+            .get_result::<bool>(conn)
+            .or_else(|e| match e {
+                DieselError::NotFound => {
+                     error!(
+                        target: "test_log",
+                        handler = "get_character_handler (session link exists query)",
+                        %character_id_for_session_clone,
+                        %user_id_for_session_clone,
+                        error = %e,
+                        "DieselError::NotFound encountered unexpectedly for exists query. Interpreting as false."
+                    );
+                    Ok(false)
+                },
+                _ => {
+                    error!(
+                        target: "test_log",
+                        handler = "get_character_handler (session link exists query)",
+                        %character_id_for_session_clone,
+                        %user_id_for_session_clone,
+                        error = %e,
+                        "DB error checking session link."
+                    );
+                    Err(AppError::DatabaseQueryError(format!("DB error checking session link: {}", e)))
+                }
+            })
         })
         .await
-        .map_err(|e| AppError::DbInteractError(format!("Interact error checking character existence: {}", e)))?;
-        
-    if !character_exists_at_all? {
-        info!(target: "test_log", %character_id, "Character does not exist at all");
-        return Err(AppError::NotFound(format!("Character {} not found", character_id)));
+        .map_err(|e| {
+             error!(
+                target: "test_log",
+                handler = "get_character_handler (session link interact)",
+                %character_id,
+                %user_id_val,
+                error = %e,
+                "Interact dispatch error checking session link."
+            );
+            AppError::DbInteractError(format!("Interact error checking session link: {}", e))
+        })??;
+
+    if !has_session_with_character {
+        info!(
+            target: "test_log",
+            handler = "get_character_handler",
+            %character_id,
+            %user_id_val,
+            "User does not directly own AND does not have an active session with this character. Returning NotFound."
+        );
+        return Err(AppError::NotFound(format!(
+            "Character {} not found or not accessible by user {}",
+            character_id, user_id_val
+        )));
     }
-    
-    info!(target: "test_log", %character_id, "Character exists in database, attempting to fetch for specific user");
 
-    // Now attempt to fetch the character if it's owned by this specific user
-    let conn_fetch = state
-        .pool
-        .get()
+    // If session link exists, fetch the character details by character_id only
+    info!(
+        target: "test_log",
+        handler = "get_character_handler",
+        %character_id,
+        %user_id_val,
+        "User has session link. Fetching character by ID."
+    );
+
+    let conn_char_fetch = state.pool.get().await.map_err(|e| AppError::DbPoolError(e.to_string()))?;
+    let character_id_for_fetch_clone = character_id; 
+
+    let character_db_result: Option<Character> = conn_char_fetch
+        .interact(move |conn| {
+            characters
+                .filter(id.eq(character_id_for_fetch_clone))
+                .select(Character::as_select())
+                .first::<Character>(conn)
+                .optional()
+                .map_err(|e| {
+                     error!(
+                        target: "test_log",
+                        handler = "get_character_handler (fetch by ID after session auth)",
+                        %character_id_for_fetch_clone,
+                        error = %e,
+                        "DB error fetching character by ID (after session auth)."
+                    );
+                    AppError::DatabaseQueryError(format!("DB error fetching character by ID: {}", e))
+                })
+        })
         .await
-        .map_err(|e| AppError::DbPoolError(e.to_string()))?;
+        .map_err(|e| {
+            error!(
+                target: "test_log",
+                handler = "get_character_handler (fetch by ID interact)",
+                %character_id,
+                error = %e,
+                "Interact dispatch error fetching character by ID."
+            );
+            AppError::DbInteractError(format!("Interact error fetching character by ID: {}", e))
+        })??;
 
-    let character_owned_result = conn_fetch
-        .interact(move |conn_block| {
+    match character_db_result {
+        Some(character) => {
             info!(
                 target: "test_log",
                 handler = "get_character_handler",
                 %character_id,
                 %user_id_val,
-                "Executing character query (ID and UserID combined using .and()) in interact block"
+                "Character (via session auth) retrieved, attempting decryption"
             );
-
-            characters
-                .filter(id.eq(character_id).and(user_id.eq(user_id_val))) // Combined filter
-                .select(Character::as_select())
-                .first::<Character>(conn_block)
-                .optional() // Converts DieselError::NotFound to Ok(None), other errors to Err
-                .map_err(|e| {
+            match character.into_decrypted_for_client(Some(&dek.0)).await {
+                Ok(character_for_client) => {
+                    info!(
+                        target: "test_log",
+                        handler = "get_character_handler",
+                        %character_id,
+                        %user_id_val,
+                        "Decryption SUCCESSFUL (via session auth)"
+                    );
+                    Ok(Json(character_for_client))
+                }
+                Err(e) => { 
                     error!(
                         target: "test_log",
                         handler = "get_character_handler",
                         %character_id,
                         %user_id_val,
-                        error = %e,
-                        "DB error during combined (ID and UserID) character query."
+                        error = ?e,
+                        "Decryption FAILED (via session auth)"
                     );
-                    // Ensure we map DieselError to our AppError type
-                    match e {
-                        DieselError::NotFound => {
-                            // This case should ideally be handled by .optional() resulting in Ok(None)
-                            // Logging it here if it somehow bypasses .optional() as an Err.
-                            warn!(
-                                target: "test_log",
-                                handler = "get_character_handler",
-                                %character_id,
-                                %user_id_val,
-                                "DieselError::NotFound encountered directly, though .optional() should prevent this."
-                            );
-                            // This path might not be strictly necessary if .optional() behaves as expected,
-                            // but doesn't hurt to map it for completeness if Diesel changes behavior.
-                            // However, for AppError::NotFound, we typically want to return Ok(None) from the closure.
-                            // The current .optional() should make this arm of the match unreachable for NotFound.
-                            // Let's rely on .optional() and map other errors to DatabaseQueryError.
-                            // If it's any other error, map it to DatabaseQueryError.
-                            AppError::DatabaseQueryError(e.to_string())
-                        }
-                        _ => AppError::DatabaseQueryError(e.to_string()),
-                    }
-                })
-        })
-        .await // For the outer Result from interact (e.g., PoolError)
-        .map_err(|interact_err| { // This handles errors from the .interact() call itself
+                    Err(e)
+                }
+            }
+        }
+        None => {
             error!(
                 target: "test_log",
                 handler = "get_character_handler",
                 %character_id,
                 %user_id_val,
-                error = ?interact_err,
-                "Interact error during combined character fetch."
+                "Character was linked in a session but now not found in characters table. Data inconsistency or deleted character?"
             );
-            AppError::DbInteractError(format!("Interact error during combined character fetch: {}", interact_err))
-        })?; // For the Result<_, DeadPoolError>
-
-    // character_owned_result is now Result<Option<Character>, AppError> (if interact succeeded)
-    // or this point is not reached if interact itself failed (e.g. pool error).
-    // The '?' above handles the interact error. So character_owned_result is the Result from the closure.
-
-    match character_owned_result {
-        Ok(Some(character)) => { // Character found and owned as per the combined query
-            info!(target: "test_log", handler = "get_character_handler", %character_id, %user_id_val, "Character (owned) retrieved via combined query, attempting decryption");
-            match character.into_decrypted_for_client(Some(&dek.0)).await {
-                Ok(character_for_client) => {
-                    info!(target: "test_log", handler = "get_character_handler", %character_id, %user_id_val, "Decryption SUCCESSFUL");
-                    Ok(Json(character_for_client))
-                }
-                Err(e) => { // This is AppError from decryption
-                    error!(target: "test_log", handler = "get_character_handler", %character_id, %user_id_val, error = ?e, "Decryption FAILED");
-                    Err(e)
-                }
-            }
-        }
-        Ok(None) => { // Character not found for this user by the combined query (due to .optional())
-            info!(target: "test_log", handler = "get_character_handler", %character_id, %user_id_val, "Character not found for user by combined query (or owner mismatch), returning NotFound");
             Err(AppError::NotFound(format!(
-                "Character {} not found or not accessible by user {}", // Clearer message
-                character_id, user_id_val
+                "Character {} was expected (due to session link) but not found",
+                character_id
             )))
-        }
-        Err(app_err) => { // Error from the closure inside interact (e.g., mapped DatabaseQueryError)
-            error!(target: "test_log", handler = "get_character_handler", %character_id, %user_id_val, error = ?app_err, "Error from interact block (e.g. DB query error) with combined query, propagating");
-            Err(app_err)
         }
     }
 }
@@ -631,10 +678,17 @@ pub fn characters_router(state: AppState) -> Router<AppState> {
     Router::new()
         .route("/upload", post(upload_character_handler))
         .route("/", get(list_characters_handler))
-        // Combine GET and DELETE for the same path parameter using method routing
-        .route("/{id}", get(get_character_handler).delete(delete_character_handler))
+        // NOTE (of frustration): The routes for getting and deleting a character were changed
+        // to `/fetch/:id` and `/remove/:id` respectively.
+        // Attempts to use  `/:id` for GET and DELETE resulted in
+        // persistent and inexplicable 404 errors, despite various debugging attempts.
+        // This change to more distinct paths was a pragmatic workaround,
+        // born from a fuck-ton (three days) of deep-seated frustration with Axum routing obscurities in this context
+        // that my fucking mortal monkey brain just cannot wrap itself around.
+        .route("/fetch/:id", get(get_character_handler))
+        .route("/remove/:id", delete(delete_character_handler))
         .route("/generate", post(generate_character_handler))
-        .route("/{id}/image", get(get_character_image)) // Add image route
+        .route("/:id/image", get(get_character_image)) // This might also need a more distinct path later
         // Apply LoginRequired middleware to all routes in this router
         // It checks auth_session.user and returns 401 if None.
         .with_state(state)

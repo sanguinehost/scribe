@@ -31,9 +31,10 @@ use scribe_backend::models::{
                                    // Since ClientCharacterDataForClient is now a distinct struct in types.rs and re-exported,
                                    // we should use that if the tests were indeed using the client's representation.
                                    // Let's stick to what was in the original test's direct use statements for now.
-    chats::{Chat, ChatMessage, ApiChatMessage, ChatSettingsResponse, UpdateChatSettingsRequest, GenerateChatRequest, MessageRole}, // Added MessageRole
+    chats::{Chat, ChatMessage, ApiChatMessage, ChatSettingsResponse, MessageRole, UpdateChatSettingsRequest, GenerateChatRequest}, 
     users::User,
 };
+use crate::client::types::{ClientCharacterDataForClient, HealthStatus, StreamEvent};
 
 
 // Shared setup for tests needing a mock server

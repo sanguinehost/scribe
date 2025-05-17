@@ -295,31 +295,4 @@ mod tests {
         assert_eq!(response.0.status, "ok");
     }
 
-    // Comment out test requiring unavailable testcontainers module
-    /*
-    #[tokio::test]
-    #[ignore] // Ignore by default as it requires Docker
-    async fn test_migrations_with_testcontainer() -> Result<(), anyhow::Error> {
-        let postgres_image = Postgres::default().with_user("test").with_password("test").with_db_name("test");
-        let node = postgres_image.start().await?;
-        let port = node.get_host_port_ipv4(5432).await?;
-        let db_url = format!("postgres://test:test@localhost:{}/test", port);
-
-        // Create a pool for the test database
-        let manager = DeadpoolManager::new(&db_url, DeadpoolRuntime::Tokio1);
-        let pool_config = PoolConfig::default();
-        let test_pool: PgPool = DeadpoolPool::builder(manager)
-            .config(pool_config)
-            .runtime(DeadpoolRuntime::Tokio1)
-            .build()
-            .expect("Failed to create test DB pool.");
-
-        // Run migrations against the test database
-        let migration_result = run_migrations(&test_pool).await;
-
-        assert!(migration_result.is_ok(), "Migrations failed to run: {:?}", migration_result.err());
-
-        Ok(())
-    }
-    */
 }

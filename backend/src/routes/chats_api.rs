@@ -26,7 +26,6 @@ use crate::state::AppState;
 use tracing::info;
 use std::sync::Arc;
 use crate::services::chat_service;
- // Ensure User is imported
 
 // Shorthand for auth session
 type CurrentAuthSession = AuthSession<AuthBackend>;

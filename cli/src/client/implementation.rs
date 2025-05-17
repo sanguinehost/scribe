@@ -240,7 +240,7 @@ impl HttpClient for ReqwestClientWrapper {
     }
  
     async fn get_character(&self, character_id: Uuid) -> Result<ClientCharacterDataForClient, CliError> {
-        let url = build_url(&self.base_url, &format!("/api/characters/{}", character_id))?;
+        let url = build_url(&self.base_url, &format!("/api/characters/fetch/{}", character_id))?;
         tracing::info!(target: "scribe_cli::client::implementation", %url, %character_id, "Fetching character details via HttpClient");
         let response = self
             .client
