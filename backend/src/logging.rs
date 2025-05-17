@@ -11,9 +11,9 @@ fn build_subscriber_builder() -> impl Subscriber { // Changed return type
     tracing_subscriber::registry()
         .with(
             EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "info,scribe_backend::routes=warn,scribe_backend::auth=warn,scribe_backend::services=warn,tower_http=warn,sqlx=warn,gemini_client=warn,auth_debug=error".into()),
+                .unwrap_or_else(|_| "info,scribe_backend::routes=info,scribe_backend::auth=info,scribe_backend::services=info,tower_http=info,sqlx=warn,gemini_client=info,auth_debug=error".into()),
         )
-        .with(fmt::layer().json()) // Use JSON formatter
+        .with(fmt::layer().json().with_current_span(false).with_span_list(false)) // Use JSON formatter, disable verbose span info
 }
 
 // Initializes and sets the global tracing subscriber.

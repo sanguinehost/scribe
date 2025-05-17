@@ -55,7 +55,7 @@ pub async fn register_handler(
     State(state): State<AppState>,
     Json(payload): Json<RegisterPayload>, // Use RegisterPayload
 ) -> Result<impl IntoResponse, AppError> {
-    info!(username = %payload.username, email = %payload.email, "Register handler entered");
+    info!("Register handler entered");
 
     // Validate the payload
     if let Err(validation_errors) = payload.validate() {
@@ -72,10 +72,10 @@ pub async fn register_handler(
     // Clone the secret to pass to hash_password, original plaintext_password is moved to create_user
     let _pwd_hash = crate::auth::hash_password(plaintext_password.clone()).await?;
 
-    debug!(username = %reg_username, email = %reg_email, "Attempting to get DB connection from pool for registration..."); // Use renamed vars
+    debug!("Attempting to get DB connection from pool for registration...");
     match pool.get().await {
         Ok(conn) => {
-            debug!(username = %reg_username, email = %reg_email, "Got DB connection. Calling interact for create_user..."); // Use renamed vars
+            debug!("Got DB connection. Calling interact for create_user...");
             // Pass the original payload to create_user
             let user_result = conn
                 .interact(move |conn_inner| {
@@ -89,10 +89,10 @@ pub async fn register_handler(
 
             match user_result {
                 Ok(inner_result) => {
-                    debug!(username = %reg_username, email = %reg_email, "Interact for create_user completed.");
+                    debug!("Interact for create_user completed.");
                     match inner_result {
                         Ok(user) => {
-                            info!(username = %user.username, email = %user.email, user_id = %user.id, "User registration successful.");
+                            info!(user_id = %user.id, "User registration successful.");
                             // Use AuthResponse for success
                             // The created user has the recovery phrase that was used
                             let response = AuthResponse {
@@ -105,25 +105,25 @@ pub async fn register_handler(
                             Ok((StatusCode::CREATED, Json(response)).into_response())
                         }
                         Err(AuthError::UsernameTaken) => {
-                            warn!(username = %reg_username, "Registration failed: Username taken.");
+                            warn!("Registration failed: Username {} taken.", reg_username);
                             Err(AppError::UsernameTaken)
                         }
                         Err(AuthError::EmailTaken) => { // Handle EmailTaken error
-                            warn!(email = %reg_email, "Registration failed: Email taken.");
+                            warn!("Registration failed: Email {} taken.", reg_email);
                             Err(AppError::EmailTaken)
                         }
                         Err(AuthError::HashingError) => {
-                            error!(username = %reg_username, email = %reg_email, "Registration failed: Password hashing error.");
+                            error!("Registration failed: Password hashing error.");
                             Err(AppError::InternalServerErrorGeneric(
                                 "Password hashing failed during registration".to_string(),
                             ))
                         }
                         Err(AuthError::DatabaseError(e)) => {
-                            error!(username = %reg_username, email = %reg_email, error = ?e, "Registration failed: Database error.");
+                            error!(error = ?e, "Registration failed: Database error.");
                             Err(AppError::DatabaseQueryError(e))
                         }
                         Err(e) => {
-                            error!(username = %reg_username, email = %reg_email, error = ?e, "Registration failed: Unknown AuthError.");
+                            error!(error = ?e, "Registration failed: Unknown AuthError.");
                             Err(AppError::InternalServerErrorGeneric(
                                 "An unexpected authentication error occurred.".to_string(),
                             ))
@@ -131,13 +131,13 @@ pub async fn register_handler(
                     }
                 }
                 Err(interact_err) => {
-                    error!(username = %reg_username, email = %reg_email, error = ?interact_err, "Interact error during user creation");
+                    error!(error = ?interact_err, "Interact error during user creation");
                     Err(AppError::InternalServerErrorGeneric(interact_err.to_string()))
                 }
             }
         }
         Err(pool_err) => {
-            error!(username = %payload.username, email = %payload.email, error = ?pool_err, "Failed to get DB connection for registration");
+            error!(error = ?pool_err, "Failed to get DB connection for registration");
             Err(AppError::DbPoolError(pool_err.to_string()))
         }
     }
@@ -150,8 +150,7 @@ pub async fn login_handler(
     session: Session,             // tower_sessions session, extracted directly
     Json(payload): Json<LoginPayload>, // Use LoginPayload
 ) -> Result<Response, AppError> {
-    let identifier_for_log = payload.identifier.clone();
-    info!(identifier = %identifier_for_log, "Attempting login");
+    info!("Attempting login");
 
     // Directly call verify_credentials to get User and DEK
     let verification_result = state.pool.get().await
@@ -165,40 +164,42 @@ pub async fn login_handler(
         })
         .await
         .map_err(|e| {
-            error!(identifier = %identifier_for_log, "Interact error during credential verification: {:?}", e);
+            error!("Interact error during credential verification: {:?}", e);
             AppError::InternalServerErrorGeneric(format!("Credential verification process failed: {}", e))
         })?;
 
-    debug!(identifier = %identifier_for_log, "Credential verification successful");
+    debug!("Credential verification successful");
 
     match verification_result {
         Ok((mut user, maybe_dek_secret_box)) => {
             let user_id = user.id;
-            let login_username = user.username.clone();
-            let login_email = user.email.clone();
-            info!(username = %login_username, email = %login_email, %user_id, "Credential verification successful.");
+            // let login_username = user.username.clone(); // PII
+            // let login_email = user.email.clone(); // PII
+            info!(%user_id, "Credential verification successful.");
 
             // Set the DEK on the user object
             let _dek_bytes_for_session = if let Some(dek_secret_box) = maybe_dek_secret_box {
                 user.dek = Some(SerializableSecretDek(dek_secret_box)); // Wrap in SerializableSecretDek
-                debug!(username = %login_username, %user_id, "DEK successfully set on user object before login.");
+                debug!(%user_id, "DEK successfully set on user object before login.");
                 
                 // Get the raw bytes for storing directly in the session
                 // Access inner SecretBox then expose_secret, or use helper
                 let dek_bytes = user.dek.as_ref().unwrap().expose_secret_bytes().to_vec();
                 Some(dek_bytes)
             } else {
-                info!(username = %login_username, %user_id, "No DEK present for this user or login type.");
+                info!(%user_id, "No DEK present for this user or login type.");
                 None
             };
             
             // Serialize the user object to see what's going into the session
             match serde_json::to_string(&user) {
                 Ok(user_json) => {
-                    debug!(username = %login_username, %user_id, user_json = %user_json, "User object serialized before login");
+                    // Note: user_json might still contain PII if User's Serialize impl includes it.
+                    // This change only removes the direct `username` field from this specific log line.
+                    debug!(%user_id, user_json = %user_json, "User object serialized before login");
                 },
                 Err(e) => {
-                    error!(username = %login_username, %user_id, error = ?e, "Failed to serialize user for debugging");
+                    error!(%user_id, error = ?e, "Failed to serialize user for debugging");
                 }
             }
             
@@ -207,16 +208,16 @@ pub async fn login_handler(
             
             // Debugging: Log DEK presence before login call
             if let Some(ref wrapped_dek) = user.dek {
-                info!(username = %login_username, %user_id, "User.dek is PRESENT before auth_session.login() call. Length: {}", wrapped_dek.expose_secret_bytes().len());
+                info!(%user_id, "User.dek is PRESENT before auth_session.login() call. Length: {}", wrapped_dek.expose_secret_bytes().len());
             } else {
-                warn!(username = %login_username, %user_id, "User.dek is MISSING before auth_session.login() call.");
+                warn!(%user_id, "User.dek is MISSING before auth_session.login() call.");
             }
 
             // Proceed with axum-login's session login
-            info!(username = %login_username, email = %login_email, user_id = %user_id, "Attempting explicit axum-login session.login...");
+            info!(user_id = %user_id, "Attempting explicit axum-login session.login...");
             auth_session.login(&user).await.map_err(|e| {
-                error!(username = %login_username, user_id = %user_id, "axum-login session.login() failed: {}", e);
-                AppError::InternalServerErrorGeneric(format!("Login process failed for user {}: {}", login_username, e))
+                error!(user_id = %user_id, "axum-login session.login() failed: {}", e);
+                AppError::InternalServerErrorGeneric(format!("Login process failed for user {}: {}", user_id, e))
             })?;
             
             // MANUAL FIX: Explicitly insert axum-login.user key with user.id as a string since axum-login.login() appears to not be doing it
@@ -225,7 +226,6 @@ pub async fn login_handler(
                 .await
                 .map_err(|e| {
                     error!(
-                        username = %login_username,
                         user_id = %user.id,
                         "Failed to manually insert axum-login.user key into session: {}",
                         e
@@ -238,7 +238,6 @@ pub async fn login_handler(
             let dek_session_key_str_after_login = format!("_user_dek_{}", user.id); // Reconstruct for logging
             let our_dek_after_login = session.get::<SerializableSecretDek>(&dek_session_key_str_after_login).await;
             info!(
-                username = %login_username,
                 user_id = %user.id,
                 session_id = ?session.id(),
                 axum_login_user_key_val = ?axum_login_user_key_after_login,
@@ -247,7 +246,7 @@ pub async fn login_handler(
             );
             // --- End log ---
 
-            info!(username = %login_username, user_id = %user.id, "Explicit auth_session.login successful");
+            info!(user_id = %user.id, "Explicit auth_session.login successful");
             
             // Log the session ID AFTER auth_session.login
             debug!(session_id = ?session.id(), user_id = %user_id, "Session ID AFTER axum-login.login() call");
@@ -261,12 +260,12 @@ pub async fn login_handler(
             // Debugging: Log DEK presence after login call (from auth_session.user)
             if let Some(ref user_after_login) = auth_session.user {
                 if let Some(ref wrapped_dek_after_login) = user_after_login.dek {
-                    info!(username = %login_username, %user_id, "User.dek is PRESENT in auth_session.user AFTER login. Length: {}", wrapped_dek_after_login.expose_secret_bytes().len());
+                    info!(%user_id, "User.dek is PRESENT in auth_session.user AFTER login. Length: {}", wrapped_dek_after_login.expose_secret_bytes().len());
                 } else {
-                    error!(username = %login_username, %user_id, "User.dek is MISSING in auth_session.user AFTER login.");
+                    error!(%user_id, "User.dek is MISSING in auth_session.user AFTER login.");
                 }
             } else {
-                error!(username = %login_username, %user_id, "auth_session.user is NONE after login.");
+                error!(%user_id, "auth_session.user is NONE after login.");
             }
 
             // Log the state of the tower_sessions::Session AFTER axum-login has done its work.
@@ -286,7 +285,7 @@ pub async fn login_handler(
             
             // Store the DEK directly in the session.
             if let Some(dek_secret_box) = user.dek {
-                info!(username = %login_username, user_id = %user.id, "User.dek is PRESENT in auth_session.user AFTER login. Length: {}", dek_secret_box.expose_secret_bytes().len());
+                info!(user_id = %user.id, "User.dek is PRESENT in auth_session.user AFTER login. Length: {}", dek_secret_box.expose_secret_bytes().len());
 
                 // Use a user-specific key format matching the SessionDek extractor's expectations
                 let user_specific_dek_key = format!("_user_dek_{}", user.id);
@@ -297,7 +296,6 @@ pub async fn login_handler(
                     .await
                     .map_err(|e| {
                         error!(
-                            username = %login_username,
                             user_id = %user.id,
                             "Failed to store DEK in session: {}",
                             e
@@ -309,7 +307,6 @@ pub async fn login_handler(
                 let axum_login_user_key_val = session.get::<String>("axum-login.user").await;
                 let our_dek_key_val = session.get::<SerializableSecretDek>(&user_specific_dek_key).await;
                 info!(
-                    username = %login_username,
                     user_id = %user.id,
                     session_id = ?session.id(),
                     axum_login_user_key_val = ?axum_login_user_key_val,
@@ -318,9 +315,9 @@ pub async fn login_handler(
                 );
                 // --- End log ---
 
-                info!(username = %login_username, user_id = %user.id, "Successfully stored DEK directly in session");
+                info!(user_id = %user.id, "Successfully stored DEK directly in session");
             } else {
-                warn!(username = %login_username, user_id = %user.id, "User has no DEK in database. New account?");
+                warn!(user_id = %user.id, "User has no DEK in database. New account?");
             }
 
             let response_data = AuthResponse {
@@ -333,15 +330,15 @@ pub async fn login_handler(
             Ok((StatusCode::OK, Json(response_data)).into_response())
         }
         Err(AuthError::WrongCredentials) => {
-            warn!(identifier = %identifier_for_log, "Login failed: Wrong credentials.");
+            warn!("Login failed: Wrong credentials.");
             Err(AppError::Unauthorized("Invalid identifier or password".to_string()))
         }
         Err(AuthError::AccountLocked) => {
-            warn!(identifier = %identifier_for_log, "Login failed: Account locked.");
+            warn!("Login failed: Account locked.");
             Err(AppError::Unauthorized("Your account is locked. Please contact an administrator.".to_string()))
         }
         Err(e) => {
-            error!(identifier = %identifier_for_log, error = ?e, "Login failed due to an unexpected authentication error.");
+            error!(error = ?e, "Login failed due to an unexpected authentication error.");
             // Map other AuthErrors to appropriate AppErrors or a generic internal server error
             match e {
                 AuthError::UserNotFound => Err(AppError::UserNotFound), // Should be caught by WrongCredentials generally
@@ -360,7 +357,7 @@ pub async fn login_handler(
 pub async fn logout_handler(mut auth_session: CurrentAuthSession) -> Result<Response, AppError> {
     info!("Logout handler entered.");
     if let Some(user) = &auth_session.user {
-        info!(user_id = %user.id(), username = %user.username, "Attempting to log out user.");
+        info!(user_id = %user.id(), "Attempting to log out user.");
     } else {
         debug!("Logout called, but no user session found in request.");
     }
@@ -383,7 +380,7 @@ pub async fn me_handler(auth_session: CurrentAuthSession) -> Result<Response, Ap
     info!("Me handler entered.");
     match auth_session.user {
         Some(user) => {
-            info!(username = %user.username, email = %user.email, user_id = %user.id, "Returning current user data for /me endpoint.");
+            info!(user_id = %user.id, "Returning current user data for /me endpoint.");
             // Use AuthResponse for consistency
             let response = AuthResponse {
                 user_id: user.id,
@@ -714,7 +711,7 @@ pub async fn change_password_handler(
             return Err(AppError::Unauthorized("Not logged in".to_string()));
         }
     };
-    info!(user_id = %authenticated_user.id, username = %authenticated_user.username, "User is authenticated. Proceeding with password change.");
+    info!(user_id = %authenticated_user.id, "User is authenticated. Proceeding with password change.");
 
     // 2. Validate payload
     if let Err(validation_errors) = payload.validate() {
@@ -783,28 +780,28 @@ pub async fn recover_password_handler(
     State(state): State<AppState>,
     Json(payload): Json<RecoverPasswordPayload>,
 ) -> Result<Response, AppError> {
-    info!(identifier = %payload.identifier, "Password recovery handler entered");
+    info!("Password recovery handler entered");
 
     // 1. Validate payload
     if let Err(validation_errors) = payload.validate() {
-        error!(identifier = %payload.identifier, errors = ?validation_errors, "Password recovery payload validation failed.");
+        error!(errors = ?validation_errors, "Password recovery payload validation failed.");
         return Err(AppError::ValidationError(validation_errors.to_string()));
     }
 
     // 2. Call the core password recovery logic
-    debug!(identifier = %payload.identifier, "Calling auth::recover_user_password_with_phrase function.");
+    debug!("Calling auth::recover_user_password_with_phrase function.");
     let auth_backend = crate::auth::user_store::Backend::new(state.pool.clone());
     match recover_user_password_with_phrase(
         &auth_backend,
         &state.pool,
-        payload.identifier.clone(),
+        payload.identifier.clone(), // identifier is still needed for the function call
         payload.recovery_phrase,
         payload.new_password,
     )
     .await
     {
         Ok(user_id) => {
-            info!(identifier = %payload.identifier, %user_id, "Password recovered successfully in core logic.");
+            info!(%user_id, "Password recovered successfully in core logic.");
 
             // 3. Session Invalidation for all user's sessions
             // This is crucial after a password recovery.
@@ -832,29 +829,29 @@ pub async fn recover_password_handler(
                 .into_response())
         }
         Err(AuthError::UserNotFound) => {
-            warn!(identifier = %payload.identifier, "Password recovery failed: User not found.");
+            warn!("Password recovery failed: User not found for identifier.");
             Err(AppError::UserNotFound)
         }
         Err(AuthError::RecoveryNotSetup) => {
-            warn!(identifier = %payload.identifier, "Password recovery failed: Recovery not set up for this user.");
+            warn!("Password recovery failed: Recovery not set up for this user.");
             Err(AppError::BadRequest("Password recovery is not enabled for this account.".to_string()))
         }
         Err(AuthError::InvalidRecoveryPhrase) => {
-            warn!(identifier = %payload.identifier, "Password recovery failed: Invalid recovery phrase.");
+            warn!("Password recovery failed: Invalid recovery phrase.");
             Err(AppError::Unauthorized("Invalid recovery phrase.".to_string()))
         }
         Err(AuthError::HashingError) => {
-            error!(identifier = %payload.identifier, "Password recovery failed: Hashing error.");
+            error!("Password recovery failed: Hashing error.");
             Err(AppError::PasswordProcessingError)
         }
         Err(AuthError::CryptoOperationFailed(e)) => {
-            error!(identifier = %payload.identifier, error = ?e, "Password recovery failed: Cryptographic operation error.");
+            error!(error = ?e, "Password recovery failed: Cryptographic operation error.");
             Err(AppError::InternalServerErrorGeneric(
                 "Encryption error during password recovery.".to_string(),
             ))
         }
         Err(e) => {
-            error!(identifier = %payload.identifier, error = ?e, "Password recovery failed: Unknown AuthError.");
+            error!(error = ?e, "Password recovery failed: Unknown AuthError.");
             Err(AppError::InternalServerErrorGeneric(
                 "An unexpected error occurred during password recovery.".to_string(),
             ))

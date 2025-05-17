@@ -95,7 +95,7 @@ impl AuthnBackend for Backend {
 
         match interact_result {
             Ok(Ok(user_from_db)) => { // Inner Ok: crate::auth::get_user succeeded
-                info!(user_id = %user_from_db.id, username = %user_from_db.username, dek_is_some = user_from_db.dek.is_some(), "AuthBackend::get_user: user loaded from DB (DEK is None as crate::auth::get_user doesn't decrypt it).");
+                info!(user_id = %user_from_db.id, dek_is_some = user_from_db.dek.is_some(), "AuthBackend::get_user: user loaded from DB (DEK is None as crate::auth::get_user doesn't decrypt it)."); // Removed PII: username
                 Ok(Some(user_from_db))
             }
             Ok(Err(AuthError::UserNotFound)) => { // Inner Err: crate::auth::get_user returned UserNotFound

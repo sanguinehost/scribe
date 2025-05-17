@@ -107,7 +107,7 @@ pub async fn create_user(
     conn: &mut PgConnection,
     mut credentials: RegisterPayload, // Use RegisterPayload struct, make it mutable
 ) -> Result<User, AuthError> {
-    info!(username = %credentials.username, email = %credentials.email, "Attempting to create user with encryption");
+    info!("Attempting to create user with encryption");
 
     // 1. Generate a random Data Encryption Key (DEK)
     let plaintext_dek_bytes = crypto::generate_dek() // Use generate_dek instead of generate_random_bytes
@@ -125,7 +125,6 @@ pub async fn create_user(
     // c. Encrypt the DEK with the KEK using AES-GCM
     // Returns (ciphertext, nonce)
     info!(
-        username = %credentials.username,
         plaintext_dek_len = plaintext_dek_bytes.expose_secret().len(),
         kek_salt_len = kek_salt.len(),
         "Generated DEK and KEK data for user creation"
@@ -135,7 +134,6 @@ pub async fn create_user(
         .map_err(AuthError::CryptoOperationFailed)?;
         
     info!(
-        username = %credentials.username,
         encrypted_dek_len = encrypted_dek.len(),
         dek_nonce_len = dek_nonce.len(),
         "Encrypted DEK for user creation"
@@ -154,7 +152,7 @@ pub async fn create_user(
         recovery_phrase_value = Some(recovery_salt);
         
         // Log that we generated a recovery phrase (but don't log the phrase itself)
-        info!(username = %credentials.username, "Generated random recovery phrase for user");
+        info!("Generated random recovery phrase for user");
     }
     
     // Process the recovery phrase (now guaranteed to exist)
@@ -178,7 +176,7 @@ pub async fn create_user(
     
     // If this is the first user, make them an administrator
     let user_role = if is_first_user {
-        info!(username = %credentials.username, "Making first user an Administrator");
+        info!("Making first user an Administrator");
         crate::models::users::UserRole::Administrator
     } else {
         crate::models::users::UserRole::User
@@ -199,7 +197,7 @@ pub async fn create_user(
         account_status: AccountStatus::Active, // Default to Active account status
     };
 
-    debug!(username = %new_user.username, email = %new_user.email, "Inserting new user with encryption fields into database...");
+    debug!("Inserting new user with encryption fields into database...");
     // 4. Insert into the database
     let insert_result = diesel::insert_into(users::table)
         .values(&new_user)
@@ -211,11 +209,11 @@ pub async fn create_user(
             let mut user = User::from(user_db_query); // Convert to User
             // Add the recovery phrase to the returned user
             user.recovery_phrase = credentials.recovery_phrase.clone();
-            info!(username = %user.username, email = %user.email, user_id = %user.id, "User created successfully in DB.");
+            info!(user_id = %user.id, "User created successfully in DB.");
             Ok(user)
         }
         Err(e) => {
-            error!(username = %new_user.username, email = %new_user.email, error = ?e, "Database error creating user");
+            error!(error = ?e, "Database error creating user");
             Err(AuthError::from(e))
         }
     }
@@ -225,7 +223,7 @@ pub async fn create_user(
 #[instrument(skip(conn), err)]
 pub fn get_user_by_username(conn: &mut PgConnection, username: &str) -> Result<User, AuthError> {
     // --- Log username explicitly ---
-    info!(%username, "Attempting to find user by username");
+    info!("Attempting to find user by username"); // Removed PII: username
     users::table
         .filter(users::username.eq(username))
         .select(UserDbQuery::as_select())
@@ -255,7 +253,7 @@ pub fn verify_credentials(
     password: SecretString, // Corrected: Was Secret<String>
 ) -> Result<(User, Option<SecretBox<Vec<u8>>>), AuthError> {
     // --- Log identifier explicitly ---
-    info!(%identifier, "Verifying credentials");
+    info!("Verifying credentials"); // Removed PII: identifier
 
     // Find user by username OR email
     let user_db_query = users::table
@@ -269,21 +267,21 @@ pub fn verify_credentials(
     let user = User::from(user_db_query.clone()); // Clone user_db_query if needed for User::from, or ensure User::from takes a ref
 
     // Perform bcrypt verification synchronously within the function
-    debug!(identifier = %identifier, username = %user.username, email = %user.email, user_id = %user.id, "Verifying password hash...");
+    debug!(user_id = %user.id, "Verifying password hash..."); // Removed PII: identifier, username, email
     let is_valid = bcrypt::verify(password.expose_secret(), &user.password_hash)
         .map_err(|e| {
-            error!(identifier = %identifier, username = %user.username, email = %user.email, user_id = %user.id, error = ?e, "Bcrypt verification failed");
+            error!(user_id = %user.id, error = ?e, "Bcrypt verification failed"); // Removed PII: identifier, username, email
             AuthError::HashingError
         })?;
 
     if is_valid {
         // Check account status
         if user.account_status == Some("locked".to_string()) {
-            warn!(identifier = %identifier, username = %user.username, email = %user.email, user_id = %user.id, "Login attempt for locked account.");
+            warn!(user_id = %user.id, "Login attempt for locked account."); // Removed PII: identifier, username, email
             return Err(AuthError::AccountLocked);
         }
 
-        debug!(identifier = %identifier, username = %user.username, email = %user.email, user_id = %user.id, "Password verification successful. Attempting DEK decryption...");
+        debug!(user_id = %user.id, "Password verification successful. Attempting DEK decryption..."); // Removed PII: identifier, username, email
 
         // a. kek_salt, encrypted_dek, and dek_nonce are already part of the `user` object,
         //    assuming they were loaded correctly from UserDbQuery into User.
@@ -294,35 +292,34 @@ pub fn verify_credentials(
         // b. Derive the Key Encryption Key (KEK)
         let kek = crypto::derive_kek(&password, &user.kek_salt) // user.kek_salt should be a &str
             .map_err(|e| {
-                error!(username = %user.username, user_id = %user.id, error = ?e, "Failed to derive KEK during login");
+                error!(user_id = %user.id, error = ?e, "Failed to derive KEK during login"); // Removed PII: username
                 AuthError::CryptoOperationFailed(e)
             })?;
 
         info!(
-            username = %user.username, 
-            user_id = %user.id, 
-            encrypted_dek_len = user.encrypted_dek.len(), 
+            user_id = %user.id,
+            encrypted_dek_len = user.encrypted_dek.len(),
             dek_nonce_len = user.dek_nonce.len(),
-            "DEK decryption attempt details"
+            "DEK decryption attempt details" // Removed PII: username
         );
         
         // c. Decrypt the user.encrypted_dek using the derived KEK and user.dek_nonce
         // crypto::decrypt_gcm returns Result<SecretBox<Vec<u8>>, CryptoError>
         let decrypted_dek_secret_box = crypto::decrypt_gcm(
-            &user.encrypted_dek, 
-            &user.dek_nonce,     
+            &user.encrypted_dek,
+            &user.dek_nonce,
             &kek                 // Pass &kek directly, decrypt_gcm expects &SecretBox<Vec<u8>>
         )
         .map_err(|e| {
-            error!(username = %user.username, user_id = %user.id, error = ?e, "Failed to decrypt DEK during login. Check if KEK/DEK/Nonce are correct.");
-            AuthError::CryptoOperationFailed(e) 
+            error!(user_id = %user.id, error = ?e, "Failed to decrypt DEK during login. Check if KEK/DEK/Nonce are correct."); // Removed PII: username
+            AuthError::CryptoOperationFailed(e)
         })?;
         
-        info!(username = %user.username, user_id = %user.id, "DEK decryption successful.");
+        info!(user_id = %user.id, "DEK decryption successful."); // Removed PII: username
 
         Ok((user, Some(decrypted_dek_secret_box))) // Return the decrypted DEK directly
     } else {
-        warn!(identifier = %identifier, "Password verification failed for user.");
+        warn!("Password verification failed for user."); // Removed PII: identifier
         Err(AuthError::WrongCredentials)
     }
 }
@@ -450,7 +447,7 @@ pub async fn recover_user_password_with_phrase(
     recovery_phrase_payload: SecretString, // Corrected: Was Secret<String>
     new_password_payload: SecretString, // Corrected: Was Secret<String>
 ) -> Result<Uuid, AuthError> {
-    info!("Attempting password recovery with phrase for identifier");
+    info!("Attempting password recovery with phrase"); // Removed PII: identifier
 
     // 1. Fetch user by identifier (username or email)
     debug!("Fetching user by identifier...");
@@ -466,10 +463,10 @@ pub async fn recover_user_password_with_phrase(
         .map_err(AuthError::from)??; // Double ?? for InteractError then diesel::Error -> AuthError
 
     let user = User::from(user_db_query);
-    info!(user_id = %user.id, username = %user.username, "User found for password recovery.");
+    info!(user_id = %user.id, "User found for password recovery."); // Removed PII: username
 
     // 2. Check if recovery is set up
-    debug!("Checking if recovery is set up for user...");
+    debug!(user_id = %user.id, "Checking if recovery is set up for user...");
     let recovery_kek_salt = match &user.recovery_kek_salt {
         Some(salt) => salt,
         None => {

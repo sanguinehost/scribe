@@ -200,7 +200,7 @@ impl SessionStore for DieselSessionStore {
         debug!(session_id = %session.id, ">>> save method entered successfully.");
 
         // --- Log the full session.data HashMap ---
-        debug!(session_id = %session.id, session_data_map = ?session.data, "DieselSessionStore::save: current session.data HashMap before serialization");
+        debug!(session_id = %session.id, session_data_keys = ?session.data.keys().collect::<Vec<_>>(), "DieselSessionStore::save: current session.data keys before serialization");
 
         let session_data_json_string = serde_json::to_string(&session.data).map_err(Self::map_json_error)?; // Serialize session.data directly
 
@@ -214,7 +214,7 @@ impl SessionStore for DieselSessionStore {
         };
 
         // --- Added Log ---
-        debug!(session_id = %record.id, expires = ?record.expires, session_db_string = %session_data_json_string, "Attempting to save session record to DB");
+        debug!(session_id = %record.id, expires = ?record.expires, "Attempting to save session record to DB"); // Removed session_db_string
 
         let pool = self.pool.clone();
         let save_result = pool
@@ -290,7 +290,7 @@ impl SessionStore for DieselSessionStore {
             Some(db_record) => {
                 // --- Log found ---
                 // Use the original session_id_str for logging here
-                debug!(session_id = %session_id_str, db_record_id = %db_record.id, db_record_expires = ?db_record.expires, db_session_string = %db_record.session, "Session record found in DB. Deserializing session data string...");
+                debug!(session_id = %session_id_str, db_record_id = %db_record.id, db_record_expires = ?db_record.expires, "Session record found in DB. Deserializing session data string..."); // Removed db_session_string
                 
                 // Deserialize the db_record.session (JSON string) into HashMap<String, String> or appropriate type for session.data
                 // tower_sessions::Record expects session.data to be HashMap<String, Value> where Value is usually String for JSON.
@@ -299,7 +299,7 @@ impl SessionStore for DieselSessionStore {
                     serde_json::from_str(&db_record.session).map_err(Self::map_json_error)?;
 
                 // --- Log the deserialized session.data HashMap ---
-                debug!(session_id = %session_id_str, deserialized_session_data_map = ?session_data_map, "DieselSessionStore::load: deserialized session.data HashMap from DB string");
+                debug!(session_id = %session_id_str, deserialized_session_data_keys = ?session_data_map.keys().collect::<Vec<_>>(), "DieselSessionStore::load: deserialized session.data keys from DB string");
 
                 let mut session_record_for_tower = Record { // Construct tower_sessions::Record
                     id: *session_id, // Use original Id

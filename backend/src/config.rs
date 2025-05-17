@@ -87,7 +87,7 @@ fn default_chunking_metric() -> String { "word".to_string() }
 fn default_chunking_max_size() -> usize { 200 } // Default for word metric
 fn default_chunking_overlap() -> usize { 20 } // Default for word metric
 fn default_tokenizer_model_path() -> Option<String> { Some("backend/resources/tokenizers/gemma.model".to_string()) } // Added
-fn default_token_counter_default_model() -> Option<String> { Some("gemini-1.5-pro".to_string()) } // Added
+fn default_token_counter_default_model() -> Option<String> { Some("gemini-2.5-flash-preview-04-17".to_string()) } // Added
 
 impl Config {
     // Placeholder function to load settings (e.g., from file or env)
