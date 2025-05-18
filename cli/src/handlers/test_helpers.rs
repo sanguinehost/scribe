@@ -128,6 +128,7 @@ pub struct MockHttpClient {
     pub logout_result: Option<Arc<Result<(), MockCliError>>>,
     pub me_result: Option<Arc<Result<User, MockCliError>>>,
     pub update_chat_settings_result: Option<Arc<Result<ChatSettingsResponse, MockCliError>>>,
+    pub delete_chat_result: Option<Arc<Result<(), MockCliError>>>,
     pub admin_list_users_result: Option<Arc<Result<Vec<AdminUserListResponse>, MockCliError>>>,
     pub admin_get_user_result: Option<Arc<Result<AdminUserDetailResponse, MockCliError>>>,
     pub admin_get_user_by_username_result: Option<Arc<Result<AdminUserDetailResponse, MockCliError>>>,
@@ -135,6 +136,85 @@ pub struct MockHttpClient {
     pub admin_lock_user_result: Option<Arc<Result<(), MockCliError>>>,
     pub admin_unlock_user_result: Option<Arc<Result<(), MockCliError>>>,
     pub last_recovery_key: Option<String>,
+    
+    // Track called endpoints for validation - use Arc<Mutex> for thread safety
+    pub called_endpoints: Arc<std::sync::Mutex<Vec<String>>>,
+    
+    // Expected endpoint patterns for validation
+    pub expected_endpoints: Arc<std::sync::Mutex<std::collections::HashMap<String, String>>>,
+}
+
+impl MockHttpClient {
+    pub fn new() -> Self {
+        Self {
+            called_endpoints: Arc::new(std::sync::Mutex::new(Vec::new())),
+            expected_endpoints: Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+            ..Default::default()
+        }
+    }
+    
+    // Records a called endpoint
+    pub fn record_endpoint_call(&self, endpoint: &str) {
+        if let Ok(mut endpoints) = self.called_endpoints.lock() {
+            endpoints.push(endpoint.to_string());
+        }
+    }
+    
+    // Set expected endpoint for a function
+    pub fn expect_endpoint(&self, function_name: &str, endpoint_pattern: &str) {
+        if let Ok(mut patterns) = self.expected_endpoints.lock() {
+            patterns.insert(function_name.to_string(), endpoint_pattern.to_string());
+        }
+    }
+    
+    // Verify that a function was called with the expected endpoint pattern
+    pub fn verify_endpoint_call(&self, function_name: &str) -> Result<(), String> {
+        let expected_patterns = match self.expected_endpoints.lock() {
+            Ok(guard) => guard,
+            Err(_) => return Err("Failed to acquire lock on expected_endpoints".to_string()),
+        };
+        
+        let called_endpoints = match self.called_endpoints.lock() {
+            Ok(guard) => guard,
+            Err(_) => return Err("Failed to acquire lock on called_endpoints".to_string()),
+        };
+        
+        if let Some(expected_pattern) = expected_patterns.get(function_name) {
+            // Find if any called endpoint matches the expected pattern
+            for endpoint in called_endpoints.iter() {
+                if endpoint.contains(expected_pattern) {
+                    return Ok(());
+                }
+            }
+            
+            // No match found
+            return Err(format!(
+                "Function '{}' was not called with an endpoint containing '{}'. Called endpoints: {:?}",
+                function_name, expected_pattern, *called_endpoints
+            ));
+        }
+        
+        // No expectation set for this function
+        Ok(())
+    }
+    
+    // Verify all endpoint expectations
+    pub fn verify_all_endpoints(&self) -> Result<(), String> {
+        let expected_patterns = match self.expected_endpoints.lock() {
+            Ok(guard) => guard,
+            Err(_) => return Err("Failed to acquire lock on expected_endpoints".to_string()),
+        };
+        
+        let function_names: Vec<String> = expected_patterns.keys().cloned().collect();
+        
+        for function_name in function_names {
+            if let Err(e) = self.verify_endpoint_call(&function_name) {
+                return Err(e);
+            }
+        }
+        
+        Ok(())
+    }
 }
 
 #[async_trait]
@@ -377,6 +457,20 @@ impl HttpClient for MockHttpClient {
             self.admin_unlock_user_result.clone().unwrap_or_else(|| {
                 Arc::new(Err(MockCliError::Internal(
                     "MockHttpClient: admin_unlock_user result not set".into(),
+                )))
+            }),
+        );
+        mock_result.map_err(Into::into)
+    }
+    
+    async fn delete_chat(&self, chat_id: Uuid) -> Result<(), CliError> {
+        // Record the endpoint call with the expected format
+        self.record_endpoint_call(&format!("/api/chats-api/chats/remove/{}", chat_id));
+        
+        let mock_result = Arc::unwrap_or_clone(
+            self.delete_chat_result.clone().unwrap_or_else(|| {
+                Arc::new(Err(MockCliError::Internal(
+                    "MockHttpClient: delete_chat result not set".into(),
                 )))
             }),
         );

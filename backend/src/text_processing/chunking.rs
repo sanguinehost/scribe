@@ -128,17 +128,16 @@ fn chunk_recursive(
     word_segmenter: &WordSegmenter,
     chunks: &mut Vec<TextChunk>,
 ) -> Result<(), AppError> {
-    println!(
-        "chunk_recursive called with segment (len {}, offset {}): \"{}\", config: {:?}",
+    trace!(
+        "chunk_recursive called with segment (len {}, offset {}), config: {:?}",
         segment.len(),
         current_offset,
-        segment.chars().take(70).collect::<String>(), // Log start of segment
         config,
     );
 
     let segment_size = measure_size(segment, config.metric, word_segmenter);
     trace!(segment_size, config.max_size, "Processing segment.");
-    println!("  Measured size ({:?}): {}", config.metric, segment_size);
+    trace!("  Measured size ({:?}): {}", config.metric, segment_size);
 
     // --- FIX: Attempt splitting by major separators FIRST ---
     let mut split_occurred = false;
@@ -208,7 +207,7 @@ fn chunk_recursive(
 
     // If a split by \n\n or \n happened, we're done with this segment level
     if split_occurred {
-         println!("chunk_recursive finished for offset {} (Split by major separator)", current_offset);
+         trace!("chunk_recursive finished for offset {} (Split by major separator)", current_offset);
          return Ok(());
     }
 
@@ -216,7 +215,7 @@ fn chunk_recursive(
     // If no major split occurred AND the segment fits, add it and return.
     if segment_size <= config.max_size {
         if !segment.trim().is_empty() {
-            println!("  Base case: Segment fits (size {} <= max {}). Adding chunk: \"{}\"", segment_size, config.max_size, segment.chars().take(70).collect::<String>());
+            trace!("  Base case: Segment fits (size {} <= max {}). Adding chunk.", segment_size, config.max_size);
             chunks.push(TextChunk {
                 content: segment.to_string(),
                 source_id: source_id.clone(),
@@ -226,7 +225,7 @@ fn chunk_recursive(
         } else {
             trace!("Segment is empty after trim, skipping.");
         }
-        println!("chunk_recursive finished for offset {} (Base Case)", current_offset);
+        trace!("chunk_recursive finished for offset {} (Base Case)", current_offset);
         return Ok(()); // Segment fits, no further splitting needed
     }
     // --- End FIX ---
@@ -243,10 +242,10 @@ fn chunk_recursive(
     if !split_occurred {
         // Fallback: Segment is still too large.
         warn!(segment_size, config.max_size, "Segment still too large after trying separators and sentences. Applying fallback split.");
-        println!("  Fallback: Segment too large (size {} > max {}). Calling split_fallback.", segment_size, config.max_size);
+        trace!("  Fallback: Segment too large (size {} > max {}). Calling split_fallback.", segment_size, config.max_size);
         split_fallback(segment, config, source_id, current_offset, word_segmenter, chunks)?;
     }
-    println!("chunk_recursive finished for offset {}", current_offset);
+    trace!("chunk_recursive finished for offset {}", current_offset);
 
     Ok(())
 }
@@ -329,7 +328,7 @@ fn split_fallback(
         // --- FIX: Rewritten Word Fallback Logic ---
         let word_byte_indices: Vec<usize> = word_segmenter.segment_str(segment).collect();
         let num_words_in_segment = word_byte_indices.len();
-        println!("Fallback Word Split: Total words in segment = {}", num_words_in_segment); // Added log
+        trace!("Fallback Word Split: Total words in segment = {}", num_words_in_segment);
 
         if num_words_in_segment > 1 {
             trace!(num_words = num_words_in_segment, "Fallback: Splitting by words.");
@@ -337,15 +336,15 @@ fn split_fallback(
             let mut current_chunk_start_offset = current_offset; // Char offset in original text
 
             while current_chunk_start_word_index < num_words_in_segment {
-                println!("-- Fallback Word Loop Iteration --"); // Added log
-                println!("  Start Word Index: {}", current_chunk_start_word_index); // Added log
+                trace!("-- Fallback Word Loop Iteration --");
+                trace!("  Start Word Index: {}", current_chunk_start_word_index);
 
                 // Determine the end word index for this chunk
                 let current_chunk_end_word_index = min(
                     current_chunk_start_word_index + config.max_size, // Ideal end based on max_size
                     num_words_in_segment // Cannot go beyond the last word
                 );
-                println!("  End Word Index (Calculated): {}", current_chunk_end_word_index); // Added log
+                trace!("  End Word Index (Calculated): {}", current_chunk_end_word_index);
 
 
                 // Ensure we don't create a chunk smaller than overlap if possible (unless it's the last chunk)
@@ -360,9 +359,9 @@ fn split_fallback(
                     // word_byte_indices[idx] is the end byte of word at index `idx`.
                     // The start byte of word `idx` should be word_byte_indices[idx - 1] (or 0 if idx is 0).
                     // So, the start byte for current_chunk_start_word_index should be word_byte_indices[current_chunk_start_word_index - 1]
-                    word_byte_indices[current_chunk_start_word_index - 1] // This seems correct now I re-read it. Let's log to be sure.
+                    word_byte_indices[current_chunk_start_word_index - 1]
                 };
-                println!("  Chunk Start Byte (Calculated): {}", chunk_start_byte); // Added log
+                trace!("  Chunk Start Byte (Calculated): {}", chunk_start_byte);
 
 
                 // Get the end byte of the last word in this chunk
@@ -376,7 +375,7 @@ fn split_fallback(
                      // but we checked for num_words_in_segment > 1 earlier.
                      // Let's just use the last available index if this weird state occurs.
                      if word_byte_indices.is_empty() {
-                         println!("  WARN: word_byte_indices is empty, cannot determine end byte."); // Added log
+                         trace!("  WARN: word_byte_indices is empty, cannot determine end byte.");
                          // Cannot proceed if there are no word boundaries
                          break;
                      }
@@ -385,63 +384,56 @@ fn split_fallback(
                  } else {
                     chunk_end_byte = word_byte_indices[chunk_end_byte_index]; // -1 because indices are end bytes
                  }
-                println!("  Chunk End Byte (Calculated): {}", chunk_end_byte); // Added log
+                trace!("  Chunk End Byte (Calculated): {}", chunk_end_byte);
 
 
                 // Extract, trim, and add the chunk
                 if chunk_start_byte < chunk_end_byte { // Ensure valid slice
                     let chunk_content_original = &segment[chunk_start_byte..chunk_end_byte];
                     let chunk_content_trimmed = chunk_content_original.trim();
-                    // Use the helper function defined elsewhere (e.g., in tests module or globally)
-                    // For now, let's assume count_icu_words_debug exists.
-                    // If not, we'd need to add it or use the segmenter directly here.
-                    let original_word_count = count_icu_words(chunk_content_original, word_segmenter); // Call moved function
-                    let trimmed_word_count = count_icu_words(chunk_content_trimmed, word_segmenter); // Call moved function
+                    let original_word_count = count_icu_words(chunk_content_original, word_segmenter);
+                    let trimmed_word_count = count_icu_words(chunk_content_trimmed, word_segmenter);
 
-
-                    println!("  Original Content Slice: \"{}\" (Word Count: {})", chunk_content_original, original_word_count); // Added log
-                    println!("  Trimmed Content Slice: \"{}\" (Word Count: {})", chunk_content_trimmed, trimmed_word_count); // Added log
-
+                    trace!("  Original Content Slice (Word Count: {})", original_word_count);
+                    trace!("  Trimmed Content Slice (Word Count: {})", trimmed_word_count);
 
                     if !chunk_content_trimmed.is_empty() {
-                        let chunk_char_count_trimmed = chunk_content_trimmed.chars().count();
-                        println!("  Adding Chunk: Start Offset = {}, End Offset = {}", current_chunk_start_offset, current_chunk_start_offset + chunk_char_count_trimmed); // Added log
+                        let chunk_start_index_char_offset = segment[0..chunk_start_byte].chars().count();
+                        let final_chunk_start_offset = current_offset + chunk_start_index_char_offset;
+                        trace!(
+                            "  Adding chunk (Word Count: {}, Char Count: {}), Range: {}..{}",
+                            trimmed_word_count,
+                            chunk_content_trimmed.chars().count(),
+                            final_chunk_start_offset,
+                            final_chunk_start_offset + chunk_content_trimmed.chars().count()
+                        );
                         chunks.push(TextChunk {
                             content: chunk_content_trimmed.to_string(),
                             source_id: source_id.clone(),
-                            start_index: current_chunk_start_offset, // Use the tracked char offset
-                            end_index: current_chunk_start_offset + chunk_char_count_trimmed,
+                            start_index: final_chunk_start_offset,
+                            end_index: final_chunk_start_offset + chunk_content_trimmed.chars().count(),
                         });
-                        // Update offset for the *next* chunk based on the *original* content's char count
-                        let offset_increase = chunk_content_original.chars().count(); // Added log
-                        println!("  Offset Increase (Original Chars): {}", offset_increase); // Added log
-                        current_chunk_start_offset += offset_increase;
-                    } else {
-                         // If trimming made it empty, still advance offset based on original
-                         let offset_increase = chunk_content_original.chars().count(); // Added log
-                         println!("  Trimmed empty. Offset Increase (Original Chars): {}", offset_increase); // Added log
-                         current_chunk_start_offset += offset_increase;
                     }
                 } else {
-                     println!("  Skipping chunk creation: chunk_start_byte ({}) >= chunk_end_byte ({})", chunk_start_byte, chunk_end_byte); // Added log
+                     trace!("  Skipping chunk creation: chunk_start_byte ({}) >= chunk_end_byte ({})", chunk_start_byte, chunk_end_byte);
                      // Need to ensure we still advance if start >= end to avoid infinite loop
                      let mut effective_end_word_index = current_chunk_end_word_index; // Use a mutable variable
                      if current_chunk_start_word_index == effective_end_word_index {
                          // This should only happen if max_size is 0 or less, or if segment has only 1 word left.
                          // Force advancement by at least one word index if possible.
-                         println!("  WARN: Start and End word indices are the same ({}). Forcing advance.", current_chunk_start_word_index); // Added log
+                         trace!("  WARN: Start and End word indices are the same ({}). Forcing advance.", current_chunk_start_word_index);
                          effective_end_word_index = min(current_chunk_start_word_index + 1, num_words_in_segment);
                      }
                      // Move to the next chunk start using the potentially adjusted end index
-                     println!("  Advancing start word index from {} to {}", current_chunk_start_word_index, effective_end_word_index); // Added log
+                     trace!("  Advancing start word index from {} to {}", current_chunk_start_word_index, effective_end_word_index);
                      current_chunk_start_word_index = effective_end_word_index;
                      continue; // Skip the normal advancement at the end of the loop
                 }
 
                 // Move to the next chunk start
-                println!("  Advancing start word index from {} to {}", current_chunk_start_word_index, current_chunk_end_word_index); // Added log
+                trace!("  Advancing start word index from {} to {}", current_chunk_start_word_index, current_chunk_end_word_index);
                 current_chunk_start_word_index = current_chunk_end_word_index;
-                println!("-- End Fallback Word Loop Iteration --"); // Added log
+                trace!("-- End Fallback Word Loop Iteration --");
             }
             return Ok(());
         }
@@ -1007,7 +999,7 @@ mod tests {
 
         // Print chunks with indices for debugging
         for (i, chunk) in result.iter().enumerate() {
-            println!("Chunk {}: '{}'", i, chunk.content);
+            trace!("Chunk {}: '{}'", i, chunk.content);
         }
 
         // Test each chunk meets size requirements
@@ -1052,7 +1044,7 @@ mod tests {
 
         // Print chunks with indices for debugging
         for (i, chunk) in result.iter().enumerate() {
-            println!("Chunk {}: '{}'", i, chunk.content);
+            trace!("Chunk {}: '{}'", i, chunk.content);
         }
 
         // The first chunk should contain the first part of message 1
@@ -1094,7 +1086,7 @@ mod tests {
         for chunk in &result {
             let word_segmenter = WordSegmenter::new_auto(); // Create segmenter for test assertion
             let word_count = count_icu_words(&chunk.content, &word_segmenter);
-            println!("Chunk: '{}', Word Count: {}", chunk.content, word_count);
+            trace!("Chunk: '{}', Word Count: {}", chunk.content, word_count);
             assert!(word_count <= config.max_size + config.overlap + 1, 
                 "Chunk word count ({}) exceeds max_size ({}) + overlap ({}) + 1", 
                 word_count, config.max_size, config.overlap);
@@ -1116,7 +1108,7 @@ mod tests {
         for (i, chunk) in result.iter().enumerate() {
             let word_segmenter = WordSegmenter::new_auto(); // Create segmenter for test assertion
             let word_count = count_icu_words(&chunk.content, &word_segmenter);
-            println!("Chunk {}: word count = {}, content = \"{}\"", i, word_count, chunk.content);
+            trace!("Chunk {}: word count = {}, content = \"{}\"", i, word_count, chunk.content);
             // Allow for 1 extra word beyond max_size + overlap due to whitespace handling in apply_overlap
             assert!(word_count <= config.max_size + config.overlap + 1, 
                 "Chunk word count ({}) exceeds max_size ({}) + overlap ({}) + 1", word_count, config.max_size, config.overlap);
@@ -1164,7 +1156,7 @@ mod tests {
          for (i, chunk) in result.iter().enumerate() {
              let word_segmenter = WordSegmenter::new_auto();
              let word_count = count_icu_words(&chunk.content, &word_segmenter);
-             println!("Chunk {}: '{}', Word Count: {}", i, chunk.content, word_count);
+             trace!("Chunk {}: '{}', Word Count: {}", i, chunk.content, word_count);
              assert!(word_count <= config.max_size + config.overlap + 1, 
                  "Chunk word count ({}) exceeds max_size ({}) + overlap ({}) + 1", 
                  word_count, config.max_size, config.overlap);
@@ -1233,7 +1225,7 @@ mod tests {
         for chunk in result {
             let word_segmenter = WordSegmenter::new_auto(); // Create segmenter for test assertion
             let word_count = count_icu_words(&chunk.content, &word_segmenter);
-            println!("Japanese Chunk: '{}', Word Count: {}", chunk.content, word_count); // Debug print
+            trace!("Japanese Chunk: '{}', Word Count: {}", chunk.content, word_count); // Debug print
             assert!(word_count <= config.max_size + config.overlap + 1, 
                 "Japanese chunk word count ({}) exceeds max_size ({}) + overlap ({}) + 1", word_count, config.max_size, config.overlap);
         }
@@ -1255,7 +1247,7 @@ mod tests {
          for chunk in result {
              let word_segmenter = WordSegmenter::new_auto(); // Create segmenter for test assertion
              let word_count = count_icu_words(&chunk.content, &word_segmenter);
-             println!("Chinese Chunk: '{}', Word Count: {}", chunk.content, word_count); // Debug print
+             trace!("Chinese Chunk: '{}', Word Count: {}", chunk.content, word_count); // Debug print
              assert!(word_count <= config.max_size + config.overlap + 1, 
                  "Chinese chunk word count ({}) exceeds max_size ({}) + overlap ({}) + 1", word_count, config.max_size, config.overlap);
          }

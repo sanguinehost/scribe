@@ -34,17 +34,18 @@ pub fn chat_routes() -> Router<crate::state::AppState> {
     tracing::debug!("chat_routes: entering chat_routes function");
     Router::new()
         .route("/chats", get(get_chats_handler).post(create_chat_handler))
-        .route("/chats/{id}", get(get_chat_by_id_handler).delete(delete_chat_handler))
-        .route("/chats/{id}/messages", {
-            tracing::debug!("chat_routes: mapping /chats/{{id}}/messages to get_messages_by_chat_id_handler");
+        .route("/chats/fetch/:id", get(get_chat_by_id_handler))
+        .route("/chats/remove/:id", delete(delete_chat_handler))
+        .route("/chats/:id/messages", {
+            tracing::debug!("chat_routes: mapping /chats/:id/messages to get_messages_by_chat_id_handler");
             get(get_messages_by_chat_id_handler).post(create_message_handler)
         })
-        .route("/chats/{id}/visibility", put(update_chat_visibility_handler))
-        .route("/chats/{id}/settings", get(get_chat_settings_handler).put(update_chat_settings_handler)) // <-- Add PUT handler
-        .route("/messages/{id}", get(get_message_by_id_handler))
-        .route("/messages/{id}/vote", post(vote_message_handler))
-        .route("/messages/{id}/trailing", delete(delete_trailing_messages_handler))
-        .route("/chats/{id}/votes", get(get_votes_by_chat_id_handler))
+        .route("/chats/:id/visibility", put(update_chat_visibility_handler))
+        .route("/chats/:id/settings", get(get_chat_settings_handler).put(update_chat_settings_handler))
+        .route("/messages/:id", get(get_message_by_id_handler))
+        .route("/messages/:id/vote", post(vote_message_handler))
+        .route("/messages/:id/trailing", delete(delete_trailing_messages_handler))
+        .route("/chats/:id/votes", get(get_votes_by_chat_id_handler))
 }
 
 // Get all chats for current user
@@ -204,6 +205,7 @@ pub async fn delete_chat_handler(
 pub async fn get_messages_by_chat_id_handler(
     auth_session: CurrentAuthSession,
     State(state): State<AppState>,
+    dek: SessionDek, // ADDED SessionDek extractor
     Path(id): Path<String>,
 ) -> Result<impl IntoResponse, AppError> {
     tracing::debug!("get_messages_by_chat_id_handler: id (as String) = {}", id);
@@ -213,8 +215,6 @@ pub async fn get_messages_by_chat_id_handler(
 
     let user = auth_session.user.ok_or(AppError::Unauthorized("Not logged in".to_string()))?;
     tracing::debug!("get_messages_by_chat_id_handler: Authenticated user.id = {}", user.id);
-    let user_dek_arc: Option<Arc<SecretBox<Vec<u8>>>> = user.dek.as_ref().map(|wrapped_dek| Arc::new(SecretBox::new(Box::new(wrapped_dek.0.expose_secret().clone()))));
-    tracing::debug!("get_messages_by_chat_id_handler: user_dek_arc.is_some() = {}", user_dek_arc.is_some());
     let pool = state.pool.clone();
     
     tracing::debug!("get_messages_by_chat_id_handler: Attempting to fetch chat with uuid_id = {}", uuid_id);
@@ -307,7 +307,7 @@ pub async fn get_messages_by_chat_id_handler(
     
     let mut responses = Vec::new();
     for msg_db in messages_db {
-        let decrypted_client_message = msg_db.clone().into_decrypted_for_client(user_dek_arc.as_deref())?;
+        let decrypted_client_message = msg_db.clone().into_decrypted_for_client(Some(&dek.0))?;
 
         // Now construct MessageResponse using fields from original msg_db and decrypted_client_message
         let response_parts = msg_db.parts.unwrap_or_else(|| json!([{"text": decrypted_client_message.content}]));
@@ -358,17 +358,20 @@ pub async fn create_message_handler(
         return Err(AppError::Forbidden);
     }
 
-    let message_role = if payload.role == "user" { MessageRole::User } else { MessageRole::Assistant };
+    let message_role_enum = if payload.role.to_lowercase() == "user" { MessageRole::User } else { MessageRole::Assistant };
 
     // Save the message
     let saved_db_message = chat_service::save_message(
         Arc::new(state.clone()),
         chat_id,
         user_id,
-        message_role,
-        &payload.content,
-        user_dek_arc.clone(), // Clone the Arc to avoid moving it
-        &chat.model_name, // Pass the model_name from the chat
+        message_role_enum, // The MessageRole enum (User or Assistant)
+        &payload.content,  // The primary textual content
+        Some(payload.role.clone()), // The specific role string (e.g., "user", "assistant") from payload
+        payload.parts.clone(),      // The structured parts from payload
+        payload.attachments.clone(),// The attachments from payload
+        user_dek_arc.clone(), 
+        &chat.model_name, 
     ).await?;
 
     // Convert DbChatMessage to ChatMessageForClient to get decrypted content

@@ -405,7 +405,7 @@ impl std::fmt::Display for MessageRole {
 #[derive(
     Queryable, Selectable, Identifiable, Associations, Clone, Serialize, Deserialize,
 )] // Removed Debug
-#[diesel(belongs_to(Chat, foreign_key = session_id))] // Renamed ChatSession to Chat
+#[diesel(belongs_to(Chat, foreign_key = session_id))] // CORRECTED: ChatSession -> Chat
 #[diesel(table_name = chat_messages)]
 pub struct ChatMessage {
     pub id: Uuid,
@@ -682,10 +682,13 @@ pub struct DbInsertableChatMessage {
     #[diesel(column_name = session_id)]
     pub chat_id: Uuid, // Maps to session_id in the database
     #[diesel(column_name = message_type)]
-    pub role: MessageRole, // Maps to message_type in the database
+    pub msg_type: MessageRole, // Maps to message_type in the database
     pub content: Vec<u8>,
     pub content_nonce: Option<Vec<u8>>, // Added nonce
     pub user_id: Uuid, // Add the user_id field
+    pub role: Option<String>, // ADDED: For Gemini role (user, model)
+    pub parts: Option<serde_json::Value>, // ADDED: For structured content
+    pub attachments: Option<serde_json::Value>, // ADDED: For attachments
     pub prompt_tokens: Option<i32>, // Added
     pub completion_tokens: Option<i32>, // Added
 }
@@ -694,10 +697,13 @@ impl std::fmt::Debug for DbInsertableChatMessage {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("DbInsertableChatMessage")
             .field("chat_id", &self.chat_id)
-            .field("role", &self.role)
+            .field("msg_type", &self.msg_type)
             .field("content", &"[REDACTED_BYTES]")
             .field("content_nonce", &self.content_nonce.as_ref().map(|_| "[REDACTED_NONCE]"))
             .field("user_id", &self.user_id)
+            .field("role", &self.role) // ADDED
+            .field("parts", &self.parts.as_ref().map(|_| "[REDACTED_JSON]")) // ADDED
+            .field("attachments", &self.attachments.as_ref().map(|_| "[REDACTED_JSON]")) // ADDED
             .field("prompt_tokens", &self.prompt_tokens) // Added
             .field("completion_tokens", &self.completion_tokens) // Added
             .finish()
@@ -705,23 +711,31 @@ impl std::fmt::Debug for DbInsertableChatMessage {
 }
 
 impl DbInsertableChatMessage {
+    #[allow(clippy::too_many_arguments)] // Allow more arguments for this constructor
     pub fn new(
         chat_id: Uuid,
         user_id: Uuid, // Change parameter to non-optional Uuid
-        role: MessageRole,
+        msg_type_enum: MessageRole, // Changed name for clarity
         text: Vec<u8>,
         nonce: Option<Vec<u8>>, // Added nonce parameter
-        prompt_tokens: Option<i32>, // Added
-        completion_tokens: Option<i32>, // Added
+        role_str: Option<String>,       // ADDED
+        parts_json: Option<serde_json::Value>, // ADDED
+        attachments_json: Option<serde_json::Value>, // ADDED
+        prompt_tokens: Option<i32>,
+        completion_tokens: Option<i32>,
     ) -> Self {
+        // let created_timestamp = Utc::now(); // Not needed here, DB handles it
         DbInsertableChatMessage {
             chat_id,
-            user_id, // Ensure user_id is assigned
-            role,
+            user_id, // Ensure this is correctly passed and non-optional
+            msg_type: msg_type_enum,
             content: text,
-            content_nonce: nonce, // Assign nonce
-            prompt_tokens, // Added
-            completion_tokens, // Added
+            content_nonce: nonce,
+            role: role_str,             // ADDED
+            parts: parts_json,          // ADDED
+            attachments: attachments_json, // ADDED
+            prompt_tokens,
+            completion_tokens,
         }
     }
 }
@@ -1353,10 +1367,10 @@ mod tests {
         let content_str = "Test message";
         let content_vec = content_str.as_bytes().to_vec(); // Will be encrypted by handler
 
-        let message = DbInsertableChatMessage::new(chat_id, user_id, role, content_vec.clone(), None, None, None);
+        let message = DbInsertableChatMessage::new(chat_id, user_id, role, content_vec.clone(), None, None, None, None, None, None);
         assert_eq!(message.chat_id, chat_id);
         assert_eq!(message.user_id, user_id);
-        assert_eq!(message.role, role);
+        assert_eq!(message.msg_type, role);
         assert_eq!(message.content, content_vec);
     }
 

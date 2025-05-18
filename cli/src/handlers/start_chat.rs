@@ -2,6 +2,7 @@ use crate::chat::run_interactive_streaming_chat_loop;
 use crate::client::HttpClient;
 use crate::error::CliError;
 use crate::handlers::characters::select_character;
+use crate::handlers::default_settings::apply_default_settings_to_session;
 use crate::io::IoHandler;
 use scribe_backend::models::chats::UpdateChatSettingsRequest;
 use tracing;
@@ -49,38 +50,47 @@ pub async fn handle_start_chat_action<H: IoHandler, C: HttpClient>(
     let chat_id = chat_session.id;
     tracing::info!(%chat_id, "Chat session created");
     
-    // 3. Configure chat session with optimal defaults 
+    // 3. Configure chat session with default settings
     io_handler.write_line(&format!("Starting streaming chat with model: {}", current_model))?;
     
-    // Setup default settings with thinking budget of 1024
-    let settings_to_update = UpdateChatSettingsRequest {
-        gemini_thinking_budget: Some(1024), // Default thinking budget is 1024
-        gemini_enable_code_execution: None, // Not currently relevant
-        system_prompt: None,
-        temperature: None,
-        max_output_tokens: None,
-        frequency_penalty: None,
-        presence_penalty: None,
-        top_k: None,
-        top_p: None,
-        repetition_penalty: None,
-        min_p: None,
-        top_a: None,
-        seed: None,
-        logit_bias: None,
-        history_management_strategy: None,
-        history_management_limit: None,
-        model_name: Some(current_model.to_string()),
-    };
-    
-    // Update session settings
-    io_handler.write_line("Setting up streaming chat session...")?;
-    match client.update_chat_settings(chat_id, &settings_to_update).await {
+    // Apply default settings from configuration
+    io_handler.write_line("Applying default chat settings...")?;
+    match apply_default_settings_to_session(client, chat_id).await {
         Ok(_) => {
-            io_handler.write_line("Session ready. You can now start chatting.")?;
+            io_handler.write_line("Session ready with your default settings. You can now start chatting.")?;
         },
         Err(e) => {
-            io_handler.write_line(&format!("Warning: Failed to update session settings: {}. Proceeding with defaults.", e))?;
+            io_handler.write_line(&format!("Warning: Failed to apply default settings: {}. Proceeding with system defaults.", e))?;
+            
+            // Fallback to basic settings if default settings application fails
+            let settings_to_update = UpdateChatSettingsRequest {
+                gemini_thinking_budget: Some(1024), // Default thinking budget is 1024
+                gemini_enable_code_execution: None, // Not currently relevant
+                system_prompt: None,
+                temperature: None,
+                max_output_tokens: None,
+                frequency_penalty: None,
+                presence_penalty: None,
+                top_k: None,
+                top_p: None,
+                repetition_penalty: None,
+                min_p: None,
+                top_a: None,
+                seed: None,
+                logit_bias: None,
+                history_management_strategy: None,
+                history_management_limit: None,
+                model_name: Some(current_model.to_string()),
+            };
+            
+            match client.update_chat_settings(chat_id, &settings_to_update).await {
+                Ok(_) => {
+                    io_handler.write_line("Session ready with basic settings. You can now start chatting.")?;
+                },
+                Err(e) => {
+                    io_handler.write_line(&format!("Warning: Failed to update session settings: {}. Proceeding with defaults.", e))?;
+                }
+            }
         }
     }
     

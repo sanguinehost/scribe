@@ -22,6 +22,7 @@ use super::interface::HttpClient;
 use super::types::{
     AuthUserResponse, // Used in login/register/me
     ClientCharacterDataForClient,
+    ClientChatMessageResponse,
     HealthStatus,
     RegisterPayload, // Used in register method signature
     SerializableLoginPayload, // Internal helper for login
@@ -263,10 +264,10 @@ impl HttpClient for ReqwestClientWrapper {
         handle_response(response).await
     }
 
-    async fn get_chat_messages(&self, session_id: Uuid) -> Result<Vec<ChatMessage>, CliError> {
+    async fn get_chat_messages(&self, session_id: Uuid) -> Result<Vec<ClientChatMessageResponse>, CliError> {
         let url = build_url(
             &self.base_url,
-            &format!("/api/chats/{}/messages", session_id),
+            &format!("/api/chats-api/chats/{}/messages", session_id),
         )?;
         tracing::info!(target: "scribe_cli::client::implementation", %url, %session_id, "Fetching chat messages via HttpClient");
         let response = self
@@ -276,6 +277,35 @@ impl HttpClient for ReqwestClientWrapper {
             .await
             .map_err(CliError::Reqwest)?;
         handle_response(response).await
+    }
+
+    async fn delete_chat(&self, chat_id: Uuid) -> Result<(), CliError> {
+        // Following the same pattern as characters for GET and DELETE:
+        //   /characters/fetch/:id and /characters/remove/:id
+        // Note: The route in the backend uses :id notation, but we need to use actual values here
+        let url = build_url(&self.base_url, &format!("/api/chats-api/chats/remove/{}", chat_id))?;
+        tracing::info!(target: "scribe_cli::client::implementation", %url, %chat_id, "Deleting chat session via HttpClient");
+        let response = self
+            .client
+            .delete(url)
+            .send()
+            .await
+            .map_err(CliError::Reqwest)?;
+        
+        if response.status().is_success() {
+            Ok(())
+        } else {
+            let status = response.status();
+            let error_text = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Failed to read error body".to_string());
+            tracing::error!(target: "scribe_cli::client::implementation", %status, error_body = %error_text, "Delete chat operation failed");
+            Err(CliError::ApiError {
+                status,
+                message: error_text,
+            })
+        }
     }
 
     // This is the non-streaming version

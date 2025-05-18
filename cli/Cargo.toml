@@ -26,6 +26,7 @@ chrono = { version = "0.4.40" }
 secrecy = { version = "0.10.3", features = ["serde"] } 
 async-stream = "0.3" # For creating streams
 tokio-stream = "0.1" # Removed incorrect features
+dirs = "5.0.1" # For locating config directory
 
 # Added missing dependencies for handlers
 genai = { path = "/home/socol/Workspace/rust-genai" }

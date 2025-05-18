@@ -774,48 +774,51 @@ async fn test_get_chat_messages_success() {
     let (mut server, client) = setup_test_server();
     let session_id = Uuid::new_v4();
     let now = Utc::now();
+    let msg_id1 = Uuid::new_v4();
+    let msg_id2 = Uuid::new_v4();
 
-    let mock_messages = vec![
-        ChatMessage {
-            id: Uuid::new_v4(),
-            session_id,
-            user_id: Uuid::nil(),
-            message_type: MessageRole::User,
-            content: "Hello there".to_string().into_bytes(),
-            content_nonce: None,
-            created_at: now,
-            prompt_tokens: None,
-            completion_tokens: None,
+    // Mock response should be Vec<ClientChatMessageResponse>
+    let mock_api_response = json!([
+        {
+            "id": msg_id1,
+            "session_id": session_id,
+            "message_type": "User",
+            "role": "user",
+            "parts": [{"text": "Hello there"}],
+            "attachments": [],
+            "created_at": now.to_rfc3339(),
         },
-        ChatMessage {
-            id: Uuid::new_v4(),
-            session_id,
-            user_id: Uuid::nil(),
-            message_type: MessageRole::Assistant,
-            content: "General Kenobi!".to_string().into_bytes(),
-            content_nonce: None,
-            created_at: now + chrono::Duration::seconds(1),
-            prompt_tokens: None,
-            completion_tokens: None,
-        },
-    ];
+        {
+            "id": msg_id2,
+            "session_id": session_id,
+            "message_type": "Assistant",
+            "role": "assistant",
+            "parts": [{"text": "General Kenobi!"}],
+            "attachments": [],
+            "created_at": (now + chrono::Duration::seconds(1)).to_rfc3339(),
+        }
+    ]);
 
-    let path_string = format!("/api/chats/{}/messages", session_id);
+    let path_string = format!("/api/chats-api/chats/{}/messages", session_id);
     server.expect(
         Expectation::matching(all_of![
             request::method("GET"),
             request::path(matches(path_string))
         ])
-            .respond_with(json_encoded(mock_messages.clone())),
+            .respond_with(json_encoded(mock_api_response)), // Use the new mock_api_response
     );
 
     let result = client.get_chat_messages(session_id).await;
 
-    assert!(result.is_ok());
+    assert!(result.is_ok(), "get_chat_messages failed: {:?}", result.err());
     let messages = result.unwrap();
     assert_eq!(messages.len(), 2);
-    assert_eq!(messages[0].content, mock_messages[0].content);
-    assert_eq!(messages[1].message_type, MessageRole::Assistant);
+    assert_eq!(messages[0].id, msg_id1);
+    assert_eq!(messages[0].role, "user");
+    assert_eq!(messages[0].parts[0]["text"].as_str().unwrap(), "Hello there");
+    assert_eq!(messages[1].id, msg_id2);
+    assert_eq!(messages[1].role, "assistant");
+    assert_eq!(messages[1].parts[0]["text"].as_str().unwrap(), "General Kenobi!");
 
     server.verify_and_clear();
 }
@@ -824,15 +827,15 @@ async fn test_get_chat_messages_success() {
 async fn test_get_chat_messages_success_empty() {
     let (mut server, client) = setup_test_server();
     let session_id = Uuid::new_v4();
-    let mock_messages: Vec<ChatMessage> = vec![];
+    let mock_api_response: Vec<ClientChatMessageResponse> = vec![]; // Correct type
 
-    let path_string = format!("/api/chats/{}/messages", session_id);
+    let path_string = format!("/api/chats-api/chats/{}/messages", session_id);
     server.expect(
         Expectation::matching(all_of![
             request::method("GET"),
             request::path(matches(path_string))
         ])
-            .respond_with(json_encoded(mock_messages)),
+            .respond_with(json_encoded(mock_api_response)),
     );
 
     let result = client.get_chat_messages(session_id).await;
@@ -854,7 +857,7 @@ async fn test_get_chat_messages_not_found() {
         }
     });
 
-    let path_string = format!("/api/chats/{}/messages", session_id);
+    let path_string = format!("/api/chats-api/chats/{}/messages", session_id);
     server.expect(
         Expectation::matching(all_of![
             request::method("GET"),
@@ -1111,6 +1114,64 @@ fn test_generate_chat_request_serde() {
     assert_eq!(original.history[0].role, deserialized.history[0].role);
     assert_eq!(original.history[0].content, deserialized.history[0].content);
     assert_eq!(original.model, deserialized.model);
+}
+
+#[tokio::test]
+async fn test_delete_chat_success() {
+    let (mut server, client) = setup_test_server();
+    let chat_id = Uuid::new_v4();
+    
+    // Set up the correct expectation for the new endpoint following the character router pattern
+    // Using explicit /remove/:id pattern to match backend's route.
+    // The routes for getting and deleting were changed from /:id to /fetch/:id and /remove/:id
+    // in the backend to avoid persistent 404 errors with Axum routing
+    server.expect(
+        Expectation::matching(all_of![
+            request::method("DELETE"),
+            request::path(matches(format!("/api/chats-api/chats/remove/{}", chat_id)))
+        ])
+        .respond_with(status_code(204))
+    );
+    
+    let result = client.delete_chat(chat_id).await;
+    
+    assert!(result.is_ok(), "Delete chat failed: {:?}", result.err());
+    
+    server.verify_and_clear();
+}
+
+#[tokio::test]
+async fn test_delete_chat_not_found() {
+    let (mut server, client) = setup_test_server();
+    let chat_id = Uuid::new_v4();
+    let error_body = json!({
+        "error": {
+            "message": format!("Chat session {} not found", chat_id)
+        }
+    });
+    
+    // Set up the correct expectation for the new endpoint following the character router pattern
+    // Using explicit /remove/:id pattern to match backend's route to avoid 404 errors
+    server.expect(
+        Expectation::matching(all_of![
+            request::method("DELETE"),
+            request::path(matches(format!("/api/chats-api/chats/remove/{}", chat_id)))
+        ])
+        .respond_with(status_code(404).body(error_body.to_string()))
+    );
+    
+    let result = client.delete_chat(chat_id).await;
+    
+    assert!(result.is_err());
+    match result.err().unwrap() {
+        CliError::ApiError { status, message } => {
+            assert_eq!(status, StatusCode::NOT_FOUND);
+            assert!(message.contains(&format!("Chat session {} not found", chat_id)));
+        }
+        e => panic!("Expected CliError::ApiError with 404, got {:?}", e),
+    }
+    
+    server.verify_and_clear();
 }
 
 // TODO: Add tests for stream_chat_response using a mock server (e.g., httptest or wiremock)

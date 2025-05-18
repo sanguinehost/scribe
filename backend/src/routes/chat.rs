@@ -261,7 +261,7 @@ pub async fn generate_chat_response(
         gen_model_name_from_service,
         gen_gemini_thinking_budget,
         gen_gemini_enable_code_execution,
-        _user_message_to_save_for_db, // This is DbInsertableChatMessage, its structure is used by service
+        user_message_struct_to_save, // RENAMED from _user_message_to_save_for_db
         _hist_management_strategy,
         _hist_management_limit,
     ) = chat_service::get_session_data_for_generation(
@@ -359,10 +359,43 @@ pub async fn generate_chat_response(
         v if v.contains(mime::TEXT_EVENT_STREAM.as_ref()) => {
             info!(%session_id, "Handling streaming SSE request. request_thinking={}", request_thinking);
             
-            // User message is saved by get_session_data_for_generation if new, or implicitly part of history.
+            // Explicitly save the user's message before streaming AI response
+            let current_user_content_for_save = user_message_struct_to_save.content.clone(); // Assuming content is Vec<u8>
+            let current_user_role_for_save = user_message_struct_to_save.role.clone();
+            let current_user_parts_for_save = user_message_struct_to_save.parts.clone();
+            let current_user_attachments_for_save = user_message_struct_to_save.attachments.clone();
+
+            // We need the actual text content for save_message's `content: &str` param.
+            // user_message_struct_to_save.content is Vec<u8> (potentially encrypted later, but plaintext from user initially).
+            // For user messages, this original Vec<u8> should be the direct user_message_content.
+            // The `DbInsertableChatMessage::new` call in `get_session_data_for_generation` uses `user_message_content.into_bytes()`.
+
+            match chat_service::save_message(
+                state_arc.clone(),
+                session_id,
+                user_id_value,
+                MessageRole::User, // message_type_enum
+                &current_user_content, // This is the original String content from the payload
+                current_user_role_for_save, // role_str from the prepared struct
+                current_user_parts_for_save, // parts from the prepared struct
+                current_user_attachments_for_save, // attachments from the prepared struct
+                Some(session_dek_arc.clone()), // DEK for potential encryption
+                &model_to_use,
+            ).await {
+                Ok(saved_user_msg) => {
+                    debug!(message_id = %saved_user_msg.id, session_id = %session_id, "Successfully saved user message via chat_service (SSE path)");
+                }
+                Err(e) => {
+                    error!(error = ?e, session_id = %session_id, "Error saving user message via chat_service (SSE path)");
+                    // Decide if we should return an error or try to stream AI response anyway
+                    // For now, let's return the error to make it visible.
+                    return Err(e);
+                }
+            }
+
             // The assistant's message will be saved by stream_ai_response_and_save_message.
 
-            let dek_for_stream_service = session_dek_arc.clone(); // MODIFIED: Use Arc clone
+            let dek_for_stream_service = session_dek_arc.clone();
             match chat_service::stream_ai_response_and_save_message(
                 state_arc.clone(),
                 session_id,
@@ -451,15 +484,18 @@ pub async fn generate_chat_response(
             // For JSON path, we save the user message explicitly before calling AI.
             // The content is current_user_content.
             
-            let dek_for_user_save_json = session_dek_arc.clone(); // MODIFIED: Use Arc clone
+            let dek_for_user_save_json = session_dek_arc.clone(); 
             let _user_saved_message = match chat_service::save_message(
                 state_arc.clone(),
                 session_id,
                 user_id_value,
-                MessageRole::User,
-                &current_user_content, // Use the already extracted current_user_content
-                Some(dek_for_user_save_json), // Pass Arc clone
-                &model_to_use, // Pass model_name
+                MessageRole::User,           // message_type_enum
+                &current_user_content,       // content
+                Some("user".to_string()),    // role_str
+                Some(json!([{"text": current_user_content}])), // parts
+                None,                        // attachments
+                Some(dek_for_user_save_json), 
+                &model_to_use, 
             ).await {
                 Ok(saved_msg) => {
                     debug!(message_id = %saved_msg.id, session_id = %session_id, "Successfully saved user message via chat_service (JSON path)");
@@ -520,7 +556,7 @@ pub async fn generate_chat_response(
                     trace!(%session_id, ?response_content, "Full non-streaming AI response (JSON path)");
                     
                     if !response_content.is_empty() {
-                        let dek_for_ai_save_json = session_dek_arc.clone(); // MODIFIED: Use Arc clone
+                        let dek_for_ai_save_json = session_dek_arc.clone(); 
                         let state_for_ai_save = state_arc.clone();
                         let response_content_for_save = response_content.clone();
                         tokio::spawn(async move {
@@ -528,8 +564,11 @@ pub async fn generate_chat_response(
                                 state_for_ai_save,
                                 session_id,
                                 user_id_value,
-                                MessageRole::Assistant,
-                                &response_content_for_save,
+                                MessageRole::Assistant,    // message_type_enum
+                                &response_content_for_save, // content
+                                Some("assistant".to_string()), // role_str  (or "model")
+                                Some(json!([{"text": response_content_for_save}])), // parts
+                                None,                         // attachments
                                 Some(dek_for_ai_save_json),
                                 &model_to_use,
                             ).await {

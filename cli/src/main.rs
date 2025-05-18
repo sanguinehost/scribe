@@ -29,7 +29,8 @@ use handlers::{
     handle_model_settings_action, handle_registration_action, handle_resume_chat_session_action,
     handle_start_chat_action, handle_upload_character_action, handle_view_character_details_action,
     handle_view_chat_history_action, handle_view_user_details_action, select_character,
-    handle_chat_config_action,
+    handle_chat_config_action, handle_delete_chat_session_action, handle_default_settings_action,
+    apply_default_settings_to_session,
 };
 use io::{IoHandler, StdIoHandler}; // IO Abstraction
 use scribe_backend::models::chats::UpdateChatSettingsRequest; // For streaming settings
@@ -138,7 +139,9 @@ async fn main() -> Result<()> {
                             io_handler.write_line("[13] Configure Chat Session")?;
                             io_handler.write_line("[14] Show My Info")?;
                             io_handler.write_line("[15] Model Settings")?;
-                            io_handler.write_line("[16] Logout")?;
+                            io_handler.write_line("[16] Delete Chat Session")?;
+                            io_handler.write_line("[17] Configure Default Chat Settings")?;
+                            io_handler.write_line("[18] Logout")?;
                             io_handler.write_line("[q] Quit Application")?;
 
                             let choice = io_handler.read_line("Enter choice: ")?;
@@ -373,6 +376,26 @@ async fn main() -> Result<()> {
                                         }
                                     }
                                     "16" => {
+                                        // Delete Chat Session
+                                        match handle_delete_chat_session_action(&http_client, &mut io_handler).await {
+                                            Ok(()) => { /* Success handled within function */ }
+                                            Err(e) => {
+                                                tracing::error!(error = ?e, "Failed to delete chat session");
+                                                io_handler.write_line(&format!("Error deleting chat session: {}", e))?;
+                                            }
+                                        }
+                                    }
+                                    "17" => {
+                                        // Configure Default Chat Settings
+                                        match handle_default_settings_action(&http_client, &mut io_handler, &current_model).await {
+                                            Ok(()) => { /* Success handled within function */ }
+                                            Err(e) => {
+                                                tracing::error!(error = ?e, "Failed to configure default settings");
+                                                io_handler.write_line(&format!("Error configuring default settings: {}", e))?;
+                                            }
+                                        }
+                                    }
+                                    "18" => {
                                         // Logout
                                         io_handler.write_line("Logging out...")?;
                                         match http_client.logout().await {

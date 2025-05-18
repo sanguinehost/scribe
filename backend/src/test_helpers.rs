@@ -19,7 +19,7 @@ use crate::{
         health::health_check,
         characters,
         chats_api,
-        documents_api::{document_routes},
+        documents::{document_routes},
         auth as auth_routes_module,
     },
     schema,

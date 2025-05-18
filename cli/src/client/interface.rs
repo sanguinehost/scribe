@@ -16,6 +16,7 @@ use uuid::Uuid;
 use super::types::{
     HealthStatus,
     ClientCharacterDataForClient, // This is the primary character type the client deals with
+    ClientChatMessageResponse,
     StreamEvent,
     RegisterPayload, // CLI specific payload
     AdminUserListResponse,
@@ -46,13 +47,14 @@ pub trait HttpClient: Send + Sync {
     
     // Chat
     async fn list_chat_sessions(&self) -> Result<Vec<Chat>, CliError>;
-    async fn get_chat_messages(&self, session_id: Uuid) -> Result<Vec<ChatMessage>, CliError>;
+    async fn get_chat_messages(&self, session_id: Uuid) -> Result<Vec<ClientChatMessageResponse>, CliError>;
     async fn send_message(
         &self,
         chat_id: Uuid,
         content: &str,
         model_name: Option<&str>,
     ) -> Result<ChatMessage, CliError>;
+    async fn delete_chat(&self, chat_id: Uuid) -> Result<(), CliError>;
 
     // Streaming Chat
     async fn stream_chat_response(

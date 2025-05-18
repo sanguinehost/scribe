@@ -207,6 +207,20 @@ pub struct ClientCharacterDataForClient {
     pub world_scenario_visibility: Option<String>,
 }
 
+// NEW: Struct for deserializing chat message responses from the backend
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct ClientChatMessageResponse {
+    pub id: Uuid,
+    pub session_id: Uuid,
+    pub message_type: String, // Or a specific enum if defined, like MessageRole
+    pub role: String,         // Or a specific enum
+    pub parts: Value,       // serde_json::Value for flexible structure like `[{"text": "..."}]`
+    pub attachments: Value, // serde_json::Value for flexible structure
+    pub created_at: DateTime<Utc>,
+    // Add other fields if the backend MessageResponse includes them and they are needed by CLI
+    // pub user_id: Option<Uuid>, // Example: if backend sends user_id for messages
+}
+
 // Custom deserializer function that can handle both string and byte array formats
 // This function is module-private as it's only used by ClientCharacterDataForClient's serde attributes
 fn deserialize_option_bytes_to_string<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>

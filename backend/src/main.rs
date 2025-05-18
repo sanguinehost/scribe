@@ -21,7 +21,7 @@ use scribe_backend::routes::{
     characters::characters_router, // Use the router function import
     chat::chat_routes,
     chats_api,
-    documents_api::document_routes,
+    documents::document_routes,
 };
 use scribe_backend::state::AppState;
 use anyhow::Context;
