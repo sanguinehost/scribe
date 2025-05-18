@@ -36,7 +36,7 @@ The implementation involves modifications to both the backend (Rust) and fronten
 
 #### 4.1.1. Define Data Structures
 
-Location: e.g., [`backend/src/models/chats.rs`](backend/src/models/chats.rs)
+Location: e.g., [`backend/src/models/chat.rs`](backend/src/models/chats.rs)
 
 *   **Request Body for the new endpoint:**
     ```rust

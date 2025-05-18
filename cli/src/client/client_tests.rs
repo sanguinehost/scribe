@@ -726,7 +726,7 @@ async fn test_list_chat_sessions_success() {
     ];
 
     server.expect(
-        Expectation::matching(request::method_path("GET", "/api/chats-api/chats"))
+        Expectation::matching(request::method_path("GET", "/api/chats"))
             .respond_with(json_encoded(mock_sessions.clone())),
     );
 
@@ -749,7 +749,7 @@ async fn test_list_chat_sessions_success_empty() {
     let mock_sessions: Vec<Chat> = vec![];
 
     server.expect(
-        Expectation::matching(request::method_path("GET", "/api/chats-api/chats"))
+        Expectation::matching(request::method_path("GET", "/api/chats"))
             .respond_with(json_encoded(mock_sessions)),
     );
 
@@ -772,7 +772,7 @@ async fn test_list_chat_sessions_api_error() {
     });
 
     server.expect(
-        Expectation::matching(request::method_path("GET", "/api/chats-api/chats"))
+        Expectation::matching(request::method_path("GET", "/api/chats"))
             .respond_with(status_code(500).body(error_body.to_string())),
     );
 
@@ -820,7 +820,7 @@ async fn test_get_chat_messages_success() {
         }
     ]);
 
-    let path_string = format!("/api/chats-api/chats/{}/messages", session_id);
+    let path_string = format!("/api/chats/{}/messages", session_id);
     server.expect(
         Expectation::matching(all_of![
             request::method("GET"),
@@ -860,7 +860,7 @@ async fn test_get_chat_messages_success_empty() {
     let session_id = Uuid::new_v4();
     let mock_api_response: Vec<ClientChatMessageResponse> = vec![]; // Correct type
 
-    let path_string = format!("/api/chats-api/chats/{}/messages", session_id);
+    let path_string = format!("/api/chats/{}/messages", session_id);
     server.expect(
         Expectation::matching(all_of![
             request::method("GET"),
@@ -888,7 +888,7 @@ async fn test_get_chat_messages_not_found() {
         }
     });
 
-    let path_string = format!("/api/chats-api/chats/{}/messages", session_id);
+    let path_string = format!("/api/chats/{}/messages", session_id);
     server.expect(
         Expectation::matching(all_of![
             request::method("GET"),
@@ -1015,7 +1015,7 @@ async fn test_send_message_success() {
     server.expect(
         Expectation::matching(all_of![
             request::method("POST"),
-            request::path(matches(format!("/api/chats/{}/generate.*", session_id)))
+            request::path(matches(format!("/api/chat/{}/generate.*", session_id)))
         ])
         .respond_with(json_encoded(mock_api_response)),
     );
@@ -1041,7 +1041,7 @@ async fn test_send_message_success() {
     server.expect(
         Expectation::matching(all_of![
             request::method("POST"),
-            request::path(matches(format!("/api/chats/{}/generate.*", session_id)))
+            request::path(matches(format!("/api/chat/{}/generate.*", session_id)))
         ])
         .respond_with(
             status_code(200)
@@ -1080,7 +1080,7 @@ async fn test_send_message_session_not_found() {
     server.expect(
         Expectation::matching(all_of![
             request::method("POST"),
-            request::path(matches(format!("/api/chats/{}/generate.*", session_id)))
+            request::path(matches(format!("/api/chat/{}/generate.*", session_id)))
         ])
         .respond_with(status_code(404).body(error_body_json.to_string())),
     );
@@ -1109,7 +1109,7 @@ async fn test_send_message_session_not_found() {
     server.expect(
         Expectation::matching(all_of![
             request::method("POST"),
-            request::path(matches(format!("/api/chats/{}/generate.*", session_id)))
+            request::path(matches(format!("/api/chat/{}/generate.*", session_id)))
         ])
         .respond_with(
             status_code(200)
@@ -1164,7 +1164,7 @@ async fn test_delete_chat_success() {
     server.expect(
         Expectation::matching(all_of![
             request::method("DELETE"),
-            request::path(matches(format!("/api/chats-api/chats/remove/{}", chat_id)))
+            request::path(matches(format!("/api/chats/remove/{}", chat_id)))
         ])
         .respond_with(status_code(204)),
     );
@@ -1191,7 +1191,7 @@ async fn test_delete_chat_not_found() {
     server.expect(
         Expectation::matching(all_of![
             request::method("DELETE"),
-            request::path(matches(format!("/api/chats-api/chats/remove/{}", chat_id)))
+            request::path(matches(format!("/api/chats/remove/{}", chat_id)))
         ])
         .respond_with(status_code(404).body(error_body.to_string())),
     );

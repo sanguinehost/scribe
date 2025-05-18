@@ -481,7 +481,7 @@ impl HttpClient for MockHttpClient {
 
     async fn delete_chat(&self, chat_id: Uuid) -> Result<(), CliError> {
         // Record the endpoint call with the expected format
-        self.record_endpoint_call(&format!("/api/chats-api/chats/remove/{}", chat_id));
+        self.record_endpoint_call(&format!("/api/chats/remove/{}", chat_id));
 
         let mock_result =
             Arc::unwrap_or_clone(self.delete_chat_result.clone().unwrap_or_else(|| {

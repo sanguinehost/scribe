@@ -26,7 +26,7 @@ use scribe_backend::{
 use serde_json::json; // For login payload
 use tower_cookies::Cookie; // Added for parsing cookie
 
-// --- Tests for GET /api/chats/{id}/messages ---
+// --- Tests for GET /api/chat/{id}/messages ---
 
 #[tokio::test]
 #[ignore] // Added ignore for CI
@@ -170,7 +170,7 @@ async fn get_chat_messages_success_integration() -> anyhow::Result<()> {
 
     let request = Request::builder()
         .method(Method::GET)
-        .uri(format!("/chats-api/chats/{}/messages", session_a.id))
+        .uri(format!("/chats/{}/messages", session_a.id))
         .header(header::COOKIE, auth_cookie_b) // Use User B's cookie
         .body(Body::empty())?;
 
@@ -214,7 +214,7 @@ async fn test_get_chat_messages_session_not_found() -> anyhow::Result<()> {
     let request = Request::builder()
         .method(Method::GET)
         .uri(format!(
-            "/api/chats-api/chats/{}/messages",
+            "/api/chats/{}/messages",
             non_existent_session_id
         ))
         .header(header::COOKIE, &auth_cookie)
@@ -254,7 +254,7 @@ mod delete_chat_message {
 
         // let request = Request::builder()
         //     .method(Method::DELETE)
-        //     .uri(format!("/api/chats-api/chats/{}/messages/{}", session_id, message_id))
+        //     .uri(format!("/api/chats/{}/messages/{}", session_id, message_id))
         //     .header(header::COOKIE, &auth_cookie)
         //     .body(Body::empty())?;
         //
@@ -285,7 +285,7 @@ mod delete_chat_message {
         let request = Request::builder()
             .method(Method::DELETE)
             .uri(format!(
-                "/api/chats-api/chats/{}/messages/{}",
+                "/api/chats/{}/messages/{}",
                 session_id, message_id
             ))
             .header(header::COOKIE, &auth_cookie)

@@ -195,7 +195,7 @@ async fn test_generate_chat_response_triggers_embeddings() -> anyhow::Result<()>
         .await
         .map_err(|e| anyhow::anyhow!("Failed to get DB connection: {}", e))?
         .interact(move |conn| {
-            // Match fields from NewChat definition in models/chats.rs
+            // Match fields from NewChat definition in models/chat.rs
             let now = Utc::now();
             let new_chat = NewChat {
                 id: Uuid::new_v4(),
@@ -244,7 +244,7 @@ async fn test_generate_chat_response_triggers_embeddings() -> anyhow::Result<()>
 
     let request = Request::builder()
         .method(Method::POST)
-        .uri(format!("/api/chats/{}/generate", session.id))
+        .uri(format!("/api/chat/{}/generate", session.id))
         .header(header::COOKIE, &auth_cookie)
         .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
         .header(header::ACCEPT, mime::APPLICATION_JSON.as_ref())
@@ -471,7 +471,7 @@ async fn test_generate_chat_response_triggers_embeddings_with_existing_session()
         .await
         .map_err(|e| anyhow::anyhow!("Failed to get DB connection: {}", e))?
         .interact(move |conn| {
-            // Match fields from NewChat definition in models/chats.rs
+            // Match fields from NewChat definition in models/chat.rs
             let now = Utc::now();
             let new_chat = NewChat {
                 id: Uuid::new_v4(),
@@ -505,7 +505,7 @@ async fn test_generate_chat_response_triggers_embeddings_with_existing_session()
         .await
         .map_err(|e| anyhow::anyhow!("Failed to get DB connection: {}", e))?
         .interact(move |conn| {
-            // Match fields from NewMessage definition in models/chats.rs
+            // Match fields from NewMessage definition in models/chat.rs
             let now = Utc::now();
             let new_message = NewMessage {
                 id: Uuid::new_v4(),
@@ -543,7 +543,7 @@ async fn test_generate_chat_response_triggers_embeddings_with_existing_session()
 
     let request = Request::builder()
         .method(Method::POST)
-        .uri(format!("/api/chats/{}/generate", session.id))
+        .uri(format!("/api/chat/{}/generate", session.id))
         .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
         .header(header::COOKIE, auth_cookie)
         .header(header::ACCEPT, mime::APPLICATION_JSON.as_ref())
@@ -715,7 +715,7 @@ async fn test_rag_context_injection_in_prompt() -> anyhow::Result<()> {
         .await
         .map_err(|e| anyhow::anyhow!("Failed to get DB connection: {}", e))?
         .interact(move |conn| {
-            // Match fields from NewChat definition in models/chats.rs
+            // Match fields from NewChat definition in models/chat.rs
             let now = Utc::now();
             let new_chat = NewChat {
                 id: Uuid::new_v4(),
@@ -785,7 +785,7 @@ async fn test_rag_context_injection_in_prompt() -> anyhow::Result<()> {
 
     let request = Request::builder()
         .method(Method::POST)
-        .uri(format!("/api/chats/{}/generate", session.id))
+        .uri(format!("/api/chat/{}/generate", session.id))
         .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
         .header(header::COOKIE, auth_cookie)
         .header(header::ACCEPT, mime::APPLICATION_JSON.as_ref())
@@ -1033,7 +1033,7 @@ async fn generate_chat_response_rag_retrieval_error() -> anyhow::Result<()> {
         .await
         .map_err(|e| anyhow::anyhow!("Failed to get DB connection: {}", e))?
         .interact(move |conn| {
-            // Match fields from NewChat definition in models/chats.rs
+            // Match fields from NewChat definition in models/chat.rs
             let now = Utc::now();
             let new_chat = NewChat {
                 id: Uuid::new_v4(),
@@ -1087,7 +1087,7 @@ async fn generate_chat_response_rag_retrieval_error() -> anyhow::Result<()> {
 
     let request = Request::builder()
         .method(Method::POST)
-        .uri(format!("/api/chats/{}/generate", session.id))
+        .uri(format!("/api/chat/{}/generate", session.id))
         .header(header::COOKIE, &auth_cookie)
         .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
         .header(header::ACCEPT, mime::APPLICATION_JSON.as_ref())
@@ -1281,7 +1281,7 @@ async fn setup_test_data(use_real_ai: bool) -> anyhow::Result<RagTestContext> {
         .await
         .map_err(|e| anyhow::anyhow!("Failed to get DB connection: {}", e))?
         .interact(move |conn| {
-            // Match fields from NewChat definition in models/chats.rs
+            // Match fields from NewChat definition in models/chat.rs
             let now = Utc::now();
             let new_chat = NewChat {
                 id: Uuid::new_v4(),
@@ -1328,7 +1328,7 @@ async fn setup_test_data(use_real_ai: bool) -> anyhow::Result<RagTestContext> {
 
     let request = Request::builder()
         .method(Method::POST)
-        .uri(format!("/api/chats/{}/generate", session.id))
+        .uri(format!("/api/chat/{}/generate", session.id))
         .header(header::COOKIE, &auth_cookie)
         .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
         .header(header::ACCEPT, mime::APPLICATION_JSON.as_ref())
@@ -1458,7 +1458,7 @@ async fn generate_chat_response_rag_success() -> anyhow::Result<()> {
 
     let request = Request::builder()
         .method(Method::POST)
-        .uri(format!("/api/chats/{}/generate", context.session.id))
+        .uri(format!("/api/chat/{}/generate", context.session.id))
         .header(header::COOKIE, &context.auth_cookie)
         .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
         .header(header::ACCEPT, mime::APPLICATION_JSON.as_ref())
@@ -1514,7 +1514,7 @@ async fn generate_chat_response_rag_empty_history_success() -> anyhow::Result<()
     // Request and assertions are similar to generate_chat_response_rag_success
     let request = Request::builder()
         .method(Method::POST)
-        .uri(format!("/api/chats/{}/generate", context.session.id))
+        .uri(format!("/api/chat/{}/generate", context.session.id))
         .header(header::COOKIE, &context.auth_cookie)
         .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
         .header(header::ACCEPT, mime::APPLICATION_JSON.as_ref())
@@ -1572,7 +1572,7 @@ async fn generate_chat_response_rag_no_relevant_chunks_found() -> anyhow::Result
     // Request and assertions
     let request = Request::builder()
         .method(Method::POST)
-        .uri(format!("/api/chats/{}/generate", context.session.id))
+        .uri(format!("/api/chat/{}/generate", context.session.id))
         .header(header::COOKIE, &context.auth_cookie)
         .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
         .header(header::ACCEPT, mime::APPLICATION_JSON.as_ref())
@@ -1675,7 +1675,7 @@ async fn generate_chat_response_rag_uses_character_settings_if_no_session() -> a
     };
     let request = Request::builder()
         .method(Method::POST)
-        .uri(format!("/api/chats/{}/generate", context.session.id)) // Use session from setup
+        .uri(format!("/api/chat/{}/generate", context.session.id)) // Use session from setup
         .header(header::COOKIE, &context.auth_cookie)
         .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
         .header(header::ACCEPT, mime::APPLICATION_JSON.as_ref())

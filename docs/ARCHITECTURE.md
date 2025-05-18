@@ -106,7 +106,7 @@ graph TD
 ## Data Flow (Core Chat Loop Example - Assumes Authenticated User)
 
 1.  User sends message via SvelteKit UI.
-2.  Frontend API Client sends message content + session info to Backend API (`/api/chats/{id}/messages`). The browser automatically includes the session cookie.
+2.  Frontend API Client sends message content + session info to Backend API (`/api/chat/{id}/messages`). The browser automatically includes the session cookie.
 3.  Backend Auth Layer (`axum-login`) verifies the session cookie and identifies the authenticated user.
 4.  Backend saves user message to PostgreSQL, associating it with the **authenticated user's session**.
 5.  Backend triggers Context Processor (asynchronous):

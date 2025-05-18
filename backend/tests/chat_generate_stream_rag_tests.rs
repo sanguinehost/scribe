@@ -196,7 +196,7 @@ async fn test_rag_context_injection_real_ai() {
 
     let request = Request::builder()
         .method(Method::POST)
-        .uri(format!("/api/chats/{}/generate", session.id))
+        .uri(format!("/api/chat/{}/generate", session.id))
         .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
         .header(header::COOKIE, &auth_cookie)
         .header(header::ACCEPT, "text/event-stream")

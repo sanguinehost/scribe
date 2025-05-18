@@ -42,18 +42,18 @@ type CurrentAuthSession = AuthSession<AuthBackend>;
 pub fn chat_routes() -> Router<crate::state::AppState> {
     tracing::debug!("chat_routes: entering chat_routes function");
     Router::new()
-        .route("/chats", get(get_chats_handler).post(create_chat_handler))
-        .route("/chats/fetch/:id", get(get_chat_by_id_handler))
-        .route("/chats/remove/:id", delete(delete_chat_handler))
-        .route("/chats/:id/messages", {
+        .route("/", get(get_chats_handler).post(create_chat_handler))
+        .route("/fetch/:id", get(get_chat_by_id_handler))
+        .route("/remove/:id", delete(delete_chat_handler))
+        .route("/:id/messages", {
             tracing::debug!(
-                "chat_routes: mapping /chats/:id/messages to get_messages_by_chat_id_handler"
+                "chat_routes: mapping /:id/messages to get_messages_by_chat_id_handler"
             );
             get(get_messages_by_chat_id_handler).post(create_message_handler)
         })
-        .route("/chats/:id/visibility", put(update_chat_visibility_handler))
+        .route("/:id/visibility", put(update_chat_visibility_handler))
         .route(
-            "/chats/:id/settings",
+            "/:id/settings",
             get(get_chat_settings_handler).put(update_chat_settings_handler),
         )
         .route("/messages/:id", get(get_message_by_id_handler))
@@ -62,7 +62,7 @@ pub fn chat_routes() -> Router<crate::state::AppState> {
             "/messages/:id/trailing",
             delete(delete_trailing_messages_handler),
         )
-        .route("/chats/:id/votes", get(get_votes_by_chat_id_handler))
+        .route("/:id/votes", get(get_votes_by_chat_id_handler))
 }
 
 // Get all chats for current user

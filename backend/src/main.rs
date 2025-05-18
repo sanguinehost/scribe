@@ -24,7 +24,7 @@ use scribe_backend::routes::health::health_check;
 use scribe_backend::routes::{
     characters::characters_router, // Use the router function import
     chat::chat_routes,
-    chats_api,
+    chats,
     documents::document_routes,
 };
 use scribe_backend::state::AppState;
@@ -208,8 +208,8 @@ async fn main() -> Result<()> {
         // Use the dedicated characters_router function
         .nest("/characters", characters_router(app_state.clone())) // Use the router function
         // Chat routes (require login)
-        .nest("/chats", chat_routes(app_state.clone())) // Static chat generation routes
-        .nest("/chats-api", chats_api::chat_routes()) // API routes for chat sessions - mounted at /api/chats-api
+        .nest("/chat", chat_routes(app_state.clone())) // Static chat generation routes
+        .nest("/chats", chats::chat_routes()) // API routes for chat sessions - mounted at /api/chats
         // Mount document API routes
         .nest("/documents", document_routes()) // Corrected: /api/documents
         // Admin routes (require login + admin role check in handlers)

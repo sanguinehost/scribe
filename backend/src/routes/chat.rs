@@ -10,7 +10,7 @@ use crate::models::chats::{
     Chat, GenerateChatRequest, MessageRole, SuggestedActionItem, SuggestedActionsRequest,
     SuggestedActionsResponse,
 };
-use crate::routes::chats_api::{get_chat_settings_handler, update_chat_settings_handler};
+use crate::routes::chats::{get_chat_settings_handler, update_chat_settings_handler};
 use crate::schema::chat_sessions;
 use crate::services::chat_service::{self, ScribeSseEvent};
 use crate::state::AppState;

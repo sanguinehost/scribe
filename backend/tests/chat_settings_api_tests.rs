@@ -28,7 +28,7 @@ use scribe_backend::state::AppState;
 use scribe_backend::test_helpers;
 use std::sync::Arc; // Added for Result in set_history_settings
 
-// --- Tests for GET /api/chats/{id}/settings ---
+// --- Tests for GET /api/chat/{id}/settings ---
 
 #[tokio::test]
 async fn get_chat_settings_success() {
@@ -217,7 +217,7 @@ async fn get_chat_settings_success() {
 
     let request = Request::builder()
         .method(Method::GET)
-        .uri(format!("/api/chats/{}/settings", session.id))
+        .uri(format!("/api/chat/{}/settings", session.id))
         .header(header::COOKIE, auth_cookie.clone())
         .body(Body::empty())
         .unwrap();
@@ -456,7 +456,7 @@ async fn get_chat_settings_defaults() {
 
     let request = Request::builder()
         .method(Method::GET)
-        .uri(format!("/api/chats/{}/settings", created_chat_session.id))
+        .uri(format!("/api/chat/{}/settings", created_chat_session.id))
         .header(header::COOKIE, auth_cookie.clone())
         .body(Body::empty())
         .unwrap();
@@ -532,7 +532,7 @@ async fn test_get_chat_settings_not_found() {
     let non_existent_session_id = Uuid::new_v4();
     let request = Request::builder()
         .method(Method::GET)
-        .uri(format!("/api/chats/{}/settings", non_existent_session_id))
+        .uri(format!("/api/chat/{}/settings", non_existent_session_id))
         .header(header::COOKIE, auth_cookie)
         .body(Body::empty())
         .unwrap();
@@ -699,7 +699,7 @@ async fn test_get_chat_settings_forbidden() {
 
     let request = Request::builder()
         .method(Method::GET)
-        .uri(format!("/api/chats/{}/settings", session_a.id))
+        .uri(format!("/api/chat/{}/settings", session_a.id))
         .header(header::COOKIE, auth_cookie2)
         .body(Body::empty())
         .unwrap();
@@ -710,7 +710,7 @@ async fn test_get_chat_settings_forbidden() {
     assert_eq!(response.status(), StatusCode::FORBIDDEN);
 }
 
-// --- Tests for PUT /api/chats/{id}/settings ---
+// --- Tests for PUT /api/chat/{id}/settings ---
 
 #[tokio::test]
 async fn update_chat_settings_success_full() {
@@ -879,7 +879,7 @@ async fn update_chat_settings_success_full() {
 
     let request = Request::builder()
         .method(Method::PUT)
-        .uri(format!("/api/chats/{}/settings", session.id))
+        .uri(format!("/api/chat/{}/settings", session.id))
         .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
         .header(header::COOKIE, auth_cookie.clone())
         .body(Body::from(serde_json::to_string(&update_data).unwrap()))
@@ -1104,7 +1104,7 @@ async fn update_chat_settings_success_partial() {
 
     let request = Request::builder()
         .method(Method::PUT)
-        .uri(format!("/api/chats/{}/settings", session.id))
+        .uri(format!("/api/chat/{}/settings", session.id))
         .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
         .header(header::COOKIE, auth_cookie.clone())
         .body(Body::from(serde_json::to_string(&update_data).unwrap()))
@@ -1285,7 +1285,7 @@ async fn update_chat_settings_invalid_data() {
 
     let request = Request::builder()
         .method(Method::PUT)
-        .uri(format!("/api/chats/{}/settings", session.id))
+        .uri(format!("/api/chat/{}/settings", session.id))
         .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
         .header(header::COOKIE, auth_cookie.clone())
         .body(Body::from(
@@ -1473,7 +1473,7 @@ async fn update_chat_settings_forbidden() {
 
     let request = Request::builder()
         .method(Method::PUT)
-        .uri(format!("/api/chats/{}/settings", session_user1.id))
+        .uri(format!("/api/chat/{}/settings", session_user1.id))
         .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
         .header(header::COOKIE, auth_cookie2)
         .body(Body::from(serde_json::to_string(&update_data).unwrap()))
@@ -1540,7 +1540,7 @@ async fn update_chat_settings_not_found() {
 
     let request = Request::builder()
         .method(Method::PUT)
-        .uri(format!("/api/chats/{}/settings", non_existent_session_id))
+        .uri(format!("/api/chat/{}/settings", non_existent_session_id))
         .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
         .header(header::COOKIE, auth_cookie.clone())
         .body(Body::from(serde_json::to_string(&update_data).unwrap()))
@@ -1558,7 +1558,7 @@ async fn get_chat_settings_unauthorized() {
 
     let request = Request::builder()
         .method(Method::GET)
-        .uri(format!("/api/chats/{}/settings", session_id_for_unauth))
+        .uri(format!("/api/chat/{}/settings", session_id_for_unauth))
         .body(Body::empty())
         .unwrap();
 
@@ -1595,7 +1595,7 @@ async fn update_chat_settings_unauthorized() {
 
     let request = Request::builder()
         .method(Method::PUT)
-        .uri(format!("/api/chats/{}/settings", session_id_for_unauth))
+        .uri(format!("/api/chat/{}/settings", session_id_for_unauth))
         .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
         .body(Body::from(serde_json::to_string(&update_data).unwrap()))
         .unwrap();

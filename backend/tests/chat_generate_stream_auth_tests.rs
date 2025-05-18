@@ -37,7 +37,7 @@ async fn generate_chat_response_streaming_unauthorized() {
     };
     let request = Request::builder()
         .method(Method::POST)
-        .uri(format!("/api/chats/{}/generate", session_id))
+        .uri(format!("/api/chat/{}/generate", session_id))
         .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
         .body(Body::from(serde_json::to_vec(&payload).unwrap()))
         .unwrap();
@@ -117,7 +117,7 @@ async fn generate_chat_response_streaming_not_found() {
     };
     let request = Request::builder()
         .method(Method::POST)
-        .uri(format!("/api/chats/{}/generate", non_existent_session_id))
+        .uri(format!("/api/chat/{}/generate", non_existent_session_id))
         .header(header::COOKIE, &auth_cookie)
         .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
         .body(Body::from(serde_json::to_vec(&payload).unwrap()))
@@ -267,7 +267,7 @@ async fn generate_chat_response_streaming_forbidden() {
     let request = Request::builder()
         .method(Method::POST)
         // User 2 tries to generate in User 1's session
-        .uri(format!("/api/chats/{}/generate", session1.id))
+        .uri(format!("/api/chat/{}/generate", session1.id))
         .header(header::COOKIE, auth_cookie2) // Use user 2's cookie
         .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
         .header(header::ACCEPT, mime::TEXT_EVENT_STREAM.as_ref()) // Add Accept header for streaming

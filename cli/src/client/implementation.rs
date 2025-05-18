@@ -263,7 +263,7 @@ impl HttpClient for ReqwestClientWrapper {
     }
 
     async fn list_chat_sessions(&self) -> Result<Vec<Chat>, CliError> {
-        let url = build_url(&self.base_url, "/api/chats-api/chats")?;
+        let url = build_url(&self.base_url, "/api/chats")?;
         tracing::info!(target: "scribe_cli::client::implementation", %url, "Listing chat sessions via HttpClient");
         let response = self
             .client
@@ -280,7 +280,7 @@ impl HttpClient for ReqwestClientWrapper {
     ) -> Result<Vec<ClientChatMessageResponse>, CliError> {
         let url = build_url(
             &self.base_url,
-            &format!("/api/chats-api/chats/{}/messages", session_id),
+            &format!("/api/chats/{}/messages", session_id),
         )?;
         tracing::info!(target: "scribe_cli::client::implementation", %url, %session_id, "Fetching chat messages via HttpClient");
         let response = self
@@ -298,7 +298,7 @@ impl HttpClient for ReqwestClientWrapper {
         // Note: The route in the backend uses :id notation, but we need to use actual values here
         let url = build_url(
             &self.base_url,
-            &format!("/api/chats-api/chats/remove/{}", chat_id),
+            &format!("/api/chats/remove/{}", chat_id),
         )?;
         tracing::info!(target: "scribe_cli::client::implementation", %url, %chat_id, "Deleting chat session via HttpClient");
         let response = self
@@ -332,7 +332,7 @@ impl HttpClient for ReqwestClientWrapper {
         model_name: Option<&str>,
     ) -> Result<ChatMessage, CliError> {
         // Build URL with query parameter for non-streaming
-        let mut url = build_url(&self.base_url, &format!("/api/chats/{}/generate", chat_id))?;
+        let mut url = build_url(&self.base_url, &format!("/api/chat/{}/generate", chat_id))?;
         url.query_pairs_mut()
             .append_pair("request_thinking", "false");
 
@@ -386,7 +386,7 @@ impl HttpClient for ReqwestClientWrapper {
         model_name: Option<&str>, // Add model_name parameter
     ) -> Result<Pin<Box<dyn Stream<Item = Result<StreamEvent, CliError>> + Send>>, CliError> {
         // Build URL with query parameter for streaming
-        let mut url = build_url(&self.base_url, &format!("/api/chats/{}/generate", chat_id))?;
+        let mut url = build_url(&self.base_url, &format!("/api/chat/{}/generate", chat_id))?;
         url.query_pairs_mut()
             .append_pair("request_thinking", &request_thinking.to_string());
 
@@ -540,7 +540,7 @@ impl HttpClient for ReqwestClientWrapper {
     ) -> Result<ChatSettingsResponse, CliError> {
         let url = build_url(
             &self.base_url,
-            &format!("/api/chats/{}/settings", session_id),
+            &format!("/api/chat/{}/settings", session_id),
         )?;
         tracing::info!(
             target: "scribe_cli::client::implementation",

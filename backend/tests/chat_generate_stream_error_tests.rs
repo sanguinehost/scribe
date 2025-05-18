@@ -185,7 +185,7 @@ async fn generate_chat_response_streaming_ai_error() {
 
     let request = Request::builder()
         .method(Method::POST)
-        .uri(format!("/api/chats/{}/generate", session.id))
+        .uri(format!("/api/chat/{}/generate", session.id))
         .header(header::COOKIE, &auth_cookie)
         .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
         // Add the Accept header for streaming
@@ -460,7 +460,7 @@ async fn generate_chat_response_streaming_initiation_error() {
 
     let request = Request::builder()
         .method(Method::POST)
-        .uri(format!("/api/chats/{}/generate", session.id))
+        .uri(format!("/api/chat/{}/generate", session.id))
         .header(header::COOKIE, &auth_cookie)
         .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
         .header(header::ACCEPT, mime::TEXT_EVENT_STREAM.as_ref())
@@ -696,7 +696,7 @@ async fn generate_chat_response_streaming_error_before_content() {
 
     let request = Request::builder()
         .method(Method::POST)
-        .uri(format!("/api/chats/{}/generate", session.id))
+        .uri(format!("/api/chat/{}/generate", session.id))
         .header(header::COOKIE, &auth_cookie)
         .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
         .header(header::ACCEPT, mime::TEXT_EVENT_STREAM.as_ref())
@@ -970,7 +970,7 @@ async fn generate_chat_response_streaming_genai_json_error() {
 
     let request = Request::builder()
         .method(Method::POST)
-        .uri(format!("/api/chats/{}/generate", session.id))
+        .uri(format!("/api/chat/{}/generate", session.id))
         .header(header::COOKIE, &auth_cookie)
         .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
         .header(header::ACCEPT, mime::TEXT_EVENT_STREAM.as_ref())

@@ -902,7 +902,7 @@ impl std::fmt::Debug for ApiChatMessage {
     }
 }
 
-/// Request body for POST /api/chats/{session_id}/generate
+/// Request body for POST /api/chat/{session_id}/generate
 #[derive(Deserialize, Serialize, Validate)] // Removed Debug
 pub struct GenerateChatRequest {
     #[validate(length(min = 1))] // History must contain at least one message
@@ -928,7 +928,7 @@ impl std::fmt::Debug for GenerateChatRequest {
 }
 // --- Chat Settings API Structures ---
 
-/// Response body for GET /api/chats/{id}/settings
+/// Response body for GET /api/chat/{id}/settings
 #[derive(Serialize, Deserialize, Clone, PartialEq)] // Removed Debug
 pub struct ChatSettingsResponse {
     pub system_prompt: Option<String>,
@@ -1014,7 +1014,7 @@ impl From<Chat> for ChatSettingsResponse {
     }
 }
 
-/// Request body for PUT /api/chats/{id}/settings
+/// Request body for PUT /api/chat/{id}/settings
 /// All fields are optional to allow partial updates.
 #[derive(Serialize, Deserialize, Clone, PartialEq, AsChangeset, Validate, Default)] // Removed Debug
 #[diesel(table_name = crate::schema::chat_sessions)] // Specify target table

@@ -177,7 +177,7 @@ async fn test_suggested_actions_success() -> anyhow::Result<()> {
     // Use reqwest::Client for the main request
     let response = client // Reuse client from login; it now has the auth cookie
         .post(format!(
-            "{}/api/chats/{}/suggested-actions",
+            "{}/api/chat/{}/suggested-actions",
             test_app.address, session.id
         ))
         .json(&payload)
@@ -229,7 +229,7 @@ async fn test_suggested_actions_unauthorized() -> anyhow::Result<()> {
     let client = reqwest::Client::new();
     let response = client
         .post(&format!(
-            "{}/api/chats/{}/suggested-actions",
+            "{}/api/chat/{}/suggested-actions",
             test_app.address,
             Uuid::new_v4() // A random, likely non-existent session_id
         ))
@@ -379,7 +379,7 @@ async fn test_suggested_actions_forbidden() -> anyhow::Result<()> {
 
     let request = Request::builder()
         .method(Method::POST)
-        .uri(format!("/api/chats/{}/suggested-actions", session_a.id))
+        .uri(format!("/api/chat/{}/suggested-actions", session_a.id))
         .header(header::COOKIE, &auth_cookie_b)
         .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
         .body(Body::from(serde_json::to_vec(&payload)?))?;
@@ -434,7 +434,7 @@ async fn test_suggested_actions_session_not_found() -> anyhow::Result<()> {
     let request = Request::builder()
         .method(Method::POST)
         .uri(format!(
-            "/api/chats/{}/suggested-actions",
+            "/api/chat/{}/suggested-actions",
             non_existent_session_id
         ))
         .header(header::COOKIE, &auth_cookie)
@@ -581,7 +581,7 @@ async fn test_suggested_actions_ai_error() -> anyhow::Result<()> {
 
     let request = Request::builder()
         .method(Method::POST)
-        .uri(format!("/api/chats/{}/suggested-actions", session.id))
+        .uri(format!("/api/chat/{}/suggested-actions", session.id))
         .header(header::COOKIE, &auth_cookie)
         .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
         .body(Body::from(serde_json::to_vec(&payload)?))?;
@@ -725,7 +725,7 @@ async fn test_suggested_actions_invalid_json_response() -> anyhow::Result<()> {
 
     let request = Request::builder()
         .method(Method::POST)
-        .uri(format!("/api/chats/{}/suggested-actions", session.id))
+        .uri(format!("/api/chat/{}/suggested-actions", session.id))
         .header(header::COOKIE, &auth_cookie)
         .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
         .body(Body::from(serde_json::to_vec(&payload)?))?;
@@ -882,7 +882,7 @@ async fn test_suggested_actions_success_optional_fields_none() -> anyhow::Result
 
     let request = Request::builder()
         .method(Method::POST)
-        .uri(format!("/api/chats/{}/suggested-actions", session.id))
+        .uri(format!("/api/chat/{}/suggested-actions", session.id))
         .header(header::COOKIE, &auth_cookie)
         .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
         .body(Body::from(serde_json::to_vec(&payload)?))?;
@@ -1045,7 +1045,7 @@ async fn test_suggested_actions_success_optional_fields_some() -> anyhow::Result
 
     let request = Request::builder()
         .method(Method::POST)
-        .uri(format!("/api/chats/{}/suggested-actions", session.id))
+        .uri(format!("/api/chat/{}/suggested-actions", session.id))
         .header(header::COOKIE, &auth_cookie)
         .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
         .body(Body::from(serde_json::to_vec(&payload)?))?;
@@ -1096,9 +1096,9 @@ async fn test_suggested_actions_success_login_user_a() -> anyhow::Result<()> {
     // Cookies are now automatically stored in the client's cookie jar.
 
     // --- Act ---
-    // Try hitting the /api/chats/ping route (no path parameter)
+    // Try hitting the /api/chat/ping route (no path parameter)
     let response = client
-        .get(format!("{}/api/chats/ping", &test_app.address))
+        .get(format!("{}/api/chat/ping", &test_app.address))
         .send()
         .await
         .unwrap();

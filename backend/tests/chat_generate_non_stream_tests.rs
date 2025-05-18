@@ -166,7 +166,7 @@ async fn debug_session_data(
     }
 }
 
-// --- Tests for POST /api/chats/{id}/generate (Non-Streaming JSON) ---
+// --- Tests for POST /api/chat/{id}/generate (Non-Streaming JSON) ---
 
 #[tokio::test]
 // Removed ignore flag to make sure this test runs in CI
@@ -483,7 +483,7 @@ async fn generate_chat_response_uses_session_settings() -> Result<(), anyhow::Er
     info!("Building chat generate request");
     let request = Request::builder()
         .method(Method::POST)
-        .uri(format!("/api/chats/{}/generate", session.id))
+        .uri(format!("/api/chat/{}/generate", session.id))
         .header(header::COOKIE, cookie_header_value)
         .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
         .header(header::ACCEPT, mime::APPLICATION_JSON.as_ref())
@@ -940,7 +940,7 @@ async fn generate_chat_response_json_stream_initiation_error() -> Result<(), any
 
     let request = Request::builder()
         .method(Method::POST)
-        .uri(format!("/api/chats/{}/generate", session.id))
+        .uri(format!("/api/chat/{}/generate", session.id))
         .header(header::COOKIE, cookie_header_value)
         .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
         .header(header::ACCEPT, mime::APPLICATION_JSON.as_ref())
@@ -1395,7 +1395,7 @@ async fn generate_chat_response_history_sliding_window_messages() -> anyhow::Res
     };
     let request = Request::builder()
         .method(Method::POST)
-        .uri(format!("/api/chats/{}/generate", session_id))
+        .uri(format!("/api/chat/{}/generate", session_id))
         .header(header::COOKIE, &auth_cookie)
         .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
         .body(Body::from(serde_json::to_string(&payload)?))?;
@@ -1673,7 +1673,7 @@ async fn generate_chat_response_history_sliding_window_tokens() -> anyhow::Resul
     };
     let request = Request::builder()
         .method(Method::POST)
-        .uri(format!("/api/chats/{}/generate", session_id))
+        .uri(format!("/api/chat/{}/generate", session_id))
         .header(header::COOKIE, &auth_cookie)
         .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
         .body(Body::from(serde_json::to_string(&payload)?))?;
@@ -1946,7 +1946,7 @@ async fn test_generate_chat_response_history_truncate_tokens() -> anyhow::Result
     };
     let request = Request::builder()
         .method(Method::POST)
-        .uri(format!("/api/chats/{}/generate", session_id))
+        .uri(format!("/api/chat/{}/generate", session_id))
         .header(header::COOKIE, &auth_cookie)
         .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
         .body(Body::from(serde_json::to_string(&payload)?))?;
@@ -1992,7 +1992,7 @@ async fn test_generate_chat_response_history_truncate_tokens() -> anyhow::Result
         }));
     let request_2 = Request::builder()
         .method(Method::POST)
-        .uri(format!("/api/chats/{}/generate", session_id))
+        .uri(format!("/api/chat/{}/generate", session_id))
         .header(header::COOKIE, &auth_cookie)
         .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
         .body(Body::from(serde_json::to_string(&payload)?))?; // Same payload for simplicity
@@ -2239,7 +2239,7 @@ async fn generate_chat_response_history_none() -> anyhow::Result<()> {
     };
     let request = Request::builder()
         .method(Method::POST)
-        .uri(format!("/api/chats/{}/generate", session_id))
+        .uri(format!("/api/chat/{}/generate", session_id))
         .header(header::COOKIE, &auth_cookie)
         .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
         .body(Body::from(serde_json::to_string(&payload)?))?;
@@ -2513,7 +2513,7 @@ async fn generate_chat_response_history_truncate_tokens_limit_30() -> anyhow::Re
     };
     let request = Request::builder()
         .method(Method::POST)
-        .uri(format!("/api/chats/{}/generate", session_id))
+        .uri(format!("/api/chat/{}/generate", session_id))
         .header(header::COOKIE, &auth_cookie)
         .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
         .body(Body::from(serde_json::to_string(&payload)?))?;
@@ -2559,7 +2559,7 @@ async fn generate_chat_response_history_truncate_tokens_limit_30() -> anyhow::Re
         }));
     let request_2 = Request::builder()
         .method(Method::POST)
-        .uri(format!("/api/chats/{}/generate", session_id))
+        .uri(format!("/api/chat/{}/generate", session_id))
         .header(header::COOKIE, &auth_cookie)
         .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
         .body(Body::from(serde_json::to_string(&payload)?))?; // Same payload for simplicity
@@ -2581,7 +2581,7 @@ async fn generate_chat_response_history_truncate_tokens_limit_30() -> anyhow::Re
     Ok(())
 }
 
-// --- Tests for GET /api/chats/{id}/messages ---
+// --- Tests for GET /api/chat/{id}/messages ---
 // (Moved from chat_tests.rs)
 
 // Test: Get messages for a valid session owned by the user
@@ -2685,10 +2685,10 @@ async fn test_get_chat_messages_success() -> anyhow::Result<()> {
     tracing::info!("Inserted {} chat message row(s)", create_message_rows);
 
     // Verify that we can get the messages
-    tracing::info!("Making API request to /api/chats/{}/generate", session_id);
+    tracing::info!("Making API request to /api/chat/{}/generate", session_id);
     let response = reqwest::Client::new()
         .post(&format!(
-            "{}/api/chats/{}/generate",
+            "{}/api/chat/{}/generate",
             test_app.address, session_id
         ))
         .header("Cookie", &auth_cookie)
@@ -2877,7 +2877,7 @@ async fn test_get_chat_messages_forbidden() -> anyhow::Result<()> {
     };
     let request = Request::builder()
         .method(Method::POST)
-        .uri(format!("/api/chats/{}/generate", session_a_id)) // User B tries to access User A's session
+        .uri(format!("/api/chat/{}/generate", session_a_id)) // User B tries to access User A's session
         .header(header::COOKIE, &auth_cookie_b)
         .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
         .body(Body::from(serde_json::to_string(&payload)?))?;
@@ -2897,7 +2897,7 @@ async fn test_get_chat_messages_unauthorized() -> Result<(), Box<dyn std::error:
 
     // Try to get the messages without authentication
     tracing::info!(
-        "Making API request to /api/chats/{}/generate without auth",
+        "Making API request to /api/{}/generate without auth",
         uuid
     );
     let payload = GenerateChatRequest {
@@ -2906,7 +2906,7 @@ async fn test_get_chat_messages_unauthorized() -> Result<(), Box<dyn std::error:
     };
     let request = Request::builder()
         .method(Method::POST)
-        .uri(format!("/api/chats/{}/generate", uuid))
+        .uri(format!("/api/chat/{}/generate", uuid))
         .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
         .body(Body::from(serde_json::to_string(&payload)?))?;
 

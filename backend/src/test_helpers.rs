@@ -17,7 +17,7 @@ use crate::{
     models::chats::{ChatMessage, UpdateChatSettingsRequest}, // Added UpdateChatSettingsRequest
     models::users::AccountStatus,
     routes::{
-        auth as auth_routes_module, characters, chat::chat_routes, chats_api,
+        auth as auth_routes_module, characters, chat::chat_routes, chats,
         documents::document_routes, health::health_check,
     },
     schema,
@@ -676,14 +676,14 @@ pub async fn spawn_app(multi_thread: bool, use_real_ai: bool, use_real_qdrant: b
 
     // Restore other protected routes
     protected_api_routes =
-        protected_api_routes.nest("/chats", chat_routes(app_state_for_routes.clone()));
-    tracing::debug!(router = ?protected_api_routes, "Protected routes after /chats (crate::routes::chat)");
+        protected_api_routes.nest("/chat", chat_routes(app_state_for_routes.clone()));
+    tracing::debug!(router = ?protected_api_routes, "Protected routes after /chat (crate::routes::chat)");
 
-    protected_api_routes = protected_api_routes.nest("/chats-api", {
-        tracing::debug!("spawn_app: nesting chats_api::chat_routes() under /chats-api");
-        chats_api::chat_routes() // Assumes this returns Router<AppState>
+    protected_api_routes = protected_api_routes.nest("/chats", {
+        tracing::debug!("spawn_app: nesting chats::chat_routes() under /chats");
+        chats::chat_routes() // Assumes this returns Router<AppState>
     });
-    tracing::debug!(router = ?protected_api_routes, "Protected routes after /chats-api");
+    tracing::debug!(router = ?protected_api_routes, "Protected routes after /chats");
 
     protected_api_routes = protected_api_routes.nest(
         "/documents",
@@ -1587,7 +1587,7 @@ pub async fn set_history_settings(
 
     let request = Request::builder()
         .method(Method::PUT)
-        .uri(format!("/api/chats/{}/settings", session_id))
+        .uri(format!("/api/chat/{}/settings", session_id))
         .header(header::COOKIE, auth_cookie)
         .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
         .body(Body::from(serde_json::to_vec(&payload)?))?;
