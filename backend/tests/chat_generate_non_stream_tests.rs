@@ -47,6 +47,7 @@ use tracing::{debug, error, info, warn}; // Added debug
 
 // Add a custom ChatCompletionResponse struct since there doesn't seem to be one in scribe_backend::models::chats
 #[derive(Debug, serde::Deserialize)]
+#[allow(dead_code)]
 struct ChatCompletionResponse {
     content: String,
     message_id: String, // Expecting flat structure { "content": "...", "message_id": "..." }
@@ -532,7 +533,7 @@ async fn generate_chat_response_uses_session_settings() -> Result<(), anyhow::Er
     }
     info!("--- END DEBUG ---");
 
-    let user_message = last_request
+    let _user_message = last_request
         .messages
         .iter()
         .find(|msg| matches!(msg.role, ChatRole::User))
@@ -990,7 +991,7 @@ async fn generate_chat_response_json_stream_initiation_error() -> Result<(), any
     }
     eprintln!("--- END DEBUG ---");
 
-    let user_message = last_request
+    let _user_message = last_request
         .messages
         .iter()
         .find(|msg| matches!(msg.role, ChatRole::User))

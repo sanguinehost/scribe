@@ -11,7 +11,7 @@ use crate::auth::session_dek::SessionDek;
 use async_trait::async_trait;
 use qdrant_client::qdrant::r#match::MatchValue;
 use qdrant_client::qdrant::{Condition, Filter, Value as QdrantValue};
-use secrecy::{ExposeSecret, SecretBox}; // For SessionDek & fixed key
+use secrecy::ExposeSecret; // For SessionDek & fixed key
 use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::sync::Arc;
@@ -430,6 +430,7 @@ mod tests {
     };
     use chrono::Utc;
     use qdrant_client::qdrant::{PointId, ScoredPoint, Value};
+    use secrecy::SecretBox; // For encryption tests
     // For creating test JSON values
     // Ensure this is imported ONCE here
 

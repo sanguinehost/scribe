@@ -1,10 +1,9 @@
-use crate::chat::run_chat_loop;
 use crate::chat::run_interactive_streaming_chat_loop; // Add this import for streaming chat
 use crate::client::HttpClient;
 use crate::error::CliError;
 use crate::handlers::default_settings::apply_default_settings_to_session;
 use crate::io::IoHandler;
-use scribe_backend::models::chats::{MessageRole, UpdateChatSettingsRequest}; // Import UpdateChatSettingsRequest
+use scribe_backend::models::chats::UpdateChatSettingsRequest; // Import UpdateChatSettingsRequest
 
 /// Handler function for listing chat sessions
 pub async fn handle_list_chat_sessions_action<H: IoHandler, C: HttpClient>(

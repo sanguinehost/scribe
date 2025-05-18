@@ -8,13 +8,9 @@ use axum::{
 };
 use base64::Engine;
 use http_body_util::BodyExt;
-use scribe_backend::{
-    crypto,
-    models::{auth::AuthResponse, users::User},
-    test_helpers,
-};
+use scribe_backend::{crypto, models::auth::AuthResponse, test_helpers};
 use secrecy::{ExposeSecret, SecretString};
-use serde_json::{Value, json};
+use serde_json::json;
 use tower::util::ServiceExt;
 use uuid::Uuid;
 

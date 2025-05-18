@@ -399,7 +399,7 @@ pub async fn generate_chat_response(
             info!(%session_id, "Handling streaming SSE request. request_thinking={}", request_thinking);
 
             // Explicitly save the user's message before streaming AI response
-            let current_user_content_for_save = user_message_struct_to_save.content.clone(); // Assuming content is Vec<u8>
+            let _current_user_content_for_save = user_message_struct_to_save.content.clone(); // Assuming content is Vec<u8>
             let current_user_role_for_save = user_message_struct_to_save.role.clone();
             let current_user_parts_for_save = user_message_struct_to_save.parts.clone();
             let current_user_attachments_for_save = user_message_struct_to_save.attachments.clone();

@@ -6,7 +6,6 @@ use super::*; // Brings in items re-exported by cli/src/client/mod.rs // For bui
 // External Crate Imports
 use bigdecimal::BigDecimal;
 use chrono::Utc;
-use futures_util::{Stream, StreamExt}; // Added Stream
 use httptest::{
     Expectation,
     ServerHandle,
@@ -15,7 +14,6 @@ use httptest::{
     responders::{json_encoded, status_code},
 };
 use reqwest::{Client as ReqwestClient, StatusCode, Url}; // Added StatusCode
-use reqwest_eventsource::{Event, EventSource};
 use secrecy::SecretString;
 use serde_json::json;
 use std::io::Write;
@@ -26,23 +24,16 @@ use uuid::Uuid;
 // Project Crate Imports
 use super::interface::HttpClient;
 use super::types::{
-    AdminUserDetailResponse, AdminUserListResponse, AuthUserResponse, ClientCharacterDataForClient,
-    ClientChatMessageResponse, HealthStatus, RegisterPayload, SerializableLoginPayload,
-    SerializableRegisterPayload, StreamEvent, UpdateUserRoleRequest,
+    ClientCharacterDataForClient, ClientChatMessageResponse, HealthStatus, RegisterPayload,
 };
 use crate::error::CliError;
 use scribe_backend::models::{
     auth::LoginPayload,
-    characters::CharacterMetadata, // This was CharacterDataForClient in the old file, but CharacterMetadata is more likely for tests if it's a summary. Let's assume CharacterMetadata for now. If it causes issues, we can adjust.
     // The original test used CharacterDataForClient, but it was aliased from the main client file.
     // Since ClientCharacterDataForClient is now a distinct struct in types.rs and re-exported,
     // we should use that if the tests were indeed using the client's representation.
     // Let's stick to what was in the original test's direct use statements for now.
-    chats::{
-        ApiChatMessage, Chat, ChatMessage, ChatSettingsResponse, GenerateChatRequest, MessageRole,
-        UpdateChatSettingsRequest,
-    },
-    users::User,
+    chats::{ApiChatMessage, Chat, GenerateChatRequest, MessageRole},
 };
 
 // Shared setup for tests needing a mock server

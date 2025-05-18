@@ -496,7 +496,7 @@ async fn test_first_mes_included_in_history() {
         .unwrap();
     let parsed_cookie =
         cookie::Cookie::parse(auth_cookie_header).expect("Failed to parse Set-Cookie header");
-    let auth_cookie = format!("{}={}", parsed_cookie.name(), parsed_cookie.value());
+    let _auth_cookie = format!("{}={}", parsed_cookie.name(), parsed_cookie.value());
 
     // Create a test character with first_mes content
     let conn_pool = test_app.db_pool.clone();

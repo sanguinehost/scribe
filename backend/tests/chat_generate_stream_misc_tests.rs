@@ -8,11 +8,11 @@ use chrono::Utc;
 use diesel::prelude::*;
 use genai::chat::{ChatStreamEvent, StreamChunk, StreamEnd};
 use mime;
-use secrecy::{ExposeSecret, SecretBox};
+use secrecy::ExposeSecret;
 use std::env;
 use std::time::Duration;
 use tower::ServiceExt;
-use tracing::{debug, error, info, warn};
+use tracing::debug;
 use uuid::Uuid;
 
 use scribe_backend::{

@@ -815,7 +815,7 @@ async fn test_rag_context_injection_in_prompt() -> anyhow::Result<()> {
         if let PipelineCall::RetrieveRelevantChunks {
             chat_id,
             query_text: called_query,
-            limit,
+            limit: _,
         } = retrieve_call
         {
             assert_eq!(*chat_id, session.id);
@@ -1338,7 +1338,7 @@ async fn setup_test_data(use_real_ai: bool) -> anyhow::Result<RagTestContext> {
     assert_eq!(response.status(), StatusCode::OK);
     let _ = response.into_body().collect().await?.to_bytes();
 
-    let tracker = test_app.embedding_call_tracker.clone();
+    let _tracker = test_app.embedding_call_tracker.clone();
 
     // We know from previous debugging that the embedding calls are being made
     // but they're not being tracked properly in the embedding_call_tracker.

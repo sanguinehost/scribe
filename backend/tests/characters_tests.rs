@@ -4,14 +4,10 @@ use axum::{
     Router,
     body::{Body, to_bytes},
     http::{Method, Request, Response as AxumResponse, StatusCode, header},
-    middleware::{self, Next},
+    middleware::Next,
     response::IntoResponse,
-    routing::get, // Only import get
 };
-use axum_login::{
-    AuthManagerLayerBuilder, AuthSession, login_required,
-    tower_sessions::{Expiry, SessionManagerLayer, cookie::SameSite},
-};
+use axum_login::AuthSession;
 use base64::{Engine as _, engine::general_purpose::STANDARD as base64_standard};
 use bcrypt;
 use crc32fast;
@@ -22,32 +18,22 @@ use http_body_util::BodyExt;
 use mime;
 use reqwest::Client;
 use reqwest::StatusCode as ReqwestStatusCode;
-use reqwest::cookie::{CookieStore, Jar};
 use scribe_backend::auth::session_dek::SessionDek;
 use scribe_backend::test_helpers::db;
 use scribe_backend::{
-    auth::{session_store::DieselSessionStore, user_store::Backend as AuthBackend},
-    config::Config,
+    auth::user_store::Backend as AuthBackend,
     crypto,
     models::{
         characters::Character as DbCharacter,
         users::UserRole,
         users::{AccountStatus, NewUser, User, UserDbQuery},
     },
-    routes::{auth::auth_routes, characters::characters_router, health::health_check},
     schema::users,
-    state::AppState,
-    test_helpers::{
-        MockAiClient, MockEmbeddingClient, MockEmbeddingPipelineService, MockQdrantClientService,
-    },
 };
 use secrecy::ExposeSecret;
 use secrecy::SecretString;
 use serde_json::json;
-use std::sync::Arc;
-use time;
 use tokio::net::TcpListener;
-use tower_cookies::CookieManagerLayer;
 use uuid::Uuid;
 
 // Helper function to insert a test character (returns Result<(), ...>)
@@ -312,6 +298,7 @@ fn insert_test_user_with_password(
 }
 
 // Middleware to log request details for debugging routing
+#[allow(dead_code)]
 async fn log_requests_middleware(req: Request<Body>, next: Next) -> impl IntoResponse {
     tracing::info!(target: "LOG_REQ_MIDDLEWARE", "Received request: {} {}", req.method(), req.uri().path());
     next.run(req).await
@@ -345,7 +332,7 @@ async fn auth_log_wrapper(
 
 // --- Helper to Build Test App (Similar to auth_tests) ---
 // Returns a basic Router that works for testing
-async fn build_test_app_for_characters(pool: Pool) -> Router {
+async fn build_test_app_for_characters(_pool: Pool) -> Router {
     // Create a simple test app using the test_helpers::spawn_app to get proper router setup
     let test_app = scribe_backend::test_helpers::spawn_app(false, false, false).await;
 
@@ -1233,7 +1220,7 @@ mod tests {
         let username = format!("upload_missing_field_user_{}", Uuid::new_v4());
         let password = "testpassword";
         let username_for_closure = username.clone();
-        let (user, dek) = run_db_op(&pool, move |conn| {
+        let (user, _dek) = run_db_op(&pool, move |conn| {
             insert_test_user_with_password(conn, &username_for_closure, password)
         })
         .await?;
@@ -2000,7 +1987,7 @@ mod tests {
             .await
             .context("Failed to get DB connection for character list query")?;
         let user_id_for_query = user.id;
-        let dek_for_decrypt = dek.clone();
+        let _dek_for_decrypt = dek.clone();
 
         let characters = conn.interact(move |conn_block| {
             use scribe_backend::schema::characters::dsl::*;

@@ -3,7 +3,7 @@
 use anyhow::{Context, Error as AnyhowError, anyhow}; // Consolidate anyhow imports
 // For Body
 // Removed duplicate axum::http imports
-use bcrypt; // Added bcrypt import
+// bcrypt is used directly in the code, no need for a separate import
 use bigdecimal::BigDecimal; // Add this import
 use chrono::{DateTime, Utc}; // ADDED for timestamp types
 use deadpool_diesel::postgres::Manager as DeadpoolManager;
@@ -111,7 +111,8 @@ fn establish_connection() -> PgConnection {
     dotenv().ok(); // Load .env file if present
 
     let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
-    PgConnection::establish(&database_url).expect(&format!("Error connecting to {}", database_url))
+    PgConnection::establish(&database_url)
+        .unwrap_or_else(|_| panic!("Error connecting to {}", database_url))
 }
 
 // --- Test Helper Functions ---
@@ -121,11 +122,10 @@ pub fn create_test_pool() -> DbPool {
     dotenv().ok();
     let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set for test pool");
     let manager = DeadpoolManager::new(&database_url, DeadpoolRuntime::Tokio1);
-    let pool = DeadpoolPool::builder(manager)
+    DeadpoolPool::builder(manager)
         // .max_size(5) // Example: configure max size
         .build()
-        .expect("Failed to create test DB pool.");
-    pool // Return the pool directly (it's Clone)
+        .expect("Failed to create test DB pool.") // Return the pool directly (it's Clone)
 }
 
 // Helper to insert a unique test user (returns Result) - kept private
@@ -544,7 +544,7 @@ async fn test_list_characters_handler_with_auth() -> Result<(), AnyhowError> {
                 )
             })
             .await;
-        let diesel_result = match interact_result {
+        match interact_result {
             Ok(Ok(u)) => {
                 println!("Successfully inserted test user: {}", u.username);
                 Ok(u)
@@ -559,8 +559,7 @@ async fn test_list_characters_handler_with_auth() -> Result<(), AnyhowError> {
             Err(deadpool_diesel::InteractError::Aborted) => {
                 Err(anyhow!("Interact aborted inserting user"))
             }
-        }?;
-        diesel_result
+        }?
     };
     guard.add_user(user.id);
 
@@ -644,7 +643,7 @@ async fn test_list_characters_handler_with_auth() -> Result<(), AnyhowError> {
 
     // Send login request using the reqwest client and app.address
     let login_response = client
-        .post(&format!("{}/api/auth/login", &app.address)) // Use client.post and app.address
+        .post(format!("{}/api/auth/login", &app.address)) // Use client.post and app.address
         .header(header::CONTENT_TYPE, "application/json") // Use reqwest::header
         .json(&login_body) // Use .json() helper for convenience
         .send()
@@ -729,7 +728,7 @@ async fn test_list_characters_handler_with_auth() -> Result<(), AnyhowError> {
 
     // --- Call the Character List Endpoint (using the same reqwest::Client) ---
     let response = client // Use the same client instance
-        .get(&format!("{}/api/characters", &app.address)) // Use client.get and app.address
+        .get(format!("{}/api/characters", &app.address)) // Use client.get and app.address
         .header(header::COOKIE, &session_cookie) // Use reqwest::header
         .send()
         .await

@@ -6,14 +6,10 @@ use axum::{
     body::Body,
     http::{Method, Request, StatusCode, header},
 };
-use diesel::{PgConnection, RunQueryDsl};
+use diesel::RunQueryDsl;
 use http_body_util::BodyExt;
-use scribe_backend::{
-    auth,
-    models::{auth::AuthResponse, users::UserRole},
-    test_helpers,
-};
-use serde_json::{Value, json};
+use scribe_backend::{auth, models::auth::AuthResponse, test_helpers};
+use serde_json::json;
 use tower::util::ServiceExt;
 use uuid::Uuid;
 

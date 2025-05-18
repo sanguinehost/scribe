@@ -31,11 +31,10 @@ use tracing::debug;
 use scribe_backend::crypto;
 use scribe_backend::models::{
     // scribe_backend::models::chats::Chat is already aliased as DbChatSession in this file
-    chats::{Message as DbChatMessage, MessageRole, NewMessage},
+    chats::{Message as DbChatMessage, MessageRole},
     users::User,
 };
 use scribe_backend::schema::chat_messages;
-use scribe_backend::services::chat_service;
 use scribe_backend::state::AppState;
 // scribe_backend::test_helpers is already imported. TestDataGuard will be used as test_helpers::TestDataGuard.
 

@@ -395,7 +395,7 @@ fn split_fallback(
                 "Fallback: Splitting by words."
             );
             let mut current_chunk_start_word_index = 0; // Index within word_byte_indices
-            let mut current_chunk_start_offset = current_offset; // Char offset in original text
+            let _current_chunk_start_offset = current_offset; // Char offset in original text
 
             while current_chunk_start_word_index < num_words_in_segment {
                 trace!("-- Fallback Word Loop Iteration --");

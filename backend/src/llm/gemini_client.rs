@@ -11,8 +11,11 @@ use crate::errors::AppError;
 
 #[derive(Debug)]
 struct ChatRequestLogSummary {
+    #[allow(dead_code)]
     has_system_prompt: bool,
+    #[allow(dead_code)]
     num_messages: usize,
+    #[allow(dead_code)]
     has_tools: bool,
 }
 

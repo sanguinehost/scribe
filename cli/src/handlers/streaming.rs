@@ -6,6 +6,7 @@ use crate::io::IoHandler;
 use scribe_backend::models::chats::{ApiChatMessage, UpdateChatSettingsRequest};
 
 /// Handler function for testing the streaming chat functionality
+#[allow(dead_code)]
 pub async fn handle_stream_test_action<H: IoHandler, C: HttpClient>(
     client: &C,
     io_handler: &mut H,
@@ -90,7 +91,7 @@ pub async fn handle_stream_test_action<H: IoHandler, C: HttpClient>(
     }
 
     // +++ Construct initial history payload +++
-    let initial_history = vec![ApiChatMessage {
+    let _initial_history = vec![ApiChatMessage {
         // Assuming ApiChatMessage has these fields based on backend usage
         role: "user".to_string(),      // Role should be "user"
         content: user_message.clone(), // Clone the user message content

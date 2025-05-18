@@ -5,10 +5,6 @@
 // 1. That the backend rejects login attempts for locked accounts
 // 2. That the CLI client properly handles locked account responses
 
-use scribe_backend::models::users::AccountStatus;
-use secrecy::SecretString;
-use uuid::Uuid;
-
 #[tokio::test]
 #[ignore] // This test requires a running backend
 async fn test_account_locking() {

@@ -208,7 +208,7 @@ async fn test_suggested_actions_success() -> anyhow::Result<()> {
 #[tokio::test]
 async fn test_suggested_actions_unauthorized() -> anyhow::Result<()> {
     let test_app = test_helpers::spawn_app(true, false, false).await;
-    let conn_pool_obj = test_app
+    let _conn_pool_obj = test_app
         .db_pool
         .get()
         .await

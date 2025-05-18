@@ -140,7 +140,7 @@ async fn test_register_success() -> AnyhowResult<()> {
     // --- BEGIN PRIMER USER ---
     // Register a dummy user first to ensure the main test user is not the *first* user.
     let primer_username = format!("primer_user_{}", Uuid::new_v4());
-    let primer_email = format!("{}@test.com", primer_username);
+    let _primer_email = format!("{}@test.com", primer_username);
     let _primer_response = test_helpers::db::create_test_user(
         &test_app.db_pool,
         primer_username.to_string(),

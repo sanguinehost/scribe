@@ -12,7 +12,7 @@ use anyhow::{Context, Result};
 use clap::Parser;
 use reqwest::Client as ReqwestClient;
 use reqwest::cookie::Jar;
-use scribe_backend::models::users::User; // Keep User if used for logged_in_user state
+// Keep User if used for logged_in_user state
 use std::path::PathBuf;
 use std::sync::Arc;
 use tracing;
@@ -20,20 +20,19 @@ use tracing_subscriber::{EnvFilter, fmt};
 use url::Url;
 
 // Use module contents
-use chat::{run_chat_loop, run_interactive_streaming_chat_loop}; // Chat loops
+// Chat loops
 use client::{HttpClient, ReqwestClientWrapper}; // Client Abstraction
 use error::CliError; // Use our specific error type
 use handlers::{
-    apply_default_settings_to_session, handle_change_user_role_action, handle_chat_config_action,
-    handle_default_settings_action, handle_delete_chat_session_action, handle_health_check_action,
-    handle_list_all_users_action, handle_list_chat_sessions_action, handle_lock_unlock_user_action,
-    handle_login_action, handle_model_settings_action, handle_registration_action,
-    handle_resume_chat_session_action, handle_start_chat_action, handle_upload_character_action,
-    handle_view_character_details_action, handle_view_chat_history_action,
-    handle_view_user_details_action, select_character,
+    handle_change_user_role_action, handle_chat_config_action, handle_default_settings_action,
+    handle_delete_chat_session_action, handle_health_check_action, handle_list_all_users_action,
+    handle_list_chat_sessions_action, handle_lock_unlock_user_action, handle_login_action,
+    handle_model_settings_action, handle_registration_action, handle_resume_chat_session_action,
+    handle_start_chat_action, handle_upload_character_action, handle_view_character_details_action,
+    handle_view_chat_history_action, handle_view_user_details_action,
 };
 use io::{IoHandler, StdIoHandler}; // IO Abstraction
-use scribe_backend::models::chats::UpdateChatSettingsRequest; // For streaming settings
+// For streaming settings
 
 /// A basic CLI client to test the Scribe backend API.
 #[derive(Parser, Debug)]

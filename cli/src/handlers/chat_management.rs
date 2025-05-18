@@ -1,7 +1,6 @@
 use crate::client::HttpClient;
 use crate::error::CliError;
 use crate::io::IoHandler;
-use std::fmt::Write;
 
 /// Handler function for managing/deleting chat sessions
 pub async fn handle_delete_chat_session_action<H: IoHandler, C: HttpClient>(

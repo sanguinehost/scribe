@@ -16,7 +16,6 @@ use tower::ServiceExt;
 use uuid::Uuid;
 
 // Diesel and model imports
-use anyhow;
 use diesel::prelude::*;
 use scribe_backend::models::character_card::NewCharacter;
 use scribe_backend::models::characters::Character as DbCharacter;

@@ -8,7 +8,6 @@ use chrono::Utc;
 use diesel::RunQueryDsl as _;
 use diesel::prelude::*;
 use mime;
-use std::env;
 use std::time::Duration;
 use tower::ServiceExt;
 use uuid::Uuid;
@@ -17,8 +16,8 @@ use scribe_backend::{
     models::{
         characters::Character as DbCharacter,
         chats::{
-            ApiChatMessage, Chat as ChatSession, ChatMessage as DbChatMessage, GenerateChatRequest,
-            MessageRole, NewChat, NewMessage,
+            ApiChatMessage, Chat as ChatSession, GenerateChatRequest, MessageRole, NewChat,
+            NewMessage,
         },
     },
     schema::{
