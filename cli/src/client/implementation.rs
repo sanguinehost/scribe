@@ -296,10 +296,7 @@ impl HttpClient for ReqwestClientWrapper {
         // Following the same pattern as characters for GET and DELETE:
         //   /characters/fetch/:id and /characters/remove/:id
         // Note: The route in the backend uses :id notation, but we need to use actual values here
-        let url = build_url(
-            &self.base_url,
-            &format!("/api/chats/remove/{}", chat_id),
-        )?;
+        let url = build_url(&self.base_url, &format!("/api/chats/remove/{}", chat_id))?;
         tracing::info!(target: "scribe_cli::client::implementation", %url, %chat_id, "Deleting chat session via HttpClient");
         let response = self
             .client

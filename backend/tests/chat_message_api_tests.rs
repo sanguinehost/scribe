@@ -213,10 +213,7 @@ async fn test_get_chat_messages_session_not_found() -> anyhow::Result<()> {
 
     let request = Request::builder()
         .method(Method::GET)
-        .uri(format!(
-            "/api/chats/{}/messages",
-            non_existent_session_id
-        ))
+        .uri(format!("/api/chats/{}/messages", non_existent_session_id))
         .header(header::COOKIE, &auth_cookie)
         .body(Body::empty())?;
 
@@ -284,10 +281,7 @@ mod delete_chat_message {
 
         let request = Request::builder()
             .method(Method::DELETE)
-            .uri(format!(
-                "/api/chats/{}/messages/{}",
-                session_id, message_id
-            ))
+            .uri(format!("/api/chats/{}/messages/{}", session_id, message_id))
             .header(header::COOKIE, &auth_cookie)
             .body(Body::empty())?;
 

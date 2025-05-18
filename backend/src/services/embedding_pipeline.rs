@@ -1164,7 +1164,7 @@ mod tests {
         let (state, mock_qdrant, mock_embed_client) = setup_pipeline_test_env().await;
         let dek = create_test_dek();
         // Shortened to ensure its lossy-converted ciphertext is unlikely to be chunked.
-        let original_content_text = "Test";
+        let original_content_text = "T";
 
         // Encrypt the content to simulate what would be in message.content
         let (encrypted_content_bytes, _nonce_that_will_be_ignored) =

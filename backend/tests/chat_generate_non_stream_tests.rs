@@ -2896,10 +2896,7 @@ async fn test_get_chat_messages_unauthorized() -> Result<(), Box<dyn std::error:
     let uuid = Uuid::new_v4(); // Some random UUID that won't be in the DB
 
     // Try to get the messages without authentication
-    tracing::info!(
-        "Making API request to /api/{}/generate without auth",
-        uuid
-    );
+    tracing::info!("Making API request to /api/{}/generate without auth", uuid);
     let payload = GenerateChatRequest {
         history: vec![],
         model: None,
