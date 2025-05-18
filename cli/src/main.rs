@@ -52,7 +52,7 @@ struct Args {
 #[tokio::main]
 async fn main() -> Result<()> {
     let filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| "scribe_cli=info,scribe_backend=warn".into()); // Less verbose default
+        .unwrap_or_else(|_| "warn,scribe_cli::main=info,scribe_backend=warn".into()); // Default to WARN, INFO for cli main, WARN for backend
     fmt()
         .with_env_filter(filter)
         .with_target(true)

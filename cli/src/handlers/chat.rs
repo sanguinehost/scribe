@@ -280,9 +280,10 @@ pub async fn handle_resume_chat_session_action<H: IoHandler, C: HttpClient>(
         selected_session_id,
         io_handler,
         current_model,
+        None, // first_mes_content is not applicable when resuming a session
     ).await {
-        tracing::error!(error = ?e, "Chat loop failed");
-        io_handler.write_line(&format!("Chat loop encountered an error: {}", e))?;
+        tracing::error!(error = ?e, "Streaming chat loop failed while resuming session");
+        io_handler.write_line(&format!("Chat encountered an error: {}", e))?;
     }
     io_handler.write_line("Chat finished.")?;
     Ok(())

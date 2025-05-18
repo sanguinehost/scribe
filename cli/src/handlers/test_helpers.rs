@@ -1,7 +1,7 @@
 use crate::client::HttpClient;
 use crate::client::types::{
     HealthStatus, StreamEvent, ClientCharacterDataForClient, RegisterPayload,
-    AdminUserListResponse, AdminUserDetailResponse
+    AdminUserListResponse, AdminUserDetailResponse, ClientChatMessageResponse
 };
 use crate::error::CliError;
 use crate::io::IoHandler;
@@ -122,7 +122,7 @@ pub struct MockHttpClient {
     pub list_characters_result: Option<Arc<Result<Vec<ClientCharacterDataForClient>, MockCliError>>>,
     pub get_character_result: Option<Arc<Result<ClientCharacterDataForClient, MockCliError>>>,
     pub list_chat_sessions_result: Option<Arc<Result<Vec<Chat>, MockCliError>>>,
-    pub get_chat_messages_result: Option<Arc<Result<Vec<ChatMessage>, MockCliError>>>,
+    pub get_chat_messages_result: Option<Arc<Result<Vec<ClientChatMessageResponse>, MockCliError>>>,
     pub create_chat_session_result: Option<Arc<Result<Chat, MockCliError>>>,
     pub generate_response_result: Option<Arc<Result<ChatMessage, MockCliError>>>,
     pub logout_result: Option<Arc<Result<(), MockCliError>>>,
@@ -314,23 +314,19 @@ impl HttpClient for MockHttpClient {
     }
 
     async fn list_chat_sessions(&self) -> Result<Vec<Chat>, CliError> {
-        let mock_result =
-            Arc::unwrap_or_clone(self.list_chat_sessions_result.clone().unwrap_or_else(|| {
-                Arc::new(Err(MockCliError::Internal(
-                    "MockHttpClient: list_chat_sessions result not set".into(),
-                )))
-            }));
-        mock_result.map_err(Into::into)
+        self.record_endpoint_call("list_chat_sessions");
+        match &self.list_chat_sessions_result {
+            Some(res) => res.as_ref().clone().map_err(CliError::from),
+            None => Err(CliError::Internal("list_chat_sessions_result not set".to_string())),
+        }
     }
 
-    async fn get_chat_messages(&self, _session_id: Uuid) -> Result<Vec<ChatMessage>, CliError> {
-        let mock_result =
-            Arc::unwrap_or_clone(self.get_chat_messages_result.clone().unwrap_or_else(|| {
-                Arc::new(Err(MockCliError::Internal(
-                    "MockHttpClient: get_chat_messages result not set".into(),
-                )))
-            }));
-        mock_result.map_err(Into::into)
+    async fn get_chat_messages(&self, _session_id: Uuid) -> Result<Vec<ClientChatMessageResponse>, CliError> {
+        self.record_endpoint_call(&format!("get_chat_messages/{}", _session_id));
+        match &self.get_chat_messages_result {
+            Some(res) => res.as_ref().clone().map_err(CliError::from),
+            None => Err(CliError::Internal("get_chat_messages_result not set".to_string())),
+        }
     }
 
     // Add missing implementation for generate_response (matching the trait signature)

@@ -72,11 +72,24 @@ pub async fn run_interactive_streaming_chat_loop<IO: IoHandler, Http: HttpClient
     chat_id: Uuid,
     io_handler: &mut IO,
     current_model: &str,
+    first_mes_content: Option<String>,
 ) -> Result<(), CliError> {
     io_handler.write_line(&format!(
         "\nEntering streaming chat session (ID: {}). Type 'quit' or 'exit' to leave.",
         chat_id
     ))?;
+
+    // Display the character's first message if provided
+    if let Some(mes) = first_mes_content {
+        if !mes.is_empty() {
+            io_handler.write_line("--------------------------------------------------")?;
+            io_handler.write_line("AI:")?;
+            // Split message into lines and print them individually for better formatting
+            for line in mes.lines() {
+                io_handler.write_line(line)?;
+            }
+        }
+    }
     io_handler.write_line("--------------------------------------------------")?;
 
     loop {

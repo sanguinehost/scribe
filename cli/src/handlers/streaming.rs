@@ -89,11 +89,15 @@ pub async fn handle_stream_test_action<H: IoHandler, C: HttpClient>(
 
     // 4. Run the Stream Test Loop
     io_handler.write_line("\nInitiating streaming response...")?;
-    if let Err(e) = run_interactive_streaming_chat_loop(client, chat_id, io_handler, current_model).await {
-        tracing::error!(error = ?e, "Stream test loop failed");
-        io_handler.write_line(&format!("Stream test encountered an error: {}", e))?;
-        // Return Ok here as the action itself didn't fail, the loop did.
-        // The error is reported to the user.
+    if let Err(e) = run_interactive_streaming_chat_loop(
+        client, 
+        chat_id, 
+        io_handler, 
+        current_model,
+        None // first_mes_content is None for this test action
+    ).await {
+        tracing::error!(error = ?e, "Streaming chat loop failed in test action");
+        io_handler.write_line(&format!("Chat encountered an error: {}", e))?;
     } else {
         io_handler.write_line("\nStreaming test finished.")?;
     }

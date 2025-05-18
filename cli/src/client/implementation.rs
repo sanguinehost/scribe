@@ -516,9 +516,20 @@ impl HttpClient for ReqwestClientWrapper {
     // NEW: Implement update_chat_settings
     async fn update_chat_settings(&self, session_id: Uuid, payload: &UpdateChatSettingsRequest) -> Result<ChatSettingsResponse, CliError> {
         let url = build_url(&self.base_url, &format!("/api/chats/{}/settings", session_id))?;
-        tracing::info!(target: "scribe_cli::client::implementation", %url, %session_id, payload = ?payload, "Updating chat settings via HttpClient");
-
-        let response = self.client.put(url).json(payload).send().await.map_err(CliError::Reqwest)?;
+        tracing::info!(
+            target: "scribe_cli::client::implementation",
+            %url,
+            %session_id,
+            model_name = %payload.model_name.as_deref().unwrap_or("Not Set"),
+            "Updating chat settings via HttpClient"
+        );
+        let response = self
+            .client
+            .patch(url)
+            .json(payload)
+            .send()
+            .await
+            .map_err(CliError::Reqwest)?;
         handle_response(response).await
     }
     

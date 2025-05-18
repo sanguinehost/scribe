@@ -17,17 +17,20 @@ pub async fn handle_start_chat_action<H: IoHandler, C: HttpClient>(
     let character_id = select_character(client, io_handler).await?;
     tracing::info!(%character_id, "Character selected for chat");
     
+    let mut first_mes_content: Option<String> = None;
+
     // Fetch character details to display information
-    let character_metadata = match client.get_character(character_id).await {
+    let _character_metadata = match client.get_character(character_id).await {
         Ok(metadata) => {
-            // Print the character's description
-            io_handler.write_line(&format!("\n--- {} ---", metadata.name))?;
+            io_handler.write_line(&format!("\n--- Character: {} ---", metadata.name))?;
             if let Some(first_mes_bytes) = metadata.first_mes.as_ref() {
-                io_handler.write_line(&String::from_utf8_lossy(first_mes_bytes.as_bytes()))?;
+                first_mes_content = Some(String::from_utf8_lossy(first_mes_bytes.as_bytes()).to_string());
+                // Do not print here, will be passed to chat loop
+                // io_handler.write_line(&first_mes_content.as_ref().unwrap())?;
             } else {
-                io_handler.write_line("[Character has no first message defined]")?;
+                io_handler.write_line("[Character has no introductory message defined]")?;
             }
-            io_handler.write_line("---")?; // Separator
+            io_handler.write_line("------------------------")?;
             metadata
         }
         Err(e) => {
@@ -100,6 +103,7 @@ pub async fn handle_start_chat_action<H: IoHandler, C: HttpClient>(
         chat_id,
         io_handler,
         current_model,
+        first_mes_content,
     ).await {
         tracing::error!(error = ?e, "Streaming chat loop failed");
         io_handler.write_line(&format!("Chat encountered an error: {}", e))?;

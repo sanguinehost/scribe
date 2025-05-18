@@ -34,7 +34,12 @@ use scribe_backend::models::{
     chats::{Chat, ChatMessage, ApiChatMessage, ChatSettingsResponse, MessageRole, UpdateChatSettingsRequest, GenerateChatRequest}, 
     users::User,
 };
-use crate::client::types::{ClientCharacterDataForClient, HealthStatus, StreamEvent};
+use super::interface::HttpClient;
+use super::types::{
+    AuthUserResponse, ClientCharacterDataForClient, ClientChatMessageResponse, HealthStatus, RegisterPayload,
+    SerializableLoginPayload, SerializableRegisterPayload, StreamEvent, AdminUserListResponse,
+    AdminUserDetailResponse, UpdateUserRoleRequest,
+};
 
 
 // Shared setup for tests needing a mock server
