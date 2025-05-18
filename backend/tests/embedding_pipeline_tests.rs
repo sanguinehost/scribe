@@ -1,4 +1,5 @@
 use chrono::Utc;
+// Removed unused dotenvy
 use log;
 use mockall::predicate::*;
 use scribe_backend::services::embedding_pipeline::EmbeddingPipelineServiceTrait;
@@ -15,21 +16,30 @@ use scribe_backend::{
 use serial_test::serial;
 use std::convert::TryFrom; // Needed for EmbeddingMetadata::try_from
 use std::time::Duration;
-use std::{collections::HashMap, env, sync::Arc};
+use std::{collections::HashMap, sync::Arc}; // Removed env
 use uuid::Uuid; // For mock assertions
 
 // Comment out the test requiring a Qdrant instance setup via testcontainers
 #[tokio::test]
-#[ignore = "Integration test requires Qdrant instance"]
+// #[ignore = "Integration test requires Qdrant instance"] // Temporarily un-ignore
 async fn test_process_and_embed_message_integration() {
-    // Skip test if QDRANT_URL is not set (e.g., in CI without service)
-    if env::var("QDRANT_URL").is_err() {
-        log::warn!("Skipping Qdrant integration test: QDRANT_URL not set.");
-        return;
-    }
-
     // 1. Setup dependencies using spawn_app with use_real_qdrant = true
     let test_app = test_helpers::spawn_app(false, false, true).await; // multi_thread = false, use_real_ai = false, use_real_qdrant = true
+    log::info!(
+        "Qdrant URL from test_app.config: {}",
+        test_app.config.qdrant_url.as_deref().unwrap_or("None")
+    );
+
+    // Check if QDRANT_URL is set in the loaded config
+    if test_app.config.qdrant_url.is_none() || test_app.config.qdrant_url.as_deref().unwrap_or("").is_empty() {
+        log::warn!("Skipping Qdrant integration test: QDRANT_URL not set in config.");
+        // Intentionally panic if QDRANT_URL is not set but test is not ignored.
+        // This makes the test failure explicit if it's forced to run without the URL.
+        if option_env!("CI").is_none() { // Don't panic in CI if URL is missing
+             panic!("QDRANT_URL is not set in config for an un-ignored integration test.");
+        }
+        return;
+    }
 
     // Get necessary components from test_app
     let mock_embedding_client = test_app.mock_embedding_client.clone();
@@ -908,17 +918,25 @@ async fn test_retrieve_relevant_chunks_metadata_wrong_type() {
 // likely involving inserting known points and then querying them.
 
 #[tokio::test]
-#[ignore] // Test requires external Qdrant service
+// #[ignore] // Test requires external Qdrant service // Temporarily un-ignore
 #[serial]
 async fn test_rag_context_injection_with_qdrant() {
-    // Skip test if QDRANT_URL is not set (e.g., in CI without service)
-    if env::var("QDRANT_URL").is_err() {
-        log::warn!("Skipping Qdrant integration test: QDRANT_URL not set.");
-        return;
-    }
-
     // Setup: Initialize test environment with real Qdrant
     let test_app = test_helpers::spawn_app(false, false, true).await; // multi_thread = false, use_real_ai = false, use_real_qdrant = true
+    log::info!(
+        "Qdrant URL from test_app.config for RAG test: {}",
+        test_app.config.qdrant_url.as_deref().unwrap_or("None")
+    );
+
+    // Check if QDRANT_URL is set in the loaded config
+    if test_app.config.qdrant_url.is_none() || test_app.config.qdrant_url.as_deref().unwrap_or("").is_empty() {
+        log::warn!("Skipping Qdrant integration test: QDRANT_URL not set in config for RAG test.");
+        // Intentionally panic if QDRANT_URL is not set but test is not ignored.
+        if option_env!("CI").is_none() { // Don't panic in CI if URL is missing
+            panic!("QDRANT_URL is not set in config for an un-ignored RAG integration test.");
+        }
+        return;
+    }
 
     // Create a real EmbeddingPipelineService
     let embedding_pipeline_service =

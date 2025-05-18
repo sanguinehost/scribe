@@ -1093,7 +1093,7 @@ async fn test_session_store_load_invalid_json() -> AnyhowResult<()> {
                 expires: Some(Utc::now() + chrono::Duration::hours(1)),
                 session: invalid_json.to_string(),
             };
-            diesel::insert_into(crate::schema::sessions::table)
+            diesel::insert_into(scribe_backend::schema::sessions::table)
                 .values(&record_to_insert)
                 .execute(conn)
         }
@@ -1125,7 +1125,7 @@ async fn test_session_store_load_invalid_json() -> AnyhowResult<()> {
     // Cleanup: Delete the manually inserted record
     let delete_result = run_db_op(&test_app.db_pool, {
         let sid = session_id_str.clone(); // Use String for DB query
-        move |conn| diesel::delete(crate::schema::sessions::table.find(sid)).execute(conn)
+        move |conn| diesel::delete(scribe_backend::schema::sessions::table.find(sid)).execute(conn)
     })
     .await;
     delete_result.context("Failed to clean up manually inserted invalid record")?;
@@ -1169,9 +1169,9 @@ async fn test_session_store_load_expired_session() -> AnyhowResult<()> {
     let exists_before_load = run_db_op(&test_app.db_pool, {
         let sid = session_id_str.clone(); // Use String for DB query
         move |conn| {
-            crate::schema::sessions::table
+            scribe_backend::schema::sessions::table
                 .find(sid)
-                .select(crate::schema::sessions::id)
+                .select(scribe_backend::schema::sessions::id)
                 .first::<String>(conn)
                 .optional() // Check for String
         }
@@ -1200,9 +1200,9 @@ async fn test_session_store_load_expired_session() -> AnyhowResult<()> {
     let loaded_after_load = run_db_op(&test_app.db_pool, {
         let sid = session_id_str.clone(); // Use String for DB query
         move |conn| {
-            crate::schema::sessions::table
+            scribe_backend::schema::sessions::table
                 .find(sid)
-                .select(crate::schema::sessions::id)
+                .select(scribe_backend::schema::sessions::id)
                 .first::<String>(conn)
                 .optional() // Check for String
         }

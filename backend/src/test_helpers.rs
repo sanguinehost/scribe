@@ -582,7 +582,7 @@ pub async fn spawn_app(multi_thread: bool, use_real_ai: bool, use_real_qdrant: b
 
     // Load configuration
     dotenv().ok();
-    let config = crate::config::Config::default();
+    let config = crate::config::Config::load().expect("Failed to load test configuration");
     let config = Arc::new(config);
 
     // Setup Database Pool
