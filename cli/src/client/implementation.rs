@@ -2,15 +2,18 @@
 
 use async_trait::async_trait;
 use futures_util::{Stream, StreamExt};
-use reqwest::{multipart, Client as ReqwestClient, StatusCode, Url}; // Removed Response
+use reqwest::{Client as ReqwestClient, StatusCode, Url, multipart}; // Removed Response
 use reqwest_eventsource::{Event, EventSource};
 use scribe_backend::models::{
     auth::LoginPayload,
-    users::User,
     // No need to import CharacterDataForClient from backend here, as we use ClientCharacterDataForClient
-    chats::{Chat, ChatMessage, ApiChatMessage, ChatSettingsResponse, UpdateChatSettingsRequest, GenerateChatRequest},
+    chats::{
+        ApiChatMessage, Chat, ChatMessage, ChatSettingsResponse, GenerateChatRequest,
+        UpdateChatSettingsRequest,
+    },
+    users::User,
 };
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::{fs, path::Path, pin::Pin};
 use tracing;
 use uuid::Uuid;
@@ -20,20 +23,19 @@ use crate::error::CliError;
 // Imports from sibling modules
 use super::interface::HttpClient;
 use super::types::{
+    AdminUserDetailResponse,
+    AdminUserListResponse,
     AuthUserResponse, // Used in login/register/me
     ClientCharacterDataForClient,
     ClientChatMessageResponse,
     HealthStatus,
-    RegisterPayload, // Used in register method signature
-    SerializableLoginPayload, // Internal helper for login
+    RegisterPayload,             // Used in register method signature
+    SerializableLoginPayload,    // Internal helper for login
     SerializableRegisterPayload, // Internal helper for register
     StreamEvent,
-    AdminUserListResponse,
-    AdminUserDetailResponse,
     UpdateUserRoleRequest,
 };
-use super::util::{build_url, handle_response, handle_non_streaming_chat_response};
-
+use super::util::{build_url, handle_non_streaming_chat_response, handle_response};
 
 /// Wrapper around ReqwestClient implementing the HttpClient trait.
 pub struct ReqwestClientWrapper {
@@ -44,8 +46,8 @@ pub struct ReqwestClientWrapper {
 
 impl ReqwestClientWrapper {
     pub fn new(client: ReqwestClient, base_url: Url) -> Self {
-        Self { 
-            client, 
+        Self {
+            client,
             base_url,
             last_recovery_key: std::sync::Mutex::new(None),
         }
@@ -64,18 +66,20 @@ impl HttpClient for ReqwestClientWrapper {
             .send()
             .await
             .map_err(CliError::Reqwest)?;
-        
+
         // Get auth response and convert to User
         let auth_response = handle_response::<AuthUserResponse>(response)
             .await
             .map_err(|e| CliError::AuthFailed(format!("{}", e)))?;
-        
+
         // Check if account is locked
         let user = User::from(auth_response);
         if user.account_status == Some("locked".to_string()) {
-            return Err(CliError::AuthFailed("Your account is locked. Please contact an administrator.".to_string()));
+            return Err(CliError::AuthFailed(
+                "Your account is locked. Please contact an administrator.".to_string(),
+            ));
         }
-        
+
         // Return the user
         Ok(user)
     }
@@ -90,27 +94,27 @@ impl HttpClient for ReqwestClientWrapper {
             .send()
             .await
             .map_err(CliError::Reqwest)?;
-        
+
         // Get auth response and convert to User, just like in the login method
         let auth_response = handle_response::<AuthUserResponse>(response)
             .await
             .map_err(|e| CliError::RegistrationFailed(format!("{}", e)))?;
-        
+
         // Store the recovery key in the client for later retrieval
         if let Some(recovery_key) = &auth_response.recovery_key {
             let mut guard = self.last_recovery_key.lock().unwrap();
             *guard = Some(recovery_key.clone());
         }
-        
+
         // Convert to User for backwards compatibility
         Ok(User::from(auth_response))
     }
-    
+
     fn get_last_recovery_key(&self) -> Option<String> {
         let guard = self.last_recovery_key.lock().unwrap();
         guard.clone()
     }
- 
+
     async fn list_characters(&self) -> Result<Vec<ClientCharacterDataForClient>, CliError> {
         let url = build_url(&self.base_url, "/api/characters")?;
         tracing::info!(target: "scribe_cli::client::implementation", %url, "Listing characters via HttpClient");
@@ -143,7 +147,7 @@ impl HttpClient for ReqwestClientWrapper {
         file_path: &str,
     ) -> Result<ClientCharacterDataForClient, CliError> {
         tracing::info!(target: "scribe_cli::client::implementation", %file_path, "Attempting to upload character via HttpClient from file");
- 
+
         let file_bytes = fs::read(file_path).map_err(|e| {
             tracing::error!(target: "scribe_cli::client::implementation", error = ?e, %file_path, "Failed to read character card file");
             CliError::Io(e)
@@ -232,16 +236,22 @@ impl HttpClient for ReqwestClientWrapper {
             .send()
             .await
             .map_err(CliError::Reqwest)?;
-        
+
         // Get auth response and convert to User
         let auth_response = handle_response::<AuthUserResponse>(response).await?;
-        
+
         // Convert to User for backwards compatibility
         Ok(User::from(auth_response))
     }
- 
-    async fn get_character(&self, character_id: Uuid) -> Result<ClientCharacterDataForClient, CliError> {
-        let url = build_url(&self.base_url, &format!("/api/characters/fetch/{}", character_id))?;
+
+    async fn get_character(
+        &self,
+        character_id: Uuid,
+    ) -> Result<ClientCharacterDataForClient, CliError> {
+        let url = build_url(
+            &self.base_url,
+            &format!("/api/characters/fetch/{}", character_id),
+        )?;
         tracing::info!(target: "scribe_cli::client::implementation", %url, %character_id, "Fetching character details via HttpClient");
         let response = self
             .client
@@ -264,7 +274,10 @@ impl HttpClient for ReqwestClientWrapper {
         handle_response(response).await
     }
 
-    async fn get_chat_messages(&self, session_id: Uuid) -> Result<Vec<ClientChatMessageResponse>, CliError> {
+    async fn get_chat_messages(
+        &self,
+        session_id: Uuid,
+    ) -> Result<Vec<ClientChatMessageResponse>, CliError> {
         let url = build_url(
             &self.base_url,
             &format!("/api/chats-api/chats/{}/messages", session_id),
@@ -283,7 +296,10 @@ impl HttpClient for ReqwestClientWrapper {
         // Following the same pattern as characters for GET and DELETE:
         //   /characters/fetch/:id and /characters/remove/:id
         // Note: The route in the backend uses :id notation, but we need to use actual values here
-        let url = build_url(&self.base_url, &format!("/api/chats-api/chats/remove/{}", chat_id))?;
+        let url = build_url(
+            &self.base_url,
+            &format!("/api/chats-api/chats/remove/{}", chat_id),
+        )?;
         tracing::info!(target: "scribe_cli::client::implementation", %url, %chat_id, "Deleting chat session via HttpClient");
         let response = self
             .client
@@ -291,7 +307,7 @@ impl HttpClient for ReqwestClientWrapper {
             .send()
             .await
             .map_err(CliError::Reqwest)?;
-        
+
         if response.status().is_success() {
             Ok(())
         } else {
@@ -341,20 +357,21 @@ impl HttpClient for ReqwestClientWrapper {
             .header(reqwest::header::ACCEPT, "application/json") // Set Accept header to get JSON response
             .json(&request_body)
             .send()
-            .await {
-                Ok(resp) => {
-                    // Check for HTTP 429 status code directly before processing response
-                    if resp.status() == StatusCode::TOO_MANY_REQUESTS {
-                        tracing::warn!(target: "scribe_cli::client::implementation", "Received 429 Too Many Requests from backend API");
-                        return Err(CliError::RateLimitExceeded);
-                    }
-                    resp
-                },
-                Err(e) => {
-                    tracing::error!(target: "scribe_cli::client::implementation", error = ?e, "Network error sending message");
-                    return Err(CliError::Network(e.to_string()));
+            .await
+        {
+            Ok(resp) => {
+                // Check for HTTP 429 status code directly before processing response
+                if resp.status() == StatusCode::TOO_MANY_REQUESTS {
+                    tracing::warn!(target: "scribe_cli::client::implementation", "Received 429 Too Many Requests from backend API");
+                    return Err(CliError::RateLimitExceeded);
                 }
-            };
+                resp
+            }
+            Err(e) => {
+                tracing::error!(target: "scribe_cli::client::implementation", error = ?e, "Network error sending message");
+                return Err(CliError::Network(e.to_string()));
+            }
+        };
 
         // Use the NEW handler function specifically for this response type
         handle_non_streaming_chat_response(response).await
@@ -364,9 +381,9 @@ impl HttpClient for ReqwestClientWrapper {
     async fn stream_chat_response(
         &self,
         chat_id: Uuid,
-        history: Vec<ApiChatMessage>, 
+        history: Vec<ApiChatMessage>,
         request_thinking: bool,
-        model_name: Option<&str>,  // Add model_name parameter
+        model_name: Option<&str>, // Add model_name parameter
     ) -> Result<Pin<Box<dyn Stream<Item = Result<StreamEvent, CliError>> + Send>>, CliError> {
         // Build URL with query parameter for streaming
         let mut url = build_url(&self.base_url, &format!("/api/chats/{}/generate", chat_id))?;
@@ -376,13 +393,15 @@ impl HttpClient for ReqwestClientWrapper {
         tracing::info!(target: "scribe_cli::client::implementation", %url, %chat_id, %request_thinking, "Initiating streaming chat response via HttpClient");
 
         // Payload now includes history using the backend's struct directly
-        let payload = GenerateChatRequest { 
+        let payload = GenerateChatRequest {
             history,
-            model: model_name.map(|s| s.to_string())  // Use the model name provided or None
+            model: model_name.map(|s| s.to_string()), // Use the model name provided or None
         };
 
         // Build the request manually to use with EventSource
-        let request_builder = self.client.post(url.clone())
+        let request_builder = self
+            .client
+            .post(url.clone())
             .header(reqwest::header::ACCEPT, "text/event-stream") // Explicitly request SSE format
             .json(&payload); // Clone URL, create builder
 
@@ -424,10 +443,10 @@ impl HttpClient for ReqwestClientWrapper {
                             "error" => {
                                 // Handle potential errors sent via SSE 'error' event
                                 tracing::error!(target: "scribe_cli::client::implementation", sse_error_data = %message.data, "Received error event from backend stream");
-                                
+
                                 // Check for rate limit errors in the error data
-                                if message.data.contains("429") || 
-                                   message.data.contains("Too Many Requests") || 
+                                if message.data.contains("429") ||
+                                   message.data.contains("Too Many Requests") ||
                                    message.data.contains("rate limit") {
                                     tracing::warn!(target: "scribe_cli::client::implementation", "SSE error event contains rate limit indication: {}", message.data);
                                     yield Err(CliError::RateLimitExceeded);
@@ -482,7 +501,7 @@ impl HttpClient for ReqwestClientWrapper {
                                     es.close();
                                     break;
                                 }
-                                
+
                                 let body = resp.text().await.unwrap_or_else(|_| "Failed to read error body".to_string());
                                 tracing::error!(target: "scribe_cli::client::implementation", %status, error_body = %body, "SSE request failed with status code");
                                 yield Err(CliError::ApiError { status, message: body });
@@ -514,8 +533,15 @@ impl HttpClient for ReqwestClientWrapper {
     }
 
     // NEW: Implement update_chat_settings
-    async fn update_chat_settings(&self, session_id: Uuid, payload: &UpdateChatSettingsRequest) -> Result<ChatSettingsResponse, CliError> {
-        let url = build_url(&self.base_url, &format!("/api/chats/{}/settings", session_id))?;
+    async fn update_chat_settings(
+        &self,
+        session_id: Uuid,
+        payload: &UpdateChatSettingsRequest,
+    ) -> Result<ChatSettingsResponse, CliError> {
+        let url = build_url(
+            &self.base_url,
+            &format!("/api/chats/{}/settings", session_id),
+        )?;
         tracing::info!(
             target: "scribe_cli::client::implementation",
             %url,
@@ -532,23 +558,36 @@ impl HttpClient for ReqwestClientWrapper {
             .map_err(CliError::Reqwest)?;
         handle_response(response).await
     }
-    
+
     // ADMIN APIs
     async fn admin_list_users(&self) -> Result<Vec<AdminUserListResponse>, CliError> {
         let url = build_url(&self.base_url, "/api/admin/users")?;
         tracing::info!(target: "scribe_cli::client::implementation", %url, "Admin: Listing users via HttpClient");
-        let response = self.client.get(url).send().await.map_err(CliError::Reqwest)?;
+        let response = self
+            .client
+            .get(url)
+            .send()
+            .await
+            .map_err(CliError::Reqwest)?;
         handle_response(response).await
     }
 
     async fn admin_get_user(&self, user_id: Uuid) -> Result<AdminUserDetailResponse, CliError> {
         let url = build_url(&self.base_url, &format!("/api/admin/users/{}", user_id))?;
         tracing::info!(target: "scribe_cli::client::implementation", %url, %user_id, "Admin: Getting user details via HttpClient");
-        let response = self.client.get(url).send().await.map_err(CliError::Reqwest)?;
+        let response = self
+            .client
+            .get(url)
+            .send()
+            .await
+            .map_err(CliError::Reqwest)?;
         handle_response(response).await
     }
-    
-    async fn admin_get_user_by_username(&self, username: &str) -> Result<AdminUserDetailResponse, CliError> {
+
+    async fn admin_get_user_by_username(
+        &self,
+        username: &str,
+    ) -> Result<AdminUserDetailResponse, CliError> {
         // Try to get user by ID first if the input looks like a UUID
         if let Ok(user_id) = Uuid::parse_str(username) {
             return self.admin_get_user(user_id).await;
@@ -561,41 +600,81 @@ impl HttpClient for ReqwestClientWrapper {
                 return self.admin_get_user(user.id).await;
             }
         }
-        
-        Err(CliError::InputError(format!("User with username '{}' not found", username)))
+
+        Err(CliError::InputError(format!(
+            "User with username '{}' not found",
+            username
+        )))
     }
 
-    async fn admin_update_user_role(&self, user_id: Uuid, role: &str) -> Result<AdminUserDetailResponse, CliError> {
-        let url = build_url(&self.base_url, &format!("/api/admin/users/{}/role", user_id))?;
+    async fn admin_update_user_role(
+        &self,
+        user_id: Uuid,
+        role: &str,
+    ) -> Result<AdminUserDetailResponse, CliError> {
+        let url = build_url(
+            &self.base_url,
+            &format!("/api/admin/users/{}/role", user_id),
+        )?;
         tracing::info!(target: "scribe_cli::client::implementation", %url, %user_id, %role, "Admin: Updating user role via HttpClient");
-        let payload = UpdateUserRoleRequest { role: role.to_string() };
-        let response = self.client.put(url).json(&payload).send().await.map_err(CliError::Reqwest)?;
+        let payload = UpdateUserRoleRequest {
+            role: role.to_string(),
+        };
+        let response = self
+            .client
+            .put(url)
+            .json(&payload)
+            .send()
+            .await
+            .map_err(CliError::Reqwest)?;
         handle_response(response).await
     }
 
     async fn admin_lock_user(&self, user_id: Uuid) -> Result<(), CliError> {
-        let url = build_url(&self.base_url, &format!("/api/admin/users/{}/lock", user_id))?;
+        let url = build_url(
+            &self.base_url,
+            &format!("/api/admin/users/{}/lock", user_id),
+        )?;
         tracing::info!(target: "scribe_cli::client::implementation", %url, %user_id, "Admin: Locking user via HttpClient");
-        let response = self.client.put(url).send().await.map_err(CliError::Reqwest)?;
+        let response = self
+            .client
+            .put(url)
+            .send()
+            .await
+            .map_err(CliError::Reqwest)?;
         if response.status().is_success() {
             Ok(())
         } else {
             let status = response.status();
             handle_response::<Value>(response).await?; // Attempt to parse error body
-            Err(CliError::ApiError{status, message: "Failed to lock user".to_string()}) // Fallback
+            Err(CliError::ApiError {
+                status,
+                message: "Failed to lock user".to_string(),
+            }) // Fallback
         }
     }
 
     async fn admin_unlock_user(&self, user_id: Uuid) -> Result<(), CliError> {
-        let url = build_url(&self.base_url, &format!("/api/admin/users/{}/unlock", user_id))?;
+        let url = build_url(
+            &self.base_url,
+            &format!("/api/admin/users/{}/unlock", user_id),
+        )?;
         tracing::info!(target: "scribe_cli::client::implementation", %url, %user_id, "Admin: Unlocking user via HttpClient");
-        let response = self.client.put(url).send().await.map_err(CliError::Reqwest)?;
-         if response.status().is_success() {
+        let response = self
+            .client
+            .put(url)
+            .send()
+            .await
+            .map_err(CliError::Reqwest)?;
+        if response.status().is_success() {
             Ok(())
         } else {
             let status = response.status();
             handle_response::<Value>(response).await?; // Attempt to parse error body
-            Err(CliError::ApiError{status, message: "Failed to unlock user".to_string()}) // Fallback
+            Err(CliError::ApiError {
+                status,
+                message: "Failed to unlock user".to_string(),
+            }) // Fallback
         }
     }
 

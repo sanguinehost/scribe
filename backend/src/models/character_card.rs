@@ -1,5 +1,6 @@
 #![allow(dead_code)]
 
+use crate::models::characters::Character;
 use chrono::{DateTime, Utc}; // Add DateTime and Utc
 use diesel::prelude::*;
 use diesel_json::Json;
@@ -7,8 +8,7 @@ use serde::{Deserialize, Deserializer, Serialize}; // Added Deserializer
 use serde_json::Value; // Using Value for flexibility in extensions and mixed types like id
 use serde_json::Value as JsonValue;
 use std::collections::HashMap;
-use uuid::Uuid; // <-- Add Uuid import // Alias serde_json::Value
-use crate::models::characters::Character; // Add use statement for canonical Character struct
+use uuid::Uuid; // <-- Add Uuid import // Alias serde_json::Value // Add use statement for canonical Character struct
 
 // Main Character Card Structure (V3)
 #[derive(Serialize, Deserialize, Clone, Default)]
@@ -747,21 +747,29 @@ impl NewCharacter {
                     user_id,                                     // Use passed user_id
                     name: data.name.clone().unwrap_or_default(), // V3 name is Option<String>, DB needs String
                     // Wrap non-optional V3 strings in Some() for DB Option<String>, filter empty
-                    description: Some(data.description.clone().into_bytes()).filter(|v| !v.is_empty()),
+                    description: Some(data.description.clone().into_bytes())
+                        .filter(|v| !v.is_empty()),
                     description_nonce: None,
-                    personality: Some(data.personality.clone().into_bytes()).filter(|v| !v.is_empty()),
+                    personality: Some(data.personality.clone().into_bytes())
+                        .filter(|v| !v.is_empty()),
                     personality_nonce: None,
                     scenario: Some(data.scenario.clone().into_bytes()).filter(|v| !v.is_empty()),
                     scenario_nonce: None,
                     first_mes: Some(data.first_mes.clone().into_bytes()).filter(|v| !v.is_empty()),
                     first_mes_nonce: None,
-                    mes_example: Some(data.mes_example.clone().into_bytes()).filter(|v| !v.is_empty()),
+                    mes_example: Some(data.mes_example.clone().into_bytes())
+                        .filter(|v| !v.is_empty()),
                     mes_example_nonce: None,
-                    creator_notes: Some(data.creator_notes.clone().into_bytes()).filter(|v| !v.is_empty()),
+                    creator_notes: Some(data.creator_notes.clone().into_bytes())
+                        .filter(|v| !v.is_empty()),
                     creator_notes_nonce: None,
-                    system_prompt: Some(data.system_prompt.clone().into_bytes()).filter(|v| !v.is_empty()),
+                    system_prompt: Some(data.system_prompt.clone().into_bytes())
+                        .filter(|v| !v.is_empty()),
                     system_prompt_nonce: None,
-                    post_history_instructions: Some(data.post_history_instructions.clone().into_bytes()).filter(|v| !v.is_empty()),
+                    post_history_instructions: Some(
+                        data.post_history_instructions.clone().into_bytes(),
+                    )
+                    .filter(|v| !v.is_empty()),
                     post_history_instructions_nonce: None,
                     creator: Some(data.creator.clone()).filter(|s| !s.is_empty()),
                     character_version: Some(data.character_version.clone())
@@ -843,21 +851,30 @@ impl NewCharacter {
                 NewCharacter {
                     user_id,                                        // Use passed user_id
                     name: data_v2.name.clone().unwrap_or_default(), // V2 name is Option<String>, DB needs String
-                    description: Some(data_v2.description.clone().into_bytes()).filter(|v| !v.is_empty()),
+                    description: Some(data_v2.description.clone().into_bytes())
+                        .filter(|v| !v.is_empty()),
                     description_nonce: None,
-                    personality: Some(data_v2.personality.clone().into_bytes()).filter(|v| !v.is_empty()),
+                    personality: Some(data_v2.personality.clone().into_bytes())
+                        .filter(|v| !v.is_empty()),
                     personality_nonce: None,
                     scenario: Some(data_v2.scenario.clone().into_bytes()).filter(|v| !v.is_empty()),
                     scenario_nonce: None,
-                    first_mes: Some(data_v2.first_mes.clone().into_bytes()).filter(|v| !v.is_empty()),
+                    first_mes: Some(data_v2.first_mes.clone().into_bytes())
+                        .filter(|v| !v.is_empty()),
                     first_mes_nonce: None,
-                    mes_example: Some(data_v2.mes_example.clone().into_bytes()).filter(|v| !v.is_empty()),
+                    mes_example: Some(data_v2.mes_example.clone().into_bytes())
+                        .filter(|v| !v.is_empty()),
                     mes_example_nonce: None,
-                    creator_notes: Some(data_v2.creator_notes.clone().into_bytes()).filter(|v| !v.is_empty()),
+                    creator_notes: Some(data_v2.creator_notes.clone().into_bytes())
+                        .filter(|v| !v.is_empty()),
                     creator_notes_nonce: None,
-                    system_prompt: Some(data_v2.system_prompt.clone().into_bytes()).filter(|v| !v.is_empty()),
+                    system_prompt: Some(data_v2.system_prompt.clone().into_bytes())
+                        .filter(|v| !v.is_empty()),
                     system_prompt_nonce: None,
-                    post_history_instructions: Some(data_v2.post_history_instructions.clone().into_bytes()).filter(|v| !v.is_empty()),
+                    post_history_instructions: Some(
+                        data_v2.post_history_instructions.clone().into_bytes(),
+                    )
+                    .filter(|v| !v.is_empty()),
                     post_history_instructions_nonce: None,
                     tags, // Use converted tags
                     creator: Some(data_v2.creator.clone()).filter(|s| !s.is_empty()),
@@ -1305,7 +1322,7 @@ mod tests {
         assert_eq!(processed_content7, "@@ \nContent");
     }
 
-// --- Tests for Default Implementations ---
+    // --- Tests for Default Implementations ---
 
     #[test]
     fn test_character_card_v3_default() {
@@ -1421,7 +1438,7 @@ mod tests {
             selective: None,
             secondary_keys: vec![],
             position: None,
-            parsed_decorators: vec![], // skip field
+            parsed_decorators: vec![],                // skip field
             processed_content: "content".to_string(), // skip field
         };
         let _ = format!("{:?}", entry);
@@ -1576,7 +1593,6 @@ mod tests {
         // Add other V2 fields if necessary for more specific tests
     }
 
-
     #[test]
     fn test_from_parsed_card_v3_fields() {
         let user_id = Uuid::new_v4();
@@ -1587,9 +1603,10 @@ mod tests {
         data_v3.group_only_greetings = vec!["group_greet1".to_string()];
         data_v3.creation_date = Some(1678886400); // Example timestamp
         data_v3.modification_date = Some(1678887400);
-        data_v3.creator_notes_multilingual = Some(HashMap::from([("es".to_string(), "nota".to_string())]));
-        data_v3.extensions = HashMap::from([("ext_key".to_string(), Value::String("ext_val".to_string()))]);
-
+        data_v3.creator_notes_multilingual =
+            Some(HashMap::from([("es".to_string(), "nota".to_string())]));
+        data_v3.extensions =
+            HashMap::from([("ext_key".to_string(), Value::String("ext_val".to_string()))]);
 
         let card_v3 = CharacterCardV3 {
             spec: "chara_card_v3".to_string(),
@@ -1608,9 +1625,15 @@ mod tests {
         assert_eq!(new_char.spec_version, "3.0");
 
         // Test V3 Vec<String> -> Option<Vec<Option<String>>> conversion (lines 433, 451, 457)
-        assert_eq!(new_char.tags, Some(vec![Some("tag1".to_string()), Some("tag2".to_string())]));
+        assert_eq!(
+            new_char.tags,
+            Some(vec![Some("tag1".to_string()), Some("tag2".to_string())])
+        );
         assert_eq!(new_char.source, Some(vec![Some("source1".to_string())]));
-        assert_eq!(new_char.group_only_greetings, Some(vec![Some("group_greet1".to_string())]));
+        assert_eq!(
+            new_char.group_only_greetings,
+            Some(vec![Some("group_greet1".to_string())])
+        );
 
         // Test timestamp conversion (lines 468, 471)
         assert!(new_char.creation_date.is_some());
@@ -1622,12 +1645,18 @@ mod tests {
         assert!(new_char.creator_notes_multilingual.is_some());
         let multi_notes_json = new_char.creator_notes_multilingual.unwrap().0; // Extract Value from Json wrapper
         assert!(multi_notes_json.is_object());
-        assert_eq!(multi_notes_json.get("es").unwrap().as_str().unwrap(), "nota");
+        assert_eq!(
+            multi_notes_json.get("es").unwrap().as_str().unwrap(),
+            "nota"
+        );
 
         assert!(new_char.extensions.is_some());
         let extensions_json = new_char.extensions.unwrap().0; // Extract Value from Json wrapper
         assert!(extensions_json.is_object());
-        assert_eq!(extensions_json.get("ext_key").unwrap().as_str().unwrap(), "ext_val");
+        assert_eq!(
+            extensions_json.get("ext_key").unwrap().as_str().unwrap(),
+            "ext_val"
+        );
     }
 
     #[test]
@@ -1652,7 +1681,10 @@ mod tests {
 
         // Test V2 Vec<String> -> Option<Vec<Option<String>>> conversion (lines 528, 533)
         assert_eq!(new_char.tags, Some(vec![Some("v2tag1".to_string())]));
-        assert_eq!(new_char.alternate_greetings, Some(vec![Some("v2greet1".to_string())]));
+        assert_eq!(
+            new_char.alternate_greetings,
+            Some(vec![Some("v2greet1".to_string())])
+        );
 
         // Check that V3 specific fields are None
         assert!(new_char.nickname.is_none());

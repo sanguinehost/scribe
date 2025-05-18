@@ -1,16 +1,15 @@
 // cli/src/client/types.rs
 
+use bigdecimal::BigDecimal;
+use chrono::{DateTime, Utc};
 use scribe_backend::models::characters::CharacterDataForClient;
 use scribe_backend::models::users::{User, UserRole};
 use secrecy::{ExposeSecret, SecretString};
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
 use uuid::Uuid;
-use bigdecimal::BigDecimal;
-use chrono::{DateTime, Utc};
 // Import the backend Json type directly for conversion
 use diesel_json::Json as DieselJson;
-
 
 // Custom Json type to mirror backend's diesel_json::Json
 #[derive(Debug, Clone, Deserialize, Serialize)] // Added Serialize
@@ -53,11 +52,11 @@ impl From<AuthUserResponse> for User {
             encrypted_dek_by_recovery: None,
             recovery_kek_salt: None,
             recovery_dek_nonce: None,
-            dek: None,                    // Option<SerializableSecretDek>
+            dek: None, // Option<SerializableSecretDek>
             created_at: chrono::Utc::now(),
             updated_at: chrono::Utc::now(),
-            role,                         // Add the role field
-            recovery_phrase: None,         // Add the recovery_phrase field
+            role,                                       // Add the role field
+            recovery_phrase: None,                      // Add the recovery_phrase field
             account_status: Some("active".to_string()), // Default to active, may be overridden by login response
         }
     }
@@ -68,11 +67,11 @@ impl From<AuthUserResponse> for User {
 #[serde(tag = "event", content = "data")] // Specify how to deserialize based on SSE event name
 #[serde(rename_all = "snake_case")] // Match backend event names (e.g., event: thinking)
 pub enum StreamEvent {
-    Thinking(String), // Corresponds to event: thinking, data: "step description"
-    Content(String),  // Corresponds to event: content, data: "text chunk"
+    Thinking(String),       // Corresponds to event: thinking, data: "step description"
+    Content(String),        // Corresponds to event: content, data: "text chunk"
     ReasoningChunk(String), // NEW: Corresponds to event: reasoning_chunk, data: "reasoning text chunk"
     PartialMessage(String), // NEW: For event: message, data: {"text": "..."}
-    Done,             // Corresponds to event: done (no data expected)
+    Done,                   // Corresponds to event: done (no data expected)
 }
 
 // NEW: Intermediate struct for the non-streaming response body
@@ -214,8 +213,8 @@ pub struct ClientChatMessageResponse {
     pub session_id: Uuid,
     pub message_type: String, // Or a specific enum if defined, like MessageRole
     pub role: String,         // Or a specific enum
-    pub parts: Value,       // serde_json::Value for flexible structure like `[{"text": "..."}]`
-    pub attachments: Value, // serde_json::Value for flexible structure
+    pub parts: Value,         // serde_json::Value for flexible structure like `[{"text": "..."}]`
+    pub attachments: Value,   // serde_json::Value for flexible structure
     pub created_at: DateTime<Utc>,
     // Add other fields if the backend MessageResponse includes them and they are needed by CLI
     // pub user_id: Option<Uuid>, // Example: if backend sends user_id for messages
@@ -229,13 +228,11 @@ where
 {
     // First try deserializing as any value
     let value = serde_json::Value::deserialize(deserializer)?;
-    
+
     // Handle different value types
     match value {
         // Null - return None
-        serde_json::Value::Null => {
-            Ok(None)
-        }
+        serde_json::Value::Null => Ok(None),
         // String - return the string wrapped in Some
         serde_json::Value::String(s) => {
             if s.is_empty() {
@@ -247,7 +244,8 @@ where
         // Array of integers (byte array) - convert to UTF-8 string
         serde_json::Value::Array(arr) => {
             // Convert the array of numbers to bytes
-            let bytes: Result<Vec<u8>, _> = arr.into_iter()
+            let bytes: Result<Vec<u8>, _> = arr
+                .into_iter()
                 .map(|v| {
                     if let serde_json::Value::Number(n) = v {
                         if let Some(i) = n.as_u64() {
@@ -256,22 +254,25 @@ where
                             }
                         }
                     }
-                    Err(serde::de::Error::custom(format!("Expected byte value 0-255")))
+                    Err(serde::de::Error::custom(format!(
+                        "Expected byte value 0-255"
+                    )))
                 })
                 .collect();
-                
+
             match bytes {
                 Ok(b) if b.is_empty() => Ok(None),
-                Ok(b) => {
-                    String::from_utf8(b)
-                        .map(Some)
-                        .map_err(|e| serde::de::Error::custom(format!("Invalid UTF-8: {}", e)))
-                }
-                Err(e) => Err(e)
+                Ok(b) => String::from_utf8(b)
+                    .map(Some)
+                    .map_err(|e| serde::de::Error::custom(format!("Invalid UTF-8: {}", e))),
+                Err(e) => Err(e),
             }
         }
         // Any other value type - error
-        v => Err(serde::de::Error::custom(format!("Expected string, byte array, or null, got {:?}", v))),
+        v => Err(serde::de::Error::custom(format!(
+            "Expected string, byte array, or null, got {:?}",
+            v
+        ))),
     }
 }
 
@@ -297,7 +298,9 @@ impl From<ClientCharacterDataForClient> for CharacterDataForClient {
             character_version: client.character_version,
             alternate_greetings: client.alternate_greetings,
             nickname: client.nickname,
-            creator_notes_multilingual: client.creator_notes_multilingual.map(|json| DieselJson(json.0)),
+            creator_notes_multilingual: client
+                .creator_notes_multilingual
+                .map(|json| DieselJson(json.0)),
             source: client.source,
             group_only_greetings: client.group_only_greetings,
             creation_date: client.creation_date,

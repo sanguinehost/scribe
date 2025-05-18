@@ -2,8 +2,8 @@
 
 use crate::error::CliError;
 use reqwest::{Response, StatusCode, Url};
-use serde::de::DeserializeOwned;
 use serde::Deserialize; // For local error parsing structs
+use serde::de::DeserializeOwned;
 use serde_json;
 use tracing;
 
@@ -17,7 +17,9 @@ pub(super) fn build_url(base: &Url, path: &str) -> Result<Url, CliError> {
 
 // Helper to handle API responses
 // Add std::fmt::Debug to T for logging
-pub(super) async fn handle_response<T: DeserializeOwned + std::fmt::Debug>(response: Response) -> Result<T, CliError> {
+pub(super) async fn handle_response<T: DeserializeOwned + std::fmt::Debug>(
+    response: Response,
+) -> Result<T, CliError> {
     let status = response.status();
     let type_name = std::any::type_name::<T>(); // Get type name for logs
 
@@ -73,7 +75,11 @@ pub(super) async fn handle_response<T: DeserializeOwned + std::fmt::Debug>(respo
             Err(e) => {
                 tracing::debug!(target: "scribe_cli::client::util", %type_name, body = %response_body, error = ?e, "Failed to deserialize response body");
                 // Existing tracing logs
-                tracing::error!("Failed to deserialize successful response for T={}: {}", type_name, e);
+                tracing::error!(
+                    "Failed to deserialize successful response for T={}: {}",
+                    type_name,
+                    e
+                );
                 tracing::error!("Response text for T={} was: {}", type_name, response_body);
                 // Map to CliError::Json or CliError::Internal as appropriate
                 // Using CliError::Json as it's more specific for deserialization issues
@@ -87,7 +93,10 @@ pub(super) async fn handle_response<T: DeserializeOwned + std::fmt::Debug>(respo
         if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
             tracing::warn!(target: "scribe_cli::client::util", %type_name, "Received 429 Too Many Requests, returning CliError::RateLimitExceeded.");
             // The original tracing::warn is kept below, this one is more specific to the eprint replacement
-            tracing::warn!("Received 429 Too Many Requests from backend for T={}", type_name);
+            tracing::warn!(
+                "Received 429 Too Many Requests from backend for T={}",
+                type_name
+            );
             return Err(CliError::RateLimitExceeded);
         }
 
@@ -103,7 +112,8 @@ pub(super) async fn handle_response<T: DeserializeOwned + std::fmt::Debug>(respo
             error: ApiErrorDetail,
         }
 
-        let structured_error_result: Result<StructuredApiErrorResponse, _> = serde_json::from_str(&response_body);
+        let structured_error_result: Result<StructuredApiErrorResponse, _> =
+            serde_json::from_str(&response_body);
 
         if let Ok(parsed_error) = structured_error_result {
             tracing::trace!(target: "scribe_cli::client::util", %type_name, parsed_error = ?parsed_error, "Successfully parsed structured API error");
@@ -140,23 +150,25 @@ pub(super) async fn handle_response<T: DeserializeOwned + std::fmt::Debug>(respo
 }
 
 // NEW: Helper function specifically for handling the non-streaming chat response
-pub(super) async fn handle_non_streaming_chat_response(response: Response) -> Result<ChatMessage, CliError> {
+pub(super) async fn handle_non_streaming_chat_response(
+    response: Response,
+) -> Result<ChatMessage, CliError> {
     let status = response.status();
-    
+
     // Get the content type to determine how to process the response
     let content_type = response
         .headers()
         .get(reqwest::header::CONTENT_TYPE)
         .map(|v| v.to_str().unwrap_or("").to_string())
         .unwrap_or_default();
-        
+
     if !status.is_success() {
         // For error status codes, handle the same way as before
         if status == StatusCode::TOO_MANY_REQUESTS {
             tracing::warn!("Received 429 Too Many Requests from backend");
             return Err(CliError::RateLimitExceeded);
         }
-        
+
         let error_text = response
             .text()
             .await
@@ -167,29 +179,32 @@ pub(super) async fn handle_non_streaming_chat_response(response: Response) -> Re
             message: error_text,
         });
     }
-    
+
     // Get the response text
     let response_text = match response.text().await {
         Ok(text) => {
             if text.trim().is_empty() {
                 tracing::warn!(target: "scribe_cli::client::util", "Received empty response body with success status");
-                return Err(CliError::Internal("Received empty response from server".to_string()));
+                return Err(CliError::Internal(
+                    "Received empty response from server".to_string(),
+                ));
             }
             text
-        },
+        }
         Err(e) => {
             tracing::error!(target: "scribe_cli::client::util", error = ?e, "Failed to get text from response");
             return Err(CliError::Reqwest(e));
         }
     };
-    
+
     tracing::debug!(target: "scribe_cli::client::util", "Received response text: {}", response_text);
-    
+
     // Check if we have an SSE response (text/event-stream or contains "event:" and "data:")
-    if content_type.contains("text/event-stream") || 
-       (response_text.contains("event:") && response_text.contains("data:")) {
+    if content_type.contains("text/event-stream")
+        || (response_text.contains("event:") && response_text.contains("data:"))
+    {
         tracing::debug!(target: "scribe_cli::client::util", "Detected SSE format response");
-        
+
         // Check for error event (including rate limit errors from Gemini)
         if response_text.contains("event: error") {
             let error_data = response_text
@@ -197,17 +212,20 @@ pub(super) async fn handle_non_streaming_chat_response(response: Response) -> Re
                 .find(|line| line.starts_with("data:"))
                 .map(|line| line.trim_start_matches("data:").trim())
                 .unwrap_or("Unknown error in SSE stream");
-                
+
             tracing::error!(target: "scribe_cli::client::util", error_data = %error_data, "SSE stream contained error event");
-            
+
             // Check for rate limit errors (status code 429) in the error text
-            if error_data.contains("429") || error_data.contains("Too Many Requests") || error_data.contains("rate limit") {
+            if error_data.contains("429")
+                || error_data.contains("Too Many Requests")
+                || error_data.contains("rate limit")
+            {
                 return Err(CliError::RateLimitExceeded);
             }
-            
+
             return Err(CliError::Backend(format!("Server error: {}", error_data)));
         }
-        
+
         // Extract content from a successful response
         // Look for "event: content" or "event: done" followed by data
         let content = response_text
@@ -219,7 +237,7 @@ pub(super) async fn handle_non_streaming_chat_response(response: Response) -> Re
             .map(|line| line.trim_start_matches("data:").trim())
             .collect::<Vec<&str>>()
             .join("");
-            
+
         if content.is_empty() {
             // If no content, check for done event with data
             let done_data = response_text
@@ -231,7 +249,7 @@ pub(super) async fn handle_non_streaming_chat_response(response: Response) -> Re
                 .map(|line| line.trim_start_matches("data:").trim())
                 .collect::<Vec<&str>>()
                 .join("");
-                
+
             if !done_data.is_empty() {
                 // Use the done event data
                 tracing::debug!(target: "scribe_cli::client::util", done_data = %done_data, "Using data from done event");
@@ -247,11 +265,13 @@ pub(super) async fn handle_non_streaming_chat_response(response: Response) -> Re
                     completion_tokens: None,
                 });
             }
-            
+
             tracing::warn!(target: "scribe_cli::client::util", "No content found in SSE response");
-            return Err(CliError::Internal("No message content found in server response".to_string()));
+            return Err(CliError::Internal(
+                "No message content found in server response".to_string(),
+            ));
         }
-        
+
         // Return the content we found
         tracing::debug!(target: "scribe_cli::client::util", content_len = content.len(), "Found content in SSE response");
         return Ok(ChatMessage {
@@ -266,7 +286,7 @@ pub(super) async fn handle_non_streaming_chat_response(response: Response) -> Re
             completion_tokens: None,
         });
     }
-    
+
     // If not SSE, try parsing as JSON (original implementation)
     match serde_json::from_str::<NonStreamingResponse>(&response_text) {
         Ok(body) => {
@@ -276,11 +296,11 @@ pub(super) async fn handle_non_streaming_chat_response(response: Response) -> Re
             Ok(ChatMessage {
                 id: body.message_id,
                 session_id: uuid::Uuid::nil(), // Not provided by this endpoint, set to nil
-                user_id: uuid::Uuid::nil(), // Use Uuid::nil() for CLI context
+                user_id: uuid::Uuid::nil(),    // Use Uuid::nil() for CLI context
                 message_type: scribe_backend::models::chats::MessageRole::Assistant,
                 content: body.content.into_bytes(), // Convert String to Vec<u8>
-                content_nonce: None, // Add missing field
-                created_at: chrono::Utc::now(), // Use current time
+                content_nonce: None,                // Add missing field
+                created_at: chrono::Utc::now(),     // Use current time
                 prompt_tokens: None,
                 completion_tokens: None,
             })

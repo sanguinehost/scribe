@@ -36,7 +36,7 @@ impl TokenEstimate {
             is_estimate: false,
         }
     }
-    
+
     /// Add counts from another estimate
     pub fn combine(&mut self, other: &TokenEstimate) {
         self.total += other.total;
@@ -59,7 +59,7 @@ pub enum ContentType {
 }
 
 /// Model-specific tokenizer for LLM operations
-/// 
+///
 /// The TokenizerService wraps SentencePiece models and provides methods for
 /// encoding text to token IDs and decoding token IDs back to text.
 #[derive(Debug, Clone)]
@@ -79,15 +79,14 @@ impl TokenizerService {
             .to_string();
 
         debug!("Loading SentencePiece model from {}", path.display());
-        
-        let processor = SentencePieceProcessor::open(path)
-            .map_err(|e| {
-                error!("Failed to load SentencePiece model: {}", e);
-                AppError::ConfigError(format!("Failed to load tokenizer model: {}", e))
-            })?;
-        
+
+        let processor = SentencePieceProcessor::open(path).map_err(|e| {
+            error!("Failed to load SentencePiece model: {}", e);
+            AppError::ConfigError(format!("Failed to load tokenizer model: {}", e))
+        })?;
+
         info!("Loaded SentencePiece model: {}", model_name);
-        
+
         Ok(Self {
             processor: Arc::new(processor),
             model_name,
@@ -98,7 +97,7 @@ impl TokenizerService {
     pub fn model_name(&self) -> &str {
         &self.model_name
     }
-    
+
     /// Returns the vocabulary size of the model
     pub fn vocab_size(&self) -> usize {
         self.processor.len()
@@ -130,19 +129,19 @@ impl TokenizerService {
             error!("Failed to encode text: {}", e);
             AppError::TextProcessingError(format!("Tokenizer encoding error: {}", e))
         })?;
-        
+
         Ok(pieces.into_iter().map(|p| p.id).collect())
     }
 
     /// Encodes a batch of text strings into token IDs
     pub fn encode_batch(&self, texts: &[String]) -> Result<Vec<Vec<u32>>> {
         let mut results = Vec::with_capacity(texts.len());
-        
+
         for text in texts {
             let tokens = self.encode(text)?;
             results.push(tokens);
         }
-        
+
         Ok(results)
     }
 
@@ -161,18 +160,17 @@ impl TokenizerService {
         if id >= self.processor.len() as u32 {
             return Ok(None);
         }
-        
+
         let text = self.decode(&[id])?;
         Ok(Some(text))
     }
 
     /// Gets the ID for a given piece (token)
     pub fn piece_to_id(&self, piece: &str) -> Result<Option<u32>> {
-        self.processor.piece_to_id(piece)
-            .map_err(|e| {
-                error!("Failed to get ID for piece '{}': {}", piece, e);
-                AppError::TextProcessingError(format!("Error in piece_to_id: {}", e))
-            })
+        self.processor.piece_to_id(piece).map_err(|e| {
+            error!("Failed to get ID for piece '{}': {}", piece, e);
+            AppError::TextProcessingError(format!("Error in piece_to_id: {}", e))
+        })
     }
 
     /// Counts the number of tokens in a text string
@@ -180,29 +178,32 @@ impl TokenizerService {
         let tokens = self.encode(text)?;
         Ok(tokens.len())
     }
-    
+
     /// Estimates tokens for text, returning a TokenEstimate object
     pub fn estimate_text_tokens(&self, text: &str) -> Result<TokenEstimate> {
         let token_count = self.count_tokens(text)?;
         Ok(TokenEstimate::new_text_only(token_count))
     }
-    
+
     /// Estimates tokens for an image based on Gemini's image token counting rules
-    /// 
+    ///
     /// Gemini 2.0 counts images as follows:
     /// - Images with both dimensions ≤ 384 pixels: 258 tokens
     /// - Larger images: 258 tokens per 768x768 tile (scaled and cropped as needed)
     pub fn estimate_image_tokens(&self, image_path: impl AsRef<Path>) -> Result<TokenEstimate> {
         let path = image_path.as_ref();
-        
+
         // Open the image to get dimensions
         let img = image::open(path).map_err(|e| {
             error!("Failed to open image at {}: {}", path.display(), e);
-            AppError::TextProcessingError(format!("Failed to open image for token estimation: {}", e))
+            AppError::TextProcessingError(format!(
+                "Failed to open image for token estimation: {}",
+                e
+            ))
         })?;
-        
+
         let (width, height) = img.dimensions();
-        
+
         // Small images (both dimensions ≤ 384 pixels) are counted as 258 tokens
         if width <= 384 && height <= 384 {
             debug!("Small image ({}x{}): 258 tokens", width, height);
@@ -213,19 +214,21 @@ impl TokenizerService {
                 ..Default::default()
             });
         }
-        
+
         // Larger images are processed into 768x768 tiles
         // Calculate how many tiles would be needed (ceiling division)
         let tiles_x = (width as f64 / 768.0).ceil() as usize;
         let tiles_y = (height as f64 / 768.0).ceil() as usize;
         let total_tiles = tiles_x * tiles_y;
-        
+
         // Each tile is 258 tokens
         let token_count = total_tiles * 258;
-        
-        debug!("Large image ({}x{}): {} tiles, {} tokens", 
-               width, height, total_tiles, token_count);
-        
+
+        debug!(
+            "Large image ({}x{}): {} tiles, {} tokens",
+            width, height, total_tiles, token_count
+        );
+
         Ok(TokenEstimate {
             total: token_count,
             images: token_count,
@@ -233,13 +236,13 @@ impl TokenizerService {
             ..Default::default()
         })
     }
-    
+
     /// Estimates tokens for video content based on Gemini's counting rules
-    /// 
+    ///
     /// For Gemini, video is counted at a fixed rate of 263 tokens per second
     pub fn estimate_video_tokens(&self, duration_seconds: f64) -> TokenEstimate {
         let token_count = (duration_seconds * 263.0).ceil() as usize;
-        
+
         TokenEstimate {
             total: token_count,
             video: token_count,
@@ -247,13 +250,13 @@ impl TokenizerService {
             ..Default::default()
         }
     }
-    
+
     /// Estimates tokens for audio content based on Gemini's counting rules
-    /// 
+    ///
     /// For Gemini, audio is counted at a fixed rate of 32 tokens per second
     pub fn estimate_audio_tokens(&self, duration_seconds: f64) -> TokenEstimate {
         let token_count = (duration_seconds * 32.0).ceil() as usize;
-        
+
         TokenEstimate {
             total: token_count,
             audio: token_count,
@@ -261,48 +264,54 @@ impl TokenizerService {
             ..Default::default()
         }
     }
-    
+
     /// Estimates total tokens for mixed content
-    pub fn estimate_content_tokens(&self, 
-                                  text: Option<&str>,
-                                  image_paths: Option<&[PathBuf]>,
-                                  video_duration: Option<f64>,
-                                  audio_duration: Option<f64>) -> Result<TokenEstimate> {
+    pub fn estimate_content_tokens(
+        &self,
+        text: Option<&str>,
+        image_paths: Option<&[PathBuf]>,
+        video_duration: Option<f64>,
+        audio_duration: Option<f64>,
+    ) -> Result<TokenEstimate> {
         let mut total_estimate = TokenEstimate::default();
-        
+
         // Add text tokens if provided
         if let Some(text_content) = text {
             let text_estimate = self.estimate_text_tokens(text_content)?;
             total_estimate.combine(&text_estimate);
         }
-        
+
         // Add image tokens if provided
         if let Some(images) = image_paths {
             for image_path in images {
                 match self.estimate_image_tokens(image_path) {
                     Ok(image_estimate) => {
                         total_estimate.combine(&image_estimate);
-                    },
+                    }
                     Err(e) => {
-                        warn!("Failed to estimate tokens for image {}: {}", image_path.display(), e);
+                        warn!(
+                            "Failed to estimate tokens for image {}: {}",
+                            image_path.display(),
+                            e
+                        );
                         // Continue with other images, don't fail the entire estimation
                     }
                 }
             }
         }
-        
+
         // Add video tokens if provided
         if let Some(duration) = video_duration {
             let video_estimate = self.estimate_video_tokens(duration);
             total_estimate.combine(&video_estimate);
         }
-        
+
         // Add audio tokens if provided
         if let Some(duration) = audio_duration {
             let audio_estimate = self.estimate_audio_tokens(duration);
             total_estimate.combine(&audio_estimate);
         }
-        
+
         Ok(total_estimate)
     }
 }
@@ -320,9 +329,11 @@ mod tests {
     use std::path::PathBuf;
 
     fn get_test_model_path() -> PathBuf {
-        PathBuf::from("/home/socol/Workspace/sanguine-scribe/backend/resources/tokenizers/gemma.model")
+        PathBuf::from(
+            "/home/socol/Workspace/sanguine-scribe/backend/resources/tokenizers/gemma.model",
+        )
     }
-    
+
     fn get_test_image_path() -> PathBuf {
         PathBuf::from("/home/socol/Workspace/sanguine-scribe/test_data/test_card.png")
     }
@@ -331,7 +342,7 @@ mod tests {
     fn test_tokenizer_service_creation() {
         let model_path = get_test_model_path();
         let tokenizer = TokenizerService::new(model_path).expect("Failed to create tokenizer");
-        
+
         // Basic assertions to make sure the tokenizer is working
         assert!(tokenizer.vocab_size() > 0);
         assert_eq!(tokenizer.model_name(), "gemma.model");
@@ -341,11 +352,11 @@ mod tests {
     fn test_encode_decode_roundtrip() {
         let model_path = get_test_model_path();
         let tokenizer = TokenizerService::new(model_path).expect("Failed to create tokenizer");
-        
+
         let text = "Hello world, this is a test.";
         let tokens = tokenizer.encode(text).expect("Failed to encode text");
         let decoded = tokenizer.decode(&tokens).expect("Failed to decode tokens");
-        
+
         // The decoded text might not exactly match the original
         // due to tokenization nuances, but should be close
         assert!(decoded.contains("Hello world"));
@@ -356,7 +367,7 @@ mod tests {
     fn test_special_tokens() {
         let model_path = get_test_model_path();
         let tokenizer = TokenizerService::new(model_path).expect("Failed to create tokenizer");
-        
+
         // Test if special tokens are available (model-dependent)
         // These assertions may need adjustment based on the actual model used
         assert!(tokenizer.unk_id() > 0);
@@ -366,23 +377,27 @@ mod tests {
     fn test_token_counting() {
         let model_path = get_test_model_path();
         let tokenizer = TokenizerService::new(model_path).expect("Failed to create tokenizer");
-        
+
         let text = "Short text.";
-        let token_count = tokenizer.count_tokens(text).expect("Failed to count tokens");
-        
+        let token_count = tokenizer
+            .count_tokens(text)
+            .expect("Failed to count tokens");
+
         // The exact count will depend on the model, but should be reasonable
         assert!(token_count > 0);
         assert!(token_count < 10); // A short text shouldn't have too many tokens
     }
-    
+
     #[test]
     fn test_token_estimate_text() {
         let model_path = get_test_model_path();
         let tokenizer = TokenizerService::new(model_path).expect("Failed to create tokenizer");
-        
+
         let text = "This is a test of the token estimation functionality.";
-        let estimate = tokenizer.estimate_text_tokens(text).expect("Failed to estimate tokens");
-        
+        let estimate = tokenizer
+            .estimate_text_tokens(text)
+            .expect("Failed to estimate tokens");
+
         assert_eq!(estimate.images, 0);
         assert_eq!(estimate.video, 0);
         assert_eq!(estimate.audio, 0);
@@ -390,109 +405,123 @@ mod tests {
         assert_eq!(estimate.total, estimate.text);
         assert!(!estimate.is_estimate); // Text counting is exact, not an estimate
     }
-    
+
     #[test]
     fn test_token_estimate_image() {
         let model_path = get_test_model_path();
         let tokenizer = TokenizerService::new(model_path).expect("Failed to create tokenizer");
-        
+
         let image_path = get_test_image_path();
         if !image_path.exists() {
-            println!("Test image not found at {}, skipping test", image_path.display());
+            println!(
+                "Test image not found at {}, skipping test",
+                image_path.display()
+            );
             return;
         }
-        
-        let estimate = tokenizer.estimate_image_tokens(image_path).expect("Failed to estimate image tokens");
-        
+
+        let estimate = tokenizer
+            .estimate_image_tokens(image_path)
+            .expect("Failed to estimate image tokens");
+
         assert_eq!(estimate.text, 0);
         assert_eq!(estimate.video, 0);
         assert_eq!(estimate.audio, 0);
         assert!(estimate.images > 0);
         assert_eq!(estimate.total, estimate.images);
         assert!(estimate.is_estimate); // Image counting is an estimate
-        
+
         // Basic check - should be either 258 (small image) or multiple of 258 (large image)
         assert_eq!(estimate.images % 258, 0);
     }
-    
+
     #[test]
     fn test_token_estimate_video() {
         let model_path = get_test_model_path();
         let tokenizer = TokenizerService::new(model_path).expect("Failed to create tokenizer");
-        
+
         let duration = 10.5; // 10.5 seconds
         let estimate = tokenizer.estimate_video_tokens(duration);
-        
+
         assert_eq!(estimate.text, 0);
         assert_eq!(estimate.images, 0);
         assert_eq!(estimate.audio, 0);
         assert!(estimate.video > 0);
         assert_eq!(estimate.total, estimate.video);
         assert!(estimate.is_estimate);
-        
+
         // 10.5 seconds * 263 tokens/second = 2761.5, ceiling = 2762
         assert_eq!(estimate.video, 2762);
     }
-    
+
     #[test]
     fn test_token_estimate_audio() {
         let model_path = get_test_model_path();
         let tokenizer = TokenizerService::new(model_path).expect("Failed to create tokenizer");
-        
+
         let duration = 60.0; // 60 seconds (1 minute)
         let estimate = tokenizer.estimate_audio_tokens(duration);
-        
+
         assert_eq!(estimate.text, 0);
         assert_eq!(estimate.images, 0);
         assert_eq!(estimate.video, 0);
         assert!(estimate.audio > 0);
         assert_eq!(estimate.total, estimate.audio);
         assert!(estimate.is_estimate);
-        
+
         // 60.0 seconds * 32 tokens/second = 1920
         assert_eq!(estimate.audio, 1920);
     }
-    
+
     #[test]
     fn test_token_estimate_mixed() {
         let model_path = get_test_model_path();
         let tokenizer = TokenizerService::new(model_path).expect("Failed to create tokenizer");
-        
+
         let text = "This is a test message with an image and some audio.";
         let image_path = get_test_image_path();
-        let image_paths = if image_path.exists() { Some(vec![image_path]) } else { None };
+        let image_paths = if image_path.exists() {
+            Some(vec![image_path])
+        } else {
+            None
+        };
         let video_duration = Some(5.0); // 5 seconds
         let audio_duration = Some(30.0); // 30 seconds
-        
-        let estimate = tokenizer.estimate_content_tokens(
-            Some(text),
-            image_paths.as_deref(),
-            video_duration,
-            audio_duration
-        ).expect("Failed to estimate mixed tokens");
-        
+
+        let estimate = tokenizer
+            .estimate_content_tokens(
+                Some(text),
+                image_paths.as_deref(),
+                video_duration,
+                audio_duration,
+            )
+            .expect("Failed to estimate mixed tokens");
+
         // Text tokens should be greater than 0
         assert!(estimate.text > 0);
-        
+
         // If we had an image to test with
         if image_paths.is_some() {
             assert!(estimate.images > 0);
             assert_eq!(estimate.images % 258, 0); // Should be multiple of 258
         }
-        
+
         // Video: 5.0 seconds * 263 tokens/second = 1315
         assert_eq!(estimate.video, 1315);
-        
+
         // Audio: 30.0 seconds * 32 tokens/second = 960
         assert_eq!(estimate.audio, 960);
-        
+
         // Total should be sum of all parts
-        assert_eq!(estimate.total, estimate.text + estimate.images + estimate.video + estimate.audio);
-        
+        assert_eq!(
+            estimate.total,
+            estimate.text + estimate.images + estimate.video + estimate.audio
+        );
+
         // Mixed content should be marked as an estimate
         assert!(estimate.is_estimate);
     }
-    
+
     #[test]
     fn test_token_estimate_combine() {
         let est1 = TokenEstimate {
@@ -503,7 +532,7 @@ mod tests {
             audio: 0,
             is_estimate: false,
         };
-        
+
         let est2 = TokenEstimate {
             total: 258,
             text: 0,
@@ -512,10 +541,10 @@ mod tests {
             audio: 0,
             is_estimate: true,
         };
-        
+
         let mut combined = est1.clone();
         combined.combine(&est2);
-        
+
         assert_eq!(combined.total, 358);
         assert_eq!(combined.text, 100);
         assert_eq!(combined.images, 258);

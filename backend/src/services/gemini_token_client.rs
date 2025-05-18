@@ -118,7 +118,10 @@ struct UsageMetadata {
 impl GeminiTokenClient {
     /// Create a new GeminiTokenClient
     pub fn new(api_key: String) -> Self {
-        Self::new_with_base_url(api_key, "https://generativelanguage.googleapis.com/v1beta".to_string())
+        Self::new_with_base_url(
+            api_key,
+            "https://generativelanguage.googleapis.com/v1beta".to_string(),
+        )
     }
 
     /// Create a new GeminiTokenClient with custom base URL
@@ -137,18 +140,24 @@ impl GeminiTokenClient {
     /// Count tokens for a text-only input
     pub async fn count_tokens(&self, text: &str, model: &str) -> Result<TokenEstimate> {
         debug!("Counting tokens for text with Gemini API");
-        
-        let url = format!("{}/models/{}:countTokens?key={}", 
-                          self.api_base_url, model, self.api_key);
-        
+
+        let url = format!(
+            "{}/models/{}:countTokens?key={}",
+            self.api_base_url, model, self.api_key
+        );
+
         let request = CountTokensRequest {
             contents: vec![ContentBlock {
-                parts: vec![Part::Text { text: text.to_string() }],
+                parts: vec![Part::Text {
+                    text: text.to_string(),
+                }],
                 role: "user".to_string(),
             }],
         };
-        
-        let response = self.client.post(&url)
+
+        let response = self
+            .client
+            .post(&url)
             .json(&request)
             .send()
             .await
@@ -156,22 +165,30 @@ impl GeminiTokenClient {
                 error!("Failed to send countTokens request: {}", e);
                 AppError::HttpRequestError(format!("Failed to count tokens: {}", e))
             })?;
-        
+
         if !response.status().is_success() {
             let status = response.status();
-            let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+            let error_text = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unknown error".to_string());
             error!("Gemini API returned error {}: {}", status, error_text);
-            return Err(AppError::GeminiError(format!("Gemini API returned error {}: {}", status, error_text)));
+            return Err(AppError::GeminiError(format!(
+                "Gemini API returned error {}: {}",
+                status, error_text
+            )));
         }
-        
-        let count_response: CountTokensResponse = response.json().await
-            .map_err(|e| {
-                error!("Failed to parse countTokens response: {}", e);
-                AppError::SerializationError(format!("Failed to parse token count response: {}", e))
-            })?;
-        
-        debug!("Received token count from API: {} tokens", count_response.total_tokens);
-        
+
+        let count_response: CountTokensResponse = response.json().await.map_err(|e| {
+            error!("Failed to parse countTokens response: {}", e);
+            AppError::SerializationError(format!("Failed to parse token count response: {}", e))
+        })?;
+
+        debug!(
+            "Received token count from API: {} tokens",
+            count_response.total_tokens
+        );
+
         // Convert API response to TokenEstimate (all text tokens for countTokens API)
         Ok(TokenEstimate {
             total: count_response.total_tokens as usize,
@@ -191,24 +208,29 @@ impl GeminiTokenClient {
         model: &str,
     ) -> Result<TokenEstimate> {
         debug!("Counting tokens for multimodal content with Gemini API");
-        
-        let url = format!("{}/models/{}:generateContent?key={}", 
-                          self.api_base_url, model, self.api_key);
-        
+
+        let url = format!(
+            "{}/models/{}:generateContent?key={}",
+            self.api_base_url, model, self.api_key
+        );
+
         // Create parts with text and images
-        let mut parts = vec![Part::Text { text: text.to_string() }];
-        
+        let mut parts = vec![Part::Text {
+            text: text.to_string(),
+        }];
+
         // Add images as inline data
         for (image_data, mime_type) in images {
-            let base64_data = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &image_data);
+            let base64_data =
+                base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &image_data);
             parts.push(Part::InlineData {
                 inline_data: InlineData {
                     mime_type,
                     data: base64_data,
-                }
+                },
             });
         }
-        
+
         // Create request with minimal generation config to save tokens
         let request = GenerateContentRequest {
             contents: vec![ContentBlock {
@@ -220,8 +242,10 @@ impl GeminiTokenClient {
                 temperature: Some(0.0),     // Deterministic
             }),
         };
-        
-        let response = self.client.post(&url)
+
+        let response = self
+            .client
+            .post(&url)
             .json(&request)
             .send()
             .await
@@ -229,38 +253,47 @@ impl GeminiTokenClient {
                 error!("Failed to send generateContent request: {}", e);
                 AppError::HttpRequestError(format!("Failed to count multimodal tokens: {}", e))
             })?;
-        
+
         if !response.status().is_success() {
             let status = response.status();
-            let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+            let error_text = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unknown error".to_string());
             error!("Gemini API returned error {}: {}", status, error_text);
-            return Err(AppError::GeminiError(format!("Gemini API returned error {}: {}", status, error_text)));
+            return Err(AppError::GeminiError(format!(
+                "Gemini API returned error {}: {}",
+                status, error_text
+            )));
         }
-        
-        let content_response: GenerateContentResponse = response.json().await
-            .map_err(|e| {
-                error!("Failed to parse generateContent response: {}", e);
-                AppError::SerializationError(format!("Failed to parse token count response: {}", e))
-            })?;
-        
+
+        let content_response: GenerateContentResponse = response.json().await.map_err(|e| {
+            error!("Failed to parse generateContent response: {}", e);
+            AppError::SerializationError(format!("Failed to parse token count response: {}", e))
+        })?;
+
         // Extract usage metadata (if available)
         if let Some(usage) = content_response.usage_metadata {
-            debug!("Received token counts - Prompt: {}, Output: {}, Total: {}", 
-                  usage.prompt_token_count, usage.candidates_token_count, usage.total_token_count);
-            
+            debug!(
+                "Received token counts - Prompt: {}, Output: {}, Total: {}",
+                usage.prompt_token_count, usage.candidates_token_count, usage.total_token_count
+            );
+
             // Since we can't differentiate between text and image tokens from the API directly,
             // we report the prompt tokens as the total with an unknown breakdown
             Ok(TokenEstimate {
                 total: usage.prompt_token_count as usize,
                 text: usage.prompt_token_count as usize, // Approximation - all counted as text
-                images: 0,                              // No breakdown available from API
+                images: 0,                               // No breakdown available from API
                 video: 0,
                 audio: 0,
                 is_estimate: true, // This is an estimate of the breakdown
             })
         } else {
             error!("Gemini API response did not include usage metadata");
-            Err(AppError::GeminiError("Gemini API response did not include usage metadata".to_string()))
+            Err(AppError::GeminiError(
+                "Gemini API response did not include usage metadata".to_string(),
+            ))
         }
     }
 
@@ -271,21 +304,26 @@ impl GeminiTokenClient {
         model: &str,
     ) -> Result<TokenEstimate> {
         debug!("Counting tokens for chat history with Gemini API");
-        
-        let url = format!("{}/models/{}:countTokens?key={}", 
-                          self.api_base_url, model, self.api_key);
-        
+
+        let url = format!(
+            "{}/models/{}:countTokens?key={}",
+            self.api_base_url, model, self.api_key
+        );
+
         // Convert messages to content blocks
-        let contents = messages.iter().map(|(role, text)| {
-            ContentBlock {
+        let contents = messages
+            .iter()
+            .map(|(role, text)| ContentBlock {
                 parts: vec![Part::Text { text: text.clone() }],
                 role: role.clone(),
-            }
-        }).collect();
-        
+            })
+            .collect();
+
         let request = CountTokensRequest { contents };
-        
-        let response = self.client.post(&url)
+
+        let response = self
+            .client
+            .post(&url)
             .json(&request)
             .send()
             .await
@@ -293,22 +331,30 @@ impl GeminiTokenClient {
                 error!("Failed to send countTokens request: {}", e);
                 AppError::HttpRequestError(format!("Failed to count chat tokens: {}", e))
             })?;
-        
+
         if !response.status().is_success() {
             let status = response.status();
-            let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+            let error_text = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unknown error".to_string());
             error!("Gemini API returned error {}: {}", status, error_text);
-            return Err(AppError::GeminiError(format!("Gemini API returned error {}: {}", status, error_text)));
+            return Err(AppError::GeminiError(format!(
+                "Gemini API returned error {}: {}",
+                status, error_text
+            )));
         }
-        
-        let count_response: CountTokensResponse = response.json().await
-            .map_err(|e| {
-                error!("Failed to parse countTokens response: {}", e);
-                AppError::SerializationError(format!("Failed to parse token count response: {}", e))
-            })?;
-        
-        debug!("Received token count from API for chat: {} tokens", count_response.total_tokens);
-        
+
+        let count_response: CountTokensResponse = response.json().await.map_err(|e| {
+            error!("Failed to parse countTokens response: {}", e);
+            AppError::SerializationError(format!("Failed to parse token count response: {}", e))
+        })?;
+
+        debug!(
+            "Received token count from API for chat: {} tokens",
+            count_response.total_tokens
+        );
+
         // Convert API response to TokenEstimate (all text tokens for countTokens API)
         Ok(TokenEstimate {
             total: count_response.total_tokens as usize,
@@ -324,43 +370,52 @@ impl GeminiTokenClient {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     // These tests require a valid API key and will be ignored by default
     // To run these tests, use: cargo test -- --ignored
-    
+
     #[tokio::test]
     #[ignore]
     async fn test_count_tokens() {
-        let api_key = std::env::var("GEMINI_API_KEY")
-            .expect("GEMINI_API_KEY environment variable not set");
-            
+        let api_key =
+            std::env::var("GEMINI_API_KEY").expect("GEMINI_API_KEY environment variable not set");
+
         let client = GeminiTokenClient::new(api_key);
         let text = "The quick brown fox jumps over the lazy dog.";
         let model = "gemini-2.5-flash-preview-04-17";
-        
-        let result = client.count_tokens(text, model).await.expect("Failed to count tokens");
-        
+
+        let result = client
+            .count_tokens(text, model)
+            .await
+            .expect("Failed to count tokens");
+
         println!("Token count: {}", result.total);
         assert!(result.total > 0);
         assert_eq!(result.total, result.text);
     }
-    
+
     #[tokio::test]
     #[ignore]
     async fn test_count_tokens_chat() {
-        let api_key = std::env::var("GEMINI_API_KEY")
-            .expect("GEMINI_API_KEY environment variable not set");
-            
+        let api_key =
+            std::env::var("GEMINI_API_KEY").expect("GEMINI_API_KEY environment variable not set");
+
         let client = GeminiTokenClient::new(api_key);
         let messages = vec![
             ("user".to_string(), "Hi my name is Bob".to_string()),
             ("model".to_string(), "Hi Bob!".to_string()),
-            ("user".to_string(), "What is the meaning of life?".to_string()),
+            (
+                "user".to_string(),
+                "What is the meaning of life?".to_string(),
+            ),
         ];
         let model = "gemini-2.5-flash-preview-04-17";
-        
-        let result = client.count_tokens_chat(&messages, model).await.expect("Failed to count chat tokens");
-        
+
+        let result = client
+            .count_tokens_chat(&messages, model)
+            .await
+            .expect("Failed to count chat tokens");
+
         println!("Chat token count: {}", result.total);
         assert!(result.total > 0);
     }

@@ -22,7 +22,7 @@ mod user_store_tests {
     use uuid::Uuid; // Added import for Uuid
 
     // Add imports from scribe-backend packages
-     // Just import the crypto module
+    // Just import the crypto module
 
     // Moved from models/users.rs
     #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
@@ -78,7 +78,10 @@ mod user_store_tests {
             "testcreateuser_{}",
             uuid::Uuid::new_v4().to_string().split('-').next().unwrap()
         );
-        let email = format!("test1_{}@example.com", uuid::Uuid::new_v4().to_string().split('-').next().unwrap());
+        let email = format!(
+            "test1_{}@example.com",
+            uuid::Uuid::new_v4().to_string().split('-').next().unwrap()
+        );
         let password = secrecy::SecretString::new("password123".to_string().into());
 
         // REMOVED: Pre-hash the password
@@ -96,17 +99,14 @@ mod user_store_tests {
         let create_result = obj
             .interact(move |conn| {
                 let register_payload = scribe_backend::models::auth::RegisterPayload {
-                   recovery_phrase: None,
+                    recovery_phrase: None,
                     username: username_clone,
                     email: email_clone,
                     password: password_clone,
                 };
                 // Create a new Runtime for the blocking task to handle async in a sync context
                 let rt = tokio::runtime::Runtime::new().expect("Failed to create runtime in test");
-                rt.block_on(scribe_backend::auth::create_user(
-                    conn,
-                    register_payload,
-                ))
+                rt.block_on(scribe_backend::auth::create_user(conn, register_payload))
             })
             .await
             .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
@@ -149,9 +149,13 @@ mod user_store_tests {
             .await
             .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
         let username_clone3 = username.clone();
-        let duplicate_email = format!("test2_{}@example.com", uuid::Uuid::new_v4().to_string().split('-').next().unwrap());
-        let password_for_duplicate = secrecy::SecretString::new("another_password".to_string().into());
-        
+        let duplicate_email = format!(
+            "test2_{}@example.com",
+            uuid::Uuid::new_v4().to_string().split('-').next().unwrap()
+        );
+        let password_for_duplicate =
+            secrecy::SecretString::new("another_password".to_string().into());
+
         // REMOVED: Pre-hash the password for the duplicate attempt
         // let hashed_password_for_duplicate = scribe_backend::auth::hash_password(password_for_duplicate.clone()).await?;
 
@@ -160,17 +164,14 @@ mod user_store_tests {
         let duplicate_result = obj3
             .interact(move |conn| {
                 let register_payload = scribe_backend::models::auth::RegisterPayload {
-                   recovery_phrase: None,
+                    recovery_phrase: None,
                     username: username_clone3,
                     email: duplicate_email,
                     password: password_clone3,
                 };
                 // Create a new Runtime for the blocking task to handle async in a sync context
                 let rt = tokio::runtime::Runtime::new().expect("Failed to create runtime in test");
-                rt.block_on(scribe_backend::auth::create_user(
-                    conn,
-                    register_payload,
-                ))
+                rt.block_on(scribe_backend::auth::create_user(conn, register_payload))
             })
             .await
             .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
@@ -194,15 +195,17 @@ mod user_store_tests {
         let pool = &test_app.db_pool;
         let mut guard = TestDataGuard::new(pool.clone());
 
-
         // Create a user using the auth::create_user function
         let username = format!(
             "testgetuser_{}",
             uuid::Uuid::new_v4().to_string().split('-').next().unwrap()
         );
-        let email = format!("getuser_{}@example.com", uuid::Uuid::new_v4().to_string().split('-').next().unwrap());
+        let email = format!(
+            "getuser_{}@example.com",
+            uuid::Uuid::new_v4().to_string().split('-').next().unwrap()
+        );
         let password = SecretString::new("password_get_user".to_string().into());
-        
+
         // REMOVED: let hashed_password = scribe_backend::auth::hash_password(password.clone()).await?;
 
         let obj_create = pool.get().await?;
@@ -213,17 +216,15 @@ mod user_store_tests {
                 let password_c = password.clone(); // Renamed
                 move |conn| {
                     let register_payload = scribe_backend::models::auth::RegisterPayload {
-                       recovery_phrase: None,
+                        recovery_phrase: None,
                         username: username_c,
                         email: email_c,
                         password: password_c,
                     };
                     // Create a runtime to handle async in a sync context
-                    let rt = tokio::runtime::Runtime::new().expect("Failed to create runtime in test");
-                    rt.block_on(scribe_backend::auth::create_user(
-                        conn,
-                        register_payload,
-                    ))
+                    let rt =
+                        tokio::runtime::Runtime::new().expect("Failed to create runtime in test");
+                    rt.block_on(scribe_backend::auth::create_user(conn, register_payload))
                 }
             })
             .await?; // Handle interact error
@@ -244,7 +245,11 @@ mod user_store_tests {
             .await
             .map_err(|interact_err| Box::new(interact_err) as Box<dyn std::error::Error>)?;
 
-        assert!(found_user_result.is_ok(), "Expected Ok, got {:?}", found_user_result);
+        assert!(
+            found_user_result.is_ok(),
+            "Expected Ok, got {:?}",
+            found_user_result
+        );
         let found_user: Option<User> = match found_user_result {
             Ok(user) => Some(user),
             Err(scribe_backend::auth::AuthError::UserNotFound) => None,
@@ -293,11 +298,14 @@ mod user_store_tests {
             "testgetuserbyid_{}",
             uuid::Uuid::new_v4().to_string().split('-').next().unwrap()
         );
-        let email_for_get = format!("getuserbyid_{}@example.com", uuid::Uuid::new_v4().to_string().split('-').next().unwrap());
+        let email_for_get = format!(
+            "getuserbyid_{}@example.com",
+            uuid::Uuid::new_v4().to_string().split('-').next().unwrap()
+        );
         let password_for_get = SecretString::new("password_get_user_by_id".to_string().into());
 
         // REMOVED: let hashed_password_for_get = scribe_backend::auth::hash_password(password_for_get.clone()).await?;
-        
+
         let obj_create = pool.get().await?;
         let created_user = obj_create
             .interact({
@@ -312,25 +320,27 @@ mod user_store_tests {
                         password: password_c,
                     };
                     // Create a runtime to handle async in a sync context
-                    let rt = tokio::runtime::Runtime::new().expect("Failed to create runtime in test");
-                    rt.block_on(scribe_backend::auth::create_user(
-                        conn,
-                        register_payload,
-                    ))
+                    let rt =
+                        tokio::runtime::Runtime::new().expect("Failed to create runtime in test");
+                    rt.block_on(scribe_backend::auth::create_user(conn, register_payload))
                 }
             })
             .await??; // Propagate interact error then AuthError
         guard.add_user(created_user.id);
 
         let user_id_to_find = created_user.id;
-        
+
         // Test finding the existing user by ID
         let obj_get = pool.get().await?;
         let found_user_result: Result<User, scribe_backend::auth::AuthError> = obj_get
             .interact(move |conn| scribe_backend::auth::get_user(conn, user_id_to_find))
             .await?;
 
-        assert!(found_user_result.is_ok(), "User should be found by ID. Error: {:?}", found_user_result.err());
+        assert!(
+            found_user_result.is_ok(),
+            "User should be found by ID. Error: {:?}",
+            found_user_result.err()
+        );
         let user = found_user_result.unwrap();
         assert_eq!(user.username, username_for_get);
         assert_eq!(user.id, user_id_to_find);
@@ -338,16 +348,17 @@ mod user_store_tests {
         // Test finding a non-existent user by ID
         let non_existent_uuid = Uuid::new_v4();
         let obj_get_non_existent = pool.get().await?;
-        let not_found_user_result: Result<User, scribe_backend::auth::AuthError> = obj_get_non_existent
-            .interact(move |conn| scribe_backend::auth::get_user(conn, non_existent_uuid))
-            .await?;
+        let not_found_user_result: Result<User, scribe_backend::auth::AuthError> =
+            obj_get_non_existent
+                .interact(move |conn| scribe_backend::auth::get_user(conn, non_existent_uuid))
+                .await?;
 
         assert!(
             matches!(
                 not_found_user_result,
                 Err(scribe_backend::auth::AuthError::UserNotFound)
             ),
-            "Expected UserNotFound error for non-existent ID, got {:?}" ,
+            "Expected UserNotFound error for non-existent ID, got {:?}",
             not_found_user_result
         );
         guard.cleanup().await?;
@@ -365,33 +376,40 @@ mod user_store_tests {
             "testverifyuser_{}",
             uuid::Uuid::new_v4().to_string().split('-').next().unwrap()
         );
-        let email = format!("verify_{}@example.com", uuid::Uuid::new_v4().to_string().split('-').next().unwrap());
+        let email = format!(
+            "verify_{}@example.com",
+            uuid::Uuid::new_v4().to_string().split('-').next().unwrap()
+        );
         let password_str = "password_verify123".to_string();
         let password_secret = SecretString::new(password_str.clone().into());
 
         // Create a user first
         // REMOVED: let hashed_password = scribe_backend::auth::hash_password(password_secret.clone()).await?;
-        
+
         let obj_create = pool.get().await?;
-        let created_user = { // Limit scope of clones
+        let created_user = {
+            // Limit scope of clones
             let username_c = username.clone();
             let email_c = email.clone();
             let password_secret_c = password_secret.clone();
             // REMOVED: let hashed_password_c = hashed_password.clone();
             let register_payload = scribe_backend::models::auth::RegisterPayload {
-               recovery_phrase: None,
+                recovery_phrase: None,
                 username: username_c,
                 email: email_c,
                 password: password_secret_c,
             };
-            obj_create.interact(move |conn| {
-                // Create a runtime to handle async in a sync context
-                let rt = tokio::runtime::Runtime::new().expect("Failed to create runtime in test");
-                rt.block_on(scribe_backend::auth::create_user(conn, register_payload))
-            }).await??
+            obj_create
+                .interact(move |conn| {
+                    // Create a runtime to handle async in a sync context
+                    let rt =
+                        tokio::runtime::Runtime::new().expect("Failed to create runtime in test");
+                    rt.block_on(scribe_backend::auth::create_user(conn, register_payload))
+                })
+                .await??
         };
         guard.add_user(created_user.id);
-        
+
         let user_id = created_user.id;
 
         // Test verify_credentials with correct username and password
@@ -399,25 +417,34 @@ mod user_store_tests {
         let verify_ok_user_result = {
             let username_c = username.clone();
             let password_secret_c = password_secret.clone();
-            obj_verify_ok_user.interact(move |conn| {
-                scribe_backend::auth::verify_credentials(conn, &username_c, password_secret_c)
-            }).await?? // Propagates InteractError, then AuthError
+            obj_verify_ok_user
+                .interact(move |conn| {
+                    scribe_backend::auth::verify_credentials(conn, &username_c, password_secret_c)
+                })
+                .await?? // Propagates InteractError, then AuthError
         };
         assert_eq!(verify_ok_user_result.0.id, user_id);
-        assert!(verify_ok_user_result.1.is_some(), "DEK should be present after successful verification");
-
+        assert!(
+            verify_ok_user_result.1.is_some(),
+            "DEK should be present after successful verification"
+        );
 
         // Test verify_credentials with correct email and password
         let obj_verify_ok_email = pool.get().await?;
         let verify_ok_email_result = {
             let email_c = email.clone(); // Use the email from the created user
             let password_secret_c = password_secret.clone();
-            obj_verify_ok_email.interact(move |conn| {
-                scribe_backend::auth::verify_credentials(conn, &email_c, password_secret_c)
-            }).await??
+            obj_verify_ok_email
+                .interact(move |conn| {
+                    scribe_backend::auth::verify_credentials(conn, &email_c, password_secret_c)
+                })
+                .await??
         };
         assert_eq!(verify_ok_email_result.0.id, user_id);
-        assert!(verify_ok_email_result.1.is_some(), "DEK should be present after successful verification with email");
+        assert!(
+            verify_ok_email_result.1.is_some(),
+            "DEK should be present after successful verification with email"
+        );
 
         // Test verify_credentials with wrong password
         let wrong_password_secret = SecretString::new("wrongpassword".to_string().into());
@@ -425,32 +452,51 @@ mod user_store_tests {
         let verify_fail_pw_result = {
             let username_c = username.clone();
             let wrong_password_secret_c = wrong_password_secret.clone();
-            obj_verify_fail_pw.interact(move |conn| {
-                scribe_backend::auth::verify_credentials(conn, &username_c, wrong_password_secret_c)
-            }).await? // InteractError mapped to Box<dyn Error>
+            obj_verify_fail_pw
+                .interact(move |conn| {
+                    scribe_backend::auth::verify_credentials(
+                        conn,
+                        &username_c,
+                        wrong_password_secret_c,
+                    )
+                })
+                .await? // InteractError mapped to Box<dyn Error>
         };
-         assert!(
-            matches!(verify_fail_pw_result, Err(scribe_backend::auth::AuthError::WrongCredentials)),
-            "Test failed: verify_credentials with wrong password did not return AuthError::WrongCredentials. Actual: {:?}", verify_fail_pw_result.err() // Only show error part if available
+        assert!(
+            matches!(
+                verify_fail_pw_result,
+                Err(scribe_backend::auth::AuthError::WrongCredentials)
+            ),
+            "Test failed: verify_credentials with wrong password did not return AuthError::WrongCredentials. Actual: {:?}",
+            verify_fail_pw_result.err() // Only show error part if available
         );
-        
 
         // Test verify_credentials with non-existent username
         let obj_verify_notfound = pool.get().await?;
         let verify_notfound_result = {
             let password_secret_c = password_secret.clone();
-            obj_verify_notfound.interact(move |conn| {
-                scribe_backend::auth::verify_credentials(conn, "nonexistentuser", password_secret_c)
-            }).await?
+            obj_verify_notfound
+                .interact(move |conn| {
+                    scribe_backend::auth::verify_credentials(
+                        conn,
+                        "nonexistentuser",
+                        password_secret_c,
+                    )
+                })
+                .await?
         };
         assert!(
-            matches!(verify_notfound_result, Err(scribe_backend::auth::AuthError::UserNotFound) | Err(scribe_backend::auth::AuthError::WrongCredentials)),
-            "Test failed: verify_credentials with non-existent user did not return UserNotFound or WrongCredentials. Actual: {:?}", verify_notfound_result.err()
+            matches!(
+                verify_notfound_result,
+                Err(scribe_backend::auth::AuthError::UserNotFound)
+                    | Err(scribe_backend::auth::AuthError::WrongCredentials)
+            ),
+            "Test failed: verify_credentials with non-existent user did not return UserNotFound or WrongCredentials. Actual: {:?}",
+            verify_notfound_result.err()
         );
         // Note: The current verify_credentials first finds the user, then verifies password.
         // If user is not found by identifier, it returns UserNotFound from the first db query.
         // So, UserNotFound is the correct expectation here.
-
 
         // Test HashingError (difficult to trigger reliably in unit test, usually for bcrypt internal issues)
         // This would ideally be tested by somehow making bcrypt::verify fail with something other than invalid password.
@@ -463,30 +509,37 @@ mod user_store_tests {
         // This error is more likely if `derive_kek` itself has an issue or if the password somehow
         // causes an unexpected error in argon2.
         // Let's simulate by temporarily altering the stored KEK salt to be invalid base64 for a specific user.
-        
+
         let obj_crypto_err = pool.get().await?;
         // Manually update the user's KEK salt to something invalid for base64 decoding
         let invalid_kek_salt = "!!!invalid_base64_salt!!!".to_string();
-        obj_crypto_err.interact({
-            let user_id_c = user_id;
-            let invalid_kek_salt_c = invalid_kek_salt.clone();
-            move |conn| {
-                diesel::update(scribe_backend::schema::users::table.find(user_id_c))
-                    .set(scribe_backend::schema::users::kek_salt.eq(invalid_kek_salt_c))
-                    .execute(conn)
-            }
-        }).await??;
+        obj_crypto_err
+            .interact({
+                let user_id_c = user_id;
+                let invalid_kek_salt_c = invalid_kek_salt.clone();
+                move |conn| {
+                    diesel::update(scribe_backend::schema::users::table.find(user_id_c))
+                        .set(scribe_backend::schema::users::kek_salt.eq(invalid_kek_salt_c))
+                        .execute(conn)
+                }
+            })
+            .await??;
 
         let obj_verify_crypto_fail = pool.get().await?;
         let verify_crypto_fail_result = {
             let username_c = username.clone();
             let password_secret_c = password_secret.clone();
-            obj_verify_crypto_fail.interact(move |conn| {
-                scribe_backend::auth::verify_credentials(conn, &username_c, password_secret_c)
-            }).await?
+            obj_verify_crypto_fail
+                .interact(move |conn| {
+                    scribe_backend::auth::verify_credentials(conn, &username_c, password_secret_c)
+                })
+                .await?
         };
-        
-        if !matches!(verify_crypto_fail_result, Err(scribe_backend::auth::AuthError::CryptoOperationFailed(_))) {
+
+        if !matches!(
+            verify_crypto_fail_result,
+            Err(scribe_backend::auth::AuthError::CryptoOperationFailed(_))
+        ) {
             panic!(
                 "Expected CryptoOperationFailed due to invalid KEK salt. Actual: {}",
                 match verify_crypto_fail_result {

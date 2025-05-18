@@ -6,20 +6,17 @@ use axum::{
     body::Body,
     http::{Method, Request, StatusCode, header},
 };
+use base64::Engine;
 use http_body_util::BodyExt;
 use scribe_backend::{
-    models::{
-        auth::AuthResponse,
-        users::{User},
-    },
     crypto,
+    models::{auth::AuthResponse, users::User},
     test_helpers,
 };
-use serde_json::{json, Value};
-use uuid::Uuid;
-use secrecy::{SecretString, ExposeSecret};
+use secrecy::{ExposeSecret, SecretString};
+use serde_json::{Value, json};
 use tower::util::ServiceExt;
-use base64::Engine;
+use uuid::Uuid;
 
 #[tokio::test(flavor = "multi_thread")]
 #[ignore] // Ignored for CI
@@ -45,30 +42,43 @@ async fn test_recovery_key_generation_during_registration() -> AnyhowResult<()> 
         .body(Body::from(payload.to_string()))?;
 
     let response = test_app.router.clone().oneshot(request).await?;
-    
+
     // Check that registration was successful
-    assert_eq!(response.status(), StatusCode::CREATED, "Registration failed");
-    
+    assert_eq!(
+        response.status(),
+        StatusCode::CREATED,
+        "Registration failed"
+    );
+
     let body = response.into_body().collect().await?.to_bytes();
     let auth_response: AuthResponse = serde_json::from_slice(&body)?;
-    
+
     // Store user ID for cleanup
     guard.add_user(auth_response.user_id);
-    
+
     // Assert that a recovery key was generated and returned
-    assert!(auth_response.recovery_key.is_some(), "Recovery key should be automatically generated");
+    assert!(
+        auth_response.recovery_key.is_some(),
+        "Recovery key should be automatically generated"
+    );
     let recovery_key = auth_response.recovery_key.unwrap();
-    
+
     // Verify the recovery key is not empty
     assert!(!recovery_key.is_empty(), "Recovery key should not be empty");
-    
+
     // Check that the recovery key is a valid base64url string
     let decode_result = base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(&recovery_key);
-    assert!(decode_result.is_ok(), "Recovery key should be a valid base64url string");
-    
+    assert!(
+        decode_result.is_ok(),
+        "Recovery key should be a valid base64url string"
+    );
+
     // Check that the decoded bytes are of sufficient length for security (at least 16 bytes)
     let decoded_bytes = decode_result.unwrap();
-    assert!(decoded_bytes.len() >= 16, "Recovery key should decode to at least 16 bytes of random data");
+    assert!(
+        decoded_bytes.len() >= 16,
+        "Recovery key should decode to at least 16 bytes of random data"
+    );
 
     // Check that the user can login with their credentials
     let login_payload = json!({
@@ -83,13 +93,13 @@ async fn test_recovery_key_generation_during_registration() -> AnyhowResult<()> 
         .body(Body::from(login_payload.to_string()))?;
 
     let login_response = test_app.router.clone().oneshot(login_request).await?;
-    
+
     // Check that login is successful
     assert_eq!(login_response.status(), StatusCode::OK, "Login failed");
 
     // Clean up
     guard.cleanup().await?;
-    
+
     Ok(())
 }
 
@@ -101,7 +111,7 @@ async fn test_provided_recovery_key_is_used() -> AnyhowResult<()> {
 
     // Create a custom recovery key
     let custom_recovery_key = "my-custom-recovery-phrase";
-    
+
     // Register a user with the custom recovery key
     let username = format!("recovery_custom_{}", Uuid::new_v4());
     let email = format!("{}@test.com", username);
@@ -121,23 +131,30 @@ async fn test_provided_recovery_key_is_used() -> AnyhowResult<()> {
         .body(Body::from(payload.to_string()))?;
 
     let response = test_app.router.clone().oneshot(request).await?;
-    
+
     // Check that registration was successful
-    assert_eq!(response.status(), StatusCode::CREATED, "Registration failed");
-    
+    assert_eq!(
+        response.status(),
+        StatusCode::CREATED,
+        "Registration failed"
+    );
+
     let body = response.into_body().collect().await?.to_bytes();
     let auth_response: AuthResponse = serde_json::from_slice(&body)?;
-    
+
     // Store user ID for cleanup
     guard.add_user(auth_response.user_id);
-    
+
     // Assert that the provided recovery key was used and returned
-    assert_eq!(auth_response.recovery_key, Some(custom_recovery_key.to_string()), 
-        "The provided recovery key should be returned in the response");
+    assert_eq!(
+        auth_response.recovery_key,
+        Some(custom_recovery_key.to_string()),
+        "The provided recovery key should be returned in the response"
+    );
 
     // Clean up
     guard.cleanup().await?;
-    
+
     Ok(())
 }
 
@@ -166,51 +183,77 @@ async fn test_recovery_key_decrypts_dek() -> AnyhowResult<()> {
         .body(Body::from(payload.to_string()))?;
 
     let response = test_app.router.clone().oneshot(request).await?;
-    
+
     // Check that registration was successful
-    assert_eq!(response.status(), StatusCode::CREATED, "Registration failed");
-    
+    assert_eq!(
+        response.status(),
+        StatusCode::CREATED,
+        "Registration failed"
+    );
+
     let body = response.into_body().collect().await?.to_bytes();
     let auth_response: AuthResponse = serde_json::from_slice(&body)?;
-    
+
     // Store user ID for cleanup
     let user_id = auth_response.user_id;
     guard.add_user(user_id);
-    
+
     // Get the generated recovery key
-    let recovery_key = auth_response.recovery_key.expect("Recovery key should be generated");
+    let recovery_key = auth_response
+        .recovery_key
+        .expect("Recovery key should be generated");
 
     // Retrieve the user from the database to get the encryption fields
-    let conn = test_app.db_pool.get().await.context("Failed to get DB connection")?;
-    let user = conn.interact(move |conn_inner| {
-        scribe_backend::auth::get_user(conn_inner, user_id)
-    })
-    .await
-    .map_err(|e| anyhow::anyhow!("DB interaction failed: {}", e))?
-    .map_err(|e| anyhow::anyhow!("Auth error: {}", e))?;
+    let conn = test_app
+        .db_pool
+        .get()
+        .await
+        .context("Failed to get DB connection")?;
+    let user = conn
+        .interact(move |conn_inner| scribe_backend::auth::get_user(conn_inner, user_id))
+        .await
+        .map_err(|e| anyhow::anyhow!("DB interaction failed: {}", e))?
+        .map_err(|e| anyhow::anyhow!("Auth error: {}", e))?;
 
     // Try to decrypt the DEK using the recovery key
-    let recovery_kek_salt = user.recovery_kek_salt.expect("Recovery KEK salt should be set");
-    let encrypted_dek_by_recovery = user.encrypted_dek_by_recovery.expect("Encrypted DEK by recovery should be set");
-    let recovery_dek_nonce = user.recovery_dek_nonce.expect("Recovery DEK nonce should be set");
-    
+    let recovery_kek_salt = user
+        .recovery_kek_salt
+        .expect("Recovery KEK salt should be set");
+    let encrypted_dek_by_recovery = user
+        .encrypted_dek_by_recovery
+        .expect("Encrypted DEK by recovery should be set");
+    let recovery_dek_nonce = user
+        .recovery_dek_nonce
+        .expect("Recovery DEK nonce should be set");
+
     // Derive recovery key
     let recovery_secret = SecretString::new(recovery_key.into_boxed_str());
     let recovery_kek = crypto::derive_kek(&recovery_secret, &recovery_kek_salt)
         .map_err(|e| anyhow::anyhow!("Failed to derive recovery KEK: {}", e))?;
-    
+
     // Decrypt DEK
-    let decrypted_dek = crypto::decrypt_gcm(&encrypted_dek_by_recovery, &recovery_dek_nonce, &recovery_kek)
-        .map_err(|e| anyhow::anyhow!("Failed to decrypt DEK with recovery key: {}", e))?;
-    
+    let decrypted_dek = crypto::decrypt_gcm(
+        &encrypted_dek_by_recovery,
+        &recovery_dek_nonce,
+        &recovery_kek,
+    )
+    .map_err(|e| anyhow::anyhow!("Failed to decrypt DEK with recovery key: {}", e))?;
+
     // Verify that the decrypted DEK is not empty
-    assert!(!decrypted_dek.expose_secret().is_empty(), "Decrypted DEK should not be empty");
-    
+    assert!(
+        !decrypted_dek.expose_secret().is_empty(),
+        "Decrypted DEK should not be empty"
+    );
+
     // Verify the DEK is 32 bytes (for AES-256)
-    assert_eq!(decrypted_dek.expose_secret().len(), 32, "Decrypted DEK should be 32 bytes for AES-256");
+    assert_eq!(
+        decrypted_dek.expose_secret().len(),
+        32,
+        "Decrypted DEK should be 32 bytes for AES-256"
+    );
 
     // Clean up
     guard.cleanup().await?;
-    
+
     Ok(())
 }

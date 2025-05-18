@@ -71,23 +71,48 @@ impl std::fmt::Debug for Config {
             .field("chunking_max_size", &self.chunking_max_size)
             .field("chunking_overlap", &self.chunking_overlap)
             .field("tokenizer_model_path", &self.tokenizer_model_path)
-            .field("token_counter_default_model", &self.token_counter_default_model)
+            .field(
+                "token_counter_default_model",
+                &self.token_counter_default_model,
+            )
             .finish()
     }
 }
 
 // Default value functions for serde
-fn default_port() -> u16 { 8080 }
-fn default_session_cookie_secure() -> bool { true } // Default to secure
-fn default_qdrant_collection_name() -> String { "scribe_embeddings".to_string() }
-fn default_embedding_dimension() -> u64 { 3072 } // Default for gemini-embedding-exp-03-07
-fn default_qdrant_distance_metric() -> String { "Cosine".to_string() } // Added
-fn default_qdrant_on_disk() -> Option<bool> { None } // Added
-fn default_chunking_metric() -> String { "word".to_string() }
-fn default_chunking_max_size() -> usize { 200 } // Default for word metric
-fn default_chunking_overlap() -> usize { 20 } // Default for word metric
-fn default_tokenizer_model_path() -> Option<String> { Some("backend/resources/tokenizers/gemma.model".to_string()) } // Added
-fn default_token_counter_default_model() -> Option<String> { Some("gemini-2.5-flash-preview-04-17".to_string()) } // Added
+fn default_port() -> u16 {
+    8080
+}
+fn default_session_cookie_secure() -> bool {
+    true
+} // Default to secure
+fn default_qdrant_collection_name() -> String {
+    "scribe_embeddings".to_string()
+}
+fn default_embedding_dimension() -> u64 {
+    3072
+} // Default for gemini-embedding-exp-03-07
+fn default_qdrant_distance_metric() -> String {
+    "Cosine".to_string()
+} // Added
+fn default_qdrant_on_disk() -> Option<bool> {
+    None
+} // Added
+fn default_chunking_metric() -> String {
+    "word".to_string()
+}
+fn default_chunking_max_size() -> usize {
+    200
+} // Default for word metric
+fn default_chunking_overlap() -> usize {
+    20
+} // Default for word metric
+fn default_tokenizer_model_path() -> Option<String> {
+    Some("backend/resources/tokenizers/gemma.model".to_string())
+} // Added
+fn default_token_counter_default_model() -> Option<String> {
+    Some("gemini-2.5-flash-preview-04-17".to_string())
+} // Added
 
 impl Config {
     // Placeholder function to load settings (e.g., from file or env)
@@ -119,7 +144,7 @@ impl Default for Config {
             qdrant_collection_name: default_qdrant_collection_name(),
             embedding_dimension: default_embedding_dimension(),
             qdrant_distance_metric: default_qdrant_distance_metric(), // Added
-            qdrant_on_disk: default_qdrant_on_disk(), // Added
+            qdrant_on_disk: default_qdrant_on_disk(),                 // Added
             chunking_metric: default_chunking_metric(),
             chunking_max_size: default_chunking_max_size(),
             chunking_overlap: default_chunking_overlap(),

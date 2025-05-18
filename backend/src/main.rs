@@ -12,7 +12,11 @@ use std::net::SocketAddr;
 use tower_http::trace::{DefaultMakeSpan, TraceLayer};
 
 // Use modules from the library crate
+use anyhow::Context;
+use anyhow::Result;
+use scribe_backend::PgPool;
 use scribe_backend::auth::session_store::DieselSessionStore;
+use scribe_backend::auth::user_store::Backend as AuthBackend;
 use scribe_backend::logging::init_subscriber;
 use scribe_backend::routes::admin::admin_routes;
 use scribe_backend::routes::auth::auth_routes;
@@ -24,21 +28,12 @@ use scribe_backend::routes::{
     documents::document_routes,
 };
 use scribe_backend::state::AppState;
-use anyhow::Context;
-use anyhow::Result;
-use scribe_backend::auth::user_store::Backend as AuthBackend;
-use scribe_backend::PgPool;
- 
- // Imports for axum-login and tower-sessions
+
+// Imports for axum-login and tower-sessions
 use axum_login::{AuthManagerLayerBuilder, login_required}; // Modified
 // Import SessionManagerLayer directly from tower_sessions
-use tower_sessions::cookie::Key; // Use Key from tower_sessions::cookie for with_signed
 use hex; // Added for hex::decode
 use scribe_backend::config::Config; // Import Config instead
-use std::sync::Arc;
-use time; // Used for tower_sessions::Expiry
-use tower_cookies::CookieManagerLayer; // Re-add CookieManagerLayer
-use tower_sessions::{cookie::SameSite, Expiry, SessionManagerLayer}; // Add Arc for config
 use scribe_backend::llm::gemini_client::build_gemini_client; // Import the async builder
 use scribe_backend::llm::gemini_embedding_client::build_gemini_embedding_client; // Add this
 use scribe_backend::services::embedding_pipeline::{
@@ -48,11 +43,16 @@ use scribe_backend::services::gemini_token_client::GeminiTokenClient; // Added
 use scribe_backend::services::hybrid_token_counter::HybridTokenCounter; // Added
 use scribe_backend::services::tokenizer_service::TokenizerService; // Added
 use scribe_backend::text_processing::chunking::{ChunkConfig, ChunkingMetric}; // Import chunking config structs
-use scribe_backend::vector_db::QdrantClientService; // Add Qdrant service import // Add embedding pipeline service import
+use scribe_backend::vector_db::QdrantClientService;
+use std::sync::Arc;
+use time; // Used for tower_sessions::Expiry
+use tower_cookies::CookieManagerLayer; // Re-add CookieManagerLayer
+use tower_sessions::cookie::Key; // Use Key from tower_sessions::cookie for with_signed
+use tower_sessions::{Expiry, SessionManagerLayer, cookie::SameSite}; // Add Arc for config // Add Qdrant service import // Add embedding pipeline service import
 // Removed unused: use tokio::net::TcpListener;
 use axum_server::tls_rustls::RustlsConfig; // <-- ADD this
-use std::path::PathBuf; // <-- Add PathBuf import
-use rustls::crypto::ring; // <-- Import the ring provider module
+use rustls::crypto::ring;
+use std::path::PathBuf; // <-- Add PathBuf import // <-- Import the ring provider module
 
 // Define the embedded migrations macro
 pub const MIGRATIONS: EmbeddedMigrations = embed_migrations!("./migrations");
@@ -104,24 +104,37 @@ async fn main() -> Result<()> {
 
     // --- Initialize Tokenizer Service ---
     tracing::info!("Initializing TokenizerService...");
-    let tokenizer_model_path = config.tokenizer_model_path.as_ref().cloned()
+    let tokenizer_model_path = config
+        .tokenizer_model_path
+        .as_ref()
+        .cloned()
         .context("Tokenizer model path not set in config")?;
-    let tokenizer_service = TokenizerService::new(&tokenizer_model_path)
-        .context(format!("Failed to load tokenizer model from {}", tokenizer_model_path))?;
-    tracing::info!("TokenizerService initialized with model: {}", tokenizer_service.model_name());
+    let tokenizer_service = TokenizerService::new(&tokenizer_model_path).context(format!(
+        "Failed to load tokenizer model from {}",
+        tokenizer_model_path
+    ))?;
+    tracing::info!(
+        "TokenizerService initialized with model: {}",
+        tokenizer_service.model_name()
+    );
 
     // --- Initialize Gemini Token Client (Optional) ---
     let gemini_token_client = if let Some(api_key) = config.gemini_api_key.as_ref() {
         tracing::info!("Initializing GeminiTokenClient for token counting...");
         Some(GeminiTokenClient::new(api_key.clone()))
     } else {
-        tracing::warn!("GEMINI_API_KEY not set, GeminiTokenClient for token counting will not be available.");
+        tracing::warn!(
+            "GEMINI_API_KEY not set, GeminiTokenClient for token counting will not be available."
+        );
         None
     };
 
     // --- Initialize Hybrid Token Counter ---
     tracing::info!("Initializing HybridTokenCounter...");
-    let token_counter_default_model = config.token_counter_default_model.as_ref().cloned()
+    let token_counter_default_model = config
+        .token_counter_default_model
+        .as_ref()
+        .cloned()
         .context("Token counter default model not set in config")?;
     let hybrid_token_counter = HybridTokenCounter::new(
         tokenizer_service,
@@ -129,18 +142,22 @@ async fn main() -> Result<()> {
         token_counter_default_model.clone(),
     );
     let hybrid_token_counter_arc = Arc::new(hybrid_token_counter);
-    tracing::info!("HybridTokenCounter initialized with default model: {}", token_counter_default_model);
-    
+    tracing::info!(
+        "HybridTokenCounter initialized with default model: {}",
+        token_counter_default_model
+    );
+
     // --- Session Store Setup ---
     // Ideally load from config/env, generating is okay for dev
     let session_store = DieselSessionStore::new(pool.clone());
 
     // Use the signing key from the config
-    let secret_key = config.cookie_signing_key
+    let secret_key = config
+        .cookie_signing_key
         .as_ref()
         .context("COOKIE_SIGNING_KEY must be set in config")?;
-    let key_bytes =
-        hex::decode(secret_key).context("Invalid COOKIE_SIGNING_KEY format in config (must be hex)")?;
+    let key_bytes = hex::decode(secret_key)
+        .context("Invalid COOKIE_SIGNING_KEY format in config (must be hex)")?;
     let _signing_key = Key::from(&key_bytes); // Key is now tower_sessions::cookie::Key (unused in current config)
 
     // Build the session manager layer (handles session data)
@@ -182,7 +199,7 @@ async fn main() -> Result<()> {
         embedding_client_arc,
         qdrant_service_arc,
         embedding_pipeline_service, // Add the embedding pipeline service
-        hybrid_token_counter_arc, // Added
+        hybrid_token_counter_arc,   // Added
     );
 
     // --- Define Protected Routes ---
@@ -222,7 +239,9 @@ async fn main() -> Result<()> {
     // Get the directory containing backend's Cargo.toml at compile time
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     // Navigate to project root (parent of backend dir)
-    let project_root = manifest_dir.parent().context("Failed to get project root from manifest dir")?;
+    let project_root = manifest_dir
+        .parent()
+        .context("Failed to get project root from manifest dir")?;
 
     let cert_path = project_root.join(".certs/cert.pem");
     let key_path = project_root.join(".certs/key.pem");
@@ -231,7 +250,7 @@ async fn main() -> Result<()> {
 
     let tls_config = RustlsConfig::from_pem_file(
         cert_path, // Use the constructed path
-        key_path   // Use the constructed path
+        key_path,  // Use the constructed path
     )
     .await
     .context("Failed to load TLS certificate/key for Axum server")?;
@@ -294,5 +313,4 @@ mod tests {
         let response = health_check().await;
         assert_eq!(response.0.status, "ok");
     }
-
 }

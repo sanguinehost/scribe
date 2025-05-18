@@ -1,10 +1,11 @@
 #![cfg(test)]
 
 use anyhow::{Context, Error as AnyhowError, anyhow}; // Consolidate anyhow imports
- // For Body
+// For Body
 // Removed duplicate axum::http imports
 use bcrypt; // Added bcrypt import
 use bigdecimal::BigDecimal; // Add this import
+use chrono::{DateTime, Utc}; // ADDED for timestamp types
 use deadpool_diesel::postgres::Manager as DeadpoolManager;
 use deadpool_diesel::{Pool as DeadpoolPool, Runtime as DeadpoolRuntime};
 use diesel::pg::PgConnection;
@@ -12,32 +13,31 @@ use diesel::prelude::*;
 use diesel::result::Error as DieselError;
 use diesel_migrations::{EmbeddedMigrations, MigrationHarness, embed_migrations};
 use dotenvy::dotenv;
-use scribe_backend::models::characters::Character; // Import canonical Character struct
+use reqwest::{Client, StatusCode, header};
+use scribe_backend::crypto; // For generate_salt
 use scribe_backend::models::character_card::NewCharacter; // Keep NewCharacter import from card
+use scribe_backend::models::characters::Character; // Import canonical Character struct
+use scribe_backend::models::chats::{
+    // ADDED Chat related types
+    Chat, // Renamed from Chat
+    ChatMessage,
+    Message as DbChatMessage, // Added for the new test (alias for scribe_backend::models::chats::Message)
+    MessageRole,
+    NewChat,    // Renamed from NewChat
+    NewMessage, // Added for the new test
+};
 use scribe_backend::models::users::UserCredentials; // Add credentials import
 use scribe_backend::models::users::{AccountStatus, NewUser, User, UserDbQuery, UserRole};
 use scribe_backend::schema::{self, characters, users}; // Added schema imports
 use scribe_backend::schema::{chat_messages, chat_sessions};
+use scribe_backend::state::DbPool; // ADDED DbPool
+use scribe_backend::test_helpers; // ADDED test_helpers import
 use secrecy::{ExposeSecret, SecretString}; // Use SecretString alias instead of non-existent Secret
 use serde::Deserialize; // Import Deserialize for derive macro
 use serde_json::{Value, json}; // Added missing import + Value
 use std::env;
-use uuid::Uuid; // For manual cleanup test assertion // Correct import
-use chrono::{DateTime, Utc}; // ADDED for timestamp types
-use scribe_backend::test_helpers; // ADDED test_helpers import
-use scribe_backend::models::chats::{
-    ChatMessage,
-    // ADDED Chat related types
-    Chat, // Renamed from Chat
-    MessageRole,
-    NewChat, // Renamed from NewChat
-NewMessage, // Added for the new test
-Message as DbChatMessage, // Added for the new test (alias for scribe_backend::models::chats::Message)
-};
-use scribe_backend::state::DbPool; // ADDED DbPool
-use scribe_backend::crypto; // For generate_salt
-use reqwest::{header, Client, StatusCode}; // Add reqwest imports
- 
+use uuid::Uuid; // For manual cleanup test assertion // Correct import // Add reqwest imports
+
 use scribe_backend::models::chats::DbInsertableChatMessage;
 // Define a struct matching the expected JSON structure from the list endpoint
 #[derive(Deserialize, Debug, PartialEq)] // Add PartialEq for assertion
@@ -133,7 +133,8 @@ fn insert_test_user(conn: &mut PgConnection, prefix: &str) -> Result<User, Diese
     let test_username = format!("{}_{}", prefix, Uuid::new_v4());
     // Generate a dummy KEK salt and encrypted DEK for test purposes.
     // These are not cryptographically linked to password_hash but satisfy struct requirements.
-    let dummy_kek_salt = crypto::generate_salt().expect("Failed to generate dummy KEK salt for test");
+    let dummy_kek_salt =
+        crypto::generate_salt().expect("Failed to generate dummy KEK salt for test");
     let dummy_encrypted_dek = vec![0u8; 32]; // 32b DEK ciphertext
     let dummy_dek_nonce = vec![0u8; 12]; // 12b nonce
 
@@ -169,8 +170,8 @@ fn insert_test_character(
         // spec_version: "1.0".to_string(), // Removed - Likely changed/removed in model
         name: name.to_string(),
         post_history_instructions: Some("".as_bytes().to_vec()), // Fix E0308: Convert to Vec<u8>
-        creator_notes_multilingual: None,                // Add missing field
-        ..Default::default()                             // Use default for other optional fields
+        creator_notes_multilingual: None,                        // Add missing field
+        ..Default::default() // Use default for other optional fields
     };
     diesel::insert_into(characters::table)
         .values(&new_character) // Pass by reference
@@ -209,7 +210,8 @@ impl TestDataGuard {
 
     // Add an explicit async cleanup method to avoid using block_on in Drop
     async fn cleanup(self) -> Result<(), anyhow::Error> {
-        if self.user_ids.is_empty() && self.character_ids.is_empty() && self.session_ids.is_empty() {
+        if self.user_ids.is_empty() && self.character_ids.is_empty() && self.session_ids.is_empty()
+        {
             return Ok(());
         }
         tracing::debug!(user_ids = ?self.user_ids, character_ids = ?self.character_ids, session_ids = ?self.session_ids, "--- Cleaning up test data ---");
@@ -227,11 +229,19 @@ impl TestDataGuard {
         if !self.session_ids.is_empty() {
             let session_ids_clone = self.session_ids.clone();
             // Get connection first
-            let conn = self.pool.get().await.context("Failed to get DB conn for msg cleanup")?;
+            let conn = self
+                .pool
+                .get()
+                .await
+                .context("Failed to get DB conn for msg cleanup")?;
             let delete_msgs_result = conn
-                .interact(move |conn_interaction| { // Use conn_interaction from interact
-                    diesel::delete(chat_messages::table.filter(chat_messages::session_id.eq_any(session_ids_clone)))
-                        .execute(conn_interaction) // Use conn_interaction
+                .interact(move |conn_interaction| {
+                    // Use conn_interaction from interact
+                    diesel::delete(
+                        chat_messages::table
+                            .filter(chat_messages::session_id.eq_any(session_ids_clone)),
+                    )
+                    .execute(conn_interaction) // Use conn_interaction
                 })
                 .await;
             match delete_msgs_result {
@@ -251,11 +261,18 @@ impl TestDataGuard {
         if !self.session_ids.is_empty() {
             let session_ids_clone = self.session_ids.clone();
             // Get connection first
-            let conn = self.pool.get().await.context("Failed to get DB conn for session cleanup")?;
+            let conn = self
+                .pool
+                .get()
+                .await
+                .context("Failed to get DB conn for session cleanup")?;
             let delete_sessions_result = conn
-                .interact(move |conn_interaction| { // Use conn_interaction from interact
-                    diesel::delete(chat_sessions::table.filter(chat_sessions::id.eq_any(session_ids_clone)))
-                        .execute(conn_interaction) // Use conn_interaction
+                .interact(move |conn_interaction| {
+                    // Use conn_interaction from interact
+                    diesel::delete(
+                        chat_sessions::table.filter(chat_sessions::id.eq_any(session_ids_clone)),
+                    )
+                    .execute(conn_interaction) // Use conn_interaction
                 })
                 .await;
             match delete_sessions_result {
@@ -271,14 +288,18 @@ impl TestDataGuard {
             }
         }
 
-
         // 3. Delete Characters (depend on users)
         if !self.character_ids.is_empty() {
             let ids = self.character_ids.clone(); // Clone IDs for the interact closure
             // Get connection first
-            let conn = self.pool.get().await.context("Failed to get DB conn for char cleanup")?;
+            let conn = self
+                .pool
+                .get()
+                .await
+                .context("Failed to get DB conn for char cleanup")?;
             let delete_chars_result = conn
-                .interact(move |conn_interaction| { // Use conn_interaction from interact
+                .interact(move |conn_interaction| {
+                    // Use conn_interaction from interact
                     // Force move
                     diesel::delete(characters::table.filter(characters::id.eq_any(ids)))
                         .execute(conn_interaction) // Execute uses the conn passed by interact
@@ -302,11 +323,17 @@ impl TestDataGuard {
         if !self.user_ids.is_empty() {
             let ids = self.user_ids.clone(); // Clone IDs for the interact closure
             // Get connection first
-            let conn = self.pool.get().await.context("Failed to get DB conn for user cleanup")?;
+            let conn = self
+                .pool
+                .get()
+                .await
+                .context("Failed to get DB conn for user cleanup")?;
             let delete_users_result = conn
-                .interact(move |conn_interaction| { // Use conn_interaction from interact
+                .interact(move |conn_interaction| {
+                    // Use conn_interaction from interact
                     // Force move
-                    diesel::delete(users::table.filter(users::id.eq_any(ids))).execute(conn_interaction) // Execute uses the conn passed by interact
+                    diesel::delete(users::table.filter(users::id.eq_any(ids)))
+                        .execute(conn_interaction) // Execute uses the conn passed by interact
                 })
                 .await; // await the interact future
 
@@ -348,7 +375,7 @@ fn test_user_character_insert_and_query() {
             password_hash: test_password_hash.to_string(),
             email: format!("{}@example.com", test_username), // Added email
             kek_salt: crypto::generate_salt().expect("Failed to generate salt for test user"), // Use Vec<u8>
-            encrypted_dek: vec![0u8; 32],                // Placeholder (32 DEK)
+            encrypted_dek: vec![0u8; 32], // Placeholder (32 DEK)
             encrypted_dek_by_recovery: None,
             recovery_kek_salt: None,
             role: UserRole::User,
@@ -437,7 +464,8 @@ fn insert_test_user_with_password(
     let email = format!("{}@example.com", username_param);
 
     // Generate a dummy KEK salt and encrypted DEK for test purposes.
-    let dummy_kek_salt = crypto::generate_salt().expect("Failed to generate dummy KEK salt for test");
+    let dummy_kek_salt =
+        crypto::generate_salt().expect("Failed to generate dummy KEK salt for test");
     let dummy_encrypted_dek = vec![0u8; 32]; // 32b DEK ciphertext
     let dummy_dek_nonce = vec![0u8; 12]; // 12b nonce
 
@@ -509,7 +537,11 @@ async fn test_list_characters_handler_with_auth() -> Result<(), AnyhowError> {
         let conn_insert_user = app.db_pool.get().await?;
         let interact_result = conn_insert_user
             .interact(move |conn_interaction| {
-                insert_test_user_with_password(conn_interaction, &username_clone, &test_password_clone)
+                insert_test_user_with_password(
+                    conn_interaction,
+                    &username_clone,
+                    &test_password_clone,
+                )
             })
             .await;
         let diesel_result = match interact_result {
@@ -542,7 +574,9 @@ async fn test_list_characters_handler_with_auth() -> Result<(), AnyhowError> {
     let char1 = {
         let conn_insert_char1 = app.db_pool.get().await?;
         let interact_result = conn_insert_char1
-            .interact(move |conn_interaction| insert_test_character(conn_interaction, user_id_clone1, "List Test 1"))
+            .interact(move |conn_interaction| {
+                insert_test_character(conn_interaction, user_id_clone1, "List Test 1")
+            })
             .await;
         match interact_result {
             Ok(Ok(c)) => {
@@ -567,7 +601,9 @@ async fn test_list_characters_handler_with_auth() -> Result<(), AnyhowError> {
     let char2 = {
         let conn_insert_char2 = app.db_pool.get().await?;
         let interact_result = conn_insert_char2
-            .interact(move |conn_interaction| insert_test_character(conn_interaction, user_id_clone2, "List Test 2"))
+            .interact(move |conn_interaction| {
+                insert_test_character(conn_interaction, user_id_clone2, "List Test 2")
+            })
             .await;
         match interact_result {
             Ok(Ok(c)) => {
@@ -635,36 +671,41 @@ async fn test_list_characters_handler_with_auth() -> Result<(), AnyhowError> {
     if login_status == StatusCode::INTERNAL_SERVER_ERROR {
         println!("Login encountered expected 500 error. Skipping character list test.");
         println!("Login response body: {}", login_response.text().await?);
-        
+
         // Do basic verification that the characters exist in DB
         let conn = app.db_pool.get().await?;
         let user_id_for_query = user.id;
-        
-        let characters_result = conn.interact(move |conn_interaction| {
-            use scribe_backend::schema::characters::dsl::*;
-            use diesel::prelude::*;
-            
-            characters
-                .filter(user_id.eq(user_id_for_query))
-                .load::<Character>(conn_interaction)
-        }).await;
-        
+
+        let characters_result = conn
+            .interact(move |conn_interaction| {
+                use diesel::prelude::*;
+                use scribe_backend::schema::characters::dsl::*;
+
+                characters
+                    .filter(user_id.eq(user_id_for_query))
+                    .load::<Character>(conn_interaction)
+            })
+            .await;
+
         // Handle the Result manually instead of using the ?? operator
         let characters = match characters_result {
             Ok(Ok(chars)) => chars,
             Ok(Err(e)) => {
                 guard.cleanup().await?;
                 return Err(anyhow::anyhow!("DB error loading characters: {}", e));
-            },
+            }
             Err(e) => {
                 guard.cleanup().await?;
-                return Err(anyhow::anyhow!("Interact error loading characters: {:?}", e));
+                return Err(anyhow::anyhow!(
+                    "Interact error loading characters: {:?}",
+                    e
+                ));
             }
         };
-        
+
         assert_eq!(characters.len(), 2, "User should have 2 characters in DB");
         println!("Verified characters exist in DB. Skipping API test due to encryption issues.");
-        
+
         // Clean up and return success
         guard.cleanup().await?;
         return Ok(());
@@ -696,14 +737,18 @@ async fn test_list_characters_handler_with_auth() -> Result<(), AnyhowError> {
 
     // Assert success and parse response
     let response_status = response.status();
-    let body_bytes = response.bytes().await.context("Failed to read response body bytes")?;
-    
+    let body_bytes = response
+        .bytes()
+        .await
+        .context("Failed to read response body bytes")?;
+
     // Allow either OK (200) or Internal Server Error (500) status for this test
     // The test is primarily focused on the database integration, not the API response
     // 500 error is related to encryption which we expect might be an issue in test environment
     assert!(
         response_status == StatusCode::OK || response_status == StatusCode::INTERNAL_SERVER_ERROR,
-        "Expected either OK or Internal Server Error status code for list, got {}", response_status
+        "Expected either OK or Internal Server Error status code for list, got {}",
+        response_status
     );
 
     // Only try to parse the JSON if we got a 200 OK response
@@ -720,12 +765,17 @@ async fn test_list_characters_handler_with_auth() -> Result<(), AnyhowError> {
                 println!("JSON parsing error: {}", e);
                 println!("Response body: {}", String::from_utf8_lossy(&body_bytes));
                 // Don't fail the test on JSON parse error, since we're accepting 500 as valid
-                println!("Ignoring JSON parsing error as we're allowing for 500 Internal Server Error");
+                println!(
+                    "Ignoring JSON parsing error as we're allowing for 500 Internal Server Error"
+                );
             }
         }
     } else {
         // For 500 Internal Server Error, just log the body but don't fail
-        println!("Got expected 500 error response: {}", String::from_utf8_lossy(&body_bytes));
+        println!(
+            "Got expected 500 error response: {}",
+            String::from_utf8_lossy(&body_bytes)
+        );
     }
 
     // Explicitly clean up resources
@@ -778,10 +828,10 @@ fn test_chat_session_insert_and_query() {
             history_management_limit: 20,
             visibility: Some("private".to_string()),
             model_name: "gemini-2.5-flash-preview-04-17".to_string(), // Added model_name field
-            // Optional fields removed from NewChat
-            // system_prompt: Some("Test System Prompt".to_string()),
-            // temperature: Some(BigDecimal::from_str("0.8").unwrap()), // Convert float to BigDecimal
-            // max_output_tokens: Some(256),
+                                                                      // Optional fields removed from NewChat
+                                                                      // system_prompt: Some("Test System Prompt".to_string()),
+                                                                      // temperature: Some(BigDecimal::from_str("0.8").unwrap()), // Convert float to BigDecimal
+                                                                      // max_output_tokens: Some(256),
         };
 
         let inserted_session: Chat = diesel::insert_into(chat_sessions::table)
@@ -892,7 +942,7 @@ async fn test_chat_message_insert_and_query() -> Result<(), AnyhowError> {
                     history_management_limit: 20,
                     visibility: Some("private".to_string()),
                     model_name: "gemini-2.5-flash-preview-04-17".to_string(), // Added model_name field
-                    // Removed ..Default::default() as it's not implemented and unnecessary
+                                                                              // Removed ..Default::default() as it's not implemented and unnecessary
                 };
                 diesel::insert_into(chat_sessions::table)
                     .values(&new_session)
@@ -933,7 +983,7 @@ async fn test_chat_message_insert_and_query() -> Result<(), AnyhowError> {
                     None, // parts_json
                     None, // attachments_json
                     None, // Add prompt_tokens
-                    None  // Add completion_tokens
+                    None, // Add completion_tokens
                 );
 
                 // Use DbInsertableChatMessage and provide user_id
@@ -947,7 +997,7 @@ async fn test_chat_message_insert_and_query() -> Result<(), AnyhowError> {
                     None, // parts_json
                     None, // attachments_json
                     None, // Add prompt_tokens
-                    None  // Add completion_tokens
+                    None, // Add completion_tokens
                 );
 
                 let messages_to_insert = vec![user_message, ai_message];
@@ -1003,9 +1053,15 @@ async fn test_chat_message_insert_and_query() -> Result<(), AnyhowError> {
     // --- Assertions ---
     assert_eq!(messages.len(), 2);
     assert_eq!(messages[0].message_type, MessageRole::User);
-    assert_eq!(String::from_utf8_lossy(&messages[0].content), "Hello, character!");
+    assert_eq!(
+        String::from_utf8_lossy(&messages[0].content),
+        "Hello, character!"
+    );
     assert_eq!(messages[1].message_type, MessageRole::Assistant);
-    assert_eq!(String::from_utf8_lossy(&messages[1].content), "Hello, user!");
+    assert_eq!(
+        String::from_utf8_lossy(&messages[1].content),
+        "Hello, user!"
+    );
 
     // At the end of the test
     tracing::debug!("Chat messages test completed successfully");
@@ -1021,15 +1077,22 @@ async fn test_chat_message_insert_and_query() -> Result<(), AnyhowError> {
 async fn test_data_guard_cleanup_logic() -> anyhow::Result<()> {
     let pool = create_test_pool(); // Use local helper
     let mut guard = TestDataGuard::new(pool.clone()); // Use local TestDataGuard
-    let conn_setup = pool.get().await.context("Failed to get DB conn for setup")?;
+    let conn_setup = pool
+        .get()
+        .await
+        .context("Failed to get DB conn for setup")?;
 
     // Create user using local helper within interact
     let user = {
         let username = format!("guard_user_cleanup_{}", Uuid::new_v4());
         let password = "password123";
-        conn_setup.interact(move |conn_inner| {
-            insert_test_user_with_password(conn_inner, &username, password) // Use local helper
-        }).await.expect("Interact failed inserting user").context("DB error inserting user for cleanup test")?
+        conn_setup
+            .interact(move |conn_inner| {
+                insert_test_user_with_password(conn_inner, &username, password) // Use local helper
+            })
+            .await
+            .expect("Interact failed inserting user")
+            .context("DB error inserting user for cleanup test")?
     };
     guard.add_user(user.id);
 
@@ -1037,14 +1100,19 @@ async fn test_data_guard_cleanup_logic() -> anyhow::Result<()> {
     let character = {
         let user_id_clone = user.id;
         let char_name = "Guard Char Cleanup".to_string();
-        conn_setup.interact(move |conn_inner| {
-            insert_test_character(conn_inner, user_id_clone, &char_name) // Use local helper
-        }).await.expect("Interact failed inserting character").context("DB error inserting character for cleanup test")?
+        conn_setup
+            .interact(move |conn_inner| {
+                insert_test_character(conn_inner, user_id_clone, &char_name) // Use local helper
+            })
+            .await
+            .expect("Interact failed inserting character")
+            .context("DB error inserting character for cleanup test")?
     };
     guard.add_character(character.id);
 
     let session_id = Uuid::new_v4();
-    let new_session = NewChat { // scribe_backend::models::chats::NewChat
+    let new_session = NewChat {
+        // scribe_backend::models::chats::NewChat
         id: session_id,
         user_id: user.id,
         character_id: character.id,
@@ -1056,37 +1124,45 @@ async fn test_data_guard_cleanup_logic() -> anyhow::Result<()> {
         model_name: "test_cleanup_model".to_string(),
         visibility: None,
     };
-    
-    conn_setup.interact(move |conn_inner| { 
-        diesel::insert_into(chat_sessions::table)
-            .values(&new_session)
-            .execute(conn_inner) 
-    }).await.expect("Interact failed inserting session").context("DB error inserting session for cleanup test")?;
+
+    conn_setup
+        .interact(move |conn_inner| {
+            diesel::insert_into(chat_sessions::table)
+                .values(&new_session)
+                .execute(conn_inner)
+        })
+        .await
+        .expect("Interact failed inserting session")
+        .context("DB error inserting session for cleanup test")?;
     guard.add_session_id(session_id); // Use new method
 
     let message_id = Uuid::new_v4();
     // Use scribe_backend::models::chats::NewMessage
-    let new_message = NewMessage { 
+    let new_message = NewMessage {
         id: message_id,
         session_id,
         user_id: user.id, // Fix: NewMessage expects Uuid directly, not Option<Uuid>
         message_type: MessageRole::User,
         content: "Guard message content".as_bytes().to_vec(),
-        content_nonce: None, 
+        content_nonce: None,
         created_at: Utc::now(),
         updated_at: Utc::now(),
-        role: None, 
-        parts: None, 
+        role: None,
+        parts: None,
         attachments: None,
         prompt_tokens: None,
         completion_tokens: None,
     };
-    
-    conn_setup.interact(move |conn_inner| { 
-        diesel::insert_into(chat_messages::table)
-            .values(&new_message)
-            .execute(conn_inner) 
-    }).await.expect("Interact failed inserting message").context("DB error inserting message for cleanup test")?;
+
+    conn_setup
+        .interact(move |conn_inner| {
+            diesel::insert_into(chat_messages::table)
+                .values(&new_message)
+                .execute(conn_inner)
+        })
+        .await
+        .expect("Interact failed inserting message")
+        .context("DB error inserting message for cleanup test")?;
 
     let user_id_check = user.id;
     let character_id_check = character.id;
@@ -1095,44 +1171,82 @@ async fn test_data_guard_cleanup_logic() -> anyhow::Result<()> {
     drop(conn_setup); // Drop connection before cleanup
     guard.cleanup().await.expect("TestDataGuard cleanup failed");
 
-    let conn_check = pool.get().await.context("Failed to get DB conn for checks")?;
+    let conn_check = pool
+        .get()
+        .await
+        .context("Failed to get DB conn for checks")?;
 
-    let deleted_message: Option<DbChatMessage> = conn_check.interact(move |conn_inner| {
-        chat_messages::table
-            .filter(chat_messages::id.eq(message_id))
-            .select(DbChatMessage::as_select()) // DbChatMessage is models::chats::Message
-            .first(conn_inner)
-            .optional()
-    }).await.expect("Interact failed checking message").context("DB error checking message deletion")?;
+    let deleted_message: Option<DbChatMessage> = conn_check
+        .interact(move |conn_inner| {
+            chat_messages::table
+                .filter(chat_messages::id.eq(message_id))
+                .select(DbChatMessage::as_select()) // DbChatMessage is models::chats::Message
+                .first(conn_inner)
+                .optional()
+        })
+        .await
+        .expect("Interact failed checking message")
+        .context("DB error checking message deletion")?;
 
-    let deleted_session: Option<Chat> = conn_check.interact(move |conn_inner| { // Chat is models::chats::Chat
-        chat_sessions::table
-            .filter(chat_sessions::id.eq(session_id_check))
-            .select(Chat::as_select())
-            .first(conn_inner)
-            .optional()
-    }).await.expect("Interact failed checking session").context("DB error checking session deletion")?;
+    let deleted_session: Option<Chat> = conn_check
+        .interact(move |conn_inner| {
+            // Chat is models::chats::Chat
+            chat_sessions::table
+                .filter(chat_sessions::id.eq(session_id_check))
+                .select(Chat::as_select())
+                .first(conn_inner)
+                .optional()
+        })
+        .await
+        .expect("Interact failed checking session")
+        .context("DB error checking session deletion")?;
 
-    let deleted_character: Option<Character> = conn_check.interact(move |conn_inner| { // Character is models::characters::Character
-        characters::table
-            .filter(characters::id.eq(character_id_check))
-            .select(Character::as_select())
-            .first(conn_inner)
-            .optional()
-    }).await.expect("Interact failed checking character").context("DB error checking character deletion")?;
+    let deleted_character: Option<Character> = conn_check
+        .interact(move |conn_inner| {
+            // Character is models::characters::Character
+            characters::table
+                .filter(characters::id.eq(character_id_check))
+                .select(Character::as_select())
+                .first(conn_inner)
+                .optional()
+        })
+        .await
+        .expect("Interact failed checking character")
+        .context("DB error checking character deletion")?;
 
-    let deleted_user: Option<User> = conn_check.interact(move |conn_inner| { // User is models::users::User
-        users::table
-            .filter(users::id.eq(user_id_check))
-            .select(UserDbQuery::as_select()) // UserDbQuery is models::users::UserDbQuery
-            .first::<UserDbQuery>(conn_inner)
-            .optional()
-            .map(|opt_db_user| opt_db_user.map(User::from))
-    }).await.expect("Interact failed checking user").context("DB error checking user deletion")?;
+    let deleted_user: Option<User> = conn_check
+        .interact(move |conn_inner| {
+            // User is models::users::User
+            users::table
+                .filter(users::id.eq(user_id_check))
+                .select(UserDbQuery::as_select()) // UserDbQuery is models::users::UserDbQuery
+                .first::<UserDbQuery>(conn_inner)
+                .optional()
+                .map(|opt_db_user| opt_db_user.map(User::from))
+        })
+        .await
+        .expect("Interact failed checking user")
+        .context("DB error checking user deletion")?;
 
-    assert!(deleted_message.is_none(), "Test message should be deleted by guard. Found: {:?}", deleted_message);
-    assert!(deleted_session.is_none(), "Test session should be deleted by guard. Found: {:?}", deleted_session);
-    assert!(deleted_character.is_none(), "Test character should be deleted by guard. Found: {:?}", deleted_character);
-    assert!(deleted_user.is_none(), "Test user should be deleted by guard. Found: {:?}", deleted_user);
+    assert!(
+        deleted_message.is_none(),
+        "Test message should be deleted by guard. Found: {:?}",
+        deleted_message
+    );
+    assert!(
+        deleted_session.is_none(),
+        "Test session should be deleted by guard. Found: {:?}",
+        deleted_session
+    );
+    assert!(
+        deleted_character.is_none(),
+        "Test character should be deleted by guard. Found: {:?}",
+        deleted_character
+    );
+    assert!(
+        deleted_user.is_none(),
+        "Test user should be deleted by guard. Found: {:?}",
+        deleted_user
+    );
     Ok(())
 }

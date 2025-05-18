@@ -465,7 +465,7 @@ mod tests {
             _ => panic!("Expected ConfigError"),
         }
     }
-// Test for reqwest::Error during send()
+    // Test for reqwest::Error during send()
     #[tokio::test]
     async fn test_embed_content_request_send_error() {
         // Start a mock server
@@ -522,10 +522,12 @@ mod tests {
     async fn test_embed_content_success_integration() {
         // Correctly load config using dotenv and build the client
         dotenv().ok(); // Load .env for GEMINI_API_KEY
-        let config = Arc::new(Config::load().expect("Failed to load config for integration test")
-);
+        let config = Arc::new(Config::load().expect("Failed to load config for integration test"));
         // Ensure config loaded the key
-        assert!(config.gemini_api_key.is_some(), "GEMINI_API_KEY must be set in .env or environment for this integration test");
+        assert!(
+            config.gemini_api_key.is_some(),
+            "GEMINI_API_KEY must be set in .env or environment for this integration test"
+        );
 
         let client = build_gemini_embedding_client(config)
             .expect("Failed to build client for integration test");
@@ -537,11 +539,20 @@ mod tests {
 
         match result {
             Ok(embedding) => {
-                assert!(!embedding.is_empty(), "Embedding vector should not be empty");
-                println!("Received embedding vector of dimension: {}", embedding.len());
+                assert!(
+                    !embedding.is_empty(),
+                    "Embedding vector should not be empty"
+                );
+                println!(
+                    "Received embedding vector of dimension: {}",
+                    embedding.len()
+                );
             }
             Err(e) => {
-                panic!("Integration test failed: embed_content returned error: {:?}", e);
+                panic!(
+                    "Integration test failed: embed_content returned error: {:?}",
+                    e
+                );
             }
         }
     }

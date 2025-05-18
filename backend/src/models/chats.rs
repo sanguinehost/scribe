@@ -15,11 +15,11 @@ use diesel::serialize::{self, IsNull, Output, ToSql};
 use diesel::{AsExpression, FromSqlRow};
 use std::io::Write;
 
-use secrecy::SecretBox; // For DEK (SecretBox<Vec<u8>>)
-use secrecy::ExposeSecret; // Added for ExposeSecret
 use crate::crypto::{decrypt_gcm, encrypt_gcm}; // For encryption/decryption
-use crate::errors::AppError; // For error handling
- // Import the newtype
+use crate::errors::AppError;
+use secrecy::ExposeSecret; // Added for ExposeSecret
+use secrecy::SecretBox; // For DEK (SecretBox<Vec<u8>>) // For error handling
+// Import the newtype
 
 // Main Chat model (similar to the frontend Chat type)
 // Type alias for the tuple returned when selecting/returning chat settings
@@ -40,8 +40,8 @@ pub type SettingsTuple = (
     i32,                // history_management_limit
     String,             // model_name
     // -- Gemini Specific Options --
-    Option<i32>,        // gemini_thinking_budget
-    Option<bool>,       // gemini_enable_code_execution
+    Option<i32>,  // gemini_thinking_budget
+    Option<bool>, // gemini_enable_code_execution
 );
 #[derive(Queryable, Selectable, Identifiable, Serialize, Deserialize, Clone)] // Removed Debug
 #[diesel(table_name = chat_sessions)]
@@ -81,7 +81,10 @@ impl std::fmt::Debug for Chat {
             .field("user_id", &self.user_id)
             .field("character_id", &self.character_id)
             .field("title", &self.title.as_ref().map(|_| "[REDACTED]"))
-            .field("system_prompt", &self.system_prompt.as_ref().map(|_| "[REDACTED]"))
+            .field(
+                "system_prompt",
+                &self.system_prompt.as_ref().map(|_| "[REDACTED]"),
+            )
             .field("temperature", &self.temperature)
             .field("max_output_tokens", &self.max_output_tokens)
             .field("created_at", &self.created_at)
@@ -94,12 +97,21 @@ impl std::fmt::Debug for Chat {
             .field("min_p", &self.min_p)
             .field("top_a", &self.top_a)
             .field("seed", &self.seed)
-            .field("logit_bias", &self.logit_bias.as_ref().map(|_| "[REDACTED_JSON]"))
-            .field("history_management_strategy", &self.history_management_strategy)
+            .field(
+                "logit_bias",
+                &self.logit_bias.as_ref().map(|_| "[REDACTED_JSON]"),
+            )
+            .field(
+                "history_management_strategy",
+                &self.history_management_strategy,
+            )
             .field("history_management_limit", &self.history_management_limit)
             .field("model_name", &self.model_name)
             .field("gemini_thinking_budget", &self.gemini_thinking_budget)
-            .field("gemini_enable_code_execution", &self.gemini_enable_code_execution)
+            .field(
+                "gemini_enable_code_execution",
+                &self.gemini_enable_code_execution,
+            )
             .field("visibility", &self.visibility)
             .finish()
     }
@@ -130,7 +142,10 @@ impl std::fmt::Debug for NewChat {
             .field("title", &self.title.as_ref().map(|_| "[REDACTED]"))
             .field("created_at", &self.created_at)
             .field("updated_at", &self.updated_at)
-            .field("history_management_strategy", &self.history_management_strategy)
+            .field(
+                "history_management_strategy",
+                &self.history_management_strategy,
+            )
             .field("history_management_limit", &self.history_management_limit)
             .field("model_name", &self.model_name)
             .field("visibility", &self.visibility)
@@ -155,7 +170,7 @@ pub struct Message {
     pub role: Option<String>,
     pub parts: Option<serde_json::Value>,
     pub attachments: Option<serde_json::Value>,
-    pub prompt_tokens: Option<i32>, // Added
+    pub prompt_tokens: Option<i32>,     // Added
     pub completion_tokens: Option<i32>, // Added
 }
 
@@ -170,10 +185,16 @@ impl std::fmt::Debug for Message {
             .field("created_at", &self.created_at)
             .field("updated_at", &self.updated_at)
             .field("user_id", &self.user_id)
-            .field("content_nonce", &self.content_nonce.as_ref().map(|_| "[REDACTED_NONCE]"))
+            .field(
+                "content_nonce",
+                &self.content_nonce.as_ref().map(|_| "[REDACTED_NONCE]"),
+            )
             .field("role", &self.role)
             .field("parts", &self.parts.as_ref().map(|_| "[REDACTED_JSON]"))
-            .field("attachments", &self.attachments.as_ref().map(|_| "[REDACTED_JSON]"))
+            .field(
+                "attachments",
+                &self.attachments.as_ref().map(|_| "[REDACTED_JSON]"),
+            )
             .field("prompt_tokens", &self.prompt_tokens) // Added
             .field("completion_tokens", &self.completion_tokens) // Added
             .finish()
@@ -195,7 +216,7 @@ pub struct NewMessage {
     pub role: Option<String>,
     pub parts: Option<serde_json::Value>,
     pub attachments: Option<serde_json::Value>,
-    pub prompt_tokens: Option<i32>, // Added
+    pub prompt_tokens: Option<i32>,     // Added
     pub completion_tokens: Option<i32>, // Added
 }
 
@@ -206,13 +227,19 @@ impl std::fmt::Debug for NewMessage {
             .field("session_id", &self.session_id)
             .field("message_type", &self.message_type)
             .field("content", &"[REDACTED_BYTES]")
-            .field("content_nonce", &self.content_nonce.as_ref().map(|_| "[REDACTED_NONCE]"))
+            .field(
+                "content_nonce",
+                &self.content_nonce.as_ref().map(|_| "[REDACTED_NONCE]"),
+            )
             .field("user_id", &self.user_id)
             .field("created_at", &self.created_at)
             .field("updated_at", &self.updated_at)
             .field("role", &self.role)
             .field("parts", &self.parts.as_ref().map(|_| "[REDACTED_JSON]"))
-            .field("attachments", &self.attachments.as_ref().map(|_| "[REDACTED_JSON]"))
+            .field(
+                "attachments",
+                &self.attachments.as_ref().map(|_| "[REDACTED_JSON]"),
+            )
             .field("prompt_tokens", &self.prompt_tokens) // Added
             .field("completion_tokens", &self.completion_tokens) // Added
             .finish()
@@ -271,7 +298,10 @@ impl std::fmt::Debug for CreateMessageRequest {
             .field("role", &self.role)
             .field("content", &"[REDACTED]")
             .field("parts", &self.parts.as_ref().map(|_| "[REDACTED_JSON]"))
-            .field("attachments", &self.attachments.as_ref().map(|_| "[REDACTED_JSON]"))
+            .field(
+                "attachments",
+                &self.attachments.as_ref().map(|_| "[REDACTED_JSON]"),
+            )
             .finish()
     }
 }
@@ -279,7 +309,7 @@ impl std::fmt::Debug for CreateMessageRequest {
 #[derive(Serialize, Deserialize, Clone)] // Removed Debug
 pub struct MessageResponse {
     pub id: Uuid,
-    pub session_id: Uuid, // Renamed from chat_id
+    pub session_id: Uuid,          // Renamed from chat_id
     pub message_type: MessageRole, // Added missing field
     pub role: String, // TODO: Consider removing this if message_type covers it? Check usage.
     pub parts: serde_json::Value,
@@ -402,9 +432,7 @@ impl std::fmt::Display for MessageRole {
 }
 
 // Represents a chat message in the database
-#[derive(
-    Queryable, Selectable, Identifiable, Associations, Clone, Serialize, Deserialize,
-)] // Removed Debug
+#[derive(Queryable, Selectable, Identifiable, Associations, Clone, Serialize, Deserialize)] // Removed Debug
 #[diesel(belongs_to(Chat, foreign_key = session_id))] // CORRECTED: ChatSession -> Chat
 #[diesel(table_name = chat_messages)]
 pub struct ChatMessage {
@@ -416,10 +444,10 @@ pub struct ChatMessage {
     pub content: Vec<u8>,
     pub content_nonce: Option<Vec<u8>>, // Added nonce
     pub created_at: DateTime<Utc>,
-    pub user_id: Uuid,              // Changed to non-optional Uuid to match schema
+    pub user_id: Uuid, // Changed to non-optional Uuid to match schema
     // pub embedding: Option<Vec<f32>>, // Maybe store embeddings here later? Or Qdrant?
     // pub token_count: Option<i32>,
-    pub prompt_tokens: Option<i32>, // Added
+    pub prompt_tokens: Option<i32>,     // Added
     pub completion_tokens: Option<i32>, // Added
 }
 
@@ -430,7 +458,10 @@ impl std::fmt::Debug for ChatMessage {
             .field("session_id", &self.session_id)
             .field("message_type", &self.message_type)
             .field("content", &"[REDACTED_BYTES]")
-            .field("content_nonce", &self.content_nonce.as_ref().map(|_| "[REDACTED_NONCE]"))
+            .field(
+                "content_nonce",
+                &self.content_nonce.as_ref().map(|_| "[REDACTED_NONCE]"),
+            )
             .field("created_at", &self.created_at)
             .field("user_id", &self.user_id)
             .field("prompt_tokens", &self.prompt_tokens) // Added
@@ -461,14 +492,12 @@ impl ChatMessage {
 
     /// Decrypts the content field if ciphertext and nonce are present and a DEK is available.
     /// Returns String representing the decrypted content.
-    pub fn decrypt_content_field(
-        &self,
-        dek: &SecretBox<Vec<u8>>,
-    ) -> Result<String, AppError> { // content_nonce is taken from self.content_nonce
+    pub fn decrypt_content_field(&self, dek: &SecretBox<Vec<u8>>) -> Result<String, AppError> {
+        // content_nonce is taken from self.content_nonce
         if self.content.is_empty() {
             return Ok(String::new()); // Return empty string if content is empty
         }
-        
+
         match &self.content_nonce {
             Some(nonce_bytes) => {
                 if nonce_bytes.is_empty() {
@@ -476,19 +505,32 @@ impl ChatMessage {
                         "ChatMessage ID {} content nonce is present but empty. Cannot decrypt.",
                         self.id
                     );
-                    return Err(AppError::DecryptionError("Missing nonce for content decryption".to_string()));
+                    return Err(AppError::DecryptionError(
+                        "Missing nonce for content decryption".to_string(),
+                    ));
                 }
                 match decrypt_gcm(&self.content, nonce_bytes, dek) {
-                    Ok(plaintext_secret_vec) => {
-                        String::from_utf8(plaintext_secret_vec.expose_secret().to_vec())
-                            .map_err(|e| {
-                                error!("Failed to convert decrypted message content to UTF-8: {}", e);
-                                AppError::DecryptionError("Failed to convert message content to UTF-8".to_string())
-                            })
-                    }
+                    Ok(plaintext_secret_vec) => String::from_utf8(
+                        plaintext_secret_vec.expose_secret().to_vec(),
+                    )
+                    .map_err(|e| {
+                        error!(
+                            "Failed to convert decrypted message content to UTF-8: {}",
+                            e
+                        );
+                        AppError::DecryptionError(
+                            "Failed to convert message content to UTF-8".to_string(),
+                        )
+                    }),
                     Err(e) => {
-                        error!("Failed to decrypt chat message content for ID {}: {}", self.id, e);
-                        Err(AppError::DecryptionError(format!("Decryption failed for message content: {}", e)))
+                        error!(
+                            "Failed to decrypt chat message content for ID {}: {}",
+                            self.id, e
+                        );
+                        Err(AppError::DecryptionError(format!(
+                            "Decryption failed for message content: {}",
+                            e
+                        )))
                     }
                 }
             }
@@ -497,53 +539,61 @@ impl ChatMessage {
                     "ChatMessage ID {} content is present but nonce is missing. Cannot decrypt.",
                     self.id
                 );
-                Err(AppError::DecryptionError("Missing nonce for content decryption".to_string()))
+                Err(AppError::DecryptionError(
+                    "Missing nonce for content decryption".to_string(),
+                ))
             }
         }
     }
 
     /// Convert this ChatMessage to a decrypted ClientChatMessage
-    pub fn into_decrypted_for_client(self, user_dek_secret_box: Option<&SecretBox<Vec<u8>>>) -> Result<ChatMessageForClient, AppError> {
-        let decrypted_content_result: Result<String, AppError> = if let Some(nonce) = &self.content_nonce {
-            if let Some(dek_sb) = user_dek_secret_box {
-                match decrypt_gcm(&self.content, nonce, dek_sb) { 
-                    Ok(plaintext_secret_vec) => {
-                        String::from_utf8(plaintext_secret_vec.expose_secret().to_vec())
-                            .map_err(|e| {
-                                error!("UTF-8 conversion error for msg {}: {:?}", self.id, e);
-                                AppError::DecryptionError(format!("UTF-8 conversion: {}", e))
-                            })
-                    },
-                    Err(e) => {
-                        error!("Decryption failed for msg {}: {:?}", self.id, e);
-                        Err(AppError::DecryptionError(format!("Decryption failed: {}", e)))
+    pub fn into_decrypted_for_client(
+        self,
+        user_dek_secret_box: Option<&SecretBox<Vec<u8>>>,
+    ) -> Result<ChatMessageForClient, AppError> {
+        let decrypted_content_result: Result<String, AppError> =
+            if let Some(nonce) = &self.content_nonce {
+                if let Some(dek_sb) = user_dek_secret_box {
+                    match decrypt_gcm(&self.content, nonce, dek_sb) {
+                        Ok(plaintext_secret_vec) => {
+                            String::from_utf8(plaintext_secret_vec.expose_secret().to_vec())
+                                .map_err(|e| {
+                                    error!("UTF-8 conversion error for msg {}: {:?}", self.id, e);
+                                    AppError::DecryptionError(format!("UTF-8 conversion: {}", e))
+                                })
+                        }
+                        Err(e) => {
+                            error!("Decryption failed for msg {}: {:?}", self.id, e);
+                            Err(AppError::DecryptionError(format!(
+                                "Decryption failed: {}",
+                                e
+                            )))
+                        }
                     }
+                } else {
+                    error!("Msg {} is encrypted but no DEK provided.", self.id);
+                    // This case should probably be an error too if strict decryption is required.
+                    // For now, matches previous behavior of returning placeholder.
+                    Ok("[Content encrypted, DEK not available]".to_string())
                 }
             } else {
-                error!("Msg {} is encrypted but no DEK provided.", self.id);
-                // This case should probably be an error too if strict decryption is required.
-                // For now, matches previous behavior of returning placeholder.
-                Ok("[Content encrypted, DEK not available]".to_string()) 
-            }
-        } else {
-            // No nonce, assume plaintext
-            String::from_utf8(self.content.clone())
-                .map_err(|e| {
+                // No nonce, assume plaintext
+                String::from_utf8(self.content.clone()).map_err(|e| {
                     error!("Invalid UTF-8 in plaintext for msg {}: {:?}", self.id, e);
                     AppError::InternalServerErrorGeneric(format!("Invalid UTF-8: {}", e))
                 })
-        };
+            };
 
         let final_decrypted_content = decrypted_content_result?;
 
         Ok(ChatMessageForClient {
             id: self.id,
             session_id: self.session_id,
-            message_type: self.message_type, 
+            message_type: self.message_type,
             content: final_decrypted_content,
             created_at: self.created_at,
             user_id: self.user_id,
-            prompt_tokens: self.prompt_tokens, // Added
+            prompt_tokens: self.prompt_tokens,         // Added
             completion_tokens: self.completion_tokens, // Added
         })
     }
@@ -588,7 +638,7 @@ pub struct ChatMessageForClient {
     // pub role: Option<String>, // from Message struct, if needed
     // pub parts: Option<serde_json::Value>, // from Message struct, if needed
     // pub attachments: Option<serde_json::Value>, // from Message struct, if needed
-    pub prompt_tokens: Option<i32>, // Added
+    pub prompt_tokens: Option<i32>,     // Added
     pub completion_tokens: Option<i32>, // Added
 }
 
@@ -609,31 +659,56 @@ impl std::fmt::Debug for ChatMessageForClient {
 
 // Moved into_decrypted_for_client from ChatMessage to Message struct
 impl Message {
-    pub fn into_decrypted_for_client(self, dek: Option<&SecretBox<Vec<u8>>>) -> Result<ChatMessageForClient, AppError> {
+    pub fn into_decrypted_for_client(
+        self,
+        dek: Option<&SecretBox<Vec<u8>>>,
+    ) -> Result<ChatMessageForClient, AppError> {
         let decrypted_content_string = if !self.content.is_empty() {
             match dek {
                 Some(actual_dek) => {
-                    let nonce_bytes = self.content_nonce.as_deref()
-                        .ok_or_else(|| AppError::DecryptionError("Nonce missing for content decryption".to_string()))?;
+                    let nonce_bytes = self.content_nonce.as_deref().ok_or_else(|| {
+                        AppError::DecryptionError(
+                            "Nonce missing for content decryption".to_string(),
+                        )
+                    })?;
                     if nonce_bytes.is_empty() {
-                        return Err(AppError::DecryptionError("Nonce is empty for content decryption".to_string()));
+                        return Err(AppError::DecryptionError(
+                            "Nonce is empty for content decryption".to_string(),
+                        ));
                     }
-                    match decrypt_gcm(&self.content, nonce_bytes, actual_dek) { 
+                    match decrypt_gcm(&self.content, nonce_bytes, actual_dek) {
                         Ok(plaintext_bytes_secret) => {
-                            String::from_utf8(plaintext_bytes_secret.expose_secret().to_vec()).map_err(|e| {
-                                tracing::error!("Failed to convert decrypted message content to UTF-8: {}", e);
-                                AppError::DecryptionError("Failed to convert message content to UTF-8".to_string())
-                            })
+                            String::from_utf8(plaintext_bytes_secret.expose_secret().to_vec())
+                                .map_err(|e| {
+                                    tracing::error!(
+                                        "Failed to convert decrypted message content to UTF-8: {}",
+                                        e
+                                    );
+                                    AppError::DecryptionError(
+                                        "Failed to convert message content to UTF-8".to_string(),
+                                    )
+                                })
                         }
                         Err(e) => {
-                            error!("Failed to decrypt chat message content for ID {}: {}", self.id, e);
-                            Err(AppError::DecryptionError(format!("Decryption failed for message content: {}", e)))
+                            error!(
+                                "Failed to decrypt chat message content for ID {}: {}",
+                                self.id, e
+                            );
+                            Err(AppError::DecryptionError(format!(
+                                "Decryption failed for message content: {}",
+                                e
+                            )))
                         }
                     }
                 }
                 None => {
-                    error!("Attempted to decrypt chat message (ID: {}) but no DEK provided in session.", self.id);
-                    Err(AppError::DecryptionError("DEK not available for message decryption".to_string()))
+                    error!(
+                        "Attempted to decrypt chat message (ID: {}) but no DEK provided in session.",
+                        self.id
+                    );
+                    Err(AppError::DecryptionError(
+                        "DEK not available for message decryption".to_string(),
+                    ))
                 }
             }
         } else {
@@ -647,12 +722,11 @@ impl Message {
             content: decrypted_content_string,
             created_at: self.created_at,
             user_id: self.user_id,
-            prompt_tokens: self.prompt_tokens, // Added
+            prompt_tokens: self.prompt_tokens,         // Added
             completion_tokens: self.completion_tokens, // Added
         })
     }
 }
-
 
 // For inserting a new chat message
 #[derive(Insertable, Default, Clone)] // Removed Debug
@@ -661,8 +735,8 @@ pub struct NewChatMessage {
     pub session_id: Uuid,
     pub message_type: MessageRole,
     pub content: Vec<u8>, // This will store encrypted content
-    // Add user_id if it's part of NewChatMessage and not set by default in DB
-    // pub user_id: Uuid, // Example, check schema and insertion logic
+                          // Add user_id if it's part of NewChatMessage and not set by default in DB
+                          // pub user_id: Uuid, // Example, check schema and insertion logic
 }
 
 impl std::fmt::Debug for NewChatMessage {
@@ -684,13 +758,13 @@ pub struct DbInsertableChatMessage {
     #[diesel(column_name = message_type)]
     pub msg_type: MessageRole, // Maps to message_type in the database
     pub content: Vec<u8>,
-    pub content_nonce: Option<Vec<u8>>, // Added nonce
-    pub user_id: Uuid, // Add the user_id field
-    pub role: Option<String>, // ADDED: For Gemini role (user, model)
-    pub parts: Option<serde_json::Value>, // ADDED: For structured content
+    pub content_nonce: Option<Vec<u8>>,         // Added nonce
+    pub user_id: Uuid,                          // Add the user_id field
+    pub role: Option<String>,                   // ADDED: For Gemini role (user, model)
+    pub parts: Option<serde_json::Value>,       // ADDED: For structured content
     pub attachments: Option<serde_json::Value>, // ADDED: For attachments
-    pub prompt_tokens: Option<i32>, // Added
-    pub completion_tokens: Option<i32>, // Added
+    pub prompt_tokens: Option<i32>,             // Added
+    pub completion_tokens: Option<i32>,         // Added
 }
 
 impl std::fmt::Debug for DbInsertableChatMessage {
@@ -699,11 +773,17 @@ impl std::fmt::Debug for DbInsertableChatMessage {
             .field("chat_id", &self.chat_id)
             .field("msg_type", &self.msg_type)
             .field("content", &"[REDACTED_BYTES]")
-            .field("content_nonce", &self.content_nonce.as_ref().map(|_| "[REDACTED_NONCE]"))
+            .field(
+                "content_nonce",
+                &self.content_nonce.as_ref().map(|_| "[REDACTED_NONCE]"),
+            )
             .field("user_id", &self.user_id)
             .field("role", &self.role) // ADDED
             .field("parts", &self.parts.as_ref().map(|_| "[REDACTED_JSON]")) // ADDED
-            .field("attachments", &self.attachments.as_ref().map(|_| "[REDACTED_JSON]")) // ADDED
+            .field(
+                "attachments",
+                &self.attachments.as_ref().map(|_| "[REDACTED_JSON]"),
+            ) // ADDED
             .field("prompt_tokens", &self.prompt_tokens) // Added
             .field("completion_tokens", &self.completion_tokens) // Added
             .finish()
@@ -714,12 +794,12 @@ impl DbInsertableChatMessage {
     #[allow(clippy::too_many_arguments)] // Allow more arguments for this constructor
     pub fn new(
         chat_id: Uuid,
-        user_id: Uuid, // Change parameter to non-optional Uuid
+        user_id: Uuid,              // Change parameter to non-optional Uuid
         msg_type_enum: MessageRole, // Changed name for clarity
         text: Vec<u8>,
-        nonce: Option<Vec<u8>>, // Added nonce parameter
-        role_str: Option<String>,       // ADDED
-        parts_json: Option<serde_json::Value>, // ADDED
+        nonce: Option<Vec<u8>>,                      // Added nonce parameter
+        role_str: Option<String>,                    // ADDED
+        parts_json: Option<serde_json::Value>,       // ADDED
         attachments_json: Option<serde_json::Value>, // ADDED
         prompt_tokens: Option<i32>,
         completion_tokens: Option<i32>,
@@ -731,8 +811,8 @@ impl DbInsertableChatMessage {
             msg_type: msg_type_enum,
             content: text,
             content_nonce: nonce,
-            role: role_str,             // ADDED
-            parts: parts_json,          // ADDED
+            role: role_str,                // ADDED
+            parts: parts_json,             // ADDED
             attachments: attachments_json, // ADDED
             prompt_tokens,
             completion_tokens,
@@ -834,7 +914,14 @@ pub struct GenerateChatRequest {
 impl std::fmt::Debug for GenerateChatRequest {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("GenerateChatRequest")
-            .field("history", &self.history.iter().map(|_| "[REDACTED_ApiChatMessage]").collect::<Vec<_>>())
+            .field(
+                "history",
+                &self
+                    .history
+                    .iter()
+                    .map(|_| "[REDACTED_ApiChatMessage]")
+                    .collect::<Vec<_>>(),
+            )
             .field("model", &self.model)
             .finish()
     }
@@ -870,7 +957,10 @@ pub struct ChatSettingsResponse {
 impl std::fmt::Debug for ChatSettingsResponse {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ChatSettingsResponse")
-            .field("system_prompt", &self.system_prompt.as_ref().map(|_| "[REDACTED]"))
+            .field(
+                "system_prompt",
+                &self.system_prompt.as_ref().map(|_| "[REDACTED]"),
+            )
             .field("temperature", &self.temperature)
             .field("max_output_tokens", &self.max_output_tokens)
             .field("frequency_penalty", &self.frequency_penalty)
@@ -881,12 +971,21 @@ impl std::fmt::Debug for ChatSettingsResponse {
             .field("min_p", &self.min_p)
             .field("top_a", &self.top_a)
             .field("seed", &self.seed)
-            .field("logit_bias", &self.logit_bias.as_ref().map(|_| "[REDACTED_JSON]"))
-            .field("history_management_strategy", &self.history_management_strategy)
+            .field(
+                "logit_bias",
+                &self.logit_bias.as_ref().map(|_| "[REDACTED_JSON]"),
+            )
+            .field(
+                "history_management_strategy",
+                &self.history_management_strategy,
+            )
             .field("history_management_limit", &self.history_management_limit)
             .field("model_name", &self.model_name)
             .field("gemini_thinking_budget", &self.gemini_thinking_budget)
-            .field("gemini_enable_code_execution", &self.gemini_enable_code_execution)
+            .field(
+                "gemini_enable_code_execution",
+                &self.gemini_enable_code_execution,
+            )
             .finish()
     }
 }
@@ -958,7 +1057,10 @@ pub struct UpdateChatSettingsRequest {
 impl std::fmt::Debug for UpdateChatSettingsRequest {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("UpdateChatSettingsRequest")
-            .field("system_prompt", &self.system_prompt.as_ref().map(|_| "[REDACTED]"))
+            .field(
+                "system_prompt",
+                &self.system_prompt.as_ref().map(|_| "[REDACTED]"),
+            )
             .field("temperature", &self.temperature)
             .field("max_output_tokens", &self.max_output_tokens)
             .field("frequency_penalty", &self.frequency_penalty)
@@ -969,12 +1071,21 @@ impl std::fmt::Debug for UpdateChatSettingsRequest {
             .field("min_p", &self.min_p)
             .field("top_a", &self.top_a)
             .field("seed", &self.seed)
-            .field("logit_bias", &self.logit_bias.as_ref().map(|_| "[REDACTED_JSON]"))
-            .field("history_management_strategy", &self.history_management_strategy)
+            .field(
+                "logit_bias",
+                &self.logit_bias.as_ref().map(|_| "[REDACTED_JSON]"),
+            )
+            .field(
+                "history_management_strategy",
+                &self.history_management_strategy,
+            )
             .field("history_management_limit", &self.history_management_limit)
             .field("model_name", &self.model_name)
             .field("gemini_thinking_budget", &self.gemini_thinking_budget)
-            .field("gemini_enable_code_execution", &self.gemini_enable_code_execution)
+            .field(
+                "gemini_enable_code_execution",
+                &self.gemini_enable_code_execution,
+            )
             .finish()
     }
 }
@@ -983,7 +1094,12 @@ impl std::fmt::Debug for UpdateChatSettingsRequest {
 fn validate_optional_history_strategy(strategy: &String) -> Result<(), ValidationError> {
     // Check if the strategy is a known value
     match strategy.as_str() {
-        "none" | "sliding_window_messages" | "sliding_window_tokens" | "truncate_tokens" | "message_window" | "token_limit" => Ok(()),
+        "none"
+        | "sliding_window_messages"
+        | "sliding_window_tokens"
+        | "truncate_tokens"
+        | "message_window"
+        | "token_limit" => Ok(()),
         _ => {
             let mut err = ValidationError::new("unknown_strategy");
             err.message = Some(format!("Unknown history management strategy: {}. Allowed values are: none, sliding_window_messages, message_window, sliding_window_tokens, truncate_tokens, token_limit", strategy).into());
@@ -1108,10 +1224,23 @@ pub struct SuggestedActionsRequest {
 impl std::fmt::Debug for SuggestedActionsRequest {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("SuggestedActionsRequest")
-            .field("message_history", &self.message_history.iter().map(|_| "[REDACTED_ApiChatMessage]").collect::<Vec<_>>())
+            .field(
+                "message_history",
+                &self
+                    .message_history
+                    .iter()
+                    .map(|_| "[REDACTED_ApiChatMessage]")
+                    .collect::<Vec<_>>(),
+            )
             .field("character_first_message", &"[REDACTED]")
-            .field("user_first_message", &self.user_first_message.as_ref().map(|_| "[REDACTED]"))
-            .field("ai_first_response", &self.ai_first_response.as_ref().map(|_| "[REDACTED]"))
+            .field(
+                "user_first_message",
+                &self.user_first_message.as_ref().map(|_| "[REDACTED]"),
+            )
+            .field(
+                "ai_first_response",
+                &self.ai_first_response.as_ref().map(|_| "[REDACTED]"),
+            )
             .finish()
     }
 }
@@ -1139,22 +1268,29 @@ pub struct SuggestedActionsResponse {
 impl std::fmt::Debug for SuggestedActionsResponse {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("SuggestedActionsResponse")
-            .field("suggestions", &self.suggestions.iter().map(|_| "[REDACTED_SuggestedActionItem]").collect::<Vec<_>>())
+            .field(
+                "suggestions",
+                &self
+                    .suggestions
+                    .iter()
+                    .map(|_| "[REDACTED_SuggestedActionItem]")
+                    .collect::<Vec<_>>(),
+            )
             .finish()
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use validator::Validate; // Import the Validate trait for tests
     use super::*;
     use bigdecimal::BigDecimal; // Import BigDecimal
     use chrono::Utc;
+    use ring::rand::{SecureRandom, SystemRandom};
+    use secrecy::SecretBox; // For testing encryption/decryption
     use serde_json::json;
     use std::str::FromStr;
     use uuid::Uuid;
-    use secrecy::SecretBox; // For testing encryption/decryption
-    use ring::rand::{SystemRandom, SecureRandom}; // For generating a dummy DEK
+    use validator::Validate; // Import the Validate trait for tests // For generating a dummy DEK
 
     // Helper function to generate a dummy DEK for testing
     fn generate_dummy_dek() -> SecretBox<Vec<u8>> {
@@ -1216,7 +1352,10 @@ mod tests {
         let cloned = original.clone();
         assert_eq!(original.id, cloned.id);
         // ... (rest of assertions for Chat fields)
-        assert_eq!(original.gemini_enable_code_execution, cloned.gemini_enable_code_execution);
+        assert_eq!(
+            original.gemini_enable_code_execution,
+            cloned.gemini_enable_code_execution
+        );
     }
 
     #[test]
@@ -1241,7 +1380,8 @@ mod tests {
     }
 
     // Helper function to create a sample chat message
-    fn create_sample_chat_message_db() -> ChatMessage { // Renamed to avoid conflict
+    fn create_sample_chat_message_db() -> ChatMessage {
+        // Renamed to avoid conflict
         ChatMessage {
             id: Uuid::new_v4(),
             session_id: Uuid::new_v4(),
@@ -1277,7 +1417,8 @@ mod tests {
     fn test_serde_chat_message() {
         let message = create_sample_chat_message_db();
         let serialized = serde_json::to_string(&message).expect("Serialization failed");
-        let deserialized: ChatMessage = serde_json::from_str(&serialized).expect("Deserialization failed");
+        let deserialized: ChatMessage =
+            serde_json::from_str(&serialized).expect("Deserialization failed");
         assert_eq!(message.id, deserialized.id);
         // ... (rest of assertions, minding DateTime precision)
         assert_eq!(message.user_id, deserialized.user_id);
@@ -1290,18 +1431,33 @@ mod tests {
         let original_content_str = String::from_utf8(message.content.clone()).unwrap();
 
         // Encrypt
-        message.encrypt_content_field(&dek, original_content_str.clone()).unwrap();
-        assert_ne!(message.content, original_content_str.as_bytes(), "Content should be encrypted");
+        message
+            .encrypt_content_field(&dek, original_content_str.clone())
+            .unwrap();
+        assert_ne!(
+            message.content,
+            original_content_str.as_bytes(),
+            "Content should be encrypted"
+        );
 
         // Decrypt
         let decrypted_content = message.decrypt_content_field(&dek).unwrap();
-        assert_eq!(decrypted_content, original_content_str, "Decrypted content should match original");
+        assert_eq!(
+            decrypted_content, original_content_str,
+            "Decrypted content should match original"
+        );
 
         // Test with empty string
         message.encrypt_content_field(&dek, "".to_string()).unwrap();
-        assert!(message.content.is_empty(), "Encrypting empty string should result in empty bytes");
+        assert!(
+            message.content.is_empty(),
+            "Encrypting empty string should result in empty bytes"
+        );
         let decrypted_empty = message.decrypt_content_field(&dek).unwrap();
-        assert_eq!(decrypted_empty, "", "Decrypting empty bytes should result in empty string");
+        assert_eq!(
+            decrypted_empty, "",
+            "Decrypting empty bytes should result in empty string"
+        );
     }
 
     #[test]
@@ -1311,29 +1467,44 @@ mod tests {
         let original_content_str = String::from_utf8(message_db.content.clone()).unwrap();
 
         // Encrypt the content for the DB version
-        message_db.encrypt_content_field(&dek, original_content_str.clone()).unwrap();
+        message_db
+            .encrypt_content_field(&dek, original_content_str.clone())
+            .unwrap();
 
         // Test with DEK
-        let client_message_with_dek = message_db.clone().into_decrypted_for_client(Some(&dek)).unwrap();
+        let client_message_with_dek = message_db
+            .clone()
+            .into_decrypted_for_client(Some(&dek))
+            .unwrap();
         assert_eq!(client_message_with_dek.content, original_content_str);
         assert_eq!(client_message_with_dek.id, message_db.id);
 
         // Test without DEK (when content is encrypted)
-        let client_message_without_dek = message_db.clone().into_decrypted_for_client(None).unwrap();
-        assert_eq!(client_message_without_dek.content, "[Content encrypted, DEK not available]"); // Match implementation
+        let client_message_without_dek =
+            message_db.clone().into_decrypted_for_client(None).unwrap();
+        assert_eq!(
+            client_message_without_dek.content,
+            "[Content encrypted, DEK not available]"
+        ); // Match implementation
 
         // Test with initially empty content
         let mut empty_content_msg_db = create_sample_chat_message_db();
         empty_content_msg_db.content = Vec::new(); // Set content to empty
-        let client_empty_with_dek = empty_content_msg_db.clone().into_decrypted_for_client(Some(&dek)).unwrap();
+        let client_empty_with_dek = empty_content_msg_db
+            .clone()
+            .into_decrypted_for_client(Some(&dek))
+            .unwrap();
         assert_eq!(client_empty_with_dek.content, "");
-        let client_empty_without_dek = empty_content_msg_db.clone().into_decrypted_for_client(None).unwrap();
+        let client_empty_without_dek = empty_content_msg_db
+            .clone()
+            .into_decrypted_for_client(None)
+            .unwrap();
         assert_eq!(client_empty_without_dek.content, "");
     }
 
-
     // Helper function to create a sample new chat message
-    fn create_sample_new_chat_message_db() -> NewChatMessage { // Renamed
+    fn create_sample_new_chat_message_db() -> NewChatMessage {
+        // Renamed
         NewChatMessage {
             session_id: Uuid::new_v4(),
             message_type: MessageRole::User,
@@ -1367,7 +1538,18 @@ mod tests {
         let content_str = "Test message";
         let content_vec = content_str.as_bytes().to_vec(); // Will be encrypted by handler
 
-        let message = DbInsertableChatMessage::new(chat_id, user_id, role, content_vec.clone(), None, None, None, None, None, None);
+        let message = DbInsertableChatMessage::new(
+            chat_id,
+            user_id,
+            role,
+            content_vec.clone(),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
         assert_eq!(message.chat_id, chat_id);
         assert_eq!(message.user_id, user_id);
         assert_eq!(message.msg_type, role);
@@ -1417,11 +1599,23 @@ mod tests {
         assert_eq!(original.temperature, cloned.temperature);
         assert_eq!(original.max_output_tokens, cloned.max_output_tokens);
         // Add assertions for new fields
-        assert_eq!(original.history_management_strategy, cloned.history_management_strategy);
-        assert_eq!(original.history_management_limit, cloned.history_management_limit);
+        assert_eq!(
+            original.history_management_strategy,
+            cloned.history_management_strategy
+        );
+        assert_eq!(
+            original.history_management_limit,
+            cloned.history_management_limit
+        );
         assert_eq!(original.model_name, cloned.model_name);
-        assert_eq!(original.gemini_thinking_budget, cloned.gemini_thinking_budget);
-        assert_eq!(original.gemini_enable_code_execution, cloned.gemini_enable_code_execution);
+        assert_eq!(
+            original.gemini_thinking_budget,
+            cloned.gemini_thinking_budget
+        );
+        assert_eq!(
+            original.gemini_enable_code_execution,
+            cloned.gemini_enable_code_execution
+        );
     }
 
     // Helper function to create a sample update chat settings request
@@ -1466,45 +1660,83 @@ mod tests {
         assert_eq!(original.temperature, cloned.temperature);
         assert_eq!(original.max_output_tokens, cloned.max_output_tokens);
         // Add assertions for new fields
-        assert_eq!(original.history_management_strategy, cloned.history_management_strategy);
-        assert_eq!(original.history_management_limit, cloned.history_management_limit);
+        assert_eq!(
+            original.history_management_strategy,
+            cloned.history_management_strategy
+        );
+        assert_eq!(
+            original.history_management_limit,
+            cloned.history_management_limit
+        );
         assert_eq!(original.model_name, cloned.model_name);
-        assert_eq!(original.gemini_thinking_budget, cloned.gemini_thinking_budget);
-        assert_eq!(original.gemini_enable_code_execution, cloned.gemini_enable_code_execution);
+        assert_eq!(
+            original.gemini_thinking_budget,
+            cloned.gemini_thinking_budget
+        );
+        assert_eq!(
+            original.gemini_enable_code_execution,
+            cloned.gemini_enable_code_execution
+        );
     }
 
     #[test]
     fn test_serde_chat_settings_response() {
         let settings = create_sample_chat_settings_response();
         let serialized = serde_json::to_string(&settings).expect("Serialization failed");
-        let deserialized: ChatSettingsResponse = serde_json::from_str(&serialized).expect("Deserialization failed");
+        let deserialized: ChatSettingsResponse =
+            serde_json::from_str(&serialized).expect("Deserialization failed");
 
         assert_eq!(settings.system_prompt, deserialized.system_prompt);
         assert_eq!(settings.temperature, deserialized.temperature);
         assert_eq!(settings.max_output_tokens, deserialized.max_output_tokens);
         // Add assertions for new fields
-        assert_eq!(settings.history_management_strategy, deserialized.history_management_strategy);
-        assert_eq!(settings.history_management_limit, deserialized.history_management_limit);
+        assert_eq!(
+            settings.history_management_strategy,
+            deserialized.history_management_strategy
+        );
+        assert_eq!(
+            settings.history_management_limit,
+            deserialized.history_management_limit
+        );
         assert_eq!(settings.model_name, deserialized.model_name);
-        assert_eq!(settings.gemini_thinking_budget, deserialized.gemini_thinking_budget);
-        assert_eq!(settings.gemini_enable_code_execution, deserialized.gemini_enable_code_execution);
+        assert_eq!(
+            settings.gemini_thinking_budget,
+            deserialized.gemini_thinking_budget
+        );
+        assert_eq!(
+            settings.gemini_enable_code_execution,
+            deserialized.gemini_enable_code_execution
+        );
     }
 
     #[test]
     fn test_serde_update_chat_settings_request() {
         let settings = create_sample_update_chat_settings_request();
         let serialized = serde_json::to_string(&settings).expect("Serialization failed");
-        let deserialized: UpdateChatSettingsRequest = serde_json::from_str(&serialized).expect("Deserialization failed");
+        let deserialized: UpdateChatSettingsRequest =
+            serde_json::from_str(&serialized).expect("Deserialization failed");
 
         assert_eq!(settings.system_prompt, deserialized.system_prompt);
         assert_eq!(settings.temperature, deserialized.temperature);
         assert_eq!(settings.max_output_tokens, deserialized.max_output_tokens);
         // Add assertions for new fields
-        assert_eq!(settings.history_management_strategy, deserialized.history_management_strategy);
-        assert_eq!(settings.history_management_limit, deserialized.history_management_limit);
+        assert_eq!(
+            settings.history_management_strategy,
+            deserialized.history_management_strategy
+        );
+        assert_eq!(
+            settings.history_management_limit,
+            deserialized.history_management_limit
+        );
         assert_eq!(settings.model_name, deserialized.model_name);
-        assert_eq!(settings.gemini_thinking_budget, deserialized.gemini_thinking_budget);
-        assert_eq!(settings.gemini_enable_code_execution, deserialized.gemini_enable_code_execution);
+        assert_eq!(
+            settings.gemini_thinking_budget,
+            deserialized.gemini_thinking_budget
+        );
+        assert_eq!(
+            settings.gemini_enable_code_execution,
+            deserialized.gemini_enable_code_execution
+        );
     }
 
     #[test]
@@ -1515,7 +1747,8 @@ mod tests {
         };
 
         let serialized = serde_json::to_string(&original).expect("Serialization failed");
-        let deserialized: NewChatMessageRequest = serde_json::from_str(&serialized).expect("Deserialization failed");
+        let deserialized: NewChatMessageRequest =
+            serde_json::from_str(&serialized).expect("Deserialization failed");
 
         assert_eq!(original.content, deserialized.content);
         assert_eq!(original.model, deserialized.model);
@@ -1529,7 +1762,8 @@ mod tests {
         };
 
         let serialized = serde_json::to_string(&original).expect("Serialization failed");
-        let deserialized: GenerateResponsePayload = serde_json::from_str(&serialized).expect("Deserialization failed");
+        let deserialized: GenerateResponsePayload =
+            serde_json::from_str(&serialized).expect("Deserialization failed");
 
         assert_eq!(original.content, deserialized.content);
         assert_eq!(original.model, deserialized.model);
@@ -1553,7 +1787,7 @@ mod tests {
         settings2 = settings1.clone();
         settings2.history_management_strategy = "sliding_window_messages".to_string();
         assert_ne!(settings1, settings2);
-        
+
         settings2 = settings1.clone();
         settings2.gemini_thinking_budget = Some(0);
         assert_ne!(settings1, settings2);
@@ -1618,9 +1852,14 @@ mod tests {
             ..Default::default()
         };
         let err = invalid_strategy.validate().unwrap_err();
-        assert!(err.field_errors().contains_key("history_management_strategy"));
-        assert_eq!(err.field_errors()["history_management_strategy"][0].code, "unknown_strategy");
-
+        assert!(
+            err.field_errors()
+                .contains_key("history_management_strategy")
+        );
+        assert_eq!(
+            err.field_errors()["history_management_strategy"][0].code,
+            "unknown_strategy"
+        );
 
         // Invalid limit (zero)
         let invalid_limit_zero = UpdateChatSettingsRequest {
@@ -1628,10 +1867,12 @@ mod tests {
             history_management_limit: Some(0),
             ..Default::default()
         };
-         let err = invalid_limit_zero.validate().unwrap_err();
+        let err = invalid_limit_zero.validate().unwrap_err();
         assert!(err.field_errors().contains_key("history_management_limit"));
-        assert_eq!(err.field_errors()["history_management_limit"][0].code, "range");
-
+        assert_eq!(
+            err.field_errors()["history_management_limit"][0].code,
+            "range"
+        );
 
         // Invalid limit (negative)
         let invalid_limit_neg = UpdateChatSettingsRequest {
@@ -1641,7 +1882,10 @@ mod tests {
         };
         let err = invalid_limit_neg.validate().unwrap_err();
         assert!(err.field_errors().contains_key("history_management_limit"));
-        assert_eq!(err.field_errors()["history_management_limit"][0].code, "range");
+        assert_eq!(
+            err.field_errors()["history_management_limit"][0].code,
+            "range"
+        );
 
         // Test optional fields being None (should be valid)
         let none_settings = UpdateChatSettingsRequest {

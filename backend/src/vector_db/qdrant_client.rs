@@ -79,7 +79,10 @@ impl QdrantClientService {
             "euclid" => Distance::Euclid,
             "dot" => Distance::Dot,
             _ => {
-                error!("Invalid QDRANT_DISTANCE_METRIC configured: '{}'. Must be one of 'Cosine', 'Euclid', 'Dot'.", distance_metric_str);
+                error!(
+                    "Invalid QDRANT_DISTANCE_METRIC configured: '{}'. Must be one of 'Cosine', 'Euclid', 'Dot'.",
+                    distance_metric_str
+                );
                 return Err(AppError::ConfigError(format!(
                     "Invalid QDRANT_DISTANCE_METRIC: {}",
                     distance_metric_str
@@ -91,7 +94,6 @@ impl QdrantClientService {
         // Get on_disk setting from config
         let on_disk = config.qdrant_on_disk;
         info!(?on_disk, "Using on_disk setting from config");
-
 
         let service = Self {
             client: Arc::new(qdrant_client),
@@ -127,7 +129,7 @@ impl QdrantClientService {
             collection_name: DEFAULT_COLLECTION_NAME.to_string(), // Keep default for dummy
             embedding_dimension: 768, // Use a reasonable default (e.g., 768) for the dummy instance
             distance_metric: Distance::Cosine, // Default for dummy
-            on_disk: None,                   // Default for dummy
+            on_disk: None,            // Default for dummy
         }
     }
 
@@ -563,7 +565,7 @@ mod tests {
         // For now, this confirms the basic conversion handles nested JSON.
     }
 
-#[test]
+    #[test]
     fn test_new_test_dummy_creation() {
         // This test covers lines 89, 98, 103
         let dummy_service = QdrantClientService::new_test_dummy();
@@ -719,24 +721,38 @@ mod tests {
         let points_to_upsert = vec![point_filter, point_other];
         const MAX_RETRIES: u32 = 3;
         let mut attempt = 0;
-        
+
         loop {
             attempt += 1;
             match service.upsert_points(points_to_upsert.clone()).await {
                 Ok(_) => break, // Success
                 Err(e) => {
                     if let AppError::VectorDbError(msg) = &e {
-                        if msg.contains("Collection") && (msg.contains("doesn't exist") || msg.contains("not found")) {
+                        if msg.contains("Collection")
+                            && (msg.contains("doesn't exist") || msg.contains("not found"))
+                        {
                             if attempt < MAX_RETRIES {
-                                warn!("Upsert failed because collection was not found (attempt {}). Ensuring and retrying...", attempt);
-                                tokio::time::sleep(tokio::time::Duration::from_millis(100 * attempt as u64)).await; // Exponential backoff
-                                service.ensure_collection_exists().await.expect("Retry ensure_collection_exists failed");
+                                warn!(
+                                    "Upsert failed because collection was not found (attempt {}). Ensuring and retrying...",
+                                    attempt
+                                );
+                                tokio::time::sleep(tokio::time::Duration::from_millis(
+                                    100 * attempt as u64,
+                                ))
+                                .await; // Exponential backoff
+                                service
+                                    .ensure_collection_exists()
+                                    .await
+                                    .expect("Retry ensure_collection_exists failed");
                                 continue; // Retry upsert
                             }
                         }
                     }
                     // For other errors or max retries reached, panic with the original assertion message
-                    panic!("Failed to upsert points for filter test: {:?} (attempt {})", e, attempt);
+                    panic!(
+                        "Failed to upsert points for filter test: {:?} (attempt {})",
+                        e, attempt
+                    );
                 }
             }
         }

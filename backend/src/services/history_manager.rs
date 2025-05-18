@@ -14,11 +14,7 @@ use tracing::{debug, warn};
 /// # Returns
 ///
 /// A new `Vec<ChatMessage>` containing the managed history.
-pub fn manage_history(
-    history: Vec<ChatMessage>,
-    strategy: &str,
-    limit: i32,
-) -> Vec<ChatMessage> {
+pub fn manage_history(history: Vec<ChatMessage>, strategy: &str, limit: i32) -> Vec<ChatMessage> {
     if limit <= 0 {
         warn!(%strategy, %limit, "History management limit is non-positive, returning full history.");
         return history;
@@ -27,7 +23,9 @@ pub fn manage_history(
     debug!(%strategy, %limit, initial_length = history.len(), "Applying history management");
 
     let managed_history = match strategy {
-        "sliding_window_messages" | "message_window" => apply_sliding_window_messages(history, limit as usize),
+        "sliding_window_messages" | "message_window" => {
+            apply_sliding_window_messages(history, limit as usize)
+        }
         "sliding_window_tokens" => apply_sliding_window_tokens(history, limit as usize),
         "truncate_tokens" => apply_truncate_tokens(history, limit as usize),
         "none" | _ => {
@@ -38,15 +36,15 @@ pub fn manage_history(
         }
     };
 
-    debug!(final_length = managed_history.len(), "History management applied");
+    debug!(
+        final_length = managed_history.len(),
+        "History management applied"
+    );
     managed_history
 }
 
 /// Keeps the most recent `limit` messages.
-fn apply_sliding_window_messages(
-    history: Vec<ChatMessage>,
-    limit: usize,
-) -> Vec<ChatMessage> {
+fn apply_sliding_window_messages(history: Vec<ChatMessage>, limit: usize) -> Vec<ChatMessage> {
     let history_len = history.len(); // Calculate length before consuming history
     if history_len <= limit {
         return history;
@@ -57,10 +55,7 @@ fn apply_sliding_window_messages(
 
 /// Keeps the most recent messages whose total token count (approximated by char count) is within the `limit`.
 /// Always keeps at least the most recent message, even if it exceeds the limit.
-fn apply_sliding_window_tokens(
-    history: Vec<ChatMessage>,
-    limit: usize,
-) -> Vec<ChatMessage> {
+fn apply_sliding_window_tokens(history: Vec<ChatMessage>, limit: usize) -> Vec<ChatMessage> {
     let mut current_tokens = 0;
     let mut result = Vec::new();
 
@@ -84,11 +79,12 @@ fn apply_sliding_window_tokens(
 /// Keeps ALL messages, but truncates the older ones if necessary to stay within the token `limit`.
 /// (Approximated by character count).
 /// This differs from sliding_window_tokens by keeping all messages rather than dropping any.
-fn apply_truncate_tokens(
-    history: Vec<ChatMessage>,
-    limit: usize,
-) -> Vec<ChatMessage> {
-    debug!("apply_truncate_tokens: got {} messages with limit {}", history.len(), limit);
+fn apply_truncate_tokens(history: Vec<ChatMessage>, limit: usize) -> Vec<ChatMessage> {
+    debug!(
+        "apply_truncate_tokens: got {} messages with limit {}",
+        history.len(),
+        limit
+    );
 
     // Handle edge cases: empty history or zero limit
     if history.is_empty() || limit == 0 {
@@ -108,10 +104,12 @@ fn apply_truncate_tokens(
             // This message fits entirely within the remaining limit
             current_tokens += message_tokens;
             result.push(message); // Add the original message
-            debug!("Message accepted: tokens={}, current_tokens={}, content={}", 
-                message_tokens, 
-                current_tokens, 
-                String::from_utf8_lossy(&result.last().unwrap().content));
+            debug!(
+                "Message accepted: tokens={}, current_tokens={}, content={}",
+                message_tokens,
+                current_tokens,
+                String::from_utf8_lossy(&result.last().unwrap().content)
+            );
         } else {
             // This message would exceed the limit if added fully.
             // Calculate remaining space and truncate the *beginning* of this message if possible.
@@ -126,29 +124,41 @@ fn apply_truncate_tokens(
                 if content_len > remaining_limit {
                     // Truncate the beginning to fit exactly remaining_limit
                     let skip_chars = content_len - remaining_limit;
-                    let truncated_content_str: String = content_str.chars().skip(skip_chars).collect();
+                    let truncated_content_str: String =
+                        content_str.chars().skip(skip_chars).collect();
                     truncated_message.content = truncated_content_str.into_bytes();
-                    
+
                     // For logging/debugging, recalculate length from the new byte vector
-                    let _truncated_len = String::from_utf8_lossy(&truncated_message.content).chars().count(); 
-                    debug!("Truncating message: skip_chars={}, remaining_limit={}, limit={}, content={}", 
-                        skip_chars, 
-                        remaining_limit, 
-                        limit, 
-                        String::from_utf8_lossy(&truncated_message.content));
+                    let _truncated_len = String::from_utf8_lossy(&truncated_message.content)
+                        .chars()
+                        .count();
+                    debug!(
+                        "Truncating message: skip_chars={}, remaining_limit={}, limit={}, content={}",
+                        skip_chars,
+                        remaining_limit,
+                        limit,
+                        String::from_utf8_lossy(&truncated_message.content)
+                    );
                     result.push(truncated_message);
                 } else {
                     // This case should not be logically reachable if message_tokens > remaining_limit,
                     // but if it happens (e.g., due to char vs byte issues not handled here),
                     // add the message as is if it fits the remaining limit.
                     // If it doesn't fit, it means remaining_limit was 0, handled below.
-                     debug!("Message ({}) already fits remaining limit ({}), adding as is. Total: {}", content_len, remaining_limit, current_tokens + content_len);
-                     result.push(truncated_message); // Add the original message clone
+                    debug!(
+                        "Message ({}) already fits remaining limit ({}), adding as is. Total: {}",
+                        content_len,
+                        remaining_limit,
+                        current_tokens + content_len
+                    );
+                    result.push(truncated_message); // Add the original message clone
                 }
-
             } else {
-                 // No space left (limit was already reached by newer messages)
-                 debug!("No remaining limit ({} tokens used >= limit {}), stopping.", current_tokens, limit);
+                // No space left (limit was already reached by newer messages)
+                debug!(
+                    "No remaining limit ({} tokens used >= limit {}), stopping.",
+                    current_tokens, limit
+                );
             }
             // Stop processing older messages once we've had to truncate or couldn't fit the next one
             break;
@@ -159,13 +169,23 @@ fn apply_truncate_tokens(
     result.reverse();
 
     // Log the final state
-    let final_token_count: usize = result.iter().map(|m| String::from_utf8_lossy(&m.content).chars().count()).sum();
-    debug!("Truncation complete. Returning {} messages with total tokens: {} (limit: {})", result.len(), final_token_count, limit);
+    let final_token_count: usize = result
+        .iter()
+        .map(|m| String::from_utf8_lossy(&m.content).chars().count())
+        .sum();
+    debug!(
+        "Truncation complete. Returning {} messages with total tokens: {} (limit: {})",
+        result.len(),
+        final_token_count,
+        limit
+    );
     for (i, msg) in result.iter().enumerate() {
-        debug!("Message({}): {}, tokens={}", 
-            i, 
-            String::from_utf8_lossy(&msg.content), 
-            estimate_message_tokens(msg));
+        debug!(
+            "Message({}): {}, tokens={}",
+            i,
+            String::from_utf8_lossy(&msg.content),
+            estimate_message_tokens(msg)
+        );
     }
 
     result
@@ -220,7 +240,7 @@ mod tests {
         assert_eq!(managed[0].id, msg1.id);
     }
 
-     #[test]
+    #[test]
     fn test_manage_history_zero_limit() {
         let msg1 = create_test_message(Uuid::new_v4(), MessageRole::User, "Hello");
         let history = vec![msg1.clone()];
@@ -311,10 +331,14 @@ mod tests {
         assert_eq!(managed[1].id, msg3.id);
     }
 
-     #[test]
+    #[test]
     fn test_sliding_window_tokens_keeps_last_if_over_limit() {
         let msg1 = create_test_message(Uuid::new_v4(), MessageRole::User, "Short"); // 5 chars
-        let msg2 = create_test_message(Uuid::new_v4(), MessageRole::Assistant, "This message is very long indeed"); // 30 chars
+        let msg2 = create_test_message(
+            Uuid::new_v4(),
+            MessageRole::Assistant,
+            "This message is very long indeed",
+        ); // 30 chars
         let history = vec![msg1.clone(), msg2.clone()];
         let managed = manage_history(history.clone(), "sliding_window_tokens", 10); // Limit 10
         assert_eq!(managed.len(), 1); // Only keeps the last message
@@ -334,7 +358,7 @@ mod tests {
         assert_eq!(String::from_utf8_lossy(&managed[1].content), "World");
     }
 
-     #[test]
+    #[test]
     fn test_truncate_tokens_at_limit() {
         let msg1 = create_test_message(Uuid::new_v4(), MessageRole::User, "Hello");
         let msg2 = create_test_message(Uuid::new_v4(), MessageRole::Assistant, "World");
@@ -348,24 +372,48 @@ mod tests {
     #[test]
     fn test_truncate_tokens_over_limit_truncates_oldest() {
         let msg1 = create_test_message(Uuid::new_v4(), MessageRole::User, "This is message one");
-        let msg2 = create_test_message(Uuid::new_v4(), MessageRole::Assistant, "This is message two");
+        let msg2 = create_test_message(
+            Uuid::new_v4(),
+            MessageRole::Assistant,
+            "This is message two",
+        );
         let history = vec![msg1.clone(), msg2.clone()];
         let managed = manage_history(history.clone(), "truncate_tokens", 30);
-        
+
         assert_eq!(managed.len(), 2, "Should keep two messages, one truncated");
-        assert_eq!(String::from_utf8_lossy(&managed[0].content), "message one", "First message should be truncated");
-        assert_eq!(String::from_utf8_lossy(&managed[1].content), "This is message two", "Second message should be intact");
+        assert_eq!(
+            String::from_utf8_lossy(&managed[0].content),
+            "message one",
+            "First message should be truncated"
+        );
+        assert_eq!(
+            String::from_utf8_lossy(&managed[1].content),
+            "This is message two",
+            "Second message should be intact"
+        );
     }
 
     #[test]
     fn test_truncate_tokens_over_limit_drops_oldest() {
-        let msg1 = create_test_message(Uuid::new_v4(), MessageRole::User, "This is a very long first message that will be dropped");
+        let msg1 = create_test_message(
+            Uuid::new_v4(),
+            MessageRole::User,
+            "This is a very long first message that will be dropped",
+        );
         let msg2 = create_test_message(Uuid::new_v4(), MessageRole::Assistant, "Short second");
         let history = vec![msg1.clone(), msg2.clone()];
         let managed = manage_history(history.clone(), "truncate_tokens", 10);
 
-        assert_eq!(managed.len(), 1, "Should keep only the (truncated) second message");
-        assert_eq!(String::from_utf8_lossy(&managed[0].content), "ort second", "Second message should be truncated");
+        assert_eq!(
+            managed.len(),
+            1,
+            "Should keep only the (truncated) second message"
+        );
+        assert_eq!(
+            String::from_utf8_lossy(&managed[0].content),
+            "ort second",
+            "Second message should be truncated"
+        );
     }
 
     #[test]
@@ -378,19 +426,26 @@ mod tests {
         let limit = 20;
         let managed = manage_history(history, "truncate_tokens", limit as i32);
 
-        assert_eq!(managed.len(), 2, "Should keep both messages, truncating the first");
-        
+        assert_eq!(
+            managed.len(),
+            2,
+            "Should keep both messages, truncating the first"
+        );
+
         // Second message (newest) should be untouched
-        assert_eq!(String::from_utf8_lossy(&managed[1].content), "Second message"); 
-        
+        assert_eq!(
+            String::from_utf8_lossy(&managed[1].content),
+            "Second message"
+        );
+
         // First message (oldest) should be truncated
         // "Second message" is 14 tokens. Remaining limit = 20 - 14 = 6.
         // "First message" (13 tokens) should be truncated to 6 tokens by skipping the first (13-6)=7 chars.
         // "First message".chars().skip(7).collect() == "essage"
-        let expected_truncated_msg1 = "essage"; 
+        let expected_truncated_msg1 = "essage";
         assert_eq!(
             String::from_utf8_lossy(&managed[0].content),
-            expected_truncated_msg1, 
+            expected_truncated_msg1,
             "Oldest message should be truncated from the beginning to fit the remaining token limit"
         );
     }

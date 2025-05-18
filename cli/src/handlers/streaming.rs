@@ -1,9 +1,9 @@
 use crate::chat::run_interactive_streaming_chat_loop;
 use crate::client::HttpClient;
 use crate::error::CliError;
+use crate::handlers::characters::select_character;
 use crate::io::IoHandler;
 use scribe_backend::models::chats::{ApiChatMessage, UpdateChatSettingsRequest};
-use crate::handlers::characters::select_character;
 
 /// Handler function for testing the streaming chat functionality
 pub async fn handle_stream_test_action<H: IoHandler, C: HttpClient>(
@@ -26,7 +26,7 @@ pub async fn handle_stream_test_action<H: IoHandler, C: HttpClient>(
     io_handler.write_line(&format!("Chat session created (ID: {}).", chat_id))?;
 
     // +++ Optional: Set Gemini-specific settings for this test session +++
-    let mut settings_to_update = UpdateChatSettingsRequest { 
+    let mut settings_to_update = UpdateChatSettingsRequest {
         gemini_thinking_budget: None,
         gemini_enable_code_execution: None,
         // Initialize other fields from UpdateChatSettingsRequest to None or their defaults
@@ -47,7 +47,9 @@ pub async fn handle_stream_test_action<H: IoHandler, C: HttpClient>(
         model_name: Some(current_model.to_string()), // Use the current model
     };
 
-    let budget_str = io_handler.read_line("Set Gemini Thinking Budget (optional, integer, e.g. 1024, press Enter to skip):")?;
+    let budget_str = io_handler.read_line(
+        "Set Gemini Thinking Budget (optional, integer, e.g. 1024, press Enter to skip):",
+    )?;
     if !budget_str.trim().is_empty() {
         match budget_str.trim().parse::<i32>() {
             Ok(budget) => settings_to_update.gemini_thinking_budget = Some(budget),
@@ -55,7 +57,8 @@ pub async fn handle_stream_test_action<H: IoHandler, C: HttpClient>(
         }
     }
 
-    let exec_str = io_handler.read_line("Enable Gemini Code Execution (optional, true/false, press Enter to skip):")?;
+    let exec_str = io_handler
+        .read_line("Enable Gemini Code Execution (optional, true/false, press Enter to skip):")?;
     if !exec_str.trim().is_empty() {
         match exec_str.trim().to_lowercase().as_str() {
             "true" => settings_to_update.gemini_enable_code_execution = Some(true),
@@ -65,10 +68,17 @@ pub async fn handle_stream_test_action<H: IoHandler, C: HttpClient>(
     }
 
     // Always update settings to use our configured model and any other settings
-    io_handler.write_line("Updating session with model and Gemini-specific settings for this test...")?;
-    match client.update_chat_settings(chat_id, &settings_to_update).await {
+    io_handler
+        .write_line("Updating session with model and Gemini-specific settings for this test...")?;
+    match client
+        .update_chat_settings(chat_id, &settings_to_update)
+        .await
+    {
         Ok(_) => io_handler.write_line("Test session settings updated.")?,
-        Err(e) => io_handler.write_line(&format!("Warning: Failed to update test session settings: {}. Proceeding with defaults.", e))?,
+        Err(e) => io_handler.write_line(&format!(
+            "Warning: Failed to update test session settings: {}. Proceeding with defaults.",
+            e
+        ))?,
     }
     // +++ End Gemini settings for test +++
 
@@ -82,7 +92,7 @@ pub async fn handle_stream_test_action<H: IoHandler, C: HttpClient>(
     // +++ Construct initial history payload +++
     let initial_history = vec![ApiChatMessage {
         // Assuming ApiChatMessage has these fields based on backend usage
-        role: "user".to_string(), // Role should be "user"
+        role: "user".to_string(),      // Role should be "user"
         content: user_message.clone(), // Clone the user message content
     }];
     // +++ End construction +++
@@ -90,12 +100,14 @@ pub async fn handle_stream_test_action<H: IoHandler, C: HttpClient>(
     // 4. Run the Stream Test Loop
     io_handler.write_line("\nInitiating streaming response...")?;
     if let Err(e) = run_interactive_streaming_chat_loop(
-        client, 
-        chat_id, 
-        io_handler, 
+        client,
+        chat_id,
+        io_handler,
         current_model,
-        None // first_mes_content is None for this test action
-    ).await {
+        None, // first_mes_content is None for this test action
+    )
+    .await
+    {
         tracing::error!(error = ?e, "Streaming chat loop failed in test action");
         io_handler.write_line(&format!("Chat encountered an error: {}", e))?;
     } else {

@@ -24,13 +24,13 @@ use chat::{run_chat_loop, run_interactive_streaming_chat_loop}; // Chat loops
 use client::{HttpClient, ReqwestClientWrapper}; // Client Abstraction
 use error::CliError; // Use our specific error type
 use handlers::{
-    handle_change_user_role_action, handle_health_check_action, handle_list_all_users_action,
-    handle_list_chat_sessions_action, handle_lock_unlock_user_action, handle_login_action,
-    handle_model_settings_action, handle_registration_action, handle_resume_chat_session_action,
-    handle_start_chat_action, handle_upload_character_action, handle_view_character_details_action,
-    handle_view_chat_history_action, handle_view_user_details_action, select_character,
-    handle_chat_config_action, handle_delete_chat_session_action, handle_default_settings_action,
-    apply_default_settings_to_session,
+    apply_default_settings_to_session, handle_change_user_role_action, handle_chat_config_action,
+    handle_default_settings_action, handle_delete_chat_session_action, handle_health_check_action,
+    handle_list_all_users_action, handle_list_chat_sessions_action, handle_lock_unlock_user_action,
+    handle_login_action, handle_model_settings_action, handle_registration_action,
+    handle_resume_chat_session_action, handle_start_chat_action, handle_upload_character_action,
+    handle_view_character_details_action, handle_view_chat_history_action,
+    handle_view_user_details_action, select_character,
 };
 use io::{IoHandler, StdIoHandler}; // IO Abstraction
 use scribe_backend::models::chats::UpdateChatSettingsRequest; // For streaming settings
@@ -80,7 +80,7 @@ async fn main() -> Result<()> {
 
     // Ensure we have a current model name - defaults to Gemini 1.5 Flash
     let mut current_model = "gemini-2.5-flash-preview-04-17".to_string();
-    
+
     // Main application loop
     loop {
         io_handler.write_line("\n--- Main Menu ---")?;
@@ -97,23 +97,37 @@ async fn main() -> Result<()> {
                     Ok(user) => {
                         // After successful login, show user-specific menu
                         let mut logged_in_user = user; // Save the logged-in user
-                        io_handler.write_line(&format!("Login successful as '{}'.", logged_in_user.username))?;
+                        io_handler.write_line(&format!(
+                            "Login successful as '{}'.",
+                            logged_in_user.username
+                        ))?;
 
                         // Session-loop for logged-in user
                         'logged_in: loop {
                             // Determine user role for menu display
-                            let has_admin_role = matches!(logged_in_user.role, scribe_backend::models::users::UserRole::Administrator);
-                            let has_moderator_role = has_admin_role || matches!(logged_in_user.role, scribe_backend::models::users::UserRole::Moderator);
+                            let has_admin_role = matches!(
+                                logged_in_user.role,
+                                scribe_backend::models::users::UserRole::Administrator
+                            );
+                            let has_moderator_role = has_admin_role
+                                || matches!(
+                                    logged_in_user.role,
+                                    scribe_backend::models::users::UserRole::Moderator
+                                );
 
                             // Show menu with role-specific options
                             let role_str = match logged_in_user.role {
-                                scribe_backend::models::users::UserRole::Administrator => "Administrator",
+                                scribe_backend::models::users::UserRole::Administrator => {
+                                    "Administrator"
+                                }
                                 scribe_backend::models::users::UserRole::Moderator => "Moderator",
                                 scribe_backend::models::users::UserRole::User => "User",
                             };
-                            io_handler.write_line(&format!("\n--- Logged In Menu (User: {}, Role: {}) ---", 
-                                logged_in_user.username, role_str))?;
-                            
+                            io_handler.write_line(&format!(
+                                "\n--- Logged In Menu (User: {}, Role: {}) ---",
+                                logged_in_user.username, role_str
+                            ))?;
+
                             // Show admin menu items first if admin
                             if has_admin_role {
                                 io_handler.write_line("--- Admin Actions ---")?;
@@ -125,7 +139,7 @@ async fn main() -> Result<()> {
                                 io_handler.write_line("--- Moderator Actions ---")?;
                                 io_handler.write_line("[1] List All Users")?;
                             }
-                            
+
                             // Standard actions for all users
                             io_handler.write_line("--- Standard Actions ---")?;
                             io_handler.write_line("[5] List Characters")?;
@@ -145,47 +159,79 @@ async fn main() -> Result<()> {
                             io_handler.write_line("[q] Quit Application")?;
 
                             let choice = io_handler.read_line("Enter choice: ")?;
-                            
+
                             if has_admin_role {
                                 // Admin Menu Choices
                                 match choice.trim() {
                                     "1" => {
                                         // List All Users - Admin only
-                                        match handle_list_all_users_action(&http_client, &mut io_handler).await {
+                                        match handle_list_all_users_action(
+                                            &http_client,
+                                            &mut io_handler,
+                                        )
+                                        .await
+                                        {
                                             Ok(()) => { /* Success handled within function */ }
                                             Err(e) => {
                                                 tracing::error!(error = ?e, "Failed to list all users");
-                                                io_handler.write_line(&format!("Error listing users: {}", e))?;
+                                                io_handler.write_line(&format!(
+                                                    "Error listing users: {}",
+                                                    e
+                                                ))?;
                                             }
                                         }
                                     }
                                     "2" => {
                                         // View User Details - Admin only
-                                        match handle_view_user_details_action(&http_client, &mut io_handler).await {
+                                        match handle_view_user_details_action(
+                                            &http_client,
+                                            &mut io_handler,
+                                        )
+                                        .await
+                                        {
                                             Ok(()) => { /* Success handled within function */ }
                                             Err(e) => {
                                                 tracing::error!(error = ?e, "Failed to view user details");
-                                                io_handler.write_line(&format!("Error viewing user details: {}", e))?;
+                                                io_handler.write_line(&format!(
+                                                    "Error viewing user details: {}",
+                                                    e
+                                                ))?;
                                             }
                                         }
                                     }
                                     "3" => {
                                         // Change User Role - Admin only
-                                        match handle_change_user_role_action(&http_client, &mut io_handler).await {
+                                        match handle_change_user_role_action(
+                                            &http_client,
+                                            &mut io_handler,
+                                        )
+                                        .await
+                                        {
                                             Ok(()) => { /* Success handled within function */ }
                                             Err(e) => {
                                                 tracing::error!(error = ?e, "Failed to change user role");
-                                                io_handler.write_line(&format!("Error changing user role: {}", e))?;
+                                                io_handler.write_line(&format!(
+                                                    "Error changing user role: {}",
+                                                    e
+                                                ))?;
                                             }
                                         }
                                     }
                                     "4" => {
                                         // Lock/Unlock User Account - Admin only
-                                        match handle_lock_unlock_user_action(&http_client, &mut io_handler).await {
+                                        match handle_lock_unlock_user_action(
+                                            &http_client,
+                                            &mut io_handler,
+                                        )
+                                        .await
+                                        {
                                             Ok(()) => { /* Success handled within function */ }
                                             Err(e) => {
                                                 tracing::error!(error = ?e, "Failed to lock/unlock user account");
-                                                io_handler.write_line(&format!("Error with account lock/unlock: {}", e))?;
+                                                io_handler.write_line(&format!(
+                                                    "Error with account lock/unlock: {}",
+                                                    e
+                                                ))?;
                                             }
                                         }
                                     }
@@ -195,7 +241,8 @@ async fn main() -> Result<()> {
                                         match http_client.list_characters().await {
                                             Ok(characters) => {
                                                 if characters.is_empty() {
-                                                    io_handler.write_line("You have no characters.")?;
+                                                    io_handler
+                                                        .write_line("You have no characters.")?;
                                                 } else {
                                                     io_handler.write_line("Your characters:")?;
                                                     for char_meta in characters {
@@ -208,17 +255,29 @@ async fn main() -> Result<()> {
                                             }
                                             Err(e) => {
                                                 tracing::error!(error = ?e, "Failed to list characters");
-                                                io_handler.write_line(&format!("Error listing characters: {}", e))?;
+                                                io_handler.write_line(&format!(
+                                                    "Error listing characters: {}",
+                                                    e
+                                                ))?;
                                             }
                                         }
                                     }
                                     "6" => {
                                         // Start Chat Session
-                                        match handle_start_chat_action(&http_client, &mut io_handler, &current_model).await {
+                                        match handle_start_chat_action(
+                                            &http_client,
+                                            &mut io_handler,
+                                            &current_model,
+                                        )
+                                        .await
+                                        {
                                             Ok(_) => { /* Success handled within function */ }
                                             Err(e) => {
                                                 tracing::error!(error = ?e, "Failed to start chat session");
-                                                io_handler.write_line(&format!("Error starting chat: {}", e))?;
+                                                io_handler.write_line(&format!(
+                                                    "Error starting chat: {}",
+                                                    e
+                                                ))?;
                                             }
                                         }
                                     }
@@ -236,7 +295,8 @@ async fn main() -> Result<()> {
                                                 manifest_dir
                                             ))
                                         })?;
-                                        let test_card_path_buf = workspace_root.join("test_data/test_card.png");
+                                        let test_card_path_buf =
+                                            workspace_root.join("test_data/test_card.png");
                                         let test_card_path_str =
                                             test_card_path_buf.to_str().ok_or_else(|| {
                                                 CliError::Internal(format!(
@@ -270,14 +330,21 @@ async fn main() -> Result<()> {
                                             }
                                             Err(e) => {
                                                 tracing::error!(error = ?e, "Failed to create test character");
-                                                io_handler
-                                                    .write_line(&format!("Error creating test character: {}", e))?;
+                                                io_handler.write_line(&format!(
+                                                    "Error creating test character: {}",
+                                                    e
+                                                ))?;
                                             }
                                         }
                                     }
                                     "8" => {
                                         // Upload Character
-                                        match handle_upload_character_action(&http_client, &mut io_handler).await {
+                                        match handle_upload_character_action(
+                                            &http_client,
+                                            &mut io_handler,
+                                        )
+                                        .await
+                                        {
                                             Ok(character) => {
                                                 io_handler.write_line(&format!(
                                                     "Successfully uploaded character '{}' (ID: {}).",
@@ -286,57 +353,102 @@ async fn main() -> Result<()> {
                                             }
                                             Err(e) => {
                                                 tracing::error!(error = ?e, "Failed to upload character");
-                                                io_handler.write_line(&format!("Error uploading character: {}", e))?;
+                                                io_handler.write_line(&format!(
+                                                    "Error uploading character: {}",
+                                                    e
+                                                ))?;
                                             }
                                         }
                                     }
                                     "9" => {
                                         // View Character Details
-                                        match handle_view_character_details_action(&http_client, &mut io_handler).await {
+                                        match handle_view_character_details_action(
+                                            &http_client,
+                                            &mut io_handler,
+                                        )
+                                        .await
+                                        {
                                             Ok(()) => { /* Success handled within function */ }
                                             Err(e) => {
                                                 tracing::error!(error = ?e, "Failed to view character details");
-                                                io_handler.write_line(&format!("Error viewing character details: {}", e))?;
+                                                io_handler.write_line(&format!(
+                                                    "Error viewing character details: {}",
+                                                    e
+                                                ))?;
                                             }
                                         }
                                     }
                                     "10" => {
                                         // List Chat Sessions
-                                        match handle_list_chat_sessions_action(&http_client, &mut io_handler).await {
+                                        match handle_list_chat_sessions_action(
+                                            &http_client,
+                                            &mut io_handler,
+                                        )
+                                        .await
+                                        {
                                             Ok(()) => { /* Success handled within function */ }
                                             Err(e) => {
                                                 tracing::error!(error = ?e, "Failed to list chat sessions");
-                                                io_handler.write_line(&format!("Error listing chat sessions: {}", e))?;
+                                                io_handler.write_line(&format!(
+                                                    "Error listing chat sessions: {}",
+                                                    e
+                                                ))?;
                                             }
                                         }
                                     }
                                     "11" => {
                                         // View Chat History
-                                        match handle_view_chat_history_action(&http_client, &mut io_handler).await {
+                                        match handle_view_chat_history_action(
+                                            &http_client,
+                                            &mut io_handler,
+                                        )
+                                        .await
+                                        {
                                             Ok(()) => { /* Success handled within function */ }
                                             Err(e) => {
                                                 tracing::error!(error = ?e, "Failed to view chat history");
-                                                io_handler.write_line(&format!("Error viewing chat history: {}", e))?;
+                                                io_handler.write_line(&format!(
+                                                    "Error viewing chat history: {}",
+                                                    e
+                                                ))?;
                                             }
                                         }
                                     }
                                     "12" => {
                                         // Resume Chat Session
-                                        match handle_resume_chat_session_action(&http_client, &mut io_handler, &current_model).await {
+                                        match handle_resume_chat_session_action(
+                                            &http_client,
+                                            &mut io_handler,
+                                            &current_model,
+                                        )
+                                        .await
+                                        {
                                             Ok(()) => { /* Success handled within function */ }
                                             Err(e) => {
                                                 tracing::error!(error = ?e, "Failed to resume chat session");
-                                                io_handler.write_line(&format!("Error resuming chat session: {}", e))?;
+                                                io_handler.write_line(&format!(
+                                                    "Error resuming chat session: {}",
+                                                    e
+                                                ))?;
                                             }
                                         }
                                     }
                                     "13" => {
                                         // Configure Chat Session
-                                        match handle_chat_config_action(&http_client, &mut io_handler, &current_model).await {
+                                        match handle_chat_config_action(
+                                            &http_client,
+                                            &mut io_handler,
+                                            &current_model,
+                                        )
+                                        .await
+                                        {
                                             Ok(()) => { /* Success handled within function */ }
                                             Err(e) => {
                                                 tracing::error!(error = ?e, "Failed to configure chat session");
-                                                io_handler.write_line(&format!("Error configuring chat: {}", e))?;
+                                                io_handler.write_line(&format!(
+                                                    "Error configuring chat: {}",
+                                                    e
+                                                ))?;
                                             }
                                         }
                                     }
@@ -347,51 +459,96 @@ async fn main() -> Result<()> {
                                             Ok(user) => {
                                                 // Update the logged_in_user with fresh data
                                                 logged_in_user = user;
-                                                io_handler.write_line(&format!("--- User Info for '{}' ---", logged_in_user.username))?;
-                                                io_handler.write_line(&format!("User ID: {}", logged_in_user.id))?;
+                                                io_handler.write_line(&format!(
+                                                    "--- User Info for '{}' ---",
+                                                    logged_in_user.username
+                                                ))?;
+                                                io_handler.write_line(&format!(
+                                                    "User ID: {}",
+                                                    logged_in_user.id
+                                                ))?;
                                                 let role_str = match logged_in_user.role {
                                                     scribe_backend::models::users::UserRole::Administrator => "Administrator",
                                                     scribe_backend::models::users::UserRole::Moderator => "Moderator",
                                                     scribe_backend::models::users::UserRole::User => "User",
                                                 };
-                                                io_handler.write_line(&format!("Role: {}", role_str))?;
-                                                io_handler.write_line(&format!("Email: {}", logged_in_user.email))?;
-                                                let status_str = logged_in_user.account_status.clone().unwrap_or_else(|| "active".to_string());
-                                                io_handler.write_line(&format!("Account Status: {}", status_str))?;
+                                                io_handler
+                                                    .write_line(&format!("Role: {}", role_str))?;
+                                                io_handler.write_line(&format!(
+                                                    "Email: {}",
+                                                    logged_in_user.email
+                                                ))?;
+                                                let status_str = logged_in_user
+                                                    .account_status
+                                                    .clone()
+                                                    .unwrap_or_else(|| "active".to_string());
+                                                io_handler.write_line(&format!(
+                                                    "Account Status: {}",
+                                                    status_str
+                                                ))?;
                                             }
                                             Err(e) => {
                                                 tracing::error!(error = ?e, "Failed to fetch user info");
-                                                io_handler.write_line(&format!("Error fetching user info: {}", e))?;
+                                                io_handler.write_line(&format!(
+                                                    "Error fetching user info: {}",
+                                                    e
+                                                ))?;
                                             }
                                         }
                                     }
                                     "15" => {
                                         // Model Settings
-                                        match handle_model_settings_action(&http_client, &mut io_handler, &mut current_model).await {
+                                        match handle_model_settings_action(
+                                            &http_client,
+                                            &mut io_handler,
+                                            &mut current_model,
+                                        )
+                                        .await
+                                        {
                                             Ok(()) => { /* Success handled within function */ }
                                             Err(e) => {
                                                 tracing::error!(error = ?e, "Failed to update model settings");
-                                                io_handler.write_line(&format!("Error updating model settings: {}", e))?;
+                                                io_handler.write_line(&format!(
+                                                    "Error updating model settings: {}",
+                                                    e
+                                                ))?;
                                             }
                                         }
                                     }
                                     "16" => {
                                         // Delete Chat Session
-                                        match handle_delete_chat_session_action(&http_client, &mut io_handler).await {
+                                        match handle_delete_chat_session_action(
+                                            &http_client,
+                                            &mut io_handler,
+                                        )
+                                        .await
+                                        {
                                             Ok(()) => { /* Success handled within function */ }
                                             Err(e) => {
                                                 tracing::error!(error = ?e, "Failed to delete chat session");
-                                                io_handler.write_line(&format!("Error deleting chat session: {}", e))?;
+                                                io_handler.write_line(&format!(
+                                                    "Error deleting chat session: {}",
+                                                    e
+                                                ))?;
                                             }
                                         }
                                     }
                                     "17" => {
                                         // Configure Default Chat Settings
-                                        match handle_default_settings_action(&http_client, &mut io_handler, &current_model).await {
+                                        match handle_default_settings_action(
+                                            &http_client,
+                                            &mut io_handler,
+                                            &current_model,
+                                        )
+                                        .await
+                                        {
                                             Ok(()) => { /* Success handled within function */ }
                                             Err(e) => {
                                                 tracing::error!(error = ?e, "Failed to configure default settings");
-                                                io_handler.write_line(&format!("Error configuring default settings: {}", e))?;
+                                                io_handler.write_line(&format!(
+                                                    "Error configuring default settings: {}",
+                                                    e
+                                                ))?;
                                             }
                                         }
                                     }
@@ -400,13 +557,18 @@ async fn main() -> Result<()> {
                                         io_handler.write_line("Logging out...")?;
                                         match http_client.logout().await {
                                             Ok(()) => {
-                                                io_handler.write_line("Successfully logged out.")?;
+                                                io_handler
+                                                    .write_line("Successfully logged out.")?;
                                                 break 'logged_in; // Exit the logged_in loop
                                             }
                                             Err(e) => {
                                                 tracing::error!(error = ?e, "Failed to logout");
-                                                io_handler.write_line(&format!("Error logging out: {}", e))?;
-                                                io_handler.write_line("Returning to main menu anyway.")?;
+                                                io_handler.write_line(&format!(
+                                                    "Error logging out: {}",
+                                                    e
+                                                ))?;
+                                                io_handler
+                                                    .write_line("Returning to main menu anyway.")?;
                                                 break 'logged_in; // Exit the logged_in loop
                                             }
                                         }
@@ -416,18 +578,27 @@ async fn main() -> Result<()> {
                                         io_handler.write_line("Exiting Scribe CLI.")?;
                                         return Ok(());
                                     }
-                                    _ => io_handler.write_line("Invalid choice. Please try again.")?
+                                    _ => io_handler
+                                        .write_line("Invalid choice. Please try again.")?,
                                 }
                             } else if has_moderator_role {
                                 // Moderator Menu Choices
                                 match choice.trim() {
                                     "1" => {
                                         // List All Users - Moderator can see users
-                                        match handle_list_all_users_action(&http_client, &mut io_handler).await {
+                                        match handle_list_all_users_action(
+                                            &http_client,
+                                            &mut io_handler,
+                                        )
+                                        .await
+                                        {
                                             Ok(()) => { /* Success handled within function */ }
                                             Err(e) => {
                                                 tracing::error!(error = ?e, "Failed to list all users");
-                                                io_handler.write_line(&format!("Error listing users: {}", e))?;
+                                                io_handler.write_line(&format!(
+                                                    "Error listing users: {}",
+                                                    e
+                                                ))?;
                                             }
                                         }
                                     }
@@ -437,7 +608,8 @@ async fn main() -> Result<()> {
                                         match http_client.list_characters().await {
                                             Ok(characters) => {
                                                 if characters.is_empty() {
-                                                    io_handler.write_line("You have no characters.")?;
+                                                    io_handler
+                                                        .write_line("You have no characters.")?;
                                                 } else {
                                                     io_handler.write_line("Your characters:")?;
                                                     for char_meta in characters {
@@ -450,17 +622,29 @@ async fn main() -> Result<()> {
                                             }
                                             Err(e) => {
                                                 tracing::error!(error = ?e, "Failed to list characters");
-                                                io_handler.write_line(&format!("Error listing characters: {}", e))?;
+                                                io_handler.write_line(&format!(
+                                                    "Error listing characters: {}",
+                                                    e
+                                                ))?;
                                             }
                                         }
                                     }
                                     "6" => {
                                         // Start Chat Session
-                                        match handle_start_chat_action(&http_client, &mut io_handler, &current_model).await {
+                                        match handle_start_chat_action(
+                                            &http_client,
+                                            &mut io_handler,
+                                            &current_model,
+                                        )
+                                        .await
+                                        {
                                             Ok(_) => { /* Success handled within function */ }
                                             Err(e) => {
                                                 tracing::error!(error = ?e, "Failed to start chat session");
-                                                io_handler.write_line(&format!("Error starting chat: {}", e))?;
+                                                io_handler.write_line(&format!(
+                                                    "Error starting chat: {}",
+                                                    e
+                                                ))?;
                                             }
                                         }
                                     }
@@ -474,7 +658,8 @@ async fn main() -> Result<()> {
                                         io_handler.write_line("Exiting Scribe CLI.")?;
                                         return Ok(());
                                     }
-                                    _ => io_handler.write_line("Invalid choice. Please try again.")?
+                                    _ => io_handler
+                                        .write_line("Invalid choice. Please try again.")?,
                                 }
                             } else {
                                 // Standard User Menu Choices
@@ -485,7 +670,8 @@ async fn main() -> Result<()> {
                                         match http_client.list_characters().await {
                                             Ok(characters) => {
                                                 if characters.is_empty() {
-                                                    io_handler.write_line("You have no characters.")?;
+                                                    io_handler
+                                                        .write_line("You have no characters.")?;
                                                 } else {
                                                     io_handler.write_line("Your characters:")?;
                                                     for char_meta in characters {
@@ -498,17 +684,29 @@ async fn main() -> Result<()> {
                                             }
                                             Err(e) => {
                                                 tracing::error!(error = ?e, "Failed to list characters");
-                                                io_handler.write_line(&format!("Error listing characters: {}", e))?;
+                                                io_handler.write_line(&format!(
+                                                    "Error listing characters: {}",
+                                                    e
+                                                ))?;
                                             }
                                         }
                                     }
                                     "6" => {
                                         // Start Chat Session
-                                        match handle_start_chat_action(&http_client, &mut io_handler, &current_model).await {
+                                        match handle_start_chat_action(
+                                            &http_client,
+                                            &mut io_handler,
+                                            &current_model,
+                                        )
+                                        .await
+                                        {
                                             Ok(_) => { /* Success handled within function */ }
                                             Err(e) => {
                                                 tracing::error!(error = ?e, "Failed to start chat session");
-                                                io_handler.write_line(&format!("Error starting chat: {}", e))?;
+                                                io_handler.write_line(&format!(
+                                                    "Error starting chat: {}",
+                                                    e
+                                                ))?;
                                             }
                                         }
                                     }
@@ -522,7 +720,8 @@ async fn main() -> Result<()> {
                                         io_handler.write_line("Exiting Scribe CLI.")?;
                                         return Ok(());
                                     }
-                                    _ => io_handler.write_line("Invalid choice. Please try again.")?
+                                    _ => io_handler
+                                        .write_line("Invalid choice. Please try again.")?,
                                 }
                             }
                         }
@@ -537,14 +736,18 @@ async fn main() -> Result<()> {
                 // Registration
                 match handle_registration_action(&http_client, &mut io_handler).await {
                     Ok(user) => {
-                        io_handler.write_line(&format!("Registration successful for user '{}' (ID: {}).", user.username, user.id))?;
-                        
+                        io_handler.write_line(&format!(
+                            "Registration successful for user '{}' (ID: {}).",
+                            user.username, user.id
+                        ))?;
+
                         // Check if recovery key was provided
                         if let Some(recovery_key) = http_client.get_last_recovery_key() {
                             io_handler.write_line("\n⚠️  IMPORTANT: RECOVERY KEY ⚠️")?;
                             io_handler.write_line("Save this recovery key in a secure location. You will need it to recover your account if you lose access.")?;
                             io_handler.write_line(&format!("Recovery Key: {}", recovery_key))?;
-                            io_handler.write_line("⚠️  You will NOT be shown this key again! ⚠️")?;
+                            io_handler
+                                .write_line("⚠️  You will NOT be shown this key again! ⚠️")?;
                         }
                     }
                     Err(e) => {
@@ -577,7 +780,7 @@ async fn main() -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_arg_parsing() {
         let args = Args::parse_from(["scribe-cli", "--base-url", "https://example.com"]);

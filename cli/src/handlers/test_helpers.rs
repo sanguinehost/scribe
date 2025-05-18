@@ -1,7 +1,7 @@
 use crate::client::HttpClient;
 use crate::client::types::{
-    HealthStatus, StreamEvent, ClientCharacterDataForClient, RegisterPayload,
-    AdminUserListResponse, AdminUserDetailResponse, ClientChatMessageResponse
+    AdminUserDetailResponse, AdminUserListResponse, ClientCharacterDataForClient,
+    ClientChatMessageResponse, HealthStatus, RegisterPayload, StreamEvent,
 };
 use crate::error::CliError;
 use crate::io::IoHandler;
@@ -11,7 +11,9 @@ use chrono::Utc;
 use futures_util::Stream;
 use scribe_backend::models::auth::LoginPayload;
 use scribe_backend::models::characters::CharacterDataForClient as BackendCharacterDataForClient;
-use scribe_backend::models::chats::{ChatMessage, Chat, MessageRole, ApiChatMessage, ChatSettingsResponse, UpdateChatSettingsRequest};
+use scribe_backend::models::chats::{
+    ApiChatMessage, Chat, ChatMessage, ChatSettingsResponse, MessageRole, UpdateChatSettingsRequest,
+};
 use scribe_backend::models::users::User;
 use std::cell::RefCell;
 use std::collections::VecDeque;
@@ -119,7 +121,8 @@ pub struct MockHttpClient {
     pub register_result: Option<Arc<Result<User, MockCliError>>>,
     pub health_check_result: Option<Arc<Result<HealthStatus, MockCliError>>>,
     pub upload_character_result: Option<Arc<Result<ClientCharacterDataForClient, MockCliError>>>,
-    pub list_characters_result: Option<Arc<Result<Vec<ClientCharacterDataForClient>, MockCliError>>>,
+    pub list_characters_result:
+        Option<Arc<Result<Vec<ClientCharacterDataForClient>, MockCliError>>>,
     pub get_character_result: Option<Arc<Result<ClientCharacterDataForClient, MockCliError>>>,
     pub list_chat_sessions_result: Option<Arc<Result<Vec<Chat>, MockCliError>>>,
     pub get_chat_messages_result: Option<Arc<Result<Vec<ClientChatMessageResponse>, MockCliError>>>,
@@ -131,15 +134,16 @@ pub struct MockHttpClient {
     pub delete_chat_result: Option<Arc<Result<(), MockCliError>>>,
     pub admin_list_users_result: Option<Arc<Result<Vec<AdminUserListResponse>, MockCliError>>>,
     pub admin_get_user_result: Option<Arc<Result<AdminUserDetailResponse, MockCliError>>>,
-    pub admin_get_user_by_username_result: Option<Arc<Result<AdminUserDetailResponse, MockCliError>>>,
+    pub admin_get_user_by_username_result:
+        Option<Arc<Result<AdminUserDetailResponse, MockCliError>>>,
     pub admin_update_user_role_result: Option<Arc<Result<AdminUserDetailResponse, MockCliError>>>,
     pub admin_lock_user_result: Option<Arc<Result<(), MockCliError>>>,
     pub admin_unlock_user_result: Option<Arc<Result<(), MockCliError>>>,
     pub last_recovery_key: Option<String>,
-    
+
     // Track called endpoints for validation - use Arc<Mutex> for thread safety
     pub called_endpoints: Arc<std::sync::Mutex<Vec<String>>>,
-    
+
     // Expected endpoint patterns for validation
     pub expected_endpoints: Arc<std::sync::Mutex<std::collections::HashMap<String, String>>>,
 }
@@ -152,33 +156,33 @@ impl MockHttpClient {
             ..Default::default()
         }
     }
-    
+
     // Records a called endpoint
     pub fn record_endpoint_call(&self, endpoint: &str) {
         if let Ok(mut endpoints) = self.called_endpoints.lock() {
             endpoints.push(endpoint.to_string());
         }
     }
-    
+
     // Set expected endpoint for a function
     pub fn expect_endpoint(&self, function_name: &str, endpoint_pattern: &str) {
         if let Ok(mut patterns) = self.expected_endpoints.lock() {
             patterns.insert(function_name.to_string(), endpoint_pattern.to_string());
         }
     }
-    
+
     // Verify that a function was called with the expected endpoint pattern
     pub fn verify_endpoint_call(&self, function_name: &str) -> Result<(), String> {
         let expected_patterns = match self.expected_endpoints.lock() {
             Ok(guard) => guard,
             Err(_) => return Err("Failed to acquire lock on expected_endpoints".to_string()),
         };
-        
+
         let called_endpoints = match self.called_endpoints.lock() {
             Ok(guard) => guard,
             Err(_) => return Err("Failed to acquire lock on called_endpoints".to_string()),
         };
-        
+
         if let Some(expected_pattern) = expected_patterns.get(function_name) {
             // Find if any called endpoint matches the expected pattern
             for endpoint in called_endpoints.iter() {
@@ -186,33 +190,33 @@ impl MockHttpClient {
                     return Ok(());
                 }
             }
-            
+
             // No match found
             return Err(format!(
                 "Function '{}' was not called with an endpoint containing '{}'. Called endpoints: {:?}",
                 function_name, expected_pattern, *called_endpoints
             ));
         }
-        
+
         // No expectation set for this function
         Ok(())
     }
-    
+
     // Verify all endpoint expectations
     pub fn verify_all_endpoints(&self) -> Result<(), String> {
         let expected_patterns = match self.expected_endpoints.lock() {
             Ok(guard) => guard,
             Err(_) => return Err("Failed to acquire lock on expected_endpoints".to_string()),
         };
-        
+
         let function_names: Vec<String> = expected_patterns.keys().cloned().collect();
-        
+
         for function_name in function_names {
             if let Err(e) = self.verify_endpoint_call(&function_name) {
                 return Err(e);
             }
         }
-        
+
         Ok(())
     }
 }
@@ -220,22 +224,20 @@ impl MockHttpClient {
 #[async_trait]
 impl HttpClient for MockHttpClient {
     async fn login(&self, _credentials: &LoginPayload) -> Result<User, CliError> {
-        let mock_result =
-            Arc::unwrap_or_clone(self.login_result.clone().unwrap_or_else(|| {
-                Arc::new(Err(MockCliError::Internal(
-                    "MockHttpClient: login result not set".into(),
-                )))
-            }));
+        let mock_result = Arc::unwrap_or_clone(self.login_result.clone().unwrap_or_else(|| {
+            Arc::new(Err(MockCliError::Internal(
+                "MockHttpClient: login result not set".into(),
+            )))
+        }));
         mock_result.map_err(Into::into)
     }
 
     async fn register(&self, _credentials: &RegisterPayload) -> Result<User, CliError> {
-        let mock_result =
-            Arc::unwrap_or_clone(self.register_result.clone().unwrap_or_else(|| {
-                Arc::new(Err(MockCliError::Internal(
-                    "MockHttpClient: register result not set".into(),
-                )))
-            }));
+        let mock_result = Arc::unwrap_or_clone(self.register_result.clone().unwrap_or_else(|| {
+            Arc::new(Err(MockCliError::Internal(
+                "MockHttpClient: register result not set".into(),
+            )))
+        }));
         mock_result.map_err(Into::into)
     }
 
@@ -250,13 +252,12 @@ impl HttpClient for MockHttpClient {
     }
 
     async fn create_chat_session(&self, _character_id: Uuid) -> Result<Chat, CliError> {
-        let mock_result = Arc::unwrap_or_clone(
-            self.create_chat_session_result.clone().unwrap_or_else(|| {
+        let mock_result =
+            Arc::unwrap_or_clone(self.create_chat_session_result.clone().unwrap_or_else(|| {
                 Arc::new(Err(MockCliError::Internal(
                     "MockHttpClient: create_chat_session result not set".into(),
                 )))
-            }),
-        );
+            }));
         mock_result.map_err(Into::into)
     }
 
@@ -285,12 +286,11 @@ impl HttpClient for MockHttpClient {
     }
 
     async fn logout(&self) -> Result<(), CliError> {
-        let mock_result =
-            Arc::unwrap_or_clone(self.logout_result.clone().unwrap_or_else(|| {
-                Arc::new(Err(MockCliError::Internal(
-                    "MockHttpClient: logout result not set".into(),
-                )))
-            }));
+        let mock_result = Arc::unwrap_or_clone(self.logout_result.clone().unwrap_or_else(|| {
+            Arc::new(Err(MockCliError::Internal(
+                "MockHttpClient: logout result not set".into(),
+            )))
+        }));
         mock_result.map_err(Into::into)
     }
 
@@ -303,7 +303,10 @@ impl HttpClient for MockHttpClient {
         mock_result.map_err(Into::into)
     }
 
-    async fn get_character(&self, _character_id: Uuid) -> Result<ClientCharacterDataForClient, CliError> {
+    async fn get_character(
+        &self,
+        _character_id: Uuid,
+    ) -> Result<ClientCharacterDataForClient, CliError> {
         let mock_result =
             Arc::unwrap_or_clone(self.get_character_result.clone().unwrap_or_else(|| {
                 Arc::new(Err(MockCliError::Internal(
@@ -317,15 +320,22 @@ impl HttpClient for MockHttpClient {
         self.record_endpoint_call("list_chat_sessions");
         match &self.list_chat_sessions_result {
             Some(res) => res.as_ref().clone().map_err(CliError::from),
-            None => Err(CliError::Internal("list_chat_sessions_result not set".to_string())),
+            None => Err(CliError::Internal(
+                "list_chat_sessions_result not set".to_string(),
+            )),
         }
     }
 
-    async fn get_chat_messages(&self, _session_id: Uuid) -> Result<Vec<ClientChatMessageResponse>, CliError> {
+    async fn get_chat_messages(
+        &self,
+        _session_id: Uuid,
+    ) -> Result<Vec<ClientChatMessageResponse>, CliError> {
         self.record_endpoint_call(&format!("get_chat_messages/{}", _session_id));
         match &self.get_chat_messages_result {
             Some(res) => res.as_ref().clone().map_err(CliError::from),
-            None => Err(CliError::Internal("get_chat_messages_result not set".to_string())),
+            None => Err(CliError::Internal(
+                "get_chat_messages_result not set".to_string(),
+            )),
         }
     }
 
@@ -356,8 +366,7 @@ impl HttpClient for MockHttpClient {
         let mock_result =
             Arc::unwrap_or_clone(self.generate_response_result.clone().unwrap_or_else(|| {
                 Arc::new(Err(MockCliError::Internal(
-                    "MockHttpClient: generate_response_result (for send_message) not set"
-                        .into(),
+                    "MockHttpClient: generate_response_result (for send_message) not set".into(),
                 )))
             }));
         mock_result.map_err(Into::into)
@@ -370,8 +379,7 @@ impl HttpClient for MockHttpClient {
         _history: Vec<ApiChatMessage>,
         _request_thinking: bool,
         _model_name: Option<&str>,
-    ) -> Result<Pin<Box<dyn Stream<Item = Result<StreamEvent, CliError>> + Send>>, CliError>
-    {
+    ) -> Result<Pin<Box<dyn Stream<Item = Result<StreamEvent, CliError>> + Send>>, CliError> {
         // Default mock implementation: return an error or an empty stream.
         // For most handler tests, we don't need to simulate a full stream.
         // If a specific test needs a stream, it can configure a dedicated mock field.
@@ -382,97 +390,106 @@ impl HttpClient for MockHttpClient {
         // Ok(Box::pin(futures_util::stream::empty())) // Use futures_util::stream::empty
     }
 
-    async fn update_chat_settings(&self, _session_id: Uuid, _payload: &UpdateChatSettingsRequest) -> Result<ChatSettingsResponse, CliError> {
-        let mock_result = Arc::unwrap_or_clone(
-            self.update_chat_settings_result.clone().unwrap_or_else(|| {
+    async fn update_chat_settings(
+        &self,
+        _session_id: Uuid,
+        _payload: &UpdateChatSettingsRequest,
+    ) -> Result<ChatSettingsResponse, CliError> {
+        let mock_result =
+            Arc::unwrap_or_clone(self.update_chat_settings_result.clone().unwrap_or_else(|| {
                 Arc::new(Err(MockCliError::Internal(
                     "MockHttpClient: update_chat_settings result not set".into(),
                 )))
-            }),
-        );
+            }));
         mock_result.map_err(Into::into)
     }
 
     async fn admin_list_users(&self) -> Result<Vec<AdminUserListResponse>, CliError> {
-        let mock_result = Arc::unwrap_or_clone(
-            self.admin_list_users_result.clone().unwrap_or_else(|| {
+        let mock_result =
+            Arc::unwrap_or_clone(self.admin_list_users_result.clone().unwrap_or_else(|| {
                 Arc::new(Err(MockCliError::Internal(
                     "MockHttpClient: admin_list_users result not set".into(),
                 )))
-            }),
-        );
+            }));
         mock_result.map_err(Into::into)
     }
 
     async fn admin_get_user(&self, _user_id: Uuid) -> Result<AdminUserDetailResponse, CliError> {
-        let mock_result = Arc::unwrap_or_clone(
-            self.admin_get_user_result.clone().unwrap_or_else(|| {
+        let mock_result =
+            Arc::unwrap_or_clone(self.admin_get_user_result.clone().unwrap_or_else(|| {
                 Arc::new(Err(MockCliError::Internal(
                     "MockHttpClient: admin_get_user result not set".into(),
                 )))
-            }),
+            }));
+        mock_result.map_err(Into::into)
+    }
+
+    async fn admin_get_user_by_username(
+        &self,
+        _username: &str,
+    ) -> Result<AdminUserDetailResponse, CliError> {
+        let mock_result = Arc::unwrap_or_clone(
+            self.admin_get_user_by_username_result
+                .clone()
+                .unwrap_or_else(|| {
+                    Arc::new(Err(MockCliError::Internal(
+                        "MockHttpClient: admin_get_user_by_username result not set".into(),
+                    )))
+                }),
         );
         mock_result.map_err(Into::into)
     }
 
-    async fn admin_get_user_by_username(&self, _username: &str) -> Result<AdminUserDetailResponse, CliError> {
+    async fn admin_update_user_role(
+        &self,
+        _user_id: Uuid,
+        _role: &str,
+    ) -> Result<AdminUserDetailResponse, CliError> {
         let mock_result = Arc::unwrap_or_clone(
-            self.admin_get_user_by_username_result.clone().unwrap_or_else(|| {
-                Arc::new(Err(MockCliError::Internal(
-                    "MockHttpClient: admin_get_user_by_username result not set".into(),
-                )))
-            }),
-        );
-        mock_result.map_err(Into::into)
-    }
-
-    async fn admin_update_user_role(&self, _user_id: Uuid, _role: &str) -> Result<AdminUserDetailResponse, CliError> {
-        let mock_result = Arc::unwrap_or_clone(
-            self.admin_update_user_role_result.clone().unwrap_or_else(|| {
-                Arc::new(Err(MockCliError::Internal(
-                    "MockHttpClient: admin_update_user_role result not set".into(),
-                )))
-            }),
+            self.admin_update_user_role_result
+                .clone()
+                .unwrap_or_else(|| {
+                    Arc::new(Err(MockCliError::Internal(
+                        "MockHttpClient: admin_update_user_role result not set".into(),
+                    )))
+                }),
         );
         mock_result.map_err(Into::into)
     }
 
     async fn admin_lock_user(&self, _user_id: Uuid) -> Result<(), CliError> {
-        let mock_result = Arc::unwrap_or_clone(
-            self.admin_lock_user_result.clone().unwrap_or_else(|| {
+        let mock_result =
+            Arc::unwrap_or_clone(self.admin_lock_user_result.clone().unwrap_or_else(|| {
                 Arc::new(Err(MockCliError::Internal(
                     "MockHttpClient: admin_lock_user result not set".into(),
                 )))
-            }),
-        );
+            }));
         mock_result.map_err(Into::into)
     }
 
     async fn admin_unlock_user(&self, _user_id: Uuid) -> Result<(), CliError> {
-        let mock_result = Arc::unwrap_or_clone(
-            self.admin_unlock_user_result.clone().unwrap_or_else(|| {
+        let mock_result =
+            Arc::unwrap_or_clone(self.admin_unlock_user_result.clone().unwrap_or_else(|| {
                 Arc::new(Err(MockCliError::Internal(
                     "MockHttpClient: admin_unlock_user result not set".into(),
                 )))
-            }),
-        );
+            }));
         mock_result.map_err(Into::into)
     }
-    
+
     async fn delete_chat(&self, chat_id: Uuid) -> Result<(), CliError> {
         // Record the endpoint call with the expected format
         self.record_endpoint_call(&format!("/api/chats-api/chats/remove/{}", chat_id));
-        
-        let mock_result = Arc::unwrap_or_clone(
-            self.delete_chat_result.clone().unwrap_or_else(|| {
+
+        let mock_result =
+            Arc::unwrap_or_clone(self.delete_chat_result.clone().unwrap_or_else(|| {
                 Arc::new(Err(MockCliError::Internal(
                     "MockHttpClient: delete_chat result not set".into(),
                 )))
-            }),
-        );
+            }));
         mock_result.map_err(Into::into)
     }
-    
+
     fn get_last_recovery_key(&self) -> Option<String> {
         self.last_recovery_key.clone()
     }
@@ -497,13 +514,17 @@ pub fn mock_user(username: &str) -> User {
         created_at: Utc::now(),
         updated_at: Utc::now(),
         role: scribe_backend::models::users::UserRole::User, // Default to User role
-        account_status: Some("active".to_string()), // Default to active account
-        recovery_phrase: None, // Recovery phrase not stored in DB
+        account_status: Some("active".to_string()),          // Default to active account
+        recovery_phrase: None,                               // Recovery phrase not stored in DB
     }
 }
 
 /// Creates a mock character for testing
-pub fn mock_character_data_for_client(id: Uuid, name: &str, description: Option<&str>) -> ClientCharacterDataForClient {
+pub fn mock_character_data_for_client(
+    id: Uuid,
+    name: &str,
+    description: Option<&str>,
+) -> ClientCharacterDataForClient {
     ClientCharacterDataForClient {
         id,
         user_id: Uuid::new_v4(),

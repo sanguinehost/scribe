@@ -1,22 +1,22 @@
+use crate::auth::user_store::Backend as AuthBackend;
 use crate::errors::AppError;
 use crate::models::documents::{
     CreateDocumentRequest, CreateSuggestionRequest, Document, DocumentResponse, NewDocument,
     NewSuggestion, Suggestion,
 };
+use crate::state::AppState;
 use axum::{
+    Router,
     extract::{Path, State},
     http::StatusCode,
     response::{IntoResponse, Json},
     routing::{delete, get, post},
-    Router,
 };
 use axum_login::AuthSession; // Removed AuthUser
-use crate::auth::user_store::Backend as AuthBackend;
 use chrono::Utc;
 use diesel::prelude::*;
 use diesel::{ExpressionMethods, RunQueryDsl}; // Added missing trait imports
 use uuid::Uuid;
-use crate::state::AppState;
 
 // Shorthand for auth session
 type CurrentAuthSession = AuthSession<AuthBackend>;
@@ -43,7 +43,9 @@ async fn create_document_handler(
     State(state): State<AppState>,
     Json(payload): Json<CreateDocumentRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let user = auth_session.user.ok_or(AppError::Unauthorized("Not logged in".to_string()))?;
+    let user = auth_session
+        .user
+        .ok_or(AppError::Unauthorized("Not logged in".to_string()))?;
     let pool = state.pool.clone();
 
     let new_document = NewDocument {
@@ -67,8 +69,7 @@ async fn create_document_handler(
                 .map_err(|e| AppError::DatabaseQueryError(e.to_string())) // Added .to_string()
         })
         .await
-        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?
-        ?;
+        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
 
     let response = DocumentResponse {
         id: document.id,
@@ -88,7 +89,9 @@ async fn get_documents_by_id_handler(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let user = auth_session.user.ok_or(AppError::Unauthorized("Not logged in".to_string()))?;
+    let user = auth_session
+        .user
+        .ok_or(AppError::Unauthorized("Not logged in".to_string()))?;
     let pool = state.pool.clone();
 
     let documents = pool
@@ -112,8 +115,7 @@ async fn get_documents_by_id_handler(
             Ok(documents)
         })
         .await
-        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?
-        ?;
+        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
 
     let responses: Vec<DocumentResponse> = documents
         .into_iter()
@@ -136,7 +138,9 @@ async fn get_document_by_id_handler(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let user = auth_session.user.ok_or(AppError::Unauthorized("Not logged in".to_string()))?;
+    let user = auth_session
+        .user
+        .ok_or(AppError::Unauthorized("Not logged in".to_string()))?;
     let pool = state.pool.clone();
 
     let document = pool
@@ -158,8 +162,7 @@ async fn get_document_by_id_handler(
             Ok(document)
         })
         .await
-        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?
-        ?;
+        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
 
     let response = DocumentResponse {
         id: document.id,
@@ -179,7 +182,9 @@ async fn delete_documents_by_id_after_timestamp_handler(
     State(state): State<AppState>,
     Path((id, timestamp)): Path<(Uuid, String)>,
 ) -> Result<impl IntoResponse, AppError> {
-    let user = auth_session.user.ok_or(AppError::Unauthorized("Not logged in".to_string()))?;
+    let user = auth_session
+        .user
+        .ok_or(AppError::Unauthorized("Not logged in".to_string()))?;
     let pool = state.pool.clone();
 
     // Parse the timestamp
@@ -188,8 +193,7 @@ async fn delete_documents_by_id_after_timestamp_handler(
         .with_timezone(&Utc);
 
     // Verify ownership first
-    pool
-        .get()
+    pool.get()
         .await
         .map_err(|e| AppError::DbPoolError(e.to_string()))?
         .interact(move |conn| {
@@ -208,8 +212,7 @@ async fn delete_documents_by_id_after_timestamp_handler(
             Ok(())
         })
         .await
-        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?
-        ?;
+        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
 
     // Now perform the deletion
     let user_id = user.id;
@@ -237,8 +240,7 @@ async fn delete_documents_by_id_after_timestamp_handler(
             .map_err(|e| AppError::DatabaseQueryError(e.to_string())) // Added .to_string()
         })
         .await
-        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?
-        ?;
+        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
 
     Ok(StatusCode::NO_CONTENT)
 }
@@ -249,15 +251,16 @@ async fn create_suggestion_handler(
     State(state): State<AppState>,
     Json(payload): Json<CreateSuggestionRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let user = auth_session.user.ok_or(AppError::Unauthorized("Not logged in".to_string()))?;
+    let user = auth_session
+        .user
+        .ok_or(AppError::Unauthorized("Not logged in".to_string()))?;
     let pool = state.pool.clone();
 
     // Verify document exists and user has access to it
     let document_id = payload.document_id;
     let document_created_at = payload.document_created_at;
-    
-    pool
-        .get()
+
+    pool.get()
         .await
         .map_err(|e| AppError::DbPoolError(e.to_string()))?
         .interact(move |conn| {
@@ -279,8 +282,7 @@ async fn create_suggestion_handler(
             Ok(())
         })
         .await
-        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?
-        ?;
+        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
 
     let new_suggestion = NewSuggestion {
         id: Uuid::new_v4(),
@@ -306,8 +308,7 @@ async fn create_suggestion_handler(
                 .map_err(|e| AppError::DatabaseQueryError(e.to_string())) // Added .to_string()
         })
         .await
-        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?
-        ?;
+        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
 
     Ok((StatusCode::CREATED, Json(suggestion)))
 }
@@ -318,12 +319,13 @@ async fn get_suggestions_by_document_id_handler(
     State(state): State<AppState>,
     Path(document_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let user = auth_session.user.ok_or(AppError::Unauthorized("Not logged in".to_string()))?;
+    let user = auth_session
+        .user
+        .ok_or(AppError::Unauthorized("Not logged in".to_string()))?;
     let pool = state.pool.clone();
 
     // Verify document exists and user has access to it
-    pool
-        .get()
+    pool.get()
         .await
         .map_err(|e| AppError::DbPoolError(e.to_string()))?
         .interact(move |conn| {
@@ -344,8 +346,7 @@ async fn get_suggestions_by_document_id_handler(
             Ok(())
         })
         .await
-        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?
-        ?;
+        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
 
     // Get all suggestions for the document
     let suggestions = pool
@@ -359,8 +360,7 @@ async fn get_suggestions_by_document_id_handler(
                 .map_err(|e| AppError::DatabaseQueryError(e.to_string())) // Added .to_string()
         })
         .await
-        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?
-        ?;
+        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
 
     Ok(Json(suggestions))
-} 
+}

@@ -1,43 +1,45 @@
 // backend/src/routes/chat.rs
 
-use axum::{
-    extract::{Path, Query, State},
-    http::HeaderMap,
-    response::{IntoResponse, Sse, sse::{Event, KeepAlive}},
-    Json,
-    Router,
-    routing::{get, post},
-};
-use axum_login::AuthSession;
-use diesel::{QueryDsl, ExpressionMethods, RunQueryDsl, SelectableHelper, prelude::*};
-use crate::models::chats::{
-    MessageRole, GenerateChatRequest, Chat, SuggestedActionsRequest,
-    SuggestedActionItem, SuggestedActionsResponse,
-};
-use crate::errors::AppError;
-use crate::services::chat_service::{self, ScribeSseEvent};
-use crate::state::AppState;
-use crate::schema::chat_sessions;
-use validator::Validate;
-use std::sync::Arc;
-use tracing::{debug, error, info, instrument, trace, warn};
-use uuid::Uuid;
-use bigdecimal::ToPrimitive;
-use serde_json::json;
-use crate::auth::user_store::Backend as AuthBackend;
 use crate::auth::session_dek::SessionDek;
+use crate::auth::user_store::Backend as AuthBackend;
+use crate::errors::AppError;
 use crate::models::characters::Character;
 use crate::models::chats::CreateChatSessionPayload;
 use crate::models::chats::NewChat;
-use chrono::Utc;
-use genai::chat::{
-    ChatRequest, ChatOptions, ChatMessage as GenAiChatMessage, ChatRole, MessageContent,
-    ChatResponseFormat, JsonSpec,
+use crate::models::chats::{
+    Chat, GenerateChatRequest, MessageRole, SuggestedActionItem, SuggestedActionsRequest,
+    SuggestedActionsResponse,
 };
 use crate::routes::chats_api::{get_chat_settings_handler, update_chat_settings_handler};
-use futures_util::{StreamExt};
+use crate::schema::chat_sessions;
+use crate::services::chat_service::{self, ScribeSseEvent};
+use crate::state::AppState;
+use axum::{
+    Json, Router,
+    extract::{Path, Query, State},
+    http::HeaderMap,
+    response::{
+        IntoResponse, Sse,
+        sse::{Event, KeepAlive},
+    },
+    routing::{get, post},
+};
+use axum_login::AuthSession;
+use bigdecimal::ToPrimitive;
+use chrono::Utc;
+use diesel::{ExpressionMethods, QueryDsl, RunQueryDsl, SelectableHelper, prelude::*};
+use futures_util::StreamExt;
+use genai::chat::{
+    ChatMessage as GenAiChatMessage, ChatOptions, ChatRequest, ChatResponseFormat, ChatRole,
+    JsonSpec, MessageContent,
+};
 use serde::{Deserialize, Serialize};
+use serde_json::json;
+use std::sync::Arc;
 use tracing::field;
+use tracing::{debug, error, info, instrument, trace, warn};
+use uuid::Uuid;
+use validator::Validate;
 
 // Define CurrentAuthSession type alias
 type CurrentAuthSession = AuthSession<AuthBackend>;
@@ -54,14 +56,14 @@ struct ChatGenerateQueryParams {
 }
 
 #[derive(Serialize, Debug)] // Added derive Debug
-pub struct ChatSessionWithDekResponse { // Made pub
+pub struct ChatSessionWithDekResponse {
+    // Made pub
     pub id: Uuid,
     pub user_id: Uuid,
     pub character_id: Uuid,
     pub title: Option<String>,
     pub dek_present: bool, // Simpler representation of DEK presence
 }
-
 
 #[instrument(skip_all, fields(user_id = field::Empty, character_id = field::Empty))]
 pub async fn create_chat_session_handler(
@@ -78,8 +80,10 @@ pub async fn create_chat_session_handler(
     })?;
     let user_id = user.id;
     tracing::Span::current().record("user_id", &tracing::field::display(user_id));
-    tracing::Span::current().record("character_id", &tracing::field::display(payload.character_id));
-
+    tracing::Span::current().record(
+        "character_id",
+        &tracing::field::display(payload.character_id),
+    );
 
     debug!(user_id = %user_id, character_id = %payload.character_id, "User and character ID extracted");
 
@@ -137,14 +141,17 @@ pub async fn create_chat_session_handler(
         created_at: current_time,
         updated_at: current_time,
         history_management_strategy: "sliding_window_messages".to_string(), // Default
-        history_management_limit: 20, // Default
-        model_name: "gemini-2.5-flash-preview-04-17".to_string(), // Default
-        visibility: Some("private".to_string()), // Default
-        // system_prompt, temperature, etc., are not in NewChat, they are part of Chat.
-        // These will be set by DB defaults or need an update after insert if derived from character.
+        history_management_limit: 20,                                       // Default
+        model_name: "gemini-2.5-flash-preview-04-17".to_string(),           // Default
+        visibility: Some("private".to_string()),                            // Default
+                                                                            // system_prompt, temperature, etc., are not in NewChat, they are part of Chat.
+                                                                            // These will be set by DB defaults or need an update after insert if derived from character.
     };
 
-    let inserted_chat_id = state.pool.get().await
+    let inserted_chat_id = state
+        .pool
+        .get()
+        .await
         .map_err(|e| AppError::DbPoolError(e.to_string()))?
         .interact(move |conn| {
             diesel::insert_into(chat_sessions::table)
@@ -154,12 +161,17 @@ pub async fn create_chat_session_handler(
                 .map_err(AppError::from)
         })
         .await
-        .map_err(|e| AppError::InternalServerErrorGeneric(format!("Interact error inserting chat: {}", e)))??;
+        .map_err(|e| {
+            AppError::InternalServerErrorGeneric(format!("Interact error inserting chat: {}", e))
+        })??;
 
     debug!(chat_id = %inserted_chat_id, "New chat session record inserted successfully");
 
     // Fetch the full chat session to return
-    let created_chat_session = state.pool.get().await
+    let created_chat_session = state
+        .pool
+        .get()
+        .await
         .map_err(|e| AppError::DbPoolError(e.to_string()))?
         .interact(move |conn| {
             chat_sessions::table
@@ -169,12 +181,16 @@ pub async fn create_chat_session_handler(
                 .map_err(AppError::from)
         })
         .await
-        .map_err(|e| AppError::InternalServerErrorGeneric(format!("Interact error fetching created chat: {}", e)))??;
-    
+        .map_err(|e| {
+            AppError::InternalServerErrorGeneric(format!(
+                "Interact error fetching created chat: {}",
+                e
+            ))
+        })??;
+
     info!(chat_id = %created_chat_session.id, "Chat session created successfully");
     Ok(Json(created_chat_session))
 }
-
 
 #[instrument(skip_all, fields(session_id = %session_id_str, user_id = field::Empty, chat_id = field::Empty, message_id = field::Empty))]
 pub async fn generate_chat_response(
@@ -192,14 +208,15 @@ pub async fn generate_chat_response(
 
     let state_arc = Arc::new(state);
 
-    let user = auth_session.user
+    let user = auth_session
+        .user
         .ok_or_else(|| AppError::Unauthorized("User not found in session".to_string()))?;
-    
+
     tracing::debug!(user_id = %user.id, user_dek_from_auth_session_is_some = user.dek.is_some(), "generate_chat_response: Checked user.dek from auth_session (expected None or unused).");
 
     let user_id_value = user.id;
     let session_dek_arc = Arc::new(session_dek.0); // MODIFIED: Create Arc for SessionDek
-    
+
     debug!(%user_id_value, "Using SessionDek from extractor (now in Arc) for chat generation.");
 
     let session_id = Uuid::parse_str(&session_id_str)
@@ -207,22 +224,35 @@ pub async fn generate_chat_response(
     debug!(%session_id, "Parsed session ID");
 
     // Fetch chat session owner ID for authorization check
-    let chat_session_owner_id = state_arc.pool.get().await
+    let chat_session_owner_id = state_arc
+        .pool
+        .get()
+        .await
         .map_err(|e| AppError::DbPoolError(e.to_string()))?
         .interact(move |conn| {
             chat_sessions::table
                 .filter(chat_sessions::id.eq(session_id))
                 .select(chat_sessions::user_id)
                 .first::<Uuid>(conn)
-                // .map_err(AppError::from) // Let the outer error handling manage this
+            // .map_err(AppError::from) // Let the outer error handling manage this
         })
         .await
-        .map_err(|e| AppError::InternalServerErrorGeneric(format!("Interact dispatch error checking session owner: {}", e)))? // Handle interact error
-        .map_err(|e_db| match e_db { // Handle DB error from the closure
-            diesel::result::Error::NotFound => AppError::NotFound(format!("Chat session {} not found.", session_id)),
-            _ => AppError::DatabaseQueryError(format!("Failed to query chat session owner for {}: {}", session_id, e_db)),
+        .map_err(|e| {
+            AppError::InternalServerErrorGeneric(format!(
+                "Interact dispatch error checking session owner: {}",
+                e
+            ))
+        })? // Handle interact error
+        .map_err(|e_db| match e_db {
+            // Handle DB error from the closure
+            diesel::result::Error::NotFound => {
+                AppError::NotFound(format!("Chat session {} not found.", session_id))
+            }
+            _ => AppError::DatabaseQueryError(format!(
+                "Failed to query chat session owner for {}: {}",
+                session_id, e_db
+            )),
         })?;
-
 
     if chat_session_owner_id != user_id_value {
         error!(%session_id, expected_owner = %user_id_value, actual_owner = %chat_session_owner_id, "User forbidden from accessing chat session.");
@@ -238,7 +268,9 @@ pub async fn generate_chat_response(
 
     if current_user_api_message.role.to_lowercase() != "user" {
         error!(%session_id, "Last message in payload history is not from user.");
-        return Err(AppError::BadRequest("The last message in the payload's history must be from the 'user'.".to_string()));
+        return Err(AppError::BadRequest(
+            "The last message in the payload's history must be from the 'user'.".to_string(),
+        ));
     }
     let current_user_content = current_user_api_message.content.clone();
     trace!(%session_id, "Extracted current user message content for generation.");
@@ -268,7 +300,7 @@ pub async fn generate_chat_response(
         state_arc.clone(),
         user_id_value,
         session_id,
-        current_user_content.clone(), 
+        current_user_content.clone(),
         Some(session_dek_arc.clone()), // Use Arc clone
     )
     .await?;
@@ -282,7 +314,7 @@ pub async fn generate_chat_response(
         gen_model_name = %gen_model_name_from_service,
         "Retrieved data for generation from chat_service."
     );
-    
+
     // Determine the model to use: payload overrides service, otherwise use service's model
     let model_to_use = payload.model.clone().unwrap_or(gen_model_name_from_service);
     debug!(%model_to_use, "Determined final model to use for AI calls.");
@@ -293,12 +325,16 @@ pub async fn generate_chat_response(
         .map(|(role, content)| {
             match role {
                 MessageRole::User => GenAiChatMessage::user(MessageContent::from_text(content)),
-                MessageRole::Assistant => GenAiChatMessage::assistant(MessageContent::from_text(content)),
+                MessageRole::Assistant => {
+                    GenAiChatMessage::assistant(MessageContent::from_text(content))
+                }
                 MessageRole::System => GenAiChatMessage::system(MessageContent::from_text(content)), // MODIFIED: Handle System role
             }
         })
         .collect();
-    genai_history.push(GenAiChatMessage::user(MessageContent::from_text(current_user_content.clone())));
+    genai_history.push(GenAiChatMessage::user(MessageContent::from_text(
+        current_user_content.clone(),
+    )));
     trace!(history_len = genai_history.len(), %session_id, "Prepared final message list for AI (service history + current payload message)");
 
     let accept_header = headers
@@ -314,15 +350,17 @@ pub async fn generate_chat_response(
         .get("X-Scribe-Enable-RAG")
         .map(|v| v.to_str().unwrap_or("false") == "true")
         .unwrap_or(true); // Default to true for RAG functionality in test
-    
+
     let mut rag_context_for_json: Option<String> = None;
 
-    if enable_rag && accept_header.contains(mime::APPLICATION_JSON.as_ref()) { // RAG for JSON path
+    if enable_rag && accept_header.contains(mime::APPLICATION_JSON.as_ref()) {
+        // RAG for JSON path
         if !current_user_content.is_empty() {
             info!(%session_id, "RAG enabled for JSON path, attempting to retrieve context for user message.");
-            
+
             // Perform RAG retrieval for JSON path using embedding pipeline service
-            let rag_result = state_arc.embedding_pipeline_service
+            let rag_result = state_arc
+                .embedding_pipeline_service
                 .retrieve_relevant_chunks(
                     state_arc.clone(),
                     session_id,
@@ -330,7 +368,7 @@ pub async fn generate_chat_response(
                     5, // Limit to 5 chunks
                 )
                 .await;
-            
+
             match rag_result {
                 Ok(chunks) => {
                     if !chunks.is_empty() {
@@ -348,17 +386,18 @@ pub async fn generate_chat_response(
                 Err(e) => {
                     error!(%session_id, error = ?e, "Failed to retrieve RAG context for JSON path");
                     // Propagate the error to the client with BAD_GATEWAY status code
-                    return Err(AppError::BadGateway("Failed to process embeddings".to_string()));
+                    return Err(AppError::BadGateway(
+                        "Failed to process embeddings".to_string(),
+                    ));
                 }
             }
         }
     }
 
-
     match accept_header {
         v if v.contains(mime::TEXT_EVENT_STREAM.as_ref()) => {
             info!(%session_id, "Handling streaming SSE request. request_thinking={}", request_thinking);
-            
+
             // Explicitly save the user's message before streaming AI response
             let current_user_content_for_save = user_message_struct_to_save.content.clone(); // Assuming content is Vec<u8>
             let current_user_role_for_save = user_message_struct_to_save.role.clone();
@@ -374,14 +413,16 @@ pub async fn generate_chat_response(
                 state_arc.clone(),
                 session_id,
                 user_id_value,
-                MessageRole::User, // message_type_enum
+                MessageRole::User,                 // message_type_enum
                 &current_user_content, // This is the original String content from the payload
                 current_user_role_for_save, // role_str from the prepared struct
                 current_user_parts_for_save, // parts from the prepared struct
                 current_user_attachments_for_save, // attachments from the prepared struct
                 Some(session_dek_arc.clone()), // DEK for potential encryption
                 &model_to_use,
-            ).await {
+            )
+            .await
+            {
                 Ok(saved_user_msg) => {
                     debug!(message_id = %saved_user_msg.id, session_id = %session_id, "Successfully saved user message via chat_service (SSE path)");
                 }
@@ -400,14 +441,14 @@ pub async fn generate_chat_response(
                 state_arc.clone(),
                 session_id,
                 user_id_value,
-                genai_history, // Use the prepared history
+                genai_history,              // Use the prepared history
                 system_prompt_from_service, // Use system prompt from service
-                gen_temperature,      // Use temperature from service
-                gen_max_output_tokens,// Use max_tokens from service
+                gen_temperature,            // Use temperature from service
+                gen_max_output_tokens,      // Use max_tokens from service
                 gen_frequency_penalty,
                 gen_presence_penalty,
                 gen_top_k,
-                gen_top_p,            // Use top_p from service
+                gen_top_p, // Use top_p from service
                 gen_repetition_penalty,
                 gen_min_p,
                 gen_top_a,
@@ -464,7 +505,9 @@ pub async fn generate_chat_response(
                             debug!(%session_id, "Service stream ended with an error or an error event was already sent. Not sending additional [DONE] event.");
                         }
                     };
-                    Ok(Sse::new(Box::pin(final_stream)).keep_alive(KeepAlive::default()).into_response())
+                    Ok(Sse::new(Box::pin(final_stream))
+                        .keep_alive(KeepAlive::default())
+                        .into_response())
                 }
                 Err(e) => {
                     error!(error = ?e, %session_id, "Error calling chat_service::stream_ai_response_and_save_message");
@@ -473,30 +516,34 @@ pub async fn generate_chat_response(
                         trace!(%session_id, error_message = %error_msg, "Sending SSE 'error' event (service call failed)");
                         yield Ok::<_, AppError>(Event::default().event("error").data(error_msg));
                     };
-                    Ok(Sse::new(Box::pin(error_stream)).keep_alive(KeepAlive::default()).into_response())
+                    Ok(Sse::new(Box::pin(error_stream))
+                        .keep_alive(KeepAlive::default())
+                        .into_response())
                 }
             }
         }
         v if v.contains(mime::APPLICATION_JSON.as_ref()) => {
             info!(%session_id, "Handling non-streaming JSON request. request_thinking={}", request_thinking);
-            
+
             // _user_message_to_save_for_db from get_session_data_for_generation contains the structured user message.
             // For JSON path, we save the user message explicitly before calling AI.
             // The content is current_user_content.
-            
-            let dek_for_user_save_json = session_dek_arc.clone(); 
+
+            let dek_for_user_save_json = session_dek_arc.clone();
             let _user_saved_message = match chat_service::save_message(
                 state_arc.clone(),
                 session_id,
                 user_id_value,
-                MessageRole::User,           // message_type_enum
-                &current_user_content,       // content
-                Some("user".to_string()),    // role_str
+                MessageRole::User,                             // message_type_enum
+                &current_user_content,                         // content
+                Some("user".to_string()),                      // role_str
                 Some(json!([{"text": current_user_content}])), // parts
-                None,                        // attachments
-                Some(dek_for_user_save_json), 
-                &model_to_use, 
-            ).await {
+                None,                                          // attachments
+                Some(dek_for_user_save_json),
+                &model_to_use,
+            )
+            .await
+            {
                 Ok(saved_msg) => {
                     debug!(message_id = %saved_msg.id, session_id = %session_id, "Successfully saved user message via chat_service (JSON path)");
                     saved_msg
@@ -510,53 +557,67 @@ pub async fn generate_chat_response(
             // RAG context injection for JSON path (if enabled and context was found)
             // This modifies a copy of genai_history for this specific non-streaming call.
             let mut history_for_json_call = genai_history.clone();
-            if let Some(context) = rag_context_for_json { // This context needs to be populated by actual RAG logic if used
+            if let Some(context) = rag_context_for_json {
+                // This context needs to be populated by actual RAG logic if used
                 if let Some(last_message) = history_for_json_call.last_mut() {
                     if matches!(last_message.role, ChatRole::User) {
-                        if let MessageContent::Text(text_content_string) = &mut last_message.content { // MODIFIED: Removed ref mut
+                        if let MessageContent::Text(text_content_string) = &mut last_message.content
+                        {
+                            // MODIFIED: Removed ref mut
                             let original_content = text_content_string.clone();
                             *text_content_string = format!("{}\n\n{}", context, original_content);
                             trace!(session_id = %session_id, "Injected RAG context into user message (non-streaming JSON path)");
                         }
                     }
-                } 
+                }
             }
 
-            let chat_request = ChatRequest::new(history_for_json_call) // Use potentially RAG-modified history
-                .with_system(system_prompt_from_service.unwrap_or_default()); // Use system prompt from service
-            
+            let chat_request =
+                ChatRequest::new(history_for_json_call) // Use potentially RAG-modified history
+                    .with_system(system_prompt_from_service.unwrap_or_default()); // Use system prompt from service
+
             let mut chat_options = ChatOptions::default();
-            if let Some(temp) = gen_temperature { chat_options = chat_options.with_temperature(temp.to_f32().unwrap_or(0.7).into()); } // MODIFIED: .into()
-            if let Some(tokens) = gen_max_output_tokens { chat_options = chat_options.with_max_tokens(tokens as u32); }
-            if let Some(p) = gen_top_p { chat_options = chat_options.with_top_p(p.to_f32().unwrap_or(0.95).into()); } // MODIFIED: .into()
+            if let Some(temp) = gen_temperature {
+                chat_options = chat_options.with_temperature(temp.to_f32().unwrap_or(0.7).into());
+            } // MODIFIED: .into()
+            if let Some(tokens) = gen_max_output_tokens {
+                chat_options = chat_options.with_max_tokens(tokens as u32);
+            }
+            if let Some(p) = gen_top_p {
+                chat_options = chat_options.with_top_p(p.to_f32().unwrap_or(0.95).into());
+            } // MODIFIED: .into()
             // Add other gen_... parameters to chat_options as needed (top_k, penalties etc.)
             // For Gemini specific options via exec_chat, they might need to be part of a different options struct or handled by client
             if let Some(budget) = gen_gemini_thinking_budget {
-                 if budget > 0 { chat_options = chat_options.with_gemini_thinking_budget(budget as u32); }
+                if budget > 0 {
+                    chat_options = chat_options.with_gemini_thinking_budget(budget as u32);
+                }
             }
             if let Some(enable_exec) = gen_gemini_enable_code_execution {
-                 chat_options = chat_options.with_gemini_enable_code_execution(enable_exec);
+                chat_options = chat_options.with_gemini_enable_code_execution(enable_exec);
             }
             // Note: genai library's exec_chat might not support all tool/Gemini options directly in ChatOptions vs stream_chat.
             // This might need adjustment based on genai library capabilities for non-streaming.
 
             trace!(%session_id, chat_request = ?chat_request, chat_options = ?chat_options, "Prepared ChatRequest and Options for AI (non-streaming, JSON path)");
-            
-            match state_arc.ai_client.exec_chat(&model_to_use, chat_request, Some(chat_options))
+
+            match state_arc
+                .ai_client
+                .exec_chat(&model_to_use, chat_request, Some(chat_options))
                 .await
             {
                 Ok(chat_response) => {
                     debug!(%session_id, "Received successful non-streaming AI response (JSON path)");
-                    
+
                     let response_content = match chat_response.content {
                         Some(genai::chat::MessageContent::Text(text)) => text,
                         _ => String::new(),
                     };
 
                     trace!(%session_id, ?response_content, "Full non-streaming AI response (JSON path)");
-                    
+
                     if !response_content.is_empty() {
-                        let dek_for_ai_save_json = session_dek_arc.clone(); 
+                        let dek_for_ai_save_json = session_dek_arc.clone();
                         let state_for_ai_save = state_arc.clone();
                         let response_content_for_save = response_content.clone();
                         tokio::spawn(async move {
@@ -564,14 +625,16 @@ pub async fn generate_chat_response(
                                 state_for_ai_save,
                                 session_id,
                                 user_id_value,
-                                MessageRole::Assistant,    // message_type_enum
+                                MessageRole::Assistant, // message_type_enum
                                 &response_content_for_save, // content
                                 Some("assistant".to_string()), // role_str  (or "model")
                                 Some(json!([{"text": response_content_for_save}])), // parts
-                                None,                         // attachments
+                                None,                   // attachments
                                 Some(dek_for_ai_save_json),
                                 &model_to_use,
-                            ).await {
+                            )
+                            .await
+                            {
                                 Ok(saved_message) => {
                                     debug!(session_id = %session_id, message_id = %saved_message.id, "Successfully saved AI message via chat_service (JSON path)");
                                 }
@@ -583,7 +646,7 @@ pub async fn generate_chat_response(
                     } else {
                         warn!(session_id = %session_id, "Skipping save for empty AI content (JSON path)");
                     }
-                    
+
                     let response_payload = json!({
                         "message_id": Uuid::new_v4(), // This is a response ID, not related to DB message ID
                         "content": response_content
@@ -598,9 +661,10 @@ pub async fn generate_chat_response(
                 }
             }
         }
-        _ => { // Fallback to SSE if Accept header is not recognized or empty
+        _ => {
+            // Fallback to SSE if Accept header is not recognized or empty
             info!(%session_id, "Accept header '{}' not recognized or empty, defaulting to SSE.", accept_header);
-            
+
             // This is largely a copy of the SSE path above.
             let dek_for_fallback_stream_service = session_dek_arc.clone(); // MODIFIED: Use Arc clone
             match chat_service::stream_ai_response_and_save_message(
@@ -626,11 +690,11 @@ pub async fn generate_chat_response(
                 request_thinking,
                 Some(dek_for_fallback_stream_service), // MODIFIED: Pass Arc clone
             )
-            .await 
+            .await
             {
-                 Ok(service_stream) => {
+                Ok(service_stream) => {
                     debug!(%session_id, "Successfully obtained stream from chat_service (fallback SSE)");
-                     let final_stream = async_stream::stream! {
+                    let final_stream = async_stream::stream! {
                         let mut content_produced = false;
                         let mut error_from_service_stream = false;
                         futures::pin_mut!(service_stream);
@@ -671,7 +735,9 @@ pub async fn generate_chat_response(
                              debug!(%session_id, "Service stream ended with error (fallback). Not sending additional [DONE] event.");
                         }
                     };
-                    Ok(Sse::new(Box::pin(final_stream)).keep_alive(KeepAlive::default()).into_response())
+                    Ok(Sse::new(Box::pin(final_stream))
+                        .keep_alive(KeepAlive::default())
+                        .into_response())
                 }
                 Err(e) => {
                     error!(error = ?e, %session_id, "Error calling chat_service (fallback SSE)");
@@ -679,7 +745,9 @@ pub async fn generate_chat_response(
                         let error_msg = format!("Service error (fallback): Failed to initiate AI processing - {}", e);
                         yield Ok::<_, AppError>(Event::default().event("error").data(error_msg));
                     };
-                    Ok(Sse::new(Box::pin(error_stream)).keep_alive(KeepAlive::default()).into_response())
+                    Ok(Sse::new(Box::pin(error_stream))
+                        .keep_alive(KeepAlive::default())
+                        .into_response())
                 }
             }
         }
@@ -699,10 +767,7 @@ pub fn chat_routes(state: AppState) -> Router<AppState> {
             "/:chat_id/settings",
             get(get_chat_settings_handler).put(update_chat_settings_handler),
         )
-        .route(
-            "/:session_id_str/generate",
-            post(generate_chat_response),
-        )
+        .route("/:session_id_str/generate", post(generate_chat_response))
         .with_state(state)
 }
 
@@ -718,13 +783,22 @@ pub async fn generate_suggested_actions(
     Json(payload): Json<SuggestedActionsRequest>,
 ) -> Result<Json<SuggestedActionsResponse>, AppError> {
     info!("Entering generate_suggested_actions");
-    tracing::info!("@@@ GENERATE_SUGGESTED_ACTIONS HANDLER ENTERED (chat_id: {}) @@@", chat_id);
+    tracing::info!(
+        "@@@ GENERATE_SUGGESTED_ACTIONS HANDLER ENTERED (chat_id: {}) @@@",
+        chat_id
+    );
 
-    info!("Received request for suggested actions (chat_id: {})", chat_id);
+    info!(
+        "Received request for suggested actions (chat_id: {})",
+        chat_id
+    );
     payload.validate()?;
 
     let user = auth_session.user.ok_or_else(|| {
-        error!("User not found in session for suggested actions (chat_id: {})", chat_id);
+        error!(
+            "User not found in session for suggested actions (chat_id: {})",
+            chat_id
+        );
         AppError::Unauthorized("User not found in session".to_string())
     })?;
     let user_id = user.id;
@@ -736,7 +810,10 @@ pub async fn generate_suggested_actions(
     })?;
     debug!(%chat_id, "Parsed chat_id from parameter");
 
-    let chat_session = state.pool.get().await
+    let chat_session = state
+        .pool
+        .get()
+        .await
         .map_err(|e| AppError::DbPoolError(e.to_string()))?
         .interact(move |conn| {
             chat_sessions::table
@@ -746,8 +823,9 @@ pub async fn generate_suggested_actions(
                 .map_err(AppError::from)
         })
         .await
-        .map_err(|e| AppError::InternalServerErrorGeneric(format!("Interact error fetching chat: {}", e)))?
-        ?;
+        .map_err(|e| {
+            AppError::InternalServerErrorGeneric(format!("Interact error fetching chat: {}", e))
+        })??;
 
     if chat_session.user_id != user_id {
         return Err(AppError::Forbidden);
@@ -807,7 +885,7 @@ pub async fn generate_suggested_actions(
             error!(%chat_id, "Gemini API error for suggested actions: {:?}", e);
             AppError::AiServiceError(format!("Gemini API error: {}", e))
         })?;
-    
+
     debug!(%chat_id, "Received response from Gemini for suggested actions");
     trace!(%chat_id, ?gemini_response, "Full Gemini response object for suggested actions");
 
@@ -832,7 +910,7 @@ pub async fn generate_suggested_actions(
             );
             AppError::InternalServerErrorGeneric("Failed to parse structured response from AI".to_string())
         })?;
-    
+
     info!(%chat_id, "Successfully generated {} suggested actions", suggestions.len());
 
     Ok(Json(SuggestedActionsResponse { suggestions }))
@@ -850,7 +928,9 @@ pub async fn get_chat_session_with_dek(
         AppError::Unauthorized("User not found in session".to_string())
     })?;
 
-    let chat_session_db = pool.get().await?
+    let chat_session_db = pool
+        .get()
+        .await?
         .interact(move |conn| {
             crate::schema::chat_sessions::table
                 .filter(crate::schema::chat_sessions::id.eq(chat_id))

@@ -7,15 +7,15 @@ use tracing::{debug, error, info, instrument, warn};
 
 use crate::auth::AuthError;
 use crate::models::auth::LoginPayload; // Import LoginPayload
-use crate::models::users::{AccountStatus, User, UserDbQuery, NewUser}; // Removed unused SerializableSecretDek, UserCredentials
+use crate::models::users::{AccountStatus, NewUser, User, UserDbQuery}; // Removed unused SerializableSecretDek, UserCredentials
 // Remove UserCredentials import if no longer needed elsewhere in this file
 use crate::state::DbPool; // Assuming you use a DbPool
-use diesel::SelectableHelper; // Added for as_returning
-use diesel::RunQueryDsl; // Added for get_result
+use diesel::RunQueryDsl;
+use diesel::SelectableHelper; // Added for as_returning // Added for get_result
 // use crate::models::users::{UserFilter, UserIdentifier}; // Removed unused imports
 use crate::schema;
-use secrecy::{ExposeSecret, SecretBox, SecretString};
 use anyhow::Context;
+use secrecy::{ExposeSecret, SecretBox, SecretString};
 
 // Manually implement Debug because DbPool doesn't implement it.
 #[derive(Clone)]
@@ -47,29 +47,38 @@ impl AuthnBackend for Backend {
     type Error = AuthError;
 
     #[instrument(skip(self, creds))]
-    async fn authenticate(&self, creds: Self::Credentials) -> Result<Option<Self::User>, Self::Error> {
+    async fn authenticate(
+        &self,
+        creds: Self::Credentials,
+    ) -> Result<Option<Self::User>, Self::Error> {
         let pool = self.pool.clone();
         let identifier_clone = creds.identifier.clone();
         // Assuming SecretString can be cloned; if not, this needs adjustment or pass by ref if possible
-        let password_clone = creds.password.clone(); 
+        let password_clone = creds.password.clone();
 
         // Call the free function from crate::auth module within an interact block
-        let verify_result = pool.get().await.map_err(AuthError::PoolError)?
-            .interact(move |conn| crate::auth::verify_credentials(conn, &identifier_clone, password_clone))
+        let verify_result = pool
+            .get()
+            .await
+            .map_err(AuthError::PoolError)?
+            .interact(move |conn| {
+                crate::auth::verify_credentials(conn, &identifier_clone, password_clone)
+            })
             .await
             .map_err(AuthError::from)?; // Map InteractError to AuthError
-        
+
         match verify_result {
             Ok((user, Some(dek_secret_box))) => {
                 let mut user_with_dek = user;
-                user_with_dek.dek = Some(crate::models::users::SerializableSecretDek(dek_secret_box));
+                user_with_dek.dek =
+                    Some(crate::models::users::SerializableSecretDek(dek_secret_box));
                 Ok(Some(user_with_dek))
             }
             Ok((user, None)) => {
                 warn!(user_id = %user.id, "User authenticated but DEK was not available/decryptable during login.");
-                Ok(Some(user)) 
+                Ok(Some(user))
             }
-            Err(e) => Err(e), 
+            Err(e) => Err(e),
         }
     }
 
@@ -82,7 +91,6 @@ impl AuthnBackend for Backend {
         tracing::warn!(target: "auth_debug", "AuthBackend::get_user called with user_id from session: {:?}", user_id);
         tracing::warn!(target: "auth_debug", "AuthBackend::get_user (UUID): {}", id);
 
-
         info!(user_id = %id, "AuthBackend: Getting user via crate::auth::get_user...");
 
         // interact returns Result<Result<User, AuthError>, InteractError>
@@ -94,19 +102,23 @@ impl AuthnBackend for Backend {
             .await;
 
         match interact_result {
-            Ok(Ok(user_from_db)) => { // Inner Ok: crate::auth::get_user succeeded
+            Ok(Ok(user_from_db)) => {
+                // Inner Ok: crate::auth::get_user succeeded
                 info!(user_id = %user_from_db.id, dek_is_some = user_from_db.dek.is_some(), "AuthBackend::get_user: user loaded from DB (DEK is None as crate::auth::get_user doesn't decrypt it)."); // Removed PII: username
                 Ok(Some(user_from_db))
             }
-            Ok(Err(AuthError::UserNotFound)) => { // Inner Err: crate::auth::get_user returned UserNotFound
+            Ok(Err(AuthError::UserNotFound)) => {
+                // Inner Err: crate::auth::get_user returned UserNotFound
                 debug!(user_id = %id, "AuthBackend::get_user: User not found via crate::auth::get_user.");
                 Ok(None)
             }
-            Ok(Err(other_auth_err)) => { // Inner Err: crate::auth::get_user returned other AuthError
+            Ok(Err(other_auth_err)) => {
+                // Inner Err: crate::auth::get_user returned other AuthError
                 error!(user_id = %id, error = ?other_auth_err, "AuthBackend::get_user: AuthError from crate::auth::get_user.");
                 Err(other_auth_err)
             }
-            Err(interact_err) => { // Outer Err: .interact() itself failed
+            Err(interact_err) => {
+                // Outer Err: .interact() itself failed
                 error!(user_id = %id, error = %interact_err, "AuthBackend::get_user: InteractError.");
                 Err(AuthError::from(interact_err)) // Map InteractError to AuthError
             }
@@ -115,16 +127,27 @@ impl AuthnBackend for Backend {
 }
 
 impl Backend {
-    #[instrument(skip(self, new_password_hash, new_kek_salt, new_encrypted_dek, new_dek_nonce, new_encrypted_dek_by_recovery, new_recovery_dek_nonce), err)]
+    #[instrument(
+        skip(
+            self,
+            new_password_hash,
+            new_kek_salt,
+            new_encrypted_dek,
+            new_dek_nonce,
+            new_encrypted_dek_by_recovery,
+            new_recovery_dek_nonce
+        ),
+        err
+    )]
     pub async fn update_password_and_encryption_keys(
         &self,
         user_id: uuid::Uuid,
         new_password_hash: String,
         new_kek_salt: String, // KEK salt might not change if password changes, but DEK is re-encrypted with new KEK
         new_encrypted_dek: Vec<u8>,
-        new_dek_nonce: Vec<u8>, // Added
+        new_dek_nonce: Vec<u8>,                         // Added
         new_encrypted_dek_by_recovery: Option<Vec<u8>>, // This would also need re-encryption if recovery phrase is involved
-        new_recovery_dek_nonce: Option<Vec<u8>>, // Added
+        new_recovery_dek_nonce: Option<Vec<u8>>,        // Added
     ) -> Result<(), AuthError> {
         use crate::schema::users::dsl::*;
         use diesel::prelude::*;
@@ -186,14 +209,16 @@ pub async fn create_user_in_db(
     email: &str,
     plaintext_dek_opt: Option<SecretString>,
 ) -> Result<UserDbQuery, anyhow::Error> {
-    let conn = pool.get().await.context("Failed to get DB connection for create_user_in_db")?;
+    let conn = pool
+        .get()
+        .await
+        .context("Failed to get DB connection for create_user_in_db")?;
 
     let password_hash = crate::auth::hash_password(SecretString::from(password_str.to_string()))
         .await
         .context("Password hashing failed")?;
 
-    let kek_salt = crate::crypto::generate_salt()
-        .context("KEK salt generation failed")?;
+    let kek_salt = crate::crypto::generate_salt().context("KEK salt generation failed")?;
 
     let dek_to_encrypt: SecretBox<Vec<u8>>;
     if let Some(provided_dek_ss) = plaintext_dek_opt {
@@ -202,8 +227,7 @@ pub async fn create_user_in_db(
         dek_to_encrypt = SecretBox::new(Box::new(dek_bytes)); // Wrapped dek_bytes in Box::new()
     } else {
         // Assuming generate_dek() now returns Result<SecretBox<Vec<u8>>, CryptoError>
-        dek_to_encrypt = crate::crypto::generate_dek()
-            .context("DEK generation failed")?;
+        dek_to_encrypt = crate::crypto::generate_dek().context("DEK generation failed")?;
     }
 
     let kek = crate::crypto::derive_kek(&SecretString::from(password_str.to_string()), &kek_salt)
@@ -224,18 +248,24 @@ pub async fn create_user_in_db(
         recovery_kek_salt: None,
         recovery_dek_nonce: None,
         role: crate::models::users::UserRole::User, // 'User' enum variant for DB
-        account_status: AccountStatus::Active, // Default to Active account status
+        account_status: AccountStatus::Active,      // Default to Active account status
     };
 
-    let user_from_db: UserDbQuery = conn.interact(move |conn_actual| {
-        diesel::insert_into(schema::users::table)
-            .values(new_user_payload)
-            .returning(UserDbQuery::as_returning())
-            .get_result::<UserDbQuery>(conn_actual)
-    })
-    .await
-    .map_err(|interact_err| anyhow::anyhow!("DB interaction failed for create_user_in_db: {}", interact_err))? // Handle InteractError
-    .context("Diesel query failed for create_user_in_db")?; // Handle inner Diesel error
+    let user_from_db: UserDbQuery = conn
+        .interact(move |conn_actual| {
+            diesel::insert_into(schema::users::table)
+                .values(new_user_payload)
+                .returning(UserDbQuery::as_returning())
+                .get_result::<UserDbQuery>(conn_actual)
+        })
+        .await
+        .map_err(|interact_err| {
+            anyhow::anyhow!(
+                "DB interaction failed for create_user_in_db: {}",
+                interact_err
+            )
+        })? // Handle InteractError
+        .context("Diesel query failed for create_user_in_db")?; // Handle inner Diesel error
 
     Ok(user_from_db)
 }

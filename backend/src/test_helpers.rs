@@ -6,6 +6,8 @@ use crate::errors::AppError;
 use crate::llm::{AiClient, ChatStream, EmbeddingClient}; // Add EmbeddingClient
 use crate::services::embedding_pipeline::{EmbeddingPipelineServiceTrait, RetrievedChunk};
 // Removed unused: ChunkConfig, ChunkingMetric
+use crate::models::users::User as DbUser;
+use crate::models::users::{SerializableSecretDek, User}; // Added SerializableSecretDek
 use crate::vector_db::qdrant_client::{PointStruct, QdrantClientServiceTrait};
 use crate::{
     PgPool, // This is deadpool_diesel::postgres::Pool
@@ -15,12 +17,8 @@ use crate::{
     models::chats::{ChatMessage, UpdateChatSettingsRequest}, // Added UpdateChatSettingsRequest
     models::users::AccountStatus,
     routes::{
-        chat::chat_routes,
-        health::health_check,
-        characters,
-        chats_api,
-        documents::{document_routes},
-        auth as auth_routes_module,
+        auth as auth_routes_module, characters, chat::chat_routes, chats_api,
+        documents::document_routes, health::health_check,
     },
     schema,
     state::AppState,
@@ -29,41 +27,39 @@ use crate::{
 use anyhow::Context; // Added for TestDataGuard cleanup
 use async_trait::async_trait;
 use axum::{
+    Router,
     // body::HttpBody, // Removed boxed - Removed unused
     middleware::{self, Next},
     response::Response as AxumResponse, // Alias to avoid conflict if Response is used elsewhere
-    Router,
 };
-use axum_login::{AuthManagerLayerBuilder, login_required, AuthSession};
-use diesel::RunQueryDsl;
-use diesel::prelude::*;
-use diesel_migrations::{embed_migrations, EmbeddedMigrations};
-use dotenvy::dotenv; // Removed var
-use genai::chat::ChatStreamEvent; // Add import for chatstream types
-use futures::{TryStreamExt};
-use http_body_util::BodyExt; // Added for Body::collect
-use mime; // Added for mime::APPLICATION_JSON
-use genai::chat::{ChatOptions, ChatRequest, ChatResponse};
-use genai::ModelIden; // Import ModelIden directly
-use genai::adapter::AdapterKind; // Ensure AdapterKind is in scope
-use qdrant_client::qdrant::{Filter, PointId, ScoredPoint};
-use std::sync::{Arc, Mutex}; // Add Mutex import
-use tokio::sync::Mutex as TokioMutex;
-use tokio::net::TcpListener;
-use tower_cookies::{CookieManagerLayer}; // Removed unused: Key as TowerCookieKey
-use tower_sessions::{Expiry, SessionManagerLayer};
-use tracing::{warn, instrument, debug}; // Added debug
-use uuid::Uuid;
-use std::fmt;
-use crate::models::users::User as DbUser;
-use secrecy::{ExposeSecret, SecretBox, SecretString};
-use crate::models::users::{User, SerializableSecretDek}; // Added SerializableSecretDek
 use axum::{
     body::Body,
-    http::{Request, Method, StatusCode, header}, // Added Method and header
+    http::{Method, Request, StatusCode, header}, // Added Method and header
 };
-use tower::ServiceExt; // For .oneshot
+use axum_login::{AuthManagerLayerBuilder, AuthSession, login_required};
+use diesel::RunQueryDsl;
+use diesel::prelude::*;
+use diesel_migrations::{EmbeddedMigrations, embed_migrations};
+use dotenvy::dotenv; // Removed var
+use futures::TryStreamExt;
+use genai::ModelIden; // Import ModelIden directly
+use genai::adapter::AdapterKind; // Ensure AdapterKind is in scope
+use genai::chat::ChatStreamEvent; // Add import for chatstream types
+use genai::chat::{ChatOptions, ChatRequest, ChatResponse};
+use http_body_util::BodyExt; // Added for Body::collect
+use mime; // Added for mime::APPLICATION_JSON
+use qdrant_client::qdrant::{Filter, PointId, ScoredPoint};
+use secrecy::{ExposeSecret, SecretBox, SecretString};
 use serde_json::json;
+use std::fmt;
+use std::sync::{Arc, Mutex}; // Add Mutex import
+use tokio::net::TcpListener;
+use tokio::sync::Mutex as TokioMutex;
+use tower::ServiceExt; // For .oneshot
+use tower_cookies::CookieManagerLayer; // Removed unused: Key as TowerCookieKey
+use tower_sessions::{Expiry, SessionManagerLayer};
+use tracing::{debug, instrument, warn}; // Added debug
+use uuid::Uuid;
 
 #[derive(Clone)]
 pub struct MockAiClient {
@@ -75,8 +71,7 @@ pub struct MockAiClient {
     stream_to_return:
         std::sync::Arc<std::sync::Mutex<Option<Vec<Result<ChatStreamEvent, AppError>>>>>,
     // Field to capture the messages sent to the stream_chat method
-    last_received_messages:
-        std::sync::Arc<std::sync::Mutex<Option<Vec<genai::chat::ChatMessage>>>>,
+    last_received_messages: std::sync::Arc<std::sync::Mutex<Option<Vec<genai::chat::ChatMessage>>>>,
     // model_name: String, // Removed unused
     // provider_model_name: String, // Removed unused
     // embedding_response: Arc<Mutex<Result<Vec<f32>, AppError>>>, // Removed unused
@@ -515,7 +510,7 @@ pub const MIGRATIONS: EmbeddedMigrations = embed_migrations!("./migrations");
 
 // --- Tracing Initialization for Tests ---
 use std::sync::Once;
-use tracing_subscriber::{fmt as tracing_fmt, EnvFilter}; // Alias fmt to avoid collision with std::fmt
+use tracing_subscriber::{EnvFilter, fmt as tracing_fmt}; // Alias fmt to avoid collision with std::fmt
 
 static TRACING_INIT: Once = Once::new();
 
@@ -525,8 +520,7 @@ pub fn ensure_tracing_initialized() {
     // Use tracing_subscriber::fmt and EnvFilter directly, relying on RUST_LOG
     TRACING_INIT.call_once(|| {
         // Attempt to initialize from RUST_LOG, default to "info" if not set or invalid
-        let filter = EnvFilter::try_from_default_env()
-            .unwrap_or_else(|_| EnvFilter::new("info"));
+        let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
         tracing_fmt() // Use the aliased tracing_fmt
             .with_env_filter(filter)
             .try_init()
@@ -603,9 +597,12 @@ pub async fn spawn_app(multi_thread: bool, use_real_ai: bool, use_real_qdrant: b
             Ok(service) => {
                 let real_qdrant_service = Arc::new(service);
                 (real_qdrant_service, None)
-            },
+            }
             Err(e) => {
-                warn!("Failed to create real QdrantClientService for testing: {}. Falling back to mock.", e);
+                warn!(
+                    "Failed to create real QdrantClientService for testing: {}. Falling back to mock.",
+                    e
+                );
                 let mock_q_service = Arc::new(MockQdrantClientService::new());
                 (mock_q_service.clone(), Some(mock_q_service))
             }
@@ -657,7 +654,9 @@ pub async fn spawn_app(multi_thread: bool, use_real_ai: bool, use_real_qdrant: b
     let session_layer = SessionManagerLayer::new(session_store)
         .with_name("id")
         .with_secure(false)
-        .with_expiry(Expiry::OnInactivity(tower_sessions::cookie::time::Duration::days(1)));
+        .with_expiry(Expiry::OnInactivity(
+            tower_sessions::cookie::time::Duration::days(1),
+        ));
 
     // Auth Backend Setup
     let auth_backend = AuthBackend::new(db_pool.clone());
@@ -669,38 +668,33 @@ pub async fn spawn_app(multi_thread: bool, use_real_ai: bool, use_real_qdrant: b
 
     // Define protected_api_routes (paths are relative to the eventual /api mount)
     // Start with a router that is explicitly Router<AppState> by nesting one component first.
-    let mut protected_api_routes: Router<AppState> = Router::new()
-        .nest(
-            "/characters",
-            characters::characters_router(app_state_for_routes.clone())
-        );
+    let mut protected_api_routes: Router<AppState> = Router::new().nest(
+        "/characters",
+        characters::characters_router(app_state_for_routes.clone()),
+    );
     tracing::debug!(router = ?protected_api_routes, "Protected routes after /characters");
 
     // Restore other protected routes
-    protected_api_routes = protected_api_routes.nest(
-            "/chats",
-            chat_routes(app_state_for_routes.clone())
-        );
+    protected_api_routes =
+        protected_api_routes.nest("/chats", chat_routes(app_state_for_routes.clone()));
     tracing::debug!(router = ?protected_api_routes, "Protected routes after /chats (crate::routes::chat)");
-    
-    protected_api_routes = protected_api_routes.nest(
-            "/chats-api", {
-                tracing::debug!("spawn_app: nesting chats_api::chat_routes() under /chats-api");
-                chats_api::chat_routes() // Assumes this returns Router<AppState>
-            }
-        );
+
+    protected_api_routes = protected_api_routes.nest("/chats-api", {
+        tracing::debug!("spawn_app: nesting chats_api::chat_routes() under /chats-api");
+        chats_api::chat_routes() // Assumes this returns Router<AppState>
+    });
     tracing::debug!(router = ?protected_api_routes, "Protected routes after /chats-api");
 
     protected_api_routes = protected_api_routes.nest(
-            "/documents",
-            document_routes() // Assumes this returns Router<AppState>
-        );
+        "/documents",
+        document_routes(), // Assumes this returns Router<AppState>
+    );
     tracing::debug!(router = ?protected_api_routes, "Protected routes after /documents");
-        
+
     // Apply route_layer at the end
     let protected_api_routes_final = protected_api_routes // Now contains all nested protected routes
         .layer(middleware::from_fn(auth_log_wrapper)) // Log first
-        .layer(login_required!(AuthBackend));         // Then auth
+        .layer(login_required!(AuthBackend)); // Then auth
     tracing::debug!(router = ?protected_api_routes_final, "Protected routes final (after login_required and auth_log_wrapper)");
 
     // Define public_api_routes (paths are relative to the eventual /api mount)
@@ -732,7 +726,7 @@ pub async fn spawn_app(multi_thread: bool, use_real_ai: bool, use_real_qdrant: b
     let app = Router::new()
         .nest("/api", api_router) // Nest the combined api_router under /api
         .layer(CookieManagerLayer::new()) // Manages cookies, must be before auth_layer
-        .layer(auth_layer)                // Uses cookies to load session/user
+        .layer(auth_layer) // Uses cookies to load session/user
         // Removed TraceLayer to avoid potential conflicts with global tracing setup
         .with_state(app_state.as_ref().clone()); // Provide AppState to all handlers
     tracing::debug!(router = ?app, "Final app router structure");
@@ -780,31 +774,27 @@ pub async fn spawn_app(multi_thread: bool, use_real_ai: bool, use_real_qdrant: b
 
 pub mod db {
     // Add a comprehensive set of imports needed within the db module
+    use crate::models::users::UserDbQuery;
     use diesel::prelude::*;
-    use diesel_migrations::MigrationHarness;
-    use crate::models::users::UserDbQuery; // User was already imported, ensure UserDbQuery is correct
-     // Import AppError
-    
-    
-    
+    use diesel_migrations::MigrationHarness; // User was already imported, ensure UserDbQuery is correct
+    // Import AppError
+
     use crate::PgPool; // This should refer to the top-level crate::PgPool
     use uuid::Uuid;
-    
-    
-    
-     // For logging macros
-    use std::env; // For DATABASE_URL reading in setup_test_database
-    use dotenvy::dotenv; // For .env file loading
-    use deadpool_diesel::postgres::{Manager as DeadpoolManager, Pool as DeadpoolPool, Runtime as DeadpoolRuntime};
+
+    // For logging macros
     use super::MIGRATIONS; // Use super::MIGRATIONS since it's defined in the parent scope (test_helpers.rs)
-    use crate::auth::{self}; // Corrected: Added hash_password, auth for module items
-     // Ensure RegisterPayload is imported
+    use crate::auth::{self};
+    use deadpool_diesel::postgres::{
+        Manager as DeadpoolManager, Pool as DeadpoolPool, Runtime as DeadpoolRuntime,
+    };
+    use dotenvy::dotenv; // For .env file loading
+    use std::env; // For DATABASE_URL reading in setup_test_database // Corrected: Added hash_password, auth for module items
+    // Ensure RegisterPayload is imported
     use super::*; // To bring PgPool and DbUser etc. into scope
-     // Keep if CryptoError is used directly, else it comes via crate::crypto
-    use crate::models::users::{NewUser}; // Removed User as DbUser from here, already aliased DbUser at top
-                                       // and UserDbQuery is imported above
-    
-    
+    // Keep if CryptoError is used directly, else it comes via crate::crypto
+    use crate::models::users::NewUser; // Removed User as DbUser from here, already aliased DbUser at top
+    // and UserDbQuery is imported above
 
     /// Sets up a clean test database with migrations run.
     pub async fn setup_test_database(db_name_suffix: Option<&str>) -> PgPool {
@@ -875,7 +865,7 @@ pub mod db {
         password_str: String,
     ) -> Result<DbUser, anyhow::Error> {
         let conn = pool.get().await?;
-        let email = format!("{}@test.com", username); 
+        let email = format!("{}@test.com", username);
 
         let password_str_for_kek = password_str.clone(); // Clone for KEK derivation
         let username_clone_for_payload = username.clone(); // Clone for NewUser payload
@@ -885,18 +875,18 @@ pub mod db {
             .map_err(|e| anyhow::anyhow!("Password hashing failed: {}", e))?;
 
         let kek_salt = crate::crypto::generate_salt()
-            .map_err(|e| anyhow::anyhow!("KEK salt generation failed: {}",e))?;
+            .map_err(|e| anyhow::anyhow!("KEK salt generation failed: {}", e))?;
 
         // Assuming generate_dek() now returns Result<SecretBox<Vec<u8>>, CryptoError>
-        let plaintext_dek_box: SecretBox<Vec<u8>> = crate::crypto::generate_dek()
-            .context("DEK generation failed in create_test_user")?;
+        let plaintext_dek_box: SecretBox<Vec<u8>> =
+            crate::crypto::generate_dek().context("DEK generation failed in create_test_user")?;
 
         let kek = crate::crypto::derive_kek(&SecretString::from(password_str_for_kek), &kek_salt)
             .map_err(|e| anyhow::anyhow!("KEK derivation failed: {}", e))?;
 
         let (encrypted_dek_bytes, dek_nonce_bytes) =
             crate::crypto::encrypt_gcm(plaintext_dek_box.expose_secret(), &kek) // expose_secret() on SecretBox<Vec<u8>> gives &Vec<u8>
-                    .map_err(|e| anyhow::anyhow!("DEK encryption failed: {}", e))?;
+                .map_err(|e| anyhow::anyhow!("DEK encryption failed: {}", e))?;
 
         let new_user_payload = NewUser {
             username: username_clone_for_payload,
@@ -905,33 +895,36 @@ pub mod db {
             kek_salt,
             encrypted_dek: encrypted_dek_bytes,
             dek_nonce: dek_nonce_bytes,
-            encrypted_dek_by_recovery: None, 
-            recovery_kek_salt: None,        
+            encrypted_dek_by_recovery: None,
+            recovery_kek_salt: None,
             recovery_dek_nonce: None,
             role: crate::models::users::UserRole::User, // Using User enum variant exactly as in DB
-            account_status: AccountStatus::Active, // Default to Active account status
+            account_status: AccountStatus::Active,      // Default to Active account status
         };
 
-        let user_from_db: UserDbQuery = conn.interact(move |conn_actual| {
-            diesel::insert_into(crate::schema::users::table)
-                .values(new_user_payload) // new_user_payload is moved here
-                .returning(UserDbQuery::as_returning()) 
-                .get_result::<UserDbQuery>(conn_actual) 
-        })
-        .await
-        .map_err(|interact_err| anyhow::anyhow!("DB interact error for create_test_user: {}", interact_err))??;
-        
+        let user_from_db: UserDbQuery = conn
+            .interact(move |conn_actual| {
+                diesel::insert_into(crate::schema::users::table)
+                    .values(new_user_payload) // new_user_payload is moved here
+                    .returning(UserDbQuery::as_returning())
+                    .get_result::<UserDbQuery>(conn_actual)
+            })
+            .await
+            .map_err(|interact_err| {
+                anyhow::anyhow!("DB interact error for create_test_user: {}", interact_err)
+            })??;
+
         // Convert to DbUser
         let mut user: DbUser = user_from_db.into();
-        
+
         // IMPORTANT: Set the plaintext DEK on the User object directly.
         // This is what would happen in the normal login flow (verify_credentials -> authenticate).
         // Without this, the SessionDek extractor won't be able to access the DEK for encryption.
-        
+
         // user.dek is Option<SerializableSecretDek(SecretBox<Vec<u8>>)>
         // plaintext_dek_box is SecretBox<Vec<u8>>
         user.dek = Some(SerializableSecretDek(plaintext_dek_box));
-        
+
         Ok(user)
     }
 
@@ -953,16 +946,22 @@ pub mod db {
 
         let new_character_payload = NewCharacter {
             user_id,
-            name: name_clone_for_payload.clone(), 
-            description: Some(format!("Test description for {}", name_clone_for_payload).into_bytes()),
+            name: name_clone_for_payload.clone(),
+            description: Some(
+                format!("Test description for {}", name_clone_for_payload).into_bytes(),
+            ),
             greeting: Some(format!("Test greeting for {}", name_clone_for_payload).into_bytes()),
-            example_dialogue: Some(format!("Test example dialogue for {}", name_clone_for_payload).into_bytes()),
+            example_dialogue: Some(
+                format!("Test example dialogue for {}", name_clone_for_payload).into_bytes(),
+            ),
             visibility: Some("private".to_string()),
             character_version: Some("2.0".to_string()),
             spec: "test_spec_v2.0".to_string(),
             spec_version: "2.0".to_string(),
             persona: Some(format!("Test persona for {}", name_clone_for_payload).into_bytes()),
-            world_scenario: Some(format!("Test world scenario for {}", name_clone_for_payload).into_bytes()),
+            world_scenario: Some(
+                format!("Test world scenario for {}", name_clone_for_payload).into_bytes(),
+            ),
             avatar: None,
             chat: None,
             created_at: Some(now),
@@ -1020,14 +1019,21 @@ pub mod db {
             group_only_greetings: None,
         };
 
-        let character: Character = conn.interact(move |conn_actual| {
-            diesel::insert_into(crate::schema::characters::table)
-                .values(new_character_payload) // new_character_payload is moved here
-                .returning(Character::as_returning())
-                .get_result::<Character>(conn_actual)
-        })
-        .await
-        .map_err(move |interact_err| anyhow::anyhow!("DB interact error for create_test_character '{}': {}", name_clone_for_error, interact_err))??;
+        let character: Character = conn
+            .interact(move |conn_actual| {
+                diesel::insert_into(crate::schema::characters::table)
+                    .values(new_character_payload) // new_character_payload is moved here
+                    .returning(Character::as_returning())
+                    .get_result::<Character>(conn_actual)
+            })
+            .await
+            .map_err(move |interact_err| {
+                anyhow::anyhow!(
+                    "DB interact error for create_test_character '{}': {}",
+                    name_clone_for_error,
+                    interact_err
+                )
+            })??;
 
         Ok(character)
     }
@@ -1047,16 +1053,17 @@ pub struct TestDataGuard {
 impl fmt::Debug for TestDataGuard {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("TestDataGuard")
-         .field("pool", &"PgPool // Omitted details for Debug") // PgPool itself is Debug, but we simplify here
-         .field("user_ids", &self.user_ids)
-         .field("character_ids", &self.character_ids)
-         .field("chat_ids", &self.chat_ids)
-         .finish()
+            .field("pool", &"PgPool // Omitted details for Debug") // PgPool itself is Debug, but we simplify here
+            .field("user_ids", &self.user_ids)
+            .field("character_ids", &self.character_ids)
+            .field("chat_ids", &self.chat_ids)
+            .finish()
     }
 }
 
 impl TestDataGuard {
-    pub fn new(pool: PgPool) -> Self { // Changed to PgPool
+    pub fn new(pool: PgPool) -> Self {
+        // Changed to PgPool
         TestDataGuard {
             pool,
             user_ids: Vec::new(),
@@ -1076,43 +1083,67 @@ impl TestDataGuard {
     pub fn add_chat(&mut self, chat_id: Uuid) {
         self.chat_ids.push(chat_id);
     }
-    
+
     // Adapted from auth_tests.rs and db_integration_tests.rs
     pub async fn cleanup(self) -> Result<(), anyhow::Error> {
-        let conn = self.pool.get().await.context("Failed to get DB connection for cleanup")?;
+        let conn = self
+            .pool
+            .get()
+            .await
+            .context("Failed to get DB connection for cleanup")?;
 
         if !self.chat_ids.is_empty() {
             tracing::debug!(chat_ids = ?self.chat_ids, "Cleaning up test chats and messages");
             let chat_ids_clone = self.chat_ids.clone();
-            let diesel_chat_op_result = conn.interact(move |conn_interaction| {
-                diesel::delete(schema::chat_messages::table.filter(schema::chat_messages::session_id.eq_any(&chat_ids_clone)))
+            let diesel_chat_op_result = conn
+                .interact(move |conn_interaction| {
+                    diesel::delete(
+                        schema::chat_messages::table
+                            .filter(schema::chat_messages::session_id.eq_any(&chat_ids_clone)),
+                    )
                     .execute(conn_interaction)?;
-                diesel::delete(schema::chat_sessions::table.filter(schema::chat_sessions::id.eq_any(chat_ids_clone.clone())))
+                    diesel::delete(
+                        schema::chat_sessions::table
+                            .filter(schema::chat_sessions::id.eq_any(chat_ids_clone.clone())),
+                    )
                     .execute(conn_interaction)
-            }).await.map_err(|e_interact| anyhow::anyhow!(e_interact.to_string()))?;
+                })
+                .await
+                .map_err(|e_interact| anyhow::anyhow!(e_interact.to_string()))?;
             diesel_chat_op_result.context("Interact error cleaning up chats")?;
         }
-        
+
         if !self.character_ids.is_empty() {
             tracing::debug!(character_ids = ?self.character_ids, "Cleaning up test characters");
             let character_ids_clone = self.character_ids.clone();
-            let diesel_op_result_chars = conn.interact(move |conn_interaction| {
-                diesel::delete(schema::characters::table.filter(schema::characters::id.eq_any(character_ids_clone)))
+            let diesel_op_result_chars = conn
+                .interact(move |conn_interaction| {
+                    diesel::delete(
+                        schema::characters::table
+                            .filter(schema::characters::id.eq_any(character_ids_clone)),
+                    )
                     .execute(conn_interaction)
-            }).await.map_err(|e_interact| anyhow::anyhow!(e_interact.to_string()))?;
+                })
+                .await
+                .map_err(|e_interact| anyhow::anyhow!(e_interact.to_string()))?;
             diesel_op_result_chars.context("Interact error cleaning up characters")?;
         }
 
         if !self.user_ids.is_empty() {
             tracing::debug!(user_ids = ?self.user_ids, "Cleaning up test users");
             let user_ids_clone = self.user_ids.clone();
-            let diesel_op_result_users = conn.interact(move |conn_interaction| {
-                diesel::delete(schema::users::table.filter(schema::users::id.eq_any(user_ids_clone)))
+            let diesel_op_result_users = conn
+                .interact(move |conn_interaction| {
+                    diesel::delete(
+                        schema::users::table.filter(schema::users::id.eq_any(user_ids_clone)),
+                    )
                     .execute(conn_interaction)
-            }).await.map_err(|e_interact| anyhow::anyhow!(e_interact.to_string()))?;
+                })
+                .await
+                .map_err(|e_interact| anyhow::anyhow!(e_interact.to_string()))?;
             diesel_op_result_users.context("Interact error cleaning up users")?;
         }
-        
+
         tracing::debug!("--- TestDataGuard cleanup complete ---");
         Ok(())
     }
@@ -1123,7 +1154,8 @@ impl Drop for TestDataGuard {
         // Synchronous drop cannot call async cleanup.
         // Tests should call cleanup explicitly.
         // If user_ids is not empty, it means cleanup was not called.
-        if !self.user_ids.is_empty() || !self.character_ids.is_empty() || !self.chat_ids.is_empty() {
+        if !self.user_ids.is_empty() || !self.character_ids.is_empty() || !self.chat_ids.is_empty()
+        {
             // Use a blocking spawn for the async cleanup task
             // This is not ideal for drop, but better than panicking or doing nothing.
             // Consider making cleanup explicit in all tests.
@@ -1132,8 +1164,13 @@ impl Drop for TestDataGuard {
             let character_ids_clone = self.character_ids.drain(..).collect::<Vec<_>>();
             let chat_ids_clone = self.chat_ids.drain(..).collect::<Vec<_>>();
 
-            if !user_ids_clone.is_empty() || !character_ids_clone.is_empty() || !chat_ids_clone.is_empty() {
-                tracing::warn!("TestDataGuard dropped without explicit cleanup. Attempting synchronous cleanup (best effort).");
+            if !user_ids_clone.is_empty()
+                || !character_ids_clone.is_empty()
+                || !chat_ids_clone.is_empty()
+            {
+                tracing::warn!(
+                    "TestDataGuard dropped without explicit cleanup. Attempting synchronous cleanup (best effort)."
+                );
                 // Temporarily commented out for debugging test panics
                 /*
                 tokio::task::block_in_place(move || { // Use block_in_place if in async context
@@ -1142,7 +1179,7 @@ impl Drop for TestDataGuard {
                         if let Ok(conn_obj) = conn_result { // conn_obj is Object
                             if !chat_ids_clone.is_empty() {
                                 let chat_ids_c = chat_ids_clone.clone(); // clone for inner closure
-                                
+
                                 // Wrap the diesel operation in conn_obj.interact().await
                                 let interact_result_chats = conn_obj.interact(move |actual_conn| {
                                     diesel::delete(schema::chat_sessions::table.filter(schema::chat_sessions::id.eq_any(chat_ids_c)))
@@ -1164,7 +1201,7 @@ impl Drop for TestDataGuard {
                             if !character_ids_clone.is_empty() {
                                 let interact_result_chars = conn_obj.interact({
                                     // Clone for the inner closure, as conn is captured by interact already
-                                    let char_ids_inner_clone = character_ids_clone.clone(); 
+                                    let char_ids_inner_clone = character_ids_clone.clone();
                                     move |c_conn| {
                                         diesel::delete(schema::characters::table.filter(schema::characters::id.eq_any(char_ids_inner_clone)))
                                             .execute(c_conn)
@@ -1213,13 +1250,19 @@ impl Drop for TestDataGuard {
     }
 }
 
-pub fn db_specific_cleanup(conn: &mut PgConnection, test_data: &TestDataGuard) -> Result<(), anyhow::Error> {
+pub fn db_specific_cleanup(
+    conn: &mut PgConnection,
+    test_data: &TestDataGuard,
+) -> Result<(), anyhow::Error> {
     // Clean up chat messages first (if any, assuming chat_messages depend on chats)
     // Example: diesel::delete(schema::chat_messages::table.filter(...)).execute(conn)?;
 
     if !test_data.chat_ids.is_empty() {
         let chat_ids_clone = test_data.chat_ids.clone();
-        diesel::delete(schema::chat_sessions::table.filter(schema::chat_sessions::id.eq_any(chat_ids_clone))).execute(conn)?;
+        diesel::delete(
+            schema::chat_sessions::table.filter(schema::chat_sessions::id.eq_any(chat_ids_clone)),
+        )
+        .execute(conn)?;
     }
     // ... other cleanup like characters, users
     Ok(())
@@ -1231,7 +1274,8 @@ pub async fn create_user_with_dek_in_session(
     username: String,
     password_str: String,
     plaintext_dek: Option<SecretString>, // Option to allow no DEK for some tests
-) -> Result<(User, String), anyhow::Error> { // Returns User and session cookie string
+) -> Result<(User, String), anyhow::Error> {
+    // Returns User and session cookie string
     // 1. Create user in DB
     let created_user_db_record = crate::auth::user_store::create_user_in_db(
         pool,
@@ -1243,7 +1287,9 @@ pub async fn create_user_with_dek_in_session(
         // Assuming create_user_in_db handles KEK salt, encrypted DEK, nonce from plaintext_dek if provided.
         // For simplicity, let's assume create_user_in_db now takes plaintext_dek and handles it internally.
         plaintext_dek.clone(), // Pass a clone if create_user_in_db needs owned Option<SecretString>
-    ).await.context("Failed to create user in DB for session test")?;
+    )
+    .await
+    .context("Failed to create user in DB for session test")?;
 
     // 2. Perform login to get session cookie
     let login_payload = json!({
@@ -1267,10 +1313,11 @@ pub async fn create_user_with_dek_in_session(
         .ok_or_else(|| anyhow::anyhow!("No set-cookie header found after login"))?
         .to_str()?
         .to_string();
-    
+
     // 3. Construct mock_user_for_assertion (this is the User struct, not UserDbQuery)
     let mut mock_user_for_assertion = User::from(created_user_db_record.clone()); // Use the DB record from step 1
-    if let Some(pt_dek_string) = plaintext_dek { // Use the original plaintext_dek passed to function
+    if let Some(pt_dek_string) = plaintext_dek {
+        // Use the original plaintext_dek passed to function
         let dek_bytes = pt_dek_string.expose_secret().as_bytes().to_vec();
         let secret_box = SecretBox::new(Box::new(dek_bytes));
         mock_user_for_assertion.dek = Some(SerializableSecretDek(secret_box));
@@ -1309,14 +1356,19 @@ pub async fn login_user_via_api(test_app: &TestApp, username: &str, password: &s
         );
     }
 
-    response.headers()
+    response
+        .headers()
         .get_all(header::SET_COOKIE)
         .iter()
         .find_map(|v| {
             let cookie_str = v.to_str().unwrap_or_else(|_| {
-                panic!("Invalid Set-Cookie header (not UTF-8) for user {}", username)
+                panic!(
+                    "Invalid Set-Cookie header (not UTF-8) for user {}",
+                    username
+                )
             });
-            if cookie_str.starts_with("id=") { // Assuming session cookie name is "id"
+            if cookie_str.starts_with("id=") {
+                // Assuming session cookie name is "id"
                 cookie_str.split(';').next().map(String::from)
             } else {
                 None
@@ -1357,10 +1409,12 @@ pub async fn collect_full_sse_events(body: axum::body::Body) -> Vec<ParsedSseEve
                     return futures::future::ready(Ok(())); // Skip malformed chunk
                 }
             };
-            
+
             for line in chunk_str.lines() {
-                if line.is_empty() { // End of an event
-                    if !current_data_lines.is_empty() { // Only push if there's data
+                if line.is_empty() {
+                    // End of an event
+                    if !current_data_lines.is_empty() {
+                        // Only push if there's data
                         events.push(ParsedSseEvent {
                             event: current_event_name.clone(),
                             data: current_data_lines.join("\n"), // Data can be multi-line
@@ -1372,7 +1426,7 @@ pub async fn collect_full_sse_events(body: axum::body::Body) -> Vec<ParsedSseEve
                         // If an Event::event("name").data() is used, current_event_name would be Some("name").
                         // After a full event (blank line), the next event starts fresh. If it has no 'event:' line, it's a default 'message' event.
                         // So, resetting current_event_name to None is correct for default handling of subsequent unnamed events.
-                        current_event_name = None; 
+                        current_event_name = None;
                     } else if current_event_name.is_some() {
                         // Handle event with name but no data, e.g. event: foo
                         events.push(ParsedSseEvent {
@@ -1426,7 +1480,9 @@ pub fn assert_ai_history(
     let history_start_index = history_start_index.min(history_end_index);
     let history_sent_to_ai = &last_request.messages[history_start_index..history_end_index];
 
-    println!("\n[DEBUG] All messages sent to AI client (including system prompt and current prompt):");
+    println!(
+        "\n[DEBUG] All messages sent to AI client (including system prompt and current prompt):"
+    );
     for (i, msg) in last_request.messages.iter().enumerate() {
         let role_str = match msg.role {
             genai::chat::ChatRole::User => "User",
@@ -1441,14 +1497,27 @@ pub fn assert_ai_history(
         println!("  [{}] {}: {}", i, role_str, content);
     }
 
-    println!("\n[DEBUG] Comparing {} expected messages against {} actual messages in history (excluding current prompt)",
-             expected_history.len(), history_sent_to_ai.len());
+    println!(
+        "\n[DEBUG] Comparing {} expected messages against {} actual messages in history (excluding current prompt)",
+        expected_history.len(),
+        history_sent_to_ai.len()
+    );
 
     assert_eq!(
         history_sent_to_ai.len(),
         expected_history.len(),
         "Number of history messages sent to AI mismatch. Actual: {:?}, Expected: {:?}",
-        history_sent_to_ai.iter().map(|m| (format!("{:?}", m.role), if let genai::chat::MessageContent::Text(t) = &m.content { t.clone() } else { "".to_string() } )).collect::<Vec<_>>(),
+        history_sent_to_ai
+            .iter()
+            .map(|m| (
+                format!("{:?}", m.role),
+                if let genai::chat::MessageContent::Text(t) = &m.content {
+                    t.clone()
+                } else {
+                    "".to_string()
+                }
+            ))
+            .collect::<Vec<_>>(),
         expected_history
     );
 
@@ -1464,14 +1533,27 @@ pub fn assert_ai_history(
         };
         let actual_content = match &actual.content {
             genai::chat::MessageContent::Text(text) => text.as_str(),
-            _ => panic!("Expected text content in AI history, got: {:?}", actual.content),
+            _ => panic!(
+                "Expected text content in AI history, got: {:?}",
+                actual.content
+            ),
         };
 
-        println!("[DEBUG] Compare message {}: Expected {}:'{}' vs Actual {}:'{}'",
-                 i, expected_role_str, expected_content, actual_role_str, actual_content);
+        println!(
+            "[DEBUG] Compare message {}: Expected {}:'{}' vs Actual {}:'{}'",
+            i, expected_role_str, expected_content, actual_role_str, actual_content
+        );
 
-        assert_eq!(actual_role_str, *expected_role_str, "Role mismatch at index {}", i);
-        assert_eq!(actual_content, *expected_content, "Content mismatch at index {}", i);
+        assert_eq!(
+            actual_role_str, *expected_role_str,
+            "Role mismatch at index {}",
+            i
+        );
+        assert_eq!(
+            actual_content, *expected_content,
+            "Content mismatch at index {}",
+            i
+        );
     }
 }
 
@@ -1511,7 +1593,11 @@ pub async fn set_history_settings(
         .body(Body::from(serde_json::to_vec(&payload)?))?;
 
     let response = test_app.router.clone().oneshot(request).await?;
-    assert_eq!(response.status(), StatusCode::OK, "Failed to set history settings via API");
+    assert_eq!(
+        response.status(),
+        StatusCode::OK,
+        "Failed to set history settings via API"
+    );
     let _ = response.into_body().collect().await?.to_bytes();
     Ok(())
 }

@@ -48,7 +48,9 @@ pub async fn run_chat_loop<IO: IoHandler, Http: HttpClient>(
             }
             Err(CliError::RateLimitExceeded) => {
                 io_handler.write_line("API rate limit exceeded: The Gemini model is currently receiving too many requests.")?;
-                io_handler.write_line("Please wait a moment before trying again or try a different model.")?;
+                io_handler.write_line(
+                    "Please wait a moment before trying again or try a different model.",
+                )?;
                 io_handler.write_line("--------------------------------------------------")?;
             }
             Err(e) => {
@@ -96,8 +98,7 @@ pub async fn run_interactive_streaming_chat_loop<IO: IoHandler, Http: HttpClient
         let user_input = io_handler.read_line("You: ")?;
         let trimmed_input = user_input.trim();
 
-        if trimmed_input.eq_ignore_ascii_case("quit")
-            || trimmed_input.eq_ignore_ascii_case("exit")
+        if trimmed_input.eq_ignore_ascii_case("quit") || trimmed_input.eq_ignore_ascii_case("exit")
         {
             io_handler.write_line("Leaving streaming chat session.")?;
             break;
@@ -150,7 +151,8 @@ pub async fn run_interactive_streaming_chat_loop<IO: IoHandler, Http: HttpClient
                             }
                             current_line.push_str(&text_chunk);
                             while let Some(newline_pos) = current_line.find('\n') {
-                                let line_to_print = current_line.drain(..=newline_pos).collect::<String>();
+                                let line_to_print =
+                                    current_line.drain(..=newline_pos).collect::<String>();
                                 io_handler.write_raw(&format!("  {}", line_to_print))?;
                             }
                             if !current_line.is_empty() {
@@ -174,7 +176,8 @@ pub async fn run_interactive_streaming_chat_loop<IO: IoHandler, Http: HttpClient
                             }
                             current_line.push_str(&chunk);
                             while let Some(newline_pos) = current_line.find('\n') {
-                                let line_to_print = current_line.drain(..=newline_pos).collect::<String>();
+                                let line_to_print =
+                                    current_line.drain(..=newline_pos).collect::<String>();
                                 io_handler.write_raw(&line_to_print)?;
                             }
                             if !current_line.is_empty() {

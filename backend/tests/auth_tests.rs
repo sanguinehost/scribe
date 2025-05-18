@@ -3,20 +3,6 @@
 
 // --- Imports (similar to characters_tests, but focused on auth) ---
 use anyhow::{Context, Result as AnyhowResult};
-use tower_sessions::SessionStore;
-use serde::de::DeserializeOwned;
-use tower_cookies::Cookies;
-use scribe_backend::errors::AppError;
-use tower_cookies::Cookie;
-use tower_sessions::session_store::Error as SessionStoreError;
-use scribe_backend::auth::session_store::DieselSessionStore;
-use tower_sessions::session::Id;
-use time::OffsetDateTime;
-use std::collections::HashMap;
-use tower_sessions::session::Record;
-use scribe_backend::auth::session_store::SessionRecord;
-use chrono::Utc;
-use tower::util::ServiceExt;
 use axum::{
     Router,
     body::Body,
@@ -24,27 +10,39 @@ use axum::{
     response::{IntoResponse, Response},
     routing::get,
 };
+use chrono::Utc;
+use scribe_backend::auth::session_store::DieselSessionStore;
+use scribe_backend::auth::session_store::SessionRecord;
+use scribe_backend::errors::AppError;
+use serde::de::DeserializeOwned;
+use std::collections::HashMap;
+use time::OffsetDateTime;
+use tower::util::ServiceExt;
+use tower_cookies::Cookie;
+use tower_cookies::Cookies;
+use tower_sessions::SessionStore;
+use tower_sessions::session::Id;
+use tower_sessions::session::Record;
+use tower_sessions::session_store::Error as SessionStoreError;
 // Removed: AuthManagerLayerBuilder, Expiry, SessionManagerLayer, SameSite
 use axum_login::AuthnBackend;
 // Removed: bcrypt (handled by auth::create_user)
-use deadpool_diesel::{
-    Pool as DeadpoolPool, postgres::Manager as DeadpoolManager,
-};
+use deadpool_diesel::{Pool as DeadpoolPool, postgres::Manager as DeadpoolManager};
 use diesel::{PgConnection, prelude::*};
 // Removed: dotenvy (handled by test_helpers::spawn_app)
 use http_body_util::BodyExt;
 use scribe_backend::{
-    auth::{user_store::Backend as AuthBackend},
-// db::PgPool, // PgPool type alias // Not used directly, so remove
-models::{
-        auth::{AuthResponse}, // Updated auth models, remove LoginPayload and RegisterPayload
+    auth::user_store::Backend as AuthBackend,
+    // db::PgPool, // PgPool type alias // Not used directly, so remove
+    models::{
+        auth::AuthResponse, // Updated auth models, remove LoginPayload and RegisterPayload
         users::{User, UserDbQuery}, // Updates from helpers
     },
     schema, // Import the schema module directly
     test_helpers,
 };
-use serde_json::{json, Value};
- // Removed env
+use serde_json::{Value, json};
+// Removed env
 use tracing::{info, instrument};
 use uuid::Uuid;
 // Removed: scribe_backend::errors::AppError
@@ -52,17 +50,22 @@ use uuid::Uuid;
 // Helper function to add encryption columns to the users table if they don't exist
 async fn ensure_encryption_columns_exist(pool: &DeadpoolPool<DeadpoolManager>) -> AnyhowResult<()> {
     let conn = pool.get().await.context("Failed to get DB connection")?;
-    let _ = conn.interact(|conn| {
-        // Check if dek_nonce column exists, if not add it
-        let result = diesel::sql_query("
+    let _ = conn
+        .interact(|conn| {
+            // Check if dek_nonce column exists, if not add it
+            let result = diesel::sql_query(
+                "
             SELECT column_name 
             FROM information_schema.columns 
             WHERE table_name = 'users' AND column_name = 'dek_nonce'
-        ").execute(conn);
-        
-        if result.is_err() || result == Ok(0) {
-            // Add missing encryption columns
-            diesel::sql_query("
+        ",
+            )
+            .execute(conn);
+
+            if result.is_err() || result == Ok(0) {
+                // Add missing encryption columns
+                diesel::sql_query(
+                    "
                 ALTER TABLE users
                 ADD COLUMN IF NOT EXISTS kek_salt BYTEA,
                 ADD COLUMN IF NOT EXISTS encrypted_dek BYTEA,
@@ -70,12 +73,16 @@ async fn ensure_encryption_columns_exist(pool: &DeadpoolPool<DeadpoolManager>) -
                 ADD COLUMN IF NOT EXISTS recovery_kek_salt BYTEA,
                 ADD COLUMN IF NOT EXISTS encrypted_dek_by_recovery BYTEA,
                 ADD COLUMN IF NOT EXISTS recovery_dek_nonce BYTEA
-            ").execute(conn)?;
-        }
-        
-        Ok::<_, diesel::result::Error>(())
-    }).await.map_err(|e| anyhow::anyhow!("Failed to check/add missing columns: {}", e))?;
-    
+            ",
+                )
+                .execute(conn)?;
+            }
+
+            Ok::<_, diesel::result::Error>(())
+        })
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to check/add missing columns: {}", e))?;
+
     Ok(())
 }
 
@@ -126,11 +133,11 @@ where
 async fn test_register_success() -> AnyhowResult<()> {
     let test_app = test_helpers::spawn_app(true, false, false).await;
     let mut guard = test_helpers::TestDataGuard::new(test_app.db_pool.clone());
-    
+
     // Ensure encryption columns exist
     ensure_encryption_columns_exist(&test_app.db_pool).await?;
 
-    // --- BEGIN PRIMER USER --- 
+    // --- BEGIN PRIMER USER ---
     // Register a dummy user first to ensure the main test user is not the *first* user.
     let primer_username = format!("primer_user_{}", Uuid::new_v4());
     let primer_email = format!("{}@test.com", primer_username);
@@ -162,22 +169,28 @@ async fn test_register_success() -> AnyhowResult<()> {
         .body(Body::from(payload.to_string()))?;
 
     let response = test_app.router.clone().oneshot(request).await?;
-    
+
     assert_eq!(response.status(), StatusCode::CREATED, "Register failed");
-    
+
     let body = response.into_body().collect().await?.to_bytes();
     let auth_response: AuthResponse = serde_json::from_slice(&body)?;
-    
-    assert_eq!(auth_response.username, username, "Username in response should match");
+
+    assert_eq!(
+        auth_response.username, username,
+        "Username in response should match"
+    );
     assert_eq!(auth_response.email, email, "Email in response should match");
-    assert_eq!(auth_response.role, "User", "Role in response should be 'User'");
-    
+    assert_eq!(
+        auth_response.role, "User",
+        "Role in response should be 'User'"
+    );
+
     // Now we have a user ID to clean up
     guard.add_user(auth_response.user_id);
-    
+
     // Explicitly call cleanup before the end of the test
     guard.cleanup().await?;
-    
+
     Ok(())
 }
 
@@ -186,7 +199,7 @@ async fn test_register_success() -> AnyhowResult<()> {
 async fn test_register_duplicate_username() -> AnyhowResult<()> {
     let test_app = test_helpers::spawn_app(true, false, false).await;
     let mut guard = test_helpers::TestDataGuard::new(test_app.db_pool.clone());
-    
+
     // Ensure encryption columns exist
     ensure_encryption_columns_exist(&test_app.db_pool).await?;
 
@@ -201,9 +214,9 @@ async fn test_register_duplicate_username() -> AnyhowResult<()> {
         password.to_string(),
     )
     .await?;
-    
+
     guard.add_user(first_user.id);
-    
+
     // Now try to register another user with the same username
     let payload = json!({
         "username": username, // Same username
@@ -218,19 +231,23 @@ async fn test_register_duplicate_username() -> AnyhowResult<()> {
         .body(Body::from(payload.to_string()))?;
 
     let response = test_app.router.clone().oneshot(request).await?;
-    
+
     // Should fail with 409 Conflict for duplicate username
-    assert_eq!(response.status(), StatusCode::CONFLICT, "Registration with duplicate username should result in Conflict");
-    
+    assert_eq!(
+        response.status(),
+        StatusCode::CONFLICT,
+        "Registration with duplicate username should result in Conflict"
+    );
+
     let body = response.into_body().collect().await?.to_bytes();
     let error_body: serde_json::Value = serde_json::from_slice(&body)?;
-    
+
     // Assuming the message for CONFLICT is the same or similar
     assert_eq!(error_body["error"], "Username is already taken");
-    
+
     // Explicitly call cleanup before the end of the test
     guard.cleanup().await?;
-    
+
     Ok(())
 }
 
@@ -239,44 +256,48 @@ async fn test_register_duplicate_username() -> AnyhowResult<()> {
 async fn test_register_duplicate_email() -> AnyhowResult<()> {
     let test_app = test_helpers::spawn_app(true, false, false).await;
     let mut guard = test_helpers::TestDataGuard::new(test_app.db_pool.clone());
-    
+
     // Ensure encryption columns exist
     ensure_encryption_columns_exist(&test_app.db_pool).await?;
 
     let duplicate_email = format!("duplicate_email_{}@test.com", Uuid::new_v4());
-    
+
     // Create first user with this email
     let username1 = format!("register_dup_email1_{}", Uuid::new_v4());
     let password = "password123";
-    
+
     let first_user = test_helpers::db::create_test_user(
         &test_app.db_pool,
         username1.to_string(),
         password.to_string(),
     )
     .await?;
-    
+
     // Update the email to our duplicate value (since create_test_user generates its own)
     let conn = test_app.db_pool.get().await?;
     let duplicate_email_clone = duplicate_email.clone(); // Clone before moving into closure
-    let update_result = conn.interact(move |conn| {
-        diesel::update(schema::users::dsl::users.filter(schema::users::dsl::id.eq(first_user.id)))
+    let update_result = conn
+        .interact(move |conn| {
+            diesel::update(
+                schema::users::dsl::users.filter(schema::users::dsl::id.eq(first_user.id)),
+            )
             .set(schema::users::dsl::email.eq(&duplicate_email_clone))
             .execute(conn)
-    }).await;
-    
+        })
+        .await;
+
     match update_result {
-        Ok(Ok(_)) => {},
+        Ok(Ok(_)) => {}
         Ok(Err(e)) => return Err(anyhow::anyhow!("Database error: {}", e)),
         Err(e) => return Err(anyhow::anyhow!("Interact error: {}", e)),
     }
-    
+
     guard.add_user(first_user.id);
-    
+
     // Now try to register another user with the same email
     let username2 = format!("register_dup_email2_{}", Uuid::new_v4());
     let payload = json!({
-        "username": username2, // Different username 
+        "username": username2, // Different username
         "email": duplicate_email, // Same email
         "password": password
     });
@@ -288,42 +309,45 @@ async fn test_register_duplicate_email() -> AnyhowResult<()> {
         .body(Body::from(payload.to_string()))?;
 
     let response = test_app.router.clone().oneshot(request).await?;
-    
+
     // Should fail with 409 Conflict for duplicate email
-    assert_eq!(response.status(), StatusCode::CONFLICT, "Registration with duplicate email should result in Conflict");
-    
+    assert_eq!(
+        response.status(),
+        StatusCode::CONFLICT,
+        "Registration with duplicate email should result in Conflict"
+    );
+
     let body = response.into_body().collect().await?.to_bytes();
     let error_body: serde_json::Value = serde_json::from_slice(&body)?;
-    
+
     // Assuming the message for CONFLICT is the same or similar
     assert_eq!(error_body["error"], "Email is already taken");
-    
+
     // Explicitly call cleanup before the end of the test
     guard.cleanup().await?;
-    
+
     Ok(())
 }
-
 
 #[tokio::test(flavor = "multi_thread")]
 #[ignore] // Added ignore for CI
 async fn test_login_success() -> AnyhowResult<()> {
     let test_app = test_helpers::spawn_app(true, false, false).await;
     let mut guard = test_helpers::TestDataGuard::new(test_app.db_pool.clone());
-    
+
     // Ensure encryption columns exist
     ensure_encryption_columns_exist(&test_app.db_pool).await?;
 
     let username = format!("test_login_{}", Uuid::new_v4().to_string()[..8].to_string());
     let password = "testPassword123";
-    
+
     let user = test_helpers::db::create_test_user(
         &test_app.db_pool,
         username.to_string(),
         password.to_string(),
     )
     .await?;
-    
+
     guard.add_user(user.id);
     info!(user_id = %user.id, %username, email = %user.email, "Test user created for login");
 
@@ -341,34 +365,48 @@ async fn test_login_success() -> AnyhowResult<()> {
         .body(Body::from(login_payload.to_string()))?;
 
     let response = test_app.router.clone().oneshot(request).await?;
-    
+
     assert_eq!(response.status(), StatusCode::OK, "Login failed");
-    
+
     let body = response.into_body().collect().await?.to_bytes();
     let auth_response: AuthResponse = serde_json::from_slice(&body)?;
-    
-    assert_eq!(auth_response.username, username, "Username in response should match");
-    assert_eq!(auth_response.email, user.email, "Email in response should match");
-    assert_eq!(auth_response.user_id, user.id, "User ID in response should match");
-    assert_eq!(auth_response.role, "User", "Role in response should be 'User'");
-    
+
+    assert_eq!(
+        auth_response.username, username,
+        "Username in response should match"
+    );
+    assert_eq!(
+        auth_response.email, user.email,
+        "Email in response should match"
+    );
+    assert_eq!(
+        auth_response.user_id, user.id,
+        "User ID in response should match"
+    );
+    assert_eq!(
+        auth_response.role, "User",
+        "Role in response should be 'User'"
+    );
+
     // Explicitly call cleanup before the end of the test
     guard.cleanup().await?;
-    
+
     Ok(())
 }
-
 
 #[tokio::test(flavor = "multi_thread")]
 #[ignore] // Added ignore for CI
 async fn test_login_success_with_email() -> AnyhowResult<()> {
     let test_app = test_helpers::spawn_app(true, false, false).await;
     let mut guard = test_helpers::TestDataGuard::new(test_app.db_pool.clone());
-    
+
     // Ensure encryption columns exist
     ensure_encryption_columns_exist(&test_app.db_pool).await?;
 
-    let username = format!("test_login_email_{}", Uuid::new_v4().to_string()[..8].to_string());
+    let username = format!(
+        "test_login_email_{}",
+        Uuid::new_v4().to_string()[..8].to_string()
+    );
     let password = "testPassword123";
     let user = test_helpers::db::create_test_user(
         &test_app.db_pool,
@@ -376,7 +414,7 @@ async fn test_login_success_with_email() -> AnyhowResult<()> {
         password.to_string(),
     )
     .await?;
-    
+
     guard.add_user(user.id);
     info!(user_id = %user.id, %username, email = %user.email, "Test user created for email login");
 
@@ -393,30 +431,41 @@ async fn test_login_success_with_email() -> AnyhowResult<()> {
         .body(Body::from(login_payload.to_string()))?;
 
     let response = test_app.router.clone().oneshot(request).await?;
-    
+
     assert_eq!(response.status(), StatusCode::OK, "Login with email failed");
-    
+
     let body = response.into_body().collect().await?.to_bytes();
     let auth_response: AuthResponse = serde_json::from_slice(&body)?;
-    
-    assert_eq!(auth_response.username, username, "Username in response should match");
-    assert_eq!(auth_response.email, user.email, "Email in response should match");
-    assert_eq!(auth_response.user_id, user.id, "User ID in response should match");
-    assert_eq!(auth_response.role, "User", "Role in response should be 'User'");
-    
+
+    assert_eq!(
+        auth_response.username, username,
+        "Username in response should match"
+    );
+    assert_eq!(
+        auth_response.email, user.email,
+        "Email in response should match"
+    );
+    assert_eq!(
+        auth_response.user_id, user.id,
+        "User ID in response should match"
+    );
+    assert_eq!(
+        auth_response.role, "User",
+        "Role in response should be 'User'"
+    );
+
     // Explicitly call cleanup before the end of the test
     guard.cleanup().await?;
-    
+
     Ok(())
 }
-
 
 #[tokio::test(flavor = "multi_thread")]
 #[ignore] // Added ignore for CI
 async fn test_login_wrong_password() -> AnyhowResult<()> {
     let test_app = test_helpers::spawn_app(true, false, false).await;
     let mut guard = test_helpers::TestDataGuard::new(test_app.db_pool.clone());
-    
+
     // Ensure encryption columns exist
     ensure_encryption_columns_exist(&test_app.db_pool).await?;
 
@@ -431,7 +480,7 @@ async fn test_login_wrong_password() -> AnyhowResult<()> {
         correct_password.to_string(),
     )
     .await?;
-    
+
     guard.add_user(user.id);
 
     // Now try to login with wrong password
@@ -450,12 +499,16 @@ async fn test_login_wrong_password() -> AnyhowResult<()> {
     let status_code = response.status(); // Get status before consuming response
 
     // Should fail with 401 Unauthorized
-    assert_eq!(status_code, StatusCode::UNAUTHORIZED, "Login with wrong password should fail");
+    assert_eq!(
+        status_code,
+        StatusCode::UNAUTHORIZED,
+        "Login with wrong password should fail"
+    );
 
     // Verify error message from body (consumes response)
     let (_status_from_body, error_body) = get_json_body::<Value>(response).await?;
     assert_eq!(error_body["error"], "Invalid identifier or password");
-    
+
     // Explicitly call cleanup at the very end
     guard.cleanup().await?;
     Ok(())
@@ -466,7 +519,7 @@ async fn test_login_wrong_password() -> AnyhowResult<()> {
 async fn test_login_user_not_found() -> AnyhowResult<()> {
     let test_app = test_helpers::spawn_app(true, false, false).await;
     let guard = test_helpers::TestDataGuard::new(test_app.db_pool.clone());
-    
+
     // Ensure encryption columns exist
     ensure_encryption_columns_exist(&test_app.db_pool).await?;
 
@@ -487,13 +540,17 @@ async fn test_login_user_not_found() -> AnyhowResult<()> {
         .body(Body::from(login_payload.to_string()))?;
 
     let response = test_app.router.clone().oneshot(request).await?;
-    
+
     // Should fail with 404 Not Found
-    assert_eq!(response.status(), StatusCode::NOT_FOUND, "Login with non-existent user should return 404");
-    
+    assert_eq!(
+        response.status(),
+        StatusCode::NOT_FOUND,
+        "Login with non-existent user should return 404"
+    );
+
     // Explicitly call cleanup before the end of the test
     guard.cleanup().await?;
-    
+
     // Verify error message (depends on AppError mapping)
     let (status, error_body) = get_json_body::<Value>(response).await?;
     assert_eq!(status, StatusCode::NOT_FOUND);
@@ -509,7 +566,7 @@ async fn test_verify_credentials_invalid_hash_in_db() -> AnyhowResult<()> {
     // Covers lines 156-157 in auth/mod.rs (verify_credentials -> HashingError)
     let test_app = test_helpers::spawn_app(true, false, false).await;
     let mut guard = test_helpers::TestDataGuard::new(test_app.db_pool.clone());
-    
+
     // Ensure encryption columns exist
     ensure_encryption_columns_exist(&test_app.db_pool).await?;
 
@@ -524,17 +581,19 @@ async fn test_verify_credentials_invalid_hash_in_db() -> AnyhowResult<()> {
         password.to_string(),
     )
     .await?;
-    
+
     guard.add_user(user.id);
 
     // 2. Update the password hash to an invalid value
     let conn = test_app.db_pool.get().await?;
-    let update_result = conn.interact(move |conn| {
-        diesel::update(schema::users::dsl::users.filter(schema::users::dsl::id.eq(user.id)))
-            .set(schema::users::dsl::password_hash.eq(invalid_hash))
-            .execute(conn)
-    }).await;
-    
+    let update_result = conn
+        .interact(move |conn| {
+            diesel::update(schema::users::dsl::users.filter(schema::users::dsl::id.eq(user.id)))
+                .set(schema::users::dsl::password_hash.eq(invalid_hash))
+                .execute(conn)
+        })
+        .await;
+
     match update_result {
         Ok(Ok(_)) => Ok(()),
         Ok(Err(e)) => Err(anyhow::anyhow!("Database error: {}", e)),
@@ -543,29 +602,37 @@ async fn test_verify_credentials_invalid_hash_in_db() -> AnyhowResult<()> {
 
     // 3. Now try to verify credentials directly - first get a connection
     let conn = test_app.db_pool.get().await?;
-    
-    // Create the credential object 
-    let verify_result = conn.interact(move |db_conn| {
-        scribe_backend::auth::verify_credentials(
-            db_conn,
-            &username, // username as identifier
-            password.into(), // convert to &str
-        )
-    }).await;
+
+    // Create the credential object
+    let verify_result = conn
+        .interact(move |db_conn| {
+            scribe_backend::auth::verify_credentials(
+                db_conn,
+                &username,       // username as identifier
+                password.into(), // convert to &str
+            )
+        })
+        .await;
 
     // 4. Should fail with HashingError
     let db_call_result = match verify_result {
         Ok(internal_auth_result) => internal_auth_result, // This is Result<(User, Option<SecretBox<Vec<u8>>>), AuthError>
         Err(interact_err) => {
             // Convert InteractError to anyhow::Error to propagate with '?' later if needed, or handle directly
-            return Err(anyhow::anyhow!("Database interaction failed during verify_credentials: {:?}", interact_err));
+            return Err(anyhow::anyhow!(
+                "Database interaction failed during verify_credentials: {:?}",
+                interact_err
+            ));
         }
     };
 
     match db_call_result {
         Ok((user, _dek)) => {
             // If we get here, it means verify_credentials unexpectedly succeeded
-            panic!("Expected HashingError from verify_credentials, but got Ok with user: {:?}. This implies the invalid hash was not detected.", user);
+            panic!(
+                "Expected HashingError from verify_credentials, but got Ok with user: {:?}. This implies the invalid hash was not detected.",
+                user
+            );
         }
         Err(AuthError::HashingError) => {
             // This is the correct path
@@ -573,13 +640,16 @@ async fn test_verify_credentials_invalid_hash_in_db() -> AnyhowResult<()> {
         }
         Err(e) => {
             // Some other AuthError occurred
-            panic!("Expected AuthError::HashingError, but got a different AuthError: {:?}. This might indicate an issue in error mapping or a different failure mode.", e);
+            panic!(
+                "Expected AuthError::HashingError, but got a different AuthError: {:?}. This might indicate an issue in error mapping or a different failure mode.",
+                e
+            );
         }
     }
-    
+
     // Explicitly call cleanup before the end of the test
     guard.cleanup().await?;
-    
+
     Ok(())
 }
 
@@ -589,7 +659,7 @@ async fn test_login_hashing_error_in_db() -> AnyhowResult<()> {
     // Covers line 110 in routes/auth.rs (Err(e) from auth_session.authenticate)
     let test_app = test_helpers::spawn_app(true, false, false).await;
     let mut guard = test_helpers::TestDataGuard::new(test_app.db_pool.clone());
-    
+
     // Ensure encryption columns exist
     ensure_encryption_columns_exist(&test_app.db_pool).await?;
 
@@ -604,17 +674,19 @@ async fn test_login_hashing_error_in_db() -> AnyhowResult<()> {
         password.to_string(),
     )
     .await?;
-    
+
     guard.add_user(user.id);
 
     // 2. Update the password hash to an invalid value
     let conn = test_app.db_pool.get().await?;
-    let update_result = conn.interact(move |conn| {
-        diesel::update(schema::users::dsl::users.filter(schema::users::dsl::id.eq(user.id)))
-            .set(schema::users::dsl::password_hash.eq(invalid_hash))
-            .execute(conn)
-    }).await;
-    
+    let update_result = conn
+        .interact(move |conn| {
+            diesel::update(schema::users::dsl::users.filter(schema::users::dsl::id.eq(user.id)))
+                .set(schema::users::dsl::password_hash.eq(invalid_hash))
+                .execute(conn)
+        })
+        .await;
+
     match update_result {
         Ok(Ok(_)) => Ok(()),
         Ok(Err(e)) => Err(anyhow::anyhow!("Database error: {}", e)),
@@ -635,15 +707,21 @@ async fn test_login_hashing_error_in_db() -> AnyhowResult<()> {
 
     let response = test_app.router.clone().oneshot(request).await?;
     let status_code = response.status(); // Get status before consuming response
-    
+
     // 4. Should fail with 500 Internal Server Error (not 401, because hash parse is server error)
-    assert_eq!(status_code, StatusCode::INTERNAL_SERVER_ERROR, 
-        "Login with invalid hash should return 500");
-    
+    assert_eq!(
+        status_code,
+        StatusCode::INTERNAL_SERVER_ERROR,
+        "Login with invalid hash should return 500"
+    );
+
     // Verify error message (consumes response)
     let (_status_from_body, error_body) = get_json_body::<Value>(response).await?;
-    assert_eq!(error_body["error"], "Internal Server Error: Password processing error.");
-    
+    assert_eq!(
+        error_body["error"],
+        "Internal Server Error: Password processing error."
+    );
+
     // Explicitly call cleanup at the very end
     guard.cleanup().await?;
     Ok(())
@@ -654,7 +732,7 @@ async fn test_login_hashing_error_in_db() -> AnyhowResult<()> {
 async fn test_logout_success() -> AnyhowResult<()> {
     let test_app = test_helpers::spawn_app(true, false, false).await;
     let mut guard = test_helpers::TestDataGuard::new(test_app.db_pool.clone());
-    
+
     // Ensure encryption columns exist
     ensure_encryption_columns_exist(&test_app.db_pool).await?;
 
@@ -668,7 +746,7 @@ async fn test_logout_success() -> AnyhowResult<()> {
         password.to_string(),
     )
     .await?;
-    
+
     guard.add_user(user.id);
 
     // 1. Login first to get a session
@@ -684,14 +762,20 @@ async fn test_logout_success() -> AnyhowResult<()> {
         .body(Body::from(login_payload.to_string()))?;
 
     let login_response = test_app.router.clone().oneshot(login_request).await?;
-    
-    assert_eq!(login_response.status(), StatusCode::OK, "Login failed before logout");
-    
+
+    assert_eq!(
+        login_response.status(),
+        StatusCode::OK,
+        "Login failed before logout"
+    );
+
     // Get the session cookie
-    let set_cookie_header = login_response.headers().get(header::SET_COOKIE)
+    let set_cookie_header = login_response
+        .headers()
+        .get(header::SET_COOKIE)
         .expect("No cookie set on login");
     let cookie_str = set_cookie_header.to_str()?;
-    
+
     // 2. Now try to logout using the session cookie
     let logout_request = Request::builder()
         .method(Method::POST)
@@ -700,13 +784,17 @@ async fn test_logout_success() -> AnyhowResult<()> {
         .body(Body::empty())?;
 
     let logout_response = test_app.router.clone().oneshot(logout_request).await?;
-    
+
     // Should succeed with 204 No Content
-    assert_eq!(logout_response.status(), StatusCode::NO_CONTENT, "Logout failed");
-    
+    assert_eq!(
+        logout_response.status(),
+        StatusCode::NO_CONTENT,
+        "Logout failed"
+    );
+
     // Explicitly call cleanup before the end of the test
     guard.cleanup().await?;
-    
+
     Ok(())
 }
 
@@ -714,7 +802,7 @@ async fn test_logout_success() -> AnyhowResult<()> {
 #[ignore] // Added ignore for CI
 async fn test_logout_no_session() -> AnyhowResult<()> {
     let test_app = test_helpers::spawn_app(true, false, false).await;
-    
+
     // Ensure encryption columns exist
     ensure_encryption_columns_exist(&test_app.db_pool).await?;
 
@@ -741,7 +829,7 @@ async fn test_logout_no_session() -> AnyhowResult<()> {
 async fn test_me_success() -> AnyhowResult<()> {
     let test_app = test_helpers::spawn_app(true, false, false).await;
     let mut guard = test_helpers::TestDataGuard::new(test_app.db_pool.clone());
-    
+
     // Ensure encryption columns exist
     ensure_encryption_columns_exist(&test_app.db_pool).await?;
 
@@ -755,7 +843,7 @@ async fn test_me_success() -> AnyhowResult<()> {
         password.to_string(),
     )
     .await?;
-    
+
     guard.add_user(user.id);
 
     // 1. Login first to get a session
@@ -771,14 +859,20 @@ async fn test_me_success() -> AnyhowResult<()> {
         .body(Body::from(login_payload.to_string()))?;
 
     let login_response = test_app.router.clone().oneshot(login_request).await?;
-    
-    assert_eq!(login_response.status(), StatusCode::OK, "Login failed before /me test");
-    
+
+    assert_eq!(
+        login_response.status(),
+        StatusCode::OK,
+        "Login failed before /me test"
+    );
+
     // Get the session cookie
-    let set_cookie_header = login_response.headers().get(header::SET_COOKIE)
+    let set_cookie_header = login_response
+        .headers()
+        .get(header::SET_COOKIE)
         .expect("No cookie set on login");
     let cookie_str = set_cookie_header.to_str()?;
-    
+
     // 2. Now try to access /me endpoint using the session cookie
     let me_request = Request::builder()
         .method(Method::GET)
@@ -787,19 +881,22 @@ async fn test_me_success() -> AnyhowResult<()> {
         .body(Body::empty())?;
 
     let me_response = test_app.router.clone().oneshot(me_request).await?;
-    
+
     // Should succeed with 200 OK
     assert_eq!(me_response.status(), StatusCode::OK, "GET /me failed");
-    
+
     // Check response content
     let body = me_response.into_body().collect().await?.to_bytes();
     let auth_response: AuthResponse = serde_json::from_slice(&body)?;
-    
+
     // Verify user data
     assert_eq!(auth_response.username, username);
     assert_eq!(auth_response.email, user.email);
-    assert_eq!(auth_response.role, "User", "Role in response should be 'User'");
-    
+    assert_eq!(
+        auth_response.role, "User",
+        "Role in response should be 'User'"
+    );
+
     guard.cleanup().await?;
     Ok(())
 }
@@ -808,7 +905,7 @@ async fn test_me_success() -> AnyhowResult<()> {
 #[ignore] // Added ignore for CI
 async fn test_me_unauthorized() -> AnyhowResult<()> {
     let test_app = test_helpers::spawn_app(true, false, false).await;
-    
+
     // Ensure encryption columns exist
     ensure_encryption_columns_exist(&test_app.db_pool).await?;
 
@@ -880,15 +977,18 @@ async fn test_cookie_layer_sets_cookie() -> AnyhowResult<()> {
 
 // --- Unit Tests for auth module helpers ---
 
-use scribe_backend::auth::{AuthError};
 use deadpool_diesel::InteractError;
+use scribe_backend::auth::AuthError;
 
 #[test]
 fn test_auth_error_from_interact_error() {
     let interact_error = InteractError::Aborted; // Example InteractError variant
     let auth_error = AuthError::from(interact_error);
     assert!(matches!(auth_error, AuthError::InteractError(_)));
-    assert_eq!(auth_error.to_string(), "Database interaction error: Aborted");
+    assert_eq!(
+        auth_error.to_string(),
+        "Database interaction error: Aborted"
+    );
 
     // Optional: Test other variants if needed
     // let panic_error = InteractError::Panic(std::panic::Location::caller().to_string()); // Requires more setup
@@ -913,7 +1013,10 @@ async fn test_session_store_save_load_delete() -> AnyhowResult<()> {
     let expiry_date = OffsetDateTime::now_utc() + time::Duration::hours(1);
     // Manually construct Record as ::new() is private
     let mut data = HashMap::new();
-    data.insert("user_id".to_string(), serde_json::to_value(Uuid::new_v4().to_string())?);
+    data.insert(
+        "user_id".to_string(),
+        serde_json::to_value(Uuid::new_v4().to_string())?,
+    );
     let record = Record {
         id: session_id.clone(), // Clone Id here
         data,
@@ -921,12 +1024,21 @@ async fn test_session_store_save_load_delete() -> AnyhowResult<()> {
     };
 
     // 1. Save
-    store.save(&record).await.context("Failed to save session")?;
+    store
+        .save(&record)
+        .await
+        .context("Failed to save session")?;
     info!(session_id = %session_id, "Session saved");
 
     // 2. Load
-    let loaded_record_opt = store.load(&session_id).await.context("Failed to load session")?;
-    assert!(loaded_record_opt.is_some(), "Session should be found after saving");
+    let loaded_record_opt = store
+        .load(&session_id)
+        .await
+        .context("Failed to load session")?;
+    assert!(
+        loaded_record_opt.is_some(),
+        "Session should be found after saving"
+    );
     let loaded_record = loaded_record_opt.unwrap();
     info!(session_id = %session_id, "Session loaded");
 
@@ -941,12 +1053,21 @@ async fn test_session_store_save_load_delete() -> AnyhowResult<()> {
     assert!((loaded_record.expiry_date - expiry_date).abs() < time::Duration::seconds(1));
 
     // 3. Delete
-    store.delete(&session_id).await.context("Failed to delete session")?;
+    store
+        .delete(&session_id)
+        .await
+        .context("Failed to delete session")?;
     info!(session_id = %session_id, "Session deleted");
 
     // 4. Verify deletion
-    let loaded_after_delete = store.load(&session_id).await.context("Failed to load session after delete")?;
-    assert!(loaded_after_delete.is_none(), "Session should not be found after deletion");
+    let loaded_after_delete = store
+        .load(&session_id)
+        .await
+        .context("Failed to load session after delete")?;
+    assert!(
+        loaded_after_delete.is_none(),
+        "Session should not be found after deletion"
+    );
     info!(session_id = %session_id, "Verified session deletion");
 
     Ok(())
@@ -966,7 +1087,8 @@ async fn test_session_store_load_invalid_json() -> AnyhowResult<()> {
     let insert_result = run_db_op(&test_app.db_pool, {
         let sid = session_id_str.clone(); // Use String for DB
         move |conn| {
-            let record_to_insert = SessionRecord { // Renamed to avoid conflict
+            let record_to_insert = SessionRecord {
+                // Renamed to avoid conflict
                 id: sid, // Use String ID
                 expires: Some(Utc::now() + chrono::Duration::hours(1)),
                 session: invalid_json.to_string(),
@@ -975,7 +1097,8 @@ async fn test_session_store_load_invalid_json() -> AnyhowResult<()> {
                 .values(&record_to_insert)
                 .execute(conn)
         }
-    }).await;
+    })
+    .await;
 
     // Check if insertion itself failed unexpectedly (it shouldn't just for bad JSON string)
     insert_result.context("Manual insertion of invalid JSON failed unexpectedly")?;
@@ -986,7 +1109,10 @@ async fn test_session_store_load_invalid_json() -> AnyhowResult<()> {
     info!(session_id = %session_id_val, ?load_result, "Load result for invalid JSON"); // Log i128 ID
 
     // Assert that loading failed with a Decode error
-    assert!(load_result.is_err(), "Loading invalid JSON should result in an error");
+    assert!(
+        load_result.is_err(),
+        "Loading invalid JSON should result in an error"
+    );
     match load_result {
         Err(SessionStoreError::Decode(e)) => {
             info!(error=%e, "Successfully caught expected Decode error");
@@ -999,11 +1125,9 @@ async fn test_session_store_load_invalid_json() -> AnyhowResult<()> {
     // Cleanup: Delete the manually inserted record
     let delete_result = run_db_op(&test_app.db_pool, {
         let sid = session_id_str.clone(); // Use String for DB query
-        move |conn| {
-            diesel::delete(crate::schema::sessions::table.find(sid))
-                .execute(conn)
-        }
-    }).await;
+        move |conn| diesel::delete(crate::schema::sessions::table.find(sid)).execute(conn)
+    })
+    .await;
     delete_result.context("Failed to clean up manually inserted invalid record")?;
     info!(session_id = %session_id_val, "Cleaned up invalid JSON record"); // Log i128 ID
 
@@ -1023,41 +1147,71 @@ async fn test_session_store_load_expired_session() -> AnyhowResult<()> {
     let expiry_date = OffsetDateTime::now_utc() - time::Duration::days(1);
     // Manually construct Record
     let mut data = HashMap::new();
-    data.insert("data".to_string(), serde_json::to_value("some_expired_data")?);
-    let record_to_save = Record { // Renamed to avoid conflict
+    data.insert(
+        "data".to_string(),
+        serde_json::to_value("some_expired_data")?,
+    );
+    let record_to_save = Record {
+        // Renamed to avoid conflict
         id: session_id.clone(),
         data,
         expiry_date,
     };
 
     // 1. Save the expired record
-    store.save(&record_to_save).await.context("Failed to save expired session")?;
+    store
+        .save(&record_to_save)
+        .await
+        .context("Failed to save expired session")?;
     info!(session_id = %session_id, "Saved expired session");
 
     // Verify it exists momentarily in DB (optional sanity check)
     let exists_before_load = run_db_op(&test_app.db_pool, {
         let sid = session_id_str.clone(); // Use String for DB query
         move |conn| {
-            crate::schema::sessions::table.find(sid).select(crate::schema::sessions::id).first::<String>(conn).optional() // Check for String
+            crate::schema::sessions::table
+                .find(sid)
+                .select(crate::schema::sessions::id)
+                .first::<String>(conn)
+                .optional() // Check for String
         }
-    }).await?.is_some();
-    assert!(exists_before_load, "Expired session should exist in DB before loading");
+    })
+    .await?
+    .is_some();
+    assert!(
+        exists_before_load,
+        "Expired session should exist in DB before loading"
+    );
 
     // 2. Load the expired record
-    let loaded_record_opt = store.load(&session_id).await.context("Failed to load expired session")?;
+    let loaded_record_opt = store
+        .load(&session_id)
+        .await
+        .context("Failed to load expired session")?;
     info!(session_id = %session_id_val, ?loaded_record_opt, "Load result for expired session"); // Log i128 ID
 
     // Assert that loading returns None because it was expired
-    assert!(loaded_record_opt.is_none(), "Loading an expired session should return None");
+    assert!(
+        loaded_record_opt.is_none(),
+        "Loading an expired session should return None"
+    );
 
     // 3. Verify deletion happened during load
     let loaded_after_load = run_db_op(&test_app.db_pool, {
         let sid = session_id_str.clone(); // Use String for DB query
         move |conn| {
-            crate::schema::sessions::table.find(sid).select(crate::schema::sessions::id).first::<String>(conn).optional() // Check for String
+            crate::schema::sessions::table
+                .find(sid)
+                .select(crate::schema::sessions::id)
+                .first::<String>(conn)
+                .optional() // Check for String
         }
-    }).await?;
-    assert!(loaded_after_load.is_none(), "Expired session should have been deleted during load");
+    })
+    .await?;
+    assert!(
+        loaded_after_load.is_none(),
+        "Expired session should have been deleted during load"
+    );
     info!(session_id = %session_id_val, "Verified expired session was deleted during load"); // Log i128 ID
 
     Ok(())
@@ -1091,10 +1245,10 @@ fn test_auth_backend_debug_impl() {
 async fn test_auth_backend_get_user_not_found() -> AnyhowResult<()> {
     // Covers lines 115-116 in user_store.rs
     let test_app = test_helpers::spawn_app(true, false, false).await;
-    
+
     // Ensure encryption columns exist
     ensure_encryption_columns_exist(&test_app.db_pool).await?;
-    
+
     let backend = AuthBackend::new(test_app.db_pool.clone());
     let non_existent_user_id = Uuid::new_v4(); // Generate a random UUID
 
@@ -1106,13 +1260,19 @@ async fn test_auth_backend_get_user_not_found() -> AnyhowResult<()> {
     info!(user_id = %non_existent_user_id, ?result, "Result from AuthBackend::get_user");
 
     // Assert that the result is Ok(None)
-    assert!(result.is_ok(), "get_user should return Ok even if user not found");
+    assert!(
+        result.is_ok(),
+        "get_user should return Ok even if user not found"
+    );
     let user_option = result.unwrap();
-    assert!(user_option.is_none(), "get_user should return None for a non-existent user ID");
+    assert!(
+        user_option.is_none(),
+        "get_user should return None for a non-existent user ID"
+    );
 
     Ok(())
 }
-    
+
 #[tokio::test(flavor = "multi_thread")]
 // #[ignore] // Requires DB access via pool <- This line will be commented out
 async fn test_auth_backend_authenticate_hashing_error() -> AnyhowResult<()> {
@@ -1122,10 +1282,10 @@ async fn test_auth_backend_authenticate_hashing_error() -> AnyhowResult<()> {
     // New: spawn_app(multi_thread, use_ai, use_qdrant)
     let test_app = test_helpers::spawn_app(true, false, false).await;
     let mut guard = test_helpers::TestDataGuard::new(test_app.db_pool.clone());
-    
+
     // Ensure encryption columns exist
     ensure_encryption_columns_exist(&test_app.db_pool).await?;
-    
+
     let backend = AuthBackend::new(test_app.db_pool.clone());
 
     let username = format!("auth_backend_hash_err_{}", Uuid::new_v4());
@@ -1139,17 +1299,19 @@ async fn test_auth_backend_authenticate_hashing_error() -> AnyhowResult<()> {
         password.to_string(),
     )
     .await?;
-    
+
     guard.add_user(user.id);
 
     // 2. Update the password hash to an invalid value
     let conn = test_app.db_pool.get().await?;
-    let update_result = conn.interact(move |conn| {
-        diesel::update(schema::users::dsl::users.filter(schema::users::dsl::id.eq(user.id)))
-            .set(schema::users::dsl::password_hash.eq(invalid_hash))
-            .execute(conn)
-    }).await;
-    
+    let update_result = conn
+        .interact(move |conn| {
+            diesel::update(schema::users::dsl::users.filter(schema::users::dsl::id.eq(user.id)))
+                .set(schema::users::dsl::password_hash.eq(invalid_hash))
+                .execute(conn)
+        })
+        .await;
+
     match update_result {
         Ok(Ok(_)) => Ok(()),
         Ok(Err(e)) => Err(anyhow::anyhow!("Database error: {}", e)),
@@ -1164,10 +1326,10 @@ async fn test_auth_backend_authenticate_hashing_error() -> AnyhowResult<()> {
     };
 
     let auth_result = backend.authenticate(credentials).await;
-    
+
     // 4. Should fail with an error related to authentication
     assert!(auth_result.is_err(), "Should fail with invalid hash");
-    
+
     // Explicitly call cleanup before the end of the test
     guard.cleanup().await?;
 
@@ -1179,7 +1341,7 @@ async fn test_auth_backend_authenticate_hashing_error() -> AnyhowResult<()> {
 async fn test_register_and_verify_dek_decryption() -> AnyhowResult<()> {
     let test_app = test_helpers::spawn_app(true, false, false).await;
     let mut guard = test_helpers::TestDataGuard::new(test_app.db_pool.clone());
-    
+
     // Ensure encryption columns exist
     ensure_encryption_columns_exist(&test_app.db_pool).await?;
 
@@ -1187,7 +1349,10 @@ async fn test_register_and_verify_dek_decryption() -> AnyhowResult<()> {
     let email = format!("{}@test.com", username);
     let password = "password123";
 
-    info!("Registering test user with username {} and email {}", username, email);
+    info!(
+        "Registering test user with username {} and email {}",
+        username, email
+    );
 
     // Register a new user
     let payload = json!({
@@ -1203,24 +1368,33 @@ async fn test_register_and_verify_dek_decryption() -> AnyhowResult<()> {
         .body(Body::from(payload.to_string()))?;
 
     let response = test_app.router.clone().oneshot(request).await?;
-    
-    assert_eq!(response.status(), StatusCode::CREATED, "Registration failed");
-    
+
+    assert_eq!(
+        response.status(),
+        StatusCode::CREATED,
+        "Registration failed"
+    );
+
     let body = response.into_body().collect().await?.to_bytes();
     let auth_response: AuthResponse = serde_json::from_slice(&body)?;
-    
-    info!("User registered successfully with ID: {}", auth_response.user_id);
+
+    info!(
+        "User registered successfully with ID: {}",
+        auth_response.user_id
+    );
     guard.add_user(auth_response.user_id);
 
-    // Get the saved user record directly from the database  
+    // Get the saved user record directly from the database
     let conn = test_app.db_pool.get().await?;
-    let user_result = conn.interact(move |conn| {
-        schema::users::dsl::users
-            .find(auth_response.user_id)
-            .first::<UserDbQuery>(conn)
-            .map(User::from)
-    }).await;
-    
+    let user_result = conn
+        .interact(move |conn| {
+            schema::users::dsl::users
+                .find(auth_response.user_id)
+                .first::<UserDbQuery>(conn)
+                .map(User::from)
+        })
+        .await;
+
     let user_with_dek = match user_result {
         Ok(Ok(user)) => user,
         Ok(Err(e)) => return Err(anyhow::anyhow!("Database error: {}", e)),
@@ -1238,8 +1412,14 @@ async fn test_register_and_verify_dek_decryption() -> AnyhowResult<()> {
     );
 
     // Verify that the DEK and nonces are set
-    assert!(!user_with_dek.encrypted_dek.is_empty(), "encrypted_dek should be populated");
-    assert!(!user_with_dek.dek_nonce.is_empty(), "DEK nonce should be populated");
+    assert!(
+        !user_with_dek.encrypted_dek.is_empty(),
+        "encrypted_dek should be populated"
+    );
+    assert!(
+        !user_with_dek.dek_nonce.is_empty(),
+        "DEK nonce should be populated"
+    );
 
     // Now try to login (which will test DEK decryption)
     let login_payload = json!({
@@ -1256,14 +1436,18 @@ async fn test_register_and_verify_dek_decryption() -> AnyhowResult<()> {
         .body(Body::from(login_payload.to_string()))?;
 
     let login_response = test_app.router.clone().oneshot(login_request).await?;
-    
+
     info!(
         status = ?login_response.status(),
         "Login response received"
     );
-    
-    assert_eq!(login_response.status(), StatusCode::OK, "Login failed (DEK decryption likely failed)");
-    
+
+    assert_eq!(
+        login_response.status(),
+        StatusCode::OK,
+        "Login failed (DEK decryption likely failed)"
+    );
+
     guard.cleanup().await?;
     Ok(())
 }

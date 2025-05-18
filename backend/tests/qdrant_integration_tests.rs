@@ -6,18 +6,18 @@ use scribe_backend::errors::AppError;
 use scribe_backend::vector_db::qdrant_client::{QdrantClientService, create_qdrant_point};
 // Import necessary types for direct client use in setup
 use qdrant_client::Qdrant;
+use qdrant_client::qdrant::Match;
+use qdrant_client::qdrant::condition::ConditionOneOf;
+use qdrant_client::qdrant::r#match::MatchValue;
 use qdrant_client::qdrant::{
     Condition, CreateCollection, Distance, FieldCondition, Filter, VectorParams, VectorsConfig,
     vectors_config::Config as QdrantVectorsConfig,
 };
-use qdrant_client::qdrant::r#match::MatchValue;
-use qdrant_client::qdrant::condition::ConditionOneOf;
-use qdrant_client::qdrant::Match;
 use scribe_backend::vector_db::qdrant_client::Kind as ValueKind;
 use serde_json::json;
+use serial_test::serial;
 use std::sync::Arc;
 use uuid::Uuid;
-use serial_test::serial;
 
 // Define a shared collection name
 const TEST_COLLECTION_NAME: &str = "sanguine_scribe_integration_test";
@@ -447,7 +447,10 @@ async fn test_qdrant_ensure_collection_already_exists() -> Result<(), AnyhowErro
     // Check if the collection still exists using the raw client for verification
     let client = Qdrant::from_url("http://localhost:6334").build()?;
     let exists = client.collection_exists(TEST_COLLECTION_NAME).await?;
-    assert!(exists, "Collection should still exist after second service creation");
+    assert!(
+        exists,
+        "Collection should still exist after second service creation"
+    );
     Ok(())
 }
 
@@ -490,7 +493,14 @@ async fn test_qdrant_retrieve_points() -> Result<(), AnyhowError> {
     let retrieved_point = &retrieved_points[0];
 
     // Verify ID and payload
-    let retrieved_id_str = match retrieved_point.id.as_ref().unwrap().point_id_options.as_ref().unwrap() {
+    let retrieved_id_str = match retrieved_point
+        .id
+        .as_ref()
+        .unwrap()
+        .point_id_options
+        .as_ref()
+        .unwrap()
+    {
         qdrant_client::qdrant::point_id::PointIdOptions::Uuid(s) => s.clone(),
         qdrant_client::qdrant::point_id::PointIdOptions::Num(n) => n.to_string(),
     };
@@ -501,11 +511,13 @@ async fn test_qdrant_retrieve_points() -> Result<(), AnyhowError> {
         Some(ValueKind::StringValue("value_a".to_string()))
     );
     // Also check vector is retrieved
-    assert!(retrieved_point.vectors.is_some(), "Vectors should be retrieved");
+    assert!(
+        retrieved_point.vectors.is_some(),
+        "Vectors should be retrieved"
+    );
 
     Ok(())
 }
-
 
 #[tokio::test]
 #[serial]
@@ -520,7 +532,8 @@ async fn test_qdrant_trait_methods() -> Result<(), AnyhowError> {
     let test_vectors = generate_test_vectors(768, 1);
     let point_id_trait = Uuid::new_v4();
     let payload_trait = json!({"trait_key": "trait_value"});
-    let point_trait = create_qdrant_point(point_id_trait, test_vectors[0].clone(), Some(payload_trait))?;
+    let point_trait =
+        create_qdrant_point(point_id_trait, test_vectors[0].clone(), Some(payload_trait))?;
     trait_service.store_points(vec![point_trait]).await?;
     tokio::time::sleep(tokio::time::Duration::from_millis(100)).await; // Allow indexing
 
@@ -538,10 +551,21 @@ async fn test_qdrant_trait_methods() -> Result<(), AnyhowError> {
         ..Default::default()
     };
     let retrieved_trait_points = trait_service.retrieve_points(Some(filter_trait), 5).await?;
-    assert_eq!(retrieved_trait_points.len(), 1, "Expected to retrieve 1 point via trait");
+    assert_eq!(
+        retrieved_trait_points.len(),
+        1,
+        "Expected to retrieve 1 point via trait"
+    );
     let retrieved_trait_point = &retrieved_trait_points[0];
     // Verify ID (ScoredPoint has ID directly)
-     let retrieved_id_str_trait = match retrieved_trait_point.id.as_ref().unwrap().point_id_options.as_ref().unwrap() {
+    let retrieved_id_str_trait = match retrieved_trait_point
+        .id
+        .as_ref()
+        .unwrap()
+        .point_id_options
+        .as_ref()
+        .unwrap()
+    {
         qdrant_client::qdrant::point_id::PointIdOptions::Uuid(s) => s.clone(),
         qdrant_client::qdrant::point_id::PointIdOptions::Num(n) => n.to_string(),
     };

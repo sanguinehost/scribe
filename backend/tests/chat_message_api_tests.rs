@@ -10,20 +10,20 @@ use tower::ServiceExt;
 use uuid::Uuid;
 
 // Crate imports
+use anyhow::Context as _; // For .context() on Option/Result
 use diesel::prelude::*;
+use mime; // For mime::APPLICATION_JSON
 use scribe_backend::{
     models::{
-        characters::Character as DbCharacter,
-        chats::{MessageRole, NewChat, NewMessage, Chat},
         character_card::NewCharacter,
+        characters::Character as DbCharacter,
+        chats::{Chat, MessageRole, NewChat, NewMessage},
         users::User,
     },
     schema::{characters, chat_messages, chat_sessions},
     test_helpers::{self}, // Added crypto for generate_salt
 }; // For password hashing
-use mime; // For mime::APPLICATION_JSON
 use serde_json::json; // For login payload
-use anyhow::Context as _; // For .context() on Option/Result
 use tower_cookies::Cookie; // Added for parsing cookie
 
 // --- Tests for GET /api/chats/{id}/messages ---
@@ -31,7 +31,9 @@ use tower_cookies::Cookie; // Added for parsing cookie
 #[tokio::test]
 #[ignore] // Added ignore for CI
 async fn get_chat_messages_success_integration() -> anyhow::Result<()> {
-    unsafe { std::env::set_var("RUST_LOG", "debug"); }
+    unsafe {
+        std::env::set_var("RUST_LOG", "debug");
+    }
     let test_app = test_helpers::spawn_app(true, false, false).await;
 
     // Create User A (will own the character and the chat session)
@@ -56,7 +58,10 @@ async fn get_chat_messages_success_integration() -> anyhow::Result<()> {
         updated_at: Some(chrono::Utc::now()),
         ..Default::default()
     };
-    let char_a: DbCharacter = test_app.db_pool.get().await
+    let char_a: DbCharacter = test_app
+        .db_pool
+        .get()
+        .await
         .context("Failed to get DB connection for char_a creation")?
         .interact(move |conn_inner| {
             diesel::insert_into(characters::table)
@@ -73,7 +78,10 @@ async fn get_chat_messages_success_integration() -> anyhow::Result<()> {
         user_id: user_a.id,
         character_id: char_a.id,
         // Aligning with chat_session_api_tests.rs test_get_chat_session_details_forbidden
-        title: Some(format!("Chat Session for {} with Character {}", user_a.username, char_a.name)),
+        title: Some(format!(
+            "Chat Session for {} with Character {}",
+            user_a.username, char_a.name
+        )),
         created_at: chrono::Utc::now(),
         updated_at: chrono::Utc::now(),
         history_management_strategy: "truncate_summary".to_string(),
@@ -81,7 +89,10 @@ async fn get_chat_messages_success_integration() -> anyhow::Result<()> {
         model_name: "gemini-test-model".to_string(),
         visibility: Some("private".to_string()),
     };
-    let session_a: Chat = test_app.db_pool.get().await
+    let session_a: Chat = test_app
+        .db_pool
+        .get()
+        .await
         .context("Failed to get DB connection for session_a creation")?
         .interact(move |conn_inner| {
             diesel::insert_into(chat_sessions::table)
@@ -98,7 +109,7 @@ async fn get_chat_messages_success_integration() -> anyhow::Result<()> {
         id: Uuid::new_v4(),
         session_id: session_a.id,
         user_id: user_a.id, // Message from user_a
-        message_type: MessageRole::User, 
+        message_type: MessageRole::User,
         content: dummy_message_content.as_bytes().to_vec(),
         content_nonce: None, // Plaintext for this test message
         role: Some("user".to_string()),
@@ -110,7 +121,10 @@ async fn get_chat_messages_success_integration() -> anyhow::Result<()> {
         completion_tokens: None,
     };
 
-    test_app.db_pool.get().await
+    test_app
+        .db_pool
+        .get()
+        .await
         .context("Failed to get DB connection for dummy message creation")?
         .interact(move |conn_inner| {
             diesel::insert_into(chat_messages::table)
@@ -118,7 +132,9 @@ async fn get_chat_messages_success_integration() -> anyhow::Result<()> {
                 .execute(conn_inner)
         })
         .await
-        .map_err(|e| anyhow::anyhow!("Pool.get().interact error creating dummy message: {:?}", e))??;
+        .map_err(|e| {
+            anyhow::anyhow!("Pool.get().interact error creating dummy message: {:?}", e)
+        })??;
 
     // Arrange: User B (tries to access User A's session)
     let username_b = "test_get_messages_forbidden_user_b";
@@ -134,12 +150,21 @@ async fn get_chat_messages_success_integration() -> anyhow::Result<()> {
     // Arrange: User B logs in
     let login_payload_b = json!({ "identifier": user_b.username.clone(), "password": password_b }); // Use plaintext password_b
     let login_request_b = Request::builder()
-        .method(Method::POST).uri("/api/auth/login")
+        .method(Method::POST)
+        .uri("/api/auth/login")
         .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
         .body(Body::from(serde_json::to_string(&login_payload_b)?))?;
     let login_response_b = test_app.router.clone().oneshot(login_request_b).await?;
-    assert_eq!(login_response_b.status(), StatusCode::OK, "Login failed for user_b");
-    let raw_cookie_header_b = login_response_b.headers().get(header::SET_COOKIE).context("Set-Cookie missing for B")?.to_str()?;
+    assert_eq!(
+        login_response_b.status(),
+        StatusCode::OK,
+        "Login failed for user_b"
+    );
+    let raw_cookie_header_b = login_response_b
+        .headers()
+        .get(header::SET_COOKIE)
+        .context("Set-Cookie missing for B")?
+        .to_str()?;
     let parsed_cookie_b = Cookie::parse(raw_cookie_header_b.to_string())?;
     let auth_cookie_b = format!("{}={}", parsed_cookie_b.name(), parsed_cookie_b.value());
 
@@ -152,7 +177,10 @@ async fn get_chat_messages_success_integration() -> anyhow::Result<()> {
     // Act: User B tries to get messages from User A's session
     let response = test_app.router.clone().oneshot(request).await?;
 
-    tracing::debug!("get_chat_messages_success_integration: response status = {}", response.status());
+    tracing::debug!(
+        "get_chat_messages_success_integration: response status = {}",
+        response.status()
+    );
 
     // Assert: Check for either Forbidden or Not Found status
     // Both are acceptable - 403 means user doesn't have permission, 404 means resource not found
@@ -171,7 +199,13 @@ async fn test_get_chat_messages_session_not_found() -> anyhow::Result<()> {
     let mut test_data_guard = test_helpers::TestDataGuard::new(test_app.db_pool.clone());
     let username = "get_messages_not_found_user";
     let password = "password";
-    let user: User = test_helpers::db::create_test_user(&test_app.db_pool, username.to_string(), password.to_string()).await.expect("Failed to create test user");
+    let user: User = test_helpers::db::create_test_user(
+        &test_app.db_pool,
+        username.to_string(),
+        password.to_string(),
+    )
+    .await
+    .expect("Failed to create test user");
     test_data_guard.add_user(user.id);
     let auth_cookie = test_helpers::login_user_via_api(&test_app, username, password).await;
 
@@ -196,12 +230,16 @@ mod delete_chat_message {
 
     #[tokio::test]
     async fn test_delete_chat_message_success() -> anyhow::Result<()> {
-        let test_app = TestApp::create_for_user_without_encryption_key(
-            false, false, false
-        ).await;
+        let test_app = TestApp::create_for_user_without_encryption_key(false, false, false).await;
         let username = "test_delete_chat_message_user";
         let password = "password";
-        let user: User = test_helpers::db::create_test_user(&test_app.db_pool, username.to_string(), password.to_string()).await.expect("Failed to create test user");
+        let user: User = test_helpers::db::create_test_user(
+            &test_app.db_pool,
+            username.to_string(),
+            password.to_string(),
+        )
+        .await
+        .expect("Failed to create test user");
         let auth_cookie = test_helpers::login_user_via_api(&test_app, username, password).await;
 
         let session_id = Uuid::new_v4();
@@ -220,12 +258,16 @@ mod delete_chat_message {
 
     #[tokio::test]
     async fn test_delete_chat_message_not_found() -> anyhow::Result<()> {
-        let test_app = TestApp::create_for_user_without_encryption_key(
-            false, false, false
-        ).await;
+        let test_app = TestApp::create_for_user_without_encryption_key(false, false, false).await;
         let username = "test_delete_chat_message_user";
         let password = "password";
-        let user: User = test_helpers::db::create_test_user(&test_app.db_pool, username.to_string(), password.to_string()).await.expect("Failed to create test user");
+        let user: User = test_helpers::db::create_test_user(
+            &test_app.db_pool,
+            username.to_string(),
+            password.to_string(),
+        )
+        .await
+        .expect("Failed to create test user");
         let auth_cookie = test_helpers::login_user_via_api(&test_app, username, password).await;
 
         let session_id = Uuid::new_v4();

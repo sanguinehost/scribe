@@ -25,7 +25,7 @@ pub enum AppError {
     // --- Authentication/Authorization Errors ---
     #[error("User not found")]
     UserNotFound, // Often used in auth flows
-    
+
     // --- Gateway Errors ---
     #[error("Bad Gateway: {0}")]
     BadGateway(String), // For external service errors
@@ -195,7 +195,7 @@ pub enum AppError {
     // Character Parsing Error (NEW)
     #[error("Character parsing error: {0}")]
     CharacterParsingError(String),
-    
+
     // Tokenization Error (NEW)
     #[error("Text processing error: {0}")]
     TextProcessingError(String),
@@ -276,15 +276,16 @@ impl IntoResponse for AppError {
             AppError::BadRequest(msg) => (StatusCode::BAD_REQUEST, msg),
             AppError::NotFound(msg) => (StatusCode::NOT_FOUND, msg),
             AppError::UserNotFound => (StatusCode::NOT_FOUND, "User not found".to_string()),
-            AppError::SessionNotFound => (StatusCode::UNAUTHORIZED, "Session not found or expired".to_string()),
+            AppError::SessionNotFound => (
+                StatusCode::UNAUTHORIZED,
+                "Session not found or expired".to_string(),
+            ),
             AppError::Conflict(msg) => (StatusCode::CONFLICT, msg),
-            AppError::UsernameTaken => {
-                (StatusCode::CONFLICT, "Username is already taken".to_string())
-            }
-            AppError::EmailTaken => (
+            AppError::UsernameTaken => (
                 StatusCode::CONFLICT,
-                "Email is already taken".to_string(),
-            ), // 409 Conflict
+                "Username is already taken".to_string(),
+            ),
+            AppError::EmailTaken => (StatusCode::CONFLICT, "Email is already taken".to_string()), // 409 Conflict
             AppError::InvalidInput(msg) => {
                 (StatusCode::BAD_REQUEST, format!("Invalid input: {}", msg))
             }
@@ -331,19 +332,31 @@ impl IntoResponse for AppError {
             }
             AppError::CryptoError(e) => {
                 error!("Cryptography error: {}", e);
-                (StatusCode::INTERNAL_SERVER_ERROR, "A cryptographic operation failed.".to_string())
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "A cryptographic operation failed.".to_string(),
+                )
             }
             AppError::EncryptionError(e) => {
                 error!("Encryption error: {}", e);
-                (StatusCode::INTERNAL_SERVER_ERROR, "Encryption operation failed.".to_string())
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Encryption operation failed.".to_string(),
+                )
             }
             AppError::DecryptionError(e) => {
                 error!("Decryption error: {}", e);
-                (StatusCode::INTERNAL_SERVER_ERROR, "Data decryption failed.".to_string())
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Data decryption failed.".to_string(),
+                )
             }
             AppError::SessionError(e) => {
                 error!("Session operation error: {}", e);
-                (StatusCode::INTERNAL_SERVER_ERROR, "A session operation failed.".to_string())
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "A session operation failed.".to_string(),
+                )
             }
 
             // Added RateLimited mapping
@@ -484,16 +497,16 @@ impl IntoResponse for AppError {
             }
             AppError::AiServiceError(e) => {
                 error!("AI Service Error: {}", e);
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    e,
-                )
+                (StatusCode::INTERNAL_SERVER_ERROR, e)
             }
 
-            AppError::PasswordProcessingError => (StatusCode::INTERNAL_SERVER_ERROR, self.to_string()), // Handle new variant
+            AppError::PasswordProcessingError => {
+                (StatusCode::INTERNAL_SERVER_ERROR, self.to_string())
+            } // Handle new variant
 
             // Catch-all Internal Server Error MUST be last
-            AppError::InternalServerErrorGeneric(e) => { // Renamed variant
+            AppError::InternalServerErrorGeneric(e) => {
+                // Renamed variant
                 // Log the full error chain if possible
                 error!("Internal Server Error: {:?}", e); // Use debug formatting for Anyhow
                 (
@@ -546,7 +559,7 @@ impl IntoResponse for AppError {
                     "Failed to parse character data".to_string(),
                 )
             }
-            
+
             // Tokenization Error
             AppError::TextProcessingError(e) => {
                 error!("Text processing error: {}", e);
@@ -556,14 +569,15 @@ impl IntoResponse for AppError {
                 )
             }
 
-            AppError::ValidationError(msg) => {
-                (StatusCode::BAD_REQUEST, format!("Validation error: {}", msg))
-            },
-            
+            AppError::ValidationError(msg) => (
+                StatusCode::BAD_REQUEST,
+                format!("Validation error: {}", msg),
+            ),
+
             AppError::BadGateway(msg) => {
                 error!("Bad Gateway error: {}", msg);
                 (StatusCode::BAD_GATEWAY, msg)
-            },
+            }
         };
 
         let body = Json(json!({
@@ -832,13 +846,16 @@ mod tests {
     fn test_app_error_from_diesel_error() {
         let diesel_error = DieselError::NotFound;
         let app_error: AppError = diesel_error.into();
-        assert!(matches!(app_error, AppError::NotFound(s) if s == "Resource not found".to_string()));
+        assert!(
+            matches!(app_error, AppError::NotFound(s) if s == "Resource not found".to_string())
+        );
         // Covers lines 716-717
     }
 
     #[test]
     fn test_app_error_from_deadpool_diesel_pool_error() {
-        let pool_error = deadpool_diesel::PoolError::Timeout(deadpool::managed::TimeoutType::Create);
+        let pool_error =
+            deadpool_diesel::PoolError::Timeout(deadpool::managed::TimeoutType::Create);
         let error_string = pool_error.to_string();
         let app_error: AppError = pool_error.into();
         assert!(matches!(app_error, AppError::DbPoolError(s) if s == error_string));
@@ -848,7 +865,8 @@ mod tests {
     #[test]
     fn test_app_error_from_deadpool_managed_pool_error() {
         // Constructing this requires a PoolError, which we created above.
-        let inner_pool_error = deadpool_diesel::PoolError::Timeout(deadpool::managed::TimeoutType::Create);
+        let inner_pool_error =
+            deadpool_diesel::PoolError::Timeout(deadpool::managed::TimeoutType::Create);
         let managed_pool_error: deadpool::managed::PoolError<deadpool_diesel::PoolError> =
             deadpool::managed::PoolError::Backend(inner_pool_error);
         let error_string = managed_pool_error.to_string();
@@ -937,7 +955,8 @@ mod tests {
     fn test_app_error_from_reqwest_middleware_error() {
         // Use Error::Reqwest which wraps reqwest::Error
         // Simulate middleware error directly as reqwest::Error is hard to construct
-        let middleware_error = reqwest_middleware::Error::Middleware(anyhow::anyhow!("Simulated middleware error"));
+        let middleware_error =
+            reqwest_middleware::Error::Middleware(anyhow::anyhow!("Simulated middleware error"));
         let error_string = middleware_error.to_string();
         let app_error: AppError = middleware_error.into();
         assert!(matches!(app_error, AppError::HttpMiddlewareError(s) if s == error_string));
@@ -1030,7 +1049,6 @@ mod tests {
         // Covers lines 819-829
     }
 
-
     // --- Tests for AppError IntoResponse arms ---
 
     #[tokio::test]
@@ -1059,7 +1077,6 @@ mod tests {
         let body = get_body_json(response).await;
         assert_eq!(body["error"], "User not found"); // Line 243
     }
-
 
     #[tokio::test]
     async fn test_invalid_input_response() {
@@ -1106,12 +1123,16 @@ mod tests {
         let response = error.into_response(); // Line 294
         assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS); // Line 295
         let body = get_body_json(response).await;
-        assert_eq!(body["error"], "API rate limit exceeded. Please try again later."); // Line 296
+        assert_eq!(
+            body["error"],
+            "API rate limit exceeded. Please try again later."
+        ); // Line 296
     }
 
     #[tokio::test]
     async fn test_db_pool_error_response() {
-        let pool_error = deadpool_diesel::PoolError::Timeout(deadpool::managed::TimeoutType::Create);
+        let pool_error =
+            deadpool_diesel::PoolError::Timeout(deadpool::managed::TimeoutType::Create);
         let error: AppError = pool_error.into(); // Line 722-723 trigger this variant
         let response = error.into_response(); // Line 307
         assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR); // Line 311
@@ -1121,7 +1142,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_db_managed_pool_error_response() {
-        let inner_pool_error = deadpool_diesel::PoolError::Timeout(deadpool::managed::TimeoutType::Create);
+        let inner_pool_error =
+            deadpool_diesel::PoolError::Timeout(deadpool::managed::TimeoutType::Create);
         let managed_pool_error: deadpool::managed::PoolError<deadpool_diesel::PoolError> =
             deadpool::managed::PoolError::Backend(inner_pool_error);
         let error: AppError = managed_pool_error.into(); // Line 728-729 trigger this variant
@@ -1236,12 +1258,16 @@ mod tests {
     #[tokio::test]
     async fn test_http_middleware_error_response() {
         // Simulate middleware error directly as reqwest::Error is hard to construct
-        let middleware_error = reqwest_middleware::Error::Middleware(anyhow::anyhow!("Simulated middleware error"));
+        let middleware_error =
+            reqwest_middleware::Error::Middleware(anyhow::anyhow!("Simulated middleware error"));
         let error: AppError = middleware_error.into(); // Line 788-789 trigger this variant
         let response = error.into_response(); // Line 392
         assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR); // Line 396
         let body = get_body_json(response).await;
-        assert_eq!(body["error"], "Failed during external service communication"); // Line 396
+        assert_eq!(
+            body["error"],
+            "Failed during external service communication"
+        ); // Line 396
     }
 
     #[tokio::test]
@@ -1373,7 +1399,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_session_error_response_new() { // Renamed to avoid conflict
+    async fn test_session_error_response_new() {
+        // Renamed to avoid conflict
         let app_error = AppError::SessionError("Test session op error".to_string());
         let response = app_error.into_response();
         assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
@@ -1395,10 +1422,14 @@ impl From<axum_login::Error<AuthBackend>> for AppError {
         match err {
             axum_login::Error::Session(session_err) => {
                 tracing::error!("Session component of axum_login::Error: {:?}", session_err);
-                if session_err.to_string().contains("decode error") { // Heuristic check
+                if session_err.to_string().contains("decode error") {
+                    // Heuristic check
                     AppError::Unauthorized(format!("Invalid session data: {}", session_err))
                 } else {
-                    AppError::SessionStoreError(format!("Session processing error: {}", session_err))
+                    AppError::SessionStoreError(format!(
+                        "Session processing error: {}",
+                        session_err
+                    ))
                 }
             }
             // This variant caused E0599 before, indicating it might be incorrect for the current axum_login version.
@@ -1419,10 +1450,10 @@ impl From<axum_login::Error<AuthBackend>> for AppError {
             }
             */
             // Add a temporary catch-all that maps to Unauthorized until we know the correct variants
-             _ => {
-                 tracing::error!("Unhandled axum_login::Error variant: {:?}", err);
-                 AppError::Unauthorized(format!("Unhandled authentication error: {}", err))
-             }
+            _ => {
+                tracing::error!("Unhandled axum_login::Error variant: {:?}", err);
+                AppError::Unauthorized(format!("Unhandled authentication error: {}", err))
+            }
         }
     }
 }
@@ -1549,16 +1580,31 @@ impl From<crate::auth::AuthError> for AppError {
             crate::auth::AuthError::WrongCredentials => AppError::InvalidCredentials,
             crate::auth::AuthError::UsernameTaken => AppError::UsernameTaken,
             crate::auth::AuthError::EmailTaken => AppError::EmailTaken,
-            crate::auth::AuthError::HashingError => AppError::PasswordHashingFailed("Bcrypt hashing failed".to_string()), // This remains, not PasswordProcessingError, as From<AuthError> is generic
+            crate::auth::AuthError::HashingError => {
+                AppError::PasswordHashingFailed("Bcrypt hashing failed".to_string())
+            } // This remains, not PasswordProcessingError, as From<AuthError> is generic
             crate::auth::AuthError::UserNotFound => AppError::UserNotFound,
             crate::auth::AuthError::DatabaseError(msg) => AppError::DatabaseQueryError(msg),
             crate::auth::AuthError::PoolError(e) => AppError::DbPoolError(e.to_string()),
             crate::auth::AuthError::InteractError(s) => AppError::DbInteractError(s),
-            crate::auth::AuthError::CryptoOperationFailed(crypto_err) => AppError::InternalServerErrorGeneric(format!("Cryptography operation failed: {}", crypto_err)), // Use renamed variant
-            crate::auth::AuthError::RecoveryNotSetup => AppError::BadRequest("Account recovery has not been set up for this user.".to_string()),
-            crate::auth::AuthError::InvalidRecoveryPhrase => AppError::BadRequest("The provided recovery phrase was invalid.".to_string()),
-            crate::auth::AuthError::SessionDeletionError(msg) => AppError::InternalServerErrorGeneric(format!("Failed to delete session: {}", msg)),
-            crate::auth::AuthError::AccountLocked => AppError::Unauthorized("Your account is locked. Please contact an administrator.".to_string())
+            crate::auth::AuthError::CryptoOperationFailed(crypto_err) => {
+                AppError::InternalServerErrorGeneric(format!(
+                    "Cryptography operation failed: {}",
+                    crypto_err
+                ))
+            } // Use renamed variant
+            crate::auth::AuthError::RecoveryNotSetup => AppError::BadRequest(
+                "Account recovery has not been set up for this user.".to_string(),
+            ),
+            crate::auth::AuthError::InvalidRecoveryPhrase => {
+                AppError::BadRequest("The provided recovery phrase was invalid.".to_string())
+            }
+            crate::auth::AuthError::SessionDeletionError(msg) => {
+                AppError::InternalServerErrorGeneric(format!("Failed to delete session: {}", msg))
+            }
+            crate::auth::AuthError::AccountLocked => AppError::Unauthorized(
+                "Your account is locked. Please contact an administrator.".to_string(),
+            ),
         }
     }
 }

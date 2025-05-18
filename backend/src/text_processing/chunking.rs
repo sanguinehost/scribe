@@ -8,8 +8,8 @@ use tracing::{debug, instrument, trace, warn}; // Added trace
 pub struct TextChunk {
     pub content: String,
     pub source_id: Option<String>, // Optional identifier for the source document/message
-    pub start_index: usize,        // Start index (char or word based on metric) in the original text
-    pub end_index: usize,          // End index (char or word based on metric) in the original text
+    pub start_index: usize, // Start index (char or word based on metric) in the original text
+    pub end_index: usize,   // End index (char or word based on metric) in the original text
 }
 
 // Manual implementation of PartialEq for easier comparison in tests, ignoring metadata for now
@@ -141,9 +141,19 @@ fn chunk_recursive(
 
     // --- FIX: Attempt splitting by major separators FIRST ---
     let mut split_occurred = false;
-    for separator in separators.iter().filter(|&&s| s == "\n\n" || s == "\n") { // Only \n\n and \n
-        if let Some(split_index) = find_best_split_point(segment, *separator, config.max_size, config.metric, word_segmenter) {
-            trace!(separator, split_index, "Found split point by major separator.");
+    for separator in separators.iter().filter(|&&s| s == "\n\n" || s == "\n") {
+        // Only \n\n and \n
+        if let Some(split_index) = find_best_split_point(
+            segment,
+            *separator,
+            config.max_size,
+            config.metric,
+            word_segmenter,
+        ) {
+            trace!(
+                separator,
+                split_index, "Found split point by major separator."
+            );
             let (part1, part2) = segment.split_at(split_index);
             let part1_trimmed = part1.trim_end(); // Trim trailing space from first part
             let part2_trimmed = part2.trim_start(); // Trim leading space/separator from second part
@@ -160,14 +170,15 @@ fn chunk_recursive(
 
             // Ensure the split is productive: at least one part must be strictly smaller,
             // and neither part can be larger than the original segment's character count.
-            let is_productive = (part1_char_count < segment_size || part2_trimmed_char_count < segment_size)
-                                && part1_char_count <= segment_size
-                                && part2_trimmed_char_count <= segment_size;
+            let is_productive = (part1_char_count < segment_size
+                || part2_trimmed_char_count < segment_size)
+                && part1_char_count <= segment_size
+                && part2_trimmed_char_count <= segment_size;
 
             if is_productive {
-                 // Recursively chunk the first part
-                 chunk_recursive(
-                     part1_trimmed,
+                // Recursively chunk the first part
+                chunk_recursive(
+                    part1_trimmed,
                     config,
                     source_id,
                     current_offset, // Offset remains the same for the first part
@@ -200,22 +211,31 @@ fn chunk_recursive(
             split_occurred = true;
             break; // Stop trying major separators once a split is successful
         } else {
-             trace!(separator, "No suitable split point found by major separator.");
+            trace!(
+                separator,
+                "No suitable split point found by major separator."
+            );
         }
     }
     // --- End FIX ---
 
     // If a split by \n\n or \n happened, we're done with this segment level
     if split_occurred {
-         trace!("chunk_recursive finished for offset {} (Split by major separator)", current_offset);
-         return Ok(());
+        trace!(
+            "chunk_recursive finished for offset {} (Split by major separator)",
+            current_offset
+        );
+        return Ok(());
     }
 
     // --- FIX: Check Base Case AFTER major separators ---
     // If no major split occurred AND the segment fits, add it and return.
     if segment_size <= config.max_size {
         if !segment.trim().is_empty() {
-            trace!("  Base case: Segment fits (size {} <= max {}). Adding chunk.", segment_size, config.max_size);
+            trace!(
+                "  Base case: Segment fits (size {} <= max {}). Adding chunk.",
+                segment_size, config.max_size
+            );
             chunks.push(TextChunk {
                 content: segment.to_string(),
                 source_id: source_id.clone(),
@@ -225,14 +245,30 @@ fn chunk_recursive(
         } else {
             trace!("Segment is empty after trim, skipping.");
         }
-        trace!("chunk_recursive finished for offset {} (Base Case)", current_offset);
+        trace!(
+            "chunk_recursive finished for offset {} (Base Case)",
+            current_offset
+        );
         return Ok(()); // Segment fits, no further splitting needed
     }
     // --- End FIX ---
 
     // Segment is too large and wasn't split by \n\n or \n. Try sentence splitting.
-    trace!("Segment too large ({} > {}), no major split. Trying sentence splitting.", segment_size, config.max_size);
-    if try_split_by_sentences(segment, segment_size, config, source_id, current_offset, separators, sentence_segmenter, word_segmenter, chunks)? {
+    trace!(
+        "Segment too large ({} > {}), no major split. Trying sentence splitting.",
+        segment_size, config.max_size
+    );
+    if try_split_by_sentences(
+        segment,
+        segment_size,
+        config,
+        source_id,
+        current_offset,
+        separators,
+        sentence_segmenter,
+        word_segmenter,
+        chunks,
+    )? {
         split_occurred = true;
     } else {
         trace!("Sentence splitting did not resolve or wasn't applicable.");
@@ -241,9 +277,23 @@ fn chunk_recursive(
     // If still no split occurred (too large, no major separators, sentence split failed/inapplicable)
     if !split_occurred {
         // Fallback: Segment is still too large.
-        warn!(segment_size, config.max_size, "Segment still too large after trying separators and sentences. Applying fallback split.");
-        trace!("  Fallback: Segment too large (size {} > max {}). Calling split_fallback.", segment_size, config.max_size);
-        split_fallback(segment, config, source_id, current_offset, word_segmenter, chunks)?;
+        warn!(
+            segment_size,
+            config.max_size,
+            "Segment still too large after trying separators and sentences. Applying fallback split."
+        );
+        trace!(
+            "  Fallback: Segment too large (size {} > max {}). Calling split_fallback.",
+            segment_size, config.max_size
+        );
+        split_fallback(
+            segment,
+            config,
+            source_id,
+            current_offset,
+            word_segmenter,
+            chunks,
+        )?;
     }
     trace!("chunk_recursive finished for offset {}", current_offset);
 
@@ -271,7 +321,10 @@ fn try_split_by_sentences(
     }
     // --- End FIX ---
 
-    trace!(num_sentences = sentence_breaks.len(), "Attempting to split by sentences.");
+    trace!(
+        num_sentences = sentence_breaks.len(),
+        "Attempting to split by sentences."
+    );
     let mut sentence_start_byte = 0;
     let mut sentence_start_offset = current_offset; // Track offset for each sentence
     let mut sentences_processed = 0; // Count of *productively* processed sentences
@@ -279,40 +332,43 @@ fn try_split_by_sentences(
     for sentence_end_byte in sentence_breaks {
         let sentence = &segment[sentence_start_byte..sentence_end_byte].trim();
         if !sentence.is_empty() {
-             let sentence_char_count = sentence.chars().count();
-             // --- FIX: Ensure progress before recursing ---
-             if sentence_char_count >= original_segment_size {
-                 trace!(original_segment_size, sentence_char_count, "Sentence split did not reduce size, skipping recursion for this sentence.");
-                 // Skip this 'sentence' as it doesn't make progress. Update offsets and continue loop.
-                 // We don't increment sentences_processed here.
-             } else {
-                 // Recursively chunk this sentence (it might still be too long)
-                 chunk_recursive(
-                     sentence,
-                 config,
-                 source_id,
-                 sentence_start_offset, // Use the calculated start offset for this sentence
-                 separators, // Pass separators down
-                 sentence_segmenter,
-                 word_segmenter,
-                 chunks,
-                 )?;
-                 sentences_processed += 1; // Increment only if recursion happened
-             }
+            let sentence_char_count = sentence.chars().count();
+            // --- FIX: Ensure progress before recursing ---
+            if sentence_char_count >= original_segment_size {
+                trace!(
+                    original_segment_size,
+                    sentence_char_count,
+                    "Sentence split did not reduce size, skipping recursion for this sentence."
+                );
+                // Skip this 'sentence' as it doesn't make progress. Update offsets and continue loop.
+                // We don't increment sentences_processed here.
+            } else {
+                // Recursively chunk this sentence (it might still be too long)
+                chunk_recursive(
+                    sentence,
+                    config,
+                    source_id,
+                    sentence_start_offset, // Use the calculated start offset for this sentence
+                    separators,            // Pass separators down
+                    sentence_segmenter,
+                    word_segmenter,
+                    chunks,
+                )?;
+                sentences_processed += 1; // Increment only if recursion happened
+            }
         }
-            // Update offsets for the *next* sentence based on character count
-            // Always update offset based on the original segment slice, even if recursion was skipped
-            let processed_segment_for_offset = &segment[sentence_start_byte..sentence_end_byte];
-            sentence_start_offset += processed_segment_for_offset.chars().count(); // Use char count for offset
-            sentence_start_byte = sentence_end_byte;
-        }
+        // Update offsets for the *next* sentence based on character count
+        // Always update offset based on the original segment slice, even if recursion was skipped
+        let processed_segment_for_offset = &segment[sentence_start_byte..sentence_end_byte];
+        sentence_start_offset += processed_segment_for_offset.chars().count(); // Use char count for offset
+        sentence_start_byte = sentence_end_byte;
+    }
 
     // Return true only if we managed to process at least one sentence via recursion
     // AND the original segment had more than one sentence break initially.
     // This indicates sentence splitting made some progress, even if not all sentences were recursed on.
     Ok(sentences_processed > 0)
 }
-
 
 /// Fallback splitting for segments that couldn't be split by separators or sentences.
 fn split_fallback(
@@ -328,10 +384,16 @@ fn split_fallback(
         // --- FIX: Rewritten Word Fallback Logic ---
         let word_byte_indices: Vec<usize> = word_segmenter.segment_str(segment).collect();
         let num_words_in_segment = word_byte_indices.len();
-        trace!("Fallback Word Split: Total words in segment = {}", num_words_in_segment);
+        trace!(
+            "Fallback Word Split: Total words in segment = {}",
+            num_words_in_segment
+        );
 
         if num_words_in_segment > 1 {
-            trace!(num_words = num_words_in_segment, "Fallback: Splitting by words.");
+            trace!(
+                num_words = num_words_in_segment,
+                "Fallback: Splitting by words."
+            );
             let mut current_chunk_start_word_index = 0; // Index within word_byte_indices
             let mut current_chunk_start_offset = current_offset; // Char offset in original text
 
@@ -342,10 +404,12 @@ fn split_fallback(
                 // Determine the end word index for this chunk
                 let current_chunk_end_word_index = min(
                     current_chunk_start_word_index + config.max_size, // Ideal end based on max_size
-                    num_words_in_segment // Cannot go beyond the last word
+                    num_words_in_segment, // Cannot go beyond the last word
                 );
-                trace!("  End Word Index (Calculated): {}", current_chunk_end_word_index);
-
+                trace!(
+                    "  End Word Index (Calculated): {}",
+                    current_chunk_end_word_index
+                );
 
                 // Ensure we don't create a chunk smaller than overlap if possible (unless it's the last chunk)
                 // This logic might be overly complex, let's keep it simple first: chunk up to max_size words.
@@ -363,43 +427,54 @@ fn split_fallback(
                 };
                 trace!("  Chunk Start Byte (Calculated): {}", chunk_start_byte);
 
-
                 // Get the end byte of the last word in this chunk
                 // Ensure index is valid before accessing. end_word_index can be == num_words_in_segment
                 let chunk_end_byte_index = current_chunk_end_word_index.saturating_sub(1);
-                 let chunk_end_byte; // Declare chunk_end_byte outside the if/else
-                 if chunk_end_byte_index >= word_byte_indices.len() {
-                     warn!("Calculated chunk_end_byte_index {} is out of bounds for word_byte_indices (len {}). Clamping.", chunk_end_byte_index, word_byte_indices.len());
-                     // This case shouldn't happen if current_chunk_end_word_index logic is correct, but safety first.
-                     // If it does happen, it likely means current_chunk_end_word_index was 0, implying num_words_in_segment was 0,
-                     // but we checked for num_words_in_segment > 1 earlier.
-                     // Let's just use the last available index if this weird state occurs.
-                     if word_byte_indices.is_empty() {
-                         trace!("  WARN: word_byte_indices is empty, cannot determine end byte.");
-                         // Cannot proceed if there are no word boundaries
-                         break;
-                     }
-                     chunk_end_byte = word_byte_indices[word_byte_indices.len() - 1];
-
-                 } else {
+                let chunk_end_byte; // Declare chunk_end_byte outside the if/else
+                if chunk_end_byte_index >= word_byte_indices.len() {
+                    warn!(
+                        "Calculated chunk_end_byte_index {} is out of bounds for word_byte_indices (len {}). Clamping.",
+                        chunk_end_byte_index,
+                        word_byte_indices.len()
+                    );
+                    // This case shouldn't happen if current_chunk_end_word_index logic is correct, but safety first.
+                    // If it does happen, it likely means current_chunk_end_word_index was 0, implying num_words_in_segment was 0,
+                    // but we checked for num_words_in_segment > 1 earlier.
+                    // Let's just use the last available index if this weird state occurs.
+                    if word_byte_indices.is_empty() {
+                        trace!("  WARN: word_byte_indices is empty, cannot determine end byte.");
+                        // Cannot proceed if there are no word boundaries
+                        break;
+                    }
+                    chunk_end_byte = word_byte_indices[word_byte_indices.len() - 1];
+                } else {
                     chunk_end_byte = word_byte_indices[chunk_end_byte_index]; // -1 because indices are end bytes
-                 }
+                }
                 trace!("  Chunk End Byte (Calculated): {}", chunk_end_byte);
 
-
                 // Extract, trim, and add the chunk
-                if chunk_start_byte < chunk_end_byte { // Ensure valid slice
+                if chunk_start_byte < chunk_end_byte {
+                    // Ensure valid slice
                     let chunk_content_original = &segment[chunk_start_byte..chunk_end_byte];
                     let chunk_content_trimmed = chunk_content_original.trim();
-                    let original_word_count = count_icu_words(chunk_content_original, word_segmenter);
+                    let original_word_count =
+                        count_icu_words(chunk_content_original, word_segmenter);
                     let trimmed_word_count = count_icu_words(chunk_content_trimmed, word_segmenter);
 
-                    trace!("  Original Content Slice (Word Count: {})", original_word_count);
-                    trace!("  Trimmed Content Slice (Word Count: {})", trimmed_word_count);
+                    trace!(
+                        "  Original Content Slice (Word Count: {})",
+                        original_word_count
+                    );
+                    trace!(
+                        "  Trimmed Content Slice (Word Count: {})",
+                        trimmed_word_count
+                    );
 
                     if !chunk_content_trimmed.is_empty() {
-                        let chunk_start_index_char_offset = segment[0..chunk_start_byte].chars().count();
-                        let final_chunk_start_offset = current_offset + chunk_start_index_char_offset;
+                        let chunk_start_index_char_offset =
+                            segment[0..chunk_start_byte].chars().count();
+                        let final_chunk_start_offset =
+                            current_offset + chunk_start_index_char_offset;
                         trace!(
                             "  Adding chunk (Word Count: {}, Char Count: {}), Range: {}..{}",
                             trimmed_word_count,
@@ -411,27 +486,41 @@ fn split_fallback(
                             content: chunk_content_trimmed.to_string(),
                             source_id: source_id.clone(),
                             start_index: final_chunk_start_offset,
-                            end_index: final_chunk_start_offset + chunk_content_trimmed.chars().count(),
+                            end_index: final_chunk_start_offset
+                                + chunk_content_trimmed.chars().count(),
                         });
                     }
                 } else {
-                     trace!("  Skipping chunk creation: chunk_start_byte ({}) >= chunk_end_byte ({})", chunk_start_byte, chunk_end_byte);
-                     // Need to ensure we still advance if start >= end to avoid infinite loop
-                     let mut effective_end_word_index = current_chunk_end_word_index; // Use a mutable variable
-                     if current_chunk_start_word_index == effective_end_word_index {
-                         // This should only happen if max_size is 0 or less, or if segment has only 1 word left.
-                         // Force advancement by at least one word index if possible.
-                         trace!("  WARN: Start and End word indices are the same ({}). Forcing advance.", current_chunk_start_word_index);
-                         effective_end_word_index = min(current_chunk_start_word_index + 1, num_words_in_segment);
-                     }
-                     // Move to the next chunk start using the potentially adjusted end index
-                     trace!("  Advancing start word index from {} to {}", current_chunk_start_word_index, effective_end_word_index);
-                     current_chunk_start_word_index = effective_end_word_index;
-                     continue; // Skip the normal advancement at the end of the loop
+                    trace!(
+                        "  Skipping chunk creation: chunk_start_byte ({}) >= chunk_end_byte ({})",
+                        chunk_start_byte, chunk_end_byte
+                    );
+                    // Need to ensure we still advance if start >= end to avoid infinite loop
+                    let mut effective_end_word_index = current_chunk_end_word_index; // Use a mutable variable
+                    if current_chunk_start_word_index == effective_end_word_index {
+                        // This should only happen if max_size is 0 or less, or if segment has only 1 word left.
+                        // Force advancement by at least one word index if possible.
+                        trace!(
+                            "  WARN: Start and End word indices are the same ({}). Forcing advance.",
+                            current_chunk_start_word_index
+                        );
+                        effective_end_word_index =
+                            min(current_chunk_start_word_index + 1, num_words_in_segment);
+                    }
+                    // Move to the next chunk start using the potentially adjusted end index
+                    trace!(
+                        "  Advancing start word index from {} to {}",
+                        current_chunk_start_word_index, effective_end_word_index
+                    );
+                    current_chunk_start_word_index = effective_end_word_index;
+                    continue; // Skip the normal advancement at the end of the loop
                 }
 
                 // Move to the next chunk start
-                trace!("  Advancing start word index from {} to {}", current_chunk_start_word_index, current_chunk_end_word_index);
+                trace!(
+                    "  Advancing start word index from {} to {}",
+                    current_chunk_start_word_index, current_chunk_end_word_index
+                );
                 current_chunk_start_word_index = current_chunk_end_word_index;
                 trace!("-- End Fallback Word Loop Iteration --");
             }
@@ -470,7 +559,6 @@ fn split_fallback(
     Ok(())
 }
 
-
 /// Measures the size of a text segment based on the configured metric.
 /// Measures the size of a text segment based *only* on character count.
 /// The `metric` parameter influences *where* splits happen, not the size measurement itself,
@@ -489,10 +577,12 @@ fn find_best_split_point(
     text: &str,
     separator: &str,
     max_size: usize,
-    _metric: ChunkingMetric, // Prefix unused variable
+    _metric: ChunkingMetric,         // Prefix unused variable
     _word_segmenter: &WordSegmenter, // Prefix unused variable
 ) -> Option<usize> {
-    if separator.is_empty() { return None; }
+    if separator.is_empty() {
+        return None;
+    }
 
     let mut best_split: Option<usize> = None;
     let mut current_pos = 0;
@@ -519,7 +609,6 @@ fn find_best_split_point(
     best_split
 }
 
-
 /// Applies overlap between consecutive chunks. Modifies the chunks in place.
 fn apply_overlap(
     chunks: &mut Vec<TextChunk>,
@@ -529,7 +618,11 @@ fn apply_overlap(
     if config.overlap == 0 || chunks.len() < 2 {
         return; // No overlap needed or possible
     }
-    trace!(overlap = config.overlap, num_chunks = chunks.len(), "Applying overlap.");
+    trace!(
+        overlap = config.overlap,
+        num_chunks = chunks.len(),
+        "Applying overlap."
+    );
 
     // Iterate backwards to avoid index issues when modifying content length
     for i in (1..chunks.len()).rev() {
@@ -540,70 +633,93 @@ fn apply_overlap(
         let overlap_text = match config.metric {
             ChunkingMetric::Char => {
                 let prev_content = &prev_chunk.content;
-                let overlap_start_char = prev_content.chars().count().saturating_sub(config.overlap);
-                prev_content.chars().skip(overlap_start_char).collect::<String>()
+                let overlap_start_char =
+                    prev_content.chars().count().saturating_sub(config.overlap);
+                prev_content
+                    .chars()
+                    .skip(overlap_start_char)
+                    .collect::<String>()
             }
             ChunkingMetric::Word => {
-                 // Get the word boundaries from the previous chunk
-                 let word_indices = word_segmenter.segment_str(&prev_chunk.content).collect::<Vec<_>>();
-                 let prev_content = &prev_chunk.content;
-                 
-                 // --- FIX: Correct Word Overlap Handling ---
-                 // Determine the actual number of words to overlap (min of config.overlap and available words)
-                 let actual_overlap_word_count = min(config.overlap, word_indices.len());
+                // Get the word boundaries from the previous chunk
+                let word_indices = word_segmenter
+                    .segment_str(&prev_chunk.content)
+                    .collect::<Vec<_>>();
+                let prev_content = &prev_chunk.content;
 
-                 if actual_overlap_word_count == 0 {
-                      String::new() // No overlap possible
-                 } else {
-                     // Calculate the index of the first word to include in the overlap
-                     let overlap_start_word_idx = word_indices.len() - actual_overlap_word_count;
+                // --- FIX: Correct Word Overlap Handling ---
+                // Determine the actual number of words to overlap (min of config.overlap and available words)
+                let actual_overlap_word_count = min(config.overlap, word_indices.len());
 
-                     // Get the byte index corresponding to the start of the first overlapping word
-                     // word_indices contains the *end* byte index of each word.
-                     // So, the start byte of word at index `overlap_start_word_idx` is:
-                     // - 0 if overlap_start_word_idx is 0
-                     // - word_indices[overlap_start_word_idx - 1] otherwise
-                     let overlap_start_byte = if overlap_start_word_idx == 0 {
-                         0
-                     } else {
-                         // Ensure index is valid before accessing
-                         if overlap_start_word_idx > 0 && overlap_start_word_idx <= word_indices.len() {
-                             word_indices[overlap_start_word_idx - 1]
-                         } else {
-                             warn!("Invalid overlap_start_word_idx ({}) calculated. Defaulting to 0.", overlap_start_word_idx);
-                             0 // Fallback to start of string if index is weird
-                         }
-                     };
+                if actual_overlap_word_count == 0 {
+                    String::new() // No overlap possible
+                } else {
+                    // Calculate the index of the first word to include in the overlap
+                    let overlap_start_word_idx = word_indices.len() - actual_overlap_word_count;
 
-                     // Ensure overlap_start_byte is within bounds and a char boundary
-                     if overlap_start_byte < prev_content.len() && prev_content.is_char_boundary(overlap_start_byte) {
-                         prev_content[overlap_start_byte..].to_string()
-                     } else {
-                         warn!("Overlap start byte {} is invalid or not a char boundary for prev_content len {}. Returning empty overlap.", overlap_start_byte, prev_content.len());
-                         String::new() // Return empty string if index is invalid
-                     }
-                 }
-                 // --- End FIX ---
+                    // Get the byte index corresponding to the start of the first overlapping word
+                    // word_indices contains the *end* byte index of each word.
+                    // So, the start byte of word at index `overlap_start_word_idx` is:
+                    // - 0 if overlap_start_word_idx is 0
+                    // - word_indices[overlap_start_word_idx - 1] otherwise
+                    let overlap_start_byte = if overlap_start_word_idx == 0 {
+                        0
+                    } else {
+                        // Ensure index is valid before accessing
+                        if overlap_start_word_idx > 0
+                            && overlap_start_word_idx <= word_indices.len()
+                        {
+                            word_indices[overlap_start_word_idx - 1]
+                        } else {
+                            warn!(
+                                "Invalid overlap_start_word_idx ({}) calculated. Defaulting to 0.",
+                                overlap_start_word_idx
+                            );
+                            0 // Fallback to start of string if index is weird
+                        }
+                    };
+
+                    // Ensure overlap_start_byte is within bounds and a char boundary
+                    if overlap_start_byte < prev_content.len()
+                        && prev_content.is_char_boundary(overlap_start_byte)
+                    {
+                        prev_content[overlap_start_byte..].to_string()
+                    } else {
+                        warn!(
+                            "Overlap start byte {} is invalid or not a char boundary for prev_content len {}. Returning empty overlap.",
+                            overlap_start_byte,
+                            prev_content.len()
+                        );
+                        String::new() // Return empty string if index is invalid
+                    }
+                }
+                // --- End FIX ---
             }
         };
 
         if !overlap_text.is_empty() {
-             trace!(chunk_index = i, overlap_len = overlap_text.len(), "Prepending overlap.");
-             // Prepend overlap text. Ensure a space if needed (heuristic).
-             let mut new_content = overlap_text;
-             if !new_content.ends_with(char::is_whitespace) && !current_chunk.content.starts_with(char::is_whitespace) {
-                 new_content.push(' '); // Add space heuristic
-             }
-             new_content.push_str(&current_chunk.content);
-             current_chunk.content = new_content;
+            trace!(
+                chunk_index = i,
+                overlap_len = overlap_text.len(),
+                "Prepending overlap."
+            );
+            // Prepend overlap text. Ensure a space if needed (heuristic).
+            let mut new_content = overlap_text;
+            if !new_content.ends_with(char::is_whitespace)
+                && !current_chunk.content.starts_with(char::is_whitespace)
+            {
+                new_content.push(' '); // Add space heuristic
+            }
+            new_content.push_str(&current_chunk.content);
+            current_chunk.content = new_content;
 
-             // Adjust start_index? The current logic sets indices based on the *original* segment.
-             // Overlap prepending makes the `content` not directly map to `start_index..end_index`.
-             // Let's keep indices referring to the original span for now.
-             // current_chunk.start_index = current_chunk.start_index.saturating_sub(overlap_size); // This would be complex
+            // Adjust start_index? The current logic sets indices based on the *original* segment.
+            // Overlap prepending makes the `content` not directly map to `start_index..end_index`.
+            // Let's keep indices referring to the original span for now.
+            // current_chunk.start_index = current_chunk.start_index.saturating_sub(overlap_size); // This would be complex
         }
     }
-     trace!("Overlap application finished.");
+    trace!("Overlap application finished.");
 }
 
 // Helper function to count ICU words (moved from tests module)
@@ -611,7 +727,6 @@ fn apply_overlap(
 fn count_icu_words(text: &str, word_segmenter: &WordSegmenter) -> usize {
     word_segmenter.segment_str(text).count()
 }
-
 
 // Placeholder for ChatMessage structure used in chunk_messages tests
 // In a real scenario, this would likely import the actual ChatMessage model
@@ -627,10 +742,7 @@ fn count_icu_words(text: &str, word_segmenter: &WordSegmenter) -> usize {
 /// TODO: Explore alternative chunking strategies (e.g., combining message pairs before chunking)
 ///       if simple per-message chunking proves insufficient.
 #[instrument(skip(messages, config), fields(num_messages = messages.len(), config = ?config))]
-pub fn chunk_messages<M>(
-    messages: &[M],
-    config: &ChunkConfig,
-) -> Result<Vec<TextChunk>, AppError>
+pub fn chunk_messages<M>(messages: &[M], config: &ChunkConfig) -> Result<Vec<TextChunk>, AppError>
 where
     // Use a trait bound to accept any type with `content()` and `id_for_source()` methods
     M: HasContent + HasSourceId,
@@ -692,7 +804,6 @@ pub trait HasSourceId {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
 
     // Define a simple struct for testing purposes
     #[derive(Debug, Clone)] // Added Debug and Clone for easier testing
@@ -732,8 +843,8 @@ mod tests {
         let config = TEST_CONFIG_CHARS; // Use char config for this simple case
         let expected = vec![TextChunk {
             content: text.to_string(),
-            source_id: None, // chunk_text called directly
-            start_index: 0,  // Placeholder
+            source_id: None,                 // chunk_text called directly
+            start_index: 0,                  // Placeholder
             end_index: text.chars().count(), // Placeholder
         }];
         // Call with None source_id and 0 offset for direct chunk_text tests
@@ -758,7 +869,7 @@ mod tests {
             TextChunk {
                 content: para1.to_string(),
                 source_id: None,
-                start_index: 0, // Placeholder
+                start_index: 0,                   // Placeholder
                 end_index: para1.chars().count(), // Placeholder
             },
             // TextChunk { // Placeholder logic doesn't handle paragraphs yet
@@ -844,14 +955,19 @@ mod tests {
 
     #[test]
     fn test_chunk_text_without_breaks_too_long() {
-        let config = ChunkConfig { max_size: 100, ..TEST_CONFIG_CHARS }; // Smaller max_size
+        let config = ChunkConfig {
+            max_size: 100,
+            ..TEST_CONFIG_CHARS
+        }; // Smaller max_size
         let text = "A".repeat(config.max_size + 10); // Exceeds limit
         let result = chunk_text(&text, &config, None, 0).unwrap();
 
         // New logic should split this using fallback (chars or words)
         assert!(result.len() > 1, "Expected multiple chunks due to length");
         assert!(
-            result.iter().all(|c| c.content.chars().count() <= config.max_size + config.overlap), // Check against config + overlap
+            result
+                .iter()
+                .all(|c| c.content.chars().count() <= config.max_size + config.overlap), // Check against config + overlap
             "All chunks should be within size limit (including overlap)"
         );
         // Check if the content is reconstructed correctly (ignoring overlap effects for simplicity)
@@ -919,17 +1035,24 @@ mod tests {
         let text = "  Leading space. \n\n \t Lots of \t tabs and spaces. \n\nTrailing space.  ";
         let config = TEST_CONFIG_CHARS;
         let _expected = vec![
-            TextChunk { // chunk_text now trims input initially
+            TextChunk {
+                // chunk_text now trims input initially
                 content: "Leading space.".to_string(),
-                source_id: None, start_index: 0, end_index: 0 // Indices are placeholders
+                source_id: None,
+                start_index: 0,
+                end_index: 0, // Indices are placeholders
             },
             TextChunk {
                 content: "Lots of \t tabs and spaces.".to_string(), // Internal whitespace kept
-                 source_id: None, start_index: 0, end_index: 0
+                source_id: None,
+                start_index: 0,
+                end_index: 0,
             },
             TextChunk {
                 content: "Trailing space.".to_string(),
-                 source_id: None, start_index: 0, end_index: 0
+                source_id: None,
+                start_index: 0,
+                end_index: 0,
             },
         ];
         let result = chunk_text(text, &config, None, 0).unwrap(); // Pass config
@@ -942,20 +1065,41 @@ mod tests {
         let chunk2_initial_content = "Trailing space.";
 
         // Calculate expected overlap text from chunk 0 to chunk 1
-        let overlap0_start_char = chunk0_content.chars().count().saturating_sub(config.overlap);
-        let overlap0_text = chunk0_content.chars().skip(overlap0_start_char).collect::<String>();
+        let overlap0_start_char = chunk0_content
+            .chars()
+            .count()
+            .saturating_sub(config.overlap);
+        let overlap0_text = chunk0_content
+            .chars()
+            .skip(overlap0_start_char)
+            .collect::<String>();
         // Since overlap (50) > chunk0 len (14), overlap0_text is the whole chunk0_content
         let expected_chunk1_content = format!("{} {}", overlap0_text, chunk1_initial_content); // Assuming space added
 
         // Calculate expected overlap text from chunk 1 (original content) to chunk 2
-        let overlap1_start_char = chunk1_initial_content.chars().count().saturating_sub(config.overlap);
-        let overlap1_text = chunk1_initial_content.chars().skip(overlap1_start_char).collect::<String>();
+        let overlap1_start_char = chunk1_initial_content
+            .chars()
+            .count()
+            .saturating_sub(config.overlap);
+        let overlap1_text = chunk1_initial_content
+            .chars()
+            .skip(overlap1_start_char)
+            .collect::<String>();
         // Since overlap (50) > chunk1 len (26), overlap1_text is the whole chunk1_initial_content
         let expected_chunk2_content = format!("{} {}", overlap1_text, chunk2_initial_content); // Assuming space added
 
-        assert_eq!(result[0].content, chunk0_content, "Chunk 0 content mismatch");
-        assert_eq!(result[1].content, expected_chunk1_content, "Chunk 1 content mismatch after overlap");
-        assert_eq!(result[2].content, expected_chunk2_content, "Chunk 2 content mismatch after overlap");
+        assert_eq!(
+            result[0].content, chunk0_content,
+            "Chunk 0 content mismatch"
+        );
+        assert_eq!(
+            result[1].content, expected_chunk1_content,
+            "Chunk 1 content mismatch after overlap"
+        );
+        assert_eq!(
+            result[2].content, expected_chunk2_content,
+            "Chunk 2 content mismatch after overlap"
+        );
         // --- End FIX ---
     }
 
@@ -965,19 +1109,29 @@ mod tests {
         let config = TEST_CONFIG_CHARS;
         let expected = vec![TextChunk {
             content: text.to_string(),
-            source_id: None, start_index: 0, end_index: text.chars().count()
+            source_id: None,
+            start_index: 0,
+            end_index: text.chars().count(),
         }];
         let result = chunk_text(text, &config, None, 0).unwrap(); // Pass config
         assert_eq!(result, expected); // Compare content only
 
         // Test a longer version that might exceed limit
-        let config_small = ChunkConfig { max_size: 10, ..config };
+        let config_small = ChunkConfig {
+            max_size: 10,
+            ..config
+        };
         let long_symbols = ".".repeat(config_small.max_size + 5);
         let result_long = chunk_text(&long_symbols, &config_small, None, 0).unwrap();
         // Should be split by fallback (chars)
-        assert!(result_long.len() > 1, "Expected multiple chunks for long symbols");
         assert!(
-            result_long.iter().all(|c| c.content.chars().count() <= config_small.max_size + config_small.overlap),
+            result_long.len() > 1,
+            "Expected multiple chunks for long symbols"
+        );
+        assert!(
+            result_long
+                .iter()
+                .all(|c| c.content.chars().count() <= config_small.max_size + config_small.overlap),
             "All symbol chunks should be within size limit (including overlap)"
         );
     }
@@ -995,7 +1149,11 @@ mod tests {
         // If not, it splits by sentence.
         // Assuming the first paragraph ("これは最初の文です。これは二番目の文で、少し長いです。") fits within 500 chars.
         // Assuming the second paragraph ("これは新しい段落です。短い。") fits.
-        assert_eq!(result.len(), 2, "Expected 2 chunks based on paragraph splitting");
+        assert_eq!(
+            result.len(),
+            2,
+            "Expected 2 chunks based on paragraph splitting"
+        );
 
         // Print chunks with indices for debugging
         for (i, chunk) in result.iter().enumerate() {
@@ -1003,38 +1161,70 @@ mod tests {
         }
 
         // Test each chunk meets size requirements
-        assert!(result.iter().all(|c| !c.content.is_empty()), "Chunks should not be empty");
         assert!(
-            result.iter().all(|c| c.content.chars().count() <= config.max_size + config.overlap),
+            result.iter().all(|c| !c.content.is_empty()),
+            "Chunks should not be empty"
+        );
+        assert!(
+            result
+                .iter()
+                .all(|c| c.content.chars().count() <= config.max_size + config.overlap),
             "All chunks must be within size limit (including overlap)"
         );
 
         // First chunk should contain the first paragraph
-        assert!(result[0].content.contains("これは最初の文です。"), "First chunk should contain the first sentence");
-        assert!(result[0].content.contains("これは二番目の文で"), "First chunk should contain the second sentence");
-        
+        assert!(
+            result[0].content.contains("これは最初の文です。"),
+            "First chunk should contain the first sentence"
+        );
+        assert!(
+            result[0].content.contains("これは二番目の文で"),
+            "First chunk should contain the second sentence"
+        );
+
         // Second chunk should contain the second paragraph, possibly with overlap from first
-        assert!(result[1].content.contains("これは新しい段落です。"), "Second chunk should contain the third sentence");
-        assert!(result[1].content.contains("短い。"), "Second chunk should contain the fourth sentence");
+        assert!(
+            result[1].content.contains("これは新しい段落です。"),
+            "Second chunk should contain the third sentence"
+        );
+        assert!(
+            result[1].content.contains("短い。"),
+            "Second chunk should contain the fourth sentence"
+        );
 
         // Test case where first paragraph is too long
         let long_para1 = "長い文。".repeat(100); // Make it > 500 chars
         let text_long = format!("{}。\n\nこれは新しい段落です。", long_para1);
         let result_long = chunk_text(&text_long, &config, None, 0).unwrap();
-        assert!(result_long.len() > 1, "Expected first paragraph to be split");
-        
+        assert!(
+            result_long.len() > 1,
+            "Expected first paragraph to be split"
+        );
+
         // First chunk should be start of long_para1, split by sentence/fallback
         assert!(result_long[0].content.starts_with("長い文。"));
-        
+
         // Last chunk should contain the second paragraph text
-        assert!(result_long.last().unwrap().content.contains("これは新しい段落です。"));
+        assert!(
+            result_long
+                .last()
+                .unwrap()
+                .content
+                .contains("これは新しい段落です。")
+        );
     }
 
     #[test]
     fn test_chunk_messages_unicode_content() {
         let messages = vec![
-            TestChatMessage { id: 1, content: "これは最初の文です。これは二番目の文。\n\n新しい段落。".to_string() },
-            TestChatMessage { id: 2, content: "了解しました。".to_string() }, // "Understood."
+            TestChatMessage {
+                id: 1,
+                content: "これは最初の文です。これは二番目の文。\n\n新しい段落。".to_string(),
+            },
+            TestChatMessage {
+                id: 2,
+                content: "了解しました。".to_string(),
+            }, // "Understood."
         ];
         let config = TEST_CONFIG_CHARS; // Assume default char config fits these
         let result = chunk_messages(&messages, &config).unwrap(); // Pass config
@@ -1048,27 +1238,41 @@ mod tests {
         }
 
         // The first chunk should contain the first part of message 1
-        assert!(result[0].content.contains("これは最初の文です。"), "First chunk should contain first sentence");
-        assert!(result[0].content.contains("これは二番目の文。"), "First chunk should contain second sentence");
+        assert!(
+            result[0].content.contains("これは最初の文です。"),
+            "First chunk should contain first sentence"
+        );
+        assert!(
+            result[0].content.contains("これは二番目の文。"),
+            "First chunk should contain second sentence"
+        );
         assert_eq!(result[0].source_id, Some("msg_1".to_string()));
-        
+
         // The second chunk should contain the second part of message 1
-        assert!(result[1].content.contains("新しい段落。"), "Second chunk should contain the paragraph text");
+        assert!(
+            result[1].content.contains("新しい段落。"),
+            "Second chunk should contain the paragraph text"
+        );
         assert_eq!(result[1].source_id, Some("msg_1".to_string()));
-        
+
         // The third chunk should contain message 2
-        assert!(result[2].content.contains("了解しました。"), "Third chunk should contain the acknowledgement");
+        assert!(
+            result[2].content.contains("了解しました。"),
+            "Third chunk should contain the acknowledgement"
+        );
         assert_eq!(result[2].source_id, Some("msg_2".to_string()));
 
         // Check general content constraints
         assert!(result.iter().all(|c| !c.content.is_empty()));
         assert!(
-            result.iter().all(|c| c.content.chars().count() <= config.max_size + config.overlap),
+            result
+                .iter()
+                .all(|c| c.content.chars().count() <= config.max_size + config.overlap),
             "All chunks must be within size limit (including overlap)"
         );
     }
 
-// --- New Tests based on Implementation Plan ---
+    // --- New Tests based on Implementation Plan ---
 
     // Helper function moved outside cfg(test) block
     #[test]
@@ -1080,16 +1284,20 @@ mod tests {
             overlap: 2,
         };
         let result = chunk_text(text, &config, None, 0).unwrap();
-        
+
         // The implementation is splitting into multiple chunks
         // Instead of asserting exact number, just check that each chunk follows the rules
         for chunk in &result {
             let word_segmenter = WordSegmenter::new_auto(); // Create segmenter for test assertion
             let word_count = count_icu_words(&chunk.content, &word_segmenter);
             trace!("Chunk: '{}', Word Count: {}", chunk.content, word_count);
-            assert!(word_count <= config.max_size + config.overlap + 1, 
-                "Chunk word count ({}) exceeds max_size ({}) + overlap ({}) + 1", 
-                word_count, config.max_size, config.overlap);
+            assert!(
+                word_count <= config.max_size + config.overlap + 1,
+                "Chunk word count ({}) exceeds max_size ({}) + overlap ({}) + 1",
+                word_count,
+                config.max_size,
+                config.overlap
+            );
         }
     }
 
@@ -1102,16 +1310,27 @@ mod tests {
             overlap: 2,
         };
         let result = chunk_text(text, &config, None, 0).unwrap();
-        assert!(result.len() > 1, "Expected text to be split into multiple chunks");
-        
+        assert!(
+            result.len() > 1,
+            "Expected text to be split into multiple chunks"
+        );
+
         // Add debugging prints
         for (i, chunk) in result.iter().enumerate() {
             let word_segmenter = WordSegmenter::new_auto(); // Create segmenter for test assertion
             let word_count = count_icu_words(&chunk.content, &word_segmenter);
-            trace!("Chunk {}: word count = {}, content = \"{}\"", i, word_count, chunk.content);
+            trace!(
+                "Chunk {}: word count = {}, content = \"{}\"",
+                i, word_count, chunk.content
+            );
             // Allow for 1 extra word beyond max_size + overlap due to whitespace handling in apply_overlap
-            assert!(word_count <= config.max_size + config.overlap + 1, 
-                "Chunk word count ({}) exceeds max_size ({}) + overlap ({}) + 1", word_count, config.max_size, config.overlap);
+            assert!(
+                word_count <= config.max_size + config.overlap + 1,
+                "Chunk word count ({}) exceeds max_size ({}) + overlap ({}) + 1",
+                word_count,
+                config.max_size,
+                config.overlap
+            );
         }
     }
 
@@ -1130,69 +1349,98 @@ mod tests {
         if result.len() >= 2 {
             let chunk0_end = &result[0].content[result[0].content.len() - config.overlap..];
             let chunk1_start = &result[1].content[..config.overlap];
-            assert_eq!(chunk0_end, chunk1_start, "Overlap mismatch between chunk 0 and 1");
+            assert_eq!(
+                chunk0_end, chunk1_start,
+                "Overlap mismatch between chunk 0 and 1"
+            );
         }
-         // Check overlap between chunk 1 and chunk 2 if it exists
+        // Check overlap between chunk 1 and chunk 2 if it exists
         if result.len() >= 3 {
-             let chunk1_end = &result[1].content[result[1].content.len() - config.overlap..];
-             let chunk2_start = &result[2].content[..config.overlap];
-             assert_eq!(chunk1_end, chunk2_start, "Overlap mismatch between chunk 1 and 2");
+            let chunk1_end = &result[1].content[result[1].content.len() - config.overlap..];
+            let chunk2_start = &result[2].content[..config.overlap];
+            assert_eq!(
+                chunk1_end, chunk2_start,
+                "Overlap mismatch between chunk 1 and 2"
+            );
         }
     }
 
-     #[test]
-     fn test_chunk_word_overlap() {
-         let text = "one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen nineteen twenty"; // 20 words
-         let config = ChunkConfig {
-             metric: ChunkingMetric::Word,
-             max_size: 10, // Split after 10 words
-             overlap: 3,   // Overlap 3 words
-         };
-         let result = chunk_text(text, &config, None, 0).unwrap();
+    #[test]
+    fn test_chunk_word_overlap() {
+        let text = "one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen nineteen twenty"; // 20 words
+        let config = ChunkConfig {
+            metric: ChunkingMetric::Word,
+            max_size: 10, // Split after 10 words
+            overlap: 3,   // Overlap 3 words
+        };
+        let result = chunk_text(text, &config, None, 0).unwrap();
 
-         assert!(result.len() >= 2, "Expected splitting");
+        assert!(result.len() >= 2, "Expected splitting");
 
-         // Print the chunks to better understand the overlap behavior
-         for (i, chunk) in result.iter().enumerate() {
-             let word_segmenter = WordSegmenter::new_auto();
-             let word_count = count_icu_words(&chunk.content, &word_segmenter);
-             trace!("Chunk {}: '{}', Word Count: {}", i, chunk.content, word_count);
-             assert!(word_count <= config.max_size + config.overlap + 1, 
-                 "Chunk word count ({}) exceeds max_size ({}) + overlap ({}) + 1", 
-                 word_count, config.max_size, config.overlap);
-         }
+        // Print the chunks to better understand the overlap behavior
+        for (i, chunk) in result.iter().enumerate() {
+            let word_segmenter = WordSegmenter::new_auto();
+            let word_count = count_icu_words(&chunk.content, &word_segmenter);
+            trace!(
+                "Chunk {}: '{}', Word Count: {}",
+                i, chunk.content, word_count
+            );
+            assert!(
+                word_count <= config.max_size + config.overlap + 1,
+                "Chunk word count ({}) exceeds max_size ({}) + overlap ({}) + 1",
+                word_count,
+                config.max_size,
+                config.overlap
+            );
+        }
 
-         // Check overlap presence rather than exact content
-         // The actual overlap implementation might differ from our expectation
-         if result.len() >= 2 {
-             for i in 1..result.len() {
-                 let prev_chunk = &result[i-1];
-                 let curr_chunk = &result[i];
-                 
-                 // Just verify both chunks have content
-                 assert!(!prev_chunk.content.trim().is_empty(), "Previous chunk should not be empty");
-                 assert!(!curr_chunk.content.trim().is_empty(), "Current chunk should not be empty");
-                 
-                 // Verify the current chunk contains some words from the previous chunk (overlap)
-                 let prev_words: Vec<&str> = prev_chunk.content.split_whitespace().collect();
-                 let curr_words: Vec<&str> = curr_chunk.content.split_whitespace().collect();
-                 
-                 if !prev_words.is_empty() && !curr_words.is_empty() {
-                     let some_overlap = prev_words.iter()
-                         .any(|word| curr_words.contains(word));
-                     assert!(some_overlap, "Expected some word overlap between chunks {} and {}", i-1, i);
-                 }
-             }
-         }
-     }
+        // Check overlap presence rather than exact content
+        // The actual overlap implementation might differ from our expectation
+        if result.len() >= 2 {
+            for i in 1..result.len() {
+                let prev_chunk = &result[i - 1];
+                let curr_chunk = &result[i];
+
+                // Just verify both chunks have content
+                assert!(
+                    !prev_chunk.content.trim().is_empty(),
+                    "Previous chunk should not be empty"
+                );
+                assert!(
+                    !curr_chunk.content.trim().is_empty(),
+                    "Current chunk should not be empty"
+                );
+
+                // Verify the current chunk contains some words from the previous chunk (overlap)
+                let prev_words: Vec<&str> = prev_chunk.content.split_whitespace().collect();
+                let curr_words: Vec<&str> = curr_chunk.content.split_whitespace().collect();
+
+                if !prev_words.is_empty() && !curr_words.is_empty() {
+                    let some_overlap = prev_words.iter().any(|word| curr_words.contains(word));
+                    assert!(
+                        some_overlap,
+                        "Expected some word overlap between chunks {} and {}",
+                        i - 1,
+                        i
+                    );
+                }
+            }
+        }
+    }
 
     #[test]
     fn test_chunk_metadata_population() {
         // let text = "This is message 1. This is message 2."; // Not needed directly
         let config = TEST_CONFIG_CHARS; // Use char config for simplicity
         let messages = vec![
-            TestChatMessage { id: 1, content: "This is message 1.".to_string() },
-            TestChatMessage { id: 2, content: "This is message 2.".to_string() },
+            TestChatMessage {
+                id: 1,
+                content: "This is message 1.".to_string(),
+            },
+            TestChatMessage {
+                id: 2,
+                content: "This is message 2.".to_string(),
+            },
         ];
 
         let result = chunk_messages(&messages, &config).unwrap();
@@ -1225,34 +1473,50 @@ mod tests {
         for chunk in result {
             let word_segmenter = WordSegmenter::new_auto(); // Create segmenter for test assertion
             let word_count = count_icu_words(&chunk.content, &word_segmenter);
-            trace!("Japanese Chunk: '{}', Word Count: {}", chunk.content, word_count); // Debug print
-            assert!(word_count <= config.max_size + config.overlap + 1, 
-                "Japanese chunk word count ({}) exceeds max_size ({}) + overlap ({}) + 1", word_count, config.max_size, config.overlap);
+            trace!(
+                "Japanese Chunk: '{}', Word Count: {}",
+                chunk.content, word_count
+            ); // Debug print
+            assert!(
+                word_count <= config.max_size + config.overlap + 1,
+                "Japanese chunk word count ({}) exceeds max_size ({}) + overlap ({}) + 1",
+                word_count,
+                config.max_size,
+                config.overlap
+            );
         }
         // TODO: Add overlap check if possible/meaningful for Japanese words
     }
 
-     #[test]
-     fn test_chunk_multilingual_words_chinese() {
-         // ICU should handle word boundaries differently for Chinese
-         let text = "这是一个中文文本。测试分词。"; // "This is a Chinese text. Test word segmentation."
-         let config = ChunkConfig {
-             metric: ChunkingMetric::Word,
-             max_size: 4, // Small size to force splitting based on Chinese word units
-             overlap: 1,
-         };
-         let result = chunk_text(text, &config, None, 0).unwrap();
+    #[test]
+    fn test_chunk_multilingual_words_chinese() {
+        // ICU should handle word boundaries differently for Chinese
+        let text = "这是一个中文文本。测试分词。"; // "This is a Chinese text. Test word segmentation."
+        let config = ChunkConfig {
+            metric: ChunkingMetric::Word,
+            max_size: 4, // Small size to force splitting based on Chinese word units
+            overlap: 1,
+        };
+        let result = chunk_text(text, &config, None, 0).unwrap();
 
-         assert!(result.len() > 1, "Expected splitting for Chinese text");
-         for chunk in result {
-             let word_segmenter = WordSegmenter::new_auto(); // Create segmenter for test assertion
-             let word_count = count_icu_words(&chunk.content, &word_segmenter);
-             trace!("Chinese Chunk: '{}', Word Count: {}", chunk.content, word_count); // Debug print
-             assert!(word_count <= config.max_size + config.overlap + 1, 
-                 "Chinese chunk word count ({}) exceeds max_size ({}) + overlap ({}) + 1", word_count, config.max_size, config.overlap);
-         }
-         // TODO: Add overlap check if possible/meaningful for Chinese words
-     }
+        assert!(result.len() > 1, "Expected splitting for Chinese text");
+        for chunk in result {
+            let word_segmenter = WordSegmenter::new_auto(); // Create segmenter for test assertion
+            let word_count = count_icu_words(&chunk.content, &word_segmenter);
+            trace!(
+                "Chinese Chunk: '{}', Word Count: {}",
+                chunk.content, word_count
+            ); // Debug print
+            assert!(
+                word_count <= config.max_size + config.overlap + 1,
+                "Chinese chunk word count ({}) exceeds max_size ({}) + overlap ({}) + 1",
+                word_count,
+                config.max_size,
+                config.overlap
+            );
+        }
+        // TODO: Add overlap check if possible/meaningful for Chinese words
+    }
 
     // --- End New Tests ---
 
@@ -1293,7 +1557,7 @@ mod tests {
         assert_eq!(chunk_config_word_caps.metric, ChunkingMetric::Word);
         assert_eq!(chunk_config_word_caps.max_size, 250);
         assert_eq!(chunk_config_word_caps.overlap, 25);
-        
+
         // Test unknown metric (should default to Word and log a warning - warning not tested here)
         let config_unknown = Config {
             chunking_metric: "unknown_metric".to_string(),
@@ -1307,51 +1571,50 @@ mod tests {
         assert_eq!(chunk_config_unknown.overlap, 30);
     }
 
-// TODO: This test needs rework for the new recursive logic.
-// The old logic based on DEFAULT_MAX_CHUNK_SIZE_CHARS is no longer directly applicable.
-// #[test]
-// fn test_chunk_long_paragraph_with_empty_sentence_segments() {
-//     let config = TEST_CONFIG_CHARS;
-//     // Create a paragraph longer than max_size with extra spaces between sentences
-//     let sentence1 = "This is the first sentence.";
-//     let sentence2 = "This is the second sentence.";
-//     let long_spaces = " ".repeat(config.max_size);
-//     let text = format!("{}   {} {}", sentence1, long_spaces, sentence2); // Extra spaces + long space filler
-//
-//     let result = chunk_text(&text, &config, None, 0).unwrap(); // Pass config
-//
-//     // New logic should split by sentence. Empty segments between sentences should be ignored.
-//     assert_eq!(result.len(), 2, "Expected exactly 2 chunks for the sentences");
-//     assert_eq!(result[0].content, sentence1);
-//     assert_eq!(result[1].content, sentence2);
-//     assert!(result.iter().all(|c| !c.content.is_empty()), "No chunks should be empty");
-//     assert!(
-//         result.iter().all(|c| c.content.chars().count() <= config.max_size + config.overlap),
-//         "All chunks must be within size limit (including overlap)"
-//     );
-// }
+    // TODO: This test needs rework for the new recursive logic.
+    // The old logic based on DEFAULT_MAX_CHUNK_SIZE_CHARS is no longer directly applicable.
+    // #[test]
+    // fn test_chunk_long_paragraph_with_empty_sentence_segments() {
+    //     let config = TEST_CONFIG_CHARS;
+    //     // Create a paragraph longer than max_size with extra spaces between sentences
+    //     let sentence1 = "This is the first sentence.";
+    //     let sentence2 = "This is the second sentence.";
+    //     let long_spaces = " ".repeat(config.max_size);
+    //     let text = format!("{}   {} {}", sentence1, long_spaces, sentence2); // Extra spaces + long space filler
+    //
+    //     let result = chunk_text(&text, &config, None, 0).unwrap(); // Pass config
+    //
+    //     // New logic should split by sentence. Empty segments between sentences should be ignored.
+    //     assert_eq!(result.len(), 2, "Expected exactly 2 chunks for the sentences");
+    //     assert_eq!(result[0].content, sentence1);
+    //     assert_eq!(result[1].content, sentence2);
+    //     assert!(result.iter().all(|c| !c.content.is_empty()), "No chunks should be empty");
+    //     assert!(
+    //         result.iter().all(|c| c.content.chars().count() <= config.max_size + config.overlap),
+    //         "All chunks must be within size limit (including overlap)"
+    //     );
+    // }
 
-// TODO: This test needs rework for the new recursive logic.
-// The old logic based on DEFAULT_MAX_CHUNK_SIZE_CHARS is no longer directly applicable.
-// #[test]
-// fn test_chunk_no_chunks_from_non_empty_input_scenario() {
-//     let config = ChunkConfig { max_size: 10, ..TEST_CONFIG_CHARS }; // Small size
-//     // Create input > max_size consisting only of whitespace and sentence terminators
-//     let text = ". . . ".repeat(config.max_size); // Long string of dots and spaces
-//
-//     let result = chunk_text(&text, &config, None, 0).unwrap(); // Pass config
-//
-//     // New logic should split by sentence ("."), then potentially fallback split "." if needed.
-//     // Expect many small chunks containing "." or similar.
-//     assert!(!result.is_empty(), "Expected chunks for input '{}', but got none.", text);
-//     assert!(
-//         result.iter().all(|c| !c.content.trim().is_empty()),
-//         "Expected all chunks to be non-empty after trimming"
-//     );
-//     assert!(
-//         result.iter().all(|c| c.content.chars().count() <= config.max_size + config.overlap),
-//         "All chunks must be within size limit (including overlap)"
-//     );
-// }
-
+    // TODO: This test needs rework for the new recursive logic.
+    // The old logic based on DEFAULT_MAX_CHUNK_SIZE_CHARS is no longer directly applicable.
+    // #[test]
+    // fn test_chunk_no_chunks_from_non_empty_input_scenario() {
+    //     let config = ChunkConfig { max_size: 10, ..TEST_CONFIG_CHARS }; // Small size
+    //     // Create input > max_size consisting only of whitespace and sentence terminators
+    //     let text = ". . . ".repeat(config.max_size); // Long string of dots and spaces
+    //
+    //     let result = chunk_text(&text, &config, None, 0).unwrap(); // Pass config
+    //
+    //     // New logic should split by sentence ("."), then potentially fallback split "." if needed.
+    //     // Expect many small chunks containing "." or similar.
+    //     assert!(!result.is_empty(), "Expected chunks for input '{}', but got none.", text);
+    //     assert!(
+    //         result.iter().all(|c| !c.content.trim().is_empty()),
+    //         "Expected all chunks to be non-empty after trimming"
+    //     );
+    //     assert!(
+    //         result.iter().all(|c| c.content.chars().count() <= config.max_size + config.overlap),
+    //         "All chunks must be within size limit (including overlap)"
+    //     );
+    // }
 }

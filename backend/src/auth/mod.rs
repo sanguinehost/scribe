@@ -64,8 +64,8 @@ impl From<diesel::result::Error> for AuthError {
         match err {
             diesel::result::Error::NotFound => AuthError::UserNotFound,
             diesel::result::Error::DatabaseError(
-                diesel::result::DatabaseErrorKind::UniqueViolation, 
-                info
+                diesel::result::DatabaseErrorKind::UniqueViolation,
+                info,
             ) => {
                 // It's better to use .message() for the actual constraint name string if available
                 // and compare that. For now, assuming constraint_name() is sufficient.
@@ -74,7 +74,10 @@ impl From<diesel::result::Error> for AuthError {
                 } else if info.constraint_name() == Some("users_email_key") {
                     AuthError::EmailTaken
                 } else {
-                    AuthError::DatabaseError(format!("Unique constraint violation: {:?}", info.message()))
+                    AuthError::DatabaseError(format!(
+                        "Unique constraint violation: {:?}",
+                        info.message()
+                    ))
                 }
             }
             _ => AuthError::DatabaseError(err.to_string()),
@@ -87,16 +90,13 @@ impl From<diesel::result::Error> for AuthError {
 pub fn are_there_any_users(conn: &mut PgConnection) -> Result<bool, AuthError> {
     use crate::schema::users::dsl::*;
     use diesel::dsl::count;
-    
+
     debug!("Checking if there are any users in the database");
-    let user_count: i64 = users
-        .select(count(id))
-        .first(conn)
-        .map_err(|e| {
-            error!(error = ?e, "Database error checking user count");
-            AuthError::from(e)
-        })?;
-    
+    let user_count: i64 = users.select(count(id)).first(conn).map_err(|e| {
+        error!(error = ?e, "Database error checking user count");
+        AuthError::from(e)
+    })?;
+
     debug!(user_count, "Found user count");
     Ok(user_count > 0)
 }
@@ -115,8 +115,7 @@ pub async fn create_user(
 
     // 2. Derive a Key Encryption Key (KEK) from the user's password and salt
     // a. Generate a salt for the KEK
-    let kek_salt = crypto::generate_salt()
-        .map_err(AuthError::CryptoOperationFailed)?;
+    let kek_salt = crypto::generate_salt().map_err(AuthError::CryptoOperationFailed)?;
 
     // b. Derive the KEK using Argon2
     let kek = crypto::derive_kek(&credentials.password, &kek_salt)
@@ -129,10 +128,10 @@ pub async fn create_user(
         kek_salt_len = kek_salt.len(),
         "Generated DEK and KEK data for user creation"
     );
-    
+
     let (encrypted_dek, dek_nonce) = crypto::encrypt_gcm(plaintext_dek_bytes.expose_secret(), &kek)
         .map_err(AuthError::CryptoOperationFailed)?;
-        
+
     info!(
         encrypted_dek_len = encrypted_dek.len(),
         dek_nonce_len = dek_nonce.len(),
@@ -141,39 +140,49 @@ pub async fn create_user(
 
     // Generate a random recovery phrase if none was provided
     let mut recovery_phrase_value = credentials.recovery_phrase.clone();
-    
+
     // If no recovery phrase was provided, generate a random one using a secure algorithm
     if recovery_phrase_value.is_none() {
         // Use the crypto module's salt generation which uses secure randomness
-        let recovery_salt = crypto::generate_salt()
-            .map_err(AuthError::CryptoOperationFailed)?;
-        
+        let recovery_salt = crypto::generate_salt().map_err(AuthError::CryptoOperationFailed)?;
+
         // The salt is already base64url encoded, so use it directly
         recovery_phrase_value = Some(recovery_salt);
-        
+
         // Log that we generated a recovery phrase (but don't log the phrase itself)
         info!("Generated random recovery phrase for user");
     }
-    
+
     // Process the recovery phrase (now guaranteed to exist)
     let (encrypted_dek_by_recovery, recovery_kek_salt, recovery_dek_nonce) = {
         // Similar process for recovery phrase: salt, derive key, encrypt
-        let recovery_kek_salt = crypto::generate_salt()
-            .map_err(AuthError::CryptoOperationFailed)?;
-        let recovery_secret = SecretString::new(recovery_phrase_value.as_ref().unwrap().clone().into_boxed_str());
+        let recovery_kek_salt =
+            crypto::generate_salt().map_err(AuthError::CryptoOperationFailed)?;
+        let recovery_secret = SecretString::new(
+            recovery_phrase_value
+                .as_ref()
+                .unwrap()
+                .clone()
+                .into_boxed_str(),
+        );
         let recovery_key = crypto::derive_kek(&recovery_secret, &recovery_kek_salt)
             .map_err(AuthError::CryptoOperationFailed)?;
-        let (encrypted_dek_by_recovery, recovery_dek_nonce) = crypto::encrypt_gcm(plaintext_dek_bytes.expose_secret(), &recovery_key)
-            .map_err(AuthError::CryptoOperationFailed)?;
-        (Some(encrypted_dek_by_recovery), Some(recovery_kek_salt), Some(recovery_dek_nonce))
+        let (encrypted_dek_by_recovery, recovery_dek_nonce) =
+            crypto::encrypt_gcm(plaintext_dek_bytes.expose_secret(), &recovery_key)
+                .map_err(AuthError::CryptoOperationFailed)?;
+        (
+            Some(encrypted_dek_by_recovery),
+            Some(recovery_kek_salt),
+            Some(recovery_dek_nonce),
+        )
     };
-    
+
     // Replace the credentials recovery_phrase with our generated one if needed
     credentials.recovery_phrase = recovery_phrase_value;
 
     // Check if this will be the first user in the system
     let is_first_user = !are_there_any_users(conn)?;
-    
+
     // If this is the first user, make them an administrator
     let user_role = if is_first_user {
         info!("Making first user an Administrator");
@@ -181,12 +190,12 @@ pub async fn create_user(
     } else {
         crate::models::users::UserRole::User
     };
-    
+
     // 3. Create a NewUser instance
     let new_user = NewUser {
         username: credentials.username.clone(), // Clone username from credentials
-        password_hash: hash_password(credentials.password.clone()).await?,                          // Use the pre-hashed password
-        email: credentials.email.clone(),       // Clone email from credentials
+        password_hash: hash_password(credentials.password.clone()).await?, // Use the pre-hashed password
+        email: credentials.email.clone(), // Clone email from credentials
         kek_salt,
         encrypted_dek,
         encrypted_dek_by_recovery,
@@ -249,7 +258,7 @@ pub fn get_user(conn: &mut PgConnection, user_id: Uuid) -> Result<User, AuthErro
 #[instrument(skip(conn, password), err)]
 pub fn verify_credentials(
     conn: &mut PgConnection,
-    identifier: &str, // Changed from username to identifier
+    identifier: &str,       // Changed from username to identifier
     password: SecretString, // Corrected: Was Secret<String>
 ) -> Result<(User, Option<SecretBox<Vec<u8>>>), AuthError> {
     // --- Log identifier explicitly ---
@@ -257,22 +266,25 @@ pub fn verify_credentials(
 
     // Find user by username OR email
     let user_db_query = users::table
-        .filter(users::username.eq(identifier).or(users::email.eq(identifier))) // Query by username OR email
+        .filter(
+            users::username
+                .eq(identifier)
+                .or(users::email.eq(identifier)),
+        ) // Query by username OR email
         .select(UserDbQuery::as_select())
         .first::<UserDbQuery>(conn)
         .map_err(AuthError::from)?;
-    
+
     // Convert UserDbQuery to User. This User object already contains encrypted_dek, kek_salt, dek_nonce
     // if they were correctly populated in the database and UserDbQuery mapping.
     let user = User::from(user_db_query.clone()); // Clone user_db_query if needed for User::from, or ensure User::from takes a ref
 
     // Perform bcrypt verification synchronously within the function
     debug!(user_id = %user.id, "Verifying password hash..."); // Removed PII: identifier, username, email
-    let is_valid = bcrypt::verify(password.expose_secret(), &user.password_hash)
-        .map_err(|e| {
-            error!(user_id = %user.id, error = ?e, "Bcrypt verification failed"); // Removed PII: identifier, username, email
-            AuthError::HashingError
-        })?;
+    let is_valid = bcrypt::verify(password.expose_secret(), &user.password_hash).map_err(|e| {
+        error!(user_id = %user.id, error = ?e, "Bcrypt verification failed"); // Removed PII: identifier, username, email
+        AuthError::HashingError
+    })?;
 
     if is_valid {
         // Check account status
@@ -302,19 +314,19 @@ pub fn verify_credentials(
             dek_nonce_len = user.dek_nonce.len(),
             "DEK decryption attempt details" // Removed PII: username
         );
-        
+
         // c. Decrypt the user.encrypted_dek using the derived KEK and user.dek_nonce
         // crypto::decrypt_gcm returns Result<SecretBox<Vec<u8>>, CryptoError>
         let decrypted_dek_secret_box = crypto::decrypt_gcm(
             &user.encrypted_dek,
             &user.dek_nonce,
-            &kek                 // Pass &kek directly, decrypt_gcm expects &SecretBox<Vec<u8>>
+            &kek, // Pass &kek directly, decrypt_gcm expects &SecretBox<Vec<u8>>
         )
         .map_err(|e| {
             error!(user_id = %user.id, error = ?e, "Failed to decrypt DEK during login. Check if KEK/DEK/Nonce are correct."); // Removed PII: username
             AuthError::CryptoOperationFailed(e)
         })?;
-        
+
         info!(user_id = %user.id, "DEK decryption successful."); // Removed PII: username
 
         Ok((user, Some(decrypted_dek_secret_box))) // Return the decrypted DEK directly
@@ -328,11 +340,12 @@ pub mod session_dek;
 pub mod session_store;
 pub mod user_store;
 
-pub use session_dek::{SessionDek};
+pub use session_dek::SessionDek;
 pub use session_store::DieselSessionStore;
 pub use user_store::Backend as AuthBackend;
 
-pub async fn hash_password(password: SecretString) -> Result<String, AuthError> { // Corrected: Was Secret<String>
+pub async fn hash_password(password: SecretString) -> Result<String, AuthError> {
+    // Corrected: Was Secret<String>
     tokio::task::spawn_blocking(move || {
         bcrypt::hash(password.expose_secret(), bcrypt::DEFAULT_COST)
     })
@@ -340,7 +353,6 @@ pub async fn hash_password(password: SecretString) -> Result<String, AuthError> 
     .map_err(|_e: JoinError| AuthError::HashingError)?
     .map_err(|_e: BcryptError| AuthError::HashingError)
 }
-
 
 #[instrument(skip(backend, current_db_user, current_password_payload, new_password_payload), err, fields(user_id = %user_id))]
 pub async fn change_user_password(
@@ -354,12 +366,14 @@ pub async fn change_user_password(
 
     // 1. Verify current password
     debug!("Verifying current password...");
-    let is_valid_current_password =
-        bcrypt::verify(current_password_payload.expose_secret(), &current_db_user.password_hash)
-            .map_err(|e| {
-                error!(error = ?e, "Bcrypt verification failed for current password");
-                AuthError::HashingError // Or a more specific error like InvalidCurrentPassword
-            })?;
+    let is_valid_current_password = bcrypt::verify(
+        current_password_payload.expose_secret(),
+        &current_db_user.password_hash,
+    )
+    .map_err(|e| {
+        error!(error = ?e, "Bcrypt verification failed for current password");
+        AuthError::HashingError // Or a more specific error like InvalidCurrentPassword
+    })?;
 
     if !is_valid_current_password {
         warn!("Current password verification failed (wrong password).");
@@ -369,22 +383,24 @@ pub async fn change_user_password(
 
     // 2. Derive "old" KEK
     debug!("Deriving old KEK...");
-    let old_kek = crypto::derive_kek(
-        &current_password_payload,
-        &current_db_user.kek_salt,
-    ).map_err(|e| {
-        error!(error = ?e, "Failed to derive old KEK");
-        AuthError::CryptoOperationFailed(e)
-    })?;
+    let old_kek = crypto::derive_kek(&current_password_payload, &current_db_user.kek_salt)
+        .map_err(|e| {
+            error!(error = ?e, "Failed to derive old KEK");
+            AuthError::CryptoOperationFailed(e)
+        })?;
 
     // 3. Decrypt current encrypted_dek to get plaintext DEK
     debug!("Decrypting current DEK...");
     // Use the dedicated dek_nonce field
-    let plaintext_dek_secret = crypto::decrypt_gcm(&current_db_user.encrypted_dek, &current_db_user.dek_nonce, &old_kek)
-        .map_err(|e| {
-            error!(error = ?e, "Failed to decrypt current DEK using dedicated nonce field");
-            AuthError::CryptoOperationFailed(e)
-        })?;
+    let plaintext_dek_secret = crypto::decrypt_gcm(
+        &current_db_user.encrypted_dek,
+        &current_db_user.dek_nonce,
+        &old_kek,
+    )
+    .map_err(|e| {
+        error!(error = ?e, "Failed to decrypt current DEK using dedicated nonce field");
+        AuthError::CryptoOperationFailed(e)
+    })?;
     debug!("Current DEK decrypted successfully.");
 
     // 4. Generate new kek_salt
@@ -393,11 +409,10 @@ pub async fn change_user_password(
 
     // 5. Derive new KEK from new_password and new_kek_salt
     debug!("Deriving new KEK from new password...");
-    let new_kek = crypto::derive_kek(&new_password_payload, &new_kek_salt_str)
-        .map_err(|e| {
-            error!(error = ?e, "Failed to derive new KEK from new password");
-            AuthError::CryptoOperationFailed(e)
-        })?;
+    let new_kek = crypto::derive_kek(&new_password_payload, &new_kek_salt_str).map_err(|e| {
+        error!(error = ?e, "Failed to derive new KEK from new password");
+        AuthError::CryptoOperationFailed(e)
+    })?;
 
     // 6. Re-encrypt plaintext DEK with new KEK
     debug!("Re-encrypting DEK with new KEK...");
@@ -424,16 +439,20 @@ pub async fn change_user_password(
     }
 
     // 9. Update database
-    debug!("Updating user record in database with new password hash, KEK salt, and encrypted DEK...");
-    backend.update_password_and_encryption_keys(
-        user_id,
-        new_password_hash_str,
-        new_kek_salt_str,
-        new_ciphertext_dek_bytes, // Pass ciphertext
-        new_nonce_dek_bytes,      // Pass nonce
-        updated_encrypted_dek_by_recovery,
-        current_db_user.recovery_dek_nonce.clone(), // Pass existing recovery nonce
-    ).await?;
+    debug!(
+        "Updating user record in database with new password hash, KEK salt, and encrypted DEK..."
+    );
+    backend
+        .update_password_and_encryption_keys(
+            user_id,
+            new_password_hash_str,
+            new_kek_salt_str,
+            new_ciphertext_dek_bytes, // Pass ciphertext
+            new_nonce_dek_bytes,      // Pass nonce
+            updated_encrypted_dek_by_recovery,
+            current_db_user.recovery_dek_nonce.clone(), // Pass existing recovery nonce
+        )
+        .await?;
 
     info!("Password changed successfully for user.");
     Ok(())
@@ -445,17 +464,23 @@ pub async fn recover_user_password_with_phrase(
     pool: &DbPool, // Added pool for direct DB interaction if needed, or pass to backend methods
     identifier: String,
     recovery_phrase_payload: SecretString, // Corrected: Was Secret<String>
-    new_password_payload: SecretString, // Corrected: Was Secret<String>
+    new_password_payload: SecretString,    // Corrected: Was Secret<String>
 ) -> Result<Uuid, AuthError> {
     info!("Attempting password recovery with phrase"); // Removed PII: identifier
 
     // 1. Fetch user by identifier (username or email)
     debug!("Fetching user by identifier...");
     let user_db_query = pool
-        .get().await.map_err(AuthError::PoolError)?
+        .get()
+        .await
+        .map_err(AuthError::PoolError)?
         .interact(move |conn| {
             users::table
-                .filter(users::username.eq(&identifier).or(users::email.eq(&identifier)))
+                .filter(
+                    users::username
+                        .eq(&identifier)
+                        .or(users::email.eq(&identifier)),
+                )
                 .select(UserDbQuery::as_select())
                 .first::<UserDbQuery>(conn)
         })
@@ -484,14 +509,13 @@ pub async fn recover_user_password_with_phrase(
     debug!("Recovery appears to be set up. Proceeding with RKEK derivation.");
 
     // 3. Derive RKEK from recovery_phrase and recovery_kek_salt
-    let rkek = crypto::derive_kek(&recovery_phrase_payload, recovery_kek_salt)
-        .map_err(|e| {
-            error!(user_id = %user.id, error = ?e, "Failed to derive RKEK from recovery phrase");
-            // Distinguish between crypto error and potentially invalid phrase
-            // For now, map to InvalidRecoveryPhrase if KDF fails, assuming it's due to bad input.
-            // A more specific error from derive_kek might be useful.
-            AuthError::InvalidRecoveryPhrase // Or CryptoOperationFailed(e) if it's a system issue
-        })?;
+    let rkek = crypto::derive_kek(&recovery_phrase_payload, recovery_kek_salt).map_err(|e| {
+        error!(user_id = %user.id, error = ?e, "Failed to derive RKEK from recovery phrase");
+        // Distinguish between crypto error and potentially invalid phrase
+        // For now, map to InvalidRecoveryPhrase if KDF fails, assuming it's due to bad input.
+        // A more specific error from derive_kek might be useful.
+        AuthError::InvalidRecoveryPhrase // Or CryptoOperationFailed(e) if it's a system issue
+    })?;
     debug!("RKEK derived successfully.");
 
     // 4. Decrypt encrypted_dek_by_recovery using RKEK to get plaintext DEK
@@ -501,7 +525,9 @@ pub async fn recover_user_password_with_phrase(
         Some(nonce) => nonce,
         None => {
             error!(user_id = %user.id, "Recovery DEK nonce not found, but encrypted_dek_by_recovery exists. Inconsistent state.");
-            return Err(AuthError::CryptoOperationFailed(CryptoError::DecryptionFailed)); // Or a more specific error
+            return Err(AuthError::CryptoOperationFailed(
+                CryptoError::DecryptionFailed,
+            )); // Or a more specific error
         }
     };
     let plaintext_dek_secret =
@@ -518,11 +544,10 @@ pub async fn recover_user_password_with_phrase(
 
     // 6. Derive new KEK from new_password and new_kek_salt
     debug!("Deriving new KEK from new password...");
-    let new_kek = crypto::derive_kek(&new_password_payload, &new_kek_salt_str)
-        .map_err(|e| {
-            error!(user_id = %user.id, error = ?e, "Failed to derive new KEK from new password");
-            AuthError::CryptoOperationFailed(e)
-        })?;
+    let new_kek = crypto::derive_kek(&new_password_payload, &new_kek_salt_str).map_err(|e| {
+        error!(user_id = %user.id, error = ?e, "Failed to derive new KEK from new password");
+        AuthError::CryptoOperationFailed(e)
+    })?;
 
     // 7. Re-encrypt plaintext DEK with new KEK
     debug!("Re-encrypting DEK with new KEK...");
@@ -541,27 +566,30 @@ pub async fn recover_user_password_with_phrase(
     // 9. Update database: new password_hash, new kek_salt, new encrypted_dek.
     // recovery_kek_salt and encrypted_dek_by_recovery remain unchanged.
     debug!("Updating user record in database...");
-    backend.update_password_and_encryption_keys(
-        user.id,
-        new_password_hash_str,
-        new_kek_salt_str, // The new KEK salt
-        new_ciphertext_dek_bytes, // Pass ciphertext
-        new_nonce_dek_bytes,      // Pass nonce
-        user.encrypted_dek_by_recovery.clone(), // This remains unchanged
-        user.recovery_dek_nonce.clone(), // Pass existing recovery nonce
-    ).await?;
+    backend
+        .update_password_and_encryption_keys(
+            user.id,
+            new_password_hash_str,
+            new_kek_salt_str,                       // The new KEK salt
+            new_ciphertext_dek_bytes,               // Pass ciphertext
+            new_nonce_dek_bytes,                    // Pass nonce
+            user.encrypted_dek_by_recovery.clone(), // This remains unchanged
+            user.recovery_dek_nonce.clone(),        // Pass existing recovery nonce
+        )
+        .await?;
 
     info!(user_id = %user.id, "Password recovered and updated successfully.");
     Ok(user.id)
 }
-
 
 #[instrument(skip(pool), err, fields(user_id = %user_id_to_invalidate))]
 pub async fn delete_all_sessions_for_user(
     pool: &DbPool,
     user_id_to_invalidate: Uuid,
 ) -> Result<usize, AuthError> {
-    use crate::schema::sessions::dsl::{sessions, id as session_id_col, session as session_data_col};
+    use crate::schema::sessions::dsl::{
+        id as session_id_col, session as session_data_col, sessions,
+    };
     use diesel::prelude::*;
     use serde_json::Value;
 
@@ -619,10 +647,12 @@ pub async fn delete_all_sessions_for_user(
         .await
         .map_err(AuthError::from)??; // Double ?? for InteractError then AuthError from inner logic
 
-    info!(num_deleted = deleted_count, "Successfully processed session invalidation for user.");
+    info!(
+        num_deleted = deleted_count,
+        "Successfully processed session invalidation for user."
+    );
     Ok(deleted_count)
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -631,7 +661,7 @@ mod tests {
     use secrecy::SecretString; // This is fine if SecretString is used, or can be removed if sub-tests import it.
     use tokio;
 
-     #[tokio::test]
+    #[tokio::test]
     async fn test_hash_password_join_error_simulation() {
         // Similar to the verify_password JoinError test, this is hard to guarantee.
         // Covers line 179 (hash_password -> HashingError from JoinError)
@@ -642,9 +672,16 @@ mod tests {
         let result = hash_password(password).await;
 
         // We can't reliably assert for JoinError here.
-        println!("test_hash_password_join_error_simulation executed. Result: {:?}", result);
+        println!(
+            "test_hash_password_join_error_simulation executed. Result: {:?}",
+            result
+        );
         // Expect Ok or HashingError (if bcrypt itself fails, though unlikely here)
-         assert!(result.is_ok() || matches!(result, Err(AuthError::HashingError)), "Expected Ok or HashingError, got {:?}", result);
+        assert!(
+            result.is_ok() || matches!(result, Err(AuthError::HashingError)),
+            "Expected Ok or HashingError, got {:?}",
+            result
+        );
     }
 
     // Note: Testing the DatabaseError variants (lines 87, 111, 134) typically requires

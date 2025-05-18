@@ -1,14 +1,11 @@
-use secrecy::{ExposeSecret, SecretBox}; // Removed SecretVec
-use axum::{
-    extract::FromRequestParts,
-    http::request::Parts
-};
 use crate::errors::AppError;
-use tracing::{debug, error, warn};
 use async_trait::async_trait;
+use axum::{extract::FromRequestParts, http::request::Parts};
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
+use secrecy::{ExposeSecret, SecretBox}; // Removed SecretVec
 use std::fmt;
-use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use tower_sessions::Session;
+use tracing::{debug, error, warn};
 
 /// Represents the session's Data Encryption Key (DEK).
 /// This struct is intended to be used as an Axum request extractor.
@@ -36,10 +33,10 @@ impl SessionDek {
 
     // Fixed DEK key - not used anymore, keeping for backwards compatibility in tests
     const SESSION_USER_DEK_KEY: &'static str = "user_dek";
-    
+
     // The key where axum-login stores the user ID in the session
     const AXUM_LOGIN_USER_KEY: &'static str = "axum-login.user";
-    
+
     // The pattern for constructing the user-specific DEK key
     fn user_dek_key(user_id: &str) -> String {
         format!("_user_dek_{}", user_id)
@@ -67,69 +64,95 @@ where
 
         debug!("SessionDek extractor: Attempting to retrieve DEK from tower_sessions::Session.");
 
-        let tower_session: Session =
-            Session::from_request_parts(parts, state).await
-            .map_err(|err| {
-                error!("SessionDek: Failed to extract tower_sessions::Session for DEK retrieval: {:?}", err);
-                AppError::InternalServerErrorGeneric(format!("Failed to access session for DEK retrieval: {:?}", err))
-            })?;
+        let tower_session: Session = Session::from_request_parts(parts, state).await.map_err(
+            |err| {
+                error!(
+                    "SessionDek: Failed to extract tower_sessions::Session for DEK retrieval: {:?}",
+                    err
+                );
+                AppError::InternalServerErrorGeneric(format!(
+                    "Failed to access session for DEK retrieval: {:?}",
+                    err
+                ))
+            },
+        )?;
 
         // First, get the user ID from the session (stored by our manually fixed auth.rs)
         let user_id = match tower_session.get::<String>(Self::AXUM_LOGIN_USER_KEY).await {
             Ok(Some(id)) => {
                 tracing::warn!(target: "auth_debug", "SessionDek: Found user ID in session: {}", id);
                 id
-            },
+            }
             Ok(None) => {
                 tracing::warn!(target: "auth_debug", "SessionDek: No user ID found in session under key '{}'", Self::AXUM_LOGIN_USER_KEY);
-                return Err(AppError::Unauthorized("No user ID found in session, user likely not authenticated.".to_string()));
-            },
+                return Err(AppError::Unauthorized(
+                    "No user ID found in session, user likely not authenticated.".to_string(),
+                ));
+            }
             Err(e) => {
                 tracing::warn!(target: "auth_debug", "SessionDek: Error retrieving user ID from session: {}", e);
-                return Err(AppError::InternalServerErrorGeneric("Error accessing session data for user ID".to_string()));
+                return Err(AppError::InternalServerErrorGeneric(
+                    "Error accessing session data for user ID".to_string(),
+                ));
             }
         };
 
         // Now, construct the user-specific DEK key
         let dek_key = Self::user_dek_key(&user_id);
-        
+
         // Try to get the DEK using the user-specific key
-        match tower_session.get::<crate::models::users::SerializableSecretDek>(&dek_key).await {
+        match tower_session
+            .get::<crate::models::users::SerializableSecretDek>(&dek_key)
+            .await
+        {
             Ok(Some(serializable_dek)) => {
                 tracing::warn!(target: "auth_debug", "SessionDek: Found DEK under key '{}' in session", dek_key);
-                debug!("SessionDek extractor: Found DEK in tower_session data under key '{}'", dek_key);
-                
+                debug!(
+                    "SessionDek extractor: Found DEK in tower_session data under key '{}'",
+                    dek_key
+                );
+
                 // Convert SerializableSecretDek to SessionDek
                 // Assuming serializable_dek.expose_secret_bytes() returns Vec<u8>
                 let dek_bytes_vec = serializable_dek.expose_secret_bytes().to_vec();
                 Ok(SessionDek(SecretBox::new(Box::new(dek_bytes_vec))))
-            },
+            }
             Ok(None) => {
                 tracing::warn!(target: "auth_debug", "SessionDek: DEK not found under key '{}' in session", dek_key);
                 warn!(
                     key = %dek_key,
                     "SessionDek extractor: DEK not found in tower_session data under user-specific key."
                 );
-                
+
                 // Try the legacy fixed key as fallback
-                match tower_session.get::<String>(Self::SESSION_USER_DEK_KEY).await {
+                match tower_session
+                    .get::<String>(Self::SESSION_USER_DEK_KEY)
+                    .await
+                {
                     Ok(Some(dek_b64)) => {
                         tracing::warn!(target: "auth_debug", "SessionDek: Found DEK using legacy key '{}'. Decoding from base64.", Self::SESSION_USER_DEK_KEY);
                         // Handle legacy case - decode from base64
                         match BASE64_STANDARD.decode(dek_b64) {
                             Ok(dek_bytes_vec) => {
-                                debug!("SessionDek extractor: Successfully decoded legacy base64 DEK. Bytes length: {}", dek_bytes_vec.len());
+                                debug!(
+                                    "SessionDek extractor: Successfully decoded legacy base64 DEK. Bytes length: {}",
+                                    dek_bytes_vec.len()
+                                );
                                 Ok(SessionDek(SecretBox::new(Box::new(dek_bytes_vec))))
-                            },
+                            }
                             Err(e) => {
                                 error!("SessionDek: Failed to decode legacy base64 DEK: {}", e);
-                                Err(AppError::InternalServerErrorGeneric("Failed to decode legacy DEK format".to_string()))
+                                Err(AppError::InternalServerErrorGeneric(
+                                    "Failed to decode legacy DEK format".to_string(),
+                                ))
                             }
                         }
-                    },
-                    _ => Err(AppError::Unauthorized("DEK not found in session".to_string()))
+                    }
+                    _ => Err(AppError::Unauthorized(
+                        "DEK not found in session".to_string(),
+                    )),
                 }
-            },
+            }
             Err(e) => {
                 tracing::warn!(target: "auth_debug", "SessionDek: Error retrieving DEK under key '{}' from session: {}", dek_key, e);
                 error!(
@@ -137,14 +160,16 @@ where
                     key = %dek_key,
                     "SessionDek extractor: Error retrieving DEK from tower_session data."
                 );
-                Err(AppError::InternalServerErrorGeneric("Error accessing session data for DEK".to_string()))
+                Err(AppError::InternalServerErrorGeneric(
+                    "Error accessing session data for DEK".to_string(),
+                ))
             }
         }
     }
 }
 
 // REMOVED Test functions that use Session:
-// test_session_dek_valid_case, test_session_dek_none_case, test_session_dek_base64_decode_error, 
+// test_session_dek_valid_case, test_session_dek_none_case, test_session_dek_base64_decode_error,
 // test_session_dek_no_session, test_session_no_user, test_session_no_cookie
 
 // These tests used the old tower_sessions approach and are no longer relevant

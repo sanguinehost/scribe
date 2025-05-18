@@ -7,8 +7,7 @@ use uuid::Uuid;
 pub async fn handle_list_all_users_action<H: IoHandler, C: HttpClient>(
     client: &C,
     io_handler: &mut H,
-) -> Result<(), CliError>
-{
+) -> Result<(), CliError> {
     io_handler.write_line("\nListing all users...")?;
 
     match client.admin_list_users().await {
@@ -20,19 +19,18 @@ pub async fn handle_list_all_users_action<H: IoHandler, C: HttpClient>(
 
             // Table header
             io_handler.write_line("\nUSER ID                               | USERNAME             | ROLE           | STATUS")?;
-            io_handler.write_line("----------------------------------------------------------------------")?;
-            
+            io_handler.write_line(
+                "----------------------------------------------------------------------",
+            )?;
+
             // Print each user
             for user in users {
                 io_handler.write_line(&format!(
-                    "{:<36} | {:<20} | {:<14} | {}", 
-                    user.id, 
-                    user.username, 
-                    user.role,
-                    user.account_status
+                    "{:<36} | {:<20} | {:<14} | {}",
+                    user.id, user.username, user.role, user.account_status
                 ))?;
             }
-        },
+        }
         Err(e) => {
             io_handler.write_line(&format!("\nError listing users: {}", e))?;
         }
@@ -45,8 +43,7 @@ pub async fn handle_list_all_users_action<H: IoHandler, C: HttpClient>(
 pub async fn handle_view_user_details_action<H: IoHandler, C: HttpClient>(
     client: &C,
     io_handler: &mut H,
-) -> Result<(), CliError>
-{
+) -> Result<(), CliError> {
     io_handler.write_line("\nView user details")?;
 
     // Prompt for the user ID or username
@@ -62,7 +59,10 @@ pub async fn handle_view_user_details_action<H: IoHandler, C: HttpClient>(
         io_handler.write_line(&format!("\nViewing details for user ID: {}", user_id))?;
         client.admin_get_user(user_id).await
     } else {
-        io_handler.write_line(&format!("\nViewing details for username: {}", user_identifier))?;
+        io_handler.write_line(&format!(
+            "\nViewing details for username: {}",
+            user_identifier
+        ))?;
         client.admin_get_user_by_username(&user_identifier).await
     };
 
@@ -77,7 +77,7 @@ pub async fn handle_view_user_details_action<H: IoHandler, C: HttpClient>(
             io_handler.write_line(&format!("Account Status: {}", user.account_status))?;
             io_handler.write_line(&format!("Created:        {}", user.created_at))?;
             io_handler.write_line(&format!("Last Updated:   {}", user.updated_at))?;
-        },
+        }
         Err(e) => {
             io_handler.write_line(&format!("\nError retrieving user details: {}", e))?;
         }
@@ -90,8 +90,7 @@ pub async fn handle_view_user_details_action<H: IoHandler, C: HttpClient>(
 pub async fn handle_change_user_role_action<H: IoHandler, C: HttpClient>(
     client: &C,
     io_handler: &mut H,
-) -> Result<(), CliError>
-{
+) -> Result<(), CliError> {
     io_handler.write_line("\nChange user role")?;
 
     // Prompt for the user ID or username
@@ -122,7 +121,7 @@ pub async fn handle_change_user_role_action<H: IoHandler, C: HttpClient>(
     io_handler.write_line("[1] User")?;
     io_handler.write_line("[2] Moderator")?;
     io_handler.write_line("[3] Administrator")?;
-    
+
     let role_choice = io_handler.read_line("Enter role choice:")?;
     let new_role = match role_choice.as_str() {
         "1" => "User",
@@ -136,12 +135,14 @@ pub async fn handle_change_user_role_action<H: IoHandler, C: HttpClient>(
     };
 
     io_handler.write_line(&format!("\nChanging role to '{}'...", new_role))?;
-    
+
     match client.admin_update_user_role(user_id, new_role).await {
         Ok(updated_user) => {
-            io_handler.write_line(&format!("Role successfully changed. User '{}' is now a '{}'.", 
-                updated_user.username, updated_user.role))?;
-        },
+            io_handler.write_line(&format!(
+                "Role successfully changed. User '{}' is now a '{}'.",
+                updated_user.username, updated_user.role
+            ))?;
+        }
         Err(e) => {
             io_handler.write_line(&format!("\nError changing user role: {}", e))?;
         }
@@ -154,8 +155,7 @@ pub async fn handle_change_user_role_action<H: IoHandler, C: HttpClient>(
 pub async fn handle_lock_unlock_user_action<H: IoHandler, C: HttpClient>(
     client: &C,
     io_handler: &mut H,
-) -> Result<(), CliError>
-{
+) -> Result<(), CliError> {
     io_handler.write_line("\nLock/Unlock user account")?;
 
     // Prompt for the user ID or username
@@ -185,7 +185,7 @@ pub async fn handle_lock_unlock_user_action<H: IoHandler, C: HttpClient>(
     io_handler.write_line("\nSelect action:")?;
     io_handler.write_line("[1] Lock account")?;
     io_handler.write_line("[2] Unlock account")?;
-    
+
     let action_choice = io_handler.read_line("Enter action choice:")?;
     let action = match action_choice.as_str() {
         "1" => "lock",
@@ -203,10 +203,16 @@ pub async fn handle_lock_unlock_user_action<H: IoHandler, C: HttpClient>(
         Err(_) => user_id.to_string(), // Fallback to ID if we can't get the username
     };
 
-    io_handler.write_line(&format!("\n{} account for user '{}'...", 
-        if action == "lock" { "Locking" } else { "Unlocking" }, 
-        username))?;
-    
+    io_handler.write_line(&format!(
+        "\n{} account for user '{}'...",
+        if action == "lock" {
+            "Locking"
+        } else {
+            "Unlocking"
+        },
+        username
+    ))?;
+
     // Perform the action
     let result = if action == "lock" {
         client.admin_lock_user(user_id).await
@@ -217,7 +223,7 @@ pub async fn handle_lock_unlock_user_action<H: IoHandler, C: HttpClient>(
     match result {
         Ok(_) => {
             io_handler.write_line(&format!("User account successfully {}ed.", action))?;
-        },
+        }
         Err(e) => {
             io_handler.write_line(&format!("\nError {}ing user account: {}", action, e))?;
         }

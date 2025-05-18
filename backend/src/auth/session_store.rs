@@ -61,9 +61,9 @@ impl DieselSessionStore {
     fn map_diesel_error(e: DieselError) -> session_store::Error {
         error!(error = ?e, "Diesel operation failed");
         match e {
-            DieselError::NotFound => session_store::Error::Backend(
-                "Session record not found in DB".into(),
-            ),
+            DieselError::NotFound => {
+                session_store::Error::Backend("Session record not found in DB".into())
+            }
             _ => session_store::Error::Backend(e.to_string()),
         }
     }
@@ -172,7 +172,8 @@ impl DieselSessionStore {
 }
 
 // Helper function to convert time::OffsetDateTime to chrono::DateTime<Utc>
-pub fn offset_to_utc(offset_dt: Option<OffsetDateTime>) -> Option<DateTime<Utc>> { // Made pub
+pub fn offset_to_utc(offset_dt: Option<OffsetDateTime>) -> Option<DateTime<Utc>> {
+    // Made pub
     offset_dt
         .map(|dt| DateTime::from_timestamp(dt.unix_timestamp(), 0))
         .flatten()
@@ -202,7 +203,8 @@ impl SessionStore for DieselSessionStore {
         // --- Log the full session.data HashMap ---
         debug!(session_id = %session.id, session_data_keys = ?session.data.keys().collect::<Vec<_>>(), "DieselSessionStore::save: current session.data keys before serialization");
 
-        let session_data_json_string = serde_json::to_string(&session.data).map_err(Self::map_json_error)?; // Serialize session.data directly
+        let session_data_json_string =
+            serde_json::to_string(&session.data).map_err(Self::map_json_error)?; // Serialize session.data directly
 
         // Convert time::OffsetDateTime to chrono::DateTime<Utc>
         let expires_utc = offset_to_utc(Some(session.expiry_date));
@@ -291,20 +293,21 @@ impl SessionStore for DieselSessionStore {
                 // --- Log found ---
                 // Use the original session_id_str for logging here
                 debug!(session_id = %session_id_str, db_record_id = %db_record.id, db_record_expires = ?db_record.expires, "Session record found in DB. Deserializing session data string..."); // Removed db_session_string
-                
+
                 // Deserialize the db_record.session (JSON string) into HashMap<String, String> or appropriate type for session.data
                 // tower_sessions::Record expects session.data to be HashMap<String, Value> where Value is usually String for JSON.
                 // For axum-login, the user is typically serialized into a specific key.
-                let session_data_map: std::collections::HashMap<String, serde_json::Value> = 
+                let session_data_map: std::collections::HashMap<String, serde_json::Value> =
                     serde_json::from_str(&db_record.session).map_err(Self::map_json_error)?;
 
                 // --- Log the deserialized session.data HashMap ---
                 debug!(session_id = %session_id_str, deserialized_session_data_keys = ?session_data_map.keys().collect::<Vec<_>>(), "DieselSessionStore::load: deserialized session.data keys from DB string");
 
-                let mut session_record_for_tower = Record { // Construct tower_sessions::Record
-                    id: *session_id, // Use original Id
-                    data: session_data_map, // Assign deserialized map
-                    expiry_date: OffsetDateTime::now_utc() // Placeholder, will be overwritten
+                let mut session_record_for_tower = Record {
+                    // Construct tower_sessions::Record
+                    id: *session_id,                        // Use original Id
+                    data: session_data_map,                 // Assign deserialized map
+                    expiry_date: OffsetDateTime::now_utc(), // Placeholder, will be overwritten
                 };
 
                 // Convert chrono::DateTime<Utc> back to time::OffsetDateTime

@@ -4,7 +4,8 @@ use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberI
 /// Builds the tracing subscriber configuration.
 /// This function is separate to allow testing the configuration logic
 /// without initializing the global subscriber.
-fn build_subscriber_builder() -> impl Subscriber { // Changed return type
+fn build_subscriber_builder() -> impl Subscriber {
+    // Changed return type
     // Sets the default log level from RUST_LOG env var, defaulting to INFO
     // for scribe_backend and tower_http if not set.
     // Uses a JSON formatter for structured logging.
@@ -38,7 +39,8 @@ mod tests {
     // Removed unused Level and FilterExt imports
 
     // Helper function moved outside specific tests, but still in `mod tests`
-    fn with_rust_log<F>(var: Option<&str>, f: F) // Fixed &
+    fn with_rust_log<F>(var: Option<&str>, f: F)
+    // Fixed &
     where
         F: FnOnce(),
     {
@@ -86,7 +88,6 @@ mod tests {
         // No panic means success for this basic test.
     }
 
-
     #[test]
     fn test_build_subscriber_uses_default_filter_when_env_unset() {
         // Ensure RUST_LOG is unset for this test case
@@ -114,10 +115,10 @@ mod tests {
         // Set invalid RUST_LOG - EnvFilter::try_from_default_env should return Err,
         // triggering the unwrap_or_else branch.
         with_rust_log(Some(invalid_filter), || {
-             // Calling the builder covers the error handling in try_from_default_env
-             // followed by the unwrap_or_else path.
+            // Calling the builder covers the error handling in try_from_default_env
+            // followed by the unwrap_or_else path.
             let _builder = build_subscriber_builder();
-             // Asserting that it doesn't panic is the main check here
+            // Asserting that it doesn't panic is the main check here
         });
     }
 }

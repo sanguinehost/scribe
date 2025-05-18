@@ -1,8 +1,8 @@
 use async_trait::async_trait;
 use futures::StreamExt;
 use genai::{
-    chat::{ChatOptions, ChatRequest, ChatResponse},
     Client, ClientBuilder,
+    chat::{ChatOptions, ChatRequest, ChatResponse},
 };
 use std::sync::Arc;
 
@@ -165,29 +165,35 @@ pub async fn generate_simple_response(
     Ok(content)
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use genai::{ModelIden, adapter};
-    use genai::chat::{ChatStreamEvent}; // Removed unused ChatMessage
     use futures::stream;
+    use genai::chat::ChatStreamEvent; // Removed unused ChatMessage
+    use genai::{ModelIden, adapter};
     use std::sync::atomic::{AtomicBool, Ordering};
 
     // --- Existing Integration Tests (Keep them) ---
     #[tokio::test]
     async fn test_build_gemini_client_wrapper_ok() {
         let result = build_gemini_client().await;
-        assert!(result.is_ok(), "Failed to build Gemini client wrapper: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "Failed to build Gemini client wrapper: {:?}",
+            result.err()
+        );
     }
 
     #[tokio::test]
     #[ignore]
     async fn test_generate_simple_response_integration_via_wrapper() {
-        let client_wrapper = build_gemini_client().await.expect("Failed to build Gemini client wrapper");
+        let client_wrapper = build_gemini_client()
+            .await
+            .expect("Failed to build Gemini client wrapper");
         let user_message = "Test Wrapper: Say hello!".to_string();
         let model_name_for_test = "gemini-2.5-flash-preview-04-17";
-        let result = generate_simple_response(&*client_wrapper, user_message, model_name_for_test).await;
+        let result =
+            generate_simple_response(&*client_wrapper, user_message, model_name_for_test).await;
         match result {
             Ok(response) => assert!(!response.is_empty(), "Gemini returned an empty response"),
             Err(e) => panic!("Gemini API call (via wrapper) failed: {:?}", e),
@@ -197,11 +203,15 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn test_stream_chat_integration_via_wrapper() {
-        let client_wrapper = build_gemini_client().await.expect("Failed to build Gemini client wrapper");
+        let client_wrapper = build_gemini_client()
+            .await
+            .expect("Failed to build Gemini client wrapper");
         let user_message = "Test Stream Wrapper: Say hello stream!".to_string();
         let model_name_for_test = "gemini-2.5-flash-preview-04-17";
         let chat_request = ChatRequest::from_user(user_message);
-        let stream_result = client_wrapper.stream_chat(model_name_for_test, chat_request, None).await;
+        let stream_result = client_wrapper
+            .stream_chat(model_name_for_test, chat_request, None)
+            .await;
         match stream_result {
             Ok(mut stream) => {
                 let mut full_response = String::new();
@@ -219,7 +229,10 @@ mod tests {
                         _ => {}
                     }
                 }
-                assert!(!full_response.is_empty(), "Gemini stream returned an empty response");
+                assert!(
+                    !full_response.is_empty(),
+                    "Gemini stream returned an empty response"
+                );
                 assert!(chunk_count > 0, "Gemini stream did not produce any chunks");
             }
             Err(e) => panic!("Gemini API stream call (via wrapper) failed: {:?}", e),
@@ -229,13 +242,22 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn test_generate_simple_response_with_different_models() {
-        let client_wrapper = build_gemini_client().await.expect("Failed to build Gemini client wrapper");
-        let models_to_test = vec!["gemini-2.5-pro-preview-05-06", "gemini-2.5-flash-preview-04-17"];
+        let client_wrapper = build_gemini_client()
+            .await
+            .expect("Failed to build Gemini client wrapper");
+        let models_to_test = vec![
+            "gemini-2.5-pro-preview-05-06",
+            "gemini-2.5-flash-preview-04-17",
+        ];
         for model_name in models_to_test {
             let user_message = format!("Test Model [{}]: Say hello!", model_name);
             let result = generate_simple_response(&*client_wrapper, user_message, model_name).await;
             match result {
-                Ok(response) => assert!(!response.is_empty(), "Gemini model {} returned an empty response", model_name),
+                Ok(response) => assert!(
+                    !response.is_empty(),
+                    "Gemini model {} returned an empty response",
+                    model_name
+                ),
                 Err(e) => panic!("Gemini API call for model {} failed: {:?}", model_name, e),
             }
         }
@@ -272,7 +294,10 @@ mod tests {
                 reasoning_content: None,
                 // Use ModelIden::new with AdapterKind::Gemini
                 model_iden: ModelIden::new(adapter::AdapterKind::Gemini, "mock-model-empty"),
-                provider_model_iden: ModelIden::new(adapter::AdapterKind::Gemini, "mock-model-empty"),
+                provider_model_iden: ModelIden::new(
+                    adapter::AdapterKind::Gemini,
+                    "mock-model-empty",
+                ),
                 usage: genai::chat::Usage::default(),
             }
         }
@@ -285,7 +310,10 @@ mod tests {
                 reasoning_content: None,
                 // Use ModelIden::new with AdapterKind::Gemini
                 model_iden: ModelIden::new(adapter::AdapterKind::Gemini, "mock-model-text"),
-                provider_model_iden: ModelIden::new(adapter::AdapterKind::Gemini, "mock-model-text"),
+                provider_model_iden: ModelIden::new(
+                    adapter::AdapterKind::Gemini,
+                    "mock-model-text",
+                ),
                 usage: genai::chat::Usage::default(),
             }
         }
@@ -300,9 +328,11 @@ mod tests {
             _config_override: Option<ChatOptions>,
         ) -> Result<ChatResponse, AppError> {
             self.exec_chat_called.store(true, Ordering::SeqCst);
-            self.exec_chat_response
-                .clone()
-                .unwrap_or_else(|| Ok(MockAiClient::create_text_chat_response("Default mock response")))
+            self.exec_chat_response.clone().unwrap_or_else(|| {
+                Ok(MockAiClient::create_text_chat_response(
+                    "Default mock response",
+                ))
+            })
         }
 
         // Simplified stream_chat: Always returns an empty stream
@@ -328,11 +358,19 @@ mod tests {
         let client_trait_object: Arc<dyn AiClient> = client_arc_mock.clone();
 
         let request = ChatRequest::new(vec![]); // Use the new constructor
-        let result = client_trait_object.exec_chat("test-model", request, None).await;
+        let result = client_trait_object
+            .exec_chat("test-model", request, None)
+            .await;
 
         assert!(result.is_ok());
-        assert_eq!(result.unwrap().content_text_as_str(), expected_response.content_text_as_str());
-        assert!(client_arc_mock.was_exec_chat_called(), "MockAiClient::exec_chat was not called via Arc delegation");
+        assert_eq!(
+            result.unwrap().content_text_as_str(),
+            expected_response.content_text_as_str()
+        );
+        assert!(
+            client_arc_mock.was_exec_chat_called(),
+            "MockAiClient::exec_chat was not called via Arc delegation"
+        );
         // Covers lines 63-65.
     }
 
@@ -341,16 +379,15 @@ mod tests {
     async fn test_generate_simple_response_no_text_content() {
         let mut mock_client = MockAiClient::new();
         let response_without_text = MockAiClient::create_empty_chat_response();
-        assert!(response_without_text.content_text_as_str().is_none(), "Empty ChatResponse unexpectedly has text content");
+        assert!(
+            response_without_text.content_text_as_str().is_none(),
+            "Empty ChatResponse unexpectedly has text content"
+        );
 
         mock_client.set_exec_chat_response(Ok(response_without_text));
 
-        let result = generate_simple_response(
-            &mock_client,
-            "test message".to_string(),
-            "test-model",
-        )
-        .await;
+        let result =
+            generate_simple_response(&mock_client, "test message".to_string(), "test-model").await;
 
         assert!(result.is_err());
         match result.err().unwrap() {

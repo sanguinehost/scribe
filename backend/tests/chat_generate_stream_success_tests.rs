@@ -5,13 +5,13 @@ use axum::{
     http::{Method, Request, StatusCode, header},
 };
 use chrono::Utc;
-use diesel::prelude::*;
 use diesel::RunQueryDsl as _;
+use diesel::prelude::*;
 use genai::chat::{ChatStreamEvent, StreamChunk, StreamEnd};
 use mime;
 use secrecy::{ExposeSecret, SecretBox};
-use std::time::Duration;
 use std::sync::Arc;
+use std::time::Duration;
 use tower::ServiceExt;
 use uuid::Uuid;
 
@@ -19,19 +19,16 @@ use scribe_backend::{
     models::{
         characters::Character as DbCharacter,
         chats::{
-            MessageRole, GenerateChatRequest, ApiChatMessage, Chat as ChatSession, NewChat,
-            ChatMessage as DbChatMessage, NewMessage,
+            ApiChatMessage, Chat as ChatSession, ChatMessage as DbChatMessage, GenerateChatRequest,
+            MessageRole, NewChat, NewMessage,
         },
     },
     schema::{
-        characters::dsl as characters_dsl,
+        characters::dsl as characters_dsl, chat_messages::dsl as chat_messages_dsl,
         chat_sessions::dsl as chat_sessions_dsl,
-        chat_messages::dsl as chat_messages_dsl,
     },
     services::{
-        chat_service,
-        hybrid_token_counter::HybridTokenCounter,
-        tokenizer_service::TokenizerService,
+        chat_service, hybrid_token_counter::HybridTokenCounter, tokenizer_service::TokenizerService,
     },
     state::AppState,
     test_helpers::{self, ParsedSseEvent, collect_full_sse_events},
@@ -41,14 +38,14 @@ use scribe_backend::{
 #[ignore] // Added ignore for CI
 async fn generate_chat_response_streaming_success() {
     let test_app = test_helpers::spawn_app(false, false, false).await; // Corrected: Added third arg
-    
+
     if std::env::var("RUN_INTEGRATION_TESTS").is_ok() {
         println!("Skipping mock test with real client");
         return;
     }
-    
+
     let username = "gen_resp_stream_user";
-    let password = "password123"; 
+    let password = "password123";
     let user = test_helpers::db::create_test_user(
         &test_app.db_pool,
         username.to_string(), // Corrected: .to_string()
@@ -68,8 +65,17 @@ async fn generate_chat_response_streaming_success() {
         .body(Body::from(serde_json::to_string(&login_payload).unwrap()))
         .unwrap();
 
-    let login_response = test_app.router.clone().oneshot(login_request).await.unwrap();
-    assert_eq!(login_response.status(), StatusCode::OK, "Login request failed");
+    let login_response = test_app
+        .router
+        .clone()
+        .oneshot(login_request)
+        .await
+        .unwrap();
+    assert_eq!(
+        login_response.status(),
+        StatusCode::OK,
+        "Login request failed"
+    );
 
     let auth_cookie_header = login_response
         .headers()
@@ -77,104 +83,131 @@ async fn generate_chat_response_streaming_success() {
         .expect("Set-Cookie header should be present on login")
         .to_str()
         .unwrap();
-    let parsed_cookie = cookie::Cookie::parse(auth_cookie_header)
-        .expect("Failed to parse Set-Cookie header");
+    let parsed_cookie =
+        cookie::Cookie::parse(auth_cookie_header).expect("Failed to parse Set-Cookie header");
     let auth_cookie = format!("{}={}", parsed_cookie.name(), parsed_cookie.value());
 
     let conn_pool = test_app.db_pool.clone(); // Use conn_pool for interact
     let user_id_clone = user.id;
     let character_name = "Char for Stream Resp".to_string();
-    let character: DbCharacter = conn_pool.get().await.expect("Failed to get DB conn for char create").interact(move |conn_sync| { 
-        let new_char_card = scribe_backend::models::character_card::NewCharacter { 
-            user_id: user_id_clone,
-            name: character_name,
-            spec: "test_spec_v1.0".to_string(),
-            spec_version: "1.0".to_string(),
-            description: Some("Test description".to_string().into_bytes()),
-            greeting: Some("Hello".to_string().into_bytes()),
-            visibility: Some("private".to_string()),
-            creator: Some("test_creator".to_string()),
-            persona: Some("Test persona".to_string().into_bytes()),
-            created_at: Some(Utc::now()), // Add created_at
-            updated_at: Some(Utc::now()), // Add updated_at
-            ..Default::default() 
-        };
-        diesel::insert_into(characters_dsl::characters)
-            .values(&new_char_card)
-            .get_result::<DbCharacter>(conn_sync)
-    }).await.expect("DB interaction for create character failed").expect("Error saving new character");
+    let character: DbCharacter = conn_pool
+        .get()
+        .await
+        .expect("Failed to get DB conn for char create")
+        .interact(move |conn_sync| {
+            let new_char_card = scribe_backend::models::character_card::NewCharacter {
+                user_id: user_id_clone,
+                name: character_name,
+                spec: "test_spec_v1.0".to_string(),
+                spec_version: "1.0".to_string(),
+                description: Some("Test description".to_string().into_bytes()),
+                greeting: Some("Hello".to_string().into_bytes()),
+                visibility: Some("private".to_string()),
+                creator: Some("test_creator".to_string()),
+                persona: Some("Test persona".to_string().into_bytes()),
+                created_at: Some(Utc::now()), // Add created_at
+                updated_at: Some(Utc::now()), // Add updated_at
+                ..Default::default()
+            };
+            diesel::insert_into(characters_dsl::characters)
+                .values(&new_char_card)
+                .get_result::<DbCharacter>(conn_sync)
+        })
+        .await
+        .expect("DB interaction for create character failed")
+        .expect("Error saving new character");
 
-
-    let conn_pool = test_app.db_pool.clone(); 
+    let conn_pool = test_app.db_pool.clone();
     let user_id_clone_session = user.id;
     let character_id_clone_session = character.id;
     let session_title = format!("Test Chat with Char {}", character.id);
-    let session: ChatSession = conn_pool.get().await.expect("Failed to get DB conn for session create").interact(move |conn_sync| { 
-        let new_chat_session = NewChat {
-            id: Uuid::new_v4(),
-            user_id: user_id_clone_session,
-            character_id: character_id_clone_session,
-            title: Some(session_title),
-            created_at: Utc::now(),
-            updated_at: Utc::now(),
-            history_management_strategy: "truncate".to_string(),
-            history_management_limit: 10,
-            model_name: "test-model".to_string(),
-            visibility: Some("private".to_string()),
-        };
-        diesel::insert_into(chat_sessions_dsl::chat_sessions)
-            .values(&new_chat_session)
-            .returning(ChatSession::as_returning()) // Ensure returning or select is used
-            .get_result::<ChatSession>(conn_sync)
-    }).await.expect("DB interaction for create session failed").expect("Error saving new chat session");
+    let session: ChatSession = conn_pool
+        .get()
+        .await
+        .expect("Failed to get DB conn for session create")
+        .interact(move |conn_sync| {
+            let new_chat_session = NewChat {
+                id: Uuid::new_v4(),
+                user_id: user_id_clone_session,
+                character_id: character_id_clone_session,
+                title: Some(session_title),
+                created_at: Utc::now(),
+                updated_at: Utc::now(),
+                history_management_strategy: "truncate".to_string(),
+                history_management_limit: 10,
+                model_name: "test-model".to_string(),
+                visibility: Some("private".to_string()),
+            };
+            diesel::insert_into(chat_sessions_dsl::chat_sessions)
+                .values(&new_chat_session)
+                .returning(ChatSession::as_returning()) // Ensure returning or select is used
+                .get_result::<ChatSession>(conn_sync)
+        })
+        .await
+        .expect("DB interaction for create session failed")
+        .expect("Error saving new chat session");
 
     let conn_pool_msg1 = test_app.db_pool.clone(); // Use a new variable name to avoid lifetime issues if any
     let session_id_clone1 = session.id;
     let user_id_clone1 = user.id;
-    conn_pool_msg1.get().await.expect("Failed to get DB conn for msg1 save").interact(move |conn_sync| { 
-        let new_message1 = NewMessage {
-            id: Uuid::new_v4(),
-            session_id: session_id_clone1,
-            user_id: user_id_clone1,
-            message_type: MessageRole::User,
-            content: "First prompt".as_bytes().to_vec(),
-            content_nonce: None, 
-            created_at: Utc::now(),
-            updated_at: Utc::now(),
-            role: Some("user".to_string()),
-            parts: None,
-            attachments: None,
-            prompt_tokens: None,
-            completion_tokens: None,
-        };
-        diesel::insert_into(chat_messages_dsl::chat_messages)
-            .values(&new_message1)
-            .execute(conn_sync) 
-    }).await.expect("DB interaction for save message 1 failed").expect("Error saving new chat message 1");
+    conn_pool_msg1
+        .get()
+        .await
+        .expect("Failed to get DB conn for msg1 save")
+        .interact(move |conn_sync| {
+            let new_message1 = NewMessage {
+                id: Uuid::new_v4(),
+                session_id: session_id_clone1,
+                user_id: user_id_clone1,
+                message_type: MessageRole::User,
+                content: "First prompt".as_bytes().to_vec(),
+                content_nonce: None,
+                created_at: Utc::now(),
+                updated_at: Utc::now(),
+                role: Some("user".to_string()),
+                parts: None,
+                attachments: None,
+                prompt_tokens: None,
+                completion_tokens: None,
+            };
+            diesel::insert_into(chat_messages_dsl::chat_messages)
+                .values(&new_message1)
+                .execute(conn_sync)
+        })
+        .await
+        .expect("DB interaction for save message 1 failed")
+        .expect("Error saving new chat message 1");
 
     let conn_pool_msg2 = test_app.db_pool.clone(); // Use a new variable name
     let session_id_clone2 = session.id;
     let user_id_clone2 = user.id;
-    conn_pool_msg2.get().await.expect("Failed to get DB conn for msg2 save").interact(move |conn_sync| { 
-        let new_message2 = NewMessage {
-            id: Uuid::new_v4(),
-            session_id: session_id_clone2,
-            user_id: user_id_clone2, 
-            message_type: MessageRole::Assistant,
-            content: "First reply".as_bytes().to_vec(),
-            content_nonce: None,
-            created_at: Utc::now(),
-            updated_at: Utc::now(),
-            prompt_tokens: None,
-            completion_tokens: None,
-            role: Some("assistant".to_string()),
-            parts: None,
-            attachments: None,
-        };
-        diesel::insert_into(chat_messages_dsl::chat_messages)
-            .values(&new_message2)
-            .execute(conn_sync) 
-    }).await.expect("DB interaction for save message 2 failed").expect("Error saving new chat message 2");
+    conn_pool_msg2
+        .get()
+        .await
+        .expect("Failed to get DB conn for msg2 save")
+        .interact(move |conn_sync| {
+            let new_message2 = NewMessage {
+                id: Uuid::new_v4(),
+                session_id: session_id_clone2,
+                user_id: user_id_clone2,
+                message_type: MessageRole::Assistant,
+                content: "First reply".as_bytes().to_vec(),
+                content_nonce: None,
+                created_at: Utc::now(),
+                updated_at: Utc::now(),
+                prompt_tokens: None,
+                completion_tokens: None,
+                role: Some("assistant".to_string()),
+                parts: None,
+                attachments: None,
+            };
+            diesel::insert_into(chat_messages_dsl::chat_messages)
+                .values(&new_message2)
+                .execute(conn_sync)
+        })
+        .await
+        .expect("DB interaction for save message 2 failed")
+        .expect("Error saving new chat message 2");
 
     // Mock the AI client to return a stream
     let mock_stream_items = vec![
@@ -189,43 +222,52 @@ async fn generate_chat_response_streaming_success() {
         })), // Test empty chunk
         Ok(ChatStreamEvent::End(StreamEnd::default())),
     ];
-    
+
     // Set expected events before passing mock_stream_items to set_stream_response
     let expected_events = vec![
-        ParsedSseEvent { 
+        ParsedSseEvent {
             event: Some("content".to_string()),
-            data: "Hello".to_string(), // Remove the trailing space to match actual events 
+            data: "Hello".to_string(), // Remove the trailing space to match actual events
         },
-        ParsedSseEvent { 
+        ParsedSseEvent {
             event: Some("content".to_string()),
             data: "World!".to_string(),
         },
         // Our implementation now adds a DONE event automatically for streams that complete
-        ParsedSseEvent { 
+        ParsedSseEvent {
             event: Some("done".to_string()),
             data: "[DONE]".to_string(),
         },
     ];
-    
+
     test_app
         .mock_ai_client
         .as_ref()
         .expect("Mock AI client should be present")
         .set_stream_response(mock_stream_items);
 
-   // Construct the new payload with history
-   let history = vec![
-       ApiChatMessage { role: "user".to_string(), content: "First prompt".to_string() },
-       ApiChatMessage { role: "assistant".to_string(), content: "First reply".to_string() },
-       ApiChatMessage { role: "user".to_string(), content: "User message for stream".to_string() },
-   ];
-   let payload = GenerateChatRequest {
-       history,
-       model: Some("test-stream-model".to_string()),
-   };
+    // Construct the new payload with history
+    let history = vec![
+        ApiChatMessage {
+            role: "user".to_string(),
+            content: "First prompt".to_string(),
+        },
+        ApiChatMessage {
+            role: "assistant".to_string(),
+            content: "First reply".to_string(),
+        },
+        ApiChatMessage {
+            role: "user".to_string(),
+            content: "User message for stream".to_string(),
+        },
+    ];
+    let payload = GenerateChatRequest {
+        history,
+        model: Some("test-stream-model".to_string()),
+    };
 
-   let request = Request::builder()
-       .method(Method::POST)
+    let request = Request::builder()
+        .method(Method::POST)
         .uri(format!("/api/chats/{}/generate", session.id))
         .header(header::COOKIE, &auth_cookie)
         .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
@@ -248,18 +290,48 @@ async fn generate_chat_response_streaming_success() {
     let actual_events = collect_full_sse_events(body).await;
 
     // Assert actual events match expected events
-    assert_eq!(actual_events.len(), expected_events.len(), "Number of SSE events mismatch. Actual: {:?}, Expected: {:?}", actual_events, expected_events);
+    assert_eq!(
+        actual_events.len(),
+        expected_events.len(),
+        "Number of SSE events mismatch. Actual: {:?}, Expected: {:?}",
+        actual_events,
+        expected_events
+    );
     for (i, (actual, expected)) in actual_events.iter().zip(expected_events.iter()).enumerate() {
-        assert_eq!(actual.event, expected.event, "Event name mismatch at index {}", i);
+        assert_eq!(
+            actual.event, expected.event,
+            "Event name mismatch at index {}",
+            i
+        );
         // For data, if it's JSON, compare parsed JSON to avoid string formatting issues
         if expected.data == "[DONE]" {
-            assert_eq!(actual.data, "[DONE]", "Event data for [DONE] mismatch at index {}", i);
+            assert_eq!(
+                actual.data, "[DONE]",
+                "Event data for [DONE] mismatch at index {}",
+                i
+            );
         } else if expected.data.starts_with('{') || expected.data.starts_with('[') {
-            let actual_json: serde_json::Value = serde_json::from_str(&actual.data).expect(&format!("Actual data at index {} is not valid JSON: {}", i, actual.data));
-            let expected_json: serde_json::Value = serde_json::from_str(&expected.data).expect(&format!("Expected data at index {} is not valid JSON: {}", i, expected.data));
-            assert_eq!(actual_json, expected_json, "Event data JSON mismatch at index {}", i);
+            let actual_json: serde_json::Value =
+                serde_json::from_str(&actual.data).expect(&format!(
+                    "Actual data at index {} is not valid JSON: {}",
+                    i, actual.data
+                ));
+            let expected_json: serde_json::Value =
+                serde_json::from_str(&expected.data).expect(&format!(
+                    "Expected data at index {} is not valid JSON: {}",
+                    i, expected.data
+                ));
+            assert_eq!(
+                actual_json, expected_json,
+                "Event data JSON mismatch at index {}",
+                i
+            );
         } else {
-            assert_eq!(actual.data, expected.data, "Event data string mismatch at index {}", i);
+            assert_eq!(
+                actual.data, expected.data,
+                "Event data string mismatch at index {}",
+                i
+            );
         }
     }
 
@@ -267,33 +339,49 @@ async fn generate_chat_response_streaming_success() {
     // Increase sleep time to provide more time for background tasks
     tokio::time::sleep(Duration::from_millis(500)).await;
 
-    let dek_for_assertion = &user.dek.as_ref().expect("User DEK not found for assertion").0;
+    let dek_for_assertion = &user
+        .dek
+        .as_ref()
+        .expect("User DEK not found for assertion")
+        .0;
 
     let conn_pool_load_msg = test_app.db_pool.clone(); // Use a new variable name
     let session_id_clone_load = session.id;
-    let messages: Vec<DbChatMessage> = conn_pool_load_msg.get().await.expect("Failed to get DB conn for loading messages").interact(move |conn_sync| {
-        chat_messages_dsl::chat_messages
-            .filter(chat_messages_dsl::session_id.eq(session_id_clone_load))
-            .order(chat_messages_dsl::created_at.asc())
-            .select(DbChatMessage::as_select())
-            .load::<DbChatMessage>(conn_sync)
-    }).await.expect("DB interaction for loading messages failed").expect("Failed to load chat messages");
+    let messages: Vec<DbChatMessage> = conn_pool_load_msg
+        .get()
+        .await
+        .expect("Failed to get DB conn for loading messages")
+        .interact(move |conn_sync| {
+            chat_messages_dsl::chat_messages
+                .filter(chat_messages_dsl::session_id.eq(session_id_clone_load))
+                .order(chat_messages_dsl::created_at.asc())
+                .select(DbChatMessage::as_select())
+                .load::<DbChatMessage>(conn_sync)
+        })
+        .await
+        .expect("DB interaction for loading messages failed")
+        .expect("Failed to load chat messages");
 
     // Make the assertion more flexible - we need at least the initial 2 messages + user message
-    assert!(messages.len() >= 3, "Should have at least 3 messages (2 initial + user message) after streaming completion. Found: {}", messages.len());
-    
+    assert!(
+        messages.len() >= 3,
+        "Should have at least 3 messages (2 initial + user message) after streaming completion. Found: {}",
+        messages.len()
+    );
+
     // We should ideally have 4 messages (2 initial + user message + AI response)
     // But due to async timing, we might not have the AI response saved yet
     // So we'll check for at least 3 messages, which ensures we have the user message
     assert!(
         messages.len() >= 3,
-        "Should have at least 3 messages (2 initial + user message), found {}", 
+        "Should have at least 3 messages (2 initial + user message), found {}",
         messages.len()
     );
 
     // Check that we have the user message at minimum
     // Find the latest user message - it should be our "User message for stream"
-    let latest_user_msg = messages.iter()
+    let latest_user_msg = messages
+        .iter()
         .filter(|msg| msg.message_type == MessageRole::User)
         .max_by_key(|msg| msg.created_at)
         .expect("Should have at least one user message");
@@ -302,16 +390,15 @@ async fn generate_chat_response_streaming_success() {
     // some might not have encryption set up correctly.
     // For these tests, we'll simply verify the user message exists
     // and only try to decrypt if the nonce is present
-    
+
     // If the nonce is present, verify the content through decryption
     if let Some(nonce) = latest_user_msg.content_nonce.as_ref() {
-        let decrypted_user_content_bytes = scribe_backend::crypto::decrypt_gcm(
-            &latest_user_msg.content,
-            nonce,
-            dek_for_assertion
-        ).expect("Failed to decrypt user message content");
-        let decrypted_user_content_str = String::from_utf8(decrypted_user_content_bytes.expose_secret().clone())
-            .expect("Failed to convert decrypted user message to string");
+        let decrypted_user_content_bytes =
+            scribe_backend::crypto::decrypt_gcm(&latest_user_msg.content, nonce, dek_for_assertion)
+                .expect("Failed to decrypt user message content");
+        let decrypted_user_content_str =
+            String::from_utf8(decrypted_user_content_bytes.expose_secret().clone())
+                .expect("Failed to convert decrypted user message to string");
         assert_eq!(decrypted_user_content_str, "User message for stream");
     } else {
         // If nonce is not present, this is likely a test message
@@ -321,24 +408,30 @@ async fn generate_chat_response_streaming_success() {
 
     // If we have an assistant message, verify it too
     // This is conditional since the async save might not have completed yet
-    if let Some(latest_ai_msg) = messages.iter()
+    if let Some(latest_ai_msg) = messages
+        .iter()
         .filter(|msg| msg.message_type == MessageRole::Assistant)
-        .max_by_key(|msg| msg.created_at) {
-        
+        .max_by_key(|msg| msg.created_at)
+    {
         // Only try to decrypt if nonce is present
         if let Some(nonce) = latest_ai_msg.content_nonce.as_ref() {
             let decrypted_ai_content_bytes = scribe_backend::crypto::decrypt_gcm(
                 &latest_ai_msg.content,
                 nonce,
-                dek_for_assertion
-            ).expect("Failed to decrypt AI message content");
-            let decrypted_ai_content_str = String::from_utf8(decrypted_ai_content_bytes.expose_secret().clone())
-                .expect("Failed to convert decrypted AI message to string");
-            
+                dek_for_assertion,
+            )
+            .expect("Failed to decrypt AI message content");
+            let decrypted_ai_content_str =
+                String::from_utf8(decrypted_ai_content_bytes.expose_secret().clone())
+                    .expect("Failed to convert decrypted AI message to string");
+
             // Check if the AI message has the expected content
             // First AI message is "First reply", newest should be "HelloWorld!"
             if decrypted_ai_content_str != "First reply" {
-                assert_eq!(decrypted_ai_content_str, "HelloWorld!", "Latest AI message should contain the streaming response");
+                assert_eq!(
+                    decrypted_ai_content_str, "HelloWorld!",
+                    "Latest AI message should contain the streaming response"
+                );
             }
         } else {
             // If nonce is missing, just verify we have an assistant message
@@ -354,15 +447,15 @@ async fn generate_chat_response_streaming_success() {
 #[ignore] // Added ignore for CI
 async fn test_first_mes_included_in_history() {
     let test_app = test_helpers::spawn_app(false, false, false).await;
-    
+
     if std::env::var("RUN_INTEGRATION_TESTS").is_ok() {
         println!("Skipping mock test with real client");
         return;
     }
-    
+
     // Create test user
     let username = "first_mes_test_user";
-    let password = "password123"; 
+    let password = "password123";
     let user = test_helpers::db::create_test_user(
         &test_app.db_pool,
         username.to_string(),
@@ -383,8 +476,17 @@ async fn test_first_mes_included_in_history() {
         .body(Body::from(serde_json::to_string(&login_payload).unwrap()))
         .unwrap();
 
-    let login_response = test_app.router.clone().oneshot(login_request).await.unwrap();
-    assert_eq!(login_response.status(), StatusCode::OK, "Login request failed");
+    let login_response = test_app
+        .router
+        .clone()
+        .oneshot(login_request)
+        .await
+        .unwrap();
+    assert_eq!(
+        login_response.status(),
+        StatusCode::OK,
+        "Login request failed"
+    );
 
     let auth_cookie_header = login_response
         .headers()
@@ -392,58 +494,72 @@ async fn test_first_mes_included_in_history() {
         .expect("Set-Cookie header should be present on login")
         .to_str()
         .unwrap();
-    let parsed_cookie = cookie::Cookie::parse(auth_cookie_header)
-        .expect("Failed to parse Set-Cookie header");
+    let parsed_cookie =
+        cookie::Cookie::parse(auth_cookie_header).expect("Failed to parse Set-Cookie header");
     let auth_cookie = format!("{}={}", parsed_cookie.name(), parsed_cookie.value());
 
     // Create a test character with first_mes content
     let conn_pool = test_app.db_pool.clone();
     let user_id_clone = user.id;
     let first_mes_content = "Hello! I'm the character's first message that should be included.";
-    let character: DbCharacter = conn_pool.get().await.expect("Failed to get DB conn for char create").interact(move |conn_sync| { 
-        let new_char_card = scribe_backend::models::character_card::NewCharacter { 
-            user_id: user_id_clone,
-            name: "Character with first_mes".to_string(),
-            spec: "test_spec_v1.0".to_string(),
-            spec_version: "1.0".to_string(),
-            description: Some("Test description".to_string().into_bytes()),
-            first_mes: Some(first_mes_content.to_string().into_bytes()),
-            greeting: Some("Hello".to_string().into_bytes()),
-            visibility: Some("private".to_string()),
-            creator: Some("test_creator".to_string()),
-            persona: Some("Test persona".to_string().into_bytes()),
-            created_at: Some(Utc::now()),
-            updated_at: Some(Utc::now()),
-            ..Default::default() 
-        };
-        diesel::insert_into(characters_dsl::characters)
-            .values(&new_char_card)
-            .get_result::<DbCharacter>(conn_sync)
-    }).await.expect("DB interaction for create character failed").expect("Error saving new character");
+    let character: DbCharacter = conn_pool
+        .get()
+        .await
+        .expect("Failed to get DB conn for char create")
+        .interact(move |conn_sync| {
+            let new_char_card = scribe_backend::models::character_card::NewCharacter {
+                user_id: user_id_clone,
+                name: "Character with first_mes".to_string(),
+                spec: "test_spec_v1.0".to_string(),
+                spec_version: "1.0".to_string(),
+                description: Some("Test description".to_string().into_bytes()),
+                first_mes: Some(first_mes_content.to_string().into_bytes()),
+                greeting: Some("Hello".to_string().into_bytes()),
+                visibility: Some("private".to_string()),
+                creator: Some("test_creator".to_string()),
+                persona: Some("Test persona".to_string().into_bytes()),
+                created_at: Some(Utc::now()),
+                updated_at: Some(Utc::now()),
+                ..Default::default()
+            };
+            diesel::insert_into(characters_dsl::characters)
+                .values(&new_char_card)
+                .get_result::<DbCharacter>(conn_sync)
+        })
+        .await
+        .expect("DB interaction for create character failed")
+        .expect("Error saving new character");
 
     // Create a new chat session
-    let conn_pool = test_app.db_pool.clone(); 
+    let conn_pool = test_app.db_pool.clone();
     let user_id_clone_session = user.id;
     let character_id_clone_session = character.id;
     let session_title = format!("Test Chat with First Mes {}", character.id);
-    let session: ChatSession = conn_pool.get().await.expect("Failed to get DB conn for session create").interact(move |conn_sync| { 
-        let new_chat_session = NewChat {
-            id: Uuid::new_v4(),
-            user_id: user_id_clone_session,
-            character_id: character_id_clone_session,
-            title: Some(session_title),
-            created_at: Utc::now(),
-            updated_at: Utc::now(),
-            history_management_strategy: "truncate".to_string(),
-            history_management_limit: 10,
-            model_name: "test-model".to_string(),
-            visibility: Some("private".to_string()),
-        };
-        diesel::insert_into(chat_sessions_dsl::chat_sessions)
-            .values(&new_chat_session)
-            .returning(ChatSession::as_returning())
-            .get_result::<ChatSession>(conn_sync)
-    }).await.expect("DB interaction for create session failed").expect("Error saving new chat session");
+    let session: ChatSession = conn_pool
+        .get()
+        .await
+        .expect("Failed to get DB conn for session create")
+        .interact(move |conn_sync| {
+            let new_chat_session = NewChat {
+                id: Uuid::new_v4(),
+                user_id: user_id_clone_session,
+                character_id: character_id_clone_session,
+                title: Some(session_title),
+                created_at: Utc::now(),
+                updated_at: Utc::now(),
+                history_management_strategy: "truncate".to_string(),
+                history_management_limit: 10,
+                model_name: "test-model".to_string(),
+                visibility: Some("private".to_string()),
+            };
+            diesel::insert_into(chat_sessions_dsl::chat_sessions)
+                .values(&new_chat_session)
+                .returning(ChatSession::as_returning())
+                .get_result::<ChatSession>(conn_sync)
+        })
+        .await
+        .expect("DB interaction for create session failed")
+        .expect("Error saving new chat session");
 
     // Set up a mock AI client response
     let mock_stream_items = vec![
@@ -452,13 +568,13 @@ async fn test_first_mes_included_in_history() {
         })),
         Ok(ChatStreamEvent::End(StreamEnd::default())),
     ];
-    
+
     test_app
         .mock_ai_client
         .as_ref()
         .expect("Mock AI client should be present")
         .set_stream_response(mock_stream_items);
-    
+
     // Create a state Arc for testing chat_service directly
     // Create AppState similar to how it's done in spawn_app
     let state = AppState {
@@ -470,36 +586,53 @@ async fn test_first_mes_included_in_history() {
         qdrant_service: test_app.qdrant_service.clone(),
         embedding_call_tracker: test_app.embedding_call_tracker.clone(),
         token_counter: Arc::new(HybridTokenCounter::new_local_only(
-            TokenizerService::new("/home/socol/Workspace/sanguine-scribe/backend/resources/tokenizers/gemma.model")
-                .expect("Failed to create tokenizer for test")))
+            TokenizerService::new(
+                "/home/socol/Workspace/sanguine-scribe/backend/resources/tokenizers/gemma.model",
+            )
+            .expect("Failed to create tokenizer for test"),
+        )),
     };
     let state_arc = std::sync::Arc::new(state);
-    
+
     // Use get_session_data_for_generation to get the session data
     // This will test our fix for including first_mes when no history exists
     let user_message_content = "First user message";
     let session_dek = SecretBox::new(Box::new(vec![0u8; 32])); // Dummy DEK for testing
     let session_dek_arc = std::sync::Arc::new(session_dek);
-    
+
     let generation_data = chat_service::get_session_data_for_generation(
         state_arc,
         user.id,
         session.id,
         user_message_content.to_string(),
-        Some(session_dek_arc)
+        Some(session_dek_arc),
     )
     .await
     .expect("Failed to get session data for generation");
-    
+
     // Extract the managed history from the generation data
     let (managed_history, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _) = generation_data;
-    
+
     // Assert that the history contains the character's first_mes
-    assert!(!managed_history.is_empty(), "Managed history should not be empty");
-    assert_eq!(managed_history.len(), 1, "Managed history should have exactly 1 message (character's first_mes)");
-    
+    assert!(
+        !managed_history.is_empty(),
+        "Managed history should not be empty"
+    );
+    assert_eq!(
+        managed_history.len(),
+        1,
+        "Managed history should have exactly 1 message (character's first_mes)"
+    );
+
     // Check first message is the assistant's first_mes
     let (first_msg_role, first_msg_content) = &managed_history[0];
-    assert_eq!(*first_msg_role, MessageRole::Assistant, "First message role should be Assistant");
-    assert_eq!(*first_msg_content, first_mes_content, "First message content should match character's first_mes");
+    assert_eq!(
+        *first_msg_role,
+        MessageRole::Assistant,
+        "First message role should be Assistant"
+    );
+    assert_eq!(
+        *first_msg_content, first_mes_content,
+        "First message content should match character's first_mes"
+    );
 }

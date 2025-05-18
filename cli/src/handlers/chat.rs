@@ -22,7 +22,7 @@ pub async fn handle_list_chat_sessions_action<H: IoHandler, C: HttpClient>(
                 for session in sessions {
                     // Format the timestamp directly
                     let updated_at_str = session.updated_at.format("%Y-%m-%d %H:%M:%S").to_string();
-                    
+
                     io_handler.write_line(&format!(
                         "  - Session ID: {}, Character ID: {}, Last Updated: {}",
                         session.id, session.character_id, updated_at_str
@@ -52,7 +52,7 @@ pub async fn handle_view_chat_history_action<H: IoHandler, C: HttpClient>(
     for (index, session) in sessions.iter().enumerate() {
         // Format the timestamp directly
         let updated_at_str = session.updated_at.format("%Y-%m-%d %H:%M:%S").to_string();
-        
+
         io_handler.write_line(&format!(
             "  [{}] Session ID: {}, Character ID: {}, Last Updated: {}",
             index + 1,
@@ -93,7 +93,7 @@ pub async fn handle_view_chat_history_action<H: IoHandler, C: HttpClient>(
                 for message in messages {
                     io_handler.write_line("")?; // Add a blank line for spacing
                     let formatted_timestamp = message.created_at.format("%Y-%m-%d %H:%M:%S UTC");
-                    
+
                     // Determine prefix based on message.role (case-insensitive)
                     let role_lower = message.role.to_lowercase();
                     let prefix = if role_lower == "user" {
@@ -110,16 +110,21 @@ pub async fn handle_view_chat_history_action<H: IoHandler, C: HttpClient>(
                             Some(f) => &format!("{}{}:", f.to_uppercase(), c.as_str()),
                         }
                     };
-                    
+
                     // Extract content from parts array
-                    let content_str = message.parts.as_array()
+                    let content_str = message
+                        .parts
+                        .as_array()
                         .and_then(|parts_array| parts_array.get(0))
                         .and_then(|first_part| first_part.get("text"))
                         .and_then(|text_value| text_value.as_str())
                         .unwrap_or("[empty message]") // Fallback for missing content
                         .to_string();
 
-                    io_handler.write_line(&format!("  [{}] {}\n    {}", formatted_timestamp, prefix, content_str))?;
+                    io_handler.write_line(&format!(
+                        "  [{}] {}\n    {}",
+                        formatted_timestamp, prefix, content_str
+                    ))?;
                 }
             }
             io_handler.write_line("------------------------------------")?;
@@ -149,7 +154,7 @@ pub async fn handle_resume_chat_session_action<H: IoHandler, C: HttpClient>(
     for (index, session) in sessions.iter().enumerate() {
         // Format the timestamp directly
         let updated_at_str = session.updated_at.format("%Y-%m-%d %H:%M:%S").to_string();
-        
+
         io_handler.write_line(&format!(
             "  [{}] Session ID: {}, Character ID: {}, Last Updated: {}",
             index + 1,
@@ -208,14 +213,19 @@ pub async fn handle_resume_chat_session_action<H: IoHandler, C: HttpClient>(
                     };
 
                     // Extract content from parts array
-                    let content_str = message.parts.as_array()
+                    let content_str = message
+                        .parts
+                        .as_array()
                         .and_then(|parts_array| parts_array.get(0))
                         .and_then(|first_part| first_part.get("text"))
                         .and_then(|text_value| text_value.as_str())
                         .unwrap_or("[empty message]")
                         .to_string();
 
-                    io_handler.write_line(&format!("  [{}] {}\n    {}", formatted_timestamp, prefix, content_str))?;
+                    io_handler.write_line(&format!(
+                        "  [{}] {}\n    {}",
+                        formatted_timestamp, prefix, content_str
+                    ))?;
                 }
             }
             io_handler.write_line("------------------------------------")?;
@@ -232,16 +242,19 @@ pub async fn handle_resume_chat_session_action<H: IoHandler, C: HttpClient>(
     // Configure streaming chat by default with standard settings
     tracing::info!(chat_id = %selected_session_id, "Resuming chat session");
     io_handler.write_line(&format!("Using model for streaming: {}", current_model))?;
-    
+
     // Apply default settings from configuration
     io_handler.write_line("Applying default chat settings...")?;
     match apply_default_settings_to_session(client, selected_session_id).await {
         Ok(_) => {
             io_handler.write_line("Session ready with your default settings.")?;
-        },
+        }
         Err(e) => {
-            io_handler.write_line(&format!("Warning: Failed to apply default settings: {}. Proceeding with system defaults.", e))?;
-            
+            io_handler.write_line(&format!(
+                "Warning: Failed to apply default settings: {}. Proceeding with system defaults.",
+                e
+            ))?;
+
             // Fallback to basic settings if default settings application fails
             let settings_to_update = UpdateChatSettingsRequest {
                 gemini_thinking_budget: Some(1024), // Default thinking budget is 1024
@@ -262,18 +275,24 @@ pub async fn handle_resume_chat_session_action<H: IoHandler, C: HttpClient>(
                 history_management_limit: None,
                 model_name: Some(current_model.to_string()),
             };
-            
-            match client.update_chat_settings(selected_session_id, &settings_to_update).await {
+
+            match client
+                .update_chat_settings(selected_session_id, &settings_to_update)
+                .await
+            {
                 Ok(_) => {
                     io_handler.write_line("Session ready with basic settings.")?;
-                },
+                }
                 Err(e) => {
-                    io_handler.write_line(&format!("Warning: Failed to update session settings: {}. Proceeding with defaults.", e))?;
+                    io_handler.write_line(&format!(
+                        "Warning: Failed to update session settings: {}. Proceeding with defaults.",
+                        e
+                    ))?;
                 }
             }
         }
     }
-    
+
     // Use streaming chat by default
     if let Err(e) = run_interactive_streaming_chat_loop(
         client,
@@ -281,7 +300,9 @@ pub async fn handle_resume_chat_session_action<H: IoHandler, C: HttpClient>(
         io_handler,
         current_model,
         None, // first_mes_content is not applicable when resuming a session
-    ).await {
+    )
+    .await
+    {
         tracing::error!(error = ?e, "Streaming chat loop failed while resuming session");
         io_handler.write_line(&format!("Chat encountered an error: {}", e))?;
     }

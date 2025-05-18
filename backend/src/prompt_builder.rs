@@ -27,11 +27,21 @@ pub async fn build_prompt_with_rag(
     // --- RAG Query Text Construction ---
     // Use the last user message and the last assistant message (if available) for better context
     let query_text = {
-        let last_user = history.iter().filter(|m| m.message_type == MessageRole::User).last();
-        let last_assistant = history.iter().filter(|m| m.message_type == MessageRole::Assistant).last();
+        let last_user = history
+            .iter()
+            .filter(|m| m.message_type == MessageRole::User)
+            .last();
+        let last_assistant = history
+            .iter()
+            .filter(|m| m.message_type == MessageRole::Assistant)
+            .last();
 
         match (last_user, last_assistant) {
-            (Some(user), Some(assistant)) => format!("{}\n{}", String::from_utf8_lossy(&user.content), String::from_utf8_lossy(&assistant.content)),
+            (Some(user), Some(assistant)) => format!(
+                "{}\n{}",
+                String::from_utf8_lossy(&user.content),
+                String::from_utf8_lossy(&assistant.content)
+            ),
             (Some(user), None) => String::from_utf8_lossy(&user.content).into_owned(),
             (None, Some(assistant)) => String::from_utf8_lossy(&assistant.content).into_owned(), // Should ideally not happen in normal flow but handle defensively
             (None, None) => String::new(), // No messages to query with
@@ -75,8 +85,12 @@ pub async fn build_prompt_with_rag(
     // --- Character Details ---
     if let Some(char_data) = character {
         prompt.push_str(&format!("Character Name: {}\n", char_data.name));
-        if let Some(description_vec) = &char_data.description { // Renamed to description_vec to avoid conflict
-            prompt.push_str(&format!("Description: {}\n", String::from_utf8_lossy(description_vec)));
+        if let Some(description_vec) = &char_data.description {
+            // Renamed to description_vec to avoid conflict
+            prompt.push_str(&format!(
+                "Description: {}\n",
+                String::from_utf8_lossy(description_vec)
+            ));
         }
         prompt.push_str("\n");
     }
@@ -266,12 +280,18 @@ mod tests {
         );
 
         // Verify the call parameters - now combines last user and assistant
-        if let Some(PipelineCall::RetrieveRelevantChunks { query_text, limit, .. }) = calls.last() {
+        if let Some(PipelineCall::RetrieveRelevantChunks {
+            query_text, limit, ..
+        }) = calls.last()
+        {
             assert_eq!(
                 query_text, "Hello!\nHi there!",
                 "Query text should combine last user and assistant messages"
             );
-            assert_eq!(*limit, RAG_CHUNK_LIMIT, "RAG limit passed to service should match constant");
+            assert_eq!(
+                *limit, RAG_CHUNK_LIMIT,
+                "RAG limit passed to service should match constant"
+            );
         }
     }
 
@@ -371,12 +391,18 @@ mod tests {
         );
 
         // Verify the call parameters - only last user message exists
-        if let Some(PipelineCall::RetrieveRelevantChunks { query_text, limit, .. }) = calls.last() {
+        if let Some(PipelineCall::RetrieveRelevantChunks {
+            query_text, limit, ..
+        }) = calls.last()
+        {
             assert_eq!(
                 query_text, "Tell me about dogs",
                 "Query text should be the last user message when no assistant message exists"
             );
-             assert_eq!(*limit, RAG_CHUNK_LIMIT, "RAG limit passed to service should match constant");
+            assert_eq!(
+                *limit, RAG_CHUNK_LIMIT,
+                "RAG limit passed to service should match constant"
+            );
         } else {
             panic!("Expected RetrieveRelevantChunks call");
         }
@@ -449,12 +475,18 @@ mod tests {
         );
 
         // Verify the call parameters - only last user message exists
-        if let Some(PipelineCall::RetrieveRelevantChunks { query_text, limit, .. }) = calls.last() {
+        if let Some(PipelineCall::RetrieveRelevantChunks {
+            query_text, limit, ..
+        }) = calls.last()
+        {
             assert_eq!(
                 query_text, "Query that causes error",
                 "Query text should be the last user message when no assistant message exists"
             );
-             assert_eq!(*limit, RAG_CHUNK_LIMIT, "RAG limit passed to service should match constant");
+            assert_eq!(
+                *limit, RAG_CHUNK_LIMIT,
+                "RAG limit passed to service should match constant"
+            );
         } else {
             panic!("Expected RetrieveRelevantChunks call");
         }
@@ -487,7 +519,7 @@ mod tests {
             id: Uuid::new_v4(),
             user_id: Uuid::new_v4(),
             name: "Minimal Bot".to_string(),
-            description: None, // No description
+            description: None,       // No description
             description_nonce: None, // Added missing field
             created_at: Utc::now(),
             updated_at: Utc::now(),
@@ -560,9 +592,15 @@ mod tests {
         // Verify RAG call - uses last user ("User query") and last assistant ("Assistant response")
         let calls = mock_rag.get_calls();
         assert!(!calls.is_empty());
-        if let Some(PipelineCall::RetrieveRelevantChunks { query_text, limit, .. }) = calls.last() {
+        if let Some(PipelineCall::RetrieveRelevantChunks {
+            query_text, limit, ..
+        }) = calls.last()
+        {
             assert_eq!(query_text, "User query\nAssistant response");
-             assert_eq!(*limit, RAG_CHUNK_LIMIT, "RAG limit passed to service should match constant");
+            assert_eq!(
+                *limit, RAG_CHUNK_LIMIT,
+                "RAG limit passed to service should match constant"
+            );
         } else {
             panic!("Expected RetrieveRelevantChunks call");
         }
@@ -645,9 +683,15 @@ mod tests {
         // Verify RAG call - uses last user ("First user message") and last assistant ("Bot reply")
         let calls = mock_rag.get_calls();
         assert!(!calls.is_empty());
-        if let Some(PipelineCall::RetrieveRelevantChunks { query_text, limit, .. }) = calls.last() {
+        if let Some(PipelineCall::RetrieveRelevantChunks {
+            query_text, limit, ..
+        }) = calls.last()
+        {
             assert_eq!(query_text, "First user message\nBot reply");
-             assert_eq!(*limit, RAG_CHUNK_LIMIT, "RAG limit passed to service should match constant");
+            assert_eq!(
+                *limit, RAG_CHUNK_LIMIT,
+                "RAG limit passed to service should match constant"
+            );
         } else {
             panic!("Expected RetrieveRelevantChunks call");
         }

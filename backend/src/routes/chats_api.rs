@@ -1,31 +1,40 @@
+use crate::auth::session_dek::SessionDek; // Added SessionDek
+use crate::auth::user_store::Backend as AuthBackend;
+use crate::crypto; // Added crypto for encryption/decryption
 use crate::errors::AppError;
 use crate::models::chats::{
-    Chat, CreateChatRequest, CreateMessageRequest, Message, MessageResponse,
-    ChatSettingsResponse, UpdateChatSettingsRequest, UpdateChatVisibilityRequest, Vote, VoteRequest, MessageRole, // Added ChatMessage and ChatMessageForClient
+    Chat,
+    ChatSettingsResponse,
+    CreateChatRequest,
+    CreateMessageRequest,
+    Message,
+    MessageResponse,
+    MessageRole, // Added ChatMessage and ChatMessageForClient
+    UpdateChatSettingsRequest,
+    UpdateChatVisibilityRequest,
+    Vote,
+    VoteRequest,
 };
 use crate::schema::{chat_messages, chat_sessions};
-use crate::auth::session_dek::SessionDek; // Added SessionDek
-use crate::crypto; // Added crypto for encryption/decryption
-use secrecy::ExposeSecret; // Added for expose_secret method
-use secrecy::SecretBox; // Ensure SecretBox is imported
 use axum::{
+    Router,
     extract::{Path, State},
     http::StatusCode,
     response::{IntoResponse, Json},
     routing::{delete, get, post, put},
-    Router,
 };
 use axum_login::AuthSession;
-use crate::auth::user_store::Backend as AuthBackend;
+use secrecy::ExposeSecret; // Added for expose_secret method
+use secrecy::SecretBox; // Ensure SecretBox is imported
 // Removed incorrect ValidatedJson import
-use validator::Validate;
-use diesel::{QueryDsl, ExpressionMethods, RunQueryDsl, SelectableHelper};
-use serde_json::json;
-use uuid::Uuid;
-use crate::state::AppState;
-use tracing::info;
-use std::sync::Arc;
 use crate::services::chat_service;
+use crate::state::AppState;
+use diesel::{ExpressionMethods, QueryDsl, RunQueryDsl, SelectableHelper};
+use serde_json::json;
+use std::sync::Arc;
+use tracing::info;
+use uuid::Uuid;
+use validator::Validate;
 
 // Shorthand for auth session
 type CurrentAuthSession = AuthSession<AuthBackend>;
@@ -37,14 +46,22 @@ pub fn chat_routes() -> Router<crate::state::AppState> {
         .route("/chats/fetch/:id", get(get_chat_by_id_handler))
         .route("/chats/remove/:id", delete(delete_chat_handler))
         .route("/chats/:id/messages", {
-            tracing::debug!("chat_routes: mapping /chats/:id/messages to get_messages_by_chat_id_handler");
+            tracing::debug!(
+                "chat_routes: mapping /chats/:id/messages to get_messages_by_chat_id_handler"
+            );
             get(get_messages_by_chat_id_handler).post(create_message_handler)
         })
         .route("/chats/:id/visibility", put(update_chat_visibility_handler))
-        .route("/chats/:id/settings", get(get_chat_settings_handler).put(update_chat_settings_handler))
+        .route(
+            "/chats/:id/settings",
+            get(get_chat_settings_handler).put(update_chat_settings_handler),
+        )
         .route("/messages/:id", get(get_message_by_id_handler))
         .route("/messages/:id/vote", post(vote_message_handler))
-        .route("/messages/:id/trailing", delete(delete_trailing_messages_handler))
+        .route(
+            "/messages/:id/trailing",
+            delete(delete_trailing_messages_handler),
+        )
         .route("/chats/:id/votes", get(get_votes_by_chat_id_handler))
 }
 
@@ -53,10 +70,14 @@ pub async fn get_chats_handler(
     auth_session: CurrentAuthSession,
     State(state): State<AppState>,
 ) -> Result<impl IntoResponse, AppError> {
-    let user = auth_session.user.ok_or(AppError::Unauthorized("Not logged in".to_string()))?;
+    let user = auth_session
+        .user
+        .ok_or(AppError::Unauthorized("Not logged in".to_string()))?;
     let pool = state.pool.clone();
-    
-    let chats = pool.get().await
+
+    let chats = pool
+        .get()
+        .await
         .map_err(|e| AppError::DbPoolError(e.to_string()))?
         .interact(move |conn| {
             chat_sessions::table
@@ -67,8 +88,7 @@ pub async fn get_chats_handler(
                 .map_err(|e| AppError::DatabaseQueryError(e.to_string())) // Added .to_string()
         })
         .await
-        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?
-        ?;
+        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
 
     // Return the full Chat structs directly
     Ok(Json(chats))
@@ -80,28 +100,36 @@ pub async fn create_chat_handler(
     State(state): State<AppState>,
     Json(payload): Json<CreateChatRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let user = auth_session.user.ok_or(AppError::Unauthorized("Not logged in".to_string()))?;
+    let user = auth_session
+        .user
+        .ok_or(AppError::Unauthorized("Not logged in".to_string()))?;
     // Convert &SecretBox to Arc<SecretBox>
-    let user_dek_arc: Option<Arc<SecretBox<Vec<u8>>>> = user.dek.as_ref().map(|wrapped_dek| Arc::new(SecretBox::new(Box::new(wrapped_dek.0.expose_secret().clone()))));
-    
+    let user_dek_arc: Option<Arc<SecretBox<Vec<u8>>>> = user.dek.as_ref().map(|wrapped_dek| {
+        Arc::new(SecretBox::new(Box::new(
+            wrapped_dek.0.expose_secret().clone(),
+        )))
+    });
+
     info!(%user.id, character_id=%payload.character_id, "Creating chat session");
-    
+
     let app_state = Arc::new(state.clone());
     let chat = chat_service::create_session_and_maybe_first_message(
-        app_state, 
-        user.id, 
+        app_state,
+        user.id,
         payload.character_id,
         user_dek_arc, // Pass Option<Arc<SecretBox>> instead of Option<&SecretBox>
-    ).await?;
-    
+    )
+    .await?;
+
     // Generate a custom title if provided (default title is set by the service)
     if !payload.title.trim().is_empty() {
         let pool = state.pool.clone();
         let session_id = chat.id;
         let custom_title = payload.title.clone();
-        
+
         // Update just the title field
-        pool.get().await
+        pool.get()
+            .await
             .map_err(|e| AppError::DbPoolError(e.to_string()))?
             .interact(move |conn| {
                 diesel::update(chat_sessions::table.find(session_id))
@@ -110,10 +138,9 @@ pub async fn create_chat_handler(
                     .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
             })
             .await
-            .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?
-            ?;
+            .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
     }
-    
+
     // Add detailed logging for debugging the chat session after creation
     info!(
         message = "Chat session created in handler",
@@ -134,10 +161,14 @@ pub async fn get_chat_by_id_handler(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let user = auth_session.user.ok_or(AppError::Unauthorized("Not logged in".to_string()))?;
+    let user = auth_session
+        .user
+        .ok_or(AppError::Unauthorized("Not logged in".to_string()))?;
     let pool = state.pool.clone();
-    
-    let chat = pool.get().await
+
+    let chat = pool
+        .get()
+        .await
         .map_err(|e| AppError::DbPoolError(e.to_string()))?
         .interact(move |conn| {
             chat_sessions::table
@@ -147,9 +178,8 @@ pub async fn get_chat_by_id_handler(
                 .map_err(AppError::from) // Use From trait to handle NotFound correctly
         })
         .await
-        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?
-        ?;
-    
+        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
+
     // Ensure the user owns this chat or it's public
     if chat.user_id != user.id && chat.visibility != Some("public".to_string()) {
         return Err(AppError::Forbidden); // Changed to unit variant
@@ -165,11 +195,15 @@ pub async fn delete_chat_handler(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let user = auth_session.user.ok_or(AppError::Unauthorized("Not logged in".to_string()))?;
+    let user = auth_session
+        .user
+        .ok_or(AppError::Unauthorized("Not logged in".to_string()))?;
     let pool = state.pool.clone();
-    
+
     // First check if user owns the chat
-    let chat = pool.get().await
+    let chat = pool
+        .get()
+        .await
         .map_err(|e| AppError::DbPoolError(e.to_string()))?
         .interact(move |conn| {
             chat_sessions::table
@@ -179,15 +213,15 @@ pub async fn delete_chat_handler(
                 .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
         })
         .await
-        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?
-        ?;
-    
+        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
+
     if chat.user_id != user.id {
         return Err(AppError::Forbidden); // Changed to unit variant
     }
 
     // Delete the chat (votes and messages will cascade due to foreign key constraints)
-    pool.get().await
+    pool.get()
+        .await
         .map_err(|e| AppError::DbPoolError(e.to_string()))?
         .interact(move |conn| {
             diesel::delete(chat_sessions::table.filter(chat_sessions::id.eq(id)))
@@ -195,8 +229,7 @@ pub async fn delete_chat_handler(
                 .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
         })
         .await
-        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?
-        ?;
+        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
 
     Ok(StatusCode::NO_CONTENT)
 }
@@ -210,14 +243,26 @@ pub async fn get_messages_by_chat_id_handler(
 ) -> Result<impl IntoResponse, AppError> {
     tracing::debug!("get_messages_by_chat_id_handler: id (as String) = {}", id);
     // Attempt to parse the string id to Uuid manually for now
-    let uuid_id = Uuid::parse_str(&id).map_err(|_| AppError::BadRequest("Invalid UUID format in path".to_string()))?;
-    tracing::debug!("get_messages_by_chat_id_handler: id (parsed as Uuid) = {}", uuid_id);
+    let uuid_id = Uuid::parse_str(&id)
+        .map_err(|_| AppError::BadRequest("Invalid UUID format in path".to_string()))?;
+    tracing::debug!(
+        "get_messages_by_chat_id_handler: id (parsed as Uuid) = {}",
+        uuid_id
+    );
 
-    let user = auth_session.user.ok_or(AppError::Unauthorized("Not logged in".to_string()))?;
-    tracing::debug!("get_messages_by_chat_id_handler: Authenticated user.id = {}", user.id);
+    let user = auth_session
+        .user
+        .ok_or(AppError::Unauthorized("Not logged in".to_string()))?;
+    tracing::debug!(
+        "get_messages_by_chat_id_handler: Authenticated user.id = {}",
+        user.id
+    );
     let pool = state.pool.clone();
-    
-    tracing::debug!("get_messages_by_chat_id_handler: Attempting to fetch chat with uuid_id = {}", uuid_id);
+
+    tracing::debug!(
+        "get_messages_by_chat_id_handler: Attempting to fetch chat with uuid_id = {}",
+        uuid_id
+    );
 
     // Fetch the chat session, ensuring NotFound is handled correctly
     let chat: Chat = pool.get().await
@@ -231,7 +276,6 @@ pub async fn get_messages_by_chat_id_handler(
                 .filter(chat_sessions::id.eq(uuid_id))
                 .select(Chat::as_select())
                 .first::<Chat>(conn);
-            
             match &result {
                 Ok(chat) => tracing::debug!("get_messages_by_chat_id_handler: Successfully found chat with id={}, user_id={}", uuid_id, chat.user_id),
                 Err(e) => {
@@ -247,7 +291,6 @@ pub async fn get_messages_by_chat_id_handler(
                     }
                 }
             }
-            
             // Change direct mapping to explicit handling of NotFound
             match result {
                 Ok(chat) => Ok(chat),
@@ -267,17 +310,28 @@ pub async fn get_messages_by_chat_id_handler(
             AppError::InternalServerErrorGeneric(format!("Error processing chat request for {}: {}", uuid_id, join_error))
         })? // Unwraps Result<_, JoinError> or returns AppError (if JoinError). Leaves Result<Chat, AppError>
         ?; // Unwraps Result<Chat, AppError> or returns AppError (e.g. AppError::NotFound from closure)
-    
-    tracing::debug!("get_messages_by_chat_id_handler: chat fetched for id {} = {:?}", uuid_id, chat);
-    
+
+    tracing::debug!(
+        "get_messages_by_chat_id_handler: chat fetched for id {} = {:?}",
+        uuid_id,
+        chat
+    );
+
     if chat.user_id != user.id && chat.visibility != Some("public".to_string()) {
-        tracing::warn!("get_messages_by_chat_id_handler: Access forbidden. chat.user_id={}, user.id={}, chat.visibility={:?}",
-                      chat.user_id, user.id, chat.visibility);
+        tracing::warn!(
+            "get_messages_by_chat_id_handler: Access forbidden. chat.user_id={}, user.id={}, chat.visibility={:?}",
+            chat.user_id,
+            user.id,
+            chat.visibility
+        );
         return Err(AppError::Forbidden);
     }
 
-    tracing::debug!("get_messages_by_chat_id_handler: Authorization passed, fetching messages for chat {}", uuid_id);
-    
+    tracing::debug!(
+        "get_messages_by_chat_id_handler: Authorization passed, fetching messages for chat {}",
+        uuid_id
+    );
+
     let messages_db: Vec<Message> = pool.get().await // Fetching Vec<Message> which includes 'parts'
         .map_err(|e| {
             tracing::error!("get_messages_by_chat_id_handler: Failed to get connection from pool for messages query: {}", e);
@@ -290,12 +344,10 @@ pub async fn get_messages_by_chat_id_handler(
                 .order_by(chat_messages::created_at.asc())
                 .select(Message::as_select())
                 .load::<Message>(conn);
-                
             match &result {
                 Ok(messages) => tracing::debug!("get_messages_by_chat_id_handler: Found {} messages for chat {}", messages.len(), uuid_id),
                 Err(e) => tracing::error!("get_messages_by_chat_id_handler: Error fetching messages: {}", e),
             }
-            
             result.map_err(|e| AppError::DatabaseQueryError(e.to_string()))
         })
         .await
@@ -304,15 +356,19 @@ pub async fn get_messages_by_chat_id_handler(
             AppError::InternalServerErrorGeneric(e.to_string())
         })?
         ?;
-    
+
     let mut responses = Vec::new();
     for msg_db in messages_db {
         let decrypted_client_message = msg_db.clone().into_decrypted_for_client(Some(&dek.0))?;
 
         // Now construct MessageResponse using fields from original msg_db and decrypted_client_message
-        let response_parts = msg_db.parts.unwrap_or_else(|| json!([{"text": decrypted_client_message.content}]));
+        let response_parts = msg_db
+            .parts
+            .unwrap_or_else(|| json!([{"text": decrypted_client_message.content}]));
         let response_attachments = msg_db.attachments.unwrap_or_else(|| json!([]));
-        let response_role = msg_db.role.unwrap_or_else(|| decrypted_client_message.message_type.to_string());
+        let response_role = msg_db
+            .role
+            .unwrap_or_else(|| decrypted_client_message.message_type.to_string());
 
         responses.push(MessageResponse {
             id: decrypted_client_message.id,
@@ -335,14 +391,23 @@ pub async fn create_message_handler(
     Path(chat_id): Path<Uuid>,
     Json(payload): Json<CreateMessageRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let user = auth_session.user.ok_or(AppError::Unauthorized("Not logged in".to_string()))?;
+    let user = auth_session
+        .user
+        .ok_or(AppError::Unauthorized("Not logged in".to_string()))?;
     let user_id = user.id;
-    
+
     // Convert &SecretBox to Arc<SecretBox>
-    let user_dek_arc: Option<Arc<SecretBox<Vec<u8>>>> = user.dek.as_ref().map(|wrapped_dek| Arc::new(SecretBox::new(Box::new(wrapped_dek.0.expose_secret().clone()))));
-    
+    let user_dek_arc: Option<Arc<SecretBox<Vec<u8>>>> = user.dek.as_ref().map(|wrapped_dek| {
+        Arc::new(SecretBox::new(Box::new(
+            wrapped_dek.0.expose_secret().clone(),
+        )))
+    });
+
     // Verify chat session ownership (existing logic is fine)
-    let chat = state.pool.get().await // Keep this verification block
+    let chat = state
+        .pool
+        .get()
+        .await // Keep this verification block
         .map_err(|e| AppError::DbPoolError(e.to_string()))?
         .interact(move |conn| {
             chat_sessions::table
@@ -353,26 +418,31 @@ pub async fn create_message_handler(
         })
         .await
         .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
-    
+
     if chat.user_id != user.id {
         return Err(AppError::Forbidden);
     }
 
-    let message_role_enum = if payload.role.to_lowercase() == "user" { MessageRole::User } else { MessageRole::Assistant };
+    let message_role_enum = if payload.role.to_lowercase() == "user" {
+        MessageRole::User
+    } else {
+        MessageRole::Assistant
+    };
 
     // Save the message
     let saved_db_message = chat_service::save_message(
         Arc::new(state.clone()),
         chat_id,
         user_id,
-        message_role_enum, // The MessageRole enum (User or Assistant)
-        &payload.content,  // The primary textual content
+        message_role_enum,           // The MessageRole enum (User or Assistant)
+        &payload.content,            // The primary textual content
         Some(payload.role.clone()), // The specific role string (e.g., "user", "assistant") from payload
         payload.parts.clone(),      // The structured parts from payload
-        payload.attachments.clone(),// The attachments from payload
-        user_dek_arc.clone(), 
-        &chat.model_name, 
-    ).await?;
+        payload.attachments.clone(), // The attachments from payload
+        user_dek_arc.clone(),
+        &chat.model_name,
+    )
+    .await?;
 
     // Convert DbChatMessage to ChatMessageForClient to get decrypted content
     // saved_db_message is a ChatMessage. We need to construct a Message to call into_decrypted_for_client.
@@ -386,22 +456,25 @@ pub async fn create_message_handler(
         created_at: saved_db_message.created_at,
         updated_at: saved_db_message.created_at, // For a new message, updated_at is same as created_at
         user_id: saved_db_message.user_id,
-        role: Some(payload.role.clone()),      // From the request payload
-        parts: payload.parts.clone(),          // From the request payload
+        role: Some(payload.role.clone()), // From the request payload
+        parts: payload.parts.clone(),     // From the request payload
         attachments: payload.attachments.clone(), // From the request payload
         prompt_tokens: saved_db_message.prompt_tokens,
         completion_tokens: saved_db_message.completion_tokens,
     };
-    let client_message = message_for_decryption.into_decrypted_for_client(user_dek_arc.as_deref())?;
-    
+    let client_message =
+        message_for_decryption.into_decrypted_for_client(user_dek_arc.as_deref())?;
+
     // Use client_message.content (String) for parts if payload.parts is None
-    let response_parts = payload.parts.unwrap_or_else(|| json!([{"text": client_message.content.clone()}]));
+    let response_parts = payload
+        .parts
+        .unwrap_or_else(|| json!([{"text": client_message.content.clone()}]));
     let response_attachments = payload.attachments.unwrap_or_else(|| json!([]));
 
     let response = MessageResponse {
         id: client_message.id,
         session_id: client_message.session_id, // Renamed from chat_id
-        message_type: client_message.message_type, 
+        message_type: client_message.message_type,
         role: payload.role, // Keep original role string from request for response consistency with frontend expectations
         parts: response_parts,
         attachments: response_attachments,
@@ -418,10 +491,14 @@ pub async fn get_message_by_id_handler(
     dek: SessionDek, // Added SessionDek
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let user = auth_session.user.ok_or(AppError::Unauthorized("Not logged in".to_string()))?;
+    let user = auth_session
+        .user
+        .ok_or(AppError::Unauthorized("Not logged in".to_string()))?;
     let pool = state.pool.clone();
-    
-    let message_db: Message = pool.get().await // Fetches Message struct
+
+    let message_db: Message = pool
+        .get()
+        .await // Fetches Message struct
         .map_err(|e| AppError::DbPoolError(e.to_string()))?
         .interact(move |conn| {
             chat_messages::table
@@ -432,8 +509,10 @@ pub async fn get_message_by_id_handler(
         })
         .await
         .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
-    
-    let chat = pool.get().await
+
+    let chat = pool
+        .get()
+        .await
         .map_err(|e| AppError::DbPoolError(e.to_string()))?
         .interact(move |conn| {
             chat_sessions::table
@@ -444,45 +523,70 @@ pub async fn get_message_by_id_handler(
         })
         .await
         .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
-    
+
     if chat.user_id != user.id && chat.visibility != Some("public".to_string()) {
         return Err(AppError::Forbidden);
     }
 
     let decrypted_content_string = if !message_db.content.is_empty() {
-        let nonce_bytes_ref = message_db.content_nonce.as_deref()
-            .ok_or_else(|| {
-                tracing::error!("Message ID {} content nonce is missing. Cannot decrypt.", message_db.id);
-                AppError::DecryptionError("Nonce missing for content decryption".to_string())
-            })?;
+        let nonce_bytes_ref = message_db.content_nonce.as_deref().ok_or_else(|| {
+            tracing::error!(
+                "Message ID {} content nonce is missing. Cannot decrypt.",
+                message_db.id
+            );
+            AppError::DecryptionError("Nonce missing for content decryption".to_string())
+        })?;
 
         if nonce_bytes_ref.is_empty() {
-            tracing::error!("Message ID {} content nonce is present but empty. Cannot decrypt.", message_db.id);
-            return Err(AppError::DecryptionError("Nonce is empty for content decryption".to_string()));
+            tracing::error!(
+                "Message ID {} content nonce is present but empty. Cannot decrypt.",
+                message_db.id
+            );
+            return Err(AppError::DecryptionError(
+                "Nonce is empty for content decryption".to_string(),
+            ));
         }
 
         crypto::decrypt_gcm(&message_db.content, nonce_bytes_ref, &dek.0)
             .map_err(|e| {
-                tracing::error!("Failed to decrypt message content for get_message_by_id {}: {}", message_db.id, e);
-                AppError::DecryptionError(format!("Failed to decrypt content for message {}: {}", message_db.id, e))
+                tracing::error!(
+                    "Failed to decrypt message content for get_message_by_id {}: {}",
+                    message_db.id,
+                    e
+                );
+                AppError::DecryptionError(format!(
+                    "Failed to decrypt content for message {}: {}",
+                    message_db.id, e
+                ))
             })
             .and_then(|secret_bytes| {
                 String::from_utf8(secret_bytes.expose_secret().to_vec()).map_err(|e| {
-                    tracing::error!("UTF-8 conversion error for decrypted message {}: {}", message_db.id, e);
-                    AppError::DecryptionError(format!("UTF-8 conversion error for message {}: {}", message_db.id, e))
+                    tracing::error!(
+                        "UTF-8 conversion error for decrypted message {}: {}",
+                        message_db.id,
+                        e
+                    );
+                    AppError::DecryptionError(format!(
+                        "UTF-8 conversion error for message {}: {}",
+                        message_db.id, e
+                    ))
                 })
             })?
     } else {
         String::new()
     };
 
-    let response_parts = message_db.parts.unwrap_or_else(|| json!([{"text": decrypted_content_string}]));
+    let response_parts = message_db
+        .parts
+        .unwrap_or_else(|| json!([{"text": decrypted_content_string}]));
 
     let response = MessageResponse {
         id: message_db.id,
         session_id: message_db.session_id,
         message_type: message_db.message_type,
-        role: message_db.role.unwrap_or_else(|| message_db.message_type.to_string()),
+        role: message_db
+            .role
+            .unwrap_or_else(|| message_db.message_type.to_string()),
         parts: response_parts,
         attachments: message_db.attachments.unwrap_or_else(|| json!([])),
         created_at: message_db.created_at,
@@ -498,11 +602,15 @@ pub async fn vote_message_handler(
     Path(id): Path<Uuid>,
     Json(payload): Json<VoteRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let user = auth_session.user.ok_or(AppError::Unauthorized("Not logged in".to_string()))?;
+    let user = auth_session
+        .user
+        .ok_or(AppError::Unauthorized("Not logged in".to_string()))?;
     let pool = state.pool.clone();
-    
+
     // First get the message to find its chat ID
-    let message = pool.get().await
+    let message = pool
+        .get()
+        .await
         .map_err(|e| AppError::DbPoolError(e.to_string()))?
         .interact(move |conn| {
             chat_messages::table
@@ -512,11 +620,12 @@ pub async fn vote_message_handler(
                 .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
         })
         .await
-        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?
-        ?;
-    
+        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
+
     // Check if user has access to the chat
-    let chat = pool.get().await
+    let chat = pool
+        .get()
+        .await
         .map_err(|e| AppError::DbPoolError(e.to_string()))?
         .interact(move |conn| {
             chat_sessions::table
@@ -526,17 +635,17 @@ pub async fn vote_message_handler(
                 .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
         })
         .await
-        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?
-        ?;
-    
+        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
+
     if chat.user_id != user.id {
         return Err(AppError::Forbidden); // Changed to unit variant
     }
 
     let is_upvoted = payload.type_ == "up";
-    
+
     // Insert or update the vote
-    pool.get().await
+    pool.get()
+        .await
         .map_err(|e| AppError::DbPoolError(e.to_string()))?
         .interact(move |conn| {
             diesel::insert_into(crate::schema::old_votes::table) // Use old_votes
@@ -545,15 +654,17 @@ pub async fn vote_message_handler(
                     crate::schema::old_votes::dsl::message_id.eq(id), // Use old_votes::dsl
                     crate::schema::old_votes::dsl::is_upvoted.eq(is_upvoted), // Use old_votes::dsl
                 ))
-                .on_conflict((crate::schema::old_votes::dsl::chat_id, crate::schema::old_votes::dsl::message_id)) // Use old_votes::dsl
+                .on_conflict((
+                    crate::schema::old_votes::dsl::chat_id,
+                    crate::schema::old_votes::dsl::message_id,
+                )) // Use old_votes::dsl
                 .do_update()
                 .set(crate::schema::old_votes::dsl::is_upvoted.eq(is_upvoted)) // Use old_votes::dsl
                 .execute(conn)
                 .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
         })
         .await
-        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?
-        ?;
+        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
 
     Ok(StatusCode::OK)
 }
@@ -564,11 +675,15 @@ pub async fn get_votes_by_chat_id_handler(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let user = auth_session.user.ok_or(AppError::Unauthorized("Not logged in".to_string()))?;
+    let user = auth_session
+        .user
+        .ok_or(AppError::Unauthorized("Not logged in".to_string()))?;
     let pool = state.pool.clone();
-    
+
     // First check if user has access to the chat
-    let chat = pool.get().await
+    let chat = pool
+        .get()
+        .await
         .map_err(|e| AppError::DbPoolError(e.to_string()))?
         .interact(move |conn| {
             chat_sessions::table
@@ -578,15 +693,16 @@ pub async fn get_votes_by_chat_id_handler(
                 .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
         })
         .await
-        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?
-        ?;
-    
+        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
+
     if chat.user_id != user.id && chat.visibility != Some("public".to_string()) {
         return Err(AppError::Forbidden); // Changed to unit variant
     }
 
     // Get all votes for the chat
-    let votes = pool.get().await
+    let votes = pool
+        .get()
+        .await
         .map_err(|e| AppError::DbPoolError(e.to_string()))?
         .interact(move |conn| {
             crate::schema::old_votes::table // Use old_votes
@@ -602,10 +718,9 @@ pub async fn get_votes_by_chat_id_handler(
                         .collect::<Vec<Vote>>()
                 })
                 .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
-       })
-       .await
-        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?
-        ?;
+        })
+        .await
+        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
 
     Ok(Json(votes))
 }
@@ -616,11 +731,15 @@ pub async fn delete_trailing_messages_handler(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let user = auth_session.user.ok_or(AppError::Unauthorized("Not logged in".to_string()))?;
+    let user = auth_session
+        .user
+        .ok_or(AppError::Unauthorized("Not logged in".to_string()))?;
     let pool = state.pool.clone();
-    
+
     // First get the message to find its timestamp and chat ID
-    let message = pool.get().await
+    let message = pool
+        .get()
+        .await
         .map_err(|e| AppError::DbPoolError(e.to_string()))?
         .interact(move |conn| {
             chat_messages::table
@@ -630,11 +749,12 @@ pub async fn delete_trailing_messages_handler(
                 .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
         })
         .await
-        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?
-        ?;
-    
+        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
+
     // Check if user owns the chat
-    let chat = pool.get().await
+    let chat = pool
+        .get()
+        .await
         .map_err(|e| AppError::DbPoolError(e.to_string()))?
         .interact(move |conn| {
             chat_sessions::table
@@ -644,9 +764,8 @@ pub async fn delete_trailing_messages_handler(
                 .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
         })
         .await
-        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?
-        ?;
-    
+        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
+
     if chat.user_id != user.id {
         return Err(AppError::Forbidden); // Changed to unit variant
     }
@@ -654,8 +773,10 @@ pub async fn delete_trailing_messages_handler(
     // Get all messages to delete
     let chat_id = message.session_id;
     let timestamp = message.created_at;
-    
-    let message_ids = pool.get().await
+
+    let message_ids = pool
+        .get()
+        .await
         .map_err(|e| AppError::DbPoolError(e.to_string()))?
         .interact(move |conn| {
             chat_messages::table
@@ -666,17 +787,18 @@ pub async fn delete_trailing_messages_handler(
                 .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
         })
         .await
-        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?
-        ?;
-    
+        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
+
     if !message_ids.is_empty() {
         // Clone message_ids *before* the first closure moves the original
         let message_ids_clone_for_messages = message_ids.clone();
 
         // Delete associated votes first
-        pool.get().await
+        pool.get()
+            .await
             .map_err(|e| AppError::DbPoolError(e.to_string()))?
-            .interact(move |conn| { // This closure moves the original message_ids
+            .interact(move |conn| {
+                // This closure moves the original message_ids
                 diesel::delete(
                     crate::schema::old_votes::table // Use old_votes
                         .filter(crate::schema::old_votes::dsl::chat_id.eq(chat_id)) // Use old_votes::dsl
@@ -686,24 +808,24 @@ pub async fn delete_trailing_messages_handler(
                 .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
             })
             .await
-            .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?
-            ?;
-        
+            .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
+
         // Now delete the messages
-        pool.get().await
+        pool.get()
+            .await
             .map_err(|e| AppError::DbPoolError(e.to_string()))?
-            .interact(move |conn| { // This closure moves the clone
+            .interact(move |conn| {
+                // This closure moves the clone
                 diesel::delete(
                     chat_messages::table
                         .filter(chat_messages::session_id.eq(chat_id))
-                        .filter(chat_messages::id.eq_any(message_ids_clone_for_messages)) // Use the clone here
+                        .filter(chat_messages::id.eq_any(message_ids_clone_for_messages)), // Use the clone here
                 )
                 .execute(conn)
                 .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
             })
             .await
-            .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?
-            ?;
+            .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
     }
 
     Ok(StatusCode::NO_CONTENT)
@@ -716,11 +838,15 @@ pub async fn update_chat_visibility_handler(
     Path(id): Path<Uuid>,
     Json(payload): Json<UpdateChatVisibilityRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let user = auth_session.user.ok_or(AppError::Unauthorized("Not logged in".to_string()))?;
+    let user = auth_session
+        .user
+        .ok_or(AppError::Unauthorized("Not logged in".to_string()))?;
     let pool = state.pool.clone();
-    
+
     // First check if user owns the chat
-    let chat = pool.get().await
+    let chat = pool
+        .get()
+        .await
         .map_err(|e| AppError::DbPoolError(e.to_string()))?
         .interact(move |conn| {
             chat_sessions::table
@@ -730,20 +856,21 @@ pub async fn update_chat_visibility_handler(
                 .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
         })
         .await
-        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?
-        ?;
+        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
     if chat.user_id != user.id {
         return Err(AppError::Forbidden); // Changed to unit variant
     }
 
-    
     // Ensure visibility is one of the allowed values
     if payload.visibility != "public" && payload.visibility != "private" {
-        return Err(AppError::BadRequest("Visibility must be 'public' or 'private'".to_string()));
+        return Err(AppError::BadRequest(
+            "Visibility must be 'public' or 'private'".to_string(),
+        ));
     }
-    
+
     // Update the chat visibility
-    pool.get().await
+    pool.get()
+        .await
         .map_err(|e| AppError::DbPoolError(e.to_string()))?
         .interact(move |conn| {
             diesel::update(chat_sessions::table.filter(chat_sessions::id.eq(id)))
@@ -752,8 +879,7 @@ pub async fn update_chat_visibility_handler(
                 .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
         })
         .await
-        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?
-        ?;
+        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
 
     Ok(StatusCode::OK)
 }
@@ -764,8 +890,10 @@ pub async fn get_chat_settings_handler(
     State(state): State<AppState>,
     Path(id): Path<Uuid>, // This is session_id
 ) -> Result<impl IntoResponse, AppError> {
-    let user = auth_session.user.ok_or(AppError::Unauthorized("Not logged in".to_string()))?;
-    
+    let user = auth_session
+        .user
+        .ok_or(AppError::Unauthorized("Not logged in".to_string()))?;
+
     // Call the service function to get chat settings
     // The service function handles ownership check and constructing the response
     let chat_settings_response = chat_service::get_session_settings(
@@ -788,7 +916,9 @@ pub async fn update_chat_settings_handler(
     // Manually validate the payload
     payload.validate()?; // Ensure validator is imported and used
 
-    let user = auth_session.user.ok_or(AppError::Unauthorized("Not logged in".to_string()))?;
+    let user = auth_session
+        .user
+        .ok_or(AppError::Unauthorized("Not logged in".to_string()))?;
     let pool = state.pool.clone();
     let user_id = user.id; // Clone user_id for use in interact closure
 

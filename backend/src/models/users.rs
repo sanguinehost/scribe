@@ -1,15 +1,15 @@
 use crate::schema::users;
 use axum_login::AuthUser;
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use chrono::{DateTime, Utc};
 use diesel::Insertable;
 use diesel::{Identifiable, Queryable, Selectable};
 use secrecy::ExposeSecret;
-use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 use secrecy::{SecretBox, SecretString};
-use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
+use serde::{Deserialize, Serialize};
 use serde::{Deserializer, Serializer};
 use tracing;
+use uuid::Uuid;
 
 // User role enum
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, diesel_derive_enum::DbEnum)]
@@ -64,7 +64,8 @@ impl Clone for SerializableSecretDek {
 
 impl Serialize for SerializableSecretDek {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where S: Serializer,
+    where
+        S: Serializer,
     {
         let dek_bytes = self.0.expose_secret();
         let base64_encoded = BASE64.encode(dek_bytes);
@@ -81,12 +82,21 @@ impl<'de> Deserialize<'de> for SerializableSecretDek {
         let s = String::deserialize(deserializer)?;
         match BASE64.decode(s) {
             Ok(bytes) => {
-                tracing::debug!("SerializableSecretDek::deserialize: Successfully decoded base64, byte length: {}", bytes.len());
+                tracing::debug!(
+                    "SerializableSecretDek::deserialize: Successfully decoded base64, byte length: {}",
+                    bytes.len()
+                );
                 Ok(SerializableSecretDek(SecretBox::new(Box::new(bytes))))
             }
             Err(e) => {
-                tracing::error!("SerializableSecretDek::deserialize: Failed to decode base64: {}", e);
-                Err(serde::de::Error::custom(format!("Base64 decode error for DEK: {}", e)))
+                tracing::error!(
+                    "SerializableSecretDek::deserialize: Failed to decode base64: {}",
+                    e
+                );
+                Err(serde::de::Error::custom(format!(
+                    "Base64 decode error for DEK: {}",
+                    e
+                )))
             }
         }
     }
@@ -124,10 +134,16 @@ impl std::fmt::Debug for UserDbQuery {
             .field("email", &"<omitted>")
             .field("kek_salt", &self.kek_salt)
             .field("encrypted_dek", &"<omitted>")
-            .field("encrypted_dek_by_recovery", &self.encrypted_dek_by_recovery.as_ref().map(|_| "<omitted>"))
+            .field(
+                "encrypted_dek_by_recovery",
+                &self.encrypted_dek_by_recovery.as_ref().map(|_| "<omitted>"),
+            )
             .field("recovery_kek_salt", &self.recovery_kek_salt)
             .field("dek_nonce", &"<omitted>")
-            .field("recovery_dek_nonce", &self.recovery_dek_nonce.as_ref().map(|_| "<omitted>"))
+            .field(
+                "recovery_dek_nonce",
+                &self.recovery_dek_nonce.as_ref().map(|_| "<omitted>"),
+            )
             .field("role", &self.role)
             .field("account_status", &self.account_status)
             .finish()
@@ -136,9 +152,9 @@ impl std::fmt::Debug for UserDbQuery {
 
 // Main User struct for application logic - includes non-DB 'dek' field
 // Removed Queryable, Selectable. Kept Identifiable for AuthUser.
-#[derive(Identifiable, Serialize, Deserialize)] 
+#[derive(Identifiable, Serialize, Deserialize)]
 #[diesel(table_name = users)] // Identifiable needs this to know the table for the ID.
-#[diesel(primary_key(id))]    // Explicitly state primary key for Identifiable
+#[diesel(primary_key(id))] // Explicitly state primary key for Identifiable
 pub struct User {
     pub id: Uuid,
     pub username: String,
@@ -156,14 +172,14 @@ pub struct User {
     pub recovery_kek_salt: Option<String>,
     #[serde(skip_serializing, skip_deserializing)]
     pub recovery_dek_nonce: Option<Vec<u8>>,
-    
+
     // DEK field now uses the newtype wrapper
     pub dek: Option<SerializableSecretDek>,
-    
+
     // Recovery phrase field for registration process (not stored in DB)
     #[serde(skip_serializing, skip_deserializing)]
     pub recovery_phrase: Option<String>,
-    
+
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     pub role: UserRole,
@@ -181,12 +197,30 @@ impl std::fmt::Debug for User {
             .field("kek_salt", &self.kek_salt)
             .field("encrypted_dek", &"<omitted>")
             .field("dek_nonce", &"<omitted>")
-            .field("encrypted_dek_by_recovery", &self.encrypted_dek_by_recovery.as_ref().map(|_| "<omitted>"))
+            .field(
+                "encrypted_dek_by_recovery",
+                &self.encrypted_dek_by_recovery.as_ref().map(|_| "<omitted>"),
+            )
             .field("recovery_kek_salt", &self.recovery_kek_salt)
-            .field("recovery_dek_nonce", &self.recovery_dek_nonce.as_ref().map(|_| "<omitted>"))
+            .field(
+                "recovery_dek_nonce",
+                &self.recovery_dek_nonce.as_ref().map(|_| "<omitted>"),
+            )
             // Updated Debug for Option<SerializableSecretDek>
-            .field("dek", &self.dek.as_ref().map(|_wrapper| "<SerializableSecretDek_omitted>"))
-            .field("recovery_phrase", &self.recovery_phrase.as_ref().map(|_| "<recovery_phrase_omitted>"))
+            .field(
+                "dek",
+                &self
+                    .dek
+                    .as_ref()
+                    .map(|_wrapper| "<SerializableSecretDek_omitted>"),
+            )
+            .field(
+                "recovery_phrase",
+                &self
+                    .recovery_phrase
+                    .as_ref()
+                    .map(|_| "<recovery_phrase_omitted>"),
+            )
             .field("created_at", &self.created_at)
             .field("updated_at", &self.updated_at)
             .field("role", &self.role)
@@ -282,10 +316,16 @@ impl std::fmt::Debug for NewUser {
             .field("email", &"<omitted>")
             .field("kek_salt", &self.kek_salt)
             .field("encrypted_dek", &"<omitted>")
-            .field("encrypted_dek_by_recovery", &self.encrypted_dek_by_recovery.as_ref().map(|_| "<omitted>"))
+            .field(
+                "encrypted_dek_by_recovery",
+                &self.encrypted_dek_by_recovery.as_ref().map(|_| "<omitted>"),
+            )
             .field("recovery_kek_salt", &self.recovery_kek_salt)
             .field("dek_nonce", &"<omitted>")
-            .field("recovery_dek_nonce", &self.recovery_dek_nonce.as_ref().map(|_| "<omitted>"))
+            .field(
+                "recovery_dek_nonce",
+                &self.recovery_dek_nonce.as_ref().map(|_| "<omitted>"),
+            )
             .field("role", &self.role)
             .field("account_status", &self.account_status)
             .finish()
@@ -302,7 +342,6 @@ pub struct UserCredentials {
 mod tests {
     use super::*;
     use chrono::Utc;
-    
 
     impl User {
         #[allow(clippy::too_many_arguments)]
@@ -347,9 +386,14 @@ mod tests {
         let _now = Utc::now();
         let test_kek_salt = "test_kek_salt".to_string();
         let test_encrypted_dek = vec![1, 2, 3];
-        let test_dek_nonce = vec![7,8,9,10,11,12,13,14,15,16,17,18];
-        let test_dek_bytes = vec![4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32];
-        let initial_test_dek = Some(SerializableSecretDek(SecretBox::new(Box::new(test_dek_bytes.clone()))));
+        let test_dek_nonce = vec![7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18];
+        let test_dek_bytes = vec![
+            4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26,
+            27, 28, 29, 30, 31, 32,
+        ];
+        let initial_test_dek = Some(SerializableSecretDek(SecretBox::new(Box::new(
+            test_dek_bytes.clone(),
+        ))));
 
         let user = User::new_test_user(
             user_id,
@@ -374,14 +418,21 @@ mod tests {
         assert_eq!(user.dek_nonce, test_dek_nonce);
         assert!(user.dek.is_some());
         if let Some(wrapped_dek) = &user.dek {
-             assert_eq!(wrapped_dek.expose_secret_bytes(), &test_dek_bytes);
+            assert_eq!(wrapped_dek.expose_secret_bytes(), &test_dek_bytes);
         }
         assert_eq!(user.role, UserRole::User);
 
         let cloned_user = user.clone();
-        assert!(cloned_user.dek.is_some(), "Cloned user DEK should be preserved");
+        assert!(
+            cloned_user.dek.is_some(),
+            "Cloned user DEK should be preserved"
+        );
         if let Some(wrapped_dek) = &cloned_user.dek {
-            assert_eq!(wrapped_dek.expose_secret_bytes(), &test_dek_bytes, "Cloned DEK should match original");
+            assert_eq!(
+                wrapped_dek.expose_secret_bytes(),
+                &test_dek_bytes,
+                "Cloned DEK should match original"
+            );
         }
 
         assert_eq!(axum_login::AuthUser::id(&user), user_id);
@@ -395,7 +446,7 @@ mod tests {
         let email = "new@example.com".to_string();
         let kek_salt = "new_kek_salt".to_string();
         let encrypted_dek = vec![4, 5, 6];
-        let dek_nonce = vec![10,11,12,13,14,15,16,17,18,19,20,21]; // Example 12-byte nonce
+        let dek_nonce = vec![10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21]; // Example 12-byte nonce
 
         let new_user = NewUser {
             username: username.clone(),

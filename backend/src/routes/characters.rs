@@ -1,10 +1,10 @@
 // backend/src/routes/characters.rs
 
+use crate::auth::session_dek::SessionDek; // Added SessionDek
+use crate::crypto;
 use crate::errors::AppError;
 use crate::models::character_card::NewCharacter;
-use crate::models::characters::{Character, CharacterDataForClient}; // Added CharacterDataForClient
-use crate::auth::session_dek::SessionDek; // Added SessionDek
-use crate::crypto; // Added crypto for encrypt_gcm
+use crate::models::characters::{Character, CharacterDataForClient}; // Added CharacterDataForClient // Added crypto for encrypt_gcm
 // use crate::models::users::User; // Removed unused import
 use crate::schema::characters::dsl::*; // DSL needed for table/columns
 use crate::services::character_parser::{self};
@@ -16,22 +16,22 @@ use axum::{
     extract::{Path, State, multipart::Multipart}, // Removed unused Extension
     http::StatusCode,
     response::{IntoResponse, Json, Response},
-    routing::{get, post, delete}, // ADDED delete here
+    routing::{delete, get, post}, // ADDED delete here
 };
 use diesel::prelude::*; // Needed for .filter(), .load(), .first(), etc.
-use tracing::{info, instrument, trace, error}; // Use needed tracing macros, ADDED error, warn
+use tracing::{error, info, instrument, trace}; // Use needed tracing macros, ADDED error, warn
 use uuid::Uuid;
 // use anyhow::anyhow; // Unused import
 use crate::auth::user_store::Backend as AuthBackend; // <-- Import the backend type
+use crate::schema::chat_sessions;
+use crate::services::encryption_service::EncryptionService; // Added import
 use axum::body::Bytes;
 use axum_login::AuthSession; // <-- Removed login_required import
 use diesel::RunQueryDsl;
 use diesel::SelectableHelper;
 use diesel::result::Error as DieselError; // Add import for DieselError
-use serde::Deserialize; // Add serde import
-use crate::services::encryption_service::EncryptionService; // Added import
 use secrecy::ExposeSecret; // Added for DEK expose
-use crate::schema::chat_sessions; // Added for querying chat_sessions table
+use serde::Deserialize; // Add serde import // Added for querying chat_sessions table
 
 // Define the type alias for the auth session specific to our AuthBackend
 // type CurrentAuthSession = AuthSession<AppState>;
@@ -50,7 +50,8 @@ pub async fn upload_character_handler(
     auth_session: CurrentAuthSession,
     dek: SessionDek, // Added SessionDek extractor
     mut multipart: Multipart,
-) -> Result<(StatusCode, Json<CharacterDataForClient>), AppError> { // Return CharacterDataForClient
+) -> Result<(StatusCode, Json<CharacterDataForClient>), AppError> {
+    // Return CharacterDataForClient
     // Get the user from the session
     let user = auth_session
         .user
@@ -137,21 +138,55 @@ pub async fn upload_character_handler(
     encrypt_field!(new_character_for_db, scenario, scenario_nonce, &dek.0);
     encrypt_field!(new_character_for_db, first_mes, first_mes_nonce, &dek.0);
     encrypt_field!(new_character_for_db, mes_example, mes_example_nonce, &dek.0);
-    encrypt_field!(new_character_for_db, creator_notes, creator_notes_nonce, &dek.0);
-    encrypt_field!(new_character_for_db, system_prompt, system_prompt_nonce, &dek.0);
+    encrypt_field!(
+        new_character_for_db,
+        creator_notes,
+        creator_notes_nonce,
+        &dek.0
+    );
+    encrypt_field!(
+        new_character_for_db,
+        system_prompt,
+        system_prompt_nonce,
+        &dek.0
+    );
     encrypt_field!(new_character_for_db, persona, persona_nonce, &dek.0);
-    encrypt_field!(new_character_for_db, world_scenario, world_scenario_nonce, &dek.0);
+    encrypt_field!(
+        new_character_for_db,
+        world_scenario,
+        world_scenario_nonce,
+        &dek.0
+    );
     encrypt_field!(new_character_for_db, greeting, greeting_nonce, &dek.0);
     encrypt_field!(new_character_for_db, definition, definition_nonce, &dek.0);
-    encrypt_field!(new_character_for_db, example_dialogue, example_dialogue_nonce, &dek.0);
-    encrypt_field!(new_character_for_db, model_prompt, model_prompt_nonce, &dek.0);
-    encrypt_field!(new_character_for_db, user_persona, user_persona_nonce, &dek.0);
+    encrypt_field!(
+        new_character_for_db,
+        example_dialogue,
+        example_dialogue_nonce,
+        &dek.0
+    );
+    encrypt_field!(
+        new_character_for_db,
+        model_prompt,
+        model_prompt_nonce,
+        &dek.0
+    );
+    encrypt_field!(
+        new_character_for_db,
+        user_persona,
+        user_persona_nonce,
+        &dek.0
+    );
     // Note: NewCharacter struct might not have all these _nonce fields yet.
     // This will be addressed by updating NewCharacter definition in models/character_card.rs next.
 
     info!(?new_character_for_db.name, user_id = %local_user_id, "Attempting to insert character into DB for user");
 
-    let conn_insert_op = state.pool.get().await.map_err(|e| AppError::DbPoolError(e.to_string()))?;
+    let conn_insert_op = state
+        .pool
+        .get()
+        .await
+        .map_err(|e| AppError::DbPoolError(e.to_string()))?;
 
     let returned_id: Uuid = conn_insert_op
         .interact(move |conn_insert_block| {
@@ -161,12 +196,18 @@ pub async fn upload_character_handler(
                 .get_result::<Uuid>(conn_insert_block)
         })
         .await
-        .map_err(|e| AppError::InternalServerErrorGeneric(format!("Insert interaction error: {}", e)))?
+        .map_err(|e| {
+            AppError::InternalServerErrorGeneric(format!("Insert interaction error: {}", e))
+        })?
         .map_err(|e| AppError::InternalServerErrorGeneric(format!("Insert DB error: {}", e)))?;
 
     info!(character_id = %returned_id, "Character basic info returned after insert");
 
-    let conn_fetch_op = state.pool.get().await.map_err(|e| AppError::DbPoolError(e.to_string()))?;
+    let conn_fetch_op = state
+        .pool
+        .get()
+        .await
+        .map_err(|e| AppError::DbPoolError(e.to_string()))?;
     let inserted_character: Character = conn_fetch_op
         .interact(move |conn_select_block| {
             characters
@@ -175,12 +216,16 @@ pub async fn upload_character_handler(
                 .get_result::<Character>(conn_select_block)
         })
         .await
-        .map_err(|e| AppError::InternalServerErrorGeneric(format!("Fetch interaction error: {}", e)))?
+        .map_err(|e| {
+            AppError::InternalServerErrorGeneric(format!("Fetch interaction error: {}", e))
+        })?
         .map_err(|e| AppError::InternalServerErrorGeneric(format!("Fetch DB error: {}", e)))?;
 
     info!(character_id = %inserted_character.id, "Character uploaded and saved (full data fetched)");
 
-    let client_character_data = inserted_character.into_decrypted_for_client(Some(&dek.0)).await?;
+    let client_character_data = inserted_character
+        .into_decrypted_for_client(Some(&dek.0))
+        .await?;
 
     Ok((StatusCode::CREATED, Json(client_character_data)))
 }
@@ -191,7 +236,8 @@ pub async fn list_characters_handler(
     State(state): State<AppState>,
     auth_session: CurrentAuthSession,
     dek: SessionDek, // Added SessionDek extractor
-) -> Result<Json<Vec<CharacterDataForClient>>, AppError> { // Return Vec<CharacterDataForClient>
+) -> Result<Json<Vec<CharacterDataForClient>>, AppError> {
+    // Return Vec<CharacterDataForClient>
     let user = auth_session
         .user
         .ok_or_else(|| AppError::Unauthorized("Authentication required".to_string()))?;
@@ -199,7 +245,11 @@ pub async fn list_characters_handler(
 
     info!(%local_user_id, "Listing characters for user");
 
-    let conn = state.pool.get().await.map_err(|e| AppError::DbPoolError(e.to_string()))?;
+    let conn = state
+        .pool
+        .get()
+        .await
+        .map_err(|e| AppError::DbPoolError(e.to_string()))?;
 
     let characters_db: Vec<Character> = conn
         .interact(move |conn_block| {
@@ -229,7 +279,7 @@ pub async fn get_character_handler(
     Path(character_id): Path<Uuid>,
 ) -> Result<Json<CharacterDataForClient>, AppError> {
     trace!(target: "auth_debug", ">>> ENTERING get_character_handler for character_id: {}", character_id);
-    
+
     let user = auth_session
         .user
         .ok_or_else(|| AppError::Unauthorized("Authentication required".to_string()))?;
@@ -238,41 +288,52 @@ pub async fn get_character_handler(
     info!(target: "test_log", %character_id, %user_id_val, "Attempting to get character details for user (hybrid auth: direct owner OR session-based)");
 
     // --- Try 1: Direct Ownership Check ---
-    let conn_direct_owner_check = state.pool.get().await.map_err(|e| AppError::DbPoolError(e.to_string()))?;
+    let conn_direct_owner_check = state
+        .pool
+        .get()
+        .await
+        .map_err(|e| AppError::DbPoolError(e.to_string()))?;
     let user_id_for_direct_clone = user_id_val;
     let character_id_for_direct_clone = character_id;
 
-    let directly_owned_character_result: Result<Option<Character>, AppError> = conn_direct_owner_check
-        .interact(move |conn| {
-            characters
-                .filter(id.eq(character_id_for_direct_clone).and(user_id.eq(user_id_for_direct_clone)))
-                .select(Character::as_select())
-                .first::<Character>(conn)
-                .optional()
-                .map_err(|e| {
-                    error!(
-                        target: "test_log",
-                        handler = "get_character_handler (direct ownership query)",
-                        %character_id_for_direct_clone,
-                        %user_id_for_direct_clone,
-                        error = %e,
-                        "DB error during direct ownership character query."
-                    );
-                    AppError::DatabaseQueryError(e.to_string())
-                })
-        })
-        .await // For the outer Result from interact (e.g., PoolError)
-        .map_err(|interact_err| { 
-            error!(
-                target: "test_log",
-                handler = "get_character_handler (direct ownership interact)",
-                %character_id,
-                %user_id_val,
-                error = ?interact_err,
-                "Interact error during direct ownership character fetch."
-            );
-            AppError::DbInteractError(format!("Interact error during direct ownership character fetch: {}", interact_err))
-        })?;
+    let directly_owned_character_result: Result<Option<Character>, AppError> =
+        conn_direct_owner_check
+            .interact(move |conn| {
+                characters
+                    .filter(
+                        id.eq(character_id_for_direct_clone)
+                            .and(user_id.eq(user_id_for_direct_clone)),
+                    )
+                    .select(Character::as_select())
+                    .first::<Character>(conn)
+                    .optional()
+                    .map_err(|e| {
+                        error!(
+                            target: "test_log",
+                            handler = "get_character_handler (direct ownership query)",
+                            %character_id_for_direct_clone,
+                            %user_id_for_direct_clone,
+                            error = %e,
+                            "DB error during direct ownership character query."
+                        );
+                        AppError::DatabaseQueryError(e.to_string())
+                    })
+            })
+            .await // For the outer Result from interact (e.g., PoolError)
+            .map_err(|interact_err| {
+                error!(
+                    target: "test_log",
+                    handler = "get_character_handler (direct ownership interact)",
+                    %character_id,
+                    %user_id_val,
+                    error = ?interact_err,
+                    "Interact error during direct ownership character fetch."
+                );
+                AppError::DbInteractError(format!(
+                    "Interact error during direct ownership character fetch: {}",
+                    interact_err
+                ))
+            })?;
 
     match directly_owned_character_result {
         Ok(Some(character)) => {
@@ -300,8 +361,12 @@ pub async fn get_character_handler(
 
     // --- Try 2: Session-Based Authorization Check (if not directly owned) ---
     info!(target: "test_log", %character_id, %user_id_val, "Attempting session-based auth for character details");
-    let conn_auth_check = state.pool.get().await.map_err(|e| AppError::DbPoolError(e.to_string()))?;
-    
+    let conn_auth_check = state
+        .pool
+        .get()
+        .await
+        .map_err(|e| AppError::DbPoolError(e.to_string()))?;
+
     let user_id_for_session_clone = user_id_val;
     let character_id_for_session_clone = character_id;
 
@@ -374,8 +439,12 @@ pub async fn get_character_handler(
         "User has session link. Fetching character by ID."
     );
 
-    let conn_char_fetch = state.pool.get().await.map_err(|e| AppError::DbPoolError(e.to_string()))?;
-    let character_id_for_fetch_clone = character_id; 
+    let conn_char_fetch = state
+        .pool
+        .get()
+        .await
+        .map_err(|e| AppError::DbPoolError(e.to_string()))?;
+    let character_id_for_fetch_clone = character_id;
 
     let character_db_result: Option<Character> = conn_char_fetch
         .interact(move |conn| {
@@ -385,14 +454,17 @@ pub async fn get_character_handler(
                 .first::<Character>(conn)
                 .optional()
                 .map_err(|e| {
-                     error!(
+                    error!(
                         target: "test_log",
                         handler = "get_character_handler (fetch by ID after session auth)",
                         %character_id_for_fetch_clone,
                         error = %e,
                         "DB error fetching character by ID (after session auth)."
                     );
-                    AppError::DatabaseQueryError(format!("DB error fetching character by ID: {}", e))
+                    AppError::DatabaseQueryError(format!(
+                        "DB error fetching character by ID: {}",
+                        e
+                    ))
                 })
         })
         .await
@@ -427,7 +499,7 @@ pub async fn get_character_handler(
                     );
                     Ok(Json(character_for_client))
                 }
-                Err(e) => { 
+                Err(e) => {
                     error!(
                         target: "test_log",
                         handler = "get_character_handler",
@@ -463,7 +535,8 @@ pub async fn generate_character_handler(
     auth_session: CurrentAuthSession,
     dek: SessionDek, // Added SessionDek extractor
     Json(payload): Json<GenerateCharacterPayload>,
-) -> Result<(StatusCode, Json<CharacterDataForClient>), AppError> { // Return CharacterDataForClient
+) -> Result<(StatusCode, Json<CharacterDataForClient>), AppError> {
+    // Return CharacterDataForClient
     let user = auth_session
         .user
         .ok_or_else(|| AppError::Unauthorized("Authentication required".to_string()))?;
@@ -475,7 +548,8 @@ pub async fn generate_character_handler(
     // This will involve creating a NewCharacter, encrypting its description, saving, then fetching and decrypting.
 
     // Placeholder: Create a dummy Character, encrypt its description, then convert for client.
-    let mut dummy_char_for_db = Character { // This is a Character struct, not NewCharacter
+    let mut dummy_char_for_db = Character {
+        // This is a Character struct, not NewCharacter
         id: Uuid::new_v4(),
         user_id: user_id_val,
         spec: "dummy_spec_placeholder".to_string(),
@@ -571,7 +645,9 @@ pub async fn generate_character_handler(
     // In a real scenario, we would save dummy_char_for_db (as NewCharacter)
     // then fetch it, then convert to client data.
     // For this placeholder, we convert the in-memory (potentially encrypted) Character.
-    let client_data = dummy_char_for_db.into_decrypted_for_client(Some(&dek.0)).await?;
+    let client_data = dummy_char_for_db
+        .into_decrypted_for_client(Some(&dek.0))
+        .await?;
 
     // --- TODO: Save the character to DB if this route is meant to persist. ---
 
@@ -603,24 +679,25 @@ pub async fn delete_character_handler(
     let character_exists = conn
         .interact(move |conn_block| {
             tracing::info!(target: "test_log", %character_id, "Checking if character exists at all");
-            
             let exists = characters
                 .filter(id.eq(character_id))
                 .select(id)  // Just select the ID for efficiency
                 .first::<Uuid>(conn_block)
                 .optional()
                 .map_err(|e| AppError::DatabaseQueryError(e.to_string()));
-                
             exists.map(|opt| opt.is_some())
         })
         .await
         .map_err(|e| AppError::DbInteractError(format!("Interact error checking character: {}", e)))?;
-        
+
     if !character_exists? {
         info!(target: "test_log", %character_id, "Character does not exist at all");
-        return Err(AppError::NotFound(format!("Character {} not found", character_id)));
+        return Err(AppError::NotFound(format!(
+            "Character {} not found",
+            character_id
+        )));
     }
-    
+
     // Character exists, now perform deletion with user_id filter
     info!(%character_id, %local_user_id, "Character exists, performing delete for user");
 
@@ -639,7 +716,6 @@ pub async fn delete_character_handler(
                     .filter(id.eq(character_id))
                     .filter(user_id.eq(local_user_id)), // Ensure this user_id_val is correct
             );
-            
             let execution_result = delete_result.execute(conn_block); // Use conn_block
             info!(target: "test_log", handler = "delete_character_handler", character_id = %character_id, user_id = %local_user_id, ?execution_result, "Delete query execution result (inside interact)"); // Log result
             execution_result.map_err(|e| { // Map error after logging

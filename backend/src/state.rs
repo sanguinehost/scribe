@@ -13,13 +13,13 @@ use crate::llm::AiClient;
 use crate::llm::EmbeddingClient; // Add this
 use crate::services::embedding_pipeline::EmbeddingPipelineServiceTrait;
 // Remove concrete service import, use trait
-// use crate::vector_db::QdrantClientService; 
+// use crate::vector_db::QdrantClientService;
 use crate::vector_db::qdrant_client::QdrantClientServiceTrait;
 // use crate::auth::user_store::Backend as AuthBackend; // For axum-login
 // use crate::services::email_service::EmailService; // For email service
 use crate::services::hybrid_token_counter::HybridTokenCounter; // Added for token counting
-use uuid::Uuid; // For embedding_call_tracker
-use std::fmt; // For manual Debug impl
+use std::fmt;
+use uuid::Uuid; // For embedding_call_tracker // For manual Debug impl
 
 // --- DB Connection Pool Type ---
 pub type DbPool = DeadpoolPool;
@@ -43,7 +43,7 @@ pub struct AppState {
     pub embedding_pipeline_service: Arc<dyn EmbeddingPipelineServiceTrait + Send + Sync>, // Add Send + Sync
     // Remove #[cfg(test)]
     pub embedding_call_tracker: Arc<TokioMutex<Vec<Uuid>>>, // Track message IDs for embedding calls
-    pub token_counter: Arc<HybridTokenCounter>, // Added for token counting
+    pub token_counter: Arc<HybridTokenCounter>,             // Added for token counting
 }
 
 // Manual Debug implementation for AppState
@@ -55,7 +55,10 @@ impl fmt::Debug for AppState {
             .field("ai_client", &"<Arc<dyn AiClient>>")
             .field("embedding_client", &"<Arc<dyn EmbeddingClient>>")
             .field("qdrant_service", &"<Arc<dyn QdrantClientServiceTrait>>")
-            .field("embedding_pipeline_service", &"<Arc<dyn EmbeddingPipelineServiceTrait>>")
+            .field(
+                "embedding_pipeline_service",
+                &"<Arc<dyn EmbeddingPipelineServiceTrait>>",
+            )
             .field("embedding_call_tracker", &"<Arc<TokioMutex<Vec<Uuid>>>>") // Or try to debug its contents if safe
             .field("token_counter", &"<Arc<HybridTokenCounter>>") // Added
             .finish()
@@ -72,7 +75,7 @@ impl AppState {
         // Accept the trait object Arc for Qdrant service
         qdrant_service: Arc<dyn QdrantClientServiceTrait + Send + Sync>,
         embedding_pipeline_service: Arc<dyn EmbeddingPipelineServiceTrait + Send + Sync>, // Add Send + Sync
-        token_counter: Arc<HybridTokenCounter>, // Added
+        token_counter: Arc<HybridTokenCounter>,                                           // Added
     ) -> Self {
         Self {
             pool,
@@ -85,7 +88,7 @@ impl AppState {
             embedding_pipeline_service, // Add this assignment
             // Remove #[cfg(test)]
             embedding_call_tracker: Arc::new(TokioMutex::new(Vec::new())), // Initialize tracker for tests
-            token_counter, // Added
+            token_counter,                                                 // Added
         }
     }
 }

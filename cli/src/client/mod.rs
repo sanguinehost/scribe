@@ -1,27 +1,28 @@
 // cli/src/client/mod.rs
 
 // Declare modules
+pub mod implementation;
+pub mod interface;
 pub mod types;
 pub mod util;
-pub mod interface;
-pub mod implementation;
 
 #[cfg(test)]
 mod client_tests; // Test module doesn't need to be pub
 
 // Re-export public API
-pub use self::interface::HttpClient; // Explicit self for clarity
-pub use self::implementation::ReqwestClientWrapper; // Explicit self for clarity
+pub use self::implementation::ReqwestClientWrapper;
+pub use self::interface::HttpClient; // Explicit self for clarity // Explicit self for clarity
 
 // Re-export types that are part of the public interface of this client module.
 // These are types defined *within* this client module (primarily in types.rs)
 // that consumers of the client module (e.g., handlers) will need.
-pub use self::types::{ // Explicit self for clarity
-    StreamEvent,
+pub use self::types::{
     ClientCharacterDataForClient,
     RegisterPayload, // CLI specific payload for registration
     // Json<T> // Not typically part of public API unless methods return it directly and it's a client-specific Json wrapper
     // NonStreamingResponse // This is an internal detail for response handling, not for public consumption
+    // Explicit self for clarity
+    StreamEvent,
 };
 
 // Note: Types from `scribe_backend` (like `LoginPayload`, `User`, `Chat`, `ChatMessage`, etc.)

@@ -1,4 +1,4 @@
-use crate::client::{HttpClient, ClientCharacterDataForClient};
+use crate::client::{ClientCharacterDataForClient, HttpClient};
 use crate::error::CliError;
 use crate::io::IoHandler;
 use std::path::Path;

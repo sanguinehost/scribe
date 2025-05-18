@@ -1,15 +1,15 @@
 use crate::errors::AppError;
-use crate::models::users::{UserDbQuery, UserRole, AccountStatus};
+use crate::models::users::{AccountStatus, UserDbQuery, UserRole};
 use crate::schema::users;
 use crate::state::AppState;
 use axum::{
+    Json, Router,
     extract::{Path, State},
     http::StatusCode,
     response::{IntoResponse, Response},
     routing::{get, put},
-    Json, Router,
 };
-use axum_login::{AuthSession};
+use axum_login::AuthSession;
 use chrono::{DateTime, Utc};
 use diesel::{ExpressionMethods, QueryDsl, RunQueryDsl, SelectableHelper};
 use serde::{Deserialize, Serialize};
@@ -25,7 +25,7 @@ pub struct AdminUserListResponse {
     pub id: Uuid,
     pub username: String,
     pub role: UserRole,
-    pub account_status: String, // "active" or "locked"
+    pub account_status: String,            // "active" or "locked"
     pub last_login: Option<DateTime<Utc>>, // We'll use updated_at for now as proxy for last login
 }
 
@@ -54,7 +54,7 @@ async fn require_admin(auth_session: &CurrentAuthSession) -> Result<(), AppError
             // Access role from User struct
             let user_id = user.id;
             let username = user.username.clone();
-            
+
             // Ideally we would have role here directly, but we need to get it from the database
             // since we added it after the auth system was set up
             match user.role {
@@ -83,9 +83,9 @@ async fn list_users_handler(
 ) -> Result<Response, AppError> {
     // Verify the user is an administrator
     require_admin(&auth_session).await?;
-    
+
     info!("Admin: listing all users");
-    
+
     // Fetch all users from the database
     let users = _state
         .pool
@@ -100,7 +100,7 @@ async fn list_users_handler(
         })
         .await
         .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
-    
+
     // Transform to DTOs for response
     let user_list: Vec<AdminUserListResponse> = users
         .into_iter()
@@ -112,7 +112,7 @@ async fn list_users_handler(
             last_login: Some(user.updated_at), // Using updated_at as proxy for last login
         })
         .collect();
-    
+
     Ok(Json(user_list).into_response())
 }
 
@@ -125,9 +125,9 @@ async fn get_user_handler(
 ) -> Result<Response, AppError> {
     // Verify the user is an administrator
     require_admin(&auth_session).await?;
-    
+
     info!(user_id = %user_id, "Admin: getting specific user details");
-    
+
     // Fetch the user from the database
     let user = _state
         .pool
@@ -149,7 +149,7 @@ async fn get_user_handler(
         })
         .await
         .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
-    
+
     // Transform to DTO for response
     let user_detail = AdminUserDetailResponse {
         id: user.id,
@@ -160,7 +160,7 @@ async fn get_user_handler(
         created_at: user.created_at,
         updated_at: user.updated_at, // Using as last login for now
     };
-    
+
     Ok(Json(user_detail).into_response())
 }
 
@@ -173,17 +173,19 @@ async fn lock_user_handler(
 ) -> Result<Response, AppError> {
     // Verify the user is an administrator
     require_admin(&auth_session).await?;
-    
+
     info!(user_id = %user_id, "Admin: locking user account");
-    
+
     // Prevent locking own account
     if let Some(admin_user) = &auth_session.user {
         if admin_user.id == user_id {
             warn!(user_id = %user_id, "Admin tried to lock their own account");
-            return Err(AppError::BadRequest("Cannot lock your own account".to_string()));
+            return Err(AppError::BadRequest(
+                "Cannot lock your own account".to_string(),
+            ));
         }
     }
-    
+
     // Update the user's account status in the database
     let updated_user = _state
         .pool
@@ -206,7 +208,7 @@ async fn lock_user_handler(
         })
         .await
         .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
-    
+
     // Return success message
     Ok((
         StatusCode::OK,
@@ -226,9 +228,9 @@ async fn unlock_user_handler(
 ) -> Result<Response, AppError> {
     // Verify the user is an administrator
     require_admin(&auth_session).await?;
-    
+
     info!(user_id = %user_id, "Admin: unlocking user account");
-    
+
     // Update the user's account status in the database
     let updated_user = _state
         .pool
@@ -251,7 +253,7 @@ async fn unlock_user_handler(
         })
         .await
         .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
-    
+
     // Return success message
     Ok((
         StatusCode::OK,
@@ -272,17 +274,19 @@ async fn update_user_role_handler(
 ) -> Result<Response, AppError> {
     // Verify the user is an administrator
     require_admin(&auth_session).await?;
-    
+
     info!(user_id = %user_id, new_role = ?payload.role, "Admin: updating user role");
-    
+
     // Prevent changing own role
     if let Some(admin_user) = &auth_session.user {
         if admin_user.id == user_id {
             warn!(user_id = %user_id, "Admin tried to change their own role");
-            return Err(AppError::BadRequest("Cannot change your own role".to_string()));
+            return Err(AppError::BadRequest(
+                "Cannot change your own role".to_string(),
+            ));
         }
     }
-    
+
     // Update the user's role in the database
     let updated_user = _state
         .pool
@@ -305,7 +309,7 @@ async fn update_user_role_handler(
         })
         .await
         .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
-    
+
     // Transform to DTO for response
     let user_detail = AdminUserDetailResponse {
         id: updated_user.id,
@@ -314,9 +318,9 @@ async fn update_user_role_handler(
         role: updated_user.role,
         account_status: format!("{:?}", updated_user.account_status).to_lowercase(),
         created_at: updated_user.created_at,
-        updated_at: updated_user.updated_at, 
+        updated_at: updated_user.updated_at,
     };
-    
+
     Ok(Json(user_detail).into_response())
 }
 

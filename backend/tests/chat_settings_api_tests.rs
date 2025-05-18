@@ -16,28 +16,25 @@ use tower::ServiceExt;
 use uuid::Uuid;
 
 // Diesel and model imports
+use anyhow;
 use diesel::prelude::*;
-use scribe_backend::models::characters::Character as DbCharacter;
 use scribe_backend::models::character_card::NewCharacter;
+use scribe_backend::models::characters::Character as DbCharacter;
 use scribe_backend::models::chats::{
-    Chat as DbChat,
-    NewChat, 
-    ChatSettingsResponse, 
-    UpdateChatSettingsRequest
+    Chat as DbChat, ChatSettingsResponse, NewChat, UpdateChatSettingsRequest,
 };
 use scribe_backend::schema::{characters, chat_sessions};
-use scribe_backend::test_helpers;
 use scribe_backend::services::chat_service;
-use std::sync::Arc;
 use scribe_backend::state::AppState;
-use anyhow; // Added for Result in set_history_settings
+use scribe_backend::test_helpers;
+use std::sync::Arc; // Added for Result in set_history_settings
 
 // --- Tests for GET /api/chats/{id}/settings ---
 
 #[tokio::test]
 async fn get_chat_settings_success() {
     let test_app = test_helpers::spawn_app(false, false, false).await;
-    let conn_pool = test_app.db_pool.clone(); 
+    let conn_pool = test_app.db_pool.clone();
 
     let user = test_helpers::db::create_test_user(
         &test_app.db_pool,
@@ -58,7 +55,12 @@ async fn get_chat_settings_success() {
         .body(Body::from(serde_json::to_string(&login_payload).unwrap()))
         .unwrap();
 
-    let login_response = test_app.router.clone().oneshot(login_request).await.unwrap();
+    let login_response = test_app
+        .router
+        .clone()
+        .oneshot(login_request)
+        .await
+        .unwrap();
     assert_eq!(login_response.status(), StatusCode::OK);
     let auth_cookie = login_response
         .headers()
@@ -68,7 +70,7 @@ async fn get_chat_settings_success() {
         .unwrap()
         .to_string();
 
-    let new_character_data = NewCharacter { 
+    let new_character_data = NewCharacter {
         user_id: user.id,
         spec: "character_card_v2_get_success".to_string(),
         spec_version: "2.0.0".to_string(),
@@ -76,76 +78,144 @@ async fn get_chat_settings_success() {
         visibility: Some("private".to_string()),
         created_at: Some(Utc::now()),
         updated_at: Some(Utc::now()),
-        description: None, description_nonce: None, personality: None, personality_nonce: None,
-        scenario: None, scenario_nonce: None, first_mes: None, first_mes_nonce: None,
-        mes_example: None, mes_example_nonce: None, creator_notes: None, creator_notes_nonce: None,
-        system_prompt: None, system_prompt_nonce: None, post_history_instructions: None, post_history_instructions_nonce: None,
-        tags: Some(vec![Some("test".to_string())]), creator: None, character_version: None, alternate_greetings: None,
-        nickname: None, creator_notes_multilingual: None, source: None, group_only_greetings: None,
-        creation_date: None, modification_date: None, extensions: None, persona: None, persona_nonce: None,
-        world_scenario: None, world_scenario_nonce: None, avatar: None, chat: None, greeting: None, greeting_nonce: None,
-        definition: None, definition_nonce: None, default_voice: None, category: None, definition_visibility: None,
-        example_dialogue: None, example_dialogue_nonce: None, favorite: None, first_message_visibility: None,
-        migrated_from: None, model_prompt: None, model_prompt_nonce: None, model_prompt_visibility: None,
-        persona_visibility: None, sharing_visibility: None, status: None, system_prompt_visibility: None,
-        system_tags: None, token_budget: None, usage_hints: None, user_persona: None, user_persona_nonce: None,
-        user_persona_visibility: None, world_scenario_visibility: None,
+        description: None,
+        description_nonce: None,
+        personality: None,
+        personality_nonce: None,
+        scenario: None,
+        scenario_nonce: None,
+        first_mes: None,
+        first_mes_nonce: None,
+        mes_example: None,
+        mes_example_nonce: None,
+        creator_notes: None,
+        creator_notes_nonce: None,
+        system_prompt: None,
+        system_prompt_nonce: None,
+        post_history_instructions: None,
+        post_history_instructions_nonce: None,
+        tags: Some(vec![Some("test".to_string())]),
+        creator: None,
+        character_version: None,
+        alternate_greetings: None,
+        nickname: None,
+        creator_notes_multilingual: None,
+        source: None,
+        group_only_greetings: None,
+        creation_date: None,
+        modification_date: None,
+        extensions: None,
+        persona: None,
+        persona_nonce: None,
+        world_scenario: None,
+        world_scenario_nonce: None,
+        avatar: None,
+        chat: None,
+        greeting: None,
+        greeting_nonce: None,
+        definition: None,
+        definition_nonce: None,
+        default_voice: None,
+        category: None,
+        definition_visibility: None,
+        example_dialogue: None,
+        example_dialogue_nonce: None,
+        favorite: None,
+        first_message_visibility: None,
+        migrated_from: None,
+        model_prompt: None,
+        model_prompt_nonce: None,
+        model_prompt_visibility: None,
+        persona_visibility: None,
+        sharing_visibility: None,
+        status: None,
+        system_prompt_visibility: None,
+        system_tags: None,
+        token_budget: None,
+        usage_hints: None,
+        user_persona: None,
+        user_persona_nonce: None,
+        user_persona_visibility: None,
+        world_scenario_visibility: None,
     };
-    
-    let character_conn_pool = conn_pool.clone();
-    let character: DbCharacter = character_conn_pool.get().await.unwrap().interact(move |actual_conn| {
-        diesel::insert_into(characters::table)
-            .values(&new_character_data)
-            .get_result::<DbCharacter>(actual_conn)
-    }).await.expect("Interact failed for character insert").expect("Diesel query failed for character insert");
 
-    let new_chat_data = NewChat { 
+    let character_conn_pool = conn_pool.clone();
+    let character: DbCharacter = character_conn_pool
+        .get()
+        .await
+        .unwrap()
+        .interact(move |actual_conn| {
+            diesel::insert_into(characters::table)
+                .values(&new_character_data)
+                .get_result::<DbCharacter>(actual_conn)
+        })
+        .await
+        .expect("Interact failed for character insert")
+        .expect("Diesel query failed for character insert");
+
+    let new_chat_data = NewChat {
         id: Uuid::new_v4(),
         user_id: user.id,
         character_id: character.id,
         title: Some(format!("Chat with {}", character.name)),
         created_at: Utc::now(),
         updated_at: Utc::now(),
-        history_management_strategy: "truncate_summary".to_string(), 
-        history_management_limit: 20, 
-        model_name: "initial-model-for-get-success".to_string(), 
-        visibility: Some("private".to_string()), 
+        history_management_strategy: "truncate_summary".to_string(),
+        history_management_limit: 20,
+        model_name: "initial-model-for-get-success".to_string(),
+        visibility: Some("private".to_string()),
     };
-    let new_chat_data_clone = new_chat_data.clone(); 
+    let new_chat_data_clone = new_chat_data.clone();
     let session_conn_pool = conn_pool.clone();
-    let session: DbChat = session_conn_pool.get().await.unwrap().interact(move |actual_conn| {
-        diesel::insert_into(chat_sessions::table)
-            .values(&new_chat_data_clone)
-            .returning(DbChat::as_returning()) 
-            .get_result(actual_conn)
-    }).await.expect("Interact failed for chat insert").expect("Diesel query failed for chat insert");
+    let session: DbChat = session_conn_pool
+        .get()
+        .await
+        .unwrap()
+        .interact(move |actual_conn| {
+            diesel::insert_into(chat_sessions::table)
+                .values(&new_chat_data_clone)
+                .returning(DbChat::as_returning())
+                .get_result(actual_conn)
+        })
+        .await
+        .expect("Interact failed for chat insert")
+        .expect("Diesel query failed for chat insert");
 
     let session_id_for_update = session.id;
     let update_conn_pool = conn_pool.clone();
-    update_conn_pool.get().await.unwrap().interact(move |actual_conn| {
-        diesel::update(chat_sessions::table.find(session_id_for_update))
-            .set((
-                chat_sessions::system_prompt.eq(Some("Test System Prompt".to_string())),
-                chat_sessions::temperature.eq(Some(BigDecimal::from_str("0.9").unwrap())),
-                chat_sessions::max_output_tokens.eq(Some(1024_i32)),
-                chat_sessions::frequency_penalty.eq(Some(BigDecimal::from_str("0.3").unwrap())),
-                chat_sessions::presence_penalty.eq(Some(BigDecimal::from_str("0.2").unwrap())),
-                chat_sessions::top_k.eq(Some(40_i32)),
-                chat_sessions::top_p.eq(Some(BigDecimal::from_str("0.95").unwrap())),
-                chat_sessions::repetition_penalty.eq(Some(BigDecimal::from_str("1.1").unwrap())),
-                chat_sessions::min_p.eq(Some(BigDecimal::from_str("0.01").unwrap())),
-                chat_sessions::top_a.eq(Some(BigDecimal::from_str("0.1").unwrap())),
-                chat_sessions::seed.eq(Some(12345_i32)),
-                chat_sessions::logit_bias.eq(Some(serde_json::json!({ "20001": -50, "20002": 50 }))),
-                chat_sessions::model_name.eq("gemini-2.5-flash-preview-04-17".to_string()), 
-                chat_sessions::history_management_strategy.eq("truncate_summary".to_string()), 
-                chat_sessions::history_management_limit.eq(20), 
-                chat_sessions::gemini_thinking_budget.eq(Some(30_i32)),
-                chat_sessions::gemini_enable_code_execution.eq(Some(true)),
-            ))
-            .execute(actual_conn)
-    }).await.expect("Interact failed for chat update").expect("Diesel query failed for chat update");
-    
+    update_conn_pool
+        .get()
+        .await
+        .unwrap()
+        .interact(move |actual_conn| {
+            diesel::update(chat_sessions::table.find(session_id_for_update))
+                .set((
+                    chat_sessions::system_prompt.eq(Some("Test System Prompt".to_string())),
+                    chat_sessions::temperature.eq(Some(BigDecimal::from_str("0.9").unwrap())),
+                    chat_sessions::max_output_tokens.eq(Some(1024_i32)),
+                    chat_sessions::frequency_penalty.eq(Some(BigDecimal::from_str("0.3").unwrap())),
+                    chat_sessions::presence_penalty.eq(Some(BigDecimal::from_str("0.2").unwrap())),
+                    chat_sessions::top_k.eq(Some(40_i32)),
+                    chat_sessions::top_p.eq(Some(BigDecimal::from_str("0.95").unwrap())),
+                    chat_sessions::repetition_penalty
+                        .eq(Some(BigDecimal::from_str("1.1").unwrap())),
+                    chat_sessions::min_p.eq(Some(BigDecimal::from_str("0.01").unwrap())),
+                    chat_sessions::top_a.eq(Some(BigDecimal::from_str("0.1").unwrap())),
+                    chat_sessions::seed.eq(Some(12345_i32)),
+                    chat_sessions::logit_bias
+                        .eq(Some(serde_json::json!({ "20001": -50, "20002": 50 }))),
+                    chat_sessions::model_name.eq("gemini-2.5-flash-preview-04-17".to_string()),
+                    chat_sessions::history_management_strategy.eq("truncate_summary".to_string()),
+                    chat_sessions::history_management_limit.eq(20),
+                    chat_sessions::gemini_thinking_budget.eq(Some(30_i32)),
+                    chat_sessions::gemini_enable_code_execution.eq(Some(true)),
+                ))
+                .execute(actual_conn)
+        })
+        .await
+        .expect("Interact failed for chat update")
+        .expect("Diesel query failed for chat update");
+
     let request = Request::builder()
         .method(Method::GET)
         .uri(format!("/api/chats/{}/settings", session.id))
@@ -160,20 +230,53 @@ async fn get_chat_settings_success() {
     let settings_resp: ChatSettingsResponse =
         serde_json::from_slice(&body).expect("Failed to deserialize settings response");
 
-    assert_eq!(settings_resp.system_prompt, Some("Test System Prompt".to_string()));
-    assert_eq!(settings_resp.temperature, Some(BigDecimal::from_str("0.9").unwrap()));
+    assert_eq!(
+        settings_resp.system_prompt,
+        Some("Test System Prompt".to_string())
+    );
+    assert_eq!(
+        settings_resp.temperature,
+        Some(BigDecimal::from_str("0.9").unwrap())
+    );
     assert_eq!(settings_resp.max_output_tokens, Some(1024_i32));
-    assert_eq!(settings_resp.frequency_penalty, Some(BigDecimal::from_str("0.3").unwrap()));
-    assert_eq!(settings_resp.presence_penalty, Some(BigDecimal::from_str("0.2").unwrap()));
+    assert_eq!(
+        settings_resp.frequency_penalty,
+        Some(BigDecimal::from_str("0.3").unwrap())
+    );
+    assert_eq!(
+        settings_resp.presence_penalty,
+        Some(BigDecimal::from_str("0.2").unwrap())
+    );
     assert_eq!(settings_resp.top_k, Some(40_i32));
-    assert_eq!(settings_resp.top_p, Some(BigDecimal::from_str("0.95").unwrap()));
-    assert_eq!(settings_resp.repetition_penalty, Some(BigDecimal::from_str("1.1").unwrap()));
-    assert_eq!(settings_resp.min_p, Some(BigDecimal::from_str("0.01").unwrap()));
-    assert_eq!(settings_resp.top_a, Some(BigDecimal::from_str("0.1").unwrap()));
+    assert_eq!(
+        settings_resp.top_p,
+        Some(BigDecimal::from_str("0.95").unwrap())
+    );
+    assert_eq!(
+        settings_resp.repetition_penalty,
+        Some(BigDecimal::from_str("1.1").unwrap())
+    );
+    assert_eq!(
+        settings_resp.min_p,
+        Some(BigDecimal::from_str("0.01").unwrap())
+    );
+    assert_eq!(
+        settings_resp.top_a,
+        Some(BigDecimal::from_str("0.1").unwrap())
+    );
     assert_eq!(settings_resp.seed, Some(12345_i32));
-    assert_eq!(settings_resp.logit_bias, Some(serde_json::json!({ "20001": -50, "20002": 50 })) );
-    assert_eq!(settings_resp.model_name, "gemini-2.5-flash-preview-04-17".to_string());
-    assert_eq!(settings_resp.history_management_strategy, "truncate_summary");
+    assert_eq!(
+        settings_resp.logit_bias,
+        Some(serde_json::json!({ "20001": -50, "20002": 50 }))
+    );
+    assert_eq!(
+        settings_resp.model_name,
+        "gemini-2.5-flash-preview-04-17".to_string()
+    );
+    assert_eq!(
+        settings_resp.history_management_strategy,
+        "truncate_summary"
+    );
     assert_eq!(settings_resp.history_management_limit, 20);
     assert_eq!(settings_resp.gemini_thinking_budget, Some(30_i32));
     assert_eq!(settings_resp.gemini_enable_code_execution, Some(true));
@@ -202,7 +305,12 @@ async fn get_chat_settings_defaults() {
         .body(Body::from(serde_json::to_string(&login_payload).unwrap()))
         .unwrap();
 
-    let login_response = test_app.router.clone().oneshot(login_request).await.unwrap();
+    let login_response = test_app
+        .router
+        .clone()
+        .oneshot(login_request)
+        .await
+        .unwrap();
     assert_eq!(login_response.status(), StatusCode::OK);
     let auth_cookie = login_response
         .headers()
@@ -222,30 +330,79 @@ async fn get_chat_settings_defaults() {
         visibility: Some("private".to_string()),
         created_at: Some(Utc::now()),
         updated_at: Some(Utc::now()),
-        description: Some(character_default_description.as_bytes().to_vec()), 
+        description: Some(character_default_description.as_bytes().to_vec()),
         description_nonce: None,
-        personality: None, personality_nonce: None,
-        scenario: None, scenario_nonce: None, first_mes: None, first_mes_nonce: None,
-        mes_example: None, mes_example_nonce: None, creator_notes: None, creator_notes_nonce: None,
-        system_prompt: None, system_prompt_nonce: None, 
-        post_history_instructions: None, post_history_instructions_nonce: None,
-        tags: Some(vec![Some("test".to_string())]), creator: None, character_version: None, alternate_greetings: None,
-        nickname: None, creator_notes_multilingual: None, source: None, group_only_greetings: None,
-        creation_date: None, modification_date: None, extensions: None, persona: None, persona_nonce: None,
-        world_scenario: None, world_scenario_nonce: None, avatar: None, chat: None, greeting: None, greeting_nonce: None,
-        definition: None, definition_nonce: None, default_voice: None, category: None, definition_visibility: None,
-        example_dialogue: None, example_dialogue_nonce: None, favorite: None, first_message_visibility: None,
-        migrated_from: None, model_prompt: None, model_prompt_nonce: None, model_prompt_visibility: None,
-        persona_visibility: None, sharing_visibility: None, status: None, system_prompt_visibility: None,
-        system_tags: None, token_budget: None, usage_hints: None, user_persona: None, user_persona_nonce: None,
-        user_persona_visibility: None, world_scenario_visibility: None,
+        personality: None,
+        personality_nonce: None,
+        scenario: None,
+        scenario_nonce: None,
+        first_mes: None,
+        first_mes_nonce: None,
+        mes_example: None,
+        mes_example_nonce: None,
+        creator_notes: None,
+        creator_notes_nonce: None,
+        system_prompt: None,
+        system_prompt_nonce: None,
+        post_history_instructions: None,
+        post_history_instructions_nonce: None,
+        tags: Some(vec![Some("test".to_string())]),
+        creator: None,
+        character_version: None,
+        alternate_greetings: None,
+        nickname: None,
+        creator_notes_multilingual: None,
+        source: None,
+        group_only_greetings: None,
+        creation_date: None,
+        modification_date: None,
+        extensions: None,
+        persona: None,
+        persona_nonce: None,
+        world_scenario: None,
+        world_scenario_nonce: None,
+        avatar: None,
+        chat: None,
+        greeting: None,
+        greeting_nonce: None,
+        definition: None,
+        definition_nonce: None,
+        default_voice: None,
+        category: None,
+        definition_visibility: None,
+        example_dialogue: None,
+        example_dialogue_nonce: None,
+        favorite: None,
+        first_message_visibility: None,
+        migrated_from: None,
+        model_prompt: None,
+        model_prompt_nonce: None,
+        model_prompt_visibility: None,
+        persona_visibility: None,
+        sharing_visibility: None,
+        status: None,
+        system_prompt_visibility: None,
+        system_tags: None,
+        token_budget: None,
+        usage_hints: None,
+        user_persona: None,
+        user_persona_nonce: None,
+        user_persona_visibility: None,
+        world_scenario_visibility: None,
     };
     let char_conn_pool = conn_pool.clone();
-    let character: DbCharacter = char_conn_pool.get().await.unwrap().interact(move |actual_conn| {
-        diesel::insert_into(characters::table)
-            .values(&new_character_data)
-            .get_result::<DbCharacter>(actual_conn)
-    }).await.expect("Interact char insert failed").expect("Diesel char insert failed");
+    let character: DbCharacter = char_conn_pool
+        .get()
+        .await
+        .unwrap()
+        .interact(move |actual_conn| {
+            diesel::insert_into(characters::table)
+                .values(&new_character_data)
+                .get_result::<DbCharacter>(actual_conn)
+        })
+        .await
+        .expect("Interact char insert failed")
+        .expect("Diesel char insert failed");
 
     let new_chat_data = NewChat {
         id: Uuid::new_v4(),
@@ -254,19 +411,26 @@ async fn get_chat_settings_defaults() {
         title: Some(format!("Default Chat with {}", character.name)),
         created_at: Utc::now(),
         updated_at: Utc::now(),
-        history_management_strategy: "token_limit".to_string(), 
-        history_management_limit: 1000, 
-        model_name: "scribe-default-model".to_string(), 
+        history_management_strategy: "token_limit".to_string(),
+        history_management_limit: 1000,
+        model_name: "scribe-default-model".to_string(),
         visibility: Some("private".to_string()),
     };
     let new_chat_data_clone = new_chat_data.clone();
     let session_conn_pool = conn_pool.clone();
-    let _session: DbChat = session_conn_pool.get().await.unwrap().interact(move |actual_conn| {
-        diesel::insert_into(chat_sessions::table)
-            .values(&new_chat_data_clone)
-            .returning(DbChat::as_returning())
-            .get_result(actual_conn)
-    }).await.expect("Interact chat insert failed").expect("Diesel chat insert failed");
+    let _session: DbChat = session_conn_pool
+        .get()
+        .await
+        .unwrap()
+        .interact(move |actual_conn| {
+            diesel::insert_into(chat_sessions::table)
+                .values(&new_chat_data_clone)
+                .returning(DbChat::as_returning())
+                .get_result(actual_conn)
+        })
+        .await
+        .expect("Interact chat insert failed")
+        .expect("Diesel chat insert failed");
 
     // Construct AppState for the service call
     let app_state_for_service = AppState {
@@ -283,11 +447,13 @@ async fn get_chat_settings_defaults() {
     };
 
     let created_chat_session = chat_service::create_session_and_maybe_first_message(
-        Arc::new(app_state_for_service), 
-        user.id, 
-        character.id, 
-        None
-    ).await.expect("Failed to create chat session via service");
+        Arc::new(app_state_for_service),
+        user.id,
+        character.id,
+        None,
+    )
+    .await
+    .expect("Failed to create chat session via service");
 
     let request = Request::builder()
         .method(Method::GET)
@@ -303,26 +469,29 @@ async fn get_chat_settings_defaults() {
     let settings_resp: ChatSettingsResponse =
         serde_json::from_slice(&body).expect("Failed to deserialize settings response");
 
-    assert_eq!(settings_resp.system_prompt, Some(character_default_description)); 
-    
-    assert_eq!(settings_resp.temperature, None);   
-    assert_eq!(settings_resp.max_output_tokens, None); 
-    assert_eq!(settings_resp.frequency_penalty, None); 
-    assert_eq!(settings_resp.presence_penalty, None);  
-    assert_eq!(settings_resp.top_k, None);             
-    assert_eq!(settings_resp.top_p, None);             
-    assert_eq!(settings_resp.repetition_penalty, None); 
-    assert_eq!(settings_resp.min_p, None);             
-    assert_eq!(settings_resp.top_a, None);             
-    assert_eq!(settings_resp.seed, None);              
-    assert_eq!(settings_resp.logit_bias, None);        
-    
-    assert_eq!(settings_resp.model_name, "gemini-2.5-pro-preview-03-25"); 
-    assert_eq!(settings_resp.history_management_strategy, "message_window"); 
-    assert_eq!(settings_resp.history_management_limit, 20); 
-    
-    assert_eq!(settings_resp.gemini_thinking_budget, None); 
-    assert_eq!(settings_resp.gemini_enable_code_execution, None); 
+    assert_eq!(
+        settings_resp.system_prompt,
+        Some(character_default_description)
+    );
+
+    assert_eq!(settings_resp.temperature, None);
+    assert_eq!(settings_resp.max_output_tokens, None);
+    assert_eq!(settings_resp.frequency_penalty, None);
+    assert_eq!(settings_resp.presence_penalty, None);
+    assert_eq!(settings_resp.top_k, None);
+    assert_eq!(settings_resp.top_p, None);
+    assert_eq!(settings_resp.repetition_penalty, None);
+    assert_eq!(settings_resp.min_p, None);
+    assert_eq!(settings_resp.top_a, None);
+    assert_eq!(settings_resp.seed, None);
+    assert_eq!(settings_resp.logit_bias, None);
+
+    assert_eq!(settings_resp.model_name, "gemini-2.5-pro-preview-03-25");
+    assert_eq!(settings_resp.history_management_strategy, "message_window");
+    assert_eq!(settings_resp.history_management_limit, 20);
+
+    assert_eq!(settings_resp.gemini_thinking_budget, None);
+    assert_eq!(settings_resp.gemini_enable_code_execution, None);
 }
 
 #[tokio::test]
@@ -346,7 +515,12 @@ async fn test_get_chat_settings_not_found() {
         .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
         .body(Body::from(serde_json::to_string(&login_payload).unwrap()))
         .unwrap();
-    let login_response = test_app.router.clone().oneshot(login_request).await.unwrap();
+    let login_response = test_app
+        .router
+        .clone()
+        .oneshot(login_request)
+        .await
+        .unwrap();
     assert_eq!(login_response.status(), StatusCode::OK);
     let auth_cookie = login_response
         .headers()
@@ -374,30 +548,46 @@ async fn test_get_chat_settings_not_found() {
 async fn test_get_chat_settings_forbidden() {
     let test_app = test_helpers::spawn_app(false, false, false).await;
     let conn_pool = test_app.db_pool.clone();
-    
+
     let user_a = test_helpers::db::create_test_user(
         &test_app.db_pool,
         "get_settings_forbid_usera".to_string(),
         "password".to_string(),
     )
-    .await.expect("Failed to create user_a");
-    
+    .await
+    .expect("Failed to create user_a");
+
     let _user_b = test_helpers::db::create_test_user(
         &test_app.db_pool,
         "get_settings_forbid_userb".to_string(),
         "password".to_string(),
     )
-    .await.expect("Failed to create user_b");
+    .await
+    .expect("Failed to create user_b");
 
-    let login_payload_b = serde_json::json!({ "identifier": "get_settings_forbid_userb", "password": "password" });
-    let login_request2 = Request::builder().method(Method::POST).uri("/api/auth/login")
+    let login_payload_b =
+        serde_json::json!({ "identifier": "get_settings_forbid_userb", "password": "password" });
+    let login_request2 = Request::builder()
+        .method(Method::POST)
+        .uri("/api/auth/login")
         .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
-        .body(Body::from(serde_json::to_string(&login_payload_b).unwrap())).unwrap();
-    let login_response2 = test_app.router.clone().oneshot(login_request2).await.unwrap();
+        .body(Body::from(serde_json::to_string(&login_payload_b).unwrap()))
+        .unwrap();
+    let login_response2 = test_app
+        .router
+        .clone()
+        .oneshot(login_request2)
+        .await
+        .unwrap();
     assert_eq!(login_response2.status(), StatusCode::OK);
-    let auth_cookie2 = login_response2.headers().get(header::SET_COOKIE)
-        .expect("Set-Cookie header should be present").to_str().unwrap().to_string();
-    
+    let auth_cookie2 = login_response2
+        .headers()
+        .get(header::SET_COOKIE)
+        .expect("Set-Cookie header should be present")
+        .to_str()
+        .unwrap()
+        .to_string();
+
     let new_character_a_data = NewCharacter {
         user_id: user_a.id,
         spec: "character_card_v2_get_forbidden".to_string(),
@@ -406,26 +596,79 @@ async fn test_get_chat_settings_forbidden() {
         visibility: Some("private".to_string()),
         created_at: Some(Utc::now()),
         updated_at: Some(Utc::now()),
-        description: None, description_nonce: None, personality: None, personality_nonce: None,
-        scenario: None, scenario_nonce: None, first_mes: None, first_mes_nonce: None,
-        mes_example: None, mes_example_nonce: None, creator_notes: None, creator_notes_nonce: None,
-        system_prompt: None, system_prompt_nonce: None, post_history_instructions: None, post_history_instructions_nonce: None,
-        tags: Some(vec![Some("test".to_string())]), creator: None, character_version: None, alternate_greetings: None,
-        nickname: None, creator_notes_multilingual: None, source: None, group_only_greetings: None,
-        creation_date: None, modification_date: None, extensions: None, persona: None, persona_nonce: None,
-        world_scenario: None, world_scenario_nonce: None, avatar: None, chat: None, greeting: None, greeting_nonce: None,
-        definition: None, definition_nonce: None, default_voice: None, category: None, definition_visibility: None,
-        example_dialogue: None, example_dialogue_nonce: None, favorite: None, first_message_visibility: None,
-        migrated_from: None, model_prompt: None, model_prompt_nonce: None, model_prompt_visibility: None,
-        persona_visibility: None, sharing_visibility: None, status: None, system_prompt_visibility: None,
-        system_tags: None, token_budget: None, usage_hints: None, user_persona: None, user_persona_nonce: None,
-        user_persona_visibility: None, world_scenario_visibility: None,
+        description: None,
+        description_nonce: None,
+        personality: None,
+        personality_nonce: None,
+        scenario: None,
+        scenario_nonce: None,
+        first_mes: None,
+        first_mes_nonce: None,
+        mes_example: None,
+        mes_example_nonce: None,
+        creator_notes: None,
+        creator_notes_nonce: None,
+        system_prompt: None,
+        system_prompt_nonce: None,
+        post_history_instructions: None,
+        post_history_instructions_nonce: None,
+        tags: Some(vec![Some("test".to_string())]),
+        creator: None,
+        character_version: None,
+        alternate_greetings: None,
+        nickname: None,
+        creator_notes_multilingual: None,
+        source: None,
+        group_only_greetings: None,
+        creation_date: None,
+        modification_date: None,
+        extensions: None,
+        persona: None,
+        persona_nonce: None,
+        world_scenario: None,
+        world_scenario_nonce: None,
+        avatar: None,
+        chat: None,
+        greeting: None,
+        greeting_nonce: None,
+        definition: None,
+        definition_nonce: None,
+        default_voice: None,
+        category: None,
+        definition_visibility: None,
+        example_dialogue: None,
+        example_dialogue_nonce: None,
+        favorite: None,
+        first_message_visibility: None,
+        migrated_from: None,
+        model_prompt: None,
+        model_prompt_nonce: None,
+        model_prompt_visibility: None,
+        persona_visibility: None,
+        sharing_visibility: None,
+        status: None,
+        system_prompt_visibility: None,
+        system_tags: None,
+        token_budget: None,
+        usage_hints: None,
+        user_persona: None,
+        user_persona_nonce: None,
+        user_persona_visibility: None,
+        world_scenario_visibility: None,
     };
     let char_a_conn_pool = conn_pool.clone();
-    let char_a: DbCharacter = char_a_conn_pool.get().await.unwrap().interact(move |actual_conn| {
-        diesel::insert_into(characters::table)
-            .values(&new_character_a_data).get_result::<DbCharacter>(actual_conn)
-    }).await.expect("Interact char_a insert failed").expect("Diesel char_a insert failed");
+    let char_a: DbCharacter = char_a_conn_pool
+        .get()
+        .await
+        .unwrap()
+        .interact(move |actual_conn| {
+            diesel::insert_into(characters::table)
+                .values(&new_character_a_data)
+                .get_result::<DbCharacter>(actual_conn)
+        })
+        .await
+        .expect("Interact char_a insert failed")
+        .expect("Diesel char_a insert failed");
 
     let new_chat_a_data = NewChat {
         id: Uuid::new_v4(),
@@ -435,20 +678,29 @@ async fn test_get_chat_settings_forbidden() {
         created_at: Utc::now(),
         updated_at: Utc::now(),
         history_management_strategy: "token_limit".to_string(),
-        history_management_limit: 10, 
+        history_management_limit: 10,
         model_name: "forbidden-model".to_string(),
         visibility: Some("private".to_string()),
     };
     let new_chat_a_data_clone = new_chat_a_data.clone();
     let session_a_conn_pool = conn_pool.clone();
-    let session_a: DbChat = session_a_conn_pool.get().await.unwrap().interact(move |actual_conn| {
-        diesel::insert_into(chat_sessions::table)
-            .values(&new_chat_a_data_clone).returning(DbChat::as_returning()).get_result(actual_conn)
-    }).await.expect("Interact session_a insert failed").expect("Diesel session_a insert failed");
+    let session_a: DbChat = session_a_conn_pool
+        .get()
+        .await
+        .unwrap()
+        .interact(move |actual_conn| {
+            diesel::insert_into(chat_sessions::table)
+                .values(&new_chat_a_data_clone)
+                .returning(DbChat::as_returning())
+                .get_result(actual_conn)
+        })
+        .await
+        .expect("Interact session_a insert failed")
+        .expect("Diesel session_a insert failed");
 
     let request = Request::builder()
         .method(Method::GET)
-        .uri(format!("/api/chats/{}/settings", session_a.id)) 
+        .uri(format!("/api/chats/{}/settings", session_a.id))
         .header(header::COOKIE, auth_cookie2)
         .body(Body::empty())
         .unwrap();
@@ -458,7 +710,6 @@ async fn test_get_chat_settings_forbidden() {
     // (For non-existent chat IDs, it returns NOT_FOUND)
     assert_eq!(response.status(), StatusCode::FORBIDDEN);
 }
-
 
 // --- Tests for PUT /api/chats/{id}/settings ---
 
@@ -473,14 +724,29 @@ async fn update_chat_settings_success_full() {
     )
     .await
     .expect("Failed to create test user");
-    
-    let login_payload = serde_json::json!({ "identifier": "update_settings_user", "password": "password" });
-    let login_request = Request::builder().method(Method::POST).uri("/api/auth/login")
+
+    let login_payload =
+        serde_json::json!({ "identifier": "update_settings_user", "password": "password" });
+    let login_request = Request::builder()
+        .method(Method::POST)
+        .uri("/api/auth/login")
         .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
-        .body(Body::from(serde_json::to_string(&login_payload).unwrap())).unwrap();
-    let login_response = test_app.router.clone().oneshot(login_request).await.unwrap();
+        .body(Body::from(serde_json::to_string(&login_payload).unwrap()))
+        .unwrap();
+    let login_response = test_app
+        .router
+        .clone()
+        .oneshot(login_request)
+        .await
+        .unwrap();
     assert_eq!(login_response.status(), StatusCode::OK);
-    let auth_cookie = login_response.headers().get(header::SET_COOKIE).expect("Set-Cookie header should be present").to_str().unwrap().to_string();
+    let auth_cookie = login_response
+        .headers()
+        .get(header::SET_COOKIE)
+        .expect("Set-Cookie header should be present")
+        .to_str()
+        .unwrap()
+        .to_string();
 
     let new_character_data = NewCharacter {
         user_id: user.id,
@@ -490,27 +756,79 @@ async fn update_chat_settings_success_full() {
         visibility: Some("private".to_string()),
         created_at: Some(Utc::now()),
         updated_at: Some(Utc::now()),
-        description: None, description_nonce: None, personality: None, personality_nonce: None,
-        scenario: None, scenario_nonce: None, first_mes: None, first_mes_nonce: None,
-        mes_example: None, mes_example_nonce: None, creator_notes: None, creator_notes_nonce: None,
-        system_prompt: None, system_prompt_nonce: None, post_history_instructions: None, post_history_instructions_nonce: None,
-        tags: Some(vec![Some("test".to_string())]), creator: None, character_version: None, alternate_greetings: None,
-        nickname: None, creator_notes_multilingual: None, source: None, group_only_greetings: None,
-        creation_date: None, modification_date: None, extensions: None, persona: None, persona_nonce: None,
-        world_scenario: None, world_scenario_nonce: None, avatar: None, chat: None, greeting: None, greeting_nonce: None,
-        definition: None, definition_nonce: None, default_voice: None, category: None, definition_visibility: None,
-        example_dialogue: None, example_dialogue_nonce: None, favorite: None, first_message_visibility: None,
-        migrated_from: None, model_prompt: None, model_prompt_nonce: None, model_prompt_visibility: None,
-        persona_visibility: None, sharing_visibility: None, status: None, system_prompt_visibility: None,
-        system_tags: None, token_budget: None, usage_hints: None, user_persona: None, user_persona_nonce: None,
-        user_persona_visibility: None, world_scenario_visibility: None,
+        description: None,
+        description_nonce: None,
+        personality: None,
+        personality_nonce: None,
+        scenario: None,
+        scenario_nonce: None,
+        first_mes: None,
+        first_mes_nonce: None,
+        mes_example: None,
+        mes_example_nonce: None,
+        creator_notes: None,
+        creator_notes_nonce: None,
+        system_prompt: None,
+        system_prompt_nonce: None,
+        post_history_instructions: None,
+        post_history_instructions_nonce: None,
+        tags: Some(vec![Some("test".to_string())]),
+        creator: None,
+        character_version: None,
+        alternate_greetings: None,
+        nickname: None,
+        creator_notes_multilingual: None,
+        source: None,
+        group_only_greetings: None,
+        creation_date: None,
+        modification_date: None,
+        extensions: None,
+        persona: None,
+        persona_nonce: None,
+        world_scenario: None,
+        world_scenario_nonce: None,
+        avatar: None,
+        chat: None,
+        greeting: None,
+        greeting_nonce: None,
+        definition: None,
+        definition_nonce: None,
+        default_voice: None,
+        category: None,
+        definition_visibility: None,
+        example_dialogue: None,
+        example_dialogue_nonce: None,
+        favorite: None,
+        first_message_visibility: None,
+        migrated_from: None,
+        model_prompt: None,
+        model_prompt_nonce: None,
+        model_prompt_visibility: None,
+        persona_visibility: None,
+        sharing_visibility: None,
+        status: None,
+        system_prompt_visibility: None,
+        system_tags: None,
+        token_budget: None,
+        usage_hints: None,
+        user_persona: None,
+        user_persona_nonce: None,
+        user_persona_visibility: None,
+        world_scenario_visibility: None,
     };
     let char_conn_pool = conn_pool.clone();
-    let character: DbCharacter = char_conn_pool.get().await.unwrap().interact(move |actual_conn| {
-        diesel::insert_into(characters::table)
-            .values(&new_character_data)
-            .get_result::<DbCharacter>(actual_conn)
-    }).await.expect("Interact char insert failed").expect("Diesel char insert failed");
+    let character: DbCharacter = char_conn_pool
+        .get()
+        .await
+        .unwrap()
+        .interact(move |actual_conn| {
+            diesel::insert_into(characters::table)
+                .values(&new_character_data)
+                .get_result::<DbCharacter>(actual_conn)
+        })
+        .await
+        .expect("Interact char insert failed")
+        .expect("Diesel char insert failed");
 
     let new_chat_data = NewChat {
         id: Uuid::new_v4(),
@@ -519,19 +837,26 @@ async fn update_chat_settings_success_full() {
         title: Some(format!("Update Test Chat Full with {}", character.name)),
         created_at: Utc::now(),
         updated_at: Utc::now(),
-        history_management_strategy: "token_limit".to_string(), 
-        history_management_limit: 10, 
-        model_name: "initial-model".to_string(), 
+        history_management_strategy: "token_limit".to_string(),
+        history_management_limit: 10,
+        model_name: "initial-model".to_string(),
         visibility: Some("private".to_string()),
     };
     let new_chat_data_clone = new_chat_data.clone();
     let session_conn_pool = conn_pool.clone();
-    let session: DbChat = session_conn_pool.get().await.unwrap().interact(move |actual_conn| {
-        diesel::insert_into(chat_sessions::table)
-            .values(&new_chat_data_clone)
-            .returning(DbChat::as_returning())
-            .get_result(actual_conn)
-    }).await.expect("Interact chat insert failed").expect("Diesel chat insert failed");
+    let session: DbChat = session_conn_pool
+        .get()
+        .await
+        .unwrap()
+        .interact(move |actual_conn| {
+            diesel::insert_into(chat_sessions::table)
+                .values(&new_chat_data_clone)
+                .returning(DbChat::as_returning())
+                .get_result(actual_conn)
+        })
+        .await
+        .expect("Interact chat insert failed")
+        .expect("Diesel chat insert failed");
 
     let update_data = UpdateChatSettingsRequest {
         system_prompt: Some("Updated System Prompt".to_string()),
@@ -568,8 +893,14 @@ async fn update_chat_settings_success_full() {
     let settings_resp: ChatSettingsResponse =
         serde_json::from_slice(&body).expect("Failed to deserialize settings response");
 
-    assert_eq!(settings_resp.system_prompt, Some("Updated System Prompt".to_string()));
-    assert_eq!(settings_resp.temperature, Some(BigDecimal::from_str("0.75").unwrap()));
+    assert_eq!(
+        settings_resp.system_prompt,
+        Some("Updated System Prompt".to_string())
+    );
+    assert_eq!(
+        settings_resp.temperature,
+        Some(BigDecimal::from_str("0.75").unwrap())
+    );
     assert_eq!(settings_resp.max_output_tokens, Some(512_i32));
     assert_eq!(settings_resp.model_name, "updated-model-name".to_string());
     assert_eq!(settings_resp.history_management_strategy, "token_limit");
@@ -589,14 +920,29 @@ async fn update_chat_settings_success_partial() {
     )
     .await
     .expect("Failed to create test user");
-    
-    let login_payload = serde_json::json!({ "identifier": "update_partial_user", "password": "password" });
-    let login_request = Request::builder().method(Method::POST).uri("/api/auth/login")
+
+    let login_payload =
+        serde_json::json!({ "identifier": "update_partial_user", "password": "password" });
+    let login_request = Request::builder()
+        .method(Method::POST)
+        .uri("/api/auth/login")
         .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
-        .body(Body::from(serde_json::to_string(&login_payload).unwrap())).unwrap();
-    let login_response = test_app.router.clone().oneshot(login_request).await.unwrap();
+        .body(Body::from(serde_json::to_string(&login_payload).unwrap()))
+        .unwrap();
+    let login_response = test_app
+        .router
+        .clone()
+        .oneshot(login_request)
+        .await
+        .unwrap();
     assert_eq!(login_response.status(), StatusCode::OK);
-    let auth_cookie = login_response.headers().get(header::SET_COOKIE).expect("Set-Cookie header should be present").to_str().unwrap().to_string();
+    let auth_cookie = login_response
+        .headers()
+        .get(header::SET_COOKIE)
+        .expect("Set-Cookie header should be present")
+        .to_str()
+        .unwrap()
+        .to_string();
 
     let new_character_data = NewCharacter {
         user_id: user.id,
@@ -606,27 +952,79 @@ async fn update_chat_settings_success_partial() {
         visibility: Some("private".to_string()),
         created_at: Some(Utc::now()),
         updated_at: Some(Utc::now()),
-        description: None, description_nonce: None, personality: None, personality_nonce: None,
-        scenario: None, scenario_nonce: None, first_mes: None, first_mes_nonce: None,
-        mes_example: None, mes_example_nonce: None, creator_notes: None, creator_notes_nonce: None,
-        system_prompt: None, system_prompt_nonce: None, post_history_instructions: None, post_history_instructions_nonce: None,
-        tags: Some(vec![Some("test".to_string())]), creator: None, character_version: None, alternate_greetings: None,
-        nickname: None, creator_notes_multilingual: None, source: None, group_only_greetings: None,
-        creation_date: None, modification_date: None, extensions: None, persona: None, persona_nonce: None,
-        world_scenario: None, world_scenario_nonce: None, avatar: None, chat: None, greeting: None, greeting_nonce: None,
-        definition: None, definition_nonce: None, default_voice: None, category: None, definition_visibility: None,
-        example_dialogue: None, example_dialogue_nonce: None, favorite: None, first_message_visibility: None,
-        migrated_from: None, model_prompt: None, model_prompt_nonce: None, model_prompt_visibility: None,
-        persona_visibility: None, sharing_visibility: None, status: None, system_prompt_visibility: None,
-        system_tags: None, token_budget: None, usage_hints: None, user_persona: None, user_persona_nonce: None,
-        user_persona_visibility: None, world_scenario_visibility: None,
+        description: None,
+        description_nonce: None,
+        personality: None,
+        personality_nonce: None,
+        scenario: None,
+        scenario_nonce: None,
+        first_mes: None,
+        first_mes_nonce: None,
+        mes_example: None,
+        mes_example_nonce: None,
+        creator_notes: None,
+        creator_notes_nonce: None,
+        system_prompt: None,
+        system_prompt_nonce: None,
+        post_history_instructions: None,
+        post_history_instructions_nonce: None,
+        tags: Some(vec![Some("test".to_string())]),
+        creator: None,
+        character_version: None,
+        alternate_greetings: None,
+        nickname: None,
+        creator_notes_multilingual: None,
+        source: None,
+        group_only_greetings: None,
+        creation_date: None,
+        modification_date: None,
+        extensions: None,
+        persona: None,
+        persona_nonce: None,
+        world_scenario: None,
+        world_scenario_nonce: None,
+        avatar: None,
+        chat: None,
+        greeting: None,
+        greeting_nonce: None,
+        definition: None,
+        definition_nonce: None,
+        default_voice: None,
+        category: None,
+        definition_visibility: None,
+        example_dialogue: None,
+        example_dialogue_nonce: None,
+        favorite: None,
+        first_message_visibility: None,
+        migrated_from: None,
+        model_prompt: None,
+        model_prompt_nonce: None,
+        model_prompt_visibility: None,
+        persona_visibility: None,
+        sharing_visibility: None,
+        status: None,
+        system_prompt_visibility: None,
+        system_tags: None,
+        token_budget: None,
+        usage_hints: None,
+        user_persona: None,
+        user_persona_nonce: None,
+        user_persona_visibility: None,
+        world_scenario_visibility: None,
     };
     let char_conn_pool = conn_pool.clone();
-    let character: DbCharacter = char_conn_pool.get().await.unwrap().interact(move |actual_conn| {
-        diesel::insert_into(characters::table)
-            .values(&new_character_data)
-            .get_result::<DbCharacter>(actual_conn)
-    }).await.expect("Interact char insert failed").expect("Diesel char insert failed");
+    let character: DbCharacter = char_conn_pool
+        .get()
+        .await
+        .unwrap()
+        .interact(move |actual_conn| {
+            diesel::insert_into(characters::table)
+                .values(&new_character_data)
+                .get_result::<DbCharacter>(actual_conn)
+        })
+        .await
+        .expect("Interact char insert failed")
+        .expect("Diesel char insert failed");
 
     let initial_model_name = "initial-partial-model".to_string();
     let initial_system_prompt_val = "Initial System Prompt".to_string();
@@ -635,7 +1033,6 @@ async fn update_chat_settings_success_partial() {
     let initial_hist_strat_val = "none".to_string();
     let initial_hist_limit_val = 0_i32;
 
-
     let new_chat_data = NewChat {
         id: Uuid::new_v4(),
         user_id: user.id,
@@ -643,46 +1040,67 @@ async fn update_chat_settings_success_partial() {
         title: Some(format!("Update Test Chat Partial with {}", character.name)),
         created_at: Utc::now(),
         updated_at: Utc::now(),
-        history_management_strategy: initial_hist_strat_val.clone(), 
-        history_management_limit: initial_hist_limit_val,        
-        model_name: initial_model_name.clone(), 
+        history_management_strategy: initial_hist_strat_val.clone(),
+        history_management_limit: initial_hist_limit_val,
+        model_name: initial_model_name.clone(),
         visibility: Some("private".to_string()),
     };
     let new_chat_data_clone = new_chat_data.clone();
     let session_conn_pool = conn_pool.clone();
-    let session: DbChat = session_conn_pool.get().await.unwrap().interact(move |actual_conn| {
-        diesel::insert_into(chat_sessions::table)
-            .values(&new_chat_data_clone)
-            .returning(DbChat::as_returning())
-            .get_result(actual_conn)
-    }).await.expect("Interact chat insert failed").expect("Diesel chat insert failed");
+    let session: DbChat = session_conn_pool
+        .get()
+        .await
+        .unwrap()
+        .interact(move |actual_conn| {
+            diesel::insert_into(chat_sessions::table)
+                .values(&new_chat_data_clone)
+                .returning(DbChat::as_returning())
+                .get_result(actual_conn)
+        })
+        .await
+        .expect("Interact chat insert failed")
+        .expect("Diesel chat insert failed");
 
     let session_id_for_update = session.id;
     let update_conn_pool = conn_pool.clone();
     let initial_system_prompt_clone = initial_system_prompt_val.clone();
     let initial_temp_clone = initial_temp_val.clone();
 
-    update_conn_pool.get().await.unwrap().interact(move |actual_conn| {
-        diesel::update(chat_sessions::table.find(session_id_for_update))
-            .set((
-                chat_sessions::system_prompt.eq(Some(initial_system_prompt_clone)),
-                chat_sessions::temperature.eq(Some(initial_temp_clone)),
-                chat_sessions::max_output_tokens.eq(Some(initial_max_tokens_val)),
-            ))
-            .execute(actual_conn)
-    }).await.expect("Interact for initial chat settings update failed").expect("Diesel update for initial settings failed");
-
+    update_conn_pool
+        .get()
+        .await
+        .unwrap()
+        .interact(move |actual_conn| {
+            diesel::update(chat_sessions::table.find(session_id_for_update))
+                .set((
+                    chat_sessions::system_prompt.eq(Some(initial_system_prompt_clone)),
+                    chat_sessions::temperature.eq(Some(initial_temp_clone)),
+                    chat_sessions::max_output_tokens.eq(Some(initial_max_tokens_val)),
+                ))
+                .execute(actual_conn)
+        })
+        .await
+        .expect("Interact for initial chat settings update failed")
+        .expect("Diesel update for initial settings failed");
 
     let update_data = UpdateChatSettingsRequest {
         system_prompt: Some("Partially Updated System Prompt".to_string()),
-        temperature: None, 
-        max_output_tokens: Some(200), 
-        frequency_penalty: None, presence_penalty: None, top_k: None, top_p: None,
-        repetition_penalty: None, min_p: None, top_a: None, seed: None, logit_bias: None,
-        model_name: None, 
-        history_management_strategy: None, 
-        history_management_limit: None,    
-        gemini_thinking_budget: None, gemini_enable_code_execution: None,
+        temperature: None,
+        max_output_tokens: Some(200),
+        frequency_penalty: None,
+        presence_penalty: None,
+        top_k: None,
+        top_p: None,
+        repetition_penalty: None,
+        min_p: None,
+        top_a: None,
+        seed: None,
+        logit_bias: None,
+        model_name: None,
+        history_management_strategy: None,
+        history_management_limit: None,
+        gemini_thinking_budget: None,
+        gemini_enable_code_execution: None,
     };
 
     let request = Request::builder()
@@ -700,12 +1118,21 @@ async fn update_chat_settings_success_partial() {
     let settings_resp: ChatSettingsResponse =
         serde_json::from_slice(&body).expect("Failed to deserialize settings response");
 
-    assert_eq!(settings_resp.system_prompt, Some("Partially Updated System Prompt".to_string()));
+    assert_eq!(
+        settings_resp.system_prompt,
+        Some("Partially Updated System Prompt".to_string())
+    );
     assert_eq!(settings_resp.max_output_tokens, Some(200));
-    assert_eq!(settings_resp.temperature, Some(initial_temp_val)); 
+    assert_eq!(settings_resp.temperature, Some(initial_temp_val));
     assert_eq!(settings_resp.model_name, initial_model_name);
-    assert_eq!(settings_resp.history_management_strategy, initial_hist_strat_val);
-    assert_eq!(settings_resp.history_management_limit, initial_hist_limit_val);
+    assert_eq!(
+        settings_resp.history_management_strategy,
+        initial_hist_strat_val
+    );
+    assert_eq!(
+        settings_resp.history_management_limit,
+        initial_hist_limit_val
+    );
 }
 
 #[tokio::test]
@@ -719,14 +1146,29 @@ async fn update_chat_settings_invalid_data() {
     )
     .await
     .expect("Failed to create test user");
-    
-    let login_payload = serde_json::json!({ "identifier": "update_invalid_user", "password": "password" });
-    let login_request = Request::builder().method(Method::POST).uri("/api/auth/login")
+
+    let login_payload =
+        serde_json::json!({ "identifier": "update_invalid_user", "password": "password" });
+    let login_request = Request::builder()
+        .method(Method::POST)
+        .uri("/api/auth/login")
         .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
-        .body(Body::from(serde_json::to_string(&login_payload).unwrap())).unwrap();
-    let login_response = test_app.router.clone().oneshot(login_request).await.unwrap();
+        .body(Body::from(serde_json::to_string(&login_payload).unwrap()))
+        .unwrap();
+    let login_response = test_app
+        .router
+        .clone()
+        .oneshot(login_request)
+        .await
+        .unwrap();
     assert_eq!(login_response.status(), StatusCode::OK);
-    let auth_cookie = login_response.headers().get(header::SET_COOKIE).expect("Set-Cookie header should be present").to_str().unwrap().to_string();
+    let auth_cookie = login_response
+        .headers()
+        .get(header::SET_COOKIE)
+        .expect("Set-Cookie header should be present")
+        .to_str()
+        .unwrap()
+        .to_string();
 
     let new_character_data = NewCharacter {
         user_id: user.id,
@@ -736,27 +1178,79 @@ async fn update_chat_settings_invalid_data() {
         visibility: Some("private".to_string()),
         created_at: Some(Utc::now()),
         updated_at: Some(Utc::now()),
-        description: None, description_nonce: None, personality: None, personality_nonce: None,
-        scenario: None, scenario_nonce: None, first_mes: None, first_mes_nonce: None,
-        mes_example: None, mes_example_nonce: None, creator_notes: None, creator_notes_nonce: None,
-        system_prompt: None, system_prompt_nonce: None, post_history_instructions: None, post_history_instructions_nonce: None,
-        tags: Some(vec![Some("test".to_string())]), creator: None, character_version: None, alternate_greetings: None,
-        nickname: None, creator_notes_multilingual: None, source: None, group_only_greetings: None,
-        creation_date: None, modification_date: None, extensions: None, persona: None, persona_nonce: None,
-        world_scenario: None, world_scenario_nonce: None, avatar: None, chat: None, greeting: None, greeting_nonce: None,
-        definition: None, definition_nonce: None, default_voice: None, category: None, definition_visibility: None,
-        example_dialogue: None, example_dialogue_nonce: None, favorite: None, first_message_visibility: None,
-        migrated_from: None, model_prompt: None, model_prompt_nonce: None, model_prompt_visibility: None,
-        persona_visibility: None, sharing_visibility: None, status: None, system_prompt_visibility: None,
-        system_tags: None, token_budget: None, usage_hints: None, user_persona: None, user_persona_nonce: None,
-        user_persona_visibility: None, world_scenario_visibility: None,
+        description: None,
+        description_nonce: None,
+        personality: None,
+        personality_nonce: None,
+        scenario: None,
+        scenario_nonce: None,
+        first_mes: None,
+        first_mes_nonce: None,
+        mes_example: None,
+        mes_example_nonce: None,
+        creator_notes: None,
+        creator_notes_nonce: None,
+        system_prompt: None,
+        system_prompt_nonce: None,
+        post_history_instructions: None,
+        post_history_instructions_nonce: None,
+        tags: Some(vec![Some("test".to_string())]),
+        creator: None,
+        character_version: None,
+        alternate_greetings: None,
+        nickname: None,
+        creator_notes_multilingual: None,
+        source: None,
+        group_only_greetings: None,
+        creation_date: None,
+        modification_date: None,
+        extensions: None,
+        persona: None,
+        persona_nonce: None,
+        world_scenario: None,
+        world_scenario_nonce: None,
+        avatar: None,
+        chat: None,
+        greeting: None,
+        greeting_nonce: None,
+        definition: None,
+        definition_nonce: None,
+        default_voice: None,
+        category: None,
+        definition_visibility: None,
+        example_dialogue: None,
+        example_dialogue_nonce: None,
+        favorite: None,
+        first_message_visibility: None,
+        migrated_from: None,
+        model_prompt: None,
+        model_prompt_nonce: None,
+        model_prompt_visibility: None,
+        persona_visibility: None,
+        sharing_visibility: None,
+        status: None,
+        system_prompt_visibility: None,
+        system_tags: None,
+        token_budget: None,
+        usage_hints: None,
+        user_persona: None,
+        user_persona_nonce: None,
+        user_persona_visibility: None,
+        world_scenario_visibility: None,
     };
     let char_conn_pool = conn_pool.clone();
-    let character: DbCharacter = char_conn_pool.get().await.unwrap().interact(move |actual_conn| {
-        diesel::insert_into(characters::table)
-            .values(&new_character_data)
-            .get_result::<DbCharacter>(actual_conn)
-    }).await.expect("Interact char insert failed").expect("Diesel char insert failed");
+    let character: DbCharacter = char_conn_pool
+        .get()
+        .await
+        .unwrap()
+        .interact(move |actual_conn| {
+            diesel::insert_into(characters::table)
+                .values(&new_character_data)
+                .get_result::<DbCharacter>(actual_conn)
+        })
+        .await
+        .expect("Interact char insert failed")
+        .expect("Diesel char insert failed");
 
     let new_chat_data = NewChat {
         id: Uuid::new_v4(),
@@ -765,19 +1259,26 @@ async fn update_chat_settings_invalid_data() {
         title: Some(format!("Invalid Update Test Chat with {}", character.name)),
         created_at: Utc::now(),
         updated_at: Utc::now(),
-        history_management_strategy: "token_limit".to_string(), 
-        history_management_limit: 10, 
-        model_name: "invalid-data-model".to_string(), 
+        history_management_strategy: "token_limit".to_string(),
+        history_management_limit: 10,
+        model_name: "invalid-data-model".to_string(),
         visibility: Some("private".to_string()),
     };
     let new_chat_data_clone = new_chat_data.clone();
     let session_conn_pool = conn_pool.clone();
-    let session: DbChat = session_conn_pool.get().await.unwrap().interact(move |actual_conn| {
-        diesel::insert_into(chat_sessions::table)
-            .values(&new_chat_data_clone)
-            .returning(DbChat::as_returning())
-            .get_result(actual_conn)
-    }).await.expect("Interact chat insert failed").expect("Diesel chat insert failed");
+    let session: DbChat = session_conn_pool
+        .get()
+        .await
+        .unwrap()
+        .interact(move |actual_conn| {
+            diesel::insert_into(chat_sessions::table)
+                .values(&new_chat_data_clone)
+                .returning(DbChat::as_returning())
+                .get_result(actual_conn)
+        })
+        .await
+        .expect("Interact chat insert failed")
+        .expect("Diesel chat insert failed");
 
     let invalid_update_data = serde_json::json!({
         "temperature": "not_a_number"
@@ -788,7 +1289,9 @@ async fn update_chat_settings_invalid_data() {
         .uri(format!("/api/chats/{}/settings", session.id))
         .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
         .header(header::COOKIE, auth_cookie.clone())
-        .body(Body::from(serde_json::to_string(&invalid_update_data).unwrap()))
+        .body(Body::from(
+            serde_json::to_string(&invalid_update_data).unwrap(),
+        ))
         .unwrap();
 
     let response = test_app.router.clone().oneshot(request).await.unwrap();
@@ -799,20 +1302,45 @@ async fn update_chat_settings_invalid_data() {
 async fn update_chat_settings_forbidden() {
     let test_app = test_helpers::spawn_app(false, false, false).await;
     let conn_pool = test_app.db_pool.clone();
-    
-    let user1 = test_helpers::db::create_test_user(
-        &test_app.db_pool, "update_settings_user1".to_string(), "password".to_string()).await.expect("user1 creation failed");
-    
-    let _user2 = test_helpers::db::create_test_user(
-        &test_app.db_pool, "update_settings_user2".to_string(), "password".to_string()).await.expect("user2 creation failed");
 
-    let login_payload2 = serde_json::json!({ "identifier": "update_settings_user2", "password": "password" });
-    let login_request2 = Request::builder().method(Method::POST).uri("/api/auth/login")
+    let user1 = test_helpers::db::create_test_user(
+        &test_app.db_pool,
+        "update_settings_user1".to_string(),
+        "password".to_string(),
+    )
+    .await
+    .expect("user1 creation failed");
+
+    let _user2 = test_helpers::db::create_test_user(
+        &test_app.db_pool,
+        "update_settings_user2".to_string(),
+        "password".to_string(),
+    )
+    .await
+    .expect("user2 creation failed");
+
+    let login_payload2 =
+        serde_json::json!({ "identifier": "update_settings_user2", "password": "password" });
+    let login_request2 = Request::builder()
+        .method(Method::POST)
+        .uri("/api/auth/login")
         .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
-        .body(Body::from(serde_json::to_string(&login_payload2).unwrap())).unwrap();
-    let login_response2 = test_app.router.clone().oneshot(login_request2).await.unwrap();
+        .body(Body::from(serde_json::to_string(&login_payload2).unwrap()))
+        .unwrap();
+    let login_response2 = test_app
+        .router
+        .clone()
+        .oneshot(login_request2)
+        .await
+        .unwrap();
     assert_eq!(login_response2.status(), StatusCode::OK);
-    let auth_cookie2 = login_response2.headers().get(header::SET_COOKIE).expect("Set-Cookie header user2").to_str().unwrap().to_string();
+    let auth_cookie2 = login_response2
+        .headers()
+        .get(header::SET_COOKIE)
+        .expect("Set-Cookie header user2")
+        .to_str()
+        .unwrap()
+        .to_string();
 
     let new_character_user1_data = NewCharacter {
         user_id: user1.id,
@@ -822,27 +1350,79 @@ async fn update_chat_settings_forbidden() {
         visibility: Some("private".to_string()),
         created_at: Some(Utc::now()),
         updated_at: Some(Utc::now()),
-        description: None, description_nonce: None, personality: None, personality_nonce: None,
-        scenario: None, scenario_nonce: None, first_mes: None, first_mes_nonce: None,
-        mes_example: None, mes_example_nonce: None, creator_notes: None, creator_notes_nonce: None,
-        system_prompt: None, system_prompt_nonce: None, post_history_instructions: None, post_history_instructions_nonce: None,
-        tags: Some(vec![Some("test".to_string())]), creator: None, character_version: None, alternate_greetings: None,
-        nickname: None, creator_notes_multilingual: None, source: None, group_only_greetings: None,
-        creation_date: None, modification_date: None, extensions: None, persona: None, persona_nonce: None,
-        world_scenario: None, world_scenario_nonce: None, avatar: None, chat: None, greeting: None, greeting_nonce: None,
-        definition: None, definition_nonce: None, default_voice: None, category: None, definition_visibility: None,
-        example_dialogue: None, example_dialogue_nonce: None, favorite: None, first_message_visibility: None,
-        migrated_from: None, model_prompt: None, model_prompt_nonce: None, model_prompt_visibility: None,
-        persona_visibility: None, sharing_visibility: None, status: None, system_prompt_visibility: None,
-        system_tags: None, token_budget: None, usage_hints: None, user_persona: None, user_persona_nonce: None,
-        user_persona_visibility: None, world_scenario_visibility: None,
+        description: None,
+        description_nonce: None,
+        personality: None,
+        personality_nonce: None,
+        scenario: None,
+        scenario_nonce: None,
+        first_mes: None,
+        first_mes_nonce: None,
+        mes_example: None,
+        mes_example_nonce: None,
+        creator_notes: None,
+        creator_notes_nonce: None,
+        system_prompt: None,
+        system_prompt_nonce: None,
+        post_history_instructions: None,
+        post_history_instructions_nonce: None,
+        tags: Some(vec![Some("test".to_string())]),
+        creator: None,
+        character_version: None,
+        alternate_greetings: None,
+        nickname: None,
+        creator_notes_multilingual: None,
+        source: None,
+        group_only_greetings: None,
+        creation_date: None,
+        modification_date: None,
+        extensions: None,
+        persona: None,
+        persona_nonce: None,
+        world_scenario: None,
+        world_scenario_nonce: None,
+        avatar: None,
+        chat: None,
+        greeting: None,
+        greeting_nonce: None,
+        definition: None,
+        definition_nonce: None,
+        default_voice: None,
+        category: None,
+        definition_visibility: None,
+        example_dialogue: None,
+        example_dialogue_nonce: None,
+        favorite: None,
+        first_message_visibility: None,
+        migrated_from: None,
+        model_prompt: None,
+        model_prompt_nonce: None,
+        model_prompt_visibility: None,
+        persona_visibility: None,
+        sharing_visibility: None,
+        status: None,
+        system_prompt_visibility: None,
+        system_tags: None,
+        token_budget: None,
+        usage_hints: None,
+        user_persona: None,
+        user_persona_nonce: None,
+        user_persona_visibility: None,
+        world_scenario_visibility: None,
     };
     let char1_conn_pool = conn_pool.clone();
-    let character_user1: DbCharacter = char1_conn_pool.get().await.unwrap().interact(move |actual_conn| {
-        diesel::insert_into(characters::table)
-            .values(&new_character_user1_data)
-            .get_result::<DbCharacter>(actual_conn)
-    }).await.expect("Interact char1 insert failed").expect("Diesel char1 insert failed");
+    let character_user1: DbCharacter = char1_conn_pool
+        .get()
+        .await
+        .unwrap()
+        .interact(move |actual_conn| {
+            diesel::insert_into(characters::table)
+                .values(&new_character_user1_data)
+                .get_result::<DbCharacter>(actual_conn)
+        })
+        .await
+        .expect("Interact char1 insert failed")
+        .expect("Diesel char1 insert failed");
 
     let new_chat_user1_data = NewChat {
         id: Uuid::new_v4(),
@@ -852,23 +1432,44 @@ async fn update_chat_settings_forbidden() {
         created_at: Utc::now(),
         updated_at: Utc::now(),
         history_management_strategy: "token_limit".to_string(),
-        history_management_limit: 10, 
+        history_management_limit: 10,
         model_name: "forbidden-model".to_string(),
         visibility: Some("private".to_string()),
     };
     let new_chat_user1_data_clone = new_chat_user1_data.clone();
     let session1_conn_pool = conn_pool.clone();
-    let session_user1: DbChat = session1_conn_pool.get().await.unwrap().interact(move |actual_conn| {
-        diesel::insert_into(chat_sessions::table)
-            .values(&new_chat_user1_data_clone).returning(DbChat::as_returning()).get_result(actual_conn)
-    }).await.expect("Interact session1 insert failed").expect("Diesel session1 insert failed");
+    let session_user1: DbChat = session1_conn_pool
+        .get()
+        .await
+        .unwrap()
+        .interact(move |actual_conn| {
+            diesel::insert_into(chat_sessions::table)
+                .values(&new_chat_user1_data_clone)
+                .returning(DbChat::as_returning())
+                .get_result(actual_conn)
+        })
+        .await
+        .expect("Interact session1 insert failed")
+        .expect("Diesel session1 insert failed");
 
     let update_data = UpdateChatSettingsRequest {
         system_prompt: Some("Attempted Update by User2".to_string()),
-        temperature: None, max_output_tokens: None, frequency_penalty: None, presence_penalty: None, 
-        top_k: None, top_p: None, repetition_penalty: None, min_p: None, top_a: None, seed: None, 
-        logit_bias: None, model_name: None, history_management_strategy: None, 
-        history_management_limit: None, gemini_thinking_budget: None, gemini_enable_code_execution: None,
+        temperature: None,
+        max_output_tokens: None,
+        frequency_penalty: None,
+        presence_penalty: None,
+        top_k: None,
+        top_p: None,
+        repetition_penalty: None,
+        min_p: None,
+        top_a: None,
+        seed: None,
+        logit_bias: None,
+        model_name: None,
+        history_management_strategy: None,
+        history_management_limit: None,
+        gemini_thinking_budget: None,
+        gemini_enable_code_execution: None,
     };
 
     let request = Request::builder()
@@ -886,24 +1487,56 @@ async fn update_chat_settings_forbidden() {
 #[tokio::test]
 async fn update_chat_settings_not_found() {
     let test_app = test_helpers::spawn_app(false, false, false).await;
-    let _user = test_helpers::db::create_test_user( 
-        &test_app.db_pool, "update_notfound_user".to_string(), "password".to_string()).await.expect("user creation failed");
-    
-    let login_payload = serde_json::json!({ "identifier": "update_notfound_user", "password": "password" });
-    let login_request = Request::builder().method(Method::POST).uri("/api/auth/login")
+    let _user = test_helpers::db::create_test_user(
+        &test_app.db_pool,
+        "update_notfound_user".to_string(),
+        "password".to_string(),
+    )
+    .await
+    .expect("user creation failed");
+
+    let login_payload =
+        serde_json::json!({ "identifier": "update_notfound_user", "password": "password" });
+    let login_request = Request::builder()
+        .method(Method::POST)
+        .uri("/api/auth/login")
         .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
-        .body(Body::from(serde_json::to_string(&login_payload).unwrap())).unwrap();
-    let login_response = test_app.router.clone().oneshot(login_request).await.unwrap();
+        .body(Body::from(serde_json::to_string(&login_payload).unwrap()))
+        .unwrap();
+    let login_response = test_app
+        .router
+        .clone()
+        .oneshot(login_request)
+        .await
+        .unwrap();
     assert_eq!(login_response.status(), StatusCode::OK);
-    let auth_cookie = login_response.headers().get(header::SET_COOKIE).expect("Set-Cookie header").to_str().unwrap().to_string();
+    let auth_cookie = login_response
+        .headers()
+        .get(header::SET_COOKIE)
+        .expect("Set-Cookie header")
+        .to_str()
+        .unwrap()
+        .to_string();
 
     let non_existent_session_id = Uuid::new_v4();
     let update_data = UpdateChatSettingsRequest {
         system_prompt: Some("Update for Non-existent Session".to_string()),
-        temperature: None, max_output_tokens: None, frequency_penalty: None, presence_penalty: None, 
-        top_k: None, top_p: None, repetition_penalty: None, min_p: None, top_a: None, seed: None, 
-        logit_bias: None, model_name: None, history_management_strategy: None, 
-        history_management_limit: None, gemini_thinking_budget: None, gemini_enable_code_execution: None,
+        temperature: None,
+        max_output_tokens: None,
+        frequency_penalty: None,
+        presence_penalty: None,
+        top_k: None,
+        top_p: None,
+        repetition_penalty: None,
+        min_p: None,
+        top_a: None,
+        seed: None,
+        logit_bias: None,
+        model_name: None,
+        history_management_strategy: None,
+        history_management_limit: None,
+        gemini_thinking_budget: None,
+        gemini_enable_code_execution: None,
     };
 
     let request = Request::builder()
@@ -943,10 +1576,22 @@ async fn update_chat_settings_unauthorized() {
     let session_id_for_unauth = Uuid::new_v4();
     let update_data = UpdateChatSettingsRequest {
         system_prompt: Some("Unauthorized Update Attempt".to_string()),
-        temperature: None, max_output_tokens: None, frequency_penalty: None, presence_penalty: None, 
-        top_k: None, top_p: None, repetition_penalty: None, min_p: None, top_a: None, seed: None, 
-        logit_bias: None, model_name: None, history_management_strategy: None, 
-        history_management_limit: None, gemini_thinking_budget: None, gemini_enable_code_execution: None,
+        temperature: None,
+        max_output_tokens: None,
+        frequency_penalty: None,
+        presence_penalty: None,
+        top_k: None,
+        top_p: None,
+        repetition_penalty: None,
+        min_p: None,
+        top_a: None,
+        seed: None,
+        logit_bias: None,
+        model_name: None,
+        history_management_strategy: None,
+        history_management_limit: None,
+        gemini_thinking_budget: None,
+        gemini_enable_code_execution: None,
     };
 
     let request = Request::builder()

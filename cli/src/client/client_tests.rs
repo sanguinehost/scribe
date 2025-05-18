@@ -1,46 +1,49 @@
 // cli/src/client/client_tests.rs
 #![cfg(test)]
-use super::*; // Brings in items re-exported by cli/src/client/mod.rs
-use super::util::*; // For build_url and handle_response
+use super::util::*;
+use super::*; // Brings in items re-exported by cli/src/client/mod.rs // For build_url and handle_response
 
 // External Crate Imports
+use bigdecimal::BigDecimal;
+use chrono::Utc;
+use futures_util::{Stream, StreamExt}; // Added Stream
 use httptest::{
-    matchers::{all_of, request, contains, key, matches}, // Added matches
+    Expectation,
+    ServerHandle,
+    ServerPool,
+    matchers::{all_of, contains, key, matches, request}, // Added matches
     responders::{json_encoded, status_code},
-    Expectation, ServerPool, ServerHandle,
 };
 use reqwest::{Client as ReqwestClient, StatusCode, Url}; // Added StatusCode
+use reqwest_eventsource::{Event, EventSource};
 use secrecy::SecretString;
 use serde_json::json;
-use uuid::Uuid;
-use chrono::Utc;
-use tempfile::NamedTempFile;
-use bigdecimal::BigDecimal;
 use std::io::Write;
 use std::str::FromStr;
-use futures_util::{StreamExt, Stream}; // Added Stream
-use reqwest_eventsource::{Event, EventSource};
-
+use tempfile::NamedTempFile;
+use uuid::Uuid;
 
 // Project Crate Imports
+use super::interface::HttpClient;
+use super::types::{
+    AdminUserDetailResponse, AdminUserListResponse, AuthUserResponse, ClientCharacterDataForClient,
+    ClientChatMessageResponse, HealthStatus, RegisterPayload, SerializableLoginPayload,
+    SerializableRegisterPayload, StreamEvent, UpdateUserRoleRequest,
+};
 use crate::error::CliError;
 use scribe_backend::models::{
     auth::LoginPayload,
     characters::CharacterMetadata, // This was CharacterDataForClient in the old file, but CharacterMetadata is more likely for tests if it's a summary. Let's assume CharacterMetadata for now. If it causes issues, we can adjust.
-                                   // The original test used CharacterDataForClient, but it was aliased from the main client file.
-                                   // Since ClientCharacterDataForClient is now a distinct struct in types.rs and re-exported,
-                                   // we should use that if the tests were indeed using the client's representation.
-                                   // Let's stick to what was in the original test's direct use statements for now.
-    chats::{Chat, ChatMessage, ApiChatMessage, ChatSettingsResponse, MessageRole, UpdateChatSettingsRequest, GenerateChatRequest}, 
+    // The original test used CharacterDataForClient, but it was aliased from the main client file.
+    // Since ClientCharacterDataForClient is now a distinct struct in types.rs and re-exported,
+    // we should use that if the tests were indeed using the client's representation.
+    // Let's stick to what was in the original test's direct use statements for now.
+    chats::{
+        ApiChatMessage, Chat, ChatMessage, ChatSettingsResponse, GenerateChatRequest, MessageRole,
+        UpdateChatSettingsRequest,
+    },
     users::User,
 };
-use super::interface::HttpClient;
-use super::types::{
-    AuthUserResponse, ClientCharacterDataForClient, ClientChatMessageResponse, HealthStatus, RegisterPayload,
-    SerializableLoginPayload, SerializableRegisterPayload, StreamEvent, AdminUserListResponse,
-    AdminUserDetailResponse, UpdateUserRoleRequest,
-};
-
 
 // Shared setup for tests needing a mock server
 fn setup_test_server() -> (ServerHandle<'static>, ReqwestClientWrapper) {
@@ -130,7 +133,6 @@ async fn test_login_failure_unauthorized() {
         }
     });
 
-
     server.expect(
         Expectation::matching(request::method_path("POST", "/api/auth/login"))
             .respond_with(status_code(401).body(error_body.to_string())),
@@ -141,7 +143,11 @@ async fn test_login_failure_unauthorized() {
     assert!(result.is_err());
     match result.err().unwrap() {
         CliError::AuthFailed(msg) => {
-            assert!(msg.contains("Invalid credentials"), "Error message was: {}", msg);
+            assert!(
+                msg.contains("Invalid credentials"),
+                "Error message was: {}",
+                msg
+            );
             assert!(msg.contains("401"), "Error message was: {}", msg);
         }
         e => panic!("Expected CliError::AuthFailed, got {:?}", e),
@@ -177,7 +183,10 @@ async fn test_login_failure_rate_limit() {
                 expected_substring
             );
         }
-        e => panic!("Expected CliError::AuthFailed indicating rate limit, got {:?}", e),
+        e => panic!(
+            "Expected CliError::AuthFailed indicating rate limit, got {:?}",
+            e
+        ),
     }
 
     server.verify_and_clear();
@@ -198,7 +207,7 @@ async fn test_register_success() {
 
     server.expect(
         Expectation::matching(request::method_path("POST", "/api/auth/register"))
-            .respond_with(json_encoded(mock_user_response))
+            .respond_with(json_encoded(mock_user_response)),
     );
 
     let credentials = RegisterPayload {
@@ -219,35 +228,39 @@ async fn test_register_success() {
 #[tokio::test]
 async fn test_register_failure_conflict() {
     let (mut server, client) = setup_test_server();
-    
+
     let register_payload = RegisterPayload {
         username: "existinguser".to_string(),
         email: "existing@example.com".to_string(),
         password: SecretString::new("password123".to_string().into()),
     };
-    
+
     let error_body = json!({
         "error": {
             "message": "Username already taken"
         }
     });
-    
+
     server.expect(
         Expectation::matching(request::method_path("POST", "/api/auth/register"))
-            .respond_with(status_code(409).body(error_body.to_string()))
+            .respond_with(status_code(409).body(error_body.to_string())),
     );
-    
+
     let result = client.register(&register_payload).await;
-    
+
     assert!(result.is_err());
     match result.err().unwrap() {
         CliError::RegistrationFailed(msg) => {
-            assert!(msg.contains("Username already taken"), "Error message was: {}", msg);
+            assert!(
+                msg.contains("Username already taken"),
+                "Error message was: {}",
+                msg
+            );
             assert!(msg.contains("409"), "Error message was: {}", msg);
         }
         e => panic!("Expected CliError::RegistrationFailed, got {:?}", e),
     }
-    
+
     server.verify_and_clear();
 }
 
@@ -298,8 +311,14 @@ async fn test_list_characters_success() {
     assert_eq!(characters.len(), 2);
     assert_eq!(characters[0].id, char1_id);
     assert_eq!(characters[1].name, "Character Two");
-    assert_eq!(characters[0].description, Some("Description One".to_string()));
-    assert_eq!(characters[0].first_mes, Some("Hello from Character One!".to_string()));
+    assert_eq!(
+        characters[0].description,
+        Some("Description One".to_string())
+    );
+    assert_eq!(
+        characters[0].first_mes,
+        Some("Hello from Character One!".to_string())
+    );
     assert_eq!(characters[1].description, None);
     assert_eq!(characters[1].first_mes, None);
 
@@ -333,7 +352,6 @@ async fn test_list_characters_api_error() {
             "message": "Database connection failed"
         }
     });
-
 
     server.expect(
         Expectation::matching(request::method_path("GET", "/api/characters"))
@@ -396,8 +414,14 @@ async fn test_upload_character_success() {
     let uploaded_char = result.unwrap();
     assert_eq!(uploaded_char.id, mock_response_id);
     assert_eq!(uploaded_char.name, character_name);
-    assert_eq!(uploaded_char.description, Some("Uploaded via test".to_string()));
-    assert_eq!(uploaded_char.first_mes, Some("Hello from upload!".to_string()));
+    assert_eq!(
+        uploaded_char.description,
+        Some("Uploaded via test".to_string())
+    );
+    assert_eq!(
+        uploaded_char.first_mes,
+        Some("Hello from upload!".to_string())
+    );
 
     server.verify_and_clear();
 }
@@ -426,7 +450,9 @@ async fn test_upload_character_file_not_found() {
 async fn test_health_check_success() {
     let (mut server, client) = setup_test_server();
 
-    let mock_status = HealthStatus { status: "OK".to_string() };
+    let mock_status = HealthStatus {
+        status: "OK".to_string(),
+    };
 
     server.expect(
         Expectation::matching(request::method_path("GET", "/api/health"))
@@ -445,7 +471,7 @@ async fn test_health_check_success() {
 #[tokio::test]
 async fn test_health_check_api_error() {
     let (mut server, client) = setup_test_server();
-     let error_body = json!({
+    let error_body = json!({
         "error": {
             "message": "Service Unavailable"
         }
@@ -576,7 +602,7 @@ async fn test_get_character_success() {
     let character_id = Uuid::new_v4();
     let user_id_mock = Uuid::new_v4();
     let now = Utc::now();
-    
+
     let mock_character = json!({
         "id": character_id,
         "user_id": user_id_mock,
@@ -619,7 +645,6 @@ async fn test_get_character_not_found() {
             "message": format!("Character {} not found", character_id)
         }
     });
-
 
     let path_string = format!("/api/characters/fetch/{}", character_id);
     server.expect(
@@ -810,20 +835,30 @@ async fn test_get_chat_messages_success() {
             request::method("GET"),
             request::path(matches(path_string))
         ])
-            .respond_with(json_encoded(mock_api_response)), // Use the new mock_api_response
+        .respond_with(json_encoded(mock_api_response)), // Use the new mock_api_response
     );
 
     let result = client.get_chat_messages(session_id).await;
 
-    assert!(result.is_ok(), "get_chat_messages failed: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "get_chat_messages failed: {:?}",
+        result.err()
+    );
     let messages = result.unwrap();
     assert_eq!(messages.len(), 2);
     assert_eq!(messages[0].id, msg_id1);
     assert_eq!(messages[0].role, "user");
-    assert_eq!(messages[0].parts[0]["text"].as_str().unwrap(), "Hello there");
+    assert_eq!(
+        messages[0].parts[0]["text"].as_str().unwrap(),
+        "Hello there"
+    );
     assert_eq!(messages[1].id, msg_id2);
     assert_eq!(messages[1].role, "assistant");
-    assert_eq!(messages[1].parts[0]["text"].as_str().unwrap(), "General Kenobi!");
+    assert_eq!(
+        messages[1].parts[0]["text"].as_str().unwrap(),
+        "General Kenobi!"
+    );
 
     server.verify_and_clear();
 }
@@ -840,7 +875,7 @@ async fn test_get_chat_messages_success_empty() {
             request::method("GET"),
             request::path(matches(path_string))
         ])
-            .respond_with(json_encoded(mock_api_response)),
+        .respond_with(json_encoded(mock_api_response)),
     );
 
     let result = client.get_chat_messages(session_id).await;
@@ -868,7 +903,7 @@ async fn test_get_chat_messages_not_found() {
             request::method("GET"),
             request::path(matches(path_string))
         ])
-            .respond_with(status_code(404).body(error_body.to_string())),
+        .respond_with(status_code(404).body(error_body.to_string())),
     );
 
     let result = client.get_chat_messages(session_id).await;
@@ -983,21 +1018,24 @@ async fn test_send_message_success() {
     let response_content = "Hello, user!";
 
     // 1. Test with JSON response format
-    let mock_api_response = json!({ "message_id": response_message_id, "content": response_content });
-    
+    let mock_api_response =
+        json!({ "message_id": response_message_id, "content": response_content });
+
     server.expect(
         Expectation::matching(all_of![
             request::method("POST"),
             request::path(matches(format!("/api/chats/{}/generate.*", session_id)))
         ])
-        .respond_with(json_encoded(mock_api_response))
+        .respond_with(json_encoded(mock_api_response)),
     );
 
-    let result = client
-        .send_message(session_id, message_content, None)
-        .await;
+    let result = client.send_message(session_id, message_content, None).await;
 
-    assert!(result.is_ok(), "send_message with JSON response failed: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "send_message with JSON response failed: {:?}",
+        result.err()
+    );
     let response_message = result.unwrap();
     assert_eq!(response_message.content, response_content.as_bytes());
     assert_eq!(response_message.message_type, MessageRole::Assistant);
@@ -1008,7 +1046,7 @@ async fn test_send_message_success() {
 
     // 2. Test with SSE response format
     let sse_response = "event: content\ndata: Hello, user from SSE!\n\nevent: done\ndata: [DONE]\n";
-    
+
     server.expect(
         Expectation::matching(all_of![
             request::method("POST"),
@@ -1017,15 +1055,17 @@ async fn test_send_message_success() {
         .respond_with(
             status_code(200)
                 .append_header("content-type", "text/event-stream")
-                .body(sse_response)
-        )
+                .body(sse_response),
+        ),
     );
 
-    let result = client
-        .send_message(session_id, message_content, None)
-        .await;
+    let result = client.send_message(session_id, message_content, None).await;
 
-    assert!(result.is_ok(), "send_message with SSE response failed: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "send_message with SSE response failed: {:?}",
+        result.err()
+    );
     let response_message = result.unwrap();
     assert_eq!(response_message.content, "Hello, user from SSE!".as_bytes());
     assert_eq!(response_message.message_type, MessageRole::Assistant);
@@ -1046,49 +1086,48 @@ async fn test_send_message_session_not_found() {
         }
     });
 
-
     server.expect(
         Expectation::matching(all_of![
             request::method("POST"),
             request::path(matches(format!("/api/chats/{}/generate.*", session_id)))
         ])
-        .respond_with(status_code(404).body(error_body_json.to_string()))
+        .respond_with(status_code(404).body(error_body_json.to_string())),
     );
 
-    let result = client
-        .send_message(session_id, message_content, None)
-        .await;
+    let result = client.send_message(session_id, message_content, None).await;
 
     assert!(result.is_err());
     match result.err().unwrap() {
         CliError::ApiError { status, message } => {
             assert_eq!(status, StatusCode::NOT_FOUND);
-            assert!(message.contains(&error_message_text), 
-                "Expected message to contain '{}', but got: '{}'", error_message_text, message);
+            assert!(
+                message.contains(&error_message_text),
+                "Expected message to contain '{}', but got: '{}'",
+                error_message_text,
+                message
+            );
         }
         e => panic!("Expected CliError::ApiError, got {:?}", e),
     }
 
     server.verify_and_clear();
-    
+
     // Test SSE error response format
     let sse_error_body = format!("event: error\ndata: Session {} not found", session_id);
-    
+
     server.expect(
         Expectation::matching(all_of![
             request::method("POST"),
             request::path(matches(format!("/api/chats/{}/generate.*", session_id)))
         ])
         .respond_with(
-            status_code(200) 
+            status_code(200)
                 .append_header("content-type", "text/event-stream")
-                .body(sse_error_body)
-        )
+                .body(sse_error_body),
+        ),
     );
 
-    let result = client
-        .send_message(session_id, message_content, None)
-        .await;
+    let result = client.send_message(session_id, message_content, None).await;
 
     assert!(result.is_err());
     match result.err().unwrap() {
@@ -1113,7 +1152,8 @@ fn test_generate_chat_request_serde() {
     };
 
     let serialized = serde_json::to_string(&original).expect("Serialization failed");
-    let deserialized: GenerateChatRequest = serde_json::from_str(&serialized).expect("Deserialization failed");
+    let deserialized: GenerateChatRequest =
+        serde_json::from_str(&serialized).expect("Deserialization failed");
 
     assert_eq!(original.history.len(), deserialized.history.len());
     assert_eq!(original.history[0].role, deserialized.history[0].role);
@@ -1125,7 +1165,7 @@ fn test_generate_chat_request_serde() {
 async fn test_delete_chat_success() {
     let (mut server, client) = setup_test_server();
     let chat_id = Uuid::new_v4();
-    
+
     // Set up the correct expectation for the new endpoint following the character router pattern
     // Using explicit /remove/:id pattern to match backend's route.
     // The routes for getting and deleting were changed from /:id to /fetch/:id and /remove/:id
@@ -1135,13 +1175,13 @@ async fn test_delete_chat_success() {
             request::method("DELETE"),
             request::path(matches(format!("/api/chats-api/chats/remove/{}", chat_id)))
         ])
-        .respond_with(status_code(204))
+        .respond_with(status_code(204)),
     );
-    
+
     let result = client.delete_chat(chat_id).await;
-    
+
     assert!(result.is_ok(), "Delete chat failed: {:?}", result.err());
-    
+
     server.verify_and_clear();
 }
 
@@ -1154,7 +1194,7 @@ async fn test_delete_chat_not_found() {
             "message": format!("Chat session {} not found", chat_id)
         }
     });
-    
+
     // Set up the correct expectation for the new endpoint following the character router pattern
     // Using explicit /remove/:id pattern to match backend's route to avoid 404 errors
     server.expect(
@@ -1162,11 +1202,11 @@ async fn test_delete_chat_not_found() {
             request::method("DELETE"),
             request::path(matches(format!("/api/chats-api/chats/remove/{}", chat_id)))
         ])
-        .respond_with(status_code(404).body(error_body.to_string()))
+        .respond_with(status_code(404).body(error_body.to_string())),
     );
-    
+
     let result = client.delete_chat(chat_id).await;
-    
+
     assert!(result.is_err());
     match result.err().unwrap() {
         CliError::ApiError { status, message } => {
@@ -1175,7 +1215,7 @@ async fn test_delete_chat_not_found() {
         }
         e => panic!("Expected CliError::ApiError with 404, got {:?}", e),
     }
-    
+
     server.verify_and_clear();
 }
 

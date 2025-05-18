@@ -16,7 +16,7 @@ pub async fn handle_start_chat_action<H: IoHandler, C: HttpClient>(
     // 1. Select a character
     let character_id = select_character(client, io_handler).await?;
     tracing::info!(%character_id, "Character selected for chat");
-    
+
     let mut first_mes_content: Option<String> = None;
 
     // Fetch character details to display information
@@ -24,7 +24,8 @@ pub async fn handle_start_chat_action<H: IoHandler, C: HttpClient>(
         Ok(metadata) => {
             io_handler.write_line(&format!("\n--- Character: {} ---", metadata.name))?;
             if let Some(first_mes_bytes) = metadata.first_mes.as_ref() {
-                first_mes_content = Some(String::from_utf8_lossy(first_mes_bytes.as_bytes()).to_string());
+                first_mes_content =
+                    Some(String::from_utf8_lossy(first_mes_bytes.as_bytes()).to_string());
                 // Do not print here, will be passed to chat loop
                 // io_handler.write_line(&first_mes_content.as_ref().unwrap())?;
             } else {
@@ -35,7 +36,10 @@ pub async fn handle_start_chat_action<H: IoHandler, C: HttpClient>(
         }
         Err(e) => {
             tracing::error!(error = ?e, %character_id, "Failed to fetch character details");
-            io_handler.write_line(&format!("Warning: Could not fetch character details: {}. Proceeding with chat creation.", e))?;
+            io_handler.write_line(&format!(
+                "Warning: Could not fetch character details: {}. Proceeding with chat creation.",
+                e
+            ))?;
             return Err(e); // Return error as we need character details
         }
     };
@@ -49,22 +53,30 @@ pub async fn handle_start_chat_action<H: IoHandler, C: HttpClient>(
             return Err(e);
         }
     };
-    
+
     let chat_id = chat_session.id;
     tracing::info!(%chat_id, "Chat session created");
-    
+
     // 3. Configure chat session with default settings
-    io_handler.write_line(&format!("Starting streaming chat with model: {}", current_model))?;
-    
+    io_handler.write_line(&format!(
+        "Starting streaming chat with model: {}",
+        current_model
+    ))?;
+
     // Apply default settings from configuration
     io_handler.write_line("Applying default chat settings...")?;
     match apply_default_settings_to_session(client, chat_id).await {
         Ok(_) => {
-            io_handler.write_line("Session ready with your default settings. You can now start chatting.")?;
-        },
+            io_handler.write_line(
+                "Session ready with your default settings. You can now start chatting.",
+            )?;
+        }
         Err(e) => {
-            io_handler.write_line(&format!("Warning: Failed to apply default settings: {}. Proceeding with system defaults.", e))?;
-            
+            io_handler.write_line(&format!(
+                "Warning: Failed to apply default settings: {}. Proceeding with system defaults.",
+                e
+            ))?;
+
             // Fallback to basic settings if default settings application fails
             let settings_to_update = UpdateChatSettingsRequest {
                 gemini_thinking_budget: Some(1024), // Default thinking budget is 1024
@@ -85,18 +97,26 @@ pub async fn handle_start_chat_action<H: IoHandler, C: HttpClient>(
                 history_management_limit: None,
                 model_name: Some(current_model.to_string()),
             };
-            
-            match client.update_chat_settings(chat_id, &settings_to_update).await {
+
+            match client
+                .update_chat_settings(chat_id, &settings_to_update)
+                .await
+            {
                 Ok(_) => {
-                    io_handler.write_line("Session ready with basic settings. You can now start chatting.")?;
-                },
+                    io_handler.write_line(
+                        "Session ready with basic settings. You can now start chatting.",
+                    )?;
+                }
                 Err(e) => {
-                    io_handler.write_line(&format!("Warning: Failed to update session settings: {}. Proceeding with defaults.", e))?;
+                    io_handler.write_line(&format!(
+                        "Warning: Failed to update session settings: {}. Proceeding with defaults.",
+                        e
+                    ))?;
                 }
             }
         }
     }
-    
+
     // 4. Start streaming chat session
     if let Err(e) = run_interactive_streaming_chat_loop(
         client,
@@ -104,11 +124,13 @@ pub async fn handle_start_chat_action<H: IoHandler, C: HttpClient>(
         io_handler,
         current_model,
         first_mes_content,
-    ).await {
+    )
+    .await
+    {
         tracing::error!(error = ?e, "Streaming chat loop failed");
         io_handler.write_line(&format!("Chat encountered an error: {}", e))?;
     }
-    
+
     io_handler.write_line("Chat session ended.")?;
     Ok(())
 }

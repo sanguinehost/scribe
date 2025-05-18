@@ -238,7 +238,10 @@ fn test_from_parsed_card_v2_with_collections() {
         new_char.alternate_greetings,
         Some(vec![Some("hi".to_string())])
     );
-    assert_eq!(new_char.description, Some("A description".as_bytes().to_vec()));
+    assert_eq!(
+        new_char.description,
+        Some("A description".as_bytes().to_vec())
+    );
 }
 
 // Add a test for V3 conversion as well for completeness
@@ -275,16 +278,43 @@ fn test_from_parsed_card_v3() {
     assert_eq!(new_char.name, "V3 Full");
     assert_eq!(new_char.spec, "chara_card_v3");
     assert_eq!(new_char.spec_version, "3.0");
-    assert_eq!(new_char.description, Some(data_v3.description.as_bytes().to_vec()));
-    assert_eq!(new_char.personality, Some(data_v3.personality.as_bytes().to_vec()));
-    assert_eq!(new_char.scenario, Some(data_v3.scenario.as_bytes().to_vec()));
-    assert_eq!(new_char.first_mes, Some(data_v3.first_mes.as_bytes().to_vec()));
-    assert_eq!(new_char.mes_example, Some(data_v3.mes_example.as_bytes().to_vec()));
-    assert_eq!(new_char.creator_notes, Some(data_v3.creator_notes.as_bytes().to_vec()));
-    assert_eq!(new_char.system_prompt, Some(data_v3.system_prompt.as_bytes().to_vec()));
-    assert_eq!(new_char.post_history_instructions, Some(data_v3.post_history_instructions.as_bytes().to_vec()));
+    assert_eq!(
+        new_char.description,
+        Some(data_v3.description.as_bytes().to_vec())
+    );
+    assert_eq!(
+        new_char.personality,
+        Some(data_v3.personality.as_bytes().to_vec())
+    );
+    assert_eq!(
+        new_char.scenario,
+        Some(data_v3.scenario.as_bytes().to_vec())
+    );
+    assert_eq!(
+        new_char.first_mes,
+        Some(data_v3.first_mes.as_bytes().to_vec())
+    );
+    assert_eq!(
+        new_char.mes_example,
+        Some(data_v3.mes_example.as_bytes().to_vec())
+    );
+    assert_eq!(
+        new_char.creator_notes,
+        Some(data_v3.creator_notes.as_bytes().to_vec())
+    );
+    assert_eq!(
+        new_char.system_prompt,
+        Some(data_v3.system_prompt.as_bytes().to_vec())
+    );
+    assert_eq!(
+        new_char.post_history_instructions,
+        Some(data_v3.post_history_instructions.as_bytes().to_vec())
+    );
     assert_eq!(new_char.tags, Some(vec![Some("v3tag".to_string())]));
-    assert_eq!(new_char.alternate_greetings, Some(vec![Some("v3greet".to_string())]));
+    assert_eq!(
+        new_char.alternate_greetings,
+        Some(vec![Some("v3greet".to_string())])
+    );
     assert_eq!(new_char.creator, Some(data_v3.creator));
     assert_eq!(new_char.character_version, Some(data_v3.character_version));
 }
