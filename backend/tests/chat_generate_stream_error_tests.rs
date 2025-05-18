@@ -6,10 +6,9 @@ use axum::{
 };
 use chrono::Utc;
 use diesel::prelude::*;
-use diesel::RunQueryDsl as _;
-use genai::chat::{ChatStreamEvent, StreamChunk, StreamEnd};
+use genai::chat::{ChatStreamEvent, StreamChunk};
 use mime;
-use secrecy::{ExposeSecret, SecretBox, SecretString};
+use secrecy::ExposeSecret;
 use std::time::Duration;
 use tower::ServiceExt;
 use uuid::Uuid;
@@ -216,11 +215,23 @@ async fn generate_chat_response_streaming_ai_error() {
 
     assert_eq!(
         messages.len(),
-        1,
-        "Should have only the AI message after stream error"
+        2, // User message from payload + partial AI message
+        "Should have user message and partial AI message after stream error. Actual: {:?}", messages
     );
 
-    let ai_msg_db = messages.first().unwrap();
+    let user_msg_db = messages.get(0).expect("User message should exist");
+    assert_eq!(user_msg_db.message_type, MessageRole::User);
+    let decrypted_user_content_bytes = scribe_backend::crypto::decrypt_gcm(
+        &user_msg_db.content,
+        user_msg_db.content_nonce.as_ref().expect("User message nonce missing for ai_error test"),
+        dek_for_assertion
+    ).expect("Failed to decrypt user message content for ai_error test");
+    let decrypted_user_content_str = String::from_utf8(decrypted_user_content_bytes.expose_secret().clone())
+        .expect("Failed to convert decrypted user message to string");
+    assert_eq!(decrypted_user_content_str, "User message for error stream");
+
+
+    let ai_msg_db = messages.get(1).expect("Partial AI message should exist");
     assert_eq!(ai_msg_db.message_type, MessageRole::Assistant);
     let decrypted_ai_content_bytes = scribe_backend::crypto::decrypt_gcm(
         &ai_msg_db.content,
@@ -250,7 +261,7 @@ async fn generate_chat_response_streaming_initiation_error() {
     }
     
     let username = "stream_init_err_user";
-    let password = "password123"; 
+    let password = "password123";
     let user_with_dek = test_helpers::db::create_test_user(
         &test_app.db_pool,
         username.to_string(),
@@ -258,6 +269,9 @@ async fn generate_chat_response_streaming_initiation_error() {
     )
     .await
     .expect("Failed to create test user with DEK");
+    
+    let dek_for_assertion = &user_with_dek.dek.as_ref().expect("User DEK not found for assertion").0;
+
 
     let login_payload = serde_json::json!({
         "identifier": username,
@@ -282,7 +296,7 @@ async fn generate_chat_response_streaming_initiation_error() {
     let parsed_cookie = cookie::Cookie::parse(auth_cookie_header)
         .expect("Failed to parse Set-Cookie header");
     let auth_cookie = format!("{}={}", parsed_cookie.name(), parsed_cookie.value());
-
+    
     let conn_pool = test_app.db_pool.clone();
     let user_id_clone = user_with_dek.id;
     let char_name_init_err = "Stream Init Err Char".to_string();
@@ -395,11 +409,20 @@ async fn generate_chat_response_streaming_initiation_error() {
         
     assert_eq!(
         messages_from_db.len(),
-        0, 
-        "Should have no messages saved after stream initiation error. Found: {:?}", messages_from_db
+        1,
+        "Should have only the user's message saved after stream initiation error. Found: {:?}", messages_from_db
     );
-
-    // Skip message content verification since no messages should be present
+    
+    let user_msg_db = messages_from_db.first().unwrap();
+    assert_eq!(user_msg_db.message_type, MessageRole::User);
+    let decrypted_user_content_bytes = scribe_backend::crypto::decrypt_gcm(
+        &user_msg_db.content,
+        user_msg_db.content_nonce.as_ref().expect("User message nonce missing for stream_init_error test"),
+        dek_for_assertion
+    ).expect("Failed to decrypt user message content for stream_init_error test");
+    let decrypted_user_content_str = String::from_utf8(decrypted_user_content_bytes.expose_secret().clone())
+        .expect("Failed to convert decrypted user message to string");
+    assert_eq!(decrypted_user_content_str, user_message_content);
 }
 
 #[tokio::test]
@@ -413,7 +436,7 @@ async fn generate_chat_response_streaming_error_before_content() {
     }
     
     let username = "stream_err_b4_content_user";
-    let password = "password123"; 
+    let password = "password123";
     let user = test_helpers::db::create_test_user(
         &test_app.db_pool,
         username.to_string(), // Corrected: .to_string()
@@ -451,8 +474,8 @@ async fn generate_chat_response_streaming_error_before_content() {
     let conn_pool = test_app.db_pool.clone();
     let user_id_clone = user.id;
     let char_name = "Stream Err B4 Content Char".to_string();
-    let character: DbCharacter = conn_pool.get().await.expect("Failed to get DB conn for char create").interact(move |conn_sync| { 
-        let new_char_card = scribe_backend::models::character_card::NewCharacter { 
+    let character: DbCharacter = conn_pool.get().await.expect("Failed to get DB conn for char create").interact(move |conn_sync| {
+        let new_char_card = scribe_backend::models::character_card::NewCharacter {
             user_id: user_id_clone,
             name: char_name,
             spec: "test_spec_v1.0".to_string(),
@@ -475,7 +498,7 @@ async fn generate_chat_response_streaming_error_before_content() {
     let user_id_clone_session = user.id;
     let character_id_clone_session = character.id;
     let session_title = format!("Test Chat with Char {}", character.id);
-    let session: ChatSession = conn_pool.get().await.expect("Failed to get DB conn for session create").interact(move |conn_sync| { 
+    let session: ChatSession = conn_pool.get().await.expect("Failed to get DB conn for session create").interact(move |conn_sync| {
         let new_chat_session = NewChat {
             id: Uuid::new_v4(),
             user_id: user_id_clone_session,
@@ -519,8 +542,9 @@ async fn generate_chat_response_streaming_error_before_content() {
         .set_stream_response(mock_stream_items);
 
    // Construct the new payload with history
+   let user_message_content = "User message for error before content";
    let history = vec![
-       ApiChatMessage { role: "user".to_string(), content: "User message for error before content".to_string() },
+       ApiChatMessage { role: "user".to_string(), content: user_message_content.to_string() },
    ];
    let payload = GenerateChatRequest {
        history,
@@ -570,11 +594,20 @@ async fn generate_chat_response_streaming_error_before_content() {
         
     assert_eq!(
         messages.len(),
-        0, // No messages should be saved
-        "Should have no messages saved after stream error before content. Actual: {:?}", messages
+        1,
+        "Should have only the user's message saved after stream error before content. Actual: {:?}", messages
     );
 
-    // Skip message content verification since no messages should be present
+    let user_msg_db = messages.first().unwrap();
+    assert_eq!(user_msg_db.message_type, MessageRole::User);
+    let decrypted_user_content_bytes = scribe_backend::crypto::decrypt_gcm(
+        &user_msg_db.content,
+        user_msg_db.content_nonce.as_ref().expect("User message nonce missing for stream_err_b4_content test"),
+        dek_for_assertion
+    ).expect("Failed to decrypt user message content for stream_err_b4_content test");
+    let decrypted_user_content_str = String::from_utf8(decrypted_user_content_bytes.expose_secret().clone())
+        .expect("Failed to convert decrypted user message to string");
+    assert_eq!(decrypted_user_content_str, user_message_content);
 }
 
 #[tokio::test]
@@ -588,7 +621,7 @@ async fn generate_chat_response_streaming_genai_json_error() {
     }
     
     let username = "stream_json_err_user";
-    let password = "password123"; 
+    let password = "password123";
     let user = test_helpers::db::create_test_user(
         &test_app.db_pool,
         username.to_string(), // Corrected: .to_string()
@@ -670,14 +703,15 @@ async fn generate_chat_response_streaming_genai_json_error() {
     let conn_pool_msg = test_app.db_pool.clone(); // Use a new variable name
     let session_id_clone_msg = session.id;
     let user_id_clone_msg = user.id;
-    conn_pool_msg.get().await.expect("Failed to get DB conn for msg save").interact(move |conn_sync| { 
+    let initial_user_message_content = "User message for JSON error stream"; // Content for the first user message
+    conn_pool_msg.get().await.expect("Failed to get DB conn for msg save").interact(move |conn_sync| {
         let new_message = NewMessage {
             id: Uuid::new_v4(),
             session_id: session_id_clone_msg,
             user_id: user_id_clone_msg,
             message_type: MessageRole::User,
-            content: "User message for JSON error stream".as_bytes().to_vec(),
-            content_nonce: None,
+            content: initial_user_message_content.as_bytes().to_vec(),
+            content_nonce: None, // Assuming not encrypted for this direct insert
             created_at: Utc::now(),
             updated_at: Utc::now(),
             role: Some("user".to_string()),
@@ -688,7 +722,7 @@ async fn generate_chat_response_streaming_genai_json_error() {
         };
         diesel::insert_into(chat_messages_dsl::chat_messages)
             .values(&new_message)
-            .execute(conn_sync) 
+            .execute(conn_sync)
     }).await.expect("DB interaction for save message failed").expect("Error saving user message");
 
     // Mock the AI client to return a specific error mimicking JsonValueExt
@@ -720,8 +754,9 @@ async fn generate_chat_response_streaming_genai_json_error() {
         .set_stream_response(mock_stream_items);
 
    // Construct the new payload with history
+   let payload_user_message_content = "User message for JSON error stream"; // This is the second user message, from the payload
    let history = vec![
-       ApiChatMessage { role: "user".to_string(), content: "User message for JSON error stream".to_string() },
+       ApiChatMessage { role: "user".to_string(), content: payload_user_message_content.to_string() },
    ];
    let payload = GenerateChatRequest {
        history,
@@ -779,38 +814,49 @@ async fn generate_chat_response_streaming_genai_json_error() {
         
     assert_eq!(
         messages.len(),
-        2, // User message from payload + partial AI message
-        "Should have user message and partial AI message after JSON error. Actual: {:?}", messages
+        3, // Initial User message (DB setup) + Payload User message + partial AI message
+        "Should have initial user message, payload user message, and partial AI message after JSON error. Actual: {:?}", messages
     );
 
-    // messages[0] is the user message 
-    // messages[1] is the partial AI message ("Some initial content. ")
-
-    let user_msg_db = messages.get(0).expect("User message should exist");
-    assert_eq!(user_msg_db.message_type, MessageRole::User);
-    
-    // Check if the content is already in a readable format (not encrypted)
-    let user_content_str = match user_msg_db.content_nonce {
+    let initial_user_msg_db = messages.get(0).expect("Initial User message should exist");
+    assert_eq!(initial_user_msg_db.message_type, MessageRole::User);
+    // Decrypt and assert content for initial_user_msg_db
+    let initial_user_content_str = match initial_user_msg_db.content_nonce {
         Some(ref nonce) => {
-            // Content is encrypted
-            let decrypted_user_content_bytes = scribe_backend::crypto::decrypt_gcm(
-                &user_msg_db.content,
+            let decrypted_bytes = scribe_backend::crypto::decrypt_gcm(
+                &initial_user_msg_db.content,
                 nonce,
                 dek_for_assertion
-            ).expect("Failed to decrypt user message content for genai_json_error test");
-            String::from_utf8(decrypted_user_content_bytes.expose_secret().clone())
-                .expect("Failed to convert decrypted user message to string")
+            ).expect("Failed to decrypt initial user message content for genai_json_error test");
+            String::from_utf8(decrypted_bytes.expose_secret().clone()).expect("Failed to convert decrypted initial user message to string")
         },
         None => {
-            // Content is not encrypted
-            String::from_utf8(user_msg_db.content.clone())
-                .expect("Failed to convert user message content to string")
+            String::from_utf8(initial_user_msg_db.content.clone()).expect("Failed to convert initial user message content to string (unencrypted)")
         }
     };
-    
-    assert_eq!(user_content_str, "User message for JSON error stream");
+    assert_eq!(initial_user_content_str, initial_user_message_content);
 
-    let ai_msg_db = messages.get(1).expect("Partial AI message should exist");
+    // Assert the second message: User message from payload
+    let payload_user_msg_db = messages.get(1).expect("Payload User message should exist");
+    assert_eq!(payload_user_msg_db.message_type, MessageRole::User);
+    // Decrypt and assert content for payload_user_msg_db
+    let payload_user_content_str = match payload_user_msg_db.content_nonce {
+        Some(ref nonce) => {
+            let decrypted_bytes = scribe_backend::crypto::decrypt_gcm(
+                &payload_user_msg_db.content,
+                nonce,
+                dek_for_assertion
+            ).expect("Failed to decrypt payload user message content for genai_json_error test");
+            String::from_utf8(decrypted_bytes.expose_secret().clone()).expect("Failed to convert decrypted payload user message to string")
+        },
+        None => { // This case is more likely for user messages saved by the handler before encryption of AI response
+             String::from_utf8(payload_user_msg_db.content.clone()).expect("Failed to convert payload user message content to string (unencrypted)")
+        }
+    };
+    assert_eq!(payload_user_content_str, payload_user_message_content);
+
+    // Assert the third message: Partial AI message
+    let ai_msg_db = messages.get(2).expect("Partial AI message should exist");
     assert_eq!(ai_msg_db.message_type, MessageRole::Assistant);
     let decrypted_ai_content_bytes = scribe_backend::crypto::decrypt_gcm(
         &ai_msg_db.content,

@@ -927,8 +927,11 @@ async fn test_chat_message_insert_and_query() -> Result<(), AnyhowError> {
                     session_id_clone,
                     user_id_clone,
                     MessageRole::User,
-                    "Hello, character!".as_bytes().to_vec(), // Convert to Vec<u8>
-                    None, // Fix E0061: Add missing nonce argument
+                    "Hello, character!".as_bytes().to_vec(),
+                    None, // nonce
+                    None, // role_str
+                    None, // parts_json
+                    None, // attachments_json
                     None, // Add prompt_tokens
                     None  // Add completion_tokens
                 );
@@ -938,8 +941,11 @@ async fn test_chat_message_insert_and_query() -> Result<(), AnyhowError> {
                     session_id_clone,
                     user_id_clone, // Use the same user_id for assistant message in this test context
                     MessageRole::Assistant,
-                    "Hello, user!".as_bytes().to_vec(), // Convert to Vec<u8>
-                    None, // Fix E0061: Add missing nonce argument
+                    "Hello, user!".as_bytes().to_vec(),
+                    None, // nonce
+                    None, // role_str
+                    None, // parts_json
+                    None, // attachments_json
                     None, // Add prompt_tokens
                     None  // Add completion_tokens
                 );

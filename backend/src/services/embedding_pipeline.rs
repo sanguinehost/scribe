@@ -16,7 +16,7 @@ use std::sync::Arc;
 use tracing::{error, info, instrument, warn, debug}; // Added debug
 use uuid::Uuid;
 use tokio::time::{sleep, Duration}; // Added for rate limiting delay
-use secrecy::{ExposeSecret}; // For SessionDek
+use secrecy::{ExposeSecret, SecretBox}; // For SessionDek & fixed key
 use crate::auth::session_dek::SessionDek; // Import SessionDek
 
 // Define metadata to store alongside vectors
@@ -923,8 +923,12 @@ mod tests {
             let (state, mock_qdrant, mock_embed_client) = setup_pipeline_test_env().await;
             
             let original_content = "NoDEK"; // Shorter, simpler content
+            
+            // Use a fixed key for deterministic encryption in this test
+            let fixed_key_bytes = [0u8; 32]; // Example fixed key
+            let key_for_encryption_only = SecretBox::new(Box::new(fixed_key_bytes.to_vec()));
+
             // Simulate encrypted content and nonce, but we won't provide DEK
-            let key_for_encryption_only = crate::crypto::crypto_generate_dek().expect("Failed to generate key for encryption only in test"); // Returns SecretBox<Vec<u8>>
             let (encrypted_content, nonce) = encrypt_gcm(original_content.as_bytes(), &key_for_encryption_only).expect("Encryption failed in test");
     
             let test_message = ChatMessage {
@@ -947,7 +951,7 @@ mod tests {
             assert!(result.is_ok(), "Processing message with nonce but no DEK failed: {:?}", result.err());
     
             let calls = mock_embed_client.get_calls();
-            assert_eq!(calls.len(), 1, "Expected one call to embedding client");
+            assert_eq!(calls.len(), 1, "Expected one call to embedding client. Actual calls: {:#?}", calls);
             // Expect lossy conversion of the ciphertext, then trimmed, to match chunk_text behavior
             let expected_embedded_content = String::from_utf8_lossy(&encrypted_content).trim().to_string();
             assert_eq!(calls[0].0, expected_embedded_content, "Expected trimmed lossy ciphertext to be embedded");
