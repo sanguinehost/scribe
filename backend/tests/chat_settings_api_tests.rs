@@ -432,18 +432,23 @@ async fn get_chat_settings_defaults() {
         .expect("Diesel chat insert failed");
 
     // Construct AppState for the service call
-    let app_state_for_service = AppState {
-        pool: test_app.db_pool.clone(),
-        config: test_app.config.clone(),
-        ai_client: test_app.ai_client.clone(),
-        embedding_client: test_app.mock_embedding_client.clone(),
-        qdrant_service: test_app.qdrant_service.clone(),
-        embedding_pipeline_service: test_app.mock_embedding_pipeline_service.clone(),
-        embedding_call_tracker: test_app.embedding_call_tracker.clone(),
-        token_counter: Arc::new(scribe_backend::services::hybrid_token_counter::HybridTokenCounter::new_local_only(
-            scribe_backend::services::tokenizer_service::TokenizerService::new("/home/socol/Workspace/sanguine-scribe/backend/resources/tokenizers/gemma.model")
-                .expect("Failed to create tokenizer for test"))),
-    };
+    // Create dependent services for AppState
+    let encryption_service_for_test = Arc::new(scribe_backend::services::encryption_service::EncryptionService::new());
+    let chat_override_service_for_test = Arc::new(scribe_backend::services::chat_override_service::ChatOverrideService::new(test_app.db_pool.clone(), encryption_service_for_test.clone()));
+    let tokenizer_service_for_test = scribe_backend::services::tokenizer_service::TokenizerService::new("/home/socol/Workspace/sanguine-scribe/backend/resources/tokenizers/gemma.model")
+                .expect("Failed to create tokenizer for test");
+    let hybrid_token_counter_for_test = Arc::new(scribe_backend::services::hybrid_token_counter::HybridTokenCounter::new_local_only(tokenizer_service_for_test));
+
+    let app_state_for_service = AppState::new(
+        test_app.db_pool.clone(),
+        test_app.config.clone(),
+        test_app.ai_client.clone(),
+        test_app.mock_embedding_client.clone(),
+        test_app.qdrant_service.clone(), 
+        test_app.mock_embedding_pipeline_service.clone(),
+        chat_override_service_for_test,
+        hybrid_token_counter_for_test
+    );
 
     let created_chat_session = chat_service::create_session_and_maybe_first_message(
         Arc::new(app_state_for_service),

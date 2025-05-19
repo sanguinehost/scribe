@@ -75,16 +75,6 @@ pub struct CharacterUpdateDto {
     pub extensions: Option<Json<JsonValue>>,
 }
 
-/// DTO for character field override in a specific chat session
-#[derive(Debug, Serialize, Deserialize)]
-pub struct CharacterOverrideDto {
-    /// The name of the field to override (e.g., "description", "personality", "first_mes")
-    pub field_name: String,
-    
-    /// The new value for the field, specific to this chat session
-    pub value: String,
-}
-
 impl CharacterCreateDto {
     /// Validates that all required fields are provided and not empty
     pub fn validate(&self) -> Result<(), String> {
@@ -125,31 +115,5 @@ impl CharacterCreateDto {
         } else {
             Err(format!("Validation errors: {}", errors.join(", ")))
         }
-    }
-}
-
-impl CharacterOverrideDto {
-    /// Validates that the field name is valid and supported for overrides
-    pub fn validate(&self) -> Result<(), String> {
-        // Initially supporting these fields as per plan
-        let supported_fields = ["description", "personality", "first_mes"];
-        
-        if self.field_name.trim().is_empty() {
-            return Err("field_name is required".to_string());
-        }
-        
-        if self.value.trim().is_empty() {
-            return Err("value is required".to_string());
-        }
-        
-        if !supported_fields.contains(&self.field_name.as_str()) {
-            return Err(format!(
-                "field_name '{}' is not supported for overrides. Supported fields: {}", 
-                self.field_name, 
-                supported_fields.join(", ")
-            ));
-        }
-        
-        Ok(())
     }
 }

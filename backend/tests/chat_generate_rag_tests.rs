@@ -3,7 +3,7 @@
 
 use axum::{
     body::Body,
-    http::{Method, Request, StatusCode, header},
+    http::{Method, Request, StatusCode, header}, // Keep for other requests if any still use oneshot
 };
 use chrono::Utc;
 use genai::{
@@ -13,9 +13,10 @@ use genai::{
 };
 use http_body_util::BodyExt;
 use mime;
+use reqwest; // Added reqwest
 use serde_json::Value;
 use std::time::Duration;
-use tower::ServiceExt;
+use tower::ServiceExt; // Keep for other requests if any still use oneshot
 use uuid::Uuid;
 
 // Diesel imports
@@ -39,7 +40,6 @@ use scribe_backend::{
     test_helpers::{self, PipelineCall},
 };
 use serde_json::json;
-use tower_cookies::Cookie;
 
 // Add this struct definition after the imports
 pub struct RagTestContext {
@@ -63,31 +63,28 @@ async fn test_generate_chat_response_triggers_embeddings() -> anyhow::Result<()>
     )
     .await?;
 
-    // API Login
+    // API Login using reqwest
+    let client = reqwest::Client::builder().cookie_store(true).build()?;
     let login_payload = json!({
         "identifier": user.username,
         "password": "password",
     });
-    let login_request = Request::builder()
-        .method(Method::POST)
-        .uri("/api/auth/login")
-        .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
-        .body(Body::from(serde_json::to_string(&login_payload)?))?;
-    let login_response = test_app.router.clone().oneshot(login_request).await?;
-    assert_eq!(login_response.status(), StatusCode::OK, "Login failed");
 
-    let raw_cookie_header = login_response
-        .headers()
-        .get(header::SET_COOKIE)
-        .context("Set-Cookie header missing from login response")?
-        .to_str()?;
-    let parsed_cookie = Cookie::parse(raw_cookie_header.to_string())?;
-    assert_eq!(
-        parsed_cookie.name(),
-        "id",
-        "Session cookie name is not 'id'"
-    );
-    let auth_cookie = format!("{}={}", parsed_cookie.name(), parsed_cookie.value());
+    let login_response = client
+        .post(format!("{}/api/auth/login", &test_app.address))
+        .header(reqwest::header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
+        .json(&login_payload)
+        .send()
+        .await?;
+
+    assert_eq!(login_response.status(), reqwest::StatusCode::OK, "Login failed");
+
+    // Extract cookie for subsequent non-reqwest client requests or for verification
+    let auth_cookie = login_response
+        .cookies()
+        .find(|c| c.name() == "id") // Standard axum_login session cookie name
+        .map(|c| format!("{}={}", c.name(), c.value()))
+        .context("Session cookie 'id' not found in login response")?;
 
     let character_name = "Char for Embed Trigger".to_string();
     let user_id_for_char = user.id;
@@ -348,22 +345,28 @@ async fn test_generate_chat_response_triggers_embeddings_with_existing_session()
     )
     .await?;
 
-    let login_payload = json!({ "identifier": user.username, "password": "password" });
-    let login_request = Request::builder()
-        .method(Method::POST)
-        .uri("/api/auth/login")
-        .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
-        .body(Body::from(serde_json::to_string(&login_payload)?))?;
-    let login_response = test_app.router.clone().oneshot(login_request).await?;
-    assert_eq!(login_response.status(), StatusCode::OK, "Login failed");
-    let raw_cookie_header = login_response
-        .headers()
-        .get(header::SET_COOKIE)
-        .context("Set-Cookie header missing")?
-        .to_str()?;
-    let parsed_cookie = Cookie::parse(raw_cookie_header.to_string())?;
-    assert_eq!(parsed_cookie.name(), "id");
-    let auth_cookie = format!("{}={}", parsed_cookie.name(), parsed_cookie.value());
+    // API Login using reqwest
+    let client = reqwest::Client::builder().cookie_store(true).build()?;
+    let login_payload = json!({
+        "identifier": user.username,
+        "password": "password",
+    });
+
+    let login_response = client
+        .post(format!("{}/api/auth/login", &test_app.address))
+        .header(reqwest::header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
+        .json(&login_payload)
+        .send()
+        .await?;
+
+    assert_eq!(login_response.status(), reqwest::StatusCode::OK, "Login failed");
+
+    // Extract cookie for subsequent non-reqwest client requests or for verification
+    let auth_cookie = login_response
+        .cookies()
+        .find(|c| c.name() == "id") // Standard axum_login session cookie name
+        .map(|c| format!("{}={}", c.name(), c.value()))
+        .context("Session cookie 'id' not found in login response")?;
 
     let char_name = "Embed Test Char".to_string();
     let user_id_for_char = user.id;
@@ -592,22 +595,28 @@ async fn test_rag_context_injection_in_prompt() -> anyhow::Result<()> {
     )
     .await?;
 
-    let login_payload = json!({ "identifier": user.username, "password": "password" });
-    let login_request = Request::builder()
-        .method(Method::POST)
-        .uri("/api/auth/login")
-        .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
-        .body(Body::from(serde_json::to_string(&login_payload)?))?;
-    let login_response = test_app.router.clone().oneshot(login_request).await?;
-    assert_eq!(login_response.status(), StatusCode::OK, "Login failed");
-    let raw_cookie_header = login_response
-        .headers()
-        .get(header::SET_COOKIE)
-        .context("Set-Cookie missing")?
-        .to_str()?;
-    let parsed_cookie = Cookie::parse(raw_cookie_header.to_string())?;
-    assert_eq!(parsed_cookie.name(), "id");
-    let auth_cookie = format!("{}={}", parsed_cookie.name(), parsed_cookie.value());
+    // API Login using reqwest
+    let client = reqwest::Client::builder().cookie_store(true).build()?;
+    let login_payload = json!({
+        "identifier": user.username,
+        "password": "password",
+    });
+
+    let login_response = client
+        .post(format!("{}/api/auth/login", &test_app.address))
+        .header(reqwest::header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
+        .json(&login_payload)
+        .send()
+        .await?;
+
+    assert_eq!(login_response.status(), reqwest::StatusCode::OK, "Login failed");
+
+    // Extract cookie for subsequent non-reqwest client requests or for verification
+    let auth_cookie = login_response
+        .cookies()
+        .find(|c| c.name() == "id") // Standard axum_login session cookie name
+        .map(|c| format!("{}={}", c.name(), c.value()))
+        .context("Session cookie 'id' not found in login response")?;
 
     let char_name = "RAG Test Char".to_string();
     let user_id_for_char = user.id;
@@ -910,22 +919,28 @@ async fn generate_chat_response_rag_retrieval_error() -> anyhow::Result<()> {
     )
     .await?;
 
-    let login_payload = json!({ "identifier": user.username, "password": "password" });
-    let login_request = Request::builder()
-        .method(Method::POST)
-        .uri("/api/auth/login")
-        .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
-        .body(Body::from(serde_json::to_string(&login_payload)?))?;
-    let login_response = test_app.router.clone().oneshot(login_request).await?;
-    assert_eq!(login_response.status(), StatusCode::OK, "Login failed");
-    let raw_cookie_header = login_response
-        .headers()
-        .get(header::SET_COOKIE)
-        .context("Set-Cookie missing")?
-        .to_str()?;
-    let parsed_cookie = Cookie::parse(raw_cookie_header.to_string())?;
-    assert_eq!(parsed_cookie.name(), "id");
-    let auth_cookie = format!("{}={}", parsed_cookie.name(), parsed_cookie.value());
+    // API Login using reqwest
+    let client = reqwest::Client::builder().cookie_store(true).build()?;
+    let login_payload = json!({
+        "identifier": user.username,
+        "password": "password",
+    });
+
+    let login_response = client
+        .post(format!("{}/api/auth/login", &test_app.address))
+        .header(reqwest::header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
+        .json(&login_payload)
+        .send()
+        .await?;
+
+    assert_eq!(login_response.status(), reqwest::StatusCode::OK, "Login failed");
+
+    // Extract cookie for subsequent non-reqwest client requests or for verification
+    let auth_cookie = login_response
+        .cookies()
+        .find(|c| c.name() == "id") // Standard axum_login session cookie name
+        .map(|c| format!("{}={}", c.name(), c.value()))
+        .context("Session cookie 'id' not found in login response")?;
 
     let char_name = "RAG Retrieval Err Char".to_string();
     let user_id_for_char = user.id;
@@ -1154,26 +1169,28 @@ async fn setup_test_data(use_real_ai: bool) -> anyhow::Result<RagTestContext> {
     )
     .await?;
 
-    let login_payload = json!({ "identifier": user.username, "password": "password" });
-    let login_request = Request::builder()
-        .method(Method::POST)
-        .uri("/api/auth/login")
-        .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
-        .body(Body::from(serde_json::to_string(&login_payload)?))?;
-    let login_response = test_app.router.clone().oneshot(login_request).await?;
-    assert_eq!(
-        login_response.status(),
-        StatusCode::OK,
-        "Login failed in setup"
-    );
-    let raw_cookie_header = login_response
-        .headers()
-        .get(header::SET_COOKIE)
-        .context("Set-Cookie missing in setup")?
-        .to_str()?;
-    let parsed_cookie = Cookie::parse(raw_cookie_header.to_string())?;
-    assert_eq!(parsed_cookie.name(), "id");
-    let auth_cookie = format!("{}={}", parsed_cookie.name(), parsed_cookie.value());
+    // API Login using reqwest
+    let client = reqwest::Client::builder().cookie_store(true).build()?;
+    let login_payload = json!({
+        "identifier": user.username,
+        "password": "password",
+    });
+
+    let login_response = client
+        .post(format!("{}/api/auth/login", &test_app.address))
+        .header(reqwest::header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
+        .json(&login_payload)
+        .send()
+        .await?;
+
+    assert_eq!(login_response.status(), reqwest::StatusCode::OK, "Login failed in setup");
+
+    // Extract cookie for subsequent non-reqwest client requests or for verification
+    let auth_cookie = login_response
+        .cookies()
+        .find(|c| c.name() == "id") // Standard axum_login session cookie name
+        .map(|c| format!("{}={}", c.name(), c.value()))
+        .context("Session cookie 'id' not found in login response for setup")?;
 
     let char_name = "Char for Embed Trigger Setup".to_string();
     let user_id_for_char = user.id;

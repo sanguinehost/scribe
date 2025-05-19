@@ -53,6 +53,7 @@ use tower_sessions::{Expiry, SessionManagerLayer, cookie::SameSite}; // Add Arc 
 use axum_server::tls_rustls::RustlsConfig; // <-- ADD this
 use rustls::crypto::ring;
 use std::path::PathBuf; // <-- Add PathBuf import // <-- Import the ring provider module
+use scribe_backend::services::chat_override_service::ChatOverrideService; // <<< ADDED IMPORT
 
 // Define the embedded migrations macro
 pub const MIGRATIONS: EmbeddedMigrations = embed_migrations!("./migrations");
@@ -147,6 +148,16 @@ async fn main() -> Result<()> {
         token_counter_default_model
     );
 
+    // --- Initialize Encryption Service (shared) ---
+    // Assuming EncryptionService is cheap to create and stateless for now, or managed internally if it needs more setup
+    let encryption_service_arc = Arc::new(scribe_backend::services::encryption_service::EncryptionService::new());
+
+    // --- Initialize Chat Override Service ---
+    tracing::info!("Initializing ChatOverrideService...");
+    let chat_override_service = ChatOverrideService::new(pool.clone(), encryption_service_arc.clone()); // Pass DB pool and encryption service
+    let chat_override_service_arc = Arc::new(chat_override_service);
+    tracing::info!("ChatOverrideService initialized.");
+
     // --- Session Store Setup ---
     // Ideally load from config/env, generating is okay for dev
     let session_store = DieselSessionStore::new(pool.clone());
@@ -199,6 +210,7 @@ async fn main() -> Result<()> {
         embedding_client_arc,
         qdrant_service_arc,
         embedding_pipeline_service, // Add the embedding pipeline service
+        chat_override_service_arc,  // <<< PASSING THE SERVICE TO APPSTATE
         hybrid_token_counter_arc,   // Added
     );
 

@@ -9,7 +9,6 @@ use bigdecimal::{BigDecimal, ToPrimitive};
 use chrono::Utc;
 use diesel::prelude::*;
 use genai::chat::{ChatRole, MessageContent};
-use http_body_util::BodyExt;
 use mime;
 use reqwest;
 use serde_json::{Value, json};
@@ -196,51 +195,46 @@ async fn generate_chat_response_uses_session_settings() -> Result<(), anyhow::Er
         .body(Body::from(serde_json::to_string(&login_payload)?))?;
 
     info!("Sending login request");
-    let login_response = test_app.router.clone().oneshot(login_request).await?;
-    assert_eq!(login_response.status(), StatusCode::OK, "Login failed");
+    // let login_response = test_app.router.clone().oneshot(login_request).await?; // OLD WAY
+    
+    // New way using reqwest client
+    let client = reqwest::Client::builder().cookie_store(true).build()?; // Enable cookie store
+    let login_response_reqwest = client
+        .post(format!("{}/api/auth/login", test_app.address))
+        .header(reqwest::header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
+        .json(&login_payload)
+        .send()
+        .await?;
+
+    assert_eq!(login_response_reqwest.status(), reqwest::StatusCode::OK, "Login failed");
 
     // Extract and log all cookies
-    let cookie_headers = login_response.headers().get_all(header::SET_COOKIE);
-    info!(
-        "Login response received, status: {}",
-        login_response.status()
-    );
-    info!("All cookie headers: {:?}", cookie_headers);
-
-    let cookie_header = login_response
-        .headers()
-        .get(header::SET_COOKIE)
-        .ok_or_else(|| anyhow::anyhow!("No Set-Cookie header found"))?;
-    let cookie_str = cookie_header.to_str()?;
-    info!("Cookie header string: {}", cookie_str);
-
-    let parsed_cookie =
-        Cookie::parse(cookie_str).map_err(|e| anyhow::anyhow!("Failed to parse cookie: {}", e))?;
-
-    info!(
-        "Parsed cookie: name={}, value={}",
-        parsed_cookie.name(),
-        parsed_cookie.value()
-    );
-
-    // Get the session ID from the cookie
-    let session_id = parsed_cookie.value();
-    info!("Using session ID: {}", session_id);
-
-    // Use the entire cookie header in the requests
-    let cookie_header_value = format!("{}={}", parsed_cookie.name(), parsed_cookie.value());
-    info!("Using cookie header: {}", cookie_header_value);
+    // The reqwest::Client `client` was built with cookie_store(true),
+    // so it will handle cookies automatically for subsequent requests.
+    // The following block is for logging/verification of the cookie from the login response.
+    let mut auth_cookie_value_for_logging = String::new();
+    info!("Cookies from login response:");
+    for cookie in login_response_reqwest.cookies() {
+        info!("Found cookie: name={}, value={}", cookie.name(), cookie.value());
+        if cookie.name() == "tower.sid" {
+            auth_cookie_value_for_logging = format!("{}={}", cookie.name(), cookie.value());
+        }
+    }
+    if auth_cookie_value_for_logging.is_empty() {
+        warn!("Session cookie (tower.sid) not found in login response for logging purposes. Client will still attempt to use stored cookies.");
+    } else {
+        info!("Logged session cookie for verification: {}", auth_cookie_value_for_logging);
+    }
 
     // Give the session store time to persist the session
     info!("Waiting for session to be persisted...");
     sleep(Duration::from_millis(2000)).await;
 
-    // Debug the session data to check if the DEK is present
-    match debug_session_data(&test_app.db_pool, session_id.to_string()).await {
-        Ok(_) => info!("Successfully retrieved session debug info"),
-        Err(e) => error!("Failed to debug session data: {}", e),
-    }
-
+    // The call to debug_session_data here was problematic as `session` (DbChat)
+    // is not yet defined, and debugging the login session (tower.sid)
+    // would require extracting the cookie value and adapting debug_session_data.
+    // Removing this call as the later call to debug_session_data (for the chat session)
+    // is more relevant to the test's core assertions.
     let now = Utc::now();
     let new_db_character = NewCharacter {
         user_id: user.id,
@@ -475,32 +469,42 @@ async fn generate_chat_response_uses_session_settings() -> Result<(), anyhow::Er
 
     // Check session one last time before making chat generate request
     info!("Checking session before chat generate request");
-    match debug_session_data(&test_app.db_pool, session_id.to_string()).await {
+    match debug_session_data(&test_app.db_pool, session.id.to_string()).await {
         Ok(_) => info!("Session verified before chat generate request"),
         Err(e) => error!("Failed to verify session before chat generate: {}", e),
     }
 
     info!("Building chat generate request");
-    let request = Request::builder()
-        .method(Method::POST)
-        .uri(format!("/api/chat/{}/generate", session.id))
-        .header(header::COOKIE, cookie_header_value)
-        .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
-        .header(header::ACCEPT, mime::APPLICATION_JSON.as_ref())
-        .body(Body::from(serde_json::to_vec(&payload)?))?;
+    // let request = Request::builder() // OLD WAY
+    //     .method(Method::POST)
+    //     .uri(format!("/api/chat/{}/generate", session.id))
+    //     .header(header::COOKIE, cookie_header_value)
+    //     .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
+    //     .header(header::ACCEPT, mime::APPLICATION_JSON.as_ref())
+    //     .body(Body::from(serde_json::to_vec(&payload)?))?;
 
     info!("Sending chat generate request");
-    let response = test_app.router.clone().oneshot(request).await?;
+    // let response = test_app.router.clone().oneshot(request).await?; // OLD WAY
+
+    let generate_response = client // Reuse the reqwest client with its cookie store
+        .post(format!("{}/api/chat/{}/generate", test_app.address, session.id))
+        .header(reqwest::header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
+        .header(reqwest::header::ACCEPT, mime::APPLICATION_JSON.as_ref())
+        // No need to manually set the cookie header if the client's cookie_store is working
+        .json(&payload)
+        .send()
+        .await?;
+
     info!(
         "Received chat generate response, status: {}",
-        response.status()
+        generate_response.status()
     );
 
     // Uncomment this to explicitly capture the response body for debugging
-    // let body_bytes = response.into_body().collect().await?.to_bytes();
+    // let body_bytes = generate_response.bytes().await?;
     // info!("Response body: {:?}", String::from_utf8_lossy(&body_bytes));
 
-    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(generate_response.status(), reqwest::StatusCode::OK);
 
     let last_request = test_app
         .mock_ai_client
@@ -938,20 +942,20 @@ async fn generate_chat_response_json_stream_initiation_error() -> Result<(), any
         model: Some("gemini/mock-model".to_string()),
     };
 
-    let request = Request::builder()
-        .method(Method::POST)
-        .uri(format!("/api/chat/{}/generate", session.id))
-        .header(header::COOKIE, cookie_header_value)
-        .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
-        .header(header::ACCEPT, mime::APPLICATION_JSON.as_ref())
-        .body(Body::from(serde_json::to_vec(&payload)?))?;
-
-    let response = test_app.router.clone().oneshot(request).await?;
+    let client = reqwest::Client::new(); // Initialize client
+    let response = client
+        .post(format!("{}/api/chat/{}/generate", test_app.address, session.id))
+        .header(reqwest::header::COOKIE, cookie_header_value)
+        .header(reqwest::header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
+        .header(reqwest::header::ACCEPT, mime::APPLICATION_JSON.as_ref())
+        .json(&payload)
+        .send()
+        .await?;
 
     // Assert that the status code is 500 Internal Server Error
     assert_eq!(
         response.status(),
-        StatusCode::INTERNAL_SERVER_ERROR,
+        reqwest::StatusCode::INTERNAL_SERVER_ERROR, // Changed to reqwest::StatusCode
         "Expected 500 Internal Server Error due to AI service error"
     );
 
@@ -1393,15 +1397,16 @@ async fn generate_chat_response_history_sliding_window_messages() -> anyhow::Res
         }],
         model: None,
     };
-    let request = Request::builder()
-        .method(Method::POST)
-        .uri(format!("/api/chat/{}/generate", session_id))
-        .header(header::COOKIE, &auth_cookie)
-        .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
-        .body(Body::from(serde_json::to_string(&payload)?))?;
-    let response = test_app.router.clone().oneshot(request).await?;
-    assert_eq!(response.status(), StatusCode::OK);
-    let _ = response.into_body().collect().await?.to_bytes();
+    let client = reqwest::Client::new(); // Initialize client
+    let response = client
+        .post(format!("{}/api/chat/{}/generate", test_app.address, session_id))
+        .header(reqwest::header::COOKIE, &auth_cookie)
+        .header(reqwest::header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
+        .json(&payload)
+        .send()
+        .await?;
+    assert_eq!(response.status(), reqwest::StatusCode::OK);
+    let _ = response.bytes().await?; // Changed for reqwest::Response
 
     test_helpers::assert_ai_history(
         &test_app,
@@ -1671,15 +1676,16 @@ async fn generate_chat_response_history_sliding_window_tokens() -> anyhow::Resul
         }],
         model: None,
     };
-    let request = Request::builder()
-        .method(Method::POST)
-        .uri(format!("/api/chat/{}/generate", session_id))
-        .header(header::COOKIE, &auth_cookie)
-        .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
-        .body(Body::from(serde_json::to_string(&payload)?))?;
-    let response = test_app.router.clone().oneshot(request).await?;
-    assert_eq!(response.status(), StatusCode::OK);
-    let _ = response.into_body().collect().await?.to_bytes();
+    let client = reqwest::Client::new(); // Initialize client
+    let response = client
+        .post(format!("{}/api/chat/{}/generate", test_app.address, session_id))
+        .header(reqwest::header::COOKIE, &auth_cookie)
+        .header(reqwest::header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
+        .json(&payload)
+        .send()
+        .await?;
+    assert_eq!(response.status(), reqwest::StatusCode::OK);
+    let _ = response.bytes().await?; // Changed for reqwest::Response
 
     test_helpers::assert_ai_history(
         &test_app,
@@ -1944,15 +1950,16 @@ async fn test_generate_chat_response_history_truncate_tokens() -> anyhow::Result
         }],
         model: None,
     };
-    let request = Request::builder()
-        .method(Method::POST)
-        .uri(format!("/api/chat/{}/generate", session_id))
-        .header(header::COOKIE, &auth_cookie)
-        .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
-        .body(Body::from(serde_json::to_string(&payload)?))?;
-    let response = test_app.router.clone().oneshot(request).await?;
-    assert_eq!(response.status(), StatusCode::OK);
-    let _ = response.into_body().collect().await?.to_bytes();
+    let client = reqwest::Client::new(); // Initialize client
+    let response = client
+        .post(format!("{}/api/chat/{}/generate", test_app.address, session_id))
+        .header(reqwest::header::COOKIE, &auth_cookie)
+        .header(reqwest::header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
+        .json(&payload)
+        .send()
+        .await?;
+    assert_eq!(response.status(), reqwest::StatusCode::OK);
+    let _ = response.bytes().await?; // Changed for reqwest::Response
 
     test_helpers::assert_ai_history(
         &test_app,
@@ -1990,15 +1997,16 @@ async fn test_generate_chat_response_history_truncate_tokens() -> anyhow::Result
             reasoning_content: None,
             usage: Default::default(),
         }));
-    let request_2 = Request::builder()
-        .method(Method::POST)
-        .uri(format!("/api/chat/{}/generate", session_id))
-        .header(header::COOKIE, &auth_cookie)
-        .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
-        .body(Body::from(serde_json::to_string(&payload)?))?; // Same payload for simplicity
-    let response_2 = test_app.router.clone().oneshot(request_2).await?;
-    assert_eq!(response_2.status(), StatusCode::OK);
-    let _ = response_2.into_body().collect().await?.to_bytes();
+    // Client is reused from above
+    let response_2 = client
+        .post(format!("{}/api/chat/{}/generate", test_app.address, session_id))
+        .header(reqwest::header::COOKIE, &auth_cookie)
+        .header(reqwest::header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
+        .json(&payload) // Same payload for simplicity
+        .send()
+        .await?;
+    assert_eq!(response_2.status(), reqwest::StatusCode::OK);
+    let _ = response_2.bytes().await?; // Changed for reqwest::Response
 
     // DB now has: M1, R1, M2, R2, "User message 3", "Mock response"
     // History for AI (limit 25) should be: "y one", "Message two", "Reply two"
@@ -2237,15 +2245,16 @@ async fn generate_chat_response_history_none() -> anyhow::Result<()> {
         }],
         model: None,
     };
-    let request = Request::builder()
-        .method(Method::POST)
-        .uri(format!("/api/chat/{}/generate", session_id))
-        .header(header::COOKIE, &auth_cookie)
-        .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
-        .body(Body::from(serde_json::to_string(&payload)?))?;
-    let response = test_app.router.clone().oneshot(request).await?;
-    assert_eq!(response.status(), StatusCode::OK);
-    let _ = response.into_body().collect().await?.to_bytes();
+    let client = reqwest::Client::new(); // Initialize client
+    let response = client
+        .post(format!("{}/api/chat/{}/generate", test_app.address, session_id))
+        .header(reqwest::header::COOKIE, &auth_cookie)
+        .header(reqwest::header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
+        .json(&payload)
+        .send()
+        .await?;
+    assert_eq!(response.status(), reqwest::StatusCode::OK);
+    let _ = response.bytes().await?; // Changed for reqwest::Response
 
     test_helpers::assert_ai_history(&test_app, vec![("User", "Msg 1"), ("Assistant", "Reply 1")]);
     test_data_guard.cleanup().await?;
@@ -2511,15 +2520,16 @@ async fn generate_chat_response_history_truncate_tokens_limit_30() -> anyhow::Re
         }],
         model: None,
     };
-    let request = Request::builder()
-        .method(Method::POST)
-        .uri(format!("/api/chat/{}/generate", session_id))
-        .header(header::COOKIE, &auth_cookie)
-        .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
-        .body(Body::from(serde_json::to_string(&payload)?))?;
-    let response = test_app.router.clone().oneshot(request).await?;
-    assert_eq!(response.status(), StatusCode::OK);
-    let _ = response.into_body().collect().await?.to_bytes();
+    let client = reqwest::Client::new(); // Initialize client
+    let response = client
+        .post(format!("{}/api/chat/{}/generate", test_app.address, session_id))
+        .header(reqwest::header::COOKIE, &auth_cookie)
+        .header(reqwest::header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
+        .json(&payload)
+        .send()
+        .await?;
+    assert_eq!(response.status(), reqwest::StatusCode::OK); // Changed to reqwest::StatusCode
+    let _ = response.bytes().await?;
 
     test_helpers::assert_ai_history(
         &test_app,
@@ -2557,15 +2567,16 @@ async fn generate_chat_response_history_truncate_tokens_limit_30() -> anyhow::Re
             reasoning_content: None,
             usage: Default::default(),
         }));
-    let request_2 = Request::builder()
-        .method(Method::POST)
-        .uri(format!("/api/chat/{}/generate", session_id))
-        .header(header::COOKIE, &auth_cookie)
-        .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
-        .body(Body::from(serde_json::to_string(&payload)?))?; // Same payload for simplicity
-    let response_2 = test_app.router.clone().oneshot(request_2).await?;
-    assert_eq!(response_2.status(), StatusCode::OK);
-    let _ = response_2.into_body().collect().await?.to_bytes();
+    // Client is reused from above
+    let response_2 = client
+        .post(format!("{}/api/chat/{}/generate", test_app.address, session_id))
+        .header(reqwest::header::COOKIE, &auth_cookie)
+        .header(reqwest::header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
+        .json(&payload) // Same payload for simplicity
+        .send()
+        .await?;
+    assert_eq!(response_2.status(), reqwest::StatusCode::OK); // Changed to reqwest::StatusCode
+    let _ = response_2.bytes().await?; // Changed for reqwest::Response
 
     // DB now has: M1, R1, M2, R2, "User message 3", "Mock response"
     // History for AI (limit 25) should be: "y one", "Message two", "Reply two"
@@ -2686,19 +2697,12 @@ async fn test_get_chat_messages_success() -> anyhow::Result<()> {
 
     // Verify that we can get the messages
     tracing::info!("Making API request to /api/chat/{}/generate", session_id);
-    let response = reqwest::Client::new()
-        .post(&format!(
-            "{}/api/chat/{}/generate",
-            test_app.address, session_id
-        ))
-        .header("Cookie", &auth_cookie)
-        .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
-        .body(
-            serde_json::to_string(
-                &json!({"history": [{"role": "user", "content": "Test message"}]}),
-            )
-            .unwrap(),
-        )
+    let client = reqwest::Client::new();
+    let response = client
+        .post(format!("{}/api/chat/{}/generate", test_app.address, session_id))
+        .header(reqwest::header::COOKIE, &auth_cookie)
+        .header(reqwest::header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
+        .json(&json!({"history": [{"role": "user", "content": "Test message"}]}))
         .send()
         .await?;
 
@@ -2706,7 +2710,7 @@ async fn test_get_chat_messages_success() -> anyhow::Result<()> {
     let body = response.text().await?;
     tracing::info!("Response status: {}, body: {}", status, body);
 
-    assert_eq!(status, reqwest::StatusCode::OK); // Changed from 200 to reqwest::StatusCode::OK
+    assert_eq!(status, reqwest::StatusCode::OK);
 
     // Explicitly call cleanup to release test resources
     test_data_guard.cleanup().await?;
@@ -2875,15 +2879,15 @@ async fn test_get_chat_messages_forbidden() -> anyhow::Result<()> {
         }],
         model: None,
     };
-    let request = Request::builder()
-        .method(Method::POST)
-        .uri(format!("/api/chat/{}/generate", session_a_id)) // User B tries to access User A's session
-        .header(header::COOKIE, &auth_cookie_b)
-        .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
-        .body(Body::from(serde_json::to_string(&payload)?))?;
-
-    let response = test_app.router.clone().oneshot(request).await?;
-    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    let client = reqwest::Client::new();
+    let response = client
+        .post(format!("{}/api/chat/{}/generate", test_app.address, session_a_id)) // User B tries to access User A's session
+        .header(reqwest::header::COOKIE, &auth_cookie_b)
+        .header(reqwest::header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
+        .json(&payload)
+        .send()
+        .await?;
+    assert_eq!(response.status(), reqwest::StatusCode::FORBIDDEN);
     test_data_guard.cleanup().await?;
     Ok(())
 }
@@ -2901,14 +2905,16 @@ async fn test_get_chat_messages_unauthorized() -> Result<(), Box<dyn std::error:
         history: vec![],
         model: None,
     };
-    let request = Request::builder()
-        .method(Method::POST)
-        .uri(format!("/api/chat/{}/generate", uuid))
-        .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
-        .body(Body::from(serde_json::to_string(&payload)?))?;
+    
+    let client = reqwest::Client::new();
+    let response = client
+        .post(format!("{}/api/chat/{}/generate", test_app.address, uuid))
+        .header(reqwest::header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
+        .json(&payload)
+        .send()
+        .await?;
 
-    let response = test_app.router.clone().oneshot(request).await?;
-    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(response.status(), reqwest::StatusCode::UNAUTHORIZED);
 
     Ok(())
 }

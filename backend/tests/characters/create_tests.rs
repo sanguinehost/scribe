@@ -1,12 +1,11 @@
 #![cfg(test)]
 use super::helpers::{
-    get_text_body, insert_test_user_with_password, run_db_op, spawn_app,
+    get_text_body, insert_test_user_with_password, run_db_op,
 };
 use axum::{
     body::{Body},
     http::{header, Method, Request, StatusCode},
 };
-use reqwest::StatusCode as ReqwestStatusCode;
 use scribe_backend::test_helpers::{ensure_tracing_initialized, TestDataGuard};
 use serde_json::json;
 use tower::ServiceExt; // For oneshot
