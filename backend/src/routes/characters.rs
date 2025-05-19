@@ -16,7 +16,7 @@ use axum::{
     extract::{Path, State, multipart::Multipart}, // Removed unused Extension
     http::StatusCode,
     response::{IntoResponse, Json, Response},
-    routing::{delete, get, post}, // ADDED delete here
+    routing::{delete, get, post, put}, // ADDED delete here
 };
 use diesel::prelude::*; // Needed for .filter(), .load(), .first(), etc.
 use tracing::{error, info, instrument, trace}; // Use needed tracing macros, ADDED error, warn
@@ -31,7 +31,10 @@ use diesel::RunQueryDsl;
 use diesel::SelectableHelper;
 use diesel::result::Error as DieselError; // Add import for DieselError
 use secrecy::ExposeSecret; // Added for DEK expose
+use secrecy::SecretBox; // <<<<<<< ADDED SecretBox IMPORT HERE
 use serde::Deserialize; // Add serde import // Added for querying chat_sessions table
+use crate::models::character_dto::{CharacterCreateDto, CharacterUpdateDto}; // Added DTO imports
+use diesel_json; // Added import for diesel_json
 
 // Define the type alias for the auth session specific to our AuthBackend
 // type CurrentAuthSession = AuthSession<AppState>;
@@ -226,6 +229,173 @@ pub async fn upload_character_handler(
     let client_character_data = inserted_character
         .into_decrypted_for_client(Some(&dek.0))
         .await?;
+
+    Ok((StatusCode::CREATED, Json(client_character_data)))
+}
+
+// POST /api/characters - Manual character creation endpoint
+#[instrument(skip(state, auth_session, dek, create_dto), err)]
+pub async fn create_character_handler(
+    State(state): State<AppState>,
+    auth_session: CurrentAuthSession,
+    dek: SessionDek,
+    Json(create_dto): Json<CharacterCreateDto>,
+) -> Result<(StatusCode, Json<CharacterDataForClient>), AppError> {
+    // Get the user from the session
+    let user = auth_session
+        .user
+        .ok_or_else(|| AppError::Unauthorized("Authentication required".to_string()))?;
+    let local_user_id = user.id;
+
+    // Validate the DTO
+    if let Err(validation_error) = create_dto.validate() {
+        return Err(AppError::BadRequest(validation_error));
+    }
+
+    // Create EncryptionService for encrypting fields
+    let enc_service = EncryptionService::new();
+
+    // Helper function to encrypt a non-empty string field
+    async fn encrypt_string_field(
+        enc_service: &EncryptionService,
+        plaintext: &str,
+        dek_key: &SecretBox<Vec<u8>>,
+    ) -> Result<(Option<Vec<u8>>, Option<Vec<u8>>), AppError> {
+        if plaintext.is_empty() {
+            Ok((None, None))
+        } else {
+            let (ciphertext, nonce) = enc_service
+                .encrypt(plaintext, dek_key.expose_secret())
+                .await
+                .map_err(|e| AppError::EncryptionError(format!("Encryption failed: {}", e)))?;
+            Ok((Some(ciphertext), Some(nonce)))
+        }
+    }
+
+    // Encrypt fields from DTO
+    let (description_enc, description_nonce_enc) = encrypt_string_field(
+        &enc_service, 
+        create_dto.description.as_deref().expect("Description guaranteed by validation"), 
+        &dek.0
+    ).await?;
+    let (personality_enc, personality_nonce_enc) = encrypt_string_field(&enc_service, &create_dto.personality, &dek.0).await?;
+    let (scenario_enc, scenario_nonce_enc) = encrypt_string_field(&enc_service, &create_dto.scenario, &dek.0).await?;
+    let (first_mes_enc, first_mes_nonce_enc) = encrypt_string_field(
+        &enc_service, 
+        create_dto.first_mes.as_deref().expect("First message guaranteed by validation"), 
+        &dek.0
+    ).await?;
+    let (mes_example_enc, mes_example_nonce_enc) = encrypt_string_field(&enc_service, &create_dto.mes_example, &dek.0).await?;
+    let (creator_notes_enc, creator_notes_nonce_enc) = encrypt_string_field(&enc_service, &create_dto.creator_notes, &dek.0).await?;
+    let (system_prompt_enc, system_prompt_nonce_enc) = encrypt_string_field(&enc_service, &create_dto.system_prompt, &dek.0).await?;
+    let (post_history_instructions_enc, post_history_instructions_nonce_enc) = encrypt_string_field(&enc_service, &create_dto.post_history_instructions, &dek.0).await?;
+
+    // Create a NewCharacter from the DTO
+    let new_character = NewCharacter {
+        user_id: local_user_id,
+        name: create_dto.name.expect("Name should be present after validation"),
+        spec: "chara_card_v3".to_string(),
+        spec_version: "3.0".to_string(),
+        description: description_enc,
+        description_nonce: description_nonce_enc,
+        personality: personality_enc,
+        personality_nonce: personality_nonce_enc,
+        scenario: scenario_enc,
+        scenario_nonce: scenario_nonce_enc,
+        first_mes: first_mes_enc,
+        first_mes_nonce: first_mes_nonce_enc,
+        mes_example: mes_example_enc,
+        mes_example_nonce: mes_example_nonce_enc,
+        creator_notes: creator_notes_enc,
+        creator_notes_nonce: creator_notes_nonce_enc,
+        system_prompt: system_prompt_enc,
+        system_prompt_nonce: system_prompt_nonce_enc,
+        post_history_instructions: post_history_instructions_enc,
+        post_history_instructions_nonce: post_history_instructions_nonce_enc,
+        tags: if create_dto.tags.is_empty() { None } else { Some(create_dto.tags.into_iter().map(Some).collect()) },
+        creator: if create_dto.creator.is_empty() { None } else { Some(create_dto.creator) },
+        character_version: if create_dto.character_version.is_empty() { None } else { Some(create_dto.character_version) },
+        alternate_greetings: if create_dto.alternate_greetings.is_empty() { None } else { Some(create_dto.alternate_greetings.into_iter().map(Some).collect()) },
+        creator_notes_multilingual: create_dto.creator_notes_multilingual.map(|j| diesel_json::Json(j.0)), // Extract Value and wrap in Json
+        nickname: create_dto.nickname,
+        source: create_dto.source.and_then(|s| if s.is_empty() { None } else { Some(s.into_iter().map(Some).collect()) }),
+        group_only_greetings: if create_dto.group_only_greetings.is_empty() { None } else { Some(create_dto.group_only_greetings.into_iter().map(Some).collect()) },
+        creation_date: create_dto.creation_date.and_then(|ts| chrono::DateTime::from_timestamp(ts, 0)),
+        modification_date: create_dto.modification_date.and_then(|ts| chrono::DateTime::from_timestamp(ts, 0)), // User can provide, else DB default or updated_at logic might handle
+        extensions: create_dto.extensions.map(|j| diesel_json::Json(j.0)).or_else(|| Some(diesel_json::Json(serde_json::json!({})))), // Extract Value and wrap in Json, then ensure it's diesel_json::Json
+        // Fields from CharacterCardDataV3 not in CharacterCreateDto default to None or DB defaults
+        persona: None,
+        persona_nonce: None,
+        world_scenario: None,
+        world_scenario_nonce: None,
+        avatar: None, // Assuming no avatar for manual creation initially
+        chat: None, // Placeholder, might be related to specific chat integration
+        greeting: None, // first_mes is the primary greeting
+        greeting_nonce: None,
+        definition: None,
+        definition_nonce: None,
+        // tavern spec fields / other common fields, defaulting to None
+        default_voice: None,
+        category: None,
+        definition_visibility: None,
+        example_dialogue: None,
+        example_dialogue_nonce: None,
+        favorite: None,
+        first_message_visibility: None,
+        migrated_from: None,
+        model_prompt: None,
+        model_prompt_nonce: None,
+        model_prompt_visibility: None,
+        persona_visibility: None,
+        sharing_visibility: None,
+        status: None,
+        system_prompt_visibility: None,
+        system_tags: None,
+        token_budget: None,
+        usage_hints: None,
+        user_persona: None,
+        user_persona_nonce: None,
+        user_persona_visibility: None,
+        visibility: None,
+        world_scenario_visibility: None,
+        created_at: Some(chrono::Utc::now()),
+        updated_at: Some(chrono::Utc::now()),
+    };
+
+    info!(?new_character.name, user_id = %local_user_id, "Attempting to insert manually created character into DB for user");
+
+    // Insert the character into the database
+    let conn_insert_op = state.pool.get().await.map_err(|e| AppError::DbPoolError(e.to_string()))?;
+    let returned_id: Uuid = conn_insert_op
+        .interact(move |conn_insert_block| {
+            diesel::insert_into(characters)
+                .values(new_character)
+                .returning(id)
+                .get_result::<Uuid>(conn_insert_block)
+        })
+        .await
+        .map_err(|e| AppError::InternalServerErrorGeneric(format!("Insert interaction error: {}", e)))?
+        .map_err(|e| AppError::InternalServerErrorGeneric(format!("Insert DB error: {}", e)))?;
+
+    info!(character_id = %returned_id, "Character basic info returned after manual insertion");
+
+    // Fetch the inserted character to return its full data
+    let conn_fetch_op = state.pool.get().await.map_err(|e| AppError::DbPoolError(e.to_string()))?;
+    let inserted_character: Character = conn_fetch_op
+        .interact(move |conn_select_block| {
+            characters
+                .find(returned_id)
+                .select(Character::as_select())
+                .get_result::<Character>(conn_select_block)
+        })
+        .await
+        .map_err(|e| AppError::InternalServerErrorGeneric(format!("Fetch interaction error: {}", e)))?
+        .map_err(|e| AppError::InternalServerErrorGeneric(format!("Fetch DB error: {}", e)))?;
+
+    info!(character_id = %inserted_character.id, "Character manually created and saved (full data fetched)");
+
+    // Convert to client format with decryption
+    let client_character_data = inserted_character.into_decrypted_for_client(Some(&dek.0)).await?;
 
     Ok((StatusCode::CREATED, Json(client_character_data)))
 }
@@ -749,11 +919,161 @@ pub async fn delete_character_handler(
     }
 }
 
+// PUT /api/characters/:id - Update an existing character
+#[instrument(skip(state, auth_session, dek, update_dto), err)]
+pub async fn update_character_handler(
+    State(state): State<AppState>,
+    auth_session: CurrentAuthSession,
+    dek: SessionDek,
+    Path(character_id_to_update): Path<Uuid>, // Renamed to avoid conflict
+    Json(update_dto): Json<CharacterUpdateDto>,
+) -> Result<Json<CharacterDataForClient>, AppError> {
+    let user = auth_session
+        .user
+        .ok_or_else(|| AppError::Unauthorized("Authentication required".to_string()))?;
+    let local_user_id = user.id;
+
+    info!(character_id = %character_id_to_update, user_id = %local_user_id, "Attempting to update character");
+
+    // Fetch the existing character from the database to verify ownership
+    let conn_fetch_op = state.pool.get().await.map_err(|e| AppError::DbPoolError(e.to_string()))?;
+    
+    // Clone necessary items for the interact closure
+    let char_id_for_fetch = character_id_to_update;
+    let user_id_for_fetch = local_user_id;
+
+    let mut existing_character: Character = conn_fetch_op
+        .interact(move |conn_select_block| {
+            characters
+                .filter(id.eq(char_id_for_fetch).and(user_id.eq(user_id_for_fetch)))
+                .select(Character::as_select())
+                .get_result::<Character>(conn_select_block)
+        })
+        .await
+        .map_err(|e| AppError::InternalServerErrorGeneric(format!("Fetch interaction error: {}", e)))?
+        .map_err(|e| match e {
+            DieselError::NotFound => AppError::NotFound(format!(
+                "Character {} not found or not owned by user {}",
+                char_id_for_fetch, user_id_for_fetch
+            )),
+            _ => AppError::InternalServerErrorGeneric(format!("Fetch DB error: {}", e)),
+        })?;
+
+    info!(character_id = %character_id_to_update, "Found character to update, applying changes");
+
+    let enc_service = EncryptionService::new();
+
+    // Helper for updating an encrypted field
+    async fn update_encrypted_string_field(
+        enc_service: &EncryptionService,
+        dto_field_value: &Option<String>,
+        dek_key: &SecretBox<Vec<u8>>,
+        current_ciphertext: &mut Option<Vec<u8>>,
+        current_nonce: &mut Option<Vec<u8>>,
+    ) -> Result<(), AppError> {
+        if let Some(plaintext) = dto_field_value {
+            if plaintext.is_empty() {
+                *current_ciphertext = None;
+                *current_nonce = None;
+            } else {
+                let (new_ciphertext, new_nonce) = enc_service
+                    .encrypt(plaintext, dek_key.expose_secret())
+                    .await
+                    .map_err(|e| AppError::EncryptionError(format!("Encryption failed: {}", e)))?;
+                *current_ciphertext = Some(new_ciphertext);
+                *current_nonce = Some(new_nonce);
+            }
+        }
+        Ok(())
+    }
+
+    // Apply updates from DTO
+    if let Some(name_val) = update_dto.name {
+        existing_character.name = name_val;
+    }
+    update_encrypted_string_field(&enc_service, &update_dto.description, &dek.0, &mut existing_character.description, &mut existing_character.description_nonce).await?;
+    update_encrypted_string_field(&enc_service, &update_dto.personality, &dek.0, &mut existing_character.personality, &mut existing_character.personality_nonce).await?;
+    update_encrypted_string_field(&enc_service, &update_dto.scenario, &dek.0, &mut existing_character.scenario, &mut existing_character.scenario_nonce).await?;
+    update_encrypted_string_field(&enc_service, &update_dto.first_mes, &dek.0, &mut existing_character.first_mes, &mut existing_character.first_mes_nonce).await?;
+    update_encrypted_string_field(&enc_service, &update_dto.mes_example, &dek.0, &mut existing_character.mes_example, &mut existing_character.mes_example_nonce).await?;
+    update_encrypted_string_field(&enc_service, &update_dto.creator_notes, &dek.0, &mut existing_character.creator_notes, &mut existing_character.creator_notes_nonce).await?;
+    update_encrypted_string_field(&enc_service, &update_dto.system_prompt, &dek.0, &mut existing_character.system_prompt, &mut existing_character.system_prompt_nonce).await?;
+    update_encrypted_string_field(&enc_service, &update_dto.post_history_instructions, &dek.0, &mut existing_character.post_history_instructions, &mut existing_character.post_history_instructions_nonce).await?;
+    
+    if let Some(tags_val) = update_dto.tags {
+        existing_character.tags = if tags_val.is_empty() { None } else { Some(tags_val.into_iter().map(Some).collect()) };
+    }
+    if let Some(creator_val) = update_dto.creator {
+        existing_character.creator = if creator_val.is_empty() { None } else { Some(creator_val) };
+    }
+    if let Some(cv_val) = update_dto.character_version {
+        existing_character.character_version = if cv_val.is_empty() { None } else { Some(cv_val) };
+    }
+    if let Some(ag_val) = update_dto.alternate_greetings {
+        existing_character.alternate_greetings = if ag_val.is_empty() { None } else { Some(ag_val.into_iter().map(Some).collect()) };
+    }
+    if let Some(cnm_val) = update_dto.creator_notes_multilingual {
+        existing_character.creator_notes_multilingual = Some(cnm_val.0);
+    }
+    if let Some(nick_val) = update_dto.nickname { // Nickname is Option<String> in model
+        existing_character.nickname = Some(nick_val);
+    }
+    if let Some(source_val) = update_dto.source {
+        existing_character.source = if source_val.is_empty() { None } else { Some(source_val.into_iter().map(Some).collect()) };
+    }
+    if let Some(gog_val) = update_dto.group_only_greetings {
+        existing_character.group_only_greetings = if gog_val.is_empty() { None } else { Some(gog_val.into_iter().map(Some).collect()) };
+    }
+    if let Some(cd_ts) = update_dto.creation_date {
+        existing_character.creation_date = chrono::DateTime::from_timestamp(cd_ts, 0);
+    }
+     // modification_date is handled by updated_at or explicit DTO field
+    if let Some(md_ts) = update_dto.modification_date { // if user explicitly provides it
+        existing_character.modification_date = chrono::DateTime::from_timestamp(md_ts, 0);
+    }
+
+    if let Some(ext_val) = update_dto.extensions {
+        existing_character.extensions = Some(ext_val.0);
+    }
+
+    // Always update the 'updated_at' timestamp
+    existing_character.updated_at = chrono::Utc::now();
+    // Also update modification_date if it's distinct or meant to be the primary user-facing mod date
+    // As per plan, "Update the modification_date field". Assuming this is distinct from updated_at for system tracking.
+    // If modification_date wasn't set by DTO, set it now.
+    if update_dto.modification_date.is_none() {
+        existing_character.modification_date = Some(chrono::Utc::now());
+    }
+
+
+    // Save the updated character
+    let conn_update_op = state.pool.get().await.map_err(|e| AppError::DbPoolError(e.to_string()))?;
+    let char_id_for_update = character_id_to_update; // Use the original Path parameter
+    
+    let updated_character_db: Character = conn_update_op
+        .interact(move |conn_update_block| {
+            diesel::update(characters.find(char_id_for_update))
+                .set(existing_character.clone()) // Pass the modified existing_character by cloning
+                .returning(Character::as_select())
+                .get_result::<Character>(conn_update_block)
+        })
+        .await
+        .map_err(|e| AppError::InternalServerErrorGeneric(format!("Update interaction error: {}", e)))?
+        .map_err(|e| AppError::InternalServerErrorGeneric(format!("Update DB error: {}", e)))?;
+
+    info!(character_id = %character_id_to_update, "Character updated successfully");
+
+    // Convert to client format with decryption
+    let client_character_data = updated_character_db.into_decrypted_for_client(Some(&dek.0)).await?;
+
+    Ok(Json(client_character_data))
+}
+
 // --- Character Router ---
 pub fn characters_router(state: AppState) -> Router<AppState> {
     Router::new()
         .route("/upload", post(upload_character_handler))
-        .route("/", get(list_characters_handler))
+        .route("/", get(list_characters_handler).post(create_character_handler)) // Added POST for manual creation
         // NOTE (of frustration): The routes for getting and deleting a character were changed
         // to `/fetch/:id` and `/remove/:id` respectively.
         // Attempts to use  `/:id` for GET and DELETE resulted in
@@ -762,6 +1082,7 @@ pub fn characters_router(state: AppState) -> Router<AppState> {
         // born from a fuck-ton (three days) of deep-seated frustration with Axum routing obscurities in this context
         // that my fucking mortal monkey brain just cannot wrap itself around.
         .route("/fetch/:id", get(get_character_handler))
+        .route("/:id", put(update_character_handler)) // Added PUT for update on /:id
         .route("/remove/:id", delete(delete_character_handler))
         .route("/generate", post(generate_character_handler))
         .route("/:id/image", get(get_character_image)) // This might also need a more distinct path later

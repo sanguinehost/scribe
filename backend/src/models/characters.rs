@@ -27,9 +27,11 @@ use crate::services::encryption_service::EncryptionService; // Added
     Deserialize,
     Clone,
     PartialEq,
+    AsChangeset,
 )] // Removed Debug for custom impl
 #[diesel(belongs_to(User, foreign_key = user_id))]
 #[diesel(table_name = crate::schema::characters)]
+#[diesel(treat_none_as_null = true)] // Added for AsChangeset with Option fields
 pub struct Character {
     pub id: Uuid,
     pub user_id: Uuid,
