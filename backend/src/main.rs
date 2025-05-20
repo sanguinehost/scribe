@@ -14,6 +14,7 @@ use tower_http::trace::{DefaultMakeSpan, TraceLayer};
 // Use modules from the library crate
 use anyhow::Context;
 use anyhow::Result;
+use std::env; // Added for current_dir
 use scribe_backend::PgPool;
 use scribe_backend::auth::session_store::DieselSessionStore;
 use scribe_backend::auth::user_store::Backend as AuthBackend;
@@ -105,14 +106,38 @@ async fn main() -> Result<()> {
 
     // --- Initialize Tokenizer Service ---
     tracing::info!("Initializing TokenizerService...");
-    let tokenizer_model_path = config
+    let tokenizer_model_relative_path_str = config
         .tokenizer_model_path
         .as_ref()
         .cloned()
         .context("Tokenizer model path not set in config")?;
-    let tokenizer_service = TokenizerService::new(&tokenizer_model_path).context(format!(
+
+    // Determine the absolute path to the tokenizer model using CARGO_MANIFEST_DIR
+    let backend_crate_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let final_tokenizer_model_path = backend_crate_dir.join(&tokenizer_model_relative_path_str);
+
+    // Log current working directory and model path details
+    if let Ok(cwd) = env::current_dir() {
+        tracing::info!("Current working directory: {}", cwd.display());
+    } else {
+        tracing::warn!("Failed to get current working directory.");
+    }
+    tracing::info!(
+        "Tokenizer model relative path from config: {}",
+        tokenizer_model_relative_path_str
+    );
+    tracing::info!(
+        "Backend crate directory (CARGO_MANIFEST_DIR): {}",
+        backend_crate_dir.display()
+    );
+    tracing::info!(
+        "Resolved absolute tokenizer model path to be used: {}",
+        final_tokenizer_model_path.display()
+    );
+
+    let tokenizer_service = TokenizerService::new(&final_tokenizer_model_path).context(format!(
         "Failed to load tokenizer model from {}",
-        tokenizer_model_path
+        final_tokenizer_model_path.display()
     ))?;
     tracing::info!(
         "TokenizerService initialized with model: {}",

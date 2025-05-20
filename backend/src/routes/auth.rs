@@ -383,7 +383,9 @@ pub async fn login_handler(
             error!(error = ?e, "Login failed due to an unexpected authentication error.");
             // Map other AuthErrors to appropriate AppErrors or a generic internal server error
             match e {
-                AuthError::UserNotFound => Err(AppError::UserNotFound), // Should be caught by WrongCredentials generally
+                AuthError::UserNotFound => Err(AppError::Unauthorized(
+                    "Invalid identifier or password".to_string(),
+                )), // Treat as wrong credentials
                 AuthError::HashingError => Err(AppError::PasswordProcessingError), // Use new specific variant
                 AuthError::CryptoOperationFailed(_) => Err(AppError::InternalServerErrorGeneric(
                     "Encryption error during login.".to_string(),
