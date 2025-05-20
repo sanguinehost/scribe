@@ -50,6 +50,23 @@ pub struct SessionResponse {
     pub expires_at: chrono::DateTime<chrono::Utc>,
 }
 
+pub fn auth_routes() -> Router<AppState> {
+    Router::new()
+        .route("/register", post(register_handler))
+        .route("/login", post(login_handler))
+        .route("/logout", post(logout_handler))
+        .route("/me", get(me_handler))
+        .route("/change-password", post(change_password_handler))
+        .route("/recover-password", post(recover_password_handler)) // New route
+        .route("/session", post(create_session_handler))
+        .route(
+            "/session/{id}",
+            get(get_session_handler).delete(delete_session_handler),
+        )
+        .route("/session/{id}/extend", post(extend_session_handler))
+        .route("/user/{id}/sessions", delete(delete_user_sessions_handler))
+}
+
 #[instrument(skip(state, payload), err)]
 pub async fn register_handler(
     State(state): State<AppState>,
@@ -59,8 +76,8 @@ pub async fn register_handler(
 
     // Validate the payload
     if let Err(validation_errors) = payload.validate() {
-        error!(errors = ?validation_errors, "Registration payload validation failed.");
-        return Err(AppError::ValidationError(validation_errors.to_string()));
+        warn!("Register DTO validation failed: {:?}", validation_errors);
+        return Err(AppError::ValidationError(validation_errors));
     }
 
     let pool = state.pool.clone();
@@ -366,7 +383,9 @@ pub async fn login_handler(
             error!(error = ?e, "Login failed due to an unexpected authentication error.");
             // Map other AuthErrors to appropriate AppErrors or a generic internal server error
             match e {
-                AuthError::UserNotFound => Err(AppError::UserNotFound), // Should be caught by WrongCredentials generally
+                AuthError::UserNotFound => Err(AppError::Unauthorized(
+                    "Invalid identifier or password".to_string(),
+                )), // Treat as wrong credentials
                 AuthError::HashingError => Err(AppError::PasswordProcessingError), // Use new specific variant
                 AuthError::CryptoOperationFailed(_) => Err(AppError::InternalServerErrorGeneric(
                     "Encryption error during login.".to_string(),
@@ -766,8 +785,8 @@ pub async fn change_password_handler(
 
     // 2. Validate payload
     if let Err(validation_errors) = payload.validate() {
-        error!(user_id = %authenticated_user.id, errors = ?validation_errors, "Change password payload validation failed.");
-        return Err(AppError::ValidationError(validation_errors.to_string()));
+        warn!("Update DTO validation failed: {:?}", validation_errors);
+        return Err(AppError::ValidationError(validation_errors));
     }
 
     // 3. Fetch full current user details from DB (needed for salts, encrypted DEK)
@@ -855,7 +874,7 @@ pub async fn recover_password_handler(
     // 1. Validate payload
     if let Err(validation_errors) = payload.validate() {
         error!(errors = ?validation_errors, "Password recovery payload validation failed.");
-        return Err(AppError::ValidationError(validation_errors.to_string()));
+        return Err(AppError::ValidationError(validation_errors));
     }
 
     // 2. Call the core password recovery logic
@@ -933,19 +952,4 @@ pub async fn recover_password_handler(
     }
 }
 
-pub fn auth_routes() -> Router<AppState> {
-    Router::new()
-        .route("/register", post(register_handler))
-        .route("/login", post(login_handler))
-        .route("/logout", post(logout_handler))
-        .route("/me", get(me_handler))
-        .route("/change-password", post(change_password_handler))
-        .route("/recover-password", post(recover_password_handler)) // New route
-        .route("/session", post(create_session_handler))
-        .route(
-            "/session/{id}",
-            get(get_session_handler).delete(delete_session_handler),
-        )
-        .route("/session/{id}/extend", post(extend_session_handler))
-        .route("/user/{id}/sessions", delete(delete_user_sessions_handler))
-}
+

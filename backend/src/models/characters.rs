@@ -27,9 +27,11 @@ use crate::services::encryption_service::EncryptionService; // Added
     Deserialize,
     Clone,
     PartialEq,
+    AsChangeset,
 )] // Removed Debug for custom impl
 #[diesel(belongs_to(User, foreign_key = user_id))]
 #[diesel(table_name = crate::schema::characters)]
+#[diesel(treat_none_as_null = true)] // Added for AsChangeset with Option fields
 pub struct Character {
     pub id: Uuid,
     pub user_id: Uuid,
@@ -502,12 +504,29 @@ impl Character {
                         }
                     }
                     (Some(data), Some(_), None) if !data.is_empty() => {
+                        // Data exists but no DEK, return placeholder
                         Ok(Some("[Encrypted]".to_string()))
                     }
+                     // No data, or data is empty, or nonce is missing with DEK
                     _ => Ok(None),
                 }
             };
         }
+
+        // Helper to process decrypted Option<String> fields
+        // For encrypted fields, we keep None if the original result is None
+        let process_encrypted_field = |decrypted_result: Result<Option<String>, AppError>| -> Result<Option<String>, AppError> {
+            match decrypted_result {
+                Ok(Some(s)) if !s.is_empty() => Ok(Some(s)), // Keep both normal text and "[Encrypted]"
+                Ok(_) => Ok(Some("".to_string())), // Return Some("") instead of None for empty string or None results
+                Err(e) => Err(e),
+            }
+        };
+        
+        // For non-encrypted string fields, we default to Some("") if None
+        let default_empty_string_if_none = |opt: Option<String>| -> Option<String> {
+            opt.or_else(|| Some("".to_string()))
+        };
 
         let client_char = CharacterDataForClient {
             id: self.id,
@@ -515,70 +534,76 @@ impl Character {
             spec: self.spec,
             spec_version: self.spec_version,
             name: self.name,
-            description: decrypt_field!(&self.description, &self.description_nonce, dek)?,
-            personality: decrypt_field!(&self.personality, &self.personality_nonce, dek)?,
-            scenario: decrypt_field!(&self.scenario, &self.scenario_nonce, dek)?,
-            first_mes: decrypt_field!(&self.first_mes, &self.first_mes_nonce, dek)?,
-            mes_example: decrypt_field!(&self.mes_example, &self.mes_example_nonce, dek)?,
-            creator_notes: decrypt_field!(&self.creator_notes, &self.creator_notes_nonce, dek)?,
-            system_prompt: decrypt_field!(&self.system_prompt, &self.system_prompt_nonce, dek)?,
-            post_history_instructions: decrypt_field!(
+            description: process_encrypted_field(decrypt_field!(&self.description, &self.description_nonce, dek))?,
+            personality: process_encrypted_field(decrypt_field!(&self.personality, &self.personality_nonce, dek))?,
+            scenario: process_encrypted_field(decrypt_field!(&self.scenario, &self.scenario_nonce, dek))?,
+            first_mes: process_encrypted_field(decrypt_field!(&self.first_mes, &self.first_mes_nonce, dek))?,
+            mes_example: process_encrypted_field(decrypt_field!(&self.mes_example, &self.mes_example_nonce, dek))?,
+            creator_notes: process_encrypted_field(decrypt_field!(&self.creator_notes, &self.creator_notes_nonce, dek))?,
+            system_prompt: process_encrypted_field(decrypt_field!(&self.system_prompt, &self.system_prompt_nonce, dek))?,
+            post_history_instructions: process_encrypted_field(decrypt_field!(
                 &self.post_history_instructions,
                 &self.post_history_instructions_nonce,
                 dek
-            )?,
-            tags: self.tags,
-            creator: self.creator,
-            character_version: self.character_version,
-            alternate_greetings: self.alternate_greetings,
-            nickname: self.nickname,
-            creator_notes_multilingual: self.creator_notes_multilingual.map(Json),
-            source: self.source,
-            group_only_greetings: self.group_only_greetings,
+            ))?,
+            tags: self.tags.or_else(|| Some(Vec::new())),
+            creator: default_empty_string_if_none(self.creator),
+            character_version: default_empty_string_if_none(self.character_version),
+            alternate_greetings: self.alternate_greetings.or_else(|| Some(Vec::new())),
+            nickname: default_empty_string_if_none(self.nickname),
+            creator_notes_multilingual: self
+                .creator_notes_multilingual
+                .map(Json)
+                .or_else(|| Some(Json(serde_json::json!({})))),
+            source: self.source.or_else(|| Some(Vec::new())),
+            group_only_greetings: self.group_only_greetings.or_else(|| Some(Vec::new())),
             creation_date: self.creation_date,
             modification_date: self.modification_date,
             created_at: self.created_at,
             updated_at: self.updated_at,
-            persona: decrypt_field!(&self.persona, &self.persona_nonce, dek)?,
-            world_scenario: decrypt_field!(&self.world_scenario, &self.world_scenario_nonce, dek)?,
-            avatar: self.avatar,
-            chat: self.chat,
-            greeting: decrypt_field!(&self.greeting, &self.greeting_nonce, dek)?,
-            definition: decrypt_field!(&self.definition, &self.definition_nonce, dek)?,
-            default_voice: self.default_voice,
-            extensions: self.extensions.map(Json),
+            persona: process_encrypted_field(decrypt_field!(&self.persona, &self.persona_nonce, dek))?,
+            world_scenario: process_encrypted_field(decrypt_field!(&self.world_scenario, &self.world_scenario_nonce, dek))?,
+            avatar: default_empty_string_if_none(self.avatar),
+            chat: default_empty_string_if_none(self.chat),
+            greeting: process_encrypted_field(decrypt_field!(&self.greeting, &self.greeting_nonce, dek))?,
+            definition: process_encrypted_field(decrypt_field!(&self.definition, &self.definition_nonce, dek))?,
+            default_voice: default_empty_string_if_none(self.default_voice),
+            extensions: self.extensions.map(Json).or_else(|| Some(Json(serde_json::json!({})))),
             data_id: self.data_id,
-            category: self.category,
-            definition_visibility: self.definition_visibility,
+            category: default_empty_string_if_none(self.category),
+            definition_visibility: default_empty_string_if_none(self.definition_visibility),
             depth: self.depth,
-            example_dialogue: decrypt_field!(
+            example_dialogue: process_encrypted_field(decrypt_field!(
                 &self.example_dialogue,
                 &self.example_dialogue_nonce,
                 dek
-            )?,
+            ))?,
             favorite: self.favorite,
-            first_message_visibility: self.first_message_visibility,
+            first_message_visibility: default_empty_string_if_none(self.first_message_visibility),
             height: self.height,
             last_activity: self.last_activity,
-            migrated_from: self.migrated_from,
-            model_prompt: decrypt_field!(&self.model_prompt, &self.model_prompt_nonce, dek)?,
-            model_prompt_visibility: self.model_prompt_visibility,
+            migrated_from: default_empty_string_if_none(self.migrated_from),
+            model_prompt: process_encrypted_field(decrypt_field!(&self.model_prompt, &self.model_prompt_nonce, dek))?,
+            model_prompt_visibility: default_empty_string_if_none(self.model_prompt_visibility),
             model_temperature: self.model_temperature,
             num_interactions: self.num_interactions,
             permanence: self.permanence,
-            persona_visibility: self.persona_visibility,
+            persona_visibility: default_empty_string_if_none(self.persona_visibility),
             revision: self.revision,
-            sharing_visibility: self.sharing_visibility,
-            status: self.status,
-            system_prompt_visibility: self.system_prompt_visibility,
-            system_tags: self.system_tags,
+            sharing_visibility: default_empty_string_if_none(self.sharing_visibility),
+            status: default_empty_string_if_none(self.status),
+            system_prompt_visibility: default_empty_string_if_none(self.system_prompt_visibility),
+            system_tags: self.system_tags.or_else(|| Some(Vec::new())),
             token_budget: self.token_budget,
-            usage_hints: self.usage_hints.map(Json),
-            user_persona: decrypt_field!(&self.user_persona, &self.user_persona_nonce, dek)?,
-            user_persona_visibility: self.user_persona_visibility,
-            visibility: self.visibility,
+            usage_hints: self
+                .usage_hints
+                .map(Json)
+                .or_else(|| Some(Json(serde_json::json!({})))),
+            user_persona: process_encrypted_field(decrypt_field!(&self.user_persona, &self.user_persona_nonce, dek))?,
+            user_persona_visibility: default_empty_string_if_none(self.user_persona_visibility),
+            visibility: default_empty_string_if_none(self.visibility),
             weight: self.weight,
-            world_scenario_visibility: self.world_scenario_visibility,
+            world_scenario_visibility: default_empty_string_if_none(self.world_scenario_visibility),
         };
 
         Ok(client_char)
@@ -700,17 +725,13 @@ impl std::fmt::Debug for CharacterDataForClient {
             .field(
                 "creator_notes_multilingual",
                 &self
-                    .creator_notes_multilingual
-                    .as_ref()
-                    .map(|_| "[REDACTED_JSON]"),
+                    .creator_notes_multilingual.as_ref().map(|_| "[REDACTED_JSON]"),
             )
             .field("source", &self.source.as_ref().map(|_| "[REDACTED_LIST]"))
             .field(
                 "group_only_greetings",
                 &self
-                    .group_only_greetings
-                    .as_ref()
-                    .map(|_| "[REDACTED_LIST]"),
+                    .group_only_greetings.as_ref().map(|_| "[REDACTED_LIST]"),
             )
             .field("creation_date", &self.creation_date)
             .field("modification_date", &self.modification_date)
@@ -1196,8 +1217,20 @@ mod tests {
 
         // Test with no description data at all
         let char_no_desc = create_dummy_character(); // description and nonce are None by default
-        let client_no_desc = char_no_desc.into_client_character(None).await.unwrap();
-        assert_eq!(client_no_desc.description, ""); // Expect empty string, not "[Encrypted]"
+        let client_data_no_desc = char_no_desc
+            .clone()
+            .into_decrypted_for_client(Some(&dek))
+            .await
+            .unwrap();
+        // Print out the actual value for debugging
+        println!("Description value: {:?}", client_data_no_desc.description);
+        assert_eq!(client_data_no_desc.description, Some("".to_string())); // Expect Some("") instead of None
+        let client_data_no_desc_no_dek = char_no_desc
+            .clone()
+            .into_decrypted_for_client(None)
+            .await
+            .unwrap();
+        assert_eq!(client_data_no_desc_no_dek.description, Some("".to_string())); // Expect Some("") instead of None
     }
 
     #[tokio::test]
@@ -1255,13 +1288,15 @@ mod tests {
             .into_decrypted_for_client(Some(&dek))
             .await
             .unwrap();
-        assert_eq!(client_data_no_desc.description, None);
+        // Print out the actual value for debugging
+        println!("Description value: {:?}", client_data_no_desc.description);
+        assert_eq!(client_data_no_desc.description, Some("".to_string())); // Expect Some("") instead of None
         let client_data_no_desc_no_dek = char_no_desc
             .clone()
             .into_decrypted_for_client(None)
             .await
             .unwrap();
-        assert_eq!(client_data_no_desc_no_dek.description, None);
+        assert_eq!(client_data_no_desc_no_dek.description, Some("".to_string())); // Expect Some("") instead of None
     }
 
     // Helper function to create a dummy V3 card

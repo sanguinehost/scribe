@@ -40,10 +40,14 @@ httptest = "0.16.3" # For mocking HTTP requests in tests
 tempfile = "3.19.1" # For handling temporary files
 bigdecimal = { version = "0.4", features = ["serde"] } # For ChatSession testing
 
+[lib]
+name = "scribe_cli"
+path = "src/lib.rs"
+
 [dev-dependencies]
 # Add dev dependencies if needed for CLI-specific tests
 chrono = { version = "0.4", features = ["serde"] }
 
 [[bin]]
 name = "scribe-cli"
-path = "src/main.rs" 
+path = "src/main.rs"

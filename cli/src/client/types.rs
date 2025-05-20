@@ -275,6 +275,43 @@ where
         ))),
     }
 }
+// Helper for deserializing Vec<u8> to String, typically for non-optional encrypted fields
+fn deserialize_bytes_to_string_for_override<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value = serde_json::Value::deserialize(deserializer)?;
+    match value {
+        serde_json::Value::Array(arr) => {
+            let bytes: Result<Vec<u8>, _> = arr
+                .into_iter()
+                .map(|v| {
+                    if let serde_json::Value::Number(n) = v {
+                        if let Some(i) = n.as_u64() {
+                            if i <= 255 {
+                                return Ok(i as u8);
+                            }
+                        }
+                    }
+                    Err(serde::de::Error::custom(format!(
+                        "Expected byte value 0-255"
+                    )))
+                })
+                .collect();
+
+            match bytes {
+                Ok(b) => String::from_utf8(b)
+                    .map_err(|e| serde::de::Error::custom(format!("Invalid UTF-8: {}", e))),
+                Err(e) => Err(e),
+            }
+        }
+        serde_json::Value::String(s) => Ok(s), // Allow if it's already a string
+        v => Err(serde::de::Error::custom(format!(
+            "Expected byte array or string, got {:?}",
+            v
+        ))),
+    }
+}
 
 // Implement From trait to convert ClientCharacterDataForClient to CharacterDataForClient
 impl From<ClientCharacterDataForClient> for CharacterDataForClient {
@@ -417,4 +454,227 @@ impl<'a> From<&'a RegisterPayload> for SerializableRegisterPayload<'a> {
             password: payload.password.expose_secret(),
         }
     }
+}
+
+// DTO for character creation requests (mirrors backend/src/models/character_dto.rs)
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+pub struct CharacterCreateDto {
+    // Required fields
+    pub name: Option<String>,
+    pub description: Option<String>,
+    pub first_mes: Option<String>,
+
+    // Optional fields
+    #[serde(default)]
+    pub personality: String,
+    #[serde(default)]
+    pub scenario: String,
+    #[serde(default)]
+    pub mes_example: String,
+    #[serde(default)]
+    pub creator_notes: String,
+    #[serde(default)]
+    pub system_prompt: String,
+    #[serde(default)]
+    pub post_history_instructions: String,
+    #[serde(default)]
+    pub tags: Vec<String>,
+    #[serde(default)]
+    pub creator: String,
+    #[serde(default)]
+    pub character_version: String,
+    #[serde(default)]
+    pub alternate_greetings: Vec<String>,
+    #[serde(default)]
+    pub creator_notes_multilingual: Option<Json<Value>>,
+    #[serde(default)]
+    pub nickname: Option<String>,
+    #[serde(default)]
+    pub source: Option<Vec<String>>,
+    #[serde(default)]
+    pub group_only_greetings: Vec<String>,
+    #[serde(default)]
+    pub creation_date: Option<i64>,
+    #[serde(default)]
+    pub modification_date: Option<i64>,
+    #[serde(default)]
+    pub extensions: Option<Json<Value>>,
+    // Fields from CharacterCardDataV2 (ensure these are covered if needed by CLI)
+    #[serde(default)]
+    pub persona: String, // Note: In backend DTO, this is not Option. For CLI create, it's optional.
+    #[serde(default)]
+    pub world_scenario: String, // Note: In backend DTO, this is not Option.
+    #[serde(default)]
+    pub avatar: String, // e.g. "char_image.png" or "none"
+    #[serde(default)]
+    pub chat: String, // Example: "character_chat_history.jsonl"
+    #[serde(default)]
+    pub greeting: String,
+    #[serde(default)]
+    pub definition: String, // TavernAI card definition
+    #[serde(default)]
+    pub default_voice: String,
+    #[serde(default)]
+    pub data_id: Option<i32>,
+    #[serde(default)]
+    pub category: String,
+    #[serde(default)]
+    pub definition_visibility: String,
+    #[serde(default)]
+    pub depth: Option<i32>,
+    #[serde(default)]
+    pub example_dialogue: String,
+    #[serde(default)]
+    pub favorite: Option<bool>,
+    #[serde(default)]
+    pub first_message_visibility: String,
+    #[serde(default)]
+    pub height: Option<BigDecimal>,
+    #[serde(default)]
+    pub last_activity: Option<DateTime<Utc>>,
+    #[serde(default)]
+    pub migrated_from: String,
+    #[serde(default)]
+    pub model_prompt: String,
+    #[serde(default)]
+    pub model_prompt_visibility: String,
+    #[serde(default)]
+    pub model_temperature: Option<BigDecimal>,
+    #[serde(default)]
+    pub num_interactions: Option<i64>,
+    #[serde(default)]
+    pub permanence: Option<BigDecimal>,
+    #[serde(default)]
+    pub persona_visibility: String,
+    #[serde(default)]
+    pub revision: Option<i32>,
+    #[serde(default)]
+    pub sharing_visibility: String,
+    #[serde(default)]
+    pub status: String,
+    #[serde(default)]
+    pub system_prompt_visibility: String,
+    #[serde(default)]
+    pub system_tags: Vec<String>,
+    #[serde(default)]
+    pub token_budget: Option<i32>,
+    #[serde(default)]
+    pub usage_hints: Option<Json<Value>>,
+    #[serde(default)]
+    pub user_persona: String,
+    #[serde(default)]
+    pub user_persona_visibility: String,
+    #[serde(default)]
+    pub visibility: String,
+    #[serde(default)]
+    pub weight: Option<BigDecimal>,
+    #[serde(default)]
+    pub world_scenario_visibility: String,
+}
+
+// DTO for character update requests (mirrors backend/src/models/character_dto.rs)
+// All fields are optional to allow partial updates
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+pub struct CharacterUpdateDto {
+    pub name: Option<String>,
+    pub description: Option<String>,
+    pub personality: Option<String>,
+    pub scenario: Option<String>,
+    pub first_mes: Option<String>,
+    pub mes_example: Option<String>,
+    pub creator_notes: Option<String>,
+    pub system_prompt: Option<String>,
+    pub post_history_instructions: Option<String>,
+    pub tags: Option<Vec<String>>,
+    pub creator: Option<String>,
+    pub character_version: Option<String>,
+    pub alternate_greetings: Option<Vec<String>>,
+    pub creator_notes_multilingual: Option<Json<Value>>,
+    pub nickname: Option<String>,
+    pub source: Option<Vec<String>>,
+    pub group_only_greetings: Option<Vec<String>>,
+    pub creation_date: Option<i64>,
+    pub modification_date: Option<i64>,
+    pub extensions: Option<Json<Value>>,
+    // Fields from CharacterCardDataV2
+    pub persona: Option<String>,
+    pub world_scenario: Option<String>,
+    pub avatar: Option<String>,
+    pub chat: Option<String>,
+    pub greeting: Option<String>,
+    pub definition: Option<String>,
+    pub default_voice: Option<String>,
+    pub data_id: Option<i32>,
+    pub category: Option<String>,
+    pub definition_visibility: Option<String>,
+    pub depth: Option<i32>,
+    pub example_dialogue: Option<String>,
+    pub favorite: Option<bool>,
+    pub first_message_visibility: Option<String>,
+    pub height: Option<BigDecimal>,
+    pub last_activity: Option<DateTime<Utc>>,
+    pub migrated_from: Option<String>,
+    pub model_prompt: Option<String>,
+    pub model_prompt_visibility: Option<String>,
+    pub model_temperature: Option<BigDecimal>,
+    pub num_interactions: Option<i64>,
+    pub permanence: Option<BigDecimal>,
+    pub persona_visibility: Option<String>,
+    pub revision: Option<i32>,
+    pub sharing_visibility: Option<String>,
+    pub status: Option<String>,
+    pub system_prompt_visibility: Option<String>,
+    pub system_tags: Option<Vec<String>>,
+    pub token_budget: Option<i32>,
+    pub usage_hints: Option<Json<Value>>,
+    pub user_persona: Option<String>,
+    pub user_persona_visibility: Option<String>,
+    pub visibility: Option<String>,
+    pub weight: Option<BigDecimal>,
+    pub world_scenario_visibility: Option<String>,
+}
+
+/// DTO for chat session details, used when fetching a session to get its original character ID.
+#[derive(Debug, Deserialize, Clone)]
+pub struct ChatSessionDetails {
+    pub id: Uuid,
+    pub user_id: Uuid,
+    pub character_id: Uuid, // This is the original_character_id
+    pub title: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    // Add other fields from backend ChatSession if needed by CLI
+    // e.g., settings, model_name, etc.
+}
+
+/// DTO for the request to set a character override for a chat session.
+#[derive(Debug, Serialize, Clone)]
+pub struct CharacterOverrideRequest {
+    pub field_name: String,
+    pub value: String,
+}
+
+/// DTO for the successful response of a character override operation.
+/// This should match the actual response from the backend.
+#[derive(Debug, Deserialize, Clone)]
+pub struct OverrideSuccessResponse {
+    pub message: String, // e.g., "Override applied successfully."
+    pub session_id: Uuid,
+    pub field_name: String,
+    pub new_value: String, // The backend might return the applied value
+}
+
+/// DTO for representing a character override as returned by the backend.
+/// This is used when fetching effective character details for a chat.
+/// It needs to handle potentially encrypted fields.
+#[derive(Debug, Deserialize, Clone)]
+pub struct CliChatCharacterOverride {
+    pub id: Uuid,
+    pub session_id: Uuid,
+    pub character_id: Uuid,
+    pub field_name: String,
+    #[serde(deserialize_with = "deserialize_bytes_to_string_for_override")]
+    pub overriden_value: String, // Stored as Vec<u8> in DB, needs deserialization
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
 }

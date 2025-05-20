@@ -14,6 +14,7 @@ use tower_http::trace::{DefaultMakeSpan, TraceLayer};
 // Use modules from the library crate
 use anyhow::Context;
 use anyhow::Result;
+use std::env; // Added for current_dir
 use scribe_backend::PgPool;
 use scribe_backend::auth::session_store::DieselSessionStore;
 use scribe_backend::auth::user_store::Backend as AuthBackend;
@@ -53,6 +54,7 @@ use tower_sessions::{Expiry, SessionManagerLayer, cookie::SameSite}; // Add Arc 
 use axum_server::tls_rustls::RustlsConfig; // <-- ADD this
 use rustls::crypto::ring;
 use std::path::PathBuf; // <-- Add PathBuf import // <-- Import the ring provider module
+use scribe_backend::services::chat_override_service::ChatOverrideService; // <<< ADDED IMPORT
 
 // Define the embedded migrations macro
 pub const MIGRATIONS: EmbeddedMigrations = embed_migrations!("./migrations");
@@ -104,14 +106,38 @@ async fn main() -> Result<()> {
 
     // --- Initialize Tokenizer Service ---
     tracing::info!("Initializing TokenizerService...");
-    let tokenizer_model_path = config
+    let tokenizer_model_relative_path_str = config
         .tokenizer_model_path
         .as_ref()
         .cloned()
         .context("Tokenizer model path not set in config")?;
-    let tokenizer_service = TokenizerService::new(&tokenizer_model_path).context(format!(
+
+    // Determine the absolute path to the tokenizer model using CARGO_MANIFEST_DIR
+    let backend_crate_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let final_tokenizer_model_path = backend_crate_dir.join(&tokenizer_model_relative_path_str);
+
+    // Log current working directory and model path details
+    if let Ok(cwd) = env::current_dir() {
+        tracing::info!("Current working directory: {}", cwd.display());
+    } else {
+        tracing::warn!("Failed to get current working directory.");
+    }
+    tracing::info!(
+        "Tokenizer model relative path from config: {}",
+        tokenizer_model_relative_path_str
+    );
+    tracing::info!(
+        "Backend crate directory (CARGO_MANIFEST_DIR): {}",
+        backend_crate_dir.display()
+    );
+    tracing::info!(
+        "Resolved absolute tokenizer model path to be used: {}",
+        final_tokenizer_model_path.display()
+    );
+
+    let tokenizer_service = TokenizerService::new(&final_tokenizer_model_path).context(format!(
         "Failed to load tokenizer model from {}",
-        tokenizer_model_path
+        final_tokenizer_model_path.display()
     ))?;
     tracing::info!(
         "TokenizerService initialized with model: {}",
@@ -146,6 +172,16 @@ async fn main() -> Result<()> {
         "HybridTokenCounter initialized with default model: {}",
         token_counter_default_model
     );
+
+    // --- Initialize Encryption Service (shared) ---
+    // Assuming EncryptionService is cheap to create and stateless for now, or managed internally if it needs more setup
+    let encryption_service_arc = Arc::new(scribe_backend::services::encryption_service::EncryptionService::new());
+
+    // --- Initialize Chat Override Service ---
+    tracing::info!("Initializing ChatOverrideService...");
+    let chat_override_service = ChatOverrideService::new(pool.clone(), encryption_service_arc.clone()); // Pass DB pool and encryption service
+    let chat_override_service_arc = Arc::new(chat_override_service);
+    tracing::info!("ChatOverrideService initialized.");
 
     // --- Session Store Setup ---
     // Ideally load from config/env, generating is okay for dev
@@ -199,6 +235,7 @@ async fn main() -> Result<()> {
         embedding_client_arc,
         qdrant_service_arc,
         embedding_pipeline_service, // Add the embedding pipeline service
+        chat_override_service_arc,  // <<< PASSING THE SERVICE TO APPSTATE
         hybrid_token_counter_arc,   // Added
     );
 

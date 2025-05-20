@@ -201,7 +201,7 @@ pub enum AppError {
     TextProcessingError(String),
 
     #[error("Validation error: {0}")]
-    ValidationError(String),
+    ValidationError(#[from] ValidationErrors),
 }
 
 // This helper enum is necessary because axum_login::Error requires the UserStore::Error
@@ -263,328 +263,327 @@ impl From<AnyhowError> for AuthBackendError {
 // as #[from] handles them.
 
 // --- IntoResponse Implementation ---
-// (Keep existing IntoResponse impl, ensuring it matches the consolidated variants)
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
-        let (status, error_message) = match self {
-            // 4xx Client Errors
-            AppError::InvalidCredentials => {
-                (StatusCode::UNAUTHORIZED, "Invalid credentials".to_string())
-            }
-            AppError::Unauthorized(msg) => (StatusCode::UNAUTHORIZED, msg),
-            AppError::Forbidden => (StatusCode::FORBIDDEN, "Forbidden".to_string()),
-            AppError::BadRequest(msg) => (StatusCode::BAD_REQUEST, msg),
-            AppError::NotFound(msg) => (StatusCode::NOT_FOUND, msg),
-            AppError::UserNotFound => (StatusCode::NOT_FOUND, "User not found".to_string()),
-            AppError::SessionNotFound => (
-                StatusCode::UNAUTHORIZED,
-                "Session not found or expired".to_string(),
-            ),
-            AppError::Conflict(msg) => (StatusCode::CONFLICT, msg),
-            AppError::UsernameTaken => (
-                StatusCode::CONFLICT,
-                "Username is already taken".to_string(),
-            ),
-            AppError::EmailTaken => (StatusCode::CONFLICT, "Email is already taken".to_string()), // 409 Conflict
-            AppError::InvalidInput(msg) => {
-                (StatusCode::BAD_REQUEST, format!("Invalid input: {}", msg))
-            }
-            AppError::FileUploadError(e) => {
-                error!("File upload error: {}", e);
-                (StatusCode::BAD_REQUEST, "File upload failed".to_string())
-            }
-            AppError::CharacterParseError(e) => {
-                // Corrected variant name
-                error!("Character parsing error: {}", e);
-                (
-                    StatusCode::BAD_REQUEST,
-                    "Failed to parse character data".to_string(),
-                )
-            }
-            AppError::ParseIntError(e) => {
-                error!("Integer parsing error: {}", e);
-                (
-                    StatusCode::BAD_REQUEST,
-                    "Invalid numeric value provided".to_string(),
-                )
-            }
-            AppError::UuidError(e) => {
-                error!("UUID error: {}", e);
-                (
-                    StatusCode::BAD_REQUEST,
-                    "Invalid identifier format".to_string(),
-                )
-            }
-            AppError::AuthError(e) => {
-                // Corrected variant name
-                error!("Authentication error: {}", e);
-                // Determine status based on underlying axum_login::Error if possible
-                // For now, default to UNAUTHORIZED or INTERNAL_SERVER_ERROR
-                // Note: axum_login::Error doesn't expose underlying easily without matching
-                (StatusCode::UNAUTHORIZED, "Authentication error".to_string()) // Changed to UNAUTHORIZED to match test expectation
-            }
-            AppError::SessionStoreError(e) => {
-                error!("Session store error: {}", e);
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "Session management error".to_string(),
-                )
-            }
-            AppError::CryptoError(e) => {
-                error!("Cryptography error: {}", e);
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "A cryptographic operation failed.".to_string(),
-                )
-            }
-            AppError::EncryptionError(e) => {
-                error!("Encryption error: {}", e);
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "Encryption operation failed.".to_string(),
-                )
-            }
-            AppError::DecryptionError(e) => {
-                error!("Decryption error: {}", e);
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "Data decryption failed.".to_string(),
-                )
-            }
-            AppError::SessionError(e) => {
-                error!("Session operation error: {}", e);
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "A session operation failed.".to_string(),
-                )
-            }
+        match self {
+            AppError::ValidationError(validation_errors) => {
+                let status = StatusCode::UNPROCESSABLE_ENTITY;
+                let error_message = "Validation error".to_string();
+                
+                // Manually construct a serializable representation of ValidationErrors
+                let mut error_details = serde_json::Map::new();
+                for (field, errors) in validation_errors.field_errors() {
+                    let field_errors: Vec<serde_json::Value> = errors.iter().map(|error| {
+                        let mut err_map = serde_json::Map::new();
+                        err_map.insert("code".to_string(), json!(error.code));
+                        if let Some(message) = &error.message {
+                            err_map.insert("message".to_string(), json!(message));
+                        }
+                        // Add params if they exist and are useful
+                        let params: serde_json::Map<String, serde_json::Value> = error.params.iter()
+                            .map(|(k, v)| (k.to_string(), json!(v)))
+                            .collect();
+                        if !params.is_empty() {
+                            err_map.insert("params".to_string(), json!(params));
+                        }
+                        json!(err_map)
+                    }).collect();
+                    error_details.insert(field.to_string(), json!(field_errors));
+                }
 
-            // Added RateLimited mapping
-            AppError::RateLimited => (
-                StatusCode::TOO_MANY_REQUESTS,
-                "API rate limit exceeded. Please try again later.".to_string(),
-            ), // 429
-
-            // 5xx Server Errors
-            AppError::DatabaseQueryError(e) => {
-                error!("Database query error: {}", e);
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "Database error".to_string(),
-                )
+                let body = Json(json!({
+                    "error": error_message,
+                    "error_details": error_details // Use the manually constructed details
+                }));
+                (status, body).into_response()
             }
-            AppError::DbPoolError(e) => {
-                error!("Database pool error: {}", e);
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "Database connection error".to_string(),
-                )
+            app_error => { // Handle all other AppError variants
+                let (status, error_message) = match app_error {
+                    AppError::InvalidCredentials => {
+                        (StatusCode::UNAUTHORIZED, "Invalid credentials".to_string())
+                    }
+                    AppError::Unauthorized(msg) => (StatusCode::UNAUTHORIZED, msg),
+                    AppError::Forbidden => (StatusCode::FORBIDDEN, "Forbidden".to_string()),
+                    AppError::BadRequest(msg) => (StatusCode::BAD_REQUEST, msg),
+                    AppError::NotFound(msg) => (StatusCode::NOT_FOUND, msg),
+                    AppError::UserNotFound => (StatusCode::NOT_FOUND, "User not found".to_string()),
+                    AppError::SessionNotFound => (
+                        StatusCode::UNAUTHORIZED,
+                        "Session not found or expired".to_string(),
+                    ),
+                    AppError::Conflict(msg) => (StatusCode::CONFLICT, msg),
+                    AppError::UsernameTaken => (
+                        StatusCode::CONFLICT,
+                        "Username is already taken".to_string(),
+                    ),
+                    AppError::EmailTaken => (StatusCode::CONFLICT, "Email is already taken".to_string()),
+                    AppError::InvalidInput(msg) => {
+                        (StatusCode::BAD_REQUEST, format!("Invalid input: {}", msg))
+                    }
+                    AppError::FileUploadError(e) => {
+                        error!("File upload error: {}", e);
+                        (StatusCode::BAD_REQUEST, "File upload failed".to_string())
+                    }
+                    AppError::CharacterParseError(e) => {
+                        error!("Character parsing error: {}", e);
+                        (
+                            StatusCode::BAD_REQUEST,
+                            "Failed to parse character data".to_string(),
+                        )
+                    }
+                    AppError::ParseIntError(e) => {
+                        error!("Integer parsing error: {}", e);
+                        (
+                            StatusCode::BAD_REQUEST,
+                            "Invalid numeric value provided".to_string(),
+                        )
+                    }
+                    AppError::UuidError(e) => {
+                        error!("UUID error: {}", e);
+                        (
+                            StatusCode::BAD_REQUEST,
+                            "Invalid identifier format".to_string(),
+                        )
+                    }
+                    AppError::AuthError(e) => {
+                        error!("Authentication framework error: {}", e);
+                        (StatusCode::UNAUTHORIZED, "Authentication error".to_string())
+                    }
+                    AppError::SessionStoreError(e) => {
+                        error!("Session store error: {}", e);
+                        (
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            "Session management error".to_string(),
+                        )
+                    }
+                    AppError::CryptoError(e) => {
+                        error!("Cryptography error: {}", e);
+                        (
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            "A cryptographic operation failed.".to_string(),
+                        )
+                    }
+                    AppError::EncryptionError(e) => {
+                        error!("Encryption error: {}", e);
+                        (
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            "Encryption operation failed.".to_string(),
+                        )
+                    }
+                    AppError::DecryptionError(e) => {
+                        error!("Decryption error: {}", e);
+                        (
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            "Data decryption failed.".to_string(),
+                        )
+                    }
+                    AppError::SessionError(e) => {
+                        error!("Session operation error: {}", e);
+                        (
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            "A session operation failed.".to_string(),
+                        )
+                    }
+                    AppError::RateLimited => (
+                        StatusCode::TOO_MANY_REQUESTS,
+                        "API rate limit exceeded. Please try again later.".to_string(),
+                    ),
+                    AppError::DatabaseQueryError(e) => {
+                        error!("Database query error: {}", e);
+                        (
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            "Database error".to_string(),
+                        )
+                    }
+                    AppError::DbPoolError(e) => {
+                        error!("Database pool error: {}", e);
+                        (
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            "Database connection error".to_string(),
+                        )
+                    }
+                    AppError::DbManagedPoolError(e) => {
+                        error!("Database managed pool error: {}", e);
+                        (
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            "Database connection error".to_string(),
+                        )
+                    }
+                    AppError::DbPoolBuildError(e) => {
+                        error!("Database pool build error: {}", e);
+                        (
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            "Database configuration error".to_string(),
+                        )
+                    }
+                    AppError::DbInteractError(e) => {
+                        error!("Database interaction error: {}", e);
+                        (
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            "Database task execution error".to_string(),
+                        )
+                    }
+                    AppError::DbMigrationError(e) => {
+                        error!("Database migration error: {}", e);
+                        (
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            "Database schema error".to_string(),
+                        )
+                    }
+                    AppError::PasswordHashingFailed(e) => {
+                        error!("Password hashing failed: {}", e);
+                        (
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            "Internal security error".to_string(),
+                        )
+                    }
+                    AppError::ConfigError(e) => {
+                        error!("Configuration error: {}", e);
+                        (
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            "Server configuration error".to_string(),
+                        )
+                    }
+                    AppError::IoError(e) => {
+                        error!("IO error: {}", e);
+                        (
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            "File system or network error".to_string(),
+                        )
+                    }
+                    AppError::SerializationError(e) => {
+                        error!("Serialization error: {}", e);
+                        (
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            "Data formatting error".to_string(),
+                        )
+                    }
+                    AppError::GeminiError(e) => {
+                        error!("LLM API error: {}", e);
+                        (
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            "AI service error".to_string(),
+                        )
+                    }
+                    AppError::ImageProcessingError(e) => {
+                        error!("Image processing error: {}", e);
+                        (
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            "Failed to process image".to_string(),
+                        )
+                    }
+                    AppError::HttpRequestError(e) => {
+                        error!("HTTP request error: {}", e);
+                        (
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            "Failed to communicate with external service".to_string(),
+                        )
+                    }
+                    AppError::HttpMiddlewareError(e) => {
+                        error!("HTTP middleware error: {}", e);
+                        (
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            "Failed during external service communication".to_string(),
+                        )
+                    }
+                    AppError::LlmClientError(e) => {
+                        error!("LLM client error: {}", e);
+                        (
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            "AI service client error".to_string(),
+                        )
+                    }
+                    AppError::GenerationError(e) => {
+                        error!("LLM generation error: {}", e);
+                        (StatusCode::BAD_GATEWAY, "AI service request failed".to_string())
+                    }
+                    AppError::EmbeddingError(e) => {
+                        error!("LLM embedding error: {}", e);
+                        (
+                            StatusCode::BAD_GATEWAY,
+                            "AI embedding service request failed".to_string(),
+                        )
+                    }
+                    AppError::VectorDbError(e) => {
+                        error!("Vector DB error: {}", e);
+                        (
+                            StatusCode::BAD_GATEWAY,
+                            "Failed to process embeddings".to_string(),
+                        )
+                    }
+                    AppError::AiServiceError(e) => {
+                        error!("AI Service Error: {}", e);
+                        (StatusCode::INTERNAL_SERVER_ERROR, e)
+                    }
+                    AppError::PasswordProcessingError => {
+                        (StatusCode::INTERNAL_SERVER_ERROR, "Internal Server Error: Password processing error.".to_string())
+                    } 
+                    AppError::InternalServerErrorGeneric(e) => {
+                        error!("Internal server error: {}", e);
+                        (
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            "An unexpected error occurred".to_string(),
+                        )
+                    }
+                    AppError::Session(e) => {
+                        error!("Session error: {}", e);
+                        (
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            "Session management error".to_string(),
+                        )
+                    }
+                    AppError::NotImplemented(msg) => {
+                        error!("Not Implemented: {}", msg);
+                        (StatusCode::NOT_IMPLEMENTED, msg)
+                    }
+                    AppError::WebSocketSendError(e) => {
+                        error!("WebSocket send error: {}", e);
+                        (
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            "WebSocket send error".to_string(),
+                        )
+                    }
+                    AppError::WebSocketReceiveError(e) => {
+                        error!("WebSocket receive error: {}", e);
+                        (
+                            StatusCode::BAD_REQUEST, // Or INTERNAL_SERVER_ERROR depending on context
+                            "WebSocket receive error".to_string(),
+                        )
+                    }
+                    AppError::ChunkingError(e) => {
+                        error!("Text chunking error: {}", e);
+                        (
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            "Text chunking error".to_string(),
+                        )
+                    }
+                    AppError::CharacterParsingError(e) => {
+                        error!("Character parsing error: {}", e);
+                        (
+                            StatusCode::BAD_REQUEST,
+                            "Failed to parse character data".to_string(),
+                        )
+                    }
+                    AppError::TextProcessingError(e) => {
+                        error!("Text processing error: {}", e);
+                        (
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            "Failed to process text".to_string(),
+                        )
+                    }
+                    // This case should not be reachable due to the outer match
+                    AppError::ValidationError(_) => unreachable!("ValidationError should be handled by the outer match arm"),
+                    AppError::BadGateway(msg) => {
+                        error!("Bad Gateway error: {}", msg);
+                        (StatusCode::BAD_GATEWAY, msg)
+                    }
+                };
+                let body = Json(json!({
+                    "error": error_message,
+                }));
+                (status, body).into_response()
             }
-            AppError::DbManagedPoolError(e) => {
-                error!("Database managed pool error: {}", e);
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "Database connection error".to_string(),
-                )
-            }
-            AppError::DbPoolBuildError(e) => {
-                error!("Database pool build error: {}", e);
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "Database configuration error".to_string(),
-                )
-            }
-            AppError::DbInteractError(e) => {
-                error!("Database interaction error: {}", e);
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "Database task execution error".to_string(),
-                )
-            }
-            AppError::DbMigrationError(e) => {
-                error!("Database migration error: {}", e);
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "Database schema error".to_string(),
-                )
-            }
-            AppError::PasswordHashingFailed(e) => {
-                error!("Password hashing failed: {}", e);
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "Internal security error".to_string(),
-                )
-            }
-            AppError::ConfigError(msg) => {
-                error!("Configuration error: {}", msg);
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "Server configuration error".to_string(),
-                )
-            }
-            AppError::IoError(e) => {
-                error!("IO error: {}", e);
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "File system or network error".to_string(),
-                )
-            }
-            AppError::SerializationError(e) => {
-                error!("Serialization error: {}", e);
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "Data formatting error".to_string(),
-                )
-            }
-            AppError::GeminiError(e) => {
-                error!("LLM API error: {}", e);
-                // Consider mapping specific GenAIError types to different user messages/codes
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "AI service error".to_string(),
-                )
-            }
-            AppError::ImageProcessingError(e) => {
-                error!("Image Processing Error: {}", e);
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "Failed to process image".to_string(),
-                )
-            }
-            AppError::HttpRequestError(e) => {
-                error!("HTTP Request Error: {}", e);
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "Failed to communicate with external service".to_string(),
-                )
-            }
-            AppError::HttpMiddlewareError(e) => {
-                error!("HTTP Middleware Error: {}", e);
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "Failed during external service communication".to_string(),
-                )
-            }
-            AppError::LlmClientError(msg) => {
-                error!("LLM Client Error: {}", msg);
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "AI service client error".to_string(),
-                )
-            }
-            AppError::GenerationError(msg) => {
-                // Updated variant name
-                error!("LLM Generation Error: {}", msg);
-                (
-                    StatusCode::BAD_GATEWAY,
-                    "AI service request failed".to_string(),
-                )
-            }
-            AppError::EmbeddingError(msg) => {
-                // Updated variant name
-                error!("LLM Embedding Error: {}", msg);
-                (
-                    StatusCode::BAD_GATEWAY,
-                    "AI embedding service request failed".to_string(),
-                )
-            }
-            AppError::VectorDbError(e) => {
-                error!("Vector DB error: {}", e);
-                (
-                    StatusCode::BAD_GATEWAY,
-                    "Failed to process embeddings".to_string(),
-                )
-            }
-            AppError::AiServiceError(e) => {
-                error!("AI Service Error: {}", e);
-                (StatusCode::INTERNAL_SERVER_ERROR, e)
-            }
-
-            AppError::PasswordProcessingError => {
-                (StatusCode::INTERNAL_SERVER_ERROR, self.to_string())
-            } // Handle new variant
-
-            // Catch-all Internal Server Error MUST be last
-            AppError::InternalServerErrorGeneric(e) => {
-                // Renamed variant
-                // Log the full error chain if possible
-                error!("Internal Server Error: {:?}", e); // Use debug formatting for Anyhow
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "An unexpected error occurred".to_string(),
-                )
-            }
-            AppError::Session(e) => {
-                error!("Session error: {}", e);
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "Session management error".to_string(),
-                )
-            }
-            AppError::NotImplemented(msg) => {
-                error!("Not Implemented: {}", msg);
-                (StatusCode::NOT_IMPLEMENTED, msg)
-            }
-
-            // WebSocket Errors
-            AppError::WebSocketSendError(e) => {
-                error!("WebSocket send error: {}", e);
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "WebSocket send error".to_string(),
-                )
-            }
-            AppError::WebSocketReceiveError(e) => {
-                error!("WebSocket receive error: {}", e);
-                (
-                    StatusCode::BAD_REQUEST,
-                    "WebSocket receive error".to_string(),
-                )
-            }
-
-            // Chunking Errors (NEW)
-            AppError::ChunkingError(e) => {
-                error!("Text chunking error: {}", e);
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "Text chunking error".to_string(),
-                )
-            }
-
-            // Character Parsing Error (NEW)
-            AppError::CharacterParsingError(e) => {
-                error!("Character parsing error: {}", e);
-                (
-                    StatusCode::BAD_REQUEST,
-                    "Failed to parse character data".to_string(),
-                )
-            }
-
-            // Tokenization Error
-            AppError::TextProcessingError(e) => {
-                error!("Text processing error: {}", e);
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "Failed to process text".to_string(),
-                )
-            }
-
-            AppError::ValidationError(msg) => (
-                StatusCode::BAD_REQUEST,
-                format!("Validation error: {}", msg),
-            ),
-
-            AppError::BadGateway(msg) => {
-                error!("Bad Gateway error: {}", msg);
-                (StatusCode::BAD_GATEWAY, msg)
-            }
-        };
-
-        let body = Json(json!({
-            "error": error_message,
-        }));
-
-        (status, body).into_response()
+        }
     }
 }
 
@@ -834,15 +833,6 @@ mod tests {
     }
 
     #[test]
-    fn test_app_error_from_tower_sessions_store_error() {
-        // Cannot easily create tower_sessions::session_store::Error.
-        // Test the target variant structure.
-        let app_error = AppError::SessionStoreError("Simulated session store error".to_string());
-        assert!(matches!(app_error, AppError::SessionStoreError(_)));
-        // This covers lines 710-711 conceptually.
-    }
-
-    #[test]
     fn test_app_error_from_diesel_error() {
         let diesel_error = DieselError::NotFound;
         let app_error: AppError = diesel_error.into();
@@ -988,29 +978,6 @@ mod tests {
         let app_error: AppError = anyhow_error.into(); // Use into() which calls From
         assert!(matches!(app_error, AppError::InternalServerErrorGeneric(s) if s == error_string));
         // Covers lines 806-807
-    }
-
-    #[test]
-    fn test_app_error_from_tower_sessions_session_error() {
-        // Construct via Store(Decode(serde_json::Error))
-        let json_error = create_serde_json_error();
-        // Note: session_store::Error::Decode might not be public or constructible this way.
-        // If this fails, we might need to skip direct testing of this From impl.
-        // Let's assume session_store::Error::Decode exists and is constructible for now.
-        // If tower_sessions::session_store::Error::Decode is not available,
-        // we might need to use another variant like session_store::Error::Backend("...".to_string())
-        // For now, trying Decode:
-        // Assuming session_store::Error::Decode is constructible. If this fails, might need another approach.
-        // Assuming session_store::Error::Decode is constructible. If this fails, might need another approach.
-        // Assuming session_store::Error::Decode is constructible. If this fails, might need another approach.
-        // Assuming session_store::Error::Decode is constructible. If this fails, might need another approach.
-        // Assuming session_store::Error::Decode is constructible. If this fails, might need another approach.
-        let store_error = tower_sessions::session_store::Error::Decode(json_error.to_string()); // Convert to String
-        let session_error = tower_sessions::session::Error::Store(store_error);
-        let error_string = session_error.to_string();
-        let app_error: AppError = session_error.into();
-        assert!(matches!(app_error, AppError::Session(s) if s == error_string));
-        // Covers lines 812-813
     }
 
     #[test]
@@ -1606,11 +1573,5 @@ impl From<crate::auth::AuthError> for AppError {
                 "Your account is locked. Please contact an administrator.".to_string(),
             ),
         }
-    }
-}
-
-impl From<ValidationErrors> for AppError {
-    fn from(errors: ValidationErrors) -> Self {
-        AppError::ValidationError(errors.to_string())
     }
 }

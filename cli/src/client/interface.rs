@@ -22,6 +22,12 @@ use super::types::{
     HealthStatus,
     RegisterPayload, // CLI specific payload
     StreamEvent,
+    // New DTOs for character and chat management
+    CharacterCreateDto,
+    CharacterUpdateDto,
+    ChatSessionDetails,
+    // CharacterOverrideRequest, // This is a request payload, not directly returned by trait methods
+    OverrideSuccessResponse,
 };
 
 /// Trait for abstracting HTTP client interactions to allow mocking in tests.
@@ -46,9 +52,30 @@ pub trait HttpClient: Send + Sync {
         &self,
         character_id: Uuid,
     ) -> Result<ClientCharacterDataForClient, CliError>;
+    async fn create_character(
+        &self,
+        character_data: CharacterCreateDto,
+    ) -> Result<ClientCharacterDataForClient, CliError>;
+    async fn update_character(
+        &self,
+        id: Uuid,
+        character_update_data: CharacterUpdateDto,
+    ) -> Result<ClientCharacterDataForClient, CliError>;
 
     // Chat
     async fn list_chat_sessions(&self) -> Result<Vec<Chat>, CliError>;
+    async fn get_chat_session(&self, session_id: Uuid) -> Result<ChatSessionDetails, CliError>;
+    async fn set_chat_character_override(
+        &self,
+        session_id: Uuid,
+        field_name: String,
+        value: String,
+    ) -> Result<OverrideSuccessResponse, CliError>;
+    async fn get_effective_character_for_chat(
+        &self,
+        character_id: Uuid,
+        session_id: Uuid,
+    ) -> Result<ClientCharacterDataForClient, CliError>; // Assuming it returns the full character data with overrides applied
     async fn get_chat_messages(
         &self,
         session_id: Uuid,
