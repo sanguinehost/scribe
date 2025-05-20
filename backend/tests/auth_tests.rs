@@ -541,11 +541,11 @@ async fn test_login_user_not_found() -> AnyhowResult<()> {
 
     let response = test_app.router.clone().oneshot(request).await?;
 
-    // Should fail with 404 Not Found
+    // Should fail with 401 Unauthorized
     assert_eq!(
         response.status(),
-        StatusCode::NOT_FOUND,
-        "Login with non-existent user should return 404"
+        StatusCode::UNAUTHORIZED,
+        "Login with non-existent user should return 401"
     );
 
     // Explicitly call cleanup before the end of the test
@@ -553,8 +553,8 @@ async fn test_login_user_not_found() -> AnyhowResult<()> {
 
     // Verify error message (depends on AppError mapping)
     let (status, error_body) = get_json_body::<Value>(response).await?;
-    assert_eq!(status, StatusCode::NOT_FOUND);
-    assert_eq!(error_body["error"], "User not found");
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    assert_eq!(error_body["error"], "Invalid identifier or password");
 
     // No user created, so no guard cleanup needed in this specific test case
     Ok(())

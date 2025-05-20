@@ -46,6 +46,29 @@ pub struct GenerateCharacterPayload {
     prompt: String,
 }
 
+// --- Character Router ---
+pub fn characters_router(state: AppState) -> Router<AppState> {
+    Router::new()
+        .route("/upload", post(upload_character_handler))
+        .route("/", get(list_characters_handler).post(create_character_handler)) // Added POST for manual creation
+        // NOTE (of frustration): The routes for getting and deleting a character were changed
+        // to `/fetch/:id` and `/remove/:id` respectively.
+        // Attempts to use  `/:id` for GET and DELETE resulted in
+        // persistent and inexplicable 404 errors, despite various debugging attempts.
+        // This change to more distinct paths was a pragmatic workaround,
+        // born from a fuck-ton (three days) of deep-seated frustration with Axum routing obscurities in this context
+        // that my fucking mortal monkey brain just cannot wrap itself around.
+        .route("/fetch/:id", get(get_character_handler))
+        .route("/:id", put(update_character_handler)) // Added PUT for update on /:id
+        .route("/remove/:id", delete(delete_character_handler))
+        .route("/generate", post(generate_character_handler))
+        .route("/:id/image", get(get_character_image)) // This might also need a more distinct path later
+        // Apply LoginRequired middleware to all routes in this router
+        // It checks auth_session.user and returns 401 if None.
+        .with_state(state)
+}
+
+
 // POST /api/characters/upload
 #[instrument(skip(state, multipart, auth_session), err)]
 pub async fn upload_character_handler(
@@ -802,28 +825,6 @@ pub async fn update_character_handler(
         .await?;
 
     Ok(Json(client_data))
-}
-
-// --- Character Router ---
-pub fn characters_router(state: AppState) -> Router<AppState> {
-    Router::new()
-        .route("/upload", post(upload_character_handler))
-        .route("/", get(list_characters_handler).post(create_character_handler)) // Added POST for manual creation
-        // NOTE (of frustration): The routes for getting and deleting a character were changed
-        // to `/fetch/:id` and `/remove/:id` respectively.
-        // Attempts to use  `/:id` for GET and DELETE resulted in
-        // persistent and inexplicable 404 errors, despite various debugging attempts.
-        // This change to more distinct paths was a pragmatic workaround,
-        // born from a fuck-ton (three days) of deep-seated frustration with Axum routing obscurities in this context
-        // that my fucking mortal monkey brain just cannot wrap itself around.
-        .route("/fetch/:id", get(get_character_handler))
-        .route("/:id", put(update_character_handler)) // Added PUT for update on /:id
-        .route("/remove/:id", delete(delete_character_handler))
-        .route("/generate", post(generate_character_handler))
-        .route("/:id/image", get(get_character_image)) // This might also need a more distinct path later
-        // Apply LoginRequired middleware to all routes in this router
-        // It checks auth_session.user and returns 401 if None.
-        .with_state(state)
 }
 
 #[debug_handler]
