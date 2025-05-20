@@ -728,7 +728,7 @@ impl HttpClient for ReqwestClientWrapper {
     }
 
     async fn get_chat_session(&self, session_id: Uuid) -> Result<ChatSessionDetails, CliError> {
-        let url = build_url(&self.base_url, &format!("/api/chats/{}", session_id))?;
+        let url = build_url(&self.base_url, &format!("/api/chats/fetch/{}", session_id))?;
         tracing::info!(target: "scribe_cli::client::implementation", %url, %session_id, "Fetching chat session details via HttpClient");
         let response = self
             .client
