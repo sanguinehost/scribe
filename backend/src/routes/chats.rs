@@ -2,6 +2,7 @@ use crate::auth::session_dek::SessionDek; // Added SessionDek
 use crate::auth::user_store::Backend as AuthBackend;
 use crate::crypto; // Added crypto for encryption/decryption
 use crate::errors::AppError;
+use crate::models::chat_override::CharacterOverrideDto; // Added for override handler
 use crate::models::chats::{
     Chat,
     ChatSettingsResponse,
@@ -35,6 +36,7 @@ use std::sync::Arc;
 use tracing::info;
 use uuid::Uuid;
 use validator::Validate;
+use serde::Serialize; // Remove unused Deserialize
 
 // Shorthand for auth session
 type CurrentAuthSession = AuthSession<AuthBackend>;
@@ -63,6 +65,74 @@ pub fn chat_routes() -> Router<crate::state::AppState> {
             delete(delete_trailing_messages_handler),
         )
         .route("/:id/votes", get(get_votes_by_chat_id_handler))
+        .route(
+            "/:id/character/overrides",
+            post(set_chat_character_override_handler),
+        )
+}
+
+// Placeholder for the new handler
+pub async fn set_chat_character_override_handler(
+    auth_session: CurrentAuthSession,
+    State(state): State<AppState>,
+    dek: SessionDek, // Added SessionDek extractor
+    Path(session_id): Path<Uuid>, // Renamed id to session_id for clarity
+    Json(payload): Json<CharacterOverrideDto>,
+) -> Result<impl IntoResponse, AppError> {
+    // Validate the payload first
+    payload.validate()?;
+
+    let user = auth_session
+        .user
+        .ok_or(AppError::Unauthorized("Not logged in".to_string()))?;
+
+    tracing::info!(target: "scribe_backend::routes::chats", %session_id, user_id = %user.id, field_name = %payload.field_name, "Attempting to set chat character override");
+
+    // The user.dek from auth_session might not be the raw SecretBox<Vec<u8>> needed by the service.
+    // The SessionDek extractor provides the correct SecretBox<Vec<u8>>.
+    let override_db_response = chat_service::set_character_override(
+        &state.pool,
+        user.id,
+        session_id,
+        payload.clone(), // Clone payload for use in client response
+        Some(&dek.0), // Pass the SecretBox from SessionDek
+    )
+    .await?;
+
+    // Create a response structure that includes the message field expected by the CLI
+    #[derive(Serialize)]
+    struct OverrideResponse {
+        message: String,
+        session_id: Uuid,
+        field_name: String,
+        new_value: String,
+        // Include original fields for compatibility with existing tests
+        id: Uuid,
+        chat_session_id: Uuid,
+        original_character_id: Uuid,
+        overridden_value: Vec<u8>,
+        overridden_value_nonce: Option<Vec<u8>>,
+        created_at: chrono::DateTime<chrono::Utc>,
+        updated_at: chrono::DateTime<chrono::Utc>,
+    }
+
+    let client_response = OverrideResponse {
+        message: format!("Override for '{}' applied successfully.", override_db_response.field_name),
+        session_id: override_db_response.chat_session_id,
+        field_name: override_db_response.field_name.clone(),
+        new_value: payload.value, // Use the unencrypted value from the request
+        
+        // Include original fields
+        id: override_db_response.id,
+        chat_session_id: override_db_response.chat_session_id,
+        original_character_id: override_db_response.original_character_id,
+        overridden_value: override_db_response.overridden_value,
+        overridden_value_nonce: Some(override_db_response.overridden_value_nonce),
+        created_at: override_db_response.created_at,
+        updated_at: override_db_response.updated_at,
+    };
+
+    Ok((StatusCode::OK, Json(client_response)))
 }
 
 // Get all chats for current user

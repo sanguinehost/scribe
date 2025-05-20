@@ -80,7 +80,7 @@ mod chat_overrides_api_tests {
             .build().unwrap();
 
         let request_url = format!(
-            "{}/api/chat/overrides/{}", // Corrected to the new distinct path
+            "{}/api/chats/{}/character/overrides", // Align with CLI and backend route
             test_app.address,
             chat_session.id
         );
@@ -121,7 +121,7 @@ mod chat_overrides_api_tests {
         };
 
         let request_url = format!(
-            "{}/api/chat/overrides/{}",
+            "{}/api/chats/{}/character/overrides", // Align with CLI and backend route
             test_app.address,
             chat_session.id
         );
@@ -193,7 +193,7 @@ mod chat_overrides_api_tests {
         };
 
         let request_url = format!(
-            "{}/api/chat/overrides/{}",
+            "{}/api/chats/{}/character/overrides", // Align with CLI and backend route
             test_app.address,
             non_existent_session_id // Use the fake ID
         );
@@ -242,7 +242,7 @@ mod chat_overrides_api_tests {
         };
 
         let request_url = format!(
-            "{}/api/chat/overrides/{}",
+            "{}/api/chats/{}/character/overrides", // Align with CLI and backend route
             test_app.address,
             chat_session_a.id // User B targets User A's session
         );
@@ -273,7 +273,7 @@ mod chat_overrides_api_tests {
         };
 
         let request_url = format!(
-            "{}/api/chat/overrides/{}",
+            "{}/api/chats/{}/character/overrides", // Align with CLI and backend route
             test_app.address,
             chat_session.id
         );
@@ -309,7 +309,7 @@ mod chat_overrides_api_tests {
         };
 
         let request_url = format!(
-            "{}/api/chat/overrides/{}",
+            "{}/api/chats/{}/character/overrides", // Align with CLI and backend route
             test_app.address,
             chat_session.id
         );
@@ -328,6 +328,48 @@ mod chat_overrides_api_tests {
         assert!(error_response["error"].as_str().unwrap().contains("Validation error"));
         // Check that the error is for the 'field_name' field
         assert!(error_response["error_details"]["field_name"][0]["code"].as_str().unwrap().contains("length"));
+    }
+
+    #[tokio::test]
+    async fn test_create_override_response_has_message_field() {
+        let test_app = test_helpers::spawn_app(true, true, true).await;
+        let (_guard, _user, _character, chat_session, session_cookie) = setup_test_environment(&test_app).await;
+
+        let override_dto = CharacterOverrideDto {
+            field_name: "description".to_string(),
+            value: "This is a test override description.".to_string(),
+        };
+
+        let client = reqwest::Client::builder()
+            .cookie_store(true)
+            .build().unwrap();
+
+        let request_url = format!(
+            "{}/api/chats/{}/character/overrides",
+            test_app.address,
+            chat_session.id
+        );
+
+        let response = client
+            .post(&request_url)
+            .header("Cookie", &session_cookie)
+            .json(&override_dto)
+            .send()
+            .await
+            .expect("Failed to execute request.");
+
+        assert_eq!(response.status(), ReqwestStatusCode::OK);
+
+        // Parse the response as JSON value to check fields
+        let response_json: serde_json::Value = response.json().await.expect("Failed to parse response as JSON");
+        
+        // The test that would fail currently - the response doesn't have a "message" field
+        assert!(response_json.get("message").is_some(), "Response should include a 'message' field");
+        
+        // Check other expected fields
+        assert!(response_json.get("field_name").is_some(), "Response should include a 'field_name' field");
+        assert!(response_json.get("session_id").is_some() || response_json.get("chat_session_id").is_some(), 
+                "Response should include 'session_id' or 'chat_session_id'");
     }
 
 } 

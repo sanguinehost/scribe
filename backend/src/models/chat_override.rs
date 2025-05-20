@@ -57,7 +57,7 @@ pub struct UpdateChatCharacterOverride<'a> {
 }
 
 // DTO for creating/updating an override via API
-#[derive(Serialize, Deserialize, Debug, validator::Validate)]
+#[derive(Serialize, Deserialize, Debug, validator::Validate, Clone)]
 pub struct CharacterOverrideDto {
     #[validate(length(min = 1, max = 255))]
     pub field_name: String,
