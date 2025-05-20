@@ -4,7 +4,7 @@ This document outlines the plan for implementing manual character creation (with
 
 ## I. Backend Changes
 
-### A. Manual Character Creation (e.g., `POST /api/characters/manual_create`)
+### A. Manual Character Creation (e.g., `POST /api/characters`)
 
 1.  **Request DTO:**
     *   Define a new Data Transfer Object (DTO) for the request payload. This DTO will largely mirror the structure of `CharacterCardDataV3` as defined in the character card specifications.
@@ -59,7 +59,7 @@ This document outlines the plan for implementing manual character creation (with
     *   `updated_at`: TIMESTAMPTZ (Default to current timestamp, auto-update on modification)
     *   *Constraint:* Add a unique constraint on (`chat_session_id`, `original_character_id`, `field_name`) to ensure only one override per field for a specific character within a specific chat session.
 
-2.  **New API Endpoint (e.g., `POST /api/chat_sessions/:session_id/character_overrides`)**
+2.  **New API Endpoint (e.g., `POST /api/chats/:session_id/character/overrides`)**
     *   **Request Payload:** A JSON object like `{ "field_name": "description", "value": "New chat-specific description" }`.
         *   Initially, `field_name` will support "description", "personality", and "first_mes".
     *   **Handler Logic:**
@@ -148,9 +148,9 @@ graph TD
 
     subgraph Backend API [/api]
         direction TB
-        EP_ManualCreate["POST /characters/manual_create <br> (Accepts DTO with char data)"]
+        EP_ManualCreate["POST /characters <br> (Accepts DTO with char data)"]
         EP_EditChar["PUT /characters/:id <br> (Accepts DTO with fields to update)"]
-        EP_ChatOverride["POST /chat_sessions/:sid/character_overrides <br> (Accepts field_name, value)"]
+        EP_ChatOverride["POST /chats/:sid/character/overrides <br> (Accepts field_name, value)"]
         EP_GetChar["GET /characters/fetch/:id <br> (Modified to check overrides)"]
     end
 

@@ -10,6 +10,7 @@ use crate::models::chats::{
     Chat, GenerateChatRequest, MessageRole, SuggestedActionItem, SuggestedActionsRequest,
     SuggestedActionsResponse,
 };
+use crate::models::chat_override::{CharacterOverrideDto, ChatCharacterOverride};
 use crate::routes::chats::{get_chat_settings_handler, update_chat_settings_handler};
 use crate::schema::chat_sessions;
 use crate::services::chat_service::{self, ScribeSseEvent};
@@ -17,7 +18,7 @@ use crate::state::AppState;
 use axum::{
     Json, Router,
     extract::{Path, Query, State},
-    http::HeaderMap,
+    http::{HeaderMap, StatusCode},
     response::{
         IntoResponse, Sse,
         sse::{Event, KeepAlive},
@@ -71,7 +72,7 @@ pub async fn create_chat_session_handler(
     auth_session: CurrentAuthSession,
     _session_dek: SessionDek, // Mark as unused for now, will be used for character system prompt
     Json(payload): Json<CreateChatSessionPayload>,
-) -> Result<Json<Chat>, AppError> {
+) -> Result<(StatusCode, Json<Chat>), AppError> {
     info!("Attempting to create new chat session");
 
     let user = auth_session.user.ok_or_else(|| {
@@ -189,7 +190,7 @@ pub async fn create_chat_session_handler(
         })??;
 
     info!(chat_id = %created_chat_session.id, "Chat session created successfully");
-    Ok(Json(created_chat_session))
+    Ok((StatusCode::CREATED, Json(created_chat_session)))
 }
 
 #[instrument(skip_all, fields(session_id = %session_id_str, user_id = field::Empty, chat_id = field::Empty, message_id = field::Empty))]
@@ -757,7 +758,7 @@ pub async fn generate_chat_response(
 pub fn chat_routes(state: AppState) -> Router<AppState> {
     info!("Entering chat_routes");
     Router::new()
-        .route("/", post(create_chat_session_handler)) // Added route for creating chat sessions
+        .route("/create_session", post(create_chat_session_handler))
         .route(
             "/:chat_id/suggested-actions",
             post(generate_suggested_actions),
@@ -768,6 +769,10 @@ pub fn chat_routes(state: AppState) -> Router<AppState> {
             get(get_chat_settings_handler).put(update_chat_settings_handler),
         )
         .route("/:session_id_str/generate", post(generate_chat_response))
+        .route(
+            "/overrides/:session_id",
+            post(create_or_update_chat_character_override_handler).with_state(state.clone()),
+        )
         .with_state(state)
 }
 
@@ -953,4 +958,60 @@ pub async fn get_chat_session_with_dek(
     } else {
         Err(AppError::NotFound("Chat session not found".to_string()))
     }
+}
+
+#[instrument(skip_all, fields(user_id = field::Empty, chat_session_id = %session_id, field_name = %payload.field_name))]
+pub async fn create_or_update_chat_character_override_handler(
+    State(state): State<AppState>,
+    auth_session: CurrentAuthSession,
+    session_dek: SessionDek,
+    Path(session_id): Path<Uuid>,
+    Json(payload): Json<CharacterOverrideDto>,
+) -> Result<impl IntoResponse, AppError> {
+    info!("Attempting to create or update chat character override via handler");
+    payload.validate()?; // Validate DTO
+
+    let user = auth_session.user.ok_or_else(|| {
+        error!("User not found in session during override creation/update");
+        AppError::Unauthorized("User not found in session".to_string())
+    })?;
+    let user_id = user.id;
+    tracing::Span::current().record("user_id", &tracing::field::display(user_id));
+
+    // 1. Verify ownership of the chat_session and get original_character_id
+    let chat_session_details = state.pool.get().await?
+        .interact(move |conn| {
+            chat_sessions::table
+                .filter(chat_sessions::id.eq(session_id))
+                .select((chat_sessions::user_id, chat_sessions::character_id))
+                .first::<(Uuid, Uuid)>(conn)
+                .optional()
+        })
+        .await??
+        .ok_or_else(|| AppError::NotFound(format!("Chat session {} not found", session_id)))?;
+
+    if chat_session_details.0 != user_id {
+        error!(
+            "User {} attempted to modify overrides for chat session {} owned by {}",
+            user_id, session_id, chat_session_details.0
+        );
+        return Err(AppError::Forbidden);
+    }
+    let original_character_id = chat_session_details.1;
+
+    // 2. Call the ChatOverrideService to handle the logic
+    let upserted_override: ChatCharacterOverride = state.chat_override_service // Use the service from AppState
+        .create_or_update_chat_override(
+            session_id,
+            original_character_id,
+            user_id, // Pass user_id for logging/future checks in service
+            payload.field_name, // field_name is already a String
+            payload.value,      // value is already a String
+            &session_dek,
+        )
+        .await?;
+
+    info!(override_id = %upserted_override.id, "Chat character override created/updated successfully via handler calling service");
+    
+    Ok(Json(upserted_override))
 }

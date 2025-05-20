@@ -1,0 +1,2 @@
+ALTER TABLE chat_character_overrides
+ADD CONSTRAINT chat_character_overrides_session_id_field_name_key UNIQUE (chat_session_id, field_name);

@@ -196,14 +196,19 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
                             }
                             Err(e) => {
                                 warn!(message_id = %message.id, error = %e, "Failed to convert decrypted content to UTF-8. Falling back to lossy conversion of ciphertext.");
-                                content_to_embed =
-                                    String::from_utf8_lossy(&message.content).to_string();
+                                content_to_embed = String::from_utf8_lossy(&message.content)
+                                    .to_string()
+                                    .replace("\n", " ")
+                                    .replace("\r", " ");
                             }
                         }
                     }
                     Err(e) => {
                         warn!(message_id = %message.id, error = %e, "Failed to decrypt message content. Falling back to lossy conversion of ciphertext.");
-                        content_to_embed = String::from_utf8_lossy(&message.content).to_string();
+                        content_to_embed = String::from_utf8_lossy(&message.content)
+                            .to_string()
+                            .replace("\n", " ")
+                            .replace("\r", " ");
                     }
                 }
             }
@@ -213,7 +218,10 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
                 } else if message.content_nonce.is_none() {
                     debug!(message_id = %message.id, "Message has no nonce, treating as plaintext for embedding.");
                 }
-                content_to_embed = String::from_utf8_lossy(&message.content).to_string();
+                content_to_embed = String::from_utf8_lossy(&message.content)
+                    .to_string()
+                    .replace("\n", " ")
+                    .replace("\r", " ");
             }
         }
 
@@ -564,21 +572,27 @@ mod tests {
             max_size: 100,
             overlap: 20,
         };
-        let embedding_pipeline_service = Arc::new(EmbeddingPipelineService::new(chunk_config))
-            as Arc<dyn EmbeddingPipelineServiceTrait>; // Cast to trait object
+        let embedding_pipeline_service_concrete = Arc::new(EmbeddingPipelineService::new(chunk_config));
 
-        let app_state = Arc::new(AppState {
+        let encryption_service = Arc::new(crate::services::encryption_service::EncryptionService::new());
+        let chat_override_service = Arc::new(crate::services::chat_override_service::ChatOverrideService::new(pool.clone(), encryption_service.clone()));
+        let token_counter_service = Arc::new(crate::services::hybrid_token_counter::HybridTokenCounter::new_local_only(
+            crate::services::tokenizer_service::TokenizerService::new(
+                config.tokenizer_model_path.as_ref().expect("Tokenizer path is None").as_str()
+            )
+            .expect("Failed to create tokenizer for test")
+        ));
+
+        let app_state = Arc::new(AppState::new(
             pool,
             config,
             ai_client,
-            embedding_client: mock_embed_client.clone(), // Use mock for embedding client here
-            qdrant_service: mock_qdrant.clone(),       // Use mock for Qdrant here
-            embedding_pipeline_service, // Use the real service
-            embedding_call_tracker: Arc::new(tokio::sync::Mutex::new(Vec::new())),
-            token_counter: Arc::new(crate::services::hybrid_token_counter::HybridTokenCounter::new_local_only(
-                crate::services::tokenizer_service::TokenizerService::new("/home/socol/Workspace/sanguine-scribe/backend/resources/tokenizers/gemma.model")
-                    .expect("Failed to create tokenizer for test")))
-        });
+            mock_embed_client.clone(), // Use mock for embedding client here
+            mock_qdrant.clone(),       // Use mock for Qdrant here
+            embedding_pipeline_service_concrete, // Use the real service, cast to trait object is handled by new()
+            chat_override_service,
+            token_counter_service
+        ));
         (app_state, mock_qdrant, mock_embed_client)
     }
 
@@ -1098,13 +1112,15 @@ mod tests {
             "Expected one call to embedding client. Actual calls: {:#?}",
             calls
         );
-        // Expect lossy conversion of the ciphertext, then trimmed, to match chunk_text behavior
-        let expected_embedded_content = String::from_utf8_lossy(&encrypted_content)
-            .trim()
-            .to_string();
+        // Expect lossy conversion of the ciphertext, sanitized, then trimmed
+        let expected_lossy_content_sanitized = String::from_utf8_lossy(&encrypted_content)
+            .to_string()
+            .replace("\n", " ")
+            .replace("\r", " ");
+        let expected_embedded_content = expected_lossy_content_sanitized.trim().to_string();
         assert_eq!(
             calls[0].0, expected_embedded_content,
-            "Expected trimmed lossy ciphertext to be embedded"
+            "Expected trimmed, sanitized lossy ciphertext to be embedded"
         );
     }
 
@@ -1149,13 +1165,15 @@ mod tests {
 
         let calls = mock_embed_client.get_calls();
         assert_eq!(calls.len(), 1, "Expected one call to embedding client");
-        // Expect lossy conversion of the ciphertext, then trimmed, due to decryption failure
-        let expected_embedded_content = String::from_utf8_lossy(&encrypted_content)
-            .trim()
-            .to_string();
+        // Expect lossy conversion of the ciphertext, sanitized, then trimmed, due to decryption failure
+        let expected_lossy_content_sanitized = String::from_utf8_lossy(&encrypted_content)
+            .to_string()
+            .replace("\n", " ")
+            .replace("\r", " ");
+        let expected_embedded_content = expected_lossy_content_sanitized.trim().to_string();
         assert_eq!(
             calls[0].0, expected_embedded_content,
-            "Expected trimmed lossy ciphertext to be embedded after decryption failure"
+            "Expected trimmed, sanitized lossy ciphertext to be embedded after decryption failure"
         );
     }
 
@@ -1199,13 +1217,16 @@ mod tests {
         let calls = mock_embed_client.get_calls();
         assert_eq!(calls.len(), 1, "Expected one call to embedding client");
 
-        // Expect lossy conversion of the ciphertext, as decryption won't be attempted
-        let expected_embedded_content = String::from_utf8_lossy(&encrypted_content_bytes)
-            .trim()
-            .to_string();
+        // Expect lossy conversion of the ciphertext, sanitized, then trimmed
+        let expected_lossy_content_sanitized =
+            String::from_utf8_lossy(&encrypted_content_bytes)
+                .to_string()
+                .replace("\n", " ")
+                .replace("\r", " ");
+        let expected_embedded_content = expected_lossy_content_sanitized.trim().to_string();
         assert_eq!(
             calls[0].0, expected_embedded_content,
-            "Expected trimmed lossy original (encrypted) content to be embedded"
+            "Expected trimmed, sanitized lossy original (encrypted) content to be embedded"
         );
     }
 

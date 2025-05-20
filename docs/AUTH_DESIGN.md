@@ -16,7 +16,7 @@ We will use the `axum-login` crate (`axum-login = "0.14.0"` or latest compatible
 
 ## 3. User Store & Password Management
 
-*   **User Model:** `axum-login` will interact with our existing `User` model (defined in `backend/src/models/users.rs` and the `users` table in PostgreSQL). We will need to implement the `axum_login::AuthUser` trait for our `User` model.
+*   **User Model:** `axum-login` will interact with our existing `User` model (defined in `backend/src/models/users.rs` and the `users` table in PostgreSQL). We will need to implement the `axum_login::AuthUser` trait for our `User` model. The `User` model includes a `role` field (see Authorization section).
 *   **Password Hashing:**
     *   **Algorithm:** `bcrypt` will be used for hashing user passwords before storing them in the `password_hash` column of the `users` table.
     *   **Crate:** The `bcrypt` crate (`bcrypt = "0.15.1"` or latest) will be added as a dependency.
@@ -36,47 +36,68 @@ We will use the `axum-login` crate (`axum-login = "0.14.0"` or latest compatible
 ## 5. API Endpoints & Flow
 
 *   **`/api/auth/register` (POST):**
-    *   **Request:** `Json({ username: "user", password: "password" })`
+    *   **Request:** `Json({ username: "user", email: "user@example.com", password: "password", recovery_phrase: "optional phrase" })`
     *   **Logic:**
-        1.  Validate input (username length, password complexity - basic checks for MVP).
-        2.  Check if username already exists in the `users` table. Return `409 Conflict` if it does.
+        1.  Validate input (username length, password complexity - basic checks for MVP, email format).
+        2.  Check if username or email already exists. Return `409 Conflict` if so.
         3.  Hash the password using `bcrypt`.
-        4.  Insert the new user (username, hashed password) into the `users` table using Diesel.
-    *   **Response:** `201 Created` on success, appropriate error codes (`400 Bad Request`, `409 Conflict`, `500 Internal Server Error`) on failure. Does *not* log the user in automatically.
+        4.  Perform server-side encryption setup (generate DEK, KEK, encrypt DEK, etc. - see `ENCRYPTION_ARCHITECTURE.md`).
+        5.  Assign `UserRole::Administrator` if first user, else `UserRole::User`.
+        6.  Insert the new user (username, email, hashed password, role, encryption-related fields) into the `users` table.
+    *   **Response:** `201 Created` (potentially with user ID, username, email, role, and generated recovery phrase if applicable) on success, appropriate error codes (`400 Bad Request`, `409 Conflict`, `500 Internal Server Error`) on failure. Does *not* log the user in automatically.
 *   **`/api/auth/login` (POST):**
-    *   **Request:** `Json({ username: "user", password: "password" })`
+    *   **Request:** `Json({ identifier: "user_or_email", password: "password" })`
     *   **Logic:**
-        1.  Find user by username in the `users` table. Return `401 Unauthorized` if not found.
-        2.  Verify the provided password against the stored hash using `bcrypt::verify`. Return `401 Unauthorized` if verification fails.
-        3.  If verification succeeds, use `AuthSession::login(&user)` provided by `axum-login` to establish the session. This sets the session cookie.
-    *   **Response:** `200 OK` (potentially with user info excluding hash) on success, `401 Unauthorized` on failure, `500 Internal Server Error`.
+        1.  Find user by username or email. Return `401 Unauthorized` if not found.
+        2.  Verify the provided password against the stored hash. Return `401 Unauthorized` if verification fails.
+        3.  Check account status (e.g., if locked).
+        4.  If verification succeeds, decrypt user's DEK using KEK (derived from password) and store plaintext DEK in session memory.
+        5.  Use `AuthSession::login(&user)` to establish the session.
+    *   **Response:** `200 OK` (potentially with user info: ID, username, email, role) on success, `401 Unauthorized` on failure, `500 Internal Server Error`.
 *   **`/api/auth/logout` (POST):**
-    *   **Logic:** Use `AuthSession::logout()` provided by `axum-login` to clear the session.
+    *   **Logic:** Use `AuthSession::logout()` to clear the session (including the in-memory DEK).
     *   **Response:** `200 OK`.
-*   **`/api/auth/me` (GET):** (Optional but useful)
+*   **`/api/auth/me` (GET):**
     *   **Logic:** Requires authentication. Uses `AuthSession` to retrieve the current logged-in `User`.
-    *   **Response:** `200 OK` with user details (excluding hash), `401 Unauthorized` if not logged in.
+    *   **Response:** `200 OK` with user details (ID, username, email, role), `401 Unauthorized` if not logged in.
+*   **`/api/auth/change-password` (POST):**
+    *   **Logic:** Requires authentication. Verifies current password, re-keys encrypted DEK with new KEK derived from new password.
+    *   **Response:** `200 OK` on success.
+*   **`/api/auth/recover-password` (POST):**
+    *   **Logic:** Uses recovery phrase to decrypt DEK, allows setting a new password, re-keys DEK.
+    *   **Response:** `200 OK` on success.
 
 ## 6. Backend Middleware & User Access
 
 *   **`axum-login` Layers:** The necessary `axum_login::AuthManagerLayerBuilder` and session store layers will be added to the Axum router in `main.rs`.
-*   **Accessing User:** Authenticated routes will use the `AuthSession` extractor provided by `axum-login` to access the current `User` object (or check if a user is logged in).
+*   **Accessing User:** Authenticated routes will use the `AuthSession` extractor provided by `axum-login` to access the current `User` object (or check if a user is logged in). The `User` object will contain the `role` and the in-memory plaintext DEK (if login was successful).
     *   Example: `async fn protected_route(auth_session: AuthSession)`
-*   **Protected Routes:** Routes requiring authentication will extract `AuthSession` and check `auth_session.user`. If `None`, return `401 Unauthorized`.
+*   **Protected Routes:** Routes requiring authentication will extract `AuthSession` and check `auth_session.user`. If `None`, return `401 Unauthorized`. Further authorization checks (role/ownership) will be done within the handler.
 
 ## 7. Authorization (MVP)
 
-*   **Strategy:** Simple ownership-based access control.
-*   **Implementation:** Within authenticated API handlers (e.g., `get_character`, `list_characters`, `get_chat_session`), after retrieving the authenticated `User` object (containing the `user_id`) via `AuthSession`, database queries **must** include a filter condition comparing the resource's `user_id` column with the authenticated user's ID.
+*   **Strategy:** The MVP employs a combination of ownership-based access control and a basic role-based access control (RBAC) system.
+*   **User Roles:**
+    *   The system defines three primary roles: `User`, `Moderator`, and `Administrator` (enum `UserRole` in `models/users.rs`).
+    *   The first registered user is automatically assigned the `Administrator` role. Subsequent users default to the `User` role during registration.
+    *   Roles are stored in the `role` column of the `users` table.
+*   **Ownership-Based Control:**
+    *   Within authenticated API handlers (e.g., `get_character`, `list_characters`, `get_chat_session`), after retrieving the authenticated `User` object (containing the `user_id`) via `AuthSession`, database queries **must** include a filter condition comparing the resource's `user_id` column with the authenticated user's ID.
     *   Example (Diesel): `.filter(schema::characters::user_id.eq(authenticated_user.id))`
-*   **Failure:** If a user attempts to access a resource they don't own (even if authenticated), the handler should return `403 Forbidden` or `404 Not Found`.
+*   **Role-Based Control:**
+    *   Specific API endpoints or functionalities (e.g., admin-only operations, moderation actions) can check the `user.role` field of the authenticated `User` object.
+    *   Example: An admin dashboard route would verify `if auth_session.user.role == UserRole::Administrator { ... }`.
+*   **Failure:**
+    *   If a user attempts to access a resource they don't own, the handler should return `403 Forbidden` or `404 Not Found`.
+    *   If a user attempts an action not permitted for their role, the handler should return `403 Forbidden`.
 
 ## 8. Security Considerations Summary for MVP
 
 *   Use `axum-login` for session management.
 *   Use `bcrypt` for password hashing.
+*   Implement server-side encryption for sensitive data at rest using user-derived keys (see `ENCRYPTION_ARCHITECTURE.md`).
 *   Configure secure HttpOnly cookies.
-*   Implement user ownership checks rigorously in all relevant API handlers.
+*   Implement user ownership checks and basic role checks rigorously in all relevant API handlers.
 *   Keep user data and application data in separate tables within the single PostgreSQL instance.
 *   Consider CSRF protection.
 
@@ -86,9 +107,8 @@ We will use the `axum-login` crate (`axum-login = "0.14.0"` or latest compatible
 *   Advanced Microsegmentation (Infrastructure Level).
 *   Refresh Tokens.
 *   Rate Limiting on Auth Endpoints.
-*   Account Lockout Mechanisms.
-*   More Granular Authorization (Roles/Permissions via `casbin-rs` or similar).
+*   Account Lockout Mechanisms (basic status field exists, could be enhanced).
+*   Advanced Role/Permission Management: Implementing a more granular permission system beyond the basic MVP roles (e.g., using `casbin-rs` or a similar library for object-level permissions or custom actions).
 *   MFA (TOTP using `totp-rs` or `otpauth`).
 *   Integration with External IdPs (OAuth/OIDC using `oauth2`).
-*   Security Auditing / Logging.
-
+*   Security Auditing / Logging (basic logging exists, can be enhanced for security events).

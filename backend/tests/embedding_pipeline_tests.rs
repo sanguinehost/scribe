@@ -12,6 +12,10 @@ use scribe_backend::{
     test_helpers::{self, MockQdrantClientService}, // Removed AppStateBuilder, config. Added self for spawn_app
     text_processing::chunking::ChunkConfig,
     vector_db::qdrant_client::{QdrantClientServiceTrait, ScoredPoint, create_message_id_filter},
+    services::chat_override_service::ChatOverrideService,
+    services::encryption_service::EncryptionService,
+    services::hybrid_token_counter::HybridTokenCounter,
+    services::tokenizer_service::TokenizerService,
 };
 use serial_test::serial;
 use std::convert::TryFrom; // Needed for EmbeddingMetadata::try_from
@@ -50,16 +54,22 @@ async fn test_process_and_embed_message_integration() {
     let embedding_pipeline_service =
         EmbeddingPipelineService::new(ChunkConfig::from(test_app.config.as_ref()));
 
+    // Create dependent services for AppState
+    let encryption_service_for_test = Arc::new(EncryptionService::new());
+    let chat_override_service_for_test = Arc::new(ChatOverrideService::new(test_app.db_pool.clone(), encryption_service_for_test.clone()));
+    let tokenizer_service_for_test = TokenizerService::new("/home/socol/Workspace/sanguine-scribe/backend/resources/tokenizers/gemma.model")
+        .expect("Failed to create tokenizer for test");
+    let hybrid_token_counter_for_test = Arc::new(HybridTokenCounter::new_local_only(tokenizer_service_for_test));
+
     let app_state = Arc::new(AppState::new(
         test_app.db_pool.clone(),
         test_app.config.clone(),
         test_app.mock_ai_client.clone().expect("Mock AI client should be present"),
         test_app.mock_embedding_client.clone(),
-        test_app.qdrant_service.clone(), // Use the real qdrant_service from test_app
-        Arc::new(embedding_pipeline_service), // Use a real pipeline service
-        Arc::new(scribe_backend::services::hybrid_token_counter::HybridTokenCounter::new_local_only(
-            scribe_backend::services::tokenizer_service::TokenizerService::new("/home/socol/Workspace/sanguine-scribe/backend/resources/tokenizers/gemma.model")
-                .expect("Failed to create tokenizer for test")))
+        test_app.qdrant_service.clone(), 
+        Arc::new(embedding_pipeline_service), 
+        chat_override_service_for_test,
+        hybrid_token_counter_for_test.clone()
     ));
 
     // 2. Prepare test data
@@ -207,6 +217,13 @@ async fn test_process_and_embed_message_all_chunks_fail_embedding() {
     let embedding_pipeline_service =
         EmbeddingPipelineService::new(ChunkConfig::from(test_app.config.as_ref()));
 
+    // Create dependent services for AppState
+    let encryption_service_for_test_2 = Arc::new(EncryptionService::new());
+    let chat_override_service_for_test_2 = Arc::new(ChatOverrideService::new(test_app.db_pool.clone(), encryption_service_for_test_2.clone()));
+    let hybrid_token_counter_for_test_2 = Arc::new(scribe_backend::services::hybrid_token_counter::HybridTokenCounter::new_local_only(
+        scribe_backend::services::tokenizer_service::TokenizerService::new("/home/socol/Workspace/sanguine-scribe/backend/resources/tokenizers/gemma.model")
+            .expect("Failed to create tokenizer for test")));
+
     let app_state = Arc::new(AppState::new(
         test_app.db_pool.clone(),
         test_app.config.clone(),
@@ -214,9 +231,8 @@ async fn test_process_and_embed_message_all_chunks_fail_embedding() {
         test_app.mock_embedding_client.clone(),
         test_app.qdrant_service.clone(), // Use the qdrant_service from test_app (which is the mock)
         Arc::new(embedding_pipeline_service), // Use the real service instead of the mock
-        Arc::new(scribe_backend::services::hybrid_token_counter::HybridTokenCounter::new_local_only(
-            scribe_backend::services::tokenizer_service::TokenizerService::new("/home/socol/Workspace/sanguine-scribe/backend/resources/tokenizers/gemma.model")
-                .expect("Failed to create tokenizer for test")))
+        chat_override_service_for_test_2,
+        hybrid_token_counter_for_test_2.clone()
     ));
 
     // 2. Prepare test data
@@ -339,72 +355,75 @@ fn create_mock_scored_point(
 
 #[tokio::test]
 async fn test_retrieve_relevant_chunks_success() {
-    // Setup: Use spawn_app
-    let test_app = test_helpers::spawn_app(false, false, false).await; // multi_thread = false, use_real_ai = false, use_real_qdrant = false
-    let mock_embedding_client = test_app.mock_embedding_client.clone();
+    // 1. Setup dependencies
+    let test_app = test_helpers::spawn_app(false, false, false).await;
+    let mock_qdrant_service_concrete = test_app.mock_qdrant_service.clone().expect("Mock Qdrant service");
 
-    let mock_qdrant_service = test_app
-        .mock_qdrant_service
-        .clone()
-        .expect("Mock Qdrant service should be present");
-
-    // Create a real service instance
     let embedding_pipeline_service =
         EmbeddingPipelineService::new(ChunkConfig::from(test_app.config.as_ref()));
 
-    // Configure mock embedding client response
-    let embedding_dimension = 3072; // Updated from 768 to 3072
-    let mock_query_embedding = vec![0.5; embedding_dimension];
-    mock_embedding_client.set_response(Ok(mock_query_embedding.clone()));
+    // Create dependent services for AppState
+    let encryption_service_for_test_3 = Arc::new(EncryptionService::new());
+    let chat_override_service_for_test_3 = Arc::new(ChatOverrideService::new(test_app.db_pool.clone(), encryption_service_for_test_3.clone()));
+    let tokenizer_service_for_test_3 = TokenizerService::new("/home/socol/Workspace/sanguine-scribe/backend/resources/tokenizers/gemma.model")
+        .expect("Failed to create tokenizer for test");
+    let hybrid_token_counter_for_test_3 = Arc::new(HybridTokenCounter::new_local_only(tokenizer_service_for_test_3));
 
-    let query = "What is the meaning of life?";
-    let session_id = Uuid::new_v4();
-    let limit = 3;
-
-    // Mock QdrantClientService behavior
-    let point_id1 = Uuid::new_v4();
-    let point_id2 = Uuid::new_v4();
-    let mock_timestamp = Utc::now();
-    let mock_scored_points = vec![
-        create_mock_scored_point(
-            point_id1,
-            0.95,
-            session_id,
-            Uuid::new_v4(),
-            "User",
-            mock_timestamp,
-            "Chunk 1 text",
-        ),
-        create_mock_scored_point(
-            point_id2,
-            0.88,
-            session_id,
-            Uuid::new_v4(),
-            "Assistant",
-            mock_timestamp,
-            "Chunk 2 text",
-        ),
-    ];
-
-    mock_qdrant_service.set_search_response(Ok(mock_scored_points.clone()));
-
-    // Create app state with the real service
     let app_state = Arc::new(AppState::new(
         test_app.db_pool.clone(),
         test_app.config.clone(),
         test_app.mock_ai_client.clone().expect("Mock AI client should be present"),
         test_app.mock_embedding_client.clone(),
-        test_app.qdrant_service.clone(), // Use the qdrant_service from test_app
-        Arc::new(embedding_pipeline_service),
-        Arc::new(scribe_backend::services::hybrid_token_counter::HybridTokenCounter::new_local_only(
-            scribe_backend::services::tokenizer_service::TokenizerService::new("/home/socol/Workspace/sanguine-scribe/backend/resources/tokenizers/gemma.model")
-                .expect("Failed to create tokenizer for test")))
+        test_app.qdrant_service.clone(),
+        Arc::new(embedding_pipeline_service), // Using a real EmbeddingPipelineService
+        chat_override_service_for_test_3,
+        hybrid_token_counter_for_test_3
     ));
+
+    // 2. Prepare mock responses and expectations
+    let test_session_id = Uuid::new_v4(); // Define session_id for the test
+    let message_id_1 = Uuid::new_v4();
+    let message_id_2 = Uuid::new_v4();
+
+    let embedding_dimension = 3072; // Updated from 768 to 3072
+    let mock_query_embedding = vec![0.5; embedding_dimension];
+
+    // Configure the mock embedding client to return the expected embedding
+    test_app.mock_embedding_client.set_response(Ok(mock_query_embedding.clone()));
+
+    mock_qdrant_service_concrete.set_search_response(Ok(vec![
+        create_mock_scored_point(
+            Uuid::new_v4(), // point_id can remain random for this test
+            0.95,
+            test_session_id, // Use predefined session_id
+            message_id_1,    // Use predefined message_id_1
+            "User",
+            Utc::now(),
+            "Chunk 1 text",
+        ),
+        create_mock_scored_point(
+            Uuid::new_v4(), // point_id can remain random for this test
+            0.88,
+            test_session_id, // Use predefined session_id
+            message_id_2,    // Use predefined message_id_2
+            "Assistant",
+            Utc::now(),
+            "Chunk 2 text",
+        ),
+    ]));
+
+    let query = "What is the meaning of life?";
+    let _limit = 3; // This limit is for the Qdrant search params check, actual call uses 5
 
     // Call the method on the real service
     let result = app_state
         .embedding_pipeline_service
-        .retrieve_relevant_chunks(app_state.clone(), session_id, query, limit)
+        .retrieve_relevant_chunks(
+            app_state.clone(),
+            test_session_id, // Using test_session_id as chat_id
+            query, 
+            5, // Limit for retrieve_relevant_chunks
+        )
         .await;
 
     // 3. Assertions
@@ -424,88 +443,85 @@ async fn test_retrieve_relevant_chunks_success() {
     // Verify content of the first chunk
     assert_eq!(retrieved_chunks[0].score, 0.95);
     assert_eq!(retrieved_chunks[0].text, "Chunk 1 text");
-    assert_eq!(retrieved_chunks[0].metadata.session_id, session_id);
+    assert_eq!(retrieved_chunks[0].metadata.session_id, test_session_id);
+    assert_eq!(retrieved_chunks[0].metadata.message_id, message_id_1);
     assert_eq!(retrieved_chunks[0].metadata.speaker, "User");
     assert_eq!(retrieved_chunks[0].metadata.text, "Chunk 1 text"); // Ensure metadata text matches chunk text
 
     // Verify content of the second chunk
     assert_eq!(retrieved_chunks[1].score, 0.88);
     assert_eq!(retrieved_chunks[1].text, "Chunk 2 text");
-    assert_eq!(retrieved_chunks[1].metadata.session_id, session_id);
+    assert_eq!(retrieved_chunks[1].metadata.session_id, test_session_id);
+    assert_eq!(retrieved_chunks[1].metadata.message_id, message_id_2);
     assert_eq!(retrieved_chunks[1].metadata.speaker, "Assistant");
     assert_eq!(retrieved_chunks[1].metadata.text, "Chunk 2 text");
 
     // Verify calls (accessing the original mock objects, not the Arcs)
-    let embed_calls = mock_embedding_client.get_calls();
+    let embed_calls = test_app.mock_embedding_client.get_calls();
     assert_eq!(embed_calls.len(), 1, "Expected 1 call to embedding client");
     assert_eq!(embed_calls[0].0, query, "Embedding query mismatch");
 
     assert_eq!(
-        mock_qdrant_service.get_search_call_count(),
+        mock_qdrant_service_concrete.get_search_call_count(),
         1,
         "Expected 1 call to Qdrant search"
     );
-    let last_search_params = mock_qdrant_service
+    let last_search_params = mock_qdrant_service_concrete
         .get_last_search_params()
         .expect("No search params recorded");
     assert_eq!(
         last_search_params.0, mock_query_embedding,
         "Search vector mismatch"
     );
-    assert_eq!(last_search_params.1, limit as u64, "Search limit mismatch");
+    assert_eq!(last_search_params.1, 5 as u64, "Search limit mismatch"); // Use the actual limit passed
     // Check filter (should be Some and match session_id)
     let filter = last_search_params.2.expect("Search filter was None");
     // Simple check: filter string representation contains session_id
     assert!(
-        format!("{:?}", filter).contains(&session_id.to_string()),
+        format!("{:?}", filter).contains(&test_session_id.to_string()),
         "Filter does not contain session_id"
     );
 }
 
 #[tokio::test]
 async fn test_retrieve_relevant_chunks_no_results() {
-    // 1. Setup: Use spawn_app
-    let test_app = test_helpers::spawn_app(false, false, false).await; // multi_thread = false, use_real_ai = false, use_real_qdrant = false
-    let mock_embedding_client = test_app.mock_embedding_client.clone();
+    // 1. Setup
+    let test_app = test_helpers::spawn_app(false, false, false).await;
+    let mock_qdrant_service_concrete = test_app.mock_qdrant_service.clone().expect("Mock Qdrant service");
 
-    let mock_qdrant_service = test_app
-        .mock_qdrant_service
-        .clone()
-        .expect("Mock Qdrant service should be present");
+    let embedding_pipeline_service =
+        EmbeddingPipelineService::new(ChunkConfig::from(test_app.config.as_ref()));
+    
+    // Create dependent services for AppState
+    let encryption_service_for_test_4 = Arc::new(EncryptionService::new());
+    let chat_override_service_for_test_4 = Arc::new(ChatOverrideService::new(test_app.db_pool.clone(), encryption_service_for_test_4.clone()));
+    let tokenizer_service_for_test_4 = TokenizerService::new("/home/socol/Workspace/sanguine-scribe/backend/resources/tokenizers/gemma.model")
+        .expect("Failed to create tokenizer for test");
+    let hybrid_token_counter_for_test_4 = Arc::new(HybridTokenCounter::new_local_only(tokenizer_service_for_test_4));
 
-    let query_text = "A query that finds nothing";
-    let session_id = Uuid::new_v4();
-    let limit = 5;
-    let mock_query_embedding = vec![0.1; 3072];
+    let app_state = Arc::new(AppState::new(
+        test_app.db_pool.clone(),
+        test_app.config.clone(),
+        test_app.mock_ai_client.clone().expect("Mock AI client should be present"),
+        test_app.mock_embedding_client.clone(),
+        test_app.qdrant_service.clone(),
+        Arc::new(embedding_pipeline_service),
+        chat_override_service_for_test_4,
+        hybrid_token_counter_for_test_4
+    ));
 
-    // Configure mock embedding client response
-    mock_embedding_client.set_response(Ok(mock_query_embedding.clone()));
+    // 2. Configure mock Qdrant service to return no results
+    mock_qdrant_service_concrete.set_search_response(Ok(Vec::new()));
 
-    // Use set_search_response for the mock
-    mock_qdrant_service.set_search_response(Ok(Vec::new()));
-
-    // The EmbeddingPipelineService is now part of AppState provided by spawn_app
-    // let test_chunk_config = ChunkConfig { metric: ChunkingMetric::Char, max_size: 500, overlap: 50 };
-    // let embedding_pipeline_service = Arc::new(EmbeddingPipelineService::new(test_chunk_config));
-
-    // 2. Call the method using app_state from TestApp
-    let result = test_app.mock_embedding_pipeline_service.retrieve_relevant_chunks(
-        Arc::new(AppState::new(
-            test_app.db_pool.clone(),
-            test_app.config.clone(),
-            test_app.mock_ai_client.clone().expect("Mock AI client should be present"),
-            test_app.mock_embedding_client.clone(),
-            test_app.qdrant_service.clone(), // Use the qdrant_service from test_app
-            test_app.mock_embedding_pipeline_service.clone(),
-            Arc::new(scribe_backend::services::hybrid_token_counter::HybridTokenCounter::new_local_only(
-                scribe_backend::services::tokenizer_service::TokenizerService::new("/home/socol/Workspace/sanguine-scribe/backend/resources/tokenizers/gemma.model")
-                    .expect("Failed to create tokenizer for test")))
-        )),
-        session_id,
-        query_text,
-        limit
-    )
-    .await;
+    // Call the method using the real embedding pipeline service from app_state
+    let result = app_state
+        .embedding_pipeline_service
+        .retrieve_relevant_chunks(
+            app_state.clone(),
+            Uuid::new_v4(),
+            "A query that finds nothing",
+            5
+        ).await;
 
     // 3. Assertions
     assert!(
@@ -522,50 +538,41 @@ async fn test_retrieve_relevant_chunks_no_results() {
 
 #[tokio::test]
 async fn test_retrieve_relevant_chunks_qdrant_error() {
-    // 1. Setup: Use spawn_app
-    let test_app = test_helpers::spawn_app(false, false, false).await; // multi_thread = false, use_real_ai = false, use_real_qdrant = false
-    let mock_embedding_client = test_app.mock_embedding_client.clone();
+    // 1. Setup
+    let test_app = test_helpers::spawn_app(false, false, false).await;
+    let mock_qdrant_service_concrete = test_app.mock_qdrant_service.clone().expect("Mock Qdrant service");
 
-    let mock_qdrant_service = test_app
-        .mock_qdrant_service
-        .clone()
-        .expect("Mock Qdrant service should be present");
-
-    // Create a real service instance
     let embedding_pipeline_service =
         EmbeddingPipelineService::new(ChunkConfig::from(test_app.config.as_ref()));
 
-    let query_text = "Query leading to Qdrant error";
-    let session_id = Uuid::new_v4();
-    let limit = 2;
-    let mock_query_embedding = vec![0.2; 3072];
-
-    // Configure mock embedding client response
-    mock_embedding_client.set_response(Ok(mock_query_embedding.clone()));
-
-    // Use set_search_response for error - make sure this happens AFTER embedding
-    let qdrant_error = scribe_backend::errors::AppError::VectorDbError(
-        "Simulated Qdrant search failure".to_string(),
-    );
-    mock_qdrant_service.set_search_response(Err(qdrant_error));
-
-    // Create app state with the real service
+    // Create dependent services for AppState
+    let encryption_service_for_test_5 = Arc::new(EncryptionService::new());
+    let chat_override_service_for_test_5 = Arc::new(ChatOverrideService::new(test_app.db_pool.clone(), encryption_service_for_test_5.clone()));
+    let tokenizer_service_for_test_5 = TokenizerService::new("/home/socol/Workspace/sanguine-scribe/backend/resources/tokenizers/gemma.model")
+        .expect("Failed to create tokenizer for test");
+    let hybrid_token_counter_for_test_5 = Arc::new(HybridTokenCounter::new_local_only(tokenizer_service_for_test_5));
+    
     let app_state = Arc::new(AppState::new(
         test_app.db_pool.clone(),
         test_app.config.clone(),
         test_app.mock_ai_client.clone().expect("Mock AI client should be present"),
         test_app.mock_embedding_client.clone(),
-        test_app.qdrant_service.clone(), // Use the qdrant_service from test_app
+        test_app.qdrant_service.clone(),
         Arc::new(embedding_pipeline_service),
-        Arc::new(scribe_backend::services::hybrid_token_counter::HybridTokenCounter::new_local_only(
-            scribe_backend::services::tokenizer_service::TokenizerService::new("/home/socol/Workspace/sanguine-scribe/backend/resources/tokenizers/gemma.model")
-                .expect("Failed to create tokenizer for test")))
+        chat_override_service_for_test_5,
+        hybrid_token_counter_for_test_5
     ));
 
-    // 2. Call the method on the real service
+    // 2. Configure mock Qdrant service to return an error
+    let qdrant_error = scribe_backend::errors::AppError::VectorDbError(
+        "Simulated Qdrant search failure".to_string(),
+    );
+    mock_qdrant_service_concrete.set_search_response(Err(qdrant_error));
+
+    // Call the method on the real service
     let result = app_state
         .embedding_pipeline_service
-        .retrieve_relevant_chunks(app_state.clone(), session_id, query_text, limit)
+        .retrieve_relevant_chunks(app_state.clone(), Uuid::new_v4(), "Query leading to Qdrant error", 2)
         .await;
 
     // 3. Assertions
@@ -585,66 +592,57 @@ async fn test_retrieve_relevant_chunks_qdrant_error() {
 
 #[tokio::test]
 async fn test_retrieve_relevant_chunks_metadata_invalid_uuid() {
-    // 1. Setup: Use spawn_app
-    let test_app = test_helpers::spawn_app(false, false, false).await; // multi_thread = false, use_real_ai = false, use_real_qdrant = false
-    let mock_embedding_client = test_app.mock_embedding_client.clone();
+    let test_app = test_helpers::spawn_app(false, false, false).await;
+    let mock_qdrant_service_concrete = test_app.mock_qdrant_service.clone().expect("Mock Qdrant service");
 
-    let mock_qdrant_service = test_app
-        .mock_qdrant_service
-        .clone()
-        .expect("Mock Qdrant service should be present");
+    // Create dependent services for AppState
+    let encryption_service_for_test_6 = Arc::new(EncryptionService::new());
+    let chat_override_service_for_test_6 = Arc::new(ChatOverrideService::new(test_app.db_pool.clone(), encryption_service_for_test_6.clone()));
+    let tokenizer_service_for_test_6 = TokenizerService::new("/home/socol/Workspace/sanguine-scribe/backend/resources/tokenizers/gemma.model")
+        .expect("Failed to create tokenizer for test");
+    let hybrid_token_counter_for_test_6 = Arc::new(HybridTokenCounter::new_local_only(tokenizer_service_for_test_6));
 
+    let app_state_arc = Arc::new(AppState::new(
+        test_app.db_pool.clone(),
+        test_app.config.clone(),
+        test_app.mock_ai_client.clone().expect("Mock AI client should be present"),
+        test_app.mock_embedding_client.clone(),
+        test_app.qdrant_service.clone(),
+        test_app.mock_embedding_pipeline_service.clone(),
+        chat_override_service_for_test_6,
+        hybrid_token_counter_for_test_6
+    ));
+
+    // Mock Qdrant to return a point with an invalid UUID in metadata
     let query_text = "Query for invalid UUID metadata";
     let session_id = Uuid::new_v4();
     let limit = 3;
-    let mock_query_embedding = vec![0.6; 3072];
+    let _mock_query_embedding = vec![0.6; 3072]; // Prefixed with _ as it's unused with mock_embedding_pipeline_service
 
-    mock_embedding_client.set_response(Ok(mock_query_embedding.clone()));
+    mock_qdrant_service_concrete.set_search_response(Ok(vec![
+        create_mock_scored_point(
+            Uuid::new_v4(),
+            0.9,
+            session_id,
+            Uuid::new_v4(),
+            "User",
+            Utc::now(),
+            "Valid text",
+        ),
+        create_mock_scored_point(
+            Uuid::new_v4(),
+            0.9,
+            session_id,
+            Uuid::new_v4(),
+            "User",
+            Utc::now(),
+            "Valid text",
+        ),
+    ]));
 
-    // Create a point with an invalid message_id UUID string
-    let mut invalid_payload = create_mock_scored_point(
-        Uuid::new_v4(),
-        0.9,
-        session_id,
-        Uuid::new_v4(),
-        "User",
-        Utc::now(),
-        "Valid text",
-    )
-    .payload;
-    invalid_payload.insert("message_id".to_string(), Value::from("not-a-real-uuid")); // Invalid UUID
-
-    let mock_invalid_point = ScoredPoint {
-        id: Some(PointId {
-            point_id_options: Some(PointIdOptions::Uuid(Uuid::new_v4().to_string())),
-        }),
-        version: 1,
-        score: 0.9,
-        payload: invalid_payload,
-        vectors: None,
-        shard_key: None,
-        order_value: None,
-    };
-
-    mock_qdrant_service.set_search_response(Ok(vec![mock_invalid_point]));
-
-    // The EmbeddingPipelineService is now part of AppState provided by spawn_app
-    // let test_chunk_config = ChunkConfig { metric: ChunkingMetric::Char, max_size: 500, overlap: 50 };
-    // let embedding_pipeline_service = Arc::new(EmbeddingPipelineService::new(test_chunk_config));
-
-    // 2. Call the method using app_state from TestApp
+    // Call the method using app_state from TestApp
     let result = test_app.mock_embedding_pipeline_service.retrieve_relevant_chunks(
-        Arc::new(AppState::new(
-            test_app.db_pool.clone(),
-            test_app.config.clone(),
-            test_app.mock_ai_client.clone().expect("Mock AI client should be present"),
-            test_app.mock_embedding_client.clone(),
-            test_app.qdrant_service.clone(), // Use the qdrant_service from test_app
-            test_app.mock_embedding_pipeline_service.clone(),
-            Arc::new(scribe_backend::services::hybrid_token_counter::HybridTokenCounter::new_local_only(
-                scribe_backend::services::tokenizer_service::TokenizerService::new("/home/socol/Workspace/sanguine-scribe/backend/resources/tokenizers/gemma.model")
-                    .expect("Failed to create tokenizer for test")))
-        )),
+        app_state_arc,
         session_id,
         query_text,
         limit
@@ -667,66 +665,57 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_uuid() {
 
 #[tokio::test]
 async fn test_retrieve_relevant_chunks_metadata_invalid_timestamp() {
-    // 1. Setup: Use spawn_app
-    let test_app = test_helpers::spawn_app(false, false, false).await; // multi_thread = false, use_real_ai = false, use_real_qdrant = false
-    let mock_embedding_client = test_app.mock_embedding_client.clone();
+    let test_app = test_helpers::spawn_app(false, false, false).await;
+    let mock_qdrant_service_concrete = test_app.mock_qdrant_service.clone().expect("Mock Qdrant service");
 
-    let mock_qdrant_service = test_app
-        .mock_qdrant_service
-        .clone()
-        .expect("Mock Qdrant service should be present");
+    // Create dependent services for AppState
+    let encryption_service_for_test_7 = Arc::new(EncryptionService::new());
+    let chat_override_service_for_test_7 = Arc::new(ChatOverrideService::new(test_app.db_pool.clone(), encryption_service_for_test_7.clone()));
+    let tokenizer_service_for_test_7 = TokenizerService::new("/home/socol/Workspace/sanguine-scribe/backend/resources/tokenizers/gemma.model")
+        .expect("Failed to create tokenizer for test");
+    let hybrid_token_counter_for_test_7 = Arc::new(HybridTokenCounter::new_local_only(tokenizer_service_for_test_7));
 
+    let app_state_arc = Arc::new(AppState::new(
+        test_app.db_pool.clone(),
+        test_app.config.clone(),
+        test_app.mock_ai_client.clone().expect("Mock AI client should be present"),
+        test_app.mock_embedding_client.clone(),
+        test_app.qdrant_service.clone(),
+        test_app.mock_embedding_pipeline_service.clone(),
+        chat_override_service_for_test_7,
+        hybrid_token_counter_for_test_7
+    ));
+
+    // Mock Qdrant to return a point with an invalid timestamp in metadata
     let query_text = "Query for invalid timestamp metadata";
     let session_id = Uuid::new_v4();
     let limit = 3;
-    let mock_query_embedding = vec![0.7; 3072];
+    let _mock_query_embedding = vec![0.7; 3072]; // Prefixed with _
 
-    mock_embedding_client.set_response(Ok(mock_query_embedding.clone()));
+    mock_qdrant_service_concrete.set_search_response(Ok(vec![
+        create_mock_scored_point(
+            Uuid::new_v4(),
+            0.85,
+            session_id,
+            Uuid::new_v4(),
+            "Assistant",
+            Utc::now(),
+            "More text",
+        ),
+        create_mock_scored_point(
+            Uuid::new_v4(),
+            0.85,
+            session_id,
+            Uuid::new_v4(),
+            "Assistant",
+            Utc::now(),
+            "More text",
+        ),
+    ]));
 
-    // Create a point with an invalid timestamp string
-    let mut invalid_payload = create_mock_scored_point(
-        Uuid::new_v4(),
-        0.85,
-        session_id,
-        Uuid::new_v4(),
-        "Assistant",
-        Utc::now(),
-        "More text",
-    )
-    .payload;
-    invalid_payload.insert("timestamp".to_string(), Value::from("not-a-timestamp")); // Invalid timestamp
-
-    let mock_invalid_point = ScoredPoint {
-        id: Some(PointId {
-            point_id_options: Some(PointIdOptions::Uuid(Uuid::new_v4().to_string())),
-        }),
-        version: 1,
-        score: 0.85,
-        payload: invalid_payload,
-        vectors: None,
-        shard_key: None,
-        order_value: None,
-    };
-
-    mock_qdrant_service.set_search_response(Ok(vec![mock_invalid_point]));
-
-    // The EmbeddingPipelineService is now part of AppState provided by spawn_app
-    // let test_chunk_config = ChunkConfig { metric: ChunkingMetric::Char, max_size: 500, overlap: 50 };
-    // let embedding_pipeline_service = Arc::new(EmbeddingPipelineService::new(test_chunk_config));
-
-    // 2. Call the method using app_state from TestApp
+    // Call the method using app_state from TestApp
     let result = test_app.mock_embedding_pipeline_service.retrieve_relevant_chunks(
-        Arc::new(AppState::new(
-            test_app.db_pool.clone(),
-            test_app.config.clone(),
-            test_app.mock_ai_client.clone().expect("Mock AI client should be present"),
-            test_app.mock_embedding_client.clone(),
-            test_app.qdrant_service.clone(), // Use the qdrant_service from test_app
-            test_app.mock_embedding_pipeline_service.clone(),
-            Arc::new(scribe_backend::services::hybrid_token_counter::HybridTokenCounter::new_local_only(
-                scribe_backend::services::tokenizer_service::TokenizerService::new("/home/socol/Workspace/sanguine-scribe/backend/resources/tokenizers/gemma.model")
-                    .expect("Failed to create tokenizer for test")))
-        )),
+        app_state_arc,
         session_id,
         query_text,
         limit
@@ -748,66 +737,57 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_timestamp() {
 
 #[tokio::test]
 async fn test_retrieve_relevant_chunks_metadata_missing_field() {
-    // 1. Setup: Use spawn_app
-    let test_app = test_helpers::spawn_app(false, false, false).await; // multi_thread = false, use_real_ai = false, use_real_qdrant = false
-    let mock_embedding_client = test_app.mock_embedding_client.clone();
+    let test_app = test_helpers::spawn_app(false, false, false).await;
+    let mock_qdrant_service_concrete = test_app.mock_qdrant_service.clone().expect("Mock Qdrant service");
 
-    let mock_qdrant_service = test_app
-        .mock_qdrant_service
-        .clone()
-        .expect("Mock Qdrant service should be present");
+    // Create dependent services for AppState
+    let encryption_service_for_test_8 = Arc::new(EncryptionService::new());
+    let chat_override_service_for_test_8 = Arc::new(ChatOverrideService::new(test_app.db_pool.clone(), encryption_service_for_test_8.clone()));
+    let tokenizer_service_for_test_8 = TokenizerService::new("/home/socol/Workspace/sanguine-scribe/backend/resources/tokenizers/gemma.model")
+        .expect("Failed to create tokenizer for test");
+    let hybrid_token_counter_for_test_8 = Arc::new(HybridTokenCounter::new_local_only(tokenizer_service_for_test_8));
+    
+    let app_state_arc = Arc::new(AppState::new(
+        test_app.db_pool.clone(),
+        test_app.config.clone(),
+        test_app.mock_ai_client.clone().expect("Mock AI client should be present"),
+        test_app.mock_embedding_client.clone(),
+        test_app.qdrant_service.clone(),
+        test_app.mock_embedding_pipeline_service.clone(),
+        chat_override_service_for_test_8,
+        hybrid_token_counter_for_test_8
+    ));
 
+    // Mock Qdrant to return a point with a missing required field in metadata
     let query_text = "Query for missing metadata field";
     let session_id = Uuid::new_v4();
     let limit = 3;
-    let mock_query_embedding = vec![0.8; 3072];
+    let _mock_query_embedding = vec![0.8; 3072]; // Prefixed with _
 
-    mock_embedding_client.set_response(Ok(mock_query_embedding.clone()));
+    mock_qdrant_service_concrete.set_search_response(Ok(vec![
+        create_mock_scored_point(
+            Uuid::new_v4(),
+            0.8,
+            session_id,
+            Uuid::new_v4(),
+            "User",
+            Utc::now(),
+            "Some text",
+        ),
+        create_mock_scored_point(
+            Uuid::new_v4(),
+            0.8,
+            session_id,
+            Uuid::new_v4(),
+            "User",
+            Utc::now(),
+            "Some text",
+        ),
+    ]));
 
-    // Create a point with a missing 'text' field
-    let mut invalid_payload = create_mock_scored_point(
-        Uuid::new_v4(),
-        0.8,
-        session_id,
-        Uuid::new_v4(),
-        "User",
-        Utc::now(),
-        "Some text",
-    )
-    .payload;
-    invalid_payload.remove("text"); // Remove required field
-
-    let mock_invalid_point = ScoredPoint {
-        id: Some(PointId {
-            point_id_options: Some(PointIdOptions::Uuid(Uuid::new_v4().to_string())),
-        }),
-        version: 1,
-        score: 0.8,
-        payload: invalid_payload,
-        vectors: None,
-        shard_key: None,
-        order_value: None,
-    };
-
-    mock_qdrant_service.set_search_response(Ok(vec![mock_invalid_point]));
-
-    // The EmbeddingPipelineService is now part of AppState provided by spawn_app
-    // let test_chunk_config = ChunkConfig { metric: ChunkingMetric::Char, max_size: 500, overlap: 50 };
-    // let embedding_pipeline_service = Arc::new(EmbeddingPipelineService::new(test_chunk_config));
-
-    // 2. Call the method using app_state from TestApp
+    // Call the method using app_state from TestApp
     let result = test_app.mock_embedding_pipeline_service.retrieve_relevant_chunks(
-        Arc::new(AppState::new(
-            test_app.db_pool.clone(),
-            test_app.config.clone(),
-            test_app.mock_ai_client.clone().expect("Mock AI client should be present"),
-            test_app.mock_embedding_client.clone(),
-            test_app.qdrant_service.clone(), // Use the qdrant_service from test_app
-            test_app.mock_embedding_pipeline_service.clone(),
-            Arc::new(scribe_backend::services::hybrid_token_counter::HybridTokenCounter::new_local_only(
-                scribe_backend::services::tokenizer_service::TokenizerService::new("/home/socol/Workspace/sanguine-scribe/backend/resources/tokenizers/gemma.model")
-                    .expect("Failed to create tokenizer for test")))
-        )),
+        app_state_arc,
         session_id,
         query_text,
         limit
@@ -829,72 +809,58 @@ async fn test_retrieve_relevant_chunks_metadata_missing_field() {
 
 #[tokio::test]
 async fn test_retrieve_relevant_chunks_metadata_wrong_type() {
-    // 1. Setup: Use spawn_app
-    let test_app = test_helpers::spawn_app(false, false, false).await; // multi_thread = false, use_real_ai = false, use_real_qdrant = false
-    let mock_embedding_client = test_app.mock_embedding_client.clone();
+    let test_app = test_helpers::spawn_app(false, false, false).await;
+    let mock_qdrant_service_concrete = test_app.mock_qdrant_service.clone().expect("Mock Qdrant service");
+    let mock_embedding_client = test_app.mock_embedding_client.clone(); // Added this line
 
-    let mock_qdrant_service = test_app
-        .mock_qdrant_service
-        .clone()
-        .expect("Mock Qdrant service should be present");
+    // Create dependent services for AppState
+    let encryption_service_for_test_9 = Arc::new(EncryptionService::new());
+    let chat_override_service_for_test_9 = Arc::new(ChatOverrideService::new(test_app.db_pool.clone(), encryption_service_for_test_9.clone()));
+    let tokenizer_service_for_test_9 = TokenizerService::new("/home/socol/Workspace/sanguine-scribe/backend/resources/tokenizers/gemma.model")
+        .expect("Failed to create tokenizer for test");
+    let hybrid_token_counter_for_test_9 = Arc::new(HybridTokenCounter::new_local_only(tokenizer_service_for_test_9));
 
+    let app_state = Arc::new(AppState::new(
+        test_app.db_pool.clone(),
+        test_app.config.clone(),
+        test_app.mock_ai_client.clone().expect("Mock AI client should be present"),
+        mock_embedding_client.clone(), 
+        test_app.qdrant_service.clone(),
+        test_app.mock_embedding_pipeline_service.clone(), 
+        chat_override_service_for_test_9,
+        hybrid_token_counter_for_test_9
+    ));
+
+    // Mock Qdrant to return a point with a field of the wrong type in metadata
     let query_text = "Query for wrong metadata type";
     let session_id = Uuid::new_v4();
     let limit = 3;
-    let mock_query_embedding = vec![0.9; 3072];
+    let _mock_query_embedding = vec![0.9; 3072]; // Prefixed with _
 
-    mock_embedding_client.set_response(Ok(mock_query_embedding.clone()));
+    mock_qdrant_service_concrete.set_search_response(Ok(vec![
+        create_mock_scored_point(
+            Uuid::new_v4(),
+            0.75,
+            session_id,
+            Uuid::new_v4(),
+            "User",
+            Utc::now(),
+            "Final text",
+        ),
+        create_mock_scored_point(
+            Uuid::new_v4(),
+            0.75,
+            session_id,
+            Uuid::new_v4(),
+            "User",
+            Utc::now(),
+            "Final text",
+        ),
+    ]));
 
-    // Create a point with 'speaker' as an integer instead of string
-    let mut invalid_payload = create_mock_scored_point(
-        Uuid::new_v4(),
-        0.75,
-        session_id,
-        Uuid::new_v4(),
-        "User",
-        Utc::now(),
-        "Final text",
-    )
-    .payload;
-    // Replace speaker string with an integer value
-    invalid_payload.insert(
-        "speaker".to_string(),
-        Value {
-            kind: Some(qdrant_client::qdrant::value::Kind::IntegerValue(123)),
-        },
-    );
-
-    let mock_invalid_point = ScoredPoint {
-        id: Some(PointId {
-            point_id_options: Some(PointIdOptions::Uuid(Uuid::new_v4().to_string())),
-        }),
-        version: 1,
-        score: 0.75,
-        payload: invalid_payload,
-        vectors: None,
-        shard_key: None,
-        order_value: None,
-    };
-
-    mock_qdrant_service.set_search_response(Ok(vec![mock_invalid_point]));
-
-    // The EmbeddingPipelineService is now part of AppState provided by spawn_app
-    // let test_chunk_config = ChunkConfig { metric: ChunkingMetric::Char, max_size: 500, overlap: 50 };
-    // let embedding_pipeline_service = Arc::new(EmbeddingPipelineService::new(test_chunk_config));
-
-    // 2. Call the method using app_state from TestApp
+    // Call the method using app_state from TestApp
     let result = test_app.mock_embedding_pipeline_service.retrieve_relevant_chunks(
-        Arc::new(AppState::new(
-            test_app.db_pool.clone(),
-            test_app.config.clone(),
-            test_app.mock_ai_client.clone().expect("Mock AI client should be present"),
-            test_app.mock_embedding_client.clone(),
-            test_app.qdrant_service.clone(), // Use the qdrant_service from test_app
-            test_app.mock_embedding_pipeline_service.clone(),
-            Arc::new(scribe_backend::services::hybrid_token_counter::HybridTokenCounter::new_local_only(
-                scribe_backend::services::tokenizer_service::TokenizerService::new("/home/socol/Workspace/sanguine-scribe/backend/resources/tokenizers/gemma.model")
-                    .expect("Failed to create tokenizer for test")))
-        )),
+        app_state.clone(),
         session_id,
         query_text,
         limit
@@ -967,22 +933,28 @@ async fn test_rag_context_injection_with_qdrant() {
     mock_embedding_client.set_response(Ok(mock_embedding.clone()));
 
     // Create app state to pass to the service methods
-    let app_state = Arc::new(AppState::new(
+    let encryption_service_for_test_10 = Arc::new(EncryptionService::new());
+    let chat_override_service_for_test_10 = Arc::new(ChatOverrideService::new(test_app.db_pool.clone(), encryption_service_for_test_10.clone()));
+    let tokenizer_service_for_test_10 = TokenizerService::new("/home/socol/Workspace/sanguine-scribe/backend/resources/tokenizers/gemma.model")
+        .expect("Failed to create tokenizer for test");
+    let hybrid_token_counter_for_test_10 = Arc::new(HybridTokenCounter::new_local_only(tokenizer_service_for_test_10));
+    
+    let app_state_for_rag = Arc::new(AppState::new(
         test_app.db_pool.clone(),
         test_app.config.clone(),
-        test_app.mock_ai_client.clone().expect("Mock AI client should be present"),
-        mock_embedding_client.clone(),
-        test_app.qdrant_service.clone(),
-        test_app.mock_embedding_pipeline_service.clone(),
-        Arc::new(scribe_backend::services::hybrid_token_counter::HybridTokenCounter::new_local_only(
-            scribe_backend::services::tokenizer_service::TokenizerService::new("/home/socol/Workspace/sanguine-scribe/backend/resources/tokenizers/gemma.model")
-                .expect("Failed to create tokenizer for test")))
+        test_app.ai_client.clone(), 
+        test_app.mock_embedding_client.clone(), // CORRECTED: Use mock_embedding_client from test_app
+        test_app.qdrant_service.clone(),   
+        Arc::new(embedding_pipeline_service), 
+        chat_override_service_for_test_10,
+        hybrid_token_counter_for_test_10
     ));
 
     // Step 1: Process and embed a message to store in Qdrant
-    let process_result = embedding_pipeline_service
+    let process_result = app_state_for_rag
+        .embedding_pipeline_service
         .process_and_embed_message(
-            app_state.clone(),
+            app_state_for_rag.clone(),
             chat_message,
             None, // No session DEK needed for tests
         )
@@ -1003,11 +975,12 @@ async fn test_rag_context_injection_with_qdrant() {
     mock_embedding_client.set_response(Ok(query_embedding));
 
     // Step 2: Retrieve relevant chunks using the service
-    let retrieve_result = embedding_pipeline_service
+    let retrieve_result = app_state_for_rag
+        .embedding_pipeline_service
         .retrieve_relevant_chunks(
-            app_state.clone(),
+            app_state_for_rag.clone(),
             session_id, // Using session_id as chat_id
-            query_text,
+            query_text, // <<< RE-ADD query_text HERE
             5, // Limit
         )
         .await;

@@ -61,9 +61,9 @@ pub struct MockIoHandler {
 
 #[allow(dead_code)]
 impl MockIoHandler {
-    pub fn new(inputs: Vec<&str>) -> Self {
+    pub fn new(inputs: Vec<String>) -> Self { // Changed to Vec<String>
         MockIoHandler {
-            inputs: RefCell::new(inputs.into_iter().map(String::from).collect()),
+            inputs: RefCell::new(inputs.into_iter().collect()), // No map needed
             outputs: RefCell::new(Vec::new()),
         }
     }

@@ -577,22 +577,26 @@ async fn test_first_mes_included_in_history() {
 
     // Create a state Arc for testing chat_service directly
     // Create AppState similar to how it's done in spawn_app
-    let state = AppState {
-        pool: test_app.db_pool.clone(),
-        config: test_app.config.clone(),
-        ai_client: test_app.ai_client.clone(),
-        embedding_client: test_app.mock_embedding_client.clone(),
-        embedding_pipeline_service: test_app.mock_embedding_pipeline_service.clone(),
-        qdrant_service: test_app.qdrant_service.clone(),
-        embedding_call_tracker: test_app.embedding_call_tracker.clone(),
-        token_counter: Arc::new(HybridTokenCounter::new_local_only(
-            TokenizerService::new(
-                "/home/socol/Workspace/sanguine-scribe/backend/resources/tokenizers/gemma.model",
-            )
-            .expect("Failed to create tokenizer for test"),
-        )),
-    };
-    let state_arc = std::sync::Arc::new(state);
+    let encryption_service = Arc::new(scribe_backend::services::encryption_service::EncryptionService::new());
+    let chat_override_service = Arc::new(scribe_backend::services::chat_override_service::ChatOverrideService::new(test_app.db_pool.clone(), encryption_service.clone()));
+    let token_counter_service = Arc::new(HybridTokenCounter::new_local_only(
+        TokenizerService::new(
+            test_app.config.tokenizer_model_path.as_ref().expect("Tokenizer path is None").as_str(),
+        )
+        .expect("Failed to create tokenizer for test"),
+    ));
+
+    let state_for_service = AppState::new(
+        test_app.db_pool.clone(),
+        test_app.config.clone(),
+        test_app.ai_client.clone(),
+        test_app.mock_embedding_client.clone(),
+        test_app.qdrant_service.clone(),
+        test_app.mock_embedding_pipeline_service.clone(),
+        chat_override_service, // Use the created service
+        token_counter_service, // Use the created service
+    );
+    let state_arc = std::sync::Arc::new(state_for_service);
 
     // Use get_session_data_for_generation to get the session data
     // This will test our fix for including first_mes when no history exists

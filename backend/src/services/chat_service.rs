@@ -22,15 +22,17 @@ use crate::{
     errors::AppError,
     models::{
         characters::Character,
+        chat_override::{ChatCharacterOverride, CharacterOverrideDto, NewChatCharacterOverride},
         chats::{
             Chat, ChatMessage as DbChatMessage, ChatSettingsResponse, DbInsertableChatMessage,
             MessageRole, NewChat, SettingsTuple, UpdateChatSettingsRequest,
         },
     },
-    schema::{characters, chat_messages, chat_sessions},
+    schema::{characters, chat_character_overrides, chat_messages, chat_sessions},
     services::history_manager,
     services::hybrid_token_counter::CountingMode, // Added for token counting
     state::{AppState, DbPool},
+    crypto, // Added for encryption
 };
 use std::pin::Pin;
 use std::sync::Arc;
@@ -554,6 +556,7 @@ pub async fn get_session_data_for_generation(
             session_seed,
             session_logit_bias,
             session_model_name,
+            // -- Gemini Specific Options --
             session_gemini_thinking_budget,
             session_gemini_enable_code_execution,
         ) = chat_sessions::table
@@ -610,8 +613,6 @@ pub async fn get_session_data_for_generation(
         // Fetch the character details
         let character: Character = characters::table
             .filter(characters::id.eq(session_character_id))
-            // .filter(characters::user_id.eq(user_id)) // Characters are not directly owned by users in the same way sessions are, but can be public or belong to other users.
-            // Access control for characters should be handled at the route/service layer before this point if needed.
             .first::<Character>(conn_interaction)
             .map_err(|e| {
                 error!("Failed to fetch character {} for session {}: {:?}", session_character_id, session_id, e);
@@ -620,6 +621,23 @@ pub async fn get_session_data_for_generation(
                     _ => AppError::DatabaseQueryError(format!("Failed to query character {}: {}", session_character_id, e)),
                 }
             })?;
+
+        // Fetch character overrides from the database
+        let character_overrides: Vec<ChatCharacterOverride> = chat_character_overrides::table
+            .filter(chat_character_overrides::chat_session_id.eq(session_id))
+            .filter(chat_character_overrides::original_character_id.eq(session_character_id))
+            .load::<ChatCharacterOverride>(conn_interaction)
+            .map_err(|e| {
+                warn!("Failed to fetch character overrides for session {}: {:?}", session_id, e);
+                AppError::DatabaseQueryError(format!("Failed to query character overrides for session {}: {}", session_id, e))
+            })?;
+            
+        info!(
+            %session_id, 
+            %session_character_id, 
+            override_count = character_overrides.len(),
+            "Fetched character overrides for session"
+        );
 
         // Helper function (or closure) for decrypting a character field
         let decrypt_char_field = |data: Option<&Vec<u8>>, nonce: Option<&Vec<u8>>, field_name: &str| -> Result<Option<String>, AppError> {
@@ -644,7 +662,6 @@ pub async fn get_session_data_for_generation(
                 }
                 (Some(d), None, _) if !d.is_empty() => { // Data exists but no nonce (should not happen for encrypted fields)
                     trace!(character_id = %character.id, field_name, "Character field has data but no nonce, treating as plaintext if possible or erroring.");
-                     // Attempt to treat as plaintext if no nonce, though ideally encrypted fields always have nonces
                     String::from_utf8(d.clone())
                         .map(Some)
                         .map_err(|e| AppError::InternalServerErrorGeneric(format!("Invalid UTF-8 in non-nonced field {} for character {}: {}", field_name, character.id, e)))
@@ -652,29 +669,82 @@ pub async fn get_session_data_for_generation(
                 _ => Ok(None), // No data or other cases
             }
         };
+        
+        // Helper function to decrypt override values
+        let decrypt_override = |override_data: &ChatCharacterOverride| -> Result<Option<String>, AppError> {
+            match &dek_for_interact {
+                Some(dek) if !override_data.overridden_value.is_empty() && !override_data.overridden_value_nonce.is_empty() => {
+                    trace!(field_name = %override_data.field_name, "Attempting to decrypt character override");
+                    let decrypted_bytes = crate::crypto::decrypt_gcm(
+                        &override_data.overridden_value,
+                        &override_data.overridden_value_nonce,
+                        dek.as_ref(),
+                    ).map_err(|e| {
+                        error!(field_name = %override_data.field_name, error = ?e, "Failed to decrypt character override");
+                        AppError::DecryptionError(format!("Failed to decrypt override for {}: {}", override_data.field_name, e))
+                    })?;
+                    
+                    String::from_utf8(decrypted_bytes.expose_secret().to_vec())
+                        .map(Some)
+                        .map_err(|e| {
+                            error!(field_name = %override_data.field_name, error = ?e, "Invalid UTF-8 in decrypted override");
+                            AppError::InternalServerErrorGeneric(format!("Invalid UTF-8 in override for {}: {}", override_data.field_name, e))
+                        })
+                },
+                _ => {
+                    warn!(field_name = %override_data.field_name, "Cannot decrypt override: missing DEK or invalid override data for session {}", session_id);
+                    Ok(None)
+                }
+            }
+        };
+        
+        // Create a map of field_name -> decrypted_value for the overrides
+        let mut override_values: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+        for override_data in &character_overrides {
+            if let Ok(Some(decrypted_value)) = decrypt_override(override_data) {
+                if !decrypted_value.is_empty() { // Only insert non-empty decrypted overrides
+                    info!(
+                        %session_id,
+                        field_name = %override_data.field_name, 
+                        "Successfully decrypted and storing non-empty character override"
+                    );
+                    override_values.insert(override_data.field_name.clone(), decrypted_value);
+                } else {
+                    info!(
+                        %session_id,
+                        field_name = %override_data.field_name, 
+                        "Decrypted character override is empty, not storing"
+                    );
+                }
+            }
+        }
+        
         let mut comprehensive_system_prompt_parts: Vec<String> = Vec::new();
 
         comprehensive_system_prompt_parts.push(format!("You are {}, a character with the following details:", character.name));
 
-        if let Some(desc) = decrypt_char_field(character.description.as_ref(), character.description_nonce.as_ref(), "description")? {
-            comprehensive_system_prompt_parts.push(format!("\n[Character Description]\n{}", desc));
-        }
-        if let Some(pers) = decrypt_char_field(character.personality.as_ref(), character.personality_nonce.as_ref(), "personality")? {
-            comprehensive_system_prompt_parts.push(format!("\n[Character Personality]\n{}", pers));
-        }
-        if let Some(scen) = decrypt_char_field(character.scenario.as_ref(), character.scenario_nonce.as_ref(), "scenario")? {
-            comprehensive_system_prompt_parts.push(format!("\n[Scenario]\n{}", scen));
-        }
-        if let Some(char_persona) = decrypt_char_field(character.persona.as_ref(), character.persona_nonce.as_ref(), "persona")? {
-            comprehensive_system_prompt_parts.push(format!("\n[Character Persona]\n{}", char_persona));
-        }
-        if let Some(char_sys_prompt) = decrypt_char_field(character.system_prompt.as_ref(), character.system_prompt_nonce.as_ref(), "character_system_prompt")? {
-            comprehensive_system_prompt_parts.push(format!("\n[Base Instructions for {}]\n{}", character.name, char_sys_prompt));
-        }
-        // Consider adding first_mes. For now, focusing on core bio.
-        // if let Some(fm) = decrypt_char_field(character.first_mes.as_ref(), character.first_mes_nonce.as_ref(), "first_mes")? {
-        //     comprehensive_system_prompt_parts.push(format!("\n[Your First Message/Greeting should be in the style of:]\n{}", fm));
-        // }
+        // Use override value if it exists, otherwise use the original character field
+        let mut handle_field = |field_name: &str, 
+                           field_data: Option<&Vec<u8>>, 
+                           field_nonce: Option<&Vec<u8>>,
+                           label: &str| -> Result<(), AppError> {
+            if let Some(override_value) = override_values.get(field_name) {
+                info!(%session_id, field_name, "Using character override value for prompt construction");
+                comprehensive_system_prompt_parts.push(format!("\n[{}]\n{}", label, override_value));
+            } else if let Some(original_value) = decrypt_char_field(field_data, field_nonce, field_name)? {
+                if !original_value.is_empty() { // Only include non-empty original values
+                    info!(%session_id, field_name, "Using original character value for prompt construction (no override or override was empty)");
+                    comprehensive_system_prompt_parts.push(format!("\n[{}]\n{}", label, original_value));
+                }
+            }
+            Ok(())
+        };
+
+        handle_field("description", character.description.as_ref(), character.description_nonce.as_ref(), "Character Description")?;
+        handle_field("personality", character.personality.as_ref(), character.personality_nonce.as_ref(), "Character Personality")?;
+        handle_field("scenario", character.scenario.as_ref(), character.scenario_nonce.as_ref(), "Scenario")?;
+        handle_field("persona", character.persona.as_ref(), character.persona_nonce.as_ref(), "Character Persona")?;
+        handle_field("system_prompt", character.system_prompt.as_ref(), character.system_prompt_nonce.as_ref(), &format!("Base Instructions for {}", character.name))?;
 
         // Append session-specific system prompt if it exists
         if let Some(session_sp) = session_system_prompt { // This is already Option<String> from DB
@@ -682,12 +752,12 @@ pub async fn get_session_data_for_generation(
                 comprehensive_system_prompt_parts.push(format!("\n[Additional Session Instructions]\n{}", session_sp));
             }
         }
-        let final_system_prompt = if comprehensive_system_prompt_parts.is_empty() {
+        let final_system_prompt = if comprehensive_system_prompt_parts.join("").trim().is_empty() {
             None
         } else {
             Some(comprehensive_system_prompt_parts.join(""))
         };
-        trace!(final_system_prompt_length = final_system_prompt.as_ref().map_or(0, |s| s.len()), "Constructed final system prompt");
+        trace!(final_system_prompt_length = final_system_prompt.as_ref().map_or(0, |s| s.len()), "Constructed final system prompt for session {}", session_id);
 
         // Fetch existing messages for the session
         let existing_messages_db: Vec<DbChatMessage> = chat_messages::table
@@ -703,25 +773,25 @@ pub async fn get_session_data_for_generation(
         for db_msg in existing_messages_db {
             let content_str = match (db_msg.content_nonce.as_ref(), &dek_for_interact) {
                 (Some(nonce_vec), Some(dek_arc)) => {
-                    trace!(message_id = %db_msg.id, "Attempting to decrypt message with DEK");
+                    trace!(message_id = %db_msg.id, "Attempting to decrypt message with DEK for session {}", session_id);
                     let decrypted_bytes_secret = crate::crypto::decrypt_gcm(
                         &db_msg.content,
                         nonce_vec,
                         dek_arc.as_ref(),
                     )
                     .map_err(|e| {
-                        error!(message_id = %db_msg.id, error = ?e, "Failed to decrypt message content");
+                        error!(message_id = %db_msg.id, error = ?e, "Failed to decrypt message content for session {}", session_id);
                         AppError::DecryptionError(format!("Failed to decrypt message {}: {}", db_msg.id, e))
                     })?;
                     String::from_utf8(decrypted_bytes_secret.expose_secret().to_vec()).map_err(|e| {
-                        error!(message_id = %db_msg.id, error = ?e, "Failed to convert decrypted message to UTF-8");
+                        error!(message_id = %db_msg.id, error = ?e, "Failed to convert decrypted message to UTF-8 for session {}", session_id);
                         AppError::InternalServerErrorGeneric(format!("Invalid UTF-8 in decrypted message {}: {}", db_msg.id, e))
                     })?
                 }
                 _ => {
-                    trace!(message_id = %db_msg.id, "No DEK or nonce, treating message as plaintext");
+                    trace!(message_id = %db_msg.id, "No DEK or nonce, treating message as plaintext for session {}", session_id);
                     String::from_utf8(db_msg.content.clone()).map_err(|e| { // Clone db_msg.content
-                        error!(message_id = %db_msg.id, error = ?e, "Failed to convert plaintext message to UTF-8 (should be valid)");
+                        error!(message_id = %db_msg.id, error = ?e, "Failed to convert plaintext message to UTF-8 (should be valid) for session {}", session_id);
                         AppError::InternalServerErrorGeneric(format!("Invalid UTF-8 in plaintext message {}: {}", db_msg.id, e))
                     })?
                 }
@@ -761,10 +831,17 @@ pub async fn get_session_data_for_generation(
         // Check if this is the first user message (no existing messages, empty history)
         // If so, prepend the character's first_mes as the first assistant message
         if managed_history.is_empty() {
-            info!(%session_id, "No existing messages found in history - checking for character's first_mes to include");
-            if let Some(char_first_mes) = decrypt_char_field(character.first_mes.as_ref(), character.first_mes_nonce.as_ref(), "first_mes")? {
-                if !char_first_mes.is_empty() {
-                    info!(%session_id, "Adding character's first_mes to history before the first user message");
+            info!(%session_id, "No existing messages in history - checking for character's first_mes (with override) to include");
+            
+            // Use override value if it exists, otherwise use the original character field
+            if let Some(first_mes_override) = override_values.get("first_mes") {
+                if !first_mes_override.is_empty() { // Only add if override is not empty
+                    info!(%session_id, "Adding character's non-empty first_mes override to history");
+                    managed_history.push((MessageRole::Assistant, first_mes_override.clone()));
+                }
+            } else if let Some(char_first_mes) = decrypt_char_field(character.first_mes.as_ref(), character.first_mes_nonce.as_ref(), "first_mes")? {
+                if !char_first_mes.is_empty() { // Only add if original is not empty
+                    info!(%session_id, "Adding character's non-empty original first_mes to history");
                     managed_history.push((MessageRole::Assistant, char_first_mes));
                 }
             }
@@ -806,8 +883,7 @@ pub async fn get_session_data_for_generation(
         ))
     })
     .await // Outer await for interact
-    .map_err(|e| AppError::DbInteractError(format!("Interact dispatch error: {}", e)))? // Handle interact dispatch error (e.g., pool error, panic)
-    // The inner Result<..., AppError> is now the direct output of the interact block
+    .map_err(|e| AppError::DbInteractError(format!("Interact dispatch error: {}", e)))? 
 }
 
 /// Gets chat settings for a specific session, verifying ownership.
@@ -974,48 +1050,48 @@ pub async fn update_session_settings(
                             AppError::DatabaseQueryError(e.to_string())
                         })?;
 
-                    info!(%session_id, "Chat session settings updated successfully");
+            info!(%session_id, "Chat session settings updated successfully");
 
-                    let (
-                        system_prompt,
-                        temperature,
-                        max_output_tokens,
-                        frequency_penalty,
-                        presence_penalty,
-                        top_k,
-                        top_p,
-                        repetition_penalty,
-                        min_p,
-                        top_a,
-                        seed,
-                        logit_bias,
-                        history_management_strategy,
-                        history_management_limit,
-                        model_name,
-                        // -- Gemini Specific Options --
-                        gemini_thinking_budget,
-                        gemini_enable_code_execution,
-                    ) = updated_settings_tuple;
-                    Ok(ChatSettingsResponse {
-                        system_prompt,
-                        temperature,
-                        max_output_tokens,
-                        frequency_penalty,
-                        presence_penalty,
-                        top_k,
-                        top_p,
-                        repetition_penalty,
-                        min_p,
-                        top_a,
-                        seed,
-                        logit_bias,
-                        history_management_strategy,
-                        history_management_limit,
-                        model_name,
-                        // -- Gemini Specific Options --
-                        gemini_thinking_budget,
-                        gemini_enable_code_execution,
-                    })
+            let (
+                system_prompt,
+                temperature,
+                max_output_tokens,
+                frequency_penalty,
+                presence_penalty,
+                top_k,
+                top_p,
+                repetition_penalty,
+                min_p,
+                top_a,
+                seed,
+                logit_bias,
+                history_management_strategy,
+                history_management_limit,
+                model_name,
+                // -- Gemini Specific Options --
+                gemini_thinking_budget,
+                gemini_enable_code_execution,
+            ) = updated_settings_tuple;
+            Ok(ChatSettingsResponse {
+                system_prompt,
+                temperature,
+                max_output_tokens,
+                frequency_penalty,
+                presence_penalty,
+                top_k,
+                top_p,
+                repetition_penalty,
+                min_p,
+                top_a,
+                seed,
+                logit_bias,
+                history_management_strategy,
+                history_management_limit,
+                model_name,
+                // -- Gemini Specific Options --
+                gemini_thinking_budget,
+                gemini_enable_code_execution,
+            })
                 }
                 None => {
                     error!("Chat session {} not found for update", session_id);
@@ -1331,4 +1407,111 @@ pub async fn stream_ai_response_and_save_message(
     };
 
     Ok(Box::pin(sse_stream))
+}
+
+/// Sets or updates a character override for a specific chat session.
+#[instrument(skip(pool, payload, user_dek_secret_box), err)]
+pub async fn set_character_override(
+    pool: &DbPool,
+    user_id: Uuid,
+    session_id: Uuid,
+    payload: CharacterOverrideDto,
+    user_dek_secret_box: Option<&SecretBox<Vec<u8>>>, // Changed to Option<&SecretBox>
+) -> Result<ChatCharacterOverride, AppError> {
+    let conn = pool.get().await?;
+
+    // Clone payload parts needed for the interact closure
+    let field_name_clone = payload.field_name.clone();
+    let value_clone = payload.value.clone();
+
+    // Manually clone the inner secret data to create an owned SecretBox for the closure
+    let owned_user_dek_opt: Option<SecretBox<Vec<u8>>> = user_dek_secret_box
+        .map(|sb_ref| SecretBox::new(Box::new(sb_ref.expose_secret().clone())));
+
+    conn.interact(move |conn| {
+        conn.transaction(|transaction_conn| {
+            // 1. Verify chat session ownership and get original character_id
+            let (chat_owner_id, original_character_id_from_session) = chat_sessions::table
+                .filter(chat_sessions::id.eq(session_id))
+                .select((chat_sessions::user_id, chat_sessions::character_id))
+                .first::<(Uuid, Uuid)>(transaction_conn)
+                .map_err(|e| match e {
+                    DieselError::NotFound => AppError::NotFound(format!(
+                        "Chat session {} not found.",
+                        session_id
+                    )),
+                    _ => AppError::DatabaseQueryError(e.to_string()),
+                })?;
+
+            if chat_owner_id != user_id {
+                error!(
+                    "User {} attempted to set override for session {} owned by {}",
+                    user_id, session_id, chat_owner_id
+                );
+                return Err(AppError::Forbidden);
+            }
+
+            // 2. Encrypt the value
+            let (encrypted_value, nonce) = match &owned_user_dek_opt { // Use the owned Option
+                Some(dek) => { // dek is &SecretBox<Vec<u8>>
+                    crypto::encrypt_gcm(value_clone.as_bytes(), dek).map_err(|e| {
+                        error!("Failed to encrypt override value: {}", e);
+                        AppError::EncryptionError("Failed to encrypt override value".to_string())
+                    })?
+                }
+                None => {
+                    // This case should ideally be prevented if overrides require encryption.
+                    // For now, let's assume if no DEK, we store plaintext (though this is not ideal for sensitive data)
+                    // Or, more correctly, return an error if DEK is expected but not provided.
+                    // For this implementation, we'll require DEK for overrides.
+                    error!("User DEK not provided, cannot encrypt override value.");
+                    return Err(AppError::BadRequest(
+                        "User DEK is required to set character overrides.".to_string(),
+                    ));
+                }
+            };
+
+            // 3. Perform an upsert (insert or update on conflict)
+            let new_override = NewChatCharacterOverride {
+                id: Uuid::new_v4(), // Generate a new ID for insert, conflict target will handle existing
+                chat_session_id: session_id,
+                original_character_id: original_character_id_from_session,
+                field_name: field_name_clone,
+                overridden_value: encrypted_value.clone(), // Clone for insert
+                overridden_value_nonce: nonce.clone(),   // Clone for insert
+            };
+
+            // Upsert logic: Insert, and on conflict on (chat_session_id, field_name), update the value and nonce.
+            // Note: Diesel's `on_conflict` requires the columns in the conflict target to be part of the insert.
+            // The `id` will be different for new inserts vs updates if we rely on a simple update.
+            // A common pattern is to try an update first, if 0 rows affected, then insert.
+            // Or, use a raw query for complex upserts if Diesel's DSL is limiting.
+            // For simplicity here, we'll use `insert_into` with `on_conflict` and `do_update`.
+            // This assumes a unique constraint exists on (chat_session_id, field_name).
+            // If not, this will always insert. A migration would be needed for the unique constraint.
+            // Let's assume the constraint `chat_character_overrides_session_id_field_name_key` exists.
+
+            let result = diesel::insert_into(chat_character_overrides::table)
+                .values(&new_override)
+                .on_conflict((
+                    chat_character_overrides::chat_session_id,
+                    chat_character_overrides::field_name,
+                ))
+                .do_update()
+                .set((
+                    chat_character_overrides::overridden_value.eq(encrypted_value),
+                    chat_character_overrides::overridden_value_nonce.eq(nonce),
+                    chat_character_overrides::updated_at.eq(chrono::Utc::now()), // Explicitly set updated_at
+                ))
+                .returning(ChatCharacterOverride::as_select())
+                .get_result::<ChatCharacterOverride>(transaction_conn)
+                .map_err(|e| {
+                    error!("Failed to upsert chat character override: {}", e);
+                    AppError::DatabaseQueryError(e.to_string())
+                })?;
+
+            Ok(result)
+        })
+    })
+    .await?
 }

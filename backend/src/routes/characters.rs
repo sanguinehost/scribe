@@ -16,15 +16,17 @@ use axum::{
     extract::{Path, State, multipart::Multipart}, // Removed unused Extension
     http::StatusCode,
     response::{IntoResponse, Json, Response},
-    routing::{delete, get, post}, // ADDED delete here
+    routing::{delete, get, post, put}, // ADDED delete here
 };
 use diesel::prelude::*; // Needed for .filter(), .load(), .first(), etc.
 use tracing::{error, info, instrument, trace}; // Use needed tracing macros, ADDED error, warn
 use uuid::Uuid;
+use std::sync::Arc;
 // use anyhow::anyhow; // Unused import
 use crate::auth::user_store::Backend as AuthBackend; // <-- Import the backend type
 use crate::schema::chat_sessions;
 use crate::services::encryption_service::EncryptionService; // Added import
+use crate::services::character_service::CharacterService;
 use axum::body::Bytes;
 use axum_login::AuthSession; // <-- Removed login_required import
 use diesel::RunQueryDsl;
@@ -32,6 +34,7 @@ use diesel::SelectableHelper;
 use diesel::result::Error as DieselError; // Add import for DieselError
 use secrecy::ExposeSecret; // Added for DEK expose
 use serde::Deserialize; // Add serde import // Added for querying chat_sessions table
+use crate::models::character_dto::{CharacterCreateDto, CharacterUpdateDto}; // Added DTO imports
 
 // Define the type alias for the auth session specific to our AuthBackend
 // type CurrentAuthSession = AuthSession<AppState>;
@@ -42,6 +45,29 @@ type CurrentAuthSession = AuthSession<AuthBackend>; // <-- Use correct Backend t
 pub struct GenerateCharacterPayload {
     prompt: String,
 }
+
+// --- Character Router ---
+pub fn characters_router(state: AppState) -> Router<AppState> {
+    Router::new()
+        .route("/upload", post(upload_character_handler))
+        .route("/", get(list_characters_handler).post(create_character_handler)) // Added POST for manual creation
+        // NOTE (of frustration): The routes for getting and deleting a character were changed
+        // to `/fetch/:id` and `/remove/:id` respectively.
+        // Attempts to use  `/:id` for GET and DELETE resulted in
+        // persistent and inexplicable 404 errors, despite various debugging attempts.
+        // This change to more distinct paths was a pragmatic workaround,
+        // born from a fuck-ton (three days) of deep-seated frustration with Axum routing obscurities in this context
+        // that my fucking mortal monkey brain just cannot wrap itself around.
+        .route("/fetch/:id", get(get_character_handler))
+        .route("/:id", put(update_character_handler)) // Added PUT for update on /:id
+        .route("/remove/:id", delete(delete_character_handler))
+        .route("/generate", post(generate_character_handler))
+        .route("/:id/image", get(get_character_image)) // This might also need a more distinct path later
+        // Apply LoginRequired middleware to all routes in this router
+        // It checks auth_session.user and returns 401 if None.
+        .with_state(state)
+}
+
 
 // POST /api/characters/upload
 #[instrument(skip(state, multipart, auth_session), err)]
@@ -228,6 +254,32 @@ pub async fn upload_character_handler(
         .await?;
 
     Ok((StatusCode::CREATED, Json(client_character_data)))
+}
+
+// POST /api/characters - Manual character creation endpoint
+#[instrument(skip(state, auth_session, dek, create_dto), err)]
+pub async fn create_character_handler(
+    State(state): State<AppState>,
+    auth_session: CurrentAuthSession,
+    dek: SessionDek,
+    Json(create_dto): Json<CharacterCreateDto>,
+) -> Result<(StatusCode, Json<CharacterDataForClient>), AppError> {
+    // Get the user from the session
+    let user = auth_session
+        .user
+        .ok_or_else(|| AppError::Unauthorized("Authentication required".to_string()))?;
+    let local_user_id = user.id;
+
+    // Instantiate services
+    let enc_service = Arc::new(EncryptionService::new());
+    let character_service = CharacterService::new(state.pool.clone(), enc_service);
+
+    // Call the service method
+    let client_data = character_service
+        .create_character_manually(local_user_id, create_dto, &dek)
+        .await?;
+
+    Ok((StatusCode::CREATED, Json(client_data)))
 }
 
 // GET /api/characters
@@ -749,25 +801,30 @@ pub async fn delete_character_handler(
     }
 }
 
-// --- Character Router ---
-pub fn characters_router(state: AppState) -> Router<AppState> {
-    Router::new()
-        .route("/upload", post(upload_character_handler))
-        .route("/", get(list_characters_handler))
-        // NOTE (of frustration): The routes for getting and deleting a character were changed
-        // to `/fetch/:id` and `/remove/:id` respectively.
-        // Attempts to use  `/:id` for GET and DELETE resulted in
-        // persistent and inexplicable 404 errors, despite various debugging attempts.
-        // This change to more distinct paths was a pragmatic workaround,
-        // born from a fuck-ton (three days) of deep-seated frustration with Axum routing obscurities in this context
-        // that my fucking mortal monkey brain just cannot wrap itself around.
-        .route("/fetch/:id", get(get_character_handler))
-        .route("/remove/:id", delete(delete_character_handler))
-        .route("/generate", post(generate_character_handler))
-        .route("/:id/image", get(get_character_image)) // This might also need a more distinct path later
-        // Apply LoginRequired middleware to all routes in this router
-        // It checks auth_session.user and returns 401 if None.
-        .with_state(state)
+// PUT /api/characters/:id - Update an existing character
+#[instrument(skip(state, auth_session, dek, update_dto), err)]
+pub async fn update_character_handler(
+    State(state): State<AppState>,
+    auth_session: CurrentAuthSession,
+    dek: SessionDek,
+    Path(character_id_to_update): Path<Uuid>, // Renamed to avoid conflict
+    Json(update_dto): Json<CharacterUpdateDto>,
+) -> Result<Json<CharacterDataForClient>, AppError> {
+    let user = auth_session
+        .user
+        .ok_or_else(|| AppError::Unauthorized("Authentication required".to_string()))?;
+    let local_user_id = user.id;
+
+    // Instantiate services
+    let enc_service = Arc::new(EncryptionService::new());
+    let character_service = CharacterService::new(state.pool.clone(), enc_service);
+
+    // Call the service method
+    let client_data = character_service
+        .update_character_details(character_id_to_update, local_user_id, update_dto, &dek)
+        .await?;
+
+    Ok(Json(client_data))
 }
 
 #[debug_handler]

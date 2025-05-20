@@ -1,3 +1,11 @@
+CREATE OR REPLACE FUNCTION trigger_set_timestamp()
+RETURNS TRIGGER AS $$
+BEGIN
+  NEW.updated_at = NOW();
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
 -- Your SQL goes here
 CREATE TABLE sessions (
     id TEXT PRIMARY KEY NOT NULL,        -- Session ID provided by axum-session

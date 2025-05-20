@@ -5,6 +5,7 @@ pub mod characters;
 pub mod chat;
 pub mod chat_config; // Add the chat configuration module
 pub mod chat_management; // Add the chat management module
+pub mod chat_overrides; // Add the chat overrides module
 pub mod default_settings;
 pub mod health;
 pub mod model;
@@ -12,8 +13,7 @@ pub mod start_chat;
 pub mod streaming; // Add the default settings module
 
 // For tests
-#[cfg(test)]
-pub mod test_helpers;
+// pub mod test_helpers; // Moved to lib.rs
 
 // Re-export public API
 pub use self::admin::{
@@ -28,6 +28,9 @@ pub use self::chat::{
 };
 pub use self::chat_config::handle_chat_config_action;
 pub use self::chat_management::handle_delete_chat_session_action;
+pub use self::chat_overrides::{
+    handle_chat_edit_character_oneliner, handle_chat_edit_character_wizard,
+};
 pub use self::default_settings::handle_default_settings_action;
 pub use self::health::handle_health_check_action;
 pub use self::model::handle_model_settings_action;

@@ -152,20 +152,27 @@ mod tests {
         let embedding_client = Arc::new(crate::test_helpers::MockEmbeddingClient::new());
         let qdrant_service =
             Arc::new(crate::vector_db::qdrant_client::QdrantClientService::new_test_dummy());
+        
+        let encryption_service = Arc::new(crate::services::encryption_service::EncryptionService::new());
+        let chat_override_service = Arc::new(crate::services::chat_override_service::ChatOverrideService::new(pool.clone(), encryption_service.clone()));
+        let token_counter_service = Arc::new(crate::services::hybrid_token_counter::HybridTokenCounter::new_local_only(
+            crate::services::tokenizer_service::TokenizerService::new(
+                config.tokenizer_model_path.as_ref().expect("Tokenizer path is None").as_str()
+            )
+            .expect("Failed to create tokenizer for test")
+        ));
 
         // Create AppState with our mock service
-        let app_state = Arc::new(AppState {
+        let app_state = Arc::new(AppState::new(
             pool,
             config,
             ai_client,
             embedding_client,
             qdrant_service,
-            embedding_pipeline_service: mock_embedding_service.clone(),
-            embedding_call_tracker: Arc::new(tokio::sync::Mutex::new(Vec::new())),
-            token_counter: Arc::new(crate::services::hybrid_token_counter::HybridTokenCounter::new_local_only(
-                crate::services::tokenizer_service::TokenizerService::new("/home/socol/Workspace/sanguine-scribe/backend/resources/tokenizers/gemma.model")
-                    .expect("Failed to create tokenizer for test")))
-        });
+            mock_embedding_service.clone(), // This is embedding_pipeline_service
+            chat_override_service,
+            token_counter_service
+        ));
 
         (app_state, mock_embedding_service)
     }

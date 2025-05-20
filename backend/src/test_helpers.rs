@@ -5,38 +5,44 @@
 use crate::errors::AppError;
 use crate::llm::{AiClient, ChatStream, EmbeddingClient}; // Add EmbeddingClient
 use crate::services::embedding_pipeline::{EmbeddingPipelineServiceTrait, RetrievedChunk};
-// Removed unused: ChunkConfig, ChunkingMetric
+// Unused ChunkConfig, ChunkingMetric were previously noted as removed.
 use crate::models::users::User as DbUser;
 use crate::models::users::{SerializableSecretDek, User}; // Added SerializableSecretDek
 use crate::vector_db::qdrant_client::{PointStruct, QdrantClientServiceTrait};
 use crate::{
-    PgPool, // This is deadpool_diesel::postgres::Pool
-    auth::{session_store::DieselSessionStore, user_store::Backend as AuthBackend}, // Use crate::auth and alias Backend, Added RegisterPayload
-    config::Config,
-    // Ensure build_gemini_client is removed if present
-    models::chats::{ChatMessage, UpdateChatSettingsRequest}, // Added UpdateChatSettingsRequest
-    models::users::AccountStatus,
-    routes::{
-        auth as auth_routes_module, characters, chat::chat_routes, chats,
-        documents::document_routes, health::health_check,
-    },
-    schema,
-    state::AppState,
-    vector_db::qdrant_client::QdrantClientService, // Import constants module alias
+PgPool, // This is deadpool_diesel::postgres::Pool
+auth::{session_store::DieselSessionStore, user_store::Backend as AuthBackend}, // Use crate::auth and alias Backend, Added RegisterPayload
+config::Config,
+// Ensure build_gemini_client is removed if present
+models::chats::{ChatMessage, UpdateChatSettingsRequest}, // Added UpdateChatSettingsRequest
+models::users::AccountStatus,
+routes::{
+    auth as auth_routes_module, characters, chat::chat_routes, chats,
+    documents::document_routes, health::health_check,
+},
+schema,
+state::AppState,
+services::chat_override_service::ChatOverrideService, // <<< ENSURED IMPORT
+services::encryption_service::EncryptionService, // <<< ENSURED IMPORT
+services::gemini_token_client::GeminiTokenClient,
+services::hybrid_token_counter::HybridTokenCounter,
+services::tokenizer_service::TokenizerService,
+// text_processing::chunking::{ChunkConfig, ChunkingMetric}, // Removed unused imports
+vector_db::qdrant_client::QdrantClientService, // Import constants module alias
 };
 use anyhow::Context; // Added for TestDataGuard cleanup
 use async_trait::async_trait;
 use axum::{
-    Router,
-    // body::HttpBody, // Removed boxed - Removed unused
-    middleware::{self, Next},
-    response::Response as AxumResponse, // Alias to avoid conflict if Response is used elsewhere
+Router,
+middleware::{self, Next},
+response::Response as AxumResponse, // Alias to avoid conflict if Response is used elsewhere
+routing::get, // <<< ADD THIS IMPORT
 };
 use axum::{
-    body::Body,
-    http::{Method, Request, StatusCode, header}, // Added Method and header
+body::Body,
+http::{Request, StatusCode}, // Removed unused Method, header
 };
-use axum_login::{AuthManagerLayerBuilder, AuthSession, login_required};
+use axum_login::{AuthManagerLayerBuilder, AuthSession}; // Removed unused login_required
 use diesel::RunQueryDsl;
 use diesel::prelude::*;
 use diesel_migrations::{EmbeddedMigrations, embed_migrations};
@@ -46,7 +52,7 @@ use genai::ModelIden; // Import ModelIden directly
 use genai::adapter::AdapterKind; // Ensure AdapterKind is in scope
 use genai::chat::ChatStreamEvent; // Add import for chatstream types
 use genai::chat::{ChatOptions, ChatRequest, ChatResponse};
-use http_body_util::BodyExt; // Added for Body::collect
+// use http_body_util::BodyExt; // Removed unused import
 use mime; // Added for mime::APPLICATION_JSON
 use qdrant_client::qdrant::{Filter, PointId, ScoredPoint};
 use secrecy::{ExposeSecret, SecretBox, SecretString};
@@ -57,9 +63,12 @@ use tokio::net::TcpListener;
 use tokio::sync::Mutex as TokioMutex;
 use tower::ServiceExt; // For .oneshot
 use tower_cookies::CookieManagerLayer; // Removed unused: Key as TowerCookieKey
-use tower_sessions::{Expiry, SessionManagerLayer};
+use tower_sessions::{Expiry, SessionManagerLayer, cookie::Key as TowerSessionKey, cookie::SameSite}; // Added SameSite
 use tracing::{debug, instrument, warn}; // Added debug
 use uuid::Uuid;
+use hex; // Added for hex::decode
+use time; // For time::Duration for session expiry
+use reqwest;
 
 #[derive(Clone)]
 pub struct MockAiClient {
@@ -96,10 +105,6 @@ impl MockAiClient {
             }))),
             stream_to_return: std::sync::Arc::new(std::sync::Mutex::new(None)),
             last_received_messages: std::sync::Arc::new(std::sync::Mutex::new(None)),
-            // model_name: "gemini/mock-model".to_string(), // Removed unused
-            // provider_model_name: "gemini/mock-model".to_string(), // Removed unused
-            // embedding_response: Arc::new(Mutex::new(Ok(vec![0.1, 0.2, 0.3]))), // Removed unused
-            // text_gen_response: Arc::new(Mutex::new(Ok("Mock text generation response".to_string()))), // Removed unused
         }
     }
 
@@ -420,9 +425,9 @@ impl MockQdrantClientService {
         response.unwrap_or(Ok(()))
     }
 
-    pub async fn search_points(
+    async fn search_points(
         &self,
-        query_vector: Vec<f32>,
+        vector: Vec<f32>,
         limit: u64,
         filter: Option<Filter>,
     ) -> Result<Vec<ScoredPoint>, AppError> {
@@ -432,12 +437,47 @@ impl MockQdrantClientService {
             *count += 1;
 
             let mut last_params = self.last_search_params.lock().unwrap();
-            *last_params = Some((query_vector.clone(), limit, filter.clone()));
+            *last_params = Some((vector.clone(), limit, filter.clone()));
         }
 
         // Return response
+        let opt_response = self.search_response.lock().unwrap().take();
+        tracing::info!(
+            target: "mock_qdrant_search",
+            "MockQdrantClientService::search_points (trait): taken response option is: {:?}", 
+            opt_response.as_ref().map(|res| match res {
+                Ok(v) => format!("Ok(len={})", v.len()),
+                Err(e) => format!("Err({})", e)
+            })
+        );
+        let result_to_return = opt_response.unwrap_or(Ok(vec![]));
+        tracing::info!(
+            target: "mock_qdrant_search",
+            "MockQdrantClientService::search_points (trait): result_to_return is: {:?}", 
+            match &result_to_return {
+                Ok(v) => format!("Ok(len={})", v.len()),
+                Err(e) => format!("Err({})", e)
+            }
+        );
+        result_to_return
+    }
+
+    async fn retrieve_points(
+        &self,
+        _filter: Option<Filter>,
+        _limit: u64,
+    ) -> Result<Vec<ScoredPoint>, AppError> {
+        // Use the search response for retrieve as well
         let response = self.search_response.lock().unwrap().take();
         response.unwrap_or(Ok(vec![]))
+    }
+
+    async fn delete_points(&self, _point_ids: Vec<PointId>) -> Result<(), AppError> {
+        Ok(()) // Just return success for the mock
+    }
+
+    async fn update_collection_settings(&self) -> Result<(), AppError> {
+        Ok(()) // Just return success for the mock
     }
 }
 
@@ -573,200 +613,174 @@ async fn auth_log_wrapper(
     res
 }
 
-/// Spawns the application for testing.
-/// Takes boolean flags to determine whether to use real AI and Qdrant clients.
-/// Takes a boolean flag to determine whether to use a multi-threaded runtime.
+#[instrument(skip_all, fields(multi_thread, use_real_ai, use_real_qdrant))]
 pub async fn spawn_app(multi_thread: bool, use_real_ai: bool, use_real_qdrant: bool) -> TestApp {
-    // Ensure tracing is initialized for tests
     ensure_tracing_initialized();
-
-    // Load configuration
     dotenv().ok();
-    let config = crate::config::Config::load().expect("Failed to load test configuration");
-    let config = Arc::new(config);
 
-    // Setup Database Pool
-    let db_pool = db::setup_test_database(Some("spawn_app")).await;
-
-    // Setup Qdrant Service (Real or Mock)
-    let (qdrant_service, mock_qdrant_service_opt): (
-        Arc<dyn QdrantClientServiceTrait + Send + Sync>,
-        Option<Arc<MockQdrantClientService>>,
-    ) = if use_real_qdrant {
-        match QdrantClientService::new(config.clone()).await {
-            Ok(service) => {
-                let real_qdrant_service = Arc::new(service);
-                (real_qdrant_service, None)
-            }
-            Err(e) => {
-                warn!(
-                    "Failed to create real QdrantClientService for testing: {}. Falling back to mock.",
-                    e
-                );
-                let mock_q_service = Arc::new(MockQdrantClientService::new());
-                (mock_q_service.clone(), Some(mock_q_service))
-            }
-        }
+    let test_db_name_suffix = if multi_thread {
+        Some(Uuid::new_v4().to_string()) // Ensure it's String for suffix
     } else {
-        let mock_q_service = Arc::new(MockQdrantClientService::new());
-        (mock_q_service.clone(), Some(mock_q_service))
+        None
     };
+    let pool: PgPool = db::setup_test_database(test_db_name_suffix.as_deref()).await;
 
-    // Create AI Client (Real or Mock)
-    let (ai_client, mock_ai_client_opt): (
+    let mut config_loader = Config::load().expect("Failed to load test configuration");
+    if let Some(ref suffix) = test_db_name_suffix {
+        config_loader.database_url = Some(format!(
+            "{}_{}",
+            config_loader.database_url.unwrap_or_else(|| "postgres://user:pass@localhost/testdb".to_string()), // Provide a default if None
+            suffix
+        ));
+    }
+    config_loader.port = 0; 
+    let config_arc = Arc::new(config_loader);
+
+    let (ai_client_for_state, mock_ai_client_for_test_app): (
         Arc<dyn AiClient + Send + Sync>,
         Option<Arc<MockAiClient>>,
     ) = if use_real_ai {
-        let real_client = crate::llm::gemini_client::build_gemini_client()
+        let real_ai_client = crate::llm::gemini_client::build_gemini_client()
             .await
-            .expect("Failed to build real Gemini client for testing");
-        (real_client, None)
+            .expect("Failed to build real AI client for test");
+        (Arc::new(real_ai_client), None)
     } else {
         let mock_client = Arc::new(MockAiClient::new());
-        (mock_client.clone(), Some(mock_client))
+        (mock_client.clone() as Arc<dyn AiClient + Send + Sync>, Some(mock_client))
     };
 
-    // Setup Mock Clients (keep these as mocks for isolating other parts, unless specified otherwise)
-    let mock_embedding_client = Arc::new(MockEmbeddingClient::new());
-    let mock_embedding_pipeline_service = Arc::new(MockEmbeddingPipelineService::new());
+    let mock_embedding_client_instance = Arc::new(MockEmbeddingClient::new());
+    let embedding_client_for_state =
+        mock_embedding_client_instance.clone() as Arc<dyn EmbeddingClient + Send + Sync>;
 
-    // Create tracker for embedding calls
-    let embedding_call_tracker = Arc::new(TokioMutex::new(Vec::new()));
-
-    // Build AppState
-    let app_state_inner = AppState {
-        pool: db_pool.clone(),
-        config: config.clone(),
-        ai_client: ai_client.clone(),
-        embedding_client: mock_embedding_client.clone(),
-        embedding_pipeline_service: mock_embedding_pipeline_service.clone(),
-        qdrant_service: qdrant_service.clone(), // This will be the real or mock service
-        embedding_call_tracker: embedding_call_tracker.clone(),
-        token_counter: Arc::new(crate::services::hybrid_token_counter::HybridTokenCounter::new_local_only(
-            crate::services::tokenizer_service::TokenizerService::new("/home/socol/Workspace/sanguine-scribe/backend/resources/tokenizers/gemma.model")
-                .expect("Failed to create tokenizer for test")))
-    };
-    // Create the Arc<AppState> after building the inner state
-    let app_state = Arc::new(app_state_inner);
-
-    // Session Management Setup
-    let session_store = DieselSessionStore::new(db_pool.clone());
-    let session_layer = SessionManagerLayer::new(session_store)
-        .with_name("id")
-        .with_secure(false)
-        .with_expiry(Expiry::OnInactivity(
-            tower_sessions::cookie::time::Duration::days(1),
-        ));
-
-    // Auth Backend Setup
-    let auth_backend = AuthBackend::new(db_pool.clone());
-    let auth_layer = AuthManagerLayerBuilder::new(auth_backend, session_layer).build();
-
-    // --- Router Setup (mimicking main.rs) ---
-
-    let app_state_for_routes = app_state.as_ref().clone();
-
-    // Define protected_api_routes (paths are relative to the eventual /api mount)
-    // Start with a router that is explicitly Router<AppState> by nesting one component first.
-    let mut protected_api_routes: Router<AppState> = Router::new().nest(
-        "/characters",
-        characters::characters_router(app_state_for_routes.clone()),
-    );
-    tracing::debug!(router = ?protected_api_routes, "Protected routes after /characters");
-
-    // Restore other protected routes
-    protected_api_routes =
-        protected_api_routes.nest("/chat", chat_routes(app_state_for_routes.clone()));
-    tracing::debug!(router = ?protected_api_routes, "Protected routes after /chat (crate::routes::chat)");
-
-    protected_api_routes = protected_api_routes.nest("/chats", {
-        tracing::debug!("spawn_app: nesting chats::chat_routes() under /chats");
-        chats::chat_routes() // Assumes this returns Router<AppState>
-    });
-    tracing::debug!(router = ?protected_api_routes, "Protected routes after /chats");
-
-    protected_api_routes = protected_api_routes.nest(
-        "/documents",
-        document_routes(), // Assumes this returns Router<AppState>
-    );
-    tracing::debug!(router = ?protected_api_routes, "Protected routes after /documents");
-
-    // Apply route_layer at the end
-    let protected_api_routes_final = protected_api_routes // Now contains all nested protected routes
-        .layer(middleware::from_fn(auth_log_wrapper)) // Log first
-        .layer(login_required!(AuthBackend)); // Then auth
-    tracing::debug!(router = ?protected_api_routes_final, "Protected routes final (after login_required and auth_log_wrapper)");
-
-    // Define public_api_routes (paths are relative to the eventual /api mount)
-    let public_api_routes: Router<AppState> = Router::new()
-        .route("/health", axum::routing::get(health_check))
-        .merge(Router::new().nest("/auth", auth_routes_module::auth_routes()));
-
-    // Combine public and protected routes under a single /api prefix
-    // let api_router = Router::new()
-    //     .merge(public_api_routes)
-    //     .merge(protected_api_routes_final); // protected_api_routes_final already has login_required applied
-
-    // Combine routers and add layers.
-    // Apply CookieManagerLayer and auth_layer at the top level
-    // so they run before routing into /api.
-    // Temporarily bypass api_router and public_api_routes for this test.
-    // Mount ONLY the protected_api_routes_final under /api.
-    // auth_layer is crucial for login_required! to function.
-    // Reverting to nesting the full api_router under /api
-    // let api_router = Router::new()
-    //     .merge(public_api_routes) // Ensure public_api_routes is defined
-    //     .merge(protected_api_routes_final.clone());
-
-    // Merge public and protected routes into a single api_router
-    let api_router = Router::new()
-        .merge(public_api_routes)
-        .merge(protected_api_routes_final); // protected_api_routes_final already has login_required applied
-
-    let app = Router::new()
-        .nest("/api", api_router) // Nest the combined api_router under /api
-        .layer(CookieManagerLayer::new()) // Manages cookies, must be before auth_layer
-        .layer(auth_layer) // Uses cookies to load session/user
-        // Removed TraceLayer to avoid potential conflicts with global tracing setup
-        .with_state(app_state.as_ref().clone()); // Provide AppState to all handlers
-    tracing::debug!(router = ?app, "Final app router structure");
-
-    // Start the server on a random available port
-    let listener = TcpListener::bind("127.0.0.1:0")
-        .await
-        .expect("Failed to bind random port");
-    let addr = listener.local_addr().unwrap();
-    let address = format!("http://{}", addr);
-    println!("Test server running on {}", address);
-
-    let app_for_server = app.clone();
-
-    if multi_thread {
-        tokio::spawn(async move {
-            axum::serve(listener, app_for_server.into_make_service())
-                .await
-                .unwrap();
-        });
+    let (qdrant_service_for_state, mock_qdrant_service_for_test_app): (
+        Arc<dyn QdrantClientServiceTrait + Send + Sync>,
+        Option<Arc<MockQdrantClientService>>,
+    ) = if use_real_qdrant {
+        let real_qdrant_service = QdrantClientService::new(config_arc.clone())
+            .await
+            .expect("Failed to create real Qdrant client for test");
+        (Arc::new(real_qdrant_service) as Arc<dyn QdrantClientServiceTrait + Send + Sync>, None)
     } else {
-        tokio::spawn(async move {
-            axum::serve(listener, app_for_server.into_make_service())
-                .await
-                .unwrap();
-        });
-    }
+        let mock_qdrant = Arc::new(MockQdrantClientService::new());
+        (mock_qdrant.clone() as Arc<dyn QdrantClientServiceTrait + Send + Sync>, Some(mock_qdrant))
+    };
+    
+    // Embedding Pipeline Service (use real one for tests that might need it, or mock)
+    // For now, using the mock. If a real one is needed, it should be conditional like AI/Qdrant.
+    let mock_embedding_pipeline_service_instance = Arc::new(MockEmbeddingPipelineService::new());
+    let embedding_pipeline_service_for_state = mock_embedding_pipeline_service_instance.clone()
+        as Arc<dyn EmbeddingPipelineServiceTrait + Send + Sync>;
+
+    let tokenizer_model_path = config_arc
+        .tokenizer_model_path
+        .as_ref()
+        .cloned()
+        .expect("Tokenizer model path not set in config for tests");
+    let tokenizer_service =
+        TokenizerService::new(&tokenizer_model_path).expect("Failed to load tokenizer model for tests");
+
+    let gemini_token_client_for_test = config_arc.gemini_api_key.as_ref().map(|api_key_string|
+        GeminiTokenClient::new(api_key_string.clone()) 
+    );
+
+    let token_counter_default_model_for_test = config_arc
+        .token_counter_default_model
+        .as_ref()
+        .cloned()
+        .expect("Token counter default model not set in config for tests");
+
+    let hybrid_token_counter = HybridTokenCounter::new(
+        tokenizer_service,
+        gemini_token_client_for_test, // This is Option<GeminiTokenClient>
+        token_counter_default_model_for_test,
+    );
+    let hybrid_token_counter_arc = Arc::new(hybrid_token_counter);
+
+    let encryption_service_arc = Arc::new(EncryptionService::new());
+    let chat_override_service_arc = Arc::new(ChatOverrideService::new(pool.clone(), encryption_service_arc.clone()));
+
+    let app_state_inner = AppState::new(
+        pool.clone(),
+        config_arc.clone(),
+        ai_client_for_state.clone(),
+        embedding_client_for_state.clone(), // Cloned
+        qdrant_service_for_state.clone(),   // Cloned
+        embedding_pipeline_service_for_state.clone(), // Cloned
+        chat_override_service_arc.clone(), // Cloned
+        hybrid_token_counter_arc.clone(), // Cloned
+    );
+
+    let session_store = DieselSessionStore::new(pool.clone());
+    let secret_key_hex_str: &String = config_arc.cookie_signing_key.as_ref()
+        .expect("COOKIE_SIGNING_KEY must be set for tests");
+    let key_bytes = hex::decode(secret_key_hex_str.as_bytes()) // .as_bytes() on String
+        .expect("Invalid COOKIE_SIGNING_KEY format in test config (must be hex)");
+    let _signing_key = TowerSessionKey::from(&key_bytes);
+
+    let session_manager_layer = SessionManagerLayer::new(session_store)
+        .with_secure(config_arc.session_cookie_secure)
+        .with_same_site(SameSite::Lax)
+        .with_expiry(Expiry::OnInactivity(time::Duration::days(7)));
+
+    let auth_backend = AuthBackend::new(pool.clone());
+    let auth_layer = AuthManagerLayerBuilder::new(auth_backend, session_manager_layer.clone()).build();
+    
+    let listener = TcpListener::bind(format!("127.0.0.1:{}", config_arc.port))
+        .await
+        .expect("Failed to bind to random port for test server");
+    let local_addr = listener.local_addr().expect("Failed to get local address");
+    let app_address = format!("http://{}", local_addr);
+
+    debug!("Test app address: {}", app_address);
+
+    let embedding_call_tracker_for_state = app_state_inner.embedding_call_tracker.clone();
+
+    // Corrected Router Setup for Tests
+    let public_api_routes_for_test = Router::new()
+        .route("/health", get(health_check))
+        .merge(Router::new().nest("/auth", auth_routes_module::auth_routes())); // Align with main.rs
+
+    let protected_api_routes_for_test = Router::new()
+        .nest("/characters", characters::characters_router(app_state_inner.clone()))
+        .nest("/chat", chat_routes(app_state_inner.clone()))
+        .nest("/chats", chats::chat_routes()) // Assuming this returns Router<AppState> or is already stateful
+        .nest("/documents", document_routes()) // Assuming this returns Router<AppState> or is already stateful
+        .route_layer(middleware::from_fn_with_state(app_state_inner.clone(), auth_log_wrapper));
+
+    // Combine public and protected routes before nesting under /api
+    let all_api_routes = Router::new()
+        .merge(public_api_routes_for_test) // Contains /health, /auth/*
+        .merge(protected_api_routes_for_test); // Re-enabled protected routes
+
+    let router_for_server = Router::new() // Renamed to avoid conflict with router field in TestApp
+        .nest("/api", all_api_routes) // Nest all combined API routes under /api
+        .layer(CookieManagerLayer::new())
+        .layer(auth_layer)
+        .with_state(app_state_inner.clone());
+
+    let router_for_test_app = router_for_server.clone(); // Clone before moving
+
+    tokio::spawn(async move {
+        axum::serve(listener, router_for_server.into_make_service()) // Use router_for_server
+            .await
+            .expect("Test server failed");
+    });
 
     TestApp {
-        address,
-        router: app,
-        db_pool,
-        config: config.clone(),
-        ai_client,
-        mock_ai_client: mock_ai_client_opt,
-        mock_embedding_client,
-        mock_embedding_pipeline_service,
-        qdrant_service, // This is now correctly the real or mock service
-        mock_qdrant_service: mock_qdrant_service_opt, // Store the Option<Arc<MockQdrantClientService>>
-        embedding_call_tracker,
+        address: app_address,
+        router: router_for_test_app, // Use the cloned router
+                               // Direct reqwest calls are made to `app_address`.
+                               // Keeping it to satisfy struct, but should ideally be removed or used consistently.
+        db_pool: pool,
+        config: config_arc,
+        ai_client: ai_client_for_state,
+        mock_ai_client: mock_ai_client_for_test_app,
+        mock_embedding_client: mock_embedding_client_instance,
+        mock_embedding_pipeline_service: mock_embedding_pipeline_service_instance,
+        qdrant_service: qdrant_service_for_state,
+        mock_qdrant_service: mock_qdrant_service_for_test_app,
+        embedding_call_tracker: embedding_call_tracker_for_state,
     }
 }
 
@@ -1335,50 +1349,41 @@ pub async fn login_user_via_api(test_app: &TestApp, username: &str, password: &s
         "identifier": username,
         "password": password
     });
-    let request = Request::builder()
-        .method(Method::POST)
-        .uri("/api/auth/login")
-        .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
-        .body(Body::from(serde_json::to_string(&login_payload).unwrap()))
-        .unwrap();
 
-    let response = test_app.router.clone().oneshot(request).await.unwrap();
-    if response.status() != StatusCode::OK {
+    // Create a new reqwest client for each call, or pass one in TestApp
+    let client = reqwest::Client::builder()
+        .cookie_store(true) // Enable cookie store for this client
+        .build()
+        .expect("Failed to build reqwest client for login");
+
+    let login_url = format!("{}/api/auth/login", test_app.address);
+
+    let response = client
+        .post(&login_url)
+        .json(&login_payload)
+        .send()
+        .await
+        .expect("Login request failed to send");
+
+    if response.status() != reqwest::StatusCode::OK {
         let status = response.status();
-        let body_bytes = match response.into_body().collect().await {
-            Ok(collected) => collected.to_bytes(),
-            Err(e) => format!("Failed to collect body: {}", e).into_bytes().into(),
-        };
-        let body_str = String::from_utf8_lossy(&body_bytes);
+        let body_text = response.text().await.unwrap_or_else(|e| format!("Failed to read error body: {}", e));
         panic!(
-            "API login failed for user '{}'. Status: {}. Body: {}",
-            username, status, body_str
+            "API login failed for user '{}'. Status: {}. URL: {}. Body: {}",
+            username, status, login_url, body_text
         );
     }
 
+    // Extract the session cookie
     response
-        .headers()
-        .get_all(header::SET_COOKIE)
-        .iter()
-        .find_map(|v| {
-            let cookie_str = v.to_str().unwrap_or_else(|_| {
-                panic!(
-                    "Invalid Set-Cookie header (not UTF-8) for user {}",
-                    username
-                )
-            });
-            if cookie_str.starts_with("id=") {
-                // Assuming session cookie name is "id"
-                cookie_str.split(';').next().map(String::from)
-            } else {
-                None
-            }
-        })
+        .cookies()
+        .find(|c| c.name() == "id") // Assuming session cookie name is "id"
+        .map(|c| format!("{}={}", c.name(), c.value()))
         .unwrap_or_else(|| {
             let headers_debug = format!("{:?}", response.headers());
             panic!(
-                "Session cookie 'id' not found in login response for user {}. Headers: {}",
-                username, headers_debug
+                "Session cookie 'id' not found in login response for user {}. URL: {}. Headers: {}",
+                username, login_url, headers_debug
             )
         })
 }
@@ -1585,19 +1590,21 @@ pub async fn set_history_settings(
         gemini_thinking_budget: None,
     };
 
-    let request = Request::builder()
-        .method(Method::PUT)
-        .uri(format!("/api/chat/{}/settings", session_id))
-        .header(header::COOKIE, auth_cookie)
-        .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
-        .body(Body::from(serde_json::to_vec(&payload)?))?;
+    let client = reqwest::Client::new();
+    let response = client
+        .put(format!("{}/api/chat/{}/settings", test_app.address, session_id))
+        .header(reqwest::header::COOKIE, auth_cookie)
+        .header(reqwest::header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
+        .json(&payload)
+        .send()
+        .await?;
 
-    let response = test_app.router.clone().oneshot(request).await?;
     assert_eq!(
         response.status(),
-        StatusCode::OK,
+        reqwest::StatusCode::OK,
         "Failed to set history settings via API"
     );
-    let _ = response.into_body().collect().await?.to_bytes();
+    // Ensure body is consumed to prevent issues, but we don't need to parse it here.
+    let _ = response.bytes().await?;
     Ok(())
 }

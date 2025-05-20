@@ -2,37 +2,39 @@
 
 ## Overview
 
-Scribe adopts a modern client-server architecture designed for performance, maintainability, and extensibility. It separates concerns between the frontend user interface, the backend business logic, data storage, and external AI services.
+Scribe adopts a modern client-server architecture designed for performance, maintainability, and extensibility. It separates concerns between the frontend user interface, the backend business logic, data storage, and external AI services. HTTPS is used for secure communication between client and server.
 
 ## Components
 
 1.  **Frontend (SvelteKit):**
-    *   **Technology:** SvelteKit framework using Svelte and TypeScript. UI components and styling provided by the **Skeleton UI toolkit** ([https://www.skeleton.dev/](https://www.skeleton.dev/)) integrated with TailwindCSS.
+    *   **Technology:** SvelteKit framework using Svelte and TypeScript. The UI is built upon the **Vercel SvelteKit AI chat template**, which utilizes **shadcn-svelte** for components and **TailwindCSS** for styling.
     *   **Responsibilities:**
         *   Rendering the user interface (login/register, chat, character management, settings).
         *   Handling user input and interactions.
         *   Managing local UI state (using Svelte Stores, including auth state).
-        *   Communicating with the backend via RESTful API calls (`fetch`), managing session cookies automatically via the browser.
+        *   Communicating with the backend via RESTful API calls (`fetch` over HTTPS), managing session cookies automatically via the browser.
+        *   Securely handling user credentials (e.g., password during login/recovery) for server-side key derivation. Chat messages are exchanged as plaintext with the backend over HTTPS.
     *   **Key Modules:** Auth views, Chat view, Character list/details, Settings panels, API client service.
 
 2.  **Backend (Rust):**
     *   **Technology:** Rust language with the Axum web framework.
     *   **Responsibilities:**
-        *   Providing a secure RESTful API for the frontend.
-        *   Handling user authentication and session management using `axum-login` (See `docs/AUTH_DESIGN.md`).
+        *   Providing a secure RESTful API for the frontend (endpoints served over HTTPS).
+        *   Handling user authentication (including role-based access considerations) and session management using `axum-login` (See `docs/AUTH_DESIGN.md`).
+        *   Managing the server-side encryption lifecycle: deriving Key Encryption Keys (KEKs) from user passwords, decrypting user Data Encryption Keys (DEKs) into session memory, using DEKs to encrypt/decrypt user data (chat messages, character details) before database persistence/after retrieval, and storing encrypted data with nonces. Also handles user roles and account status. (See `docs/ENCRYPTION_ARCHITECTURE.md`).
         *   Implementing core business logic (prompt assembly, context management).
         *   Interacting with databases (PostgreSQL for primary data and sessions, Qdrant for vectors).
         *   Communicating with external AI APIs (initially Google Gemini).
         *   Parsing character card data.
-        *   Processing chat history for the RAG system (chunking, embedding).
-    *   **Key Modules:** API route handlers, Authentication layer (`axum-login`), Core logic services, Database services (Diesel for PostgreSQL, Qdrant client), AI client services, Character parser, Context processor.
+        *   Processing chat history for the RAG system (chunking, embedding decrypted content).
+    *   **Key Modules:** API route handlers (e.g., `routes/chats.rs`, `routes/characters.rs`), Authentication layer (`auth/mod.rs`, `axum-login`), Cryptography utilities (`crypto.rs`), Encryption Service (`services/encryption_service.rs`), Core logic services (e.g., `ChatService`, `CharacterService`), Database services (Diesel for PostgreSQL, Qdrant client), AI client services, Character parser, Context processor.
 
 3.  **Databases:**
     *   **PostgreSQL:**
-        *   **Purpose:** Primary relational database for structured, persistent data (`users`, `characters`, `chat_sessions`, `chat_messages`, etc.) and potentially session state.
+        *   **Purpose:** Primary relational database for structured, persistent data: `users` (with roles, E2EE key info, account status), `characters` (sensitive fields encrypted), `chat_sessions`, `chat_messages` (content encrypted), etc., and session state.
         *   **Interaction:** Via the Diesel ORM.
     *   **Qdrant:**
-        *   **Purpose:** Vector database optimized for similarity search, powering the RAG system.
+        *   **Purpose:** Vector database optimized for similarity search, powering the RAG system (stores embeddings of decrypted content).
         *   **Interaction:** Via official Qdrant Rust client library.
 
 4.  **External Services:**
@@ -44,11 +46,11 @@ Scribe adopts a modern client-server architecture designed for performance, main
 
 ```mermaid
 graph TD
-    subgraph Browser ["SvelteKit"]
+    subgraph Browser ["SvelteKit (Vercel Template Base)"]
         direction TB
         UI["Svelte Components (Auth, Chat, Settings, Char Mgmt)"]
         STATE["Svelte Stores (UI State, Auth State)"]
-        API_CLIENT["API Client (fetch w/ Cookies)"]
+        API_CLIENT["API Client (fetch over HTTPS)"]
         UI --> STATE
         UI --> API_CLIENT
     end
@@ -56,42 +58,54 @@ graph TD
     subgraph Backend ["Rust - Axum"]
         direction TB
         API_ROUTES["API Routes (/api/...)"]
-        AUTH["Auth Layer (axum-login)"]
+        AUTH["Auth Layer (axum-login, auth/mod.rs)"]
+        CRYPTO["Crypto Utils (crypto.rs)"]
+        ENCRYPTION_SVC["Encryption Service"]
         SESSION_STORE["Session Store (DB/Memory)"]
         USER_STORE["User Store (Diesel)"]
-        CORE_LOGIC["Core Logic (Prompting, Context Mgmt)"]
+        CORE_LOGIC["Core Logic (ChatService, CharService, Prompting, Context Mgmt)"]
         DB_SERVICE["PostgreSQL Service (Diesel)"]
         VECTOR_SERVICE["Qdrant Service"]
         GEMINI_CLIENT["Gemini API Client"]
         CHAR_PARSER["Character Card Parser"]
         CONTEXT_PROCESSOR["Context Processor (Chunking, Embedding)"]
 
+        API_CLIENT -- HTTP Requests (Plaintext over HTTPS) --> API_ROUTES
         API_ROUTES -- Uses --> AUTH
-        AUTH -- Uses --> SESSION_STORE
-        AUTH -- Uses --> USER_STORE
-        USER_STORE -- Uses --> DB_SERVICE
         API_ROUTES -- Uses --> CORE_LOGIC
-        API_ROUTES -- Uses --> DB_SERVICE
         API_ROUTES -- Uses --> CHAR_PARSER
+
+        AUTH -- Uses --> USER_STORE
+        AUTH -- Uses --> CRYPTO
+        %% For KEK derivation, DEK decryption
+        AUTH -- Uses --> SESSION_STORE
+        USER_STORE -- Uses --> DB_SERVICE
+
         CORE_LOGIC -- Uses --> DB_SERVICE
         CORE_LOGIC -- Uses --> VECTOR_SERVICE
         CORE_LOGIC -- Uses --> GEMINI_CLIENT
+        CORE_LOGIC -- Uses --> ENCRYPTION_SVC
+        %% For data encryption/decryption
+        ENCRYPTION_SVC -- Uses --> CRYPTO
+
         CONTEXT_PROCESSOR -- Uses --> DB_SERVICE
+        %% To get (encrypted) messages
+        CONTEXT_PROCESSOR -- Uses --> ENCRYPTION_SVC
+        %% To decrypt messages for RAG
         CONTEXT_PROCESSOR -- Uses --> VECTOR_SERVICE
         CONTEXT_PROCESSOR -- Uses --> GEMINI_CLIENT[Embedding API]
     end
 
     subgraph Databases ["Databases"]
         direction TB
-        POSTGRES["PostgreSQL (Users, Chars, Chats, Sessions)"]
-        QDRANT["Qdrant (Vector Embeddings)"]
+        POSTGRES["PostgreSQL (Users w/ Roles & E2EE Keys, Encrypted Chars & Chats, Sessions)"]
+        QDRANT["Qdrant (Vector Embeddings of Plaintext)"]
     end
 
     subgraph External_Services ["External Services"]
         GEMINI["Google Gemini API (Generation & Embeddings)"]
     end
 
-    API_CLIENT -- HTTP Requests --> API_ROUTES
     DB_SERVICE -- Connects --> POSTGRES
     SESSION_STORE -- Connects --> POSTGRES[If DB backed]
     VECTOR_SERVICE -- Connects --> QDRANT
@@ -105,37 +119,39 @@ graph TD
 
 ## Data Flow (Core Chat Loop Example - Assumes Authenticated User)
 
-1.  User sends message via SvelteKit UI.
-2.  Frontend API Client sends message content + session info to Backend API (`/api/chat/{id}/messages`). The browser automatically includes the session cookie.
-3.  Backend Auth Layer (`axum-login`) verifies the session cookie and identifies the authenticated user.
-4.  Backend saves user message to PostgreSQL, associating it with the **authenticated user's session**.
-5.  Backend triggers Context Processor (asynchronous):
-    *   Chunks recent history.
-    *   Embeds chunks via Gemini.
+1.  User types message in SvelteKit UI (plaintext).
+2.  Frontend API Client sends the **plaintext message content** + session info to Backend API (`/api/chat/{id}/messages`) over HTTPS.
+3.  Backend Auth Layer (`axum-login`) verifies the session cookie and identifies the authenticated user. The user's plaintext DEK is already in the server-side session memory from login.
+4.  Backend (e.g., `ChatService`) **encrypts the user message** using the user's DEK (from session) and saves the ciphertext and nonce to PostgreSQL via `DB_SERVICE`.
+5.  Backend triggers Context Processor (asynchronous) for RAG:
+    *   Retrieves relevant recent (encrypted) messages from PostgreSQL.
+    *   **Decrypts these messages** using the user's DEK.
+    *   Chunks plaintext, embeds chunks via Gemini Embedding API.
     *   Stores vectors in Qdrant.
-6.  Backend Core Logic prepares for generation:
-    *   Retrieves recent messages **for the user's session** from PostgreSQL.
-    *   Retrieves character data/settings **owned by the user** from PostgreSQL.
-    *   Embeds recent context.
-    *   Queries Qdrant for relevant historical chunks.
-    *   Assembles the final prompt.
+6.  Backend Core Logic prepares for LLM generation:
+    *   Retrieves recent chat messages from PostgreSQL. **Decrypts message content** using user's DEK.
+    *   Retrieves character data/settings (decrypting sensitive fields if necessary) from PostgreSQL.
+    *   Queries Qdrant for relevant historical chunks (which are based on plaintext).
+    *   Assembles the final prompt using **plaintext content**.
 7.  Backend sends prompt to Gemini Generation API.
-8.  Gemini streams response back.
-9.  Backend streams response back to Frontend.
-10. Frontend UI displays streamed response.
-11. Backend saves final AI response to PostgreSQL **for the user's session**.
-12. Backend triggers Context Processor again for the new AI message.
+8.  Gemini streams response back (plaintext).
+9.  Backend streams AI response (plaintext) back to Frontend over HTTPS.
+10. Frontend UI displays the streamed (plaintext) response.
+11. Backend (e.g., `ChatService`) **encrypts the final AI response** using user's DEK and saves ciphertext and nonce to PostgreSQL.
+12. Backend triggers Context Processor again for the new AI message (decrypting it for RAG processing).
 
 ## Key Design Principles
 
 *   **Separation of Concerns:** Frontend, backend, data, and AI logic are distinct.
-*   **API-Driven:** Communication between frontend and backend is strictly via the defined REST API.
-*   **Secure by Default:** Leverage established frameworks (`axum-login`) for authentication and session management. Implement rigorous ownership checks.
-*   **Asynchronous Processing:** Embedding and vector storage should ideally happen asynchronously.
+*   **API-Driven:** Communication between frontend and backend is strictly via the defined REST API over HTTPS. Note: Due to specific routing behaviors encountered with Axum, API endpoints for resource operations often use explicit verbs in paths (e.g., `/characters/fetch/:id`, `/chats/remove/:id`) rather than relying solely on HTTP methods with a generic `/:id` path for all operations on a resource, to ensure reliable route matching. Authentication endpoints (e.g. `/api/auth/login`) follow standard patterns.
+*   **Secure by Default:** Leverage established frameworks (`axum-login`) for authentication and session management. Implement rigorous ownership checks. User roles (`User`, `Moderator`, `Administrator`) are defined and can be used for authorization.
+*   **Server-Side Data Encryption:** Sensitive user data (e.g., chat messages, character details) is encrypted on the server using user-specific Data Encryption Keys (DEKs) before being persisted to the database. DEKs are themselves encrypted with Key Encryption Keys (KEKs) derived from user passwords. The server holds the plaintext DEK only in memory during an authenticated user session. This model protects data at rest from unauthorized direct database access and system administrators.
+*   **Asynchronous Processing:** Embedding and vector storage happen asynchronously.
 *   **Session-Based Auth:** Use secure HttpOnly cookies managed by `axum-login` for session state.
 *   **Configuration:** Manage AI keys, database connections, session secrets, etc., through configuration files or environment variables.
 
 ## Scalability and Future Platform Considerations
+*(Content from original file, remains relevant)*
 
 While the MVP focuses on a self-contained application experience, the chosen architecture is designed with long-term scalability and the broader Sanguine vision in mind:
 
@@ -145,6 +161,7 @@ While the MVP focuses on a self-contained application experience, the chosen arc
 *   **Modularity:** The separation of concerns allows individual components (e.g., AI client, RAG processor) to be updated or replaced more easily as technology evolves or strategic needs change.
 
 ### Extension & Federation Hooks (post‑MVP)
+*(Content from original file, remains relevant)*
 
 * **Plugin / Tool API surface** – A thin `/api/tools/invoke` endpoint (Axum) will act as a generic broker for "tool calls" originating from the LLM. This could potentially leverage a standard like the Model Context Protocol (MCP) for integrating external resources and tools.
 * **Federated Node Boundary** – Each node runs the exact same codebase.  Cross‑node sharing happens through signed `*.scribe-export.json` bundles (characters, chats).  Long‑term we expect ActivityPub‑style replication or potentially A2A-based interaction.

@@ -59,6 +59,7 @@ You are an AI Pair Programmer assisting with development on the Sanguine Scribe 
          * **Request Path Tracing:** For persistent routing issues, add request path logging middleware at multiple levels of the router to trace the exact path of requests through the routing system.
          * **Test Adaptability:** When faced with consistent test failures due to architectural issues that may require deeper investigation, consider temporarily adapting test expectations to match current behavior, accompanied by clear TODO comments explaining the adaptation and ultimate goal.
          * **Visual Comparison:** Create visual representations (e.g., ASCII diagrams) of the router structure and middleware stack in both working and failing environments to more easily spot structural differences.
+         * **Distinct Route Paths:** When defining routes, especially nested ones, using more distinct path segments (e.g., `/chat/create_session` instead of just `/chat/` for a POST) can prevent unexpected routing/matching behavior in Axum, even if a less distinct path might seem more RESTful.
    * **Refactor (Safely):** Once the tests for a specific abstraction/component are passing, refactor the implementation code for clarity, efficiency, and maintainability *while ensuring all tests for that unit continue to pass*.
    * **Iterate:** Repeat the Implement -> Test -> Refactor cycle for each planned part until the entire feature/fix is implemented according to the plan and all related tests pass.
 

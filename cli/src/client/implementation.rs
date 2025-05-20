@@ -34,6 +34,12 @@ use super::types::{
     SerializableRegisterPayload, // Internal helper for register
     StreamEvent,
     UpdateUserRoleRequest,
+    // New DTOs
+    CharacterCreateDto,
+    CharacterUpdateDto,
+    ChatSessionDetails,
+    CharacterOverrideRequest, // For the payload of set_chat_character_override
+    OverrideSuccessResponse,
 };
 use super::util::{build_url, handle_non_streaming_chat_response, handle_response};
 
@@ -548,7 +554,7 @@ impl HttpClient for ReqwestClientWrapper {
         );
         let response = self
             .client
-            .patch(url)
+            .put(url)
             .json(payload)
             .send()
             .await
@@ -686,5 +692,96 @@ impl HttpClient for ReqwestClientWrapper {
         // This implementation might need adjustment if used, but for now, it mirrors send_message
         self.send_message(chat_id, message_content, model_name.as_deref())
             .await
+    }
+
+    async fn create_character(
+        &self,
+        character_data: CharacterCreateDto,
+    ) -> Result<ClientCharacterDataForClient, CliError> {
+        let url = build_url(&self.base_url, "/api/characters")?;
+        tracing::info!(target: "scribe_cli::client::implementation", %url, "Creating character via HttpClient");
+        let response = self
+            .client
+            .post(url)
+            .json(&character_data)
+            .send()
+            .await
+            .map_err(CliError::Reqwest)?;
+        handle_response(response).await
+    }
+
+    async fn update_character(
+        &self,
+        id: Uuid,
+        character_update_data: CharacterUpdateDto,
+    ) -> Result<ClientCharacterDataForClient, CliError> {
+        let url = build_url(&self.base_url, &format!("/api/characters/{}", id))?;
+        tracing::info!(target: "scribe_cli::client::implementation", %url, %id, "Updating character via HttpClient");
+        let response = self
+            .client
+            .put(url) // Assuming PUT for full update, or PATCH for partial
+            .json(&character_update_data)
+            .send()
+            .await
+            .map_err(CliError::Reqwest)?;
+        handle_response(response).await
+    }
+
+    async fn get_chat_session(&self, session_id: Uuid) -> Result<ChatSessionDetails, CliError> {
+        let url = build_url(&self.base_url, &format!("/api/chats/fetch/{}", session_id))?;
+        tracing::info!(target: "scribe_cli::client::implementation", %url, %session_id, "Fetching chat session details via HttpClient");
+        let response = self
+            .client
+            .get(url)
+            .send()
+            .await
+            .map_err(CliError::Reqwest)?;
+        handle_response(response).await
+    }
+
+    async fn set_chat_character_override(
+        &self,
+        session_id: Uuid,
+        field_name: String,
+        value: String,
+    ) -> Result<OverrideSuccessResponse, CliError> {
+        let url = build_url(
+            &self.base_url,
+            &format!("/api/chats/{}/character/overrides", session_id),
+        )?;
+        tracing::info!(target: "scribe_cli::client::implementation", %url, %session_id, %field_name, "Setting chat character override via HttpClient");
+        let payload = CharacterOverrideRequest { field_name, value };
+        let response = self
+            .client
+            .post(url)
+            .json(&payload)
+            .send()
+            .await
+            .map_err(CliError::Reqwest)?;
+        handle_response(response).await
+    }
+
+    async fn get_effective_character_for_chat(
+        &self,
+        character_id: Uuid,
+        session_id: Uuid,
+    ) -> Result<ClientCharacterDataForClient, CliError> {
+        // The plan suggests: GET /api/characters/fetch/:original_character_id?session_id=<session_id>
+        // This implies the character_id passed here is the original_character_id.
+        let mut url = build_url(
+            &self.base_url,
+            &format!("/api/characters/fetch/{}", character_id),
+        )?;
+        url.query_pairs_mut()
+            .append_pair("session_id", &session_id.to_string());
+
+        tracing::info!(target: "scribe_cli::client::implementation", %url, %character_id, %session_id, "Fetching effective character for chat via HttpClient");
+        let response = self
+            .client
+            .get(url)
+            .send()
+            .await
+            .map_err(CliError::Reqwest)?;
+        handle_response(response).await
     }
 }
