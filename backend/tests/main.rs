@@ -55,3 +55,6 @@ pub mod user_store_tests;
 
 // New characters test module (directory)
 pub mod characters;
+
+// Service level or other specific tests
+pub mod user_persona_service_tests;

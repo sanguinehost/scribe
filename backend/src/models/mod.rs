@@ -6,6 +6,7 @@ pub mod chat_override;
 pub mod chats;
 pub mod documents;
 pub mod users;
+pub mod user_personas;
 
 pub use auth::*;
 pub use character_card::*;
@@ -15,3 +16,4 @@ pub use chat_override::*;
 pub use chats::*;
 pub use documents::*;
 pub use users::*;
+pub use user_personas::*;
