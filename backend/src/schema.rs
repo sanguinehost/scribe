@@ -208,6 +208,8 @@ diesel::table! {
         gemini_enable_code_execution -> Nullable<Bool>,
         #[max_length = 50]
         visibility -> Nullable<Varchar>,
+        active_custom_persona_id -> Nullable<Uuid>,
+        active_impersonated_character_id -> Nullable<Uuid>,
     }
 }
 
@@ -316,6 +318,37 @@ diesel::table! {
 diesel::table! {
     use diesel::sql_types::*;
     use diesel_derive_enum::DbEnum;
+
+    user_personas (id) {
+        id -> Uuid,
+        user_id -> Uuid,
+        name -> Varchar,
+        description -> Bytea,
+        spec -> Nullable<Varchar>,
+        spec_version -> Nullable<Varchar>,
+        personality -> Nullable<Bytea>,
+        scenario -> Nullable<Bytea>,
+        first_mes -> Nullable<Bytea>,
+        mes_example -> Nullable<Bytea>,
+        system_prompt -> Nullable<Bytea>,
+        post_history_instructions -> Nullable<Bytea>,
+        tags -> Nullable<Array<Nullable<Text>>>,
+        avatar -> Nullable<Varchar>,
+        description_nonce -> Nullable<Bytea>,
+        personality_nonce -> Nullable<Bytea>,
+        scenario_nonce -> Nullable<Bytea>,
+        first_mes_nonce -> Nullable<Bytea>,
+        mes_example_nonce -> Nullable<Bytea>,
+        system_prompt_nonce -> Nullable<Bytea>,
+        post_history_instructions_nonce -> Nullable<Bytea>,
+        created_at -> Timestamptz,
+        updated_at -> Timestamptz,
+    }
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    use diesel_derive_enum::DbEnum;
     use super::sql_types::UserRole;
     use super::sql_types::AccountStatus;
 
@@ -345,7 +378,7 @@ diesel::joinable!(chat_character_overrides -> characters (original_character_id)
 diesel::joinable!(chat_character_overrides -> chat_sessions (chat_session_id));
 diesel::joinable!(chat_messages -> chat_sessions (session_id));
 diesel::joinable!(chat_messages -> users (user_id));
-diesel::joinable!(chat_sessions -> characters (character_id));
+diesel::joinable!(chat_sessions -> user_personas (active_custom_persona_id));
 diesel::joinable!(chat_sessions -> users (user_id));
 diesel::joinable!(lorebook_entries -> lorebooks (lorebook_id));
 diesel::joinable!(lorebooks -> characters (character_id));
@@ -353,6 +386,7 @@ diesel::joinable!(old_documents -> users (user_id));
 diesel::joinable!(old_suggestions -> users (user_id));
 diesel::joinable!(old_votes -> chat_messages (message_id));
 diesel::joinable!(old_votes -> chat_sessions (chat_id));
+diesel::joinable!(user_personas -> users (user_id));
 
 diesel::allow_tables_to_appear_in_same_query!(
     character_assets,
@@ -366,5 +400,6 @@ diesel::allow_tables_to_appear_in_same_query!(
     old_suggestions,
     old_votes,
     sessions,
+    user_personas,
     users,
 );

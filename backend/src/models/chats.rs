@@ -72,6 +72,9 @@ pub struct Chat {
     pub gemini_thinking_budget: Option<i32>,
     pub gemini_enable_code_execution: Option<bool>,
     pub visibility: Option<String>, // Moved to last
+    // Add new fields to match schema.rs for chat_sessions table
+    pub active_custom_persona_id: Option<Uuid>,
+    pub active_impersonated_character_id: Option<Uuid>,
 }
 
 impl std::fmt::Debug for Chat {
@@ -113,6 +116,9 @@ impl std::fmt::Debug for Chat {
                 &self.gemini_enable_code_execution,
             )
             .field("visibility", &self.visibility)
+            // Add new fields to Debug output
+            .field("active_custom_persona_id", &self.active_custom_persona_id)
+            .field("active_impersonated_character_id", &self.active_impersonated_character_id)
             .finish()
     }
 }
@@ -1332,6 +1338,8 @@ mod tests {
             visibility: Some("private".to_string()),
             gemini_thinking_budget: Some(100),
             gemini_enable_code_execution: Some(true),
+            active_custom_persona_id: None,
+            active_impersonated_character_id: None,
         }
     }
 
