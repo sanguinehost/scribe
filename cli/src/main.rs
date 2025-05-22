@@ -33,6 +33,7 @@ use scribe_cli::{
         user_personas::{ // User Persona handlers
             handle_persona_create_action, handle_persona_list_action, handle_persona_get_action,
             handle_persona_update_action, handle_persona_delete_action,
+            handle_persona_set_default_action, handle_persona_clear_default_action, // Added new handlers
         }
     },
     io::{IoHandler, StdIoHandler}, // IO Abstraction
@@ -169,6 +170,16 @@ async fn main() -> Result<()> {
                     PersonaCommand::Delete(delete_args) => {
                         if let Err(e) = handle_persona_delete_action(&http_client, &mut io_handler, delete_args).await {
                             io_handler.write_line(&format!("Error deleting persona: {}", e))?;
+                        }
+                    }
+                    PersonaCommand::SetDefault(set_default_args) => {
+                        if let Err(e) = handle_persona_set_default_action(&http_client, &mut io_handler, set_default_args).await {
+                            io_handler.write_line(&format!("Error setting default persona: {}", e))?;
+                        }
+                    }
+                    PersonaCommand::ClearDefault(clear_default_args) => {
+                        if let Err(e) = handle_persona_clear_default_action(&http_client, &mut io_handler, clear_default_args).await {
+                            io_handler.write_line(&format!("Error clearing default persona: {}", e))?;
                         }
                     }
                 }
@@ -629,6 +640,8 @@ async fn handle_persona_management_menu<C: HttpClient, H: IoHandler>(
         io_handler.write_line("[3] View Persona Details")?;
         io_handler.write_line("[4] Update Persona")?;
         io_handler.write_line("[5] Delete Persona")?;
+        io_handler.write_line("[6] Set Default Persona")?; // New option
+        io_handler.write_line("[7] Clear Default Persona")?; // New option
         io_handler.write_line("[B] Back to Main Menu")?;
 
         let choice = io_handler.read_line("Enter choice: ")?.trim().to_lowercase();
@@ -742,6 +755,19 @@ async fn handle_persona_management_menu<C: HttpClient, H: IoHandler>(
                     Err(_) => {
                         io_handler.write_line("Invalid Persona ID format.")?;
                     }
+                }
+            }
+            "6" => { // Set Default Persona
+                // Create empty args struct as the handler will prompt for ID
+                let set_default_args = scribe_cli::PersonaSetDefaultArgs { id: None };
+                if let Err(e) = handle_persona_set_default_action(http_client, io_handler, set_default_args).await {
+                    io_handler.write_line(&format!("Error setting default persona: {}", e))?;
+                }
+            }
+            "7" => { // Clear Default Persona
+                let clear_default_args = scribe_cli::PersonaClearDefaultArgs {};
+                if let Err(e) = handle_persona_clear_default_action(http_client, io_handler, clear_default_args).await {
+                    io_handler.write_line(&format!("Error clearing default persona: {}", e))?;
                 }
             }
             "b" => return Ok(MenuNavigation::ReturnToMainMenu),

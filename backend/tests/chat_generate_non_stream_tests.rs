@@ -326,6 +326,8 @@ async fn generate_chat_response_uses_session_settings() -> Result<(), anyhow::Er
         created_at: Utc::now(),
         updated_at: Utc::now(),
         visibility: Some("private".to_string()),
+        active_custom_persona_id: None,
+        active_impersonated_character_id: None,
     };
 
     info!(
@@ -853,6 +855,8 @@ async fn generate_chat_response_json_stream_initiation_error() -> Result<(), any
         created_at: Utc::now(),
         updated_at: Utc::now(),
         visibility: Some("private".to_string()),
+        active_custom_persona_id: None,
+        active_impersonated_character_id: None,
     };
     let session: DbChat = {
         let interact_result = conn
@@ -1245,6 +1249,8 @@ async fn generate_chat_response_history_sliding_window_messages() -> anyhow::Res
         history_management_limit: 10,
         model_name: "test".to_string(),
         visibility: None,
+        active_custom_persona_id: None,
+        active_impersonated_character_id: None,
     };
 
     let result = conn
@@ -1539,6 +1545,8 @@ async fn generate_chat_response_history_sliding_window_tokens() -> anyhow::Resul
         history_management_limit: 10,
         model_name: "test".to_string(),
         visibility: None,
+        active_custom_persona_id: None,
+        active_impersonated_character_id: None,
     };
 
     let result = conn
@@ -1813,6 +1821,8 @@ async fn test_generate_chat_response_history_truncate_tokens() -> anyhow::Result
         history_management_limit: 10,
         model_name: "test".to_string(),
         visibility: None,
+        active_custom_persona_id: None,
+        active_impersonated_character_id: None,
     };
 
     let result = conn
@@ -2141,6 +2151,8 @@ async fn generate_chat_response_history_none() -> anyhow::Result<()> {
         history_management_limit: 10,
         model_name: "test".to_string(),
         visibility: None,
+        active_custom_persona_id: None,
+        active_impersonated_character_id: None,
     };
 
     let result = conn
@@ -2383,6 +2395,8 @@ async fn generate_chat_response_history_truncate_tokens_limit_30() -> anyhow::Re
         history_management_limit: 10,
         model_name: "test".to_string(),
         visibility: None,
+        active_custom_persona_id: None,
+        active_impersonated_character_id: None,
     };
 
     let result = conn
@@ -2636,6 +2650,8 @@ async fn test_get_chat_messages_success() -> anyhow::Result<()> {
         history_management_limit: 10,
         model_name: "test_model".to_string(),
         visibility: Some("private".to_string()),
+        active_custom_persona_id: None,
+        active_impersonated_character_id: None,
     };
 
     let create_session_result = conn
@@ -2849,6 +2865,8 @@ async fn test_get_chat_messages_forbidden() -> anyhow::Result<()> {
         history_management_limit: 10,
         model_name: "test_model".to_string(),
         visibility: Some("private".to_string()),
+        active_custom_persona_id: None,
+        active_impersonated_character_id: None,
     };
 
     let conn_clone = test_app.db_pool.get().await?; // Re-acquire connection as it was moved

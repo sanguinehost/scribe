@@ -137,6 +137,8 @@ async fn generate_chat_response_streaming_success() {
                 history_management_limit: 10,
                 model_name: "test-model".to_string(),
                 visibility: Some("private".to_string()),
+                active_custom_persona_id: None,
+                active_impersonated_character_id: None,
             };
             diesel::insert_into(chat_sessions_dsl::chat_sessions)
                 .values(&new_chat_session)
@@ -551,6 +553,8 @@ async fn test_first_mes_included_in_history() {
                 history_management_limit: 10,
                 model_name: "test-model".to_string(),
                 visibility: Some("private".to_string()),
+                active_custom_persona_id: None,
+                active_impersonated_character_id: None,
             };
             diesel::insert_into(chat_sessions_dsl::chat_sessions)
                 .values(&new_chat_session)
@@ -579,6 +583,7 @@ async fn test_first_mes_included_in_history() {
     // Create AppState similar to how it's done in spawn_app
     let encryption_service = Arc::new(scribe_backend::services::encryption_service::EncryptionService::new());
     let chat_override_service = Arc::new(scribe_backend::services::chat_override_service::ChatOverrideService::new(test_app.db_pool.clone(), encryption_service.clone()));
+    let user_persona_service = Arc::new(scribe_backend::services::user_persona_service::UserPersonaService::new(test_app.db_pool.clone(), encryption_service.clone()));
     let token_counter_service = Arc::new(HybridTokenCounter::new_local_only(
         TokenizerService::new(
             test_app.config.tokenizer_model_path.as_ref().expect("Tokenizer path is None").as_str(),
@@ -594,6 +599,7 @@ async fn test_first_mes_included_in_history() {
         test_app.qdrant_service.clone(),
         test_app.mock_embedding_pipeline_service.clone(),
         chat_override_service, // Use the created service
+        user_persona_service, // Use the created service
         token_counter_service, // Use the created service
     );
     let state_arc = std::sync::Arc::new(state_for_service);

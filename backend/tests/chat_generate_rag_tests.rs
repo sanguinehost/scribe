@@ -205,6 +205,8 @@ async fn test_generate_chat_response_triggers_embeddings() -> anyhow::Result<()>
                 history_management_limit: 0, // Added required field
                 model_name: "default-test-model".to_string(),
                 visibility: Some("private".to_string()), // Added required field
+                active_custom_persona_id: None,
+                active_impersonated_character_id: None,
             };
             diesel::insert_into(schema::chat_sessions::table)
                 .values(&new_chat)
@@ -487,6 +489,8 @@ async fn test_generate_chat_response_triggers_embeddings_with_existing_session()
                 history_management_limit: 0, // Added required field
                 model_name: "default-test-model".to_string(),
                 visibility: Some("private".to_string()), // Added required field
+                active_custom_persona_id: None,
+                active_impersonated_character_id: None,
             };
             diesel::insert_into(schema::chat_sessions::table)
                 .values(&new_chat)
@@ -552,7 +556,7 @@ async fn test_generate_chat_response_triggers_embeddings_with_existing_session()
         .header(header::ACCEPT, mime::APPLICATION_JSON.as_ref())
         .body(Body::from(serde_json::to_vec(&payload)?))?;
 
-    test_app.embedding_call_tracker.lock().await.clear();
+    test_app.mock_embedding_client.clear_calls();
     let response = test_app.router.clone().oneshot(request).await?;
     assert_eq!(response.status(), StatusCode::OK);
 
@@ -737,6 +741,8 @@ async fn test_rag_context_injection_in_prompt() -> anyhow::Result<()> {
                 history_management_limit: 0, // Added required field
                 model_name: "default-test-model".to_string(),
                 visibility: Some("private".to_string()), // Added required field
+                active_custom_persona_id: None,
+                active_impersonated_character_id: None,
             };
             diesel::insert_into(schema::chat_sessions::table)
                 .values(&new_chat)
@@ -1061,6 +1067,8 @@ async fn generate_chat_response_rag_retrieval_error() -> anyhow::Result<()> {
                 history_management_limit: 0, // Added required field
                 model_name: "default-test-model".to_string(),
                 visibility: Some("private".to_string()), // Added required field
+                active_custom_persona_id: None,
+                active_impersonated_character_id: None,
             };
             diesel::insert_into(schema::chat_sessions::table)
                 .values(&new_chat)
@@ -1311,6 +1319,8 @@ async fn setup_test_data(use_real_ai: bool) -> anyhow::Result<RagTestContext> {
                 history_management_limit: 0, // Added required field
                 model_name: "default-test-model".to_string(),
                 visibility: Some("private".to_string()), // Added required field
+                active_custom_persona_id: None,
+                active_impersonated_character_id: None,
             };
             diesel::insert_into(schema::chat_sessions::table)
                 .values(&new_chat)
@@ -1355,7 +1365,7 @@ async fn setup_test_data(use_real_ai: bool) -> anyhow::Result<RagTestContext> {
     assert_eq!(response.status(), StatusCode::OK);
     let _ = response.into_body().collect().await?.to_bytes();
 
-    let _tracker = test_app.embedding_call_tracker.clone();
+    let _tracker_calls = test_app.mock_embedding_client.get_calls(); // Now returns Vec<(String, String)>
 
     // We know from previous debugging that the embedding calls are being made
     // but they're not being tracked properly in the embedding_call_tracker.

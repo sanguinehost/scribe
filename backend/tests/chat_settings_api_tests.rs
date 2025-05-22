@@ -163,6 +163,8 @@ async fn get_chat_settings_success() {
         history_management_limit: 20,
         model_name: "initial-model-for-get-success".to_string(),
         visibility: Some("private".to_string()),
+        active_custom_persona_id: None,
+        active_impersonated_character_id: None,
     };
     let new_chat_data_clone = new_chat_data.clone();
     let session_conn_pool = conn_pool.clone();
@@ -414,6 +416,8 @@ async fn get_chat_settings_defaults() {
         history_management_limit: 1000,
         model_name: "scribe-default-model".to_string(),
         visibility: Some("private".to_string()),
+        active_custom_persona_id: None,
+        active_impersonated_character_id: None,
     };
     let new_chat_data_clone = new_chat_data.clone();
     let session_conn_pool = conn_pool.clone();
@@ -435,6 +439,7 @@ async fn get_chat_settings_defaults() {
     // Create dependent services for AppState
     let encryption_service_for_test = Arc::new(scribe_backend::services::encryption_service::EncryptionService::new());
     let chat_override_service_for_test = Arc::new(scribe_backend::services::chat_override_service::ChatOverrideService::new(test_app.db_pool.clone(), encryption_service_for_test.clone()));
+    let user_persona_service_for_test = Arc::new(scribe_backend::services::user_persona_service::UserPersonaService::new(test_app.db_pool.clone(), encryption_service_for_test.clone()));
     let tokenizer_service_for_test = scribe_backend::services::tokenizer_service::TokenizerService::new("/home/socol/Workspace/sanguine-scribe/backend/resources/tokenizers/gemma.model")
                 .expect("Failed to create tokenizer for test");
     let hybrid_token_counter_for_test = Arc::new(scribe_backend::services::hybrid_token_counter::HybridTokenCounter::new_local_only(tokenizer_service_for_test));
@@ -444,9 +449,10 @@ async fn get_chat_settings_defaults() {
         test_app.config.clone(),
         test_app.ai_client.clone(),
         test_app.mock_embedding_client.clone(),
-        test_app.qdrant_service.clone(), 
+        test_app.qdrant_service.clone(),
         test_app.mock_embedding_pipeline_service.clone(),
         chat_override_service_for_test,
+        user_persona_service_for_test,
         hybrid_token_counter_for_test
     );
 
@@ -454,7 +460,8 @@ async fn get_chat_settings_defaults() {
         Arc::new(app_state_for_service),
         user.id,
         character.id,
-        None,
+        None, // active_custom_persona_id
+        None, // user_dek_secret_box
     )
     .await
     .expect("Failed to create chat session via service");
@@ -685,6 +692,8 @@ async fn test_get_chat_settings_forbidden() {
         history_management_limit: 10,
         model_name: "forbidden-model".to_string(),
         visibility: Some("private".to_string()),
+        active_custom_persona_id: None,
+        active_impersonated_character_id: None,
     };
     let new_chat_a_data_clone = new_chat_a_data.clone();
     let session_a_conn_pool = conn_pool.clone();
@@ -845,6 +854,8 @@ async fn update_chat_settings_success_full() {
         history_management_limit: 10,
         model_name: "initial-model".to_string(),
         visibility: Some("private".to_string()),
+        active_custom_persona_id: None,
+        active_impersonated_character_id: None,
     };
     let new_chat_data_clone = new_chat_data.clone();
     let session_conn_pool = conn_pool.clone();
@@ -1048,6 +1059,8 @@ async fn update_chat_settings_success_partial() {
         history_management_limit: initial_hist_limit_val,
         model_name: initial_model_name.clone(),
         visibility: Some("private".to_string()),
+        active_custom_persona_id: None,
+        active_impersonated_character_id: None,
     };
     let new_chat_data_clone = new_chat_data.clone();
     let session_conn_pool = conn_pool.clone();
@@ -1267,6 +1280,8 @@ async fn update_chat_settings_invalid_data() {
         history_management_limit: 10,
         model_name: "invalid-data-model".to_string(),
         visibility: Some("private".to_string()),
+        active_custom_persona_id: None,
+        active_impersonated_character_id: None,
     };
     let new_chat_data_clone = new_chat_data.clone();
     let session_conn_pool = conn_pool.clone();
@@ -1439,6 +1454,8 @@ async fn update_chat_settings_forbidden() {
         history_management_limit: 10,
         model_name: "forbidden-model".to_string(),
         visibility: Some("private".to_string()),
+        active_custom_persona_id: None,
+        active_impersonated_character_id: None,
     };
     let new_chat_user1_data_clone = new_chat_user1_data.clone();
     let session1_conn_pool = conn_pool.clone();

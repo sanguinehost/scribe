@@ -130,6 +130,8 @@ async fn test_rag_context_injection_real_ai() {
                 history_management_limit: 10,
                 model_name: "test-model".to_string(),
                 visibility: Some("private".to_string()),
+                active_custom_persona_id: None,
+                active_impersonated_character_id: None,
             };
             diesel::insert_into(chat_sessions_dsl::chat_sessions)
                 .values(&new_chat_session)

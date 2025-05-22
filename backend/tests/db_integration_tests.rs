@@ -810,6 +810,10 @@ fn test_migrations_run_cleanly() {
 #[test]
 fn test_chat_session_insert_and_query() {
     let mut conn = establish_connection();
+
+    // Run migrations before starting the transaction
+    conn.run_pending_migrations(MIGRATIONS).expect("Failed to run migrations for test_chat_session_insert_and_query");
+
     conn.test_transaction::<_, DieselError, _>(|conn| {
         // --- Setup: Insert User and Character ---
         let user = insert_test_user(conn, "session_user")?;
@@ -827,6 +831,8 @@ fn test_chat_session_insert_and_query() {
             history_management_limit: 20,
             visibility: Some("private".to_string()),
             model_name: "gemini-2.5-flash-preview-04-17".to_string(), // Added model_name field
+            active_custom_persona_id: None,
+            active_impersonated_character_id: None,
                                                                       // Optional fields removed from NewChat
                                                                       // system_prompt: Some("Test System Prompt".to_string()),
                                                                       // temperature: Some(BigDecimal::from_str("0.8").unwrap()), // Convert float to BigDecimal
@@ -941,6 +947,8 @@ async fn test_chat_message_insert_and_query() -> Result<(), AnyhowError> {
                     history_management_limit: 20,
                     visibility: Some("private".to_string()),
                     model_name: "gemini-2.5-flash-preview-04-17".to_string(), // Added model_name field
+                    active_custom_persona_id: None,
+                    active_impersonated_character_id: None,
                                                                               // Removed ..Default::default() as it's not implemented and unnecessary
                 };
                 diesel::insert_into(chat_sessions::table)
@@ -1122,6 +1130,8 @@ async fn test_data_guard_cleanup_logic() -> anyhow::Result<()> {
         history_management_limit: 10,
         model_name: "test_cleanup_model".to_string(),
         visibility: None,
+        active_custom_persona_id: None,
+        active_impersonated_character_id: None,
     };
 
     conn_setup

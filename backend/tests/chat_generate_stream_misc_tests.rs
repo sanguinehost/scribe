@@ -139,6 +139,8 @@ async fn generate_chat_response_streaming_empty_response() {
                 history_management_limit: 10,
                 model_name: "test-model".to_string(),
                 visibility: Some("private".to_string()),
+                active_custom_persona_id: None,
+                active_impersonated_character_id: None,
             };
             diesel::insert_into(chat_sessions_dsl::chat_sessions)
                 .values(&new_chat_session)
@@ -385,6 +387,8 @@ async fn generate_chat_response_streaming_reasoning_chunk() {
                 history_management_limit: 10,
                 model_name: "test-model".to_string(),
                 visibility: Some("private".to_string()),
+                active_custom_persona_id: None,
+                active_impersonated_character_id: None,
             };
             diesel::insert_into(chat_sessions_dsl::chat_sessions)
                 .values(&new_chat_session)
@@ -759,6 +763,8 @@ async fn generate_chat_response_streaming_real_client_failure_repro() {
                 history_management_limit: 10,
                 model_name: "real-model-for-failure-test".to_string(), // Use a distinct model name
                 visibility: Some("private".to_string()),
+                active_custom_persona_id: None,
+                active_impersonated_character_id: None,
             };
             diesel::insert_into(chat_sessions_dsl::chat_sessions)
                 .values(&new_chat_session)

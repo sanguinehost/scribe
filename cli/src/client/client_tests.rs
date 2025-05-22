@@ -952,7 +952,7 @@ async fn test_create_chat_session_success() {
         active_impersonated_character_id: None,
 };
 
-    let request_payload = json!({ "character_id": character_id });
+    let request_payload = json!({ "character_id": character_id, "active_custom_persona_id": serde_json::Value::Null });
 
     server.expect(
         Expectation::matching(all_of![
@@ -962,7 +962,7 @@ async fn test_create_chat_session_success() {
         .respond_with(json_encoded(mock_session.clone())),
     );
 
-    let result = client.create_chat_session(character_id).await;
+    let result = client.create_chat_session(character_id, None).await;
 
     assert!(result.is_ok());
     let created_session = result.unwrap();
@@ -982,7 +982,7 @@ async fn test_create_chat_session_char_not_found() {
         }
     });
 
-    let request_payload = json!({ "character_id": character_id });
+    let request_payload = json!({ "character_id": character_id, "active_custom_persona_id": serde_json::Value::Null });
 
     server.expect(
         Expectation::matching(all_of![
@@ -992,7 +992,7 @@ async fn test_create_chat_session_char_not_found() {
         .respond_with(status_code(404).body(error_body.to_string())),
     );
 
-    let result = client.create_chat_session(character_id).await;
+    let result = client.create_chat_session(character_id, None).await;
 
     assert!(result.is_err());
     match result.err().unwrap() {

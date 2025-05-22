@@ -34,6 +34,7 @@ use crate::{
     services::hybrid_token_counter::CountingMode, // Added for token counting
     state::{AppState, DbPool},
     crypto, // Added for encryption
+    schema::users::dsl as users_dsl, // Added for fetching user's default persona
 };
 use std::pin::Pin;
 use std::sync::Arc;
@@ -86,9 +87,37 @@ pub async fn create_session_and_maybe_first_message(
 ) -> Result<Chat, AppError> {
     let pool = state.pool.clone();
     let conn = pool.get().await?;
+    // Clone user_dek_secret_box for use inside the 'move' closure
+    let user_dek_for_closure = user_dek_secret_box.clone();
     let (created_session, first_mes_ciphertext_opt, first_mes_nonce_opt) = conn.interact(move |conn| {
         conn.transaction(|transaction_conn| {
-            info!(%character_id, %user_id, ?active_custom_persona_id, "Verifying character ownership and fetching character details, potentially persona details");
+            let mut effective_active_persona_id = active_custom_persona_id;
+
+            if effective_active_persona_id.is_none() {
+                info!(%user_id, "No active_custom_persona_id provided, checking for user's default persona.");
+                match users_dsl::users
+                    .filter(users_dsl::id.eq(user_id))
+                    .select(users_dsl::default_persona_id)
+                    .first::<Option<Uuid>>(transaction_conn)
+                    .optional()
+                {
+                    Ok(Some(Some(default_id))) => {
+                        info!(%user_id, default_persona_id = %default_id, "Found user's default persona. Using it for this session.");
+                        effective_active_persona_id = Some(default_id);
+                    }
+                    Ok(Some(None)) => {
+                        info!(%user_id, "User has no default persona set.");
+                    }
+                    Ok(None) => {
+                        warn!(%user_id, "User not found when trying to fetch default persona. This should not happen.");
+                    }
+                    Err(e) => {
+                        error!(%user_id, error = ?e, "Error fetching user's default persona. Proceeding without it.");
+                    }
+                }
+            }
+
+            info!(%character_id, %user_id, ?effective_active_persona_id, "Verifying character ownership and fetching character details, potentially persona details");
             let character: Character = characters::table
                 .filter(characters::id.eq(character_id))
                 .select(Character::as_select())
@@ -124,7 +153,7 @@ pub async fn create_session_and_maybe_first_message(
                 history_management_limit: 20,
                 model_name: "gemini-2.5-pro-preview-03-25".to_string(),
                 visibility: Some("private".to_string()),
-                active_custom_persona_id,
+                active_custom_persona_id: effective_active_persona_id,
                 active_impersonated_character_id: None,
             };
 
@@ -136,7 +165,7 @@ pub async fn create_session_and_maybe_first_message(
             // Determine the system prompt to use
             let mut final_system_prompt_str: Option<String> = None;
 
-            if let Some(persona_id) = active_custom_persona_id {
+            if let Some(persona_id) = effective_active_persona_id {
                 use crate::schema::user_personas;
                 match user_personas::table
                     .filter(user_personas::id.eq(persona_id))
@@ -146,20 +175,51 @@ pub async fn create_session_and_maybe_first_message(
                     .optional() // Persona might not be found or user might not own it
                 {
                     Ok(Some(persona)) => {
-                        if let Some(persona_sp_bytes) = persona.system_prompt { // persona_sp_bytes is Vec<u8>
-                            // Convert Vec<u8> to String before trimming and replacing
-                            match String::from_utf8(persona_sp_bytes) {
-                                Ok(persona_sp_str) => {
-                                    if !persona_sp_str.trim().is_empty() {
-                                        final_system_prompt_str = Some(persona_sp_str.replace('\0', ""));
-                                        info!(%persona_id, "Using system prompt from active persona.");
+                        if let Some(ref sp_bytes_vec) = persona.system_prompt {
+                            if let (Some(sp_nonce_vec), Some(dek_arc)) = (&persona.system_prompt_nonce, &user_dek_for_closure) { // Use cloned DEK
+                                match crypto::decrypt_gcm(sp_bytes_vec, sp_nonce_vec, dek_arc.as_ref()) {
+                                    Ok(decrypted_secret_vec) => {
+                                        match String::from_utf8(decrypted_secret_vec.expose_secret().to_vec()) {
+                                            Ok(decrypted_sp_str) => {
+                                                if !decrypted_sp_str.trim().is_empty() {
+                                                    final_system_prompt_str = Some(decrypted_sp_str.replace('\0', ""));
+                                                    info!(%persona_id, "Using DECRYPTED system prompt from active persona.");
+                                                } else {
+                                                    info!(%persona_id, "Decrypted persona system_prompt is empty. Skipping.");
+                                                }
+                                            }
+                                            Err(e) => {
+                                                error!(%persona_id, error = ?e, "DECRYPTED Persona system_prompt is not valid UTF-8. Skipping.");
+                                            }
+                                        }
+                                    }
+                                    Err(e) => {
+                                        error!(%persona_id, error = ?e, "Failed to DECRYPT persona system_prompt. Skipping.");
                                     }
                                 }
-                                Err(e) => {
-                                    error!(%persona_id, error = ?e, "Persona system_prompt is not valid UTF-8. Skipping.");
-                                    // Optionally, decide if this should be a more critical error or just a warning
+                            } else if persona.system_prompt_nonce.is_none() && user_dek_for_closure.is_none() { // Only attempt plaintext if nonce AND DEK are missing
+                                // Attempt to use as plaintext if nonce is missing AND DEK is not available (implying it might be intentionally plaintext)
+                                match String::from_utf8(sp_bytes_vec.clone()) {
+                                    Ok(plaintext_sp_str) => {
+                                        if !plaintext_sp_str.trim().is_empty() {
+                                            final_system_prompt_str = Some(plaintext_sp_str.replace('\0', ""));
+                                            warn!(%persona_id, "Using persona system_prompt as PLAINTEXT (nonce and DEK were missing).");
+                                        } else {
+                                            info!(%persona_id, "Persona system_prompt (plaintext, no nonce/DEK) is empty. Skipping.");
+                                        }
+                                    }
+                                    Err(e) => {
+                                        error!(%persona_id, error = ?e, "Persona system_prompt (plaintext, no nonce/DEK) is not valid UTF-8. Skipping.");
+                                    }
                                 }
+                            } else {
+                                // This case covers:
+                                // 1. Nonce is Some, DEK is None (cannot decrypt)
+                                // 2. Nonce is None, DEK is Some (inconsistent state, cannot assume plaintext or decrypt)
+                                info!(%persona_id, nonce_present = persona.system_prompt_nonce.is_some(), dek_present = user_dek_for_closure.is_some(), "Persona system_prompt could not be used (cannot decrypt or inconsistent state). Skipping.");
                             }
+                        } else {
+                            info!(%persona_id, "Persona system_prompt (bytes) is None. Skipping.");
                         }
                     }
                     Ok(None) => {
@@ -560,6 +620,7 @@ pub async fn get_session_data_for_generation(
     user_message_content: String,
     user_dek_secret_box: Option<Arc<SecretBox<Vec<u8>>>>,
 ) -> Result<GenerationDataWithUnsavedUserMessage, AppError> {
+    info!(target: "chat_service_persona_debug", %session_id, %user_id, "Entering get_session_data_for_generation.");
     let conn = state.pool.get().await.map_err(|e| {
         // Use state.pool
         error!(error = ?e, "Failed to get DB connection from pool");
@@ -568,6 +629,7 @@ pub async fn get_session_data_for_generation(
 
     // Clone the Arc for moving into the interact closure if it exists
     let dek_for_interact: Option<Arc<SecretBox<Vec<u8>>>> = user_dek_secret_box.clone();
+    info!(target: "chat_service_persona_debug", %session_id, dek_present_initial = user_dek_secret_box.is_some(), "Initial DEK presence for get_session_data_for_generation.");
 
     // Calculate prompt tokens for the current user message outside the interact block
     let user_prompt_tokens = match state
@@ -604,11 +666,13 @@ pub async fn get_session_data_for_generation(
                 .first::<Option<Uuid>>(c)
         }).await?? // Propagate InteractError then DB error
     };
+    info!(target: "chat_service_persona_debug", %session_id, ?maybe_active_persona_id_from_session, "Fetched active_custom_persona_id from session.");
 
     let mut effective_system_prompt: Option<String> = None;
 
     let db_persona_for_prompt: Option<UserPersonaDataForClient> =
         if let Some(persona_id) = maybe_active_persona_id_from_session {
+            info!(target: "chat_service_persona_debug", %session_id, %persona_id, dek_present_for_persona_fetch = user_dek_secret_box.is_some(), "Attempting to fetch persona details.");
             if let Some(ref dek_arc_outer) = user_dek_secret_box { // dek_arc_outer is Option<Arc<SecretBox<Vec<u8>>>>
                 debug!(target: "chat_service_trace_prompt", %session_id, %persona_id, "Session has active_custom_persona_id and DEK. Fetching persona.");
 
@@ -637,8 +701,12 @@ pub async fn get_session_data_for_generation(
                 // Correctly get Option<&SecretBox<Vec<u8>>> from Option<Arc<SecretBox<Vec<u8>>>>
                 let dek_ref_for_service: Option<&SecretBox<Vec<u8>>> = Some(dek_arc_outer.as_ref());
 
-                match state.user_persona_service.get_user_persona(&user_for_service_call, dek_ref_for_service, persona_id).await {
+                let persona_service_result = state.user_persona_service.get_user_persona(&user_for_service_call, dek_ref_for_service, persona_id).await;
+                info!(target: "chat_service_persona_debug", %session_id, %persona_id, "Result from user_persona_service.get_user_persona: {:?}", persona_service_result);
+
+                match persona_service_result {
                     Ok(client_persona_dto) => { // Renamed to avoid confusion
+                        info!(target: "chat_service_persona_debug", %session_id, %persona_id, "Successfully fetched persona DTO: {:?}", client_persona_dto);
                         Some(client_persona_dto)
                     }
                     Err(e) => {
@@ -648,13 +716,16 @@ pub async fn get_session_data_for_generation(
                 }
             } else {
                 warn!(target: "chat_service_trace_prompt", %session_id, %persona_id, "Active persona ID present, but no user DEK available. Cannot fetch/decrypt custom persona.");
+                info!(target: "chat_service_persona_debug", %session_id, %persona_id, "No DEK available for persona fetch, returning None for db_persona_for_prompt.");
                 None
             }
         } else {
+            info!(target: "chat_service_persona_debug", %session_id, "No active_custom_persona_id in session, db_persona_for_prompt is None.");
             None
         };
 
     if let Some(ref persona_dto) = db_persona_for_prompt {
+        info!(target: "chat_service_persona_debug", %session_id, persona_id = %persona_dto.id, "Processing fetched persona DTO: Name='{}', Desc='{}'", persona_dto.name, persona_dto.description);
         debug!(target: "chat_service_trace_prompt", %session_id, persona_id = %persona_dto.id, "Found active persona. Checking its system_prompt field first.");
         if let Some(ref sp_from_persona) = persona_dto.system_prompt {
             if !sp_from_persona.trim().is_empty() {
@@ -712,6 +783,14 @@ pub async fn get_session_data_for_generation(
     } else {
         debug!(target: "chat_service_trace_prompt", %session_id, "No active_custom_persona_id in session. Will try overrides or character default.");
     }
+    info!(target: "chat_service_persona_debug", %session_id, "Final effective_system_prompt before interact block: {:?}", effective_system_prompt);
+    // It's important to understand if `db_persona_for_prompt` (which is UserPersonaDataForClient)
+    // is passed to the PromptBuilder or if only `effective_system_prompt` is used.
+    // For now, we log what `effective_system_prompt` becomes.
+    // If the full persona details (name, desc, etc.) are needed beyond the system prompt,
+    // `db_persona_for_prompt` itself would need to be passed along or its fields incorporated differently.
+    info!(target: "chat_service_persona_debug", %session_id, "db_persona_for_prompt (UserPersonaDataForClient) that might be used by PromptBuilder: {:?}", db_persona_for_prompt);
+
 
     conn.interact(move |conn_interaction| {
         info!(%session_id, %user_id, "Fetching session data for generation");

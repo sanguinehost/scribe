@@ -88,6 +88,8 @@ async fn get_chat_messages_success_integration() -> anyhow::Result<()> {
         history_management_limit: 15,
         model_name: "gemini-test-model".to_string(),
         visibility: Some("private".to_string()),
+        active_custom_persona_id: None,
+        active_impersonated_character_id: None,
     };
     let session_a: Chat = test_app
         .db_pool

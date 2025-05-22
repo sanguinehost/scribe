@@ -106,6 +106,8 @@ async fn test_suggested_actions_success() -> anyhow::Result<()> {
         history_management_limit: 20,
         model_name: "test-model-suggested".to_string(),
         visibility: Some("private".to_string()),
+        active_custom_persona_id: None,
+        active_impersonated_character_id: None,
     };
 
     let session = conn_pool_obj
@@ -352,6 +354,8 @@ async fn test_suggested_actions_forbidden() -> anyhow::Result<()> {
         history_management_limit: 20,
         model_name: "test-model-forbidden".to_string(),
         visibility: Some("private".to_string()),
+        active_custom_persona_id: None,
+        active_impersonated_character_id: None,
     };
 
     let session_a = conn_pool_obj
@@ -525,6 +529,8 @@ async fn test_suggested_actions_ai_error() -> anyhow::Result<()> {
         history_management_limit: 20,
         model_name: "test-model-ai-error".to_string(),
         visibility: Some("private".to_string()),
+        active_custom_persona_id: None,
+        active_impersonated_character_id: None,
     };
 
     let session = conn_pool_obj
@@ -676,6 +682,8 @@ async fn test_suggested_actions_invalid_json_response() -> anyhow::Result<()> {
         history_management_limit: 20,
         model_name: "test-model-invalid-json".to_string(),
         visibility: Some("private".to_string()),
+        active_custom_persona_id: None,
+        active_impersonated_character_id: None,
     };
 
     let session = conn_pool_obj
@@ -812,6 +820,8 @@ async fn test_suggested_actions_success_optional_fields_none() -> anyhow::Result
         history_management_limit: 20,
         model_name: "test-model-optional-fields".to_string(),
         visibility: Some("private".to_string()),
+        active_custom_persona_id: None,
+        active_impersonated_character_id: None,
     };
 
     let session = conn_pool_obj
@@ -975,6 +985,8 @@ async fn test_suggested_actions_success_optional_fields_some() -> anyhow::Result
         history_management_limit: 20,
         model_name: "test-model-optional-fields".to_string(),
         visibility: Some("private".to_string()),
+        active_custom_persona_id: None,
+        active_impersonated_character_id: None,
     };
 
     let session = conn_pool_obj

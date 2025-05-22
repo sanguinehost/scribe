@@ -167,6 +167,10 @@ pub enum PersonaCommand {
     Update(PersonaUpdateArgs),
     /// Delete a user persona
     Delete(PersonaDeleteArgs),
+    /// Set a user persona as the default for new chats
+    SetDefault(PersonaSetDefaultArgs),
+    /// Clear the default user persona
+    ClearDefault(PersonaClearDefaultArgs),
 }
 
 #[derive(ClapArgs, Debug, Default, Clone)]
@@ -266,6 +270,18 @@ pub struct PersonaDeleteArgs {
     /// The UUID of the persona to delete
     #[arg()] // Positional argument
     pub id: Uuid,
+}
+
+#[derive(ClapArgs, Debug, Default, Clone)]
+pub struct PersonaSetDefaultArgs {
+    /// The UUID of the persona to set as default. If not provided, interactive selection will be used.
+    #[arg(long)]
+    pub id: Option<Uuid>,
+}
+
+#[derive(ClapArgs, Debug, Default, Clone)]
+pub struct PersonaClearDefaultArgs {
+    // No arguments needed for clearing the default
 }
 
 

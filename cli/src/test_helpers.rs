@@ -169,6 +169,8 @@ pub struct MockHttpClient {
     pub get_user_persona_result: Option<Arc<Result<UserPersonaDataForClient, MockCliError>>>,
     pub update_user_persona_result: Option<Arc<Result<UserPersonaDataForClient, MockCliError>>>,
     pub delete_user_persona_result: Option<Arc<Result<(), MockCliError>>>,
+    pub set_default_persona_result: Option<Arc<Result<User, MockCliError>>>,
+    pub clear_default_persona_result: Option<Arc<Result<(), MockCliError>>>,
 
     // Track called endpoints for validation - use Arc<Mutex> for thread safety
     pub called_endpoints: Arc<std::sync::Mutex<Vec<String>>>,
@@ -665,6 +667,32 @@ impl HttpClient for MockHttpClient {
         );
         mock_result.map_err(Into::into)
     }
+
+    async fn set_default_persona(&self, _persona_id: Uuid) -> Result<User, CliError> {
+        let mock_result = Arc::unwrap_or_clone(
+            self.set_default_persona_result
+                .clone()
+                .unwrap_or_else(|| {
+                    Arc::new(Err(MockCliError::Internal(
+                        "MockHttpClient: set_default_persona result not set".into(),
+                    )))
+                }),
+        );
+        mock_result.map_err(Into::into)
+    }
+
+    async fn clear_default_persona(&self) -> Result<(), CliError> {
+        let mock_result = Arc::unwrap_or_clone(
+            self.clear_default_persona_result
+                .clone()
+                .unwrap_or_else(|| {
+                    Arc::new(Err(MockCliError::Internal(
+                        "MockHttpClient: clear_default_persona result not set".into(),
+                    )))
+                }),
+        );
+        mock_result.map_err(Into::into)
+    }
 }
 
 // --- Helper Functions for Creating Mocks ---
@@ -689,6 +717,7 @@ pub fn mock_user(username: &str) -> User {
         role: scribe_backend::models::users::UserRole::User, // Default to User role
         account_status: Some("active".to_string()),          // Default to active account
         recovery_phrase: None,                               // Recovery phrase not stored in DB
+        default_persona_id: None,
     }
 }
 

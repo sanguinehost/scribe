@@ -2,12 +2,13 @@ use std::sync::Arc;
 use uuid::Uuid;
 use diesel::prelude::*;
 use secrecy::{ExposeSecret, SecretBox};
+use tracing::debug; // Added for logging
 
 use crate::state::DbPool;
 use crate::errors::AppError;
 use crate::models::user_personas::*;
-use crate::models::users::User;
-use crate::schema::user_personas::dsl as user_personas_dsl;
+use crate::models::users::{User, UserDbQuery};
+use crate::schema::{user_personas::dsl as user_personas_dsl, users::dsl as users_dsl};
 use crate::services::encryption_service::EncryptionService;
 
 #[derive(Clone)]
@@ -266,30 +267,39 @@ impl UserPersonaService {
         // Macro to handle updates for optional encrypted fields
         macro_rules! update_optional_encrypted_field {
             ($field_name:ident, $nonce_field_name:ident) => {
-                if let Some(value_from_dto) = update_dto.$field_name.clone() {
-                    // If DTO field is Some(string_value):
-                    // - If string_value is empty, encrypt_optional_string_for_db returns (None, None) to clear.
-                    // - If string_value is non-empty, it's encrypted.
-                    let (new_ct, new_n) = self.encrypt_optional_string_for_db(Some(value_from_dto), dek).await?;
-                    
-                    if persona.$field_name != new_ct || persona.$nonce_field_name != new_n {
-                        persona.$field_name = new_ct;
-                        persona.$nonce_field_name = new_n;
-                        changed = true;
-                    }
+                // Get the Option<String> from the DTO.
+                let dto_field_value = update_dto.$field_name.clone(); // This is Option<String>
+
+                // Encrypt it. If dto_field_value is None or Some(""),
+                // encrypt_optional_string_for_db returns (None, None) which clears the field.
+                // If dto_field_value is Some("text"), this encrypts "text".
+                let (new_ct, new_n) = self.encrypt_optional_string_for_db(dto_field_value, dek).await?;
+                
+                // Check if the current DB values differ from the new (potentially None) values.
+                if persona.$field_name != new_ct || persona.$nonce_field_name != new_n {
+                    persona.$field_name = new_ct;
+                    persona.$nonce_field_name = new_n;
+                    changed = true;
                 }
-                // If DTO field is None, do nothing (field not specified for update).
+                // If the DTO field was not present (e.g. if UpdateUserPersonaDto used Option<Option<String>>
+                // and the outer Option was None), then we would skip. But with Option<String>,
+                // None means "clear", Some("") means "clear", and Some("text") means "update".
+                // The logic above correctly handles all these cases for Option<String> DTO fields.
             };
         }
 
         // Apply for description (mandatory, but handled differently with its own nonce)
-        if let Some(desc_str) = update_dto.description {
-            let (new_ct, new_n) = self.encryption_service.encrypt(&desc_str, dek.expose_secret().as_slice()).await?;
-            if persona.description != new_ct || persona.description_nonce != Some(new_n.clone()) { // Compare with Some(new_n)
-                persona.description = new_ct;
-                persona.description_nonce = Some(new_n);
-                changed = true;
-            }
+        // Apply for description. If update_dto.description is None or an empty string, encrypt an empty string.
+        // Otherwise, encrypt the provided string.
+        let string_to_encrypt_for_description = update_dto.description.as_deref().unwrap_or("");
+        let (new_description_ct, new_description_n) = self.encryption_service
+            .encrypt(string_to_encrypt_for_description, dek.expose_secret().as_slice())
+            .await?;
+
+        if persona.description != new_description_ct || persona.description_nonce != Some(new_description_n.clone()) {
+            persona.description = new_description_ct;
+            persona.description_nonce = Some(new_description_n);
+            changed = true;
         }
 
         update_optional_encrypted_field!(personality, personality_nonce);
@@ -384,6 +394,58 @@ impl UserPersonaService {
             None => Err(AppError::NotFound(format!("User persona with ID {} not found for deletion.", persona_id))),
         }
     }
+
+    #[tracing::instrument(skip(pool), err)]
+    pub async fn set_default_persona(
+        pool: &DbPool, // Changed to pass pool directly as it's a static-like method now
+        user_id_val: Uuid,
+        persona_id_val: Option<Uuid>,
+    ) -> Result<User, AppError> { // Return the updated User
+        let conn = pool.get().await.map_err(|e| AppError::DbPoolError(e.to_string()))?;
+
+        let updated_user_db_query = conn
+            .interact(move |db_conn| {
+                diesel::update(users_dsl::users.find(user_id_val))
+                    .set(users_dsl::default_persona_id.eq(persona_id_val))
+                    .get_result::<UserDbQuery>(db_conn) // Fetch UserDbQuery
+                    .map_err(AppError::from)
+            })
+            .await
+            .map_err(|e| AppError::InternalServerErrorGeneric(format!("DB interact join error for set_default_persona: {}", e)))??;
+        
+        tracing::info!(user_id = %user_id_val, default_persona_id = ?persona_id_val, "Successfully set default persona for user");
+        
+        // Convert UserDbQuery to User before returning
+        // This assumes User::from(UserDbQuery) handles DEK decryption or sets it to None appropriately.
+        // If DEK is needed, it must be fetched and passed here. For now, assuming it's not needed for this response.
+        Ok(User::from(updated_user_db_query))
+    }
+    
+    // Helper to fetch a persona by ID and user ID, ensuring ownership.
+    // This can be used by the route handler before calling set_default_persona.
+    #[tracing::instrument(skip(pool), err)]
+    pub async fn get_user_persona_by_id_and_user_id(
+        pool: &DbPool,
+        persona_id_val: Uuid,
+        user_id_val: Uuid,
+    ) -> Result<Option<UserPersona>, AppError> {
+        debug!(%persona_id_val, %user_id_val, "Attempting to get user persona by ID and user ID");
+        let conn = pool.get().await.map_err(|e| AppError::DbPoolError(e.to_string()))?;
+        let persona_result = conn
+            .interact(move |db_conn| {
+                user_personas_dsl::user_personas
+                    .filter(user_personas_dsl::id.eq(persona_id_val))
+                    .filter(user_personas_dsl::user_id.eq(user_id_val))
+                    .first::<UserPersona>(db_conn)
+                    .optional()
+                    .map_err(AppError::from)
+            })
+            .await
+            .map_err(|e| AppError::InternalServerErrorGeneric(format!("DB interact join error for get_user_persona_by_id_and_user_id: {}", e)))??;
+        
+        debug!(?persona_result, "Result of database query in get_user_persona_by_id_and_user_id");
+        Ok(persona_result)
+    }
 }
 
-// TODO: Add unit tests for UserPersonaService methods 
+// TODO: Add unit tests for UserPersonaService methods

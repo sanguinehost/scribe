@@ -34,22 +34,24 @@ pub struct HealthStatus {
 // Update AuthUserResponse to include role and recovery key
 #[derive(Deserialize, Debug, Clone)]
 pub struct AuthUserResponse {
+    #[serde(alias = "id")]
     pub user_id: Uuid,
     pub username: String,
     pub email: String,
-    pub role: String, // Changed from Option<String> to String since backend now always returns role
+    pub role: Option<String>,
     pub recovery_key: Option<String>, // Add recovery key field
+    pub default_persona_id: Option<Uuid>,
 }
 
 // Map AuthUserResponse to User for compatibility
 impl From<AuthUserResponse> for User {
     fn from(auth: AuthUserResponse) -> Self {
         // Map role string to UserRole enum
-        let role = match auth.role.as_str() {
+        let role = auth.role.map_or(UserRole::User, |r| match r.as_str() {
             "Administrator" => UserRole::Administrator,
             "Moderator" => UserRole::Moderator,
             _ => UserRole::User, // Default to User role
-        };
+        });
 
         User {
             id: auth.user_id,
@@ -68,6 +70,7 @@ impl From<AuthUserResponse> for User {
             role,                                       // Add the role field
             recovery_phrase: None,                      // Add the recovery_phrase field
             account_status: Some("active".to_string()), // Default to active, may be overridden by login response
+            default_persona_id: auth.default_persona_id,
         }
     }
 }

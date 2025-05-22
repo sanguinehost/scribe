@@ -8,9 +8,10 @@ use crate::{
     },
     error::CliError,
     io::IoHandler,
-    PersonaCreateArgs, PersonaUpdateArgs, PersonaGetArgs, PersonaDeleteArgs, // Argument structs from lib.rs
+    // Argument structs from lib.rs
+    PersonaCreateArgs, PersonaUpdateArgs, PersonaGetArgs, PersonaDeleteArgs, PersonaSetDefaultArgs, PersonaClearDefaultArgs,
 };
-// use uuid::Uuid; // No longer needed directly in this file if IDs are handled by client/args
+use uuid::Uuid; // Needed for parsing input for set-default
 
 pub async fn handle_persona_create_action<C: HttpClient, H: IoHandler>(
     http_client: &C,
@@ -194,4 +195,90 @@ fn print_persona_details<H: IoHandler>(io_handler: &mut H, persona: &UserPersona
     io_handler.write_line(&format!("Updated At: {}", persona.updated_at))?;
     io_handler.write_line("------------------------------")?;
     Ok(())
+}
+
+pub async fn handle_persona_set_default_action<C: HttpClient, H: IoHandler>(
+    http_client: &C,
+    io_handler: &mut H,
+    _args: PersonaSetDefaultArgs, // Args might be used if we allow direct ID input later
+) -> Result<(), CliError> {
+    io_handler.write_line("Fetching your personas to set a default...")?;
+    let personas = match http_client.list_user_personas().await {
+        Ok(p) => p,
+        Err(e) => {
+            io_handler.write_line(&format!("Error fetching personas: {}", e))?;
+            return Err(e.into());
+        }
+    };
+
+    if personas.is_empty() {
+        io_handler.write_line("No personas available to set as default.")?;
+        return Ok(());
+    }
+
+    io_handler.write_line("Available personas:")?;
+    for (index, persona) in personas.iter().enumerate() {
+        io_handler.write_line(&format!("  [{}] {} (ID: {})", index + 1, persona.name, persona.id))?;
+    }
+
+    let selection_prompt = "Enter the number or ID of the persona to set as default (or 'c' to cancel):";
+    let choice_str = io_handler.read_line(selection_prompt)?.trim().to_string();
+
+    if choice_str.eq_ignore_ascii_case("c") {
+        io_handler.write_line("Operation cancelled.")?;
+        return Ok(());
+    }
+
+    let selected_persona_id: Uuid = if let Ok(num) = choice_str.parse::<usize>() {
+        if num > 0 && num <= personas.len() {
+            personas[num - 1].id
+        } else {
+            io_handler.write_line("Invalid selection number.")?;
+            return Err(CliError::InputError("Invalid selection.".to_string()));
+        }
+    } else if let Ok(id) = Uuid::parse_str(&choice_str) {
+        // Check if this ID is in the list of fetched personas to ensure user owns it
+        if !personas.iter().any(|p| p.id == id) {
+            io_handler.write_line("Selected Persona ID not found in your list of personas.")?;
+            return Err(CliError::InputError("Persona ID not found or not owned by user.".to_string()));
+        }
+        id
+    } else {
+        io_handler.write_line("Invalid input. Please enter a number or a valid Persona ID.")?;
+        return Err(CliError::InputError("Invalid input format.".to_string()));
+    };
+
+    io_handler.write_line(&format!("Setting persona {} as default...", selected_persona_id))?;
+    match http_client.set_default_persona(selected_persona_id).await {
+        Ok(user) => {
+            io_handler.write_line(&format!(
+                "Successfully set persona {} as default for user {}.",
+                user.default_persona_id.map_or_else(|| "None".to_string(), |id| id.to_string()),
+                user.username
+            ))?;
+            Ok(())
+        }
+        Err(e) => {
+            io_handler.write_line(&format!("Error setting default persona: {}", e))?;
+            Err(e.into())
+        }
+    }
+}
+
+pub async fn handle_persona_clear_default_action<C: HttpClient, H: IoHandler>(
+    http_client: &C,
+    io_handler: &mut H,
+    _args: PersonaClearDefaultArgs,
+) -> Result<(), CliError> {
+    io_handler.write_line("Clearing default persona...")?;
+    match http_client.clear_default_persona().await {
+        Ok(()) => {
+            io_handler.write_line("Successfully cleared default persona.")?;
+            Ok(())
+        }
+        Err(e) => {
+            io_handler.write_line(&format!("Error clearing default persona: {}", e))?;
+            Err(e.into())
+        }
+    }
 }
