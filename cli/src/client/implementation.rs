@@ -23,6 +23,8 @@ use crate::error::CliError;
 // Imports from sibling modules
 use super::interface::HttpClient;
 use super::types::{
+    // User persona types are now directly available under super::types
+    CreateUserPersonaDto, UpdateUserPersonaDto, UserPersonaDataForClient,
     AdminUserDetailResponse,
     AdminUserListResponse,
     AuthUserResponse, // Used in login/register/me
@@ -133,10 +135,13 @@ impl HttpClient for ReqwestClientWrapper {
         handle_response(response).await
     }
 
-    async fn create_chat_session(&self, character_id: Uuid) -> Result<Chat, CliError> {
-        let url = build_url(&self.base_url, "/api/chats")?;
-        tracing::info!(target: "scribe_cli::client::implementation", %url, %character_id, "Creating chat session via HttpClient");
-        let payload = json!({ "character_id": character_id });
+    async fn create_chat_session(&self, character_id: Uuid, active_custom_persona_id: Option<Uuid>) -> Result<Chat, CliError> {
+        let url = build_url(&self.base_url, "/api/chat/create_session")?;
+        tracing::info!(target: "scribe_cli::client::implementation", %url, %character_id, ?active_custom_persona_id, "Creating chat session via HttpClient");
+        let payload = json!({
+            "character_id": character_id,
+            "active_custom_persona_id": active_custom_persona_id
+        });
         let response = self
             .client
             .post(url)
@@ -783,5 +788,89 @@ impl HttpClient for ReqwestClientWrapper {
             .await
             .map_err(CliError::Reqwest)?;
         handle_response(response).await
+    }
+
+    // User Persona Methods
+    async fn create_user_persona(
+        &self,
+        persona_data: CreateUserPersonaDto,
+    ) -> Result<UserPersonaDataForClient, CliError> {
+        let url = build_url(&self.base_url, "/api/personas")?;
+        tracing::info!(target: "scribe_cli::client::implementation", %url, "Creating user persona via HttpClient");
+        let response = self
+            .client
+            .post(url)
+            .json(&persona_data)
+            .send()
+            .await
+            .map_err(CliError::Reqwest)?;
+        handle_response(response).await
+    }
+
+    async fn list_user_personas(&self) -> Result<Vec<UserPersonaDataForClient>, CliError> {
+        let url = build_url(&self.base_url, "/api/personas")?;
+        tracing::info!(target: "scribe_cli::client::implementation", %url, "Listing user personas via HttpClient");
+        let response = self
+            .client
+            .get(url)
+            .send()
+            .await
+            .map_err(CliError::Reqwest)?;
+        handle_response(response).await
+    }
+
+    async fn get_user_persona(&self, persona_id: Uuid) -> Result<UserPersonaDataForClient, CliError> {
+        let url = build_url(&self.base_url, &format!("/api/personas/{}", persona_id))?;
+        tracing::info!(target: "scribe_cli::client::implementation", %url, %persona_id, "Fetching user persona via HttpClient");
+        let response = self
+            .client
+            .get(url)
+            .send()
+            .await
+            .map_err(CliError::Reqwest)?;
+        handle_response(response).await
+    }
+
+    async fn update_user_persona(
+        &self,
+        persona_id: Uuid,
+        persona_data: UpdateUserPersonaDto,
+    ) -> Result<UserPersonaDataForClient, CliError> {
+        let url = build_url(&self.base_url, &format!("/api/personas/{}", persona_id))?;
+        tracing::info!(target: "scribe_cli::client::implementation", %url, %persona_id, "Updating user persona via HttpClient");
+        let response = self
+            .client
+            .put(url)
+            .json(&persona_data)
+            .send()
+            .await
+            .map_err(CliError::Reqwest)?;
+        handle_response(response).await
+    }
+
+    async fn delete_user_persona(&self, persona_id: Uuid) -> Result<(), CliError> {
+        let url = build_url(&self.base_url, &format!("/api/personas/{}", persona_id))?;
+        tracing::info!(target: "scribe_cli::client::implementation", %url, %persona_id, "Deleting user persona via HttpClient");
+        let response = self
+            .client
+            .delete(url)
+            .send()
+            .await
+            .map_err(CliError::Reqwest)?;
+
+        if response.status().is_success() {
+            Ok(())
+        } else {
+            let status = response.status();
+            let error_text = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Failed to read error body".to_string());
+            tracing::error!(target: "scribe_cli::client::implementation", %status, error_body = %error_text, "Delete user persona operation failed");
+            Err(CliError::ApiError {
+                status,
+                message: error_text,
+            })
+        }
     }
 }

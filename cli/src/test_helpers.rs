@@ -3,10 +3,10 @@ use crate::client::types::{
     AdminUserDetailResponse, AdminUserListResponse, ClientCharacterDataForClient,
     ClientChatMessageResponse, HealthStatus, RegisterPayload, StreamEvent,
     // New DTOs for character and chat management
-    CharacterCreateDto,
-    CharacterUpdateDto,
     ChatSessionDetails,
     OverrideSuccessResponse,
+    // User Persona DTOs are now directly available under crate::client::types
+    UserPersonaDataForClient, CreateUserPersonaDto, UpdateUserPersonaDto,
 };
 use crate::error::CliError;
 use crate::io::IoHandler;
@@ -61,11 +61,19 @@ pub struct MockIoHandler {
 
 #[allow(dead_code)]
 impl MockIoHandler {
-    pub fn new(inputs: Vec<String>) -> Self { // Changed to Vec<String>
+    pub fn new(inputs: Vec<String>) -> Self {
         MockIoHandler {
-            inputs: RefCell::new(inputs.into_iter().collect()), // No map needed
+            inputs: RefCell::new(inputs.into_iter().collect()),
             outputs: RefCell::new(Vec::new()),
         }
+    }
+
+    pub fn get_all_output(&self) -> Vec<String> {
+        self.outputs.borrow().clone()
+    }
+
+    pub fn clear_output(&mut self) {
+        self.outputs.borrow_mut().clear()
     }
 
     pub fn expect_output(&self, expected: &str) {
@@ -154,6 +162,13 @@ pub struct MockHttpClient {
         Option<Arc<Result<OverrideSuccessResponse, MockCliError>>>,
     pub get_effective_character_for_chat_result:
         Option<Arc<Result<ClientCharacterDataForClient, MockCliError>>>,
+
+    // User Persona methods
+    pub create_user_persona_result: Option<Arc<Result<UserPersonaDataForClient, MockCliError>>>,
+    pub list_user_personas_result: Option<Arc<Result<Vec<UserPersonaDataForClient>, MockCliError>>>,
+    pub get_user_persona_result: Option<Arc<Result<UserPersonaDataForClient, MockCliError>>>,
+    pub update_user_persona_result: Option<Arc<Result<UserPersonaDataForClient, MockCliError>>>,
+    pub delete_user_persona_result: Option<Arc<Result<(), MockCliError>>>,
 
     // Track called endpoints for validation - use Arc<Mutex> for thread safety
     pub called_endpoints: Arc<std::sync::Mutex<Vec<String>>>,
@@ -267,7 +282,7 @@ impl HttpClient for MockHttpClient {
         mock_result.map_err(Into::into)
     }
 
-    async fn create_chat_session(&self, _character_id: Uuid) -> Result<Chat, CliError> {
+    async fn create_chat_session(&self, _character_id: Uuid, _active_custom_persona_id: Option<Uuid>) -> Result<Chat, CliError> {
         let mock_result =
             Arc::unwrap_or_clone(self.create_chat_session_result.clone().unwrap_or_else(|| {
                 Arc::new(Err(MockCliError::Internal(
@@ -581,6 +596,75 @@ impl HttpClient for MockHttpClient {
         );
         mock_result.map_err(Into::into)
     }
+
+    async fn create_user_persona(
+        &self,
+        _persona_data: CreateUserPersonaDto,
+    ) -> Result<UserPersonaDataForClient, CliError> {
+        let mock_result = Arc::unwrap_or_clone(
+            self.create_user_persona_result
+                .clone()
+                .unwrap_or_else(|| {
+                    Arc::new(Err(MockCliError::Internal(
+                        "MockHttpClient: create_user_persona result not set".into(),
+                    )))
+                }),
+        );
+        mock_result.map_err(Into::into)
+    }
+
+    async fn list_user_personas(&self) -> Result<Vec<UserPersonaDataForClient>, CliError> {
+        let mock_result = Arc::unwrap_or_clone(
+            self.list_user_personas_result
+                .clone()
+                .unwrap_or_else(|| {
+                    Arc::new(Err(MockCliError::Internal(
+                        "MockHttpClient: list_user_personas result not set".into(),
+                    )))
+                }),
+        );
+        mock_result.map_err(Into::into)
+    }
+
+    async fn get_user_persona(&self, _persona_id: Uuid) -> Result<UserPersonaDataForClient, CliError> {
+        let mock_result =
+            Arc::unwrap_or_clone(self.get_user_persona_result.clone().unwrap_or_else(|| {
+                Arc::new(Err(MockCliError::Internal(
+                    "MockHttpClient: get_user_persona result not set".into(),
+                )))
+            }));
+        mock_result.map_err(Into::into)
+    }
+
+    async fn update_user_persona(
+        &self,
+        _persona_id: Uuid,
+        _persona_data: UpdateUserPersonaDto,
+    ) -> Result<UserPersonaDataForClient, CliError> {
+        let mock_result = Arc::unwrap_or_clone(
+            self.update_user_persona_result
+                .clone()
+                .unwrap_or_else(|| {
+                    Arc::new(Err(MockCliError::Internal(
+                        "MockHttpClient: update_user_persona result not set".into(),
+                    )))
+                }),
+        );
+        mock_result.map_err(Into::into)
+    }
+
+    async fn delete_user_persona(&self, _persona_id: Uuid) -> Result<(), CliError> {
+        let mock_result = Arc::unwrap_or_clone(
+            self.delete_user_persona_result
+                .clone()
+                .unwrap_or_else(|| {
+                    Arc::new(Err(MockCliError::Internal(
+                        "MockHttpClient: delete_user_persona result not set".into(),
+                    )))
+                }),
+        );
+        mock_result.map_err(Into::into)
+    }
 }
 
 // --- Helper Functions for Creating Mocks ---
@@ -708,6 +792,8 @@ pub fn mock_chat_session(id: Uuid, character_id: Uuid) -> Chat {
         model_name: "default-model".to_string(),
         gemini_thinking_budget: None,
         gemini_enable_code_execution: None,
+        active_custom_persona_id: None,
+        active_impersonated_character_id: None,
     }
 }
 

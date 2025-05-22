@@ -27,6 +27,7 @@ use crate::{
             Chat, ChatMessage as DbChatMessage, ChatSettingsResponse, DbInsertableChatMessage,
             MessageRole, NewChat, SettingsTuple, UpdateChatSettingsRequest,
         },
+        user_personas::UserPersonaDataForClient, // Correct DTO name
     },
     schema::{characters, chat_character_overrides, chat_messages, chat_sessions},
     services::history_manager,
@@ -80,13 +81,14 @@ pub async fn create_session_and_maybe_first_message(
     state: Arc<AppState>,
     user_id: Uuid,
     character_id: Uuid,
+    active_custom_persona_id: Option<Uuid>,
     user_dek_secret_box: Option<Arc<SecretBox<Vec<u8>>>>,
 ) -> Result<Chat, AppError> {
     let pool = state.pool.clone();
     let conn = pool.get().await?;
     let (created_session, first_mes_ciphertext_opt, first_mes_nonce_opt) = conn.interact(move |conn| {
         conn.transaction(|transaction_conn| {
-            info!(%character_id, %user_id, "Verifying character ownership and fetching character details");
+            info!(%character_id, %user_id, ?active_custom_persona_id, "Verifying character ownership and fetching character details, potentially persona details");
             let character: Character = characters::table
                 .filter(characters::id.eq(character_id))
                 .select(Character::as_select())
@@ -101,31 +103,86 @@ pub async fn create_session_and_maybe_first_message(
                 return Err(AppError::Forbidden);
             }
 
+            // Sanitize character.name by removing NULL bytes
+            let sanitized_character_name = character.name.replace('\0', "");
+            if sanitized_character_name.is_empty() {
+                error!(%character_id, "Character name is empty or consists only of invalid characters after sanitization.");
+                return Err(AppError::BadRequest("Character name cannot be empty or consist only of invalid characters.".to_string()));
+            }
+
             info!(%character_id, %user_id, "Inserting new chat session");
             let new_session_id = Uuid::new_v4();
             let new_chat_for_insert = NewChat {
                 id: new_session_id,
                 user_id,
                 character_id,
-                title: Some(character.name.clone()),
+                // Use sanitized name for title
+                title: Some(sanitized_character_name.clone()),
                 created_at: chrono::Utc::now(),
                 updated_at: chrono::Utc::now(),
                 history_management_strategy: "message_window".to_string(),
                 history_management_limit: 20,
                 model_name: "gemini-2.5-pro-preview-03-25".to_string(),
                 visibility: Some("private".to_string()),
+                active_custom_persona_id,
+                active_impersonated_character_id: None,
             };
 
             diesel::insert_into(chat_sessions::table)
                 .values(&new_chat_for_insert)
                 .execute(transaction_conn)
                 .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
-            let effective_system_prompt = character.system_prompt.as_ref()
-                .and_then(|val| if val.is_empty() { None } else { Some(String::from_utf8_lossy(val).to_string()) })
-                .or_else(|| character.persona.as_ref().and_then(|val| if val.is_empty() { None } else { Some(String::from_utf8_lossy(val).to_string()) }))
-                .or_else(|| character.description.as_ref().and_then(|val| if val.is_empty() { None } else { Some(String::from_utf8_lossy(val).to_string()) }));
 
-            if let Some(prompt_to_set) = &effective_system_prompt {
+            // Determine the system prompt to use
+            let mut final_system_prompt_str: Option<String> = None;
+
+            if let Some(persona_id) = active_custom_persona_id {
+                use crate::schema::user_personas;
+                match user_personas::table
+                    .filter(user_personas::id.eq(persona_id))
+                    .filter(user_personas::user_id.eq(user_id)) // Ensure user owns persona
+                    .select(crate::models::user_personas::UserPersona::as_select())
+                    .first::<crate::models::user_personas::UserPersona>(transaction_conn)
+                    .optional() // Persona might not be found or user might not own it
+                {
+                    Ok(Some(persona)) => {
+                        if let Some(persona_sp_bytes) = persona.system_prompt { // persona_sp_bytes is Vec<u8>
+                            // Convert Vec<u8> to String before trimming and replacing
+                            match String::from_utf8(persona_sp_bytes) {
+                                Ok(persona_sp_str) => {
+                                    if !persona_sp_str.trim().is_empty() {
+                                        final_system_prompt_str = Some(persona_sp_str.replace('\0', ""));
+                                        info!(%persona_id, "Using system prompt from active persona.");
+                                    }
+                                }
+                                Err(e) => {
+                                    error!(%persona_id, error = ?e, "Persona system_prompt is not valid UTF-8. Skipping.");
+                                    // Optionally, decide if this should be a more critical error or just a warning
+                                }
+                            }
+                        }
+                    }
+                    Ok(None) => {
+                        warn!(%persona_id, %user_id, "Active persona not found or not owned by user. Will fall back to character prompt.");
+                    }
+                    Err(e) => {
+                        error!(%persona_id, error = ?e, "Failed to query active persona. Will fall back to character prompt.");
+                        // Do not return error, just log and fall back
+                    }
+                }
+            }
+
+            // If no persona prompt was set (or no persona active), use character's prompt logic
+            if final_system_prompt_str.is_none() {
+                info!("No persona system prompt active, deriving from character.");
+                final_system_prompt_str = character.system_prompt.as_ref()
+                    .and_then(|val| if val.is_empty() { None } else { Some(String::from_utf8_lossy(val).to_string().replace('\0', "")) })
+                    .or_else(|| character.persona.as_ref().and_then(|val| if val.is_empty() { None } else { Some(String::from_utf8_lossy(val).to_string().replace('\0', "")) }))
+                    .or_else(|| character.description.as_ref().and_then(|val| if val.is_empty() { None } else { Some(String::from_utf8_lossy(val).to_string().replace('\0', "")) }));
+            }
+
+            // Set the system prompt on the chat session if one was determined
+            if let Some(prompt_to_set) = &final_system_prompt_str {
                 if !prompt_to_set.trim().is_empty() {
                     diesel::update(chat_sessions::table.filter(chat_sessions::id.eq(new_session_id)))
                         .set(chat_sessions::system_prompt.eq(prompt_to_set))
@@ -139,7 +196,8 @@ pub async fn create_session_and_maybe_first_message(
                 .first(transaction_conn)
                 .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
 
-            if let Some(ref esp_content) = effective_system_prompt {
+            // Ensure the fully_created_session also reflects the sanitized system prompt if it was set
+            if let Some(ref esp_content) = final_system_prompt_str {
                 if !esp_content.trim().is_empty() {
                     fully_created_session.system_prompt = Some(esp_content.clone());
                 } else {
@@ -535,6 +593,126 @@ pub async fn get_session_data_for_generation(
         "Calculated prompt tokens for current user message"
     );
 
+    // Fetch session's active_custom_persona_id first to potentially fetch persona details
+    let maybe_active_persona_id_from_session: Option<Uuid> = {
+        let conn_clone_for_persona_check = state.pool.get().await?; // Get a new connection
+        conn_clone_for_persona_check.interact(move |c| {
+            chat_sessions::table
+                .filter(chat_sessions::id.eq(session_id))
+                .filter(chat_sessions::user_id.eq(user_id))
+                .select(chat_sessions::active_custom_persona_id)
+                .first::<Option<Uuid>>(c)
+        }).await?? // Propagate InteractError then DB error
+    };
+
+    let mut effective_system_prompt: Option<String> = None;
+
+    let db_persona_for_prompt: Option<UserPersonaDataForClient> =
+        if let Some(persona_id) = maybe_active_persona_id_from_session {
+            if let Some(ref dek_arc_outer) = user_dek_secret_box { // dek_arc_outer is Option<Arc<SecretBox<Vec<u8>>>>
+                debug!(target: "chat_service_trace_prompt", %session_id, %persona_id, "Session has active_custom_persona_id and DEK. Fetching persona.");
+
+                let user_for_service_call: crate::models::users::User = {
+                    let conn_for_user_fetch = state.pool.get().await.map_err(|e| {
+                        error!("Failed to get DB connection for user fetch: {}", e);
+                        AppError::DbPoolError(e.to_string())
+                    })?;
+                    let user_db_query_result = conn_for_user_fetch.interact(move |c| {
+                        crate::schema::users::table
+                            .filter(crate::schema::users::id.eq(user_id))
+                            .select(crate::models::users::UserDbQuery::as_select())
+                            .first::<crate::models::users::UserDbQuery>(c)
+                    }).await.map_err(|e| {
+                        error!("DB interact error fetching user_db_query for {}: {}", user_id, e);
+                        AppError::InternalServerErrorGeneric(format!("DB interact error fetching user_db_query: {}", e))
+                    })?; // Propagate interact error first
+                    
+                    let user_db_query = user_db_query_result.map_err(|e| { // Then handle Diesel error
+                        error!("Failed to fetch user_db_query for {} for persona check: {}", user_id, e);
+                        AppError::NotFound(format!("UserDbQuery for user {} not found for persona check: {}", user_id, e))
+                    })?;
+                    user_db_query.into()
+                };
+                
+                // Correctly get Option<&SecretBox<Vec<u8>>> from Option<Arc<SecretBox<Vec<u8>>>>
+                let dek_ref_for_service: Option<&SecretBox<Vec<u8>>> = Some(dek_arc_outer.as_ref());
+
+                match state.user_persona_service.get_user_persona(&user_for_service_call, dek_ref_for_service, persona_id).await {
+                    Ok(client_persona_dto) => { // Renamed to avoid confusion
+                        Some(client_persona_dto)
+                    }
+                    Err(e) => {
+                        error!(target: "chat_service_trace_prompt", %session_id, %persona_id, error = %e, "Error fetching active persona via service. Will try overrides or character default.");
+                        None
+                    }
+                }
+            } else {
+                warn!(target: "chat_service_trace_prompt", %session_id, %persona_id, "Active persona ID present, but no user DEK available. Cannot fetch/decrypt custom persona.");
+                None
+            }
+        } else {
+            None
+        };
+
+    if let Some(ref persona_dto) = db_persona_for_prompt {
+        debug!(target: "chat_service_trace_prompt", %session_id, persona_id = %persona_dto.id, "Found active persona. Checking its system_prompt field first.");
+        if let Some(ref sp_from_persona) = persona_dto.system_prompt {
+            if !sp_from_persona.trim().is_empty() {
+                effective_system_prompt = Some(sp_from_persona.replace('\0', ""));
+                info!(target: "chat_service_trace_prompt", %session_id, persona_id = %persona_dto.id, "Using non-empty system_prompt directly from active persona.");
+                debug!(target: "chat_service_trace_prompt", %session_id, persona_id = %persona_dto.id, persona_direct_prompt_content = %effective_system_prompt.as_deref().unwrap_or_default());
+            } else {
+                warn!(target: "chat_service_trace_prompt", %session_id, persona_id = %persona_dto.id, "Active persona's system_prompt field is present but empty. Attempting to construct prompt from other fields.");
+            }
+        } else {
+            warn!(target: "chat_service_trace_prompt", %session_id, persona_id = %persona_dto.id, "Active persona's system_prompt field is None. Attempting to construct prompt from other fields.");
+        }
+
+        // If persona's system_prompt was None or empty, try constructing one
+        if effective_system_prompt.is_none() {
+            debug!(target: "chat_service_trace_prompt", %session_id, persona_id = %persona_dto.id, "Constructing system prompt from persona name, description, personality, and scenario.");
+            let mut constructed_parts = Vec::new();
+
+            // Name and Description are mandatory for the base message.
+            // UserPersonaDataForClient has `name: String` and `description: String` (non-optional)
+            // Ensure description is not empty before adding "Their description is: "
+            let base_prompt_part = if persona_dto.description.trim().is_empty() {
+                format!("You are chatting with {}.", persona_dto.name.replace('\0', ""))
+            } else {
+                format!("You are chatting with {}. Their description is: {}.",
+                    persona_dto.name.replace('\0', ""),
+                    persona_dto.description.replace('\0', "")
+                )
+            };
+            constructed_parts.push(base_prompt_part);
+
+            if let Some(ref personality) = persona_dto.personality {
+                if !personality.trim().is_empty() {
+                    constructed_parts.push(format!("Personality: {}", personality.replace('\0', "")));
+                }
+            }
+            if let Some(ref scenario) = persona_dto.scenario {
+                if !scenario.trim().is_empty() {
+                    constructed_parts.push(format!("Scenario: {}", scenario.replace('\0', "")));
+                }
+            }
+            // TODO: Consider adding other fields like first_mes, mes_example, post_history_instructions if relevant for system prompt context
+
+            let constructed_prompt_full = constructed_parts.join("\n");
+            if !constructed_prompt_full.trim().is_empty() {
+                effective_system_prompt = Some(constructed_prompt_full);
+                info!(target: "chat_service_trace_prompt", %session_id, persona_id = %persona_dto.id, "Using constructed system prompt from persona details.");
+                debug!(target: "chat_service_trace_prompt", %session_id, persona_id = %persona_dto.id, persona_constructed_prompt_content = %effective_system_prompt.as_deref().unwrap_or_default());
+            } else {
+                warn!(target: "chat_service_trace_prompt", %session_id, persona_id = %persona_dto.id, "Constructed prompt from persona details is empty. Will fall back to overrides or character default.");
+            }
+        }
+    } else if maybe_active_persona_id_from_session.is_some() {
+        warn!(target: "chat_service_trace_prompt", %session_id, persona_id = %maybe_active_persona_id_from_session.unwrap(), "Active persona_id specified in session, but persona DTO could not be loaded/used. Will try overrides or character default.");
+    } else {
+        debug!(target: "chat_service_trace_prompt", %session_id, "No active_custom_persona_id in session. Will try overrides or character default.");
+    }
+
     conn.interact(move |conn_interaction| {
         info!(%session_id, %user_id, "Fetching session data for generation");
 
@@ -543,7 +721,7 @@ pub async fn get_session_data_for_generation(
             history_management_strategy,
             history_management_limit,
             session_character_id, // Renamed from character_id to avoid conflict
-            session_system_prompt, // This is the override from chat_sessions
+            _session_system_prompt, // This is the override from chat_sessions
             session_temperature,
             session_max_output_tokens,
             session_frequency_penalty,
@@ -719,45 +897,49 @@ pub async fn get_session_data_for_generation(
             }
         }
         
-        let mut comprehensive_system_prompt_parts: Vec<String> = Vec::new();
+        // Logic for persona prompt already handled above, effective_system_prompt is already set or None
 
-        comprehensive_system_prompt_parts.push(format!("You are {}, a character with the following details:", character.name));
-
-        // Use override value if it exists, otherwise use the original character field
-        let mut handle_field = |field_name: &str, 
-                           field_data: Option<&Vec<u8>>, 
-                           field_nonce: Option<&Vec<u8>>,
-                           label: &str| -> Result<(), AppError> {
-            if let Some(override_value) = override_values.get(field_name) {
-                info!(%session_id, field_name, "Using character override value for prompt construction");
-                comprehensive_system_prompt_parts.push(format!("\n[{}]\n{}", label, override_value));
-            } else if let Some(original_value) = decrypt_char_field(field_data, field_nonce, field_name)? {
-                if !original_value.is_empty() { // Only include non-empty original values
-                    info!(%session_id, field_name, "Using original character value for prompt construction (no override or override was empty)");
-                    comprehensive_system_prompt_parts.push(format!("\n[{}]\n{}", label, original_value));
+        // 2. If no persona prompt, check character overrides for system_prompt
+        if effective_system_prompt.is_none() {
+            debug!(target: "chat_service_trace_prompt", %session_id, "No effective_system_prompt from persona. Checking character overrides for 'system_prompt'.");
+            if let Some(override_value) = override_values.get("system_prompt") {
+                if !override_value.trim().is_empty() {
+                    effective_system_prompt = Some(override_value.replace('\0', ""));
+                    info!(target: "chat_service_trace_prompt", %session_id, "Using overridden system_prompt for generation.");
+                     debug!(target: "chat_service_trace_prompt", %session_id, overridden_prompt_content = %effective_system_prompt.as_deref().unwrap_or_default());
+                } else {
+                    debug!(target: "chat_service_trace_prompt", %session_id, "Override for 'system_prompt' is empty. Will try character default.");
                 }
-            }
-            Ok(())
-        };
-
-        handle_field("description", character.description.as_ref(), character.description_nonce.as_ref(), "Character Description")?;
-        handle_field("personality", character.personality.as_ref(), character.personality_nonce.as_ref(), "Character Personality")?;
-        handle_field("scenario", character.scenario.as_ref(), character.scenario_nonce.as_ref(), "Scenario")?;
-        handle_field("persona", character.persona.as_ref(), character.persona_nonce.as_ref(), "Character Persona")?;
-        handle_field("system_prompt", character.system_prompt.as_ref(), character.system_prompt_nonce.as_ref(), &format!("Base Instructions for {}", character.name))?;
-
-        // Append session-specific system prompt if it exists
-        if let Some(session_sp) = session_system_prompt { // This is already Option<String> from DB
-            if !session_sp.is_empty() {
-                comprehensive_system_prompt_parts.push(format!("\n[Additional Session Instructions]\n{}", session_sp));
+            } else {
+                debug!(target: "chat_service_trace_prompt", %session_id, "No override found for 'system_prompt'. Will try character default.");
             }
         }
-        let final_system_prompt = if comprehensive_system_prompt_parts.join("").trim().is_empty() {
-            None
-        } else {
-            Some(comprehensive_system_prompt_parts.join(""))
-        };
-        trace!(final_system_prompt_length = final_system_prompt.as_ref().map_or(0, |s| s.len()), "Constructed final system prompt for session {}", session_id);
+
+        // 3. If still no prompt, use character's default system_prompt
+        if effective_system_prompt.is_none() {
+            debug!(target: "chat_service_trace_prompt", %session_id, "No effective_system_prompt from persona or overrides. Using character's default system_prompt.");
+            if let Some(ref char_sp_bytes) = character.system_prompt {
+                match String::from_utf8(char_sp_bytes.clone()) { // Clone for logging
+                    Ok(char_sp_str) => {
+                        if !char_sp_str.trim().is_empty() {
+                            effective_system_prompt = Some(char_sp_str.replace('\0', ""));
+                            info!(target: "chat_service_trace_prompt", %session_id, character_id = %character.id, "Using character's default system_prompt for generation.");
+                            debug!(target: "chat_service_trace_prompt", %session_id, character_id = %character.id, character_prompt_content = %effective_system_prompt.as_deref().unwrap_or_default());
+                        } else {
+                             warn!(target: "chat_service_trace_prompt", %session_id, character_id = %character.id, "Character's default system_prompt is empty. No system prompt will be used.");
+                             effective_system_prompt = None; // Explicitly set to None
+                        }
+                    }
+                    Err(e) => {
+                        error!(target: "chat_service_trace_prompt", %session_id, character_id = %character.id, error = %e, "Failed to convert character's default system_prompt from UTF-8. No system prompt will be used.");
+                        effective_system_prompt = None; // Explicitly set to None
+                    }
+                }
+            } else {
+                warn!(target: "chat_service_trace_prompt", %session_id, character_id = %character.id, "Character's default system_prompt is None in DB. No system prompt will be used.");
+                effective_system_prompt = None; // Explicitly set to None
+            }
+        }
 
         // Fetch existing messages for the session
         let existing_messages_db: Vec<DbChatMessage> = chat_messages::table
@@ -790,7 +972,7 @@ pub async fn get_session_data_for_generation(
                 }
                 _ => {
                     trace!(message_id = %db_msg.id, "No DEK or nonce, treating message as plaintext for session {}", session_id);
-                    String::from_utf8(db_msg.content.clone()).map_err(|e| { // Clone db_msg.content
+                    String::from_utf8(db_msg.content.clone()).map_err(|e| {
                         error!(message_id = %db_msg.id, error = ?e, "Failed to convert plaintext message to UTF-8 (should be valid) for session {}", session_id);
                         AppError::InternalServerErrorGeneric(format!("Invalid UTF-8 in plaintext message {}: {}", db_msg.id, e))
                     })?
@@ -862,7 +1044,7 @@ pub async fn get_session_data_for_generation(
         );
         Ok::<GenerationDataWithUnsavedUserMessage, AppError>((
             managed_history,
-            final_system_prompt, // Use the newly constructed system prompt
+            effective_system_prompt, // Use the newly constructed system prompt
             session_temperature,
             session_max_output_tokens,
             session_frequency_penalty,
@@ -1130,12 +1312,16 @@ pub async fn stream_ai_response_and_save_message(
     let service_model_name = model_name.clone(); // Clone for use in this function scope, esp. for save_message calls
     trace!(
         ?system_prompt,
-        "stream_ai_response_and_save_message received system_prompt"
+        "stream_ai_response_and_save_message received system_prompt argument"
     );
     info!(%request_thinking, "Initiating AI stream and message saving process");
 
-    // REMOVED: Conversion from HistoryForGeneration to Vec<GenAiChatMessage>
-    // The incoming_genai_messages parameter is already in the correct format.
+    // Log the system_prompt that will be used
+    debug!(
+        target: "chat_service_system_prompt",
+        system_prompt_to_use = ?system_prompt,
+        "System prompt to be used for GenAiChatRequest construction"
+    );
 
     let mut chat_request = GenAiChatRequest::new(incoming_genai_messages) // MODIFIED: Use incoming_genai_messages directly
         .with_system(system_prompt.unwrap_or_default());

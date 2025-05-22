@@ -35,6 +35,8 @@ pub enum Commands {
     Character(CharacterArgs),
     /// Manage chat sessions
     Chat(ChatArgs),
+    /// Manage user personas
+    Persona(PersonaArgs),
 }
 
 #[derive(ClapArgs, Debug)]
@@ -144,6 +146,128 @@ pub struct ChatEditCharacterArgs {
     #[arg(long, short, default_value_t = false)]
     pub interactive: bool,
 }
+
+// --- User Persona Commands ---
+
+#[derive(ClapArgs, Debug)]
+pub struct PersonaArgs {
+    #[clap(subcommand)]
+    pub command: PersonaCommand,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum PersonaCommand {
+    /// Create a new user persona
+    Create(PersonaCreateArgs),
+    /// List all user personas
+    List,
+    /// Get details of a specific user persona
+    Get(PersonaGetArgs),
+    /// Update an existing user persona
+    Update(PersonaUpdateArgs),
+    /// Delete a user persona
+    Delete(PersonaDeleteArgs),
+}
+
+#[derive(ClapArgs, Debug, Default, Clone)]
+pub struct PersonaCreateArgs {
+    /// Persona's name (required)
+    #[arg(long)]
+    pub name: String,
+    /// Persona's description (required)
+    #[arg(long)]
+    pub description: String,
+    /// Persona's specification (e.g., "user_persona_v1")
+    #[arg(long)]
+    pub spec: Option<String>,
+    /// Version of the persona specification
+    #[arg(long, name = "spec-version")]
+    pub spec_version: Option<String>,
+    /// Persona's personality
+    #[arg(long)]
+    pub personality: Option<String>,
+    /// Persona's scenario
+    #[arg(long)]
+    pub scenario: Option<String>,
+    /// Persona's first message
+    #[arg(long, name = "first-mes")]
+    pub first_mes: Option<String>,
+    /// Persona's message example
+    #[arg(long, name = "mes-example")]
+    pub mes_example: Option<String>,
+    /// Persona's system prompt
+    #[arg(long, name = "system-prompt")]
+    pub system_prompt: Option<String>,
+    /// Persona's post history instructions
+    #[arg(long, name = "post-history-instructions")]
+    pub post_history_instructions: Option<String>,
+    /// Comma-separated tags (e.g., "tag1,tag2,tag3")
+    #[arg(long, value_parser = parse_comma_separated_list)]
+    pub tags: Option<Vec<String>>,
+    /// Avatar URL or identifier for the persona
+    #[arg(long)]
+    pub avatar: Option<String>,
+    // No interactive flag for persona creation for now, assuming direct args.
+    // If an interactive wizard is desired later, it can be added.
+}
+
+#[derive(ClapArgs, Debug, Default, Clone)]
+pub struct PersonaUpdateArgs {
+    /// The UUID of the persona to update (required)
+    #[arg(long)]
+    pub id: Uuid,
+    /// New name for the persona
+    #[arg(long)]
+    pub name: Option<String>,
+    /// New description for the persona
+    #[arg(long)]
+    pub description: Option<String>,
+    /// New specification for the persona
+    #[arg(long)]
+    pub spec: Option<String>,
+    /// New version of the persona specification
+    #[arg(long, name = "spec-version")]
+    pub spec_version: Option<String>,
+    /// New personality for the persona
+    #[arg(long)]
+    pub personality: Option<String>,
+    /// New scenario for the persona
+    #[arg(long)]
+    pub scenario: Option<String>,
+    /// New first message for the persona
+    #[arg(long, name = "first-mes")]
+    pub first_mes: Option<String>,
+    /// New message example for the persona
+    #[arg(long, name = "mes-example")]
+    pub mes_example: Option<String>,
+    /// New system prompt for the persona
+    #[arg(long, name = "system-prompt")]
+    pub system_prompt: Option<String>,
+    /// New post history instructions for the persona
+    #[arg(long, name = "post-history-instructions")]
+    pub post_history_instructions: Option<String>,
+    /// New comma-separated tags (e.g., "tag1,tag2,tag3")
+    #[arg(long, value_parser = parse_comma_separated_list)]
+    pub tags: Option<Vec<String>>,
+    /// New avatar URL or identifier for the persona
+    #[arg(long)]
+    pub avatar: Option<String>,
+}
+
+#[derive(ClapArgs, Debug)]
+pub struct PersonaGetArgs {
+    /// The UUID of the persona to retrieve
+    #[arg()] // Positional argument
+    pub id: Uuid,
+}
+
+#[derive(ClapArgs, Debug)]
+pub struct PersonaDeleteArgs {
+    /// The UUID of the persona to delete
+    #[arg()] // Positional argument
+    pub id: Uuid,
+}
+
 
 // Helper function for parsing comma-separated lists
 pub fn parse_comma_separated_list(s: &str) -> Result<Vec<String>, String> {

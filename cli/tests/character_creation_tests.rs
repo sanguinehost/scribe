@@ -1,6 +1,5 @@
 #[cfg(test)]
 mod character_creation_tests {
-    use scribe_cli::client::types::{CharacterCreateDto, ClientCharacterDataForClient};
     use scribe_cli::handlers::characters::{
         handle_character_create_oneliner, handle_character_create_wizard,
     };

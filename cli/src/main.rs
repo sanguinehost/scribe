@@ -7,11 +7,10 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tracing;
 use tracing_subscriber::{EnvFilter, fmt};
-use url::Url; // Keep this if base_url is still Url type directly in main, otherwise move to lib.rs if CliArgs is the sole user
 
 // Items imported from the library crate
 use scribe_cli::{
-    CliArgs, Commands, CharacterCommand, ChatCommand, // Clap arg structs
+    CliArgs, Commands, CharacterCommand, ChatCommand, PersonaCommand, // Clap arg structs
     client::{HttpClient, ReqwestClientWrapper},      // Client Abstraction
     error::CliError,                                 // Use our specific error type
     handlers::{
@@ -31,6 +30,10 @@ use scribe_cli::{
         chat_overrides::{
             handle_chat_edit_character_oneliner, handle_chat_edit_character_wizard,
         },
+        user_personas::{ // User Persona handlers
+            handle_persona_create_action, handle_persona_list_action, handle_persona_get_action,
+            handle_persona_update_action, handle_persona_delete_action,
+        }
     },
     io::{IoHandler, StdIoHandler}, // IO Abstraction
 };
@@ -45,6 +48,7 @@ enum MenuState {
     CharacterManagement,
     ChatManagement,
     AccountSettings,
+    PersonaManagement, // Added new state
 }
 
 // Enum to manage navigation results from menu handlers
@@ -140,6 +144,35 @@ async fn main() -> Result<()> {
                     }
                 }
             }
+            Commands::Persona(persona_args) => {
+                match persona_args.command {
+                    PersonaCommand::Create(create_args) => {
+                        if let Err(e) = handle_persona_create_action(&http_client, &mut io_handler, create_args).await {
+                            io_handler.write_line(&format!("Error creating persona: {}", e))?;
+                        }
+                    }
+                    PersonaCommand::List => {
+                        if let Err(e) = handle_persona_list_action(&http_client, &mut io_handler).await {
+                            io_handler.write_line(&format!("Error listing personas: {}", e))?;
+                        }
+                    }
+                    PersonaCommand::Get(get_args) => {
+                        if let Err(e) = handle_persona_get_action(&http_client, &mut io_handler, get_args).await {
+                            io_handler.write_line(&format!("Error getting persona: {}", e))?;
+                        }
+                    }
+                    PersonaCommand::Update(update_args) => {
+                        if let Err(e) = handle_persona_update_action(&http_client, &mut io_handler, update_args).await {
+                            io_handler.write_line(&format!("Error updating persona: {}", e))?;
+                        }
+                    }
+                    PersonaCommand::Delete(delete_args) => {
+                        if let Err(e) = handle_persona_delete_action(&http_client, &mut io_handler, delete_args).await {
+                            io_handler.write_line(&format!("Error deleting persona: {}", e))?;
+                        }
+                    }
+                }
+            }
         }
     } else {
         // Fallback to existing interactive main menu loop
@@ -215,6 +248,11 @@ async fn main() -> Result<()> {
                                     &mut io_handler,
                                     &mut logged_in_user,
                                     &mut current_model,
+                                )
+                                .await?,
+                                MenuState::PersonaManagement => handle_persona_management_menu(
+                                    &http_client,
+                                    &mut io_handler,
                                 )
                                 .await?,
                             };
@@ -300,42 +338,40 @@ async fn main() -> Result<()> {
 async fn handle_main_menu_logged_in<H: IoHandler>(
     io_handler: &mut H,
     logged_in_user: &User,
-    has_admin_role: bool,
-    has_moderator_role: bool,
+    _has_admin_role: bool, // Parameter can be kept for consistency or removed if not used
+    _has_moderator_role: bool, // Parameter can be kept for consistency or removed if not used
 ) -> MenuResult {
-    let role_str = match logged_in_user.role {
-        scribe_backend::models::users::UserRole::Administrator => "Administrator",
-        scribe_backend::models::users::UserRole::Moderator => "Moderator",
-        scribe_backend::models::users::UserRole::User => "User",
-    };
     io_handler.write_line(&format!(
         "\n--- Main Menu (User: {}, Role: {}) ---",
-        logged_in_user.username, role_str
+        logged_in_user.username, logged_in_user.role
     ))?;
 
-    if has_admin_role || has_moderator_role {
-        io_handler.write_line("[1] User & Access Management")?;
+    // Define menu options. The order here will determine the displayed number.
+    let options = [
+        ("User & Access Management", MenuState::UserManagement),
+        ("Character Management", MenuState::CharacterManagement),
+        ("Persona Management", MenuState::PersonaManagement), // New option
+        ("Chat Session Management", MenuState::ChatManagement),
+        ("My Account & Settings", MenuState::AccountSettings),
+    ];
+
+    for (i, (label, _)) in options.iter().enumerate() {
+        io_handler.write_line(&format!("[{}] {}", i + 1, label))?;
     }
-    io_handler.write_line(if has_admin_role || has_moderator_role {"[2] Character Management"} else {"[1] Character Management"})?;
-    io_handler.write_line(if has_admin_role || has_moderator_role {"[3] Chat Session Management"} else {"[2] Chat Session Management"})?;
-    io_handler.write_line(if has_admin_role || has_moderator_role {"[4] My Account & Settings"} else {"[3] My Account & Settings"})?;
     io_handler.write_line("[L] Logout")?;
     io_handler.write_line("[Q] Quit Application")?;
 
-    let choice = io_handler.read_line("Enter choice: ")?;
-    match choice.trim().to_lowercase().as_str() {
-        "1" if has_admin_role || has_moderator_role => Ok(MenuNavigation::GoTo(MenuState::UserManagement)),
-        "2" if has_admin_role || has_moderator_role => Ok(MenuNavigation::GoTo(MenuState::CharacterManagement)),
-        "3" if has_admin_role || has_moderator_role => Ok(MenuNavigation::GoTo(MenuState::ChatManagement)),
-        "4" if has_admin_role || has_moderator_role => Ok(MenuNavigation::GoTo(MenuState::AccountSettings)),
-        "1" if !(has_admin_role || has_moderator_role) => Ok(MenuNavigation::GoTo(MenuState::CharacterManagement)),
-        "2" if !(has_admin_role || has_moderator_role) => Ok(MenuNavigation::GoTo(MenuState::ChatManagement)),
-        "3" if !(has_admin_role || has_moderator_role) => Ok(MenuNavigation::GoTo(MenuState::AccountSettings)),
-        "l" => Ok(MenuNavigation::Logout),
-        "q" => Ok(MenuNavigation::Quit),
-        _ => {
-            io_handler.write_line("Invalid choice. Please try again.")?;
-            Ok(MenuNavigation::ReturnToMainMenu) // Stay in main menu effectively
+    loop {
+        let choice = io_handler.read_line("Enter choice: ")?.trim().to_lowercase();
+        match choice.as_str() {
+            "1" => return Ok(MenuNavigation::GoTo(options[0].1)),
+            "2" => return Ok(MenuNavigation::GoTo(options[1].1)),
+            "3" => return Ok(MenuNavigation::GoTo(options[2].1)), // Persona Management
+            "4" => return Ok(MenuNavigation::GoTo(options[3].1)),
+            "5" => return Ok(MenuNavigation::GoTo(options[4].1)),
+            "l" => return Ok(MenuNavigation::Logout),
+            "q" => return Ok(MenuNavigation::Quit),
+            _ => io_handler.write_line("Invalid choice, please try again.")?,
         }
     }
 }
@@ -582,6 +618,137 @@ async fn handle_account_settings_menu<C: HttpClient, H: IoHandler>(
     }
 }
 
+async fn handle_persona_management_menu<C: HttpClient, H: IoHandler>(
+    http_client: &C,
+    io_handler: &mut H,
+) -> MenuResult {
+    loop {
+        io_handler.write_line("\n--- Persona Management ---")?;
+        io_handler.write_line("[1] List My Personas")?;
+        io_handler.write_line("[2] Create Persona")?;
+        io_handler.write_line("[3] View Persona Details")?;
+        io_handler.write_line("[4] Update Persona")?;
+        io_handler.write_line("[5] Delete Persona")?;
+        io_handler.write_line("[B] Back to Main Menu")?;
+
+        let choice = io_handler.read_line("Enter choice: ")?.trim().to_lowercase();
+        match choice.as_str() {
+            "1" => {
+                if let Err(e) = handle_persona_list_action(http_client, io_handler).await {
+                    io_handler.write_line(&format!("Error listing personas: {}", e))?;
+                }
+            }
+            "2" => {
+                io_handler.write_line("Creating a new persona...")?;
+                let name = io_handler.read_line("Enter persona name: ")?;
+                let description = io_handler.read_line("Enter persona description: ")?;
+                let system_prompt_str = io_handler.read_line("Enter system prompt (optional, press Enter to skip): ")?;
+                let system_prompt = if system_prompt_str.trim().is_empty() { None } else { Some(system_prompt_str) };
+
+                // TODO: Add prompts for other fields in PersonaCreateArgs as desired
+                // spec, spec_version, personality, scenario, first_mes, mes_example, post_history_instructions, tags, avatar
+
+                let create_args = scribe_cli::PersonaCreateArgs {
+                    name,
+                    description,
+                    system_prompt,
+                    spec: None,
+                    spec_version: None,
+                    personality: None,
+                    scenario: None,
+                    first_mes: None,
+                    mes_example: None,
+                    post_history_instructions: None,
+                    tags: None,
+                    avatar: None,
+                };
+                if let Err(e) = handle_persona_create_action(http_client, io_handler, create_args).await {
+                    io_handler.write_line(&format!("Error creating persona: {}", e))?;
+                }
+            }
+            "3" => {
+                let id_str = io_handler.read_line("Enter Persona ID to view: ")?;
+                match uuid::Uuid::parse_str(&id_str) {
+                    Ok(id) => {
+                        let get_args = scribe_cli::PersonaGetArgs { id };
+                        if let Err(e) = handle_persona_get_action(http_client, io_handler, get_args).await {
+                            io_handler.write_line(&format!("Error viewing persona: {}", e))?;
+                        }
+                    }
+                    Err(_) => {
+                        io_handler.write_line("Invalid Persona ID format.")?;
+                    }
+                }
+            }
+            "4" => {
+                let id_str = io_handler.read_line("Enter Persona ID to update: ")?;
+                match uuid::Uuid::parse_str(&id_str) {
+                    Ok(id) => {
+                        io_handler.write_line("Enter new values. Press Enter to keep current value.")?;
+                        let name_str = io_handler.read_line("New name (optional): ")?;
+                        let name = if name_str.trim().is_empty() { None } else { Some(name_str) };
+
+                        let description_str = io_handler.read_line("New description (optional): ")?;
+                        let description = if description_str.trim().is_empty() { None } else { Some(description_str) };
+                        
+                        let system_prompt_str = io_handler.read_line("New system prompt (optional): ")?;
+                        let system_prompt = if system_prompt_str.trim().is_empty() { None } else { Some(system_prompt_str) };
+                        
+                        // TODO: Add prompts for other updatable fields in PersonaUpdateArgs
+                        // spec, spec_version, personality, scenario, first_mes, mes_example, post_history_instructions, tags, avatar
+
+                        if name.is_none() && description.is_none() && system_prompt.is_none() /* && other_fields.is_none()... */ {
+                            io_handler.write_line("No changes specified. Aborting update.")?;
+                        } else {
+                            let update_args = scribe_cli::PersonaUpdateArgs {
+                                id,
+                                name,
+                                description,
+                                system_prompt,
+                                spec: None, // Add other fields as None or prompt for them
+                                spec_version: None,
+                                personality: None,
+                                scenario: None,
+                                first_mes: None,
+                                mes_example: None,
+                                post_history_instructions: None,
+                                tags: None,
+                                avatar: None,
+                            };
+                            if let Err(e) = handle_persona_update_action(http_client, io_handler, update_args).await {
+                                io_handler.write_line(&format!("Error updating persona: {}", e))?;
+                            }
+                        }
+                    }
+                    Err(_) => {
+                        io_handler.write_line("Invalid Persona ID format.")?;
+                    }
+                }
+            }
+            "5" => {
+                let id_str = io_handler.read_line("Enter Persona ID to delete: ")?;
+                match uuid::Uuid::parse_str(&id_str) {
+                    Ok(id) => {
+                        let confirm = io_handler.read_line(&format!("Are you sure you want to delete persona {}? (yes/no): ", id_str))?;
+                        if confirm.trim().to_lowercase() == "yes" {
+                            let delete_args = scribe_cli::PersonaDeleteArgs { id };
+                            if let Err(e) = handle_persona_delete_action(http_client, io_handler, delete_args).await {
+                                io_handler.write_line(&format!("Error deleting persona: {}", e))?;
+                            }
+                        } else {
+                            io_handler.write_line("Deletion cancelled.")?;
+                        }
+                    }
+                    Err(_) => {
+                        io_handler.write_line("Invalid Persona ID format.")?;
+                    }
+                }
+            }
+            "b" => return Ok(MenuNavigation::ReturnToMainMenu),
+            _ => io_handler.write_line("Invalid choice. Please try again.")?,
+        }
+    }
+}
 
 #[cfg(test)]
 mod tests {

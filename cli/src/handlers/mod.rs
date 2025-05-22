@@ -11,6 +11,7 @@ pub mod health;
 pub mod model;
 pub mod start_chat;
 pub mod streaming; // Add the default settings module
+pub mod user_personas;
 
 // For tests
 // pub mod test_helpers; // Moved to lib.rs
@@ -35,3 +36,7 @@ pub use self::default_settings::handle_default_settings_action;
 pub use self::health::handle_health_check_action;
 pub use self::model::handle_model_settings_action;
 pub use self::start_chat::handle_start_chat_action;
+pub use self::user_personas::{
+    handle_persona_create_action, handle_persona_list_action, handle_persona_get_action,
+    handle_persona_update_action, handle_persona_delete_action,
+};

@@ -2,10 +2,54 @@ use crate::chat::run_interactive_streaming_chat_loop;
 use crate::client::HttpClient;
 use crate::error::CliError;
 use crate::handlers::characters::select_character;
+use crate::handlers::user_personas::get_user_personas;
 use crate::handlers::default_settings::apply_default_settings_to_session;
 use crate::io::IoHandler;
 use scribe_backend::models::chats::UpdateChatSettingsRequest;
 use tracing;
+use uuid::Uuid;
+
+/// Helper function to allow the user to select a persona for the chat.
+async fn select_persona_for_chat<H: IoHandler, C: HttpClient>(
+    client: &C,
+    io_handler: &mut H,
+) -> Result<Option<Uuid>, CliError> {
+    match get_user_personas(client).await {
+        Ok(personas) => {
+            if personas.is_empty() {
+                io_handler.write_line("No custom personas found. Starting chat without a specific persona.")?;
+                return Ok(None);
+            }
+
+            io_handler.write_line("\nAvailable custom personas:")?;
+            for (index, persona) in personas.iter().enumerate() {
+                io_handler.write_line(&format!("  [{}] {} (ID: {})", index + 1, persona.name, persona.id))?;
+            }
+            io_handler.write_line("  [N] Continue without a custom persona")?;
+
+            loop {
+                let choice_str = io_handler.read_line("Select persona by number or N to continue without: ")?;
+                if choice_str.trim().eq_ignore_ascii_case("n") {
+                    return Ok(None);
+                }
+                match choice_str.trim().parse::<usize>() {
+                    Ok(num) if num > 0 && num <= personas.len() => {
+                        let selected_persona = &personas[num - 1];
+                        io_handler.write_line(&format!("Using persona: {}", selected_persona.name))?;
+                        return Ok(Some(selected_persona.id));
+                    }
+                    _ => {
+                        io_handler.write_line("Invalid selection, please try again.")?;
+                    }
+                }
+            }
+        }
+        Err(e) => {
+            io_handler.write_line(&format!("Error fetching personas: {}. Continuing without persona selection.", e))?;
+            Ok(None) // Proceed without persona if fetching fails
+        }
+    }
+}
 
 /// Handler function for starting a new chat session with improved UX
 pub async fn handle_start_chat_action<H: IoHandler, C: HttpClient>(
@@ -16,6 +60,14 @@ pub async fn handle_start_chat_action<H: IoHandler, C: HttpClient>(
     // 1. Select a character
     let character_id = select_character(client, io_handler).await?;
     tracing::info!(%character_id, "Character selected for chat");
+
+    // 1b. Select a Persona (New Step)
+    let selected_persona_id = select_persona_for_chat(client, io_handler).await?;
+    if let Some(persona_id) = selected_persona_id {
+        tracing::info!(%character_id, %persona_id, "Persona selected for chat");
+    } else {
+        tracing::info!(%character_id, "No persona selected for chat");
+    }
 
     let mut first_mes_content: Option<String> = None;
 
@@ -45,7 +97,7 @@ pub async fn handle_start_chat_action<H: IoHandler, C: HttpClient>(
     };
 
     // 2. Create the chat session
-    let chat_session = match client.create_chat_session(character_id).await {
+    let chat_session = match client.create_chat_session(character_id, selected_persona_id).await {
         Ok(session) => session,
         Err(e) => {
             tracing::error!(error = ?e, %character_id, "Failed to create chat session");

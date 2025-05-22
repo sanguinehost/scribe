@@ -1,8 +1,6 @@
 #[cfg(test)]
 mod chat_override_tests {
-    use scribe_cli::client::types::{
-        ChatSessionDetails, ClientCharacterDataForClient, OverrideSuccessResponse,
-    };
+    use scribe_cli::client::types::{ChatSessionDetails, OverrideSuccessResponse};
     use scribe_cli::handlers::chat_overrides::{
         handle_chat_edit_character_oneliner, handle_chat_edit_character_wizard,
     };

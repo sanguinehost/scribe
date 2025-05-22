@@ -108,7 +108,12 @@ fn default_chunking_overlap() -> usize {
     20
 } // Default for word metric
 fn default_tokenizer_model_path() -> Option<String> {
-    Some("resources/tokenizers/gemma.model".to_string())
+    let manifest_dir = env!("CARGO_MANIFEST_DIR");
+    let model_path = std::path::Path::new(manifest_dir)
+        .join("resources")
+        .join("tokenizers")
+        .join("gemma.model");
+    Some(model_path.to_string_lossy().into_owned())
 } // Path relative to crate root (backend/)
 fn default_token_counter_default_model() -> Option<String> {
     Some("gemini-2.5-flash-preview-04-17".to_string())

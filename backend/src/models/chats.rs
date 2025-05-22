@@ -137,6 +137,9 @@ pub struct NewChat {
     pub history_management_limit: i32,
     pub model_name: String,
     pub visibility: Option<String>,
+    // Added to match schema and Chat struct
+    pub active_custom_persona_id: Option<Uuid>,
+    pub active_impersonated_character_id: Option<Uuid>,
 }
 
 impl std::fmt::Debug for NewChat {
@@ -155,6 +158,9 @@ impl std::fmt::Debug for NewChat {
             .field("history_management_limit", &self.history_management_limit)
             .field("model_name", &self.model_name)
             .field("visibility", &self.visibility)
+            // Added to debug output
+            .field("active_custom_persona_id", &self.active_custom_persona_id)
+            .field("active_impersonated_character_id", &self.active_impersonated_character_id)
             .finish()
     }
 }
@@ -850,12 +856,14 @@ impl std::fmt::Debug for NewChatMessageRequest {
 #[derive(Deserialize)] // Removed Debug
 pub struct CreateChatSessionPayload {
     pub character_id: Uuid,
+    pub active_custom_persona_id: Option<Uuid>, // Added new field
 }
 
 impl std::fmt::Debug for CreateChatSessionPayload {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("CreateChatSessionPayload")
             .field("character_id", &self.character_id)
+            .field("active_custom_persona_id", &self.active_custom_persona_id)
             .finish()
     }
 }

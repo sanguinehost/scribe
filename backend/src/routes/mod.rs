@@ -5,3 +5,4 @@ pub mod chat;
 pub mod chats;
 pub mod documents;
 pub mod health;
+pub mod user_persona_routes;

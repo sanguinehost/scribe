@@ -27,6 +27,7 @@ use scribe_backend::routes::{
     chat::chat_routes,
     chats,
     documents::document_routes,
+    user_persona_routes::user_personas_router, // Added for user persona routes
 };
 use scribe_backend::state::AppState;
 
@@ -55,6 +56,8 @@ use axum_server::tls_rustls::RustlsConfig; // <-- ADD this
 use rustls::crypto::ring;
 use std::path::PathBuf; // <-- Add PathBuf import // <-- Import the ring provider module
 use scribe_backend::services::chat_override_service::ChatOverrideService; // <<< ADDED IMPORT
+use scribe_backend::services::encryption_service::EncryptionService;
+use scribe_backend::services::user_persona_service::UserPersonaService; // <<< ADDED THIS IMPORT
 
 // Define the embedded migrations macro
 pub const MIGRATIONS: EmbeddedMigrations = embed_migrations!("./migrations");
@@ -175,13 +178,25 @@ async fn main() -> Result<()> {
 
     // --- Initialize Encryption Service (shared) ---
     // Assuming EncryptionService is cheap to create and stateless for now, or managed internally if it needs more setup
-    let encryption_service_arc = Arc::new(scribe_backend::services::encryption_service::EncryptionService::new());
+    let encryption_service = EncryptionService::new();
+    let encryption_service_arc = Arc::new(encryption_service);
 
     // --- Initialize Chat Override Service ---
-    tracing::info!("Initializing ChatOverrideService...");
-    let chat_override_service = ChatOverrideService::new(pool.clone(), encryption_service_arc.clone()); // Pass DB pool and encryption service
+    let encryption_service_arc_for_chat_override = encryption_service_arc.clone(); // Clone Arc for ChatOverrideService
+    let chat_override_service = ChatOverrideService::new(
+        pool.clone(),
+        encryption_service_arc_for_chat_override,
+    );
     let chat_override_service_arc = Arc::new(chat_override_service);
     tracing::info!("ChatOverrideService initialized.");
+
+    // --- Create User Persona Service ---
+    let encryption_service_arc_for_persona = encryption_service_arc.clone(); // Clone Arc for UserPersonaService
+    let user_persona_service = UserPersonaService::new(
+        pool.clone(), 
+        encryption_service_arc_for_persona
+    );
+    let user_persona_service_arc = Arc::new(user_persona_service);
 
     // --- Session Store Setup ---
     // Ideally load from config/env, generating is okay for dev
@@ -236,6 +251,7 @@ async fn main() -> Result<()> {
         qdrant_service_arc,
         embedding_pipeline_service, // Add the embedding pipeline service
         chat_override_service_arc,  // <<< PASSING THE SERVICE TO APPSTATE
+        user_persona_service_arc, // <<< PASSING THE NEW SERVICE TO APPSTATE
         hybrid_token_counter_arc,   // Added
     );
 
@@ -249,6 +265,8 @@ async fn main() -> Result<()> {
         .nest("/chats", chats::chat_routes()) // API routes for chat sessions - mounted at /api/chats
         // Mount document API routes
         .nest("/documents", document_routes()) // Corrected: /api/documents
+        // User Persona routes (require login)
+        .nest("/personas", user_personas_router(app_state.clone()))
         // Admin routes (require login + admin role check in handlers)
         .nest("/admin", admin_routes())
         .route_layer(login_required!(AuthBackend)); // Simplify macro: remove user type (i64)

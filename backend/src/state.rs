@@ -19,6 +19,7 @@ use crate::vector_db::qdrant_client::QdrantClientServiceTrait;
 // use crate::services::email_service::EmailService; // For email service
 use crate::services::hybrid_token_counter::HybridTokenCounter; // Added for token counting
 use crate::services::chat_override_service::ChatOverrideService; // <<< ADDED THIS IMPORT
+use crate::services::user_persona_service::UserPersonaService; // <<< ADDED THIS IMPORT
 use std::fmt;
 use uuid::Uuid; // For embedding_call_tracker // For manual Debug impl
 
@@ -43,6 +44,7 @@ pub struct AppState {
     pub qdrant_service: Arc<dyn QdrantClientServiceTrait + Send + Sync>,
     pub embedding_pipeline_service: Arc<dyn EmbeddingPipelineServiceTrait + Send + Sync>, // Add Send + Sync
     pub chat_override_service: Arc<ChatOverrideService>, // <<< ADDED THIS FIELD
+    pub user_persona_service: Arc<UserPersonaService>, // <<< ADDED THIS FIELD
     // Remove #[cfg(test)]
     pub embedding_call_tracker: Arc<TokioMutex<Vec<Uuid>>>, // Track message IDs for embedding calls
     pub token_counter: Arc<HybridTokenCounter>,             // Added for token counting
@@ -62,6 +64,7 @@ impl fmt::Debug for AppState {
                 &"<Arc<dyn EmbeddingPipelineServiceTrait>>",
             )
             .field("chat_override_service", &"<Arc<ChatOverrideService>>") // <<< ADDED THIS LINE FOR DEBUG
+            .field("user_persona_service", &"<Arc<UserPersonaService>>") // <<< ADDED THIS LINE FOR DEBUG
             .field("embedding_call_tracker", &"<Arc<TokioMutex<Vec<Uuid>>>>") // Or try to debug its contents if safe
             .field("token_counter", &"<Arc<HybridTokenCounter>>") // Added
             .finish()
@@ -79,6 +82,7 @@ impl AppState {
         qdrant_service: Arc<dyn QdrantClientServiceTrait + Send + Sync>,
         embedding_pipeline_service: Arc<dyn EmbeddingPipelineServiceTrait + Send + Sync>, // Add Send + Sync
         chat_override_service: Arc<ChatOverrideService>, // <<< ADDED THIS PARAMETER
+        user_persona_service: Arc<UserPersonaService>, // <<< ADDED THIS PARAMETER
         token_counter: Arc<HybridTokenCounter>,                                           // Added
     ) -> Self {
         Self {
@@ -91,6 +95,7 @@ impl AppState {
             qdrant_service,             // Assign the trait object
             embedding_pipeline_service, // Add this assignment
             chat_override_service,    // <<< ADDED THIS ASSIGNMENT
+            user_persona_service,     // <<< ADDED THIS ASSIGNMENT
             // Remove #[cfg(test)]
             embedding_call_tracker: Arc::new(TokioMutex::new(Vec::new())), // Initialize tracker for tests
             token_counter,                                                 // Added

@@ -375,7 +375,7 @@ mod tests {
         assert_eq!(client_empty_desc_with_dek.personality, None);
 
         let client_empty_desc_without_dek = persona_empty_desc.clone().into_data_for_client(None).await.unwrap();
-        assert_eq!(client_empty_desc_without_dek.description, ""); // Empty description becomes empty string even without DEK
+        assert_eq!(client_empty_desc_without_dek.description, "[Encrypted]".to_string());
         assert_eq!(client_empty_desc_without_dek.personality, None);
     }
 

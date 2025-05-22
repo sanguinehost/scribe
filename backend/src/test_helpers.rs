@@ -18,7 +18,7 @@ models::chats::{ChatMessage, UpdateChatSettingsRequest}, // Added UpdateChatSett
 models::users::AccountStatus,
 routes::{
     auth as auth_routes_module, characters, chat::chat_routes, chats,
-    documents::document_routes, health::health_check,
+    documents::document_routes, health::health_check, user_persona_routes,
 },
 schema,
 state::AppState,
@@ -28,6 +28,7 @@ services::gemini_token_client::GeminiTokenClient,
 services::hybrid_token_counter::HybridTokenCounter,
 services::tokenizer_service::TokenizerService,
 // text_processing::chunking::{ChunkConfig, ChunkingMetric}, // Removed unused imports
+services::user_persona_service::UserPersonaService, // <<< ADDED THIS IMPORT
 vector_db::qdrant_client::QdrantClientService, // Import constants module alias
 };
 use anyhow::Context; // Added for TestDataGuard cleanup
@@ -425,6 +426,7 @@ impl MockQdrantClientService {
         response.unwrap_or(Ok(()))
     }
 
+    #[allow(dead_code)]
     async fn search_points(
         &self,
         vector: Vec<f32>,
@@ -444,7 +446,7 @@ impl MockQdrantClientService {
         let opt_response = self.search_response.lock().unwrap().take();
         tracing::info!(
             target: "mock_qdrant_search",
-            "MockQdrantClientService::search_points (trait): taken response option is: {:?}", 
+            "MockQdrantClientService::search_points (trait): taken response option is: {:?}",
             opt_response.as_ref().map(|res| match res {
                 Ok(v) => format!("Ok(len={})", v.len()),
                 Err(e) => format!("Err({})", e)
@@ -453,7 +455,7 @@ impl MockQdrantClientService {
         let result_to_return = opt_response.unwrap_or(Ok(vec![]));
         tracing::info!(
             target: "mock_qdrant_search",
-            "MockQdrantClientService::search_points (trait): result_to_return is: {:?}", 
+            "MockQdrantClientService::search_points (trait): result_to_return is: {:?}",
             match &result_to_return {
                 Ok(v) => format!("Ok(len={})", v.len()),
                 Err(e) => format!("Err({})", e)
@@ -462,6 +464,7 @@ impl MockQdrantClientService {
         result_to_return
     }
 
+    #[allow(dead_code)]
     async fn retrieve_points(
         &self,
         _filter: Option<Filter>,
@@ -472,10 +475,12 @@ impl MockQdrantClientService {
         response.unwrap_or(Ok(vec![]))
     }
 
+    #[allow(dead_code)]
     async fn delete_points(&self, _point_ids: Vec<PointId>) -> Result<(), AppError> {
         Ok(()) // Just return success for the mock
     }
 
+    #[allow(dead_code)]
     async fn update_collection_settings(&self) -> Result<(), AppError> {
         Ok(()) // Just return success for the mock
     }
@@ -585,6 +590,7 @@ pub struct TestApp {
     pub qdrant_service: Arc<dyn QdrantClientServiceTrait + Send + Sync>, // Use trait object
     // Optionally store the mock Qdrant client for tests that need mock-specific methods
     pub mock_qdrant_service: Option<Arc<MockQdrantClientService>>,
+    pub user_persona_service: Arc<UserPersonaService>, // <<< ADDED THIS FIELD
     pub embedding_call_tracker: Arc<TokioMutex<Vec<uuid::Uuid>>>,
 }
 
@@ -699,6 +705,7 @@ pub async fn spawn_app(multi_thread: bool, use_real_ai: bool, use_real_qdrant: b
 
     let encryption_service_arc = Arc::new(EncryptionService::new());
     let chat_override_service_arc = Arc::new(ChatOverrideService::new(pool.clone(), encryption_service_arc.clone()));
+    let user_persona_service_arc = Arc::new(UserPersonaService::new(pool.clone(), encryption_service_arc.clone())); // <<< ADDED THIS
 
     let app_state_inner = AppState::new(
         pool.clone(),
@@ -708,6 +715,7 @@ pub async fn spawn_app(multi_thread: bool, use_real_ai: bool, use_real_qdrant: b
         qdrant_service_for_state.clone(),   // Cloned
         embedding_pipeline_service_for_state.clone(), // Cloned
         chat_override_service_arc.clone(), // Cloned
+        user_persona_service_arc.clone(), // <<< ADDED THIS ARGUMENT
         hybrid_token_counter_arc.clone(), // Cloned
     );
 
@@ -746,6 +754,7 @@ pub async fn spawn_app(multi_thread: bool, use_real_ai: bool, use_real_qdrant: b
         .nest("/chat", chat_routes(app_state_inner.clone()))
         .nest("/chats", chats::chat_routes()) // Assuming this returns Router<AppState> or is already stateful
         .nest("/documents", document_routes()) // Assuming this returns Router<AppState> or is already stateful
+        .nest("/personas", user_persona_routes::user_personas_router(app_state_inner.clone())) // Add persona routes
         .route_layer(middleware::from_fn_with_state(app_state_inner.clone(), auth_log_wrapper));
 
     // Combine public and protected routes before nesting under /api
@@ -780,6 +789,7 @@ pub async fn spawn_app(multi_thread: bool, use_real_ai: bool, use_real_qdrant: b
         mock_embedding_pipeline_service: mock_embedding_pipeline_service_instance,
         qdrant_service: qdrant_service_for_state,
         mock_qdrant_service: mock_qdrant_service_for_test_app,
+        user_persona_service: user_persona_service_arc, // <<< ADDED THIS INITIALIZATION
         embedding_call_tracker: embedding_call_tracker_for_state,
     }
 }

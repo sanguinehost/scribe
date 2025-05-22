@@ -377,8 +377,12 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn test_count_tokens() {
-        let api_key =
-            std::env::var("GEMINI_API_KEY").expect("GEMINI_API_KEY environment variable not set");
+        let api_key_result = std::env::var("GEMINI_API_KEY");
+        if api_key_result.is_err() {
+            println!("GEMINI_API_KEY not set, skipping test_count_tokens.");
+            return;
+        }
+        let api_key = api_key_result.unwrap();
 
         let client = GeminiTokenClient::new(api_key);
         let text = "The quick brown fox jumps over the lazy dog.";
@@ -397,8 +401,12 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn test_count_tokens_chat() {
-        let api_key =
-            std::env::var("GEMINI_API_KEY").expect("GEMINI_API_KEY environment variable not set");
+        let api_key_result = std::env::var("GEMINI_API_KEY");
+        if api_key_result.is_err() {
+            println!("GEMINI_API_KEY not set, skipping test_count_tokens_chat.");
+            return;
+        }
+        let api_key = api_key_result.unwrap();
 
         let client = GeminiTokenClient::new(api_key);
         let messages = vec![

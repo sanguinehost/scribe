@@ -52,6 +52,7 @@ pub mod recovery_key_tests;
 pub mod token_counter_tests;
 pub mod tokenizer_tests;
 pub mod user_store_tests;
+pub mod user_persona_api_tests; // Added for User Persona API tests
 
 // New characters test module (directory)
 pub mod characters;

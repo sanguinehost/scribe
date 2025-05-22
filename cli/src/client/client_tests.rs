@@ -696,6 +696,8 @@ async fn test_list_chat_sessions_success() {
             model_name: "default-model".to_string(),
             gemini_thinking_budget: None,
             gemini_enable_code_execution: None,
+            active_custom_persona_id: None,
+            active_impersonated_character_id: None,
         },
         Chat {
             id: session2_id,
@@ -722,6 +724,8 @@ async fn test_list_chat_sessions_success() {
             model_name: "default-model".to_string(),
             gemini_thinking_budget: None,
             gemini_enable_code_execution: None,
+            active_custom_persona_id: None,
+            active_impersonated_character_id: None,
         },
     ];
 
@@ -944,7 +948,9 @@ async fn test_create_chat_session_success() {
         model_name: "default-model".to_string(),
         gemini_thinking_budget: None,
         gemini_enable_code_execution: None,
-    };
+        active_custom_persona_id: None,
+        active_impersonated_character_id: None,
+};
 
     let request_payload = json!({ "character_id": character_id });
 

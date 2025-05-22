@@ -125,6 +125,7 @@ rstest = "0.25.0"
 serial_test = "3.0.0"
 log = "0.4" # Add log crate for testing
 ctor = "0.2.1" # For running code at test startup
+dotenvy = "0.15"
 
 # Testing utilities
 httpc-test = "0.1.10" # For testing axum handlers
