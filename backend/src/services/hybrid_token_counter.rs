@@ -494,16 +494,21 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn test_api_token_counting() {
-        let api_key =
-            std::env::var("GEMINI_API_KEY").expect("GEMINI_API_KEY environment variable not set");
+        let api_key_result = std::env::var("GEMINI_API_KEY");
+        if api_key_result.is_err() {
+            println!("GEMINI_API_KEY not set, skipping test_api_token_counting.");
+            return;
+        }
+        let api_key = api_key_result.unwrap();
 
+        let model_name = "gemini-2.5-flash-preview-04-17";
+        let client = GeminiTokenClient::new(api_key.clone());
         let model_path = get_test_model_path();
         let tokenizer = TokenizerService::new(model_path).expect("Failed to create tokenizer");
-        let api_client = GeminiTokenClient::new(api_key);
         let counter = HybridTokenCounter::new(
             tokenizer,
-            Some(api_client),
-            "gemini-2.5-flash-preview-04-17",
+            Some(client),
+            model_name,
         );
 
         let text = "The quick brown fox jumps over the lazy dog.";

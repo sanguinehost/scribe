@@ -13,7 +13,9 @@ use std::pin::Pin;
 use uuid::Uuid;
 
 // Re-exporting local types from super::types for use in the trait definition
-use super::types::{
+use crate::client::types::{ // Changed from super::types to crate::client::types
+    // User persona types are now directly available under crate::client::types
+    CreateUserPersonaDto, UpdateUserPersonaDto, UserPersonaDataForClient,
     AdminUserDetailResponse,
     // UpdateUserRoleRequest is used as a payload, not a return type here
     AdminUserListResponse,
@@ -42,7 +44,7 @@ pub trait HttpClient: Send + Sync {
 
     // Characters
     async fn list_characters(&self) -> Result<Vec<ClientCharacterDataForClient>, CliError>;
-    async fn create_chat_session(&self, character_id: Uuid) -> Result<Chat, CliError>;
+    async fn create_chat_session(&self, character_id: Uuid, active_custom_persona_id: Option<Uuid>) -> Result<Chat, CliError>;
     async fn upload_character(
         &self,
         name: &str,
@@ -62,6 +64,20 @@ pub trait HttpClient: Send + Sync {
         character_update_data: CharacterUpdateDto,
     ) -> Result<ClientCharacterDataForClient, CliError>;
 
+    // User Personas
+    async fn create_user_persona(
+        &self,
+        persona_data: CreateUserPersonaDto,
+    ) -> Result<UserPersonaDataForClient, CliError>;
+    async fn list_user_personas(&self) -> Result<Vec<UserPersonaDataForClient>, CliError>;
+    async fn get_user_persona(&self, persona_id: Uuid) -> Result<UserPersonaDataForClient, CliError>;
+    async fn update_user_persona(
+        &self,
+        persona_id: Uuid,
+        persona_data: UpdateUserPersonaDto,
+    ) -> Result<UserPersonaDataForClient, CliError>;
+    async fn delete_user_persona(&self, persona_id: Uuid) -> Result<(), CliError>;
+ 
     // Chat
     async fn list_chat_sessions(&self) -> Result<Vec<Chat>, CliError>;
     async fn get_chat_session(&self, session_id: Uuid) -> Result<ChatSessionDetails, CliError>;

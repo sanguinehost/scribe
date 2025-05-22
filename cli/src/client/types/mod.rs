@@ -1,4 +1,14 @@
-// cli/src/client/types.rs
+//! This module aggregates all DTOs used for client-server communication.
+
+pub mod user_personas;
+// Add other type modules here as needed, e.g.:
+// pub mod characters;
+// pub mod chat_sessions;
+
+// Potentially re-export common types if desired for easier access
+pub use self::user_personas::{CreateUserPersonaDto, UserPersonaDataForClient, UpdateUserPersonaDto};
+
+// --- Content from old cli/src/client/types.rs below ---
 
 use bigdecimal::BigDecimal;
 use chrono::{DateTime, Utc};

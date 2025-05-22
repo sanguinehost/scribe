@@ -188,14 +188,8 @@ async fn generate_chat_response_uses_session_settings() -> Result<(), anyhow::Er
         "identifier": user.username,
         "password": "password",
     });
-    let login_request = Request::builder()
-        .method(Method::POST)
-        .uri("/api/auth/login")
-        .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
-        .body(Body::from(serde_json::to_string(&login_payload)?))?;
-
     info!("Sending login request");
-    // let login_response = test_app.router.clone().oneshot(login_request).await?; // OLD WAY
+    // let login_response = test_app.router.clone().oneshot(login_request).await?; // OLD WAY, login_request was used here
     
     // New way using reqwest client
     let client = reqwest::Client::builder().cookie_store(true).build()?; // Enable cookie store

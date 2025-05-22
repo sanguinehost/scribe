@@ -47,6 +47,9 @@ path = "src/lib.rs"
 [dev-dependencies]
 # Add dev dependencies if needed for CLI-specific tests
 chrono = { version = "0.4", features = ["serde"] }
+assert_cmd = "2.0"
+predicates = "3.1.0"
+regex = "1.5" # Added regex for parsing output in tests
 
 [[bin]]
 name = "scribe-cli"

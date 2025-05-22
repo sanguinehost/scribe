@@ -1,6 +1,5 @@
 #[cfg(test)]
 mod character_editing_tests {
-    use scribe_cli::client::types::{CharacterUpdateDto, ClientCharacterDataForClient};
     use scribe_cli::handlers::characters::{
         handle_character_edit_oneliner, handle_character_edit_wizard,
     };

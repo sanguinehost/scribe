@@ -23,6 +23,16 @@ pub enum UserRole {
     Administrator,
 }
 
+impl std::fmt::Display for UserRole {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            UserRole::User => write!(f, "User"),
+            UserRole::Moderator => write!(f, "Moderator"),
+            UserRole::Administrator => write!(f, "Administrator"),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, diesel_derive_enum::DbEnum)]
 #[ExistingTypePath = "crate::schema::sql_types::AccountStatus"]
 pub enum AccountStatus {
@@ -131,7 +141,7 @@ impl std::fmt::Debug for UserDbQuery {
             .field("password_hash", &"<omitted>")
             .field("created_at", &self.created_at)
             .field("updated_at", &self.updated_at)
-            .field("email", &"<omitted>")
+            .field("email", &self.email)
             .field("kek_salt", &self.kek_salt)
             .field("encrypted_dek", &"<omitted>")
             .field(
@@ -151,8 +161,8 @@ impl std::fmt::Debug for UserDbQuery {
 }
 
 // Main User struct for application logic - includes non-DB 'dek' field
-// Removed Queryable, Selectable. Kept Identifiable for AuthUser.
-#[derive(Identifiable, Serialize, Deserialize)]
+// Removed Queryable and Selectable. Kept Identifiable for AuthUser.
+#[derive(Identifiable, Serialize, Deserialize)] // <<< REMOVED Selectable
 #[diesel(table_name = users)] // Identifiable needs this to know the table for the ID.
 #[diesel(primary_key(id))] // Explicitly state primary key for Identifiable
 pub struct User {
@@ -192,7 +202,7 @@ impl std::fmt::Debug for User {
         f.debug_struct("User")
             .field("id", &self.id)
             .field("username", &self.username)
-            .field("email", &"<omitted>")
+            .field("email", &self.email)
             .field("password_hash", &"<omitted>")
             .field("kek_salt", &self.kek_salt)
             .field("encrypted_dek", &"<omitted>")
@@ -313,7 +323,7 @@ impl std::fmt::Debug for NewUser {
         f.debug_struct("NewUser")
             .field("username", &self.username)
             .field("password_hash", &"<omitted>")
-            .field("email", &"<omitted>")
+            .field("email", &self.email)
             .field("kek_salt", &self.kek_salt)
             .field("encrypted_dek", &"<omitted>")
             .field(

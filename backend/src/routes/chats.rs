@@ -187,6 +187,7 @@ pub async fn create_chat_handler(
         app_state,
         user.id,
         payload.character_id,
+        None, // Added missing active_custom_persona_id argument
         user_dek_arc, // Pass Option<Arc<SecretBox>> instead of Option<&SecretBox>
     )
     .await?;

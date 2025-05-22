@@ -3,9 +3,9 @@
 use crate::auth::session_dek::SessionDek;
 use crate::auth::user_store::Backend as AuthBackend;
 use crate::errors::AppError;
-use crate::models::characters::Character;
+// Unused import: crate::models::characters::Character;
 use crate::models::chats::CreateChatSessionPayload;
-use crate::models::chats::NewChat;
+// Unused import: crate::models::chats::NewChat;
 use crate::models::chats::{
     Chat, GenerateChatRequest, MessageRole, SuggestedActionItem, SuggestedActionsRequest,
     SuggestedActionsResponse,
@@ -27,7 +27,7 @@ use axum::{
 };
 use axum_login::AuthSession;
 use bigdecimal::ToPrimitive;
-use chrono::Utc;
+// Unused import: chrono::Utc;
 use diesel::{ExpressionMethods, QueryDsl, RunQueryDsl, SelectableHelper, prelude::*};
 use futures_util::StreamExt;
 use genai::chat::{
@@ -70,7 +70,7 @@ pub struct ChatSessionWithDekResponse {
 pub async fn create_chat_session_handler(
     State(state): State<AppState>,
     auth_session: CurrentAuthSession,
-    _session_dek: SessionDek, // Mark as unused for now, will be used for character system prompt
+    session_dek: SessionDek, // Renamed from _session_dek as it will be used
     Json(payload): Json<CreateChatSessionPayload>,
 ) -> Result<(StatusCode, Json<Chat>), AppError> {
     info!("Attempting to create new chat session");
@@ -85,111 +85,26 @@ pub async fn create_chat_session_handler(
         "character_id",
         &tracing::field::display(payload.character_id),
     );
+    if let Some(persona_id) = payload.active_custom_persona_id {
+        tracing::Span::current().record(
+            "active_custom_persona_id",
+            &tracing::field::display(persona_id),
+        );
+    }
 
-    debug!(user_id = %user_id, character_id = %payload.character_id, "User and character ID extracted");
+    debug!(user_id = %user_id, character_id = %payload.character_id, active_custom_persona_id=?payload.active_custom_persona_id, "User, character, and persona ID extracted");
 
-    // Fetch the character to ensure it exists and to get its name
-    let character = state.pool.get().await
-        .map_err(|e| AppError::DbPoolError(e.to_string()))?
-        .interact(move |conn| {
-            crate::schema::characters::table
-                .filter(crate::schema::characters::id.eq(payload.character_id))
-                .filter(crate::schema::characters::user_id.eq(user_id)) // Ensure user owns character
-                .select(Character::as_select())
-                .first::<Character>(conn)
-                .optional() // Use optional to handle not found case gracefully
-        })
-        .await
-        .map_err(|e| AppError::InternalServerErrorGeneric(format!("Interact error fetching character: {}", e)))? // First ? handles InteractError
-        ? // Second ? handles diesel::result::Error, converting it to AppError if necessary
-        .ok_or_else(|| {
-            error!(character_id = %payload.character_id, user_id = %user_id, "Character not found or user does not have access");
-            AppError::NotFound(format!("Character with ID {} not found or access denied.", payload.character_id))
-        })?;
-
-    debug!(character_name = %character.name, "Character fetched successfully");
-
-    let new_chat_id = Uuid::new_v4();
-    let chat_title = format!("Chat with {}", character.name);
-    let current_time = Utc::now();
-
-    // TODO: Inherit defaults from character (system_prompt, model_name, temperature, etc.)
-    // For now, using hardcoded defaults for simplicity.
-    // let character_system_prompt = if let (Some(sp_data), Some(sp_nonce)) = (&character.system_prompt, &character.system_prompt_nonce) {
-    //     if !sp_data.is_empty() && !sp_nonce.is_empty() {
-    //         // Assuming SessionDek holds the user's DEK needed for character field decryption
-    //         // This part needs careful handling of the DEK.
-    //         // For now, we'll skip decrypting and use a default or None.
-    //         // let decrypted_sp = crate::crypto::decrypt_gcm(sp_data, sp_nonce, session_dek.0.expose_secret())
-    //         //     .map_err(|e| {
-    //         //         error!("Failed to decrypt character system prompt: {}", e);
-    //         //         AppError::InternalServerErrorGeneric("Failed to decrypt character settings".to_string())
-    //         //     })
-    //         //     .and_then(|bytes| String::from_utf8(bytes).map_err(|e| {
-    //         //         error!("Invalid UTF-8 in decrypted character system prompt: {}", e);
-    //         //         AppError::InternalServerErrorGeneric("Invalid UTF-8 in character settings".to_string())
-    //         //     }));
-    //         // Some(decrypted_sp?)
-    //         None // Placeholder: Decryption logic to be added
-    //     } else { None }
-    // } else { None };
-
-    let new_chat_session_record = NewChat {
-        id: new_chat_id,
+    // Call the service function to create the chat session
+    let created_chat_session = chat_service::create_session_and_maybe_first_message(
+        state.into(),
         user_id,
-        character_id: character.id,
-        title: Some(chat_title.clone()),
-        created_at: current_time,
-        updated_at: current_time,
-        history_management_strategy: "sliding_window_messages".to_string(), // Default
-        history_management_limit: 20,                                       // Default
-        model_name: "gemini-2.5-flash-preview-04-17".to_string(),           // Default
-        visibility: Some("private".to_string()),                            // Default
-                                                                            // system_prompt, temperature, etc., are not in NewChat, they are part of Chat.
-                                                                            // These will be set by DB defaults or need an update after insert if derived from character.
-    };
+        payload.character_id,
+        payload.active_custom_persona_id, // Pass the new field
+        Some(Arc::new(session_dek.0)),    // Pass the DEK, wrapped in Arc for the service
+    )
+    .await?;
 
-    let inserted_chat_id = state
-        .pool
-        .get()
-        .await
-        .map_err(|e| AppError::DbPoolError(e.to_string()))?
-        .interact(move |conn| {
-            diesel::insert_into(chat_sessions::table)
-                .values(&new_chat_session_record)
-                .returning(chat_sessions::id)
-                .get_result::<Uuid>(conn)
-                .map_err(AppError::from)
-        })
-        .await
-        .map_err(|e| {
-            AppError::InternalServerErrorGeneric(format!("Interact error inserting chat: {}", e))
-        })??;
-
-    debug!(chat_id = %inserted_chat_id, "New chat session record inserted successfully");
-
-    // Fetch the full chat session to return
-    let created_chat_session = state
-        .pool
-        .get()
-        .await
-        .map_err(|e| AppError::DbPoolError(e.to_string()))?
-        .interact(move |conn| {
-            chat_sessions::table
-                .filter(chat_sessions::id.eq(inserted_chat_id))
-                .select(Chat::as_select())
-                .first::<Chat>(conn)
-                .map_err(AppError::from)
-        })
-        .await
-        .map_err(|e| {
-            AppError::InternalServerErrorGeneric(format!(
-                "Interact error fetching created chat: {}",
-                e
-            ))
-        })??;
-
-    info!(chat_id = %created_chat_session.id, "Chat session created successfully");
+    info!(chat_id = %created_chat_session.id, "Chat session created successfully via service");
     Ok((StatusCode::CREATED, Json(created_chat_session)))
 }
 

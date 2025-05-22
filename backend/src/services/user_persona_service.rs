@@ -266,20 +266,19 @@ impl UserPersonaService {
         // Macro to handle updates for optional encrypted fields
         macro_rules! update_optional_encrypted_field {
             ($field_name:ident, $nonce_field_name:ident) => {
-                if let Some(plaintext_as_string) = update_dto.$field_name.clone() { // plaintext_as_string is String
-                    // encrypt_optional_string_for_db expects Option<String>
-                    // It handles Some("") by setting DB fields to None, effectively clearing the field.
-                    let (new_ct, new_n) = self.encrypt_optional_string_for_db(Some(plaintext_as_string), dek).await?;
+                if let Some(value_from_dto) = update_dto.$field_name.clone() {
+                    // If DTO field is Some(string_value):
+                    // - If string_value is empty, encrypt_optional_string_for_db returns (None, None) to clear.
+                    // - If string_value is non-empty, it's encrypted.
+                    let (new_ct, new_n) = self.encrypt_optional_string_for_db(Some(value_from_dto), dek).await?;
                     
-                    // Only mark as changed if the resulting ciphertext/nonce is different from current DB state.
-                    // This prevents unnecessary updates if DTO specifies a value that results in same encrypted form,
-                    // or if DTO specifies empty string for a field already None in DB.
                     if persona.$field_name != new_ct || persona.$nonce_field_name != new_n {
                         persona.$field_name = new_ct;
                         persona.$nonce_field_name = new_n;
                         changed = true;
                     }
                 }
+                // If DTO field is None, do nothing (field not specified for update).
             };
         }
 
