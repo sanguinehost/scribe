@@ -136,7 +136,7 @@ impl HttpClient for ReqwestClientWrapper {
     }
 
     async fn create_chat_session(&self, character_id: Uuid, active_custom_persona_id: Option<Uuid>) -> Result<Chat, CliError> {
-        let url = build_url(&self.base_url, "/api/chat/create_session")?;
+        let url = build_url(&self.base_url, "/api/chats")?;
         tracing::info!(target: "scribe_cli::client::implementation", %url, %character_id, ?active_custom_persona_id, "Creating chat session via HttpClient");
         let payload = json!({
             "character_id": character_id,
@@ -867,6 +867,53 @@ impl HttpClient for ReqwestClientWrapper {
                 .await
                 .unwrap_or_else(|_| "Failed to read error body".to_string());
             tracing::error!(target: "scribe_cli::client::implementation", %status, error_body = %error_text, "Delete user persona operation failed");
+            Err(CliError::ApiError {
+                status,
+                message: error_text,
+            })
+        }
+    }
+
+    async fn set_default_persona(&self, persona_id: Uuid) -> Result<User, CliError> {
+        let url = build_url(&self.base_url, &format!("/api/user-settings/set_default_persona/{}", persona_id))?;
+        tracing::info!(target: "scribe_cli::client::implementation", %url, %persona_id, "Setting default persona via HttpClient");
+        let response = self
+            .client
+            .put(url)
+            // No JSON body is sent for this PUT request as persona_id is in the path
+            .send()
+            .await
+            .map_err(CliError::Reqwest)?;
+
+        // The backend returns DefaultPersonaResponse, which is similar to AuthUserResponse.
+        // We can reuse AuthUserResponse for parsing if the fields align, or create a new one.
+        // For now, assuming AuthUserResponse can be used or adapted.
+        let auth_response = handle_response::<AuthUserResponse>(response)
+            .await
+            .map_err(|e| CliError::OperationFailed(format!("Set default persona failed: {}", e)))?;
+        
+        Ok(User::from(auth_response))
+    }
+
+    async fn clear_default_persona(&self) -> Result<(), CliError> {
+        let url = build_url(&self.base_url, "/api/user-settings/clear_default_persona")?;
+        tracing::info!(target: "scribe_cli::client::implementation", %url, "Clearing default persona via HttpClient");
+        let response = self
+            .client
+            .delete(url)
+            .send()
+            .await
+            .map_err(CliError::Reqwest)?;
+
+        if response.status().is_success() {
+            Ok(())
+        } else {
+            let status = response.status();
+            let error_text = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Failed to read error body".to_string());
+            tracing::error!(target: "scribe_cli::client::implementation", %status, error_body = %error_text, "Clear default persona operation failed");
             Err(CliError::ApiError {
                 status,
                 message: error_text,

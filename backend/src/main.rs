@@ -28,6 +28,7 @@ use scribe_backend::routes::{
     chats,
     documents::document_routes,
     user_persona_routes::user_personas_router, // Added for user persona routes
+    user_settings_routes::user_settings_routes, // Added for user settings routes
 };
 use scribe_backend::state::AppState;
 
@@ -55,12 +56,20 @@ use tower_sessions::{Expiry, SessionManagerLayer, cookie::SameSite}; // Add Arc 
 use axum_server::tls_rustls::RustlsConfig; // <-- ADD this
 use rustls::crypto::ring;
 use std::path::PathBuf; // <-- Add PathBuf import // <-- Import the ring provider module
+use axum::extract::Request as AxumRequest;
+use axum::middleware::{self as axum_middleware, Next};
+use axum::response::Response as AxumResponse;
 use scribe_backend::services::chat_override_service::ChatOverrideService; // <<< ADDED IMPORT
 use scribe_backend::services::encryption_service::EncryptionService;
 use scribe_backend::services::user_persona_service::UserPersonaService; // <<< ADDED THIS IMPORT
 
 // Define the embedded migrations macro
 pub const MIGRATIONS: EmbeddedMigrations = embed_migrations!("./migrations");
+
+async fn main_request_logging_middleware(req: AxumRequest, next: Next) -> AxumResponse {
+    tracing::info!(target: "main_router_debug", "MAIN ROUTER: Method={}, URI={}", req.method(), req.uri());
+    next.run(req).await
+}
 
 // Removed custom rejection handler functions (handle_auth_rejection, handle_unauthorized_rejection)
 // Relying on default axum_login::Error -> AppError conversion via From trait
@@ -267,6 +276,8 @@ async fn main() -> Result<()> {
         .nest("/documents", document_routes()) // Corrected: /api/documents
         // User Persona routes (require login)
         .nest("/personas", user_personas_router(app_state.clone()))
+        // User Settings routes (require login)
+        .nest("/user-settings", user_settings_routes(app_state.clone())) // Path /api/user-settings
         // Admin routes (require login + admin role check in handlers)
         .nest("/admin", admin_routes())
         .route_layer(login_required!(AuthBackend)); // Simplify macro: remove user type (i64)
@@ -288,7 +299,8 @@ async fn main() -> Result<()> {
         .layer(
             TraceLayer::new_for_http()
                 .make_span_with(DefaultMakeSpan::default().include_headers(true)),
-        ); // 3. Tracing (often near the outside)
+        ) // 3. Tracing (often near the outside)
+        .layer(axum_middleware::from_fn(main_request_logging_middleware));
 
     // --- Configure TLS --- <-- Add TLS Config Block
     // Get the directory containing backend's Cargo.toml at compile time

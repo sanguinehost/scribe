@@ -133,6 +133,8 @@ async fn generate_chat_response_streaming_ai_error() {
                 history_management_limit: 10,
                 model_name: "test-model".to_string(),
                 visibility: Some("private".to_string()),
+                active_custom_persona_id: None,
+                active_impersonated_character_id: None,
             };
             diesel::insert_into(chat_sessions_dsl::chat_sessions)
                 .values(&new_chat_session)
@@ -426,6 +428,8 @@ async fn generate_chat_response_streaming_initiation_error() {
                 history_management_limit: 10,
                 model_name: "test-model".to_string(),
                 visibility: Some("private".to_string()),
+                active_custom_persona_id: None,
+                active_impersonated_character_id: None,
             };
             diesel::insert_into(chat_sessions_dsl::chat_sessions)
                 .values(&new_chat_session)
@@ -648,6 +652,8 @@ async fn generate_chat_response_streaming_error_before_content() {
                 history_management_limit: 10,
                 model_name: "test-model".to_string(),
                 visibility: Some("private".to_string()),
+                active_custom_persona_id: None,
+                active_impersonated_character_id: None,
             };
             diesel::insert_into(chat_sessions_dsl::chat_sessions)
                 .values(&new_chat_session)
@@ -883,6 +889,8 @@ async fn generate_chat_response_streaming_genai_json_error() {
                 history_management_limit: 10,
                 model_name: "test-model".to_string(),
                 visibility: Some("private".to_string()),
+                active_custom_persona_id: None,
+                active_impersonated_character_id: None,
             };
             diesel::insert_into(chat_sessions_dsl::chat_sessions)
                 .values(&new_chat_session)

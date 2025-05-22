@@ -151,7 +151,7 @@ async fn get_user_persona_success() {
 
     let response = client
         .get(&format!(
-            "{}/api/personas/fetch/{}",
+            "{}/api/personas/{}",
             &app.address, persona_id
         ))
         .header("Cookie", auth_cookie)
@@ -183,7 +183,7 @@ async fn get_user_persona_not_found() {
 
     let response = client
         .get(&format!(
-            "{}/api/personas/fetch/{}",
+            "{}/api/personas/{}",
             &app.address, non_existent_id
         ))
         .header("Cookie", auth_cookie)
@@ -230,7 +230,7 @@ async fn get_user_persona_forbidden() {
     // User2 tries to get User1's persona
     let response = client
         .get(&format!(
-            "{}/api/personas/fetch/{}",
+            "{}/api/personas/{}",
             &app.address, persona_id_user1
         ))
         .header("Cookie", auth_cookie2) // Authenticated as User2
@@ -332,7 +332,7 @@ async fn delete_user_persona_success() {
 
     let response = client
         .delete(&format!(
-            "{}/api/personas/remove/{}",
+            "{}/api/personas/{}",
             &app.address, persona_id
         ))
         .header("Cookie", auth_cookie.clone())
@@ -345,7 +345,7 @@ async fn delete_user_persona_success() {
     // Verify it's actually deleted
     let get_response = client
         .get(&format!(
-            "{}/api/personas/fetch/{}",
+            "{}/api/personas/{}",
             &app.address, persona_id
         ))
         .header("Cookie", auth_cookie)
@@ -391,7 +391,7 @@ async fn delete_user_persona_forbidden() {
     // User2 tries to delete User1's persona
     let response = client
         .delete(&format!(
-            "{}/api/personas/remove/{}",
+            "{}/api/personas/{}",
             &app.address, persona_id_user1
         ))
         .header("Cookie", auth_cookie2) // Authenticated as User2

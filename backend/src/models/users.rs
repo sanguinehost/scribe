@@ -131,6 +131,7 @@ pub struct UserDbQuery {
     pub recovery_dek_nonce: Option<Vec<u8>>,
     pub role: UserRole,
     pub account_status: AccountStatus,
+    pub default_persona_id: Option<Uuid>,
 }
 
 impl std::fmt::Debug for UserDbQuery {
@@ -156,6 +157,7 @@ impl std::fmt::Debug for UserDbQuery {
             )
             .field("role", &self.role)
             .field("account_status", &self.account_status)
+            .field("default_persona_id", &self.default_persona_id)
             .finish()
     }
 }
@@ -194,6 +196,7 @@ pub struct User {
     pub updated_at: DateTime<Utc>,
     pub role: UserRole,
     pub account_status: Option<String>, // Added for CLI compatibility
+    pub default_persona_id: Option<Uuid>,
 }
 
 // Manual Debug implementation for User
@@ -235,6 +238,7 @@ impl std::fmt::Debug for User {
             .field("updated_at", &self.updated_at)
             .field("role", &self.role)
             .field("account_status", &self.account_status)
+            .field("default_persona_id", &self.default_persona_id)
             .finish()
     }
 }
@@ -259,6 +263,7 @@ impl From<UserDbQuery> for User {
             updated_at: user_from_db.updated_at,
             role: user_from_db.role,
             account_status: Some(format!("{:?}", user_from_db.account_status).to_lowercase()),
+            default_persona_id: user_from_db.default_persona_id,
         }
     }
 }
@@ -284,6 +289,7 @@ impl Clone for User {
             updated_at: self.updated_at,
             role: self.role,
             account_status: self.account_status.clone(),
+            default_persona_id: self.default_persona_id,
         }
     }
 }
@@ -368,6 +374,7 @@ mod tests {
             recovery_dek_nonce: Option<Vec<u8>>,
             dek: Option<SerializableSecretDek>,
             role: UserRole,
+            default_persona_id: Option<Uuid>,
         ) -> Self {
             User {
                 id,
@@ -386,6 +393,7 @@ mod tests {
                 role,
                 account_status: Some("active".to_string()),
                 recovery_phrase: None, // Add the recovery_phrase field
+                default_persona_id,
             }
         }
     }
@@ -418,6 +426,7 @@ mod tests {
             None,
             initial_test_dek,
             UserRole::User,
+            None, // default_persona_id
         );
 
         assert_eq!(user.username, "testuser");
@@ -431,6 +440,7 @@ mod tests {
             assert_eq!(wrapped_dek.expose_secret_bytes(), &test_dek_bytes);
         }
         assert_eq!(user.role, UserRole::User);
+        assert_eq!(user.default_persona_id, None);
 
         let cloned_user = user.clone();
         assert!(

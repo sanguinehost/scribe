@@ -51,4 +51,6 @@ pub enum CliError {
     CharacterUploadError(String),
     #[error("Chat session error: {0}")]
     ChatSessionError(String),
+    #[error("Operation failed: {0}")]
+    OperationFailed(String),
 }

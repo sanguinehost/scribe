@@ -88,6 +88,7 @@ pub struct AuthResponse {
     pub email: String,
     pub role: String,                 // Added role field
     pub recovery_key: Option<String>, // Added recovery key field
+    pub default_persona_id: Option<uuid::Uuid>,
 }
 
 impl std::fmt::Debug for AuthResponse {
@@ -101,6 +102,7 @@ impl std::fmt::Debug for AuthResponse {
                 "recovery_key",
                 &self.recovery_key.as_ref().map(|_| "[REDACTED]"),
             )
+            .field("default_persona_id", &self.default_persona_id)
             .finish()
     }
 }

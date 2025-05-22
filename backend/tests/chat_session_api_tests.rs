@@ -778,6 +778,8 @@ async fn test_get_chat_session_details_unauthorized() {
                 history_management_limit: 10,
                 model_name: "test-model".to_string(),
                 visibility: Some("private".to_string()),
+                active_custom_persona_id: None,
+                active_impersonated_character_id: None,
             };
             diesel::insert_into(chat_sessions::table)
                 .values(&new_chat_values)
@@ -1290,6 +1292,7 @@ async fn test_create_session_saves_first_mes() -> Result<(), AnyhowError> {
     // Create dependent services for AppState
     let encryption_service_for_test = Arc::new(scribe_backend::services::encryption_service::EncryptionService::new());
     let chat_override_service_for_test = Arc::new(scribe_backend::services::chat_override_service::ChatOverrideService::new(test_app.db_pool.clone(), encryption_service_for_test.clone()));
+    let user_persona_service_for_test = Arc::new(scribe_backend::services::user_persona_service::UserPersonaService::new(test_app.db_pool.clone(), encryption_service_for_test.clone()));
     let tokenizer_service_for_test = scribe_backend::services::tokenizer_service::TokenizerService::new("/home/socol/Workspace/sanguine-scribe/backend/resources/tokenizers/gemma.model")
                 .expect("Failed to create tokenizer for test");
     let hybrid_token_counter_for_test = Arc::new(scribe_backend::services::hybrid_token_counter::HybridTokenCounter::new_local_only(tokenizer_service_for_test));
@@ -1302,7 +1305,8 @@ async fn test_create_session_saves_first_mes() -> Result<(), AnyhowError> {
         test_app.qdrant_service.clone(), // Assuming qdrant_service is used, else provide mock_qdrant_service
         test_app.mock_embedding_pipeline_service.clone(),
         chat_override_service_for_test, // 7th arg
-        hybrid_token_counter_for_test    // 8th arg
+        user_persona_service_for_test, // 8th arg
+        hybrid_token_counter_for_test    // 9th arg
     ));
 
     // The function create_session_and_maybe_first_message returns Result<scribe_backend::models::chats::Chat, ...>
@@ -1312,7 +1316,8 @@ async fn test_create_session_saves_first_mes() -> Result<(), AnyhowError> {
         app_state_arc,
         user.id,
         character_id,
-        Some(user_dek.clone()),
+        None, // active_custom_persona_id
+        Some(user_dek.clone()), // user_dek_secret_box
     )
     .await;
 

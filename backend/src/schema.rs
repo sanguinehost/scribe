@@ -369,6 +369,7 @@ diesel::table! {
         recovery_dek_nonce -> Nullable<Bytea>,
         role -> UserRole,
         account_status -> AccountStatus,
+        default_persona_id -> Nullable<Uuid>,
     }
 }
 
@@ -386,7 +387,6 @@ diesel::joinable!(old_documents -> users (user_id));
 diesel::joinable!(old_suggestions -> users (user_id));
 diesel::joinable!(old_votes -> chat_messages (message_id));
 diesel::joinable!(old_votes -> chat_sessions (chat_id));
-diesel::joinable!(user_personas -> users (user_id));
 
 diesel::allow_tables_to_appear_in_same_query!(
     character_assets,

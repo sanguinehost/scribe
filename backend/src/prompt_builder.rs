@@ -155,6 +155,7 @@ mod tests {
         
         let encryption_service = Arc::new(crate::services::encryption_service::EncryptionService::new());
         let chat_override_service = Arc::new(crate::services::chat_override_service::ChatOverrideService::new(pool.clone(), encryption_service.clone()));
+        let user_persona_service = Arc::new(crate::services::user_persona_service::UserPersonaService::new(pool.clone(), encryption_service.clone()));
         let token_counter_service = Arc::new(crate::services::hybrid_token_counter::HybridTokenCounter::new_local_only(
             crate::services::tokenizer_service::TokenizerService::new(
                 config.tokenizer_model_path.as_ref().expect("Tokenizer path is None").as_str()
@@ -171,6 +172,7 @@ mod tests {
             qdrant_service,
             mock_embedding_service.clone(), // This is embedding_pipeline_service
             chat_override_service,
+            user_persona_service,
             token_counter_service
         ));
 

@@ -119,6 +119,7 @@ pub async fn register_handler(
                                 email: user.email,
                                 role: format!("{:?}", user.role),
                                 recovery_key: user.recovery_phrase.clone(), // Get recovery phrase from the returned user
+                                default_persona_id: user.default_persona_id,
                             };
                             Ok((StatusCode::CREATED, Json(response)).into_response())
                         }
@@ -364,6 +365,7 @@ pub async fn login_handler(
                 email: user.email,
                 role: format!("{:?}", user.role),
                 recovery_key: None, // Login response doesn't include recovery key
+                default_persona_id: user.default_persona_id,
             };
             Ok((StatusCode::OK, Json(response_data)).into_response())
         }
@@ -439,6 +441,7 @@ pub async fn me_handler(auth_session: CurrentAuthSession) -> Result<Response, Ap
                 email: user.email,
                 role: format!("{:?}", user.role),
                 recovery_key: None, // /me endpoint doesn't return recovery key
+                default_persona_id: user.default_persona_id,
             };
             Ok(Json(response).into_response())
         }
@@ -572,6 +575,7 @@ pub async fn get_session_handler(
                         email: user.email.clone(),       // Clone if User.email is String
                         role: format!("{:?}", user.role),
                         recovery_key: None, // Session response doesn't include recovery key
+                        default_persona_id: user.default_persona_id,
                     };
                     let response = SessionWithUserResponse {
                         session: SessionResponse {

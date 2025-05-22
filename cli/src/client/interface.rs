@@ -77,6 +77,8 @@ pub trait HttpClient: Send + Sync {
         persona_data: UpdateUserPersonaDto,
     ) -> Result<UserPersonaDataForClient, CliError>;
     async fn delete_user_persona(&self, persona_id: Uuid) -> Result<(), CliError>;
+    async fn set_default_persona(&self, persona_id: Uuid) -> Result<User, CliError>;
+    async fn clear_default_persona(&self) -> Result<(), CliError>;
  
     // Chat
     async fn list_chat_sessions(&self) -> Result<Vec<Chat>, CliError>;

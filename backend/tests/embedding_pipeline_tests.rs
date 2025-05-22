@@ -16,6 +16,7 @@ use scribe_backend::{
     services::encryption_service::EncryptionService,
     services::hybrid_token_counter::HybridTokenCounter,
     services::tokenizer_service::TokenizerService,
+    services::user_persona_service::UserPersonaService, // Added UserPersonaService
 };
 use serial_test::serial;
 use std::convert::TryFrom; // Needed for EmbeddingMetadata::try_from
@@ -60,15 +61,17 @@ async fn test_process_and_embed_message_integration() {
     let tokenizer_service_for_test = TokenizerService::new("/home/socol/Workspace/sanguine-scribe/backend/resources/tokenizers/gemma.model")
         .expect("Failed to create tokenizer for test");
     let hybrid_token_counter_for_test = Arc::new(HybridTokenCounter::new_local_only(tokenizer_service_for_test));
+    let user_persona_service_for_test = Arc::new(UserPersonaService::new(test_app.db_pool.clone(), encryption_service_for_test.clone()));
 
     let app_state = Arc::new(AppState::new(
         test_app.db_pool.clone(),
         test_app.config.clone(),
         test_app.mock_ai_client.clone().expect("Mock AI client should be present"),
         test_app.mock_embedding_client.clone(),
-        test_app.qdrant_service.clone(), 
-        Arc::new(embedding_pipeline_service), 
+        test_app.qdrant_service.clone(),
+        Arc::new(embedding_pipeline_service),
         chat_override_service_for_test,
+        user_persona_service_for_test, // Added user_persona_service
         hybrid_token_counter_for_test.clone()
     ));
 
@@ -223,6 +226,7 @@ async fn test_process_and_embed_message_all_chunks_fail_embedding() {
     let hybrid_token_counter_for_test_2 = Arc::new(scribe_backend::services::hybrid_token_counter::HybridTokenCounter::new_local_only(
         scribe_backend::services::tokenizer_service::TokenizerService::new("/home/socol/Workspace/sanguine-scribe/backend/resources/tokenizers/gemma.model")
             .expect("Failed to create tokenizer for test")));
+    let user_persona_service_for_test_2 = Arc::new(UserPersonaService::new(test_app.db_pool.clone(), encryption_service_for_test_2.clone()));
 
     let app_state = Arc::new(AppState::new(
         test_app.db_pool.clone(),
@@ -232,6 +236,7 @@ async fn test_process_and_embed_message_all_chunks_fail_embedding() {
         test_app.qdrant_service.clone(), // Use the qdrant_service from test_app (which is the mock)
         Arc::new(embedding_pipeline_service), // Use the real service instead of the mock
         chat_override_service_for_test_2,
+        user_persona_service_for_test_2, // Added user_persona_service
         hybrid_token_counter_for_test_2.clone()
     ));
 
@@ -368,6 +373,7 @@ async fn test_retrieve_relevant_chunks_success() {
     let tokenizer_service_for_test_3 = TokenizerService::new("/home/socol/Workspace/sanguine-scribe/backend/resources/tokenizers/gemma.model")
         .expect("Failed to create tokenizer for test");
     let hybrid_token_counter_for_test_3 = Arc::new(HybridTokenCounter::new_local_only(tokenizer_service_for_test_3));
+    let user_persona_service_for_test_3 = Arc::new(UserPersonaService::new(test_app.db_pool.clone(), encryption_service_for_test_3.clone()));
 
     let app_state = Arc::new(AppState::new(
         test_app.db_pool.clone(),
@@ -377,6 +383,7 @@ async fn test_retrieve_relevant_chunks_success() {
         test_app.qdrant_service.clone(),
         Arc::new(embedding_pipeline_service), // Using a real EmbeddingPipelineService
         chat_override_service_for_test_3,
+        user_persona_service_for_test_3, // Added user_persona_service
         hybrid_token_counter_for_test_3
     ));
 
@@ -498,6 +505,7 @@ async fn test_retrieve_relevant_chunks_no_results() {
     let tokenizer_service_for_test_4 = TokenizerService::new("/home/socol/Workspace/sanguine-scribe/backend/resources/tokenizers/gemma.model")
         .expect("Failed to create tokenizer for test");
     let hybrid_token_counter_for_test_4 = Arc::new(HybridTokenCounter::new_local_only(tokenizer_service_for_test_4));
+    let user_persona_service_for_test_4 = Arc::new(UserPersonaService::new(test_app.db_pool.clone(), encryption_service_for_test_4.clone()));
 
     let app_state = Arc::new(AppState::new(
         test_app.db_pool.clone(),
@@ -507,6 +515,7 @@ async fn test_retrieve_relevant_chunks_no_results() {
         test_app.qdrant_service.clone(),
         Arc::new(embedding_pipeline_service),
         chat_override_service_for_test_4,
+        user_persona_service_for_test_4, // Added user_persona_service
         hybrid_token_counter_for_test_4
     ));
 
@@ -551,6 +560,7 @@ async fn test_retrieve_relevant_chunks_qdrant_error() {
     let tokenizer_service_for_test_5 = TokenizerService::new("/home/socol/Workspace/sanguine-scribe/backend/resources/tokenizers/gemma.model")
         .expect("Failed to create tokenizer for test");
     let hybrid_token_counter_for_test_5 = Arc::new(HybridTokenCounter::new_local_only(tokenizer_service_for_test_5));
+    let user_persona_service_for_test_5 = Arc::new(UserPersonaService::new(test_app.db_pool.clone(), encryption_service_for_test_5.clone()));
     
     let app_state = Arc::new(AppState::new(
         test_app.db_pool.clone(),
@@ -560,6 +570,7 @@ async fn test_retrieve_relevant_chunks_qdrant_error() {
         test_app.qdrant_service.clone(),
         Arc::new(embedding_pipeline_service),
         chat_override_service_for_test_5,
+        user_persona_service_for_test_5, // Added user_persona_service
         hybrid_token_counter_for_test_5
     ));
 
@@ -601,6 +612,7 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_uuid() {
     let tokenizer_service_for_test_6 = TokenizerService::new("/home/socol/Workspace/sanguine-scribe/backend/resources/tokenizers/gemma.model")
         .expect("Failed to create tokenizer for test");
     let hybrid_token_counter_for_test_6 = Arc::new(HybridTokenCounter::new_local_only(tokenizer_service_for_test_6));
+    let user_persona_service_for_test_6 = Arc::new(UserPersonaService::new(test_app.db_pool.clone(), encryption_service_for_test_6.clone()));
 
     let app_state_arc = Arc::new(AppState::new(
         test_app.db_pool.clone(),
@@ -610,6 +622,7 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_uuid() {
         test_app.qdrant_service.clone(),
         test_app.mock_embedding_pipeline_service.clone(),
         chat_override_service_for_test_6,
+        user_persona_service_for_test_6, // Added user_persona_service
         hybrid_token_counter_for_test_6
     ));
 
@@ -674,6 +687,7 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_timestamp() {
     let tokenizer_service_for_test_7 = TokenizerService::new("/home/socol/Workspace/sanguine-scribe/backend/resources/tokenizers/gemma.model")
         .expect("Failed to create tokenizer for test");
     let hybrid_token_counter_for_test_7 = Arc::new(HybridTokenCounter::new_local_only(tokenizer_service_for_test_7));
+    let user_persona_service_for_test_7 = Arc::new(UserPersonaService::new(test_app.db_pool.clone(), encryption_service_for_test_7.clone()));
 
     let app_state_arc = Arc::new(AppState::new(
         test_app.db_pool.clone(),
@@ -683,6 +697,7 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_timestamp() {
         test_app.qdrant_service.clone(),
         test_app.mock_embedding_pipeline_service.clone(),
         chat_override_service_for_test_7,
+        user_persona_service_for_test_7, // Added user_persona_service
         hybrid_token_counter_for_test_7
     ));
 
@@ -746,6 +761,7 @@ async fn test_retrieve_relevant_chunks_metadata_missing_field() {
     let tokenizer_service_for_test_8 = TokenizerService::new("/home/socol/Workspace/sanguine-scribe/backend/resources/tokenizers/gemma.model")
         .expect("Failed to create tokenizer for test");
     let hybrid_token_counter_for_test_8 = Arc::new(HybridTokenCounter::new_local_only(tokenizer_service_for_test_8));
+    let user_persona_service_for_test_8 = Arc::new(UserPersonaService::new(test_app.db_pool.clone(), encryption_service_for_test_8.clone()));
     
     let app_state_arc = Arc::new(AppState::new(
         test_app.db_pool.clone(),
@@ -755,6 +771,7 @@ async fn test_retrieve_relevant_chunks_metadata_missing_field() {
         test_app.qdrant_service.clone(),
         test_app.mock_embedding_pipeline_service.clone(),
         chat_override_service_for_test_8,
+        user_persona_service_for_test_8, // Added user_persona_service
         hybrid_token_counter_for_test_8
     ));
 
@@ -819,15 +836,17 @@ async fn test_retrieve_relevant_chunks_metadata_wrong_type() {
     let tokenizer_service_for_test_9 = TokenizerService::new("/home/socol/Workspace/sanguine-scribe/backend/resources/tokenizers/gemma.model")
         .expect("Failed to create tokenizer for test");
     let hybrid_token_counter_for_test_9 = Arc::new(HybridTokenCounter::new_local_only(tokenizer_service_for_test_9));
+    let user_persona_service_for_test_9 = Arc::new(UserPersonaService::new(test_app.db_pool.clone(), encryption_service_for_test_9.clone()));
 
     let app_state = Arc::new(AppState::new(
         test_app.db_pool.clone(),
         test_app.config.clone(),
         test_app.mock_ai_client.clone().expect("Mock AI client should be present"),
-        mock_embedding_client.clone(), 
+        mock_embedding_client.clone(),
         test_app.qdrant_service.clone(),
-        test_app.mock_embedding_pipeline_service.clone(), 
+        test_app.mock_embedding_pipeline_service.clone(),
         chat_override_service_for_test_9,
+        user_persona_service_for_test_9, // Added user_persona_service
         hybrid_token_counter_for_test_9
     ));
 
@@ -938,15 +957,17 @@ async fn test_rag_context_injection_with_qdrant() {
     let tokenizer_service_for_test_10 = TokenizerService::new("/home/socol/Workspace/sanguine-scribe/backend/resources/tokenizers/gemma.model")
         .expect("Failed to create tokenizer for test");
     let hybrid_token_counter_for_test_10 = Arc::new(HybridTokenCounter::new_local_only(tokenizer_service_for_test_10));
+    let user_persona_service_for_test_10 = Arc::new(UserPersonaService::new(test_app.db_pool.clone(), encryption_service_for_test_10.clone()));
     
     let app_state_for_rag = Arc::new(AppState::new(
         test_app.db_pool.clone(),
         test_app.config.clone(),
-        test_app.ai_client.clone(), 
+        test_app.ai_client.clone(),
         test_app.mock_embedding_client.clone(), // CORRECTED: Use mock_embedding_client from test_app
-        test_app.qdrant_service.clone(),   
-        Arc::new(embedding_pipeline_service), 
+        test_app.qdrant_service.clone(),
+        Arc::new(embedding_pipeline_service),
         chat_override_service_for_test_10,
+        user_persona_service_for_test_10, // Added user_persona_service
         hybrid_token_counter_for_test_10
     ));
 

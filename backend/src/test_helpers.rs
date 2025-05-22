@@ -4,7 +4,8 @@
 // Make sure all necessary imports from the main crate and external crates are included.
 use crate::errors::AppError;
 use crate::llm::{AiClient, ChatStream, EmbeddingClient}; // Add EmbeddingClient
-use crate::services::embedding_pipeline::{EmbeddingPipelineServiceTrait, RetrievedChunk};
+use crate::services::embedding_pipeline::{EmbeddingPipelineService, EmbeddingPipelineServiceTrait, RetrievedChunk}; // Added EmbeddingPipelineService
+use crate::text_processing::chunking::ChunkConfig; // Added ChunkConfig
 // Unused ChunkConfig, ChunkingMetric were previously noted as removed.
 use crate::models::users::User as DbUser;
 use crate::models::users::{SerializableSecretDek, User}; // Added SerializableSecretDek
@@ -18,7 +19,7 @@ models::chats::{ChatMessage, UpdateChatSettingsRequest}, // Added UpdateChatSett
 models::users::AccountStatus,
 routes::{
     auth as auth_routes_module, characters, chat::chat_routes, chats,
-    documents::document_routes, health::health_check, user_persona_routes,
+    documents::document_routes, health::health_check, user_persona_routes, user_settings_routes,
 },
 schema,
 state::AppState,
@@ -61,7 +62,7 @@ use serde_json::json;
 use std::fmt;
 use std::sync::{Arc, Mutex}; // Add Mutex import
 use tokio::net::TcpListener;
-use tokio::sync::Mutex as TokioMutex;
+// use tokio::sync::Mutex as TokioMutex; // Removed unused import
 use tower::ServiceExt; // For .oneshot
 use tower_cookies::CookieManagerLayer; // Removed unused: Key as TowerCookieKey
 use tower_sessions::{Expiry, SessionManagerLayer, cookie::Key as TowerSessionKey, cookie::SameSite}; // Added SameSite
@@ -244,6 +245,10 @@ impl MockEmbeddingClient {
 
     pub fn get_calls(&self) -> Vec<(String, String)> {
         self.calls.lock().unwrap().clone()
+    }
+
+    pub fn clear_calls(&self) {
+        self.calls.lock().unwrap().clear();
     }
 }
 
@@ -549,6 +554,128 @@ impl QdrantClientServiceTrait for MockQdrantClientService {
 
 // --- END Placeholder Mock Definitions ---
 
+pub struct TestAppStateBuilder {
+    db_pool: PgPool,
+    config: Arc<Config>,
+    ai_client: Arc<dyn AiClient + Send + Sync>,
+    embedding_client: Arc<dyn EmbeddingClient + Send + Sync>,
+    qdrant_service: Arc<dyn QdrantClientServiceTrait + Send + Sync>,
+    embedding_pipeline_service: Option<Arc<dyn EmbeddingPipelineServiceTrait + Send + Sync>>,
+    chat_override_service: Option<Arc<ChatOverrideService>>,
+    user_persona_service: Option<Arc<UserPersonaService>>,
+    token_counter: Option<Arc<HybridTokenCounter>>,
+}
+
+impl TestAppStateBuilder {
+    pub fn new(
+        db_pool: PgPool,
+        config: Arc<Config>,
+        ai_client: Arc<dyn AiClient + Send + Sync>,
+        embedding_client: Arc<dyn EmbeddingClient + Send + Sync>,
+        qdrant_service: Arc<dyn QdrantClientServiceTrait + Send + Sync>,
+    ) -> Self {
+        Self {
+            db_pool,
+            config,
+            ai_client,
+            embedding_client,
+            qdrant_service,
+            embedding_pipeline_service: None,
+            chat_override_service: None,
+            user_persona_service: None,
+            token_counter: None,
+        }
+    }
+
+    pub fn with_embedding_pipeline_service(
+        mut self,
+        service: Arc<dyn EmbeddingPipelineServiceTrait + Send + Sync>,
+    ) -> Self {
+        self.embedding_pipeline_service = Some(service);
+        self
+    }
+
+    pub fn with_chat_override_service(mut self, service: Arc<ChatOverrideService>) -> Self {
+        self.chat_override_service = Some(service);
+        self
+    }
+
+    pub fn with_user_persona_service(mut self, service: Arc<UserPersonaService>) -> Self {
+        self.user_persona_service = Some(service);
+        self
+    }
+
+    pub fn with_token_counter(mut self, counter: Arc<HybridTokenCounter>) -> Self {
+        self.token_counter = Some(counter);
+        self
+    }
+
+    pub fn build(self) -> AppState {
+        let encryption_service = Arc::new(EncryptionService::new());
+
+        let embedding_pipeline_service = self.embedding_pipeline_service.unwrap_or_else(|| {
+            // Correctly derive ChunkConfig from the main Config
+            let chunk_config = ChunkConfig::from(self.config.as_ref());
+            // EmbeddingPipelineService::new only takes chunk_config
+            Arc::new(EmbeddingPipelineService::new(chunk_config))
+        });
+
+        let chat_override_service = self.chat_override_service.unwrap_or_else(|| {
+            Arc::new(ChatOverrideService::new(
+                self.db_pool.clone(),
+                encryption_service.clone(),
+            ))
+        });
+
+        let user_persona_service = self.user_persona_service.unwrap_or_else(|| {
+            Arc::new(UserPersonaService::new(
+                self.db_pool.clone(),
+                encryption_service.clone(),
+            ))
+        });
+
+        let token_counter = self.token_counter.unwrap_or_else(|| {
+            let tokenizer_model_path = self
+                .config
+                .tokenizer_model_path
+                .as_ref()
+                .cloned()
+                .expect("Tokenizer model path not set in config for TestAppStateBuilder");
+            let tokenizer_service = TokenizerService::new(&tokenizer_model_path)
+                .expect("Failed to load tokenizer model for TestAppStateBuilder");
+
+            let gemini_token_client = self.config.gemini_api_key.as_ref().map(|api_key| {
+                GeminiTokenClient::new(api_key.clone())
+            });
+
+            let default_model = self
+                .config
+                .token_counter_default_model
+                .as_ref()
+                .cloned()
+                .expect("Token counter default model not set in config for TestAppStateBuilder");
+
+            Arc::new(HybridTokenCounter::new(
+                tokenizer_service,
+                gemini_token_client,
+                default_model,
+            ))
+        });
+
+        AppState::new(
+            self.db_pool,
+            self.config,
+            self.ai_client,
+            self.embedding_client,
+            self.qdrant_service,
+            embedding_pipeline_service,
+            chat_override_service,
+            user_persona_service,
+            token_counter,
+        )
+    }
+}
+
 // Define the embedded migrations macro
 // Ensure this path is correct relative to the crate root (src)
 pub const MIGRATIONS: EmbeddedMigrations = embed_migrations!("./migrations");
@@ -590,8 +717,8 @@ pub struct TestApp {
     pub qdrant_service: Arc<dyn QdrantClientServiceTrait + Send + Sync>, // Use trait object
     // Optionally store the mock Qdrant client for tests that need mock-specific methods
     pub mock_qdrant_service: Option<Arc<MockQdrantClientService>>,
-    pub user_persona_service: Arc<UserPersonaService>, // <<< ADDED THIS FIELD
-    pub embedding_call_tracker: Arc<TokioMutex<Vec<uuid::Uuid>>>,
+    // user_persona_service field removed as per plan
+    // embedding_call_tracker field removed as per plan
 }
 
 #[instrument(skip_all, fields(uri = %req.uri()))]
@@ -672,52 +799,26 @@ pub async fn spawn_app(multi_thread: bool, use_real_ai: bool, use_real_qdrant: b
         (mock_qdrant.clone() as Arc<dyn QdrantClientServiceTrait + Send + Sync>, Some(mock_qdrant))
     };
     
-    // Embedding Pipeline Service (use real one for tests that might need it, or mock)
-    // For now, using the mock. If a real one is needed, it should be conditional like AI/Qdrant.
+    // Create the mock embedding pipeline service instance that TestApp will hold
+    // and will be used to configure the AppState via the builder.
     let mock_embedding_pipeline_service_instance = Arc::new(MockEmbeddingPipelineService::new());
-    let embedding_pipeline_service_for_state = mock_embedding_pipeline_service_instance.clone()
-        as Arc<dyn EmbeddingPipelineServiceTrait + Send + Sync>;
 
-    let tokenizer_model_path = config_arc
-        .tokenizer_model_path
-        .as_ref()
-        .cloned()
-        .expect("Tokenizer model path not set in config for tests");
-    let tokenizer_service =
-        TokenizerService::new(&tokenizer_model_path).expect("Failed to load tokenizer model for tests");
-
-    let gemini_token_client_for_test = config_arc.gemini_api_key.as_ref().map(|api_key_string|
-        GeminiTokenClient::new(api_key_string.clone()) 
-    );
-
-    let token_counter_default_model_for_test = config_arc
-        .token_counter_default_model
-        .as_ref()
-        .cloned()
-        .expect("Token counter default model not set in config for tests");
-
-    let hybrid_token_counter = HybridTokenCounter::new(
-        tokenizer_service,
-        gemini_token_client_for_test, // This is Option<GeminiTokenClient>
-        token_counter_default_model_for_test,
-    );
-    let hybrid_token_counter_arc = Arc::new(hybrid_token_counter);
-
-    let encryption_service_arc = Arc::new(EncryptionService::new());
-    let chat_override_service_arc = Arc::new(ChatOverrideService::new(pool.clone(), encryption_service_arc.clone()));
-    let user_persona_service_arc = Arc::new(UserPersonaService::new(pool.clone(), encryption_service_arc.clone())); // <<< ADDED THIS
-
-    let app_state_inner = AppState::new(
+    // Initialize TestAppStateBuilder with core components
+    let builder = TestAppStateBuilder::new(
         pool.clone(),
         config_arc.clone(),
         ai_client_for_state.clone(),
-        embedding_client_for_state.clone(), // Cloned
-        qdrant_service_for_state.clone(),   // Cloned
-        embedding_pipeline_service_for_state.clone(), // Cloned
-        chat_override_service_arc.clone(), // Cloned
-        user_persona_service_arc.clone(), // <<< ADDED THIS ARGUMENT
-        hybrid_token_counter_arc.clone(), // Cloned
+        embedding_client_for_state.clone(),
+        qdrant_service_for_state.clone(),
     );
+
+    // Build AppState.
+    // Use with_embedding_pipeline_service to ensure AppState uses the mock.
+    // Other services (ChatOverrideService, UserPersonaService, HybridTokenCounter)
+    // will be created with their default (real) implementations by the builder.
+    let app_state_inner = builder
+        .with_embedding_pipeline_service(mock_embedding_pipeline_service_instance.clone())
+        .build();
 
     let session_store = DieselSessionStore::new(pool.clone());
     let secret_key_hex_str: &String = config_arc.cookie_signing_key.as_ref()
@@ -742,7 +843,8 @@ pub async fn spawn_app(multi_thread: bool, use_real_ai: bool, use_real_qdrant: b
 
     debug!("Test app address: {}", app_address);
 
-    let embedding_call_tracker_for_state = app_state_inner.embedding_call_tracker.clone();
+    // embedding_call_tracker_for_state is no longer needed here as TestApp won't store it.
+    // It's accessible via app_state_inner.embedding_call_tracker if necessary.
 
     // Corrected Router Setup for Tests
     let public_api_routes_for_test = Router::new()
@@ -755,6 +857,7 @@ pub async fn spawn_app(multi_thread: bool, use_real_ai: bool, use_real_qdrant: b
         .nest("/chats", chats::chat_routes()) // Assuming this returns Router<AppState> or is already stateful
         .nest("/documents", document_routes()) // Assuming this returns Router<AppState> or is already stateful
         .nest("/personas", user_persona_routes::user_personas_router(app_state_inner.clone())) // Add persona routes
+        .nest("/user-settings", user_settings_routes::user_settings_routes(app_state_inner.clone())) // Add user settings routes
         .route_layer(middleware::from_fn_with_state(app_state_inner.clone(), auth_log_wrapper));
 
     // Combine public and protected routes before nesting under /api
@@ -786,11 +889,10 @@ pub async fn spawn_app(multi_thread: bool, use_real_ai: bool, use_real_qdrant: b
         ai_client: ai_client_for_state,
         mock_ai_client: mock_ai_client_for_test_app,
         mock_embedding_client: mock_embedding_client_instance,
-        mock_embedding_pipeline_service: mock_embedding_pipeline_service_instance,
+        mock_embedding_pipeline_service: mock_embedding_pipeline_service_instance, // This is the mock instance
         qdrant_service: qdrant_service_for_state,
         mock_qdrant_service: mock_qdrant_service_for_test_app,
-        user_persona_service: user_persona_service_arc, // <<< ADDED THIS INITIALIZATION
-        embedding_call_tracker: embedding_call_tracker_for_state,
+        // user_persona_service and embedding_call_tracker removed from TestApp instantiation
     }
 }
 
@@ -1071,6 +1173,7 @@ pub struct TestDataGuard {
     user_ids: Vec<Uuid>,
     character_ids: Vec<Uuid>, // Added for characters
     chat_ids: Vec<Uuid>,      // Added for chats/sessions
+    user_persona_ids: Vec<Uuid>, // Added for user personas
 }
 
 // Manual implementation of Debug for TestDataGuard
@@ -1081,6 +1184,7 @@ impl fmt::Debug for TestDataGuard {
             .field("user_ids", &self.user_ids)
             .field("character_ids", &self.character_ids)
             .field("chat_ids", &self.chat_ids)
+            .field("user_persona_ids", &self.user_persona_ids)
             .finish()
     }
 }
@@ -1093,6 +1197,7 @@ impl TestDataGuard {
             user_ids: Vec::new(),
             character_ids: Vec::new(),
             chat_ids: Vec::new(),
+            user_persona_ids: Vec::new(),
         }
     }
 
@@ -1106,6 +1211,10 @@ impl TestDataGuard {
 
     pub fn add_chat(&mut self, chat_id: Uuid) {
         self.chat_ids.push(chat_id);
+    }
+
+    pub fn add_user_persona(&mut self, user_persona_id: Uuid) {
+        self.user_persona_ids.push(user_persona_id);
     }
 
     // Adapted from auth_tests.rs and db_integration_tests.rs
@@ -1135,6 +1244,22 @@ impl TestDataGuard {
                 .await
                 .map_err(|e_interact| anyhow::anyhow!(e_interact.to_string()))?;
             diesel_chat_op_result.context("Interact error cleaning up chats")?;
+        }
+
+        if !self.user_persona_ids.is_empty() {
+            tracing::debug!(user_persona_ids = ?self.user_persona_ids, "Cleaning up test user personas");
+            let user_persona_ids_clone = self.user_persona_ids.clone();
+            let diesel_op_result_personas = conn
+                .interact(move |conn_interaction| {
+                    diesel::delete(
+                        schema::user_personas::table
+                            .filter(schema::user_personas::id.eq_any(user_persona_ids_clone)),
+                    )
+                    .execute(conn_interaction)
+                })
+                .await
+                .map_err(|e_interact| anyhow::anyhow!(e_interact.to_string()))?;
+            diesel_op_result_personas.context("Interact error cleaning up user personas")?;
         }
 
         if !self.character_ids.is_empty() {
@@ -1178,7 +1303,10 @@ impl Drop for TestDataGuard {
         // Synchronous drop cannot call async cleanup.
         // Tests should call cleanup explicitly.
         // If user_ids is not empty, it means cleanup was not called.
-        if !self.user_ids.is_empty() || !self.character_ids.is_empty() || !self.chat_ids.is_empty()
+        if !self.user_ids.is_empty()
+            || !self.character_ids.is_empty()
+            || !self.chat_ids.is_empty()
+            || !self.user_persona_ids.is_empty()
         {
             // Use a blocking spawn for the async cleanup task
             // This is not ideal for drop, but better than panicking or doing nothing.
@@ -1187,10 +1315,12 @@ impl Drop for TestDataGuard {
             let user_ids_clone = self.user_ids.drain(..).collect::<Vec<_>>();
             let character_ids_clone = self.character_ids.drain(..).collect::<Vec<_>>();
             let chat_ids_clone = self.chat_ids.drain(..).collect::<Vec<_>>();
+            let user_persona_ids_clone = self.user_persona_ids.drain(..).collect::<Vec<_>>();
 
             if !user_ids_clone.is_empty()
                 || !character_ids_clone.is_empty()
                 || !chat_ids_clone.is_empty()
+                || !user_persona_ids_clone.is_empty()
             {
                 tracing::warn!(
                     "TestDataGuard dropped without explicit cleanup. Attempting synchronous cleanup (best effort)."
@@ -1219,6 +1349,22 @@ impl Drop for TestDataGuard {
                                     }
                                     Err(pool_err_chats) => { // This is deadpool::managed::PoolError
                                         tracing::error!("TestDataGuard Drop: chat_sessions interact pool error: {:?}", pool_err_chats);
+                                    }
+                                }
+                            }
+                            if !user_persona_ids_clone.is_empty() {
+                                let persona_ids_c = user_persona_ids_clone.clone();
+                                let interact_result_personas = conn_obj.interact(move |actual_conn| {
+                                    diesel::delete(schema::user_personas::table.filter(schema::user_personas::id.eq_any(persona_ids_c)))
+                                        .execute(actual_conn)
+                                }).await;
+                                match interact_result_personas {
+                                    Ok(Ok(_num_deleted_personas)) => {}
+                                    Ok(Err(db_err_personas)) => {
+                                        tracing::error!("TestDataGuard Drop: user_personas diesel cleanup failed: {:?}", db_err_personas);
+                                    }
+                                    Err(pool_err_personas) => {
+                                        tracing::error!("TestDataGuard Drop: user_personas interact pool error: {:?}", pool_err_personas);
                                     }
                                 }
                             }
