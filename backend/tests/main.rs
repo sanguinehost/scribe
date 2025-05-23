@@ -46,6 +46,7 @@ pub mod db_integration_tests;
 pub mod embedding_pipeline_tests;
 pub mod first_user_admin_tests;
 pub mod health_check;
+pub mod lorebook_api_tests;
 pub mod qdrant_integration_tests;
 pub mod qdrant_pipeline_tests;
 pub mod recovery_key_tests;

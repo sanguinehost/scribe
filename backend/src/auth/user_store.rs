@@ -1,13 +1,17 @@
 // backend/src/auth/user_store.rs
 use async_trait::async_trait;
 use axum_login::{AuthnBackend, UserId};
+use std::collections::HashMap;
 use std::fmt::{self, Debug};
+use std::sync::Arc; // Keep Arc
+use tokio::sync::RwLock; // Change to tokio::sync::RwLock
 // Assuming User ID is Uuid
 use tracing::{debug, error, info, instrument, warn};
+use uuid::Uuid;
 
 use crate::auth::AuthError;
 use crate::models::auth::LoginPayload; // Import LoginPayload
-use crate::models::users::{AccountStatus, NewUser, User, UserDbQuery}; // Removed unused SerializableSecretDek, UserCredentials
+use crate::models::users::{AccountStatus, NewUser, SerializableSecretDek, User, UserDbQuery}; // Removed unused SerializableSecretDek, UserCredentials // Added SerializableSecretDek
 // Remove UserCredentials import if no longer needed elsewhere in this file
 use crate::state::DbPool; // Assuming you use a DbPool
 use diesel::RunQueryDsl;
@@ -21,8 +25,7 @@ use secrecy::{ExposeSecret, SecretBox, SecretString};
 #[derive(Clone)]
 pub struct Backend {
     pool: DbPool,
-    // Optional in-memory cache if needed
-    // users: Arc<RwLock<HashMap<Uuid, User>>,
+    dek_cache: Arc<RwLock<HashMap<Uuid, SerializableSecretDek>>>,
 }
 
 // Manual Debug implementation
@@ -30,13 +33,17 @@ impl Debug for Backend {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Backend")
             .field("pool", &"<DbPool>") // Avoid printing the pool
+            .field("dek_cache", &"<DekCache>") // Avoid printing the cache
             .finish()
     }
 }
 
 impl Backend {
     pub fn new(pool: DbPool) -> Self {
-        Self { pool }
+        Self {
+            pool,
+            dek_cache: Arc::new(RwLock::new(HashMap::new())),
+        }
     }
 }
 
@@ -72,10 +79,24 @@ impl AuthnBackend for Backend {
                 let mut user_with_dek = user;
                 user_with_dek.dek =
                     Some(crate::models::users::SerializableSecretDek(dek_secret_box));
+                // Store the DEK in the cache
+                if let Some(ref dek_val) = user_with_dek.dek {
+                    let mut cache = self.dek_cache.write().await; // Use .await
+                    cache.insert(user_with_dek.id, dek_val.clone());
+                    // More verbose logging
+                    warn!(target: "dek_cache_debug", user_id = %user_with_dek.id, "AuthBackend::authenticate - DEK CACHED (key: {}, value_present: true)", user_with_dek.id);
+                } else {
+                    warn!(target: "dek_cache_debug", user_id = %user_with_dek.id, "AuthBackend::authenticate - User object had NO DEK to cache.");
+                }
                 Ok(Some(user_with_dek))
             }
             Ok((user, None)) => {
                 warn!(user_id = %user.id, "User authenticated but DEK was not available/decryptable during login.");
+                // Clear any potentially stale DEK from cache for this user if login proceeds without DEK
+                let mut cache = self.dek_cache.write().await; // Use .await
+                if cache.remove(&user.id).is_some() {
+                    warn!(target: "dek_cache_debug", user_id = %user.id, "AuthBackend::authenticate - STALE DEK REMOVED from cache (key: {})", user.id);
+                }
                 Ok(Some(user))
             }
             Err(e) => Err(e),
@@ -98,13 +119,22 @@ impl AuthnBackend for Backend {
             .get()
             .await
             .map_err(AuthError::PoolError)?
-            .interact(move |conn| crate::auth::get_user(conn, id))
+            .interact(move |conn| crate::auth::get_user(conn, id)) // crate::auth::get_user returns User
             .await;
 
         match interact_result {
-            Ok(Ok(user_from_db)) => {
+            Ok(Ok(mut user_from_db)) => { // user_from_db is of type User
                 // Inner Ok: crate::auth::get_user succeeded
-                info!(user_id = %user_from_db.id, dek_is_some = user_from_db.dek.is_some(), "AuthBackend::get_user: user loaded from DB (DEK is None as crate::auth::get_user doesn't decrypt it)."); // Removed PII: username
+                info!(user_id = %user_from_db.id, initial_dek_is_some = user_from_db.dek.is_some(), "AuthBackend::get_user: user loaded from DB.");
+
+                // Attempt to populate DEK from cache
+                let cache_read_guard = self.dek_cache.read().await; // Use .await
+                if let Some(cached_dek) = cache_read_guard.get(&user_from_db.id).cloned() {
+                    user_from_db.dek = Some(cached_dek);
+                    warn!(target: "dek_cache_debug", user_id = %user_from_db.id, "AuthBackend::get_user - DEK POPULATED FROM CACHE (key: {})", user_from_db.id);
+                } else {
+                    warn!(target: "dek_cache_debug", user_id = %user_from_db.id, "AuthBackend::get_user - DEK NOT FOUND IN CACHE (key: {}). User.dek remains as loaded from DB (should be None). Cache size: {}", user_from_db.id, cache_read_guard.len());
+                }
                 Ok(Some(user_from_db))
             }
             Ok(Err(AuthError::UserNotFound)) => {

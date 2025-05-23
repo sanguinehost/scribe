@@ -5,6 +5,7 @@ use secrecy::{ExposeSecret, SecretBox};
 
 const NONCE_LEN: usize = aead::NONCE_LEN;
 
+#[derive(Clone)]
 pub struct EncryptionService;
 
 impl EncryptionService {

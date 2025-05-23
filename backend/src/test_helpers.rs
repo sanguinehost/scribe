@@ -3,7 +3,7 @@
 
 // Make sure all necessary imports from the main crate and external crates are included.
 use crate::errors::AppError;
-use crate::llm::{AiClient, ChatStream, EmbeddingClient}; // Add EmbeddingClient
+use crate::llm::{AiClient, ChatStream, EmbeddingClient, BatchEmbeddingContentRequest}; // Add EmbeddingClient and BatchEmbeddingContentRequest
 use crate::services::embedding_pipeline::{EmbeddingPipelineService, EmbeddingPipelineServiceTrait, RetrievedChunk}; // Added EmbeddingPipelineService
 use crate::text_processing::chunking::ChunkConfig; // Added ChunkConfig
 // Unused ChunkConfig, ChunkingMetric were previously noted as removed.
@@ -19,7 +19,8 @@ models::chats::{ChatMessage, UpdateChatSettingsRequest}, // Added UpdateChatSett
 models::users::AccountStatus,
 routes::{
     auth as auth_routes_module, characters, chat::chat_routes, chats,
-    documents::document_routes, health::health_check, user_persona_routes, user_settings_routes,
+    documents::document_routes, health::health_check, lorebook_routes, // Added lorebook_routes
+    user_persona_routes, user_settings_routes,
 },
 schema,
 state::AppState,
@@ -28,7 +29,6 @@ services::encryption_service::EncryptionService, // <<< ENSURED IMPORT
 services::gemini_token_client::GeminiTokenClient,
 services::hybrid_token_counter::HybridTokenCounter,
 services::tokenizer_service::TokenizerService,
-// text_processing::chunking::{ChunkConfig, ChunkingMetric}, // Removed unused imports
 services::user_persona_service::UserPersonaService, // <<< ADDED THIS IMPORT
 vector_db::qdrant_client::QdrantClientService, // Import constants module alias
 };
@@ -227,14 +227,18 @@ impl AiClient for MockAiClient {
 #[derive(Clone)]
 pub struct MockEmbeddingClient {
     response: Arc<Mutex<Option<Result<Vec<f32>, AppError>>>>,
-    calls: Arc<Mutex<Vec<(String, String)>>>,
+    batch_response: Arc<Mutex<Option<Result<Vec<Vec<f32>>, AppError>>>>, // For batch_embed_contents
+    calls: Arc<Mutex<Vec<(String, String, Option<String>)>>>, // Added Option<String> for title
+    batch_calls: Arc<Mutex<Vec<Vec<(String, String, Option<String>)>>>>, // For batch_embed_contents calls, storing Vec of batches, each batch is Vec of (text, task_type, title)
 }
 
 impl MockEmbeddingClient {
     pub fn new() -> Self {
         MockEmbeddingClient {
             response: Arc::new(Mutex::new(None)),
+            batch_response: Arc::new(Mutex::new(None)),
             calls: Arc::new(Mutex::new(Vec::new())),
+            batch_calls: Arc::new(Mutex::new(Vec::new())),
         }
     }
 
@@ -243,23 +247,33 @@ impl MockEmbeddingClient {
         *lock = Some(response);
     }
 
-    pub fn get_calls(&self) -> Vec<(String, String)> {
+    pub fn set_batch_response(&self, response: Result<Vec<Vec<f32>>, AppError>) {
+        let mut lock = self.batch_response.lock().unwrap();
+        *lock = Some(response);
+    }
+
+    pub fn get_calls(&self) -> Vec<(String, String, Option<String>)> {
         self.calls.lock().unwrap().clone()
+    }
+
+    pub fn get_batch_calls(&self) -> Vec<Vec<(String, String, Option<String>)>> {
+        self.batch_calls.lock().unwrap().clone()
     }
 
     pub fn clear_calls(&self) {
         self.calls.lock().unwrap().clear();
+        self.batch_calls.lock().unwrap().clear();
     }
 }
 
 #[async_trait]
 impl EmbeddingClient for MockEmbeddingClient {
-    async fn embed_content(&self, text: &str, task_type: &str) -> Result<Vec<f32>, AppError> {
+    async fn embed_content(&self, text: &str, task_type: &str, title: Option<&str>) -> Result<Vec<f32>, AppError> {
         // Record the call
         self.calls
             .lock()
             .unwrap()
-            .push((text.to_string(), task_type.to_string()));
+            .push((text.to_string(), task_type.to_string(), title.map(String::from)));
 
         // Return the pre-set response or a default
         match self.response.lock().unwrap().clone() {
@@ -268,6 +282,33 @@ impl EmbeddingClient for MockEmbeddingClient {
                 // Default behavior if no response is set
                 warn!("MockEmbeddingClient response not set, returning default OK response."); // Keep warning
                 Ok(vec![0.0; 768]) // Restore default Ok(...) behavior
+            }
+        }
+    }
+
+    async fn batch_embed_contents(
+        &self,
+        requests: Vec<BatchEmbeddingContentRequest<'_>>,
+    ) -> Result<Vec<Vec<f32>>, AppError> {
+        // Record the call
+        let current_batch_owned: Vec<(String, String, Option<String>)> = requests
+            .into_iter()
+            .map(|req| {
+                (
+                    req.text.to_string(),
+                    req.task_type.to_string(),
+                    None, // Title field removed from BatchEmbeddingContentRequest
+                )
+            })
+            .collect();
+        self.batch_calls.lock().unwrap().push(current_batch_owned);
+
+        // Return the pre-set response or a default
+        match self.batch_response.lock().unwrap().clone() {
+            Some(res) => res,
+            None => {
+                warn!("MockEmbeddingClient batch_response not set, returning default Ok(vec![]) response.");
+                Ok(Vec::new()) // Default to empty vec of embeddings
             }
         }
     }
@@ -672,6 +713,7 @@ impl TestAppStateBuilder {
             chat_override_service,
             user_persona_service,
             token_counter,
+            encryption_service, // Added encryption_service
         )
     }
 }
@@ -858,6 +900,7 @@ pub async fn spawn_app(multi_thread: bool, use_real_ai: bool, use_real_qdrant: b
         .nest("/documents", document_routes()) // Assuming this returns Router<AppState> or is already stateful
         .nest("/personas", user_persona_routes::user_personas_router(app_state_inner.clone())) // Add persona routes
         .nest("/user-settings", user_settings_routes::user_settings_routes(app_state_inner.clone())) // Add user settings routes
+        .nest("/", lorebook_routes::lorebook_routes()) // Add lorebook routes
         .route_layer(middleware::from_fn_with_state(app_state_inner.clone(), auth_log_wrapper));
 
     // Combine public and protected routes before nesting under /api
@@ -1500,7 +1543,7 @@ pub async fn create_user_with_dek_in_session(
 }
 
 // Helper function for API-based login
-pub async fn login_user_via_api(test_app: &TestApp, username: &str, password: &str) -> String {
+pub async fn login_user_via_api(test_app: &TestApp, username: &str, password: &str) -> (reqwest::Client, String) {
     let login_payload = json!({
         "identifier": username,
         "password": password
@@ -1531,7 +1574,7 @@ pub async fn login_user_via_api(test_app: &TestApp, username: &str, password: &s
     }
 
     // Extract the session cookie
-    response
+    let session_cookie_string = response
         .cookies()
         .find(|c| c.name() == "id") // Assuming session cookie name is "id"
         .map(|c| format!("{}={}", c.name(), c.value()))
@@ -1541,7 +1584,8 @@ pub async fn login_user_via_api(test_app: &TestApp, username: &str, password: &s
                 "Session cookie 'id' not found in login response for user {}. URL: {}. Headers: {}",
                 username, login_url, headers_debug
             )
-        })
+        });
+    (client, session_cookie_string)
 }
 
 // Helper structs and functions for testing SSE

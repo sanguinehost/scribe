@@ -257,7 +257,7 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
             // 2a. Get embedding
             let task_type = "RETRIEVAL_DOCUMENT";
             let embedding_vector = match embedding_client
-                .embed_content(&chunk.content, task_type)
+                .embed_content(&chunk.content, task_type, None)
                 .await
             {
                 Ok(vector) => vector,
@@ -324,7 +324,7 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
         let qdrant_service = state.qdrant_service.clone();
 
         let query_embedding = embedding_client
-            .embed_content(query_text, "RETRIEVAL_QUERY")
+            .embed_content(query_text, "RETRIEVAL_QUERY", None)
             .await?;
 
         // Create a filter for the specific chat_id
@@ -385,7 +385,7 @@ async fn retrieve_relevant_chunks_standalone(
     info!("Retrieving relevant chunks for session (standalone)");
 
     let query_embedding = embedding_client
-        .embed_content(query_text, "RETRIEVAL_QUERY")
+        .embed_content(query_text, "RETRIEVAL_QUERY", None)
         .await?;
 
     let filter = Filter::must([Condition::matches(
@@ -593,7 +593,8 @@ mod tests {
             embedding_pipeline_service_concrete, // Use the real service, cast to trait object is handled by new()
             chat_override_service,
             user_persona_service,
-            token_counter_service
+            token_counter_service,
+            encryption_service.clone()
         ));
         (app_state, mock_qdrant, mock_embed_client)
     }

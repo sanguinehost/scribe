@@ -72,7 +72,8 @@ async fn test_process_and_embed_message_integration() {
         Arc::new(embedding_pipeline_service),
         chat_override_service_for_test,
         user_persona_service_for_test, // Added user_persona_service
-        hybrid_token_counter_for_test.clone()
+        hybrid_token_counter_for_test.clone(),
+        encryption_service_for_test.clone()
     ));
 
     // 2. Prepare test data
@@ -237,7 +238,8 @@ async fn test_process_and_embed_message_all_chunks_fail_embedding() {
         Arc::new(embedding_pipeline_service), // Use the real service instead of the mock
         chat_override_service_for_test_2,
         user_persona_service_for_test_2, // Added user_persona_service
-        hybrid_token_counter_for_test_2.clone()
+        hybrid_token_counter_for_test_2.clone(),
+        encryption_service_for_test_2.clone()
     ));
 
     // 2. Prepare test data
@@ -293,7 +295,7 @@ async fn test_process_and_embed_message_all_chunks_fail_embedding() {
     )
     .expect("Failed to chunk test content for verification")
     .into_iter()
-    .map(|c| (c.content, "RETRIEVAL_DOCUMENT".to_string())) // Match expected call format
+    .map(|c| (c.content, "RETRIEVAL_DOCUMENT".to_string(), None)) // Match expected call format (text, task_type, title)
     .collect::<Vec<_>>();
 
     let embed_calls = mock_embedding_client.get_calls();
@@ -384,7 +386,8 @@ async fn test_retrieve_relevant_chunks_success() {
         Arc::new(embedding_pipeline_service), // Using a real EmbeddingPipelineService
         chat_override_service_for_test_3,
         user_persona_service_for_test_3, // Added user_persona_service
-        hybrid_token_counter_for_test_3
+        hybrid_token_counter_for_test_3,
+        encryption_service_for_test_3.clone()
     ));
 
     // 2. Prepare mock responses and expectations
@@ -516,7 +519,8 @@ async fn test_retrieve_relevant_chunks_no_results() {
         Arc::new(embedding_pipeline_service),
         chat_override_service_for_test_4,
         user_persona_service_for_test_4, // Added user_persona_service
-        hybrid_token_counter_for_test_4
+        hybrid_token_counter_for_test_4,
+        encryption_service_for_test_4.clone()
     ));
 
     // 2. Configure mock Qdrant service to return no results
@@ -571,7 +575,8 @@ async fn test_retrieve_relevant_chunks_qdrant_error() {
         Arc::new(embedding_pipeline_service),
         chat_override_service_for_test_5,
         user_persona_service_for_test_5, // Added user_persona_service
-        hybrid_token_counter_for_test_5
+        hybrid_token_counter_for_test_5,
+        encryption_service_for_test_5.clone()
     ));
 
     // 2. Configure mock Qdrant service to return an error
@@ -623,7 +628,8 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_uuid() {
         test_app.mock_embedding_pipeline_service.clone(),
         chat_override_service_for_test_6,
         user_persona_service_for_test_6, // Added user_persona_service
-        hybrid_token_counter_for_test_6
+        hybrid_token_counter_for_test_6,
+        encryption_service_for_test_6.clone()
     ));
 
     // Mock Qdrant to return a point with an invalid UUID in metadata
@@ -698,7 +704,8 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_timestamp() {
         test_app.mock_embedding_pipeline_service.clone(),
         chat_override_service_for_test_7,
         user_persona_service_for_test_7, // Added user_persona_service
-        hybrid_token_counter_for_test_7
+        hybrid_token_counter_for_test_7,
+        encryption_service_for_test_7.clone()
     ));
 
     // Mock Qdrant to return a point with an invalid timestamp in metadata
@@ -772,7 +779,8 @@ async fn test_retrieve_relevant_chunks_metadata_missing_field() {
         test_app.mock_embedding_pipeline_service.clone(),
         chat_override_service_for_test_8,
         user_persona_service_for_test_8, // Added user_persona_service
-        hybrid_token_counter_for_test_8
+        hybrid_token_counter_for_test_8,
+        encryption_service_for_test_8.clone()
     ));
 
     // Mock Qdrant to return a point with a missing required field in metadata
@@ -847,7 +855,8 @@ async fn test_retrieve_relevant_chunks_metadata_wrong_type() {
         test_app.mock_embedding_pipeline_service.clone(),
         chat_override_service_for_test_9,
         user_persona_service_for_test_9, // Added user_persona_service
-        hybrid_token_counter_for_test_9
+        hybrid_token_counter_for_test_9,
+        encryption_service_for_test_9.clone()
     ));
 
     // Mock Qdrant to return a point with a field of the wrong type in metadata
@@ -968,7 +977,8 @@ async fn test_rag_context_injection_with_qdrant() {
         Arc::new(embedding_pipeline_service),
         chat_override_service_for_test_10,
         user_persona_service_for_test_10, // Added user_persona_service
-        hybrid_token_counter_for_test_10
+        hybrid_token_counter_for_test_10,
+        encryption_service_for_test_10.clone()
     ));
 
     // Step 1: Process and embed a message to store in Qdrant

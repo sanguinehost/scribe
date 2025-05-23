@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 axum = { version = "0.7.5", features = ["macros", "multipart", "tokio"] } # Align with tonic and axum-login ^0.7.0, ADDED tokio feature
+axum-macros = "0.4.1" # Added for debug_handler
 axum-server = { version = "0.7.0", features = ["tls-rustls"] } # Added for HTTPS serving
 tokio = { version = "1.44.2", features = ["full"] }
 serde = { version = "1.0.219", features = ["derive"] }

@@ -27,6 +27,7 @@ use scribe_backend::routes::{
     chat::chat_routes,
     chats,
     documents::document_routes,
+    lorebook_routes::lorebook_routes, // Added for lorebook routes
     user_persona_routes::user_personas_router, // Added for user persona routes
     user_settings_routes::user_settings_routes, // Added for user settings routes
 };
@@ -262,6 +263,7 @@ async fn main() -> Result<()> {
         chat_override_service_arc,  // <<< PASSING THE SERVICE TO APPSTATE
         user_persona_service_arc, // <<< PASSING THE NEW SERVICE TO APPSTATE
         hybrid_token_counter_arc,   // Added
+        encryption_service_arc.clone(), // Pass the encryption service
     );
 
     // --- Define Protected Routes ---
@@ -278,6 +280,8 @@ async fn main() -> Result<()> {
         .nest("/personas", user_personas_router(app_state.clone()))
         // User Settings routes (require login)
         .nest("/user-settings", user_settings_routes(app_state.clone())) // Path /api/user-settings
+        // Lorebook routes (require login)
+        .nest("/", lorebook_routes()) // Mounts /lorebooks and /chats/:id/lorebooks under /api
         // Admin routes (require login + admin role check in handlers)
         .nest("/admin", admin_routes())
         .route_layer(login_required!(AuthBackend)); // Simplify macro: remove user type (i64)

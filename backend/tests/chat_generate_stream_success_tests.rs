@@ -601,6 +601,7 @@ async fn test_first_mes_included_in_history() {
         chat_override_service, // Use the created service
         user_persona_service, // Use the created service
         token_counter_service, // Use the created service
+        encryption_service.clone(),
     );
     let state_arc = std::sync::Arc::new(state_for_service);
 

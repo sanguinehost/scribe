@@ -7,6 +7,8 @@ pub mod chats;
 pub mod documents;
 pub mod users;
 pub mod user_personas;
+pub mod lorebooks;
+pub mod lorebook_dtos;
 
 pub use auth::*;
 pub use character_card::*;
@@ -17,3 +19,5 @@ pub use chats::*;
 pub use documents::*;
 pub use users::*;
 pub use user_personas::*;
+pub use lorebooks::*;
+pub use lorebook_dtos::*;

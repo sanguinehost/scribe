@@ -4844,6 +4844,7 @@ dependencies = [
  "async-trait",
  "axum",
  "axum-login",
+ "axum-macros",
  "axum-server",
  "base64 0.22.1",
  "bcrypt",

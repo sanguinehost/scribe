@@ -11,6 +11,8 @@ pub type ChatStream = Pin<Box<dyn Stream<Item = ChatStreamItem> + Send>>;
 
 pub mod gemini_client;
 pub mod gemini_embedding_client;
+// Import the public request struct for use in the trait
+pub use gemini_embedding_client::BatchEmbeddingContentRequest;
 
 /// Trait defining the interface for AI client operations.
 #[async_trait]
@@ -48,5 +50,11 @@ pub trait EmbeddingClient: Send + Sync {
         &self,
         text: &str,
         task_type: &str, // e.g., "RETRIEVAL_DOCUMENT", "RETRIEVAL_QUERY"
+        title: Option<&str>, // Added title parameter
     ) -> Result<Vec<f32>, AppError>;
+
+    async fn batch_embed_contents(
+        &self,
+        requests: Vec<BatchEmbeddingContentRequest<'_>>, // Use the imported struct
+    ) -> Result<Vec<Vec<f32>>, AppError>;
 }
