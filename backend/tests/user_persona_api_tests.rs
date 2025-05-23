@@ -31,7 +31,6 @@ fn default_create_dto() -> CreateUserPersonaDto {
 #[tokio::test]
 async fn create_user_persona_success() {
     let app = spawn_app(false, false, false).await;
-    let client = reqwest::Client::new();
     let username = "testuser_create_persona";
     let password = "Password123!";
 
@@ -41,7 +40,7 @@ async fn create_user_persona_success() {
         .expect("Failed to create test user");
 
     // Login via API to get session cookie
-    let auth_cookie = login_user_via_api(&app, username, password).await;
+    let (client, auth_cookie) = login_user_via_api(&app, username, password).await;
 
     let create_dto = default_create_dto();
 
@@ -86,14 +85,13 @@ async fn create_user_persona_unauthorized() {
 #[tokio::test]
 async fn list_user_personas_success() {
     let app = spawn_app(false, false, false).await;
-    let client = reqwest::Client::new();
     let username = "testuser_list_personas";
     let password = "Password123!";
 
     let _user = create_test_user(&app.db_pool, username.to_string(), password.to_string())
         .await
         .expect("Failed to create test user");
-    let auth_cookie = login_user_via_api(&app, username, password).await;
+    let (client, auth_cookie) = login_user_via_api(&app, username, password).await;
 
     // Create a persona first
     let create_dto = default_create_dto();
@@ -126,14 +124,13 @@ async fn list_user_personas_success() {
 #[tokio::test]
 async fn get_user_persona_success() {
     let app = spawn_app(false, false, false).await;
-    let client = reqwest::Client::new();
     let username = "testuser_get_persona";
     let password = "Password123!";
 
     let _user = create_test_user(&app.db_pool, username.to_string(), password.to_string())
         .await
         .expect("Failed to create test user");
-    let auth_cookie = login_user_via_api(&app, username, password).await;
+    let (client, auth_cookie) = login_user_via_api(&app, username, password).await;
 
     let create_dto = default_create_dto();
     let create_response = client
@@ -171,14 +168,13 @@ async fn get_user_persona_success() {
 #[tokio::test]
 async fn get_user_persona_not_found() {
     let app = spawn_app(false, false, false).await;
-    let client = reqwest::Client::new();
     let username = "testuser_get_persona_nf";
     let password = "Password123!";
 
     let _user = create_test_user(&app.db_pool, username.to_string(), password.to_string())
         .await
         .expect("Failed to create test user");
-    let auth_cookie = login_user_via_api(&app, username, password).await;
+    let (client, auth_cookie) = login_user_via_api(&app, username, password).await;
     let non_existent_id = Uuid::new_v4();
 
     let response = client
@@ -197,7 +193,6 @@ async fn get_user_persona_not_found() {
 #[tokio::test]
 async fn get_user_persona_forbidden() {
     let app = spawn_app(false, false, false).await;
-    let client = reqwest::Client::new();
     let username1 = "testuser_get_forbidden1";
     let password = "Password123!";
     let username2 = "testuser_get_forbidden2";
@@ -205,16 +200,16 @@ async fn get_user_persona_forbidden() {
     let _user1 = create_test_user(&app.db_pool, username1.to_string(), password.to_string())
         .await
         .expect("Failed to create user1");
-    let auth_cookie1 = login_user_via_api(&app, username1, password).await;
+    let (client1, auth_cookie1) = login_user_via_api(&app, username1, password).await;
 
     let _user2 = create_test_user(&app.db_pool, username2.to_string(), password.to_string())
         .await
         .expect("Failed to create user2");
-    let auth_cookie2 = login_user_via_api(&app, username2, password).await;
+    let (client2, auth_cookie2) = login_user_via_api(&app, username2, password).await;
 
     // User1 creates a persona
     let create_dto = default_create_dto();
-    let create_response = client
+    let create_response = client1 // Use client1
         .post(&format!("{}/api/personas", &app.address))
         .header("Cookie", auth_cookie1.clone())
         .json(&create_dto)
@@ -228,7 +223,7 @@ async fn get_user_persona_forbidden() {
     let persona_id_user1 = created_persona.id;
 
     // User2 tries to get User1's persona
-    let response = client
+    let response = client2 // Use client2
         .get(&format!(
             "{}/api/personas/{}",
             &app.address, persona_id_user1
@@ -245,14 +240,13 @@ async fn get_user_persona_forbidden() {
 #[tokio::test]
 async fn update_user_persona_success() {
     let app = spawn_app(false, false, false).await;
-    let client = reqwest::Client::new();
     let username = "testuser_update_persona";
     let password = "Password123!";
 
     let _user = create_test_user(&app.db_pool, username.to_string(), password.to_string())
         .await
         .expect("Failed to create test user");
-    let auth_cookie = login_user_via_api(&app, username, password).await;
+    let (client, auth_cookie) = login_user_via_api(&app, username, password).await;
 
     let create_dto = default_create_dto();
     let create_response = client
@@ -307,14 +301,13 @@ async fn update_user_persona_success() {
 #[tokio::test]
 async fn delete_user_persona_success() {
     let app = spawn_app(false, false, false).await;
-    let client = reqwest::Client::new();
     let username = "testuser_delete_persona";
     let password = "Password123!";
 
     let _user = create_test_user(&app.db_pool, username.to_string(), password.to_string())
         .await
         .expect("Failed to create test user");
-    let auth_cookie = login_user_via_api(&app, username, password).await;
+    let (client, auth_cookie) = login_user_via_api(&app, username, password).await;
 
     let create_dto = default_create_dto();
     let create_response = client
@@ -358,7 +351,6 @@ async fn delete_user_persona_success() {
 #[tokio::test]
 async fn delete_user_persona_forbidden() {
     let app = spawn_app(false, false, false).await;
-    let client = reqwest::Client::new();
     let username1 = "testuser_delete_forbidden1";
     let password = "Password123!";
     let username2 = "testuser_delete_forbidden2";
@@ -366,16 +358,16 @@ async fn delete_user_persona_forbidden() {
     let _user1 = create_test_user(&app.db_pool, username1.to_string(), password.to_string())
         .await
         .expect("Failed to create user1");
-    let auth_cookie1 = login_user_via_api(&app, username1, password).await;
+    let (client1, auth_cookie1) = login_user_via_api(&app, username1, password).await;
 
     let _user2 = create_test_user(&app.db_pool, username2.to_string(), password.to_string())
         .await
         .expect("Failed to create user2");
-    let auth_cookie2 = login_user_via_api(&app, username2, password).await;
+    let (client2, auth_cookie2) = login_user_via_api(&app, username2, password).await;
 
     // User1 creates a persona
     let create_dto = default_create_dto();
-    let create_response = client
+    let create_response = client1 // Use client1
         .post(&format!("{}/api/personas", &app.address))
         .header("Cookie", auth_cookie1.clone())
         .json(&create_dto)
@@ -389,7 +381,7 @@ async fn delete_user_persona_forbidden() {
     let persona_id_user1 = created_persona.id;
 
     // User2 tries to delete User1's persona
-    let response = client
+    let response = client2 // Use client2
         .delete(&format!(
             "{}/api/personas/{}",
             &app.address, persona_id_user1

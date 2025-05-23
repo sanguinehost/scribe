@@ -49,27 +49,14 @@ fn test_deserialize_card_with_lorebook() {
             "description": "Knows things.",
             "personality": "", "scenario": "", "first_mes": "", "mes_example": "",
             "character_book": {
+                "id": "550e8400-e29b-41d4-a716-446655440000",
+                "user_id": "550e8400-e29b-41d4-a716-446655440001",
                 "name": "World Facts",
-                "entries": [
-                    {
-                        "keys": ["capital", "france"],
-                        "content": "The capital of France is Paris.",
-                        "enabled": true,
-                        "insertion_order": 10,
-                        "use_regex": false
-                    },
-                     {
-                        "keys": ["\\d+ ducks"],
-                        "content": "That's a lot of ducks!",
-                        "enabled": true,
-                        "insertion_order": 5,
-                        "use_regex": true,
-                        "case_sensitive": false,
-                        "priority": 100,
-                        "id": 12345,
-                        "comment": "Reacts to ducks"
-                    }
-                ]
+                "description": null,
+                "source_format": "sillytavern",
+                "is_public": false,
+                "created_at": "2025-05-23T00:00:00Z",
+                "updated_at": "2025-05-23T00:00:00Z"
             }
         }
     }"#;
@@ -82,24 +69,7 @@ fn test_deserialize_card_with_lorebook() {
     let card = card.unwrap();
     assert!(card.data.character_book.is_some());
     let book = card.data.character_book.unwrap();
-    assert_eq!(book.name.unwrap(), "World Facts");
-    assert_eq!(book.entries.len(), 2);
-    assert_eq!(
-        book.entries[0].keys,
-        vec!["capital".to_string(), "france".to_string()]
-    );
-    assert_eq!(book.entries[0].content, "The capital of France is Paris.");
-    assert!(book.entries[0].enabled);
-    assert_eq!(book.entries[0].insertion_order, 10);
-    assert!(!book.entries[0].use_regex); // use_regex default is false.
-
-    assert_eq!(book.entries[1].keys, vec![r"\d+ ducks".to_string()]);
-    assert!(book.entries[1].use_regex);
-    assert_eq!(book.entries[1].case_sensitive, Some(false));
-    assert_eq!(book.entries[1].priority, Some(100));
-    assert!(book.entries[1].id.is_some());
-    assert_eq!(book.entries[1].id.clone().unwrap().as_i64().unwrap(), 12345); // Check ID is number
-    assert_eq!(book.entries[1].comment.clone().unwrap(), "Reacts to ducks");
+    assert_eq!(book.name, "World Facts");
 }
 
 #[test]

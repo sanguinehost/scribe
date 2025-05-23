@@ -173,7 +173,8 @@ mod tests {
             mock_embedding_service.clone(), // This is embedding_pipeline_service
             chat_override_service,
             user_persona_service,
-            token_counter_service
+            token_counter_service,
+            encryption_service.clone(), // Added encryption service
         ));
 
         (app_state, mock_embedding_service)

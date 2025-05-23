@@ -180,6 +180,17 @@ diesel::table! {
     use diesel::sql_types::*;
     use diesel_derive_enum::DbEnum;
 
+    chat_session_lorebooks (chat_session_id, lorebook_id) {
+        chat_session_id -> Uuid,
+        lorebook_id -> Uuid,
+        user_id -> Uuid,
+    }
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    use diesel_derive_enum::DbEnum;
+
     chat_sessions (id) {
         id -> Uuid,
         user_id -> Uuid,
@@ -218,28 +229,29 @@ diesel::table! {
     use diesel_derive_enum::DbEnum;
 
     lorebook_entries (id) {
-        id -> Int4,
-        lorebook_id -> Int4,
-        keys -> Array<Nullable<Text>>,
-        content -> Text,
-        extensions -> Nullable<Jsonb>,
-        enabled -> Bool,
+        is_enabled -> Bool,
         insertion_order -> Int4,
-        case_sensitive -> Nullable<Bool>,
-        use_regex -> Bool,
-        constant -> Nullable<Bool>,
         #[max_length = 255]
         name -> Nullable<Varchar>,
-        priority -> Nullable<Int4>,
-        #[max_length = 255]
-        entry_id -> Nullable<Varchar>,
-        comment -> Nullable<Text>,
-        selective -> Nullable<Bool>,
-        secondary_keys -> Nullable<Array<Nullable<Text>>>,
-        #[max_length = 50]
-        position -> Nullable<Varchar>,
         created_at -> Timestamptz,
         updated_at -> Timestamptz,
+        id -> Uuid,
+        lorebook_id -> Uuid,
+        user_id -> Uuid,
+        original_sillytavern_uid -> Nullable<Int4>,
+        entry_title_ciphertext -> Bytea,
+        entry_title_nonce -> Bytea,
+        keys_text_ciphertext -> Bytea,
+        keys_text_nonce -> Bytea,
+        content_ciphertext -> Bytea,
+        content_nonce -> Bytea,
+        comment_ciphertext -> Nullable<Bytea>,
+        comment_nonce -> Nullable<Bytea>,
+        is_constant -> Bool,
+        #[max_length = 255]
+        placement_hint -> Nullable<Varchar>,
+        sillytavern_metadata_ciphertext -> Nullable<Bytea>,
+        sillytavern_metadata_nonce -> Nullable<Bytea>,
     }
 }
 
@@ -248,17 +260,16 @@ diesel::table! {
     use diesel_derive_enum::DbEnum;
 
     lorebooks (id) {
-        id -> Int4,
-        character_id -> Uuid,
         #[max_length = 255]
-        name -> Nullable<Varchar>,
+        name -> Varchar,
         description -> Nullable<Text>,
-        scan_depth -> Nullable<Int4>,
-        token_budget -> Nullable<Int4>,
-        recursive_scanning -> Nullable<Bool>,
-        extensions -> Nullable<Jsonb>,
         created_at -> Timestamptz,
         updated_at -> Timestamptz,
+        id -> Uuid,
+        user_id -> Uuid,
+        #[max_length = 255]
+        source_format -> Varchar,
+        is_public -> Bool,
     }
 }
 
@@ -379,10 +390,14 @@ diesel::joinable!(chat_character_overrides -> characters (original_character_id)
 diesel::joinable!(chat_character_overrides -> chat_sessions (chat_session_id));
 diesel::joinable!(chat_messages -> chat_sessions (session_id));
 diesel::joinable!(chat_messages -> users (user_id));
+diesel::joinable!(chat_session_lorebooks -> chat_sessions (chat_session_id));
+diesel::joinable!(chat_session_lorebooks -> lorebooks (lorebook_id));
+diesel::joinable!(chat_session_lorebooks -> users (user_id));
 diesel::joinable!(chat_sessions -> user_personas (active_custom_persona_id));
 diesel::joinable!(chat_sessions -> users (user_id));
 diesel::joinable!(lorebook_entries -> lorebooks (lorebook_id));
-diesel::joinable!(lorebooks -> characters (character_id));
+diesel::joinable!(lorebook_entries -> users (user_id));
+diesel::joinable!(lorebooks -> users (user_id));
 diesel::joinable!(old_documents -> users (user_id));
 diesel::joinable!(old_suggestions -> users (user_id));
 diesel::joinable!(old_votes -> chat_messages (message_id));
@@ -393,6 +408,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     characters,
     chat_character_overrides,
     chat_messages,
+    chat_session_lorebooks,
     chat_sessions,
     lorebook_entries,
     lorebooks,

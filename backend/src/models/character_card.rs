@@ -1,10 +1,11 @@
 #![allow(dead_code)]
 
 use crate::models::characters::Character;
+use crate::models::lorebooks::Lorebook; // Import the new Lorebook
 use chrono::{DateTime, Utc}; // Add DateTime and Utc
 use diesel::prelude::*;
 use diesel_json::Json;
-use serde::{Deserialize, Deserializer, Serialize}; // Added Deserializer
+use serde::{Deserialize, Serialize}; // Added Deserializer
 use serde_json::Value; // Using Value for flexibility in extensions and mixed types like id
 use serde_json::Value as JsonValue;
 use std::collections::HashMap;
@@ -128,35 +129,6 @@ impl std::fmt::Debug for Asset {
             .field("uri", &"[REDACTED]")
             .field("name", &"[REDACTED]")
             .field("ext", &"[REDACTED]")
-            .finish()
-    }
-}
-
-// Lorebook Definition
-#[derive(Serialize, Deserialize, Clone, Default)]
-#[serde(rename_all = "snake_case")]
-pub struct Lorebook {
-    pub name: Option<String>,
-    pub description: Option<String>,
-    pub scan_depth: Option<i64>,
-    pub token_budget: Option<i64>,
-    pub recursive_scanning: Option<bool>,
-    #[serde(default)]
-    pub extensions: HashMap<String, Value>,
-    #[serde(default)]
-    pub entries: Vec<LorebookEntry>,
-}
-
-impl std::fmt::Debug for Lorebook {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Lorebook")
-            .field("name", &"[REDACTED]")
-            .field("description", &"[REDACTED]")
-            .field("scan_depth", &self.scan_depth)
-            .field("token_budget", &self.token_budget)
-            .field("recursive_scanning", &self.recursive_scanning)
-            .field("extensions", &"[REDACTED]")
-            .field("entries", &self.entries) // Relies on LorebookEntry's Debug
             .finish()
     }
 }
@@ -323,153 +295,6 @@ fn parse_decorators_from_content(raw_content: &str) -> (Vec<Decorator>, String) 
     (decorators, processed_content)
 }
 
-// Lorebook Entry Definition
-#[derive(Serialize, Clone)] // Removed Deserialize temporarily, will add custom later, Removed Debug
-#[serde(rename_all = "snake_case")]
-pub struct LorebookEntry {
-    #[serde(default)]
-    pub keys: Vec<String>,
-    // Raw content as read from JSON
-    pub content: String,
-    #[serde(default)]
-    pub extensions: HashMap<String, Value>,
-    pub enabled: bool,
-    #[serde(default)] // Assume 0 if missing.
-    pub insertion_order: i64,
-    pub case_sensitive: Option<bool>,
-
-    // V3 additions / Required V2 optionals
-    #[serde(default)] // Default is false
-    pub use_regex: bool,
-    pub constant: Option<bool>,
-
-    // Optional fields (compatibility)
-    pub name: Option<String>,
-    pub priority: Option<i64>,
-    pub id: Option<Value>, // Can be string or number according to spec
-    pub comment: Option<String>,
-
-    // Selective Activation fields
-    pub selective: Option<bool>,
-    #[serde(default)]
-    pub secondary_keys: Vec<String>,
-
-    // Position (only before/after_char mentioned in struct definition)
-    pub position: Option<LorebookEntryPosition>,
-
-    // --- Fields derived from parsing decorators ---
-    #[serde(skip)] // Don't serialize/deserialize this directly
-    pub parsed_decorators: Vec<Decorator>,
-    #[serde(skip)] // Don't serialize/deserialize this directly
-    pub processed_content: String, // Content after decorators are stripped
-}
-
-impl std::fmt::Debug for LorebookEntry {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("LorebookEntry")
-            .field("keys", &"[REDACTED]")
-            .field("content", &"[REDACTED]")
-            .field("extensions", &"[REDACTED]")
-            .field("enabled", &self.enabled)
-            .field("insertion_order", &self.insertion_order)
-            .field("case_sensitive", &self.case_sensitive)
-            .field("use_regex", &self.use_regex)
-            .field("constant", &self.constant)
-            .field("name", &"[REDACTED]")
-            .field("priority", &self.priority)
-            .field("id", &self.id) // Value's Debug should be fine
-            .field("comment", &"[REDACTED]")
-            .field("selective", &self.selective)
-            .field("secondary_keys", &"[REDACTED]")
-            .field("position", &self.position) // Relies on LorebookEntryPosition's Debug
-            .field("parsed_decorators", &self.parsed_decorators) // Relies on Decorator's Debug
-            .field("processed_content", &"[REDACTED]")
-            .finish()
-    }
-}
-
-// We need a temporary struct for deserialization before processing decorators
-#[derive(Deserialize)] // Removed Debug
-#[serde(rename_all = "snake_case")]
-struct RawLorebookEntry {
-    #[serde(default)]
-    keys: Vec<String>,
-    content: String,
-    #[serde(default)]
-    extensions: HashMap<String, Value>,
-    enabled: bool,
-    #[serde(default)]
-    insertion_order: i64,
-    case_sensitive: Option<bool>,
-    #[serde(default)]
-    use_regex: bool,
-    constant: Option<bool>,
-    name: Option<String>,
-    priority: Option<i64>,
-    id: Option<Value>,
-    comment: Option<String>,
-    selective: Option<bool>,
-    #[serde(default)]
-    secondary_keys: Vec<String>,
-    position: Option<LorebookEntryPosition>,
-}
-
-impl std::fmt::Debug for RawLorebookEntry {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("RawLorebookEntry")
-            .field("keys", &"[REDACTED]")
-            .field("content", &"[REDACTED]")
-            .field("extensions", &"[REDACTED]")
-            .field("enabled", &self.enabled)
-            .field("insertion_order", &self.insertion_order)
-            .field("case_sensitive", &self.case_sensitive)
-            .field("use_regex", &self.use_regex)
-            .field("constant", &self.constant)
-            .field("name", &"[REDACTED]")
-            .field("priority", &self.priority)
-            .field("id", &self.id) // Value's Debug should be fine
-            .field("comment", &"[REDACTED]")
-            .field("selective", &self.selective)
-            .field("secondary_keys", &"[REDACTED]")
-            .field("position", &self.position) // Relies on LorebookEntryPosition's Debug
-            .finish()
-    }
-}
-
-// Custom Deserialize implementation for LorebookEntry to handle decorator parsing
-impl<'de> Deserialize<'de> for LorebookEntry {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let raw: RawLorebookEntry = RawLorebookEntry::deserialize(deserializer)?;
-
-        // Parse decorators from the raw content
-        let (parsed_decorators, processed_content) = parse_decorators_from_content(&raw.content);
-
-        Ok(LorebookEntry {
-            keys: raw.keys,
-            content: raw.content, // Keep original raw content
-            extensions: raw.extensions,
-            enabled: raw.enabled,
-            insertion_order: raw.insertion_order,
-            case_sensitive: raw.case_sensitive,
-            use_regex: raw.use_regex,
-            constant: raw.constant,
-            name: raw.name,
-            priority: raw.priority,
-            id: raw.id,
-            comment: raw.comment,
-            selective: raw.selective,
-            secondary_keys: raw.secondary_keys,
-            position: raw.position,
-            // --- Populate derived fields ---
-            parsed_decorators,
-            processed_content,
-        })
-    }
-}
-
 // Enum for Lorebook Entry Position Field
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -509,7 +334,7 @@ mod tests;
 
 // --- Diesel Database Models ---
 
-use crate::schema::{character_assets, lorebook_entries, lorebooks};
+use crate::schema::{character_assets};
 // use crate::models::users::User; // Unused import
 
 // Note: For Insertable, we might need a separate struct `NewCharacter`
@@ -982,153 +807,6 @@ impl std::fmt::Debug for NewCharacterAsset {
     }
 }
 
-#[derive(Queryable, Selectable, Identifiable, Associations, Serialize)]
-#[diesel(table_name = lorebooks)]
-#[diesel(belongs_to(Character))] // Foreign key character_id -> characters(id)
-pub struct DbLorebook {
-    pub id: i32,
-    #[diesel(deserialize_as = Uuid)]
-    pub character_id: Uuid, // Changed from i32
-    pub name: Option<String>,
-    pub description: Option<String>,
-    pub scan_depth: Option<i32>,
-    pub token_budget: Option<i32>,
-    pub recursive_scanning: Option<bool>,
-    pub extensions: Option<Json<JsonValue>>, // JSONB
-}
-
-impl std::fmt::Debug for DbLorebook {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("DbLorebook")
-            .field("id", &self.id)
-            .field("character_id", &self.character_id)
-            .field("name", &"[REDACTED]")
-            .field("description", &"[REDACTED]")
-            .field("scan_depth", &self.scan_depth)
-            .field("token_budget", &self.token_budget)
-            .field("recursive_scanning", &self.recursive_scanning)
-            .field("extensions", &"[REDACTED_JSON]")
-            .finish()
-    }
-}
-
-#[derive(Insertable)]
-#[diesel(table_name = lorebooks)]
-pub struct NewDbLorebook {
-    #[diesel(serialize_as = Uuid)]
-    pub character_id: Uuid, // Changed from i32
-    pub name: Option<String>,
-    pub description: Option<String>,
-    pub scan_depth: Option<i32>,
-    pub token_budget: Option<i32>,
-    pub recursive_scanning: Option<bool>,
-    pub extensions: Option<Json<JsonValue>>,
-}
-
-impl std::fmt::Debug for NewDbLorebook {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("NewDbLorebook")
-            .field("character_id", &self.character_id)
-            .field("name", &"[REDACTED]")
-            .field("description", &"[REDACTED]")
-            .field("scan_depth", &self.scan_depth)
-            .field("token_budget", &self.token_budget)
-            .field("recursive_scanning", &self.recursive_scanning)
-            .field("extensions", &"[REDACTED_JSON]")
-            .finish()
-    }
-}
-
-#[derive(Queryable, Selectable, Identifiable, Associations, Serialize)]
-#[diesel(table_name = lorebook_entries)]
-#[diesel(belongs_to(DbLorebook, foreign_key = lorebook_id))] // Explicitly set foreign key
-pub struct DbLorebookEntry {
-    pub id: i32,
-    pub lorebook_id: i32,
-    pub keys: Vec<Option<String>>, // TEXT[]
-    pub content: String,
-    pub extensions: Option<Json<JsonValue>>, // JSONB
-    pub enabled: bool,
-    pub insertion_order: i32,
-    pub case_sensitive: Option<bool>,
-    pub use_regex: bool,
-    pub constant: Option<bool>,
-    pub name: Option<String>,
-    pub priority: Option<i32>,
-    pub entry_id: Option<String>,
-    pub comment: Option<String>,
-    pub selective: Option<bool>,
-    pub secondary_keys: Option<Vec<Option<String>>>, // TEXT[]
-    pub position: Option<String>,
-}
-
-impl std::fmt::Debug for DbLorebookEntry {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("DbLorebookEntry")
-            .field("id", &self.id)
-            .field("lorebook_id", &self.lorebook_id)
-            .field("keys", &"[REDACTED]")
-            .field("content", &"[REDACTED]")
-            .field("extensions", &"[REDACTED_JSON]")
-            .field("enabled", &self.enabled)
-            .field("insertion_order", &self.insertion_order)
-            .field("case_sensitive", &self.case_sensitive)
-            .field("use_regex", &self.use_regex)
-            .field("constant", &self.constant)
-            .field("name", &"[REDACTED]")
-            .field("priority", &self.priority)
-            .field("entry_id", &"[REDACTED]")
-            .field("comment", &"[REDACTED]")
-            .field("selective", &self.selective)
-            .field("secondary_keys", &"[REDACTED]")
-            .field("position", &"[REDACTED]")
-            .finish()
-    }
-}
-
-#[derive(Insertable)]
-#[diesel(table_name = lorebook_entries)]
-pub struct NewDbLorebookEntry {
-    pub lorebook_id: i32,
-    pub keys: Vec<Option<String>>,
-    pub content: String,
-    pub extensions: Option<Json<JsonValue>>,
-    pub enabled: bool,
-    pub insertion_order: i32,
-    pub case_sensitive: Option<bool>,
-    pub use_regex: bool,
-    pub constant: Option<bool>,
-    pub name: Option<String>,
-    pub priority: Option<i32>,
-    pub entry_id: Option<String>,
-    pub comment: Option<String>,
-    pub selective: Option<bool>,
-    pub secondary_keys: Option<Vec<Option<String>>>,
-    pub position: Option<String>,
-}
-
-impl std::fmt::Debug for NewDbLorebookEntry {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("NewDbLorebookEntry")
-            .field("lorebook_id", &self.lorebook_id)
-            .field("keys", &"[REDACTED]")
-            .field("content", &"[REDACTED]")
-            .field("extensions", &"[REDACTED_JSON]")
-            .field("enabled", &self.enabled)
-            .field("insertion_order", &self.insertion_order)
-            .field("case_sensitive", &self.case_sensitive)
-            .field("use_regex", &self.use_regex)
-            .field("constant", &self.constant)
-            .field("name", &"[REDACTED]")
-            .field("priority", &self.priority)
-            .field("entry_id", &"[REDACTED]")
-            .field("comment", &"[REDACTED]")
-            .field("selective", &self.selective)
-            .field("secondary_keys", &"[REDACTED]")
-            .field("position", &"[REDACTED]")
-            .finish()
-    }
-}
 
 // --- Unit tests ---
 #[cfg(test)]
@@ -1360,18 +1038,6 @@ mod tests {
     }
 
     #[test]
-    fn test_lorebook_default() {
-        let book = Lorebook::default();
-        assert!(book.name.is_none());
-        assert!(book.description.is_none());
-        assert!(book.scan_depth.is_none());
-        assert!(book.token_budget.is_none());
-        assert!(book.recursive_scanning.is_none());
-        assert!(book.extensions.is_empty());
-        assert!(book.entries.is_empty());
-    }
-
-    #[test]
     fn test_new_character_default() {
         let new_char = NewCharacter::default();
         // user_id is not Default, so it won't be set here.
@@ -1409,10 +1075,6 @@ mod tests {
         };
         let _ = format!("{:?}", asset);
 
-        // Lorebook
-        let book = Lorebook::default();
-        let _ = format!("{:?}", book);
-
         // Decorator
         let decorator = Decorator {
             name: "test".to_string(),
@@ -1420,28 +1082,6 @@ mod tests {
             fallbacks: vec![],
         };
         let _ = format!("{:?}", decorator);
-
-        // LorebookEntry (needs manual construction due to custom Deserialize)
-        let entry = LorebookEntry {
-            keys: vec!["key".to_string()],
-            content: "content".to_string(),
-            extensions: Default::default(),
-            enabled: true,
-            insertion_order: 0,
-            case_sensitive: None,
-            use_regex: false,
-            constant: None,
-            name: None,
-            priority: None,
-            id: None,
-            comment: None,
-            selective: None,
-            secondary_keys: vec![],
-            position: None,
-            parsed_decorators: vec![],                // skip field
-            processed_content: "content".to_string(), // skip field
-        };
-        let _ = format!("{:?}", entry);
 
         // LorebookEntryPosition
         let pos = LorebookEntryPosition::BeforeChar;
@@ -1482,93 +1122,6 @@ mod tests {
         };
         let _ = format!("{:?}", new_char_asset);
 
-        // DbLorebook (needs id, character_id)
-        let db_book = DbLorebook {
-            id: 1,
-            character_id: Uuid::new_v4(),
-            name: None,
-            description: None,
-            scan_depth: None,
-            token_budget: None,
-            recursive_scanning: None,
-            extensions: None,
-        };
-        let _ = format!("{:?}", db_book);
-
-        // NewDbLorebook (needs character_id)
-        let new_db_book = NewDbLorebook {
-            character_id: Uuid::new_v4(),
-            name: None,
-            description: None,
-            scan_depth: None,
-            token_budget: None,
-            recursive_scanning: None,
-            extensions: None,
-        };
-        let _ = format!("{:?}", new_db_book);
-
-        // DbLorebookEntry (needs id, lorebook_id)
-        let db_entry = DbLorebookEntry {
-            id: 1,
-            lorebook_id: 1,
-            keys: vec![],
-            content: "content".to_string(),
-            extensions: None,
-            enabled: true,
-            insertion_order: 0,
-            case_sensitive: None,
-            use_regex: false,
-            constant: None,
-            name: None,
-            priority: None,
-            entry_id: None,
-            comment: None,
-            selective: None,
-            secondary_keys: None,
-            position: None,
-        };
-        let _ = format!("{:?}", db_entry);
-
-        // NewDbLorebookEntry (needs lorebook_id)
-        let new_db_entry = NewDbLorebookEntry {
-            lorebook_id: 1,
-            keys: vec![],
-            content: "content".to_string(),
-            extensions: None,
-            enabled: true,
-            insertion_order: 0,
-            case_sensitive: None,
-            use_regex: false,
-            constant: None,
-            name: None,
-            priority: None,
-            entry_id: None,
-            comment: None,
-            selective: None,
-            secondary_keys: None,
-            position: None,
-        };
-        let _ = format!("{:?}", new_db_entry);
-    }
-
-    // --- Test for LorebookEntry Deserialize (covering lines 346-347) ---
-    #[test]
-    fn test_lorebook_entry_deserialize_with_decorators() {
-        let json = r#"{
-            "keys": ["key1"],
-            "content": "@@role system\nActual content.",
-            "enabled": true
-        }"#;
-
-        let entry: Result<LorebookEntry, _> = serde_json::from_str(json);
-        assert!(entry.is_ok());
-        let entry = entry.unwrap();
-
-        assert_eq!(entry.content, "@@role system\nActual content."); // Raw content preserved
-        assert_eq!(entry.processed_content, "Actual content."); // Decorators stripped
-        assert_eq!(entry.parsed_decorators.len(), 1); // Decorator parsed
-        assert_eq!(entry.parsed_decorators[0].name, "role");
-        assert_eq!(entry.parsed_decorators[0].value, Some("system".to_string()));
     }
 
     // --- Tests for NewCharacter::from_parsed_card (covering lines 433, 451, 457, 468, 471, 477-478, 528, 533) ---

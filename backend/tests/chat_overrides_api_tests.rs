@@ -53,21 +53,21 @@ mod chat_overrides_api_tests {
         let user = test_helpers::db::create_test_user(&test_app.db_pool, username.to_string(), password.to_string()).await.unwrap();
         guard.add_user(user.id);
         
-        let session_cookie = test_helpers::login_user_via_api(test_app, username, password).await;
+        let (_client, session_cookie_str) = test_helpers::login_user_via_api(test_app, username, password).await;
 
         let character = test_helpers::db::create_test_character(&test_app.db_pool, user.id, "Override Test Char".to_string()).await.unwrap();
         guard.add_character(character.id);
 
-        let chat_session = create_chat_session_via_api(test_app, user.id, character.id, &session_cookie).await;
+        let chat_session = create_chat_session_via_api(test_app, user.id, character.id, &session_cookie_str).await;
         guard.add_chat(chat_session.id); // Use add_chat
 
-        (guard, user, character, chat_session, session_cookie)
+        (guard, user, character, chat_session, session_cookie_str)
     }
 
     #[tokio::test]
     async fn test_create_new_override_success() {
         let test_app = test_helpers::spawn_app(true, true, true).await;
-        let (_guard, _user, _character, chat_session, session_cookie) = setup_test_environment(&test_app).await;
+        let (_guard, _user, _character, chat_session, session_cookie_str) = setup_test_environment(&test_app).await;
 
         let override_dto = CharacterOverrideDto {
             field_name: "description".to_string(),
@@ -87,7 +87,7 @@ mod chat_overrides_api_tests {
 
         let response = client
             .post(&request_url)
-            .header("Cookie", &session_cookie) // Pass the session cookie from login
+            .header("Cookie", &session_cookie_str) // Pass the session cookie from login
             .json(&override_dto)
             .send()
             .await
@@ -109,7 +109,7 @@ mod chat_overrides_api_tests {
     #[tokio::test]
     async fn test_update_existing_override_success() {
         let test_app = test_helpers::spawn_app(true, true, true).await;
-        let (_guard, _user, character, chat_session, session_cookie) = setup_test_environment(&test_app).await;
+        let (_guard, _user, character, chat_session, session_cookie_str) = setup_test_environment(&test_app).await;
 
         let client = reqwest::Client::builder()
             .cookie_store(true)
@@ -129,7 +129,7 @@ mod chat_overrides_api_tests {
         // 1. Create the initial override
         let response1 = client
             .post(&request_url)
-            .header("Cookie", &session_cookie)
+            .header("Cookie", &session_cookie_str)
             .json(&initial_override_dto)
             .send()
             .await
@@ -152,7 +152,7 @@ mod chat_overrides_api_tests {
 
         let response2 = client
             .post(&request_url) // Same URL for upsert
-            .header("Cookie", &session_cookie)
+            .header("Cookie", &session_cookie_str)
             .json(&updated_override_dto)
             .send()
             .await
@@ -179,7 +179,7 @@ mod chat_overrides_api_tests {
     #[tokio::test]
     async fn test_create_override_for_non_existent_chat_session() {
         let test_app = test_helpers::spawn_app(true, true, true).await;
-        let (_guard, _user, _character, _chat_session, session_cookie) = setup_test_environment(&test_app).await;
+        let (_guard, _user, _character, _chat_session, session_cookie_str) = setup_test_environment(&test_app).await;
 
         let client = reqwest::Client::builder()
             .cookie_store(true)
@@ -200,7 +200,7 @@ mod chat_overrides_api_tests {
 
         let response = client
             .post(&request_url)
-            .header("Cookie", &session_cookie)
+            .header("Cookie", &session_cookie_str)
             .json(&override_dto)
             .send()
             .await
@@ -219,10 +219,10 @@ mod chat_overrides_api_tests {
         let user_a_password = "password123A";
         let user_a = test_helpers::db::create_test_user(&test_app.db_pool, user_a_username.to_string(), user_a_password.to_string()).await.unwrap();
         guard.add_user(user_a.id);
-        let user_a_cookie = test_helpers::login_user_via_api(&test_app, user_a_username, user_a_password).await;
+        let (_client_a, user_a_cookie_str) = test_helpers::login_user_via_api(&test_app, user_a_username, user_a_password).await;
         let character_a = test_helpers::db::create_test_character(&test_app.db_pool, user_a.id, "UserA Char".to_string()).await.unwrap();
         guard.add_character(character_a.id);
-        let chat_session_a = create_chat_session_via_api(&test_app, user_a.id, character_a.id, &user_a_cookie).await;
+        let chat_session_a = create_chat_session_via_api(&test_app, user_a.id, character_a.id, &user_a_cookie_str).await;
         guard.add_chat(chat_session_a.id);
 
         // User B: The one trying to make an unauthorized edit
@@ -230,7 +230,7 @@ mod chat_overrides_api_tests {
         let user_b_password = "password123B";
         let user_b = test_helpers::db::create_test_user(&test_app.db_pool, user_b_username.to_string(), user_b_password.to_string()).await.unwrap();
         guard.add_user(user_b.id);
-        let user_b_cookie = test_helpers::login_user_via_api(&test_app, user_b_username, user_b_password).await;
+        let (_client_b, user_b_cookie_str) = test_helpers::login_user_via_api(&test_app, user_b_username, user_b_password).await;
 
         let client = reqwest::Client::builder()
             .cookie_store(true)
@@ -249,7 +249,7 @@ mod chat_overrides_api_tests {
 
         let response = client
             .post(&request_url)
-            .header("Cookie", &user_b_cookie) // Authenticated as User B
+            .header("Cookie", &user_b_cookie_str) // Authenticated as User B
             .json(&override_dto)
             .send()
             .await
@@ -261,7 +261,7 @@ mod chat_overrides_api_tests {
     #[tokio::test]
     async fn test_create_override_empty_value() {
         let test_app = test_helpers::spawn_app(true, true, true).await;
-        let (_guard, _user, _character, chat_session, session_cookie) = setup_test_environment(&test_app).await;
+        let (_guard, _user, _character, chat_session, session_cookie_str) = setup_test_environment(&test_app).await;
 
         let client = reqwest::Client::builder()
             .cookie_store(true)
@@ -280,7 +280,7 @@ mod chat_overrides_api_tests {
 
         let response = client
             .post(&request_url)
-            .header("Cookie", &session_cookie)
+            .header("Cookie", &session_cookie_str)
             .json(&override_dto)
             .send()
             .await
@@ -297,7 +297,7 @@ mod chat_overrides_api_tests {
     #[tokio::test]
     async fn test_create_override_invalid_field_name() {
         let test_app = test_helpers::spawn_app(true, true, true).await;
-        let (_guard, _user, _character, chat_session, session_cookie) = setup_test_environment(&test_app).await;
+        let (_guard, _user, _character, chat_session, session_cookie_str) = setup_test_environment(&test_app).await;
 
         let client = reqwest::Client::builder()
             .cookie_store(true)
@@ -316,7 +316,7 @@ mod chat_overrides_api_tests {
 
         let response = client
             .post(&request_url)
-            .header("Cookie", &session_cookie)
+            .header("Cookie", &session_cookie_str)
             .json(&override_dto)
             .send()
             .await
@@ -333,7 +333,7 @@ mod chat_overrides_api_tests {
     #[tokio::test]
     async fn test_create_override_response_has_message_field() {
         let test_app = test_helpers::spawn_app(true, true, true).await;
-        let (_guard, _user, _character, chat_session, session_cookie) = setup_test_environment(&test_app).await;
+        let (_guard, _user, _character, chat_session, session_cookie_str) = setup_test_environment(&test_app).await;
 
         let override_dto = CharacterOverrideDto {
             field_name: "description".to_string(),
@@ -352,7 +352,7 @@ mod chat_overrides_api_tests {
 
         let response = client
             .post(&request_url)
-            .header("Cookie", &session_cookie)
+            .header("Cookie", &session_cookie_str)
             .json(&override_dto)
             .send()
             .await

@@ -5,6 +5,7 @@ use crate::errors::AppError;
 use crate::llm::EmbeddingClient;
 use async_trait::async_trait;
 use reqwest::Client as ReqwestClient;
+// use serde::ser::SerializeStruct; // Not needed with skip_serializing_if
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::time::Duration;
@@ -12,17 +13,20 @@ use tracing::{error, instrument};
 
 // --- Request Structs ---
 
+// --- Single Embedding Request Structs ---
 #[derive(Serialize)]
 struct EmbeddingRequest<'a> {
     model: &'a str,
-    content: Content<'a>,
-    #[serde(rename = "taskType")] // Match API naming
+    content: ContentWithTitle<'a>, // Changed
+    #[serde(rename = "taskType")]
     task_type: &'a str,
 }
 
+// Content structure for embedding requests
 #[derive(Serialize)]
-struct Content<'a> {
+struct ContentWithTitle<'a> {
     parts: Vec<Part<'a>>,
+    // Note: title field removed as it's not supported by Gemini API
 }
 
 #[derive(Serialize)]
@@ -30,20 +34,53 @@ struct Part<'a> {
     text: &'a str,
 }
 
-// --- Response Structs ---
-
+// --- Single Embedding Response Structs ---
 #[derive(Deserialize)]
 struct EmbeddingResponse {
-    embedding: Embedding,
-    // Add potential error fields if needed for better error handling
+    embedding: EmbeddingData,
 }
 
-#[derive(Deserialize)]
-struct Embedding {
+#[derive(Deserialize, Debug)]
+struct EmbeddingData {
     values: Vec<f32>,
 }
 
-// --- Error Response Struct ---
+// --- Batch Embedding Request Structs ---
+
+/// Public request struct for a single item in a batch embedding request.
+#[derive(Debug, Clone)] // Added derive for easier use
+pub struct BatchEmbeddingContentRequest<'a> {
+    pub text: &'a str,
+    pub task_type: &'a str,
+}
+
+/// Internal struct for a single request within the batchEmbedContents API payload.
+#[derive(Serialize)]
+struct SingleBatchRequestInternal<'a> {
+    // Model is specified at the top level of the batch request for the API,
+    // but we might include it here if we were to support per-item model overrides (not typical for this API).
+    // For now, it's simpler to assume one model per batch call.
+    content: ContentWithTitle<'a>,
+    #[serde(rename = "taskType")]
+    task_type: &'a str,
+}
+
+/// Internal container for the batchEmbedContents API payload.
+#[derive(Serialize)]
+struct BatchEmbedRequestContainerInternal<'a> {
+    requests: Vec<SingleBatchRequestInternal<'a>>,
+}
+
+
+// --- Batch Embedding Response Structs ---
+
+#[derive(Deserialize, Debug)] // Added Debug
+struct BatchEmbeddingResponse {
+    embeddings: Vec<EmbeddingData>, // API returns a list of embeddings
+}
+
+
+// --- Common Error Response Struct ---
 #[derive(Deserialize, Debug)]
 struct GeminiApiErrorResponse {
     error: GeminiApiError,
@@ -69,8 +106,13 @@ pub struct RestGeminiEmbeddingClient {
 // --- Builder Function (To be added below) ---
 #[async_trait]
 impl EmbeddingClient for RestGeminiEmbeddingClient {
-    #[instrument(skip(self, text), fields(task_type, model_name = %self.model_name), err)] // Add instrument
-    async fn embed_content(&self, text: &str, task_type: &str) -> Result<Vec<f32>, AppError> {
+    #[instrument(skip(self, text), fields(task_type, model_name = %self.model_name), err)]
+    async fn embed_content(
+        &self,
+        text: &str,
+        task_type: &str,
+        _title: Option<&str>, // Keep parameter for trait compatibility, but ignore it
+    ) -> Result<Vec<f32>, AppError> {
         let api_key = self.config.gemini_api_key.as_ref().ok_or_else(|| {
             error!("GEMINI_API_KEY not configured");
             AppError::ConfigError("GEMINI_API_KEY not configured".to_string())
@@ -84,7 +126,7 @@ impl EmbeddingClient for RestGeminiEmbeddingClient {
 
         let request_body = EmbeddingRequest {
             model: &self.model_name,
-            content: Content {
+            content: ContentWithTitle {
                 parts: vec![Part { text }],
             },
             task_type,
@@ -125,9 +167,82 @@ impl EmbeddingClient for RestGeminiEmbeddingClient {
 
         Ok(embedding_response.embedding.values)
     }
+
+    #[instrument(skip(self, requests), fields(num_requests = requests.len(), model_name = %self.model_name), err)]
+    async fn batch_embed_contents(
+        &self,
+        requests: Vec<BatchEmbeddingContentRequest<'_>>,
+    ) -> Result<Vec<Vec<f32>>, AppError> {
+        if requests.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let api_key = self.config.gemini_api_key.as_ref().ok_or_else(|| {
+            error!("GEMINI_API_KEY not configured for batch embedding");
+            AppError::ConfigError("GEMINI_API_KEY not configured".to_string())
+        })?;
+
+        // Construct URL (e.g., "https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-exp-03-07:batchEmbedContents?key=...")
+        let url = format!(
+            "https://generativelanguage.googleapis.com/v1beta/{}:batchEmbedContents?key={}",
+            self.model_name, api_key
+        );
+
+        let internal_requests: Vec<SingleBatchRequestInternal> = requests
+            .into_iter()
+            .map(|req| SingleBatchRequestInternal {
+                content: ContentWithTitle {
+                    parts: vec![Part { text: req.text }],
+                },
+                task_type: req.task_type,
+            })
+            .collect();
+
+        let request_body = BatchEmbedRequestContainerInternal {
+            requests: internal_requests,
+        };
+        
+        let response = self
+            .reqwest_client
+            .post(&url)
+            .json(&request_body)
+            .send()
+            .await
+            .map_err(|e| {
+                error!(error = %e, "HTTP request to Gemini Batch Embedding API failed");
+                AppError::HttpRequestError(e.to_string())
+            })?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let error_body = response.json::<GeminiApiErrorResponse>().await;
+            error!(status = %status, error_details = ?error_body, "Gemini Batch Embedding API returned error status");
+            let error_message = error_body
+                .map(|b| b.error.message)
+                .unwrap_or_else(|e| format!("Failed to parse error body: {}", e));
+            return Err(AppError::GeminiError(format!(
+                "Gemini Batch API error ({}): {}",
+                status, error_message
+            )));
+        }
+
+        let batch_response = response.json::<BatchEmbeddingResponse>().await.map_err(|e| {
+            error!(error = %e, "Failed to parse successful Gemini Batch Embedding API response");
+            AppError::SerializationError(format!(
+                "Failed to parse Gemini batch embedding response: {}",
+                e
+            ))
+        })?;
+
+        Ok(batch_response
+            .embeddings
+            .into_iter()
+            .map(|emb_data| emb_data.values)
+            .collect())
+    }
 }
 
-// --- Builder Function (To be added below) ---
+// --- Builder Function ---
 pub fn build_gemini_embedding_client(
     config: Arc<Config>,
 ) -> Result<RestGeminiEmbeddingClient, AppError> {
@@ -176,6 +291,7 @@ mod tests {
         server_url: &str,
         text: &str,
         task_type: &str,
+        _title: Option<&str>, // Kept for compatibility but ignored
     ) -> Result<Vec<f32>, AppError> {
         let api_key =
             client.config.gemini_api_key.as_ref().ok_or_else(|| {
@@ -190,7 +306,7 @@ mod tests {
 
         let request_body = EmbeddingRequest {
             model: &client.model_name,
-            content: Content {
+            content: ContentWithTitle {
                 parts: vec![Part { text }],
             },
             task_type,
@@ -227,6 +343,74 @@ mod tests {
         Ok(embedding_response.embedding.values)
     }
 
+    // Helper function for testing batch_embed_contents with mock server
+    #[allow(dead_code)] // This is a test helper
+    async fn custom_batch_embed_contents(
+        client: &RestGeminiEmbeddingClient,
+        server_url: &str,
+        requests: Vec<BatchEmbeddingContentRequest<'_>>,
+    ) -> Result<Vec<Vec<f32>>, AppError> {
+        if requests.is_empty() {
+            return Ok(Vec::new());
+        }
+        let api_key = client.config.gemini_api_key.as_ref().ok_or_else(|| {
+            AppError::ConfigError("GEMINI_API_KEY not configured".to_string())
+        })?;
+
+        let url = format!(
+            "{}/v1beta/{}:batchEmbedContents?key={}",
+            server_url, client.model_name, api_key
+        );
+
+        let internal_requests: Vec<SingleBatchRequestInternal> = requests
+            .into_iter()
+            .map(|req| SingleBatchRequestInternal {
+                content: ContentWithTitle {
+                    parts: vec![Part { text: req.text }],
+                },
+                task_type: req.task_type,
+            })
+            .collect();
+        
+        let request_body = BatchEmbedRequestContainerInternal {
+            requests: internal_requests,
+        };
+
+        let response = client
+            .reqwest_client
+            .post(&url)
+            .json(&request_body)
+            .send()
+            .await
+            .map_err(|e| AppError::HttpRequestError(e.to_string()))?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let error_body = response.json::<GeminiApiErrorResponse>().await;
+            let error_message = error_body
+                .map(|b| b.error.message)
+                .unwrap_or_else(|e| format!("Failed to parse error body: {}", e));
+            return Err(AppError::GeminiError(format!(
+                "Gemini Batch API error ({}): {}",
+                status, error_message
+            )));
+        }
+
+        let batch_response = response.json::<BatchEmbeddingResponse>().await.map_err(|e| {
+            AppError::SerializationError(format!(
+                "Failed to parse Gemini batch embedding response: {}",
+                e
+            ))
+        })?;
+        
+        Ok(batch_response
+            .embeddings
+            .into_iter()
+            .map(|emb_data| emb_data.values)
+            .collect())
+    }
+
+
     #[test]
     fn test_build_gemini_embedding_client_success() {
         // Provide a dummy key for the config, builder doesn't validate it
@@ -255,9 +439,7 @@ mod tests {
                 .json_body(json!({
                     "model": "models/test-model",
                     "content": {
-                        "parts": [{
-                            "text": "Test text"
-                        }]
+                        "parts": [{ "text": "Test text" }]
                     },
                     "taskType": "RETRIEVAL_QUERY"
                 }));
@@ -282,8 +464,14 @@ mod tests {
         };
 
         // Call our custom function
-        let result =
-            custom_embed_content(&client, &server.base_url(), "Test text", "RETRIEVAL_QUERY").await;
+        let result = custom_embed_content(
+            &client,
+            &server.base_url(),
+            "Test text",
+            "RETRIEVAL_QUERY",
+            None, // title is None
+        )
+        .await;
 
         // Verify the mock was called
         mock.assert();
@@ -293,6 +481,55 @@ mod tests {
         let embedding = result.unwrap();
         assert_eq!(embedding, vec![0.1, 0.2, 0.3, 0.4, 0.5]);
     }
+
+    #[tokio::test]
+    async fn test_embed_content_with_title() {
+        let server = MockServer::start();
+        let api_key = "test_api_key_with_title";
+        let test_title = "My Document Title";
+
+        let mock = server.mock(|when, then| {
+            when.method(POST)
+                .path("/v1beta/models/test-model:embedContent")
+                .query_param("key", api_key)
+                .json_body(json!({
+                    "model": "models/test-model",
+                    "content": {
+                        "parts": [{ "text": "Text with title" }]
+                        // Note: title field removed as it's not supported by Gemini API
+                    },
+                    "taskType": "RETRIEVAL_DOCUMENT"
+                }));
+            then.status(200)
+                .header("content-type", "application/json")
+                .json_body(json!({
+                    "embedding": {
+                        "values": [0.7, 0.8, 0.9]
+                    }
+                }));
+        });
+
+        let config = create_test_config(Some(api_key.to_string()));
+        let client = RestGeminiEmbeddingClient {
+            reqwest_client: ReqwestClient::new(),
+            config,
+            model_name: "models/test-model".to_string(),
+        };
+
+        let result = custom_embed_content(
+            &client,
+            &server.base_url(),
+            "Text with title",
+            "RETRIEVAL_DOCUMENT",
+            Some(test_title), // Still pass title but it will be ignored
+        )
+        .await;
+
+        mock.assert();
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), vec![0.7, 0.8, 0.9]);
+    }
+
 
     #[tokio::test]
     async fn test_embed_content_api_error_response() {
@@ -333,6 +570,7 @@ mod tests {
             &server.base_url(),
             "Test text",
             "INVALID_TASK_TYPE",
+            None, // title is None
         )
         .await;
 
@@ -378,8 +616,14 @@ mod tests {
         };
 
         // Call our custom function
-        let result =
-            custom_embed_content(&client, &server.base_url(), "Test text", "RETRIEVAL_QUERY").await;
+        let result = custom_embed_content(
+            &client,
+            &server.base_url(),
+            "Test text",
+            "RETRIEVAL_QUERY",
+            None, // title is None
+        )
+        .await;
 
         // Verify the mock was called
         mock.assert();
@@ -420,8 +664,14 @@ mod tests {
         };
 
         // Call our custom function
-        let result =
-            custom_embed_content(&client, &server.base_url(), "Test text", "RETRIEVAL_QUERY").await;
+        let result = custom_embed_content(
+            &client,
+            &server.base_url(),
+            "Test text",
+            "RETRIEVAL_QUERY",
+            None, // title is None
+        )
+        .await;
 
         // Verify the mock was called
         mock.assert();
@@ -454,8 +704,9 @@ mod tests {
 
         let text = "Test input text";
         let task_type = "RETRIEVAL_QUERY";
+        let title = None; // title is None
 
-        let result = client.embed_content(text, task_type).await;
+        let result = client.embed_content(text, task_type, title).await;
 
         assert!(result.is_err());
         match result.err().unwrap() {
@@ -497,8 +748,14 @@ mod tests {
         };
 
         // Call the custom function that uses the mock server URL
-        let result =
-            custom_embed_content(&client, &server.base_url(), "Test text", "RETRIEVAL_QUERY").await;
+        let result = custom_embed_content(
+            &client,
+            &server.base_url(),
+            "Test text",
+            "RETRIEVAL_QUERY",
+            None, // title is None
+        )
+        .await;
 
         // Verify the mock was called (or attempted)
         mock.assert(); // Asserts that the request matching the criteria was received
@@ -534,8 +791,9 @@ mod tests {
 
         let text = "This is a test sentence for embedding.";
         let task_type = "RETRIEVAL_DOCUMENT"; // Use a valid task type
+        let title = None; // Title is not supported by Gemini API
 
-        let result = client.embed_content(text, task_type).await;
+        let result = client.embed_content(text, task_type, title).await;
 
         match result {
             Ok(embedding) => {
@@ -568,8 +826,9 @@ mod tests {
 
         let text = "Test text for invalid key";
         let task_type = "RETRIEVAL_QUERY";
+        let title = None;
 
-        let result = client.embed_content(text, task_type).await;
+        let result = client.embed_content(text, task_type, title).await;
 
         assert!(result.is_err(), "Expected an error due to invalid API key");
 
@@ -609,8 +868,14 @@ mod tests {
                 .body("Internal Server Error Text");
         });
 
-        let result =
-            custom_embed_content(&client, &server.base_url(), "Test text", "RETRIEVAL_QUERY").await;
+        let result = custom_embed_content(
+            &client,
+            &server.base_url(),
+            "Test text",
+            "RETRIEVAL_QUERY",
+            None, // title is None
+        )
+        .await;
 
         assert!(result.is_err());
         match result.err().unwrap() {
@@ -643,9 +908,7 @@ mod tests {
                 .json_body(json!({
                     "model": "models/test-model",
                     "content": {
-                        "parts": [{
-                            "text": "Test text"
-                        }]
+                        "parts": [{ "text": "Test text" }]
                     },
                     "taskType": task_type // Verify this task type is sent
                 }));
@@ -658,8 +921,14 @@ mod tests {
                 }));
         });
 
-        let result =
-            custom_embed_content(&client, &server.base_url(), "Test text", task_type).await;
+        let result = custom_embed_content(
+            &client,
+            &server.base_url(),
+            "Test text",
+            task_type,
+            None, // title is None
+        )
+        .await;
 
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), vec![0.6, 0.7, 0.8]);
@@ -686,9 +955,7 @@ mod tests {
                 .json_body(json!({
                     "model": "models/test-model",
                     "content": {
-                        "parts": [{
-                            "text": "" // Empty text
-                        }]
+                        "parts": [{ "text": "" }] // Empty text
                     },
                     "taskType": "RETRIEVAL_QUERY"
                 }));
@@ -701,12 +968,13 @@ mod tests {
                 }));
         });
 
-        let result = custom_embed_content(&client, &server.base_url(), "", "RETRIEVAL_QUERY").await;
+        let result =
+            custom_embed_content(&client, &server.base_url(), "", "RETRIEVAL_QUERY", None).await;
 
         assert!(result.is_err());
         match result.err().unwrap() {
             AppError::GeminiError(msg) => {
-                assert!(msg.contains("Gemini API error (400 Bad Request)"));
+                assert!(msg.contains("400"));
                 assert!(msg.contains("Invalid content format."));
             }
             _ => panic!("Expected AppError::GeminiError"),

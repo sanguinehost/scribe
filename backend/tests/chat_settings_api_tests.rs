@@ -453,7 +453,8 @@ async fn get_chat_settings_defaults() {
         test_app.mock_embedding_pipeline_service.clone(),
         chat_override_service_for_test,
         user_persona_service_for_test,
-        hybrid_token_counter_for_test
+        hybrid_token_counter_for_test,
+        encryption_service_for_test.clone()
     );
 
     let created_chat_session = chat_service::create_session_and_maybe_first_message(

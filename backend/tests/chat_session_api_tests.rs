@@ -871,7 +871,7 @@ async fn test_create_chat_session_with_empty_first_mes() -> Result<(), AnyhowErr
     .await
     .expect("Failed to create test user");
     test_data_guard.add_user(user.id);
-    let auth_cookie = test_helpers::login_user_via_api(&test_app, username, password).await;
+    let (_client, auth_cookie) = test_helpers::login_user_via_api(&test_app, username, password).await;
 
     let conn = test_app.db_pool.get().await?;
 
@@ -1024,7 +1024,7 @@ async fn test_create_chat_session_with_null_first_mes() -> anyhow::Result<()> {
     .await
     .expect("Failed to create test user");
     test_data_guard.add_user(user.id);
-    let auth_cookie = test_helpers::login_user_via_api(&test_app, username, password).await;
+    let (_client, auth_cookie) = test_helpers::login_user_via_api(&test_app, username, password).await;
 
     let conn = test_app.db_pool.get().await?;
 
@@ -1306,7 +1306,8 @@ async fn test_create_session_saves_first_mes() -> Result<(), AnyhowError> {
         test_app.mock_embedding_pipeline_service.clone(),
         chat_override_service_for_test, // 7th arg
         user_persona_service_for_test, // 8th arg
-        hybrid_token_counter_for_test    // 9th arg
+        hybrid_token_counter_for_test,    // 9th arg
+        encryption_service_for_test.clone()
     ));
 
     // The function create_session_and_maybe_first_message returns Result<scribe_backend::models::chats::Chat, ...>

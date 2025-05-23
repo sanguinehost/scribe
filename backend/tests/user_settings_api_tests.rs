@@ -17,11 +17,10 @@ async fn get_me_includes_default_persona_id() {
     let password = "password123";
     let user_db = db::create_test_user(&app.db_pool, username.to_string(), password.to_string()).await.unwrap();
     tdg.add_user(user_db.id);
-    let auth_cookie = login_user_via_api(&app, username, password).await;
-    let client = reqwest::Client::new();
+    let (client, auth_cookie_str) = login_user_via_api(&app, username, password).await;
 
     // 1. Initially, no default persona
-    let response = client.get(format!("{}/api/auth/me", app.address)).header(COOKIE, &auth_cookie).send().await.unwrap();
+    let response = client.get(format!("{}/api/auth/me", app.address)).header(COOKIE, &auth_cookie_str).send().await.unwrap();
     assert_eq!(response.status(), StatusCode::OK);
     let auth_response: AuthResponse = response.json().await.unwrap();
     assert_eq!(auth_response.user_id, user_db.id);
@@ -37,7 +36,7 @@ async fn get_me_includes_default_persona_id() {
     let response = client
         .post(format!("{}/api/personas", app.address)) // Corrected path to /api/personas
         .json(&persona_create)
-        .header(COOKIE, &auth_cookie) // Added auth cookie
+        .header(COOKIE, &auth_cookie_str) // Added auth cookie
         .send()
         .await
         .unwrap();
@@ -51,14 +50,14 @@ async fn get_me_includes_default_persona_id() {
             "{}/api/user-settings/set_default_persona/{}", // Corrected path segment
             app.address, created_persona.id
         ))
-        .header(COOKIE, &auth_cookie)
+        .header(COOKIE, &auth_cookie_str)
         .send()
         .await
         .unwrap();
     assert_eq!(response.status(), StatusCode::OK);
 
     // 4. Get /me again, should include default_persona_id
-    let response = client.get(format!("{}/api/auth/me", app.address)).header(COOKIE, &auth_cookie).send().await.unwrap();
+    let response = client.get(format!("{}/api/auth/me", app.address)).header(COOKIE, &auth_cookie_str).send().await.unwrap();
     assert_eq!(response.status(), StatusCode::OK);
     let auth_response: AuthResponse = response.json().await.unwrap();
     assert_eq!(auth_response.user_id, user_db.id);
@@ -71,14 +70,14 @@ async fn get_me_includes_default_persona_id() {
     // 5. Clear the default persona
     let response = client
         .delete(format!("{}/api/user-settings/clear_default_persona", app.address)) // Corrected path segment
-        .header(COOKIE, &auth_cookie)
+        .header(COOKIE, &auth_cookie_str)
         .send()
         .await
         .unwrap();
     assert_eq!(response.status(), StatusCode::NO_CONTENT);
 
     // 6. Get /me again, should be None
-    let response = client.get(format!("{}/api/auth/me", app.address)).header(COOKIE, &auth_cookie).send().await.unwrap();
+    let response = client.get(format!("{}/api/auth/me", app.address)).header(COOKIE, &auth_cookie_str).send().await.unwrap();
     assert_eq!(response.status(), StatusCode::OK);
     let auth_response: AuthResponse = response.json().await.unwrap();
     assert_eq!(auth_response.user_id, user_db.id);
@@ -96,8 +95,7 @@ async fn set_default_persona_success() {
     let password = "password123";
     let user_db = db::create_test_user(&app.db_pool, username.to_string(), password.to_string()).await.unwrap();
     tdg.add_user(user_db.id);
-    let auth_cookie = login_user_via_api(&app, username, password).await;
-    let client = reqwest::Client::new();
+    let (client, auth_cookie_str) = login_user_via_api(&app, username, password).await;
 
     // Create a persona
     let persona_create = CreateUserPersonaDto {
@@ -109,7 +107,7 @@ async fn set_default_persona_success() {
     let response = client
         .post(format!("{}/api/personas", app.address)) // Corrected path
         .json(&persona_create)
-        .header(COOKIE, &auth_cookie) // Added auth cookie
+        .header(COOKIE, &auth_cookie_str) // Added auth cookie
         .send()
         .await
         .unwrap();
@@ -123,14 +121,14 @@ async fn set_default_persona_success() {
             "{}/api/user-settings/set_default_persona/{}", // Corrected path segment
             app.address, created_persona.id
         ))
-        .header(COOKIE, &auth_cookie)
+        .header(COOKIE, &auth_cookie_str)
         .send()
         .await
         .unwrap();
     assert_eq!(response.status(), StatusCode::OK);
 
     // Verify by getting /me
-    let response = client.get(format!("{}/api/auth/me", app.address)).header(COOKIE, &auth_cookie).send().await.unwrap();
+    let response = client.get(format!("{}/api/auth/me", app.address)).header(COOKIE, &auth_cookie_str).send().await.unwrap();
     assert_eq!(response.status(), StatusCode::OK);
     let auth_response: AuthResponse = response.json().await.unwrap();
     assert_eq!(auth_response.default_persona_id, Some(created_persona.id));
@@ -147,8 +145,7 @@ async fn clear_default_persona_success() {
     let password = "password123";
     let user_db = db::create_test_user(&app.db_pool, username.to_string(), password.to_string()).await.unwrap();
     tdg.add_user(user_db.id);
-    let auth_cookie = login_user_via_api(&app, username, password).await;
-    let client = reqwest::Client::new();
+    let (client, auth_cookie_str) = login_user_via_api(&app, username, password).await;
 
     // Create and set a persona as default
     let persona_create = CreateUserPersonaDto {
@@ -160,7 +157,7 @@ async fn clear_default_persona_success() {
     let response = client
         .post(format!("{}/api/personas", app.address)) // Corrected path
         .json(&persona_create)
-        .header(COOKIE, &auth_cookie) // Added auth cookie
+        .header(COOKIE, &auth_cookie_str) // Added auth cookie
         .send()
         .await
         .unwrap();
@@ -173,12 +170,12 @@ async fn clear_default_persona_success() {
             "{}/api/user-settings/set_default_persona/{}", // Corrected path segment
             app.address, created_persona.id
         ))
-        .header(COOKIE, &auth_cookie)
+        .header(COOKIE, &auth_cookie_str)
         .send()
         .await
         .unwrap();
     // Sanity check it was set
-    let response = client.get(format!("{}/api/auth/me", app.address)).header(COOKIE, &auth_cookie).send().await.unwrap();
+    let response = client.get(format!("{}/api/auth/me", app.address)).header(COOKIE, &auth_cookie_str).send().await.unwrap();
     let auth_response: AuthResponse = response.json().await.unwrap();
     assert_eq!(auth_response.default_persona_id, Some(created_persona.id));
 
@@ -186,14 +183,14 @@ async fn clear_default_persona_success() {
     // Clear the default persona
     let response = client
         .delete(format!("{}/api/user-settings/clear_default_persona", app.address)) // Corrected path segment
-        .header(COOKIE, &auth_cookie)
+        .header(COOKIE, &auth_cookie_str)
         .send()
         .await
         .unwrap();
     assert_eq!(response.status(), StatusCode::NO_CONTENT);
 
     // Verify by getting /me
-    let response = client.get(format!("{}/api/auth/me", app.address)).header(COOKIE, &auth_cookie).send().await.unwrap();
+    let response = client.get(format!("{}/api/auth/me", app.address)).header(COOKIE, &auth_cookie_str).send().await.unwrap();
     assert_eq!(response.status(), StatusCode::OK);
     let auth_response: AuthResponse = response.json().await.unwrap();
     assert!(auth_response.default_persona_id.is_none());
@@ -210,15 +207,13 @@ async fn set_default_persona_not_owned_fails() {
     let alice_password = "password123";
     let user_alice_db = db::create_test_user(&app.db_pool, alice_username.to_string(), alice_password.to_string()).await.unwrap();
     tdg.add_user(user_alice_db.id);
-    let alice_auth_cookie = login_user_via_api(&app, alice_username, alice_password).await;
-    let client_alice = reqwest::Client::new();
+    let (client_alice, alice_auth_cookie_str) = login_user_via_api(&app, alice_username, alice_password).await;
 
     let bob_username = "bob_owns_persona";
     let bob_password = "password123";
     let user_bob_db = db::create_test_user(&app.db_pool, bob_username.to_string(), bob_password.to_string()).await.unwrap();
     tdg.add_user(user_bob_db.id);
-    let bob_auth_cookie = login_user_via_api(&app, bob_username, bob_password).await;
-    let client_bob = reqwest::Client::new();
+    let (client_bob, bob_auth_cookie_str) = login_user_via_api(&app, bob_username, bob_password).await;
 
 
     // Bob creates a persona
@@ -231,7 +226,7 @@ async fn set_default_persona_not_owned_fails() {
     let response = client_bob
         .post(format!("{}/api/personas", app.address)) // Corrected path
         .json(&persona_create_bob)
-        .header(COOKIE, &bob_auth_cookie)
+        .header(COOKIE, &bob_auth_cookie_str)
         .send()
         .await
         .unwrap();
@@ -245,7 +240,7 @@ async fn set_default_persona_not_owned_fails() {
             "{}/api/user-settings/set_default_persona/{}", // Corrected path segment
             app.address, bobs_persona.id
         ))
-        .header(COOKIE, &alice_auth_cookie)
+        .header(COOKIE, &alice_auth_cookie_str)
         .send()
         .await
         .unwrap();
@@ -256,7 +251,7 @@ async fn set_default_persona_not_owned_fails() {
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
 
     // Verify Alice's default_persona_id is still None
-    let response = client_alice.get(format!("{}/api/auth/me", app.address)).header(COOKIE, &alice_auth_cookie).send().await.unwrap();
+    let response = client_alice.get(format!("{}/api/auth/me", app.address)).header(COOKIE, &alice_auth_cookie_str).send().await.unwrap();
     assert_eq!(response.status(), StatusCode::OK);
     let auth_response_alice: AuthResponse = response.json().await.unwrap();
     assert!(auth_response_alice.default_persona_id.is_none());
@@ -309,8 +304,7 @@ async fn change_default_persona_success() {
     let password = "password123";
     let user_db = db::create_test_user(&app.db_pool, username.to_string(), password.to_string()).await.unwrap();
     tdg.add_user(user_db.id);
-    let auth_cookie = login_user_via_api(&app, username, password).await;
-    let client = reqwest::Client::new();
+    let (client, auth_cookie_str) = login_user_via_api(&app, username, password).await;
 
     // 1. Create Persona A
     let persona_a_create = CreateUserPersonaDto {
@@ -322,7 +316,7 @@ async fn change_default_persona_success() {
     let response_a = client
         .post(format!("{}/api/personas", app.address)) // Corrected path
         .json(&persona_a_create)
-        .header(COOKIE, &auth_cookie)
+        .header(COOKIE, &auth_cookie_str)
         .send()
         .await
         .unwrap();
@@ -340,7 +334,7 @@ async fn change_default_persona_success() {
     let response_b = client
         .post(format!("{}/api/personas", app.address)) // Corrected path
         .json(&persona_b_create)
-        .header(COOKIE, &auth_cookie)
+        .header(COOKIE, &auth_cookie_str)
         .send()
         .await
         .unwrap();
@@ -354,14 +348,14 @@ async fn change_default_persona_success() {
             "{}/api/user-settings/set_default_persona/{}", // Corrected path segment
             app.address, persona_a.id
         ))
-        .header(COOKIE, &auth_cookie)
+        .header(COOKIE, &auth_cookie_str)
         .send()
         .await
         .unwrap();
     assert_eq!(set_a_response.status(), StatusCode::OK);
 
     // 4. Verify Persona A is default
-    let get_me_response_1 = client.get(format!("{}/api/auth/me", app.address)).header(COOKIE, &auth_cookie).send().await.unwrap();
+    let get_me_response_1 = client.get(format!("{}/api/auth/me", app.address)).header(COOKIE, &auth_cookie_str).send().await.unwrap();
     assert_eq!(get_me_response_1.status(), StatusCode::OK);
     let auth_response_1: AuthResponse = get_me_response_1.json().await.unwrap();
     assert_eq!(auth_response_1.default_persona_id, Some(persona_a.id), "Persona A should be the default.");
@@ -372,14 +366,14 @@ async fn change_default_persona_success() {
             "{}/api/user-settings/set_default_persona/{}", // Corrected path segment
             app.address, persona_b.id
         ))
-        .header(COOKIE, &auth_cookie)
+        .header(COOKIE, &auth_cookie_str)
         .send()
         .await
         .unwrap();
     assert_eq!(set_b_response.status(), StatusCode::OK);
 
     // 6. Verify Persona B is now default
-    let get_me_response_2 = client.get(format!("{}/api/auth/me", app.address)).header(COOKIE, &auth_cookie).send().await.unwrap();
+    let get_me_response_2 = client.get(format!("{}/api/auth/me", app.address)).header(COOKIE, &auth_cookie_str).send().await.unwrap();
     assert_eq!(get_me_response_2.status(), StatusCode::OK);
     let auth_response_2: AuthResponse = get_me_response_2.json().await.unwrap();
     assert_eq!(auth_response_2.default_persona_id, Some(persona_b.id), "Persona B should now be the default.");

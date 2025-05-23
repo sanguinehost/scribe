@@ -1141,7 +1141,7 @@ async fn generate_chat_response_history_sliding_window_messages() -> anyhow::Res
     .await
     .expect("Failed to create test user");
     test_data_guard.add_user(user.id);
-    let auth_cookie = test_helpers::login_user_via_api(&test_app, username, password).await;
+    let (client, auth_cookie) = test_helpers::login_user_via_api(&test_app, username, password).await;
 
     let character_id = Uuid::new_v4();
     let new_character = DbCharacter {
@@ -1397,7 +1397,7 @@ async fn generate_chat_response_history_sliding_window_messages() -> anyhow::Res
         }],
         model: None,
     };
-    let client = reqwest::Client::new(); // Initialize client
+    // client is from login_user_via_api
     let response = client
         .post(format!("{}/api/chat/{}/generate", test_app.address, session_id))
         .header(reqwest::header::COOKIE, &auth_cookie)
@@ -1437,7 +1437,7 @@ async fn generate_chat_response_history_sliding_window_tokens() -> anyhow::Resul
     .await
     .expect("Failed to create test user");
     test_data_guard.add_user(user.id);
-    let auth_cookie = test_helpers::login_user_via_api(&test_app, username, password).await;
+    let (client, auth_cookie) = test_helpers::login_user_via_api(&test_app, username, password).await;
 
     let character_id = Uuid::new_v4();
     let new_character = DbCharacter {
@@ -1678,7 +1678,7 @@ async fn generate_chat_response_history_sliding_window_tokens() -> anyhow::Resul
         }],
         model: None,
     };
-    let client = reqwest::Client::new(); // Initialize client
+    // client is from login_user_via_api
     let response = client
         .post(format!("{}/api/chat/{}/generate", test_app.address, session_id))
         .header(reqwest::header::COOKIE, &auth_cookie)
@@ -1713,7 +1713,7 @@ async fn test_generate_chat_response_history_truncate_tokens() -> anyhow::Result
     .await
     .expect("Failed to create test user");
     test_data_guard.add_user(user.id);
-    let auth_cookie = test_helpers::login_user_via_api(&test_app, username, password).await;
+    let (client, auth_cookie) = test_helpers::login_user_via_api(&test_app, username, password).await;
 
     let character_id = Uuid::new_v4();
     let new_character = DbCharacter {
@@ -1954,7 +1954,7 @@ async fn test_generate_chat_response_history_truncate_tokens() -> anyhow::Result
         }],
         model: None,
     };
-    let client = reqwest::Client::new(); // Initialize client
+    // client is from login_user_via_api
     let response = client
         .post(format!("{}/api/chat/{}/generate", test_app.address, session_id))
         .header(reqwest::header::COOKIE, &auth_cookie)
@@ -2043,7 +2043,7 @@ async fn generate_chat_response_history_none() -> anyhow::Result<()> {
     .await
     .expect("Failed to create test user");
     test_data_guard.add_user(user.id);
-    let auth_cookie = test_helpers::login_user_via_api(&test_app, username, password).await;
+    let (client, auth_cookie) = test_helpers::login_user_via_api(&test_app, username, password).await;
 
     let character_id = Uuid::new_v4();
     let new_character = DbCharacter {
@@ -2251,7 +2251,7 @@ async fn generate_chat_response_history_none() -> anyhow::Result<()> {
         }],
         model: None,
     };
-    let client = reqwest::Client::new(); // Initialize client
+    // client is from login_user_via_api
     let response = client
         .post(format!("{}/api/chat/{}/generate", test_app.address, session_id))
         .header(reqwest::header::COOKIE, &auth_cookie)
@@ -2287,7 +2287,7 @@ async fn generate_chat_response_history_truncate_tokens_limit_30() -> anyhow::Re
     .await
     .expect("Failed to create test user");
     test_data_guard.add_user(user.id);
-    let auth_cookie = test_helpers::login_user_via_api(&test_app, username, password).await;
+    let (client, auth_cookie) = test_helpers::login_user_via_api(&test_app, username, password).await;
 
     let character_id = Uuid::new_v4();
     let new_character = DbCharacter {
@@ -2528,7 +2528,7 @@ async fn generate_chat_response_history_truncate_tokens_limit_30() -> anyhow::Re
         }],
         model: None,
     };
-    let client = reqwest::Client::new(); // Initialize client
+    // client is from login_user_via_api
     let response = client
         .post(format!("{}/api/chat/{}/generate", test_app.address, session_id))
         .header(reqwest::header::COOKIE, &auth_cookie)
@@ -2620,7 +2620,7 @@ async fn test_get_chat_messages_success() -> anyhow::Result<()> {
     .expect("Failed to create test user");
     test_data_guard.add_user(user.id);
     tracing::info!("Created test user with ID: {}", user.id);
-    let auth_cookie = test_helpers::login_user_via_api(&test_app, username, password).await;
+    let (client, auth_cookie) = test_helpers::login_user_via_api(&test_app, username, password).await;
     tracing::info!("Logged in with auth cookie: {}", auth_cookie);
 
     // Create a test character
@@ -2707,7 +2707,7 @@ async fn test_get_chat_messages_success() -> anyhow::Result<()> {
 
     // Verify that we can get the messages
     tracing::info!("Making API request to /api/chat/{}/generate", session_id);
-    let client = reqwest::Client::new();
+    // client is from login_user_via_api
     let response = client
         .post(format!("{}/api/chat/{}/generate", test_app.address, session_id))
         .header(reqwest::header::COOKIE, &auth_cookie)
@@ -2756,7 +2756,7 @@ async fn test_get_chat_messages_forbidden() -> anyhow::Result<()> {
     .await
     .expect("Failed to create test user B");
     test_data_guard.add_user(user_b.id);
-    let auth_cookie_b = test_helpers::login_user_via_api(&test_app, username_b, password_b).await;
+    let (client_b, auth_cookie_b) = test_helpers::login_user_via_api(&test_app, username_b, password_b).await;
 
     let character_a_id = Uuid::new_v4();
     let new_character_a = DbCharacter {
@@ -2891,8 +2891,8 @@ async fn test_get_chat_messages_forbidden() -> anyhow::Result<()> {
         }],
         model: None,
     };
-    let client = reqwest::Client::new();
-    let response = client
+    // client_b is from login_user_via_api
+    let response = client_b
         .post(format!("{}/api/chat/{}/generate", test_app.address, session_a_id)) // User B tries to access User A's session
         .header(reqwest::header::COOKIE, &auth_cookie_b)
         .header(reqwest::header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())

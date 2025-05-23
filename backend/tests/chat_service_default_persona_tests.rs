@@ -4,7 +4,6 @@ use secrecy::ExposeSecret; // Added import
 
 use diesel::prelude::*;
 use secrecy::SecretBox;
-use uuid::Uuid;
 use reqwest::header::COOKIE; // Added
 
 use scribe_backend::{
@@ -13,9 +12,8 @@ use scribe_backend::{
         user_personas::{UserPersonaDataForClient, CreateUserPersonaDto}, // Changed UserPersona to UserPersonaDataForClient
         users::{User, UserDbQuery},
     },
-    schema::{self, chat_sessions, user_personas, users, characters}, // Added schema::characters
+    schema::{user_personas, users, characters}, // Added schema::characters
     services::chat_service,
-    state::AppState, // Added
     test_helpers::{spawn_app, TestDataGuard, db, login_user_via_api, TestAppStateBuilder}, // Changed TestUser
 };
 
@@ -28,8 +26,7 @@ async fn create_session_uses_default_persona_when_active_persona_is_none() {
     let password = "password123";
     let user_db = db::create_test_user(&app.db_pool, username.to_string(), password.to_string()).await.unwrap();
     tdg.add_user(user_db.id);
-    let auth_cookie = login_user_via_api(&app, username, password).await;
-    let client = reqwest::Client::new();
+    let (client, auth_cookie) = login_user_via_api(&app, username, password).await;
 
     // 1. Create a character for the user
     let character_name = "Test Character for Default Persona";
@@ -247,8 +244,7 @@ async fn create_session_default_persona_deleted_falls_back_to_character_prompt()
     let password = "password123";
     let user_db = db::create_test_user(&app.db_pool, username.to_string(), password.to_string()).await.unwrap();
     tdg.add_user(user_db.id);
-    let auth_cookie = login_user_via_api(&app, username, password).await;
-    let client = reqwest::Client::new();
+    let (client, auth_cookie) = login_user_via_api(&app, username, password).await;
 
 
     // 1. Create a character
