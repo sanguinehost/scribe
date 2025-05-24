@@ -194,6 +194,7 @@ async fn test_rag_context_injection_real_ai() {
     let payload = GenerateChatRequest {
         history,
         model: None,
+        query_text_for_rag: None,
     };
 
     let request = Request::builder()

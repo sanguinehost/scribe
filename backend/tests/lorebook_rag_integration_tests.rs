@@ -289,6 +289,7 @@ async fn test_lorebook_import_retrieval_and_rag_integration() {
             content: user_message_content.clone(),
         }],
         model: None, // Use default model from chat session settings
+        query_text_for_rag: None,
     };
 
    // Configure the mock AI client to return a stream with content
@@ -432,8 +433,6 @@ async fn test_lorebook_import_retrieval_and_rag_integration() {
         .expect("No chat generation request was made to the AI client");
     
     // The genai::chat::ChatRequest has `system_prompt: Option<String>` and `messages: Vec<genai::chat::ChatMessage>`
-    let system_prompt_text = last_ai_request.system.as_deref().unwrap_or_default();
-
     // The user's message should be the last message in `last_ai_request.messages`
     let message_struct = last_ai_request
         .messages
@@ -469,10 +468,18 @@ async fn test_lorebook_import_retrieval_and_rag_integration() {
     // This assertion is now covered by checking last_message_content above.
     // We can remove this redundant check if last_message_content check is sufficient.
     // For clarity, let's ensure the user_message_content is exactly the last message.
+
+    // Construct the expected full message content that includes RAG context
+    let expected_ai_message_content = format!(
+        "--- Relevant Context ---\n- Lorebook (Title: \"North America\"): {}\n\n\n\n{}", // Changed to four newlines
+        north_america_content, // This is the content from the mock retrieval
+        user_message_content   // This is the original user query
+    );
+
     assert_eq!(
         last_message_content,
-        &user_message_content,
-        "The last message sent to AI is not exactly the user's message. Last Message: '{}'",
+        expected_ai_message_content.as_str(),
+        "The last message sent to AI does not match the expected RAG-augmented content. Last Message: '{}'",
         last_message_content
     );
 
@@ -490,31 +497,31 @@ async fn test_lorebook_import_retrieval_and_rag_integration() {
     // Let's assume they are part of the system prompt for now.
     // If they are part of the user message/history block, this assertion needs to move.
     assert!(
-        system_prompt_text.contains(expected_lorebook_title_text),
-        "System prompt does not contain the expected lorebook title text 'Title: \"North America\"'. System Prompt: '{}'",
-        system_prompt_text
+        last_message_content.contains(expected_lorebook_title_text),
+        "Last message content does not contain the expected lorebook title text 'Title: \"North America\"'. Last Message: '{}'",
+        last_message_content
     );
     
-    // Check for content snippets within the system prompt.
+    // Check for content snippets within the last message content.
     assert!(
-        system_prompt_text.contains(expected_lorebook_content_snippet1),
-        "System prompt does not contain snippet 1 from North America entry. System Prompt: '{}'",
-        system_prompt_text
+        last_message_content.contains(expected_lorebook_content_snippet1),
+        "Last message content does not contain snippet 1 from North America entry. Last Message: '{}'",
+        last_message_content
     );
     assert!(
-        system_prompt_text.contains(expected_lorebook_content_snippet2),
-        "System prompt does not contain snippet 2 from North America entry. System Prompt: '{}'",
-        system_prompt_text
+        last_message_content.contains(expected_lorebook_content_snippet2),
+        "Last message content does not contain snippet 2 from North America entry. Last Message: '{}'",
+        last_message_content
     );
     assert!(
-        system_prompt_text.contains(expected_lorebook_content_snippet3),
-        "System prompt does not contain snippet 3 from North America entry. System Prompt: '{}'",
-        system_prompt_text
+        last_message_content.contains(expected_lorebook_content_snippet3),
+        "Last message content does not contain snippet 3 from North America entry. Last Message: '{}'",
+        last_message_content
     );
     assert!(
-        system_prompt_text.contains(expected_lorebook_content_snippet4),
-        "System prompt does not contain snippet 4 from North America entry. System Prompt: '{}'",
-        system_prompt_text
+        last_message_content.contains(expected_lorebook_content_snippet4),
+        "Last message content does not contain snippet 4 from North America entry. Last Message: '{}'",
+        last_message_content
     );
 
     // c. Check for the full lorebook entry format: [Lorebook: <Title>] <Content>
@@ -523,9 +530,9 @@ async fn test_lorebook_import_retrieval_and_rag_integration() {
     // The north_america_content variable is defined earlier (around line 307) when setting up the mock embedding response.
     // It's the `text` field of the `RetrievedChunk`.
     assert!(
-        system_prompt_text.contains(&north_america_content),
-        "System prompt does not contain the full content of the North America lorebook entry. System Prompt: '{}'",
-        system_prompt_text
+        last_message_content.contains(&north_america_content),
+        "Last message content does not contain the full content of the North America lorebook entry. Last Message: '{}'",
+        last_message_content
     );
 
     // d. Chat history RAG (if applicable) - for the first message, this might be minimal or none.

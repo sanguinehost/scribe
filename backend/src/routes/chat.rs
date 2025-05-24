@@ -1,21 +1,23 @@
 // backend/src/routes/chat.rs
 
+use secrecy::ExposeSecret; // Added import
 use crate::auth::session_dek::SessionDek;
 use crate::auth::user_store::Backend as AuthBackend;
 use crate::errors::AppError;
-// Unused import: crate::models::characters::Character;
 use crate::models::chats::CreateChatSessionPayload;
-// Unused import: crate::models::chats::NewChat;
 use crate::models::chats::{
     Chat, GenerateChatRequest, MessageRole, SuggestedActionItem, SuggestedActionsRequest,
-    SuggestedActionsResponse,
-};
-use crate::models::chat_override::{CharacterOverrideDto, ChatCharacterOverride};
-use crate::routes::chats::{get_chat_settings_handler, update_chat_settings_handler};
-use crate::schema::chat_sessions;
-use crate::services::chat_service::{self, ScribeSseEvent};
-use crate::state::AppState;
-use axum::{
+    SuggestedActionsResponse, // Added
+  };
+  use crate::models::chat_override::{CharacterOverrideDto, ChatCharacterOverride};
+  use crate::models::characters::{Character, CharacterMetadata}; // Added Character
+  use crate::prompt_builder; // This will be used for the simplified system prompt
+  use crate::routes::chats::{get_chat_settings_handler, update_chat_settings_handler};
+  use crate::schema::{self as app_schema, chat_sessions}; // Added app_schema for characters table
+  use crate::services::chat_service::{self, ScribeSseEvent};
+  use crate::services::embedding_pipeline::RetrievedMetadata; // Added for RAG
+  use crate::state::AppState;
+  use axum::{
     Json, Router,
     extract::{Path, Query, State},
     http::{HeaderMap, StatusCode},
@@ -27,7 +29,6 @@ use axum::{
 };
 use axum_login::AuthSession;
 use bigdecimal::ToPrimitive;
-// Unused import: chrono::Utc;
 use diesel::{ExpressionMethods, QueryDsl, RunQueryDsl, SelectableHelper, prelude::*};
 use futures_util::StreamExt;
 use genai::chat::{
@@ -37,6 +38,7 @@ use genai::chat::{
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::sync::Arc;
+use std::fmt::Write as FmtWrite; // Renamed to avoid conflict with std::io::Write if that gets used
 use tracing::field;
 use tracing::{debug, error, info, instrument, trace, warn};
 use uuid::Uuid;
@@ -44,6 +46,8 @@ use validator::Validate;
 
 // Define CurrentAuthSession type alias
 type CurrentAuthSession = AuthSession<AuthBackend>;
+
+const RAG_CHUNK_LIMIT: u64 = 7; // Value from prompt_builder.rs
 
 // Placeholder for response struct if it was missing
 // Removed unused struct PlaceholderResponse
@@ -193,25 +197,27 @@ pub async fn generate_chat_response(
 
     // Get comprehensive data for generation from chat_service
     let (
-        managed_history_tuples,
-        system_prompt_from_service,
-        gen_temperature,
-        gen_max_output_tokens,
-        gen_frequency_penalty,
-        gen_presence_penalty,
-        gen_top_k,
-        gen_top_p,
-        gen_repetition_penalty,
-        gen_min_p,
-        gen_top_a,
-        gen_seed,
-        gen_logit_bias,
-        gen_model_name_from_service,
-        gen_gemini_thinking_budget,
-        gen_gemini_enable_code_execution,
-        user_message_struct_to_save, // RENAMED from _user_message_to_save_for_db
-        _hist_management_strategy,
-        _hist_management_limit,
+        managed_db_history,                 // 0: Vec<DbChatMessage>
+        system_prompt_from_service,         // 1: Option<String>
+        active_lorebook_ids_for_search,     // 2: Option<Vec<Uuid>>
+        session_character_id,               // 3: Uuid
+        gen_temperature,                    // 4: Option<BigDecimal>
+        gen_max_output_tokens,              // 5: Option<i32>
+        gen_frequency_penalty,              // 6: Option<BigDecimal>
+        gen_presence_penalty,               // 7: Option<BigDecimal>
+        gen_top_k,                          // 8: Option<i32>
+        gen_top_p,                          // 9: Option<BigDecimal>
+        gen_repetition_penalty,             // 10: Option<BigDecimal>
+        gen_min_p,                          // 11: Option<BigDecimal>
+        gen_top_a,                          // 12: Option<BigDecimal>
+        gen_seed,                           // 13: Option<i32>
+        gen_logit_bias,                     // 14: Option<Value>
+        gen_model_name_from_service,        // 15: String
+        gen_gemini_thinking_budget,         // 16: Option<i32>
+        gen_gemini_enable_code_execution,   // 17: Option<bool>
+        user_message_struct_to_save,        // 18: DbInsertableChatMessage
+        _hist_management_strategy,          // 19: String
+        _hist_management_limit,             // 20: i32
     ) = chat_service::get_session_data_for_generation(
         state_arc.clone(),
         user_id_value,
@@ -227,31 +233,169 @@ pub async fn generate_chat_response(
         gen_temp = ?gen_temperature,
         gen_max_tokens = ?gen_max_output_tokens,
         gen_top_p = ?gen_top_p,
-        gen_model_name = %gen_model_name_from_service,
+        gen_model_name = %gen_model_name_from_service, // String implements Display
+        active_lorebook_ids_count = ?active_lorebook_ids_for_search.as_ref().map(|v| v.len()), // Use debug for Option<Vec<Uuid>>
+        %session_character_id, // Uuid implements Display
         "Retrieved data for generation from chat_service."
     );
+
+    // Fetch Character model from DB
+    let character_db_model = state_arc
+        .pool
+        .get()
+        .await
+        .map_err(|e| AppError::DbPoolError(e.to_string()))?
+        .interact(move |conn| {
+            app_schema::characters::table
+                .filter(app_schema::characters::id.eq(session_character_id))
+                .filter(app_schema::characters::user_id.eq(user_id_value)) // Ensure user owns the character
+                .select(Character::as_select())
+                .first::<Character>(conn)
+        })
+        .await
+        .map_err(|e| {
+            error!(error = %e, "Interact dispatch error fetching character model for RAG");
+            AppError::InternalServerErrorGeneric(format!(
+                "Interact dispatch error fetching character {}: {}",
+                session_character_id, e
+            ))
+        })?
+        .map_err(|e_db| match e_db {
+            diesel::result::Error::NotFound => {
+                error!(%session_character_id, %user_id_value, "Character not found for user for RAG");
+                AppError::NotFound(format!(
+                    "Character {} not found for user {}",
+                    session_character_id, user_id_value
+                ))
+            }
+            _ => {
+                error!(error = %e_db, %session_character_id, "Failed to query character for RAG");
+                AppError::DatabaseQueryError(format!(
+                    "Failed to query character {}: {}",
+                    session_character_id, e_db
+                ))
+            }
+        })?;
+
+    // Construct CharacterMetadata from the Character model
+    let character_metadata = CharacterMetadata {
+        id: character_db_model.id,
+        user_id: character_db_model.user_id,
+        name: character_db_model.name.clone(),
+        description: character_db_model.description.clone(),
+        description_nonce: character_db_model.description_nonce.clone(),
+        first_mes: character_db_model.first_mes.clone(),
+        // Note: CharacterMetadata struct does not have first_mes_nonce.
+        // If build_prompt_with_rag needs to decrypt first_mes, this might be an issue.
+        created_at: character_db_model.created_at,
+        updated_at: character_db_model.updated_at,
+    };
+    trace!(%session_id, character_id = %character_metadata.id, "Constructed CharacterMetadata for RAG from DB.");
 
     // Determine the model to use: payload overrides service, otherwise use service's model
     let model_to_use = payload.model.clone().unwrap_or(gen_model_name_from_service);
     debug!(%model_to_use, "Determined final model to use for AI calls.");
 
     // Prepare GenAI history (managed history + current user message)
-    let mut genai_history: Vec<GenAiChatMessage> = managed_history_tuples
-        .into_iter()
-        .map(|(role, content)| {
-            match role {
-                MessageRole::User => GenAiChatMessage::user(MessageContent::from_text(content)),
-                MessageRole::Assistant => {
-                    GenAiChatMessage::assistant(MessageContent::from_text(content))
+    // managed_db_history is Vec<DbChatMessage>
+    let mut genai_history: Vec<GenAiChatMessage> = Vec::new();
+    for db_msg in &managed_db_history {
+        let content_str = match (db_msg.content_nonce.as_ref(), &session_dek_arc) {
+            (Some(nonce_vec), dek_arc_ref) if !db_msg.content.is_empty() && !nonce_vec.is_empty() => {
+                match crate::crypto::decrypt_gcm(&db_msg.content, nonce_vec, &**dek_arc_ref) {
+                    Ok(decrypted_bytes_secret) => {
+                        match String::from_utf8(decrypted_bytes_secret.expose_secret().to_vec()) {
+                            Ok(s) => s,
+                            Err(e) => {
+                                error!(message_id = %db_msg.id, error = ?e, "Failed to convert decrypted message to UTF-8 for genai_history. Using placeholder.");
+                                "[DECRYPTION UTF-8 ERROR]".to_string()
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        error!(message_id = %db_msg.id, error = ?e, "Failed to decrypt message content for genai_history. Using placeholder.");
+                        "[DECRYPTION ERROR]".to_string()
+                    }
                 }
-                MessageRole::System => GenAiChatMessage::system(MessageContent::from_text(content)), // MODIFIED: Handle System role
             }
-        })
-        .collect();
+            _ => {
+                String::from_utf8_lossy(&db_msg.content).into_owned()
+            }
+        };
+
+        let chat_role = match db_msg.message_type {
+            MessageRole::User => genai::chat::ChatRole::User,
+            MessageRole::Assistant => genai::chat::ChatRole::Assistant,
+            MessageRole::System => genai::chat::ChatRole::System,
+        };
+        genai_history.push(GenAiChatMessage {
+            role: chat_role,
+            content: MessageContent::from_text(content_str),
+            options: None,
+        });
+    }
+
+    // RAG Context for User Message
+    let mut current_user_content_with_rag = current_user_content.clone();
+    let enable_rag = headers
+        .get("X-Scribe-Enable-RAG")
+        .map(|v| v.to_str().unwrap_or("false") == "true")
+        .unwrap_or(true); // Default to true
+
+    if enable_rag {
+        // Determine the text to use for RAG query
+        let query_text_for_rag_lookup = payload.query_text_for_rag
+            .as_deref()
+            .filter(|s| !s.trim().is_empty()) // Use override if not empty
+            .unwrap_or(&current_user_content); // Fallback to current user content
+
+        if !query_text_for_rag_lookup.trim().is_empty() {
+            info!(%session_id, "RAG enabled for user message, attempting to retrieve context using query: '{}'", query_text_for_rag_lookup);
+            match state_arc.embedding_pipeline_service.retrieve_relevant_chunks(
+                state_arc.clone(),
+                user_id_value,
+                Some(session_id),
+                active_lorebook_ids_for_search.clone(), // Pass the fetched lorebook IDs
+                query_text_for_rag_lookup,
+                RAG_CHUNK_LIMIT,
+            ).await {
+                Ok(chunks) if !chunks.is_empty() => {
+                    let mut rag_context_string = String::new();
+                    // Using FmtWrite trait for writeln!
+                    let _ = writeln!(rag_context_string, "--- Relevant Context ---");
+                    for chunk in chunks {
+                        match &chunk.metadata { // Borrow chunk.metadata
+                            RetrievedMetadata::Chat(chat_meta) => {
+                                let _ = writeln!(rag_context_string, "- Chat (Speaker: {}): {}", chat_meta.speaker, chunk.text.trim());
+                            }
+                            RetrievedMetadata::Lorebook(lore_meta) => {
+                                let title_str = lore_meta.entry_title.as_deref().unwrap_or("N/A");
+                                let _ = writeln!(rag_context_string, "- Lorebook (Title: \"{}\"): {}", title_str, chunk.text.trim());
+                            }
+                        }
+                    }
+                    let _ = writeln!(rag_context_string); // Add a newline after context block
+                    current_user_content_with_rag = format!("{}\n\n{}", rag_context_string, current_user_content);
+                    info!(%session_id, "Successfully prepended RAG context to user message.");
+                }
+                Ok(_) => { // No chunks found
+                    info!(%session_id, "No RAG chunks found for user message query.");
+                }
+                Err(e) => {
+                    warn!(%session_id, error = ?e, "Failed to retrieve RAG chunks for user message. Proceeding without RAG context for user message.");
+                }
+            }
+        } else {
+            info!(%session_id, "RAG enabled, but query_text_for_rag_lookup is empty. Skipping RAG for user message.");
+        }
+    } else {
+        info!(%session_id, "RAG is disabled for user message via header or default.");
+    }
+
     genai_history.push(GenAiChatMessage::user(MessageContent::from_text(
-        current_user_content.clone(),
+        current_user_content_with_rag, // Use potentially RAG-enhanced content
     )));
-    trace!(history_len = genai_history.len(), %session_id, "Prepared final message list for AI (service history + current payload message)");
+    trace!(history_len = genai_history.len(), %session_id, "Prepared final message list for AI (service history + current payload message with RAG)");
 
     let accept_header = headers
         .get(axum::http::header::ACCEPT)
@@ -261,81 +405,39 @@ pub async fn generate_chat_response(
     let request_thinking = query_params.request_thinking;
     debug!(%session_id, %request_thinking, "request_thinking value from query parameters");
 
-    // RAG related logic
-    let enable_rag = headers
-        .get("X-Scribe-Enable-RAG")
-        .map(|v| v.to_str().unwrap_or("false") == "true")
-        .unwrap_or(true); // Default to true for RAG functionality in test
-
-    let mut rag_context_for_json: Option<String> = None;
-
-    if enable_rag && accept_header.contains(mime::APPLICATION_JSON.as_ref()) {
-        // RAG for JSON path
-        if !current_user_content.is_empty() {
-            info!(%session_id, "RAG enabled for JSON path, attempting to retrieve context for user message.");
-
-            // Perform RAG retrieval for JSON path using embedding pipeline service
-            let rag_result = state_arc
-                .embedding_pipeline_service
-                .retrieve_relevant_chunks(
-                    state_arc.clone(),
-                    user_id_value,         // New argument: user_id
-                    Some(session_id),      // For session_id_for_chat_history - Wrapped in Some()
-                    None,                  // For active_lorebook_ids_for_search
-                    &current_user_content,
-                    5                      // Limit to 5 chunks
-                )
-                .await;
-
-            match rag_result {
-                Ok(chunks) => {
-                    if !chunks.is_empty() {
-                        info!(%session_id, chunk_count = chunks.len(), "Retrieved RAG chunks for JSON path");
-                        let mut context = String::from("<RAG_CONTEXT>\n");
-                        for chunk in chunks {
-                            context.push_str(&format!("- {}\n", chunk.text.trim()));
-                        }
-                        context.push_str("</RAG_CONTEXT>");
-                        rag_context_for_json = Some(context);
-                    } else {
-                        info!(%session_id, "No relevant RAG chunks found for JSON path");
-                    }
-                }
-                Err(e) => {
-                    error!(%session_id, error = ?e, "Failed to retrieve RAG context for JSON path");
-                    // Propagate the error to the client with BAD_GATEWAY status code
-                    return Err(AppError::BadGateway(
-                        "Failed to process embeddings".to_string(),
-                    ));
-                }
-            }
+    // System prompt generation using the new simplified prompt_builder
+    // It no longer takes state, user_id, session_id, history, etc.
+    let final_system_prompt = match prompt_builder::build_prompt_with_rag(Some(&character_metadata)) {
+        Ok(s) => if s.is_empty() { None } else { Some(s) },
+        Err(e) => {
+            error!(%session_id, error = ?e, "Failed to build system prompt from character info");
+            return Err(AppError::InternalServerErrorGeneric(format!("Failed to build system prompt: {}", e)));
         }
-    }
+    };
+    info!(%session_id, system_prompt_set = final_system_prompt.is_some(), "System prompt generated from character_metadata.");
 
     match accept_header {
         v if v.contains(mime::TEXT_EVENT_STREAM.as_ref()) => {
             info!(%session_id, "Handling streaming SSE request. request_thinking={}", request_thinking);
 
             // Explicitly save the user's message before streaming AI response
-            let _current_user_content_for_save = user_message_struct_to_save.content.clone(); // Assuming content is Vec<u8>
-            let current_user_role_for_save = user_message_struct_to_save.role.clone();
-            let current_user_parts_for_save = user_message_struct_to_save.parts.clone();
-            let current_user_attachments_for_save = user_message_struct_to_save.attachments.clone();
+            // user_message_struct_to_save is DbInsertableChatMessage
+            // save_message expects content: &str, role_str: Option<String>, parts: Option<Value>, attachments: Option<Value>
 
-            // We need the actual text content for save_message's `content: &str` param.
-            // user_message_struct_to_save.content is Vec<u8> (potentially encrypted later, but plaintext from user initially).
-            // For user messages, this original Vec<u8> should be the direct user_message_content.
-            // The `DbInsertableChatMessage::new` call in `get_session_data_for_generation` uses `user_message_content.into_bytes()`.
+            // The content for save_message should be the original current_user_content (String)
+            // The role_str, parts, attachments should come from user_message_struct_to_save if they are correctly populated there.
+            // DbInsertableChatMessage has role, parts, attachments as Option<String>, Option<Value>, Option<Value>
+            // However, user_message_struct_to_save.content is Vec<u8> (potentially encrypted or raw bytes of current_user_content)
 
             match chat_service::save_message(
                 state_arc.clone(),
                 session_id,
                 user_id_value,
-                MessageRole::User,                 // message_type_enum
-                &current_user_content, // This is the original String content from the payload
-                current_user_role_for_save, // role_str from the prepared struct
-                current_user_parts_for_save, // parts from the prepared struct
-                current_user_attachments_for_save, // attachments from the prepared struct
+                MessageRole::User,        // message_type_enum
+                &current_user_content,    // content: &str (original user input)
+                user_message_struct_to_save.role.clone(), // role_str from DbInsertableChatMessage
+                user_message_struct_to_save.parts.clone(), // parts from DbInsertableChatMessage
+                user_message_struct_to_save.attachments.clone(), // attachments from DbInsertableChatMessage
                 Some(session_dek_arc.clone()), // DEK for potential encryption
                 &model_to_use,
             )
@@ -359,24 +461,24 @@ pub async fn generate_chat_response(
                 state_arc.clone(),
                 session_id,
                 user_id_value,
-                genai_history,              // Use the prepared history
-                system_prompt_from_service, // Use system prompt from service
-                gen_temperature,            // Use temperature from service
-                gen_max_output_tokens,      // Use max_tokens from service
-                gen_frequency_penalty,
-                gen_presence_penalty,
-                gen_top_k,
-                gen_top_p, // Use top_p from service
-                gen_repetition_penalty,
-                gen_min_p,
-                gen_top_a,
-                gen_seed,
-                gen_logit_bias,
-                model_to_use.clone(), // Use the resolved model
-                gen_gemini_thinking_budget,
-                gen_gemini_enable_code_execution,
+                genai_history.clone(),
+                final_system_prompt.clone(),
+                gen_temperature,
+                gen_max_output_tokens,
+                gen_frequency_penalty, // Option<BigDecimal>
+                gen_presence_penalty,  // Option<BigDecimal>
+                gen_top_k,             // Option<i32>
+                gen_top_p,             // Option<BigDecimal>
+                gen_repetition_penalty, // Option<BigDecimal>
+                gen_min_p,             // Option<BigDecimal>
+                gen_top_a,             // Option<BigDecimal>
+                gen_seed,              // Option<i32>
+                gen_logit_bias,        // Option<Value>
+                model_to_use.clone(),
+                gen_gemini_thinking_budget,    // Option<i32>
+                gen_gemini_enable_code_execution, // Option<bool>
                 request_thinking,
-                Some(dek_for_stream_service), // MODIFIED: Pass cloned SecretBox
+                Some(dek_for_stream_service),
             )
             .await
             {
@@ -472,50 +574,37 @@ pub async fn generate_chat_response(
                 }
             };
 
-            // RAG context injection for JSON path (if enabled and context was found)
-            // This modifies a copy of genai_history for this specific non-streaming call.
-            let mut history_for_json_call = genai_history.clone();
-            if let Some(context) = rag_context_for_json {
-                // This context needs to be populated by actual RAG logic if used
-                if let Some(last_message) = history_for_json_call.last_mut() {
-                    if matches!(last_message.role, ChatRole::User) {
-                        if let MessageContent::Text(text_content_string) = &mut last_message.content
-                        {
-                            // MODIFIED: Removed ref mut
-                            let original_content = text_content_string.clone();
-                            *text_content_string = format!("{}\n\n{}", context, original_content);
-                            trace!(session_id = %session_id, "Injected RAG context into user message (non-streaming JSON path)");
-                        }
-                    }
-                }
-            }
+            // RAG context is now part of final_system_prompt.
+            // The old rag_context_for_json and its injection logic (lines 477-491) are removed.
 
-            let chat_request =
-                ChatRequest::new(history_for_json_call) // Use potentially RAG-modified history
-                    .with_system(system_prompt_from_service.unwrap_or_default()); // Use system prompt from service
+            let chat_request = ChatRequest::new(genai_history.clone()) // Use genai_history
+                .with_system(final_system_prompt.unwrap_or_default()); // Use RAG-enhanced or base system prompt
 
             let mut chat_options = ChatOptions::default();
-            if let Some(temp) = gen_temperature {
-                chat_options = chat_options.with_temperature(temp.to_f32().unwrap_or(0.7).into());
-            } // MODIFIED: .into()
-            if let Some(tokens) = gen_max_output_tokens {
-                chat_options = chat_options.with_max_tokens(tokens as u32);
-            }
-            if let Some(p) = gen_top_p {
-                chat_options = chat_options.with_top_p(p.to_f32().unwrap_or(0.95).into());
-            } // MODIFIED: .into()
-            // Add other gen_... parameters to chat_options as needed (top_k, penalties etc.)
-            // For Gemini specific options via exec_chat, they might need to be part of a different options struct or handled by client
-            if let Some(budget) = gen_gemini_thinking_budget {
-                if budget > 0 {
-                    chat_options = chat_options.with_gemini_thinking_budget(budget as u32);
+            if let Some(temp_bd) = gen_temperature { // temp_bd is Option<BigDecimal>
+                if let Some(temp_f32) = temp_bd.to_f32() {
+                    chat_options = chat_options.with_temperature(temp_f32.into());
                 }
             }
-            if let Some(enable_exec) = gen_gemini_enable_code_execution {
-                chat_options = chat_options.with_gemini_enable_code_execution(enable_exec);
+            if let Some(tokens_i32) = gen_max_output_tokens { // tokens_i32 is Option<i32>
+                chat_options = chat_options.with_max_tokens(tokens_i32 as u32);
             }
-            // Note: genai library's exec_chat might not support all tool/Gemini options directly in ChatOptions vs stream_chat.
-            // This might need adjustment based on genai library capabilities for non-streaming.
+            if let Some(p_bd) = gen_top_p { // p_bd is Option<BigDecimal>
+                if let Some(p_f32) = p_bd.to_f32() {
+                    chat_options = chat_options.with_top_p(p_f32.into());
+                }
+            }
+            // Add other gen_... parameters to chat_options as needed
+            if let Some(budget_i32) = gen_gemini_thinking_budget { // budget_i32 is Option<i32>
+                if budget_i32 > 0 {
+                     // Ensure budget_i32 is cast to u32 if with_gemini_thinking_budget expects u32
+                    chat_options = chat_options.with_gemini_thinking_budget(budget_i32 as u32);
+                }
+            }
+            if let Some(enable_exec_bool) = gen_gemini_enable_code_execution { // enable_exec_bool is Option<bool>
+                chat_options = chat_options.with_gemini_enable_code_execution(enable_exec_bool);
+            }
+            // TODO: Add other gen_ parameters like top_k, frequency_penalty etc. if supported by ChatOptions
 
             trace!(%session_id, chat_request = ?chat_request, chat_options = ?chat_options, "Prepared ChatRequest and Options for AI (non-streaming, JSON path)");
 
@@ -590,7 +679,7 @@ pub async fn generate_chat_response(
                 session_id,
                 user_id_value,
                 genai_history, // Use the prepared history
-                system_prompt_from_service,
+                final_system_prompt, // Use RAG-enhanced or base system prompt
                 gen_temperature,
                 gen_max_output_tokens,
                 gen_frequency_penalty,

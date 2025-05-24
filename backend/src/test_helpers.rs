@@ -395,8 +395,12 @@ impl MockEmbeddingPipelineService {
             queue.push_back(response);
         }
     }
+ 
+    pub fn clear_calls(&self) {
+        self.calls.lock().unwrap().clear();
+    }
 }
-
+ 
 #[async_trait]
 impl EmbeddingPipelineServiceTrait for MockEmbeddingPipelineService {
     async fn process_and_embed_message(

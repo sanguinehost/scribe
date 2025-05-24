@@ -33,7 +33,6 @@ use crate::{
     schema::{characters, chat_character_overrides, chat_messages, chat_sessions},
     services::{
         history_manager,
-        embedding_pipeline::{RetrievedMetadata}, // Added for RAG
     },
     services::hybrid_token_counter::CountingMode, // Added for token counting
     state::{AppState, DbPool},
@@ -50,9 +49,11 @@ pub type HistoryForGeneration = Vec<(MessageRole, String)>;
 // AND the unsaved user message struct
 // NOTE: HistoryForGeneration here will now contain the *managed* history.
 pub type GenerationDataWithUnsavedUserMessage = (
-    HistoryForGeneration, // Managed history BEFORE the new user message
-    Option<String>,       // system_prompt
-    Option<BigDecimal>,   // temperature
+    Vec<DbChatMessage>,   // 0: managed_db_history (CHANGED from HistoryForGeneration)
+    Option<String>,       // 1: system_prompt
+    Option<Vec<Uuid>>,    // 2: active_lorebook_ids_for_search
+    Uuid,                 // 3: session_character_id (NEW)
+    Option<BigDecimal>,   // 4: temperature
     Option<i32>,          // max_output_tokens
     Option<BigDecimal>,   // frequency_penalty
     Option<BigDecimal>,   // presence_penalty
@@ -797,6 +798,31 @@ pub async fn get_session_data_for_generation(
     info!(target: "chat_service_persona_debug", %session_id, "db_persona_for_prompt (UserPersonaDataForClient) that might be used by PromptBuilder: {:?}", db_persona_for_prompt);
 
 
+    // Fetch active lorebook IDs for the session
+    let active_lorebook_ids_for_search: Option<Vec<Uuid>> = {
+        let pool_clone_lore = state.pool.clone();
+        let session_id_clone_lore = session_id;
+        // This structure uses .await outside the main conn.interact block, which is correct.
+        match pool_clone_lore.get().await.map_err(AppError::from)?.interact(move |conn_lore| {
+            ChatSessionLorebook::get_active_lorebook_ids_for_session(conn_lore, session_id_clone_lore)
+                .map_err(AppError::from)
+        }).await { // This await is on the result of interact, which is fine here.
+            Ok(Ok(ids)) => {
+                info!(%session_id, num_ids = ids.as_ref().map_or(0, |v| v.len()), "Successfully fetched active lorebook IDs for RAG search.");
+                ids
+            },
+            Ok(Err(e)) => {
+                warn!(%session_id, error = %e, "Failed to get active lorebook IDs for RAG (DB error inside interact). Proceeding without them.");
+                None
+            }
+            Err(e) => { // This is InteractError
+                warn!(%session_id, error = %e, "Failed to get active lorebook IDs for RAG (InteractError). Proceeding without them.");
+                None
+            }
+        }
+    };
+    info!(%session_id, ?active_lorebook_ids_for_search, "Active lorebook IDs for search determined.");
+
     let generation_data_result = conn.interact(move |conn_interaction| {
         info!(%session_id, %user_id, "Fetching session data for generation");
 
@@ -1081,35 +1107,46 @@ pub async fn get_session_data_for_generation(
                 }
             })
             .collect();
-        let managed_history_msgs = history_manager::manage_history(
+        let mut managed_history_msgs = history_manager::manage_history( // Made mutable
             decrypted_messages_for_manager,
             &history_management_strategy,
             history_management_limit,
         );
-        let mut managed_history: HistoryForGeneration = managed_history_msgs
-            .into_iter()
-            .map(|msg| {
-                let content_str = String::from_utf8_lossy(&msg.content).to_string();
-                (msg.message_type, content_str)
-            })
-            .collect();
-        trace!(%session_id, num_managed_history_items = managed_history.len(), "History management applied");
-        // Check if this is the first user message (no existing messages, empty history)
-        // If so, prepend the character's first_mes as the first assistant message
-        if managed_history.is_empty() {
-            info!(%session_id, "No existing messages in history - checking for character's first_mes (with override) to include");
+        trace!(%session_id, num_managed_db_history_items = managed_history_msgs.len(), "History management applied to DB messages");
+
+        // Check if this is the first user message (no existing messages from DB, empty managed_history_msgs)
+        // If so, prepend the character's first_mes as the first assistant message to managed_history_msgs
+        if managed_history_msgs.is_empty() {
+            info!(%session_id, "No existing messages in DB history - checking for character's first_mes (with override) to include in managed_history_msgs");
             
-            // Use override value if it exists, otherwise use the original character field
+            let mut first_mes_content_to_add: Option<String> = None;
+
             if let Some(first_mes_override) = override_values.get("first_mes") {
-                if !first_mes_override.is_empty() { // Only add if override is not empty
-                    info!(%session_id, "Adding character's non-empty first_mes override to history");
-                    managed_history.push((MessageRole::Assistant, first_mes_override.clone()));
+                if !first_mes_override.is_empty() {
+                    info!(%session_id, "Using character's non-empty first_mes override for history");
+                    first_mes_content_to_add = Some(first_mes_override.clone());
                 }
             } else if let Some(char_first_mes) = decrypt_char_field(character.first_mes.as_ref(), character.first_mes_nonce.as_ref(), "first_mes")? {
-                if !char_first_mes.is_empty() { // Only add if original is not empty
-                    info!(%session_id, "Adding character's non-empty original first_mes to history");
-                    managed_history.push((MessageRole::Assistant, char_first_mes));
+                if !char_first_mes.is_empty() {
+                    info!(%session_id, "Using character's non-empty original first_mes for history");
+                    first_mes_content_to_add = Some(char_first_mes);
                 }
+            }
+
+            if let Some(content) = first_mes_content_to_add {
+                let first_mes_db_chat_message = DbChatMessage {
+                    id: Uuid::new_v4(), // Transient ID for this context
+                    session_id,
+                    user_id, // user_id of the session/requester
+                    message_type: MessageRole::Assistant,
+                    content: content.as_bytes().to_vec(),
+                    content_nonce: None, // Content is plaintext here, no nonce needed for this transient message
+                    created_at: chrono::Utc::now(), // Timestamp for this transient representation
+                    prompt_tokens: None, // Not applicable or calculated for first_mes in this context
+                    completion_tokens: None, // Not applicable for first_mes
+                };
+                info!(%session_id, "Prepending character's first_mes as DbChatMessage to managed_history_msgs");
+                managed_history_msgs.insert(0, first_mes_db_chat_message);
             }
         }
 
@@ -1133,6 +1170,8 @@ pub async fn get_session_data_for_generation(
         }
         // --- END: RAG Context for Current User Message (LOGIC TO BE MOVED) ---
 
+        // The block for fetching active_lorebook_ids_for_search has been moved before the main interact call.
+
 
         // Token counting has been moved above and done outside the interact block
         // We'll use the tokens that were already counted
@@ -1149,8 +1188,10 @@ pub async fn get_session_data_for_generation(
             None,               // completion_tokens (None for user message)
         );
         Ok::<GenerationDataWithUnsavedUserMessage, AppError>((
-            managed_history,
+            managed_history_msgs, // Return Vec<DbChatMessage>
             final_system_prompt_with_rag, // Use the potentially RAG-augmented system prompt
+            active_lorebook_ids_for_search.clone(), // Pass the fetched lorebook IDs
+            session_character_id, // Pass session_character_id
             session_temperature,
             session_max_output_tokens,
             session_frequency_penalty,
@@ -1168,119 +1209,23 @@ pub async fn get_session_data_for_generation(
             user_db_message_to_save,
             history_management_strategy,
             history_management_limit,
+            // active_lorebook_ids_for_search, // This was duplicated, remove one. The one at index 2 is correct.
         ))
     })
     .await // Outer await for interact
     .map_err(|e| AppError::DbInteractError(format!("Interact dispatch error: {}", e)))?;
-    let generation_data = generation_data_result?;
-
-    // --- START: RAG Context for Current User Message (MOVED LOGIC) ---
-    let mut final_system_prompt_with_rag = generation_data.1.clone(); // Get the system_prompt from the tuple
-
-    if !user_message_content.trim().is_empty() {
-        const RAG_CONTEXT_FOR_SYSTEM_PROMPT_LIMIT: u64 = 5;
-        info!(%session_id, "Retrieving RAG context for current user message to augment system prompt (post-interact).");
-
-        // Fetch active lorebook IDs for the session
-        let active_lorebook_ids_for_search_result: Result<Option<Vec<Uuid>>, AppError> = {
-            let pool_clone = state.pool.clone();
-            let session_id_clone = session_id; // Clone session_id for interact
-            pool_clone.get().await.map_err(AppError::from)?.interact(move |conn| {
-                ChatSessionLorebook::get_active_lorebook_ids_for_session(conn, session_id_clone)
-                    .map_err(AppError::from) // Convert DieselError to AppError
-            }).await.map_err(|e| AppError::DbInteractError(format!("Interact dispatch error for lorebook IDs: {}", e)))?
-        };
-
-        let active_lorebook_ids_for_search = match active_lorebook_ids_for_search_result {
-            Ok(ids) => ids,
-            Err(e) => {
-                warn!(%session_id, error = %e, "Failed to get active lorebook IDs for RAG. Proceeding without them.");
-                None // Default to None if fetching fails
-            }
-        };
-        info!(%session_id, ?active_lorebook_ids_for_search, "Fetched active lorebook IDs for RAG search.");
-
-        match state.embedding_pipeline_service.retrieve_relevant_chunks(
-            state.clone(),
-            user_id,                             // New argument: user_id
-            Some(session_id),                    // New argument: session_id_for_chat_history - Wrapped in Some()
-            active_lorebook_ids_for_search,      // New argument
-            &user_message_content,
-            RAG_CONTEXT_FOR_SYSTEM_PROMPT_LIMIT
-        ).await {
-            Ok(retrieved_chunks) => {
-                if !retrieved_chunks.is_empty() {
-                    let mut rag_context_str = "\n\n--- Relevant Context (from current message) ---\n".to_string();
-                    for chunk in retrieved_chunks {
-                        let chunk_formatted = match chunk.metadata {
-                            RetrievedMetadata::Chat(chat_meta) => {
-                                format!(
-                                    "- Chat (Score: {:.2}, Speaker: {}): {}\n",
-                                    chunk.score,
-                                    chat_meta.speaker,
-                                    chunk.text.trim()
-                                )
-                            }
-                            RetrievedMetadata::Lorebook(lore_meta) => {
-                                let title_str = lore_meta.entry_title.as_deref().unwrap_or("N/A");
-                                let keywords_str = lore_meta.keywords.as_ref().map_or_else(
-                                    || "N/A".to_string(),
-                                    |kw| kw.join(", "),
-                                );
-                                format!(
-                                    "- Lorebook (Score: {:.2}, Title: \"{}\", Keywords: [{}], Enabled: {}, Constant: {}): {}\n",
-                                    chunk.score,
-                                    title_str,
-                                    keywords_str,
-                                    lore_meta.is_enabled,
-                                    lore_meta.is_constant,
-                                    chunk.text.trim()
-                                )
-                            }
-                        };
-                        rag_context_str.push_str(&chunk_formatted);
-                    }
-                    rag_context_str.push_str("---\n");
-
-                    if let Some(existing_prompt) = final_system_prompt_with_rag {
-                        final_system_prompt_with_rag = Some(format!("{}{}", rag_context_str, existing_prompt));
-                    } else {
-                        final_system_prompt_with_rag = Some(rag_context_str.trim_start().to_string());
-                    }
-                    info!(%session_id, "Augmented system prompt with RAG context from current message.");
-                } else {
-                    info!(%session_id, "No RAG chunks found for current user message to augment system prompt.");
-                }
-            }
-            Err(e) => {
-                warn!(%session_id, error = %e, "Failed to retrieve RAG chunks for current user message. System prompt will not be augmented by it.");
-            }
-        }
-    }
-    // --- END: RAG Context for Current User Message (MOVED LOGIC) ---
     
-    // Return the modified tuple
-    Ok((
-        generation_data.0, // HistoryForGeneration
-        final_system_prompt_with_rag, // Option<String> (system_prompt, potentially updated)
-        generation_data.2, // Option<BigDecimal> (temperature)
-        generation_data.3, // Option<i32> (max_output_tokens)
-        generation_data.4, // Option<BigDecimal> (frequency_penalty)
-        generation_data.5, // Option<BigDecimal> (presence_penalty)
-        generation_data.6, // Option<i32> (top_k)
-        generation_data.7, // Option<BigDecimal> (top_p)
-        generation_data.8, // Option<BigDecimal> (repetition_penalty)
-        generation_data.9, // Option<BigDecimal> (min_p)
-        generation_data.10, // Option<BigDecimal> (top_a)
-        generation_data.11, // Option<i32> (seed)
-        generation_data.12, // Option<Value> (logit_bias)
-        generation_data.13, // String (model_name)
-        generation_data.14, // Option<i32> (gemini_thinking_budget)
-        generation_data.15, // Option<bool> (gemini_enable_code_execution)
-        generation_data.16, // DbInsertableChatMessage (user_db_message_to_save)
-        generation_data.17, // String (history_management_strategy)
-        generation_data.18, // i32 (history_management_limit) - Added missing element
-    ))
+    // The RAG context augmentation for the *current user message* was previously here.
+    // However, the `build_prompt_with_rag` function is now responsible for all RAG,
+    // including context from the current user message and history.
+    // So, the logic that was here (lines 1182-1265 in the original file) is now redundant
+    // because `build_prompt_with_rag` (called from routes/chat.rs) will handle it.
+    // The `final_system_prompt_with_rag` from the interact block is the one we want.
+    // The `active_lorebook_ids_for_search` is correctly part of the tuple from the interact block.
+
+    // The tuple returned by generation_data_result already contains all necessary fields.
+    // No further modification of final_system_prompt_with_rag is needed here.
+    generation_data_result // Directly return the result from interact
 }
 
 /// Gets chat settings for a specific session, verifying ownership.

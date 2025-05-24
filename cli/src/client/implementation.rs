@@ -354,6 +354,7 @@ impl HttpClient for ReqwestClientWrapper {
         let request_body = GenerateChatRequest {
             history: message_history,
             model: model_name.map(|s| s.to_string()),
+            query_text_for_rag: None,
         };
 
         tracing::info!(target: "scribe_cli::client::implementation", %url, chat_id = %chat_id, model = ?model_name, "Sending non-streaming message via HttpClient");
@@ -404,6 +405,7 @@ impl HttpClient for ReqwestClientWrapper {
         let payload = GenerateChatRequest {
             history,
             model: model_name.map(|s| s.to_string()), // Use the model name provided or None
+            query_text_for_rag: None,
         };
 
         // Build the request manually to use with EventSource

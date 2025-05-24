@@ -270,6 +270,7 @@ async fn generate_chat_response_streaming_success() {
     let payload = GenerateChatRequest {
         history,
         model: Some("test-stream-model".to_string()),
+        query_text_for_rag: None,
     };
 
     let request = Request::builder()
@@ -450,7 +451,6 @@ async fn generate_chat_response_streaming_success() {
 }
 
 #[tokio::test]
-#[ignore] // Added ignore for CI
 async fn test_first_mes_included_in_history() {
     let test_app = test_helpers::spawn_app(false, false, false).await;
 
@@ -635,7 +635,7 @@ async fn test_first_mes_included_in_history() {
     .expect("Failed to get session data for generation");
 
     // Extract the managed history from the generation data
-    let (managed_history, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _) = generation_data;
+    let (managed_history, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _) = generation_data;
 
     // Assert that the history contains the character's first_mes
     assert!(
@@ -649,14 +649,14 @@ async fn test_first_mes_included_in_history() {
     );
 
     // Check first message is the assistant's first_mes
-    let (first_msg_role, first_msg_content) = &managed_history[0];
+    let first_msg = &managed_history[0];
     assert_eq!(
-        *first_msg_role,
+        first_msg.message_type,
         MessageRole::Assistant,
         "First message role should be Assistant"
     );
     assert_eq!(
-        *first_msg_content, first_mes_content,
+        String::from_utf8_lossy(&first_msg.content).as_ref(), first_mes_content,
         "First message content should match character's first_mes"
     );
 }

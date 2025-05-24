@@ -187,6 +187,7 @@ async fn generate_chat_response_streaming_ai_error() {
     let payload = GenerateChatRequest {
         history,
         model: Some("test-stream-err-model".to_string()),
+        query_text_for_rag: None,
     };
 
     let request = Request::builder()
@@ -468,6 +469,7 @@ async fn generate_chat_response_streaming_initiation_error() {
     let payload = GenerateChatRequest {
         history,
         model: Some("test-stream-init-err-model".to_string()),
+        query_text_for_rag: None,
     };
 
     let request = Request::builder()
@@ -710,6 +712,7 @@ async fn generate_chat_response_streaming_error_before_content() {
     let payload = GenerateChatRequest {
         history,
         model: Some("test-stream-err-b4-content-model".to_string()),
+        query_text_for_rag: None,
     };
 
     let request = Request::builder()
@@ -990,6 +993,7 @@ async fn generate_chat_response_streaming_genai_json_error() {
     let payload = GenerateChatRequest {
         history,
         model: Some("test-stream-json-err-model".to_string()),
+        query_text_for_rag: None,
     };
 
     let request = Request::builder()
