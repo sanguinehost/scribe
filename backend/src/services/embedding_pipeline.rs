@@ -9,31 +9,28 @@ use crate::vector_db::qdrant_client::{QdrantClientServiceTrait, create_qdrant_po
 
 use crate::auth::session_dek::SessionDek;
 use async_trait::async_trait;
-use qdrant_client::qdrant::r#match::MatchValue;
-use qdrant_client::qdrant::{Condition, Filter, Value as QdrantValue};
+// use qdrant_client::qdrant::r#match::MatchValue; // Unused import
+use qdrant_client::qdrant::{Value as QdrantValue}; // Removed unused Condition, Filter
 use secrecy::ExposeSecret; // For SessionDek & fixed key
 use std::collections::HashMap;
-use std::convert::TryFrom;
 use std::sync::Arc;
 use tokio::time::{Duration, sleep}; // Added for rate limiting delay
 use tracing::{debug, error, info, instrument, warn}; // Added debug
 use uuid::Uuid; // Import SessionDek
 
-// Define metadata to store alongside vectors
-// TODO: Finalize required metadata fields
-#[derive(serde::Serialize, serde::Deserialize, Debug, Clone)] // Add Deserialize
-pub struct EmbeddingMetadata {
+// Metadata for chat message chunks
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
+pub struct ChatMessageChunkMetadata {
     pub message_id: Uuid,
     pub session_id: Uuid,
-    // user_id: Option<Uuid>, // Removed - user info not directly on message
     pub speaker: String,
     pub timestamp: chrono::DateTime<chrono::Utc>,
-    pub text: String,
+    pub text: String, // Full text of the chunk
 }
 
-// Implement conversion from Qdrant payload
-impl TryFrom<HashMap<String, QdrantValue>> for EmbeddingMetadata {
-    type Error = AppError; // Use our standard AppError for conversion errors
+// Implement conversion from Qdrant payload for ChatMessageChunkMetadata
+impl TryFrom<HashMap<String, QdrantValue>> for ChatMessageChunkMetadata {
+    type Error = AppError;
 
     fn try_from(payload: HashMap<String, QdrantValue>) -> Result<Self, Self::Error> {
         let message_id_str = payload
@@ -45,11 +42,11 @@ impl TryFrom<HashMap<String, QdrantValue>> for EmbeddingMetadata {
             })
             .ok_or_else(|| {
                 AppError::SerializationError(
-                    "Missing or invalid 'message_id' in payload".to_string(),
+                    "Missing or invalid 'message_id' in ChatMessageChunkMetadata payload".to_string(),
                 )
             })?;
         let message_id = Uuid::parse_str(message_id_str).map_err(|e| {
-            AppError::SerializationError(format!("Failed to parse 'message_id' as UUID: {}", e))
+            AppError::SerializationError(format!("Failed to parse 'message_id' as UUID in ChatMessageChunkMetadata: {}", e))
         })?;
 
         let session_id_str = payload
@@ -61,11 +58,11 @@ impl TryFrom<HashMap<String, QdrantValue>> for EmbeddingMetadata {
             })
             .ok_or_else(|| {
                 AppError::SerializationError(
-                    "Missing or invalid 'session_id' in payload".to_string(),
+                    "Missing or invalid 'session_id' in ChatMessageChunkMetadata payload".to_string(),
                 )
             })?;
         let session_id = Uuid::parse_str(session_id_str).map_err(|e| {
-            AppError::SerializationError(format!("Failed to parse 'session_id' as UUID: {}", e))
+            AppError::SerializationError(format!("Failed to parse 'session_id' as UUID in ChatMessageChunkMetadata: {}", e))
         })?;
 
         let speaker = payload
@@ -76,7 +73,7 @@ impl TryFrom<HashMap<String, QdrantValue>> for EmbeddingMetadata {
                 _ => None,
             })
             .ok_or_else(|| {
-                AppError::SerializationError("Missing or invalid 'speaker' in payload".to_string())
+                AppError::SerializationError("Missing or invalid 'speaker' in ChatMessageChunkMetadata payload".to_string())
             })?;
 
         let timestamp_str = payload
@@ -88,12 +85,12 @@ impl TryFrom<HashMap<String, QdrantValue>> for EmbeddingMetadata {
             })
             .ok_or_else(|| {
                 AppError::SerializationError(
-                    "Missing or invalid 'timestamp' in payload".to_string(),
+                    "Missing or invalid 'timestamp' in ChatMessageChunkMetadata payload".to_string(),
                 )
             })?;
         let timestamp = chrono::DateTime::parse_from_rfc3339(timestamp_str)
             .map_err(|e| {
-                AppError::SerializationError(format!("Failed to parse 'timestamp': {}", e))
+                AppError::SerializationError(format!("Failed to parse 'timestamp' in ChatMessageChunkMetadata: {}", e))
             })
             .map(|dt| dt.with_timezone(&chrono::Utc))?;
 
@@ -105,15 +102,164 @@ impl TryFrom<HashMap<String, QdrantValue>> for EmbeddingMetadata {
                 _ => None,
             })
             .ok_or_else(|| {
-                AppError::SerializationError("Missing or invalid 'text' in payload".to_string())
+                AppError::SerializationError("Missing or invalid 'text' in ChatMessageChunkMetadata payload".to_string())
             })?;
 
-        Ok(EmbeddingMetadata {
+        Ok(ChatMessageChunkMetadata {
             message_id,
             session_id,
             speaker,
             timestamp,
             text,
+        })
+    }
+}
+
+// Metadata for lorebook entry chunks
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
+pub struct LorebookChunkMetadata {
+    pub original_lorebook_entry_id: Uuid,
+    pub lorebook_id: Uuid,
+    pub user_id: Uuid,
+    pub chunk_text: String, // Full text of the chunk
+    pub entry_title: Option<String>,
+    pub keywords: Option<Vec<String>>,
+    pub is_enabled: bool,
+    pub is_constant: bool,
+}
+
+impl TryFrom<HashMap<String, QdrantValue>> for LorebookChunkMetadata {
+    type Error = AppError;
+
+    fn try_from(payload: HashMap<String, QdrantValue>) -> Result<Self, Self::Error> {
+        let original_lorebook_entry_id_str = payload
+            .get("original_lorebook_entry_id")
+            .and_then(|v| v.kind.as_ref())
+            .and_then(|k| match k {
+                qdrant_client::qdrant::value::Kind::StringValue(s) => Some(s.as_str()),
+                _ => None,
+            })
+            .ok_or_else(|| {
+                AppError::SerializationError(
+                    "Missing or invalid 'original_lorebook_entry_id' in LorebookChunkMetadata payload".to_string(),
+                )
+            })?;
+        let original_lorebook_entry_id = Uuid::parse_str(original_lorebook_entry_id_str).map_err(|e| {
+            AppError::SerializationError(format!("Failed to parse 'original_lorebook_entry_id' as UUID in LorebookChunkMetadata: {}", e))
+        })?;
+
+        let lorebook_id_str = payload
+            .get("lorebook_id")
+            .and_then(|v| v.kind.as_ref())
+            .and_then(|k| match k {
+                qdrant_client::qdrant::value::Kind::StringValue(s) => Some(s.as_str()),
+                _ => None,
+            })
+            .ok_or_else(|| {
+                AppError::SerializationError(
+                    "Missing or invalid 'lorebook_id' in LorebookChunkMetadata payload".to_string(),
+                )
+            })?;
+        let lorebook_id = Uuid::parse_str(lorebook_id_str).map_err(|e| {
+            AppError::SerializationError(format!("Failed to parse 'lorebook_id' as UUID in LorebookChunkMetadata: {}", e))
+        })?;
+
+        let user_id_str = payload
+            .get("user_id")
+            .and_then(|v| v.kind.as_ref())
+            .and_then(|k| match k {
+                qdrant_client::qdrant::value::Kind::StringValue(s) => Some(s.as_str()),
+                _ => None,
+            })
+            .ok_or_else(|| {
+                AppError::SerializationError(
+                    "Missing or invalid 'user_id' in LorebookChunkMetadata payload".to_string(),
+                )
+            })?;
+        let user_id = Uuid::parse_str(user_id_str).map_err(|e| {
+            AppError::SerializationError(format!("Failed to parse 'user_id' as UUID in LorebookChunkMetadata: {}", e))
+        })?;
+
+        let chunk_text = payload
+            .get("chunk_text")
+            .and_then(|v| v.kind.as_ref())
+            .and_then(|k| match k {
+                qdrant_client::qdrant::value::Kind::StringValue(s) => Some(s.clone()),
+                _ => None,
+            })
+            .ok_or_else(|| {
+                AppError::SerializationError("Missing or invalid 'chunk_text' in LorebookChunkMetadata payload".to_string())
+            })?;
+
+        let entry_title = payload
+            .get("entry_title")
+            .and_then(|v| v.kind.as_ref())
+            .and_then(|k| match k {
+                qdrant_client::qdrant::value::Kind::StringValue(s) => Some(s.clone()),
+                qdrant_client::qdrant::value::Kind::NullValue(_) => None, // Handle explicit null
+                _ => None, // If not string or null, treat as None or error depending on strictness
+            });
+        
+        // If "entry_title" key is not present at all, it's also None.
+        // The above .and_then chain naturally results in None if .get("entry_title") is None.
+
+        let keywords = payload
+            .get("keywords")
+            .and_then(|v| v.kind.as_ref())
+            .and_then(|k| match k {
+                qdrant_client::qdrant::value::Kind::ListValue(list_val) => {
+                    let mut keys = Vec::new();
+                    for item_val in &list_val.values {
+                        if let Some(qdrant_client::qdrant::value::Kind::StringValue(s)) = item_val.kind.as_ref() {
+                            keys.push(s.clone());
+                        } else {
+                            // Non-string value in keywords list, could return error or skip
+                            return Some(Err(AppError::SerializationError(
+                                "Non-string value found in 'keywords' list in LorebookChunkMetadata payload".to_string(),
+                            )));
+                        }
+                    }
+                    Some(Ok(keys))
+                }
+                qdrant_client::qdrant::value::Kind::NullValue(_) => None, // Explicit null for keywords list
+                _ => Some(Err(AppError::SerializationError(
+                    "Invalid type for 'keywords' in LorebookChunkMetadata payload, expected list or null".to_string(),
+                ))),
+            })
+            .transpose()? // Convert Option<Result<Vec<String>, AppError>> to Result<Option<Vec<String>>, AppError>
+            .filter(|v| !v.is_empty()); // If keywords list is empty, treat as None
+
+        let is_enabled = payload
+            .get("is_enabled")
+            .and_then(|v| v.kind.as_ref())
+            .and_then(|k| match k {
+                qdrant_client::qdrant::value::Kind::BoolValue(b) => Some(*b),
+                _ => None,
+            })
+            .ok_or_else(|| {
+                AppError::SerializationError("Missing or invalid 'is_enabled' in LorebookChunkMetadata payload".to_string())
+            })?;
+
+        let is_constant = payload
+            .get("is_constant")
+            .and_then(|v| v.kind.as_ref())
+            .and_then(|k| match k {
+                qdrant_client::qdrant::value::Kind::BoolValue(b) => Some(*b),
+                _ => None,
+            })
+            .ok_or_else(|| {
+                AppError::SerializationError("Missing or invalid 'is_constant' in LorebookChunkMetadata payload".to_string())
+            })?;
+            
+        Ok(LorebookChunkMetadata {
+            original_lorebook_entry_id,
+            lorebook_id,
+            user_id,
+            chunk_text,
+            entry_title,
+            keywords,
+            is_enabled,
+            is_constant,
         })
     }
 }
@@ -130,6 +276,20 @@ pub trait EmbeddingPipelineServiceTrait: Send + Sync {
         state: Arc<AppState>, // Pass state for access to clients
         message: ChatMessage,
         session_dek: Option<&SessionDek>, // Added SessionDek
+    ) -> Result<(), AppError>;
+
+    /// Processes a lorebook entry: chunks, embeds, and stores it.
+    async fn process_and_embed_lorebook_entry(
+        &self,
+        state: Arc<AppState>,
+        original_lorebook_entry_id: Uuid,
+        lorebook_id: Uuid,
+        user_id: Uuid,
+        decrypted_content: String,
+        decrypted_title: Option<String>,
+        decrypted_keywords: Option<Vec<String>>,
+        is_enabled: bool,
+        is_constant: bool,
     ) -> Result<(), AppError>;
 
     /// Retrieves relevant chunks based on a query.
@@ -163,7 +323,7 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
         message: ChatMessage,
         session_dek: Option<&SessionDek>, // Added SessionDek
     ) -> Result<(), AppError> {
-        info!("Starting embedding process for message");
+        info!("Starting embedding process for chat message");
         let embedding_client = state.embedding_client.clone();
         let qdrant_service = state.qdrant_service.clone();
 
@@ -272,7 +432,7 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
 
             // 2b. Prepare metadata
             let speaker_str = format!("{:?}", message.message_type);
-            let metadata = EmbeddingMetadata {
+            let metadata = ChatMessageChunkMetadata {
                 message_id: message.id,
                 session_id: message.session_id,
                 speaker: speaker_str,
@@ -311,15 +471,120 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
         Ok(())
     }
 
-    #[instrument(skip_all, fields(chat_id = %chat_id, query_length = query_text.len()))]
+    #[instrument(skip_all, fields(
+        original_lorebook_entry_id = %original_lorebook_entry_id,
+        lorebook_id = %lorebook_id,
+        user_id = %user_id
+    ))]
+    async fn process_and_embed_lorebook_entry(
+        &self,
+        state: Arc<AppState>,
+        original_lorebook_entry_id: Uuid,
+        lorebook_id: Uuid,
+        user_id: Uuid,
+        decrypted_content: String,
+        decrypted_title: Option<String>,
+        decrypted_keywords: Option<Vec<String>>,
+        is_enabled: bool,
+        is_constant: bool,
+    ) -> Result<(), AppError> {
+        info!("Starting embedding process for lorebook entry");
+        let embedding_client = state.embedding_client.clone();
+        let qdrant_service = state.qdrant_service.clone();
+
+        if decrypted_content.trim().is_empty() {
+            warn!(%original_lorebook_entry_id, "Content for lorebook entry embedding is empty. Skipping embedding.");
+            return Ok(());
+        }
+
+        let chunks = match chunk_text(
+            &decrypted_content,
+            &self.chunk_config,
+            None, // TODO: Consider if title should be prepended for chunking context
+            0,    // TODO: Consider if a specific overlap is needed for lorebook entries
+        ) {
+            Ok(chunks) => {
+                if chunks.is_empty() {
+                    warn!(%original_lorebook_entry_id, "Chunking produced no chunks for lorebook entry. Skipping embedding.");
+                    return Ok(());
+                }
+                chunks
+            }
+            Err(e) => {
+                error!(error = %e, %original_lorebook_entry_id, "Failed to chunk lorebook entry content");
+                return Err(e);
+            }
+        };
+        info!(%original_lorebook_entry_id, "Lorebook entry content split into {} chunks", chunks.len());
+
+        let mut points_to_upsert = Vec::new();
+
+        for (index, chunk) in chunks.into_iter().enumerate() {
+            let task_type = "RETRIEVAL_DOCUMENT";
+            let embedding_vector = match embedding_client
+                .embed_content(&chunk.content, task_type, decrypted_title.as_deref()) // Pass title here
+                .await
+            {
+                Ok(vector) => vector,
+                Err(e) => {
+                    error!(error = %e, chunk_index = index, %original_lorebook_entry_id, "Failed to get embedding for lorebook chunk");
+                    continue;
+                }
+            };
+            
+            // TODO: Re-evaluate if this sleep is necessary or if batch embedding can be used.
+            // For now, keeping it consistent with message embedding.
+            sleep(Duration::from_millis(6100)).await;
+
+            let metadata = LorebookChunkMetadata {
+                original_lorebook_entry_id,
+                lorebook_id,
+                user_id,
+                chunk_text: chunk.content.clone(),
+                entry_title: decrypted_title.clone(),
+                keywords: decrypted_keywords.clone(),
+                is_enabled,
+                is_constant,
+            };
+
+            let point_id = Uuid::new_v4(); // Unique ID per chunk point
+            let point = match create_qdrant_point(
+                point_id,
+                embedding_vector,
+                Some(serde_json::to_value(metadata)?),
+            ) {
+                Ok(p) => p,
+                Err(e) => {
+                    error!(error = %e, chunk_index = index, %original_lorebook_entry_id, "Failed to create Qdrant point struct for lorebook chunk");
+                    continue;
+                }
+            };
+            points_to_upsert.push(point);
+        }
+
+        if !points_to_upsert.is_empty() {
+            info!(%original_lorebook_entry_id, "Upserting {} points to Qdrant for lorebook entry", points_to_upsert.len());
+            if let Err(e) = qdrant_service.store_points(points_to_upsert).await {
+                error!(error = %e, %original_lorebook_entry_id, "Failed to upsert lorebook points to Qdrant");
+                return Err(e);
+            }
+            info!(%original_lorebook_entry_id, "Successfully upserted points for lorebook entry");
+        } else {
+            info!(%original_lorebook_entry_id, "No valid points generated for lorebook entry upserting.");
+        }
+
+        Ok(())
+    }
+
+    #[instrument(skip_all, fields(chat_id = %_chat_id, query_length = query_text.len()))]
     async fn retrieve_relevant_chunks(
         &self,
         state: Arc<AppState>, // Pass state for now, could be refactored later
-        chat_id: Uuid,        // Renamed from session_id for clarity
+        _chat_id: Uuid,        // Renamed from session_id for clarity, prefixed with _ as unused
         query_text: &str,
         limit: u64,
     ) -> Result<Vec<RetrievedChunk>, AppError> {
-        info!("Retrieving relevant chunks for chat");
+        info!("Retrieving relevant chunks for query"); // Made log more generic
         let embedding_client = state.embedding_client.clone();
         let qdrant_service = state.qdrant_service.clone();
 
@@ -327,98 +592,114 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
             .embed_content(query_text, "RETRIEVAL_QUERY", None)
             .await?;
 
-        // Create a filter for the specific chat_id
-        let filter = Filter::must([
-            Condition::matches("session_id", MatchValue::Text(chat_id.to_string())),
-            // Potentially add other filters here, e.g., by user_id if messages are user-specific
-            // Condition::matches("user_id", MatchValue::Text(user_id_performing_search.to_string()))
-        ]);
-
+        // Perform a general search without session_id filter to retrieve both chat and lorebook entries.
+        // Callers might need to implement further filtering based on user_id or other criteria if needed.
+        // The `chat_id` parameter is currently unused in this filter but kept for API consistency.
         let search_results = qdrant_service
-            .search_points(query_embedding.clone(), limit, Some(filter))
+            .search_points(query_embedding.clone(), limit, None) // Removed filter
             .await?;
 
         let mut retrieved_chunks = Vec::new();
         for scored_point in search_results {
-            let payload_map = scored_point.payload;
+            let payload_map = scored_point.payload; // Clone for multiple parsing attempts
             if !payload_map.is_empty() {
-                match EmbeddingMetadata::try_from(payload_map) {
-                    Ok(metadata) => {
-                        retrieved_chunks.push(RetrievedChunk {
-                            score: scored_point.score,
-                            text: metadata.text.clone(), // Use text from metadata
-                            metadata,                    // Store the full metadata
-                        });
-                    }
-                    Err(e) => {
-                        error!(error = %e, point_id = %scored_point.id.as_ref().map(|id| format!("{:?}", id)).unwrap_or_default(), "Failed to parse payload for scored point");
-                    }
+                // Attempt to parse as LorebookChunkMetadata first
+                if let Ok(lorebook_meta) = LorebookChunkMetadata::try_from(payload_map.clone()) {
+                    retrieved_chunks.push(RetrievedChunk {
+                        score: scored_point.score,
+                        text: lorebook_meta.chunk_text.clone(),
+                        metadata: RetrievedMetadata::Lorebook(lorebook_meta),
+                    });
+                }
+                // If not LorebookChunkMetadata, attempt to parse as ChatMessageChunkMetadata
+                else if let Ok(chat_meta) = ChatMessageChunkMetadata::try_from(payload_map.clone()) {
+                    retrieved_chunks.push(RetrievedChunk {
+                        score: scored_point.score,
+                        text: chat_meta.text.clone(),
+                        metadata: RetrievedMetadata::Chat(chat_meta),
+                    });
+                }
+                // If neither, log an error
+                else {
+                    warn!(
+                        point_id = %scored_point.id.as_ref().map(|id| format!("{:?}", id)).unwrap_or_default(),
+                        "Failed to parse payload as any known metadata type (Lorebook or ChatMessage)"
+                    );
                 }
             } else {
                 warn!(point_id = %scored_point.id.as_ref().map(|id| format!("{:?}", id)).unwrap_or_default(), "Scored point has an empty payload");
             }
         }
 
-        info!("Retrieved {} relevant chunks", retrieved_chunks.len());
+        info!("Retrieved {} relevant chunks", retrieved_chunks.len()); // Made log more generic
         Ok(retrieved_chunks)
     }
 }
 
-#[derive(Debug, Clone)] // Added Clone to RetrievedChunk
+#[derive(Debug, Clone)]
+pub enum RetrievedMetadata {
+    Chat(ChatMessageChunkMetadata),
+    Lorebook(LorebookChunkMetadata),
+    // Add other types as needed
+}
+
+
+#[derive(Debug, Clone)]
 pub struct RetrievedChunk {
     pub score: f32,
     pub text: String,
-    pub metadata: EmbeddingMetadata, // Reuse the metadata struct
+    pub metadata: RetrievedMetadata,
 }
 
 // Standalone function for testing or specific use cases (if needed)
 // This is kept for potential direct testing of retrieval logic if the service wrapper is complex
 #[instrument(skip(qdrant_service, embedding_client), err)]
 async fn retrieve_relevant_chunks_standalone(
-    // Renamed
     qdrant_service: Arc<dyn QdrantClientServiceTrait>,
     embedding_client: Arc<dyn EmbeddingClient>,
-    session_id: Uuid, // Keep session_id name here as it's used for filtering
+    _session_id: Uuid, // Parameter kept for signature compatibility, but filter is removed for broader search
     query_text: &str,
     limit: u64,
 ) -> Result<Vec<RetrievedChunk>, AppError> {
-    info!("Retrieving relevant chunks for session (standalone)");
+    info!("Retrieving relevant chunks (standalone, broad search)");
 
     let query_embedding = embedding_client
         .embed_content(query_text, "RETRIEVAL_QUERY", None)
         .await?;
 
-    let filter = Filter::must([Condition::matches(
-        "session_id",
-        MatchValue::Text(session_id.to_string()),
-    )]);
-
+    // No filter applied to search globally for relevant chunks (both chat and lorebook)
     let search_results = qdrant_service
-        .search_points(query_embedding.clone(), limit, Some(filter))
+        .search_points(query_embedding.clone(), limit, None) // Filter removed
         .await?;
 
     let mut retrieved_chunks = Vec::new();
     for scored_point in search_results {
-        let payload_map = scored_point.payload;
+        let payload_map = scored_point.payload.clone(); // Clone for multiple parsing attempts
         if !payload_map.is_empty() {
-            match EmbeddingMetadata::try_from(payload_map) {
-                Ok(metadata) => {
-                    retrieved_chunks.push(RetrievedChunk {
-                        score: scored_point.score,
-                        text: metadata.text.clone(),
-                        metadata,
-                    });
-                }
-                Err(e) => {
-                    error!(error = %e, point_id = %scored_point.id.as_ref().map(|id| format!("{:?}", id)).unwrap_or_default(), "Failed to parse payload for scored point (standalone)");
-                }
+            if let Ok(lorebook_meta) = LorebookChunkMetadata::try_from(payload_map.clone()) {
+                retrieved_chunks.push(RetrievedChunk {
+                    score: scored_point.score,
+                    text: lorebook_meta.chunk_text.clone(),
+                    metadata: RetrievedMetadata::Lorebook(lorebook_meta),
+                });
+            } else if let Ok(chat_meta) = ChatMessageChunkMetadata::try_from(payload_map) {
+                retrieved_chunks.push(RetrievedChunk {
+                    score: scored_point.score,
+                    text: chat_meta.text.clone(),
+                    metadata: RetrievedMetadata::Chat(chat_meta),
+                });
+            } else {
+                warn!(
+                    point_id = %scored_point.id.as_ref().map(|id| format!("{:?}", id)).unwrap_or_default(),
+                    "Failed to parse payload as any known metadata type (standalone)"
+                );
             }
         } else {
             warn!(point_id = %scored_point.id.as_ref().map(|id| format!("{:?}", id)).unwrap_or_default(), "Scored point has an empty payload (standalone)");
         }
     }
     info!(
-        "Retrieved {} relevant chunks (standalone)",
+        "Retrieved {} relevant chunks (standalone, broad search)",
         retrieved_chunks.len()
     );
     Ok(retrieved_chunks)
@@ -433,8 +714,9 @@ mod tests {
         models::chats::MessageRole,
         test_helpers::{
             MockAiClient, MockEmbeddingClient, MockQdrantClientService, db::setup_test_database,
-        }, // Keep this import
-        text_processing::chunking::ChunkingMetric, // Keep this import
+        },
+        services::lorebook_service::LorebookService, // Added for LorebookService
+        text_processing::chunking::ChunkingMetric,
     };
     use chrono::Utc;
     use qdrant_client::qdrant::{PointId, ScoredPoint, Value};
@@ -478,9 +760,9 @@ mod tests {
     }
 
     #[test]
-    fn test_embedding_metadata_try_from_valid_payload() {
+    fn test_chat_message_chunk_metadata_try_from_valid_payload() {
         let payload = build_valid_payload_map();
-        let result = EmbeddingMetadata::try_from(payload);
+        let result = ChatMessageChunkMetadata::try_from(payload);
         assert!(result.is_ok());
         let metadata = result.unwrap();
         assert_eq!(metadata.speaker, "user");
@@ -488,10 +770,10 @@ mod tests {
     }
 
     #[test]
-    fn test_embedding_metadata_try_from_missing_field() {
+    fn test_chat_message_chunk_metadata_try_from_missing_field() {
         let mut payload = build_valid_payload_map();
         payload.remove("speaker");
-        let result = EmbeddingMetadata::try_from(payload);
+        let result = ChatMessageChunkMetadata::try_from(payload);
         assert!(result.is_err());
         if let Err(AppError::SerializationError(msg)) = result {
             assert!(msg.contains("Missing or invalid 'speaker'"));
@@ -501,10 +783,10 @@ mod tests {
     }
 
     #[test]
-    fn test_embedding_metadata_try_from_invalid_uuid_format() {
+    fn test_chat_message_chunk_metadata_try_from_invalid_uuid_format() {
         let mut payload = build_valid_payload_map();
         payload.insert("message_id".to_string(), string_value("not-a-uuid"));
-        let result = EmbeddingMetadata::try_from(payload);
+        let result = ChatMessageChunkMetadata::try_from(payload);
         assert!(result.is_err());
         if let Err(AppError::SerializationError(msg)) = result {
             assert!(msg.contains("Failed to parse 'message_id' as UUID"));
@@ -514,10 +796,10 @@ mod tests {
     }
 
     #[test]
-    fn test_embedding_metadata_try_from_invalid_timestamp_format() {
+    fn test_chat_message_chunk_metadata_try_from_invalid_timestamp_format() {
         let mut payload = build_valid_payload_map();
         payload.insert("timestamp".to_string(), string_value("not-a-timestamp"));
-        let result = EmbeddingMetadata::try_from(payload);
+        let result = ChatMessageChunkMetadata::try_from(payload);
         assert!(result.is_err());
         if let Err(AppError::SerializationError(msg)) = result {
             assert!(msg.contains("Failed to parse 'timestamp'"));
@@ -527,10 +809,10 @@ mod tests {
     }
 
     #[test]
-    fn test_embedding_metadata_try_from_wrong_field_type() {
+    fn test_chat_message_chunk_metadata_try_from_wrong_field_type() {
         let mut payload = build_valid_payload_map();
         payload.insert("speaker".to_string(), integer_value(123)); // Speaker should be string
-        let result = EmbeddingMetadata::try_from(payload);
+        let result = ChatMessageChunkMetadata::try_from(payload);
         assert!(result.is_err());
         if let Err(AppError::SerializationError(msg)) = result {
             assert!(msg.contains("Missing or invalid 'speaker'")); // Will fail on wrong type, re-checking as missing
@@ -540,9 +822,9 @@ mod tests {
     }
 
     #[test]
-    fn test_embedding_metadata_try_from_empty_payload() {
+    fn test_chat_message_chunk_metadata_try_from_empty_payload() {
         let payload = HashMap::new();
-        let result = EmbeddingMetadata::try_from(payload);
+        let result = ChatMessageChunkMetadata::try_from(payload);
         assert!(result.is_err());
         if let Err(AppError::SerializationError(msg)) = result {
             // The first field it checks will be reported as missing
@@ -553,6 +835,7 @@ mod tests {
     }
 
     // --- Tests for EmbeddingPipelineService ---
+    // TODO: Add tests for process_and_embed_lorebook_entry
 
     // Helper for setting up test environment for service methods
     async fn setup_pipeline_test_env() -> (
@@ -583,6 +866,7 @@ mod tests {
             )
             .expect("Failed to create tokenizer for test")
         ));
+        let lorebook_service = Arc::new(LorebookService::new(pool.clone(), encryption_service.clone()));
 
         let app_state = Arc::new(AppState::new(
             pool,
@@ -594,7 +878,8 @@ mod tests {
             chat_override_service,
             user_persona_service,
             token_counter_service,
-            encryption_service.clone()
+            encryption_service.clone(),
+            lorebook_service, // Added lorebook_service
         ));
         (app_state, mock_qdrant, mock_embed_client)
     }
@@ -856,9 +1141,17 @@ mod tests {
         let chunks = result.unwrap();
         assert_eq!(chunks.len(), 2);
         assert_eq!(chunks[0].text, "Cats are furry.");
-        assert_eq!(chunks[0].metadata.speaker, "user");
+        if let RetrievedMetadata::Chat(meta) = &chunks[0].metadata {
+            assert_eq!(meta.speaker, "user");
+        } else {
+            panic!("Expected Chat metadata for chunks[0]");
+        }
         assert_eq!(chunks[1].text, "They meow a lot.");
-        assert_eq!(chunks[1].metadata.speaker, "ai");
+        if let RetrievedMetadata::Chat(meta) = &chunks[1].metadata {
+            assert_eq!(meta.speaker, "ai");
+        } else {
+            panic!("Expected Chat metadata for chunks[1]");
+        }
     }
 
     // --- Standalone function tests (can be removed if service tests cover sufficiently) ---
@@ -1272,4 +1565,227 @@ mod tests {
             "Expected original plaintext content to be embedded"
         );
     }
+
+    // --- Tests for process_and_embed_lorebook_entry ---
+
+    #[tokio::test]
+    async fn test_process_and_embed_lorebook_entry_success() {
+        let (state, mock_qdrant, mock_embed_client) = setup_pipeline_test_env().await;
+        let original_lorebook_entry_id = Uuid::new_v4();
+        let lorebook_id = Uuid::new_v4();
+        let user_id = Uuid::new_v4();
+        let decrypted_content = "This is a lorebook entry about dragons. They breathe fire.".to_string();
+        let decrypted_title = Some("Dragons".to_string());
+        let decrypted_keywords = Some(vec!["dragon".to_string(), "mythical".to_string()]);
+        let is_enabled = true;
+        let is_constant = false;
+
+        // Mock Embedding Client
+        mock_embed_client.set_response(Ok(vec![0.1, 0.2, 0.3, 0.4])); // Example embedding
+        // Mock Qdrant to succeed on upsert
+        mock_qdrant.set_upsert_response(Ok(()));
+
+        let result = state
+            .embedding_pipeline_service
+            .process_and_embed_lorebook_entry(
+                state.clone(),
+                original_lorebook_entry_id,
+                lorebook_id,
+                user_id,
+                decrypted_content.clone(),
+                decrypted_title.clone(),
+                decrypted_keywords.clone(),
+                is_enabled,
+                is_constant,
+            )
+            .await;
+
+        assert!(result.is_ok(), "process_and_embed_lorebook_entry failed: {:?}", result.err());
+
+        // Verify embedding client calls
+        let embed_calls = mock_embed_client.get_calls();
+        // Based on chunk_config (100/20), "This is a lorebook entry about dragons. They breathe fire." (56 chars) should be 1 chunk.
+        assert_eq!(embed_calls.len(), 1, "Expected 1 call to embedding client for the content");
+        assert_eq!(embed_calls[0].0, decrypted_content); // Check content
+        assert_eq!(embed_calls[0].1, "RETRIEVAL_DOCUMENT"); // Check task type
+        assert_eq!(embed_calls[0].2, decrypted_title); // Check title
+
+        // Verify Qdrant client calls
+        let qdrant_upsert_points = mock_qdrant.get_last_upsert_points().unwrap_or_default();
+        assert_eq!(qdrant_upsert_points.len(), 1, "Expected 1 point in the batch upsert");
+        
+        let point = &qdrant_upsert_points[0];
+        assert!(matches!(point.vectors.as_ref().unwrap().vectors_options.as_ref().unwrap(), qdrant_client::qdrant::vectors::VectorsOptions::Vector(_)), "Expected a single unnamed vector"); // Check vector presence
+
+        let payload_value = point.payload.get("original_lorebook_entry_id").unwrap().kind.as_ref().unwrap();
+        if let qdrant_client::qdrant::value::Kind::StringValue(s) = payload_value {
+            assert_eq!(*s, original_lorebook_entry_id.to_string());
+        } else {
+            panic!("Wrong type for original_lorebook_entry_id");
+        }
+
+        let payload_value = point.payload.get("lorebook_id").unwrap().kind.as_ref().unwrap();
+        if let qdrant_client::qdrant::value::Kind::StringValue(s) = payload_value {
+            assert_eq!(*s, lorebook_id.to_string());
+        } else {
+            panic!("Wrong type for lorebook_id");
+        }
+
+        let payload_value = point.payload.get("user_id").unwrap().kind.as_ref().unwrap();
+        if let qdrant_client::qdrant::value::Kind::StringValue(s) = payload_value {
+            assert_eq!(*s, user_id.to_string());
+        } else {
+            panic!("Wrong type for user_id");
+        }
+        
+        let payload_value = point.payload.get("chunk_text").unwrap().kind.as_ref().unwrap();
+        if let qdrant_client::qdrant::value::Kind::StringValue(s) = payload_value {
+            assert_eq!(*s, decrypted_content);
+        } else {
+            panic!("Wrong type for chunk_text");
+        }
+
+        let payload_value = point.payload.get("entry_title").unwrap().kind.as_ref().unwrap();
+        if let qdrant_client::qdrant::value::Kind::StringValue(s) = payload_value {
+            assert_eq!(*s, decrypted_title.as_ref().unwrap().clone());
+        } else {
+            panic!("Wrong type for entry_title");
+        }
+        
+        let payload_value = point.payload.get("is_enabled").unwrap().kind.as_ref().unwrap();
+        if let qdrant_client::qdrant::value::Kind::BoolValue(b) = payload_value {
+            assert_eq!(b, &is_enabled);
+        } else {
+            panic!("Wrong type for is_enabled");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_process_and_embed_lorebook_entry_empty_content() {
+        let (state, _mock_qdrant, mock_embed_client) = setup_pipeline_test_env().await;
+        let original_lorebook_entry_id = Uuid::new_v4();
+        let lorebook_id = Uuid::new_v4();
+        let user_id = Uuid::new_v4();
+
+        let result = state
+            .embedding_pipeline_service
+            .process_and_embed_lorebook_entry(
+                state.clone(),
+                original_lorebook_entry_id,
+                lorebook_id,
+                user_id,
+                "   ".to_string(), // Empty after trim
+                Some("Empty Title".to_string()),
+                None,
+                true,
+                false,
+            )
+            .await;
+        
+        assert!(result.is_ok(), "Expected Ok for empty content (should skip embedding)");
+        assert!(mock_embed_client.get_calls().is_empty(), "Embedding client should not be called for empty content");
+    }
+
+    #[tokio::test]
+    async fn test_process_and_embed_lorebook_entry_embedding_error() {
+        let (state, mock_qdrant, mock_embed_client) = setup_pipeline_test_env().await;
+        let original_lorebook_entry_id = Uuid::new_v4();
+
+        mock_embed_client.set_response(Err(AppError::AiServiceError("Embedding failed".to_string())));
+
+        let result = state
+            .embedding_pipeline_service
+            .process_and_embed_lorebook_entry(
+                state.clone(),
+                original_lorebook_entry_id,
+                Uuid::new_v4(),
+                Uuid::new_v4(),
+                "Some lore content".to_string(),
+                Some("Lore Title".to_string()),
+                None,
+                true,
+                false,
+            )
+            .await;
+        
+        assert!(result.is_ok(), "Service should handle embedding errors gracefully and return Ok if no points were made to upsert.");
+        assert!(mock_qdrant.get_last_upsert_points().unwrap_or_default().is_empty(), "Qdrant should not be called if embedding failed for all chunks");
+    }
+
+    #[tokio::test]
+    async fn test_process_and_embed_lorebook_entry_qdrant_error() {
+        let (state, mock_qdrant, mock_embed_client) = setup_pipeline_test_env().await;
+        let original_lorebook_entry_id = Uuid::new_v4();
+
+        mock_embed_client.set_response(Ok(vec![0.5, 0.5]));
+        mock_qdrant.set_upsert_response(Err(AppError::VectorDbError("Qdrant down".to_string())));
+
+        let result = state
+            .embedding_pipeline_service
+            .process_and_embed_lorebook_entry(
+                state.clone(),
+                original_lorebook_entry_id,
+                Uuid::new_v4(),
+                Uuid::new_v4(),
+                "Some lore content".to_string(),
+                Some("Lore Title".to_string()),
+                None,
+                true,
+                false,
+            )
+            .await;
+            
+        assert!(result.is_err());
+        if let Err(AppError::VectorDbError(msg)) = result {
+            assert_eq!(msg, "Qdrant down");
+        } else {
+            panic!("Expected VectorDbError");
+        }
+    }
+
+     #[tokio::test]
+    async fn test_process_and_embed_lorebook_entry_multiple_chunks() {
+        let (state, mock_qdrant, mock_embed_client) = setup_pipeline_test_env().await;
+        let original_lorebook_entry_id = Uuid::new_v4();
+        let lorebook_id = Uuid::new_v4();
+        let user_id = Uuid::new_v4();
+        // Content designed to be chunked by the service's default config (max_size 100, overlap 20)
+        let long_content = "a".repeat(150);
+        let decrypted_title = Some("Long Lore".to_string());
+
+        mock_embed_client.set_response(Ok(vec![0.1, 0.2])); // Mock will return this for each call
+        mock_qdrant.set_upsert_response(Ok(()));
+
+        let result = state
+            .embedding_pipeline_service
+            .process_and_embed_lorebook_entry(
+                state.clone(),
+                original_lorebook_entry_id,
+                lorebook_id,
+                user_id,
+                long_content.clone(),
+                decrypted_title.clone(),
+                None,
+                true,
+                false,
+            )
+            .await;
+
+        assert!(result.is_ok(), "Processing multi-chunk lore entry failed: {:?}", result.err());
+
+        let embed_calls = mock_embed_client.get_calls();
+        // 150 chars, 100 max, 20 overlap.
+        // Chunk 1: 0-99 (100 chars)
+        // Chunk 2: 80-149 (70 chars) -> (start = 100 - 20 = 80)
+        assert_eq!(embed_calls.len(), 2, "Expected 2 calls to embedding client for 150 char content");
+        assert_eq!(embed_calls[0].1, "RETRIEVAL_DOCUMENT");
+        assert_eq!(embed_calls[0].2, decrypted_title);
+        assert_eq!(embed_calls[1].1, "RETRIEVAL_DOCUMENT");
+        assert_eq!(embed_calls[1].2, decrypted_title);
+
+
+        let qdrant_upsert_points = mock_qdrant.get_last_upsert_points().unwrap_or_default();
+        assert_eq!(qdrant_upsert_points.len(), 2, "Expected 2 points in the batch upsert");
+    }
+
 }

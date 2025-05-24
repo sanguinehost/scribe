@@ -62,6 +62,7 @@ use axum::middleware::{self as axum_middleware, Next};
 use axum::response::Response as AxumResponse;
 use scribe_backend::services::chat_override_service::ChatOverrideService; // <<< ADDED IMPORT
 use scribe_backend::services::encryption_service::EncryptionService;
+use scribe_backend::services::lorebook_service::LorebookService; // Added for LorebookService
 use scribe_backend::services::user_persona_service::UserPersonaService; // <<< ADDED THIS IMPORT
 
 // Define the embedded migrations macro
@@ -203,10 +204,19 @@ async fn main() -> Result<()> {
     // --- Create User Persona Service ---
     let encryption_service_arc_for_persona = encryption_service_arc.clone(); // Clone Arc for UserPersonaService
     let user_persona_service = UserPersonaService::new(
-        pool.clone(), 
+        pool.clone(),
         encryption_service_arc_for_persona
     );
     let user_persona_service_arc = Arc::new(user_persona_service);
+
+    // --- Initialize Lorebook Service ---
+    let encryption_service_arc_for_lorebook = encryption_service_arc.clone();
+    let lorebook_service = LorebookService::new(
+        pool.clone(),
+        encryption_service_arc_for_lorebook,
+    );
+    let lorebook_service_arc = Arc::new(lorebook_service);
+    tracing::info!("LorebookService initialized.");
 
     // --- Session Store Setup ---
     // Ideally load from config/env, generating is okay for dev
@@ -264,6 +274,7 @@ async fn main() -> Result<()> {
         user_persona_service_arc, // <<< PASSING THE NEW SERVICE TO APPSTATE
         hybrid_token_counter_arc,   // Added
         encryption_service_arc.clone(), // Pass the encryption service
+        lorebook_service_arc,       // Pass the lorebook service
     );
 
     // --- Define Protected Routes ---

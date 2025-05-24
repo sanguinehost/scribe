@@ -259,7 +259,7 @@ impl std::fmt::Debug for NewMessage {
 }
 
 // Request/Response DTOs
-#[derive(Deserialize)] // Removed Debug
+#[derive(Deserialize, Serialize)] // Removed Debug, Added Serialize
 pub struct CreateChatRequest {
     #[serde(default)]
     pub title: String,
@@ -883,7 +883,7 @@ impl std::fmt::Debug for GenerateResponsePayload {
     }
 }
 
-#[derive(Serialize)] // Removed Debug
+#[derive(Serialize, Deserialize)] // Removed Debug, Added Deserialize
 pub struct GenerateResponse {
     pub ai_message: ChatMessage,
 }

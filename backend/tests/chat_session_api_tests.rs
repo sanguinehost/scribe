@@ -35,6 +35,7 @@ use scribe_backend::models::{
     users::User,
 };
 use scribe_backend::schema::chat_messages;
+use scribe_backend::services::lorebook_service::LorebookService;
 use scribe_backend::state::AppState;
 // scribe_backend::test_helpers is already imported. TestDataGuard will be used as test_helpers::TestDataGuard.
 
@@ -1296,6 +1297,10 @@ async fn test_create_session_saves_first_mes() -> Result<(), AnyhowError> {
     let tokenizer_service_for_test = scribe_backend::services::tokenizer_service::TokenizerService::new("/home/socol/Workspace/sanguine-scribe/backend/resources/tokenizers/gemma.model")
                 .expect("Failed to create tokenizer for test");
     let hybrid_token_counter_for_test = Arc::new(scribe_backend::services::hybrid_token_counter::HybridTokenCounter::new_local_only(tokenizer_service_for_test));
+    let lorebook_service_for_test = Arc::new(LorebookService::new(
+        test_app.db_pool.clone(),
+        encryption_service_for_test.clone()
+    ));
 
     let app_state_arc = Arc::new(AppState::new(
         test_app.db_pool.clone(),
@@ -1307,7 +1312,8 @@ async fn test_create_session_saves_first_mes() -> Result<(), AnyhowError> {
         chat_override_service_for_test, // 7th arg
         user_persona_service_for_test, // 8th arg
         hybrid_token_counter_for_test,    // 9th arg
-        encryption_service_for_test.clone()
+        encryption_service_for_test.clone(), // 10th arg
+        lorebook_service_for_test // 11th arg
     ));
 
     // The function create_session_and_maybe_first_message returns Result<scribe_backend::models::chats::Chat, ...>

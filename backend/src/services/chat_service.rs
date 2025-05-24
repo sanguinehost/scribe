@@ -30,7 +30,10 @@ use crate::{
         user_personas::UserPersonaDataForClient, // Correct DTO name
     },
     schema::{characters, chat_character_overrides, chat_messages, chat_sessions},
-    services::history_manager,
+    services::{
+        history_manager,
+        embedding_pipeline::{RetrievedMetadata}, // Added for RAG
+    },
     services::hybrid_token_counter::CountingMode, // Added for token counting
     state::{AppState, DbPool},
     crypto, // Added for encryption
@@ -617,9 +620,10 @@ pub async fn get_session_data_for_generation(
     state: Arc<AppState>, // Changed from pool to state
     user_id: Uuid,
     session_id: Uuid,
-    user_message_content: String,
+    user_message_content: String, // This will be cloned for the closure
     user_dek_secret_box: Option<Arc<SecretBox<Vec<u8>>>>,
 ) -> Result<GenerationDataWithUnsavedUserMessage, AppError> {
+    let user_message_content_for_closure = user_message_content.clone();
     info!(target: "chat_service_persona_debug", %session_id, %user_id, "Entering get_session_data_for_generation.");
     let conn = state.pool.get().await.map_err(|e| {
         // Use state.pool
@@ -792,7 +796,7 @@ pub async fn get_session_data_for_generation(
     info!(target: "chat_service_persona_debug", %session_id, "db_persona_for_prompt (UserPersonaDataForClient) that might be used by PromptBuilder: {:?}", db_persona_for_prompt);
 
 
-    conn.interact(move |conn_interaction| {
+    let generation_data_result = conn.interact(move |conn_interaction| {
         info!(%session_id, %user_id, "Fetching session data for generation");
 
         // Fetch chat session details including character_id and session-specific system_prompt
@@ -1107,23 +1111,45 @@ pub async fn get_session_data_for_generation(
                 }
             }
         }
+
+        // --- START: RAG Context for Current User Message ---
+        let final_system_prompt_with_rag = effective_system_prompt.clone(); // Start with the base system prompt
+
+        if !user_message_content_for_closure.trim().is_empty() {
+            // const RAG_CONTEXT_FOR_SYSTEM_PROMPT_LIMIT: u64 = 5; // Define a limit for chunks - This was unused here
+            info!(%session_id, "Retrieving RAG context for current user message to augment system prompt (placeholder in interact block).");
+            
+            // This block needs to be async, so we'll handle it outside the interact block if direct async calls are not possible inside.
+            // For now, assuming this interact block is the place for DB calls, and RAG retrieval might need to be adjusted.
+            // However, `state.embedding_pipeline_service.retrieve_relevant_chunks` is async.
+            // This means this RAG retrieval part needs to happen *before* this `conn.interact` block,
+            // or the `interact` block needs to be structured differently if it's only for sync Diesel calls.
+
+            // Let's assume we can call async functions if `conn_interaction` is not used by them.
+            // This part will be executed outside the `conn.interact` block later if needed.
+            // For now, placing logic here to see structure.
+            // THIS WILL BE MOVED OUTSIDE THE INTERACT BLOCK
+        }
+        // --- END: RAG Context for Current User Message (LOGIC TO BE MOVED) ---
+
+
         // Token counting has been moved above and done outside the interact block
         // We'll use the tokens that were already counted
         let user_db_message_to_save = DbInsertableChatMessage::new(
             session_id,
             user_id,
             MessageRole::User,
-            user_message_content.clone().into_bytes(),
+            user_message_content_for_closure.clone().into_bytes(),
             None, // Nonce for user message (plaintext here, encrypted in save_message)
             Some("user".to_string()), // role_str: ADDED
-            Some(json!([{"text": user_message_content}])), // parts_json: Now uses the original user_message_content
+            Some(json!([{"text": user_message_content_for_closure.clone()}])), // parts_json: Now uses the original user_message_content
             None,                       // attachments_json: ADDED
             user_prompt_tokens, // prompt_tokens
             None,               // completion_tokens (None for user message)
         );
         Ok::<GenerationDataWithUnsavedUserMessage, AppError>((
             managed_history,
-            effective_system_prompt, // Use the newly constructed system prompt
+            final_system_prompt_with_rag, // Use the potentially RAG-augmented system prompt
             session_temperature,
             session_max_output_tokens,
             session_frequency_penalty,
@@ -1144,7 +1170,95 @@ pub async fn get_session_data_for_generation(
         ))
     })
     .await // Outer await for interact
-    .map_err(|e| AppError::DbInteractError(format!("Interact dispatch error: {}", e)))? 
+    .map_err(|e| AppError::DbInteractError(format!("Interact dispatch error: {}", e)))?;
+    let generation_data = generation_data_result?;
+
+    // --- START: RAG Context for Current User Message (MOVED LOGIC) ---
+    let mut final_system_prompt_with_rag = generation_data.1.clone(); // Get the system_prompt from the tuple
+
+    if !user_message_content.trim().is_empty() {
+        const RAG_CONTEXT_FOR_SYSTEM_PROMPT_LIMIT: u64 = 5;
+        info!(%session_id, "Retrieving RAG context for current user message to augment system prompt (post-interact).");
+
+        match state.embedding_pipeline_service.retrieve_relevant_chunks(
+            state.clone(), // AppState needs to be cloneable or Arc-wrapped
+            session_id,
+            &user_message_content,
+            RAG_CONTEXT_FOR_SYSTEM_PROMPT_LIMIT
+        ).await {
+            Ok(retrieved_chunks) => {
+                if !retrieved_chunks.is_empty() {
+                    let mut rag_context_str = "\n\n--- Relevant Context (from current message) ---\n".to_string();
+                    for chunk in retrieved_chunks {
+                        let chunk_formatted = match chunk.metadata {
+                            RetrievedMetadata::Chat(chat_meta) => {
+                                format!(
+                                    "- Chat (Score: {:.2}, Speaker: {}): {}\n",
+                                    chunk.score,
+                                    chat_meta.speaker,
+                                    chunk.text.trim()
+                                )
+                            }
+                            RetrievedMetadata::Lorebook(lore_meta) => {
+                                let title_str = lore_meta.entry_title.as_deref().unwrap_or("N/A");
+                                let keywords_str = lore_meta.keywords.as_ref().map_or_else(
+                                    || "N/A".to_string(),
+                                    |kw| kw.join(", "),
+                                );
+                                format!(
+                                    "- Lorebook (Score: {:.2}, Title: \"{}\", Keywords: [{}], Enabled: {}, Constant: {}): {}\n",
+                                    chunk.score,
+                                    title_str,
+                                    keywords_str,
+                                    lore_meta.is_enabled,
+                                    lore_meta.is_constant,
+                                    chunk.text.trim()
+                                )
+                            }
+                        };
+                        rag_context_str.push_str(&chunk_formatted);
+                    }
+                    rag_context_str.push_str("---\n");
+
+                    if let Some(existing_prompt) = final_system_prompt_with_rag {
+                        final_system_prompt_with_rag = Some(format!("{}{}", rag_context_str, existing_prompt));
+                    } else {
+                        final_system_prompt_with_rag = Some(rag_context_str.trim_start().to_string());
+                    }
+                    info!(%session_id, "Augmented system prompt with RAG context from current message.");
+                } else {
+                    info!(%session_id, "No RAG chunks found for current user message to augment system prompt.");
+                }
+            }
+            Err(e) => {
+                warn!(%session_id, error = %e, "Failed to retrieve RAG chunks for current user message. System prompt will not be augmented by it.");
+            }
+        }
+    }
+    // --- END: RAG Context for Current User Message (MOVED LOGIC) ---
+    
+    // Return the modified tuple
+    Ok((
+        generation_data.0, // HistoryForGeneration
+        final_system_prompt_with_rag, // Option<String> (system_prompt, potentially updated)
+        generation_data.2, // Option<BigDecimal> (temperature)
+        generation_data.3, // Option<i32> (max_output_tokens)
+        generation_data.4, // Option<BigDecimal> (frequency_penalty)
+        generation_data.5, // Option<BigDecimal> (presence_penalty)
+        generation_data.6, // Option<i32> (top_k)
+        generation_data.7, // Option<BigDecimal> (top_p)
+        generation_data.8, // Option<BigDecimal> (repetition_penalty)
+        generation_data.9, // Option<BigDecimal> (min_p)
+        generation_data.10, // Option<BigDecimal> (top_a)
+        generation_data.11, // Option<i32> (seed)
+        generation_data.12, // Option<Value> (logit_bias)
+        generation_data.13, // String (model_name)
+        generation_data.14, // Option<i32> (gemini_thinking_budget)
+        generation_data.15, // Option<bool> (gemini_enable_code_execution)
+        generation_data.16, // DbInsertableChatMessage (user_db_message_to_save)
+        generation_data.17, // String (history_management_strategy)
+        generation_data.18, // i32 (history_management_limit) - Added missing element
+    ))
 }
 
 /// Gets chat settings for a specific session, verifying ownership.

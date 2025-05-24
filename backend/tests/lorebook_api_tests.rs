@@ -86,11 +86,9 @@ mod lorebook_tests {
             &test_app.db_pool,
             user_credentials.0.to_string(),
             user_credentials.1.to_string(),
-            // true, None, None, // Extra arguments removed
         ).await.expect("Failed to create user");
         let (auth_client, _user_token_str) = scribe_backend::test_helpers::login_user_via_api( // Get client and token string
             &test_app,
-            // &test_app.address, // Removed http_client and address
             user_credentials.0,
             user_credentials.1,
         ).await;
@@ -145,11 +143,9 @@ mod lorebook_tests {
             &test_app.db_pool,
             user_credentials.0.to_string(),
             user_credentials.1.to_string(),
-            // true, None, None,
         ).await.expect("Failed to create user");
         let (auth_client, _user_token_str) = scribe_backend::test_helpers::login_user_via_api(
             &test_app,
-            // &test_app.address,
             user_credentials.0,
             user_credentials.1,
         ).await;
@@ -182,11 +178,9 @@ mod lorebook_tests {
             &test_app.db_pool,
             user_credentials.0.to_string(),
             user_credentials.1.to_string(),
-            // true, None, None,
         ).await.expect("Failed to create user");
         let (auth_client, _user_token_str) = scribe_backend::test_helpers::login_user_via_api(
             &test_app,
-            // &test_app.address,
             user_credentials.0,
             user_credentials.1,
         ).await;
@@ -231,14 +225,12 @@ mod lorebook_tests {
 
         let user_credentials = ("user_tgls@example.com", "password123");
         let user_data = scribe_backend::test_helpers::db::create_test_user(
-            &test_app.db_pool, // Corrected first argument
-            user_credentials.0.to_string(), // Corrected type
-            user_credentials.1.to_string(), // Corrected type
-            // true, None, None, // Removed extra arguments
+            &test_app.db_pool,
+            user_credentials.0.to_string(),
+            user_credentials.1.to_string(),
         ).await.expect("Failed to create user");
-        let (auth_client, _user_token_str) = scribe_backend::test_helpers::login_user_via_api( // Get client and token string
-            &test_app, // Corrected first argument
-            // &test_app.address, // Removed second argument
+        let (auth_client, _user_token_str) = scribe_backend::test_helpers::login_user_via_api(
+            &test_app,
             user_credentials.0,
             user_credentials.1,
         ).await;
@@ -270,12 +262,10 @@ mod lorebook_tests {
             &test_app.db_pool,
             user_credentials.0.to_string(),
             user_credentials.1.to_string(),
-            // true, None, None,
         ).await.expect("Failed to create user");
         // We need an authenticated client to create the dummy lorebook
         let (auth_client_for_setup, _user_token_str) = scribe_backend::test_helpers::login_user_via_api(
             &test_app,
-            // &test_app.address,
             user_credentials.0,
             user_credentials.1,
         ).await;
@@ -347,11 +337,9 @@ mod lorebook_tests {
             &test_app.db_pool,
             user_credentials.0.to_string(),
             user_credentials.1.to_string(),
-            // true, None, None,
         ).await.expect("Failed to create user");
         let (auth_client, _user_token_str) = scribe_backend::test_helpers::login_user_via_api(
             &test_app,
-            // &test_app.address,
             user_credentials.0,
             user_credentials.1,
         ).await;
@@ -379,11 +367,9 @@ mod lorebook_tests {
             &test_app.db_pool,
             user_credentials.0.to_string(),
             user_credentials.1.to_string(),
-            // true, None, None,
         ).await.expect("Failed to create user");
         let (auth_client, _user_token_str) = scribe_backend::test_helpers::login_user_via_api(
             &test_app,
-            // &test_app.address,
             user_credentials.0,
             user_credentials.1,
         ).await;
@@ -419,11 +405,9 @@ mod lorebook_tests {
             &test_app.db_pool,
             user_credentials.0.to_string(),
             user_credentials.1.to_string(),
-            // true, None, None,
         ).await.expect("Failed to create user");
         let (auth_client_for_setup, _user_token_str) = scribe_backend::test_helpers::login_user_via_api(
             &test_app,
-            // &test_app.address,
             user_credentials.0,
             user_credentials.1,
         ).await;
@@ -497,11 +481,9 @@ mod lorebook_tests {
             &test_app.db_pool,
             user_credentials.0.to_string(),
             user_credentials.1.to_string(),
-            // true, None, None,
         ).await.expect("Failed to create user");
         let (auth_client, _user_token_str) = scribe_backend::test_helpers::login_user_via_api(
             &test_app,
-            // &test_app.address,
             user_credentials.0,
             user_credentials.1,
         ).await;
@@ -534,11 +516,9 @@ mod lorebook_tests {
             &test_app.db_pool,
             user_credentials.0.to_string(),
             user_credentials.1.to_string(),
-            // true, None, None,
         ).await.expect("Failed to create user");
         let (auth_client, _user_token_str) = scribe_backend::test_helpers::login_user_via_api(
             &test_app,
-            // &test_app.address,
             user_credentials.0,
             user_credentials.1,
         ).await;
@@ -568,11 +548,9 @@ mod lorebook_tests {
             &test_app.db_pool,
             user_credentials.0.to_string(),
             user_credentials.1.to_string(),
-            // true, None, None,
         ).await.expect("Failed to create user");
         let (auth_client, _user_token_str) = scribe_backend::test_helpers::login_user_via_api(
             &test_app,
-            // &test_app.address,
             user_credentials.0,
             user_credentials.1,
         ).await;
@@ -599,11 +577,9 @@ mod lorebook_tests {
             &test_app.db_pool,
             user_credentials.0.to_string(),
             user_credentials.1.to_string(),
-            // true, None, None,
         ).await.expect("Failed to create user");
         let (auth_client_for_setup, _user_token_str) = scribe_backend::test_helpers::login_user_via_api(
             &test_app,
-            // &test_app.address,
             user_credentials.0,
             user_credentials.1,
         ).await;
@@ -671,11 +647,9 @@ mod lorebook_tests {
             &test_app.db_pool,
             user_credentials.0.to_string(),
             user_credentials.1.to_string(),
-            // true, None, None,
         ).await.expect("Failed to create user");
         let (auth_client, _user_token_str) = scribe_backend::test_helpers::login_user_via_api(
             &test_app,
-            // &test_app.address,
             user_credentials.0,
             user_credentials.1,
         ).await;
@@ -707,11 +681,9 @@ mod lorebook_entry_tests {
             &test_app.db_pool,
             user_credentials.0.to_string(),
             user_credentials.1.to_string(),
-            // true, None, None,
         ).await.expect("Failed to create user");
         let (auth_client, _user_token_str) = scribe_backend::test_helpers::login_user_via_api(
             &test_app,
-            // &test_app.address,
             user_credentials.0,
             user_credentials.1,
         ).await;
@@ -739,8 +711,40 @@ mod lorebook_entry_tests {
 
         assert_eq!(response.status(), StatusCode::CREATED);
         let entry: LorebookEntryResponseDto = response.json().await.expect("Failed to parse response"); // Use DTO
-        assert_eq!(entry.lorebook_id, lorebook_id); // This might fail if dummy returns random
+        assert_eq!(entry.lorebook_id, lorebook_id);
         assert_eq!(entry.user_id, user_data.id);
+        assert_eq!(entry.entry_title, payload.entry_title);
+        assert_eq!(entry.content, payload.content);
+
+        // Give a moment for the async task to be spawned and potentially run
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+
+        // Check if the mock embedding pipeline service was called
+        let calls = test_app.mock_embedding_pipeline_service.get_calls();
+        assert_eq!(calls.len(), 1, "Expected 1 call to embedding pipeline service");
+
+        match &calls[0] {
+            scribe_backend::test_helpers::PipelineCall::ProcessAndEmbedLorebookEntry {
+                original_lorebook_entry_id,
+                lorebook_id: called_lorebook_id,
+                user_id: called_user_id,
+                decrypted_content,
+                decrypted_title,
+                decrypted_keywords, // Assuming keys_text is treated as keywords for now
+                is_enabled,
+                is_constant,
+            } => {
+                assert_eq!(*original_lorebook_entry_id, entry.id);
+                assert_eq!(*called_lorebook_id, lorebook_id);
+                assert_eq!(*called_user_id, user_data.id);
+                assert_eq!(*decrypted_content, payload.content);
+                assert_eq!(*decrypted_title, Some(payload.entry_title));
+                assert_eq!(*decrypted_keywords, payload.keys_text.map(|kt| vec![kt])); // Simple conversion for now
+                assert_eq!(*is_enabled, payload.is_enabled.unwrap_or(true));
+                assert_eq!(*is_constant, payload.is_constant.unwrap_or(false));
+            }
+            _ => panic!("Unexpected call to embedding pipeline service: {:?}", calls[0]),
+        }
     }
 
     #[tokio::test]
@@ -754,11 +758,9 @@ mod lorebook_entry_tests {
             &test_app.db_pool,
             user_credentials.0.to_string(),
             user_credentials.1.to_string(),
-            // true, None, None,
         ).await.expect("Failed to create user");
         let (auth_client_for_setup, _user_token_str) = scribe_backend::test_helpers::login_user_via_api(
             &test_app,
-            // &test_app.address,
             user_credentials.0,
             user_credentials.1,
         ).await;
@@ -833,11 +835,9 @@ mod lorebook_entry_tests {
             &test_app.db_pool,
             user_credentials.0.to_string(),
             user_credentials.1.to_string(),
-            // true, None, None,
         ).await.expect("Failed to create user");
         let (auth_client, _user_token_str) = scribe_backend::test_helpers::login_user_via_api(
             &test_app,
-            // &test_app.address,
             user_credentials.0,
             user_credentials.1,
         ).await;
@@ -870,11 +870,9 @@ mod lorebook_entry_tests {
             &test_app.db_pool,
             user_credentials.0.to_string(),
             user_credentials.1.to_string(),
-            // true, None, None,
         ).await.expect("Failed to create user");
         let (auth_client, _user_token_str) = scribe_backend::test_helpers::login_user_via_api(
             &test_app,
-            // &test_app.address,
             user_credentials.0,
             user_credentials.1,
         ).await;
@@ -905,11 +903,9 @@ mod lorebook_entry_tests {
             &test_app.db_pool,
             user_credentials.0.to_string(),
             user_credentials.1.to_string(),
-            // true, None, None,
         ).await.expect("Failed to create user");
         let (auth_client, _user_token_str) = scribe_backend::test_helpers::login_user_via_api(
             &test_app,
-            // &test_app.address,
             user_credentials.0,
             user_credentials.1,
         ).await;
@@ -940,11 +936,9 @@ mod lorebook_entry_tests {
             &test_app.db_pool,
             user_credentials.0.to_string(),
             user_credentials.1.to_string(),
-            // true, None, None,
         ).await.expect("Failed to create user");
         let (auth_client_for_setup, _user_token_str) = scribe_backend::test_helpers::login_user_via_api(
             &test_app,
-            // &test_app.address,
             user_credentials.0,
             user_credentials.1,
         ).await;
@@ -1012,11 +1006,9 @@ mod lorebook_entry_tests {
             &test_app.db_pool,
             user_credentials.0.to_string(),
             user_credentials.1.to_string(),
-            // true, None, None,
         ).await.expect("Failed to create user");
         let (auth_client, _user_token_str) = scribe_backend::test_helpers::login_user_via_api(
             &test_app,
-            // &test_app.address,
             user_credentials.0,
             user_credentials.1,
         ).await;
@@ -1043,11 +1035,9 @@ mod lorebook_entry_tests {
             &test_app.db_pool,
             user_credentials.0.to_string(),
             user_credentials.1.to_string(),
-            // true, None, None,
         ).await.expect("Failed to create user");
         let (auth_client, _user_token_str) = scribe_backend::test_helpers::login_user_via_api(
             &test_app,
-            // &test_app.address,
             user_credentials.0,
             user_credentials.1,
         ).await;
@@ -1077,11 +1067,9 @@ mod lorebook_entry_tests {
             &test_app.db_pool,
             user_credentials.0.to_string(),
             user_credentials.1.to_string(),
-            // true, None, None,
         ).await.expect("Failed to create user");
         let (auth_client_for_setup, _user_token_str) = scribe_backend::test_helpers::login_user_via_api(
             &test_app,
-            // &test_app.address,
             user_credentials.0,
             user_credentials.1,
         ).await;
@@ -1151,11 +1139,9 @@ mod lorebook_entry_tests {
             &test_app.db_pool,
             user_credentials.0.to_string(),
             user_credentials.1.to_string(),
-            // true, None, None,
         ).await.expect("Failed to create user");
         let (auth_client, _user_token_str) = scribe_backend::test_helpers::login_user_via_api(
             &test_app,
-            // &test_app.address,
             user_credentials.0,
             user_credentials.1,
         ).await;
@@ -1183,11 +1169,9 @@ mod lorebook_entry_tests {
             &test_app.db_pool,
             user_credentials.0.to_string(),
             user_credentials.1.to_string(),
-            // true, None, None,
         ).await.expect("Failed to create user");
         let (auth_client, _user_token_str) = scribe_backend::test_helpers::login_user_via_api(
             &test_app,
-            // &test_app.address,
             user_credentials.0,
             user_credentials.1,
         ).await;
@@ -1216,11 +1200,9 @@ mod lorebook_entry_tests {
             &test_app.db_pool,
             user_credentials.0.to_string(),
             user_credentials.1.to_string(),
-            // true, None, None,
         ).await.expect("Failed to create user");
         let (auth_client, _user_token_str) = scribe_backend::test_helpers::login_user_via_api(
             &test_app,
-            // &test_app.address,
             user_credentials.0,
             user_credentials.1,
         ).await;
@@ -1297,11 +1279,9 @@ mod lorebook_entry_tests {
             &test_app.db_pool,
             user_credentials.0.to_string(),
             user_credentials.1.to_string(),
-            // true, None, None,
         ).await.expect("Failed to create user");
         let (auth_client, _user_token_str) = scribe_backend::test_helpers::login_user_via_api(
             &test_app,
-            // &test_app.address,
             user_credentials.0,
             user_credentials.1,
         ).await;
