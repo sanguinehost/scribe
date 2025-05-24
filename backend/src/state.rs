@@ -21,6 +21,7 @@ use crate::services::hybrid_token_counter::HybridTokenCounter; // Added for toke
 use crate::services::chat_override_service::ChatOverrideService; // <<< ADDED THIS IMPORT
 use crate::services::user_persona_service::UserPersonaService; // <<< ADDED THIS IMPORT
 use crate::services::encryption_service::EncryptionService; // Added for EncryptionService
+use crate::services::lorebook_service::LorebookService; // Added for LorebookService
 use std::fmt;
 use uuid::Uuid; // For embedding_call_tracker // For manual Debug impl
 
@@ -50,6 +51,7 @@ pub struct AppState {
     pub embedding_call_tracker: Arc<TokioMutex<Vec<Uuid>>>, // Track message IDs for embedding calls
     pub token_counter: Arc<HybridTokenCounter>,             // Added for token counting
     pub encryption_service: Arc<EncryptionService>,         // Added for lorebook and other encryption needs
+    pub lorebook_service: Arc<LorebookService>,           // Added for LorebookService
 }
 
 // Manual Debug implementation for AppState
@@ -70,6 +72,7 @@ impl fmt::Debug for AppState {
             .field("embedding_call_tracker", &"<Arc<TokioMutex<Vec<Uuid>>>>") // Or try to debug its contents if safe
             .field("token_counter", &"<Arc<HybridTokenCounter>>") // Added
             .field("encryption_service", &"<Arc<EncryptionService>>") // Added
+            .field("lorebook_service", &"<Arc<LorebookService>>") // Added for LorebookService
             .finish()
     }
 }
@@ -88,6 +91,7 @@ impl AppState {
         user_persona_service: Arc<UserPersonaService>, // <<< ADDED THIS PARAMETER
         token_counter: Arc<HybridTokenCounter>,                                           // Added
         encryption_service: Arc<EncryptionService>, // Added
+        lorebook_service: Arc<LorebookService>, // Added for LorebookService
     ) -> Self {
         Self {
             pool,
@@ -104,6 +108,7 @@ impl AppState {
             embedding_call_tracker: Arc::new(TokioMutex::new(Vec::new())), // Initialize tracker for tests
             token_counter,                                                 // Added
             encryption_service, // Added
+            lorebook_service,   // Added for LorebookService
         }
     }
 }

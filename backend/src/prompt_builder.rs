@@ -4,6 +4,7 @@ use crate::{
         characters::CharacterMetadata,
         chats::{ChatMessage, MessageRole},
     },
+    services::embedding_pipeline::RetrievedMetadata, // Added for matching
     state::AppState,
 };
 use std::sync::Arc;
@@ -61,17 +62,38 @@ pub async fn build_prompt_with_rag(
                         count = retrieved_chunks.len(),
                         "Adding retrieved chunks to prompt context"
                     );
-                    rag_context_section.push_str("---\nRelevant Historical Context:\n");
+                    rag_context_section.push_str("---\nRelevant Context:\n"); // Changed header
                     for chunk in retrieved_chunks {
-                        rag_context_section.push_str(&format!(
-                            "- (Score: {:.2}) {}\n",
-                            chunk.score,
-                            chunk.text.trim()
-                        ));
+                        match chunk.metadata {
+                            RetrievedMetadata::Chat(chat_meta) => {
+                                rag_context_section.push_str(&format!(
+                                    "- Chat (Score: {:.2}, Speaker: {}): {}\n",
+                                    chunk.score,
+                                    chat_meta.speaker,
+                                    chunk.text.trim()
+                                ));
+                            }
+                            RetrievedMetadata::Lorebook(lore_meta) => {
+                                let title_str = lore_meta.entry_title.as_deref().unwrap_or("N/A");
+                                let keywords_str = lore_meta.keywords.as_ref().map_or_else(
+                                    || "N/A".to_string(),
+                                    |kw| kw.join(", "),
+                                );
+                                rag_context_section.push_str(&format!(
+                                    "- Lorebook (Score: {:.2}, Title: \"{}\", Keywords: [{}], Enabled: {}, Constant: {}): {}\n",
+                                    chunk.score,
+                                    title_str,
+                                    keywords_str,
+                                    lore_meta.is_enabled,
+                                    lore_meta.is_constant,
+                                    chunk.text.trim()
+                                ));
+                            }
+                        }
                     }
                     rag_context_section.push_str("---\n\n");
                 } else {
-                    info!("No relevant historical chunks found via RAG.");
+                    info!("No relevant context chunks found via RAG."); // Changed log
                 }
             }
             Err(e) => {
@@ -133,10 +155,13 @@ mod tests {
         errors::AppError,
         models::characters::CharacterMetadata,
         models::chats::{ChatMessage, MessageRole},
-        services::embedding_pipeline::{EmbeddingMetadata, RetrievedChunk},
+        services::embedding_pipeline::{
+            ChatMessageChunkMetadata, LorebookChunkMetadata, RetrievedChunk, RetrievedMetadata, // Added LorebookChunkMetadata
+        },
         state::AppState,
         test_helpers::{MockEmbeddingPipelineService, PipelineCall},
     };
+    use crate::services::lorebook_service::LorebookService;
     use chrono::Utc;
     use std::sync::Arc;
     use uuid::Uuid;
@@ -162,6 +187,8 @@ mod tests {
             )
             .expect("Failed to create tokenizer for test")
         ));
+        let lorebook_service = Arc::new(LorebookService::new(pool.clone(), encryption_service.clone()));
+
 
         // Create AppState with our mock service
         let app_state = Arc::new(AppState::new(
@@ -175,6 +202,7 @@ mod tests {
             user_persona_service,
             token_counter_service,
             encryption_service.clone(), // Added encryption service
+            lorebook_service, // Added lorebook_service
         ));
 
         (app_state, mock_embedding_service)
@@ -191,7 +219,7 @@ mod tests {
             .unwrap();
 
         assert!(!prompt.contains("Character Name:"));
-        assert!(!prompt.contains("Relevant Historical Context:"));
+        assert!(!prompt.contains("Relevant Context:")); // Updated header
         assert!(prompt.contains("---\nHistory:\n(Start of conversation)\n---\n"));
         assert!(prompt.contains("\nCharacter:"));
     }
@@ -325,24 +353,24 @@ mod tests {
             RetrievedChunk {
                 score: 0.9,
                 text: "Dogs are mammals.".to_string(),
-                metadata: EmbeddingMetadata {
+                metadata: RetrievedMetadata::Chat(ChatMessageChunkMetadata {
                     message_id: Uuid::new_v4(),
                     session_id,
                     speaker: "ai".to_string(),
                     timestamp: Utc::now(),
                     text: "Dogs are mammals.".to_string(),
-                },
+                }),
             },
             RetrievedChunk {
                 score: 0.8,
                 text: "They bark.".to_string(),
-                metadata: EmbeddingMetadata {
+                metadata: RetrievedMetadata::Chat(ChatMessageChunkMetadata {
                     message_id: Uuid::new_v4(),
                     session_id,
                     speaker: "user".to_string(),
                     timestamp: Utc::now(),
                     text: "They bark.".to_string(),
-                },
+                }),
             },
         ];
 
@@ -369,16 +397,16 @@ mod tests {
 
         // Check for RAG content in the prompt - the exact format that's used in build_prompt_with_rag function
         assert!(
-            prompt.contains("Relevant Historical Context:"),
+            prompt.contains("Relevant Context:"), // Updated header
             "Prompt does not contain the RAG context header"
         );
         assert!(
-            prompt.contains("- (Score: 0.90) Dogs are mammals."),
-            "Prompt does not contain the first RAG chunk"
+            prompt.contains("- Chat (Score: 0.90, Speaker: ai): Dogs are mammals."), // Updated format
+            "Prompt does not contain the first RAG chunk with new formatting"
         );
         assert!(
-            prompt.contains("- (Score: 0.80) They bark."),
-            "Prompt does not contain the second RAG chunk"
+            prompt.contains("- Chat (Score: 0.80, Speaker: user): They bark."), // Updated format
+            "Prompt does not contain the second RAG chunk with new formatting"
         );
 
         // Check other sections
@@ -462,7 +490,7 @@ mod tests {
         }
 
         assert!(
-            !prompt.contains("Relevant Historical Context:"),
+            !prompt.contains("Relevant Context:"), // Updated header
             "Prompt contains RAG context section despite error"
         );
 
@@ -512,7 +540,7 @@ mod tests {
             .await
             .unwrap();
 
-        assert!(!prompt.contains("---\nRelevant Historical Context:\n"));
+        assert!(!prompt.contains("---\nRelevant Context:\n")); // Updated header
 
         let calls = mock_rag.get_calls();
         assert!(calls.is_empty());
@@ -657,13 +685,13 @@ mod tests {
         let mock_chunks = vec![RetrievedChunk {
             score: 0.75,
             text: "Relevant fact".to_string(),
-            metadata: EmbeddingMetadata {
+            metadata: RetrievedMetadata::Chat(ChatMessageChunkMetadata {
                 message_id: Uuid::new_v4(),
                 session_id,
                 speaker: "user".to_string(),
                 timestamp: Utc::now(),
                 text: "Relevant fact".to_string(),
-            },
+            }),
         }];
 
         // Mock RAG to return chunks based on the last message ("Bot reply")
@@ -678,8 +706,8 @@ mod tests {
         assert!(prompt.contains("Description: The ultimate bot."));
 
         // Check RAG Context
-        assert!(prompt.contains("Relevant Historical Context:"));
-        assert!(prompt.contains("- (Score: 0.75) Relevant fact"));
+        assert!(prompt.contains("Relevant Context:")); // Updated header
+        assert!(prompt.contains("- Chat (Score: 0.75, Speaker: user): Relevant fact")); // Updated format
 
         // Check History
         assert!(prompt.contains("---\nHistory:\n"));
@@ -705,5 +733,73 @@ mod tests {
         } else {
             panic!("Expected RetrieveRelevantChunks call");
         }
+    }
+
+    #[tokio::test]
+    async fn test_build_prompt_with_lorebook_rag_context() {
+        let (state, mock_rag) = mock_app_state().await;
+        let session_id = Uuid::new_v4();
+        let user_id = Uuid::new_v4();
+        let history = vec![ChatMessage {
+            id: Uuid::new_v4(),
+            session_id,
+            message_type: MessageRole::User,
+            content: "Tell me about dragons".as_bytes().to_vec(),
+            content_nonce: None,
+            created_at: Utc::now(),
+            user_id,
+            prompt_tokens: None,
+            completion_tokens: None,
+        }];
+
+        let mock_lore_chunks = vec![
+            RetrievedChunk {
+                score: 0.92,
+                text: "Dragons breathe fire and hoard gold.".to_string(),
+                metadata: RetrievedMetadata::Lorebook(LorebookChunkMetadata {
+                    original_lorebook_entry_id: Uuid::new_v4(),
+                    lorebook_id: Uuid::new_v4(),
+                    user_id,
+                    chunk_text: "Dragons breathe fire and hoard gold.".to_string(),
+                    entry_title: Some("Dragon Facts".to_string()),
+                    keywords: Some(vec!["dragon".to_string(), "mythology".to_string()]),
+                    is_enabled: true,
+                    is_constant: false,
+                }),
+            },
+            RetrievedChunk {
+                score: 0.85,
+                text: "Some dragons are friendly.".to_string(),
+                metadata: RetrievedMetadata::Lorebook(LorebookChunkMetadata {
+                    original_lorebook_entry_id: Uuid::new_v4(),
+                    lorebook_id: Uuid::new_v4(),
+                    user_id,
+                    chunk_text: "Some dragons are friendly.".to_string(),
+                    entry_title: Some("Dragon Types".to_string()),
+                    keywords: None,
+                    is_enabled: true,
+                    is_constant: true,
+                }),
+            },
+        ];
+
+        mock_rag.set_retrieve_response(Ok(mock_lore_chunks.clone()));
+
+        let prompt = build_prompt_with_rag(state, session_id, None, &history)
+            .await
+            .unwrap();
+        
+        eprintln!("--- Prompt for test_build_prompt_with_lorebook_rag_context ---\n{}\n---", prompt);
+
+        assert!(prompt.contains("Relevant Context:"), "Prompt missing RAG context header");
+        assert!(
+            prompt.contains("- Lorebook (Score: 0.92, Title: \"Dragon Facts\", Keywords: [dragon, mythology], Enabled: true, Constant: false): Dragons breathe fire and hoard gold."),
+            "Prompt missing first lorebook chunk or has incorrect formatting"
+        );
+        assert!(
+            prompt.contains("- Lorebook (Score: 0.85, Title: \"Dragon Types\", Keywords: [N/A], Enabled: true, Constant: true): Some dragons are friendly."),
+            "Prompt missing second lorebook chunk or has incorrect formatting for None keywords"
+        );
+        assert!(prompt.contains("User: Tell me about dragons"), "Prompt missing user history");
     }
 }

@@ -7,7 +7,7 @@ use scribe_backend::services::embedding_pipeline::EmbeddingPipelineServiceTrait;
 use qdrant_client::qdrant::{PointId, Value, point_id::PointIdOptions};
 use scribe_backend::{
     models::chats::{ChatMessage, MessageRole},
-    services::embedding_pipeline::{EmbeddingMetadata, EmbeddingPipelineService},
+    services::embedding_pipeline::{ChatMessageChunkMetadata, EmbeddingPipelineService, RetrievedMetadata}, // Updated imports
     state::AppState,                               // Added AppState
     test_helpers::{self, MockQdrantClientService}, // Removed AppStateBuilder, config. Added self for spawn_app
     text_processing::chunking::ChunkConfig,
@@ -17,9 +17,10 @@ use scribe_backend::{
     services::hybrid_token_counter::HybridTokenCounter,
     services::tokenizer_service::TokenizerService,
     services::user_persona_service::UserPersonaService, // Added UserPersonaService
+    services::lorebook_service::LorebookService, // Added LorebookService
 };
 use serial_test::serial;
-use std::convert::TryFrom; // Needed for EmbeddingMetadata::try_from
+// Removed unused std::convert::TryFrom
 use std::time::Duration;
 use std::{collections::HashMap, sync::Arc}; // Removed env
 use uuid::Uuid; // For mock assertions
@@ -62,6 +63,7 @@ async fn test_process_and_embed_message_integration() {
         .expect("Failed to create tokenizer for test");
     let hybrid_token_counter_for_test = Arc::new(HybridTokenCounter::new_local_only(tokenizer_service_for_test));
     let user_persona_service_for_test = Arc::new(UserPersonaService::new(test_app.db_pool.clone(), encryption_service_for_test.clone()));
+    let lorebook_service_for_test = Arc::new(LorebookService::new(test_app.db_pool.clone(), encryption_service_for_test.clone()));
 
     let app_state = Arc::new(AppState::new(
         test_app.db_pool.clone(),
@@ -73,7 +75,8 @@ async fn test_process_and_embed_message_integration() {
         chat_override_service_for_test,
         user_persona_service_for_test, // Added user_persona_service
         hybrid_token_counter_for_test.clone(),
-        encryption_service_for_test.clone()
+        encryption_service_for_test.clone(),
+        lorebook_service_for_test
     ));
 
     // 2. Prepare test data
@@ -153,8 +156,8 @@ async fn test_process_and_embed_message_integration() {
     let mut found_chunk_texts: Vec<String> = Vec::new();
     for point in retrieved_points {
         let payload_map: HashMap<String, Value> = point.payload;
-        let metadata = EmbeddingMetadata::try_from(payload_map)
-            .expect("Failed to parse EmbeddingMetadata from Qdrant payload");
+        let metadata = ChatMessageChunkMetadata::try_from(payload_map) // Changed to ChatMessageChunkMetadata
+            .expect("Failed to parse ChatMessageChunkMetadata from Qdrant payload");
 
         assert_eq!(
             metadata.message_id, test_message_id,
@@ -228,6 +231,7 @@ async fn test_process_and_embed_message_all_chunks_fail_embedding() {
         scribe_backend::services::tokenizer_service::TokenizerService::new("/home/socol/Workspace/sanguine-scribe/backend/resources/tokenizers/gemma.model")
             .expect("Failed to create tokenizer for test")));
     let user_persona_service_for_test_2 = Arc::new(UserPersonaService::new(test_app.db_pool.clone(), encryption_service_for_test_2.clone()));
+    let lorebook_service_for_test_2 = Arc::new(LorebookService::new(test_app.db_pool.clone(), encryption_service_for_test_2.clone()));
 
     let app_state = Arc::new(AppState::new(
         test_app.db_pool.clone(),
@@ -239,7 +243,8 @@ async fn test_process_and_embed_message_all_chunks_fail_embedding() {
         chat_override_service_for_test_2,
         user_persona_service_for_test_2, // Added user_persona_service
         hybrid_token_counter_for_test_2.clone(),
-        encryption_service_for_test_2.clone()
+        encryption_service_for_test_2.clone(),
+        lorebook_service_for_test_2
     ));
 
     // 2. Prepare test data
@@ -376,6 +381,7 @@ async fn test_retrieve_relevant_chunks_success() {
         .expect("Failed to create tokenizer for test");
     let hybrid_token_counter_for_test_3 = Arc::new(HybridTokenCounter::new_local_only(tokenizer_service_for_test_3));
     let user_persona_service_for_test_3 = Arc::new(UserPersonaService::new(test_app.db_pool.clone(), encryption_service_for_test_3.clone()));
+    let lorebook_service_for_test_3 = Arc::new(LorebookService::new(test_app.db_pool.clone(), encryption_service_for_test_3.clone()));
 
     let app_state = Arc::new(AppState::new(
         test_app.db_pool.clone(),
@@ -387,7 +393,8 @@ async fn test_retrieve_relevant_chunks_success() {
         chat_override_service_for_test_3,
         user_persona_service_for_test_3, // Added user_persona_service
         hybrid_token_counter_for_test_3,
-        encryption_service_for_test_3.clone()
+        encryption_service_for_test_3.clone(),
+        lorebook_service_for_test_3
     ));
 
     // 2. Prepare mock responses and expectations
@@ -453,18 +460,26 @@ async fn test_retrieve_relevant_chunks_success() {
     // Verify content of the first chunk
     assert_eq!(retrieved_chunks[0].score, 0.95);
     assert_eq!(retrieved_chunks[0].text, "Chunk 1 text");
-    assert_eq!(retrieved_chunks[0].metadata.session_id, test_session_id);
-    assert_eq!(retrieved_chunks[0].metadata.message_id, message_id_1);
-    assert_eq!(retrieved_chunks[0].metadata.speaker, "User");
-    assert_eq!(retrieved_chunks[0].metadata.text, "Chunk 1 text"); // Ensure metadata text matches chunk text
+    if let RetrievedMetadata::Chat(meta) = &retrieved_chunks[0].metadata {
+        assert_eq!(meta.session_id, test_session_id);
+        assert_eq!(meta.message_id, message_id_1);
+        assert_eq!(meta.speaker, "User");
+        assert_eq!(meta.text, "Chunk 1 text"); // Ensure metadata text matches chunk text
+    } else {
+        panic!("Expected Chat metadata for retrieved_chunks[0]");
+    }
 
     // Verify content of the second chunk
     assert_eq!(retrieved_chunks[1].score, 0.88);
     assert_eq!(retrieved_chunks[1].text, "Chunk 2 text");
-    assert_eq!(retrieved_chunks[1].metadata.session_id, test_session_id);
-    assert_eq!(retrieved_chunks[1].metadata.message_id, message_id_2);
-    assert_eq!(retrieved_chunks[1].metadata.speaker, "Assistant");
-    assert_eq!(retrieved_chunks[1].metadata.text, "Chunk 2 text");
+    if let RetrievedMetadata::Chat(meta) = &retrieved_chunks[1].metadata {
+        assert_eq!(meta.session_id, test_session_id);
+        assert_eq!(meta.message_id, message_id_2);
+        assert_eq!(meta.speaker, "Assistant");
+        assert_eq!(meta.text, "Chunk 2 text");
+    } else {
+        panic!("Expected Chat metadata for retrieved_chunks[1]");
+    }
 
     // Verify calls (accessing the original mock objects, not the Arcs)
     let embed_calls = test_app.mock_embedding_client.get_calls();
@@ -509,6 +524,7 @@ async fn test_retrieve_relevant_chunks_no_results() {
         .expect("Failed to create tokenizer for test");
     let hybrid_token_counter_for_test_4 = Arc::new(HybridTokenCounter::new_local_only(tokenizer_service_for_test_4));
     let user_persona_service_for_test_4 = Arc::new(UserPersonaService::new(test_app.db_pool.clone(), encryption_service_for_test_4.clone()));
+    let lorebook_service_for_test_4 = Arc::new(LorebookService::new(test_app.db_pool.clone(), encryption_service_for_test_4.clone()));
 
     let app_state = Arc::new(AppState::new(
         test_app.db_pool.clone(),
@@ -520,7 +536,8 @@ async fn test_retrieve_relevant_chunks_no_results() {
         chat_override_service_for_test_4,
         user_persona_service_for_test_4, // Added user_persona_service
         hybrid_token_counter_for_test_4,
-        encryption_service_for_test_4.clone()
+        encryption_service_for_test_4.clone(),
+        lorebook_service_for_test_4
     ));
 
     // 2. Configure mock Qdrant service to return no results
@@ -565,6 +582,7 @@ async fn test_retrieve_relevant_chunks_qdrant_error() {
         .expect("Failed to create tokenizer for test");
     let hybrid_token_counter_for_test_5 = Arc::new(HybridTokenCounter::new_local_only(tokenizer_service_for_test_5));
     let user_persona_service_for_test_5 = Arc::new(UserPersonaService::new(test_app.db_pool.clone(), encryption_service_for_test_5.clone()));
+    let lorebook_service_for_test_5 = Arc::new(LorebookService::new(test_app.db_pool.clone(), encryption_service_for_test_5.clone()));
     
     let app_state = Arc::new(AppState::new(
         test_app.db_pool.clone(),
@@ -576,7 +594,8 @@ async fn test_retrieve_relevant_chunks_qdrant_error() {
         chat_override_service_for_test_5,
         user_persona_service_for_test_5, // Added user_persona_service
         hybrid_token_counter_for_test_5,
-        encryption_service_for_test_5.clone()
+        encryption_service_for_test_5.clone(),
+        lorebook_service_for_test_5
     ));
 
     // 2. Configure mock Qdrant service to return an error
@@ -618,6 +637,7 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_uuid() {
         .expect("Failed to create tokenizer for test");
     let hybrid_token_counter_for_test_6 = Arc::new(HybridTokenCounter::new_local_only(tokenizer_service_for_test_6));
     let user_persona_service_for_test_6 = Arc::new(UserPersonaService::new(test_app.db_pool.clone(), encryption_service_for_test_6.clone()));
+    let lorebook_service_for_test_6 = Arc::new(LorebookService::new(test_app.db_pool.clone(), encryption_service_for_test_6.clone()));
 
     let app_state_arc = Arc::new(AppState::new(
         test_app.db_pool.clone(),
@@ -629,7 +649,8 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_uuid() {
         chat_override_service_for_test_6,
         user_persona_service_for_test_6, // Added user_persona_service
         hybrid_token_counter_for_test_6,
-        encryption_service_for_test_6.clone()
+        encryption_service_for_test_6.clone(),
+        lorebook_service_for_test_6
     ));
 
     // Mock Qdrant to return a point with an invalid UUID in metadata
@@ -694,6 +715,7 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_timestamp() {
         .expect("Failed to create tokenizer for test");
     let hybrid_token_counter_for_test_7 = Arc::new(HybridTokenCounter::new_local_only(tokenizer_service_for_test_7));
     let user_persona_service_for_test_7 = Arc::new(UserPersonaService::new(test_app.db_pool.clone(), encryption_service_for_test_7.clone()));
+    let lorebook_service_for_test_7 = Arc::new(LorebookService::new(test_app.db_pool.clone(), encryption_service_for_test_7.clone()));
 
     let app_state_arc = Arc::new(AppState::new(
         test_app.db_pool.clone(),
@@ -705,7 +727,8 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_timestamp() {
         chat_override_service_for_test_7,
         user_persona_service_for_test_7, // Added user_persona_service
         hybrid_token_counter_for_test_7,
-        encryption_service_for_test_7.clone()
+        encryption_service_for_test_7.clone(),
+        lorebook_service_for_test_7
     ));
 
     // Mock Qdrant to return a point with an invalid timestamp in metadata
@@ -769,6 +792,7 @@ async fn test_retrieve_relevant_chunks_metadata_missing_field() {
         .expect("Failed to create tokenizer for test");
     let hybrid_token_counter_for_test_8 = Arc::new(HybridTokenCounter::new_local_only(tokenizer_service_for_test_8));
     let user_persona_service_for_test_8 = Arc::new(UserPersonaService::new(test_app.db_pool.clone(), encryption_service_for_test_8.clone()));
+    let lorebook_service_for_test_8 = Arc::new(LorebookService::new(test_app.db_pool.clone(), encryption_service_for_test_8.clone()));
     
     let app_state_arc = Arc::new(AppState::new(
         test_app.db_pool.clone(),
@@ -780,7 +804,8 @@ async fn test_retrieve_relevant_chunks_metadata_missing_field() {
         chat_override_service_for_test_8,
         user_persona_service_for_test_8, // Added user_persona_service
         hybrid_token_counter_for_test_8,
-        encryption_service_for_test_8.clone()
+        encryption_service_for_test_8.clone(),
+        lorebook_service_for_test_8
     ));
 
     // Mock Qdrant to return a point with a missing required field in metadata
@@ -845,6 +870,7 @@ async fn test_retrieve_relevant_chunks_metadata_wrong_type() {
         .expect("Failed to create tokenizer for test");
     let hybrid_token_counter_for_test_9 = Arc::new(HybridTokenCounter::new_local_only(tokenizer_service_for_test_9));
     let user_persona_service_for_test_9 = Arc::new(UserPersonaService::new(test_app.db_pool.clone(), encryption_service_for_test_9.clone()));
+    let lorebook_service_for_test_9 = Arc::new(LorebookService::new(test_app.db_pool.clone(), encryption_service_for_test_9.clone()));
 
     let app_state = Arc::new(AppState::new(
         test_app.db_pool.clone(),
@@ -856,7 +882,8 @@ async fn test_retrieve_relevant_chunks_metadata_wrong_type() {
         chat_override_service_for_test_9,
         user_persona_service_for_test_9, // Added user_persona_service
         hybrid_token_counter_for_test_9,
-        encryption_service_for_test_9.clone()
+        encryption_service_for_test_9.clone(),
+        lorebook_service_for_test_9
     ));
 
     // Mock Qdrant to return a point with a field of the wrong type in metadata
@@ -967,6 +994,7 @@ async fn test_rag_context_injection_with_qdrant() {
         .expect("Failed to create tokenizer for test");
     let hybrid_token_counter_for_test_10 = Arc::new(HybridTokenCounter::new_local_only(tokenizer_service_for_test_10));
     let user_persona_service_for_test_10 = Arc::new(UserPersonaService::new(test_app.db_pool.clone(), encryption_service_for_test_10.clone()));
+    let lorebook_service_for_test_10 = Arc::new(LorebookService::new(test_app.db_pool.clone(), encryption_service_for_test_10.clone()));
     
     let app_state_for_rag = Arc::new(AppState::new(
         test_app.db_pool.clone(),
@@ -978,7 +1006,8 @@ async fn test_rag_context_injection_with_qdrant() {
         chat_override_service_for_test_10,
         user_persona_service_for_test_10, // Added user_persona_service
         hybrid_token_counter_for_test_10,
-        encryption_service_for_test_10.clone()
+        encryption_service_for_test_10.clone(),
+        lorebook_service_for_test_10
     ));
 
     // Step 1: Process and embed a message to store in Qdrant
@@ -1036,18 +1065,22 @@ async fn test_rag_context_injection_with_qdrant() {
         first_chunk.text.contains("test message"),
         "Retrieved chunk text doesn't contain expected content"
     );
-    assert_eq!(
-        first_chunk.metadata.session_id, session_id,
-        "Session ID mismatch in retrieved chunk"
-    );
-    assert_eq!(
-        first_chunk.metadata.message_id, message_id,
-        "Message ID mismatch in retrieved chunk"
-    );
-    assert_eq!(
-        first_chunk.metadata.speaker, "User",
-        "Speaker mismatch in retrieved chunk"
-    );
+    if let RetrievedMetadata::Chat(meta) = &first_chunk.metadata {
+        assert_eq!(
+            meta.session_id, session_id,
+            "Session ID mismatch in retrieved chunk"
+        );
+        assert_eq!(
+            meta.message_id, message_id,
+            "Message ID mismatch in retrieved chunk"
+        );
+        assert_eq!(
+            meta.speaker, "User",
+            "Speaker mismatch in retrieved chunk"
+        );
+    } else {
+        panic!("Expected Chat metadata for first_chunk");
+    }
 }
 
 // --- New Tests for MockQdrantClientService Coverage ---

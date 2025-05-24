@@ -28,7 +28,8 @@ use scribe_backend::{
         chat_sessions::dsl as chat_sessions_dsl,
     },
     services::{
-        chat_service, hybrid_token_counter::HybridTokenCounter, tokenizer_service::TokenizerService,
+        chat_service, hybrid_token_counter::HybridTokenCounter,
+        lorebook_service::LorebookService, tokenizer_service::TokenizerService,
     },
     state::AppState,
     test_helpers::{self, ParsedSseEvent, collect_full_sse_events},
@@ -590,6 +591,10 @@ async fn test_first_mes_included_in_history() {
         )
         .expect("Failed to create tokenizer for test"),
     ));
+    let lorebook_service = Arc::new(LorebookService::new(
+        test_app.db_pool.clone(),
+        encryption_service.clone()
+    ));
 
     let state_for_service = AppState::new(
         test_app.db_pool.clone(),
@@ -602,6 +607,7 @@ async fn test_first_mes_included_in_history() {
         user_persona_service, // Use the created service
         token_counter_service, // Use the created service
         encryption_service.clone(),
+        lorebook_service      // Add LorebookService
     );
     let state_arc = std::sync::Arc::new(state_for_service);
 

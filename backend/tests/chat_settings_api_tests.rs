@@ -26,6 +26,7 @@ use scribe_backend::schema::{characters, chat_sessions};
 use scribe_backend::services::chat_service;
 use scribe_backend::state::AppState;
 use scribe_backend::test_helpers;
+use scribe_backend::services::lorebook_service::LorebookService; // Added LorebookService
 use std::sync::Arc; // Added for Result in set_history_settings
 
 // --- Tests for GET /api/chat/{id}/settings ---
@@ -443,6 +444,7 @@ async fn get_chat_settings_defaults() {
     let tokenizer_service_for_test = scribe_backend::services::tokenizer_service::TokenizerService::new("/home/socol/Workspace/sanguine-scribe/backend/resources/tokenizers/gemma.model")
                 .expect("Failed to create tokenizer for test");
     let hybrid_token_counter_for_test = Arc::new(scribe_backend::services::hybrid_token_counter::HybridTokenCounter::new_local_only(tokenizer_service_for_test));
+    let lorebook_service_for_test = Arc::new(LorebookService::new(test_app.db_pool.clone(), encryption_service_for_test.clone()));
 
     let app_state_for_service = AppState::new(
         test_app.db_pool.clone(),
@@ -454,7 +456,8 @@ async fn get_chat_settings_defaults() {
         chat_override_service_for_test,
         user_persona_service_for_test,
         hybrid_token_counter_for_test,
-        encryption_service_for_test.clone()
+        encryption_service_for_test.clone(),
+        lorebook_service_for_test
     );
 
     let created_chat_session = chat_service::create_session_and_maybe_first_message(

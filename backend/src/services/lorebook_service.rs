@@ -1,6 +1,8 @@
 use crate::{
     errors::AppError,
     models::{
+        Chat, // Changed from chats::ChatSession
+        NewChatSessionLorebook, // Import directly
         lorebook_dtos::{
             AssociateLorebookToChatPayload, ChatSessionLorebookAssociationResponse,
             CreateLorebookEntryPayload, CreateLorebookPayload, LorebookEntryResponse,
@@ -8,20 +10,21 @@ use crate::{
             UpdateLorebookPayload,
         },
         users::User,
-        Lorebook, LorebookEntry, NewLorebookEntry, // Added LorebookEntry and NewLorebookEntry
+        Lorebook, LorebookEntry, NewLorebookEntry,
     },
     services::EncryptionService,
-    
-    schema::{lorebooks, lorebook_entries}, // Import the tables for Diesel operations
-    auth::user_store::Backend as AuthBackend, // Import AuthBackend
+    state::AppState,
+    schema::{lorebooks, lorebook_entries}, // Removed chat_sessions, chat_session_lorebooks
+    auth::user_store::Backend as AuthBackend,
 };
-use secrecy::{ExposeSecret, SecretBox}; // Import for DEK handling
+use secrecy::{ExposeSecret, SecretBox};
 use axum_login::AuthSession;
-use diesel::{prelude::*, RunQueryDsl, SelectableHelper}; // Import necessary Diesel traits, removed PgPool
-use crate::PgPool; // Use crate::PgPool
-use std::sync::Arc; // Keep Arc
-use chrono::Utc; // Added Utc
-use tracing::{debug, error, instrument};
+use diesel::{prelude::*, RunQueryDsl, SelectableHelper};
+use diesel::result::{DatabaseErrorKind, Error as DieselError}; // Added for specific error handling
+use crate::PgPool;
+use std::sync::Arc;
+use chrono::Utc;
+use tracing::{debug, error, info, instrument};
 use uuid::Uuid;
 
 
@@ -387,16 +390,18 @@ impl LorebookService {
 
     // --- Lorebook Entry Methods ---
 
-    #[instrument(skip(self, auth_session, payload, user_dek), fields(user_id = ?auth_session.user.as_ref().map(|u| u.id), lorebook_id = %lorebook_id))]
+    #[instrument(skip(self, auth_session, payload, user_dek, state), fields(user_id = ?auth_session.user.as_ref().map(|u| u.id), lorebook_id = %lorebook_id))]
     pub async fn create_lorebook_entry(
         &self,
-        auth_session: &AuthSession<AuthBackend>, // Changed to AuthBackend
+        auth_session: &AuthSession<AuthBackend>,
         lorebook_id: Uuid,
         payload: CreateLorebookEntryPayload,
-        user_dek: Option<&SecretBox<Vec<u8>>>, // Add DEK parameter
+        user_dek: Option<&SecretBox<Vec<u8>>>,
+        state: Arc<AppState>, // Added AppState
     ) -> Result<LorebookEntryResponse, AppError> {
         debug!(?payload, "Attempting to create lorebook entry");
         let user = self.get_user_from_session(auth_session)?;
+        let user_id_for_embedding = user.id; // Clone for embedding task
 
         let conn = self
             .pool
@@ -505,10 +510,11 @@ impl LorebookService {
         };
 
         // 3. Save to DB
+        let inserted_entry_db = new_entry_db.clone(); // Clone before moving into interact
         let inserted_entry = conn
             .interact(move |conn_sync| {
                 diesel::insert_into(lorebook_entries::table)
-                    .values(&new_entry_db)
+                    .values(&inserted_entry_db) // Use the cloned value
                     .returning(LorebookEntry::as_returning())
                     .get_result::<LorebookEntry>(conn_sync)
             })
@@ -626,13 +632,68 @@ impl LorebookService {
             _ => None,
         };
 
+        // After successful DB insertion and decryption for response, trigger async vectorization
+        let state_clone = state.clone();
+        let embedding_pipeline_service = state_clone.embedding_pipeline_service.clone();
+        
+        let original_lorebook_entry_id_for_embedding = inserted_entry.id;
+        let lorebook_id_for_embedding = lorebook_id;
+        // user_id_for_embedding is already defined above
+        let decrypted_content_for_embedding = decrypted_content.clone();
+        let decrypted_title_for_embedding = Some(decrypted_entry_title.clone()); // Title is not optional for embedding if available
+        
+        let decrypted_keywords_for_embedding = decrypted_keys_text.as_ref().and_then(|keys_str| {
+            if keys_str.is_empty() {
+                None
+            } else {
+                // Assuming keys_text is a single string that should be treated as one keyword,
+                // or a comma-separated list. For now, treat as single keyword if not empty.
+                // TODO: Clarify if keys_text needs parsing into multiple keywords.
+                Some(vec![keys_str.clone()])
+            }
+        });
+
+        let is_enabled_for_embedding = new_entry_db.is_enabled; // Use value from payload/defaults
+        let is_constant_for_embedding = new_entry_db.is_constant; // Use value from payload/defaults
+
+        tokio::spawn(async move {
+            info!(
+                "Spawning task to process and embed lorebook entry: {}",
+                original_lorebook_entry_id_for_embedding
+            );
+            if let Err(e) = embedding_pipeline_service
+                .process_and_embed_lorebook_entry(
+                    state_clone,
+                    original_lorebook_entry_id_for_embedding,
+                    lorebook_id_for_embedding,
+                    user_id_for_embedding,
+                    decrypted_content_for_embedding,
+                    decrypted_title_for_embedding,
+                    decrypted_keywords_for_embedding,
+                    is_enabled_for_embedding,
+                    is_constant_for_embedding,
+                )
+                .await
+            {
+                error!(
+                    "Failed to process and embed lorebook entry {} in background: {:?}",
+                    original_lorebook_entry_id_for_embedding, e
+                );
+            } else {
+                info!(
+                    "Successfully queued lorebook entry {} for embedding.",
+                    original_lorebook_entry_id_for_embedding
+                );
+            }
+        });
+
         Ok(LorebookEntryResponse {
             id: inserted_entry.id,
             lorebook_id: inserted_entry.lorebook_id,
             user_id: inserted_entry.user_id,
-            entry_title: decrypted_entry_title,
-            keys_text: decrypted_keys_text,
-            content: decrypted_content,
+            entry_title: decrypted_entry_title, // Already cloned for embedding if needed
+            keys_text: decrypted_keys_text,     // Already cloned for embedding if needed
+            content: decrypted_content,         // Already cloned for embedding
             comment: decrypted_comment,
             is_enabled: inserted_entry.is_enabled,
             is_constant: inserted_entry.is_constant,
@@ -1134,21 +1195,112 @@ impl LorebookService {
     #[instrument(skip(self, auth_session, payload), fields(user_id = ?auth_session.user.as_ref().map(|u| u.id), chat_session_id = %chat_session_id))]
     pub async fn associate_lorebook_to_chat(
         &self,
-        auth_session: &AuthSession<AuthBackend>, // Changed to AuthBackend
+        auth_session: &AuthSession<AuthBackend>,
         chat_session_id: Uuid,
         payload: AssociateLorebookToChatPayload,
     ) -> Result<ChatSessionLorebookAssociationResponse, AppError> {
-        // TODO: Implementation
-        // 1. Get current user
-        // 2. Verify chat_session_id ownership
-        // 3. Verify lorebook_id ownership (payload.lorebook_id)
-        // 4. Create association
-        // 5. Save to DB
-        // 6. Return ChatSessionLorebookAssociationResponse (might need to fetch lorebook name)
-        tracing::debug!(?payload, "Attempting to associate lorebook to chat");
-        Err(AppError::NotImplemented(
-            "associate_lorebook_to_chat not yet implemented".to_string(),
-        ))
+        debug!(?payload, lorebook_id = %payload.lorebook_id, "Attempting to associate lorebook to chat session {}", chat_session_id);
+        let user = self.get_user_from_session(auth_session)?;
+        let lorebook_id_to_associate = payload.lorebook_id;
+
+        let conn = self.pool.get().await.map_err(|e| {
+            error!("Failed to get DB connection: {}", e);
+            AppError::DbPoolError(e.to_string())
+        })?;
+
+        // 1. Verify chat session ownership
+        let current_user_id = user.id; // Clone user_id for use in closures
+        conn.interact(move |conn_sync| {
+            use crate::schema::chat_sessions::dsl as cs_dsl;
+            cs_dsl::chat_sessions
+                .filter(cs_dsl::id.eq(chat_session_id))
+                .filter(cs_dsl::user_id.eq(current_user_id))
+                .select(Chat::as_select()) // Changed ChatSession to Chat
+                .first::<Chat>(conn_sync) // Changed ChatSession to Chat
+                .optional()
+        })
+        .await
+        .map_err(|e| {
+            error!("DB interaction failed while verifying chat session ownership for session {}: {}", chat_session_id, e);
+            AppError::DbInteractError(format!("DB interaction failed: {}", e))
+        })?
+        .map_err(|db_err| {
+            error!("Failed to query chat session {}: {}", chat_session_id, db_err);
+            AppError::DatabaseQueryError(db_err.to_string())
+        })?
+        .ok_or_else(|| {
+            error!("Chat session {} not found or user {} does not have access.", chat_session_id, current_user_id);
+            AppError::NotFound(format!("Chat session with ID {} not found or access denied.", chat_session_id))
+        })?;
+
+        // 2. Verify lorebook ownership and get its name
+        let lorebook_name = conn.interact(move |conn_sync| {
+            use crate::schema::lorebooks::dsl as lb_dsl;
+            lb_dsl::lorebooks
+                .filter(lb_dsl::id.eq(lorebook_id_to_associate))
+                .filter(lb_dsl::user_id.eq(current_user_id))
+                .select(lb_dsl::name)
+                .first::<String>(conn_sync)
+                .optional()
+        })
+        .await
+        .map_err(|e| {
+            error!("DB interaction failed while verifying lorebook ownership for lorebook {}: {}", lorebook_id_to_associate, e);
+            AppError::DbInteractError(format!("DB interaction failed: {}", e))
+        })?
+        .map_err(|db_err| {
+            error!("Failed to query lorebook {}: {}", lorebook_id_to_associate, db_err);
+            AppError::DatabaseQueryError(db_err.to_string())
+        })?
+        .ok_or_else(|| {
+            error!("Lorebook {} not found or user {} does not have access.", lorebook_id_to_associate, current_user_id);
+            AppError::NotFound(format!("Lorebook with ID {} not found or access denied.", lorebook_id_to_associate))
+        })?;
+
+        // 3. Create association
+        // let new_association_id = Uuid::new_v4(); // Not needed for NewChatSessionLorebook
+        let association_creation_time = Utc::now(); // For the response
+
+        let new_record = NewChatSessionLorebook {
+            chat_session_id,
+            lorebook_id: lorebook_id_to_associate,
+            user_id: current_user_id,
+            // id, created_at, updated_at are not part of NewChatSessionLorebook struct
+        };
+
+        conn.interact(move |conn_sync| {
+            use crate::schema::chat_session_lorebooks::dsl as csl_dsl;
+            diesel::insert_into(csl_dsl::chat_session_lorebooks)
+                .values(&new_record)
+                .execute(conn_sync) // .execute() is fine as we have all info for the response
+        })
+        .await
+        .map_err(|e| {
+            error!("DB interaction failed while creating association between chat {} and lorebook {}: {}", chat_session_id, lorebook_id_to_associate, e);
+            AppError::DbInteractError(format!("DB interaction failed: {}", e))
+        })?
+        .map_err(|db_err: DieselError| { // Explicitly type db_err
+            error!("Failed to insert chat session lorebook association: {}", db_err);
+            match db_err {
+                DieselError::DatabaseError(DatabaseErrorKind::UniqueViolation, _) => {
+                    AppError::Conflict("This lorebook is already associated with the chat session.".to_string())
+                }
+                _ => AppError::DatabaseQueryError(db_err.to_string()),
+            }
+        })?;
+
+        info!(
+            "Successfully associated lorebook {} with chat session {} for user {}",
+            lorebook_id_to_associate, chat_session_id, current_user_id
+        );
+
+        Ok(ChatSessionLorebookAssociationResponse {
+            chat_session_id,
+            lorebook_id: lorebook_id_to_associate,
+            user_id: current_user_id,
+            lorebook_name,
+            created_at: association_creation_time, // Use the time captured before DB interaction
+        })
     }
 
     #[instrument(skip(self, auth_session), fields(user_id = ?auth_session.user.as_ref().map(|u| u.id), chat_session_id = %chat_session_id))]

@@ -39,7 +39,9 @@ use scribe_backend::models::{
     users::User, // Directly import User
 };
 use scribe_backend::schema::{characters, chat_messages, chat_sessions, sessions};
-use scribe_backend::services::embedding_pipeline::{EmbeddingMetadata, RetrievedChunk};
+use scribe_backend::services::embedding_pipeline::{
+    ChatMessageChunkMetadata, RetrievedChunk, RetrievedMetadata,
+};
 use scribe_backend::test_helpers::db::create_test_user; // Already present
 use scribe_backend::test_helpers::{self, TestDataGuard};
 use tracing::{debug, error, info, warn}; // Added debug
@@ -402,14 +404,14 @@ async fn generate_chat_response_uses_session_settings() -> Result<(), anyhow::Er
     info!("Updated chat session with test settings");
 
     // --- Mock RAG Response ---
-    let mock_metadata1 = EmbeddingMetadata {
+    let mock_metadata1 = ChatMessageChunkMetadata {
         message_id: Uuid::new_v4(),
         session_id: session.id,
         speaker: "user".to_string(),
         timestamp: Utc::now(),
         text: "This is relevant chunk 1.".to_string(),
     };
-    let mock_metadata2 = EmbeddingMetadata {
+    let mock_metadata2 = ChatMessageChunkMetadata {
         message_id: Uuid::new_v4(),
         session_id: session.id,
         speaker: "ai".to_string(),
@@ -420,12 +422,12 @@ async fn generate_chat_response_uses_session_settings() -> Result<(), anyhow::Er
         RetrievedChunk {
             score: 0.95,
             text: mock_metadata1.text.clone(),
-            metadata: mock_metadata1,
+            metadata: RetrievedMetadata::Chat(mock_metadata1),
         },
         RetrievedChunk {
             score: 0.88,
             text: mock_metadata2.text.clone(),
-            metadata: mock_metadata2,
+            metadata: RetrievedMetadata::Chat(mock_metadata2),
         },
     ];
     test_app

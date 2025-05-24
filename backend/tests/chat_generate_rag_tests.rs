@@ -36,7 +36,7 @@ use scribe_backend::{
         users::User,
     },
     schema, // Import the whole schema module
-    services::embedding_pipeline::{EmbeddingMetadata, RetrievedChunk},
+    services::embedding_pipeline::{ChatMessageChunkMetadata, RetrievedChunk, RetrievedMetadata}, // Updated imports
     test_helpers::{self, PipelineCall},
 };
 use serde_json::json;
@@ -755,7 +755,7 @@ async fn test_rag_context_injection_in_prompt() -> anyhow::Result<()> {
         })?; // Handles diesel::result::Error
 
     let mock_chunk_text = "The secret code is Ouroboros.".to_string();
-    let mock_metadata = EmbeddingMetadata {
+    let chat_message_chunk_metadata = ChatMessageChunkMetadata { // Changed to ChatMessageChunkMetadata
         message_id: Uuid::new_v4(),
         session_id: session.id,
         speaker: "Assistant".to_string(), // Assuming speaker is not encrypted
@@ -765,7 +765,7 @@ async fn test_rag_context_injection_in_prompt() -> anyhow::Result<()> {
     let mock_retrieved_chunk = RetrievedChunk {
         score: 0.95,
         text: mock_chunk_text.clone(),
-        metadata: mock_metadata,
+        metadata: RetrievedMetadata::Chat(chat_message_chunk_metadata), // Wrapped in RetrievedMetadata::Chat
     }; // Use String directly
     test_app
         .mock_embedding_pipeline_service

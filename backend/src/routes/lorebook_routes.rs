@@ -150,7 +150,7 @@ async fn create_lorebook_entry_handler(
     payload.validate()?;
     let lorebook_service = LorebookService::new(state.pool.clone(), state.encryption_service.clone());
     let entry = lorebook_service
-        .create_lorebook_entry(&auth_session, lorebook_id, payload, Some(&dek.0))
+        .create_lorebook_entry(&auth_session, lorebook_id, payload, Some(&dek.0), state.clone().into())
         .await?;
     Ok((StatusCode::CREATED, Json(entry)))
 }
@@ -230,7 +230,7 @@ async fn associate_lorebook_to_chat_handler(
     let association = lorebook_service
         .associate_lorebook_to_chat(&auth_session, chat_session_id, payload)
         .await?;
-    Ok((StatusCode::CREATED, Json(association)))
+    Ok((StatusCode::OK, Json(association)))
 }
 
 #[debug_handler]

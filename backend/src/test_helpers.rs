@@ -325,7 +325,16 @@ pub enum PipelineCall {
         message_id: Uuid,
         session_id: Uuid,
     },
-    // Add other calls if the mock needs to track more interactions
+    ProcessAndEmbedLorebookEntry {
+        original_lorebook_entry_id: Uuid,
+        lorebook_id: Uuid,
+        user_id: Uuid,
+        decrypted_content: String,
+        decrypted_title: Option<String>,
+        decrypted_keywords: Option<Vec<String>>,
+        is_enabled: bool,
+        is_constant: bool,
+    },
 }
 
 // Updated MockEmbeddingPipelineService
@@ -371,6 +380,34 @@ impl EmbeddingPipelineServiceTrait for MockEmbeddingPipelineService {
             });
 
         // For mock implementation, just return success
+        Ok(())
+    }
+
+    async fn process_and_embed_lorebook_entry(
+        &self,
+        _state: Arc<AppState>,
+        original_lorebook_entry_id: Uuid,
+        lorebook_id: Uuid,
+        user_id: Uuid,
+        decrypted_content: String,
+        decrypted_title: Option<String>,
+        decrypted_keywords: Option<Vec<String>>,
+        is_enabled: bool,
+        is_constant: bool,
+    ) -> Result<(), AppError> {
+        self.calls
+            .lock()
+            .unwrap()
+            .push(PipelineCall::ProcessAndEmbedLorebookEntry {
+                original_lorebook_entry_id,
+                lorebook_id,
+                user_id,
+                decrypted_content,
+                decrypted_title,
+                decrypted_keywords,
+                is_enabled,
+                is_constant,
+            });
         Ok(())
     }
 
@@ -605,6 +642,7 @@ pub struct TestAppStateBuilder {
     chat_override_service: Option<Arc<ChatOverrideService>>,
     user_persona_service: Option<Arc<UserPersonaService>>,
     token_counter: Option<Arc<HybridTokenCounter>>,
+    lorebook_service: Option<Arc<crate::services::lorebook_service::LorebookService>>, // Fully qualify
 }
 
 impl TestAppStateBuilder {
@@ -625,6 +663,7 @@ impl TestAppStateBuilder {
             chat_override_service: None,
             user_persona_service: None,
             token_counter: None,
+            lorebook_service: None,
         }
     }
 
@@ -648,6 +687,14 @@ impl TestAppStateBuilder {
 
     pub fn with_token_counter(mut self, counter: Arc<HybridTokenCounter>) -> Self {
         self.token_counter = Some(counter);
+        self
+    }
+
+    pub fn with_lorebook_service(
+        mut self,
+        service: Arc<crate::services::lorebook_service::LorebookService>, // Fully qualify
+    ) -> Self {
+        self.lorebook_service = Some(service);
         self
     }
 
@@ -703,6 +750,13 @@ impl TestAppStateBuilder {
             ))
         });
 
+        let lorebook_service = self.lorebook_service.unwrap_or_else(|| {
+            Arc::new(crate::services::lorebook_service::LorebookService::new( // Fully qualify
+                self.db_pool.clone(),
+                encryption_service.clone(),
+            ))
+        });
+
         AppState::new(
             self.db_pool,
             self.config,
@@ -714,6 +768,7 @@ impl TestAppStateBuilder {
             user_persona_service,
             token_counter,
             encryption_service, // Added encryption_service
+            lorebook_service, // Added lorebook_service
         )
     }
 }
