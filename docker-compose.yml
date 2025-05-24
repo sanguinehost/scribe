@@ -15,6 +15,7 @@ services:
       - ./postgres-custom.conf:/etc/postgresql/postgresql.conf
     command: postgres -c config_file=/etc/postgresql/postgresql.conf
     restart: unless-stopped
+    shm_size: 256m
 
   qdrant:
     # image: qdrant/qdrant:latest

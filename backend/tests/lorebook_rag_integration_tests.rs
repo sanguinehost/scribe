@@ -318,6 +318,7 @@ async fn test_lorebook_import_retrieval_and_rag_integration() {
         ]),
         is_enabled: true,
         is_constant: false,
+        source_type: "lorebook_entry".to_string(),
     };
     let retrieved_chunk = RetrievedChunk {
         score: 0.95, // High score to ensure it's picked up

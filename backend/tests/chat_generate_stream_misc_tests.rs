@@ -164,6 +164,9 @@ async fn generate_chat_response_streaming_empty_response() {
     }];
 
     test_app
+        .mock_embedding_pipeline_service
+        .add_retrieve_response(Ok(vec![])); // Corrected method name
+    test_app
         .mock_ai_client
         .as_ref()
         .expect("Mock AI client should be present")
@@ -458,6 +461,9 @@ async fn generate_chat_response_streaming_reasoning_chunk() {
         },
     ];
 
+    test_app
+        .mock_embedding_pipeline_service
+        .add_retrieve_response(Ok(vec![])); // Corrected method name
     test_app
         .mock_ai_client
         .as_ref()

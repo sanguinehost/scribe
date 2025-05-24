@@ -16,6 +16,7 @@ const RAG_CHUNK_LIMIT: u64 = 7; // Increased from 3
 /// Assembles the prompt for the LLM, incorporating RAG context.
 pub async fn build_prompt_with_rag(
     state: Arc<AppState>,
+    user_id: Uuid, // New parameter
     session_id: Uuid,
     character: Option<&CharacterMetadata>,
     history: &[ChatMessage],
@@ -50,10 +51,17 @@ pub async fn build_prompt_with_rag(
     };
 
     if !query_text.is_empty() {
-        info!(%session_id, "Retrieving RAG context for prompt building using combined query");
+        info!(%session_id, %user_id, "Retrieving RAG context for prompt building using combined query");
         match state
             .embedding_pipeline_service
-            .retrieve_relevant_chunks(state.clone(), session_id, &query_text, RAG_CHUNK_LIMIT)
+            .retrieve_relevant_chunks(
+                state.clone(),
+                user_id,         // New argument
+                Some(session_id), // For session_id_for_chat_history - Wrapped in Some()
+                None,            // For active_lorebook_ids_for_search
+                &query_text,
+                RAG_CHUNK_LIMIT
+            )
             .await
         {
             Ok(retrieved_chunks) => {
@@ -212,9 +220,10 @@ mod tests {
     async fn test_build_prompt_empty_history_no_char_no_rag() {
         let (state, _mock_rag) = mock_app_state().await;
         let session_id = Uuid::new_v4();
+        let user_id_test = Uuid::new_v4(); // Dummy user_id for test
         let history = vec![];
 
-        let prompt = build_prompt_with_rag(state, session_id, None, &history)
+        let prompt = build_prompt_with_rag(state, user_id_test, session_id, None, &history)
             .await
             .unwrap();
 
@@ -228,6 +237,7 @@ mod tests {
     async fn test_build_prompt_with_char_details() {
         let (state, _mock_rag) = mock_app_state().await;
         let session_id = Uuid::new_v4();
+        let user_id_test = Uuid::new_v4(); // Dummy user_id for test
         let history = vec![];
         let char_meta = CharacterMetadata {
             id: Uuid::new_v4(),
@@ -240,7 +250,7 @@ mod tests {
             first_mes: Some("Bot greeting".as_bytes().to_vec()),
         };
 
-        let prompt = build_prompt_with_rag(state, session_id, Some(&char_meta), &history)
+        let prompt = build_prompt_with_rag(state, user_id_test, session_id, Some(&char_meta), &history)
             .await
             .unwrap();
 
@@ -253,6 +263,7 @@ mod tests {
     async fn test_build_prompt_with_history() {
         let (state, mock_rag) = mock_app_state().await;
         let session_id = Uuid::new_v4();
+        let user_id_test = Uuid::new_v4(); // Dummy user_id for test
         let history = vec![
             ChatMessage {
                 id: Uuid::new_v4(),
@@ -261,7 +272,7 @@ mod tests {
                 content: "Hello!".as_bytes().to_vec(),
                 content_nonce: None,
                 created_at: Utc::now(),
-                user_id: Uuid::new_v4(), // Add dummy user_id for test data
+                user_id: user_id_test,
                 prompt_tokens: None,
                 completion_tokens: None,
             },
@@ -272,7 +283,7 @@ mod tests {
                 content: "Hi there!".as_bytes().to_vec(),
                 content_nonce: None,
                 created_at: Utc::now(),
-                user_id: Uuid::new_v4(), // Add dummy user_id for test data
+                user_id: user_id_test,
                 prompt_tokens: None,
                 completion_tokens: None,
             },
@@ -282,7 +293,7 @@ mod tests {
         // The function uses the last message, which is from the Assistant with "Hi there!" content
         mock_rag.set_retrieve_response(Ok(vec![]));
 
-        let prompt = build_prompt_with_rag(state, session_id, None, &history)
+        let prompt = build_prompt_with_rag(state, user_id_test, session_id, None, &history)
             .await
             .unwrap();
 
@@ -337,6 +348,7 @@ mod tests {
     async fn test_build_prompt_with_rag_context() {
         let (state, mock_rag) = mock_app_state().await;
         let session_id = Uuid::new_v4();
+        let user_id_test = Uuid::new_v4(); // Dummy user_id for test
         let history = vec![ChatMessage {
             id: Uuid::new_v4(),
             session_id,
@@ -344,7 +356,7 @@ mod tests {
             content: "Tell me about dogs".as_bytes().to_vec(),
             content_nonce: None,
             created_at: Utc::now(),
-            user_id: Uuid::new_v4(), // Add dummy user_id for test data
+            user_id: user_id_test,
             prompt_tokens: None,
             completion_tokens: None,
         }];
@@ -356,9 +368,11 @@ mod tests {
                 metadata: RetrievedMetadata::Chat(ChatMessageChunkMetadata {
                     message_id: Uuid::new_v4(),
                     session_id,
+                    user_id: user_id_test, // Added user_id
                     speaker: "ai".to_string(),
                     timestamp: Utc::now(),
                     text: "Dogs are mammals.".to_string(),
+                    source_type: "chat_message".to_string(),
                 }),
             },
             RetrievedChunk {
@@ -367,9 +381,11 @@ mod tests {
                 metadata: RetrievedMetadata::Chat(ChatMessageChunkMetadata {
                     message_id: Uuid::new_v4(),
                     session_id,
+                    user_id: user_id_test, // Added user_id
                     speaker: "user".to_string(),
                     timestamp: Utc::now(),
                     text: "They bark.".to_string(),
+                    source_type: "chat_message".to_string(),
                 }),
             },
         ];
@@ -377,7 +393,7 @@ mod tests {
         // Setup the mock to return our predefined chunks
         mock_rag.set_retrieve_response(Ok(mock_chunks.clone()));
 
-        let prompt = build_prompt_with_rag(state, session_id, None, &history)
+        let prompt = build_prompt_with_rag(state, user_id_test, session_id, None, &history)
             .await
             .unwrap();
 
@@ -450,6 +466,7 @@ mod tests {
     async fn test_build_prompt_rag_retrieval_error() {
         let (state, mock_rag) = mock_app_state().await;
         let session_id = Uuid::new_v4();
+        let user_id_test = Uuid::new_v4(); // Dummy user_id for test
         let history = vec![ChatMessage {
             id: Uuid::new_v4(),
             session_id,
@@ -457,7 +474,7 @@ mod tests {
             content: "Query that causes error".as_bytes().to_vec(),
             content_nonce: None,
             created_at: Utc::now(),
-            user_id: Uuid::new_v4(), // Add dummy user_id for test data
+            user_id: user_id_test,
             prompt_tokens: None,
             completion_tokens: None,
         }];
@@ -467,7 +484,7 @@ mod tests {
             "Simulated RAG retrieval failure".to_string(),
         )));
 
-        let prompt_result = build_prompt_with_rag(state, session_id, None, &history).await;
+        let prompt_result = build_prompt_with_rag(state, user_id_test, session_id, None, &history).await;
 
         assert!(
             prompt_result.is_ok(),
@@ -534,9 +551,10 @@ mod tests {
     async fn test_build_prompt_no_rag_on_empty_history() {
         let (state, mock_rag) = mock_app_state().await;
         let session_id = Uuid::new_v4();
+        let user_id_test = Uuid::new_v4(); // Dummy user_id for test
         let history = vec![];
 
-        let prompt = build_prompt_with_rag(state, session_id, None, &history)
+        let prompt = build_prompt_with_rag(state, user_id_test, session_id, None, &history)
             .await
             .unwrap();
 
@@ -552,6 +570,7 @@ mod tests {
     async fn test_build_prompt_char_without_description() {
         let (state, _mock_rag) = mock_app_state().await;
         let session_id = Uuid::new_v4();
+        let user_id_test = Uuid::new_v4(); // Dummy user_id for test
         let history = vec![]; // Empty history, RAG won't be called
         let char_meta = CharacterMetadata {
             id: Uuid::new_v4(),
@@ -564,7 +583,7 @@ mod tests {
             first_mes: None,
         };
 
-        let prompt = build_prompt_with_rag(state, session_id, Some(&char_meta), &history)
+        let prompt = build_prompt_with_rag(state, user_id_test, session_id, Some(&char_meta), &history)
             .await
             .unwrap();
 
@@ -577,6 +596,7 @@ mod tests {
     async fn test_build_prompt_with_system_message_in_history() {
         let (state, mock_rag) = mock_app_state().await;
         let session_id = Uuid::new_v4();
+        let user_id_test = Uuid::new_v4(); // Dummy user_id for test
         let history = vec![
             ChatMessage {
                 id: Uuid::new_v4(),
@@ -585,7 +605,7 @@ mod tests {
                 content: "User query".as_bytes().to_vec(),
                 content_nonce: None,
                 created_at: Utc::now(),
-                user_id: Uuid::new_v4(), // Add dummy user_id for test data
+                user_id: user_id_test,
                 prompt_tokens: None,
                 completion_tokens: None,
             },
@@ -596,7 +616,7 @@ mod tests {
                 content: "System instruction".as_bytes().to_vec(),
                 content_nonce: None,
                 created_at: Utc::now(),
-                user_id: Uuid::new_v4(), // Add dummy user_id for test data (System messages might not have a real user_id, but the field is required)
+                user_id: user_id_test, // System messages might not have a real user_id, but the field is required
                 prompt_tokens: None,
                 completion_tokens: None,
             },
@@ -607,7 +627,7 @@ mod tests {
                 content: "Assistant response".as_bytes().to_vec(),
                 content_nonce: None,
                 created_at: Utc::now(),
-                user_id: Uuid::new_v4(), // Add dummy user_id for test data
+                user_id: user_id_test,
                 prompt_tokens: None,
                 completion_tokens: None,
             },
@@ -616,7 +636,7 @@ mod tests {
         // Mock RAG to return empty results based on the last message ("Assistant response")
         mock_rag.set_retrieve_response(Ok(vec![]));
 
-        let prompt = build_prompt_with_rag(state, session_id, None, &history)
+        let prompt = build_prompt_with_rag(state, user_id_test, session_id, None, &history)
             .await
             .unwrap();
 
@@ -648,6 +668,7 @@ mod tests {
     async fn test_build_prompt_full_scenario_char_history_rag() {
         let (state, mock_rag) = mock_app_state().await;
         let session_id = Uuid::new_v4();
+        let user_id_test = Uuid::new_v4(); // Dummy user_id for test
         let char_meta = CharacterMetadata {
             id: Uuid::new_v4(),
             user_id: Uuid::new_v4(),
@@ -666,7 +687,7 @@ mod tests {
                 content: "First user message".as_bytes().to_vec(),
                 content_nonce: None,
                 created_at: Utc::now(),
-                user_id: Uuid::new_v4(), // Add dummy user_id for test data
+                user_id: user_id_test,
                 prompt_tokens: None,
                 completion_tokens: None,
             },
@@ -677,7 +698,7 @@ mod tests {
                 content: "Bot reply".as_bytes().to_vec(),
                 content_nonce: None,
                 created_at: Utc::now(),
-                user_id: Uuid::new_v4(), // Add dummy user_id for test data
+                user_id: user_id_test,
                 prompt_tokens: None,
                 completion_tokens: None,
             },
@@ -688,16 +709,18 @@ mod tests {
             metadata: RetrievedMetadata::Chat(ChatMessageChunkMetadata {
                 message_id: Uuid::new_v4(),
                 session_id,
+                user_id: user_id_test, // Added user_id
                 speaker: "user".to_string(),
                 timestamp: Utc::now(),
                 text: "Relevant fact".to_string(),
+                source_type: "chat_message".to_string(),
             }),
         }];
 
         // Mock RAG to return chunks based on the last message ("Bot reply")
         mock_rag.set_retrieve_response(Ok(mock_chunks.clone()));
 
-        let prompt = build_prompt_with_rag(state, session_id, Some(&char_meta), &history)
+        let prompt = build_prompt_with_rag(state, user_id_test, session_id, Some(&char_meta), &history)
             .await
             .unwrap();
 
@@ -739,7 +762,7 @@ mod tests {
     async fn test_build_prompt_with_lorebook_rag_context() {
         let (state, mock_rag) = mock_app_state().await;
         let session_id = Uuid::new_v4();
-        let user_id = Uuid::new_v4();
+        let test_user_id = Uuid::new_v4(); // Renamed to avoid conflict with LorebookChunkMetadata.user_id
         let history = vec![ChatMessage {
             id: Uuid::new_v4(),
             session_id,
@@ -747,7 +770,7 @@ mod tests {
             content: "Tell me about dragons".as_bytes().to_vec(),
             content_nonce: None,
             created_at: Utc::now(),
-            user_id,
+            user_id: test_user_id,
             prompt_tokens: None,
             completion_tokens: None,
         }];
@@ -759,12 +782,13 @@ mod tests {
                 metadata: RetrievedMetadata::Lorebook(LorebookChunkMetadata {
                     original_lorebook_entry_id: Uuid::new_v4(),
                     lorebook_id: Uuid::new_v4(),
-                    user_id,
+                    user_id: test_user_id, // Use the test_user_id for consistency in test data
                     chunk_text: "Dragons breathe fire and hoard gold.".to_string(),
                     entry_title: Some("Dragon Facts".to_string()),
                     keywords: Some(vec!["dragon".to_string(), "mythology".to_string()]),
                     is_enabled: true,
                     is_constant: false,
+                    source_type: "lorebook_entry".to_string(),
                 }),
             },
             RetrievedChunk {
@@ -773,21 +797,22 @@ mod tests {
                 metadata: RetrievedMetadata::Lorebook(LorebookChunkMetadata {
                     original_lorebook_entry_id: Uuid::new_v4(),
                     lorebook_id: Uuid::new_v4(),
-                    user_id,
+                    user_id: test_user_id, // Use the test_user_id for consistency
                     chunk_text: "Some dragons are friendly.".to_string(),
                     entry_title: Some("Dragon Types".to_string()),
                     keywords: None,
                     is_enabled: true,
                     is_constant: true,
+                    source_type: "lorebook_entry".to_string(),
                 }),
             },
         ];
+mock_rag.set_retrieve_response(Ok(mock_lore_chunks.clone()));
 
-        mock_rag.set_retrieve_response(Ok(mock_lore_chunks.clone()));
+let prompt = build_prompt_with_rag(state, test_user_id, session_id, None, &history)
+    .await
+    .unwrap();
 
-        let prompt = build_prompt_with_rag(state, session_id, None, &history)
-            .await
-            .unwrap();
         
         eprintln!("--- Prompt for test_build_prompt_with_lorebook_rag_context ---\n{}\n---", prompt);
 

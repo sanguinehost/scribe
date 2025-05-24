@@ -175,6 +175,10 @@ async fn generate_chat_response_streaming_ai_error() {
         .expect("Mock AI client should be present")
         .set_stream_response(mock_stream_items);
 
+    test_app
+        .mock_embedding_pipeline_service
+        .set_retrieve_responses_sequence(vec![Ok(vec![]), Ok(vec![])]);
+
     // Construct the new payload with history
     let history = vec![ApiChatMessage {
         role: "user".to_string(),
@@ -451,6 +455,10 @@ async fn generate_chat_response_streaming_initiation_error() {
         .expect("Mock AI client should be present")
         .set_stream_response(vec![Err(ai_error)]); // set_stream_response expects Vec<Result<Event>>
 
+    test_app
+        .mock_embedding_pipeline_service
+        .set_retrieve_responses_sequence(vec![Ok(vec![]), Ok(vec![])]);
+
     // Construct the new payload with history
     let user_message_content = "User message for stream initiation error";
     let history = vec![ApiChatMessage {
@@ -688,6 +696,10 @@ async fn generate_chat_response_streaming_error_before_content() {
         .as_ref()
         .expect("Mock AI client should be present")
         .set_stream_response(mock_stream_items);
+
+    test_app
+        .mock_embedding_pipeline_service
+        .set_retrieve_responses_sequence(vec![Ok(vec![]), Ok(vec![])]);
 
     // Construct the new payload with history
     let user_message_content = "User message for error before content";
@@ -964,6 +976,10 @@ async fn generate_chat_response_streaming_genai_json_error() {
         .as_ref()
         .expect("Mock AI client should be present")
         .set_stream_response(mock_stream_items);
+
+    test_app
+        .mock_embedding_pipeline_service
+        .set_retrieve_responses_sequence(vec![Ok(vec![]), Ok(vec![])]);
 
     // Construct the new payload with history
     let payload_user_message_content = "User message for JSON error stream"; // This is the second user message, from the payload

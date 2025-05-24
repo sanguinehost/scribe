@@ -407,16 +407,20 @@ async fn generate_chat_response_uses_session_settings() -> Result<(), anyhow::Er
     let mock_metadata1 = ChatMessageChunkMetadata {
         message_id: Uuid::new_v4(),
         session_id: session.id,
+        user_id: user.id, // Added user_id
         speaker: "user".to_string(),
         timestamp: Utc::now(),
         text: "This is relevant chunk 1.".to_string(),
+        source_type: "chat_message".to_string(),
     };
     let mock_metadata2 = ChatMessageChunkMetadata {
         message_id: Uuid::new_v4(),
         session_id: session.id,
+        user_id: user.id, // Added user_id
         speaker: "ai".to_string(),
         timestamp: Utc::now(),
         text: "This is relevant chunk 2, slightly longer.".to_string(),
+        source_type: "chat_message".to_string(),
     };
     let mock_chunks = vec![
         RetrievedChunk {
@@ -432,7 +436,7 @@ async fn generate_chat_response_uses_session_settings() -> Result<(), anyhow::Er
     ];
     test_app
         .mock_embedding_pipeline_service
-        .set_retrieve_response(Ok(mock_chunks));
+        .set_retrieve_responses_sequence(vec![Ok(mock_chunks.clone()), Ok(mock_chunks)]); // Provide two responses
     // --- End Mock RAG Response ---
 
     // Configure Mock AI client for a successful response
@@ -924,6 +928,13 @@ async fn generate_chat_response_json_stream_initiation_error() -> Result<(), any
         diesel_result?;
     }
 
+    // --- Mock RAG Response ---
+    // Even for error cases, the RAG step might be attempted.
+    test_app
+        .mock_embedding_pipeline_service
+        .set_retrieve_responses_sequence(vec![Ok(vec![]), Ok(vec![])]);
+    // --- End Mock RAG Response ---
+ 
     // Set mock AI client to return an error
     if let Some(mock_client) = test_app.mock_ai_client.as_ref() {
         mock_client.set_response(Err(AppError::AiServiceError(
@@ -1375,6 +1386,12 @@ async fn generate_chat_response_history_sliding_window_messages() -> anyhow::Res
     )
     .await?;
 
+    // --- Mock RAG Response ---
+    test_app
+        .mock_embedding_pipeline_service
+        .set_retrieve_responses_sequence(vec![Ok(vec![]), Ok(vec![])]);
+    // --- End Mock RAG Response ---
+ 
     test_app
         .mock_ai_client
         .as_ref()
@@ -1656,6 +1673,12 @@ async fn generate_chat_response_history_sliding_window_tokens() -> anyhow::Resul
     )
     .await?;
 
+    // --- Mock RAG Response ---
+    test_app
+        .mock_embedding_pipeline_service
+        .set_retrieve_responses_sequence(vec![Ok(vec![]), Ok(vec![])]);
+    // --- End Mock RAG Response ---
+ 
     test_app
         .mock_ai_client
         .as_ref()
@@ -1932,6 +1955,12 @@ async fn test_generate_chat_response_history_truncate_tokens() -> anyhow::Result
     )
     .await?;
 
+    // --- Mock RAG Response ---
+    test_app
+        .mock_embedding_pipeline_service
+        .set_retrieve_responses_sequence(vec![Ok(vec![]), Ok(vec![])]);
+    // --- End Mock RAG Response ---
+ 
     test_app
         .mock_ai_client
         .as_ref()
@@ -2229,6 +2258,12 @@ async fn generate_chat_response_history_none() -> anyhow::Result<()> {
     )
     .await?;
 
+    // --- Mock RAG Response ---
+    test_app
+        .mock_embedding_pipeline_service
+        .set_retrieve_responses_sequence(vec![Ok(vec![]), Ok(vec![])]);
+    // --- End Mock RAG Response ---
+ 
     test_app
         .mock_ai_client
         .as_ref()
@@ -2506,6 +2541,12 @@ async fn generate_chat_response_history_truncate_tokens_limit_30() -> anyhow::Re
     )
     .await?;
 
+    // --- Mock RAG Response ---
+    test_app
+        .mock_embedding_pipeline_service
+        .set_retrieve_responses_sequence(vec![Ok(vec![]), Ok(vec![])]);
+    // --- End Mock RAG Response ---
+ 
     test_app
         .mock_ai_client
         .as_ref()
@@ -2709,6 +2750,35 @@ async fn test_get_chat_messages_success() -> anyhow::Result<()> {
 
     // Verify that we can get the messages
     tracing::info!("Making API request to /api/chat/{}/generate", session_id);
+
+    // --- Mock RAG Response ---
+    // The /generate endpoint will likely try to do RAG.
+    test_app
+        .mock_embedding_pipeline_service
+        .set_retrieve_responses_sequence(vec![Ok(vec![]), Ok(vec![])]);
+    // --- End Mock RAG Response ---
+
+    // Configure Mock AI client for a successful response, as /generate will call it
+    if let Some(mock_client) = test_app.mock_ai_client.as_ref() {
+        let ai_response_content = "Mock AI success for get_chat_messages test.".to_string();
+        let successful_response = genai::chat::ChatResponse {
+            model_iden: genai::ModelIden::new(
+                genai::adapter::AdapterKind::Gemini,
+                "gemini/mock-model",
+            ),
+            provider_model_iden: genai::ModelIden::new(
+                genai::adapter::AdapterKind::Gemini,
+                "gemini/mock-model",
+            ),
+            content: Some(genai::chat::MessageContent::Text(ai_response_content)),
+            reasoning_content: None,
+            usage: Default::default(),
+        };
+        mock_client.set_response(Ok(successful_response));
+    } else {
+        panic!("Mock AI client not available for test_get_chat_messages_success");
+    }
+
     // client is from login_user_via_api
     let response = client
         .post(format!("{}/api/chat/{}/generate", test_app.address, session_id))
