@@ -180,6 +180,7 @@ async fn generate_chat_response_streaming_empty_response() {
     let payload = GenerateChatRequest {
         history,
         model: Some("test-stream-empty-resp-model".to_string()),
+        query_text_for_rag: None,
     };
 
     let request = Request::builder()
@@ -478,6 +479,7 @@ async fn generate_chat_response_streaming_reasoning_chunk() {
     let payload = GenerateChatRequest {
         history,
         model: Some("test-stream-reasoning-model".to_string()),
+        query_text_for_rag: None,
     };
 
     let request = Request::builder()
@@ -823,6 +825,7 @@ async fn generate_chat_response_streaming_real_client_failure_repro() {
     let payload = GenerateChatRequest {
         history,
         model: Some("gemini-2.5-flash-preview-04-17".to_string()),
+        query_text_for_rag: None,
     };
 
     let request = Request::builder()

@@ -1146,6 +1146,7 @@ fn test_generate_chat_request_serde() {
             content: "Hello AI".to_string(),
         }],
         model: Some("gemini-2.5-flash-preview-04-17".to_string()),
+        query_text_for_rag: None,
     };
 
     let serialized = serde_json::to_string(&original).expect("Serialization failed");

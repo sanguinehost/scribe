@@ -923,8 +923,9 @@ pub struct GenerateChatRequest {
     #[validate(nested)] // Validate each ApiChatMessage within the Vec
     pub history: Vec<ApiChatMessage>,
     pub model: Option<String>, // Keep optional model override
+    pub query_text_for_rag: Option<String>, // ADDED: Optional override for RAG query
 }
-
+ 
 impl std::fmt::Debug for GenerateChatRequest {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("GenerateChatRequest")
