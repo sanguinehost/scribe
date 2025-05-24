@@ -244,6 +244,9 @@ async fn generate_chat_response_streaming_success() {
     ];
 
     test_app
+        .mock_embedding_pipeline_service
+        .add_retrieve_response(Ok(vec![]));
+    test_app
         .mock_ai_client
         .as_ref()
         .expect("Mock AI client should be present")
@@ -616,6 +619,10 @@ async fn test_first_mes_included_in_history() {
     let user_message_content = "First user message";
     let session_dek = SecretBox::new(Box::new(vec![0u8; 32])); // Dummy DEK for testing
     let session_dek_arc = std::sync::Arc::new(session_dek);
+
+    test_app // Add this block
+        .mock_embedding_pipeline_service
+        .add_retrieve_response(Ok(vec![]));
 
     let generation_data = chat_service::get_session_data_for_generation(
         state_arc,

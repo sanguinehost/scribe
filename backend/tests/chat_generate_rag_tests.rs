@@ -233,6 +233,11 @@ async fn test_generate_chat_response_triggers_embeddings() -> anyhow::Result<()>
         .expect("Mock client required")
         .set_response(Ok(mock_response));
 
+    // Ensure responses are queued for the retrieve_relevant_chunks calls (system prompt + user message)
+    test_app
+        .mock_embedding_pipeline_service
+        .set_retrieve_responses_sequence(vec![Ok(vec![]), Ok(vec![])]);
+
     let payload = GenerateChatRequest {
         history: vec![ApiChatMessage {
             role: "user".to_string(),
@@ -540,6 +545,11 @@ async fn test_generate_chat_response_triggers_embeddings_with_existing_session()
             anyhow::anyhow!("Database query failed (inner diesel::result::Error): {}", e)
         })?; // Handles diesel::result::Error
 
+    // Ensure responses are queued for the retrieve_relevant_chunks calls (system prompt + user message)
+    test_app
+        .mock_embedding_pipeline_service
+        .set_retrieve_responses_sequence(vec![Ok(vec![]), Ok(vec![])]);
+
     let payload = GenerateChatRequest {
         history: vec![ApiChatMessage {
             role: "user".to_string(),
@@ -758,9 +768,11 @@ async fn test_rag_context_injection_in_prompt() -> anyhow::Result<()> {
     let chat_message_chunk_metadata = ChatMessageChunkMetadata { // Changed to ChatMessageChunkMetadata
         message_id: Uuid::new_v4(),
         session_id: session.id,
+        user_id: user.id, // Added user_id
         speaker: "Assistant".to_string(), // Assuming speaker is not encrypted
         timestamp: Utc::now(),
         text: mock_chunk_text.clone(), // Use String directly
+        source_type: "chat_message".to_string(),
     };
     let mock_retrieved_chunk = RetrievedChunk {
         score: 0.95,
@@ -769,7 +781,10 @@ async fn test_rag_context_injection_in_prompt() -> anyhow::Result<()> {
     }; // Use String directly
     test_app
         .mock_embedding_pipeline_service
-        .set_retrieve_response(Ok(vec![mock_retrieved_chunk]));
+        .set_retrieve_responses_sequence(vec![
+            Ok(vec![]), // For system prompt augmentation
+            Ok(vec![mock_retrieved_chunk]), // For user message context
+        ]);
 
     let mock_ai_response = ChatResponse {
         model_iden: genai::ModelIden::new(genai::adapter::AdapterKind::Gemini, "mock-rag-model"),
@@ -828,12 +843,14 @@ async fn test_rag_context_injection_in_prompt() -> anyhow::Result<()> {
     // Only verify details if there are retrieve calls
     if let Some(retrieve_call) = retrieve_calls.first() {
         if let PipelineCall::RetrieveRelevantChunks {
-            chat_id,
+            user_id: _, // Not asserting this field for now
+            session_id_for_chat_history,
             query_text: called_query,
             limit: _,
+            active_lorebook_ids_for_search: _, // Not asserting this field for now
         } = retrieve_call
         {
-            assert_eq!(*chat_id, session.id);
+            assert_eq!(*session_id_for_chat_history, Some(session.id));
             assert_eq!(*called_query, query_text);
             println!("Verified retrieve call details");
         }
@@ -1080,11 +1097,17 @@ async fn generate_chat_response_rag_retrieval_error() -> anyhow::Result<()> {
             anyhow::anyhow!("Database query failed (inner diesel::result::Error): {}", e)
         })?; // Handles diesel::result::Error
 
+    // Set up the mock embedding pipeline service to return errors for both potential calls
     test_app
         .mock_embedding_pipeline_service
-        .set_retrieve_response(Err(AppError::VectorDbError(
-            "Mock Qdrant retrieval failure".to_string(),
-        )));
+        .set_retrieve_responses_sequence(vec![
+            Err(AppError::VectorDbError(
+                "Mock Qdrant retrieval failure (call 1)".to_string(),
+            )),
+            Err(AppError::VectorDbError(
+                "Mock Qdrant retrieval failure (call 2)".to_string(),
+            )),
+        ]);
 
     let mock_ai_content = "Response without RAG context.";
     let mock_response = ChatResponse {
@@ -1353,6 +1376,12 @@ async fn setup_test_data(use_real_ai: bool) -> anyhow::Result<RagTestContext> {
         model: Some("test-embed-trigger-model".to_string()),
     };
 
+    // Ensure responses are queued for the retrieve_relevant_chunks calls (system prompt + user message)
+    // within setup_test_data
+    test_app
+        .mock_embedding_pipeline_service
+        .set_retrieve_responses_sequence(vec![Ok(vec![]), Ok(vec![])]);
+
     let request = Request::builder()
         .method(Method::POST)
         .uri(format!("/api/chat/{}/generate", session.id))
@@ -1475,6 +1504,12 @@ async fn generate_chat_response_rag_success() -> anyhow::Result<()> {
         .expect("Mock client required")
         .set_response(Ok(mock_response));
 
+    // Ensure responses are queued for this specific /generate call (system prompt + user message)
+    context
+        .app
+        .mock_embedding_pipeline_service
+        .set_retrieve_responses_sequence(vec![Ok(vec![]), Ok(vec![])]);
+
     let payload = GenerateChatRequest {
         history: vec![ApiChatMessage {
             role: "user".to_string(),
@@ -1531,6 +1566,12 @@ async fn generate_chat_response_rag_empty_history_success() -> anyhow::Result<()
         .expect("Mock client required")
         .set_response(Ok(mock_response));
 
+    // Ensure responses are queued for this specific /generate call (system prompt + user message)
+    context
+        .app
+        .mock_embedding_pipeline_service
+        .set_retrieve_responses_sequence(vec![Ok(vec![]), Ok(vec![])]);
+
     let payload = GenerateChatRequest {
         history: vec![ApiChatMessage {
             role: "user".to_string(),
@@ -1584,10 +1625,12 @@ async fn generate_chat_response_rag_no_relevant_chunks_found() -> anyhow::Result
         .as_ref()
         .expect("Mock client required")
         .set_response(Ok(mock_response));
+    // Ensure responses are queued for this specific /generate call (system prompt + user message)
+    // Both should return empty if no chunks are found for the user message part.
     context
         .app
         .mock_embedding_pipeline_service
-        .set_retrieve_response(Ok(vec![])); // No chunks
+        .set_retrieve_responses_sequence(vec![Ok(vec![]), Ok(vec![])]); // No chunks for either call
 
     let payload = GenerateChatRequest {
         history: vec![ApiChatMessage {
@@ -1700,6 +1743,13 @@ async fn generate_chat_response_rag_uses_character_settings_if_no_session() -> a
         }],
         model: Some("gemini-2.5-flash-preview-04-17".to_string()),
     };
+
+    // Ensure responses are queued for this specific /generate call (system prompt + user message)
+    context
+        .app
+        .mock_embedding_pipeline_service
+        .set_retrieve_responses_sequence(vec![Ok(vec![]), Ok(vec![])]);
+
     let request = Request::builder()
         .method(Method::POST)
         .uri(format!("/api/chat/{}/generate", context.session.id)) // Use session from setup

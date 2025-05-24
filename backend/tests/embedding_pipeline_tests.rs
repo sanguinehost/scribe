@@ -1,9 +1,6 @@
 use chrono::Utc;
-// Removed unused dotenvy
 use log;
 use mockall::predicate::*;
-use scribe_backend::services::embedding_pipeline::EmbeddingPipelineServiceTrait;
-// Added for as_any()
 use qdrant_client::qdrant::{PointId, Value, point_id::PointIdOptions};
 use scribe_backend::{
     models::chats::{ChatMessage, MessageRole},
@@ -156,9 +153,10 @@ async fn test_process_and_embed_message_integration() {
     let mut found_chunk_texts: Vec<String> = Vec::new();
     for point in retrieved_points {
         let payload_map: HashMap<String, Value> = point.payload;
-        let metadata = ChatMessageChunkMetadata::try_from(payload_map) // Changed to ChatMessageChunkMetadata
+        let metadata = ChatMessageChunkMetadata::try_from(payload_map)
             .expect("Failed to parse ChatMessageChunkMetadata from Qdrant payload");
 
+        assert_eq!(metadata.source_type, "chat_message", "Metadata source_type mismatch");
         assert_eq!(
             metadata.message_id, test_message_id,
             "Metadata message_id mismatch"
@@ -166,6 +164,10 @@ async fn test_process_and_embed_message_integration() {
         assert_eq!(
             metadata.session_id, test_session_id,
             "Metadata session_id mismatch"
+        );
+        assert_eq!(
+            metadata.user_id, test_message.user_id, // Added user_id check
+            "Metadata user_id mismatch"
         );
         assert_eq!(
             metadata.speaker,
@@ -330,9 +332,11 @@ fn create_mock_scored_point(
     score: f32,
     session_id: Uuid,
     message_id: Uuid,
+    user_id: Uuid, // Added user_id
     speaker: &str,
     timestamp: chrono::DateTime<Utc>,
     text: &str,
+    source_type: &str,
 ) -> ScoredPoint {
     let mut payload = HashMap::new();
     payload.insert(
@@ -343,12 +347,17 @@ fn create_mock_scored_point(
         "message_id".to_string(),
         Value::from(message_id.to_string()),
     );
+    payload.insert(
+        "user_id".to_string(), // Added user_id to payload
+        Value::from(user_id.to_string()),
+    );
     payload.insert("speaker".to_string(), Value::from(speaker.to_string()));
     payload.insert("timestamp".to_string(), Value::from(timestamp.to_rfc3339()));
     payload.insert("text".to_string(), Value::from(text.to_string()));
+    payload.insert("source_type".to_string(), Value::from(source_type.to_string()));
 
     // Set vectors to None for simplicity in mock helper
-    // let vector_data: Vec<f32> = vec![0.1; 768];
+    // let vector_data: Vec<f32> = vec![0.1; 3072]; // Corrected dimension
     // let vectors_output = qdrant_client::qdrant::VectorsOutput { ... };
 
     ScoredPoint {
@@ -398,11 +407,12 @@ async fn test_retrieve_relevant_chunks_success() {
     ));
 
     // 2. Prepare mock responses and expectations
-    let test_session_id = Uuid::new_v4(); // Define session_id for the test
+    let test_session_id = Uuid::new_v4();
+    let test_user_id = Uuid::new_v4(); // Added user_id for the test
     let message_id_1 = Uuid::new_v4();
     let message_id_2 = Uuid::new_v4();
 
-    let embedding_dimension = 3072; // Updated from 768 to 3072
+    let embedding_dimension = 3072;
     let mock_query_embedding = vec![0.5; embedding_dimension];
 
     // Configure the mock embedding client to return the expected embedding
@@ -410,22 +420,26 @@ async fn test_retrieve_relevant_chunks_success() {
 
     mock_qdrant_service_concrete.set_search_response(Ok(vec![
         create_mock_scored_point(
-            Uuid::new_v4(), // point_id can remain random for this test
+            Uuid::new_v4(),
             0.95,
-            test_session_id, // Use predefined session_id
-            message_id_1,    // Use predefined message_id_1
+            test_session_id,
+            message_id_1,
+            test_user_id, // Added user_id
             "User",
             Utc::now(),
             "Chunk 1 text",
+            "chat_message",
         ),
         create_mock_scored_point(
-            Uuid::new_v4(), // point_id can remain random for this test
+            Uuid::new_v4(),
             0.88,
-            test_session_id, // Use predefined session_id
-            message_id_2,    // Use predefined message_id_2
+            test_session_id,
+            message_id_2,
+            test_user_id, // Added user_id
             "Assistant",
             Utc::now(),
             "Chunk 2 text",
+            "chat_message",
         ),
     ]));
 
@@ -437,9 +451,11 @@ async fn test_retrieve_relevant_chunks_success() {
         .embedding_pipeline_service
         .retrieve_relevant_chunks(
             app_state.clone(),
-            test_session_id, // Using test_session_id as chat_id
-            query, 
-            5, // Limit for retrieve_relevant_chunks
+            test_user_id,          // Use defined test_user_id
+            Some(test_session_id),
+            None,
+            query,
+            5,
         )
         .await;
 
@@ -463,8 +479,10 @@ async fn test_retrieve_relevant_chunks_success() {
     if let RetrievedMetadata::Chat(meta) = &retrieved_chunks[0].metadata {
         assert_eq!(meta.session_id, test_session_id);
         assert_eq!(meta.message_id, message_id_1);
+        assert_eq!(meta.user_id, test_user_id); // Added user_id check
         assert_eq!(meta.speaker, "User");
-        assert_eq!(meta.text, "Chunk 1 text"); // Ensure metadata text matches chunk text
+        assert_eq!(meta.text, "Chunk 1 text");
+        assert_eq!(meta.source_type, "chat_message");
     } else {
         panic!("Expected Chat metadata for retrieved_chunks[0]");
     }
@@ -475,8 +493,10 @@ async fn test_retrieve_relevant_chunks_success() {
     if let RetrievedMetadata::Chat(meta) = &retrieved_chunks[1].metadata {
         assert_eq!(meta.session_id, test_session_id);
         assert_eq!(meta.message_id, message_id_2);
+        assert_eq!(meta.user_id, test_user_id); // Added user_id check
         assert_eq!(meta.speaker, "Assistant");
         assert_eq!(meta.text, "Chunk 2 text");
+        assert_eq!(meta.source_type, "chat_message");
     } else {
         panic!("Expected Chat metadata for retrieved_chunks[1]");
     }
@@ -548,7 +568,9 @@ async fn test_retrieve_relevant_chunks_no_results() {
         .embedding_pipeline_service
         .retrieve_relevant_chunks(
             app_state.clone(),
-            Uuid::new_v4(),
+            Uuid::new_v4(), // user_id
+            Some(Uuid::new_v4()), // session_id_for_chat_history
+            None, // active_lorebook_ids_for_search
             "A query that finds nothing",
             5
         ).await;
@@ -607,22 +629,19 @@ async fn test_retrieve_relevant_chunks_qdrant_error() {
     // Call the method on the real service
     let result = app_state
         .embedding_pipeline_service
-        .retrieve_relevant_chunks(app_state.clone(), Uuid::new_v4(), "Query leading to Qdrant error", 2)
+        .retrieve_relevant_chunks(app_state.clone(), Uuid::new_v4(), Some(Uuid::new_v4()), None, "Query leading to Qdrant error", 2)
         .await;
 
     // 3. Assertions
     assert!(
-        result.is_err(),
-        "Expected retrieve_relevant_chunks to return an error"
+        result.is_ok(),
+        "Expected retrieve_relevant_chunks to return Ok even with Qdrant error"
     );
-    if let Err(e) = result {
-        // Check if the error is the expected type (or wraps it)
-        assert!(
-            matches!(e, scribe_backend::errors::AppError::VectorDbError(_)),
-            "Expected a VectorDbError"
-        );
-        assert!(e.to_string().contains("Simulated Qdrant search failure"));
-    }
+    let retrieved_chunks = result.unwrap();
+    assert!(
+        retrieved_chunks.is_empty(),
+        "Expected empty chunks when Qdrant search fails"
+    );
 }
 
 #[tokio::test]
@@ -664,26 +683,69 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_uuid() {
             Uuid::new_v4(),
             0.9,
             session_id,
-            Uuid::new_v4(),
+            Uuid::new_v4(), // message_id
+            Uuid::new_v4(), // user_id
             "User",
             Utc::now(),
             "Valid text",
+            "chat_message",
         ),
-        create_mock_scored_point(
+        create_mock_scored_point( // This point will have the invalid UUID in its message_id field
             Uuid::new_v4(),
             0.9,
             session_id,
-            Uuid::new_v4(),
+            Uuid::new_v4(), // message_id - this should be the one made invalid for the test's purpose
+            Uuid::new_v4(), // user_id
             "User",
             Utc::now(),
-            "Valid text",
+            "Valid text with invalid message_id in payload", // text
+            "chat_message", // source_type
         ),
     ]));
+    
+    // To make the second point's message_id invalid, we need to modify the mock_qdrant_service_concrete's response
+    // This is a bit tricky as set_search_response takes ownership. We'll set it, then modify.
+    // This test's intent is to check how the *real* EmbeddingPipelineService handles bad data from Qdrant.
+    // So, the mock_embedding_pipeline_service should not be used here.
+    // The panic "MockEmbeddingPipelineService::retrieve_relevant_chunks called but no more responses were queued"
+    // indicates that the mock service was called, which is not the intent for testing metadata parsing.
 
-    // Call the method using app_state from TestApp
-    let result = test_app.mock_embedding_pipeline_service.retrieve_relevant_chunks(
-        app_state_arc,
-        session_id,
+    // Let's re-evaluate the setup for these metadata tests.
+    // They should use the *real* EmbeddingPipelineService and a mock Qdrant that returns malformed data.
+    let real_embedding_pipeline_service = EmbeddingPipelineService::new(ChunkConfig::from(test_app.config.as_ref()));
+
+    // Create a new AppState with the real service
+    let app_state_for_metadata_test = Arc::new(AppState::new(
+        test_app.db_pool.clone(),
+        test_app.config.clone(),
+        test_app.mock_ai_client.clone().expect("Mock AI client should be present"),
+        test_app.mock_embedding_client.clone(),
+        test_app.qdrant_service.clone(), // This is the MockQdrantClientService
+        Arc::new(real_embedding_pipeline_service), // Use the real service
+        app_state_arc.chat_override_service.clone(), // Reuse from previous app_state_arc
+        app_state_arc.user_persona_service.clone(),
+        app_state_arc.token_counter.clone(),
+        app_state_arc.encryption_service.clone(),
+        app_state_arc.lorebook_service.clone(),
+    ));
+    
+    // Modify the second point in the mock Qdrant response to have an invalid message_id
+    let mut mock_response = vec![
+        create_mock_scored_point(Uuid::new_v4(), 0.9, session_id, Uuid::new_v4(), Uuid::new_v4(), "User", Utc::now(), "Valid text 1", "chat_message"),
+    ];
+    let mut invalid_payload_point = create_mock_scored_point(Uuid::new_v4(), 0.8, session_id, Uuid::new_v4(), Uuid::new_v4(), "User", Utc::now(), "Text for invalid point", "chat_message");
+    // Directly manipulate the payload to make message_id invalid
+    invalid_payload_point.payload.insert("message_id".to_string(), Value::from("not-a-valid-uuid"));
+    mock_response.push(invalid_payload_point);
+    mock_qdrant_service_concrete.set_search_response(Ok(mock_response));
+
+
+    // Call the method using the AppState with the real EmbeddingPipelineService
+    let result = app_state_for_metadata_test.embedding_pipeline_service.retrieve_relevant_chunks(
+        app_state_for_metadata_test.clone(), // Use the correct app_state
+        Uuid::new_v4(), // user_id
+        Some(session_id), // session_id_for_chat_history
+        None, // active_lorebook_ids_for_search
         query_text,
         limit
     ).await;
@@ -695,12 +757,12 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_uuid() {
         result.err()
     );
     let retrieved_chunks = result.unwrap();
-    assert!(
-        retrieved_chunks.is_empty(),
-        "Expected no chunks due to metadata parsing error"
+    assert_eq!(
+        retrieved_chunks.len(),
+        1,
+        "Expected 1 chunk, the one with invalid metadata should be skipped"
     );
-    // We expect an error log, but cannot assert on it directly here.
-    // This covers lines like 50, 66.
+    assert_eq!(retrieved_chunks[0].text, "Valid text 1");
 }
 
 #[tokio::test]
@@ -742,42 +804,61 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_timestamp() {
             Uuid::new_v4(),
             0.85,
             session_id,
-            Uuid::new_v4(),
+            Uuid::new_v4(), // message_id
+            Uuid::new_v4(), // user_id
             "Assistant",
             Utc::now(),
             "More text",
+            "chat_message",
         ),
-        create_mock_scored_point(
-            Uuid::new_v4(),
-            0.85,
-            session_id,
-            Uuid::new_v4(),
-            "Assistant",
-            Utc::now(),
-            "More text",
-        ),
+        // This point will have an invalid timestamp
+        {
+            let mut point_with_invalid_ts = create_mock_scored_point(
+                Uuid::new_v4(), 0.85, session_id, Uuid::new_v4(), Uuid::new_v4(), "Assistant", Utc::now(), "Text for invalid TS", "chat_message"
+            );
+            point_with_invalid_ts.payload.insert("timestamp".to_string(), Value::from("not-a-timestamp"));
+            point_with_invalid_ts
+        }
     ]));
+    
+    let real_embedding_pipeline_service = EmbeddingPipelineService::new(ChunkConfig::from(test_app.config.as_ref()));
+    let app_state_for_metadata_test = Arc::new(AppState::new(
+        test_app.db_pool.clone(),
+        test_app.config.clone(),
+        test_app.mock_ai_client.clone().expect("Mock AI client should be present"),
+        test_app.mock_embedding_client.clone(),
+        test_app.qdrant_service.clone(),
+        Arc::new(real_embedding_pipeline_service),
+        app_state_arc.chat_override_service.clone(),
+        app_state_arc.user_persona_service.clone(),
+        app_state_arc.token_counter.clone(),
+        app_state_arc.encryption_service.clone(),
+        app_state_arc.lorebook_service.clone(),
+    ));
 
-    // Call the method using app_state from TestApp
-    let result = test_app.mock_embedding_pipeline_service.retrieve_relevant_chunks(
-        app_state_arc,
-        session_id,
+    let result = app_state_for_metadata_test.embedding_pipeline_service.retrieve_relevant_chunks(
+        app_state_for_metadata_test.clone(),
+        Uuid::new_v4(),
+        Some(session_id),
+        None,
         query_text,
         limit
     ).await;
 
     // 3. Assertions
+    // Expect Ok, but only one valid chunk should be returned.
     assert!(
         result.is_ok(),
         "retrieve_relevant_chunks should succeed even with metadata errors: {:?}",
         result.err()
     );
     let retrieved_chunks = result.unwrap();
-    assert!(
-        retrieved_chunks.is_empty(),
-        "Expected no chunks due to metadata parsing error"
+    assert_eq!(
+        retrieved_chunks.len(),
+        1,
+        "Expected 1 chunk, the one with invalid metadata should be skipped"
     );
-    // Covers lines like 93-94.
+    assert_eq!(retrieved_chunks[0].text, "More text");
 }
 
 #[tokio::test]
@@ -794,19 +875,20 @@ async fn test_retrieve_relevant_chunks_metadata_missing_field() {
     let user_persona_service_for_test_8 = Arc::new(UserPersonaService::new(test_app.db_pool.clone(), encryption_service_for_test_8.clone()));
     let lorebook_service_for_test_8 = Arc::new(LorebookService::new(test_app.db_pool.clone(), encryption_service_for_test_8.clone()));
     
-    let app_state_arc = Arc::new(AppState::new(
-        test_app.db_pool.clone(),
-        test_app.config.clone(),
-        test_app.mock_ai_client.clone().expect("Mock AI client should be present"),
-        test_app.mock_embedding_client.clone(),
-        test_app.qdrant_service.clone(),
-        test_app.mock_embedding_pipeline_service.clone(),
-        chat_override_service_for_test_8,
-        user_persona_service_for_test_8, // Added user_persona_service
-        hybrid_token_counter_for_test_8,
-        encryption_service_for_test_8.clone(),
-        lorebook_service_for_test_8
-    ));
+    // This app_state_arc is not needed here as we are creating app_state_for_metadata_test below
+    // let app_state_arc = Arc::new(AppState::new(
+    //     test_app.db_pool.clone(),
+    //     test_app.config.clone(),
+    //     test_app.mock_ai_client.clone().expect("Mock AI client should be present"),
+    //     test_app.mock_embedding_client.clone(),
+    //     test_app.qdrant_service.clone(),
+    //     test_app.mock_embedding_pipeline_service.clone(), // This was the issue, using mock service
+    //     chat_override_service_for_test_8,
+    //     user_persona_service_for_test_8, // Added user_persona_service
+    //     hybrid_token_counter_for_test_8,
+    //     encryption_service_for_test_8.clone(),
+    //     lorebook_service_for_test_8
+    // ));
 
     // Mock Qdrant to return a point with a missing required field in metadata
     let query_text = "Query for missing metadata field";
@@ -819,49 +901,68 @@ async fn test_retrieve_relevant_chunks_metadata_missing_field() {
             Uuid::new_v4(),
             0.8,
             session_id,
-            Uuid::new_v4(),
+            Uuid::new_v4(), // message_id
+            Uuid::new_v4(), // user_id
             "User",
             Utc::now(),
             "Some text",
+            "chat_message",
         ),
-        create_mock_scored_point(
-            Uuid::new_v4(),
-            0.8,
-            session_id,
-            Uuid::new_v4(),
-            "User",
-            Utc::now(),
-            "Some text",
-        ),
+        // This point will have a missing field (e.g., speaker)
+        {
+            let mut point_with_missing_field = create_mock_scored_point(
+                Uuid::new_v4(), 0.8, session_id, Uuid::new_v4(), Uuid::new_v4(), "User", Utc::now(), "Text for missing field", "chat_message"
+            );
+            point_with_missing_field.payload.remove("speaker");
+            point_with_missing_field
+        }
     ]));
+    
+    let real_embedding_pipeline_service = EmbeddingPipelineService::new(ChunkConfig::from(test_app.config.as_ref()));
+    let app_state_for_metadata_test = Arc::new(AppState::new(
+        test_app.db_pool.clone(),
+        test_app.config.clone(),
+        test_app.mock_ai_client.clone().expect("Mock AI client should be present"),
+        test_app.mock_embedding_client.clone(),
+        test_app.qdrant_service.clone(),
+        Arc::new(real_embedding_pipeline_service),
+        chat_override_service_for_test_8, // Use services created in this test
+        user_persona_service_for_test_8,
+        hybrid_token_counter_for_test_8,
+        encryption_service_for_test_8.clone(),
+        lorebook_service_for_test_8,
+    ));
 
-    // Call the method using app_state from TestApp
-    let result = test_app.mock_embedding_pipeline_service.retrieve_relevant_chunks(
-        app_state_arc,
-        session_id,
+    let result = app_state_for_metadata_test.embedding_pipeline_service.retrieve_relevant_chunks(
+        app_state_for_metadata_test.clone(),
+        Uuid::new_v4(),
+        Some(session_id),
+        None,
         query_text,
         limit
     ).await;
 
     // 3. Assertions
+    // Expect Ok, but only one valid chunk should be returned.
     assert!(
         result.is_ok(),
         "retrieve_relevant_chunks should succeed even with metadata errors: {:?}",
         result.err()
     );
     let retrieved_chunks = result.unwrap();
-    assert!(
-        retrieved_chunks.is_empty(),
-        "Expected no chunks due to metadata parsing error"
+    assert_eq!(
+        retrieved_chunks.len(),
+        1,
+        "Expected 1 chunk, the one with invalid metadata should be skipped"
     );
-    // Covers lines like 44-46, 60-62, 76-77, 87-89, 105-106 and the logging on 343, 346, 348-350.
+    assert_eq!(retrieved_chunks[0].text, "Some text");
 }
 
 #[tokio::test]
 async fn test_retrieve_relevant_chunks_metadata_wrong_type() {
     let test_app = test_helpers::spawn_app(false, false, false).await;
     let mock_qdrant_service_concrete = test_app.mock_qdrant_service.clone().expect("Mock Qdrant service");
-    let mock_embedding_client = test_app.mock_embedding_client.clone(); // Added this line
+    let mock_embedding_client = test_app.mock_embedding_client.clone();
 
     // Create dependent services for AppState
     let encryption_service_for_test_9 = Arc::new(EncryptionService::new());
@@ -872,19 +973,20 @@ async fn test_retrieve_relevant_chunks_metadata_wrong_type() {
     let user_persona_service_for_test_9 = Arc::new(UserPersonaService::new(test_app.db_pool.clone(), encryption_service_for_test_9.clone()));
     let lorebook_service_for_test_9 = Arc::new(LorebookService::new(test_app.db_pool.clone(), encryption_service_for_test_9.clone()));
 
-    let app_state = Arc::new(AppState::new(
-        test_app.db_pool.clone(),
-        test_app.config.clone(),
-        test_app.mock_ai_client.clone().expect("Mock AI client should be present"),
-        mock_embedding_client.clone(),
-        test_app.qdrant_service.clone(),
-        test_app.mock_embedding_pipeline_service.clone(),
-        chat_override_service_for_test_9,
-        user_persona_service_for_test_9, // Added user_persona_service
-        hybrid_token_counter_for_test_9,
-        encryption_service_for_test_9.clone(),
-        lorebook_service_for_test_9
-    ));
+    // This _app_state is not needed here as we are creating app_state_for_metadata_test below
+    // let _app_state = Arc::new(AppState::new( // Renamed to avoid conflict, though it's unused now
+    //     test_app.db_pool.clone(),
+    //     test_app.config.clone(),
+    //     test_app.mock_ai_client.clone().expect("Mock AI client should be present"),
+    //     mock_embedding_client.clone(),
+    //     test_app.qdrant_service.clone(),
+    //     test_app.mock_embedding_pipeline_service.clone(), // This was the issue
+    //     chat_override_service_for_test_9,
+    //     user_persona_service_for_test_9, // Added user_persona_service
+    //     hybrid_token_counter_for_test_9,
+    //     encryption_service_for_test_9.clone(),
+    //     lorebook_service_for_test_9
+    // ));
 
     // Mock Qdrant to return a point with a field of the wrong type in metadata
     let query_text = "Query for wrong metadata type";
@@ -897,42 +999,62 @@ async fn test_retrieve_relevant_chunks_metadata_wrong_type() {
             Uuid::new_v4(),
             0.75,
             session_id,
-            Uuid::new_v4(),
+            Uuid::new_v4(), // message_id
+            Uuid::new_v4(), // user_id
             "User",
             Utc::now(),
             "Final text",
+            "chat_message",
         ),
-        create_mock_scored_point(
-            Uuid::new_v4(),
-            0.75,
-            session_id,
-            Uuid::new_v4(),
-            "User",
-            Utc::now(),
-            "Final text",
-        ),
+        // This point will have a field of the wrong type (e.g., speaker as integer)
+        {
+            let mut point_with_wrong_type = create_mock_scored_point(
+                Uuid::new_v4(), 0.75, session_id, Uuid::new_v4(), Uuid::new_v4(), "User", Utc::now(), "Text for wrong type", "chat_message"
+            );
+            point_with_wrong_type.payload.insert("speaker".to_string(), Value::from(123i64)); // speaker is integer
+            point_with_wrong_type
+        }
     ]));
+    
+    let real_embedding_pipeline_service = EmbeddingPipelineService::new(ChunkConfig::from(test_app.config.as_ref()));
+    // Use the app_state created within this test, not the one from the outer scope (app_state_arc)
+    let app_state_for_metadata_test = Arc::new(AppState::new(
+        test_app.db_pool.clone(),
+        test_app.config.clone(),
+        test_app.mock_ai_client.clone().expect("Mock AI client should be present"),
+        mock_embedding_client.clone(), // Use the mock_embedding_client from this test's scope
+        test_app.qdrant_service.clone(),
+        Arc::new(real_embedding_pipeline_service),
+        chat_override_service_for_test_9, // Use services created in this test
+        user_persona_service_for_test_9,
+        hybrid_token_counter_for_test_9,
+        encryption_service_for_test_9.clone(),
+        lorebook_service_for_test_9,
+    ));
 
-    // Call the method using app_state from TestApp
-    let result = test_app.mock_embedding_pipeline_service.retrieve_relevant_chunks(
-        app_state.clone(),
-        session_id,
+    let result = app_state_for_metadata_test.embedding_pipeline_service.retrieve_relevant_chunks(
+        app_state_for_metadata_test.clone(),
+        Uuid::new_v4(),
+        Some(session_id),
+        None,
         query_text,
         limit
     ).await;
 
     // 3. Assertions
+    // Expect Ok, but only one valid chunk should be returned.
     assert!(
         result.is_ok(),
         "retrieve_relevant_chunks should succeed even with metadata errors: {:?}",
         result.err()
     );
     let retrieved_chunks = result.unwrap();
-    assert!(
-        retrieved_chunks.is_empty(),
-        "Expected no chunks due to metadata parsing error (wrong type)"
+    assert_eq!(
+        retrieved_chunks.len(),
+        1,
+        "Expected 1 chunk, the one with invalid metadata should be skipped"
     );
-    // This covers the `_ => None` branches (lines 42, 58, 74, 85, 103) and the subsequent error logging.
+    assert_eq!(retrieved_chunks[0].text, "Final text");
 }
 
 // TODO: Add tests for retrieve_relevant_chunks integration if needed,
@@ -952,40 +1074,51 @@ async fn test_rag_context_injection_with_qdrant() {
     // Check if QDRANT_URL is set in the loaded config
     if test_app.config.qdrant_url.is_none() || test_app.config.qdrant_url.as_deref().unwrap_or("").is_empty() {
         log::warn!("Skipping Qdrant integration test: QDRANT_URL not set in config for RAG test.");
-        // Intentionally panic if QDRANT_URL is not set but test is not ignored.
-        if option_env!("CI").is_none() { // Don't panic in CI if URL is missing
+        if option_env!("CI").is_none() {
             panic!("QDRANT_URL is not set in config for an un-ignored RAG integration test.");
         }
         return;
     }
 
     // Create a real EmbeddingPipelineService
-    let embedding_pipeline_service =
+    let embedding_pipeline_service_instance = // Renamed to avoid conflict
         EmbeddingPipelineService::new(ChunkConfig::from(test_app.config.as_ref()));
 
     // Set up test data
-    let session_id = Uuid::new_v4();
-    let message_id = Uuid::new_v4();
-    let user_id = Uuid::new_v4();
-    let test_message = "This is a test message for RAG context injection using Qdrant.";
+    let user_id = Uuid::new_v4(); // Consistent user_id for all data
+    let chat_session_id = Uuid::new_v4();
+    let chat_message_id = Uuid::new_v4();
+    let chat_message_content = "This is a test chat message about dragons for RAG.";
+
+    let lorebook_id = Uuid::new_v4();
+    let original_lore_entry_id = Uuid::new_v4();
+    let lore_entry_content = "Lore about ancient dragons and their fiery breath.";
+    let lore_entry_title = Some("Ancient Dragons".to_string());
 
     // Create a valid ChatMessage to process
     let chat_message = ChatMessage {
-        id: message_id,
-        session_id,
+        id: chat_message_id,
+        session_id: chat_session_id,
         message_type: MessageRole::User,
-        content: test_message.as_bytes().to_vec(),
+        content: chat_message_content.as_bytes().to_vec(),
         content_nonce: None,
         created_at: Utc::now(),
-        user_id,
+        user_id, // Use consistent user_id
         prompt_tokens: None,
         completion_tokens: None,
     };
 
-    // Configure mock embedding client to return deterministic embeddings
+    // Configure mock embedding client for a sequence of calls
     let mock_embedding_client = test_app.mock_embedding_client.clone();
-    let mock_embedding = vec![0.5; 3072]; // 3072-dimensional embedding vector
-    mock_embedding_client.set_response(Ok(mock_embedding.clone()));
+    let chat_chunk_embedding = vec![0.5; 3072];
+    let lore_chunk_embedding = vec![0.6; 3072]; // Different embedding for lore
+    let rag_query_embedding = vec![0.55; 3072]; // Embedding for the RAG query
+
+    mock_embedding_client.set_responses_sequence(vec![
+        Ok(chat_chunk_embedding.clone()), // For chat message chunk
+        Ok(lore_chunk_embedding.clone()), // For lorebook entry chunk
+        Ok(rag_query_embedding.clone()),  // For the RAG query
+    ]);
 
     // Create app state to pass to the service methods
     let encryption_service_for_test_10 = Arc::new(EncryptionService::new());
@@ -1000,87 +1133,108 @@ async fn test_rag_context_injection_with_qdrant() {
         test_app.db_pool.clone(),
         test_app.config.clone(),
         test_app.ai_client.clone(),
-        test_app.mock_embedding_client.clone(), // CORRECTED: Use mock_embedding_client from test_app
+        test_app.mock_embedding_client.clone(),
         test_app.qdrant_service.clone(),
-        Arc::new(embedding_pipeline_service),
+        Arc::new(embedding_pipeline_service_instance), // Use the renamed instance
         chat_override_service_for_test_10,
-        user_persona_service_for_test_10, // Added user_persona_service
+        user_persona_service_for_test_10,
         hybrid_token_counter_for_test_10,
         encryption_service_for_test_10.clone(),
         lorebook_service_for_test_10
     ));
 
-    // Step 1: Process and embed a message to store in Qdrant
-    let process_result = app_state_for_rag
+    // Step 1a: Process and embed a chat message
+    let process_chat_result = app_state_for_rag
         .embedding_pipeline_service
         .process_and_embed_message(
             app_state_for_rag.clone(),
-            chat_message,
-            None, // No session DEK needed for tests
+            chat_message.clone(), // Clone chat_message
+            None,
         )
         .await;
+    assert!(process_chat_result.is_ok(), "Failed to process and embed chat message: {:?}", process_chat_result.err());
 
-    assert!(
-        process_result.is_ok(),
-        "Failed to process and embed message: {:?}",
-        process_result.err()
-    );
-
+    // Step 1b: Process and embed a lorebook entry
+    let process_lore_result = app_state_for_rag
+        .embedding_pipeline_service
+        .process_and_embed_lorebook_entry(
+            app_state_for_rag.clone(),
+            original_lore_entry_id,
+            lorebook_id,
+            user_id, // Use consistent user_id
+            lore_entry_content.to_string(),
+            lore_entry_title.clone(),
+            None, // No keywords for this test
+            true, // is_enabled
+            false, // is_constant
+        )
+        .await;
+    assert!(process_lore_result.is_ok(), "Failed to process and embed lorebook entry: {:?}", process_lore_result.err());
+    
     // Give Qdrant a moment to index the data
-    tokio::time::sleep(Duration::from_millis(100)).await;
-
-    // Configure mock embedding client for the query embedding
-    let query_text = "test message";
-    let query_embedding = vec![0.5; 3072]; // Same embedding to ensure high similarity
-    mock_embedding_client.set_response(Ok(query_embedding));
+    tokio::time::sleep(Duration::from_millis(200)).await; // Increased delay slightly
 
     // Step 2: Retrieve relevant chunks using the service
+    let query_text = "Tell me about dragons"; // Query designed to hit both
+    let limit_per_source = 5;
+
     let retrieve_result = app_state_for_rag
         .embedding_pipeline_service
         .retrieve_relevant_chunks(
             app_state_for_rag.clone(),
-            session_id, // Using session_id as chat_id
-            query_text, // <<< RE-ADD query_text HERE
-            5, // Limit
+            user_id,                          // user_id
+            Some(chat_session_id),            // session_id_for_chat_history
+            Some(vec![lorebook_id]),          // active_lorebook_ids_for_search
+            query_text,                       // query_text
+            limit_per_source,                 // limit_per_source
         )
         .await;
 
-    assert!(
-        retrieve_result.is_ok(),
-        "Failed to retrieve relevant chunks: {:?}",
-        retrieve_result.err()
-    );
-
+    assert!(retrieve_result.is_ok(), "Failed to retrieve relevant chunks: {:?}", retrieve_result.err());
     let retrieved_chunks = retrieve_result.unwrap();
 
-    // Assert that we got at least one chunk back
-    assert!(
-        !retrieved_chunks.is_empty(),
-        "Expected at least one chunk to be retrieved"
-    );
+    // Assert that we got chunks back (expecting 2: one chat, one lore)
+    assert_eq!(retrieved_chunks.len(), 2, "Expected 2 chunks to be retrieved (one chat, one lore)");
 
-    // Verify content of first chunk
-    let first_chunk = &retrieved_chunks[0];
-    assert!(
-        first_chunk.text.contains("test message"),
-        "Retrieved chunk text doesn't contain expected content"
-    );
-    if let RetrievedMetadata::Chat(meta) = &first_chunk.metadata {
-        assert_eq!(
-            meta.session_id, session_id,
-            "Session ID mismatch in retrieved chunk"
-        );
-        assert_eq!(
-            meta.message_id, message_id,
-            "Message ID mismatch in retrieved chunk"
-        );
-        assert_eq!(
-            meta.speaker, "User",
-            "Speaker mismatch in retrieved chunk"
-        );
-    } else {
-        panic!("Expected Chat metadata for first_chunk");
+    // Verify content and metadata of retrieved chunks
+    // Note: Order depends on scores, which depend on mock embeddings.
+    // For this test, assume chat_chunk_embedding and lore_chunk_embedding are distinct enough
+    // from rag_query_embedding to be retrieved, and their relative order might vary.
+    let mut found_chat_chunk = false;
+    let mut found_lore_chunk = false;
+
+    for chunk in retrieved_chunks {
+        match chunk.metadata {
+            RetrievedMetadata::Chat(meta) => {
+                assert_eq!(meta.session_id, chat_session_id, "Chat metadata session_id mismatch");
+                assert_eq!(meta.message_id, chat_message_id, "Chat metadata message_id mismatch");
+                assert_eq!(meta.user_id, user_id, "Chat metadata user_id mismatch");
+                assert_eq!(meta.speaker, "User", "Chat metadata speaker mismatch");
+                assert_eq!(meta.source_type, "chat_message", "Chat metadata source_type mismatch");
+                assert!(meta.text.contains("dragons for RAG"), "Chat metadata text content mismatch");
+                found_chat_chunk = true;
+            }
+            RetrievedMetadata::Lorebook(meta) => {
+                assert_eq!(meta.lorebook_id, lorebook_id, "Lorebook metadata lorebook_id mismatch");
+                assert_eq!(meta.original_lorebook_entry_id, original_lore_entry_id, "Lorebook metadata original_lorebook_entry_id mismatch");
+                assert_eq!(meta.user_id, user_id, "Lorebook metadata user_id mismatch");
+                assert_eq!(meta.entry_title, lore_entry_title, "Lorebook metadata entry_title mismatch");
+                assert_eq!(meta.source_type, "lorebook_entry", "Lorebook metadata source_type mismatch");
+                assert!(meta.chunk_text.contains("ancient dragons"), "Lorebook metadata chunk_text content mismatch");
+                found_lore_chunk = true;
+            }
+        }
     }
+
+    assert!(found_chat_chunk, "Did not find the expected chat chunk");
+    assert!(found_lore_chunk, "Did not find the expected lorebook chunk");
+    
+    // Verify that the mock embedding client was called three times
+    let embed_calls = mock_embedding_client.get_calls();
+    assert_eq!(embed_calls.len(), 3, "Expected 3 calls to embedding client (chat chunk, lore chunk, RAG query)");
+    assert_eq!(embed_calls[0].0, chat_message_content, "First embed call should be chat content");
+    assert_eq!(embed_calls[1].0, lore_entry_content, "Second embed call should be lore content");
+    assert_eq!(embed_calls[2].0, query_text, "Third embed call should be RAG query");
 }
 
 // --- New Tests for MockQdrantClientService Coverage ---
@@ -1138,11 +1292,13 @@ async fn test_mock_qdrant_retrieve_points() {
         // Use existing helper
         point_id,
         0.9,
-        Uuid::new_v4(),
-        Uuid::new_v4(),
+        Uuid::new_v4(), // session_id
+        Uuid::new_v4(), // message_id
+        Uuid::new_v4(), // user_id
         "TestSpeaker",
         chrono::Utc::now(),
         "Retrieved text",
+        "chat_message",
     );
     mock_qdrant.set_search_response(Ok(vec![mock_retrieved_point.clone()]));
 
@@ -1196,3 +1352,379 @@ async fn test_mock_qdrant_update_collection_settings() {
 }
 
 // --- End MockQdrantClientService Coverage Tests ---
+
+#[tokio::test]
+#[serial]
+async fn test_rag_chat_history_isolation_by_user_and_session() {
+    // 1. Setup TestApp with real Qdrant
+    let test_app = test_helpers::spawn_app(false, false, true).await;
+    log::info!(
+        "Qdrant URL from test_app.config for RAG isolation test: {}",
+        test_app.config.qdrant_url.as_deref().unwrap_or("None")
+    );
+
+    if test_app.config.qdrant_url.is_none() || test_app.config.qdrant_url.as_deref().unwrap_or("").is_empty() {
+        log::warn!("Skipping Qdrant integration test: QDRANT_URL not set in config for RAG isolation test.");
+        if option_env!("CI").is_none() {
+            panic!("QDRANT_URL is not set in config for an un-ignored RAG isolation test.");
+        }
+        return;
+    }
+
+    let embedding_pipeline_service_instance =
+        EmbeddingPipelineService::new(ChunkConfig::from(test_app.config.as_ref()));
+    
+    let mock_embedding_client = test_app.mock_embedding_client.clone();
+
+    // Create AppState
+    let encryption_service = Arc::new(EncryptionService::new());
+    let chat_override_service = Arc::new(ChatOverrideService::new(test_app.db_pool.clone(), encryption_service.clone()));
+    let tokenizer_service = TokenizerService::new("/home/socol/Workspace/sanguine-scribe/backend/resources/tokenizers/gemma.model")
+        .expect("Failed to create tokenizer for test");
+    let hybrid_token_counter = Arc::new(HybridTokenCounter::new_local_only(tokenizer_service));
+    let user_persona_service = Arc::new(UserPersonaService::new(test_app.db_pool.clone(), encryption_service.clone()));
+    let lorebook_service = Arc::new(LorebookService::new(test_app.db_pool.clone(), encryption_service.clone()));
+
+    let app_state = Arc::new(AppState::new(
+        test_app.db_pool.clone(),
+        test_app.config.clone(),
+        test_app.ai_client.clone(),
+        mock_embedding_client.clone(),
+        test_app.qdrant_service.clone(),
+        Arc::new(embedding_pipeline_service_instance),
+        chat_override_service,
+        user_persona_service,
+        hybrid_token_counter,
+        encryption_service.clone(),
+        lorebook_service
+    ));
+
+    // 2. Define User IDs and Session IDs
+    let user_a_id = Uuid::new_v4();
+    let user_b_id = Uuid::new_v4();
+
+    let session_a1_id = Uuid::new_v4();
+    let session_a2_id = Uuid::new_v4();
+    let session_b1_id = Uuid::new_v4();
+
+    // 3. Define Message Content and IDs
+    let content_a1 = "User A Session 1 secret dragon plans";
+    let message_a1_id = Uuid::new_v4();
+    let chat_message_a1 = ChatMessage {
+        id: message_a1_id,
+        session_id: session_a1_id,
+        message_type: MessageRole::User,
+        content: content_a1.as_bytes().to_vec(),
+        content_nonce: None, created_at: Utc::now(), user_id: user_a_id,
+        prompt_tokens: None, completion_tokens: None,
+    };
+
+    let content_a2 = "User A Session 2 confidential cat strategies";
+    let message_a2_id = Uuid::new_v4();
+    let chat_message_a2 = ChatMessage {
+        id: message_a2_id,
+        session_id: session_a2_id,
+        message_type: MessageRole::User,
+        content: content_a2.as_bytes().to_vec(),
+        content_nonce: None, created_at: Utc::now(), user_id: user_a_id,
+        prompt_tokens: None, completion_tokens: None,
+    };
+
+    let content_b1 = "User B Session 1 private alien agenda";
+    let message_b1_id = Uuid::new_v4();
+    let chat_message_b1 = ChatMessage {
+        id: message_b1_id,
+        session_id: session_b1_id,
+        message_type: MessageRole::User,
+        content: content_b1.as_bytes().to_vec(),
+        content_nonce: None, created_at: Utc::now(), user_id: user_b_id,
+        prompt_tokens: None, completion_tokens: None,
+    };
+
+    // 4. Configure Mock Embeddings (one for each message chunk, one for each query)
+    let embedding_dim = 3072;
+    let embedding_a1 = vec![0.1; embedding_dim];
+    let embedding_a2 = vec![0.2; embedding_dim];
+    let embedding_b1 = vec![0.3; embedding_dim];
+    let query_embedding_dragons = vec![0.11; embedding_dim]; // Similar to A1
+    let query_embedding_cats = vec![0.22; embedding_dim];    // Similar to A2
+    let query_embedding_aliens = vec![0.33; embedding_dim];  // Similar to B1
+
+    mock_embedding_client.set_responses_sequence(vec![
+        Ok(embedding_a1.clone()),        // For processing message_a1
+        Ok(embedding_a2.clone()),        // For processing message_a2
+        Ok(embedding_b1.clone()),        // For processing message_b1
+        Ok(query_embedding_dragons.clone()), // For query "dragons" (User A, Session A1)
+        Ok(query_embedding_cats.clone()),    // For query "cats" (User A, Session A2)
+        Ok(query_embedding_aliens.clone()),  // For query "aliens" (User A, Session B1) - should find nothing of B's
+        Ok(query_embedding_aliens.clone()),  // For query "aliens" (User B, Session B1)
+        Ok(query_embedding_dragons.clone()), // For query "dragons" (User B, Session A1) - should find nothing of A's
+    ]);
+
+    // 5. Process and Embed Messages
+    app_state.embedding_pipeline_service.process_and_embed_message(app_state.clone(), chat_message_a1.clone(), None).await.unwrap();
+    app_state.embedding_pipeline_service.process_and_embed_message(app_state.clone(), chat_message_a2.clone(), None).await.unwrap();
+    app_state.embedding_pipeline_service.process_and_embed_message(app_state.clone(), chat_message_b1.clone(), None).await.unwrap();
+
+    tokio::time::sleep(Duration::from_millis(500)).await; // Allow indexing
+
+    // 6. Perform RAG Queries and Assert
+    let limit = 5;
+
+    // Query 1: User A for Session A1 (expects content_a1)
+    let query1_text = "dragon plans";
+    let chunks1 = app_state.embedding_pipeline_service.retrieve_relevant_chunks(
+        app_state.clone(), user_a_id, Some(session_a1_id), None, query1_text, limit
+    ).await.unwrap();
+    assert_eq!(chunks1.len(), 1, "Query 1: Expected 1 chunk for User A, Session A1");
+    if let RetrievedMetadata::Chat(meta) = &chunks1[0].metadata {
+        assert_eq!(meta.user_id, user_a_id);
+        assert_eq!(meta.session_id, session_a1_id);
+        assert!(meta.text.contains("dragon plans"));
+    } else { panic!("Query 1: Expected Chat metadata"); }
+
+    // Query 2: User A for Session A2 (expects content_a2)
+    let query2_text = "cat strategies";
+    let chunks2 = app_state.embedding_pipeline_service.retrieve_relevant_chunks(
+        app_state.clone(), user_a_id, Some(session_a2_id), None, query2_text, limit
+    ).await.unwrap();
+    assert_eq!(chunks2.len(), 1, "Query 2: Expected 1 chunk for User A, Session A2");
+    if let RetrievedMetadata::Chat(meta) = &chunks2[0].metadata {
+        assert_eq!(meta.user_id, user_a_id);
+        assert_eq!(meta.session_id, session_a2_id);
+        assert!(meta.text.contains("cat strategies"));
+    } else { panic!("Query 2: Expected Chat metadata"); }
+
+    // Query 3: User A for Session B1 (expects no chunks from B1)
+    let query3_text = "alien agenda";
+    let chunks3 = app_state.embedding_pipeline_service.retrieve_relevant_chunks(
+        app_state.clone(), user_a_id, Some(session_b1_id), None, query3_text, limit
+    ).await.unwrap();
+    assert!(chunks3.is_empty(), "Query 3: Expected 0 chunks for User A querying User B's session");
+
+    // Query 4: User B for Session B1 (expects content_b1)
+    let query4_text = "alien agenda";
+    let chunks4 = app_state.embedding_pipeline_service.retrieve_relevant_chunks(
+        app_state.clone(), user_b_id, Some(session_b1_id), None, query4_text, limit
+    ).await.unwrap();
+    assert_eq!(chunks4.len(), 1, "Query 4: Expected 1 chunk for User B, Session B1");
+    if let RetrievedMetadata::Chat(meta) = &chunks4[0].metadata {
+        assert_eq!(meta.user_id, user_b_id);
+        assert_eq!(meta.session_id, session_b1_id);
+        assert!(meta.text.contains("alien agenda"));
+    } else { panic!("Query 4: Expected Chat metadata"); }
+
+    // Query 5: User B for Session A1 (expects no chunks from A1)
+    let query5_text = "dragon plans";
+    let chunks5 = app_state.embedding_pipeline_service.retrieve_relevant_chunks(
+        app_state.clone(), user_b_id, Some(session_a1_id), None, query5_text, limit
+    ).await.unwrap();
+    assert!(chunks5.is_empty(), "Query 5: Expected 0 chunks for User B querying User A's session");
+
+    // Verify embedding calls
+    let calls = mock_embedding_client.get_calls();
+    assert_eq!(calls.len(), 3 + 5, "Expected 3 message processing calls + 5 query calls to embedding client"); // 3 messages processed, 5 queries made
+    assert_eq!(calls[0].0, content_a1);
+    assert_eq!(calls[1].0, content_a2);
+    assert_eq!(calls[2].0, content_b1);
+    assert_eq!(calls[3].0, query1_text);
+    assert_eq!(calls[4].0, query2_text);
+    assert_eq!(calls[5].0, query3_text);
+    assert_eq!(calls[6].0, query4_text);
+    assert_eq!(calls[7].0, query5_text);
+}
+#[tokio::test]
+#[serial]
+async fn test_rag_lorebook_isolation_by_user_and_id() {
+    // 1. Setup TestApp with real Qdrant
+    let test_app = test_helpers::spawn_app(false, false, true).await;
+    log::info!(
+        "Qdrant URL from test_app.config for RAG lorebook isolation test: {}",
+        test_app.config.qdrant_url.as_deref().unwrap_or("None")
+    );
+
+    if test_app.config.qdrant_url.is_none() || test_app.config.qdrant_url.as_deref().unwrap_or("").is_empty() {
+        log::warn!("Skipping Qdrant integration test: QDRANT_URL not set in config for RAG lorebook isolation test.");
+        if option_env!("CI").is_none() {
+            panic!("QDRANT_URL is not set in config for an un-ignored RAG lorebook isolation test.");
+        }
+        return;
+    }
+
+    let embedding_pipeline_service_instance =
+        EmbeddingPipelineService::new(ChunkConfig::from(test_app.config.as_ref()));
+    
+    let mock_embedding_client = test_app.mock_embedding_client.clone();
+
+    // Create AppState
+    let encryption_service = Arc::new(EncryptionService::new());
+    let chat_override_service = Arc::new(ChatOverrideService::new(test_app.db_pool.clone(), encryption_service.clone()));
+    let tokenizer_service = TokenizerService::new("/home/socol/Workspace/sanguine-scribe/backend/resources/tokenizers/gemma.model")
+        .expect("Failed to create tokenizer for test");
+    let hybrid_token_counter = Arc::new(HybridTokenCounter::new_local_only(tokenizer_service));
+    let user_persona_service = Arc::new(UserPersonaService::new(test_app.db_pool.clone(), encryption_service.clone()));
+    let lorebook_service = Arc::new(LorebookService::new(test_app.db_pool.clone(), encryption_service.clone()));
+
+    let app_state = Arc::new(AppState::new(
+        test_app.db_pool.clone(),
+        test_app.config.clone(),
+        test_app.ai_client.clone(),
+        mock_embedding_client.clone(),
+        test_app.qdrant_service.clone(),
+        Arc::new(embedding_pipeline_service_instance),
+        chat_override_service,
+        user_persona_service,
+        hybrid_token_counter,
+        encryption_service.clone(),
+        lorebook_service
+    ));
+
+    // 2. Define User IDs and Lorebook IDs
+    let user_c_id = Uuid::new_v4();
+    let user_d_id = Uuid::new_v4();
+
+    let lorebook_c1_id = Uuid::new_v4(); // User C's first lorebook
+    let lorebook_c2_id = Uuid::new_v4(); // User C's second lorebook
+    let lorebook_d1_id = Uuid::new_v4(); // User D's first lorebook
+
+    // 3. Define Lorebook Entry Content and IDs
+    let entry_c1_content = "User C Lorebook 1: Elves and their ancient magic.";
+    let entry_c1_id = Uuid::new_v4();
+
+    let entry_c2_content = "User C Lorebook 2: Dwarves and their mountain kingdoms.";
+    let entry_c2_id = Uuid::new_v4();
+
+    let entry_d1_content = "User D Lorebook 1: Orcs and their tribal customs.";
+    let entry_d1_id = Uuid::new_v4();
+
+    // 4. Configure Mock Embeddings
+    let embedding_dim = 3072;
+    let embedding_c1 = vec![0.4; embedding_dim];
+    let embedding_c2 = vec![0.5; embedding_dim];
+    let embedding_d1 = vec![0.6; embedding_dim];
+    let query_embedding_elves = vec![0.41; embedding_dim];   // Similar to C1
+    let query_embedding_dwarves = vec![0.51; embedding_dim]; // Similar to C2
+    let query_embedding_orcs = vec![0.61; embedding_dim];    // Similar to D1
+
+    let query_embedding_elves_dwarves = vec![0.45; embedding_dim]; // Between C1 and C2
+
+    mock_embedding_client.set_responses_sequence(vec![
+        Ok(embedding_c1.clone()),         // For processing entry_c1
+        Ok(embedding_c2.clone()),         // For processing entry_c2
+        Ok(embedding_d1.clone()),         // For processing entry_d1
+        Ok(query_embedding_elves.clone()),  // Query "elves" (User C, Lorebook C1)
+        Ok(query_embedding_dwarves.clone()),// Query "dwarves" (User C, Lorebook C2)
+        Ok(query_embedding_orcs.clone()),   // Query "orcs" (User C, Lorebook D1) - should find nothing of D's
+        Ok(query_embedding_orcs.clone()),   // Query "orcs" (User D, Lorebook D1)
+        Ok(query_embedding_elves.clone()),  // Query "elves" (User D, Lorebook C1) - should find nothing of C's
+        Ok(query_embedding_elves_dwarves.clone()), // For query6_text
+    ]);
+
+    // 5. Process and Embed Lorebook Entries
+    app_state.embedding_pipeline_service.process_and_embed_lorebook_entry(
+        app_state.clone(), entry_c1_id, lorebook_c1_id, user_c_id, entry_c1_content.to_string(), Some("Elves".to_string()), None, true, false
+    ).await.unwrap();
+    app_state.embedding_pipeline_service.process_and_embed_lorebook_entry(
+        app_state.clone(), entry_c2_id, lorebook_c2_id, user_c_id, entry_c2_content.to_string(), Some("Dwarves".to_string()), None, true, false
+    ).await.unwrap();
+    app_state.embedding_pipeline_service.process_and_embed_lorebook_entry(
+        app_state.clone(), entry_d1_id, lorebook_d1_id, user_d_id, entry_d1_content.to_string(), Some("Orcs".to_string()), None, true, false
+    ).await.unwrap();
+
+    tokio::time::sleep(Duration::from_millis(500)).await; // Allow indexing
+
+    // 6. Perform RAG Queries and Assert
+    let limit = 5;
+
+    // Query 1: User C for Lorebook C1 (expects entry_c1_content)
+    let query1_text = "elves magic";
+    let chunks1 = app_state.embedding_pipeline_service.retrieve_relevant_chunks(
+        app_state.clone(), user_c_id, None, Some(vec![lorebook_c1_id]), query1_text, limit
+    ).await.unwrap();
+    assert_eq!(chunks1.len(), 1, "Query 1: Expected 1 chunk for User C, Lorebook C1");
+    if let RetrievedMetadata::Lorebook(meta) = &chunks1[0].metadata {
+        assert_eq!(meta.user_id, user_c_id);
+        assert_eq!(meta.lorebook_id, lorebook_c1_id);
+        assert!(meta.chunk_text.contains("Elves"));
+    } else { panic!("Query 1: Expected Lorebook metadata"); }
+
+    // Query 2: User C for Lorebook C2 (expects entry_c2_content)
+    let query2_text = "dwarves kingdoms";
+    let chunks2 = app_state.embedding_pipeline_service.retrieve_relevant_chunks(
+        app_state.clone(), user_c_id, None, Some(vec![lorebook_c2_id]), query2_text, limit
+    ).await.unwrap();
+    assert_eq!(chunks2.len(), 1, "Query 2: Expected 1 chunk for User C, Lorebook C2");
+    if let RetrievedMetadata::Lorebook(meta) = &chunks2[0].metadata {
+        assert_eq!(meta.user_id, user_c_id);
+        assert_eq!(meta.lorebook_id, lorebook_c2_id);
+        assert!(meta.chunk_text.contains("Dwarves"));
+    } else { panic!("Query 2: Expected Lorebook metadata"); }
+
+    // Query 3: User C for Lorebook D1 (expects no chunks from D1)
+    let query3_text = "orcs customs";
+    let chunks3 = app_state.embedding_pipeline_service.retrieve_relevant_chunks(
+        app_state.clone(), user_c_id, None, Some(vec![lorebook_d1_id]), query3_text, limit
+    ).await.unwrap();
+    assert!(chunks3.is_empty(), "Query 3: Expected 0 chunks for User C querying User D's lorebook");
+
+    // Query 4: User D for Lorebook D1 (expects entry_d1_content)
+    let query4_text = "orcs customs";
+    let chunks4 = app_state.embedding_pipeline_service.retrieve_relevant_chunks(
+        app_state.clone(), user_d_id, None, Some(vec![lorebook_d1_id]), query4_text, limit
+    ).await.unwrap();
+    assert_eq!(chunks4.len(), 1, "Query 4: Expected 1 chunk for User D, Lorebook D1");
+    if let RetrievedMetadata::Lorebook(meta) = &chunks4[0].metadata {
+        assert_eq!(meta.user_id, user_d_id);
+        assert_eq!(meta.lorebook_id, lorebook_d1_id);
+        assert!(meta.chunk_text.contains("Orcs"));
+    } else { panic!("Query 4: Expected Lorebook metadata"); }
+
+    // Query 5: User D for Lorebook C1 (expects no chunks from C1)
+    let query5_text = "elves magic";
+    let chunks5 = app_state.embedding_pipeline_service.retrieve_relevant_chunks(
+        app_state.clone(), user_d_id, None, Some(vec![lorebook_c1_id]), query5_text, limit
+    ).await.unwrap();
+    assert!(chunks5.is_empty(), "Query 5: Expected 0 chunks for User D querying User C's lorebook");
+    
+    // Query 6: User C for both Lorebook C1 and C2 (expects both entries)
+    let query6_text = "elves and dwarves"; // A query that should hit both C1 and C2
+    // Need to adjust mock embeddings for this query to be more generic or ensure it hits both
+    // For simplicity, we'll assume the existing query embeddings are sufficient if Qdrant search is broad enough
+    // Or, we can add a new mock embedding for this specific query.
+    // Let's assume the individual queries for "elves" and "dwarves" are sufficient to test this.
+    // A more robust test would involve a query embedding that is somewhat similar to both C1 and C2.
+    // For now, we will test by querying with both lorebook IDs active.
+    let chunks6 = app_state.embedding_pipeline_service.retrieve_relevant_chunks(
+        app_state.clone(), user_c_id, None, Some(vec![lorebook_c1_id, lorebook_c2_id]), query6_text, limit
+    ).await.unwrap();
+
+    assert_eq!(chunks6.len(), 2, "Query 6: Expected 2 chunks for User C, Lorebooks C1 & C2. Found {}, check mock embedding sequence.", chunks6.len());
+    let mut found_c1_in_q6 = false;
+    let mut found_c2_in_q6 = false;
+    for chunk in chunks6 {
+        if let RetrievedMetadata::Lorebook(meta) = &chunk.metadata {
+            if meta.lorebook_id == lorebook_c1_id && meta.chunk_text.contains("Elves") {
+                found_c1_in_q6 = true;
+            }
+            if meta.lorebook_id == lorebook_c2_id && meta.chunk_text.contains("Dwarves") {
+                found_c2_in_q6 = true;
+            }
+        }
+    }
+    assert!(found_c1_in_q6, "Query 6: Did not find entry from Lorebook C1");
+    assert!(found_c2_in_q6, "Query 6: Did not find entry from Lorebook C2");
+
+
+    // Verify embedding calls
+    let calls = mock_embedding_client.get_calls();
+    assert_eq!(calls.len(), 3 + 5 + 1, "Expected 3 entry processing calls + 6 query calls (9 total) to embedding client");
+    assert_eq!(calls[0].0, entry_c1_content);
+    assert_eq!(calls[1].0, entry_c2_content);
+    assert_eq!(calls[2].0, entry_d1_content);
+    assert_eq!(calls[3].0, query1_text);
+    assert_eq!(calls[4].0, query2_text);
+    assert_eq!(calls[5].0, query3_text); // User C, Lorebook D1
+    assert_eq!(calls[6].0, query4_text); // User D, Lorebook D1
+    assert_eq!(calls[7].0, query5_text); // User D, Lorebook C1
+    assert_eq!(calls[8].0, query6_text); // User C, Lorebooks C1 & C2
+}

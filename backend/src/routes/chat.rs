@@ -279,9 +279,11 @@ pub async fn generate_chat_response(
                 .embedding_pipeline_service
                 .retrieve_relevant_chunks(
                     state_arc.clone(),
-                    session_id,
+                    user_id_value,         // New argument: user_id
+                    Some(session_id),      // For session_id_for_chat_history - Wrapped in Some()
+                    None,                  // For active_lorebook_ids_for_search
                     &current_user_content,
-                    5, // Limit to 5 chunks
+                    5                      // Limit to 5 chunks
                 )
                 .await;
 

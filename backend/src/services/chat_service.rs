@@ -27,6 +27,7 @@ use crate::{
             Chat, ChatMessage as DbChatMessage, ChatSettingsResponse, DbInsertableChatMessage,
             MessageRole, NewChat, SettingsTuple, UpdateChatSettingsRequest,
         },
+        lorebooks::ChatSessionLorebook, // Added for fetching active lorebook IDs
         user_personas::UserPersonaDataForClient, // Correct DTO name
     },
     schema::{characters, chat_character_overrides, chat_messages, chat_sessions},
@@ -1180,9 +1181,30 @@ pub async fn get_session_data_for_generation(
         const RAG_CONTEXT_FOR_SYSTEM_PROMPT_LIMIT: u64 = 5;
         info!(%session_id, "Retrieving RAG context for current user message to augment system prompt (post-interact).");
 
+        // Fetch active lorebook IDs for the session
+        let active_lorebook_ids_for_search_result: Result<Option<Vec<Uuid>>, AppError> = {
+            let pool_clone = state.pool.clone();
+            let session_id_clone = session_id; // Clone session_id for interact
+            pool_clone.get().await.map_err(AppError::from)?.interact(move |conn| {
+                ChatSessionLorebook::get_active_lorebook_ids_for_session(conn, session_id_clone)
+                    .map_err(AppError::from) // Convert DieselError to AppError
+            }).await.map_err(|e| AppError::DbInteractError(format!("Interact dispatch error for lorebook IDs: {}", e)))?
+        };
+
+        let active_lorebook_ids_for_search = match active_lorebook_ids_for_search_result {
+            Ok(ids) => ids,
+            Err(e) => {
+                warn!(%session_id, error = %e, "Failed to get active lorebook IDs for RAG. Proceeding without them.");
+                None // Default to None if fetching fails
+            }
+        };
+        info!(%session_id, ?active_lorebook_ids_for_search, "Fetched active lorebook IDs for RAG search.");
+
         match state.embedding_pipeline_service.retrieve_relevant_chunks(
-            state.clone(), // AppState needs to be cloneable or Arc-wrapped
-            session_id,
+            state.clone(),
+            user_id,                             // New argument: user_id
+            Some(session_id),                    // New argument: session_id_for_chat_history - Wrapped in Some()
+            active_lorebook_ids_for_search,      // New argument
             &user_message_content,
             RAG_CONTEXT_FOR_SYSTEM_PROMPT_LIMIT
         ).await {

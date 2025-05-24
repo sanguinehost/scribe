@@ -125,6 +125,36 @@ pub struct ChatSessionLorebook {
     pub user_id: Uuid,
 }
 
+impl ChatSessionLorebook {
+    /// Retrieves a list of active lorebook IDs for a given chat session.
+    ///
+    /// # Arguments
+    ///
+    /// * `conn` - A mutable reference to the database connection.
+    /// * `session_id_param` - The UUID of the chat session.
+    ///
+    /// # Returns
+    ///
+    /// A `QueryResult` containing an `Option<Vec<Uuid>>`.
+    /// Returns `Ok(Some(Vec<Uuid>))` if lorebooks are found.
+    /// Returns `Ok(None)` if no lorebooks are found for the session.
+    /// Returns `Err` if there's a database query error.
+    pub fn get_active_lorebook_ids_for_session(
+        conn: &mut PgConnection,
+        session_id_param: Uuid,
+    ) -> QueryResult<Option<Vec<Uuid>>> {
+        use crate::schema::chat_session_lorebooks::dsl::*;
+
+        let ids = chat_session_lorebooks
+            .filter(chat_session_id.eq(session_id_param))
+            .select(lorebook_id)
+            .load::<Uuid>(conn)
+            .optional()?;
+
+        Ok(ids)
+    }
+}
+
 #[derive(Insertable, Debug, Clone)]
 #[diesel(table_name = chat_session_lorebooks)]
 pub struct NewChatSessionLorebook {

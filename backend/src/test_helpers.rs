@@ -61,6 +61,7 @@ use secrecy::{ExposeSecret, SecretBox, SecretString};
 use serde_json::json;
 use std::fmt;
 use std::sync::{Arc, Mutex}; // Add Mutex import
+use std::collections::VecDeque; // Added for MockQdrantClientService response queue
 use tokio::net::TcpListener;
 // use tokio::sync::Mutex as TokioMutex; // Removed unused import
 use tower::ServiceExt; // For .oneshot
@@ -227,6 +228,7 @@ impl AiClient for MockAiClient {
 #[derive(Clone)]
 pub struct MockEmbeddingClient {
     response: Arc<Mutex<Option<Result<Vec<f32>, AppError>>>>,
+    response_sequence: Arc<Mutex<VecDeque<Result<Vec<f32>, AppError>>>>, // For sequential responses
     batch_response: Arc<Mutex<Option<Result<Vec<Vec<f32>>, AppError>>>>, // For batch_embed_contents
     calls: Arc<Mutex<Vec<(String, String, Option<String>)>>>, // Added Option<String> for title
     batch_calls: Arc<Mutex<Vec<Vec<(String, String, Option<String>)>>>>, // For batch_embed_contents calls, storing Vec of batches, each batch is Vec of (text, task_type, title)
@@ -236,6 +238,7 @@ impl MockEmbeddingClient {
     pub fn new() -> Self {
         MockEmbeddingClient {
             response: Arc::new(Mutex::new(None)),
+            response_sequence: Arc::new(Mutex::new(VecDeque::new())),
             batch_response: Arc::new(Mutex::new(None)),
             calls: Arc::new(Mutex::new(Vec::new())),
             batch_calls: Arc::new(Mutex::new(Vec::new())),
@@ -250,6 +253,14 @@ impl MockEmbeddingClient {
     pub fn set_batch_response(&self, response: Result<Vec<Vec<f32>>, AppError>) {
         let mut lock = self.batch_response.lock().unwrap();
         *lock = Some(response);
+    }
+
+    pub fn set_responses_sequence(&self, responses: Vec<Result<Vec<f32>, AppError>>) {
+        let mut queue = self.response_sequence.lock().unwrap();
+        queue.clear();
+        for response in responses {
+            queue.push_back(response);
+        }
     }
 
     pub fn get_calls(&self) -> Vec<(String, String, Option<String>)> {
@@ -275,12 +286,20 @@ impl EmbeddingClient for MockEmbeddingClient {
             .unwrap()
             .push((text.to_string(), task_type.to_string(), title.map(String::from)));
 
-        // Return the pre-set response or a default
+        // Try to get response from sequence first
+        let mut sequence_guard = self.response_sequence.lock().unwrap();
+        if let Some(res_from_sequence) = sequence_guard.pop_front() {
+            return res_from_sequence;
+        }
+        // Drop guard to release lock before potentially locking self.response
+        drop(sequence_guard);
+
+        // If sequence is empty, try the single response
         match self.response.lock().unwrap().clone() {
             Some(res) => res,
             None => {
                 // Default behavior if no response is set
-                warn!("MockEmbeddingClient response not set, returning default OK response."); // Keep warning
+                warn!("MockEmbeddingClient response and sequence not set, returning default OK response."); // Keep warning
                 Ok(vec![0.0; 768]) // Restore default Ok(...) behavior
             }
         }
@@ -317,9 +336,11 @@ impl EmbeddingClient for MockEmbeddingClient {
 #[derive(Clone, Debug)] // Added Clone, Debug
 pub enum PipelineCall {
     RetrieveRelevantChunks {
-        chat_id: Uuid,
+        user_id: Uuid, // Renamed from chat_id
+        session_id_for_chat_history: Option<Uuid>, // New field - Updated to Option<Uuid>
         query_text: String,
         limit: u64,
+        active_lorebook_ids_for_search: Option<Vec<Uuid>>, // New field
     },
     ProcessAndEmbedMessage {
         message_id: Uuid,
@@ -340,14 +361,14 @@ pub enum PipelineCall {
 // Updated MockEmbeddingPipelineService
 #[derive(Clone)] // Added Clone
 pub struct MockEmbeddingPipelineService {
-    retrieve_response: Arc<Mutex<Option<Result<Vec<RetrievedChunk>, AppError>>>>,
+    retrieve_response_queue: Arc<Mutex<VecDeque<Result<Vec<RetrievedChunk>, AppError>>>>,
     calls: Arc<Mutex<Vec<PipelineCall>>>, // Track calls
 }
 
 impl MockEmbeddingPipelineService {
     pub fn new() -> Self {
         MockEmbeddingPipelineService {
-            retrieve_response: Arc::new(Mutex::new(None)),
+            retrieve_response_queue: Arc::new(Mutex::new(VecDeque::new())),
             calls: Arc::new(Mutex::new(Vec::new())),
         }
     }
@@ -357,8 +378,22 @@ impl MockEmbeddingPipelineService {
     }
 
     pub fn set_retrieve_response(&self, response: Result<Vec<RetrievedChunk>, AppError>) {
-        let mut lock = self.retrieve_response.lock().unwrap();
-        *lock = Some(response);
+        let mut queue = self.retrieve_response_queue.lock().unwrap();
+        queue.clear();
+        queue.push_back(response);
+    }
+
+    #[allow(dead_code)] // May not be used immediately but good to have
+    pub fn add_retrieve_response(&self, response: Result<Vec<RetrievedChunk>, AppError>) {
+        self.retrieve_response_queue.lock().unwrap().push_back(response);
+    }
+
+    pub fn set_retrieve_responses_sequence(&self, responses: Vec<Result<Vec<RetrievedChunk>, AppError>>) {
+        let mut queue = self.retrieve_response_queue.lock().unwrap();
+        queue.clear();
+        for response in responses {
+            queue.push_back(response);
+        }
     }
 }
 
@@ -414,31 +449,32 @@ impl EmbeddingPipelineServiceTrait for MockEmbeddingPipelineService {
     async fn retrieve_relevant_chunks(
         &self,
         _state: Arc<AppState>,
-        chat_id: Uuid,
+        user_id: Uuid, // New parameter
+        session_id_for_chat_history: Option<Uuid>, // New parameter - Updated to Option<Uuid>
+        active_lorebook_ids_for_search: Option<Vec<Uuid>>, // New parameter
         query_text: &str,
-        limit: u64,
+        limit: u64
     ) -> Result<Vec<RetrievedChunk>, AppError> {
         // Record the call
         self.calls
             .lock()
             .unwrap()
             .push(PipelineCall::RetrieveRelevantChunks {
-                chat_id,
-                query_text: query_text.to_string(),
-                limit,
+                user_id,
+                session_id_for_chat_history, // This is Option<Uuid>
+                query_text: query_text.to_string(), // Corrected order
+                limit, // Corrected order
+                active_lorebook_ids_for_search, // Corrected order
             });
 
-        // Return the pre-set response or a default
-        let response = self.retrieve_response.lock().unwrap().take();
-        match response {
-            Some(res) => res,
-            None => {
-                // Default behavior if no response is set
-                warn!(
-                    "MockEmbeddingPipelineService::retrieve_relevant_chunks called without a pre-set response, returning Ok(vec![])"
-                );
-                Ok(vec![])
-            }
+        // Return the next response from the queue
+        let mut queue = self.retrieve_response_queue.lock().unwrap();
+        if let Some(response) = queue.pop_front() {
+            response
+        } else {
+            // It's important for tests to set up responses correctly.
+            // Panicking here makes it clear if a response was expected but not provided.
+            panic!("MockEmbeddingPipelineService::retrieve_relevant_chunks called but no more responses were queued. Ensure your test sets up enough responses.");
         }
     }
 }
@@ -446,7 +482,7 @@ impl EmbeddingPipelineServiceTrait for MockEmbeddingPipelineService {
 #[derive(Clone)]
 pub struct MockQdrantClientService {
     upsert_response: Arc<Mutex<Option<Result<(), AppError>>>>,
-    search_response: Arc<Mutex<Option<Result<Vec<ScoredPoint>, AppError>>>>,
+    search_response: Arc<Mutex<VecDeque<Result<Vec<ScoredPoint>, AppError>>>>, // Changed to VecDeque
     upsert_call_count: Arc<Mutex<usize>>,
     search_call_count: Arc<Mutex<usize>>,
     last_upsert_points: Arc<Mutex<Option<Vec<qdrant_client::qdrant::PointStruct>>>>,
@@ -457,7 +493,7 @@ impl MockQdrantClientService {
     pub fn new() -> Self {
         MockQdrantClientService {
             upsert_response: Arc::new(Mutex::new(None)),
-            search_response: Arc::new(Mutex::new(None)),
+            search_response: Arc::new(Mutex::new(VecDeque::new())), // Initialize with an empty VecDeque
             upsert_call_count: Arc::new(Mutex::new(0)),
             search_call_count: Arc::new(Mutex::new(0)),
             last_upsert_points: Arc::new(Mutex::new(None)),
@@ -479,8 +515,21 @@ impl MockQdrantClientService {
     }
 
     pub fn set_search_response(&self, response: Result<Vec<ScoredPoint>, AppError>) {
-        let mut lock = self.search_response.lock().unwrap();
-        *lock = Some(response);
+        let mut queue = self.search_response.lock().unwrap();
+        queue.clear();
+        queue.push_back(response);
+    }
+
+    pub fn add_search_response(&self, response: Result<Vec<ScoredPoint>, AppError>) {
+        self.search_response.lock().unwrap().push_back(response);
+    }
+
+    pub fn set_search_responses_sequence(&self, responses: Vec<Result<Vec<ScoredPoint>, AppError>>) {
+        let mut queue = self.search_response.lock().unwrap();
+        queue.clear();
+        for response in responses {
+            queue.push_back(response);
+        }
     }
 
     pub fn get_search_call_count(&self) -> usize {
@@ -526,25 +575,20 @@ impl MockQdrantClientService {
         }
 
         // Return response
-        let opt_response = self.search_response.lock().unwrap().take();
-        tracing::info!(
-            target: "mock_qdrant_search",
-            "MockQdrantClientService::search_points (trait): taken response option is: {:?}",
-            opt_response.as_ref().map(|res| match res {
-                Ok(v) => format!("Ok(len={})", v.len()),
-                Err(e) => format!("Err({})", e)
-            })
-        );
-        let result_to_return = opt_response.unwrap_or(Ok(vec![]));
-        tracing::info!(
-            target: "mock_qdrant_search",
-            "MockQdrantClientService::search_points (trait): result_to_return is: {:?}",
-            match &result_to_return {
-                Ok(v) => format!("Ok(len={})", v.len()),
-                Err(e) => format!("Err({})", e)
-            }
-        );
-        result_to_return
+        let mut queue = self.search_response.lock().unwrap();
+        if let Some(response) = queue.pop_front() {
+            tracing::info!(
+                target: "mock_qdrant_search",
+                "MockQdrantClientService::search_points (standalone): Popped response: {:?}", // Corrected comment
+                match response.as_ref() { // Match directly on the Result
+                    Ok(v) => format!("Ok(len={})", v.len()),
+                    Err(e) => format!("Err({})", e.to_string()), // AppError needs .to_string() for proper formatting
+                }
+            );
+            response // This is Result<Vec<ScoredPoint>, AppError>
+        } else {
+            panic!("MockQdrantClientService::search_points called but no more responses were queued. Ensure your test sets up enough responses.");
+        }
     }
 
     #[allow(dead_code)]
@@ -554,8 +598,13 @@ impl MockQdrantClientService {
         _limit: u64,
     ) -> Result<Vec<ScoredPoint>, AppError> {
         // Use the search response for retrieve as well
-        let response = self.search_response.lock().unwrap().take();
-        response.unwrap_or(Ok(vec![]))
+        let mut queue = self.search_response.lock().unwrap();
+        if let Some(response) = queue.pop_front() {
+            response
+        } else {
+            warn!("MockQdrantClientService::retrieve_points (standalone) called but no response was queued. Returning Ok(vec![]).");
+            Ok(vec![])
+        }
     }
 
     #[allow(dead_code)]
@@ -607,8 +656,26 @@ impl QdrantClientServiceTrait for MockQdrantClientService {
         }
 
         // Return response
-        let response = self.search_response.lock().unwrap().take();
-        response.unwrap_or(Ok(vec![]))
+        let mut queue = self.search_response.lock().unwrap();
+        if let Some(response_result) = queue.pop_front() {
+            // Apply the limit to the Ok variant
+            match response_result {
+                Ok(mut points) => {
+                    points.truncate(limit as usize);
+                    Ok(points)
+                }
+                Err(e) => Err(e), // Pass through errors
+            }
+        } else {
+            // It's okay for retrieve_points to return empty if not specifically set up,
+            // as it might be called unexpectedly in some test flows.
+            // However, for search_points, we want to be strict.
+            // This branch should ideally not be hit if tests correctly set up responses.
+            // For safety in tests that might not set up enough, we could panic or return a specific error.
+            // For now, keeping the warn and returning empty Ok to match previous behavior for un-queued calls.
+            warn!("MockQdrantClientService::search_points (trait) called but no response was queued. Returning Ok(vec![]).");
+            Ok(vec![])
+        }
     }
 
     async fn retrieve_points(
@@ -617,8 +684,13 @@ impl QdrantClientServiceTrait for MockQdrantClientService {
         _limit: u64,
     ) -> Result<Vec<ScoredPoint>, AppError> {
         // Use the search response for retrieve as well
-        let response = self.search_response.lock().unwrap().take();
-        response.unwrap_or(Ok(vec![]))
+        let mut queue = self.search_response.lock().unwrap();
+        if let Some(response) = queue.pop_front() {
+            response
+        } else {
+            warn!("MockQdrantClientService::retrieve_points (trait) called but no response was queued. Returning Ok(vec![]).");
+            Ok(vec![])
+        }
     }
 
     async fn delete_points(&self, _point_ids: Vec<PointId>) -> Result<(), AppError> {

@@ -10,7 +10,7 @@ use crate::vector_db::qdrant_client::{QdrantClientServiceTrait, create_qdrant_po
 use crate::auth::session_dek::SessionDek;
 use async_trait::async_trait;
 // use qdrant_client::qdrant::r#match::MatchValue; // Unused import
-use qdrant_client::qdrant::{Value as QdrantValue}; // Removed unused Condition, Filter
+use qdrant_client::qdrant::{Condition, FieldCondition, Filter, Match, Value as QdrantValue, condition::ConditionOneOf, r#match::MatchValue};
 use secrecy::ExposeSecret; // For SessionDek & fixed key
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -23,9 +23,11 @@ use uuid::Uuid; // Import SessionDek
 pub struct ChatMessageChunkMetadata {
     pub message_id: Uuid,
     pub session_id: Uuid,
+    pub user_id: Uuid, // Added user_id
     pub speaker: String,
     pub timestamp: chrono::DateTime<chrono::Utc>,
     pub text: String, // Full text of the chunk
+    pub source_type: String,
 }
 
 // Implement conversion from Qdrant payload for ChatMessageChunkMetadata
@@ -63,6 +65,22 @@ impl TryFrom<HashMap<String, QdrantValue>> for ChatMessageChunkMetadata {
             })?;
         let session_id = Uuid::parse_str(session_id_str).map_err(|e| {
             AppError::SerializationError(format!("Failed to parse 'session_id' as UUID in ChatMessageChunkMetadata: {}", e))
+        })?;
+
+        let user_id_str = payload
+            .get("user_id")
+            .and_then(|v| v.kind.as_ref())
+            .and_then(|k| match k {
+                qdrant_client::qdrant::value::Kind::StringValue(s) => Some(s.as_str()),
+                _ => None,
+            })
+            .ok_or_else(|| {
+                AppError::SerializationError(
+                    "Missing or invalid 'user_id' in ChatMessageChunkMetadata payload".to_string(),
+                )
+            })?;
+        let user_id = Uuid::parse_str(user_id_str).map_err(|e| {
+            AppError::SerializationError(format!("Failed to parse 'user_id' as UUID in ChatMessageChunkMetadata: {}", e))
         })?;
 
         let speaker = payload
@@ -105,12 +123,25 @@ impl TryFrom<HashMap<String, QdrantValue>> for ChatMessageChunkMetadata {
                 AppError::SerializationError("Missing or invalid 'text' in ChatMessageChunkMetadata payload".to_string())
             })?;
 
+        let source_type = payload
+            .get("source_type")
+            .and_then(|v| v.kind.as_ref())
+            .and_then(|k| match k {
+                qdrant_client::qdrant::value::Kind::StringValue(s) => Some(s.clone()),
+                _ => None,
+            })
+            .ok_or_else(|| {
+                AppError::SerializationError("Missing or invalid 'source_type' in ChatMessageChunkMetadata payload".to_string())
+            })?;
+
         Ok(ChatMessageChunkMetadata {
             message_id,
             session_id,
+            user_id, // Added user_id
             speaker,
             timestamp,
             text,
+            source_type,
         })
     }
 }
@@ -126,6 +157,7 @@ pub struct LorebookChunkMetadata {
     pub keywords: Option<Vec<String>>,
     pub is_enabled: bool,
     pub is_constant: bool,
+    pub source_type: String,
 }
 
 impl TryFrom<HashMap<String, QdrantValue>> for LorebookChunkMetadata {
@@ -250,6 +282,17 @@ impl TryFrom<HashMap<String, QdrantValue>> for LorebookChunkMetadata {
             .ok_or_else(|| {
                 AppError::SerializationError("Missing or invalid 'is_constant' in LorebookChunkMetadata payload".to_string())
             })?;
+
+        let source_type = payload
+            .get("source_type")
+            .and_then(|v| v.kind.as_ref())
+            .and_then(|k| match k {
+                qdrant_client::qdrant::value::Kind::StringValue(s) => Some(s.clone()),
+                _ => None,
+            })
+            .ok_or_else(|| {
+                AppError::SerializationError("Missing or invalid 'source_type' in LorebookChunkMetadata payload".to_string())
+            })?;
             
         Ok(LorebookChunkMetadata {
             original_lorebook_entry_id,
@@ -260,6 +303,7 @@ impl TryFrom<HashMap<String, QdrantValue>> for LorebookChunkMetadata {
             keywords,
             is_enabled,
             is_constant,
+            source_type,
         })
     }
 }
@@ -295,10 +339,12 @@ pub trait EmbeddingPipelineServiceTrait: Send + Sync {
     /// Retrieves relevant chunks based on a query.
     async fn retrieve_relevant_chunks(
         &self,
-        state: Arc<AppState>, // Pass state for now, could be refactored later
-        chat_id: Uuid,
+        state: Arc<AppState>,
+        user_id: Uuid, // To scope searches to the current user
+        session_id_for_chat_history: Option<Uuid>, // If Some, search chat history for this session
+        active_lorebook_ids_for_search: Option<Vec<Uuid>>, // If Some, search these lorebooks
         query_text: &str,
-        limit: u64,
+        limit_per_source: u64, // e.g., retrieve top N from chat, top M from lorebooks
     ) -> Result<Vec<RetrievedChunk>, AppError>;
 }
 
@@ -435,9 +481,11 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
             let metadata = ChatMessageChunkMetadata {
                 message_id: message.id,
                 session_id: message.session_id,
+                user_id: message.user_id, // Added user_id from the message
                 speaker: speaker_str,
                 timestamp: message.created_at,
                 text: chunk.content.clone(), // Store original chunk text from the TextChunk struct
+                source_type: "chat_message".to_string(),
             };
 
             // 2c. Create Qdrant point
@@ -545,6 +593,7 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
                 keywords: decrypted_keywords.clone(),
                 is_enabled,
                 is_constant,
+                source_type: "lorebook_entry".to_string(),
             };
 
             let point_id = Uuid::new_v4(); // Unique ID per chunk point
@@ -576,63 +625,197 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
         Ok(())
     }
 
-    #[instrument(skip_all, fields(chat_id = %_chat_id, query_length = query_text.len()))]
+    #[instrument(skip_all, fields(user_id = %user_id, query_length = query_text.len(), session_id_for_chat = ?session_id_for_chat_history, lorebook_ids = ?active_lorebook_ids_for_search))]
     async fn retrieve_relevant_chunks(
         &self,
-        state: Arc<AppState>, // Pass state for now, could be refactored later
-        _chat_id: Uuid,        // Renamed from session_id for clarity, prefixed with _ as unused
+        state: Arc<AppState>,
+        user_id: Uuid,
+        session_id_for_chat_history: Option<Uuid>,
+        active_lorebook_ids_for_search: Option<Vec<Uuid>>,
         query_text: &str,
-        limit: u64,
+        limit_per_source: u64,
     ) -> Result<Vec<RetrievedChunk>, AppError> {
-        info!("Retrieving relevant chunks for query"); // Made log more generic
+        info!("Retrieving relevant chunks for query");
         let embedding_client = state.embedding_client.clone();
         let qdrant_service = state.qdrant_service.clone();
 
         let query_embedding = embedding_client
             .embed_content(query_text, "RETRIEVAL_QUERY", None)
             .await?;
+        debug!(query_text, ?query_embedding, "Generated query embedding for RAG");
 
-        // Perform a general search without session_id filter to retrieve both chat and lorebook entries.
-        // Callers might need to implement further filtering based on user_id or other criteria if needed.
-        // The `chat_id` parameter is currently unused in this filter but kept for API consistency.
-        let search_results = qdrant_service
-            .search_points(query_embedding.clone(), limit, None) // Removed filter
-            .await?;
+        let mut combined_results = Vec::new();
 
-        let mut retrieved_chunks = Vec::new();
-        for scored_point in search_results {
-            let payload_map = scored_point.payload; // Clone for multiple parsing attempts
-            if !payload_map.is_empty() {
-                // Attempt to parse as LorebookChunkMetadata first
-                if let Ok(lorebook_meta) = LorebookChunkMetadata::try_from(payload_map.clone()) {
-                    retrieved_chunks.push(RetrievedChunk {
-                        score: scored_point.score,
-                        text: lorebook_meta.chunk_text.clone(),
-                        metadata: RetrievedMetadata::Lorebook(lorebook_meta),
-                    });
+        // Search chat history if session_id is provided
+        if let Some(session_id) = session_id_for_chat_history {
+            debug!(%user_id, %session_id, "Constructing chat history filter for RAG");
+            let chat_filter = Filter {
+                must: vec![
+                    Condition {
+                        condition_one_of: Some(ConditionOneOf::Field(FieldCondition {
+                            key: "user_id".to_string(),
+                            r#match: Some(Match {
+                                match_value: Some(MatchValue::Keyword(user_id.to_string())),
+                            }),
+                            ..Default::default()
+                        })),
+                    },
+                    Condition {
+                        condition_one_of: Some(ConditionOneOf::Field(FieldCondition {
+                            key: "session_id".to_string(),
+                            r#match: Some(Match {
+                                match_value: Some(MatchValue::Keyword(session_id.to_string())),
+                            }),
+                            ..Default::default()
+                        })),
+                    },
+                    Condition {
+                        condition_one_of: Some(ConditionOneOf::Field(FieldCondition {
+                            key: "source_type".to_string(),
+                            r#match: Some(Match {
+                                match_value: Some(MatchValue::Keyword("chat_message".to_string())),
+                            }),
+                            ..Default::default()
+                        })),
+                    },
+                ],
+                ..Default::default()
+            };
+            debug!(?chat_filter, "Chat history filter for RAG");
+
+            match qdrant_service
+                .search_points(query_embedding.clone(), limit_per_source, Some(chat_filter.clone()))
+                .await
+            {
+                Ok(search_results) => {
+                    debug!(num_results = search_results.len(), %session_id, "Raw Qdrant results for chat history (RAG)");
+                    for scored_point in search_results {
+                        debug!(point_id = ?scored_point.id, score = scored_point.score, %session_id, "Processing chat point (RAG)");
+                        match ChatMessageChunkMetadata::try_from(scored_point.payload.clone()) {
+                            Ok(chat_meta) => {
+                                debug!(?chat_meta, %session_id, "Successfully parsed chat metadata (RAG)");
+                                combined_results.push(RetrievedChunk {
+                                    score: scored_point.score,
+                                    text: chat_meta.text.clone(),
+                                    metadata: RetrievedMetadata::Chat(chat_meta),
+                                });
+                            }
+                            Err(e) => {
+                                warn!(
+                                    point_id = %scored_point.id.as_ref().map(|id| format!("{:?}", id)).unwrap_or_default(),
+                                    error = %e,
+                                    payload = ?scored_point.payload,
+                                    %session_id,
+                                    "Failed to parse chat message payload during RAG search"
+                                );
+                            }
+                        }
+                    }
                 }
-                // If not LorebookChunkMetadata, attempt to parse as ChatMessageChunkMetadata
-                else if let Ok(chat_meta) = ChatMessageChunkMetadata::try_from(payload_map.clone()) {
-                    retrieved_chunks.push(RetrievedChunk {
-                        score: scored_point.score,
-                        text: chat_meta.text.clone(),
-                        metadata: RetrievedMetadata::Chat(chat_meta),
-                    });
+                Err(e) => {
+                    error!(error = %e, filter = ?chat_filter, %session_id, "Failed to search chat history in Qdrant (RAG)");
+                    // Decide whether to return error or continue. For now, log and continue to allow lorebook search.
+                    // return Err(e);
                 }
-                // If neither, log an error
-                else {
-                    warn!(
-                        point_id = %scored_point.id.as_ref().map(|id| format!("{:?}", id)).unwrap_or_default(),
-                        "Failed to parse payload as any known metadata type (Lorebook or ChatMessage)"
-                    );
-                }
-            } else {
-                warn!(point_id = %scored_point.id.as_ref().map(|id| format!("{:?}", id)).unwrap_or_default(), "Scored point has an empty payload");
             }
         }
 
-        info!("Retrieved {} relevant chunks", retrieved_chunks.len()); // Made log more generic
-        Ok(retrieved_chunks)
+        // Search lorebooks if active_lorebook_ids are provided and not empty
+        if let Some(lorebook_ids) = active_lorebook_ids_for_search {
+            if !lorebook_ids.is_empty() {
+                debug!(%user_id, ?lorebook_ids, "Constructing lorebook filter for RAG");
+                let mut lorebook_id_conditions = Vec::new();
+                for lorebook_id_val in lorebook_ids.iter() { // Iterate over a reference
+                    lorebook_id_conditions.push(Condition {
+                        condition_one_of: Some(ConditionOneOf::Field(FieldCondition {
+                            key: "lorebook_id".to_string(),
+                            r#match: Some(Match {
+                                match_value: Some(MatchValue::Keyword(lorebook_id_val.to_string())),
+                            }),
+                            ..Default::default()
+                        })),
+                    });
+                }
+
+                let lorebook_filter = Filter {
+                    must: vec![
+                        Condition {
+                            condition_one_of: Some(ConditionOneOf::Field(FieldCondition {
+                                key: "user_id".to_string(),
+                                r#match: Some(Match {
+                                    match_value: Some(MatchValue::Keyword(user_id.to_string())),
+                                }),
+                                ..Default::default()
+                            })),
+                        },
+                        Condition {
+                            condition_one_of: Some(ConditionOneOf::Field(FieldCondition {
+                                key: "source_type".to_string(),
+                                r#match: Some(Match {
+                                    match_value: Some(MatchValue::Keyword("lorebook_entry".to_string())),
+                                }),
+                                ..Default::default()
+                            })),
+                        },
+                        Condition {
+                            condition_one_of: Some(ConditionOneOf::Field(FieldCondition {
+                                key: "is_enabled".to_string(),
+                                r#match: Some(Match {
+                                    match_value: Some(MatchValue::Boolean(true)),
+                                }),
+                                ..Default::default()
+                            })),
+                        },
+                    ],
+                    should: lorebook_id_conditions, // Match any of the provided lorebook_ids
+                    ..Default::default()
+                };
+                debug!(?lorebook_filter, "Lorebook filter for RAG");
+
+                match qdrant_service
+                    .search_points(query_embedding.clone(), limit_per_source, Some(lorebook_filter.clone()))
+                    .await
+                {
+                    Ok(search_results) => {
+                        debug!(num_results = search_results.len(), ?lorebook_ids, "Raw Qdrant results for lorebooks (RAG)");
+                        for scored_point in search_results {
+                            debug!(point_id = ?scored_point.id, score = scored_point.score, ?lorebook_ids, "Processing lorebook point (RAG)");
+                            match LorebookChunkMetadata::try_from(scored_point.payload.clone()) {
+                                Ok(lorebook_meta) => {
+                                    debug!(?lorebook_meta, ?lorebook_ids, "Successfully parsed lorebook metadata (RAG)");
+                                    combined_results.push(RetrievedChunk {
+                                        score: scored_point.score,
+                                        text: lorebook_meta.chunk_text.clone(),
+                                        metadata: RetrievedMetadata::Lorebook(lorebook_meta),
+                                    });
+                                }
+                                Err(e) => {
+                                    warn!(
+                                        point_id = %scored_point.id.as_ref().map(|id| format!("{:?}", id)).unwrap_or_default(),
+                                        error = %e,
+                                        payload = ?scored_point.payload,
+                                        ?lorebook_ids,
+                                        "Failed to parse lorebook entry payload during RAG search"
+                                    );
+                                }
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        error!(error = %e, filter = ?lorebook_filter, ?lorebook_ids, "Failed to search lorebooks in Qdrant (RAG)");
+                        // Decide whether to return error or continue. For now, log and continue.
+                        // return Err(e);
+                    }
+                }
+            }
+        }
+
+        // Sort combined results by score in descending order
+        combined_results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        debug!(num_combined_results = combined_results.len(), query_text, "Final combined and sorted RAG chunks");
+
+        info!("Retrieved {} relevant chunks in total", combined_results.len());
+        Ok(combined_results)
     }
 }
 
@@ -750,12 +933,17 @@ mod tests {
             "session_id".to_string(),
             string_value(&Uuid::new_v4().to_string()),
         );
+        payload.insert(
+            "user_id".to_string(),
+            string_value(&Uuid::new_v4().to_string()),
+        );
         payload.insert("speaker".to_string(), string_value("user"));
         payload.insert(
             "timestamp".to_string(),
             string_value(&Utc::now().to_rfc3339()),
         );
         payload.insert("text".to_string(), string_value("Hello world"));
+        payload.insert("source_type".to_string(), string_value("chat_message")); // Added source_type
         payload
     }
 
@@ -1069,9 +1257,11 @@ mod tests {
         score: f32,
         session_id: Uuid,
         message_id: Uuid,
+        user_id: Uuid, // Added user_id
         speaker: &str,
         timestamp: chrono::DateTime<Utc>,
         text: &str,
+        source_type: &str,
     ) -> ScoredPoint {
         let mut payload = HashMap::new();
         payload.insert(
@@ -1082,15 +1272,22 @@ mod tests {
             "session_id".to_string(),
             string_value(&session_id.to_string()),
         );
+        payload.insert( // Added user_id to payload
+            "user_id".to_string(),
+            string_value(&user_id.to_string()),
+        );
         payload.insert("speaker".to_string(), string_value(speaker));
         payload.insert(
             "timestamp".to_string(),
             string_value(&timestamp.to_rfc3339()),
         );
         payload.insert("text".to_string(), string_value(text));
+        payload.insert("source_type".to_string(), string_value(source_type));
 
         ScoredPoint {
-            id: Some(PointId::from(id_uuid.to_string())),
+            id: Some(PointId { // Consistent with PointIdOptions::Uuid usage
+                point_id_options: Some(qdrant_client::qdrant::point_id::PointIdOptions::Uuid(id_uuid.to_string())),
+            }),
             payload,
             score,
             version: 0,    // Example version
@@ -1103,52 +1300,70 @@ mod tests {
     #[tokio::test]
     async fn test_retrieve_relevant_chunks_method_success() {
         let (state, mock_qdrant, mock_embed_client) = setup_pipeline_test_env().await;
-        let chat_id = Uuid::new_v4();
+        let user_id = Uuid::new_v4();
+        let session_id = Uuid::new_v4();
         let query_text = "Tell me about cats";
 
-        mock_embed_client.set_response(Ok(vec![0.5, 0.6])); // Mock query embedding
+        mock_embed_client.set_response(Ok(vec![0.5, 0.6]));
 
         let mock_point_id_1 = Uuid::new_v4();
         let mock_point_id_2 = Uuid::new_v4();
+        let message_id_1 = Uuid::new_v4();
+        let message_id_2 = Uuid::new_v4();
 
         let mock_qdrant_results = vec![
             create_mock_scored_point(
                 mock_point_id_1,
                 0.95,
-                chat_id,
-                Uuid::new_v4(),
+                session_id,
+                message_id_1,
+                user_id, // Added user_id argument
                 "user",
                 Utc::now(),
                 "Cats are furry.",
+                "chat_message",
             ),
             create_mock_scored_point(
                 mock_point_id_2,
                 0.85,
-                chat_id,
-                Uuid::new_v4(),
+                session_id,
+                message_id_2,
+                user_id, // Added user_id argument
                 "ai",
                 Utc::now(),
                 "They meow a lot.",
+                "chat_message",
             ),
         ];
         mock_qdrant.set_search_response(Ok(mock_qdrant_results));
 
         let result = state
             .embedding_pipeline_service
-            .retrieve_relevant_chunks(state.clone(), chat_id, query_text, 5)
+            .retrieve_relevant_chunks(
+                state.clone(),
+                user_id,
+                Some(session_id),
+                None,
+                query_text,
+                5,
+            )
             .await;
-        assert!(result.is_ok());
+        assert!(result.is_ok(), "retrieve_relevant_chunks failed: {:?}", result.err());
         let chunks = result.unwrap();
         assert_eq!(chunks.len(), 2);
         assert_eq!(chunks[0].text, "Cats are furry.");
         if let RetrievedMetadata::Chat(meta) = &chunks[0].metadata {
             assert_eq!(meta.speaker, "user");
+            assert_eq!(meta.user_id, user_id); // Added user_id assertion
+            assert_eq!(meta.message_id, message_id_1);
         } else {
             panic!("Expected Chat metadata for chunks[0]");
         }
         assert_eq!(chunks[1].text, "They meow a lot.");
         if let RetrievedMetadata::Chat(meta) = &chunks[1].metadata {
             assert_eq!(meta.speaker, "ai");
+            assert_eq!(meta.user_id, user_id); // Added user_id assertion
+            assert_eq!(meta.message_id, message_id_2);
         } else {
             panic!("Expected Chat metadata for chunks[1]");
         }
@@ -1788,4 +2003,755 @@ mod tests {
         assert_eq!(qdrant_upsert_points.len(), 2, "Expected 2 points in the batch upsert");
     }
 
+// Helper to convert bool to Qdrant Bool Value
+    fn bool_value(b: bool) -> Value {
+        Value {
+            kind: Some(qdrant_client::qdrant::value::Kind::BoolValue(b)),
+        }
+    }
+
+    // Helper to convert Option<Vec<String>> to Qdrant List Value or Null Value
+    fn optional_list_string_value(opt_list: Option<Vec<String>>) -> Value {
+        match opt_list {
+            Some(list) => Value {
+                kind: Some(qdrant_client::qdrant::value::Kind::ListValue(
+                    qdrant_client::qdrant::ListValue {
+                        values: list.into_iter().map(|s| string_value(&s)).collect(),
+                    },
+                )),
+            },
+            None => Value {
+                kind: Some(qdrant_client::qdrant::value::Kind::NullValue(
+                    qdrant_client::qdrant::NullValue::default() as i32,
+                )),
+            },
+        }
+    }
+    
+    // Helper to convert Option<String> to Qdrant String Value or Null Value
+    fn optional_string_value(opt_s: Option<String>) -> Value {
+        match opt_s {
+            Some(s) => string_value(&s),
+            None => Value {
+                kind: Some(qdrant_client::qdrant::value::Kind::NullValue(
+                    qdrant_client::qdrant::NullValue::default() as i32,
+                )),
+            },
+        }
+    }
+
+    // Helper to create a mock ScoredPoint for Lorebook entries
+    fn create_mock_lorebook_scored_point(
+        point_uuid: Uuid, // UUID for the qdrant point itself
+        score: f32,
+        original_lorebook_entry_id: Uuid,
+        lorebook_id: Uuid,
+        user_id: Uuid,
+        chunk_text: &str,
+        entry_title: Option<String>,
+        keywords: Option<Vec<String>>,
+        is_enabled: bool,
+        is_constant: bool,
+        source_type: &str,
+    ) -> ScoredPoint {
+        let mut payload = HashMap::new();
+        payload.insert(
+            "original_lorebook_entry_id".to_string(),
+            string_value(&original_lorebook_entry_id.to_string()),
+        );
+        payload.insert(
+            "lorebook_id".to_string(),
+            string_value(&lorebook_id.to_string()),
+        );
+        payload.insert("user_id".to_string(), string_value(&user_id.to_string()));
+        payload.insert("chunk_text".to_string(), string_value(chunk_text));
+        payload.insert("entry_title".to_string(), optional_string_value(entry_title));
+        payload.insert("keywords".to_string(), optional_list_string_value(keywords));
+        payload.insert("is_enabled".to_string(), bool_value(is_enabled));
+        payload.insert("is_constant".to_string(), bool_value(is_constant));
+        payload.insert("source_type".to_string(), string_value(source_type));
+
+        ScoredPoint {
+            id: Some(PointId::from(point_uuid.to_string())),
+            payload,
+            score,
+            version: 0,
+            vectors: None,
+            shard_key: None,
+            order_value: None,
+        }
+    }
+
+    // --- Tests for retrieve_relevant_chunks ---
+
+    #[tokio::test]
+    async fn test_retrieve_chunks_chat_history_only() {
+        let (state, mock_qdrant, mock_embed_client) = setup_pipeline_test_env().await;
+        let user_id = Uuid::new_v4();
+        let session_id = Uuid::new_v4();
+        let query_text = "relevant query";
+        let limit: u64 = 3;
+
+        mock_embed_client.set_response(Ok(vec![0.1, 0.2, 0.3])); // Mock query embedding
+
+        let chat_point_id = Uuid::new_v4();
+        let mock_chat_results = vec![create_mock_scored_point(
+            chat_point_id,
+            0.9,
+            session_id,
+            Uuid::new_v4(), // message_id
+            user_id,        // user_id (this was missing)
+            "User",
+            Utc::now(),
+            "Test chat message content",
+            "chat_message",
+        )];
+        mock_qdrant.set_search_response(Ok(mock_chat_results.clone()));
+
+        let result = state
+            .embedding_pipeline_service
+            .retrieve_relevant_chunks(
+                state.clone(),
+                user_id,
+                Some(session_id),
+                None,
+                query_text,
+                limit,
+            )
+            .await;
+
+        assert!(result.is_ok(), "retrieve_relevant_chunks failed: {:?}", result.err());
+        let chunks = result.unwrap();
+        assert_eq!(chunks.len(), 1);
+        assert_eq!(chunks[0].text, "Test chat message content");
+        match &chunks[0].metadata {
+            RetrievedMetadata::Chat(meta) => {
+                assert_eq!(meta.session_id, session_id);
+                assert_eq!(meta.source_type, "chat_message");
+            }
+            _ => panic!("Expected Chat metadata"),
+        }
+
+        let search_call_count = mock_qdrant.get_search_call_count();
+        assert_eq!(search_call_count, 1, "Expected one search call to Qdrant");
+        let search_params = mock_qdrant.get_last_search_params().expect("Expected search_params to be set after one call");
+        let (_embedding, _limit, filter_opt) = &search_params;
+        assert!(filter_opt.is_some());
+        let filter = filter_opt.as_ref().unwrap();
+        
+        // Verify chat filter construction
+        assert_eq!(filter.must.len(), 3); // user_id, session_id, source_type
+        assert!(filter.must.iter().any(|c| {
+            if let Some(ConditionOneOf::Field(fc)) = c.condition_one_of.as_ref() {
+                if fc.key == "user_id" {
+                    if let Some(m) = fc.r#match.as_ref() {
+                        if let Some(MatchValue::Keyword(val)) = m.match_value.as_ref() {
+                            return val == &user_id.to_string();
+                        }
+                    }
+                }
+            }
+            false
+        }));
+        assert!(filter.must.iter().any(|c| {
+            if let Some(ConditionOneOf::Field(fc)) = c.condition_one_of.as_ref() {
+                if fc.key == "session_id" {
+                    if let Some(m) = fc.r#match.as_ref() {
+                        if let Some(MatchValue::Keyword(val)) = m.match_value.as_ref() {
+                            return val == &session_id.to_string();
+                        }
+                    }
+                }
+            }
+            false
+        }));
+        assert!(filter.must.iter().any(|c| {
+            if let Some(ConditionOneOf::Field(fc)) = c.condition_one_of.as_ref() {
+                if fc.key == "source_type" {
+                    if let Some(m) = fc.r#match.as_ref() {
+                        if let Some(MatchValue::Keyword(val)) = m.match_value.as_ref() {
+                            return val == "chat_message";
+                        }
+                    }
+                }
+            }
+            false
+        }));
+    }
+
+    #[tokio::test]
+    async fn test_retrieve_chunks_lorebook_entries_only() {
+        let (state, mock_qdrant, mock_embed_client) = setup_pipeline_test_env().await;
+        let user_id = Uuid::new_v4();
+        let lorebook_id1 = Uuid::new_v4();
+        let lorebook_id2 = Uuid::new_v4();
+        let active_lorebook_ids = vec![lorebook_id1, lorebook_id2];
+        let query_text = "relevant query for lore";
+        let limit: u64 = 2;
+
+        mock_embed_client.set_response(Ok(vec![0.4, 0.5, 0.6]));
+
+        let lore_point_id = Uuid::new_v4();
+        let mock_lore_results = vec![create_mock_lorebook_scored_point(
+            lore_point_id,
+            0.85,
+            Uuid::new_v4(),
+            lorebook_id1,
+            user_id,
+            "Test lorebook entry content",
+            Some("Lore Title".to_string()),
+            None,
+            true,
+            false,
+            "lorebook_entry",
+        )];
+        mock_qdrant.set_search_response(Ok(mock_lore_results.clone()));
+
+        let result = state
+            .embedding_pipeline_service
+            .retrieve_relevant_chunks(
+                state.clone(),
+                user_id,
+                None,
+                Some(active_lorebook_ids.clone()),
+                query_text,
+                limit,
+            )
+            .await;
+
+        assert!(result.is_ok(), "retrieve_relevant_chunks failed: {:?}", result.err());
+        let chunks = result.unwrap();
+        assert_eq!(chunks.len(), 1);
+        assert_eq!(chunks[0].text, "Test lorebook entry content");
+        match &chunks[0].metadata {
+            RetrievedMetadata::Lorebook(meta) => {
+                assert_eq!(meta.lorebook_id, lorebook_id1);
+                assert_eq!(meta.source_type, "lorebook_entry");
+                assert_eq!(meta.is_enabled, true);
+            }
+            _ => panic!("Expected Lorebook metadata"),
+        }
+
+        let search_call_count = mock_qdrant.get_search_call_count();
+        assert_eq!(search_call_count, 1, "Expected one search call to Qdrant");
+        let search_params = mock_qdrant.get_last_search_params().expect("Expected search_params to be set after one call");
+        let (_embedding, _limit, filter_opt) = &search_params;
+        assert!(filter_opt.is_some());
+        let filter = filter_opt.as_ref().unwrap();
+
+        // Verify lorebook filter construction
+        assert_eq!(filter.must.len(), 3); // user_id, source_type, is_enabled
+        assert_eq!(filter.should.len(), 2); // lorebook_id1, lorebook_id2
+
+        assert!(filter.must.iter().any(|c| {
+            if let Some(ConditionOneOf::Field(fc)) = c.condition_one_of.as_ref() {
+                if fc.key == "user_id" {
+                    if let Some(m) = fc.r#match.as_ref() {
+                        if let Some(MatchValue::Keyword(val)) = m.match_value.as_ref() {
+                            return val == &user_id.to_string();
+                        }
+                    }
+                }
+            }
+            false
+        }));
+         assert!(filter.must.iter().any(|c| {
+            if let Some(ConditionOneOf::Field(fc)) = c.condition_one_of.as_ref() {
+                if fc.key == "source_type" {
+                    if let Some(m) = fc.r#match.as_ref() {
+                        if let Some(MatchValue::Keyword(val)) = m.match_value.as_ref() {
+                            return val == "lorebook_entry";
+                        }
+                    }
+                }
+            }
+            false
+        }));
+        assert!(filter.must.iter().any(|c| {
+            if let Some(ConditionOneOf::Field(fc)) = c.condition_one_of.as_ref() {
+                if fc.key == "is_enabled" {
+                    if let Some(m) = fc.r#match.as_ref() {
+                        if let Some(MatchValue::Boolean(b_val)) = m.match_value.as_ref() {
+                            return *b_val == true;
+                        }
+                    }
+                }
+            }
+            false
+        }));
+        assert!(filter.should.iter().any(|c| {
+            if let Some(ConditionOneOf::Field(fc)) = c.condition_one_of.as_ref() {
+                if fc.key == "lorebook_id" {
+                    if let Some(m) = fc.r#match.as_ref() {
+                        if let Some(MatchValue::Keyword(val)) = m.match_value.as_ref() {
+                            return val == &lorebook_id1.to_string();
+                        }
+                    }
+                }
+            }
+            false
+        }));
+        assert!(filter.should.iter().any(|c| {
+            if let Some(ConditionOneOf::Field(fc)) = c.condition_one_of.as_ref() {
+                if fc.key == "lorebook_id" {
+                    if let Some(m) = fc.r#match.as_ref() {
+                        if let Some(MatchValue::Keyword(val)) = m.match_value.as_ref() {
+                            return val == &lorebook_id2.to_string();
+                        }
+                    }
+                }
+            }
+            false
+        }));
+    }
+
+    #[tokio::test]
+    async fn test_retrieve_chunks_chat_and_lorebook() {
+        let (state, mock_qdrant, mock_embed_client) = setup_pipeline_test_env().await;
+        let user_id = Uuid::new_v4();
+        let session_id = Uuid::new_v4();
+        let lorebook_id = Uuid::new_v4();
+        let active_lorebook_ids = vec![lorebook_id];
+        let query_text = "relevant query for both";
+        let limit: u64 = 1; // Limit to 1 per source to test combining and sorting
+
+        mock_embed_client.set_response(Ok(vec![0.7, 0.8, 0.9]));
+
+        let chat_point_id = Uuid::new_v4();
+        let lore_point_id = Uuid::new_v4();
+
+        let mock_chat_results = vec![create_mock_scored_point(
+            chat_point_id,
+            0.95, // Higher score
+            session_id,
+            Uuid::new_v4(), // message_id
+            user_id,        // user_id (this was missing)
+            "User",
+            Utc::now(),
+            "Chat content about topic",
+            "chat_message",
+        )];
+        let mock_lore_results = vec![create_mock_lorebook_scored_point(
+            lore_point_id,
+            0.90, // Lower score
+            Uuid::new_v4(),
+            lorebook_id,
+            user_id,
+            "Lore content about topic",
+            None,
+            None,
+            true,
+            false,
+            "lorebook_entry",
+        )];
+
+        // Mock Qdrant to return chat results first, then lore results using a sequence
+        mock_qdrant.set_search_responses_sequence(vec![
+            Ok(mock_chat_results.clone()), // First call gets chat results
+            Ok(mock_lore_results.clone()), // Second call gets lore results
+        ]);
+
+        let result = state
+            .embedding_pipeline_service
+            .retrieve_relevant_chunks(
+                state.clone(),
+                user_id,
+                Some(session_id),
+                Some(active_lorebook_ids.clone()),
+                query_text,
+                limit,
+            )
+            .await;
+
+        assert!(result.is_ok(), "retrieve_relevant_chunks failed: {:?}", result.err());
+        let chunks = result.unwrap();
+        assert_eq!(chunks.len(), 2);
+
+        // Verify sorting by score (descending)
+        assert_eq!(chunks[0].text, "Chat content about topic"); // Higher score
+        assert_eq!(chunks[0].score, 0.95);
+        assert_eq!(chunks[1].text, "Lore content about topic"); // Lower score
+        assert_eq!(chunks[1].score, 0.90);
+
+        let search_call_count = mock_qdrant.get_search_call_count();
+        assert_eq!(search_call_count, 2, "Expected two search calls (one for chat, one for lore)");
+        // Verifying parameters of individual calls in a sequence is complex with the current mock.
+        // The primary check is that the combined and sorted results are correct.
+        // We can check the *types* of filters used by inspecting the mock's recorded calls if the mock supports it,
+        // but for now, we rely on the mock correctly routing based on the sequence.
+        // The `get_last_search_params` would only give details for the *second* call (lorebooks).
+        let last_search_params = mock_qdrant.get_last_search_params().expect("Expected search_params for the last call");
+        let (_embedding_lore, limit_lore, filter_opt_lore) = &last_search_params;
+        assert_eq!(*limit_lore, limit); // limit_per_source for the lorebook call
+        let filter_lore = filter_opt_lore.as_ref().unwrap();
+        assert!(get_field_condition_keyword_match(filter_lore, "source_type").is_some_and(|s| s == "lorebook_entry"));
+        assert!(get_field_condition_bool_match(filter_lore, "is_enabled").is_some_and(|b| b));
+        assert!(!get_should_conditions_keyword_match(filter_lore, "lorebook_id").is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_retrieve_chunks_no_specific_sources() {
+        let (state, mock_qdrant, mock_embed_client) = setup_pipeline_test_env().await;
+        let user_id = Uuid::new_v4();
+        let query_text = "query with no sources";
+        let limit: u64 = 5;
+
+        mock_embed_client.set_response(Ok(vec![0.1, 0.1, 0.1])); // Embedding will be generated
+
+        let result = state
+            .embedding_pipeline_service
+            .retrieve_relevant_chunks(
+                state.clone(),
+                user_id,
+                None, // No chat session
+                None, // No lorebooks
+                query_text,
+                limit,
+            )
+            .await;
+
+        assert!(result.is_ok(), "retrieve_relevant_chunks failed: {:?}", result.err());
+        let chunks = result.unwrap();
+        assert!(chunks.is_empty(), "Expected empty results when no sources are specified");
+
+        let search_call_count = mock_qdrant.get_search_call_count();
+        assert_eq!(search_call_count, 0, "Expected no calls to Qdrant search_points");
+    }
+
+    #[tokio::test]
+    async fn test_retrieve_chunks_empty_lorebook_id_list() {
+        let (state, mock_qdrant, mock_embed_client) = setup_pipeline_test_env().await;
+        let user_id = Uuid::new_v4();
+        let query_text = "query with empty lorebook list";
+        let limit: u64 = 5;
+
+        mock_embed_client.set_response(Ok(vec![0.2, 0.2, 0.2]));
+
+        let result = state
+            .embedding_pipeline_service
+            .retrieve_relevant_chunks(
+                state.clone(),
+                user_id,
+                None,                  // No chat session
+                Some(vec![]),          // Empty list of lorebook IDs
+                query_text,
+                limit,
+            )
+            .await;
+
+        assert!(result.is_ok(), "retrieve_relevant_chunks failed: {:?}", result.err());
+        let chunks = result.unwrap();
+        assert!(chunks.is_empty(), "Expected empty results for empty lorebook ID list and no chat");
+
+        let search_call_count = mock_qdrant.get_search_call_count();
+        // No call for lorebooks because the list is empty. No call for chat because session_id is None.
+        assert_eq!(search_call_count, 0, "Expected no calls to Qdrant search_points");
+    }
+    
+    #[tokio::test]
+    async fn test_retrieve_chunks_empty_lorebook_id_list_with_chat() {
+        let (state, mock_qdrant, mock_embed_client) = setup_pipeline_test_env().await;
+        let user_id = Uuid::new_v4();
+        let session_id = Uuid::new_v4(); // Chat session IS provided
+        let query_text = "query with empty lorebook list but with chat";
+        let limit: u64 = 3;
+
+        mock_embed_client.set_response(Ok(vec![0.1, 0.2, 0.3]));
+
+        let chat_point_id = Uuid::new_v4();
+        let mock_chat_results = vec![create_mock_scored_point(
+            chat_point_id,
+            0.9,
+            session_id,
+            Uuid::new_v4(), // message_id
+            user_id,        // user_id (this was missing)
+            "User",
+            Utc::now(),
+            "Chat message for this test",
+            "chat_message",
+        )];
+        mock_qdrant.set_search_response(Ok(mock_chat_results.clone())); // Only chat results expected
+
+        let result = state
+            .embedding_pipeline_service
+            .retrieve_relevant_chunks(
+                state.clone(),
+                user_id,
+                Some(session_id),      // Chat session provided
+                Some(vec![]),          // Empty list of lorebook IDs
+                query_text,
+                limit,
+            )
+            .await;
+
+        assert!(result.is_ok(), "retrieve_relevant_chunks failed: {:?}", result.err());
+        let chunks = result.unwrap();
+        assert_eq!(chunks.len(), 1); // Should get chat results
+        assert_eq!(chunks[0].text, "Chat message for this test");
+
+        let search_call_count = mock_qdrant.get_search_call_count();
+        assert_eq!(search_call_count, 1, "Expected one call to Qdrant for chat history");
+        let search_params = mock_qdrant.get_last_search_params().expect("Expected search_params to be set after one call");
+        let (_embedding, _limit_call, filter_opt) = &search_params;
+        let filter = filter_opt.as_ref().unwrap();
+        assert!(filter.must.iter().any(|c| {
+            if let Some(ConditionOneOf::Field(fc)) = c.condition_one_of.as_ref() {
+                fc.key == "session_id"
+            } else { false }
+        }));
+        assert!(filter.should.is_empty()); // No lorebook conditions
+    }
+
+
+    #[tokio::test]
+    async fn test_retrieve_chunks_limit_per_source_respected() {
+        let (state, mock_qdrant, mock_embed_client) = setup_pipeline_test_env().await;
+        let user_id = Uuid::new_v4();
+        let session_id = Uuid::new_v4();
+        let lorebook_id = Uuid::new_v4();
+        let query_text = "query for limit test";
+        let limit_per_source: u64 = 1; // Crucial: limit to 1 per source
+
+        mock_embed_client.set_response(Ok(vec![0.5, 0.5, 0.5]));
+
+        // Mock Qdrant to return MORE than limit_per_source if it were asked for more
+        // The mock's search_points will be called with `limit_per_source`, so it should respect that.
+        let chat_point1 = Uuid::new_v4();
+        let chat_point2 = Uuid::new_v4();
+        let lore_point1 = Uuid::new_v4();
+        let lore_point2 = Uuid::new_v4();
+
+        let mock_chat_results_full = vec![
+            create_mock_scored_point(chat_point1, 0.99, session_id, Uuid::new_v4(), user_id, "U1", Utc::now(), "Chat1", "chat_message"),
+            create_mock_scored_point(chat_point2, 0.98, session_id, Uuid::new_v4(), user_id, "U2", Utc::now(), "Chat2", "chat_message"),
+        ];
+        let mock_lore_results_full = vec![
+            create_mock_lorebook_scored_point(lore_point1, 0.97, Uuid::new_v4(), lorebook_id, user_id, "Lore1", None, None, true, false, "lorebook_entry"),
+            create_mock_lorebook_scored_point(lore_point2, 0.96, Uuid::new_v4(), lorebook_id, user_id, "Lore2", None, None, true, false, "lorebook_entry"),
+        ];
+        
+        // Mock Qdrant to provide full results; the mock's search_points method will truncate based on limit_per_source.
+        mock_qdrant.set_search_responses_sequence(vec![
+            Ok(mock_chat_results_full.clone()), // First call gets chat results (mock will truncate)
+            Ok(mock_lore_results_full.clone()), // Second call gets lore results (mock will truncate)
+        ]);
+
+
+        let result = state
+            .embedding_pipeline_service
+            .retrieve_relevant_chunks(
+                state.clone(),
+                user_id,
+                Some(session_id),
+                Some(vec![lorebook_id]),
+                query_text,
+                limit_per_source,
+            )
+            .await;
+
+        assert!(result.is_ok(), "retrieve_relevant_chunks failed: {:?}", result.err());
+        let chunks = result.unwrap();
+        // Total chunks should be limit_per_source from chat + limit_per_source from lore
+        assert_eq!(chunks.len(), (limit_per_source * 2) as usize, "Expected total chunks to be sum of limits from each source"); 
+        // Results are sorted by score. Chat1 (0.99) > Lore1 (0.97)
+        assert_eq!(chunks[0].text, "Chat1", "Expected Chat1 with higher score first");
+        assert_eq!(chunks[1].text, "Lore1", "Expected Lore1 with lower score second");
+
+        let search_call_count = mock_qdrant.get_search_call_count();
+        assert_eq!(search_call_count, 2, "Expected two search calls");
+
+        // We can check the limit passed to the *last* call (lorebooks)
+        let last_search_params = mock_qdrant.get_last_search_params().expect("Expected search_params for the last call");
+        let (_embedding_lore, limit_call_lore, _filter_opt_lore) = &last_search_params;
+        assert_eq!(*limit_call_lore, limit_per_source, "Limit for lorebook search call was not limit_per_source");
+
+        // To verify the limit for the first call (chat), the mock would need to store all call parameters.
+        // However, the fact that we get `limit_per_source` (1) chat result and `limit_per_source` (1) lore result,
+        // and the mock truncates based on the `limit` argument to `search_points`,
+        // implies `limit_per_source` was correctly passed for both calls.
+    }
+
+    #[tokio::test]
+    async fn test_retrieve_chunks_error_handling_one_source_fails() {
+        let (state, mock_qdrant, mock_embed_client) = setup_pipeline_test_env().await;
+        let user_id = Uuid::new_v4();
+        let session_id = Uuid::new_v4();
+        let lorebook_id = Uuid::new_v4();
+        let query_text = "query for error test";
+        let limit: u64 = 2;
+
+        mock_embed_client.set_response(Ok(vec![0.6, 0.6, 0.6]));
+
+        let lore_point_id = Uuid::new_v4();
+        let mock_lore_results = vec![create_mock_lorebook_scored_point(
+            lore_point_id,
+            0.8,
+            Uuid::new_v4(),
+            lorebook_id,
+            user_id,
+            "Successful lore content",
+            None,
+            None,
+            true,
+            false,
+            "lorebook_entry",
+        )];
+
+        // Chat search fails, Lorebook search succeeds using a sequence
+        mock_qdrant.set_search_responses_sequence(vec![
+            Err(AppError::VectorDbError("Chat search Qdrant down".to_string())), // First call (chat) fails
+            Ok(mock_lore_results.clone()), // Second call (lore) succeeds
+        ]);
+
+        let result = state
+            .embedding_pipeline_service
+            .retrieve_relevant_chunks(
+                state.clone(),
+                user_id,
+                Some(session_id),
+                Some(vec![lorebook_id]),
+                query_text,
+                limit,
+            )
+            .await;
+
+        assert!(result.is_ok(), "Expected Ok even if one source fails, got: {:?}", result.err());
+        let chunks = result.unwrap();
+        assert_eq!(chunks.len(), 1, "Expected only results from the successful source");
+        assert_eq!(chunks[0].text, "Successful lore content");
+        match &chunks[0].metadata {
+            RetrievedMetadata::Lorebook(_) => {} // Correct
+            _ => panic!("Expected Lorebook metadata"),
+        }
+
+        let search_call_count = mock_qdrant.get_search_call_count();
+        assert_eq!(search_call_count, 2, "Expected two attempts to search Qdrant");
+    }
+    
+    // Helper to extract field condition for string match
+    fn get_field_condition_keyword_match<'a>(filter: &'a Filter, key_name: &str) -> Option<&'a str> {
+        filter.must.iter()
+            .find_map(|cond| {
+                if let Some(ConditionOneOf::Field(fc)) = &cond.condition_one_of {
+                    if fc.key == key_name {
+                        if let Some(m) = &fc.r#match {
+                            if let Some(MatchValue::Keyword(val)) = &m.match_value {
+                                return Some(val.as_str());
+                            }
+                        }
+                    }
+                }
+                None
+            })
+    }
+
+    // Helper to extract field condition for boolean match
+    fn get_field_condition_bool_match(filter: &Filter, key_name: &str) -> Option<bool> {
+        filter.must.iter()
+            .find_map(|cond| {
+                if let Some(ConditionOneOf::Field(fc)) = &cond.condition_one_of {
+                    if fc.key == key_name {
+                        if let Some(m) = &fc.r#match {
+                            if let Some(MatchValue::Boolean(val)) = &m.match_value {
+                                return Some(*val);
+                            }
+                        }
+                    }
+                }
+                None
+            })
+    }
+    
+    // Helper to extract should conditions for string match
+    fn get_should_conditions_keyword_match<'a>(filter: &'a Filter, key_name: &str) -> Vec<&'a str> {
+        filter.should.iter()
+            .filter_map(|cond| {
+                if let Some(ConditionOneOf::Field(fc)) = &cond.condition_one_of {
+                    if fc.key == key_name {
+                        if let Some(m) = &fc.r#match {
+                            if let Some(MatchValue::Keyword(val)) = &m.match_value {
+                                return Some(val.as_str());
+                            }
+                        }
+                    }
+                }
+                None
+            })
+            .collect()
+    }
+
+    // Re-testing with more robust filter assertions
+    #[tokio::test]
+    async fn test_retrieve_chunks_chat_history_only_filter_check() {
+        let (state, mock_qdrant, mock_embed_client) = setup_pipeline_test_env().await;
+        let user_id = Uuid::new_v4();
+        let session_id = Uuid::new_v4();
+        let query_text = "relevant query";
+        let limit: u64 = 3;
+
+        mock_embed_client.set_response(Ok(vec![0.1, 0.2, 0.3]));
+        mock_qdrant.set_search_response(Ok(vec![])); // Results don't matter for filter check
+
+        let _ = state
+            .embedding_pipeline_service
+            .retrieve_relevant_chunks(
+                state.clone(),
+                user_id,
+                Some(session_id),
+                None,
+                query_text,
+                limit,
+            )
+            .await;
+
+        let search_call_count = mock_qdrant.get_search_call_count();
+        assert_eq!(search_call_count, 1);
+        let search_params = mock_qdrant.get_last_search_params().expect("Expected search_params to be set after one call");
+        let filter = search_params.2.as_ref().expect("Filter should be present for chat history");
+        
+        assert_eq!(get_field_condition_keyword_match(filter, "user_id"), Some(user_id.to_string().as_str()));
+        assert_eq!(get_field_condition_keyword_match(filter, "session_id"), Some(session_id.to_string().as_str()));
+        assert_eq!(get_field_condition_keyword_match(filter, "source_type"), Some("chat_message"));
+        assert!(filter.should.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_retrieve_chunks_lorebook_entries_only_filter_check() {
+        let (state, mock_qdrant, mock_embed_client) = setup_pipeline_test_env().await;
+        let user_id = Uuid::new_v4();
+        let lorebook_id1 = Uuid::new_v4();
+        let lorebook_id2 = Uuid::new_v4();
+        let active_lorebook_ids = vec![lorebook_id1, lorebook_id2];
+        let query_text = "relevant query for lore";
+        let limit: u64 = 2;
+
+        mock_embed_client.set_response(Ok(vec![0.4, 0.5, 0.6]));
+        mock_qdrant.set_search_response(Ok(vec![])); // Results don't matter
+
+        let _ = state
+            .embedding_pipeline_service
+            .retrieve_relevant_chunks(
+                state.clone(),
+                user_id,
+                None,
+                Some(active_lorebook_ids.clone()),
+                query_text,
+                limit,
+            )
+            .await;
+
+        let search_call_count = mock_qdrant.get_search_call_count();
+        assert_eq!(search_call_count, 1);
+        let search_params = mock_qdrant.get_last_search_params().expect("Expected search_params to be set after one call");
+        let filter = search_params.2.as_ref().expect("Filter should be present for lorebooks");
+
+        assert_eq!(get_field_condition_keyword_match(filter, "user_id"), Some(user_id.to_string().as_str()));
+        assert_eq!(get_field_condition_keyword_match(filter, "source_type"), Some("lorebook_entry"));
+        assert_eq!(get_field_condition_bool_match(filter, "is_enabled"), Some(true));
+        
+        let matched_lorebook_ids = get_should_conditions_keyword_match(filter, "lorebook_id");
+        assert_eq!(matched_lorebook_ids.len(), 2);
+        assert!(matched_lorebook_ids.contains(&lorebook_id1.to_string().as_str()));
+        assert!(matched_lorebook_ids.contains(&lorebook_id2.to_string().as_str()));
+    }
 }
