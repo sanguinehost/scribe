@@ -69,7 +69,8 @@ pub(super) async fn handle_response<T: DeserializeOwned + std::fmt::Debug>(
     if status.is_success() {
         match serde_json::from_str::<T>(&response_body) {
             Ok(data) => {
-                tracing::trace!(target: "scribe_cli::client::util", %type_name, deserialized_data = ?data, "Successfully deserialized response");
+                // Don't log the full data at trace level as it might be large or contain binary
+                tracing::trace!(target: "scribe_cli::client::util", %type_name, "Successfully deserialized response");
                 Ok(data)
             }
             Err(e) => {
@@ -80,7 +81,15 @@ pub(super) async fn handle_response<T: DeserializeOwned + std::fmt::Debug>(
                     type_name,
                     e
                 );
-                tracing::error!("Response text for T={} was: {}", type_name, response_body);
+                // Don't print the full response body as it might contain binary data
+                let truncated_body = if response_body.len() > 200 {
+                    format!("{}... (truncated, {} total bytes)", 
+                            &response_body.chars().take(200).collect::<String>(), 
+                            response_body.len())
+                } else {
+                    response_body.clone()
+                };
+                tracing::error!("Response text for T={} was: {}", type_name, truncated_body);
                 // Map to CliError::Json or CliError::Internal as appropriate
                 // Using CliError::Json as it's more specific for deserialization issues
                 Err(CliError::Json(e))

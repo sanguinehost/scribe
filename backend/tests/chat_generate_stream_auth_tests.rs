@@ -186,7 +186,6 @@ async fn generate_chat_response_streaming_forbidden() {
     let conn_pool = test_app.db_pool.clone();
     let user_id_clone_session = user1.id;
     let character_id_clone_session = character1.id;
-    let session_title = format!("Test Chat with Char {}", character1.id);
     let session1: ChatSession = conn_pool
         .get()
         .await
@@ -196,7 +195,8 @@ async fn generate_chat_response_streaming_forbidden() {
                 id: Uuid::new_v4(),
                 user_id: user_id_clone_session,
                 character_id: character_id_clone_session,
-                title: Some(session_title),
+                title_ciphertext: None,
+                title_nonce: None,
                 created_at: Utc::now(),
                 updated_at: Utc::now(),
                 history_management_strategy: "truncate".to_string(),

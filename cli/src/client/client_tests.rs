@@ -33,7 +33,7 @@ use scribe_backend::models::{
     // Since ClientCharacterDataForClient is now a distinct struct in types.rs and re-exported,
     // we should use that if the tests were indeed using the client's representation.
     // Let's stick to what was in the original test's direct use statements for now.
-    chats::{ApiChatMessage, Chat, GenerateChatRequest, MessageRole},
+    chats::{ApiChatMessage, Chat, ChatForClient, GenerateChatRequest, MessageRole},
 };
 
 // Shared setup for tests needing a mock server
@@ -671,7 +671,7 @@ async fn test_list_chat_sessions_success() {
     let now = Utc::now();
 
     let mock_sessions = vec![
-        Chat {
+        ChatForClient {
             id: session1_id,
             user_id: user_id_mock,
             character_id: char_id_mock,
@@ -699,7 +699,7 @@ async fn test_list_chat_sessions_success() {
             active_custom_persona_id: None,
             active_impersonated_character_id: None,
         },
-        Chat {
+        ChatForClient {
             id: session2_id,
             user_id: user_id_mock,
             character_id: Uuid::new_v4(),
@@ -750,7 +750,7 @@ async fn test_list_chat_sessions_success() {
 #[tokio::test]
 async fn test_list_chat_sessions_success_empty() {
     let (mut server, client) = setup_test_server();
-    let mock_sessions: Vec<Chat> = vec![];
+    let mock_sessions: Vec<ChatForClient> = vec![];
 
     server.expect(
         Expectation::matching(request::method_path("GET", "/api/chats"))
@@ -923,14 +923,27 @@ async fn test_create_chat_session_success() {
     let session_id = Uuid::new_v4();
     let now = Utc::now();
 
+    // create_chat_session returns the backend `Chat` model.
+    // The backend Chat model now has encrypted fields for title and system_prompt.
+    // For this test, we are mocking the direct response from the server, which would be the `Chat` struct.
+    // If the test was about what the *client method* returns after processing, it might be different,
+    // but here we mock the raw server output for `create_chat_session`.
+    // The `title` and `system_prompt` fields in the backend `Chat` struct are now `Option<Vec<u8>>` for ciphertext
+    // and `Option<Vec<u8>>` for nonce.
+    // For simplicity in this mock, we'll use None for ciphertext and nonce.
+    // The actual values would be encrypted strings.
     let mock_session = Chat {
         id: session_id,
         user_id: user_id_mock,
         character_id,
-        title: Some("New Chat".to_string()),
+        // title: Some("New Chat".to_string()), // This was the old field
+        title_ciphertext: Some("New Chat".as_bytes().to_vec()), // Mocking as if "New Chat" was encrypted
+        title_nonce: Some(vec![0u8; 12]), // Mock nonce
         created_at: now,
         updated_at: now,
-        system_prompt: None,
+        // system_prompt: None, // This was the old field
+        system_prompt_ciphertext: None, // No system prompt in this test case
+        system_prompt_nonce: None,      // No system prompt in this test case
         temperature: None,
         max_output_tokens: None,
         frequency_penalty: None,
@@ -950,7 +963,7 @@ async fn test_create_chat_session_success() {
         gemini_enable_code_execution: None,
         active_custom_persona_id: None,
         active_impersonated_character_id: None,
-};
+    };
 
     let request_payload = json!({ "character_id": character_id, "active_custom_persona_id": serde_json::Value::Null });
 

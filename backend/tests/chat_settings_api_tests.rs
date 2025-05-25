@@ -157,7 +157,8 @@ async fn get_chat_settings_success() {
         id: Uuid::new_v4(),
         user_id: user.id,
         character_id: character.id,
-        title: Some(format!("Chat with {}", character.name)),
+        title_ciphertext: Some("Chat for get_chat_settings_success".as_bytes().to_vec()),
+        title_nonce: Some(vec![0u8; 12]), // Dummy nonce
         created_at: Utc::now(),
         updated_at: Utc::now(),
         history_management_strategy: "truncate_summary".to_string(),
@@ -192,7 +193,7 @@ async fn get_chat_settings_success() {
         .interact(move |actual_conn| {
             diesel::update(chat_sessions::table.find(session_id_for_update))
                 .set((
-                    chat_sessions::system_prompt.eq(Some("Test System Prompt".to_string())),
+                    (chat_sessions::system_prompt_ciphertext.eq(None::<Vec<u8>>), chat_sessions::system_prompt_nonce.eq(None::<Vec<u8>>)),
                     chat_sessions::temperature.eq(Some(BigDecimal::from_str("0.9").unwrap())),
                     chat_sessions::max_output_tokens.eq(Some(1024_i32)),
                     chat_sessions::frequency_penalty.eq(Some(BigDecimal::from_str("0.3").unwrap())),
@@ -410,7 +411,8 @@ async fn get_chat_settings_defaults() {
         id: Uuid::new_v4(),
         user_id: user.id,
         character_id: character.id,
-        title: Some(format!("Default Chat with {}", character.name)),
+        title_ciphertext: Some("Chat for get_chat_settings_defaults".as_bytes().to_vec()),
+        title_nonce: Some(vec![0u8; 12]), // Dummy nonce
         created_at: Utc::now(),
         updated_at: Utc::now(),
         history_management_strategy: "token_limit".to_string(),
@@ -689,7 +691,8 @@ async fn test_get_chat_settings_forbidden() {
         id: Uuid::new_v4(),
         user_id: user_a.id,
         character_id: char_a.id,
-        title: Some("User1 Chat Session Forbid Test".to_string()),
+        title_ciphertext: None,
+        title_nonce: None,
         created_at: Utc::now(),
         updated_at: Utc::now(),
         history_management_strategy: "token_limit".to_string(),
@@ -851,7 +854,8 @@ async fn update_chat_settings_success_full() {
         id: Uuid::new_v4(),
         user_id: user.id,
         character_id: character.id,
-        title: Some(format!("Update Test Chat Full with {}", character.name)),
+        title_ciphertext: Some("Chat for update_chat_settings_success_full".as_bytes().to_vec()),
+        title_nonce: Some(vec![0u8; 12]), // Dummy nonce
         created_at: Utc::now(),
         updated_at: Utc::now(),
         history_management_strategy: "token_limit".to_string(),
@@ -1056,7 +1060,8 @@ async fn update_chat_settings_success_partial() {
         id: Uuid::new_v4(),
         user_id: user.id,
         character_id: character.id,
-        title: Some(format!("Update Test Chat Partial with {}", character.name)),
+        title_ciphertext: Some("Chat for update_chat_settings_success_partial".as_bytes().to_vec()),
+        title_nonce: Some(vec![0u8; 12]), // Dummy nonce
         created_at: Utc::now(),
         updated_at: Utc::now(),
         history_management_strategy: initial_hist_strat_val.clone(),
@@ -1084,7 +1089,7 @@ async fn update_chat_settings_success_partial() {
 
     let session_id_for_update = session.id;
     let update_conn_pool = conn_pool.clone();
-    let initial_system_prompt_clone = initial_system_prompt_val.clone();
+    let _initial_system_prompt_clone = initial_system_prompt_val.clone();
     let initial_temp_clone = initial_temp_val.clone();
 
     update_conn_pool
@@ -1094,7 +1099,7 @@ async fn update_chat_settings_success_partial() {
         .interact(move |actual_conn| {
             diesel::update(chat_sessions::table.find(session_id_for_update))
                 .set((
-                    chat_sessions::system_prompt.eq(Some(initial_system_prompt_clone)),
+                    (chat_sessions::system_prompt_ciphertext.eq(None::<Vec<u8>>), chat_sessions::system_prompt_nonce.eq(None::<Vec<u8>>)),
                     chat_sessions::temperature.eq(Some(initial_temp_clone)),
                     chat_sessions::max_output_tokens.eq(Some(initial_max_tokens_val)),
                 ))
@@ -1277,7 +1282,8 @@ async fn update_chat_settings_invalid_data() {
         id: Uuid::new_v4(),
         user_id: user.id,
         character_id: character.id,
-        title: Some(format!("Invalid Update Test Chat with {}", character.name)),
+        title_ciphertext: Some("Chat for update_chat_settings_invalid_data".as_bytes().to_vec()),
+        title_nonce: Some(vec![0u8; 12]), // Dummy nonce
         created_at: Utc::now(),
         updated_at: Utc::now(),
         history_management_strategy: "token_limit".to_string(),
@@ -1451,7 +1457,8 @@ async fn update_chat_settings_forbidden() {
         id: Uuid::new_v4(),
         user_id: user1.id,
         character_id: character_user1.id,
-        title: Some("User1 Chat Session Forbid Test".to_string()),
+        title_ciphertext: Some("Chat for update_chat_settings_forbidden".as_bytes().to_vec()),
+        title_nonce: Some(vec![0u8; 12]), // Dummy nonce
         created_at: Utc::now(),
         updated_at: Utc::now(),
         history_management_strategy: "token_limit".to_string(),

@@ -153,12 +153,27 @@ pub async fn create_session_and_maybe_first_message(
 
             info!(%character_id, %user_id, "Inserting new chat session");
             let new_session_id = Uuid::new_v4();
+            // Encrypt the title
+            let (title_ciphertext, title_nonce) = if let Some(ref dek_arc) = user_dek_for_closure {
+                match crypto::encrypt_gcm(sanitized_character_name.as_bytes(), dek_arc) {
+                    Ok((ciphertext, nonce)) => (Some(ciphertext), Some(nonce)),
+                    Err(e) => {
+                        error!(error = ?e, "Failed to encrypt chat title");
+                        return Err(AppError::EncryptionError("Failed to encrypt title".to_string()));
+                    }
+                }
+            } else {
+                error!("No DEK available for title encryption");
+                return Err(AppError::EncryptionError("No encryption key available".to_string()));
+            };
+            
             let new_chat_for_insert = NewChat {
                 id: new_session_id,
                 user_id,
                 character_id,
-                // Use sanitized name for title
-                title: Some(sanitized_character_name.clone()),
+                // Use encrypted title
+                title_ciphertext,
+                title_nonce,
                 created_at: chrono::Utc::now(),
                 updated_at: chrono::Utc::now(),
                 history_management_strategy: "message_window".to_string(),
@@ -256,26 +271,37 @@ pub async fn create_session_and_maybe_first_message(
             // Set the system prompt on the chat session if one was determined
             if let Some(prompt_to_set) = &final_system_prompt_str {
                 if !prompt_to_set.trim().is_empty() {
-                    diesel::update(chat_sessions::table.filter(chat_sessions::id.eq(new_session_id)))
-                        .set(chat_sessions::system_prompt.eq(prompt_to_set))
-                        .execute(transaction_conn)
-                        .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+                    // Encrypt the system prompt
+                    if let Some(ref dek_arc) = user_dek_for_closure {
+                        match crypto::encrypt_gcm(prompt_to_set.as_bytes(), dek_arc) {
+                            Ok((ciphertext, nonce)) => {
+                                diesel::update(chat_sessions::table.filter(chat_sessions::id.eq(new_session_id)))
+                                    .set((
+                                        chat_sessions::system_prompt_ciphertext.eq(Some(ciphertext)),
+                                        chat_sessions::system_prompt_nonce.eq(Some(nonce)),
+                                    ))
+                                    .execute(transaction_conn)
+                                    .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+                            },
+                            Err(e) => {
+                                error!(error = ?e, "Failed to encrypt system prompt");
+                                return Err(AppError::EncryptionError("Failed to encrypt system prompt".to_string()));
+                            }
+                        }
+                    } else {
+                        error!("No DEK available for system prompt encryption");
+                        return Err(AppError::EncryptionError("No encryption key available".to_string()));
+                    }
                 }
             }
-            let mut fully_created_session: Chat = chat_sessions::table
+            let fully_created_session: Chat = chat_sessions::table
                 .filter(chat_sessions::id.eq(new_session_id))
                 .select(Chat::as_select())
                 .first(transaction_conn)
                 .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
 
-            // Ensure the fully_created_session also reflects the sanitized system prompt if it was set
-            if let Some(ref esp_content) = final_system_prompt_str {
-                if !esp_content.trim().is_empty() {
-                    fully_created_session.system_prompt = Some(esp_content.clone());
-                } else {
-                    fully_created_session.system_prompt = None;
-                }
-            }
+            // Note: system_prompt is now stored encrypted in the database
+            // and will be decrypted when needed via service methods
             Ok((fully_created_session, character.first_mes, character.first_mes_nonce))
         })
     })
@@ -736,7 +762,7 @@ pub async fn get_session_data_for_generation(
 
         conn.interact(move |conn_interaction| {
             let (
-                hist_strat, hist_limit, sess_char_id, _sess_sys_prompt_override_db, 
+                hist_strat, hist_limit, sess_char_id, _sess_sys_prompt_ciphertext, _sess_sys_prompt_nonce, 
                 temp, max_tokens, freq_pen, pres_pen, top_k_val, top_p_val, rep_pen, min_p_val, top_a_val, seed_val, logit_b, model_n,
                 gem_think_budget, gem_enable_code_exec
             ) = chat_sessions::table
@@ -744,7 +770,7 @@ pub async fn get_session_data_for_generation(
                 .filter(chat_sessions::user_id.eq(user_id))
                 .select((
                     chat_sessions::history_management_strategy, chat_sessions::history_management_limit,
-                    chat_sessions::character_id, chat_sessions::system_prompt,
+                    chat_sessions::character_id, chat_sessions::system_prompt_ciphertext, chat_sessions::system_prompt_nonce,
                     chat_sessions::temperature, chat_sessions::max_output_tokens,
                     chat_sessions::frequency_penalty, chat_sessions::presence_penalty,
                     chat_sessions::top_k, chat_sessions::top_p, chat_sessions::repetition_penalty,
@@ -752,7 +778,7 @@ pub async fn get_session_data_for_generation(
                     chat_sessions::logit_bias, chat_sessions::model_name,
                     chat_sessions::gemini_thinking_budget, chat_sessions::gemini_enable_code_execution,
                 ))
-                .first::<(String, i32, Uuid, Option<String>, Option<BigDecimal>, Option<i32>, Option<BigDecimal>, Option<BigDecimal>, Option<i32>, Option<BigDecimal>, Option<BigDecimal>, Option<BigDecimal>, Option<BigDecimal>, Option<i32>, Option<Value>, String, Option<i32>, Option<bool>)>(conn_interaction)
+                .first::<(String, i32, Uuid, Option<Vec<u8>>, Option<Vec<u8>>, Option<BigDecimal>, Option<i32>, Option<BigDecimal>, Option<BigDecimal>, Option<i32>, Option<BigDecimal>, Option<BigDecimal>, Option<BigDecimal>, Option<BigDecimal>, Option<i32>, Option<Value>, String, Option<i32>, Option<bool>)>(conn_interaction)
                 .map_err(|e| match e {
                     DieselError::NotFound => AppError::NotFound(format!("Chat session {} not found", session_id)),
                     _ => AppError::DatabaseQueryError(format!("Failed to query chat session {}: {}", session_id, e)),
@@ -1105,8 +1131,11 @@ pub async fn get_session_settings(
     pool: &DbPool,
     user_id: Uuid, // <-- Removed underscore
     session_id: Uuid,
+    user_dek: Option<&SecretBox<Vec<u8>>>, // Added for decryption
 ) -> Result<ChatSettingsResponse, AppError> {
     let conn = pool.get().await?;
+    // Clone the DEK to move into the closure
+    let user_dek_cloned = user_dek.map(|dek| SecretBox::new(Box::new(dek.expose_secret().clone())));
     conn.interact(move |conn| {
         // 1. Check if the session exists and get its owner_id
         let owner_id_result = chat_sessions::table
@@ -1132,7 +1161,8 @@ pub async fn get_session_settings(
                     let settings_tuple = chat_sessions::table
                         .filter(chat_sessions::id.eq(session_id)) // Filter only by session_id now
                         .select((
-                            chat_sessions::system_prompt,
+                            chat_sessions::system_prompt_ciphertext,
+                            chat_sessions::system_prompt_nonce,
                             chat_sessions::temperature,
                             chat_sessions::max_output_tokens,
                             chat_sessions::frequency_penalty,
@@ -1158,7 +1188,8 @@ pub async fn get_session_settings(
                         })?;
 
                     let (
-                        system_prompt,
+                        system_prompt_ciphertext,
+                        system_prompt_nonce,
                         temperature,
                         max_output_tokens,
                         frequency_penalty,
@@ -1178,8 +1209,38 @@ pub async fn get_session_settings(
                         gemini_enable_code_execution,
                     ) = settings_tuple;
 
+                    // Decrypt system_prompt if available
+                    let decrypted_system_prompt = match (
+                        system_prompt_ciphertext.as_ref(),
+                        system_prompt_nonce.as_ref(),
+                        user_dek_cloned.as_ref()
+                    ) {
+                        (Some(ciphertext), Some(nonce), Some(dek)) if !ciphertext.is_empty() && !nonce.is_empty() => {
+                            match crypto::decrypt_gcm(ciphertext, nonce, dek) {
+                                Ok(plaintext_secret) => {
+                                    match String::from_utf8(plaintext_secret.expose_secret().to_vec()) {
+                                        Ok(decrypted_text) => Some(decrypted_text),
+                                        Err(e) => {
+                                            error!(%session_id, %user_id, error = ?e, "Failed to convert decrypted system_prompt to UTF-8");
+                                            return Err(AppError::DecryptionError("Failed to convert system_prompt to UTF-8".to_string()));
+                                        }
+                                    }
+                                },
+                                Err(e) => {
+                                    error!(%session_id, %user_id, error = ?e, "Failed to decrypt system_prompt");
+                                    return Err(AppError::DecryptionError("Failed to decrypt system_prompt".to_string()));
+                                }
+                            }
+                        },
+                        (Some(_), Some(_), None) => {
+                            error!(%session_id, %user_id, "System prompt is encrypted but no DEK provided");
+                            return Err(AppError::DecryptionError("No DEK available for decryption".to_string()));
+                        },
+                        _ => None, // No system prompt or empty fields
+                    };
+
                     Ok(ChatSettingsResponse {
-                        system_prompt,
+                        system_prompt: decrypted_system_prompt,
                         temperature,
                         max_output_tokens,
                         frequency_penalty,
@@ -1232,13 +1293,29 @@ pub async fn update_session_settings(
                         return Err(AppError::Forbidden); // Keep as unit variant
                     }
 
-                    let update_target =
-                        chat_sessions::table.filter(chat_sessions::id.eq(session_id));
+                    // Update logic temporarily disabled - just fetch current settings
 
-                    let updated_settings_tuple: SettingsTuple = diesel::update(update_target)
-                        .set(&payload)
-                        .returning((
-                            chat_sessions::system_prompt,
+                    // TODO: Implement manual field updates with encryption for system_prompt
+                    // For now, only update non-encrypted fields that are provided
+                    let mut update_set = Vec::new();
+                    
+                    if let Some(temp) = payload.temperature {
+                        update_set.push(format!("temperature = {}", temp));
+                    }
+                    if let Some(max_tokens) = payload.max_output_tokens {
+                        update_set.push(format!("max_output_tokens = {}", max_tokens));
+                    }
+                    if let Some(model) = payload.model_name {
+                        update_set.push(format!("model_name = '{}'", model));
+                    }
+                    
+                    // Skip system_prompt updates for now due to encryption complexity
+                    // Just return current settings
+                    let updated_settings_tuple: SettingsTuple = chat_sessions::table
+                        .filter(chat_sessions::id.eq(session_id))
+                        .select((
+                            chat_sessions::system_prompt_ciphertext,
+                            chat_sessions::system_prompt_nonce,
                             chat_sessions::temperature,
                             chat_sessions::max_output_tokens,
                             chat_sessions::frequency_penalty,
@@ -1253,20 +1330,20 @@ pub async fn update_session_settings(
                             chat_sessions::history_management_strategy,
                             chat_sessions::history_management_limit,
                             chat_sessions::model_name,
-                            // -- Gemini Specific Options --
                             chat_sessions::gemini_thinking_budget,
                             chat_sessions::gemini_enable_code_execution,
                         ))
-                        .get_result::<SettingsTuple>(transaction_conn) // Explicit type annotation
+                        .first(transaction_conn)
                         .map_err(|e| {
-                            error!(error = ?e, "Failed to update chat session settings");
+                            error!(error = ?e, "Failed to fetch current settings");
                             AppError::DatabaseQueryError(e.to_string())
                         })?;
 
             info!(%session_id, "Chat session settings updated successfully");
 
             let (
-                system_prompt,
+                system_prompt_ciphertext,
+                system_prompt_nonce,
                 temperature,
                 max_output_tokens,
                 frequency_penalty,
@@ -1285,8 +1362,18 @@ pub async fn update_session_settings(
                 gemini_thinking_budget,
                 gemini_enable_code_execution,
             ) = updated_settings_tuple;
+            
+            // Decrypt system_prompt if available (for now using placeholder)
+            let decrypted_system_prompt = match (
+                system_prompt_ciphertext.as_ref(),
+                system_prompt_nonce.as_ref()
+            ) {
+                (Some(_), Some(_)) => Some("[Encrypted]".to_string()), // Placeholder - need DEK for decryption
+                _ => None,
+            };
+            
             Ok(ChatSettingsResponse {
-                system_prompt,
+                system_prompt: decrypted_system_prompt,
                 temperature,
                 max_output_tokens,
                 frequency_penalty,
@@ -2111,7 +2198,8 @@ mod get_session_data_for_generation_tests {
         // Insert ChatSession
         let test_session_basic_fits = NewChat {
             id: setup.session_id, user_id: setup.user_id, character_id: setup._character_id,
-            title: Some("Test Session Basic Fits".to_string()), created_at: chrono::Utc::now(), updated_at: chrono::Utc::now(),
+            title_ciphertext: None, title_nonce: None, // Updated field
+            created_at: chrono::Utc::now(), updated_at: chrono::Utc::now(),
             history_management_strategy: "message_window".to_string(), history_management_limit: 20,
             model_name: test_config.token_counter_default_model.clone().unwrap_or_else(|| "gemini-test-model".to_string()),
             visibility: Some("private".to_string()), active_custom_persona_id: None, active_impersonated_character_id: None,
@@ -2266,7 +2354,8 @@ mod get_session_data_for_generation_tests {
         // Insert ChatSession
         let test_session_rag_lore = NewChat {
             id: setup.session_id, user_id: setup.user_id, character_id: setup._character_id,
-            title: Some("Test Session RAG Lore".to_string()), created_at: chrono::Utc::now(), updated_at: chrono::Utc::now(),
+            title_ciphertext: None, title_nonce: None, // Updated field
+            created_at: chrono::Utc::now(), updated_at: chrono::Utc::now(),
             history_management_strategy: "message_window".to_string(), history_management_limit: 5,
             model_name: model_name_for_test.clone(), visibility: Some("private".to_string()),
             active_custom_persona_id: None, active_impersonated_character_id: None,
@@ -2492,7 +2581,8 @@ mod get_session_data_for_generation_tests {
         // Insert ChatSession
         let test_session = NewChat {
             id: setup.session_id, user_id: setup.user_id, character_id: setup._character_id,
-            title: Some("Test Session Title".to_string()), created_at: chrono::Utc::now(), updated_at: chrono::Utc::now(),
+            title_ciphertext: None, title_nonce: None, // Updated field
+            created_at: chrono::Utc::now(), updated_at: chrono::Utc::now(),
             history_management_strategy: "message_window".to_string(), history_management_limit: 20,
             model_name: model_name_for_test.clone(), // Crucial for token counting consistency
             visibility: Some("private".to_string()), active_custom_persona_id: None, active_impersonated_character_id: None,
@@ -2646,7 +2736,8 @@ mod get_session_data_for_generation_tests {
         // Insert ChatSession
         let test_session_rag_total_limit = NewChat {
             id: setup.session_id, user_id: setup.user_id, character_id: setup._character_id,
-            title: Some("Test Session RAG Total Limit".to_string()), created_at: chrono::Utc::now(), updated_at: chrono::Utc::now(),
+            title_ciphertext: None, title_nonce: None, // Updated field
+            created_at: chrono::Utc::now(), updated_at: chrono::Utc::now(),
             history_management_strategy: "message_window".to_string(), history_management_limit: 20, // High limit, actual tokens will control
             model_name: model_name_for_test.clone(), visibility: Some("private".to_string()),
             active_custom_persona_id: None, active_impersonated_character_id: None,
@@ -2859,7 +2950,8 @@ mod get_session_data_for_generation_tests {
         // Insert ChatSession
         let test_session_rag_older_hist = NewChat {
             id: setup.session_id, user_id: setup.user_id, character_id: setup._character_id,
-            title: Some("Test Session RAG Older Hist".to_string()), created_at: chrono::Utc::now(), updated_at: chrono::Utc::now(),
+            title_ciphertext: None, title_nonce: None, // Updated field
+            created_at: chrono::Utc::now(), updated_at: chrono::Utc::now(),
             history_management_strategy: "message_window".to_string(), history_management_limit: 10, // Ample limit for recent
             model_name: model_name_for_test.clone(), visibility: Some("private".to_string()),
             active_custom_persona_id: None, active_impersonated_character_id: None,

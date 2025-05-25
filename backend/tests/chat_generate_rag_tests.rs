@@ -198,7 +198,8 @@ async fn test_generate_chat_response_triggers_embeddings() -> anyhow::Result<()>
                 id: Uuid::new_v4(),
                 user_id: user_id_for_session,
                 character_id: character_id_for_session,
-                title: Some(format!("Chat with char {}", character_id_for_session)),
+                title_ciphertext: None,
+                title_nonce: None,
                 created_at: now, // Added required field
                 updated_at: now, // Added required field
                 history_management_strategy: "none".to_string(), // Added required field
@@ -488,7 +489,8 @@ async fn test_generate_chat_response_triggers_embeddings_with_existing_session()
                 id: Uuid::new_v4(),
                 user_id: user_id_for_session,
                 character_id: char_id_for_session,
-                title: Some(format!("Chat with char {}", char_id_for_session)),
+                title_ciphertext: None,
+                title_nonce: None,
                 created_at: now, // Added required field
                 updated_at: now, // Added required field
                 history_management_strategy: "none".to_string(), // Added required field
@@ -746,7 +748,8 @@ async fn test_rag_context_injection_in_prompt() -> anyhow::Result<()> {
                 id: Uuid::new_v4(),
                 user_id: user_id_for_session,
                 character_id: char_id_for_session,
-                title: Some(format!("Chat with char {}", char_id_for_session)),
+                title_ciphertext: None,
+                title_nonce: None,
                 created_at: now, // Added required field
                 updated_at: now, // Added required field
                 history_management_strategy: "none".to_string(), // Added required field
@@ -1088,7 +1091,8 @@ async fn generate_chat_response_rag_retrieval_error() -> anyhow::Result<()> {
                 id: Uuid::new_v4(),
                 user_id: user_id_for_session,
                 character_id: char_id_for_session,
-                title: Some(format!("Chat with char {}", char_id_for_session)),
+                title_ciphertext: None,
+                title_nonce: None,
                 created_at: now, // Added required field
                 updated_at: now, // Added required field
                 history_management_strategy: "none".to_string(), // Added required field
@@ -1397,7 +1401,8 @@ async fn setup_test_data(use_real_ai: bool) -> anyhow::Result<RagTestContext> {
                 id: Uuid::new_v4(),
                 user_id: user_id_for_session,
                 character_id: char_id_for_session,
-                title: Some(format!("Chat with char {}", char_id_for_session)),
+                title_ciphertext: None,
+                title_nonce: None,
                 created_at: now, // Added required field
                 updated_at: now, // Added required field
                 history_management_strategy: "none".to_string(), // Added required field

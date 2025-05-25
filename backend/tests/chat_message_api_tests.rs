@@ -78,10 +78,8 @@ async fn get_chat_messages_success_integration() -> anyhow::Result<()> {
         user_id: user_a.id,
         character_id: char_a.id,
         // Aligning with chat_session_api_tests.rs test_get_chat_session_details_forbidden
-        title: Some(format!(
-            "Chat Session for {} with Character {}",
-            user_a.username, char_a.name
-        )),
+        title_ciphertext: None,
+        title_nonce: None,
         created_at: chrono::Utc::now(),
         updated_at: chrono::Utc::now(),
         history_management_strategy: "truncate_summary".to_string(),

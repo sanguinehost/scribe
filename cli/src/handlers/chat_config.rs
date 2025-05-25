@@ -34,7 +34,7 @@ pub async fn handle_chat_config_action<H: IoHandler, C: HttpClient>(
         io_handler.write_line(&format!(
             "  [{}] {} (ID: {}, Character: {})",
             i + 1,
-            session.title.as_deref().unwrap_or("Untitled"),
+            session.title.as_deref().unwrap_or("Untitled"), // Now decrypted
             session.id,
             session.character_id
         ))?;
@@ -54,7 +54,7 @@ pub async fn handle_chat_config_action<H: IoHandler, C: HttpClient>(
     let chat_id = selected_session.id;
     io_handler.write_line(&format!(
         "Configuring chat session: {} (ID: {})",
-        selected_session.title.as_deref().unwrap_or("Untitled"),
+        "[Encrypted Title]", // Title is now encrypted
         chat_id
     ))?;
 
@@ -153,6 +153,8 @@ pub async fn handle_chat_config_action<H: IoHandler, C: HttpClient>(
             io_handler.write_line(&format!("Error updating settings: {}", e))?;
         }
     }
+    
+    io_handler.write_line("\n[Chat config completed successfully]")?;
 
     Ok(())
 }
@@ -162,6 +164,11 @@ fn display_settings<H: IoHandler>(
     io_handler: &mut H,
     settings: &ChatSettingsResponse,
 ) -> Result<(), CliError> {
+    // Validate that the settings don't contain binary data
+    if !settings.model_name.is_ascii() {
+        tracing::warn!("Model name contains non-ASCII characters");
+    }
+    
     io_handler.write_line("\n--- Current Chat Settings ---")?;
 
     // Display model name
@@ -188,5 +195,12 @@ fn display_settings<H: IoHandler>(
     }
 
     io_handler.write_line("---")?;
+    
+    // Flush output to ensure everything is properly displayed
+    io_handler.flush()?;
+    
+    // Add a small delay to ensure terminal has processed output
+    std::thread::sleep(std::time::Duration::from_millis(10));
+    
     Ok(())
 }

@@ -8,7 +8,7 @@ use scribe_backend::models::{
     auth::LoginPayload,
     // No need to import CharacterDataForClient from backend here, as we use ClientCharacterDataForClient
     chats::{
-        ApiChatMessage, Chat, ChatMessage, ChatSettingsResponse, GenerateChatRequest,
+        ApiChatMessage, Chat, ChatForClient, ChatMessage, ChatSettingsResponse, GenerateChatRequest,
         UpdateChatSettingsRequest,
     },
     lorebook_dtos::{
@@ -279,7 +279,7 @@ impl HttpClient for ReqwestClientWrapper {
         handle_response(response).await
     }
 
-    async fn list_chat_sessions(&self) -> Result<Vec<Chat>, CliError> {
+    async fn list_chat_sessions(&self) -> Result<Vec<ChatForClient>, CliError> {
         let url = build_url(&self.base_url, "/api/chats")?;
         tracing::info!(target: "scribe_cli::client::implementation", %url, "Listing chat sessions via HttpClient");
         let response = self

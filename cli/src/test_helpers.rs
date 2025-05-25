@@ -22,7 +22,7 @@ use chrono::Utc;
 use futures_util::Stream;
 use scribe_backend::models::auth::LoginPayload;
 use scribe_backend::models::chats::{
-    ApiChatMessage, Chat, ChatMessage, ChatSettingsResponse, MessageRole, UpdateChatSettingsRequest,
+    ApiChatMessage, Chat, ChatForClient, ChatMessage, ChatSettingsResponse, MessageRole, UpdateChatSettingsRequest,
 };
 use scribe_backend::models::users::User;
 use std::cell::RefCell;
@@ -143,7 +143,7 @@ pub struct MockHttpClient {
     pub list_characters_result:
         Option<Arc<Result<Vec<ClientCharacterDataForClient>, MockCliError>>>,
     pub get_character_result: Option<Arc<Result<ClientCharacterDataForClient, MockCliError>>>,
-    pub list_chat_sessions_result: Option<Arc<Result<Vec<Chat>, MockCliError>>>,
+    pub list_chat_sessions_result: Option<Arc<Result<Vec<ChatForClient>, MockCliError>>>,
     pub get_chat_messages_result: Option<Arc<Result<Vec<ClientChatMessageResponse>, MockCliError>>>,
     pub create_chat_session_result: Option<Arc<Result<Chat, MockCliError>>>,
     pub generate_response_result: Option<Arc<Result<ChatMessage, MockCliError>>>,
@@ -375,7 +375,7 @@ impl HttpClient for MockHttpClient {
         mock_result.map_err(Into::into)
     }
 
-    async fn list_chat_sessions(&self) -> Result<Vec<Chat>, CliError> {
+    async fn list_chat_sessions(&self) -> Result<Vec<ChatForClient>, CliError> {
         self.record_endpoint_call("list_chat_sessions");
         match &self.list_chat_sessions_result {
             Some(res) => res.as_ref().clone().map_err(CliError::from),
@@ -925,14 +925,17 @@ pub fn mock_character_data_for_client(
 /// Creates a mock chat session for testing
 #[allow(dead_code)]
 pub fn mock_chat_session(id: Uuid, character_id: Uuid) -> Chat {
+    // This function now returns the raw Chat struct with encrypted fields
     Chat {
         id,
         user_id: Uuid::new_v4(),
         character_id,
-        title: Some("Mock Chat".to_string()),
+        title_ciphertext: Some(b"mock_encrypted_title".to_vec()),
+        title_nonce: Some(b"mock_nonce_12345".to_vec()),
         created_at: Utc::now(),
         updated_at: Utc::now(),
-        system_prompt: Some("You are a helpful mock assistant".to_string()),
+        system_prompt_ciphertext: Some(b"mock_encrypted_prompt".to_vec()),
+        system_prompt_nonce: Some(b"mock_nonce_67890".to_vec()),
         temperature: Some(BigDecimal::from_str("0.7").unwrap()),
         max_output_tokens: Some(1024),
         frequency_penalty: Some(BigDecimal::from_str("0").unwrap()),
@@ -950,6 +953,39 @@ pub fn mock_chat_session(id: Uuid, character_id: Uuid) -> Chat {
         model_name: "default-model".to_string(),
         gemini_thinking_budget: None,
         gemini_enable_code_execution: None,
+        active_custom_persona_id: None,
+        active_impersonated_character_id: None,
+    }
+}
+
+/// Creates a mock chat session for client responses (with decrypted fields)
+#[allow(dead_code)]
+pub fn mock_chat_session_for_client(id: Uuid, character_id: Uuid) -> ChatForClient {
+    ChatForClient {
+        id,
+        user_id: Uuid::new_v4(),
+        character_id,
+        title: Some("Mock Chat Session".to_string()), // Decrypted title
+        system_prompt: Some("You are a helpful mock assistant".to_string()), // Decrypted system prompt
+        temperature: Some(BigDecimal::from_str("0.7").unwrap()),
+        max_output_tokens: Some(1024),
+        created_at: Utc::now(),
+        updated_at: Utc::now(),
+        frequency_penalty: Some(BigDecimal::from_str("0").unwrap()),
+        presence_penalty: Some(BigDecimal::from_str("0").unwrap()),
+        top_k: Some(50),
+        top_p: Some(BigDecimal::from_str("0.9").unwrap()),
+        repetition_penalty: Some(BigDecimal::from_str("1.0").unwrap()),
+        min_p: Some(BigDecimal::from_str("0.0").unwrap()),
+        top_a: Some(BigDecimal::from_str("0.0").unwrap()),
+        seed: Some(12345),
+        logit_bias: None,
+        history_management_strategy: "window".to_string(),
+        history_management_limit: 20,
+        model_name: "default-model".to_string(),
+        gemini_thinking_budget: None,
+        gemini_enable_code_execution: None,
+        visibility: Some("private".to_string()),
         active_custom_persona_id: None,
         active_impersonated_character_id: None,
     }

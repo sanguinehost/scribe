@@ -24,7 +24,8 @@ use secrecy::SecretBox; // For DEK (SecretBox<Vec<u8>>) // For error handling
 // Main Chat model (similar to the frontend Chat type)
 // Type alias for the tuple returned when selecting/returning chat settings
 pub type SettingsTuple = (
-    Option<String>,     // system_prompt
+    Option<Vec<u8>>,    // system_prompt_ciphertext
+    Option<Vec<u8>>,    // system_prompt_nonce
     Option<BigDecimal>, // temperature
     Option<i32>,        // max_output_tokens
     Option<BigDecimal>, // frequency_penalty
@@ -50,8 +51,6 @@ pub struct Chat {
     pub id: Uuid,
     pub user_id: Uuid,
     pub character_id: Uuid,
-    pub title: Option<String>,
-    pub system_prompt: Option<String>,
     pub temperature: Option<bigdecimal::BigDecimal>,
     pub max_output_tokens: Option<i32>,
     pub created_at: DateTime<Utc>,
@@ -75,6 +74,11 @@ pub struct Chat {
     // Add new fields to match schema.rs for chat_sessions table
     pub active_custom_persona_id: Option<Uuid>,
     pub active_impersonated_character_id: Option<Uuid>,
+    // Encrypted fields
+    pub title_ciphertext: Option<Vec<u8>>,
+    pub title_nonce: Option<Vec<u8>>,
+    pub system_prompt_ciphertext: Option<Vec<u8>>,
+    pub system_prompt_nonce: Option<Vec<u8>>,
 }
 
 impl std::fmt::Debug for Chat {
@@ -83,11 +87,10 @@ impl std::fmt::Debug for Chat {
             .field("id", &self.id)
             .field("user_id", &self.user_id)
             .field("character_id", &self.character_id)
-            .field("title", &self.title.as_ref().map(|_| "[REDACTED]"))
-            .field(
-                "system_prompt",
-                &self.system_prompt.as_ref().map(|_| "[REDACTED]"),
-            )
+            .field("title_ciphertext", &"[REDACTED_BYTES]")
+            .field("title_nonce", &"[REDACTED_BYTES]")
+            .field("system_prompt_ciphertext", &"[REDACTED_BYTES]")
+            .field("system_prompt_nonce", &"[REDACTED_BYTES]")
             .field("temperature", &self.temperature)
             .field("max_output_tokens", &self.max_output_tokens)
             .field("created_at", &self.created_at)
@@ -130,7 +133,8 @@ pub struct NewChat {
     pub id: Uuid,
     pub user_id: Uuid,
     pub character_id: Uuid,
-    pub title: Option<String>,
+    pub title_ciphertext: Option<Vec<u8>>,
+    pub title_nonce: Option<Vec<u8>>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     pub history_management_strategy: String,
@@ -148,7 +152,8 @@ impl std::fmt::Debug for NewChat {
             .field("id", &self.id)
             .field("user_id", &self.user_id)
             .field("character_id", &self.character_id)
-            .field("title", &self.title.as_ref().map(|_| "[REDACTED]"))
+            .field("title_ciphertext", &"[REDACTED_BYTES]")
+            .field("title_nonce", &"[REDACTED_BYTES]")
             .field("created_at", &self.created_at)
             .field("updated_at", &self.updated_at)
             .field(
@@ -941,6 +946,72 @@ impl std::fmt::Debug for GenerateChatRequest {
             .finish()
     }
 }
+// --- Chat Client Response Structures ---
+
+/// Chat struct for client responses with decrypted fields
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct ChatForClient {
+    pub id: Uuid,
+    pub user_id: Uuid,
+    pub character_id: Uuid,
+    pub title: Option<String>, // Decrypted title
+    pub system_prompt: Option<String>, // Decrypted system prompt (if needed)
+    pub temperature: Option<bigdecimal::BigDecimal>,
+    pub max_output_tokens: Option<i32>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    pub frequency_penalty: Option<bigdecimal::BigDecimal>,
+    pub presence_penalty: Option<bigdecimal::BigDecimal>,
+    pub top_k: Option<i32>,
+    pub top_p: Option<bigdecimal::BigDecimal>,
+    pub repetition_penalty: Option<bigdecimal::BigDecimal>,
+    pub min_p: Option<bigdecimal::BigDecimal>,
+    pub top_a: Option<bigdecimal::BigDecimal>,
+    pub seed: Option<i32>,
+    pub logit_bias: Option<serde_json::Value>,
+    pub history_management_strategy: String,
+    pub history_management_limit: i32,
+    pub model_name: String,
+    pub gemini_thinking_budget: Option<i32>,
+    pub gemini_enable_code_execution: Option<bool>,
+    pub visibility: Option<String>,
+    pub active_custom_persona_id: Option<Uuid>,
+    pub active_impersonated_character_id: Option<Uuid>,
+}
+
+impl From<Chat> for ChatForClient {
+    fn from(chat: Chat) -> Self {
+        Self {
+            id: chat.id,
+            user_id: chat.user_id,
+            character_id: chat.character_id,
+            title: None, // Will be set by decryption logic
+            system_prompt: None, // Will be set by decryption logic
+            temperature: chat.temperature,
+            max_output_tokens: chat.max_output_tokens,
+            created_at: chat.created_at,
+            updated_at: chat.updated_at,
+            frequency_penalty: chat.frequency_penalty,
+            presence_penalty: chat.presence_penalty,
+            top_k: chat.top_k,
+            top_p: chat.top_p,
+            repetition_penalty: chat.repetition_penalty,
+            min_p: chat.min_p,
+            top_a: chat.top_a,
+            seed: chat.seed,
+            logit_bias: chat.logit_bias,
+            history_management_strategy: chat.history_management_strategy,
+            history_management_limit: chat.history_management_limit,
+            model_name: chat.model_name,
+            gemini_thinking_budget: chat.gemini_thinking_budget,
+            gemini_enable_code_execution: chat.gemini_enable_code_execution,
+            visibility: chat.visibility,
+            active_custom_persona_id: chat.active_custom_persona_id,
+            active_impersonated_character_id: chat.active_impersonated_character_id,
+        }
+    }
+}
+
 // --- Chat Settings API Structures ---
 
 /// Response body for GET /api/chat/{id}/settings
@@ -1008,7 +1079,7 @@ impl std::fmt::Debug for ChatSettingsResponse {
 impl From<Chat> for ChatSettingsResponse {
     fn from(chat: Chat) -> Self {
         ChatSettingsResponse {
-            system_prompt: chat.system_prompt,
+            system_prompt: None, // Cannot decrypt without DEK in this context
             temperature: chat.temperature,
             max_output_tokens: chat.max_output_tokens,
             frequency_penalty: chat.frequency_penalty,
@@ -1031,8 +1102,7 @@ impl From<Chat> for ChatSettingsResponse {
 
 /// Request body for PUT /api/chat/{id}/settings
 /// All fields are optional to allow partial updates.
-#[derive(Serialize, Deserialize, Clone, PartialEq, AsChangeset, Validate, Default)] // Removed Debug
-#[diesel(table_name = crate::schema::chat_sessions)] // Specify target table
+#[derive(Serialize, Deserialize, Clone, PartialEq, Validate, Default)] // Removed Debug and AsChangeset
 pub struct UpdateChatSettingsRequest {
     pub system_prompt: Option<String>,
     #[validate(custom(function = "validate_optional_temperature"))]
@@ -1326,8 +1396,10 @@ mod tests {
             id: Uuid::new_v4(),
             user_id: Uuid::new_v4(),
             character_id: Uuid::new_v4(),
-            title: Some("Test Chat".to_string()),
-            system_prompt: Some("You are a helpful assistant".to_string()),
+            title_ciphertext: None,
+            title_nonce: None,
+            system_prompt_ciphertext: None,
+            system_prompt_nonce: None,
             temperature: Some(bd("0.7")),
             max_output_tokens: Some(1024),
             created_at: Utc::now(),
@@ -1358,8 +1430,10 @@ mod tests {
         let debug_str = format!("{:?}", session);
         assert!(debug_str.contains("Chat {"));
         assert!(debug_str.contains(&session.id.to_string()));
-        assert!(debug_str.contains("title: Some(\"[REDACTED]\")"));
-        assert!(debug_str.contains("system_prompt: Some(\"[REDACTED]\")"));
+        assert!(debug_str.contains("title_ciphertext: None"));
+        assert!(debug_str.contains("title_nonce: None"));
+        assert!(debug_str.contains("system_prompt_ciphertext: None"));
+        assert!(debug_str.contains("system_prompt_nonce: None"));
         assert!(debug_str.contains("history_management_strategy: \"none\""));
     }
 

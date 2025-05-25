@@ -321,7 +321,8 @@ async fn generate_chat_response_uses_session_settings() -> Result<(), anyhow::Er
         id: Uuid::new_v4(),
         user_id: user.id,
         character_id: character.id,
-        title: Some("Test Chat Session for Settings".to_string()),
+        title_ciphertext: None,
+        title_nonce: None,
         history_management_strategy: "truncate_summary".to_string(), // Default
         history_management_limit: 20,                                // Default
         model_name: "gemini-2.5-flash-preview-04-17".to_string(),    // Default
@@ -376,12 +377,20 @@ async fn generate_chat_response_uses_session_settings() -> Result<(), anyhow::Er
     let ttopa_clone = test_top_a.clone();
     let tlb_clone = test_logit_bias.clone(); // Value might not be Copy
 
+    let user_dek_secret_box = user.dek.as_ref().map(|user_dek_struct| std::sync::Arc::new(secrecy::SecretBox::new(Box::new(user_dek_struct.0.expose_secret().clone()))));
+    let (sp_ciphertext, sp_nonce) = if let Some(dek_arc) = &user_dek_secret_box {
+        scribe_backend::crypto::encrypt_gcm(test_prompt.as_bytes(), dek_arc.as_ref()).unwrap()
+    } else {
+        panic!("User DEK not available for system prompt encryption in test setup");
+    };
+
     {
         let interact_result = conn
             .interact(move |conn_actual| {
                 diesel::update(chat_sessions::table.find(session.id))
                     .set((
-                        chat_sessions::system_prompt.eq(Some(test_prompt.to_string())),
+                        chat_sessions::system_prompt_ciphertext.eq(Some(sp_ciphertext)),
+                        chat_sessions::system_prompt_nonce.eq(Some(sp_nonce)),
                         chat_sessions::temperature.eq(Some(tt_clone)),
                         chat_sessions::max_output_tokens.eq(Some(test_tokens)),
                         chat_sessions::frequency_penalty.eq(Some(tfp_clone)),
@@ -591,8 +600,16 @@ async fn generate_chat_response_uses_session_settings() -> Result<(), anyhow::Er
             interact_result.map_err(|e| anyhow::anyhow!("Deadpool interact error: {}", e))?;
         diesel_result?
     };
+    let decrypted_system_prompt = user_dek_secret_box.as_ref().and_then(|dek_arc| {
+        db_chat_settings.system_prompt_ciphertext.as_ref().and_then(|ct| {
+            db_chat_settings.system_prompt_nonce.as_ref().and_then(|nonce| {
+                scribe_backend::crypto::decrypt_gcm(ct, nonce, dek_arc.as_ref()).ok()
+                    .and_then(|ps| String::from_utf8(ps.expose_secret().to_vec()).ok())
+            })
+        })
+    });
     assert_eq!(
-        db_chat_settings.system_prompt,
+        decrypted_system_prompt,
         Some("Test system prompt for session".to_string())
     );
     assert_eq!(db_chat_settings.temperature, Some(test_temp));
@@ -855,7 +872,8 @@ async fn generate_chat_response_json_stream_initiation_error() -> Result<(), any
         id: Uuid::new_v4(),
         user_id: user.id,
         character_id: character.id,
-        title: Some("Test Chat Session for Settings".to_string()),
+        title_ciphertext: None,
+        title_nonce: None,
         history_management_strategy: "truncate_summary".to_string(), // Default
         history_management_limit: 20,                                // Default
         model_name: "gemini-2.5-flash-preview-04-17".to_string(),    // Default
@@ -903,12 +921,20 @@ async fn generate_chat_response_json_stream_initiation_error() -> Result<(), any
     let ttopa_clone_err = test_top_a.clone();
     let tlb_clone_err = test_logit_bias.clone();
 
+    let user_dek_secret_box_err_test = user.dek.as_ref().map(|user_dek_struct| std::sync::Arc::new(secrecy::SecretBox::new(Box::new(user_dek_struct.0.expose_secret().clone()))));
+    let (sp_err_ciphertext, sp_err_nonce) = if let Some(dek_arc) = &user_dek_secret_box_err_test {
+        scribe_backend::crypto::encrypt_gcm(test_prompt.as_bytes(), dek_arc.as_ref()).unwrap()
+    } else {
+        panic!("User DEK not available for system prompt encryption in error test setup");
+    };
+
     {
         let interact_result = conn
             .interact(move |conn_actual| {
                 diesel::update(chat_sessions::table.find(session.id))
                     .set((
-                        chat_sessions::system_prompt.eq(Some(test_prompt.to_string())),
+                        chat_sessions::system_prompt_ciphertext.eq(Some(sp_err_ciphertext)),
+                        chat_sessions::system_prompt_nonce.eq(Some(sp_err_nonce)),
                         chat_sessions::temperature.eq(Some(tt_clone_err)),
                         chat_sessions::max_output_tokens.eq(Some(test_tokens)),
                         chat_sessions::frequency_penalty.eq(Some(tfp_clone_err)),
@@ -1061,8 +1087,16 @@ async fn generate_chat_response_json_stream_initiation_error() -> Result<(), any
     };
 
     // Check that the system_prompt is what we set earlier
+    let decrypted_system_prompt_err_test = user_dek_secret_box_err_test.as_ref().and_then(|dek_arc| {
+        db_chat_settings.system_prompt_ciphertext.as_ref().and_then(|ct| {
+            db_chat_settings.system_prompt_nonce.as_ref().and_then(|nonce| {
+                scribe_backend::crypto::decrypt_gcm(ct, nonce, dek_arc.as_ref()).ok()
+                    .and_then(|ps| String::from_utf8(ps.expose_secret().to_vec()).ok())
+            })
+        })
+    });
     assert_eq!(
-        db_chat_settings.system_prompt,
+        decrypted_system_prompt_err_test,
         Some("Error test system prompt".to_string())
     );
     assert_eq!(db_chat_settings.temperature, Some(test_temp));
@@ -1257,7 +1291,8 @@ async fn generate_chat_response_history_sliding_window_messages() -> anyhow::Res
         id: session_id,
         user_id: user.id,
         character_id,
-        title: Some("Hist Slide Session".to_string()),
+        title_ciphertext: None,
+        title_nonce: None,
         created_at: Utc::now(),
         updated_at: Utc::now(),
         history_management_strategy: "none".to_string(),
@@ -1566,7 +1601,8 @@ async fn generate_chat_response_history_sliding_window_tokens() -> anyhow::Resul
         id: session_id,
         user_id: user.id,
         character_id,
-        title: Some("Hist Slide Tok Session".to_string()),
+        title_ciphertext: None,
+        title_nonce: None,
         created_at: Utc::now(),
         updated_at: Utc::now(),
         history_management_strategy: "none".to_string(),
@@ -1858,7 +1894,8 @@ async fn test_generate_chat_response_history_truncate_tokens() -> anyhow::Result
         id: session_id,
         user_id: user.id,
         character_id,
-        title: Some("Hist Trunc Tok Session".to_string()),
+        title_ciphertext: None,
+        title_nonce: None,
         created_at: Utc::now(),
         updated_at: Utc::now(),
         history_management_strategy: "none".to_string(),
@@ -2204,7 +2241,8 @@ async fn generate_chat_response_history_none() -> anyhow::Result<()> {
         id: session_id,
         user_id: user.id,
         character_id,
-        title: Some("Hist None Session".to_string()),
+        title_ciphertext: None,
+        title_nonce: None,
         created_at: Utc::now(),
         updated_at: Utc::now(),
         history_management_strategy: "none".to_string(),
@@ -2455,7 +2493,8 @@ async fn generate_chat_response_history_truncate_tokens_limit_30() -> anyhow::Re
         id: session_id,
         user_id: user.id,
         character_id,
-        title: Some("Hist Trunc Tok Session".to_string()),
+        title_ciphertext: None,
+        title_nonce: None,
         created_at: Utc::now(),
         updated_at: Utc::now(),
         history_management_strategy: "none".to_string(),
@@ -2727,7 +2766,8 @@ async fn test_get_chat_messages_success() -> anyhow::Result<()> {
         id: session_id,
         user_id: user.id,
         character_id,
-        title: Some("Test Chat".to_string()),
+        title_ciphertext: None,
+        title_nonce: None,
         created_at: Utc::now(),
         updated_at: Utc::now(),
         history_management_strategy: "none".to_string(),
@@ -2971,7 +3011,8 @@ async fn test_get_chat_messages_forbidden() -> anyhow::Result<()> {
         id: session_a_id,
         user_id: user_a.id,
         character_id: character_a_id,
-        title: Some("User A Session".to_string()),
+        title_ciphertext: None,
+        title_nonce: None,
         created_at: Utc::now(),
         updated_at: Utc::now(),
         history_management_strategy: "none".to_string(),
