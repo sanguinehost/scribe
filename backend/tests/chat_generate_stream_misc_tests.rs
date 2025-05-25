@@ -122,7 +122,6 @@ async fn generate_chat_response_streaming_empty_response() {
     let conn_pool = test_app.db_pool.clone();
     let user_id_clone_session = user.id;
     let character_id_clone_session = character.id;
-    let session_title = format!("Test Chat with Char {}", character.id);
     let session: ChatSession = conn_pool
         .get()
         .await
@@ -132,7 +131,8 @@ async fn generate_chat_response_streaming_empty_response() {
                 id: Uuid::new_v4(),
                 user_id: user_id_clone_session,
                 character_id: character_id_clone_session,
-                title: Some(session_title),
+                title_ciphertext: None,
+                title_nonce: None,
                 created_at: Utc::now(),
                 updated_at: Utc::now(),
                 history_management_strategy: "truncate".to_string(),
@@ -374,7 +374,6 @@ async fn generate_chat_response_streaming_reasoning_chunk() {
     let conn_pool = test_app.db_pool.clone();
     let user_id_clone_session = user.id;
     let character_id_clone_session = character.id;
-    let session_title_reasoning = format!("Test Chat with Char {}", character.id);
     let session: ChatSession = conn_pool
         .get()
         .await
@@ -384,7 +383,8 @@ async fn generate_chat_response_streaming_reasoning_chunk() {
                 id: Uuid::new_v4(),
                 user_id: user_id_clone_session,
                 character_id: character_id_clone_session,
-                title: Some(session_title_reasoning),
+                title_ciphertext: None,
+                title_nonce: None,
                 created_at: Utc::now(),
                 updated_at: Utc::now(),
                 history_management_strategy: "truncate".to_string(),
@@ -754,7 +754,6 @@ async fn generate_chat_response_streaming_real_client_failure_repro() {
     let conn_pool = test_app.db_pool.clone();
     let user_id_clone_session = user.id;
     let character_id_clone_session = character.id;
-    let session_title_real_fail = format!("Test Chat with Char {}", character.id);
     let session: ChatSession = conn_pool
         .get()
         .await
@@ -764,7 +763,8 @@ async fn generate_chat_response_streaming_real_client_failure_repro() {
                 id: Uuid::new_v4(),
                 user_id: user_id_clone_session,
                 character_id: character_id_clone_session,
-                title: Some(session_title_real_fail),
+                title_ciphertext: None,
+                title_nonce: None,
                 created_at: Utc::now(),
                 updated_at: Utc::now(),
                 history_management_strategy: "truncate".to_string(),

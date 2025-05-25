@@ -26,6 +26,9 @@ async fn create_session_uses_default_persona_when_active_persona_is_none() {
     let password = "password123";
     let user_db = db::create_test_user(&app.db_pool, username.to_string(), password.to_string()).await.unwrap();
     tdg.add_user(user_db.id);
+    // Create user_dek_secret_box early
+    let user_dek_secret_box: Option<Arc<SecretBox<Vec<u8>>>> = user_db.dek.as_ref().map(|user_dek_struct| Arc::new(SecretBox::new(Box::new(user_dek_struct.0.expose_secret().clone()))));
+
     let (client, auth_cookie) = login_user_via_api(&app, username, password).await;
 
     // 1. Create a character for the user
@@ -42,12 +45,15 @@ async fn create_session_uses_default_persona_when_active_persona_is_none() {
     // If the test *relies* on this specific prompt, this part needs more work.
     // Given the test asserts against persona_system_prompt, character's prompt might not be critical here.
     // However, if default persona is NOT found, it falls back to character's prompt.
-    // Let's update it directly in the DB (unencrypted for simplicity in test setup, or use placeholder if encrypted)
+    // Let's update it directly in the DB. The character's system prompt is expected to be plaintext.
     let char_id_for_update = character.id;
-    let character_prompt_bytes = Some(character_system_prompt_val.as_bytes().to_vec());
+    let character_system_prompt_val_clone = character_system_prompt_val.clone();
     app.db_pool.get().await.unwrap().interact(move |conn| {
         diesel::update(characters::table.find(char_id_for_update))
-            .set(characters::system_prompt.eq(character_prompt_bytes))
+            .set((
+                characters::system_prompt.eq(Some(character_system_prompt_val_clone.as_bytes().to_vec())),
+                characters::system_prompt_nonce.eq(Some(vec![0u8; 12])) // Dummy nonce
+            ))
             .execute(conn)
     }).await.unwrap().unwrap();
     // Re-fetch character to have the updated prompt if needed by later logic, though this test focuses on persona.
@@ -108,9 +114,6 @@ async fn create_session_uses_default_persona_when_active_persona_is_none() {
         .unwrap();
     assert_eq!(db_user_check.default_persona_id, Some(created_persona.id));
 
-    // 4. Call create_session_and_maybe_first_message with active_custom_persona_id = None
-    let user_dek_secret_box: Option<Arc<SecretBox<Vec<u8>>>> = user_db.dek.as_ref().map(|user_dek_struct| Arc::new(SecretBox::new(Box::new(user_dek_struct.0.expose_secret().clone()))));
-    
     let app_state_for_service = TestAppStateBuilder::new(
         app.db_pool.clone(),
         app.config.clone(),
@@ -122,12 +125,13 @@ async fn create_session_uses_default_persona_when_active_persona_is_none() {
     .build();
     let app_state_arc = Arc::new(app_state_for_service);
 
+    // 4. Call create_session_and_maybe_first_message with active_custom_persona_id = None
     let created_chat_session = chat_service::create_session_and_maybe_first_message(
         app_state_arc, // Use constructed AppState
         user_db.id,
         character.id,
         None, // active_custom_persona_id is None
-        user_dek_secret_box,
+        user_dek_secret_box.clone(), // Clone the Option<Arc>
     )
     .await
     .unwrap();
@@ -141,8 +145,19 @@ async fn create_session_uses_default_persona_when_active_persona_is_none() {
         "Chat session should use the user's default persona ID"
     );
 
+    let decrypted_prompt: Option<String> = match (
+        created_chat_session.system_prompt_ciphertext.as_ref(),
+        created_chat_session.system_prompt_nonce.as_ref(),
+        user_dek_secret_box.as_ref()
+    ) {
+        (Some(ciphertext), Some(nonce), Some(dek_arc)) => {
+            scribe_backend::crypto::decrypt_gcm(ciphertext, nonce, dek_arc.as_ref()).ok()
+                .and_then(|ps| String::from_utf8(ps.expose_secret().to_vec()).ok())
+        }
+        _ => None,
+    };
     assert_eq!(
-        created_chat_session.system_prompt.as_deref(),
+        decrypted_prompt.as_deref(),
         Some(persona_system_prompt.as_str()),
         "Chat session system prompt should match the default persona's system prompt"
     );
@@ -157,6 +172,8 @@ async fn create_session_no_default_persona_falls_back_to_character_prompt() {
     let username = "user_no_default_persona";
     let password = "password123";
     let user_db = db::create_test_user(&app.db_pool, username.to_string(), password.to_string()).await.unwrap();
+    // Create user_dek_secret_box early
+    let user_dek_secret_box: Option<Arc<SecretBox<Vec<u8>>>> = user_db.dek.as_ref().map(|user_dek_struct| Arc::new(SecretBox::new(Box::new(user_dek_struct.0.expose_secret().clone()))));
     tdg.add_user(user_db.id);
     // No API client needed for this test as it directly calls the service
 
@@ -166,10 +183,13 @@ async fn create_session_no_default_persona_falls_back_to_character_prompt() {
     tdg.add_character(character.id);
     
     let char_id_for_update = character.id;
-    let character_prompt_bytes = Some(character_system_prompt_val.as_bytes().to_vec());
+    let character_system_prompt_val_clone = character_system_prompt_val.clone();
     app.db_pool.get().await.unwrap().interact(move |conn| {
         diesel::update(characters::table.find(char_id_for_update))
-            .set(characters::system_prompt.eq(character_prompt_bytes))
+            .set((
+                characters::system_prompt.eq(Some(character_system_prompt_val_clone.as_bytes().to_vec())),
+                characters::system_prompt_nonce.eq(Some(vec![0u8; 12])) // Dummy nonce
+            ))
             .execute(conn)
     }).await.unwrap().unwrap();
     character = app.db_pool.get().await.unwrap().interact(move |conn| {
@@ -196,9 +216,6 @@ async fn create_session_no_default_persona_falls_back_to_character_prompt() {
         .unwrap();
     assert!(db_user_check.default_persona_id.is_none());
 
-    // 3. Call create_session_and_maybe_first_message with active_custom_persona_id = None
-    let user_dek_secret_box: Option<Arc<SecretBox<Vec<u8>>>> = user_db.dek.as_ref().map(|user_dek_struct| Arc::new(SecretBox::new(Box::new(user_dek_struct.0.expose_secret().clone()))));
-
     let app_state_for_service = TestAppStateBuilder::new(
         app.db_pool.clone(),
         app.config.clone(),
@@ -210,12 +227,13 @@ async fn create_session_no_default_persona_falls_back_to_character_prompt() {
     .build();
     let app_state_arc = Arc::new(app_state_for_service);
 
+    // 3. Call create_session_and_maybe_first_message with active_custom_persona_id = None
     let created_chat_session = chat_service::create_session_and_maybe_first_message(
         app_state_arc,
         user_db.id,
         character.id,
         None, // active_custom_persona_id is None
-        user_dek_secret_box,
+        user_dek_secret_box.clone(),
     )
     .await
     .unwrap();
@@ -227,8 +245,19 @@ async fn create_session_no_default_persona_falls_back_to_character_prompt() {
         "Chat session should have no active_custom_persona_id"
     );
 
+    let decrypted_prompt: Option<String> = match (
+        created_chat_session.system_prompt_ciphertext.as_ref(),
+        created_chat_session.system_prompt_nonce.as_ref(),
+        user_dek_secret_box.as_ref()
+    ) {
+        (Some(ciphertext), Some(nonce), Some(dek_arc)) => {
+            scribe_backend::crypto::decrypt_gcm(ciphertext, nonce, dek_arc.as_ref()).ok()
+                .and_then(|ps| String::from_utf8(ps.expose_secret().to_vec()).ok())
+        }
+        _ => None,
+    };
     assert_eq!(
-        created_chat_session.system_prompt.as_deref(),
+        decrypted_prompt.as_deref(),
         Some(character_system_prompt_val.as_str()),
         "Chat session system prompt should match the character's system prompt"
     );
@@ -243,6 +272,8 @@ async fn create_session_default_persona_deleted_falls_back_to_character_prompt()
     let username = "user_deleted_default_persona";
     let password = "password123";
     let user_db = db::create_test_user(&app.db_pool, username.to_string(), password.to_string()).await.unwrap();
+    // Create user_dek_secret_box early
+    let user_dek_secret_box: Option<Arc<SecretBox<Vec<u8>>>> = user_db.dek.as_ref().map(|user_dek_struct| Arc::new(SecretBox::new(Box::new(user_dek_struct.0.expose_secret().clone()))));
     tdg.add_user(user_db.id);
     let (client, auth_cookie) = login_user_via_api(&app, username, password).await;
 
@@ -253,10 +284,13 @@ async fn create_session_default_persona_deleted_falls_back_to_character_prompt()
     tdg.add_character(character.id);
 
     let char_id_for_update = character.id;
-    let character_prompt_bytes = Some(character_system_prompt_val.as_bytes().to_vec());
-     app.db_pool.get().await.unwrap().interact(move |conn| {
+    let character_system_prompt_val_clone = character_system_prompt_val.clone();
+    app.db_pool.get().await.unwrap().interact(move |conn| {
         diesel::update(characters::table.find(char_id_for_update))
-            .set(characters::system_prompt.eq(character_prompt_bytes))
+            .set((
+                characters::system_prompt.eq(Some(character_system_prompt_val_clone.as_bytes().to_vec())),
+                characters::system_prompt_nonce.eq(Some(vec![0u8; 12])) // Dummy nonce
+            ))
             .execute(conn)
     }).await.unwrap().unwrap();
     character = app.db_pool.get().await.unwrap().interact(move |conn| {
@@ -311,12 +345,9 @@ async fn create_session_default_persona_deleted_falls_back_to_character_prompt()
         .await
         .unwrap()
         .unwrap();
-
-    // 4. Call create_session_and_maybe_first_message
-    let user_dek_secret_box: Option<Arc<SecretBox<Vec<u8>>>> = user_db.dek.as_ref().map(|user_dek_struct| Arc::new(SecretBox::new(Box::new(user_dek_struct.0.expose_secret().clone()))));
-
-    let app_state_for_service = TestAppStateBuilder::new(
-        app.db_pool.clone(),
+    
+        let app_state_for_service = TestAppStateBuilder::new(
+            app.db_pool.clone(),
         app.config.clone(),
         app.ai_client.clone(),
         app.mock_embedding_client.clone(),
@@ -326,12 +357,13 @@ async fn create_session_default_persona_deleted_falls_back_to_character_prompt()
     .build();
     let app_state_arc = Arc::new(app_state_for_service);
 
+    // 4. Call create_session_and_maybe_first_message
     let created_chat_session = chat_service::create_session_and_maybe_first_message(
         app_state_arc,
         user_db.id, // Use user_db.id
         character.id,
         None, // active_custom_persona_id is None
-        user_dek_secret_box,
+        user_dek_secret_box.clone(),
     )
     .await
     .unwrap();
@@ -346,8 +378,19 @@ async fn create_session_default_persona_deleted_falls_back_to_character_prompt()
         "Chat session active_custom_persona_id should be None after default persona is deleted"
     );
 
+    let decrypted_prompt: Option<String> = match (
+        created_chat_session.system_prompt_ciphertext.as_ref(),
+        created_chat_session.system_prompt_nonce.as_ref(),
+        user_dek_secret_box.as_ref()
+    ) {
+        (Some(ciphertext), Some(nonce), Some(dek_arc)) => {
+            scribe_backend::crypto::decrypt_gcm(ciphertext, nonce, dek_arc.as_ref()).ok()
+                .and_then(|ps| String::from_utf8(ps.expose_secret().to_vec()).ok())
+        }
+        _ => None,
+    };
     assert_eq!(
-        created_chat_session.system_prompt.as_deref(),
+        decrypted_prompt.as_deref(),
         Some(character_system_prompt_val.as_str()),
         "Chat session system prompt should fall back to the character's system prompt"
     );

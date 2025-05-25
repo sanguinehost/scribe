@@ -78,10 +78,9 @@ async fn test_create_chat_session_success() {
         .unwrap()
         .to_string();
 
-    let character_name = "Test Character for Chat";
+    let _character_name = "Test Character for Chat";
     let pool = test_app.db_pool.clone();
     let user_id_clone = user.id;
-    let _character_name_clone = character_name.to_string();
     let character_conn_obj = pool
         .get()
         .await
@@ -289,14 +288,12 @@ async fn test_create_chat_session_character_other_user() -> anyhow::Result<()> {
         .await
         .unwrap();
     assert_eq!(login_response_user1.status(), StatusCode::OK);
-    let login_cookie_user1 = login_response_user1
+    let _login_cookie_user1 = login_response_user1
         .headers()
         .get(header::SET_COOKIE)
         .expect("Set-Cookie header should be present")
         .to_str()?;
-    let _auth_cookie_user1 = login_cookie_user1.to_string();
 
-    let _character_name = "User1 Character";
     let user1_id_clone = user1.id;
     let character_conn_obj = test_app
         .db_pool
@@ -519,12 +516,11 @@ async fn create_chat_session_character_not_owned_integration() -> anyhow::Result
         .await
         .unwrap();
     assert_eq!(login_response_user1.status(), StatusCode::OK);
-    let login_cookie_user1 = login_response_user1
+    let _login_cookie_user1 = login_response_user1
         .headers()
         .get(header::SET_COOKIE)
         .expect("Set-Cookie header should be present")
         .to_str()?;
-    let _auth_cookie_user1 = login_cookie_user1.to_string();
 
     let user1_id_clone = user1.id;
     let character_conn_obj = test_app
@@ -760,8 +756,6 @@ async fn test_get_chat_session_details_unauthorized() {
     let pool = test_app.db_pool.clone();
     let session_user_id_clone = user.id;
     let session_char_id_clone = character.id;
-    let session_title = format!("Chat for char {}", character.id);
-    let session_title_clone = session_title.clone();
     let conn_guard_session_unauth = pool
         .get()
         .await
@@ -772,7 +766,8 @@ async fn test_get_chat_session_details_unauthorized() {
                 id: Uuid::new_v4(),
                 user_id: session_user_id_clone,
                 character_id: session_char_id_clone,
-                title: Some(session_title_clone),
+                title_ciphertext: None,
+                title_nonce: None,
                 created_at: Utc::now(),
                 updated_at: Utc::now(),
                 history_management_strategy: "truncate_summary".to_string(),
@@ -792,7 +787,6 @@ async fn test_get_chat_session_details_unauthorized() {
         .expect("Interact join error");
 
     let session_id_clone = session.id;
-    let _session_user_id_clone = user.id;
 
     // Make request without authentication
     let request = Request::builder()

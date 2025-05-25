@@ -116,7 +116,6 @@ async fn generate_chat_response_streaming_ai_error() {
     let conn_pool = test_app.db_pool.clone();
     let user_id_clone_session = user.id;
     let character_id_clone_session = character.id;
-    let session_title = format!("Test Chat with Char {}", character.id);
     let session: ChatSession = conn_pool
         .get()
         .await
@@ -126,7 +125,8 @@ async fn generate_chat_response_streaming_ai_error() {
                 id: Uuid::new_v4(),
                 user_id: user_id_clone_session,
                 character_id: character_id_clone_session,
-                title: Some(session_title),
+                title_ciphertext: None,
+                title_nonce: None,
                 created_at: Utc::now(),
                 updated_at: Utc::now(),
                 history_management_strategy: "truncate".to_string(),
@@ -416,7 +416,6 @@ async fn generate_chat_response_streaming_initiation_error() {
     let conn_pool = test_app.db_pool.clone();
     let user_id_clone_session = user_with_dek.id;
     let character_id_clone_session = character.id;
-    let session_title_init_err = format!("Test Chat with Char {}", character.id);
     let session: ChatSession = conn_pool
         .get()
         .await
@@ -426,7 +425,8 @@ async fn generate_chat_response_streaming_initiation_error() {
                 id: Uuid::new_v4(),
                 user_id: user_id_clone_session,
                 character_id: character_id_clone_session,
-                title: Some(session_title_init_err),
+                title_ciphertext: None,
+                title_nonce: None,
                 created_at: Utc::now(),
                 updated_at: Utc::now(),
                 history_management_strategy: "truncate".to_string(),
@@ -645,7 +645,6 @@ async fn generate_chat_response_streaming_error_before_content() {
     let conn_pool = test_app.db_pool.clone();
     let user_id_clone_session = user.id;
     let character_id_clone_session = character.id;
-    let session_title = format!("Test Chat with Char {}", character.id);
     let session: ChatSession = conn_pool
         .get()
         .await
@@ -655,7 +654,8 @@ async fn generate_chat_response_streaming_error_before_content() {
                 id: Uuid::new_v4(),
                 user_id: user_id_clone_session,
                 character_id: character_id_clone_session,
-                title: Some(session_title),
+                title_ciphertext: None,
+                title_nonce: None,
                 created_at: Utc::now(),
                 updated_at: Utc::now(),
                 history_management_strategy: "truncate".to_string(),
@@ -887,7 +887,6 @@ async fn generate_chat_response_streaming_genai_json_error() {
     let conn_pool = test_app.db_pool.clone();
     let user_id_clone_session = user.id;
     let character_id_clone_session = character.id;
-    let session_title_json_err = format!("Test Chat with Char {}", character.id);
     let session: ChatSession = conn_pool
         .get()
         .await
@@ -897,7 +896,8 @@ async fn generate_chat_response_streaming_genai_json_error() {
                 id: Uuid::new_v4(),
                 user_id: user_id_clone_session,
                 character_id: character_id_clone_session,
-                title: Some(session_title_json_err),
+                title_ciphertext: None,
+                title_nonce: None,
                 created_at: Utc::now(),
                 updated_at: Utc::now(),
                 history_management_strategy: "truncate".to_string(),

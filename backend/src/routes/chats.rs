@@ -5,7 +5,8 @@ use crate::errors::AppError;
 use crate::models::chat_override::CharacterOverrideDto; // Added for override handler
 use crate::models::chats::{
     Chat,
-    ChatSettingsResponse,
+    ChatForClient, // Added for client responses
+    // ChatSettingsResponse, // Not used directly in this file anymore
     CreateChatRequest,
     CreateMessageRequest,
     Message,
@@ -33,7 +34,8 @@ use crate::state::AppState;
 use diesel::{ExpressionMethods, QueryDsl, RunQueryDsl, SelectableHelper};
 use serde_json::json;
 use std::sync::Arc;
-use tracing::info;
+use tracing::{error, info};
+// ExposeSecret already imported above
 use uuid::Uuid;
 use validator::Validate;
 use serde::Serialize; // Remove unused Deserialize
@@ -140,6 +142,7 @@ pub async fn set_chat_character_override_handler(
 pub async fn get_chats_handler(
     auth_session: CurrentAuthSession,
     State(state): State<AppState>,
+    dek: SessionDek, // Added SessionDek extractor for decryption
 ) -> Result<impl IntoResponse, AppError> {
     let user = auth_session
         .user
@@ -161,25 +164,50 @@ pub async fn get_chats_handler(
         .await
         .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
 
-    // Return the full Chat structs directly
-    Ok(Json(chats))
+    // Decrypt the titles for client display
+    let mut decrypted_chats = Vec::new();
+    for chat in chats {
+        let mut client_chat = ChatForClient::from(chat.clone());
+        
+        // Decrypt title if available
+        client_chat.title = match (
+            chat.title_ciphertext.as_ref(),
+            chat.title_nonce.as_ref()
+        ) {
+            (Some(ciphertext), Some(nonce)) if !ciphertext.is_empty() && !nonce.is_empty() => {
+                match crypto::decrypt_gcm(ciphertext, nonce, &dek.0) {
+                    Ok(plaintext_secret) => {
+                        match String::from_utf8(plaintext_secret.expose_secret().to_vec()) {
+                            Ok(decrypted_text) => Some(decrypted_text),
+                            Err(_) => Some("[Invalid UTF-8]".to_string()),
+                        }
+                    },
+                    Err(_) => Some("[Decryption Failed]".to_string()),
+                }
+            },
+            _ => None,
+        };
+        
+        decrypted_chats.push(client_chat);
+    }
+    
+    Ok(Json(decrypted_chats))
 }
 
 // Create a new chat
 pub async fn create_chat_handler(
     auth_session: CurrentAuthSession,
     State(state): State<AppState>,
+    dek: SessionDek, // Added SessionDek extractor for encryption
     Json(payload): Json<CreateChatRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let user = auth_session
         .user
         .ok_or(AppError::Unauthorized("Not logged in".to_string()))?;
-    // Convert &SecretBox to Arc<SecretBox>
-    let user_dek_arc: Option<Arc<SecretBox<Vec<u8>>>> = user.dek.as_ref().map(|wrapped_dek| {
-        Arc::new(SecretBox::new(Box::new(
-            wrapped_dek.0.expose_secret().clone(),
-        )))
-    });
+    // Use the SessionDek which provides the user's DEK
+    let user_dek_arc = Some(Arc::new(SecretBox::new(Box::new(
+        dek.0.expose_secret().clone(),
+    ))));
 
     info!(%user.id, character_id=%payload.character_id, "Creating chat session");
 
@@ -198,19 +226,37 @@ pub async fn create_chat_handler(
         let pool = state.pool.clone();
         let session_id = chat.id;
         let custom_title = payload.title.clone();
-
-        // Update just the title field
-        pool.get()
-            .await
-            .map_err(|e| AppError::DbPoolError(e.to_string()))?
-            .interact(move |conn| {
-                diesel::update(chat_sessions::table.find(session_id))
-                    .set(chat_sessions::title.eq(Some(custom_title)))
-                    .execute(conn)
-                    .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
-            })
-            .await
-            .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
+        
+        // Encrypt the title
+        if let Some(ref dek_wrapped) = user.dek {
+            let dek = &dek_wrapped.0;
+            match crypto::encrypt_gcm(custom_title.as_bytes(), dek) {
+                Ok((ciphertext, nonce)) => {
+                    // Update with encrypted title
+                    pool.get()
+                        .await
+                        .map_err(|e| AppError::DbPoolError(e.to_string()))?
+                        .interact(move |conn| {
+                            diesel::update(chat_sessions::table.find(session_id))
+                                .set((
+                                    chat_sessions::title_ciphertext.eq(Some(ciphertext)),
+                                    chat_sessions::title_nonce.eq(Some(nonce)),
+                                ))
+                                .execute(conn)
+                                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
+                        })
+                        .await
+                        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
+                },
+                Err(e) => {
+                    error!(error = ?e, "Failed to encrypt chat title");
+                    return Err(AppError::EncryptionError("Failed to encrypt title".to_string()));
+                }
+            }
+        } else {
+            error!("No DEK available for title encryption");
+            return Err(AppError::EncryptionError("No encryption key available".to_string()));
+        }
     }
 
     // Add detailed logging for debugging the chat session after creation
@@ -219,8 +265,8 @@ pub async fn create_chat_handler(
         chat_id = %chat.id,
         character_id = %chat.character_id,
         user_id = %chat.user_id,
-        system_prompt_present = chat.system_prompt.is_some(), // Avoid logging potentially large/sensitive prompt
-        title_present = chat.title.is_some() // Also avoid logging title directly
+        system_prompt_present = chat.system_prompt_ciphertext.is_some(), // Avoid logging potentially large/sensitive prompt
+        title_present = chat.title_ciphertext.is_some() // Also avoid logging title directly
         // Removed full 'chat = ?chat' to avoid logging all fields, including encrypted ones
     );
 
@@ -461,6 +507,7 @@ pub async fn get_messages_by_chat_id_handler(
 pub async fn create_message_handler(
     auth_session: CurrentAuthSession,
     State(state): State<AppState>,
+    dek: SessionDek, // Added SessionDek extractor
     Path(chat_id): Path<Uuid>,
     Json(payload): Json<CreateMessageRequest>,
 ) -> Result<impl IntoResponse, AppError> {
@@ -469,12 +516,10 @@ pub async fn create_message_handler(
         .ok_or(AppError::Unauthorized("Not logged in".to_string()))?;
     let user_id = user.id;
 
-    // Convert &SecretBox to Arc<SecretBox>
-    let user_dek_arc: Option<Arc<SecretBox<Vec<u8>>>> = user.dek.as_ref().map(|wrapped_dek| {
-        Arc::new(SecretBox::new(Box::new(
-            wrapped_dek.0.expose_secret().clone(),
-        )))
-    });
+    // Use the SessionDek which provides the user's DEK
+    let user_dek_arc = Some(Arc::new(SecretBox::new(Box::new(
+        dek.0.expose_secret().clone(),
+    ))));
 
     // Verify chat session ownership (existing logic is fine)
     let chat = state
@@ -961,6 +1006,7 @@ pub async fn update_chat_visibility_handler(
 pub async fn get_chat_settings_handler(
     auth_session: CurrentAuthSession,
     State(state): State<AppState>,
+    dek: SessionDek, // Added SessionDek extractor
     Path(id): Path<Uuid>, // This is session_id
 ) -> Result<impl IntoResponse, AppError> {
     let user = auth_session
@@ -973,6 +1019,7 @@ pub async fn get_chat_settings_handler(
         &state.pool,
         user.id,
         id, // session_id
+        Some(&dek.0), // Pass the DEK for decryption
     )
     .await?;
 
@@ -992,45 +1039,15 @@ pub async fn update_chat_settings_handler(
     let user = auth_session
         .user
         .ok_or(AppError::Unauthorized("Not logged in".to_string()))?;
-    let pool = state.pool.clone();
-    let user_id = user.id; // Clone user_id for use in interact closure
+    let user_id = user.id; // Clone user_id for use in service call
 
-    // Fetch the chat session first to check ownership
-    let chat = pool.get().await
-        .map_err(|e| AppError::DbPoolError(e.to_string()))?
-        .interact(move |conn| {
-            chat_sessions::table
-                .filter(chat_sessions::id.eq(id))
-                .select(Chat::as_select())
-                .first::<Chat>(conn)
-                .map_err(AppError::from) // Handles NotFound -> AppError::NotFound
-        })
-        .await
-        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))? // Handle interact error
-        ?; // Propagate NotFound error
-
-    // Ensure the user owns this chat
-    if chat.user_id != user_id {
-        // Test `update_chat_settings_forbidden` expects Forbidden
-        return Err(AppError::Forbidden);
-    }
-
-    // Perform the update
-    let updated_chat = pool.get().await
-        .map_err(|e| AppError::DbPoolError(e.to_string()))?
-        .interact(move |conn| {
-            diesel::update(chat_sessions::table.find(id))
-                .set(payload) // Use the AsChangeset payload directly
-                .returning(Chat::as_select()) // Return the updated chat
-                .get_result::<Chat>(conn)
-                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
-        })
-        .await
-        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))? // Handle interact error
-        ?; // Propagate DB error
-
-    // Construct the response from the updated Chat struct
-    let response = ChatSettingsResponse::from(updated_chat);
+    // Use the service function which handles encryption and ownership checks
+    let response = chat_service::update_session_settings(
+        &state.pool,
+        user_id,
+        id,
+        payload,
+    ).await?;
 
     Ok((StatusCode::OK, Json(response)))
 }

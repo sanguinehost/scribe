@@ -197,9 +197,6 @@ diesel::table! {
         id -> Uuid,
         user_id -> Uuid,
         character_id -> Uuid,
-        #[max_length = 255]
-        title -> Nullable<Varchar>,
-        system_prompt -> Nullable<Text>,
         temperature -> Nullable<Numeric>,
         max_output_tokens -> Nullable<Int4>,
         created_at -> Timestamptz,
@@ -223,6 +220,10 @@ diesel::table! {
         visibility -> Nullable<Varchar>,
         active_custom_persona_id -> Nullable<Uuid>,
         active_impersonated_character_id -> Nullable<Uuid>,
+        system_prompt_ciphertext -> Nullable<Bytea>,
+        system_prompt_nonce -> Nullable<Bytea>,
+        title_ciphertext -> Nullable<Bytea>,
+        title_nonce -> Nullable<Bytea>,
     }
 }
 

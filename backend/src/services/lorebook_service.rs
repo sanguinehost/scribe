@@ -1513,9 +1513,9 @@ impl LorebookService {
                     .filter(csl_dsl::user_id.eq(current_user_id)) // Ensure association belongs to the user
                     .select((
                         cs_dsl::id, // chat_session_id
-                        cs_dsl::title, // chat_session title
+                        cs_dsl::title_ciphertext, // chat_session title (encrypted)
                     ))
-                    .load::<(Uuid, Option<String>)>(conn_sync)
+                    .load::<(Uuid, Option<Vec<u8>>)>(conn_sync)
             })
             .await
             .map_err(|e| {
@@ -1529,9 +1529,9 @@ impl LorebookService {
 
         let response_data = associated_chats
             .into_iter()
-            .map(|(chat_id, chat_title)| ChatSessionBasicInfo {
+            .map(|(chat_id, _encrypted_title)| ChatSessionBasicInfo {
                 chat_session_id: chat_id,
-                title: chat_title,
+                title: Some("[Encrypted]".to_string()), // Placeholder since we don't have DEK in this context
             })
             .collect();
 

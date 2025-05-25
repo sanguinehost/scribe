@@ -121,7 +121,6 @@ async fn generate_chat_response_streaming_success() {
     let conn_pool = test_app.db_pool.clone();
     let user_id_clone_session = user.id;
     let character_id_clone_session = character.id;
-    let session_title = format!("Test Chat with Char {}", character.id);
     let session: ChatSession = conn_pool
         .get()
         .await
@@ -131,7 +130,8 @@ async fn generate_chat_response_streaming_success() {
                 id: Uuid::new_v4(),
                 user_id: user_id_clone_session,
                 character_id: character_id_clone_session,
-                title: Some(session_title),
+                title_ciphertext: None,
+                title_nonce: None,
                 created_at: Utc::now(),
                 updated_at: Utc::now(),
                 history_management_strategy: "truncate".to_string(),
@@ -500,10 +500,8 @@ async fn test_first_mes_included_in_history() {
         .expect("Set-Cookie header should be present on login")
         .to_str()
         .unwrap();
-    let parsed_cookie =
+    let _parsed_cookie =
         cookie::Cookie::parse(auth_cookie_header).expect("Failed to parse Set-Cookie header");
-    let _auth_cookie = format!("{}={}", parsed_cookie.name(), parsed_cookie.value());
-
     // Create a dummy session DEK for encrypting first_mes
     let session_dek = SecretBox::new(Box::new(vec![0u8; 32])); // Dummy DEK for testing
     let session_dek_for_char_creation = std::sync::Arc::new(session_dek);
@@ -558,7 +556,6 @@ async fn test_first_mes_included_in_history() {
     let conn_pool = test_app.db_pool.clone();
     let user_id_clone_session = user.id;
     let character_id_clone_session = character.id;
-    let session_title = format!("Test Chat with First Mes {}", character.id);
     let session: ChatSession = conn_pool
         .get()
         .await
@@ -568,7 +565,8 @@ async fn test_first_mes_included_in_history() {
                 id: Uuid::new_v4(),
                 user_id: user_id_clone_session,
                 character_id: character_id_clone_session,
-                title: Some(session_title),
+                title_ciphertext: None,
+                title_nonce: None,
                 created_at: Utc::now(),
                 updated_at: Utc::now(),
                 history_management_strategy: "truncate".to_string(),

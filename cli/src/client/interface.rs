@@ -6,7 +6,7 @@ use futures_util::Stream;
 use scribe_backend::models::{
     auth::LoginPayload,
     // characters::CharacterDataForClient as BackendCharacterDataForClient, // Unused
-    chats::{ApiChatMessage, Chat, ChatMessage, ChatSettingsResponse, UpdateChatSettingsRequest}, // Removed GenerateChatRequest
+    chats::{ApiChatMessage, Chat, ChatForClient, ChatMessage, ChatSettingsResponse, UpdateChatSettingsRequest}, // Removed GenerateChatRequest
     lorebook_dtos::{
         AssociateLorebookToChatPayload, ChatSessionBasicInfo,
         ChatSessionLorebookAssociationResponse, CreateLorebookEntryPayload,
@@ -107,7 +107,7 @@ pub trait HttpClient: Send + Sync {
     async fn list_associated_chat_sessions_for_lorebook(&self, lorebook_id: Uuid) -> Result<Vec<ChatSessionBasicInfo>, CliError>;
  
     // Chat
-    async fn list_chat_sessions(&self) -> Result<Vec<Chat>, CliError>;
+    async fn list_chat_sessions(&self) -> Result<Vec<ChatForClient>, CliError>;
     async fn get_chat_session(&self, session_id: Uuid) -> Result<ChatSessionDetails, CliError>;
     async fn set_chat_character_override(
         &self,

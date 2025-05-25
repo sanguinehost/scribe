@@ -2,7 +2,9 @@
 
 use crate::auth::session_dek::SessionDek;
 use crate::auth::user_store::Backend as AuthBackend;
+// use crate::crypto; // Added for decryption - will be needed later
 use crate::errors::AppError;
+use secrecy::ExposeSecret; // Added for ExposeSecret
 use crate::models::chats::CreateChatSessionPayload;
 use crate::models::chats::{
     Chat, GenerateChatRequest, MessageRole, SuggestedActionItem, SuggestedActionsRequest,
@@ -893,11 +895,32 @@ pub async fn get_chat_session_with_dek(
 
     if let Some(session_db) = chat_session_db {
         let dek_present = user.dek.is_some();
+        
+        // Decrypt title if possible
+        let decrypted_title = match (
+            session_db.title_ciphertext.as_ref(),
+            session_db.title_nonce.as_ref(),
+            user.dek.as_ref()
+        ) {
+            (Some(ciphertext), Some(nonce), Some(dek_wrapped)) if !ciphertext.is_empty() && !nonce.is_empty() => {
+                match crate::crypto::decrypt_gcm(ciphertext, nonce, &dek_wrapped.0) {
+                    Ok(plaintext_secret) => {
+                        match String::from_utf8(plaintext_secret.expose_secret().to_vec()) {
+                            Ok(decrypted_text) => Some(decrypted_text),
+                            Err(_) => Some("[Invalid UTF-8]".to_string()),
+                        }
+                    },
+                    Err(_) => Some("[Decryption Failed]".to_string()),
+                }
+            },
+            _ => None,
+        };
+        
         Ok(Json(ChatSessionWithDekResponse {
             id: session_db.id,
             user_id: session_db.user_id,
             character_id: session_db.character_id,
-            title: session_db.title,
+            title: decrypted_title,
             dek_present,
         }))
     } else {

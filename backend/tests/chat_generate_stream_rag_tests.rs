@@ -113,7 +113,6 @@ async fn test_rag_context_injection_real_ai() {
     let conn_pool = test_app.db_pool.clone();
     let user_id_clone_session = user.id;
     let character_id_clone_session = character.id;
-    let session_title_rag = format!("Test Chat with Char {}", character.id);
     let session: ChatSession = conn_pool
         .get()
         .await
@@ -123,7 +122,8 @@ async fn test_rag_context_injection_real_ai() {
                 id: Uuid::new_v4(),
                 user_id: user_id_clone_session,
                 character_id: character_id_clone_session,
-                title: Some(session_title_rag),
+                title_ciphertext: None,
+                title_nonce: None,
                 created_at: Utc::now(),
                 updated_at: Utc::now(),
                 history_management_strategy: "truncate".to_string(),
