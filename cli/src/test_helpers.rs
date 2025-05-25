@@ -7,6 +7,12 @@ use crate::client::types::{
     OverrideSuccessResponse,
     // User Persona DTOs are now directly available under crate::client::types
     UserPersonaDataForClient, CreateUserPersonaDto, UpdateUserPersonaDto,
+    // Lorebook DTOs - import directly from backend models as they are used in the HttpClient trait
+};
+use scribe_backend::models::lorebook_dtos::{
+    AssociateLorebookToChatPayload, ChatSessionBasicInfo, ChatSessionLorebookAssociationResponse,
+    CreateLorebookEntryPayload, CreateLorebookPayload, LorebookEntryResponse, LorebookEntrySummaryResponse, LorebookResponse, // Added LorebookEntrySummaryResponse
+    UpdateLorebookEntryPayload, UpdateLorebookPayload,
 };
 use crate::error::CliError;
 use crate::io::IoHandler;
@@ -171,6 +177,26 @@ pub struct MockHttpClient {
     pub delete_user_persona_result: Option<Arc<Result<(), MockCliError>>>,
     pub set_default_persona_result: Option<Arc<Result<User, MockCliError>>>,
     pub clear_default_persona_result: Option<Arc<Result<(), MockCliError>>>,
+
+    // Lorebook fields
+    pub create_lorebook_result: Option<Arc<Result<LorebookResponse, MockCliError>>>,
+    pub list_lorebooks_result: Option<Arc<Result<Vec<LorebookResponse>, MockCliError>>>,
+    pub get_lorebook_result: Option<Arc<Result<LorebookResponse, MockCliError>>>,
+    pub update_lorebook_result: Option<Arc<Result<LorebookResponse, MockCliError>>>,
+    pub delete_lorebook_result: Option<Arc<Result<(), MockCliError>>>,
+
+    // Lorebook Entry fields
+    pub create_lorebook_entry_result: Option<Arc<Result<LorebookEntryResponse, MockCliError>>>,
+    pub list_lorebook_entries_result: Option<Arc<Result<Vec<LorebookEntrySummaryResponse>, MockCliError>>>, // Changed to LorebookEntrySummaryResponse
+    pub get_lorebook_entry_result: Option<Arc<Result<LorebookEntryResponse, MockCliError>>>,
+    pub update_lorebook_entry_result: Option<Arc<Result<LorebookEntryResponse, MockCliError>>>,
+    pub delete_lorebook_entry_result: Option<Arc<Result<(), MockCliError>>>,
+
+    // Chat Session Lorebook Association fields
+    pub associate_lorebook_to_chat_result: Option<Arc<Result<ChatSessionLorebookAssociationResponse, MockCliError>>>,
+    pub list_chat_lorebook_associations_result: Option<Arc<Result<Vec<ChatSessionLorebookAssociationResponse>, MockCliError>>>,
+    pub disassociate_lorebook_from_chat_result: Option<Arc<Result<(), MockCliError>>>,
+    pub list_associated_chat_sessions_for_lorebook_result: Option<Arc<Result<Vec<ChatSessionBasicInfo>, MockCliError>>>,
 
     // Track called endpoints for validation - use Arc<Mutex> for thread safety
     pub called_endpoints: Arc<std::sync::Mutex<Vec<String>>>,
@@ -691,6 +717,109 @@ impl HttpClient for MockHttpClient {
                     )))
                 }),
         );
+        mock_result.map_err(Into::into)
+    }
+
+    // --- Lorebook Methods ---
+    async fn create_lorebook(&self, _payload: &CreateLorebookPayload) -> Result<LorebookResponse, CliError> {
+        let mock_result = Arc::unwrap_or_clone(self.create_lorebook_result.clone().unwrap_or_else(|| {
+            Arc::new(Err(MockCliError::Internal("MockHttpClient: create_lorebook result not set".into())))
+        }));
+        mock_result.map_err(Into::into)
+    }
+
+    async fn list_lorebooks(&self) -> Result<Vec<LorebookResponse>, CliError> {
+        let mock_result = Arc::unwrap_or_clone(self.list_lorebooks_result.clone().unwrap_or_else(|| {
+            Arc::new(Err(MockCliError::Internal("MockHttpClient: list_lorebooks result not set".into())))
+        }));
+        mock_result.map_err(Into::into)
+    }
+
+    async fn get_lorebook(&self, _lorebook_id: Uuid) -> Result<LorebookResponse, CliError> {
+        let mock_result = Arc::unwrap_or_clone(self.get_lorebook_result.clone().unwrap_or_else(|| {
+            Arc::new(Err(MockCliError::Internal("MockHttpClient: get_lorebook result not set".into())))
+        }));
+        mock_result.map_err(Into::into)
+    }
+
+    async fn update_lorebook(&self, _lorebook_id: Uuid, _payload: &UpdateLorebookPayload) -> Result<LorebookResponse, CliError> {
+        let mock_result = Arc::unwrap_or_clone(self.update_lorebook_result.clone().unwrap_or_else(|| {
+            Arc::new(Err(MockCliError::Internal("MockHttpClient: update_lorebook result not set".into())))
+        }));
+        mock_result.map_err(Into::into)
+    }
+
+    async fn delete_lorebook(&self, _lorebook_id: Uuid) -> Result<(), CliError> {
+        let mock_result = Arc::unwrap_or_clone(self.delete_lorebook_result.clone().unwrap_or_else(|| {
+            Arc::new(Err(MockCliError::Internal("MockHttpClient: delete_lorebook result not set".into())))
+        }));
+        mock_result.map_err(Into::into)
+    }
+
+    // --- Lorebook Entry Methods ---
+    async fn create_lorebook_entry(&self, _lorebook_id: Uuid, _payload: &CreateLorebookEntryPayload) -> Result<LorebookEntryResponse, CliError> {
+        let mock_result = Arc::unwrap_or_clone(self.create_lorebook_entry_result.clone().unwrap_or_else(|| {
+            Arc::new(Err(MockCliError::Internal("MockHttpClient: create_lorebook_entry result not set".into())))
+        }));
+        mock_result.map_err(Into::into)
+    }
+
+    async fn list_lorebook_entries(&self, _lorebook_id: Uuid) -> Result<Vec<LorebookEntrySummaryResponse>, CliError> {
+        let mock_result = Arc::unwrap_or_clone(self.list_lorebook_entries_result.clone().unwrap_or_else(|| {
+            // Provide a default empty Vec or a specific error if not set
+            Arc::new(Ok(Vec::new())) // Default to Ok(empty_vec)
+            // Or: Arc::new(Err(MockCliError::Internal("MockHttpClient: list_lorebook_entries result not set".into())))
+        }));
+        mock_result.map_err(Into::into)
+    }
+
+    async fn get_lorebook_entry(&self, _lorebook_id: Uuid, _entry_id: Uuid) -> Result<LorebookEntryResponse, CliError> {
+        let mock_result = Arc::unwrap_or_clone(self.get_lorebook_entry_result.clone().unwrap_or_else(|| {
+            Arc::new(Err(MockCliError::Internal("MockHttpClient: get_lorebook_entry result not set".into())))
+        }));
+        mock_result.map_err(Into::into)
+    }
+
+    async fn update_lorebook_entry(&self, _lorebook_id: Uuid, _entry_id: Uuid, _payload: &UpdateLorebookEntryPayload) -> Result<LorebookEntryResponse, CliError> {
+        let mock_result = Arc::unwrap_or_clone(self.update_lorebook_entry_result.clone().unwrap_or_else(|| {
+            Arc::new(Err(MockCliError::Internal("MockHttpClient: update_lorebook_entry result not set".into())))
+        }));
+        mock_result.map_err(Into::into)
+    }
+
+    async fn delete_lorebook_entry(&self, _lorebook_id: Uuid, _entry_id: Uuid) -> Result<(), CliError> {
+        let mock_result = Arc::unwrap_or_clone(self.delete_lorebook_entry_result.clone().unwrap_or_else(|| {
+            Arc::new(Err(MockCliError::Internal("MockHttpClient: delete_lorebook_entry result not set".into())))
+        }));
+        mock_result.map_err(Into::into)
+    }
+
+    // --- Chat Session Lorebook Association Methods ---
+    async fn associate_lorebook_to_chat(&self, _chat_session_id: Uuid, _payload: &AssociateLorebookToChatPayload) -> Result<ChatSessionLorebookAssociationResponse, CliError> {
+        let mock_result = Arc::unwrap_or_clone(self.associate_lorebook_to_chat_result.clone().unwrap_or_else(|| {
+            Arc::new(Err(MockCliError::Internal("MockHttpClient: associate_lorebook_to_chat result not set".into())))
+        }));
+        mock_result.map_err(Into::into)
+    }
+
+    async fn list_chat_lorebook_associations(&self, _chat_session_id: Uuid) -> Result<Vec<ChatSessionLorebookAssociationResponse>, CliError> {
+        let mock_result = Arc::unwrap_or_clone(self.list_chat_lorebook_associations_result.clone().unwrap_or_else(|| {
+            Arc::new(Err(MockCliError::Internal("MockHttpClient: list_chat_lorebook_associations result not set".into())))
+        }));
+        mock_result.map_err(Into::into)
+    }
+
+    async fn disassociate_lorebook_from_chat(&self, _chat_session_id: Uuid, _lorebook_id: Uuid) -> Result<(), CliError> {
+        let mock_result = Arc::unwrap_or_clone(self.disassociate_lorebook_from_chat_result.clone().unwrap_or_else(|| {
+            Arc::new(Err(MockCliError::Internal("MockHttpClient: disassociate_lorebook_from_chat result not set".into())))
+        }));
+        mock_result.map_err(Into::into)
+    }
+
+    async fn list_associated_chat_sessions_for_lorebook(&self, _lorebook_id: Uuid) -> Result<Vec<ChatSessionBasicInfo>, CliError> {
+        let mock_result = Arc::unwrap_or_clone(self.list_associated_chat_sessions_for_lorebook_result.clone().unwrap_or_else(|| {
+            Arc::new(Err(MockCliError::Internal("MockHttpClient: list_associated_chat_sessions_for_lorebook result not set".into())))
+        }));
         mock_result.map_err(Into::into)
     }
 }

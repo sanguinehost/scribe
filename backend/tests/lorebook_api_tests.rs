@@ -15,8 +15,10 @@ use scribe_backend::models::lorebook_dtos::{
     LorebookEntryResponse as LorebookEntryResponseDto,
     LorebookEntrySummaryResponse,
     AssociateLorebookToChatPayload as AssociateLorebookDto, // Assuming this is the DTO name
+    ChatSessionBasicInfo, // Added for the new test
     // AssociatedLorebookResponse, // This might be a Vec<LorebookResponseDto> or a specific DTO
 };
+use scribe_backend::models::chats::CreateChatRequest; // Added for creating chat sessions
 
 
 // Helper function to create a dummy lorebook for tests that need one to exist
@@ -663,6 +665,94 @@ mod lorebook_tests {
             .await
             .expect("Request failed");
         assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn test_list_associated_chat_sessions_for_lorebook_success() {
+        let test_app = spawn_app(false, false, false).await;
+        let _test_data_guard = TestDataGuard::new(test_app.db_pool.clone());
+
+        let user_credentials = ("user_tlacsfls@example.com", "password123");
+        let user_data = scribe_backend::test_helpers::db::create_test_user(
+            &test_app.db_pool,
+            user_credentials.0.to_string(),
+            user_credentials.1.to_string(),
+        )
+        .await
+        .expect("Failed to create user");
+        let (auth_client, _user_token_str) =
+            scribe_backend::test_helpers::login_user_via_api(
+                &test_app,
+                user_credentials.0,
+                user_credentials.1,
+            )
+            .await;
+
+        // 1. Create a character for the chat session
+        let character = scribe_backend::test_helpers::db::create_test_character(
+            &test_app.db_pool,
+            user_data.id,
+            "Associated Test Character".to_string(),
+        )
+        .await
+        .expect("Failed to create test character");
+
+        // 2. Create a lorebook
+        let lorebook_id = create_dummy_lorebook(&test_app, user_data.id, &auth_client).await;
+
+        // 3. Create a chat session
+        let chat_payload = CreateChatRequest {
+            character_id: character.id,
+            title: "Chat for Lorebook Association Test".to_string(),
+        };
+        let chat_response = auth_client
+            .post(&format!("{}/api/chats/create_session", test_app.address)) // Updated path
+            .json(&chat_payload)
+            .send()
+            .await
+            .expect("Failed to create chat session");
+        assert_eq!(chat_response.status(), StatusCode::CREATED);
+        let chat_session: scribe_backend::models::chats::Chat = chat_response
+            .json()
+            .await
+            .expect("Failed to parse chat session response");
+        let chat_session_id = chat_session.id;
+
+        // 4. Associate the lorebook with the chat session
+        let assoc_payload = AssociateLorebookDto { lorebook_id };
+        let assoc_response = auth_client
+            .post(&format!(
+                "{}/api/chats/{}/lorebooks",
+                test_app.address, chat_session_id
+            ))
+            .json(&assoc_payload)
+            .send()
+            .await
+            .expect("Failed to associate lorebook with chat");
+        assert_eq!(assoc_response.status(), StatusCode::OK);
+
+        // 5. Call the new endpoint
+        let response = auth_client
+            .get(&format!(
+                "{}/api/lorebooks/{}/fetch/associated_chats",
+                test_app.address, lorebook_id
+            ))
+            .send()
+            .await
+            .expect("Request failed");
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let associated_chats: Vec<ChatSessionBasicInfo> = response
+            .json()
+            .await
+            .expect("Failed to parse associated chats response");
+
+        assert_eq!(associated_chats.len(), 1);
+        assert_eq!(associated_chats[0].chat_session_id, chat_session_id);
+        assert_eq!(
+            associated_chats[0].title,
+            Some("Chat for Lorebook Association Test".to_string())
+        );
     }
 }
 

@@ -43,6 +43,74 @@ impl IoHandler for StdIoHandler {
     }
 }
 
+// --- Helper functions for user input ---
+
+/// Prompts the user for input and ensures a non-empty value is provided.
+pub fn input_required<H: IoHandler>(io_handler: &mut H, prompt: &str) -> Result<String, CliError> {
+    loop {
+        let value = io_handler.read_line(prompt)?;
+        if value.is_empty() {
+            io_handler.write_line("Input cannot be empty. Please try again.")?;
+        } else {
+            return Ok(value);
+        }
+    }
+}
+
+/// Prompts the user for optional input.
+pub fn input_optional<H: IoHandler>(io_handler: &mut H, prompt: &str) -> Result<Option<String>, CliError> {
+    let value = io_handler.read_line(prompt)?;
+    if value.is_empty() {
+        Ok(None)
+    } else {
+        Ok(Some(value))
+    }
+}
+
+/// Asks the user for confirmation (yes/no).
+pub fn confirm_action<H: IoHandler>(io_handler: &mut H, prompt: &str) -> Result<bool, CliError> {
+    loop {
+        let choice = io_handler.read_line(&format!("{} (yes/no): ", prompt))?.trim().to_lowercase();
+        match choice.as_str() {
+            "yes" | "y" => return Ok(true),
+            "no" | "n" => return Ok(false),
+            _ => io_handler.write_line("Invalid input. Please enter 'yes' or 'no'.")?,
+        }
+    }
+}
+
+/// Allows the user to select an item from a list.
+/// `items` is a slice of tuples, where the first element is the display string
+/// and the second is the value to be returned if selected.
+pub fn select_from_list<'a, T, H: IoHandler>(
+    io_handler: &mut H,
+    prompt: &str,
+    items: &'a [(&str, T)],
+) -> Result<&'a T, CliError>
+where
+    T: Clone, // Ensure T can be cloned if needed, or adjust as necessary
+{
+    if items.is_empty() {
+        return Err(CliError::InputError("Cannot select from an empty list.".to_string()));
+    }
+
+    io_handler.write_line(prompt)?;
+    for (i, (display, _)) in items.iter().enumerate() {
+        io_handler.write_line(&format!("[{}] {}", i + 1, display))?;
+    }
+
+    loop {
+        let choice_str = io_handler.read_line("Enter choice number: ")?;
+        match choice_str.trim().parse::<usize>() {
+            Ok(num) if num > 0 && num <= items.len() => {
+                return Ok(&items[num - 1].1);
+            }
+            _ => io_handler.write_line("Invalid choice. Please enter a number from the list.")?,
+        }
+    }
+}
+
+
 #[cfg(test)]
 mod tests {
     use super::*;

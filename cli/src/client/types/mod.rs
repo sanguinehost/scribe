@@ -1,5 +1,6 @@
 //! This module aggregates all DTOs used for client-server communication.
 
+pub mod lorebook_import; // Added for SillyTavern lorebook parsing
 pub mod user_personas;
 // Add other type modules here as needed, e.g.:
 // pub mod characters;

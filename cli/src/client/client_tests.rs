@@ -956,7 +956,7 @@ async fn test_create_chat_session_success() {
 
     server.expect(
         Expectation::matching(all_of![
-            request::method_path("POST", "/api/chats"),
+            request::method_path("POST", "/api/chats/create_session"),
             request::body(request_payload.to_string()),
         ])
         .respond_with(json_encoded(mock_session.clone())),
@@ -986,7 +986,7 @@ async fn test_create_chat_session_char_not_found() {
 
     server.expect(
         Expectation::matching(all_of![
-            request::method_path("POST", "/api/chats"),
+            request::method_path("POST", "/api/chats/create_session"),
             request::body(request_payload.to_string()),
         ])
         .respond_with(status_code(404).body(error_body.to_string())),

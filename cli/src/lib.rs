@@ -11,6 +11,36 @@ pub mod test_helpers; // Added test_helpers module
 // Re-export items needed by main.rs and tests
 pub use clap::{Parser, Subcommand, Args as ClapArgs};
 pub use uuid::Uuid;
+pub use error::CliError; // Ensure CliError is available for MenuResult
+
+// --- Menu Navigation Enums and Types ---
+
+/// Enum to manage the current state of the interactive menu in main.rs
+#[derive(Debug, Clone, Copy, PartialEq, Eq)] // Added PartialEq, Eq for potential future use
+pub enum MenuState {
+    MainMenu,
+    UserManagement,
+    CharacterManagement,
+    ChatManagement,
+    AccountSettings,
+    PersonaManagement,
+    LorebookManagement,
+}
+
+/// Enum to manage navigation results from menu handlers in main.rs
+#[derive(Debug, Clone, PartialEq, Eq)] // Added PartialEq, Eq for potential future use
+pub enum MenuNavigation {
+    GoTo(MenuState),
+    ReturnToMainMenu,
+    Logout,
+    Quit,
+}
+
+/// Helper type alias for results from menu handling functions in main.rs
+pub type MenuResult = Result<MenuNavigation, CliError>;
+
+
+// --- Clap Argument Structs ---
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]

@@ -184,6 +184,8 @@ diesel::table! {
         chat_session_id -> Uuid,
         lorebook_id -> Uuid,
         user_id -> Uuid,
+        created_at -> Timestamptz,
+        updated_at -> Timestamptz,
     }
 }
 

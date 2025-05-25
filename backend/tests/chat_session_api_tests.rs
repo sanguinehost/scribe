@@ -168,7 +168,7 @@ async fn test_create_chat_session_success() {
 
     let request = Request::builder()
         .method(Method::POST)
-        .uri("/api/chats")
+        .uri("/api/chats/create_session")
         .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
         .header(header::COOKIE, auth_cookie)
         .body(Body::from(serde_json::to_vec(&request_body).unwrap()))
@@ -191,7 +191,7 @@ async fn test_create_chat_session_unauthorized() {
 
     let request = Request::builder()
         .method(Method::POST)
-        .uri("/api/chats")
+        .uri("/api/chats/create_session")
         .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
         .body(Body::from(serde_json::to_vec(&request_body).unwrap()))
         .unwrap();
@@ -244,7 +244,7 @@ async fn test_create_chat_session_character_not_found() {
 
     let request = Request::builder()
         .method(Method::POST)
-        .uri("/api/chats")
+        .uri("/api/chats/create_session")
         .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
         .header(header::COOKIE, auth_cookie)
         .body(Body::from(serde_json::to_vec(&request_body).unwrap()))
@@ -422,7 +422,7 @@ async fn test_create_chat_session_character_other_user() -> anyhow::Result<()> {
 
     let request = Request::builder()
         .method(Method::POST)
-        .uri("/api/chats")
+        .uri("/api/chats/create_session")
         .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
         .header(header::COOKIE, auth_cookie_user2) // Use user2's cookie
         .body(Body::from(serde_json::to_vec(&request_body).unwrap()))
@@ -475,7 +475,7 @@ async fn create_chat_session_character_not_found_integration() -> anyhow::Result
     let payload =
         json!({ "title": "Not Found Integ Test", "character_id": non_existent_character_id });
     let request = Request::builder()
-        .uri("/api/chats")
+        .uri("/api/chats/create_session")
         .method(Method::POST)
         .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
         .header(header::COOKIE, auth_cookie)
@@ -974,7 +974,7 @@ async fn test_create_chat_session_with_empty_first_mes() -> Result<(), AnyhowErr
 
     let request = Request::builder()
         .method(Method::POST)
-        .uri("/api/chats")
+        .uri("/api/chats/create_session")
         .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
         .header(header::COOKIE, auth_cookie)
         .body(Body::from(serde_json::to_vec(&request_body)?))?;
@@ -1127,7 +1127,7 @@ async fn test_create_chat_session_with_null_first_mes() -> anyhow::Result<()> {
 
     let request = Request::builder()
         .method(Method::POST)
-        .uri("/api/chats")
+        .uri("/api/chats/create_session")
         .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
         .header(header::COOKIE, auth_cookie)
         .body(Body::from(serde_json::to_vec(&request_body)?))?;

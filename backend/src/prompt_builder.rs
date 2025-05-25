@@ -109,30 +109,58 @@ pub async fn build_final_llm_prompt(
     token_counter: Arc<HybridTokenCounter>,
     recent_history: Vec<GenAiChatMessage>,
     rag_items: Vec<RetrievedChunk>,
-    system_prompt_base: Option<String>,
-    character_metadata: Option<&CharacterMetadata>,
+    system_prompt_base: Option<String>, // From Persona/Override
+    raw_character_system_prompt: Option<String>, // Directly from Character.system_prompt
+    character_metadata: Option<&CharacterMetadata>, // For name/description
     current_user_message: GenAiChatMessage,
     model_name: &str,
 ) -> Result<(String, Vec<GenAiChatMessage>), AppError> {
-    // 1. Calculate tokens for non-truncatable and preferred parts
-    let system_prompt_base_str = system_prompt_base.unwrap_or_default();
-    let system_prompt_base_tokens = if system_prompt_base_str.is_empty() {
-        0
-    } else {
-        token_counter
-            .count_tokens(&system_prompt_base_str, CountingMode::LocalOnly, Some(model_name))
-            .await?
-            .total as usize
+    // 1. Construct and calculate tokens for the meta system prompt
+    let char_name_placeholder = character_metadata.map_or_else(|| "{{character_name}}".to_string(), |cm| cm.name.clone());
+    // Assuming user_name would be available or passed in if needed for {{user_name}}
+    // For now, let's use a generic placeholder or omit it if not readily available.
+    // Let's assume CharacterMetadata might eventually hold a user_name or similar.
+    // If not, we might need to adjust the template or pass user_name.
+    // For this iteration, we'll use a generic "the User".
+    let meta_system_prompt_template = format!(
+        "You are the Narrator and supporting characters in a collaborative storytelling experience with a Human player. The Human controls a character (referred to as 'the User'). Your primary role is to describe the world, events, and the actions and dialogue of all characters *except* the User.\n\n\
+        You will be provided with the following structured information to guide your responses:\n\
+        1. <persona_override_prompt>: Specific instructions or style preferences from the User (if any).\n\
+        2. <character_definition>: The core definition and personality of the character '{char_name}'.\n\
+        3. <character_details>: Additional descriptive information about '{char_name}'.\n\
+        4. <lorebook_entries>: Relevant background information about the world, other characters, or plot points.\n\
+        5. <story_so_far>: The existing dialogue and narration.\n\n\
+        Key Writing Principles:\n\
+        - Focus on the direct consequences of the User's actions.\n\
+        - Describe newly encountered people, places, or significant objects only once. The Human will remember.\n\
+        - Maintain character believability. Characters have their own motivations and will not always agree with the User. They should react realistically based on their personalities and the situation.\n\
+        - End your responses with action or dialogue to maintain active immersion. Avoid summarization or out-of-character commentary.\n\n\
+        [System Instructions End]\n\
+        Based on all the above and the story so far, write the next part of the story as the narrator and any relevant non-player characters. Ensure your response is engaging and moves the story forward.",
+        char_name = char_name_placeholder
+    );
+
+    let meta_system_prompt_tokens = token_counter
+        .count_tokens(&meta_system_prompt_template, CountingMode::LocalOnly, Some(model_name))
+        .await?
+        .total as usize;
+
+    // system_prompt_base is from Persona/Override
+    let persona_override_prompt_str = system_prompt_base.unwrap_or_default();
+    let persona_override_prompt_tokens = if persona_override_prompt_str.is_empty() { 0 } else {
+        token_counter.count_tokens(&persona_override_prompt_str, CountingMode::LocalOnly, Some(model_name)).await?.total as usize
     };
 
-    let character_info_str = build_character_info_string(character_metadata);
-    let character_info_tokens = if character_info_str.is_empty() {
-        0
-    } else {
-        token_counter
-            .count_tokens(&character_info_str, CountingMode::LocalOnly, Some(model_name))
-            .await?
-            .total as usize
+    // raw_character_system_prompt is directly from Character.system_prompt
+    let character_definition_str = raw_character_system_prompt.unwrap_or_default();
+    let character_definition_tokens = if character_definition_str.is_empty() { 0 } else {
+        token_counter.count_tokens(&character_definition_str, CountingMode::LocalOnly, Some(model_name)).await?.total as usize
+    };
+    
+    // character_info_str is built from CharacterMetadata (name, description)
+    let character_details_str = build_character_info_string(character_metadata); // This already includes name and description
+    let character_details_tokens = if character_details_str.is_empty() { 0 } else {
+        token_counter.count_tokens(&character_details_str, CountingMode::LocalOnly, Some(model_name)).await?.total as usize
     };
 
     let current_user_message_tokens =
@@ -159,8 +187,10 @@ pub async fn build_final_llm_prompt(
     }
 
     // 2. Calculate initial total tokens
-    let mut current_total_tokens = system_prompt_base_tokens
-        + character_info_tokens
+    let mut current_total_tokens = meta_system_prompt_tokens
+        + persona_override_prompt_tokens
+        + character_definition_tokens
+        + character_details_tokens
         + current_user_message_tokens
         + rag_items_with_tokens.iter().map(|(_, t)| t).sum::<usize>()
         + recent_history_with_tokens.iter().map(|(_, t)| t).sum::<usize>();
@@ -169,8 +199,10 @@ pub async fn build_final_llm_prompt(
     debug!(
         current_total_tokens,
         max_allowed_tokens,
-        system_prompt_base_tokens,
-        character_info_tokens,
+        meta_system_prompt_tokens,
+        persona_override_prompt_tokens,
+        character_definition_tokens,
+        character_details_tokens,
         current_user_message_tokens,
         rag_tokens = rag_items_with_tokens.iter().map(|(_, t)| t).sum::<usize>(),
         history_tokens = recent_history_with_tokens.iter().map(|(_, t)| t).sum::<usize>(),
@@ -234,13 +266,21 @@ pub async fn build_final_llm_prompt(
     }
 
     // 6. Assemble final system prompt string
-    let mut final_system_prompt_parts: Vec<String> = Vec::new();
-    if !system_prompt_base_str.is_empty() {
-        final_system_prompt_parts.push(system_prompt_base_str);
+    let mut final_system_prompt_parts: Vec<String> = vec![meta_system_prompt_template]; // Start with the meta prompt
+
+    if !persona_override_prompt_str.is_empty() {
+        final_system_prompt_parts.push(format!("<persona_override_prompt>\n{}\n</persona_override_prompt>", persona_override_prompt_str));
     }
-    if !character_info_str.is_empty() {
-        final_system_prompt_parts.push(character_info_str);
+    if !character_definition_str.is_empty() {
+        final_system_prompt_parts.push(format!("<character_definition>\n{}\n</character_definition>", character_definition_str));
     }
+    if !character_details_str.is_empty() {
+        // build_character_info_string already includes "Character Name: ..." and "Description: ..."
+        // We might want to refine build_character_info_string to return just the description if name is already in meta prompt.
+        // For now, let's wrap what it returns.
+        final_system_prompt_parts.push(format!("<character_details>\n{}\n</character_details>", character_details_str));
+    }
+    // Note: RAG items are handled separately and prepended to the user message, not part of the system prompt string here.
 
     let final_rag_texts: Vec<String> = final_rag_items_with_tokens
         .into_iter()
@@ -272,9 +312,16 @@ pub async fn build_final_llm_prompt(
         .collect();
 
     // RAG context is now added to the user message, not the system prompt.
-    // final_rag_texts (Vec<String>) was already prepared from truncated RAG items at line 245.
+    // final_rag_texts (Vec<String>) was already prepared from truncated RAG items.
     
-    let final_system_prompt = final_system_prompt_parts.join("\n\n"); // Join with double newline for separation
+    // Join with a more distinct separator if multiple parts exist.
+    // If only one part, no separator needed. If no parts, empty string.
+    let final_system_prompt = if final_system_prompt_parts.len() > 1 {
+        final_system_prompt_parts.join("\n\n---\n\n")
+    } else {
+        final_system_prompt_parts.join("") // Effectively takes the first element or empty if no elements
+    };
+
 
     // Prepare current user message, potentially prepending RAG context
     let mut user_message_for_llm = current_user_message; // current_user_message is moved here

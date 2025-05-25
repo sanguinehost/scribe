@@ -53,7 +53,7 @@ pub struct CreateLorebookEntryPayload {
     pub placement_hint: Option<String>, // e.g., "before_prompt", "after_prompt"
 }
 
-#[derive(Debug, Serialize, Deserialize, Validate, Clone, Default)]
+#[derive(Debug, Serialize, Deserialize, Validate, Clone, Default, PartialEq)]
 pub struct UpdateLorebookEntryPayload {
     #[validate(length(min = 1, max = 255))]
     pub entry_title: Option<String>,
@@ -102,6 +102,12 @@ pub struct ChatSessionLorebookAssociationResponse {
     pub user_id: Uuid,
     pub lorebook_name: String, // For better UX, requires join or extra query
     pub created_at: DateTime<Utc>, // Assuming this comes from the association table
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ChatSessionBasicInfo {
+    pub chat_session_id: Uuid,
+    pub title: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

@@ -1,8 +1,8 @@
 use crate::{
     errors::AppError,
     models::lorebook_dtos::{
-        AssociateLorebookToChatPayload, CreateLorebookEntryPayload, CreateLorebookPayload,
-        UpdateLorebookEntryPayload, UpdateLorebookPayload,
+        AssociateLorebookToChatPayload, CreateLorebookEntryPayload,
+        CreateLorebookPayload, UpdateLorebookEntryPayload, UpdateLorebookPayload,
     },
     services::LorebookService,
     AppState,
@@ -63,6 +63,10 @@ pub fn lorebook_routes() -> Router<AppState> {
         .route(
             "/chats/:chat_session_id/lorebooks/:lorebook_id",
             delete(disassociate_lorebook_from_chat_handler),
+        )
+        .route(
+            "/lorebooks/:lorebook_id/fetch/associated_chats", // Made path more distinct
+            get(list_associated_chat_sessions_for_lorebook_handler),
         )
 }
 
@@ -259,4 +263,18 @@ async fn disassociate_lorebook_from_chat_handler(
         .disassociate_lorebook_from_chat(&auth_session, chat_session_id, lorebook_id)
         .await?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+#[debug_handler]
+#[instrument(skip(state, auth_session))]
+async fn list_associated_chat_sessions_for_lorebook_handler(
+    State(state): State<AppState>,
+    auth_session: AuthSession<AuthBackend>,
+    Path(lorebook_id): Path<Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    let lorebook_service = LorebookService::new(state.pool.clone(), state.encryption_service.clone());
+    let chat_sessions = lorebook_service
+        .list_associated_chat_sessions_for_lorebook(&auth_session, lorebook_id)
+        .await?;
+    Ok((StatusCode::OK, Json(chat_sessions)))
 }

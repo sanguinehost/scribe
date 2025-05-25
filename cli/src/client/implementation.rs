@@ -11,9 +11,15 @@ use scribe_backend::models::{
         ApiChatMessage, Chat, ChatMessage, ChatSettingsResponse, GenerateChatRequest,
         UpdateChatSettingsRequest,
     },
+    lorebook_dtos::{
+        AssociateLorebookToChatPayload, ChatSessionBasicInfo,
+        ChatSessionLorebookAssociationResponse, CreateLorebookEntryPayload,
+        CreateLorebookPayload, LorebookEntryResponse, LorebookEntrySummaryResponse,
+        LorebookResponse, UpdateLorebookEntryPayload, UpdateLorebookPayload,
+    },
     users::User,
 };
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use std::{fs, path::Path, pin::Pin};
 use tracing;
 use uuid::Uuid;
@@ -136,7 +142,7 @@ impl HttpClient for ReqwestClientWrapper {
     }
 
     async fn create_chat_session(&self, character_id: Uuid, active_custom_persona_id: Option<Uuid>) -> Result<Chat, CliError> {
-        let url = build_url(&self.base_url, "/api/chats")?;
+        let url = build_url(&self.base_url, "/api/chats/create_session")?; // Updated path
         tracing::info!(target: "scribe_cli::client::implementation", %url, %character_id, ?active_custom_persona_id, "Creating chat session via HttpClient");
         let payload = json!({
             "character_id": character_id,
@@ -921,5 +927,202 @@ impl HttpClient for ReqwestClientWrapper {
                 message: error_text,
             })
         }
+    }
+
+    // Lorebooks
+    async fn create_lorebook(&self, payload: &CreateLorebookPayload) -> Result<LorebookResponse, CliError> {
+        let url = build_url(&self.base_url, "/api/lorebooks")?;
+        tracing::info!(target: "scribe_cli::client::implementation", %url, "Creating lorebook via HttpClient");
+        let response = self
+            .client
+            .post(url)
+            .json(payload)
+            .send()
+            .await
+            .map_err(CliError::Reqwest)?;
+        handle_response(response).await
+    }
+
+    async fn list_lorebooks(&self) -> Result<Vec<LorebookResponse>, CliError> {
+        let url = build_url(&self.base_url, "/api/lorebooks")?;
+        tracing::info!(target: "scribe_cli::client::implementation", %url, "Listing lorebooks via HttpClient");
+        let response = self
+            .client
+            .get(url)
+            .send()
+            .await
+            .map_err(CliError::Reqwest)?;
+        handle_response(response).await
+    }
+
+    async fn get_lorebook(&self, lorebook_id: Uuid) -> Result<LorebookResponse, CliError> {
+        let url = build_url(&self.base_url, &format!("/api/lorebooks/{}", lorebook_id))?;
+        tracing::info!(target: "scribe_cli::client::implementation", %url, %lorebook_id, "Fetching lorebook via HttpClient");
+        let response = self
+            .client
+            .get(url)
+            .send()
+            .await
+            .map_err(CliError::Reqwest)?;
+        handle_response(response).await
+    }
+
+    async fn update_lorebook(&self, lorebook_id: Uuid, payload: &UpdateLorebookPayload) -> Result<LorebookResponse, CliError> {
+        let url = build_url(&self.base_url, &format!("/api/lorebooks/{}", lorebook_id))?;
+        tracing::info!(target: "scribe_cli::client::implementation", %url, %lorebook_id, "Updating lorebook via HttpClient");
+        let response = self
+            .client
+            .put(url)
+            .json(payload)
+            .send()
+            .await
+            .map_err(CliError::Reqwest)?;
+        handle_response(response).await
+    }
+
+    async fn delete_lorebook(&self, lorebook_id: Uuid) -> Result<(), CliError> {
+        let url = build_url(&self.base_url, &format!("/api/lorebooks/{}", lorebook_id))?;
+        tracing::info!(target: "scribe_cli::client::implementation", %url, %lorebook_id, "Deleting lorebook via HttpClient");
+        let response = self
+            .client
+            .delete(url)
+            .send()
+            .await
+            .map_err(CliError::Reqwest)?;
+        if response.status().is_success() {
+            Ok(())
+        } else {
+            let status = response.status();
+            let error_text = response.text().await.unwrap_or_else(|_| "Failed to read error body".to_string());
+            Err(CliError::ApiError { status, message: error_text })
+        }
+    }
+
+    // Lorebook Entries
+    async fn create_lorebook_entry(&self, lorebook_id: Uuid, payload: &CreateLorebookEntryPayload) -> Result<LorebookEntryResponse, CliError> {
+        let url = build_url(&self.base_url, &format!("/api/lorebooks/{}/entries", lorebook_id))?;
+        tracing::info!(target: "scribe_cli::client::implementation", %url, %lorebook_id, "Creating lorebook entry via HttpClient");
+        let response = self
+            .client
+            .post(url)
+            .json(payload)
+            .send()
+            .await
+            .map_err(CliError::Reqwest)?;
+        handle_response(response).await
+    }
+
+    async fn list_lorebook_entries(&self, lorebook_id: Uuid) -> Result<Vec<LorebookEntrySummaryResponse>, CliError> {
+        let url = build_url(&self.base_url, &format!("/api/lorebooks/{}/entries", lorebook_id))?;
+        tracing::info!(target: "scribe_cli::client::implementation", %url, %lorebook_id, "Listing lorebook entries via HttpClient");
+        let response = self
+            .client
+            .get(url)
+            .send()
+            .await
+            .map_err(CliError::Reqwest)?;
+        handle_response(response).await
+    }
+
+    async fn get_lorebook_entry(&self, lorebook_id: Uuid, entry_id: Uuid) -> Result<LorebookEntryResponse, CliError> {
+        let url = build_url(&self.base_url, &format!("/api/lorebooks/{}/entries/{}", lorebook_id, entry_id))?;
+        tracing::info!(target: "scribe_cli::client::implementation", %url, %lorebook_id, %entry_id, "Fetching lorebook entry via HttpClient");
+        let response = self
+            .client
+            .get(url)
+            .send()
+            .await
+            .map_err(CliError::Reqwest)?;
+        handle_response(response).await
+    }
+
+    async fn update_lorebook_entry(&self, lorebook_id: Uuid, entry_id: Uuid, payload: &UpdateLorebookEntryPayload) -> Result<LorebookEntryResponse, CliError> {
+        let url = build_url(&self.base_url, &format!("/api/lorebooks/{}/entries/{}", lorebook_id, entry_id))?;
+        tracing::info!(target: "scribe_cli::client::implementation", %url, %lorebook_id, %entry_id, "Updating lorebook entry via HttpClient");
+        let response = self
+            .client
+            .put(url)
+            .json(payload)
+            .send()
+            .await
+            .map_err(CliError::Reqwest)?;
+        handle_response(response).await
+    }
+
+    async fn delete_lorebook_entry(&self, lorebook_id: Uuid, entry_id: Uuid) -> Result<(), CliError> {
+        let url = build_url(&self.base_url, &format!("/api/lorebooks/{}/entries/{}", lorebook_id, entry_id))?;
+        tracing::info!(target: "scribe_cli::client::implementation", %url, %lorebook_id, %entry_id, "Deleting lorebook entry via HttpClient");
+        let response = self
+            .client
+            .delete(url)
+            .send()
+            .await
+            .map_err(CliError::Reqwest)?;
+        if response.status().is_success() {
+            Ok(())
+        } else {
+            let status = response.status();
+            let error_text = response.text().await.unwrap_or_else(|_| "Failed to read error body".to_string());
+            Err(CliError::ApiError { status, message: error_text })
+        }
+    }
+
+    // Chat Session Lorebook Associations
+    async fn associate_lorebook_to_chat(&self, chat_session_id: Uuid, payload: &AssociateLorebookToChatPayload) -> Result<ChatSessionLorebookAssociationResponse, CliError> {
+        let url = build_url(&self.base_url, &format!("/api/chats/{}/lorebooks", chat_session_id))?;
+        tracing::info!(target: "scribe_cli::client::implementation", %url, %chat_session_id, lorebook_id = %payload.lorebook_id, "Associating lorebook to chat session via HttpClient");
+        let response = self
+            .client
+            .post(url)
+            .json(payload)
+            .send()
+            .await
+            .map_err(CliError::Reqwest)?;
+        handle_response(response).await
+    }
+
+    async fn list_chat_lorebook_associations(&self, chat_session_id: Uuid) -> Result<Vec<ChatSessionLorebookAssociationResponse>, CliError> {
+        let url = build_url(&self.base_url, &format!("/api/chats/{}/lorebooks", chat_session_id))?;
+        tracing::info!(target: "scribe_cli::client::implementation", %url, %chat_session_id, "Listing chat lorebook associations via HttpClient");
+        let response = self
+            .client
+            .get(url)
+            .send()
+            .await
+            .map_err(CliError::Reqwest)?;
+        handle_response(response).await
+    }
+
+    async fn disassociate_lorebook_from_chat(&self, chat_session_id: Uuid, lorebook_id: Uuid) -> Result<(), CliError> {
+        let url = build_url(&self.base_url, &format!("/api/chats/{}/lorebooks/{}", chat_session_id, lorebook_id))?;
+        tracing::info!(target: "scribe_cli::client::implementation", %url, %chat_session_id, %lorebook_id, "Disassociating lorebook from chat session via HttpClient");
+        let response = self
+            .client
+            .delete(url)
+            .send()
+            .await
+            .map_err(CliError::Reqwest)?;
+        if response.status().is_success() {
+            Ok(())
+        } else {
+            let status = response.status();
+            let error_text = response.text().await.unwrap_or_else(|_| "Failed to read error body".to_string());
+            Err(CliError::ApiError { status, message: error_text })
+        }
+    }
+
+    async fn list_associated_chat_sessions_for_lorebook(
+        &self,
+        lorebook_id: Uuid,
+    ) -> Result<Vec<ChatSessionBasicInfo>, CliError> {
+        let url = build_url(&self.base_url, &format!("/api/lorebooks/{}/fetch/associated_chats", lorebook_id))?; // Updated path
+        tracing::info!(target: "scribe_cli::client::implementation", %url, %lorebook_id, "Listing associated chat sessions for lorebook via HttpClient");
+        let response = self
+            .client
+            .get(url)
+            .send()
+            .await
+            .map_err(CliError::Reqwest)?;
+        handle_response(response).await
     }
 }

@@ -4,7 +4,7 @@ use crate::{
         Chat, // Changed from chats::ChatSession
         NewChatSessionLorebook, // Import directly
         lorebook_dtos::{
-            AssociateLorebookToChatPayload, ChatSessionLorebookAssociationResponse,
+            AssociateLorebookToChatPayload, ChatSessionBasicInfo, ChatSessionLorebookAssociationResponse,
             CreateLorebookEntryPayload, CreateLorebookPayload, LorebookEntryResponse,
             LorebookEntrySummaryResponse, LorebookResponse, UpdateLorebookEntryPayload,
             UpdateLorebookPayload,
@@ -14,7 +14,7 @@ use crate::{
     },
     services::EncryptionService,
     state::AppState,
-    schema::{lorebooks, lorebook_entries}, // Removed chat_sessions, chat_session_lorebooks
+    schema::{lorebooks, lorebook_entries},
     auth::user_store::Backend as AuthBackend,
 };
 use secrecy::{ExposeSecret, SecretBox};
@@ -1303,43 +1303,242 @@ impl LorebookService {
         })
     }
 
-    #[instrument(skip(self, auth_session), fields(user_id = ?auth_session.user.as_ref().map(|u| u.id), chat_session_id = %chat_session_id))]
+    #[instrument(skip(self, auth_session), fields(user_id = ?auth_session.user.as_ref().map(|u| u.id), chat_session_id = %chat_session_id_param))]
     pub async fn list_chat_lorebook_associations(
-        &self,
-        auth_session: &AuthSession<AuthBackend>, // Changed to AuthBackend
-        chat_session_id: Uuid,
-    ) -> Result<Vec<ChatSessionLorebookAssociationResponse>, AppError> {
-        // TODO: Implementation
-        // 1. Get current user
-        // 2. Verify chat_session_id ownership
-        // 3. Fetch associations for chat_session_id
-        // 4. For each association, fetch lorebook name (requires join or N+1)
-        // 5. Map to ChatSessionLorebookAssociationResponse
-        tracing::debug!("Attempting to list chat lorebook associations");
-        Err(AppError::NotImplemented(
-            "list_chat_lorebook_associations not yet implemented".to_string(),
-        ))
-    }
+          &self,
+          auth_session: &AuthSession<AuthBackend>,
+          chat_session_id_param: Uuid,
+      ) -> Result<Vec<ChatSessionLorebookAssociationResponse>, AppError> {
+          debug!(chat_session_id = %chat_session_id_param, "Attempting to list chat lorebook associations");
+          let user = self.get_user_from_session(auth_session)?;
+          let current_user_id = user.id;
+  
+          let conn = self.pool.get().await.map_err(|e| {
+              error!("Failed to get DB connection: {}", e);
+              AppError::DbPoolError(e.to_string())
+          })?;
+  
+          // 1. Verify chat session ownership
+          conn.interact(move |conn_sync| {
+              use crate::schema::chat_sessions::dsl as cs_dsl;
+              cs_dsl::chat_sessions
+                  .filter(cs_dsl::id.eq(chat_session_id_param))
+                  .filter(cs_dsl::user_id.eq(current_user_id))
+                  .select(cs_dsl::id)
+                  .first::<Uuid>(conn_sync)
+                  .optional()
+          })
+          .await
+          .map_err(|e| {
+              error!("DB interaction failed while verifying chat session ownership for session {}: {}", chat_session_id_param, e);
+              AppError::DbInteractError(format!("DB interaction failed: {}", e))
+          })?
+          .map_err(|db_err| {
+              error!("Failed to query chat session {}: {}", chat_session_id_param, db_err);
+              AppError::DatabaseQueryError(db_err.to_string())
+          })?
+          .ok_or_else(|| {
+              error!("Chat session {} not found or user {} does not have access.", chat_session_id_param, current_user_id);
+              AppError::NotFound(format!("Chat session with ID {} not found or access denied.", chat_session_id_param))
+          })?;
+  
+          // 2. Fetch associations and join with lorebooks table for names
+          let associations_with_names = conn
+              .interact(move |conn_sync| {
+                  use crate::schema::chat_session_lorebooks::dsl as csl_dsl;
+                  use crate::schema::lorebooks::dsl as l_dsl;
+  
+                  csl_dsl::chat_session_lorebooks
+                      .inner_join(l_dsl::lorebooks.on(csl_dsl::lorebook_id.eq(l_dsl::id)))
+                      .filter(csl_dsl::chat_session_id.eq(chat_session_id_param))
+                      .filter(csl_dsl::user_id.eq(current_user_id)) // Ensure association belongs to the user
+                      .select((
+                          csl_dsl::chat_session_id,
+                          csl_dsl::lorebook_id,
+                          csl_dsl::user_id,
+                          l_dsl::name, // lorebook name
+                          csl_dsl::created_at, // association creation time
+                      ))
+                      .load::<(Uuid, Uuid, Uuid, String, chrono::DateTime<Utc>)>(conn_sync)
+              })
+              .await
+              .map_err(|e| {
+                  error!("DB interaction failed while listing associations for chat {}: {}", chat_session_id_param, e);
+                  AppError::DbInteractError(format!("DB interaction failed: {}", e))
+              })?
+              .map_err(|db_err| {
+                  error!("Failed to query chat session lorebook associations for chat {}: {}", chat_session_id_param, db_err);
+                  AppError::DatabaseQueryError(db_err.to_string())
+              })?;
+  
+          let response_data = associations_with_names
+              .into_iter()
+              .map(
+                  |(cs_id, lb_id, u_id, lb_name, assoc_created_at)| {
+                      ChatSessionLorebookAssociationResponse {
+                          chat_session_id: cs_id,
+                          lorebook_id: lb_id,
+                          user_id: u_id,
+                          lorebook_name: lb_name,
+                          created_at: assoc_created_at,
+                      }
+                  },
+              )
+              .collect();
+  
+          Ok(response_data)
+      }
+  
+      #[instrument(skip(self, auth_session), fields(user_id = ?auth_session.user.as_ref().map(|u| u.id), chat_session_id = %chat_session_id_param, lorebook_id = %lorebook_id_param))]
+      pub async fn disassociate_lorebook_from_chat(
+          &self,
+          auth_session: &AuthSession<AuthBackend>,
+          chat_session_id_param: Uuid,
+          lorebook_id_param: Uuid,
+      ) -> Result<(), AppError> {
+          debug!("Attempting to disassociate lorebook {} from chat {}", lorebook_id_param, chat_session_id_param);
+          let user = self.get_user_from_session(auth_session)?;
+          let current_user_id = user.id;
+  
+          let conn = self.pool.get().await.map_err(|e| {
+              error!("Failed to get DB connection: {}", e);
+              AppError::DbPoolError(e.to_string())
+          })?;
+  
+          // 1. Verify chat session ownership (optional here if we trust user_id on association, but good for safety)
+          conn.interact(move |conn_sync| {
+              use crate::schema::chat_sessions::dsl as cs_dsl;
+              cs_dsl::chat_sessions
+                  .filter(cs_dsl::id.eq(chat_session_id_param))
+                  .filter(cs_dsl::user_id.eq(current_user_id))
+                  .select(cs_dsl::id)
+                  .first::<Uuid>(conn_sync)
+                  .optional()
+          })
+          .await
+          .map_err(|e| AppError::DbInteractError(format!("DB interaction failed: {}", e)))?
+          .map_err(|db_err| AppError::DatabaseQueryError(db_err.to_string()))?
+          .ok_or_else(|| AppError::NotFound(format!("Chat session with ID {} not found or access denied.", chat_session_id_param)))?;
+  
+  
+          // 2. Delete the association, ensuring it belongs to the user
+          let rows_deleted = conn
+              .interact(move |conn_sync| {
+                  use crate::schema::chat_session_lorebooks::dsl as csl_dsl;
+                  diesel::delete(
+                      csl_dsl::chat_session_lorebooks
+                          .filter(csl_dsl::chat_session_id.eq(chat_session_id_param))
+                          .filter(csl_dsl::lorebook_id.eq(lorebook_id_param))
+                          .filter(csl_dsl::user_id.eq(current_user_id)), // Crucial for security
+                  )
+                  .execute(conn_sync)
+              })
+              .await
+              .map_err(|e| {
+                  error!("DB interaction failed while disassociating lorebook {} from chat {}: {}", lorebook_id_param, chat_session_id_param, e);
+                  AppError::DbInteractError(format!("DB interaction failed: {}", e))
+              })?
+              .map_err(|db_err| {
+                  error!("Failed to delete chat session lorebook association: {}", db_err);
+                  AppError::DatabaseQueryError(db_err.to_string())
+              })?;
+  
+          if rows_deleted == 0 {
+              info!(
+                  "No association found to delete for lorebook {} and chat session {} for user {}",
+                  lorebook_id_param, chat_session_id_param, current_user_id
+              );
+              // This could mean the association didn't exist, or didn't belong to this user for this session.
+              // Returning NotFound is appropriate as the specific resource (association) to delete was not found under these conditions.
+              return Err(AppError::NotFound(
+                  "Lorebook association not found for this chat session and user.".to_string(),
+              ));
+          }
+  
+          info!(
+              "Successfully disassociated lorebook {} from chat session {} for user {}",
+              lorebook_id_param, chat_session_id_param, current_user_id
+          );
+          Ok(())
+      }
 
-    #[instrument(skip(self, auth_session), fields(user_id = ?auth_session.user.as_ref().map(|u| u.id), chat_session_id = %chat_session_id, lorebook_id = %lorebook_id))]
-    pub async fn disassociate_lorebook_from_chat(
+    #[instrument(skip(self, auth_session), fields(user_id = ?auth_session.user.as_ref().map(|u| u.id), lorebook_id = %lorebook_id_param))]
+    pub async fn list_associated_chat_sessions_for_lorebook(
         &self,
-        auth_session: &AuthSession<AuthBackend>, // Changed to AuthBackend
-        chat_session_id: Uuid,
-        lorebook_id: Uuid,
-    ) -> Result<(), AppError> {
-        // TODO: Implementation
-        // 1. Get current user
-        // 2. Verify chat_session_id ownership
-        // 3. Verify lorebook_id ownership (optional, could just check association exists for user)
-        // 4. Delete association
-        tracing::debug!("Attempting to disassociate lorebook from chat");
-        Err(AppError::NotImplemented(
-            "disassociate_lorebook_from_chat not yet implemented".to_string(),
-        ))
-    }
+        auth_session: &AuthSession<AuthBackend>,
+        lorebook_id_param: Uuid,
+    ) -> Result<Vec<ChatSessionBasicInfo>, AppError> {
+        debug!(lorebook_id = %lorebook_id_param, "Attempting to list chat sessions associated with lorebook");
+        let user = self.get_user_from_session(auth_session)?;
+        let current_user_id = user.id;
 
-    // Helper to get user or return error
+        let conn = self.pool.get().await.map_err(|e| {
+            error!("Failed to get DB connection: {}", e);
+            AppError::DbPoolError(e.to_string())
+        })?;
+
+        // 1. Verify lorebook ownership
+        conn.interact(move |conn_sync| {
+            use crate::schema::lorebooks::dsl as l_dsl;
+            l_dsl::lorebooks
+                .filter(l_dsl::id.eq(lorebook_id_param))
+                .filter(l_dsl::user_id.eq(current_user_id))
+                .select(l_dsl::id)
+                .first::<Uuid>(conn_sync)
+                .optional()
+        })
+        .await
+        .map_err(|e| {
+            error!("DB interaction failed while verifying lorebook ownership for lorebook {}: {}", lorebook_id_param, e);
+            AppError::DbInteractError(format!("DB interaction failed: {}", e))
+        })?
+        .map_err(|db_err| {
+            error!("Failed to query lorebook {}: {}", lorebook_id_param, db_err);
+            AppError::DatabaseQueryError(db_err.to_string())
+        })?
+        .ok_or_else(|| {
+            error!("Lorebook {} not found or user {} does not have access.", lorebook_id_param, current_user_id);
+            AppError::NotFound(format!("Lorebook with ID {} not found or access denied.", lorebook_id_param))
+        })?;
+
+        // 2. Fetch associated chat sessions
+        let associated_chats = conn
+            .interact(move |conn_sync| {
+                use crate::schema::chat_session_lorebooks::dsl as csl_dsl;
+                use crate::schema::chat_sessions::dsl as cs_dsl;
+
+                csl_dsl::chat_session_lorebooks
+                    .inner_join(cs_dsl::chat_sessions.on(csl_dsl::chat_session_id.eq(cs_dsl::id)))
+                    .filter(csl_dsl::lorebook_id.eq(lorebook_id_param))
+                    .filter(csl_dsl::user_id.eq(current_user_id)) // Ensure association belongs to the user
+                    .select((
+                        cs_dsl::id, // chat_session_id
+                        cs_dsl::title, // chat_session title
+                    ))
+                    .load::<(Uuid, Option<String>)>(conn_sync)
+            })
+            .await
+            .map_err(|e| {
+                error!("DB interaction failed while listing associated chats for lorebook {}: {}", lorebook_id_param, e);
+                AppError::DbInteractError(format!("DB interaction failed: {}", e))
+            })?
+            .map_err(|db_err| {
+                error!("Failed to query associated chat sessions for lorebook {}: {}", lorebook_id_param, db_err);
+                AppError::DatabaseQueryError(db_err.to_string())
+            })?;
+
+        let response_data = associated_chats
+            .into_iter()
+            .map(|(chat_id, chat_title)| ChatSessionBasicInfo {
+                chat_session_id: chat_id,
+                title: chat_title,
+            })
+            .collect();
+
+        Ok(response_data)
+    }
+  
+      // Helper to get user or return error
     // #[allow(dead_code)] // Will be used once methods are implemented
     fn get_user_from_session(&self, auth_session: &AuthSession<AuthBackend>) -> Result<User, AppError> { // Changed to AuthBackend
         auth_session

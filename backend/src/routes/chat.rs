@@ -199,30 +199,31 @@ pub async fn generate_chat_response(
     // Get comprehensive data for generation from chat_service
     let (
         managed_db_history,                 // 0: Vec<DbChatMessage>
-        system_prompt_from_service,         // 1: Option<String>
+        system_prompt_from_service,         // 1: Option<String> (persona/override only)
         _active_lorebook_ids_for_search,    // 2: Option<Vec<Uuid>> - Now handled by prompt_builder
         session_character_id,               // 3: Uuid
-        gen_temperature,                    // 4: Option<BigDecimal>
-        gen_max_output_tokens,              // 5: Option<i32>
-        gen_frequency_penalty,              // 6: Option<BigDecimal>
-        gen_presence_penalty,               // 7: Option<BigDecimal>
-        gen_top_k,                          // 8: Option<i32>
-        gen_top_p,                          // 9: Option<BigDecimal>
-        gen_repetition_penalty,             // 10: Option<BigDecimal>
-        gen_min_p,                          // 11: Option<BigDecimal>
-        gen_top_a,                          // 12: Option<BigDecimal>
-        gen_seed,                           // 13: Option<i32>
-        gen_logit_bias,                     // 14: Option<Value>
-        gen_model_name_from_service,        // 15: String
-        gen_gemini_thinking_budget,         // 16: Option<i32>
-        gen_gemini_enable_code_execution,   // 17: Option<bool>
-        user_message_struct_to_save,        // 18: DbInsertableChatMessage
+        raw_character_system_prompt,        // 4: Option<String> (NEW - from character_db.system_prompt)
+        gen_temperature,                    // 5: Option<BigDecimal> (was 4)
+        gen_max_output_tokens,              // 6: Option<i32> (was 5)
+        gen_frequency_penalty,              // 7: Option<BigDecimal> (was 6)
+        gen_presence_penalty,               // 8: Option<BigDecimal> (was 7)
+        gen_top_k,                          // 9: Option<i32> (was 8)
+        gen_top_p,                          // 10: Option<BigDecimal> (was 9)
+        gen_repetition_penalty,             // 11: Option<BigDecimal> (was 10)
+        gen_min_p,                          // 12: Option<BigDecimal> (was 11)
+        gen_top_a,                          // 13: Option<BigDecimal> (was 12)
+        gen_seed,                           // 14: Option<i32> (was 13)
+        gen_logit_bias,                     // 15: Option<Value> (was 14)
+        gen_model_name_from_service,        // 16: String (was 15)
+        gen_gemini_thinking_budget,         // 17: Option<i32> (was 16)
+        gen_gemini_enable_code_execution,   // 18: Option<bool> (was 17)
+        user_message_struct_to_save,        // 19: DbInsertableChatMessage (was 18)
         // -- New RAG related fields --
-        _actual_recent_history_tokens_from_service, // 19: usize (NEW) - Handled by prompt_builder
-        rag_context_items_from_service,             // 20: Vec<RetrievedChunk> (NEW) - Passed to prompt_builder
+        _actual_recent_history_tokens_from_service, // 20: usize (NEW) - Handled by prompt_builder (was 19)
+        rag_context_items_from_service,             // 21: Vec<RetrievedChunk> (NEW) - Passed to prompt_builder (was 20)
         // -- Original history management settings --
-        _hist_management_strategy,          // 21: String
-        _hist_management_limit,             // 22: i32
+        _hist_management_strategy,          // 22: String (was 21)
+        _hist_management_limit,             // 23: i32 (was 22)
     ) = chat_service::get_session_data_for_generation(
         state_arc.clone(),
         user_id_value,
@@ -328,7 +329,8 @@ pub async fn generate_chat_response(
             state_arc.token_counter.clone(),
             gen_ai_recent_history,
             rag_context_items_from_service,
-            system_prompt_from_service, // This is the base system prompt (e.g. from persona or character card)
+            system_prompt_from_service, // This is the system_prompt_base (persona/override only)
+            raw_character_system_prompt, // This is the new raw_character_system_prompt
             Some(&character_metadata_for_prompt_builder),
             current_user_genai_message,
             &model_to_use,
