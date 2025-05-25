@@ -326,7 +326,10 @@ async fn test_lorebook_import_retrieval_and_rag_integration() {
         text: north_america_content.clone(),
         metadata: RetrievedMetadata::Lorebook(lorebook_chunk_metadata),
     };
-    test_app.mock_embedding_pipeline_service.set_retrieve_response(Ok(vec![retrieved_chunk]));
+    test_app.mock_embedding_pipeline_service.set_retrieve_responses_sequence(vec![
+        Ok(vec![retrieved_chunk.clone()]), // Response for lorebook RAG
+        Ok(vec![]),                       // Response for chat history RAG (empty)
+    ]);
 
     let response = auth_client
         .post(&format!(
@@ -470,8 +473,16 @@ async fn test_lorebook_import_retrieval_and_rag_integration() {
     // For clarity, let's ensure the user_message_content is exactly the last message.
 
     // Construct the expected full message content that includes RAG context
+    let mock_keywords_vec = vec![
+        "North America".to_string(), "USA".to_string(), "United States".to_string(),
+        "Canada".to_string(), "Mexico".to_string(), "America".to_string(),
+        "NAFTA".to_string(), "USMCA".to_string()
+    ];
+    let mock_keywords_str = mock_keywords_vec.join(", ");
+
     let expected_ai_message_content = format!(
-        "--- Relevant Context ---\n- Lorebook (Title: \"North America\"): {}\n\n\n\n{}", // Changed to four newlines
+        "---\nRelevant Context:\n- Lorebook (North America - {}): {}\n---\n\n{}",
+        mock_keywords_str,
         north_america_content, // This is the content from the mock retrieval
         user_message_content   // This is the original user query
     );
@@ -485,7 +496,8 @@ async fn test_lorebook_import_retrieval_and_rag_integration() {
 
     // b. Relevant text snippets from "North America" lorebook entry are present
     //    and correctly formatted.
-    let expected_lorebook_title_text = "Title: \"North America\"";
+    //    The title format is now "TITLE - KEYWORDS"
+    let expected_lorebook_title_text = format!("Lorebook (North America - {})", mock_keywords_str);
     let expected_lorebook_content_snippet1 = "President Donald Trump's second administration has implemented significant policy shifts";
     let expected_lorebook_content_snippet2 = "Strategic Bitcoin Reserve, converting 5% of national gold reserves to cryptocurrency";
     let expected_lorebook_content_snippet3 = "Canada faces its own challenges under Prime Minister Pierre Poilievre's Conservative government.";
@@ -497,7 +509,7 @@ async fn test_lorebook_import_retrieval_and_rag_integration() {
     // Let's assume they are part of the system prompt for now.
     // If they are part of the user message/history block, this assertion needs to move.
     assert!(
-        last_message_content.contains(expected_lorebook_title_text),
+        last_message_content.contains(&expected_lorebook_title_text),
         "Last message content does not contain the expected lorebook title text 'Title: \"North America\"'. Last Message: '{}'",
         last_message_content
     );

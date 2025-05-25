@@ -504,10 +504,27 @@ async fn test_first_mes_included_in_history() {
         cookie::Cookie::parse(auth_cookie_header).expect("Failed to parse Set-Cookie header");
     let _auth_cookie = format!("{}={}", parsed_cookie.name(), parsed_cookie.value());
 
+    // Create a dummy session DEK for encrypting first_mes
+    let session_dek = SecretBox::new(Box::new(vec![0u8; 32])); // Dummy DEK for testing
+    let session_dek_for_char_creation = std::sync::Arc::new(session_dek);
+
     // Create a test character with first_mes content
     let conn_pool = test_app.db_pool.clone();
     let user_id_clone = user.id;
-    let first_mes_content = "Hello! I'm the character's first message that should be included.";
+    let first_mes_content_plain = "Hello! I'm the character's first message that should be included.";
+
+    let (encrypted_first_mes, first_mes_nonce) = {
+        let (encrypted_content, nonce) = scribe_backend::crypto::encrypt_gcm(
+            first_mes_content_plain.as_bytes(),
+            session_dek_for_char_creation.as_ref(),
+        )
+        .expect("Failed to encrypt first_mes_content");
+        (
+            Some(encrypted_content),
+            Some(nonce.to_vec()),
+        )
+    };
+
     let character: DbCharacter = conn_pool
         .get()
         .await
@@ -519,7 +536,8 @@ async fn test_first_mes_included_in_history() {
                 spec: "test_spec_v1.0".to_string(),
                 spec_version: "1.0".to_string(),
                 description: Some("Test description".to_string().into_bytes()),
-                first_mes: Some(first_mes_content.to_string().into_bytes()),
+                first_mes: encrypted_first_mes, // Use encrypted content
+                first_mes_nonce,               // Store the nonce
                 greeting: Some("Hello".to_string().into_bytes()),
                 visibility: Some("private".to_string()),
                 creator: Some("test_creator".to_string()),
@@ -635,7 +653,7 @@ async fn test_first_mes_included_in_history() {
     .expect("Failed to get session data for generation");
 
     // Extract the managed history from the generation data
-    let (managed_history, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _) = generation_data;
+    let (managed_history, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _) = generation_data;
 
     // Assert that the history contains the character's first_mes
     assert!(
@@ -656,7 +674,7 @@ async fn test_first_mes_included_in_history() {
         "First message role should be Assistant"
     );
     assert_eq!(
-        String::from_utf8_lossy(&first_msg.content).as_ref(), first_mes_content,
+        String::from_utf8_lossy(&first_msg.content).as_ref(), first_mes_content_plain,
         "First message content should match character's first_mes"
     );
 }
