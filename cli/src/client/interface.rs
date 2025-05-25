@@ -7,6 +7,12 @@ use scribe_backend::models::{
     auth::LoginPayload,
     // characters::CharacterDataForClient as BackendCharacterDataForClient, // Unused
     chats::{ApiChatMessage, Chat, ChatMessage, ChatSettingsResponse, UpdateChatSettingsRequest}, // Removed GenerateChatRequest
+    lorebook_dtos::{
+        AssociateLorebookToChatPayload, ChatSessionBasicInfo,
+        ChatSessionLorebookAssociationResponse, CreateLorebookEntryPayload,
+        CreateLorebookPayload, LorebookEntryResponse, LorebookEntrySummaryResponse,
+        LorebookResponse, UpdateLorebookEntryPayload, UpdateLorebookPayload,
+    },
     users::User,
 };
 use std::pin::Pin;
@@ -79,6 +85,26 @@ pub trait HttpClient: Send + Sync {
     async fn delete_user_persona(&self, persona_id: Uuid) -> Result<(), CliError>;
     async fn set_default_persona(&self, persona_id: Uuid) -> Result<User, CliError>;
     async fn clear_default_persona(&self) -> Result<(), CliError>;
+
+    // Lorebooks
+    async fn create_lorebook(&self, payload: &CreateLorebookPayload) -> Result<LorebookResponse, CliError>;
+    async fn list_lorebooks(&self) -> Result<Vec<LorebookResponse>, CliError>;
+    async fn get_lorebook(&self, lorebook_id: Uuid) -> Result<LorebookResponse, CliError>;
+    async fn update_lorebook(&self, lorebook_id: Uuid, payload: &UpdateLorebookPayload) -> Result<LorebookResponse, CliError>;
+    async fn delete_lorebook(&self, lorebook_id: Uuid) -> Result<(), CliError>;
+
+    // Lorebook Entries
+    async fn create_lorebook_entry(&self, lorebook_id: Uuid, payload: &CreateLorebookEntryPayload) -> Result<LorebookEntryResponse, CliError>;
+    async fn list_lorebook_entries(&self, lorebook_id: Uuid) -> Result<Vec<LorebookEntrySummaryResponse>, CliError>;
+    async fn get_lorebook_entry(&self, lorebook_id: Uuid, entry_id: Uuid) -> Result<LorebookEntryResponse, CliError>;
+    async fn update_lorebook_entry(&self, lorebook_id: Uuid, entry_id: Uuid, payload: &UpdateLorebookEntryPayload) -> Result<LorebookEntryResponse, CliError>;
+    async fn delete_lorebook_entry(&self, lorebook_id: Uuid, entry_id: Uuid) -> Result<(), CliError>;
+
+    // Chat Session Lorebook Associations
+    async fn associate_lorebook_to_chat(&self, chat_session_id: Uuid, payload: &AssociateLorebookToChatPayload) -> Result<ChatSessionLorebookAssociationResponse, CliError>;
+    async fn list_chat_lorebook_associations(&self, chat_session_id: Uuid) -> Result<Vec<ChatSessionLorebookAssociationResponse>, CliError>;
+    async fn disassociate_lorebook_from_chat(&self, chat_session_id: Uuid, lorebook_id: Uuid) -> Result<(), CliError>;
+    async fn list_associated_chat_sessions_for_lorebook(&self, lorebook_id: Uuid) -> Result<Vec<ChatSessionBasicInfo>, CliError>;
  
     // Chat
     async fn list_chat_sessions(&self) -> Result<Vec<Chat>, CliError>;

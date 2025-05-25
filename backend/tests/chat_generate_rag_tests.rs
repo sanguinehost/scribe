@@ -874,11 +874,29 @@ async fn test_rag_context_injection_in_prompt() -> anyhow::Result<()> {
 
     println!("Checking AI request contents. System prompt: {:?}", last_ai_request.system);
 
-    // System prompt should be None or empty as character has no system prompt defined
-    // and RAG context is now in the user message.
-    assert!(
-        last_ai_request.system.is_none() || last_ai_request.system.as_deref().unwrap_or("").is_empty(),
-        "System prompt should be empty or None. Got: {:?}",
+    // System prompt should now match the default RAG prompt.
+    let expected_system_prompt = format!(
+        "You are the Narrator and supporting characters in a collaborative storytelling experience with a Human player. The Human controls a character (referred to as 'the User'). Your primary role is to describe the world, events, and the actions and dialogue of all characters *except* the User.\n\n\
+        You will be provided with the following structured information to guide your responses:\n\
+        1. <persona_override_prompt>: Specific instructions or style preferences from the User (if any).\n\
+        2. <character_definition>: The core definition and personality of the character '{}'.\n\
+        3. <character_details>: Additional descriptive information about '{}'.\n\
+        4. <lorebook_entries>: Relevant background information about the world, other characters, or plot points.\n\
+        5. <story_so_far>: The existing dialogue and narration.\n\n\
+        Key Writing Principles:\n\
+        - Focus on the direct consequences of the User's actions.\n\
+        - Describe newly encountered people, places, or significant objects only once. The Human will remember.\n\
+        - Maintain character believability. Characters have their own motivations and will not always agree with the User. They should react realistically based on their personalities and the situation.\n\
+        - End your responses with action or dialogue to maintain active immersion. Avoid summarization or out-of-character commentary.\n\n\
+        [System Instructions End]\n\
+        Based on all the above and the story so far, write the next part of the story as the narrator and any relevant non-player characters. Ensure your response is engaging and moves the story forward.",
+        character.name, character.name // Use the character's name from the test context
+    );
+    assert_eq!(
+        last_ai_request.system.as_deref(),
+        Some(expected_system_prompt.as_str()),
+        "System prompt mismatch. Expected: '{}', Got: '{:?}'",
+        expected_system_prompt,
         last_ai_request.system
     );
 
@@ -1143,10 +1161,30 @@ async fn generate_chat_response_rag_retrieval_error() -> anyhow::Result<()> {
         .get_last_request()
         .expect("AI Client SHOULD have been called");
  
-    // The system prompt should be None or empty as RAG context failed and char has no system prompt.
-    assert!(
-        last_ai_request.system.is_none() || last_ai_request.system.as_deref() == Some(""),
-        "Expected system prompt to be None or empty after RAG retrieval error, but got: {:?}",
+    // The system prompt should now match the default RAG prompt, even if RAG retrieval fails,
+    // as the prompt_builder prepares it assuming RAG might be used.
+    let expected_system_prompt = format!(
+        "You are the Narrator and supporting characters in a collaborative storytelling experience with a Human player. The Human controls a character (referred to as 'the User'). Your primary role is to describe the world, events, and the actions and dialogue of all characters *except* the User.\n\n\
+        You will be provided with the following structured information to guide your responses:\n\
+        1. <persona_override_prompt>: Specific instructions or style preferences from the User (if any).\n\
+        2. <character_definition>: The core definition and personality of the character '{}'.\n\
+        3. <character_details>: Additional descriptive information about '{}'.\n\
+        4. <lorebook_entries>: Relevant background information about the world, other characters, or plot points.\n\
+        5. <story_so_far>: The existing dialogue and narration.\n\n\
+        Key Writing Principles:\n\
+        - Focus on the direct consequences of the User's actions.\n\
+        - Describe newly encountered people, places, or significant objects only once. The Human will remember.\n\
+        - Maintain character believability. Characters have their own motivations and will not always agree with the User. They should react realistically based on their personalities and the situation.\n\
+        - End your responses with action or dialogue to maintain active immersion. Avoid summarization or out-of-character commentary.\n\n\
+        [System Instructions End]\n\
+        Based on all the above and the story so far, write the next part of the story as the narrator and any relevant non-player characters. Ensure your response is engaging and moves the story forward.",
+        character.name, character.name // Use the character's name from the test context
+    );
+    assert_eq!(
+        last_ai_request.system.as_deref(),
+        Some(expected_system_prompt.as_str()),
+        "System prompt mismatch after RAG retrieval error. Expected: '{}', Got: '{:?}'",
+        expected_system_prompt,
         last_ai_request.system
     );
  
@@ -1592,7 +1630,31 @@ async fn generate_chat_response_rag_success() -> anyhow::Result<()> {
     // If existing_system_prompt is also None, final_prompt is empty.
     // An empty system prompt is passed as `None` to the AI client if it's an empty string.
     // genai ChatRequest::with_system("") results in system being None.
-    assert!(last_ai_request.system.is_none() || last_ai_request.system.as_deref() == Some(""), "Expected system prompt to be None or empty as no RAG chunks and no char system prompt");
+    // UPDATE: With default RAG prompt, this will now be the RAG prompt.
+    let expected_system_prompt = format!(
+        "You are the Narrator and supporting characters in a collaborative storytelling experience with a Human player. The Human controls a character (referred to as 'the User'). Your primary role is to describe the world, events, and the actions and dialogue of all characters *except* the User.\n\n\
+        You will be provided with the following structured information to guide your responses:\n\
+        1. <persona_override_prompt>: Specific instructions or style preferences from the User (if any).\n\
+        2. <character_definition>: The core definition and personality of the character '{}'.\n\
+        3. <character_details>: Additional descriptive information about '{}'.\n\
+        4. <lorebook_entries>: Relevant background information about the world, other characters, or plot points.\n\
+        5. <story_so_far>: The existing dialogue and narration.\n\n\
+        Key Writing Principles:\n\
+        - Focus on the direct consequences of the User's actions.\n\
+        - Describe newly encountered people, places, or significant objects only once. The Human will remember.\n\
+        - Maintain character believability. Characters have their own motivations and will not always agree with the User. They should react realistically based on their personalities and the situation.\n\
+        - End your responses with action or dialogue to maintain active immersion. Avoid summarization or out-of-character commentary.\n\n\
+        [System Instructions End]\n\
+        Based on all the above and the story so far, write the next part of the story as the narrator and any relevant non-player characters. Ensure your response is engaging and moves the story forward.",
+        context.character.name, context.character.name
+    );
+    assert_eq!(
+        last_ai_request.system.as_deref(),
+        Some(expected_system_prompt.as_str()),
+        "System prompt mismatch. Expected: '{}', Got: '{:?}'",
+        expected_system_prompt,
+        last_ai_request.system
+    );
 
 
     let last_user_message_in_ai_request = last_ai_request
@@ -1685,8 +1747,31 @@ async fn generate_chat_response_rag_empty_history_success() -> anyhow::Result<()
         .get_last_request()
         .expect("Mock AI not called");
 
-    // System prompt should be None or empty (no RAG, no char system prompt)
-    assert!(last_ai_request.system.is_none() || last_ai_request.system.as_deref() == Some(""), "Expected system prompt to be None or empty");
+    // System prompt should be the default RAG prompt
+    let expected_system_prompt = format!(
+        "You are the Narrator and supporting characters in a collaborative storytelling experience with a Human player. The Human controls a character (referred to as 'the User'). Your primary role is to describe the world, events, and the actions and dialogue of all characters *except* the User.\n\n\
+        You will be provided with the following structured information to guide your responses:\n\
+        1. <persona_override_prompt>: Specific instructions or style preferences from the User (if any).\n\
+        2. <character_definition>: The core definition and personality of the character '{}'.\n\
+        3. <character_details>: Additional descriptive information about '{}'.\n\
+        4. <lorebook_entries>: Relevant background information about the world, other characters, or plot points.\n\
+        5. <story_so_far>: The existing dialogue and narration.\n\n\
+        Key Writing Principles:\n\
+        - Focus on the direct consequences of the User's actions.\n\
+        - Describe newly encountered people, places, or significant objects only once. The Human will remember.\n\
+        - Maintain character believability. Characters have their own motivations and will not always agree with the User. They should react realistically based on their personalities and the situation.\n\
+        - End your responses with action or dialogue to maintain active immersion. Avoid summarization or out-of-character commentary.\n\n\
+        [System Instructions End]\n\
+        Based on all the above and the story so far, write the next part of the story as the narrator and any relevant non-player characters. Ensure your response is engaging and moves the story forward.",
+        context.character.name, context.character.name
+    );
+    assert_eq!(
+        last_ai_request.system.as_deref(),
+        Some(expected_system_prompt.as_str()),
+        "System prompt mismatch. Expected: '{}', Got: '{:?}'",
+        expected_system_prompt,
+        last_ai_request.system
+    );
 
     let last_user_message_in_ai_request = last_ai_request
         .messages
@@ -1776,8 +1861,31 @@ async fn generate_chat_response_rag_no_relevant_chunks_found() -> anyhow::Result
         .get_last_request()
         .expect("Mock AI not called");
 
-    // System prompt should be None or empty
-    assert!(last_ai_request.system.is_none() || last_ai_request.system.as_deref() == Some(""), "Expected system prompt to be None or empty");
+    // System prompt should be the default RAG prompt
+    let expected_system_prompt = format!(
+        "You are the Narrator and supporting characters in a collaborative storytelling experience with a Human player. The Human controls a character (referred to as 'the User'). Your primary role is to describe the world, events, and the actions and dialogue of all characters *except* the User.\n\n\
+        You will be provided with the following structured information to guide your responses:\n\
+        1. <persona_override_prompt>: Specific instructions or style preferences from the User (if any).\n\
+        2. <character_definition>: The core definition and personality of the character '{}'.\n\
+        3. <character_details>: Additional descriptive information about '{}'.\n\
+        4. <lorebook_entries>: Relevant background information about the world, other characters, or plot points.\n\
+        5. <story_so_far>: The existing dialogue and narration.\n\n\
+        Key Writing Principles:\n\
+        - Focus on the direct consequences of the User's actions.\n\
+        - Describe newly encountered people, places, or significant objects only once. The Human will remember.\n\
+        - Maintain character believability. Characters have their own motivations and will not always agree with the User. They should react realistically based on their personalities and the situation.\n\
+        - End your responses with action or dialogue to maintain active immersion. Avoid summarization or out-of-character commentary.\n\n\
+        [System Instructions End]\n\
+        Based on all the above and the story so far, write the next part of the story as the narrator and any relevant non-player characters. Ensure your response is engaging and moves the story forward.",
+        context.character.name, context.character.name
+    );
+    assert_eq!(
+        last_ai_request.system.as_deref(),
+        Some(expected_system_prompt.as_str()),
+        "System prompt mismatch. Expected: '{}', Got: '{:?}'",
+        expected_system_prompt,
+        last_ai_request.system
+    );
 
     let last_user_message_in_ai_request = last_ai_request
         .messages

@@ -53,4 +53,6 @@ pub enum CliError {
     ChatSessionError(String),
     #[error("Operation failed: {0}")]
     OperationFailed(String),
+    #[error("Conflict: {0}")]
+    Conflict(String),
 }

@@ -53,31 +53,32 @@ pub type HistoryForGeneration = Vec<(MessageRole, String)>;
 // NOTE: HistoryForGeneration here will now contain the *managed* history.
 pub type GenerationDataWithUnsavedUserMessage = (
     Vec<DbChatMessage>,   // 0: managed_db_history (CHANGED from HistoryForGeneration)
-    Option<String>,       // 1: system_prompt
+    Option<String>,       // 1: system_prompt (this is the final_effective_system_prompt for the builder, from persona/override only)
     Option<Vec<Uuid>>,    // 2: active_lorebook_ids_for_search
     Uuid,                 // 3: session_character_id (NEW)
-    Option<BigDecimal>,   // 4: temperature
-    Option<i32>,          // 5: max_output_tokens
-    Option<BigDecimal>,   // 6: frequency_penalty
-    Option<BigDecimal>,   // 7: presence_penalty
-    Option<i32>,          // 8: top_k
-    Option<BigDecimal>,   // 9: top_p
-    Option<BigDecimal>,   // 10: repetition_penalty
-    Option<BigDecimal>,   // 11: min_p
-    Option<BigDecimal>,   // 12: top_a
-    Option<i32>,          // 13: seed
-    Option<Value>,        // 14: logit_bias
-    String,               // 15: model_name (Fetched from DB)
+    Option<String>,       // 4: raw_character_system_prompt (NEW - from character_db.system_prompt)
+    Option<BigDecimal>,   // 5: temperature (was 4)
+    Option<i32>,          // 6: max_output_tokens (was 5)
+    Option<BigDecimal>,   // 7: frequency_penalty (was 6)
+    Option<BigDecimal>,   // 8: presence_penalty (was 7)
+    Option<i32>,          // 9: top_k (was 8)
+    Option<BigDecimal>,   // 10: top_p (was 9)
+    Option<BigDecimal>,   // 11: repetition_penalty (was 10)
+    Option<BigDecimal>,   // 12: min_p (was 11)
+    Option<BigDecimal>,   // 13: top_a (was 12)
+    Option<i32>,          // 14: seed (was 13)
+    Option<Value>,        // 15: logit_bias (was 14)
+    String,               // 16: model_name (Fetched from DB) (was 15)
     // -- Gemini Specific Options --
-    Option<i32>,             // 16: gemini_thinking_budget
-    Option<bool>,            // 17: gemini_enable_code_execution
-    DbInsertableChatMessage, // 18: The user message struct, ready to be saved
+    Option<i32>,             // 17: gemini_thinking_budget (was 16)
+    Option<bool>,            // 18: gemini_enable_code_execution (was 17)
+    DbInsertableChatMessage, // 19: The user message struct, ready to be saved (was 18)
     // -- RAG Context & Recent History Tokens --
-    usize,                // 19: actual_recent_history_tokens (NEW)
-    Vec<RetrievedChunk>,  // 20: rag_context_items (NEW)
+    usize,                // 20: actual_recent_history_tokens (NEW) (was 19)
+    Vec<RetrievedChunk>,  // 21: rag_context_items (NEW) (was 20)
     // History Management Settings (still returned for potential future use/logging)
-    String, // 21: history_management_strategy
-    i32,    // 22: history_management_limit
+    String, // 22: history_management_strategy (was 21)
+    i32,    // 23: history_management_limit (was 22)
 );
 
 #[derive(Debug)]
@@ -726,7 +727,8 @@ pub async fn get_session_data_for_generation(
         existing_messages_db_raw, // Raw, potentially encrypted messages
         character_for_first_mes,  // Full character for first_mes logic
         character_overrides_for_first_mes, // Overrides for first_mes logic
-        final_effective_system_prompt, // Pass mutable effective_system_prompt to be refined
+        final_effective_system_prompt, // This is the system_prompt for the builder (persona/override only)
+        raw_character_system_prompt,   // This is the raw system_prompt from the character itself
     ) = {
         let conn = state.pool.get().await.map_err(|e| AppError::DbPoolError(e.to_string()))?;
         let dek_for_interact_cloned = user_dek_secret_box.clone();
@@ -796,21 +798,26 @@ pub async fn get_session_data_for_generation(
                     current_effective_system_prompt = Some(override_value.replace('\0', ""));
                 }
             }
+            // current_effective_system_prompt (for prompt builder) should NOT fall back to character_db.system_prompt here.
+            // That fallback is handled by the prompt_builder itself if this is None.
 
-            if current_effective_system_prompt.is_none() { 
-                if let Some(ref char_sp_bytes) = character_db.system_prompt {
-                    if let Ok(char_sp_str) = String::from_utf8(char_sp_bytes.clone()) {
-                        if !char_sp_str.trim().is_empty() {
-                            current_effective_system_prompt = Some(char_sp_str.replace('\0', ""));
-                        }
+            // Extract the raw character system prompt separately
+            let raw_character_system_prompt_from_db: Option<String> = character_db.system_prompt.as_ref()
+                .and_then(|val| {
+                    if val.is_empty() {
+                        None
+                    } else {
+                        String::from_utf8(val.clone()).ok().map(|s| s.replace('\0', ""))
                     }
-                }
-            }
+                })
+                .filter(|s| !s.trim().is_empty());
             
             Ok::<_, AppError>((
                 hist_strat, hist_limit, sess_char_id, temp, max_tokens, freq_pen, pres_pen, top_k_val, top_p_val, rep_pen, min_p_val, top_a_val, seed_val, logit_b, model_n,
                 gem_think_budget, gem_enable_code_exec,
-                messages_raw_db, character_db, overrides_db, current_effective_system_prompt
+                messages_raw_db, character_db, overrides_db,
+                current_effective_system_prompt, // This is the one for the builder (persona/override only)
+                raw_character_system_prompt_from_db // The new one
             ))
         }).await.map_err(|e| AppError::DbInteractError(format!("Interact dispatch error: {}", e)))??
     };
@@ -1062,29 +1069,33 @@ pub async fn get_session_data_for_generation(
 
     // --- Construct Final Tuple ---
     Ok((
-        managed_recent_history, // This is now Vec<DbChatMessage> with decrypted content
-        final_effective_system_prompt, 
-        active_lorebook_ids_for_search,
-        session_character_id_db,
-        session_temperature_db,
-        session_max_output_tokens_db,
-        session_frequency_penalty_db,
-        session_presence_penalty_db,
-        session_top_k_db,
-        session_top_p_db,
-        session_repetition_penalty_db,
-        session_min_p_db,
-        session_top_a_db,
-        session_seed_db,
-        session_logit_bias_db,
-        session_model_name_db,
-        session_gemini_thinking_budget_db,
-        session_gemini_enable_code_execution_db,
-        user_db_message_to_save,
-        actual_recent_history_tokens, // NEW
-        rag_context_items,            // NEW
-        history_management_strategy_db_val,
-        history_management_limit_db_val,
+        managed_recent_history,        // 0: managed_db_history
+        final_effective_system_prompt, // 1: system_prompt (for builder, persona/override only)
+        active_lorebook_ids_for_search,// 2: active_lorebook_ids_for_search
+        session_character_id_db,       // 3: session_character_id
+        raw_character_system_prompt,   // 4: raw_character_system_prompt (NEW)
+        session_temperature_db,        // 5: temperature
+        session_max_output_tokens_db,  // 6: max_output_tokens
+        session_frequency_penalty_db,  // 7: frequency_penalty
+        session_presence_penalty_db,   // 8: presence_penalty
+        session_top_k_db,              // 9: top_k
+        session_top_p_db,              // 10: top_p
+        session_repetition_penalty_db, // 11: repetition_penalty
+        session_min_p_db,              // 12: min_p
+        session_top_a_db,              // 13: top_a
+        session_seed_db,               // 14: seed
+        session_logit_bias_db,         // 15: logit_bias
+        session_model_name_db,         // 16: model_name
+        // -- Gemini Specific Options --
+        session_gemini_thinking_budget_db,      // 17: gemini_thinking_budget
+        session_gemini_enable_code_execution_db,// 18: gemini_enable_code_execution
+        user_db_message_to_save,                // 19: The user message struct
+        // -- RAG Context & Recent History Tokens --
+        actual_recent_history_tokens, // 20: actual_recent_history_tokens
+        rag_context_items,            // 21: rag_context_items
+        // History Management Settings
+        history_management_strategy_db_val, // 22: history_management_strategy
+        history_management_limit_db_val,    // 23: history_management_limit
     ))
 }
 
@@ -2180,7 +2191,7 @@ mod get_session_data_for_generation_tests {
         // Assert
         assert!(result.is_ok(), "Result should be Ok: {:?}", result.err());
         let (
-            managed_history, _system_prompt, _lore_ids, _char_id, _, _, _, _, _, _, _, _, _, _, _, _model_name,
+            managed_history, _system_prompt, _lore_ids, _char_id, _, _, _, _, _, _, _, _, _, _, _, _, _model_name, // Added one underscore
             _, _, _user_msg_struct, actual_recent_tokens, rag_items, _, _
         ) = result.unwrap();
 
@@ -2385,7 +2396,7 @@ mod get_session_data_for_generation_tests {
         // Assert
         assert!(result.is_ok(), "Result should be Ok: {:?}", result.err());
         let (
-            managed_history, _system_prompt, _active_lore_ids, _char_id, _, _, _, _, _, _, _, _, _, _, _, _model_name,
+            managed_history, _system_prompt, _active_lore_ids, _char_id, _, _, _, _, _, _, _, _, _, _, _, _, _model_name, // Added one underscore
             _, _, _user_msg_struct, actual_recent_tokens, rag_items, _, _
         ) = result.unwrap();
 
@@ -2559,7 +2570,7 @@ mod get_session_data_for_generation_tests {
         // Assert
         assert!(result.is_ok(), "Result should be Ok: {:?}", result.err());
         let (
-            managed_history, _system_prompt, _lore_ids, _char_id, _, _, _, _, _, _, _, _, _, _, _, _model_name,
+            managed_history, _system_prompt, _lore_ids, _char_id, _, _, _, _, _, _, _, _, _, _, _, _, _model_name, // Added one underscore
             _, _, _user_msg_struct, actual_recent_tokens, rag_items, _, _
         ) = result.unwrap();
 
@@ -2778,7 +2789,7 @@ mod get_session_data_for_generation_tests {
         // Assert
         assert!(result.is_ok(), "Result should be Ok: {:?}", result.err());
         let (
-            managed_history, _system_prompt, _active_lore_ids, _char_id, _, _, _, _, _, _, _, _, _, _, _, _model_name,
+            managed_history, _system_prompt, _active_lore_ids, _char_id, _, _, _, _, _, _, _, _, _, _, _, _, _model_name, // Added one underscore
             _, _, _user_msg_struct, actual_recent_tokens_from_result, rag_items, _, _
         ) = result.unwrap();
 
@@ -3065,7 +3076,7 @@ mod get_session_data_for_generation_tests {
         // Assert
         assert!(result.is_ok(), "Result should be Ok: {:?}", result.err());
         let (
-            managed_history, _system_prompt, _lore_ids, _char_id, _, _, _, _, _, _, _, _, _, _, _, _model_name,
+            managed_history, _system_prompt, _lore_ids, _char_id, _, _, _, _, _, _, _, _, _, _, _, _, _model_name, // Added one underscore
             _, _, _user_msg_struct, actual_recent_tokens, rag_items, _, _
         ) = result.unwrap();
 

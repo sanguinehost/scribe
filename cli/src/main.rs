@@ -11,6 +11,7 @@ use tracing_subscriber::{EnvFilter, fmt};
 // Items imported from the library crate
 use scribe_cli::{
     CliArgs, Commands, CharacterCommand, ChatCommand, PersonaCommand, // Clap arg structs
+    MenuState, MenuNavigation, MenuResult, // Menu enums and types from lib.rs
     client::{HttpClient, ReqwestClientWrapper},      // Client Abstraction
     error::CliError,                                 // Use our specific error type
     handlers::{
@@ -30,38 +31,22 @@ use scribe_cli::{
         chat_overrides::{
             handle_chat_edit_character_oneliner, handle_chat_edit_character_wizard,
         },
+        lorebooks::{ // Lorebook handlers
+            handle_lorebook_management_menu as handle_cli_lorebooks_menu_entry,
+            // TODO: Add other lorebook handlers here
+        },
         user_personas::{ // User Persona handlers
             handle_persona_create_action, handle_persona_list_action, handle_persona_get_action,
             handle_persona_update_action, handle_persona_delete_action,
             handle_persona_set_default_action, handle_persona_clear_default_action, // Added new handlers
-        }
+        },
     },
     io::{IoHandler, StdIoHandler}, // IO Abstraction
 };
 use scribe_backend::models::users::User; // Corrected User import
 use clap::Parser; // Required for CliArgs::parse()
 
-// Enum to manage the current state of the interactive menu
-#[derive(Debug, Clone, Copy)]
-enum MenuState {
-    MainMenu,
-    UserManagement, // Admin/Moderator user management tasks
-    CharacterManagement,
-    ChatManagement,
-    AccountSettings,
-    PersonaManagement, // Added new state
-}
-
-// Enum to manage navigation results from menu handlers
-enum MenuNavigation {
-    GoTo(MenuState),
-    ReturnToMainMenu,
-    Logout,
-    Quit,
-}
-
-// Helper type alias for results from menu handling functions
-type MenuResult = Result<MenuNavigation, CliError>;
+// MenuState, MenuNavigation, and MenuResult are now imported from lib.rs
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -266,6 +251,11 @@ async fn main() -> Result<()> {
                                     &mut io_handler,
                                 )
                                 .await?,
+                                MenuState::LorebookManagement => handle_cli_lorebooks_menu_entry(
+                                    &http_client,
+                                    &mut io_handler,
+                                )
+                                .await?,
                             };
 
                             match navigation_result {
@@ -361,7 +351,8 @@ async fn handle_main_menu_logged_in<H: IoHandler>(
     let options = [
         ("User & Access Management", MenuState::UserManagement),
         ("Character Management", MenuState::CharacterManagement),
-        ("Persona Management", MenuState::PersonaManagement), // New option
+        ("Persona Management", MenuState::PersonaManagement),
+        ("Lorebook Management", MenuState::LorebookManagement), // New option
         ("Chat Session Management", MenuState::ChatManagement),
         ("My Account & Settings", MenuState::AccountSettings),
     ];
@@ -377,9 +368,10 @@ async fn handle_main_menu_logged_in<H: IoHandler>(
         match choice.as_str() {
             "1" => return Ok(MenuNavigation::GoTo(options[0].1)),
             "2" => return Ok(MenuNavigation::GoTo(options[1].1)),
-            "3" => return Ok(MenuNavigation::GoTo(options[2].1)), // Persona Management
-            "4" => return Ok(MenuNavigation::GoTo(options[3].1)),
+            "3" => return Ok(MenuNavigation::GoTo(options[2].1)),
+            "4" => return Ok(MenuNavigation::GoTo(options[3].1)), // Lorebook Management
             "5" => return Ok(MenuNavigation::GoTo(options[4].1)),
+            "6" => return Ok(MenuNavigation::GoTo(options[5].1)),
             "l" => return Ok(MenuNavigation::Logout),
             "q" => return Ok(MenuNavigation::Quit),
             _ => io_handler.write_line("Invalid choice, please try again.")?,

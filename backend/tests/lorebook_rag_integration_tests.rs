@@ -239,7 +239,7 @@ async fn test_lorebook_import_retrieval_and_rag_integration() {
     };
 
     let response = auth_client
-        .post(&format!("{}/api/chats", test_app.address))
+        .post(&format!("{}/api/chats/create_session", test_app.address))
         .json(&chat_session_payload)
         .send()
         .await

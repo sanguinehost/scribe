@@ -44,7 +44,8 @@ type CurrentAuthSession = AuthSession<AuthBackend>;
 pub fn chat_routes() -> Router<crate::state::AppState> {
     tracing::debug!("chat_routes: entering chat_routes function");
     Router::new()
-        .route("/", get(get_chats_handler).post(create_chat_handler))
+        .route("/", get(get_chats_handler)) // Keep GET / for listing
+        .route("/create_session", post(create_chat_handler)) // More distinct path for POST
         .route("/fetch/:id", get(get_chat_by_id_handler))
         .route("/remove/:id", delete(delete_chat_handler))
         .route("/:id/messages", {
@@ -218,8 +219,9 @@ pub async fn create_chat_handler(
         chat_id = %chat.id,
         character_id = %chat.character_id,
         user_id = %chat.user_id,
-        system_prompt = ?chat.system_prompt,
-        chat = ?chat
+        system_prompt_present = chat.system_prompt.is_some(), // Avoid logging potentially large/sensitive prompt
+        title_present = chat.title.is_some() // Also avoid logging title directly
+        // Removed full 'chat = ?chat' to avoid logging all fields, including encrypted ones
     );
 
     // Return the fully configured Chat struct
