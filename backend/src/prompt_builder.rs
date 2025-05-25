@@ -1,7 +1,17 @@
 use crate::{
+    config::Config,
     errors::AppError,
     models::characters::CharacterMetadata,
+    services::{
+        embedding_pipeline::{RetrievedChunk, RetrievedMetadata},
+        hybrid_token_counter::{CountingMode, HybridTokenCounter},
+    },
 };
+use genai::chat::ChatMessage as GenAiChatMessage;
+use genai::chat::MessageContent; // This is an enum from the genai crate
+use genai::chat::ContentPart as Part; // This is the Part type from the genai crate
+use std::sync::Arc;
+use tracing::{debug, warn, error}; // Added error
 
 /// Assembles the character-specific part of the system prompt.
 /// RAG context is handled by the calling service and prepended to the user message.
@@ -37,6 +47,292 @@ pub fn build_prompt_with_rag( // Renaming to build_system_prompt_character_info 
 
     Ok(prompt)
 }
+
+/// Builds the character-specific information string for the system prompt.
+fn build_character_info_string(character_metadata: Option<&CharacterMetadata>) -> String {
+    if let Some(char_data) = character_metadata {
+        if let Some(description_vec) = &char_data.description {
+            if !description_vec.is_empty() {
+                let mut char_prompt_part = String::new();
+                char_prompt_part.push_str(&format!("Character Name: {}\n", char_data.name));
+                char_prompt_part.push_str(&format!(
+                    "Description: {}\n",
+                    String::from_utf8_lossy(description_vec)
+                ));
+                // Static instruction for character-based interaction
+                char_prompt_part.push_str("\n---\nInstruction:\nContinue the chat based on the conversation history. Stay in character.\n---\n\n");
+                return char_prompt_part;
+            }
+        }
+    }
+    String::new()
+}
+
+/// Counts tokens for a single GenAiChatMessage.
+async fn count_tokens_for_genai_message(
+    message: &GenAiChatMessage,
+    token_counter: &HybridTokenCounter,
+    model_name: &str,
+) -> Result<usize, AppError> {
+    let mut total_tokens = 0;
+    // genai::chat::ChatMessage has a `content: MessageContent` field.
+    // genai::chat::MessageContent is an enum. We need to match its variants.
+    match &message.content {
+        MessageContent::Text(text) => {
+            total_tokens += token_counter
+                .count_tokens(text, CountingMode::LocalOnly, Some(model_name))
+                .await?
+                .total as usize;
+        }
+        MessageContent::Parts(parts_vec) => { // parts_vec is Vec<genai::types::Part>
+            for part in parts_vec {
+                if let Part::Text(text) = part { // part is &genai::types::Part
+                    total_tokens += token_counter
+                        .count_tokens(text, CountingMode::LocalOnly, Some(model_name))
+                        .await?
+                        .total as usize;
+                }
+                // TODO: Consider other Part variants if they contribute to token count (e.g., InlineData)
+            }
+        }
+        // Handle other potential variants of MessageContent if they exist and are relevant
+        _ => {
+            warn!("Encountered unhandled MessageContent variant while counting tokens for message.");
+        }
+    }
+    Ok(total_tokens)
+}
+
+/// Builds the final LLM prompt, managing token limits by truncating RAG context and recent history if necessary.
+pub async fn build_final_llm_prompt(
+    config: Arc<Config>,
+    token_counter: Arc<HybridTokenCounter>,
+    recent_history: Vec<GenAiChatMessage>,
+    rag_items: Vec<RetrievedChunk>,
+    system_prompt_base: Option<String>,
+    character_metadata: Option<&CharacterMetadata>,
+    current_user_message: GenAiChatMessage,
+    model_name: &str,
+) -> Result<(String, Vec<GenAiChatMessage>), AppError> {
+    // 1. Calculate tokens for non-truncatable and preferred parts
+    let system_prompt_base_str = system_prompt_base.unwrap_or_default();
+    let system_prompt_base_tokens = if system_prompt_base_str.is_empty() {
+        0
+    } else {
+        token_counter
+            .count_tokens(&system_prompt_base_str, CountingMode::LocalOnly, Some(model_name))
+            .await?
+            .total as usize
+    };
+
+    let character_info_str = build_character_info_string(character_metadata);
+    let character_info_tokens = if character_info_str.is_empty() {
+        0
+    } else {
+        token_counter
+            .count_tokens(&character_info_str, CountingMode::LocalOnly, Some(model_name))
+            .await?
+            .total as usize
+    };
+
+    let current_user_message_tokens =
+        count_tokens_for_genai_message(&current_user_message, &token_counter, model_name).await?;
+
+    // Calculate tokens for RAG items and recent history messages
+    let mut rag_items_with_tokens: Vec<(RetrievedChunk, usize)> = Vec::new();
+    for item in rag_items {
+        let tokens = token_counter
+            .count_tokens(&item.text, CountingMode::LocalOnly, Some(model_name))
+            .await?
+            .total as usize;
+        rag_items_with_tokens.push((item, tokens));
+    }
+    // Sort RAG items by score (descending) so less relevant are popped first if needed,
+    // though truncation will happen from the end of the vector (least relevant if not sorted, or last if sorted).
+    // For now, let's assume rag_items are already sorted by relevance (higher score = more relevant).
+    // We will remove from the end (lowest score if sorted descending, or just last item).
+
+    let mut recent_history_with_tokens: Vec<(GenAiChatMessage, usize)> = Vec::new();
+    for msg in recent_history {
+        let tokens = count_tokens_for_genai_message(&msg, &token_counter, model_name).await?;
+        recent_history_with_tokens.push((msg, tokens));
+    }
+
+    // 2. Calculate initial total tokens
+    let mut current_total_tokens = system_prompt_base_tokens
+        + character_info_tokens
+        + current_user_message_tokens
+        + rag_items_with_tokens.iter().map(|(_, t)| t).sum::<usize>()
+        + recent_history_with_tokens.iter().map(|(_, t)| t).sum::<usize>();
+
+    let max_allowed_tokens = config.context_total_token_limit;
+    debug!(
+        current_total_tokens,
+        max_allowed_tokens,
+        system_prompt_base_tokens,
+        character_info_tokens,
+        current_user_message_tokens,
+        rag_tokens = rag_items_with_tokens.iter().map(|(_, t)| t).sum::<usize>(),
+        history_tokens = recent_history_with_tokens.iter().map(|(_, t)| t).sum::<usize>(),
+        "Initial token calculation for prompt building."
+    );
+
+
+    // 3. Truncate RAG context if over budget
+    let mut final_rag_items_with_tokens = rag_items_with_tokens;
+    if current_total_tokens > max_allowed_tokens {
+        debug!("Total tokens exceed limit. Attempting to truncate RAG context.");
+        while current_total_tokens > max_allowed_tokens && !final_rag_items_with_tokens.is_empty() {
+            if let Some((removed_item, removed_tokens)) = final_rag_items_with_tokens.pop() {
+                current_total_tokens -= removed_tokens;
+                warn!(
+                    "Truncated RAG item (text: '{}...', tokens: {}) to fit token limit. Remaining total: {}",
+                    removed_item.text.chars().take(50).collect::<String>(), removed_tokens, current_total_tokens
+                );
+            }
+        }
+    }
+
+    // 4. Truncate recent history if still over budget
+    let mut final_recent_history_with_tokens = recent_history_with_tokens;
+    if current_total_tokens > max_allowed_tokens {
+        debug!("Total tokens still exceed limit after RAG truncation. Attempting to truncate recent history.");
+        while current_total_tokens > max_allowed_tokens && !final_recent_history_with_tokens.is_empty() {
+            // Remove from the oldest (front of the vector)
+            let (removed_msg, removed_tokens) = final_recent_history_with_tokens.remove(0);
+            current_total_tokens -= removed_tokens;
+            let msg_preview = match &removed_msg.content {
+                MessageContent::Text(text) => text.chars().take(50).collect::<String>(),
+                MessageContent::Parts(parts_vec) => {
+                    parts_vec.iter().find_map(|part| {
+                        if let Part::Text(text) = part {
+                            Some(text.chars().take(50).collect::<String>())
+                        } else {
+                            None
+                        }
+                    }).unwrap_or_else(|| "[Non-text content]".to_string())
+                }
+                _ => "[Unknown content type]".to_string(),
+            };
+            warn!(
+                "Truncated history message (preview: '{}...', tokens: {}) to fit token limit. Remaining total: {}",
+                msg_preview.chars().take(50).collect::<String>(), removed_tokens, current_total_tokens
+            );
+        }
+    }
+
+    // 5. Final check: if still over budget, it's an error
+    if current_total_tokens > max_allowed_tokens {
+        error!(
+            current_total_tokens,
+            max_allowed_tokens,
+            "Prompt and user message exceed token limit even after full RAG and history truncation."
+        );
+        return Err(AppError::BadRequest(
+            "User message and system prompts are too long to fit within the token limit.".to_string(),
+        ));
+    }
+
+    // 6. Assemble final system prompt string
+    let mut final_system_prompt_parts: Vec<String> = Vec::new();
+    if !system_prompt_base_str.is_empty() {
+        final_system_prompt_parts.push(system_prompt_base_str);
+    }
+    if !character_info_str.is_empty() {
+        final_system_prompt_parts.push(character_info_str);
+    }
+
+    let final_rag_texts: Vec<String> = final_rag_items_with_tokens
+        .into_iter()
+        .map(|(item, _)| { // item is RetrievedChunk
+            match item.metadata {
+                RetrievedMetadata::Chat(chat_meta) => {
+                    format!(
+                        "- Chat (Speaker: {}): {}",
+                        chat_meta.speaker,
+                        item.text
+                    )
+                }
+                RetrievedMetadata::Lorebook(lore_meta) => {
+                    let title = lore_meta.entry_title.as_deref().unwrap_or("Untitled Entry");
+                    let keywords_str = lore_meta.keywords
+                        .as_ref()
+                        .filter(|kws| !kws.is_empty())
+                        .map(|kws| kws.join(", "))
+                        .unwrap_or_else(|| "No Keywords".to_string());
+                    format!(
+                        "- Lorebook ({} - {}): {}",
+                        title,
+                        keywords_str,
+                        item.text
+                    )
+                }
+            }
+        })
+        .collect();
+
+    // RAG context is now added to the user message, not the system prompt.
+    // final_rag_texts (Vec<String>) was already prepared from truncated RAG items at line 245.
+    
+    let final_system_prompt = final_system_prompt_parts.join("\n\n"); // Join with double newline for separation
+
+    // Prepare current user message, potentially prepending RAG context
+    let mut user_message_for_llm = current_user_message; // current_user_message is moved here
+
+    if !final_rag_texts.is_empty() {
+        let rag_context_for_user_message = format!(
+            "---\nRelevant Context:\n{}\n---", // Matches test assertion header
+            final_rag_texts.join("\n\n") // Use the already prepared final_rag_texts
+        );
+
+        match &mut user_message_for_llm.content {
+            MessageContent::Text(original_text) => {
+                let mut new_text = rag_context_for_user_message;
+                new_text.push_str("\n\n"); // Separator between RAG and original query
+                new_text.push_str(original_text);
+                *original_text = new_text; // Update the text content
+            }
+            MessageContent::Parts(parts_vec) => {
+                // This case is more complex. For now, let's assume simple text content
+                // based on how GenerateChatRequest is typically formed for new messages.
+                warn!("Prepending RAG context to a multi-part user message. Current implementation converts to full text.");
+                let mut combined_text = rag_context_for_user_message;
+                combined_text.push_str("\n\n");
+                for part in parts_vec.iter() { // Iterate over original parts
+                    if let Part::Text(text) = part {
+                        combined_text.push_str(text);
+                    }
+                    // Consider logging or preserving other part types if they are expected here.
+                }
+                user_message_for_llm.content = MessageContent::Text(combined_text);
+            }
+            _ => {
+                error!(
+                    "Cannot prepend RAG context to user_message_for_llm with unsupported content type: {:?}",
+                    user_message_for_llm.content
+                );
+                // The message will be sent without RAG context prepended in this case.
+            }
+        }
+    }
+
+    // 7. Assemble final message list
+    let mut final_message_list: Vec<GenAiChatMessage> = final_recent_history_with_tokens
+        .into_iter()
+        .map(|(msg, _)| msg)
+        .collect();
+    final_message_list.push(user_message_for_llm); // Push the (potentially modified) user message
+    
+    debug!(
+        final_system_prompt_len = final_system_prompt.len(),
+        final_message_list_len = final_message_list.len(),
+        final_total_tokens = current_total_tokens,
+        "Final prompt constructed."
+    );
+
+    Ok((final_system_prompt, final_message_list))
+}
+
 
 // --- Unit Tests ---
 #[cfg(test)]
@@ -111,21 +407,4 @@ mod tests {
         
         assert!(prompt.is_empty(), "Expected empty prompt for char with empty description, got: {}", prompt);
     }
-
-    // The following original tests are now largely redundant due to the simplification
-    // of build_prompt_with_rag. They are removed as their core assertions (RAG, history)
-    // are no longer applicable to this function. The essential cases (no char, char with desc,
-    // char without desc) are covered by the tests above.
-    //
-    // - test_build_prompt_empty_history_no_char_no_rag -> covered by test_build_prompt_no_character
-    // - test_build_prompt_with_char_details -> covered by test_build_prompt_character_with_description
-    // - test_build_prompt_with_history -> logic moved out, now like test_build_prompt_no_character
-    // - test_build_prompt_with_rag_context -> logic moved out, now like test_build_prompt_no_character
-    // - test_build_prompt_rag_retrieval_error -> logic moved out, now like test_build_prompt_no_character
-    // - test_build_prompt_no_rag_on_empty_history -> logic moved out, now like test_build_prompt_no_character
-    // - test_build_prompt_char_without_description -> covered by test_build_prompt_character_no_description
-    // - test_build_prompt_with_system_message_in_history -> logic moved out, now like test_build_prompt_no_character
-    // - test_build_prompt_full_scenario_char_history_rag -> now like test_build_prompt_character_with_description
-    // - test_build_prompt_with_lorebook_rag_context -> logic moved out, now like test_build_prompt_no_character
-    // - test_build_prompt_with_active_lorebooks_in_rag_call -> logic moved out, now like test_build_prompt_no_character
 }

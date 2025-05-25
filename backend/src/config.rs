@@ -40,6 +40,14 @@ pub struct Config {
     pub tokenizer_model_path: Option<String>,
     #[serde(default = "default_token_counter_default_model")]
     pub token_counter_default_model: Option<String>,
+
+    // Context Token Limits - Added
+    #[serde(default = "default_context_total_token_limit")]
+    pub context_total_token_limit: usize,
+    #[serde(default = "default_context_recent_history_token_budget")]
+    pub context_recent_history_token_budget: usize,
+    #[serde(default = "default_context_rag_token_budget")]
+    pub context_rag_token_budget: usize,
 }
 
 impl std::fmt::Debug for Config {
@@ -74,6 +82,18 @@ impl std::fmt::Debug for Config {
             .field(
                 "token_counter_default_model",
                 &self.token_counter_default_model,
+            )
+            .field(
+                "context_total_token_limit",
+                &self.context_total_token_limit,
+            )
+            .field(
+                "context_recent_history_token_budget",
+                &self.context_recent_history_token_budget,
+            )
+            .field(
+                "context_rag_token_budget",
+                &self.context_rag_token_budget,
             )
             .finish()
     }
@@ -119,6 +139,17 @@ fn default_token_counter_default_model() -> Option<String> {
     Some("gemini-2.5-flash-preview-04-17".to_string())
 } // Added
 
+// Defaults for context token limits
+fn default_context_total_token_limit() -> usize {
+    200_000
+}
+fn default_context_recent_history_token_budget() -> usize {
+    150_000
+}
+fn default_context_rag_token_budget() -> usize {
+    50_000
+}
+
 impl Config {
     // Placeholder function to load settings (e.g., from file or env)
     pub fn load() -> Result<Self, anyhow::Error> {
@@ -155,6 +186,9 @@ impl Default for Config {
             chunking_overlap: default_chunking_overlap(),
             tokenizer_model_path: default_tokenizer_model_path(),
             token_counter_default_model: default_token_counter_default_model(),
+            context_total_token_limit: default_context_total_token_limit(),
+            context_recent_history_token_budget: default_context_recent_history_token_budget(),
+            context_rag_token_budget: default_context_rag_token_budget(),
         }
     }
 }

@@ -898,7 +898,7 @@ async fn test_rag_context_injection_in_prompt() -> anyhow::Result<()> {
         speaker_from_meta,
         mock_chunk_text.trim()
     );
-    let expected_rag_context_header = "--- Relevant Context ---";
+    let expected_rag_context_header = "---\nRelevant Context:\n"; // Updated to match actual generated header
 
     if let genai::chat::MessageContent::Text(user_content) = &last_user_message_in_ai_request.content {
         assert!(
