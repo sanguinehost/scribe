@@ -8,6 +8,8 @@ pub struct Config {
     // Database & API Keys
     pub database_url: Option<String>,
     pub gemini_api_key: Option<String>,
+    #[serde(default = "default_gemini_api_base_url")]
+    pub gemini_api_base_url: Option<String>,
 
     // Server Config
     #[serde(default = "default_port")]
@@ -61,6 +63,10 @@ impl std::fmt::Debug for Config {
                 "gemini_api_key",
                 &self.gemini_api_key.as_ref().map(|_| "[REDACTED]"),
             )
+            .field(
+                "gemini_api_base_url",
+                &self.gemini_api_base_url.as_ref().map(|_| "[REDACTED]"),
+            )
             .field("port", &self.port)
             .field(
                 "cookie_signing_key",
@@ -97,6 +103,10 @@ impl std::fmt::Debug for Config {
             )
             .finish()
     }
+}
+
+fn default_gemini_api_base_url() -> Option<String> {
+    Some("https://generativelanguage.googleapis.com".to_string())
 }
 
 // Default value functions for serde
@@ -173,6 +183,7 @@ impl Default for Config {
         Self {
             database_url: None,
             gemini_api_key: None,
+            gemini_api_base_url: default_gemini_api_base_url(),
             port: default_port(),
             cookie_signing_key: None,
             session_cookie_secure: default_session_cookie_secure(),
