@@ -93,7 +93,7 @@ async fn test_process_and_embed_message_integration() {
     };
 
     // Configure mock embedding client response
-    let embedding_dimension = 3072; // Changed from 768 to match Qdrant collection dimension
+    let embedding_dimension = 768; // Ensure mock embedding matches Qdrant collection dimension
     let mock_embedding = vec![0.1; embedding_dimension];
     mock_embedding_client.set_response(Ok(mock_embedding.clone()));
 
@@ -1110,9 +1110,9 @@ async fn test_rag_context_injection_with_qdrant() {
 
     // Configure mock embedding client for a sequence of calls
     let mock_embedding_client = test_app.mock_embedding_client.clone();
-    let chat_chunk_embedding = vec![0.5; 3072];
-    let lore_chunk_embedding = vec![0.6; 3072]; // Different embedding for lore
-    let rag_query_embedding = vec![0.55; 3072]; // Embedding for the RAG query
+    let chat_chunk_embedding = vec![0.5; 768];
+    let lore_chunk_embedding = vec![0.6; 768]; // Different embedding for lore
+    let rag_query_embedding = vec![0.55; 768]; // Embedding for the RAG query
 
     mock_embedding_client.set_responses_sequence(vec![
         Ok(chat_chunk_embedding.clone()), // For chat message chunk
@@ -1442,7 +1442,7 @@ async fn test_rag_chat_history_isolation_by_user_and_session() {
     };
 
     // 4. Configure Mock Embeddings (one for each message chunk, one for each query)
-    let embedding_dim = 3072;
+    let embedding_dim = 768;
     let embedding_a1 = vec![0.1; embedding_dim];
     let embedding_a2 = vec![0.2; embedding_dim];
     let embedding_b1 = vec![0.3; embedding_dim];
@@ -1598,7 +1598,7 @@ async fn test_rag_lorebook_isolation_by_user_and_id() {
     let entry_d1_id = Uuid::new_v4();
 
     // 4. Configure Mock Embeddings
-    let embedding_dim = 3072;
+    let embedding_dim = 768;
     let embedding_c1 = vec![0.4; embedding_dim];
     let embedding_c2 = vec![0.5; embedding_dim];
     let embedding_d1 = vec![0.6; embedding_dim];

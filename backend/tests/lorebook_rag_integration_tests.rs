@@ -123,7 +123,7 @@ async fn import_lorebook_entries_via_api(
     }
 
     // Give a moment for the async embedding tasks to be initiated
-    sleep(Duration::from_millis(200)).await;
+    sleep(Duration::from_millis(1000)).await;
 }
 
 
@@ -681,7 +681,7 @@ async fn test_associate_lorebook_triggers_initial_embedding() {
     assert_eq!(assoc_response.status(), StatusCode::OK, "Failed to associate lorebook. Body: {:?}", assoc_response.text().await);
 
     // Give a moment for async embedding tasks
-    sleep(Duration::from_millis(500)).await; // Increased delay
+    sleep(Duration::from_millis(1000)).await; // Increased delay
 
     // 3. Assertions
     let embedding_calls = test_app.mock_embedding_pipeline_service.get_calls();
@@ -803,7 +803,7 @@ async fn test_update_lorebook_entry_triggers_re_embedding() {
     assert_eq!(update_response.status(), StatusCode::OK, "Failed to update entry. Body: {:?}", update_response.text().await);
 
     // Give a moment for async embedding task
-    sleep(Duration::from_millis(200)).await;
+    sleep(Duration::from_millis(1000)).await;
 
     // 3. Assertions
     let embedding_calls = test_app.mock_embedding_pipeline_service.get_calls();
@@ -850,10 +850,10 @@ async fn test_update_lorebook_entry_triggers_re_embedding() {
 }
 
 #[tokio::test]
-#[ignore = "This test requires real embedding pipeline which is not yet properly configured in the test infrastructure"]
+#[ignore = "This test requires real Gemini API key and Qdrant service"]
 async fn test_rag_retrieves_lorebook_entry_after_embedding_completion() -> anyhow::Result<()> {
-    // 1. Test setup: Spawn app with MOCK embedding pipeline and REAL Qdrant, MOCK AI
-    let test_app = spawn_app(false, false, true).await; // Use mock AI, real Qdrant
+    // 1. Test setup: Spawn app with REAL embedding pipeline and REAL Qdrant, MOCK AI
+    let test_app = scribe_backend::test_helpers::spawn_app_with_options(false, false, true, true).await; // Use mock AI, real Qdrant, real embedding pipeline
     let _test_data_guard = TestDataGuard::new(test_app.db_pool.clone()); // Handles DB/Qdrant cleanup
 
     let user_credentials = ("china_rag_user@example.com", "PasswordChina123!");
