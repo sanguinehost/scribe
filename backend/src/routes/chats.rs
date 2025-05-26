@@ -29,7 +29,7 @@ use axum_login::AuthSession;
 use secrecy::ExposeSecret; // Added for expose_secret method
 use secrecy::SecretBox; // Ensure SecretBox is imported
 // Removed incorrect ValidatedJson import
-use crate::services::chat_service;
+use crate::services::chat;
 use crate::state::AppState;
 use diesel::{ExpressionMethods, QueryDsl, RunQueryDsl, SelectableHelper};
 use serde_json::json;
@@ -93,7 +93,7 @@ pub async fn set_chat_character_override_handler(
 
     // The user.dek from auth_session might not be the raw SecretBox<Vec<u8>> needed by the service.
     // The SessionDek extractor provides the correct SecretBox<Vec<u8>>.
-    let override_db_response = chat_service::set_character_override(
+    let override_db_response = chat::overrides::set_character_override(
         &state.pool,
         user.id,
         session_id,
@@ -212,7 +212,7 @@ pub async fn create_chat_handler(
     info!(%user.id, character_id=%payload.character_id, "Creating chat session");
 
     let app_state = Arc::new(state.clone());
-    let chat = chat_service::create_session_and_maybe_first_message(
+    let chat = chat::session_management::create_session_and_maybe_first_message(
         app_state,
         user.id,
         payload.character_id,
@@ -543,7 +543,7 @@ pub async fn create_message_handler(
     };
 
     // Save the message
-    let saved_db_message = chat_service::save_message(
+    let saved_db_message = chat::message_handling::save_message(
         Arc::new(state.clone()),
         chat_id,
         user_id,
@@ -1010,7 +1010,7 @@ pub async fn get_chat_settings_handler(
 
     // Call the service function to get chat settings
     // The service function handles ownership check and constructing the response
-    let chat_settings_response = chat_service::get_session_settings(
+    let chat_settings_response = chat::settings::get_session_settings(
         &state.pool,
         user.id,
         id, // session_id
@@ -1038,7 +1038,7 @@ pub async fn update_chat_settings_handler(
     let user_id = user.id; // Clone user_id for use in service call
 
     // Use the service function which handles encryption and ownership checks
-    let response = chat_service::update_session_settings(
+    let response = chat::settings::update_session_settings(
         &state.pool,
         user_id,
         id,

@@ -28,7 +28,8 @@ use scribe_backend::{
         chat_sessions::dsl as chat_sessions_dsl,
     },
     services::{
-        chat_service, hybrid_token_counter::HybridTokenCounter,
+        chat::generation::{get_session_data_for_generation, stream_ai_response_and_save_message}, // Updated to new path
+        hybrid_token_counter::HybridTokenCounter,
         lorebook_service::LorebookService, tokenizer_service::TokenizerService,
     },
     state::AppState,
@@ -640,7 +641,7 @@ async fn test_first_mes_included_in_history() {
         .mock_embedding_pipeline_service
         .add_retrieve_response(Ok(vec![]));
 
-    let generation_data = chat_service::get_session_data_for_generation(
+    let generation_data = get_session_data_for_generation(
         state_arc,
         user.id,
         session.id,
