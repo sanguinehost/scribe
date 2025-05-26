@@ -481,6 +481,23 @@ impl EmbeddingPipelineServiceTrait for MockEmbeddingPipelineService {
             panic!("MockEmbeddingPipelineService::retrieve_relevant_chunks called but no more responses were queued. Ensure your test sets up enough responses.");
         }
     }
+
+    async fn delete_lorebook_entry_chunks(
+        &self,
+        _state: Arc<AppState>,
+        original_lorebook_entry_id: Uuid,
+        user_id: Uuid,
+    ) -> Result<(), AppError> {
+        tracing::info!(
+            target: "mock_embedding_pipeline",
+            "MockEmbeddingPipelineService::delete_lorebook_entry_chunks called for entry_id: {}, user_id: {}",
+            original_lorebook_entry_id, user_id
+        );
+        // In a real scenario, this would interact with Qdrant via QdrantClientService
+        // For the mock, we just log and return Ok.
+        // If tests need to verify this was called, they can check logs or add to `self.calls`.
+        Ok(())
+    }
 }
 
 #[derive(Clone)]
@@ -703,6 +720,34 @@ impl QdrantClientServiceTrait for MockQdrantClientService {
 
     async fn update_collection_settings(&self) -> Result<(), AppError> {
         Ok(()) // Just return success for the mock
+    }
+
+    async fn delete_points_by_filter(&self, filter: Filter) -> Result<(), AppError> {
+        tracing::info!(
+            target: "mock_qdrant_client",
+            "MockQdrantClientService::delete_points_by_filter called with filter: {:?}",
+            filter
+        );
+        // In a real scenario, this would interact with the Qdrant client.
+        // For the mock, we just log and return Ok.
+        // Tests could verify this call by checking logs or by adding tracking to the mock if needed.
+        Ok(())
+    }
+
+    async fn get_point_by_id(&self, point_id: PointId) -> Result<Option<qdrant_client::qdrant::RetrievedPoint>, AppError> {
+        // For the mock, we don't have a sophisticated way to store/retrieve individual points yet.
+        // We can extend this if tests need to verify specific point retrieval.
+        // For now, let's log the call and return Ok(None) or a pre-set response if we add one.
+        tracing::info!(
+            target: "mock_qdrant_client",
+            "MockQdrantClientService::get_point_by_id called with point_id: {:?}",
+            point_id.point_id_options
+        );
+        // If you need to test retrieval, you'd add a field to MockQdrantClientService
+        // like `point_to_return: Arc<Mutex<Option<Result<Option<RetrievedPoint>, AppError>>>>`
+        // and set it in your tests.
+        // For now, returning Ok(None) to satisfy the trait.
+        Ok(None)
     }
 }
 
@@ -955,14 +1000,16 @@ pub async fn spawn_app(multi_thread: bool, use_real_ai: bool, use_real_qdrant: b
         (mock_client.clone() as Arc<dyn AiClient + Send + Sync>, Some(mock_client))
     };
 
-    let mock_embedding_client_instance = Arc::new(MockEmbeddingClient::new());
-    let embedding_client_for_state =
-        mock_embedding_client_instance.clone() as Arc<dyn EmbeddingClient + Send + Sync>;
+    // Determine EmbeddingClient and EmbeddingPipelineService based on use_real_qdrant (acting as use_real_embedding_components)
+    let embedding_client_for_state: Arc<dyn EmbeddingClient + Send + Sync>;
+    // Initialize these directly as TestApp expects non-optional Arcs.
+    let mock_embedding_client_for_test_app = Arc::new(MockEmbeddingClient::new());
+    let mock_embedding_pipeline_service_for_test_app = Arc::new(MockEmbeddingPipelineService::new());
 
     let (qdrant_service_for_state, mock_qdrant_service_for_test_app): (
         Arc<dyn QdrantClientServiceTrait + Send + Sync>,
         Option<Arc<MockQdrantClientService>>,
-    ) = if use_real_qdrant {
+    ) = if use_real_qdrant { // This flag now also controls embedding components
         let real_qdrant_service = QdrantClientService::new(config_arc.clone())
             .await
             .expect("Failed to create real Qdrant client for test");
@@ -971,27 +1018,58 @@ pub async fn spawn_app(multi_thread: bool, use_real_ai: bool, use_real_qdrant: b
         let mock_qdrant = Arc::new(MockQdrantClientService::new());
         (mock_qdrant.clone() as Arc<dyn QdrantClientServiceTrait + Send + Sync>, Some(mock_qdrant))
     };
-    
-    // Create the mock embedding pipeline service instance that TestApp will hold
-    // and will be used to configure the AppState via the builder.
-    let mock_embedding_pipeline_service_instance = Arc::new(MockEmbeddingPipelineService::new());
 
-    // Initialize TestAppStateBuilder with core components
-    let builder = TestAppStateBuilder::new(
+    let mut builder = TestAppStateBuilder::new( // Make builder mutable
         pool.clone(),
         config_arc.clone(),
         ai_client_for_state.clone(),
-        embedding_client_for_state.clone(),
+        // embedding_client_for_state will be set below
+        // qdrant_service_for_state is already set
+        // Temporarily pass a mock, will be replaced if real is needed or correctly set if mock is needed.
+        // This is a bit awkward, TestAppStateBuilder expects it.
+        // Let's refine TestAppStateBuilder or how we pass embedding_client.
+        // For now, we'll create it based on the flag and pass it.
+        Arc::new(MockEmbeddingClient::new()), // Placeholder, will be replaced by correct one in builder init
         qdrant_service_for_state.clone(),
     );
 
-    // Build AppState.
-    // Use with_embedding_pipeline_service to ensure AppState uses the mock.
-    // Other services (ChatOverrideService, UserPersonaService, HybridTokenCounter)
-    // will be created with their default (real) implementations by the builder.
-    let app_state_inner = builder
-        .with_embedding_pipeline_service(mock_embedding_pipeline_service_instance.clone())
-        .build();
+
+    if use_real_qdrant { // If true, use real embedding client and pipeline for AppState
+        let real_embedding_client = crate::llm::gemini_embedding_client::build_gemini_embedding_client(config_arc.clone())
+            .expect("Failed to build real Gemini embedding client for test");
+        embedding_client_for_state = Arc::new(real_embedding_client);
+        
+        // mock_embedding_client_for_test_app and mock_embedding_pipeline_service_for_test_app are already initialized.
+        // AppState will use the real embedding pipeline service (created by builder if not specified).
+        
+        // Re-initialize builder with the real embedding client for AppState
+        builder = TestAppStateBuilder::new(
+            pool.clone(),
+            config_arc.clone(),
+            ai_client_for_state.clone(),
+            embedding_client_for_state.clone(), // Pass the real one for AppState
+            qdrant_service_for_state.clone(),
+        );
+
+    } else { // Use mock embedding client and pipeline for AppState
+        // Set embedding_client_for_state to the mock one (which is also stored in TestApp)
+        embedding_client_for_state = mock_embedding_client_for_test_app.clone() as Arc<dyn EmbeddingClient + Send + Sync>;
+
+        // Re-initialize builder with the mock embedding client for AppState
+        builder = TestAppStateBuilder::new(
+            pool.clone(),
+            config_arc.clone(),
+            ai_client_for_state.clone(),
+            embedding_client_for_state.clone(), // Pass the mock one for AppState
+            qdrant_service_for_state.clone(),
+        );
+
+        // Configure builder with the mock pipeline service for AppState
+        // This mock_embedding_pipeline_service_for_test_app is the one initialized earlier.
+        builder = builder.with_embedding_pipeline_service(mock_embedding_pipeline_service_for_test_app.clone());
+    }
+    
+    let app_state_inner = builder.build();
 
     let session_store = DieselSessionStore::new(pool.clone());
     let secret_key_hex_str: &String = config_arc.cookie_signing_key.as_ref()
@@ -1062,8 +1140,8 @@ pub async fn spawn_app(multi_thread: bool, use_real_ai: bool, use_real_qdrant: b
         config: config_arc,
         ai_client: ai_client_for_state,
         mock_ai_client: mock_ai_client_for_test_app,
-        mock_embedding_client: mock_embedding_client_instance,
-        mock_embedding_pipeline_service: mock_embedding_pipeline_service_instance, // This is the mock instance
+        mock_embedding_client: mock_embedding_client_for_test_app.clone(),
+        mock_embedding_pipeline_service: mock_embedding_pipeline_service_for_test_app.clone(),
         qdrant_service: qdrant_service_for_state,
         mock_qdrant_service: mock_qdrant_service_for_test_app,
         // user_persona_service and embedding_call_tracker removed from TestApp instantiation

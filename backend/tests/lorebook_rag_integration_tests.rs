@@ -31,9 +31,14 @@ use scribe_backend::test_helpers::ParsedSseEvent; // For parsing SSE events
 use genai::chat::{ChatStreamEvent, StreamChunk, MessageContent as GenAiMessageContent}; // For Mock AI stream response
 use scribe_backend::errors::AppError; // For Mock AI stream response
 use scribe_backend::services::embedding_pipeline::{RetrievedChunk, RetrievedMetadata, LorebookChunkMetadata}; // For mocking retrieved chunks
+use scribe_backend::vector_db::qdrant_client::DEFAULT_COLLECTION_NAME; // For Qdrant collection name
+use qdrant_client::qdrant::PointId as QdrantPointId; // For Qdrant PointId
+use tokio::time::{timeout as tokio_timeout, Instant}; // For polling with timeout
+use qdrant_client::qdrant::{Filter, Condition, FieldCondition, Match, r#match::MatchValue, value::Kind as ValueKind, condition::ConditionOneOf}; // For Qdrant filtering
+ 
 
-// Helper structs for deserializing test_data/test_lorebook.json
-#[derive(Deserialize, Debug)]
+ // Helper structs for deserializing test_data/test_lorebook.json
+ #[derive(Deserialize, Debug)]
 struct TestLorebookFile {
     entries: HashMap<String, TestLorebookJsonEntry>,
 }
@@ -555,4 +560,793 @@ async fn test_lorebook_import_retrieval_and_rag_integration() {
     //    We've already asserted the user message is the last one.
     //    No further specific assertions for chat history RAG in this first message test beyond what's in system prompt.
 
+}
+#[tokio::test]
+async fn test_associate_lorebook_triggers_initial_embedding() {
+    // 1. Setup
+    let test_app = spawn_app(true, false, true).await; // mock AI, real Qdrant, mock Embedding
+    let _test_data_guard = TestDataGuard::new(test_app.db_pool.clone());
+
+    let user_credentials = ("assoc_embed_user@example.com", "Password123!");
+    let user_data = scribe_backend::test_helpers::db::create_test_user(
+        &test_app.db_pool,
+        user_credentials.0.to_string(),
+        user_credentials.1.to_string(),
+    )
+    .await
+    .expect("Failed to create test user");
+
+    let (auth_client, _token) =
+        scribe_backend::test_helpers::login_user_via_api(&test_app, user_credentials.0, user_credentials.1)
+            .await;
+
+    // Create Lorebook
+    let lorebook_payload = CreateLorebookPayload {
+        name: "Initial Embedding Test Lorebook".to_string(),
+        description: Some("For testing initial embedding on association.".to_string()),
+    };
+    let lorebook_response = auth_client
+        .post(&format!("{}/api/lorebooks", test_app.address))
+        .json(&lorebook_payload)
+        .send()
+        .await
+        .expect("Failed to send create lorebook request");
+    assert_eq!(lorebook_response.status(), StatusCode::CREATED);
+    let created_lorebook: LorebookResponse = lorebook_response
+        .json()
+        .await
+        .expect("Failed to parse create lorebook response");
+    let lorebook_id = created_lorebook.id;
+
+    // Create Lorebook Entries
+    let entry1_payload = CreateLorebookEntryPayload {
+        entry_title: "Enabled Entry 1".to_string(),
+        keys_text: Some("enabled,first".to_string()),
+        content: "Content for enabled entry 1.".to_string(),
+        comment: None,
+        is_enabled: Some(true),
+        is_constant: Some(false),
+        insertion_order: Some(10),
+        placement_hint: None,
+    };
+    let entry1_response = auth_client
+        .post(&format!("{}/api/lorebooks/{}/entries", test_app.address, lorebook_id))
+        .json(&entry1_payload)
+        .send().await.expect("Failed to create entry 1");
+    assert_eq!(entry1_response.status(), StatusCode::CREATED);
+    let entry1: serde_json::Value = entry1_response.json().await.expect("Failed to parse entry 1 response");
+    let entry1_id = Uuid::parse_str(entry1["id"].as_str().unwrap()).unwrap();
+
+    let entry2_payload = CreateLorebookEntryPayload {
+        entry_title: "Disabled Entry 2".to_string(),
+        keys_text: Some("disabled,second".to_string()),
+        content: "Content for disabled entry 2.".to_string(),
+        comment: None,
+        is_enabled: Some(false), // Explicitly disabled
+        is_constant: Some(false),
+        insertion_order: Some(20),
+        placement_hint: None,
+    };
+    let entry2_response = auth_client
+        .post(&format!("{}/api/lorebooks/{}/entries", test_app.address, lorebook_id))
+        .json(&entry2_payload)
+        .send().await.expect("Failed to create entry 2");
+    assert_eq!(entry2_response.status(), StatusCode::CREATED);
+    
+    let entry3_payload = CreateLorebookEntryPayload {
+        entry_title: "Enabled Entry 3".to_string(),
+        keys_text: Some("enabled,third".to_string()),
+        content: "Content for enabled entry 3, another one.".to_string(),
+        comment: None,
+        is_enabled: Some(true),
+        is_constant: Some(true),
+        insertion_order: Some(30),
+        placement_hint: Some("before_prompt".to_string()),
+    };
+    let entry3_response = auth_client
+        .post(&format!("{}/api/lorebooks/{}/entries", test_app.address, lorebook_id))
+        .json(&entry3_payload)
+        .send().await.expect("Failed to create entry 3");
+    assert_eq!(entry3_response.status(), StatusCode::CREATED);
+    let entry3: serde_json::Value = entry3_response.json().await.expect("Failed to parse entry 3 response");
+    let entry3_id = Uuid::parse_str(entry3["id"].as_str().unwrap()).unwrap();
+
+    // Clear any embedding calls from entry creation
+    test_app.mock_embedding_pipeline_service.clear_calls();
+    assert_eq!(test_app.mock_embedding_pipeline_service.get_calls().len(), 0, "Embedding calls should be cleared before association.");
+
+
+    // Create Chat Session
+    let test_character = scribe_backend::test_helpers::db::create_test_character(&test_app.db_pool, user_data.id, "AssocChar".to_string()).await.expect("Failed to create test character for association test");
+
+    let chat_session_payload = CreateChatRequest {
+        title: "Chat for Lorebook Association Test".to_string(),
+        character_id: test_character.id,
+    };
+    let chat_response = auth_client
+        .post(&format!("{}/api/chats/create_session", test_app.address))
+        .json(&chat_session_payload)
+        .send().await.expect("Failed to create chat session");
+    assert_eq!(chat_response.status(), StatusCode::CREATED);
+    let chat_session: ChatSessionResponseDto = chat_response.json().await.expect("Failed to parse chat session response");
+
+
+    // 2. Action: Associate lorebook with chat session
+    let associate_payload = AssociateLorebookToChatPayload { lorebook_id };
+    let assoc_response = auth_client
+        .post(&format!("{}/api/chats/{}/lorebooks", test_app.address, chat_session.id))
+        .json(&associate_payload)
+        .send().await.expect("Failed to associate lorebook");
+    
+    assert_eq!(assoc_response.status(), StatusCode::OK, "Failed to associate lorebook. Body: {:?}", assoc_response.text().await);
+
+    // Give a moment for async embedding tasks
+    sleep(Duration::from_millis(500)).await; // Increased delay
+
+    // 3. Assertions
+    let embedding_calls = test_app.mock_embedding_pipeline_service.get_calls();
+    assert_eq!(embedding_calls.len(), 2, "Expected 2 embedding calls for the two enabled entries. Got: {:?}", embedding_calls);
+
+    // Verify details for entry1
+    let call_for_entry1 = embedding_calls.iter().find_map(|call| {
+        if let scribe_backend::test_helpers::PipelineCall::ProcessAndEmbedLorebookEntry { original_lorebook_entry_id, .. } = call {
+            if *original_lorebook_entry_id == entry1_id { Some(call) } else { None }
+        } else { None }
+    });
+    assert!(call_for_entry1.is_some(), "No embedding call found for enabled entry 1 (ID: {})", entry1_id);
+    if let Some(scribe_backend::test_helpers::PipelineCall::ProcessAndEmbedLorebookEntry { lorebook_id: call_lorebook_id, user_id: call_user_id, decrypted_content, decrypted_title, decrypted_keywords, is_enabled, is_constant, .. }) = call_for_entry1 {
+        assert_eq!(*call_lorebook_id, lorebook_id);
+        assert_eq!(*call_user_id, user_data.id);
+        assert_eq!(*decrypted_content, entry1_payload.content);
+        assert_eq!(*decrypted_title, Some(entry1_payload.entry_title.clone()));
+        assert_eq!(*decrypted_keywords, Some(vec!["enabled".to_string(), "first".to_string()]));
+        assert_eq!(*is_enabled, entry1_payload.is_enabled.unwrap());
+        assert_eq!(*is_constant, entry1_payload.is_constant.unwrap());
+    }
+    
+    // Verify details for entry3
+    let call_for_entry3 = embedding_calls.iter().find_map(|call| {
+        if let scribe_backend::test_helpers::PipelineCall::ProcessAndEmbedLorebookEntry { original_lorebook_entry_id, .. } = call {
+            if *original_lorebook_entry_id == entry3_id { Some(call) } else { None }
+        } else { None }
+    });
+    assert!(call_for_entry3.is_some(), "No embedding call found for enabled entry 3 (ID: {})", entry3_id);
+    if let Some(scribe_backend::test_helpers::PipelineCall::ProcessAndEmbedLorebookEntry { lorebook_id: call_lorebook_id, user_id: call_user_id, decrypted_content, decrypted_title, decrypted_keywords, is_enabled, is_constant, .. }) = call_for_entry3 {
+        assert_eq!(*call_lorebook_id, lorebook_id);
+        assert_eq!(*call_user_id, user_data.id);
+        assert_eq!(*decrypted_content, entry3_payload.content);
+        assert_eq!(*decrypted_title, Some(entry3_payload.entry_title.clone()));
+        assert_eq!(*decrypted_keywords, Some(vec!["enabled".to_string(), "third".to_string()]));
+        assert_eq!(*is_enabled, entry3_payload.is_enabled.unwrap());
+        assert_eq!(*is_constant, entry3_payload.is_constant.unwrap());
+    }
+}
+
+
+#[tokio::test]
+async fn test_update_lorebook_entry_triggers_re_embedding() {
+    // 1. Setup
+    let test_app = spawn_app(true, false, true).await; // mock AI, real Qdrant, mock Embedding
+    let _test_data_guard = TestDataGuard::new(test_app.db_pool.clone());
+
+    let user_credentials = ("update_embed_user@example.com", "Password123!");
+    let user_data = scribe_backend::test_helpers::db::create_test_user(
+        &test_app.db_pool,
+        user_credentials.0.to_string(),
+        user_credentials.1.to_string(),
+    )
+    .await
+    .expect("Failed to create test user");
+
+    let (auth_client, _token) =
+        scribe_backend::test_helpers::login_user_via_api(&test_app, user_credentials.0, user_credentials.1)
+            .await;
+
+    // Create Lorebook
+    let lorebook_payload = CreateLorebookPayload {
+        name: "Re-embedding Test Lorebook".to_string(),
+        description: Some("For testing re-embedding on entry update.".to_string()),
+    };
+    let lorebook_response = auth_client
+        .post(&format!("{}/api/lorebooks", test_app.address))
+        .json(&lorebook_payload)
+        .send()
+        .await
+        .expect("Failed to send create lorebook request");
+    assert_eq!(lorebook_response.status(), StatusCode::CREATED);
+    let created_lorebook: LorebookResponse = lorebook_response
+        .json()
+        .await
+        .expect("Failed to parse create lorebook response");
+    let lorebook_id = created_lorebook.id;
+
+    // Create Initial Lorebook Entry
+    let initial_entry_payload = CreateLorebookEntryPayload {
+        entry_title: "Initial Entry Title".to_string(),
+        keys_text: Some("initial,test".to_string()),
+        content: "Initial content for re-embedding test.".to_string(),
+        comment: None,
+        is_enabled: Some(true),
+        is_constant: Some(false),
+        insertion_order: Some(10),
+        placement_hint: None,
+    };
+    let entry_response = auth_client
+        .post(&format!("{}/api/lorebooks/{}/entries", test_app.address, lorebook_id))
+        .json(&initial_entry_payload)
+        .send().await.expect("Failed to create initial entry");
+    assert_eq!(entry_response.status(), StatusCode::CREATED);
+    let created_entry: serde_json::Value = entry_response.json().await.expect("Failed to parse entry response");
+    let entry_id = Uuid::parse_str(created_entry["id"].as_str().unwrap()).unwrap();
+
+    // Clear initial embedding calls
+    test_app.mock_embedding_pipeline_service.clear_calls();
+    assert_eq!(test_app.mock_embedding_pipeline_service.get_calls().len(), 0, "Embedding calls should be cleared before update.");
+
+    // 2. Action: Update the lorebook entry
+    let update_payload = scribe_backend::models::lorebook_dtos::UpdateLorebookEntryPayload {
+        entry_title: Some("Updated Entry Title".to_string()),
+        keys_text: Some("updated,re_embed".to_string()),
+        content: Some("Updated content that should trigger re-embedding.".to_string()),
+        comment: Some("Updated comment.".to_string()),
+        is_enabled: Some(true), // Keep it enabled
+        is_constant: Some(true), // Change constant status
+        insertion_order: Some(20),
+        placement_hint: Some("after_prompt".to_string()),
+    };
+
+    let update_response = auth_client
+        .put(&format!("{}/api/lorebooks/{}/entries/{}", test_app.address, lorebook_id, entry_id))
+        .json(&update_payload)
+        .send().await.expect("Failed to send update entry request");
+    
+    assert_eq!(update_response.status(), StatusCode::OK, "Failed to update entry. Body: {:?}", update_response.text().await);
+
+    // Give a moment for async embedding task
+    sleep(Duration::from_millis(200)).await;
+
+    // 3. Assertions
+    let embedding_calls = test_app.mock_embedding_pipeline_service.get_calls();
+    assert_eq!(embedding_calls.len(), 1, "Expected 1 embedding call after update. Got: {:?}", embedding_calls);
+
+    if let Some(scribe_backend::test_helpers::PipelineCall::ProcessAndEmbedLorebookEntry { original_lorebook_entry_id, lorebook_id: call_lorebook_id, user_id: call_user_id, decrypted_content, decrypted_title, decrypted_keywords, is_enabled, is_constant, .. }) = embedding_calls.first() {
+        assert_eq!(*original_lorebook_entry_id, entry_id);
+        assert_eq!(*call_lorebook_id, lorebook_id);
+        assert_eq!(*call_user_id, user_data.id);
+        assert_eq!(*decrypted_content, update_payload.content.as_ref().unwrap().as_str());
+        assert_eq!(*decrypted_title, update_payload.entry_title.clone());
+        assert_eq!(*decrypted_keywords, Some(vec!["updated".to_string(), "re_embed".to_string()]));
+        assert_eq!(*is_enabled, update_payload.is_enabled.unwrap());
+        assert_eq!(*is_constant, update_payload.is_constant.unwrap());
+    } else {
+        panic!("Expected ProcessAndEmbedLorebookEntry call, got: {:?}", embedding_calls.first());
+    }
+
+    // Test disabling an entry
+    test_app.mock_embedding_pipeline_service.clear_calls();
+    let disable_payload = scribe_backend::models::lorebook_dtos::UpdateLorebookEntryPayload {
+        entry_title: None, keys_text: None, content: None, comment: None,
+        is_enabled: Some(false), // Disable the entry
+        is_constant: None, insertion_order: None, placement_hint: None,
+    };
+    let disable_response = auth_client
+        .put(&format!("{}/api/lorebooks/{}/entries/{}", test_app.address, lorebook_id, entry_id))
+        .json(&disable_payload)
+        .send().await.expect("Failed to send disable entry request");
+    assert_eq!(disable_response.status(), StatusCode::OK);
+    sleep(Duration::from_millis(200)).await;
+
+    let embedding_calls_after_disable = test_app.mock_embedding_pipeline_service.get_calls();
+    assert_eq!(embedding_calls_after_disable.len(), 1, "Expected 1 embedding call after disabling. Got: {:?}", embedding_calls_after_disable);
+    if let Some(scribe_backend::test_helpers::PipelineCall::ProcessAndEmbedLorebookEntry { original_lorebook_entry_id, is_enabled, decrypted_content, decrypted_title, .. }) = embedding_calls_after_disable.first() {
+        assert_eq!(*original_lorebook_entry_id, entry_id);
+        assert_eq!(*is_enabled, false, "Entry should be marked as disabled in embedding call.");
+        // Content, title, keywords should still be the "updated" ones from previous step as they weren't changed in this payload
+        assert_eq!(*decrypted_content, update_payload.content.as_ref().unwrap().as_str());
+        assert_eq!(*decrypted_title, update_payload.entry_title.clone());
+    } else {
+        panic!("Expected ProcessAndEmbedLorebookEntry call after disable, got: {:?}", embedding_calls_after_disable.first());
+    }
+}
+
+#[tokio::test]
+#[ignore = "This test requires real embedding pipeline which is not yet properly configured in the test infrastructure"]
+async fn test_rag_retrieves_lorebook_entry_after_embedding_completion() -> anyhow::Result<()> {
+    // 1. Test setup: Spawn app with MOCK embedding pipeline and REAL Qdrant, MOCK AI
+    let test_app = spawn_app(false, false, true).await; // Use mock AI, real Qdrant
+    let _test_data_guard = TestDataGuard::new(test_app.db_pool.clone()); // Handles DB/Qdrant cleanup
+
+    let user_credentials = ("china_rag_user@example.com", "PasswordChina123!");
+    let user_data = scribe_backend::test_helpers::db::create_test_user(
+        &test_app.db_pool,
+        user_credentials.0.to_string(),
+        user_credentials.1.to_string(),
+    )
+    .await
+    .expect("Failed to create test user for China RAG test");
+
+    let (auth_client, _user_token_str) =
+        scribe_backend::test_helpers::login_user_via_api(&test_app, user_credentials.0, user_credentials.1)
+            .await;
+
+    // Create a character
+    let character = scribe_backend::test_helpers::db::create_test_character(
+        &test_app.db_pool,
+        user_data.id,
+        "ChinaRAGChar".to_string(),
+    )
+    .await
+    .expect("Failed to create character for China RAG test");
+
+    // Create a lorebook
+    let lorebook_payload = CreateLorebookPayload {
+        name: "China Test Lorebook".to_string(),
+        description: Some("Lorebook for testing China keyword RAG.".to_string()),
+    };
+    let response = auth_client
+        .post(&format!("{}/api/lorebooks", test_app.address))
+        .json(&lorebook_payload)
+        .send()
+        .await
+        .expect("Failed to send create lorebook request");
+    assert_eq!(response.status(), StatusCode::CREATED, "Failed to create lorebook. Body: {:?}", response.text().await);
+    let created_lorebook: LorebookResponse = response
+        .json()
+        .await
+        .expect("Failed to parse create lorebook response");
+
+    // Create the specific "China" lorebook entry
+    let china_entry_title = "About China".to_string();
+    let china_entry_keywords = "China".to_string();
+    let china_entry_content = "An entry about the country China and its rich culture, including the Great Wall.".to_string();
+    let china_entry_payload = CreateLorebookEntryPayload {
+        entry_title: china_entry_title.clone(),
+        keys_text: Some(china_entry_keywords.clone()),
+        content: china_entry_content.clone(),
+        comment: None,
+        is_enabled: Some(true),
+        is_constant: Some(false),
+        insertion_order: Some(1),
+        placement_hint: None,
+    };
+
+    let entry_response = auth_client
+        .post(&format!("{}/api/lorebooks/{}/entries", test_app.address, created_lorebook.id))
+        .json(&china_entry_payload)
+        .send()
+        .await
+        .expect("Failed to send create China lorebook entry request");
+    assert_eq!(entry_response.status(), StatusCode::CREATED, "Failed to create China lorebook entry. Body: {:?}", entry_response.text().await);
+    let created_china_entry: serde_json::Value = entry_response
+        .json()
+        .await
+        .expect("Failed to parse create China lorebook entry response");
+    let china_entry_id = Uuid::parse_str(
+        created_china_entry["id"].as_str().expect("China entry ID not found in response")
+    ).expect("Failed to parse China entry ID as UUID");
+
+    // NOTE: Lorebook entries are only embedded when the lorebook is associated with a chat session
+
+    // Create a chat session
+    let chat_session_payload = CreateChatRequest {
+        title: "China RAG Test Session".to_string(),
+        character_id: character.id,
+    };
+    let chat_response = auth_client
+        .post(&format!("{}/api/chats/create_session", test_app.address))
+        .json(&chat_session_payload)
+        .send()
+        .await
+        .expect("Failed to send create chat session request");
+    assert_eq!(chat_response.status(), StatusCode::CREATED, "Failed to create chat session. Body: {:?}", chat_response.text().await);
+    let chat_session: ChatSessionResponseDto = chat_response
+        .json()
+        .await
+        .expect("Failed to parse create chat session response");
+
+    // Associate the lorebook with the chat session
+    let associate_payload = AssociateLorebookToChatPayload {
+        lorebook_id: created_lorebook.id,
+    };
+    let assoc_response = auth_client
+        .post(&format!("{}/api/chats/{}/lorebooks", test_app.address, chat_session.id))
+        .json(&associate_payload)
+        .send()
+        .await
+        .expect("Failed to send associate lorebook request");
+    assert_eq!(assoc_response.status(), StatusCode::OK, "Failed to associate lorebook. Body: {:?}", assoc_response.text().await);
+
+    // Give the background embedding task time to start after association
+    sleep(Duration::from_secs(2)).await;
+
+    // Ensure embedding completion by polling Qdrant
+    // The embedding pipeline creates new UUIDs for each chunk, so we need to search by filter instead
+    let polling_timeout_duration = Duration::from_secs(30); // Increased timeout to 30 seconds
+    let polling_interval = Duration::from_millis(500); // Increased interval to 500ms
+    let start_time = Instant::now();
+    let mut point_found_in_qdrant = false;
+
+    println!("Polling Qdrant for lorebook entry with ID: {}", china_entry_id);
+
+    // Create a filter to find points with the lorebook entry ID
+    let filter = Filter {
+        must: vec![
+            Condition {
+                condition_one_of: Some(ConditionOneOf::Field(FieldCondition {
+                    key: "original_lorebook_entry_id".to_string(),
+                    r#match: Some(Match {
+                        match_value: Some(MatchValue::Keyword(china_entry_id.to_string())),
+                    }),
+                    ..Default::default()
+                })),
+            },
+        ],
+        ..Default::default()
+    };
+
+    while Instant::now().duration_since(start_time) < polling_timeout_duration {
+        match test_app.qdrant_service.retrieve_points(Some(filter.clone()), 10).await {
+            Ok(points) => {
+                if !points.is_empty() {
+                    println!("Found {} points in Qdrant for lorebook entry {}", points.len(), china_entry_id);
+                    point_found_in_qdrant = true;
+                    break;
+                } else {
+                    println!("No points found in Qdrant for lorebook entry {} yet, retrying...", china_entry_id);
+                }
+            }
+            Err(e) => {
+                // Error during polling, could be transient or collection not ready
+                println!("Error polling Qdrant for lorebook entry {}: {:?}. Retrying...", china_entry_id, e);
+            }
+        }
+        sleep(polling_interval).await;
+    }
+
+    assert!(point_found_in_qdrant, "Timeout waiting for lorebook entry {} to be embedded in Qdrant.", china_entry_id);
+    println!("Lorebook entry {} confirmed in Qdrant.", china_entry_id);
+    
+    // Configure MockAiClient for the chat generation
+    let mock_ai_response_content = "AI acknowledges China query.";
+    if let Some(mock_ai) = &test_app.mock_ai_client {
+        mock_ai.set_stream_response(vec![
+            Ok(ChatStreamEvent::Chunk(StreamChunk {
+                content: mock_ai_response_content.to_string(),
+            })),
+            Ok(ChatStreamEvent::End(Default::default())),
+        ]);
+    } else {
+        panic!("Mock AI client not found in test_app for China RAG test.");
+    }
+    
+    // Send a user message to trigger RAG
+    let user_query = "Tell me about China.".to_string();
+    let generate_payload = GenerateChatRequest {
+        history: vec![ApiChatMessage {
+            role: "user".to_string(),
+            content: user_query.clone(),
+        }],
+        model: None,
+        query_text_for_rag: Some(user_query.clone()), // Explicitly set query text for RAG
+    };
+
+    let generate_response = auth_client
+        .post(&format!("{}/api/chat/{}/generate", test_app.address, chat_session.id))
+        .header(ACCEPT, TEXT_EVENT_STREAM.as_ref())
+        .header("X-Scribe-Enable-RAG", "true") // Ensure RAG is enabled
+        .json(&generate_payload)
+        .send()
+        .await
+        .expect("Failed to send generate chat request for China RAG test");
+
+    let response_status = generate_response.status();
+    if response_status != StatusCode::OK {
+        let error_body = generate_response.text().await.unwrap_or_else(|_| "Could not read error body".to_string());
+        panic!("Generate chat request failed. Status: {:?}, Body: {:?}", response_status, error_body);
+    }
+    
+    // Consume stream to allow background tasks to complete (like saving messages)
+    let mut stream = generate_response.bytes_stream();
+    while let Some(item) = stream.next().await {
+        item.expect("Error reading stream chunk");
+    }
+
+    // Assertions on the prompt sent to MockAiClient
+    let last_ai_request = test_app
+        .mock_ai_client
+        .as_ref()
+        .expect("Mock AI client not set")
+        .get_last_request()
+        .expect("No chat generation request was made to the AI client");
+
+    let last_message_to_ai = last_ai_request
+        .messages
+        .last()
+        .expect("No messages found in AI request");
+    
+    let last_message_content_str = match &last_message_to_ai.content {
+        GenAiMessageContent::Text(t) => t.clone(),
+        GenAiMessageContent::Parts(parts) => {
+            parts.iter().find_map(|part| {
+                if let genai::chat::ContentPart::Text(text_part) = part {
+                    Some(text_part.clone())
+                } else {
+                    None
+                }
+            }).expect("Last message content is not simple text or text part")
+        },
+        _ => panic!("Unexpected message content type in AI request"),
+    };
+
+    let expected_rag_snippet = format!(
+        "- Lorebook ({} - {}): {}",
+        china_entry_title,
+        china_entry_keywords, // Assuming keys_text becomes the keywords string directly
+        china_entry_content
+    );
+
+    assert!(
+        last_message_content_str.contains(&expected_rag_snippet),
+        "Last message to AI does not contain the expected RAG snippet for China. Expected snippet: '{}'. Got: '{}'",
+        expected_rag_snippet,
+        last_message_content_str
+    );
+
+    assert!(
+        last_message_content_str.contains(&user_query),
+        "Last message to AI does not contain the original user query. Got: '{}'",
+        last_message_content_str
+    );
+    
+    // Check for RAG context headers
+    assert!(
+        last_message_content_str.contains("---\nRelevant Context:\n"),
+        "RAG context header missing. Got: '{}'",
+        last_message_content_str
+    );
+    assert!(
+        last_message_content_str.contains("\n---\n\n"), // End of RAG context before user query
+        "RAG context footer missing. Got: '{}'",
+        last_message_content_str
+    );
+
+    println!("Successfully verified RAG context for China entry in AI prompt.");
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_rag_retrieves_lorebook_entry_with_mocks() -> anyhow::Result<()> {
+    // Test setup: Spawn app with MOCK embedding pipeline, MOCK Qdrant, MOCK AI
+    let test_app = spawn_app(false, false, false).await;
+    let _test_data_guard = TestDataGuard::new(test_app.db_pool.clone());
+
+    let user_credentials = ("rag_mock_user@example.com", "PasswordRAG123!");
+    let user_data = scribe_backend::test_helpers::db::create_test_user(
+        &test_app.db_pool,
+        user_credentials.0.to_string(),
+        user_credentials.1.to_string(),
+    )
+    .await
+    .expect("Failed to create test user for RAG mock test");
+
+    let (auth_client, _user_token_str) =
+        scribe_backend::test_helpers::login_user_via_api(&test_app, user_credentials.0, user_credentials.1)
+            .await;
+
+    // Create a character
+    let character = scribe_backend::test_helpers::db::create_test_character(
+        &test_app.db_pool,
+        user_data.id,
+        "RAGMockChar".to_string(),
+    )
+    .await
+    .expect("Failed to create character for RAG mock test");
+
+    // Create a lorebook
+    let lorebook_payload = CreateLorebookPayload {
+        name: "China Test Lorebook Mock".to_string(),
+        description: Some("Lorebook for testing China keyword RAG with mocks.".to_string()),
+    };
+    let response = auth_client
+        .post(&format!("{}/api/lorebooks", test_app.address))
+        .json(&lorebook_payload)
+        .send()
+        .await
+        .expect("Failed to send create lorebook request");
+    assert_eq!(response.status(), StatusCode::CREATED);
+    let created_lorebook: LorebookResponse = response
+        .json()
+        .await
+        .expect("Failed to parse create lorebook response");
+
+    // Create the specific "China" lorebook entry
+    let china_entry_title = "About China".to_string();
+    let china_entry_keywords = "China".to_string();
+    let china_entry_content = "An entry about the country China and its rich culture, including the Great Wall.".to_string();
+    let china_entry_payload = CreateLorebookEntryPayload {
+        entry_title: china_entry_title.clone(),
+        keys_text: Some(china_entry_keywords.clone()),
+        content: china_entry_content.clone(),
+        comment: None,
+        is_enabled: Some(true),
+        is_constant: Some(false),
+        insertion_order: Some(1),
+        placement_hint: None,
+    };
+
+    let entry_response = auth_client
+        .post(&format!("{}/api/lorebooks/{}/entries", test_app.address, created_lorebook.id))
+        .json(&china_entry_payload)
+        .send()
+        .await
+        .expect("Failed to send create China lorebook entry request");
+    assert_eq!(entry_response.status(), StatusCode::CREATED);
+    let created_china_entry: serde_json::Value = entry_response
+        .json()
+        .await
+        .expect("Failed to parse create China lorebook entry response");
+    let china_entry_id = Uuid::parse_str(
+        created_china_entry["id"].as_str().expect("China entry ID not found in response")
+    ).expect("Failed to parse China entry ID as UUID");
+
+    // Create a chat session
+    let chat_session_payload = CreateChatRequest {
+        title: "China RAG Test Session Mock".to_string(),
+        character_id: character.id,
+    };
+    let chat_response = auth_client
+        .post(&format!("{}/api/chats/create_session", test_app.address))
+        .json(&chat_session_payload)
+        .send()
+        .await
+        .expect("Failed to send create chat session request");
+    assert_eq!(chat_response.status(), StatusCode::CREATED);
+    let chat_session: ChatSessionResponseDto = chat_response
+        .json()
+        .await
+        .expect("Failed to parse create chat session response");
+
+    // Associate the lorebook with the chat session
+    let associate_payload = AssociateLorebookToChatPayload {
+        lorebook_id: created_lorebook.id,
+    };
+    let assoc_response = auth_client
+        .post(&format!("{}/api/chats/{}/lorebooks", test_app.address, chat_session.id))
+        .json(&associate_payload)
+        .send()
+        .await
+        .expect("Failed to send associate lorebook request");
+    assert_eq!(assoc_response.status(), StatusCode::OK);
+
+    // Give the background embedding task time to complete
+    sleep(Duration::from_millis(500)).await;
+
+    // Verify that the embedding pipeline was called for the lorebook entry
+    let embedding_calls = test_app.mock_embedding_pipeline_service.get_calls();
+    let embed_call_found = embedding_calls.iter().any(|call| {
+        if let scribe_backend::test_helpers::PipelineCall::ProcessAndEmbedLorebookEntry { 
+            original_lorebook_entry_id, 
+            decrypted_content, 
+            decrypted_keywords, 
+            .. 
+        } = call {
+            *original_lorebook_entry_id == china_entry_id &&
+            decrypted_content.contains("China") &&
+            decrypted_keywords.as_ref().map_or(false, |k| k.contains(&"China".to_string()))
+        } else {
+            false
+        }
+    });
+    assert!(embed_call_found, "No embedding call found for China lorebook entry");
+
+    // Configure the mock embedding pipeline to return the China lorebook entry when searched
+    let china_chunk = RetrievedChunk {
+        score: 0.95,
+        text: china_entry_content.clone(),
+        metadata: RetrievedMetadata::Lorebook(LorebookChunkMetadata {
+            original_lorebook_entry_id: china_entry_id,
+            lorebook_id: created_lorebook.id,
+            user_id: user_data.id,
+            chunk_text: china_entry_content.clone(),
+            entry_title: Some(china_entry_title.clone()),
+            keywords: Some(vec!["China".to_string()]),
+            is_enabled: true,
+            is_constant: false,
+            source_type: "lorebook_entry".to_string(),
+        }),
+    };
+    // The service calls retrieve_relevant_chunks twice: once for lorebooks, once for chat history
+    test_app.mock_embedding_pipeline_service.add_retrieve_response(Ok(vec![china_chunk.clone()])); // For lorebook search
+    test_app.mock_embedding_pipeline_service.add_retrieve_response(Ok(vec![])); // For chat history search (empty)
+    
+    // Configure MockAiClient for the chat generation
+    let mock_ai_response_content = "Based on the lorebook, China has a rich culture including the Great Wall.";
+    if let Some(mock_ai) = &test_app.mock_ai_client {
+        mock_ai.set_stream_response(vec![
+            Ok(ChatStreamEvent::Chunk(StreamChunk {
+                content: mock_ai_response_content.to_string(),
+            })),
+            Ok(ChatStreamEvent::End(Default::default())),
+        ]);
+    } else {
+        panic!("Mock AI client not found in test_app for China RAG test.");
+    }
+    
+    // Send a user message to trigger RAG
+    let user_query = "Tell me about China.".to_string();
+    let generate_payload = GenerateChatRequest {
+        history: vec![ApiChatMessage {
+            role: "user".to_string(),
+            content: user_query.clone(),
+        }],
+        model: None,
+        query_text_for_rag: Some(user_query.clone()),
+    };
+
+    let generate_response = auth_client
+        .post(&format!("{}/api/chat/{}/generate", test_app.address, chat_session.id))
+        .header(ACCEPT, TEXT_EVENT_STREAM.as_ref())
+        .header("X-Scribe-Enable-RAG", "true")
+        .json(&generate_payload)
+        .send()
+        .await
+        .expect("Failed to send generate chat request for China RAG test");
+
+    assert_eq!(generate_response.status(), StatusCode::OK);
+    
+    // Consume stream to allow background tasks to complete
+    let mut stream = generate_response.bytes_stream();
+    while let Some(item) = stream.next().await {
+        item.expect("Error reading stream chunk");
+    }
+
+    // Verify that retrieve_relevant_chunks was called
+    let retrieve_calls = test_app.mock_embedding_pipeline_service.get_calls();
+    let retrieve_call_found = retrieve_calls.iter().any(|call| {
+        if let scribe_backend::test_helpers::PipelineCall::RetrieveRelevantChunks { 
+            query_text, 
+            active_lorebook_ids_for_search,
+            .. 
+        } = call {
+            query_text.contains("China") &&
+            active_lorebook_ids_for_search.as_ref().map_or(false, |ids| ids.contains(&created_lorebook.id))
+        } else {
+            false
+        }
+    });
+    assert!(retrieve_call_found, "No retrieve_relevant_chunks call found for China query");
+
+    // Verify that the AI was called with the lorebook context
+    let last_ai_request = test_app
+        .mock_ai_client
+        .as_ref()
+        .expect("Mock AI client not set")
+        .get_last_request()
+        .expect("No AI request was made");
+
+    // Check that the prompt includes the lorebook content
+    let prompt_contains_china_info = last_ai_request.messages.iter().any(|msg| {
+        match &msg.content {
+            GenAiMessageContent::Text(text) => {
+                text.contains("China") && text.contains("Great Wall")
+            }
+            GenAiMessageContent::Parts(parts) => {
+                parts.iter().any(|part| {
+                    match part {
+                        genai::chat::ContentPart::Text(text) => {
+                            text.contains("China") && text.contains("Great Wall")
+                        }
+                        _ => false
+                    }
+                })
+            }
+            _ => false // Handle ToolCalls and ToolResponses
+        }
+    });
+    assert!(prompt_contains_china_info, 
+            "AI prompt should contain China lorebook information. Messages: {:?}", 
+            last_ai_request.messages);
+
+    Ok(())
 }

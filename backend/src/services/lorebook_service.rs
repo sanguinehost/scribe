@@ -643,13 +643,15 @@ impl LorebookService {
         let decrypted_title_for_embedding = Some(decrypted_entry_title.clone()); // Title is not optional for embedding if available
         
         let decrypted_keywords_for_embedding = decrypted_keys_text.as_ref().and_then(|keys_str| {
-            if keys_str.is_empty() {
+            if keys_str.trim().is_empty() {
                 None
             } else {
-                // Assuming keys_text is a single string that should be treated as one keyword,
-                // or a comma-separated list. For now, treat as single keyword if not empty.
-                // TODO: Clarify if keys_text needs parsing into multiple keywords.
-                Some(vec![keys_str.clone()])
+                let keywords: Vec<String> = keys_str
+                    .split(',')
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                    .collect();
+                if keywords.is_empty() { None } else { Some(keywords) }
             }
         });
 
@@ -975,17 +977,19 @@ impl LorebookService {
         })
     }
 
-    #[instrument(skip(self, auth_session, payload, _user_dek), fields(user_id = ?auth_session.user.as_ref().map(|u| u.id), lorebook_id = %lorebook_id_param, entry_id = %entry_id))]
+    #[instrument(skip(self, auth_session, payload, user_dek, state), fields(user_id = ?auth_session.user.as_ref().map(|u| u.id), lorebook_id = %lorebook_id_param, entry_id = %entry_id))]
     pub async fn update_lorebook_entry(
         &self,
         auth_session: &AuthSession<AuthBackend>,
         lorebook_id_param: Uuid,
         entry_id: Uuid,
         payload: UpdateLorebookEntryPayload,
-        _user_dek: Option<&SecretBox<Vec<u8>>>, // Add DEK parameter
+        user_dek: Option<&SecretBox<Vec<u8>>>,
+        state: Arc<AppState>,
     ) -> Result<LorebookEntryResponse, AppError> {
         debug!(?payload, "Attempting to update lorebook entry");
         let user = self.get_user_from_session(auth_session)?;
+        let user_id_for_embedding = user.id; // Clone for embedding task
 
         let conn = self
             .pool
@@ -993,110 +997,116 @@ impl LorebookService {
             .await
             .map_err(|e| AppError::InternalServerErrorGeneric(format!("Failed to get DB connection: {}", e)))?;
 
-        let existing_entry_db = conn
+        // 1. Fetch the existing entry to verify ownership and get current values
+        let entry_id_clone = entry_id; // Clone for interact closure
+        let lorebook_id_param_clone = lorebook_id_param; // Clone for interact closure
+        let user_id_clone = user.id; // Clone for interact closure
+
+        let mut entry_to_update = conn
             .interact(move |conn_sync| {
                 lorebook_entries::table
-                    .filter(lorebook_entries::id.eq(entry_id))
+                    .filter(lorebook_entries::id.eq(entry_id_clone))
+                    .filter(lorebook_entries::lorebook_id.eq(lorebook_id_param_clone))
+                    .filter(lorebook_entries::user_id.eq(user_id_clone))
                     .select(LorebookEntry::as_select())
                     .first::<LorebookEntry>(conn_sync)
                     .optional()
             })
             .await
             .map_err(|e| AppError::InternalServerErrorGeneric(format!("DB interaction failed while fetching entry: {}", e)))?
-            .map_err(|e| AppError::DatabaseQueryError(format!("Failed to query entry: {}", e)))?;
+            .map_err(|e| AppError::DatabaseQueryError(format!("Failed to query entry: {}", e)))?
+            .ok_or_else(|| AppError::NotFound(format!("Lorebook entry with ID {} not found or access denied.", entry_id)))?;
 
-        let mut entry_to_update = match existing_entry_db {
-            Some(entry) => {
-                if entry.user_id != user.id {
-                    error!("User {} attempted to update lorebook entry {} owned by user {}", user.id, entry.id, entry.user_id);
-                    return Err(AppError::NotFound(format!("Lorebook entry with ID {} not found.", entry_id)));
-                }
-                if entry.lorebook_id != lorebook_id_param {
-                    error!("Lorebook entry {} belongs to lorebook {}, but update was for lorebook {}", entry.id, entry.lorebook_id, lorebook_id_param);
-                    return Err(AppError::BadRequest(format!("Lorebook entry {} does not belong to the specified lorebook {}.", entry_id, lorebook_id_param)));
-                }
-                entry
-            }
-            None => return Err(AppError::NotFound(format!("Lorebook entry with ID {} not found.", entry_id))),
-        };
+        // 2. Get DEK for encryption
+        let user_dek_secret_box = user_dek.ok_or_else(|| {
+            error!("User DEK not available for lorebook entry update for user {}", user.id);
+            AppError::EncryptionError("User DEK not available for lorebook entry update.".to_string())
+        })?;
+        let user_dek_bytes = user_dek_secret_box.expose_secret();
 
-        // Apply updates from payload
-        // TODO: Integrate actual encryption_service calls here.
-        // For now, using placeholder "encryption" (string to bytes) and fixed nonces.
+        // 3. Apply updates from payload, encrypting if necessary
         let mut changes_made = false;
 
         if let Some(title_str) = payload.entry_title {
-            // Placeholder encryption
-            entry_to_update.entry_title_ciphertext = title_str.into_bytes();
-            entry_to_update.entry_title_nonce = format!("nonce_title_{}", Uuid::new_v4()).into_bytes(); // Unique nonce
+            let (cipher, nonce) = self.encryption_service.encrypt(&title_str, user_dek_bytes).await?;
+            entry_to_update.entry_title_ciphertext = cipher;
+            entry_to_update.entry_title_nonce = nonce;
             changes_made = true;
         }
-        if payload.keys_text.is_some() { // Check if the field is present in the payload to differentiate Some("") from None
-            let keys_str = payload.keys_text.unwrap(); // Safe because we checked is_some()
-            if keys_str.is_empty() {
-                entry_to_update.keys_text_ciphertext = Vec::new();
-                // TODO: Use actual encryption_service.generate_nonce()
-                entry_to_update.keys_text_nonce = format!("nonce_keys_empty_{}", Uuid::new_v4()).into_bytes();
-                changes_made = true;
-            } else {
-                // Placeholder encryption
-                // TODO: Use actual encryption_service.encrypt()
-                entry_to_update.keys_text_ciphertext = keys_str.into_bytes();
-                // TODO: Use actual encryption_service.generate_nonce()
-                entry_to_update.keys_text_nonce = format!("nonce_keys_data_{}", Uuid::new_v4()).into_bytes();
+
+        if payload.keys_text.is_some() {
+            let keys_to_encrypt = payload.keys_text.as_deref().unwrap_or("");
+            let (cipher, nonce) = self.encryption_service.encrypt(keys_to_encrypt, user_dek_bytes).await?;
+            entry_to_update.keys_text_ciphertext = cipher;
+            entry_to_update.keys_text_nonce = nonce;
+            changes_made = true;
+        }
+        
+        if let Some(content_str) = payload.content {
+            let (cipher, nonce) = self.encryption_service.encrypt(&content_str, user_dek_bytes).await?;
+            entry_to_update.content_ciphertext = cipher;
+            entry_to_update.content_nonce = nonce;
+            changes_made = true;
+        }
+
+        if payload.comment.is_some() { // Handles Some(String) and Some("")
+            let comment_to_encrypt = payload.comment.as_deref().unwrap_or("");
+            let (cipher, nonce) = self.encryption_service.encrypt(comment_to_encrypt, user_dek_bytes).await?;
+            entry_to_update.comment_ciphertext = Some(cipher);
+            entry_to_update.comment_nonce = Some(nonce);
+            changes_made = true;
+        }
+        // Note: If payload.comment is None, we don't touch the existing comment fields.
+        // If the intention is to clear a comment, the payload should send Some("").
+
+        if let Some(is_enabled) = payload.is_enabled {
+            if entry_to_update.is_enabled != is_enabled {
+                entry_to_update.is_enabled = is_enabled;
                 changes_made = true;
             }
         }
-        // If payload.keys_text was None, keys_text_ciphertext and keys_text_nonce are not touched.
-
-
-        if let Some(content_str) = payload.content {
-            entry_to_update.content_ciphertext = content_str.into_bytes();
-            entry_to_update.content_nonce = format!("nonce_content_{}", Uuid::new_v4()).into_bytes();
-            changes_made = true;
-        }
-        if let Some(comment_str) = payload.comment { // Handles Some("") and Some("non-empty")
-            // Placeholder encryption
-            // TODO: Use actual encryption_service.encrypt() and encryption_service.generate_nonce()
-            entry_to_update.comment_ciphertext = Some(comment_str.into_bytes()); // If comment_str is "", this becomes Some(Vec::new())
-            entry_to_update.comment_nonce = Some(format!("nonce_comment_{}", Uuid::new_v4()).into_bytes());
-            changes_made = true;
-        }
-        // If payload.comment was None, comment_ciphertext and comment_nonce are not touched.
-
-
-        if let Some(is_enabled) = payload.is_enabled {
-            entry_to_update.is_enabled = is_enabled;
-            changes_made = true;
-        }
         if let Some(is_constant) = payload.is_constant {
-            entry_to_update.is_constant = is_constant;
-            changes_made = true;
+            if entry_to_update.is_constant != is_constant {
+                entry_to_update.is_constant = is_constant;
+                changes_made = true;
+            }
         }
         if let Some(insertion_order) = payload.insertion_order {
-            entry_to_update.insertion_order = insertion_order;
-            changes_made = true;
+            if entry_to_update.insertion_order != insertion_order {
+                entry_to_update.insertion_order = insertion_order;
+                changes_made = true;
+            }
         }
-        if let Some(placement_hint_str) = payload.placement_hint {
-            entry_to_update.placement_hint = Some(placement_hint_str);
-            changes_made = true;
+        if payload.placement_hint.is_some() { // Handles Some(String) and Some("")
+            let hint_str = payload.placement_hint.unwrap(); // Safe due to is_some()
+             if entry_to_update.placement_hint.as_deref() != Some(&hint_str) {
+                entry_to_update.placement_hint = Some(hint_str);
+                changes_made = true;
+            }
         }
+
 
         if changes_made {
             entry_to_update.updated_at = Utc::now();
         } else {
-            // If no actual data fields were changed, we can optionally skip the DB write.
-            // However, for simplicity and to ensure `updated_at` is always current on any PUT,
-            // we'll proceed with the update. If this becomes a performance concern,
-            // this logic can be revisited.
-            entry_to_update.updated_at = Utc::now(); // Still update timestamp
+            // No actual data change, but we might still want to update timestamp if PUT implies "touch"
+            // For now, only update timestamp if there were other changes.
+            // If no changes, we could even return early with the existing (decrypted) entry.
+            // However, to ensure `updated_at` is always current on any PUT that doesn't error,
+            // we'll proceed with the update if any field was *provided* in the payload,
+            // even if it matched the existing value (except for boolean/numeric where direct comparison is easy).
+            // The current logic with `changes_made` flag handles this. If no payload fields were set,
+            // `changes_made` remains false. If fields were set but matched, `changes_made` might still be false.
+            // Let's ensure `updated_at` is always set on a successful PUT.
+            entry_to_update.updated_at = Utc::now();
         }
-
+        
+        // 4. Save to DB
+        let updated_db_entry_struct = entry_to_update.clone(); // Clone for interact closure
         let updated_db_entry = conn
             .interact(move |conn_sync| {
                 diesel::update(lorebook_entries::table.find(entry_id))
-                    .set(&entry_to_update) // Update using the modified struct (if AsChangeset is derived)
-                                           // Or set fields individually as before if AsChangeset is not used or preferred
+                    .set(&updated_db_entry_struct)
                     .returning(LorebookEntry::as_returning())
                     .get_result::<LorebookEntry>(conn_sync)
             })
@@ -1104,25 +1114,99 @@ impl LorebookService {
             .map_err(|e| AppError::InternalServerErrorGeneric(format!("DB interaction failed while updating entry: {}", e)))?
             .map_err(|e| AppError::DatabaseQueryError(format!("Failed to update entry: {}", e)))?;
 
-        // Construct response (with placeholder decryption)
+        // 5. Decrypt fields from the updated_db_entry for embedding and response
+        let decrypted_title_for_response_and_embed = String::from_utf8_lossy(
+            &self.encryption_service.decrypt(&updated_db_entry.entry_title_ciphertext, &updated_db_entry.entry_title_nonce, user_dek_bytes).await?
+        ).into_owned();
+
+        let decrypted_keys_text_for_response_and_embed = {
+            if !updated_db_entry.keys_text_nonce.is_empty() {
+                 Some(String::from_utf8_lossy(
+                    &self.encryption_service.decrypt(&updated_db_entry.keys_text_ciphertext, &updated_db_entry.keys_text_nonce, user_dek_bytes).await?
+                ).into_owned())
+            } else {
+                None
+            }
+        };
+        
+        let decrypted_content_for_response_and_embed = String::from_utf8_lossy(
+            &self.encryption_service.decrypt(&updated_db_entry.content_ciphertext, &updated_db_entry.content_nonce, user_dek_bytes).await?
+        ).into_owned();
+
+        let decrypted_comment_for_response = match (&updated_db_entry.comment_ciphertext, &updated_db_entry.comment_nonce) {
+            (Some(cipher), Some(nonce)) => {
+                Some(String::from_utf8_lossy(&self.encryption_service.decrypt(cipher, nonce, user_dek_bytes).await?).into_owned())
+            }
+            _ => None,
+        };
+
+        // 6. Trigger re-embedding
+        let state_clone = state.clone();
+        let embedding_pipeline_service = state_clone.embedding_pipeline_service.clone();
+        let original_lorebook_entry_id_for_embedding = updated_db_entry.id;
+        let lorebook_id_for_embedding = updated_db_entry.lorebook_id;
+        // user_id_for_embedding is already defined
+        let content_for_embedding = decrypted_content_for_response_and_embed.clone();
+        let title_for_embedding = Some(decrypted_title_for_response_and_embed.clone());
+        let keywords_for_embedding = decrypted_keys_text_for_response_and_embed.as_ref().and_then(|keys_str| {
+            if keys_str.trim().is_empty() {
+                None
+            } else {
+                let keywords: Vec<String> = keys_str
+                    .split(',')
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                    .collect();
+                if keywords.is_empty() { None } else { Some(keywords) }
+            }
+        });
+        let is_enabled_for_embedding = updated_db_entry.is_enabled;
+        let is_constant_for_embedding = updated_db_entry.is_constant;
+
+        tokio::spawn(async move {
+            info!(
+                "Spawning task to re-process and embed updated lorebook entry: {}",
+                original_lorebook_entry_id_for_embedding
+            );
+            if let Err(e) = embedding_pipeline_service
+                .process_and_embed_lorebook_entry(
+                    state_clone,
+                    original_lorebook_entry_id_for_embedding,
+                    lorebook_id_for_embedding,
+                    user_id_for_embedding,
+                    content_for_embedding,
+                    title_for_embedding,
+                    keywords_for_embedding,
+                    is_enabled_for_embedding,
+                    is_constant_for_embedding,
+                )
+                .await
+            {
+                error!(
+                    "Failed to re-process and embed updated lorebook entry {} in background: {:?}",
+                    original_lorebook_entry_id_for_embedding, e
+                );
+            } else {
+                info!(
+                    "Successfully queued updated lorebook entry {} for re-embedding.",
+                    original_lorebook_entry_id_for_embedding
+                );
+            }
+        });
+
+        // 7. Construct and return response
         Ok(LorebookEntryResponse {
             id: updated_db_entry.id,
             lorebook_id: updated_db_entry.lorebook_id,
             user_id: updated_db_entry.user_id,
-            entry_title: String::from_utf8_lossy(&updated_db_entry.entry_title_ciphertext).into_owned(), // Placeholder decryption
-            keys_text: if updated_db_entry.keys_text_ciphertext.is_empty() {
-                None // Represent empty encrypted keys_text as None in the response
-            } else {
-                // Placeholder decryption
-                // TODO: Use actual encryption_service.decrypt()
-                Some(String::from_utf8_lossy(&updated_db_entry.keys_text_ciphertext).into_owned())
-            },
-            content: String::from_utf8_lossy(&updated_db_entry.content_ciphertext).into_owned(), // Placeholder
-            comment: updated_db_entry.comment_ciphertext.map(|v| String::from_utf8_lossy(&v).into_owned()), // Placeholder
+            entry_title: decrypted_title_for_response_and_embed,
+            keys_text: decrypted_keys_text_for_response_and_embed,
+            content: decrypted_content_for_response_and_embed,
+            comment: decrypted_comment_for_response,
             is_enabled: updated_db_entry.is_enabled,
             is_constant: updated_db_entry.is_constant,
             insertion_order: updated_db_entry.insertion_order,
-            placement_hint: updated_db_entry.placement_hint.unwrap_or_else(|| "system_default".to_string()), // Provide default
+            placement_hint: updated_db_entry.placement_hint.unwrap_or_else(|| "system_default".to_string()),
             created_at: updated_db_entry.created_at,
             updated_at: updated_db_entry.updated_at,
         })
@@ -1198,6 +1282,8 @@ impl LorebookService {
         auth_session: &AuthSession<AuthBackend>,
         chat_session_id: Uuid,
         payload: AssociateLorebookToChatPayload,
+        user_dek: Option<&SecretBox<Vec<u8>>>, // Added for entry decryption
+        state: Arc<AppState>,                 // Added for embedding pipeline
     ) -> Result<ChatSessionLorebookAssociationResponse, AppError> {
         debug!(?payload, lorebook_id = %payload.lorebook_id, "Attempting to associate lorebook to chat session {}", chat_session_id);
         let user = self.get_user_from_session(auth_session)?;
@@ -1293,6 +1379,151 @@ impl LorebookService {
             "Successfully associated lorebook {} with chat session {} for user {}",
             lorebook_id_to_associate, chat_session_id, current_user_id
         );
+
+        // After successful association, attempt to embed all enabled entries from the lorebook.
+        // This is a best-effort operation; failures here should not fail the association.
+        let user_dek_bytes_for_embedding = match user_dek {
+            Some(dek) => dek.expose_secret().clone(),
+            None => {
+                error!(
+                    "User DEK not available for embedding entries during lorebook {} association to chat {} for user {}. Skipping embedding.",
+                    lorebook_id_to_associate, chat_session_id, current_user_id
+                );
+                // Return success for association, as embedding is secondary.
+                return Ok(ChatSessionLorebookAssociationResponse {
+                    chat_session_id,
+                    lorebook_id: lorebook_id_to_associate,
+                    user_id: current_user_id,
+                    lorebook_name,
+                    created_at: association_creation_time,
+                });
+            }
+        };
+
+        let entries_to_embed_result = conn
+            .interact({
+                let lorebook_id_for_fetch = lorebook_id_to_associate;
+                let user_id_for_fetch = current_user_id;
+                move |conn_sync| {
+                    lorebook_entries::table
+                        .filter(lorebook_entries::lorebook_id.eq(lorebook_id_for_fetch))
+                        .filter(lorebook_entries::user_id.eq(user_id_for_fetch))
+                        .select(LorebookEntry::as_select())
+                        .load::<LorebookEntry>(conn_sync)
+                }
+            })
+            .await;
+
+        match entries_to_embed_result {
+            Ok(Ok(entries)) => {
+                if entries.is_empty() {
+                    info!("No entries found in lorebook {} to embed during association with chat {}.", lorebook_id_to_associate, chat_session_id);
+                } else {
+                    info!("Found {} entries in lorebook {} to potentially embed during association with chat {}.", entries.len(), lorebook_id_to_associate, chat_session_id);
+                }
+                for entry in entries {
+                    if entry.is_enabled {
+                        debug!("Processing entry {} for embedding.", entry.id);
+                        let encryption_service = self.encryption_service.clone();
+                        let user_dek_bytes_entry_clone = user_dek_bytes_for_embedding.clone(); // Clone for this entry's decryption
+
+                        let decrypted_title_result = encryption_service
+                            .decrypt(&entry.entry_title_ciphertext, &entry.entry_title_nonce, &user_dek_bytes_entry_clone)
+                            .await;
+                        let decrypted_content_result = encryption_service
+                            .decrypt(&entry.content_ciphertext, &entry.content_nonce, &user_dek_bytes_entry_clone)
+                            .await;
+                        let decrypted_keys_text_result = if !entry.keys_text_nonce.is_empty() {
+                             encryption_service
+                                .decrypt(&entry.keys_text_ciphertext, &entry.keys_text_nonce, &user_dek_bytes_entry_clone)
+                                .await
+                                .map(Some) // Wrap in Some if decryption is successful
+                        } else {
+                            Ok(None) // No keys text to decrypt
+                        };
+
+
+                        match (decrypted_title_result, decrypted_content_result, decrypted_keys_text_result) {
+                            (Ok(title_bytes), Ok(content_bytes), Ok(keys_bytes_opt)) => {
+                                let decrypted_title_for_embedding = String::from_utf8_lossy(&title_bytes).into_owned();
+                                let decrypted_content_for_embedding = String::from_utf8_lossy(&content_bytes).into_owned();
+                                
+                                let decrypted_keys_text_str_opt = keys_bytes_opt.map(|bytes| String::from_utf8_lossy(&bytes).into_owned());
+
+                                let decrypted_keywords_for_embedding = decrypted_keys_text_str_opt.as_ref().and_then(|keys_str| {
+                                    if keys_str.trim().is_empty() {
+                                        None
+                                    } else {
+                                        let keywords: Vec<String> = keys_str
+                                            .split(',')
+                                            .map(|s| s.trim().to_string())
+                                            .filter(|s| !s.is_empty())
+                                            .collect();
+                                        if keywords.is_empty() { None } else { Some(keywords) }
+                                    }
+                                });
+
+                                let state_clone_for_task = state.clone();
+                                let embedding_pipeline_service_clone = state_clone_for_task.embedding_pipeline_service.clone();
+                                let entry_id_for_embedding = entry.id;
+                                let lorebook_id_for_embedding_task = lorebook_id_to_associate;
+                                let user_id_for_embedding_task = current_user_id;
+                                let is_enabled_for_embedding_task = entry.is_enabled; // Should be true here
+                                let is_constant_for_embedding_task = entry.is_constant;
+
+                                tokio::spawn(async move {
+                                    info!(
+                                        "Spawning task to process and embed lorebook entry {} from lorebook {} during chat association.",
+                                        entry_id_for_embedding, lorebook_id_for_embedding_task
+                                    );
+                                    if let Err(e) = embedding_pipeline_service_clone
+                                        .process_and_embed_lorebook_entry(
+                                            state_clone_for_task,
+                                            entry_id_for_embedding,
+                                            lorebook_id_for_embedding_task,
+                                            user_id_for_embedding_task,
+                                            decrypted_content_for_embedding,
+                                            Some(decrypted_title_for_embedding),
+                                            decrypted_keywords_for_embedding,
+                                            is_enabled_for_embedding_task,
+                                            is_constant_for_embedding_task,
+                                        )
+                                        .await
+                                    {
+                                        error!(
+                                            "Failed to process and embed lorebook entry {} in background during association: {:?}",
+                                            entry_id_for_embedding, e
+                                        );
+                                    } else {
+                                        info!(
+                                            "Successfully queued lorebook entry {} for embedding during association.",
+                                            entry_id_for_embedding
+                                        );
+                                    }
+                                });
+                            }
+                            (Err(e), _, _) => error!("Failed to decrypt title for entry {}: {:?}. Skipping embedding.", entry.id, e),
+                            (_, Err(e), _) => error!("Failed to decrypt content for entry {}: {:?}. Skipping embedding.", entry.id, e),
+                            (_, _, Err(e)) => error!("Failed to decrypt keys_text for entry {}: {:?}. Skipping embedding.", entry.id, e),
+                        }
+                    } else {
+                        debug!("Skipping disabled entry {} during bulk embedding for lorebook {}.", entry.id, lorebook_id_to_associate);
+                    }
+                }
+            }
+            Ok(Err(db_err)) => {
+                error!(
+                    "Failed to query entries for lorebook {} during association with chat {}: {}. Skipping embedding of entries.",
+                    lorebook_id_to_associate, chat_session_id, db_err
+                );
+            }
+            Err(interact_err) => {
+                error!(
+                    "DB interaction failed while fetching entries for lorebook {} during association with chat {}: {}. Skipping embedding of entries.",
+                    lorebook_id_to_associate, chat_session_id, interact_err
+                );
+            }
+        }
 
         Ok(ChatSessionLorebookAssociationResponse {
             chat_session_id,
@@ -1462,11 +1693,12 @@ impl LorebookService {
           Ok(())
       }
 
-    #[instrument(skip(self, auth_session), fields(user_id = ?auth_session.user.as_ref().map(|u| u.id), lorebook_id = %lorebook_id_param))]
+    #[instrument(skip(self, auth_session, user_dek), fields(user_id = ?auth_session.user.as_ref().map(|u| u.id), lorebook_id = %lorebook_id_param))]
     pub async fn list_associated_chat_sessions_for_lorebook(
         &self,
         auth_session: &AuthSession<AuthBackend>,
         lorebook_id_param: Uuid,
+        user_dek: Option<&SecretBox<Vec<u8>>>,
     ) -> Result<Vec<ChatSessionBasicInfo>, AppError> {
         debug!(lorebook_id = %lorebook_id_param, "Attempting to list chat sessions associated with lorebook");
         let user = self.get_user_from_session(auth_session)?;
@@ -1514,8 +1746,9 @@ impl LorebookService {
                     .select((
                         cs_dsl::id, // chat_session_id
                         cs_dsl::title_ciphertext, // chat_session title (encrypted)
+                        cs_dsl::title_nonce, // chat_session title nonce
                     ))
-                    .load::<(Uuid, Option<Vec<u8>>)>(conn_sync)
+                    .load::<(Uuid, Option<Vec<u8>>, Option<Vec<u8>>)>(conn_sync)
             })
             .await
             .map_err(|e| {
@@ -1527,18 +1760,39 @@ impl LorebookService {
                 AppError::DatabaseQueryError(db_err.to_string())
             })?;
 
-        let response_data = associated_chats
-            .into_iter()
-            .map(|(chat_id, _encrypted_title)| ChatSessionBasicInfo {
+        let dek_bytes = user_dek.ok_or_else(|| {
+            error!("User DEK not provided for decrypting chat session titles.");
+            AppError::EncryptionError("User DEK not available for title decryption.".to_string())
+        })?.expose_secret();
+
+        let mut response_data = Vec::new();
+        for (chat_id, encrypted_title_opt, nonce_opt) in associated_chats {
+            let title = match (encrypted_title_opt, nonce_opt) {
+                (Some(ciphertext), Some(nonce)) => {
+                    if ciphertext.is_empty() && nonce.is_empty() { // Convention for NULL in DB post-encryption
+                        None
+                    } else {
+                        match self.encryption_service.decrypt(&ciphertext, &nonce, dek_bytes).await {
+                            Ok(decrypted_bytes) => String::from_utf8(decrypted_bytes).ok(),
+                            Err(e) => {
+                                error!("Failed to decrypt title for chat session {}: {:?}", chat_id, e);
+                                Some("[Decryption Error]".to_string())
+                            }
+                        }
+                    }
+                }
+                _ => None, // If either ciphertext or nonce is missing
+            };
+            response_data.push(ChatSessionBasicInfo {
                 chat_session_id: chat_id,
-                title: Some("[Encrypted]".to_string()), // Placeholder since we don't have DEK in this context
-            })
-            .collect();
+                title,
+            });
+        }
 
         Ok(response_data)
     }
-  
-      // Helper to get user or return error
+
+    // Helper to get user or return error
     // #[allow(dead_code)] // Will be used once methods are implemented
     fn get_user_from_session(&self, auth_session: &AuthSession<AuthBackend>) -> Result<User, AppError> { // Changed to AuthBackend
         auth_session

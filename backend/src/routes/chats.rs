@@ -227,35 +227,30 @@ pub async fn create_chat_handler(
         let session_id = chat.id;
         let custom_title = payload.title.clone();
         
-        // Encrypt the title
-        if let Some(ref dek_wrapped) = user.dek {
-            let dek = &dek_wrapped.0;
-            match crypto::encrypt_gcm(custom_title.as_bytes(), dek) {
-                Ok((ciphertext, nonce)) => {
-                    // Update with encrypted title
-                    pool.get()
-                        .await
-                        .map_err(|e| AppError::DbPoolError(e.to_string()))?
-                        .interact(move |conn| {
-                            diesel::update(chat_sessions::table.find(session_id))
-                                .set((
-                                    chat_sessions::title_ciphertext.eq(Some(ciphertext)),
-                                    chat_sessions::title_nonce.eq(Some(nonce)),
-                                ))
-                                .execute(conn)
-                                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
-                        })
-                        .await
-                        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
-                },
-                Err(e) => {
-                    error!(error = ?e, "Failed to encrypt chat title");
-                    return Err(AppError::EncryptionError("Failed to encrypt title".to_string()));
-                }
+        // Encrypt the title using the DEK from the SessionDek extractor
+        let dek_for_title_encryption = &dek.0; // dek is SessionDek, dek.0 is SecretBox<Vec<u8>>
+        match crypto::encrypt_gcm(custom_title.as_bytes(), dek_for_title_encryption) {
+            Ok((ciphertext, nonce)) => {
+                // Update with encrypted title
+                pool.get()
+                    .await
+                    .map_err(|e| AppError::DbPoolError(e.to_string()))?
+                    .interact(move |conn| {
+                        diesel::update(chat_sessions::table.find(session_id))
+                            .set((
+                                chat_sessions::title_ciphertext.eq(Some(ciphertext)),
+                                chat_sessions::title_nonce.eq(Some(nonce)),
+                            ))
+                            .execute(conn)
+                            .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
+                    })
+                    .await
+                    .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
+            },
+            Err(e) => {
+                error!(error = ?e, "Failed to encrypt chat title");
+                return Err(AppError::EncryptionError("Failed to encrypt title".to_string()));
             }
-        } else {
-            error!("No DEK available for title encryption");
-            return Err(AppError::EncryptionError("No encryption key available".to_string()));
         }
     }
 
@@ -1030,6 +1025,7 @@ pub async fn get_chat_settings_handler(
 pub async fn update_chat_settings_handler(
     auth_session: CurrentAuthSession,
     State(state): State<AppState>,
+    dek: SessionDek, // Added SessionDek extractor
     Path(id): Path<Uuid>,
     Json(payload): Json<UpdateChatSettingsRequest>, // Use standard Json extractor
 ) -> Result<impl IntoResponse, AppError> {
@@ -1047,6 +1043,7 @@ pub async fn update_chat_settings_handler(
         user_id,
         id,
         payload,
+        Some(&dek.0), // Pass the DEK from SessionDek
     ).await?;
 
     Ok((StatusCode::OK, Json(response)))

@@ -336,6 +336,14 @@ pub trait EmbeddingPipelineServiceTrait: Send + Sync {
         is_constant: bool,
     ) -> Result<(), AppError>;
 
+    /// Deletes all chunks associated with a specific lorebook entry.
+    async fn delete_lorebook_entry_chunks(
+        &self,
+        state: Arc<AppState>,
+        original_lorebook_entry_id: Uuid,
+        user_id: Uuid,
+    ) -> Result<(), AppError>;
+
     /// Retrieves relevant chunks based on a query.
     async fn retrieve_relevant_chunks(
         &self,
@@ -540,6 +548,20 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
         let embedding_client = state.embedding_client.clone();
         let qdrant_service = state.qdrant_service.clone();
 
+        // First, delete existing chunks for this lorebook entry to prevent duplicates or stale data
+        if let Err(e) = self.delete_lorebook_entry_chunks(state.clone(), original_lorebook_entry_id, user_id).await {
+            error!(
+                error = %e,
+                %original_lorebook_entry_id,
+                %user_id,
+                "Failed to delete existing chunks for lorebook entry before re-embedding. Proceeding with embedding anyway."
+            );
+            // Depending on desired behavior, we might choose to return an error here
+            // return Err(AppError::VectorDbError(format!("Failed to delete existing chunks for lorebook entry {}: {}", original_lorebook_entry_id, e)));
+        } else {
+            info!(%original_lorebook_entry_id, %user_id, "Successfully deleted existing chunks for lorebook entry before re-embedding.");
+        }
+
         if decrypted_content.trim().is_empty() {
             warn!(%original_lorebook_entry_id, "Content for lorebook entry embedding is empty. Skipping embedding.");
             return Ok(());
@@ -582,7 +604,7 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
             
             // TODO: Re-evaluate if this sleep is necessary or if batch embedding can be used.
             // For now, keeping it consistent with message embedding.
-            sleep(Duration::from_millis(6100)).await;
+            sleep(Duration::from_millis(100)).await; // Reduced sleep for testing
 
             let metadata = LorebookChunkMetadata {
                 original_lorebook_entry_id,
@@ -816,6 +838,55 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
 
         info!("Retrieved {} relevant chunks in total", combined_results.len());
         Ok(combined_results)
+    }
+
+    #[instrument(skip_all, fields(original_lorebook_entry_id = %original_lorebook_entry_id, user_id = %user_id))]
+    async fn delete_lorebook_entry_chunks(
+        &self,
+        state: Arc<AppState>,
+        original_lorebook_entry_id: Uuid,
+        user_id: Uuid,
+    ) -> Result<(), AppError> {
+        info!("Attempting to delete chunks for lorebook entry");
+        let qdrant_service = state.qdrant_service.clone();
+
+        let filter = Filter {
+            must: vec![
+                Condition {
+                    condition_one_of: Some(ConditionOneOf::Field(FieldCondition {
+                        key: "original_lorebook_entry_id".to_string(),
+                        r#match: Some(Match {
+                            match_value: Some(MatchValue::Keyword(original_lorebook_entry_id.to_string())),
+                        }),
+                        ..Default::default()
+                    })),
+                },
+                Condition {
+                    condition_one_of: Some(ConditionOneOf::Field(FieldCondition {
+                        key: "user_id".to_string(),
+                        r#match: Some(Match {
+                            match_value: Some(MatchValue::Keyword(user_id.to_string())),
+                        }),
+                        ..Default::default()
+                    })),
+                },
+                Condition {
+                    condition_one_of: Some(ConditionOneOf::Field(FieldCondition {
+                        key: "source_type".to_string(),
+                        r#match: Some(Match {
+                            match_value: Some(MatchValue::Keyword("lorebook_entry".to_string())),
+                        }),
+                        ..Default::default()
+                    })),
+                },
+            ],
+            ..Default::default()
+        };
+        debug!(?filter, "Constructed filter for deleting lorebook entry chunks");
+
+        qdrant_service.delete_points_by_filter(filter).await?;
+        info!("Successfully deleted chunks for lorebook entry {} for user {}", original_lorebook_entry_id, user_id);
+        Ok(())
     }
 }
 

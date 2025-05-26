@@ -829,7 +829,7 @@ mod lorebook_entry_tests {
                 assert_eq!(*called_user_id, user_data.id);
                 assert_eq!(*decrypted_content, payload.content);
                 assert_eq!(*decrypted_title, Some(payload.entry_title));
-                assert_eq!(*decrypted_keywords, payload.keys_text.map(|kt| vec![kt])); // Simple conversion for now
+                assert_eq!(*decrypted_keywords, payload.keys_text.map(|kt| kt.split(',').map(|s| s.trim().to_string()).collect::<Vec<String>>()));
                 assert_eq!(*is_enabled, payload.is_enabled.unwrap_or(true));
                 assert_eq!(*is_constant, payload.is_constant.unwrap_or(false));
             }

@@ -966,15 +966,43 @@ pub async fn get_session_data_for_generation(
             Ok(mut older_chat_chunks) => {
                 info!(%session_id, num_older_chat_chunks_raw = older_chat_chunks.len(), "Retrieved older chat history chunks (raw).");
                 let recent_message_ids: HashSet<Uuid> = managed_recent_history.iter().map(|msg| msg.id).collect();
+                debug!(target: "rag_debug", %session_id, num_recent_ids = recent_message_ids.len(), ?recent_message_ids, "Recent message IDs for RAG filtering determined.");
+
+                debug!(target: "rag_debug", %session_id, num_raw_older_chunks = older_chat_chunks.len(), "Raw older chat RAG chunks before filtering:");
+                for (i, chunk) in older_chat_chunks.iter().enumerate() {
+                    if let crate::services::embedding_pipeline::RetrievedMetadata::Chat(chat_meta) = &chunk.metadata {
+                        debug!(target: "rag_debug", %session_id, chunk_idx = i, message_id = %chat_meta.message_id, score = chunk.score, text_preview = %chunk.text.chars().take(100).collect::<String>(), "  Raw older chat RAG chunk");
+                    } else {
+                        debug!(target: "rag_debug", %session_id, chunk_idx = i, score = chunk.score, text_preview = %chunk.text.chars().take(100).collect::<String>(), metadata_type = ?chunk.metadata, "  Raw older RAG chunk (non-chat metadata)");
+                    }
+                }
+
+                let initial_older_chunk_count = older_chat_chunks.len();
                 older_chat_chunks.retain(|chunk| {
                     match &chunk.metadata {
                         crate::services::embedding_pipeline::RetrievedMetadata::Chat(chat_meta) => {
-                            !recent_message_ids.contains(&chat_meta.message_id)
+                            let is_recent = recent_message_ids.contains(&chat_meta.message_id);
+                            if is_recent {
+                                debug!(target: "rag_debug", %session_id, message_id = %chat_meta.message_id, score = chunk.score, "Filtering older RAG chat chunk (ID: {}) because it IS IN recent_message_ids.", chat_meta.message_id);
+                            } else {
+                                trace!(target: "rag_debug", %session_id, message_id = %chat_meta.message_id, score = chunk.score, "Keeping older RAG chat chunk (ID: {}) because it IS NOT IN recent_message_ids.", chat_meta.message_id);
+                            }
+                            !is_recent // Keep if NOT recent
                         }
-                        _ => true, // Should ideally not happen if source_type filter works in retrieve_relevant_chunks
+                        crate::services::embedding_pipeline::RetrievedMetadata::Lorebook(lore_meta) => {
+                            // This case should ideally not be hit if retrieve_relevant_chunks was called with Some(session_id) and None for lorebook_ids
+                            warn!(target: "rag_debug", %session_id, lorebook_id = %lore_meta.lorebook_id, entry_id = %lore_meta.original_lorebook_entry_id, "Encountered unexpected Lorebook metadata when filtering older CHAT HISTORY RAG chunks. Keeping it by default.");
+                            true
+                        }
+                        // Consider adding other specific metadata types if they exist and need special handling
+                        // _ => {
+                        //     warn!(target: "rag_debug", %session_id, metadata = ?chunk.metadata, "Encountered unknown metadata type when filtering older CHAT HISTORY RAG chunks. Keeping it by default.");
+                        //     true
+                        // }
                     }
                 });
-                info!(%session_id, num_older_chat_chunks_filtered = older_chat_chunks.len(), "Filtered older chat history chunks.");
+                debug!(target: "rag_debug", %session_id, %initial_older_chunk_count, final_older_chunk_count = older_chat_chunks.len(), "Older chat RAG chunks filtering complete.");
+                info!(%session_id, num_older_chat_chunks_filtered = older_chat_chunks.len(), "Filtered older chat history chunks."); // Existing log, good for summary
                 combined_rag_candidates.extend(older_chat_chunks);
             }
             Err(e) => {
@@ -1273,10 +1301,18 @@ pub async fn update_session_settings(
     user_id: Uuid,
     session_id: Uuid,
     payload: UpdateChatSettingsRequest,
+    user_dek: Option<&SecretBox<Vec<u8>>>, // Added user_dek
 ) -> Result<ChatSettingsResponse, AppError> {
     let conn = pool.get().await?;
-    conn.interact(move |conn| {
-        conn.transaction(|transaction_conn| {
+
+    // Clone the DEK for use inside the 'move' closure if it's Some.
+    // We need an owned SecretBox for the closure if we are to use it.
+    let user_dek_owned_opt: Option<SecretBox<Vec<u8>>> =
+        user_dek.map(|dek_ref| SecretBox::new(Box::new(dek_ref.expose_secret().clone())));
+
+    conn.interact(move |conn_interaction| {
+        conn_interaction.transaction(|transaction_conn| {
+            // 1. Verify ownership
             let owner_id_result = chat_sessions::table
                 .filter(chat_sessions::id.eq(session_id))
                 .select(chat_sessions::user_id)
@@ -1290,108 +1326,150 @@ pub async fn update_session_settings(
                             "User {} attempted to update settings for session {} owned by {}",
                             user_id, session_id, owner_id
                         );
-                        return Err(AppError::Forbidden); // Keep as unit variant
+                        return Err(AppError::Forbidden);
                     }
 
-                    // Update logic temporarily disabled - just fetch current settings
+                    // 2. Perform the update using AsChangeset
+                    #[derive(AsChangeset, Default, Debug)]
+                    #[diesel(table_name = chat_sessions)]
+                    struct ChatSessionUpdateChangeset {
+                        system_prompt_ciphertext: Option<Option<Vec<u8>>>,
+                        system_prompt_nonce: Option<Option<Vec<u8>>>,
+                        temperature: Option<BigDecimal>,
+                        max_output_tokens: Option<i32>,
+                        frequency_penalty: Option<BigDecimal>,
+                        presence_penalty: Option<BigDecimal>,
+                        top_k: Option<i32>,
+                        top_p: Option<BigDecimal>,
+                        repetition_penalty: Option<BigDecimal>,
+                        min_p: Option<BigDecimal>,
+                        top_a: Option<BigDecimal>,
+                        seed: Option<i32>,
+                        logit_bias: Option<Value>,
+                        history_management_strategy: Option<String>,
+                        history_management_limit: Option<i32>,
+                        model_name: Option<String>,
+                        gemini_thinking_budget: Option<i32>,
+                        gemini_enable_code_execution: Option<bool>,
+                        updated_at: Option<chrono::DateTime<chrono::Utc>>,
+                    }
 
-                    // TODO: Implement manual field updates with encryption for system_prompt
-                    // For now, only update non-encrypted fields that are provided
-                    let mut update_set = Vec::new();
-                    
+                    let mut changeset = ChatSessionUpdateChangeset::default();
+                    let mut changes_made = false;
+
+                    // Handle system_prompt update
+                    if let Some(new_prompt_str) = payload.system_prompt {
+                        changes_made = true;
+                        let trimmed_prompt = new_prompt_str.trim();
+                        if trimmed_prompt.is_empty() {
+                            changeset.system_prompt_ciphertext = Some(None);
+                            changeset.system_prompt_nonce = Some(None);
+                        } else {
+                            match &user_dek_owned_opt {
+                                Some(dek) => {
+                                    let (ciphertext, nonce) =
+                                        crypto::encrypt_gcm(trimmed_prompt.as_bytes(), dek)
+                                            .map_err(|e| {
+                                                error!("Failed to encrypt system prompt: {}", e);
+                                                AppError::EncryptionError(
+                                                    "Failed to encrypt system prompt".to_string(),
+                                                )
+                                            })?;
+                                    changeset.system_prompt_ciphertext = Some(Some(ciphertext));
+                                    changeset.system_prompt_nonce = Some(Some(nonce));
+                                }
+                                None => {
+                                    error!("User DEK not provided, cannot encrypt system prompt for update.");
+                                    return Err(AppError::BadRequest(
+                                        "User DEK is required to update system prompt.".to_string(),
+                                    ));
+                                }
+                            }
+                        }
+                    }
+
+                    // Handle other optional fields
                     if let Some(temp) = payload.temperature {
-                        update_set.push(format!("temperature = {}", temp));
+                        changes_made = true;
+                        changeset.temperature = Some(temp);
                     }
                     if let Some(max_tokens) = payload.max_output_tokens {
-                        update_set.push(format!("max_output_tokens = {}", max_tokens));
+                        changes_made = true;
+                        changeset.max_output_tokens = Some(max_tokens);
+                    }
+                    if let Some(freq_pen) = payload.frequency_penalty {
+                        changes_made = true;
+                        changeset.frequency_penalty = Some(freq_pen);
+                    }
+                    if let Some(pres_pen) = payload.presence_penalty {
+                        changes_made = true;
+                        changeset.presence_penalty = Some(pres_pen);
+                    }
+                    if let Some(tk) = payload.top_k {
+                        changes_made = true;
+                        changeset.top_k = Some(tk);
+                    }
+                    if let Some(tp) = payload.top_p {
+                        changes_made = true;
+                        changeset.top_p = Some(tp);
+                    }
+                    if let Some(rep_pen) = payload.repetition_penalty {
+                        changes_made = true;
+                        changeset.repetition_penalty = Some(rep_pen);
+                    }
+                    if let Some(m_p) = payload.min_p {
+                        changes_made = true;
+                        changeset.min_p = Some(m_p);
+                    }
+                    if let Some(t_a) = payload.top_a {
+                        changes_made = true;
+                        changeset.top_a = Some(t_a);
+                    }
+                    if let Some(s) = payload.seed {
+                        changes_made = true;
+                        changeset.seed = Some(s);
+                    }
+                    if let Some(lb) = payload.logit_bias {
+                        changes_made = true;
+                        changeset.logit_bias = Some(lb);
+                    }
+                    if let Some(hist_strat) = payload.history_management_strategy {
+                        changes_made = true;
+                        changeset.history_management_strategy = Some(hist_strat);
+                    }
+                    if let Some(hist_limit) = payload.history_management_limit {
+                        changes_made = true;
+                        changeset.history_management_limit = Some(hist_limit);
                     }
                     if let Some(model) = payload.model_name {
-                        update_set.push(format!("model_name = '{}'", model));
+                        changes_made = true;
+                        changeset.model_name = Some(model);
+                    }
+                    if let Some(gem_budget) = payload.gemini_thinking_budget {
+                        changes_made = true;
+                        changeset.gemini_thinking_budget = Some(gem_budget);
+                    }
+                    if let Some(gem_exec) = payload.gemini_enable_code_execution {
+                        changes_made = true;
+                        changeset.gemini_enable_code_execution = Some(gem_exec);
+                    }
+
+                    if changes_made {
+                        changeset.updated_at = Some(chrono::Utc::now());
+                        diesel::update(chat_sessions::table.filter(chat_sessions::id.eq(session_id)))
+                            .set(&changeset)
+                            .execute(transaction_conn)
+                            .map_err(|e| {
+                                error!("Failed to update chat session settings: {}", e);
+                                AppError::DatabaseQueryError(e.to_string())
+                            })?;
+                        info!(%session_id, "Chat session settings updated successfully in DB.");
+                    } else {
+                        info!(%session_id, "No changes provided to update chat session settings.");
                     }
                     
-                    // Skip system_prompt updates for now due to encryption complexity
-                    // Just return current settings
-                    let updated_settings_tuple: SettingsTuple = chat_sessions::table
-                        .filter(chat_sessions::id.eq(session_id))
-                        .select((
-                            chat_sessions::system_prompt_ciphertext,
-                            chat_sessions::system_prompt_nonce,
-                            chat_sessions::temperature,
-                            chat_sessions::max_output_tokens,
-                            chat_sessions::frequency_penalty,
-                            chat_sessions::presence_penalty,
-                            chat_sessions::top_k,
-                            chat_sessions::top_p,
-                            chat_sessions::repetition_penalty,
-                            chat_sessions::min_p,
-                            chat_sessions::top_a,
-                            chat_sessions::seed,
-                            chat_sessions::logit_bias,
-                            chat_sessions::history_management_strategy,
-                            chat_sessions::history_management_limit,
-                            chat_sessions::model_name,
-                            chat_sessions::gemini_thinking_budget,
-                            chat_sessions::gemini_enable_code_execution,
-                        ))
-                        .first(transaction_conn)
-                        .map_err(|e| {
-                            error!(error = ?e, "Failed to fetch current settings");
-                            AppError::DatabaseQueryError(e.to_string())
-                        })?;
-
-            info!(%session_id, "Chat session settings updated successfully");
-
-            let (
-                system_prompt_ciphertext,
-                system_prompt_nonce,
-                temperature,
-                max_output_tokens,
-                frequency_penalty,
-                presence_penalty,
-                top_k,
-                top_p,
-                repetition_penalty,
-                min_p,
-                top_a,
-                seed,
-                logit_bias,
-                history_management_strategy,
-                history_management_limit,
-                model_name,
-                // -- Gemini Specific Options --
-                gemini_thinking_budget,
-                gemini_enable_code_execution,
-            ) = updated_settings_tuple;
-            
-            // Decrypt system_prompt if available (for now using placeholder)
-            let decrypted_system_prompt = match (
-                system_prompt_ciphertext.as_ref(),
-                system_prompt_nonce.as_ref()
-            ) {
-                (Some(_), Some(_)) => Some("[Encrypted]".to_string()), // Placeholder - need DEK for decryption
-                _ => None,
-            };
-            
-            Ok(ChatSettingsResponse {
-                system_prompt: decrypted_system_prompt,
-                temperature,
-                max_output_tokens,
-                frequency_penalty,
-                presence_penalty,
-                top_k,
-                top_p,
-                repetition_penalty,
-                min_p,
-                top_a,
-                seed,
-                logit_bias,
-                history_management_strategy,
-                history_management_limit,
-                model_name,
-                // -- Gemini Specific Options --
-                gemini_thinking_budget,
-                gemini_enable_code_execution,
-            })
+                    // Return Ok(()) from the transaction closure. The actual response will be fetched outside.
+                    Ok(())
                 }
                 None => {
                     error!("Chat session {} not found for update", session_id);
@@ -1400,7 +1478,12 @@ pub async fn update_session_settings(
             }
         })
     })
-    .await?
+    .await??; // First '?' for InteractError, second for AppError from transaction
+
+    // 3. Fetch and return the updated settings using get_session_settings
+    // This ensures the response reflects the changes and system_prompt is correctly decrypted.
+    // Note: get_session_settings expects Option<&SecretBox>, so we use the original user_dek.
+    get_session_settings(pool, user_id, session_id, user_dek).await
 }
 
 #[instrument(skip_all, err, fields(session_id = %session_id, user_id = %user_id, model_name = %model_name))]

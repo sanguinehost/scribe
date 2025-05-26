@@ -95,12 +95,14 @@ struct GeminiApiError {
 }
 
 // --- Client Implementation (To be added below) ---
-const DEFAULT_EMBEDDING_MODEL: &str = "models/gemini-embedding-exp-03-07"; // Use the latest experimental model as per docs
-const FALLBACK_EMBEDDING_MODEL: &str = "models/text-embedding-004"; // Fallback model with higher rate limits
-const MAX_RETRIES: u32 = 5;
-const INITIAL_BACKOFF_MS: u64 = 1000; // 1 second
-const MAX_BACKOFF_MS: u64 = 30_000; // 30 seconds
-const JITTER_FACTOR: f64 = 0.1; // 10% jitter
+const DEFAULT_EMBEDDING_MODEL: &str = "models/text-embedding-004"; // Use this as the sole model
+// const DEFAULT_EMBEDDING_MODEL: &str = "models/text-embedding-004"; // Fallback model with higher rate limits - REMOVED
+const MAX_RETRIES: u32 = 5; // Max retries for the single model
+// const MAX_PRIMARY_MODEL_RETRIES_BEFORE_FALLBACK: u32 = 1; // REMOVED
+// const MAX_FALLBACK_MODEL_RETRIES: u32 = 5; // REMOVED
+const INITIAL_BACKOFF_MS: u64 = 5000; // 5 seconds
+const MAX_BACKOFF_MS: u64 = 60_000; // 60 seconds
+const JITTER_FACTOR: f64 = 0.25; // 25% jitter
 
 #[derive(Clone)] // Add Clone
 pub struct RestGeminiEmbeddingClient {
@@ -110,14 +112,13 @@ pub struct RestGeminiEmbeddingClient {
 }
 
 impl RestGeminiEmbeddingClient {
-    /// Create a new client with the fallback model
-    fn with_fallback_model(&self) -> Self {
-        Self {
-            reqwest_client: self.reqwest_client.clone(),
-            config: self.config.clone(),
-            model_name: FALLBACK_EMBEDDING_MODEL.to_string(),
-        }
-    }
+    // fn with_fallback_model(&self) -> Self { // REMOVED - No longer using fallback model logic
+    //     Self {
+    //         reqwest_client: self.reqwest_client.clone(),
+    //         config: self.config.clone(),
+    //         model_name: DEFAULT_EMBEDDING_MODEL.to_string(),
+    //     }
+    // }
 }
 
 // --- Trait Implementation (To be added below) ---
@@ -185,51 +186,36 @@ impl EmbeddingClient for RestGeminiEmbeddingClient {
                         return Ok(embedding_response.embedding.values);
                     } else if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
                         let error_body_text = response.text().await.unwrap_or_else(|e| format!("Failed to read error body: {}", e));
+                        
                         warn!(
                             status = %status,
                             attempt = retries + 1,
                             max_retries = MAX_RETRIES,
+                            current_model = %self.model_name,
                             error_body = %error_body_text,
                             "Gemini Embedding API returned 429 (Too Many Requests). Retrying..."
                         );
 
                         if retries >= MAX_RETRIES {
-                            // Check if we're already using the fallback model
-                            if self.model_name == FALLBACK_EMBEDDING_MODEL {
-                                error!(
-                                    status = %status,
-                                    attempts = retries + 1,
-                                    model = %self.model_name,
-                                    "Fallback embedding API still returning 429 after {} retries. Giving up.",
-                                    MAX_RETRIES
-                                );
-                                // Try to parse the final error body for a better message
-                                let parsed_error: Result<GeminiApiErrorResponse, _> = serde_json::from_str(&error_body_text);
-                                let error_message = parsed_error
-                                    .map(|b| b.error.message)
-                                    .unwrap_or_else(|_| error_body_text);
-
-                                return Err(AppError::GeminiError(format!(
-                                    "Gemini API error ({}): {} after {} retries with fallback model",
-                                    status, error_message, MAX_RETRIES
-                                )));
-                            } else {
-                                // Try with fallback model
-                                warn!(
-                                    status = %status,
-                                    attempts = retries + 1,
-                                    original_model = %self.model_name,
-                                    fallback_model = %FALLBACK_EMBEDDING_MODEL,
-                                    "Gemini Embedding API returning 429 after {} retries. Attempting with fallback model.",
-                                    MAX_RETRIES
-                                );
-                                
-                                let fallback_client = self.with_fallback_model();
-                                return fallback_client.embed_content(text, task_type, _title).await;
-                            }
+                            error!(
+                                status = %status,
+                                attempts = retries + 1,
+                                model = %self.model_name,
+                                "Embedding API still returning 429 after {} retries. Giving up.",
+                                MAX_RETRIES
+                            );
+                            let parsed_error: Result<GeminiApiErrorResponse, _> = serde_json::from_str(&error_body_text);
+                            let error_message = parsed_error
+                                .map(|b| b.error.message)
+                                .unwrap_or_else(|_| error_body_text);
+                            return Err(AppError::GeminiError(format!(
+                                "Gemini API error ({}): {} after {} retries with model {}",
+                                status, error_message, MAX_RETRIES, self.model_name
+                            )));
                         }
+                        // Fallback logic removed
 
-                        let jitter = (current_backoff_ms as f64 * JITTER_FACTOR * rand::rng().random_range(-1.0..=1.0)) as i64;
+                        let jitter = (current_backoff_ms as f64 * JITTER_FACTOR * rand::rng().random_range(-1.0..1.0)) as i64; // Use exclusive upper bound for gen_range
                         let sleep_duration_ms = (current_backoff_ms as i64 + jitter).max(0) as u64;
                         
                         debug!("Sleeping for {}ms before next retry (backoff: {}ms, jitter: {}ms)", sleep_duration_ms, current_backoff_ms, jitter);
@@ -337,49 +323,36 @@ impl EmbeddingClient for RestGeminiEmbeddingClient {
                         return Ok(embeddings_data);
                     } else if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
                         let error_body_text = response.text().await.unwrap_or_else(|e| format!("Failed to read error body: {}", e));
+
                         warn!(
                             status = %status,
                             attempt = retries + 1,
                             max_retries = MAX_RETRIES,
+                            current_model = %self.model_name,
                             error_body = %error_body_text,
                             "Gemini Batch Embedding API returned 429 (Too Many Requests). Retrying..."
                         );
 
                         if retries >= MAX_RETRIES {
-                            // Check if we're already using the fallback model
-                            if self.model_name == FALLBACK_EMBEDDING_MODEL {
-                                error!(
-                                    status = %status,
-                                    attempts = retries + 1,
-                                    model = %self.model_name,
-                                    "Fallback batch embedding API still returning 429 after {} retries. Giving up.",
-                                    MAX_RETRIES
-                                );
-                                let parsed_error: Result<GeminiApiErrorResponse, _> = serde_json::from_str(&error_body_text);
-                                let error_message = parsed_error
-                                    .map(|b| b.error.message)
-                                    .unwrap_or_else(|_| error_body_text);
-                                return Err(AppError::GeminiError(format!(
-                                    "Gemini Batch API error ({}): {} after {} retries with fallback model",
-                                    status, error_message, MAX_RETRIES
-                                )));
-                            } else {
-                                // Try with fallback model
-                                warn!(
-                                    status = %status,
-                                    attempts = retries + 1,
-                                    original_model = %self.model_name,
-                                    fallback_model = %FALLBACK_EMBEDDING_MODEL,
-                                    "Gemini Batch Embedding API returning 429 after {} retries. Attempting with fallback model.",
-                                    MAX_RETRIES
-                                );
-                                
-                                let fallback_client = self.with_fallback_model();
-                                return fallback_client.batch_embed_contents(requests).await;
-                            }
+                             error!(
+                                status = %status,
+                                attempts = retries + 1,
+                                model = %self.model_name,
+                                "Batch Embedding API still returning 429 after {} retries. Giving up.",
+                                MAX_RETRIES
+                            );
+                            let parsed_error: Result<GeminiApiErrorResponse, _> = serde_json::from_str(&error_body_text);
+                            let error_message = parsed_error
+                                .map(|b| b.error.message)
+                                .unwrap_or_else(|_| error_body_text);
+                            return Err(AppError::GeminiError(format!(
+                                "Gemini Batch API error ({}): {} after {} retries with model {}",
+                                status, error_message, MAX_RETRIES, self.model_name
+                            )));
                         }
-
-                        let jitter = (current_backoff_ms as f64 * JITTER_FACTOR * rand::rng().random_range(-1.0..=1.0)) as i64;
+                        // Fallback logic removed
+                        
+                        let jitter = (current_backoff_ms as f64 * JITTER_FACTOR * rand::rng().random_range(-1.0..1.0)) as i64; // Use exclusive upper bound for gen_range
                         let sleep_duration_ms = (current_backoff_ms as i64 + jitter).max(0) as u64;
 
                         debug!("Sleeping for {}ms before next batch retry (backoff: {}ms, jitter: {}ms)", sleep_duration_ms, current_backoff_ms, jitter);
@@ -851,9 +824,9 @@ mod tests {
         let client = RestGeminiEmbeddingClient {
             reqwest_client: ReqwestClient::new(),
             config,
-            model_name: FALLBACK_EMBEDDING_MODEL.to_string(),
+            model_name: DEFAULT_EMBEDDING_MODEL.to_string(),
         };
-
+ 
         let text = "Testing the fallback embedding model.";
         let task_type = "RETRIEVAL_DOCUMENT";
 
@@ -943,7 +916,7 @@ mod tests {
         let fallback_client = RestGeminiEmbeddingClient {
             reqwest_client: ReqwestClient::new(),
             config,
-            model_name: FALLBACK_EMBEDDING_MODEL.to_string(),
+            model_name: DEFAULT_EMBEDDING_MODEL.to_string(), // Changed to DEFAULT_EMBEDDING_MODEL
         };
         
         let result = fallback_client.embed_content("Test text", "RETRIEVAL_QUERY", None).await;
@@ -1112,7 +1085,7 @@ mod tests {
         // Mock: Fallback model succeeds
         let fallback_mock = server.mock(|when, then| {
             when.method(POST)
-                .path(format!("/v1beta/{}:embedContent", FALLBACK_EMBEDDING_MODEL))
+                .path(format!("/v1beta/{}:embedContent", DEFAULT_EMBEDDING_MODEL)) // Changed to DEFAULT_EMBEDDING_MODEL
                 .query_param("key", api_key);
             then.status(200)
                 .header("content-type", "application/json")
@@ -1196,7 +1169,7 @@ mod tests {
         
         let fallback_429_mock = server.mock(|when, then| {
             when.method(POST)
-                .path(format!("/v1beta/{}:embedContent", FALLBACK_EMBEDDING_MODEL))
+                .path(format!("/v1beta/{}:embedContent", DEFAULT_EMBEDDING_MODEL)) // Changed to DEFAULT_EMBEDDING_MODEL
                 .query_param("key", api_key);
             then.status(429)
                 .header("content-type", "application/json")
@@ -1214,7 +1187,7 @@ mod tests {
             AppError::GeminiError(msg) => {
                 assert!(msg.contains("429"));
                 assert!(msg.contains("Persistently rate limited"));
-                assert!(msg.contains(&format!("after {} retries with fallback model", MAX_RETRIES))); // Updated for fallback
+                assert!(msg.contains(&format!("after {} retries with model {}", MAX_RETRIES, client.model_name))); // Corrected to use client.model_name
             }
             other_err => panic!("Expected GeminiError, got {:?}", other_err),
         }
@@ -1263,13 +1236,13 @@ mod tests {
                 .query_param("key", api_key);
             then.status(429).json_body(json!({"error": {"message": "Batch persistently rate limited"}}));
         });
-        
         let fallback_batch_429_mock = server.mock(|when, then| {
             when.method(POST)
-                .path(format!("/v1beta/{}:batchEmbedContents", FALLBACK_EMBEDDING_MODEL))
+                .path(format!("/v1beta/{}:batchEmbedContents", DEFAULT_EMBEDDING_MODEL)) // Changed to DEFAULT_EMBEDDING_MODEL
                 .query_param("key", api_key);
             then.status(429).json_body(json!({"error": {"message": "Batch persistently rate limited"}}));
         });
+        
         
         let start_time = Instant::now();
         let result = client.batch_embed_contents(requests).await;
@@ -1280,7 +1253,7 @@ mod tests {
             AppError::GeminiError(msg) => {
                 assert!(msg.contains("429"));
                 assert!(msg.contains("Batch persistently rate limited"));
-                assert!(msg.contains(&format!("after {} retries with fallback model", MAX_RETRIES)));
+                assert!(msg.contains(&format!("after {} retries with model {}", MAX_RETRIES, client.model_name))); // Corrected to use client.model_name
             }
             other_err => panic!("Expected GeminiError, got {:?}", other_err),
         }

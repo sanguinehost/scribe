@@ -120,8 +120,8 @@ fn default_qdrant_collection_name() -> String {
     "scribe_embeddings".to_string()
 }
 fn default_embedding_dimension() -> u64 {
-    3072
-} // Default for gemini-embedding-exp-03-07
+    768
+} // Default for models/text-embedding-004
 fn default_qdrant_distance_metric() -> String {
     "Cosine".to_string()
 } // Added

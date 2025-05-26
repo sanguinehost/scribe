@@ -201,7 +201,7 @@ async fn update_lorebook_entry_handler(
     payload.validate()?;
     let lorebook_service = LorebookService::new(state.pool.clone(), state.encryption_service.clone());
     let entry = lorebook_service
-        .update_lorebook_entry(&auth_session, lorebook_id, entry_id, payload, Some(&dek.0))
+        .update_lorebook_entry(&auth_session, lorebook_id, entry_id, payload, Some(&dek.0), state.clone().into())
         .await?;
     Ok((StatusCode::OK, Json(entry)))
 }
@@ -222,17 +222,18 @@ async fn delete_lorebook_entry_handler(
 
 // --- Chat Session Lorebook Association Handlers ---
 #[debug_handler]
-#[instrument(skip(state, auth_session, payload))]
+#[instrument(skip(state, auth_session, payload, dek))]
 async fn associate_lorebook_to_chat_handler(
     State(state): State<AppState>,
-    auth_session: AuthSession<AuthBackend>, // Changed to AuthBackend
+    auth_session: AuthSession<AuthBackend>,
+    dek: SessionDek, // Add SessionDek extractor
     Path(chat_session_id): Path<Uuid>,
     Json(payload): Json<AssociateLorebookToChatPayload>,
 ) -> Result<impl IntoResponse, AppError> {
     // payload.validate()?; // Validation removed from DTO for this field
     let lorebook_service = LorebookService::new(state.pool.clone(), state.encryption_service.clone());
     let association = lorebook_service
-        .associate_lorebook_to_chat(&auth_session, chat_session_id, payload)
+        .associate_lorebook_to_chat(&auth_session, chat_session_id, payload, Some(&dek.0), state.clone().into())
         .await?;
     Ok((StatusCode::OK, Json(association)))
 }
@@ -266,15 +267,16 @@ async fn disassociate_lorebook_from_chat_handler(
 }
 
 #[debug_handler]
-#[instrument(skip(state, auth_session))]
+#[instrument(skip(state, auth_session, dek))]
 async fn list_associated_chat_sessions_for_lorebook_handler(
     State(state): State<AppState>,
     auth_session: AuthSession<AuthBackend>,
+    dek: SessionDek, // Add SessionDek extractor
     Path(lorebook_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
     let lorebook_service = LorebookService::new(state.pool.clone(), state.encryption_service.clone());
     let chat_sessions = lorebook_service
-        .list_associated_chat_sessions_for_lorebook(&auth_session, lorebook_id)
+        .list_associated_chat_sessions_for_lorebook(&auth_session, lorebook_id, Some(&dek.0))
         .await?;
     Ok((StatusCode::OK, Json(chat_sessions)))
 }
