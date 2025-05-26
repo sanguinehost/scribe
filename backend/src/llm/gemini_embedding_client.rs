@@ -97,11 +97,11 @@ struct GeminiApiError {
 // --- Client Implementation (To be added below) ---
 const DEFAULT_EMBEDDING_MODEL: &str = "models/text-embedding-004"; // Use this as the sole model
 // const DEFAULT_EMBEDDING_MODEL: &str = "models/text-embedding-004"; // Fallback model with higher rate limits - REMOVED
-const MAX_RETRIES: u32 = 5; // Max retries for the single model
+const MAX_RETRIES: u32 = 2; // Max retries for the single model
 // const MAX_PRIMARY_MODEL_RETRIES_BEFORE_FALLBACK: u32 = 1; // REMOVED
 // const MAX_FALLBACK_MODEL_RETRIES: u32 = 5; // REMOVED
-const INITIAL_BACKOFF_MS: u64 = 5000; // 5 seconds
-const MAX_BACKOFF_MS: u64 = 60_000; // 60 seconds
+const INITIAL_BACKOFF_MS: u64 = 1000; // 1 second
+const MAX_BACKOFF_MS: u64 = 5000; // 5 seconds
 const JITTER_FACTOR: f64 = 0.25; // 25% jitter
 
 #[derive(Clone)] // Add Clone
@@ -891,52 +891,6 @@ mod tests {
         }
     }
 
-    #[tokio::test]
-    #[ignore] // Requires GEMINI_API_KEY
-    async fn test_embed_content_rate_limit_simulation() {
-        // This test simulates what might happen in production when hitting rate limits
-        // It tests that both models work, but doesn't actually trigger the fallback
-        // (since we can't reliably trigger 429s in tests)
-        dotenv().ok();
-        let config = Arc::new(Config::load().expect("Failed to load config for integration test"));
-        assert!(
-            config.gemini_api_key.is_some(),
-            "GEMINI_API_KEY must be set in .env or environment for this integration test"
-        );
-
-        // Test primary model
-        let primary_client = build_gemini_embedding_client(config.clone())
-            .expect("Failed to build primary client");
-        
-        let result = primary_client.embed_content("Test text", "RETRIEVAL_QUERY", None).await;
-        assert!(result.is_ok(), "Primary model should work");
-        let primary_embedding = result.unwrap();
-        
-        // Test fallback model
-        let fallback_client = RestGeminiEmbeddingClient {
-            reqwest_client: ReqwestClient::new(),
-            config,
-            model_name: DEFAULT_EMBEDDING_MODEL.to_string(), // Changed to DEFAULT_EMBEDDING_MODEL
-        };
-        
-        let result = fallback_client.embed_content("Test text", "RETRIEVAL_QUERY", None).await;
-        assert!(result.is_ok(), "Fallback model should work");
-        let fallback_embedding = result.unwrap();
-        
-        // Verify dimensions are different (primary=3072, fallback=768)
-        assert_ne!(
-            primary_embedding.len(),
-            fallback_embedding.len(),
-            "Primary and fallback models should have different embedding dimensions"
-        );
-        
-        println!(
-            "Rate limit simulation test successful: primary={} dims, fallback={} dims",
-            primary_embedding.len(),
-            fallback_embedding.len()
-        );
-    }
-
     // Test for API error status with a body that is *not* valid GeminiError JSON
     #[tokio::test]
     async fn test_embed_content_api_error_malformed_body() {
@@ -1059,52 +1013,6 @@ mod tests {
         mock.assert();
     }
 
-    #[tokio::test]
-    async fn test_embed_content_fallback_on_persistent_429s() {
-        let server = MockServer::start();
-        let api_key = "test_fallback_key";
-        let primary_model = DEFAULT_EMBEDDING_MODEL;
-        let config = create_test_config(Some(api_key.to_string()), Some(server.base_url()));
-        
-        let client = RestGeminiEmbeddingClient {
-            reqwest_client: ReqwestClient::new(),
-            config,
-            model_name: primary_model.to_string(),
-        };
-        
-        // Mock: All attempts with primary model return 429
-        let primary_mock = server.mock(|when, then| {
-            when.method(POST)
-                .path(format!("/v1beta/{}:embedContent", primary_model))
-                .query_param("key", api_key);
-            then.status(429)
-                .header("content-type", "application/json")
-                .json_body(json!({"error": {"message": "Primary model rate limited"}}));
-        });
-        
-        // Mock: Fallback model succeeds
-        let fallback_mock = server.mock(|when, then| {
-            when.method(POST)
-                .path(format!("/v1beta/{}:embedContent", DEFAULT_EMBEDDING_MODEL)) // Changed to DEFAULT_EMBEDDING_MODEL
-                .query_param("key", api_key);
-            then.status(200)
-                .header("content-type", "application/json")
-                .json_body(json!({"embedding": {"values": [0.5, 0.6, 0.7]}}));
-        });
-        
-        let result = client
-            .embed_content("Test fallback", "RETRIEVAL_QUERY", None)
-            .await;
-        
-        assert!(result.is_ok(), "Expected success with fallback model, got {:?}", result.err());
-        assert_eq!(result.unwrap(), vec![0.5, 0.6, 0.7]);
-        
-        // Primary model should have been called MAX_RETRIES + 1 times
-        primary_mock.assert_hits((MAX_RETRIES + 1) as usize);
-        // Fallback model should have been called once
-        fallback_mock.assert_hits(1);
-    }
-
     // --- Integration Tests (Require API Key and Network) ---
     // #[tokio::test]
     // #[ignore] // Ignore by default, requires real API key
@@ -1166,15 +1074,7 @@ mod tests {
                 .header("content-type", "application/json")
                 .json_body(json!({"error": {"message": "Persistently rate limited"}}));
         });
-        
-        let fallback_429_mock = server.mock(|when, then| {
-            when.method(POST)
-                .path(format!("/v1beta/{}:embedContent", DEFAULT_EMBEDDING_MODEL)) // Changed to DEFAULT_EMBEDDING_MODEL
-                .query_param("key", api_key);
-            then.status(429)
-                .header("content-type", "application/json")
-                .json_body(json!({"error": {"message": "Persistently rate limited"}}));
-        });
+        // Fallback mock removed as client does not switch models
 
         let start_time = Instant::now();
         let result = client
@@ -1194,18 +1094,23 @@ mod tests {
         
         // Primary model should have been called MAX_RETRIES + 1 times (initial attempt + MAX_RETRIES)
         primary_429_mock.assert_hits(MAX_RETRIES as usize + 1);
-        // Fallback model should also have been called MAX_RETRIES + 1 times
-        fallback_429_mock.assert_hits(MAX_RETRIES as usize + 1);
+        // Fallback model assertion removed
 
         let mut expected_total_delay_ms = 0;
-        let mut current_backoff = INITIAL_BACKOFF_MS;
-        for _ in 0..MAX_RETRIES {
+        let mut current_backoff = INITIAL_BACKOFF_MS; // Now 1000ms
+        for _ in 0..MAX_RETRIES { // Now 2 retries
             expected_total_delay_ms += current_backoff;
-            current_backoff = (current_backoff * 2).min(MAX_BACKOFF_MS);
+            current_backoff = (current_backoff * 2).min(MAX_BACKOFF_MS); // Max backoff now 5000ms
         }
-        // Jitter makes exact prediction hard, so check it's roughly in the ballpark (e.g., > 70% of non-jittered sum)
-        let min_expected_total_duration = Duration::from_millis((expected_total_delay_ms as f64 * (1.0 - JITTER_FACTOR * 2.0)) as u64);
-        assert!(duration >= min_expected_total_duration, "Duration {:?} was less than minimum expected total delay {:?}", duration, min_expected_total_duration);
+        // expected_total_delay_ms = 1000 (1st retry sleep) + 2000 (2nd retry sleep) = 3000ms
+        
+        // Jitter makes exact prediction hard, so check it's roughly in the ballpark
+        // For 2 retries, total sleep is INITIAL_BACKOFF_MS + min(INITIAL_BACKOFF_MS*2, MAX_BACKOFF_MS)
+        // = 1000 + min(2000, 5000) = 1000 + 2000 = 3000ms.
+        // Allow for jitter, e.g., 70% of non-jittered sum.
+        let min_expected_total_duration = Duration::from_millis((expected_total_delay_ms as f64 * (1.0 - JITTER_FACTOR * 2.0)).max(0.0) as u64);
+
+        assert!(duration >= min_expected_total_duration, "Duration {:?} was less than minimum expected total delay {:?} (calculated from {}ms base)", duration, min_expected_total_duration, expected_total_delay_ms);
         println!("test_embed_content_retry_failure_after_max_429s duration: {:?}", duration);
     }
 
@@ -1236,12 +1141,7 @@ mod tests {
                 .query_param("key", api_key);
             then.status(429).json_body(json!({"error": {"message": "Batch persistently rate limited"}}));
         });
-        let fallback_batch_429_mock = server.mock(|when, then| {
-            when.method(POST)
-                .path(format!("/v1beta/{}:batchEmbedContents", DEFAULT_EMBEDDING_MODEL)) // Changed to DEFAULT_EMBEDDING_MODEL
-                .query_param("key", api_key);
-            then.status(429).json_body(json!({"error": {"message": "Batch persistently rate limited"}}));
-        });
+        // Fallback mock removed as client does not switch models
         
         
         let start_time = Instant::now();
@@ -1259,16 +1159,19 @@ mod tests {
         }
 
         primary_batch_429_mock.assert_hits(MAX_RETRIES as usize + 1);
-        fallback_batch_429_mock.assert_hits(MAX_RETRIES as usize + 1);
+        // Fallback model assertion removed
 
         let mut expected_total_delay_ms = 0;
-        let mut current_backoff = INITIAL_BACKOFF_MS;
-        for _ in 0..MAX_RETRIES {
+        let mut current_backoff = INITIAL_BACKOFF_MS; // Now 1000ms
+        for _ in 0..MAX_RETRIES { // Now 2 retries
             expected_total_delay_ms += current_backoff;
-            current_backoff = (current_backoff * 2).min(MAX_BACKOFF_MS);
+            current_backoff = (current_backoff * 2).min(MAX_BACKOFF_MS); // Max backoff now 5000ms
         }
-        let min_expected_total_duration = Duration::from_millis((expected_total_delay_ms as f64 * (1.0 - JITTER_FACTOR * 2.0)) as u64); // Allow for jitter
-        assert!(duration >= min_expected_total_duration, "Duration {:?} was less than minimum expected total delay {:?}", duration, min_expected_total_duration);
+        // expected_total_delay_ms = 1000 (1st retry sleep) + 2000 (2nd retry sleep) = 3000ms
+
+        // Allow for jitter, e.g., 70% of non-jittered sum.
+        let min_expected_total_duration = Duration::from_millis((expected_total_delay_ms as f64 * (1.0 - JITTER_FACTOR * 2.0)).max(0.0) as u64);
+        assert!(duration >= min_expected_total_duration, "Duration {:?} was less than minimum expected total delay {:?} (calculated from {}ms base)", duration, min_expected_total_duration, expected_total_delay_ms);
         println!("test_batch_embed_contents_retry_failure_after_max_429s duration: {:?}", duration);
     }
 }

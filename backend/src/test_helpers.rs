@@ -966,6 +966,11 @@ async fn auth_log_wrapper(
 
 #[instrument(skip_all, fields(multi_thread, use_real_ai, use_real_qdrant))]
 pub async fn spawn_app(multi_thread: bool, use_real_ai: bool, use_real_qdrant: bool) -> TestApp {
+    spawn_app_with_options(multi_thread, use_real_ai, use_real_qdrant, false).await
+}
+
+#[instrument(skip_all, fields(multi_thread, use_real_ai, use_real_qdrant, use_real_embedding_pipeline))]
+pub async fn spawn_app_with_options(multi_thread: bool, use_real_ai: bool, use_real_qdrant: bool, use_real_embedding_pipeline: bool) -> TestApp {
     ensure_tracing_initialized();
     dotenv().ok();
 
@@ -1050,6 +1055,10 @@ pub async fn spawn_app(multi_thread: bool, use_real_ai: bool, use_real_qdrant: b
             embedding_client_for_state.clone(), // Pass the real one for AppState
             qdrant_service_for_state.clone(),
         );
+        // Only use real embedding pipeline if explicitly requested
+        if !use_real_embedding_pipeline {
+            builder = builder.with_embedding_pipeline_service(mock_embedding_pipeline_service_for_test_app.clone());
+        }
 
     } else { // Use mock embedding client and pipeline for AppState
         // Set embedding_client_for_state to the mock one (which is also stored in TestApp)
