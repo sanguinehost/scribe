@@ -45,7 +45,9 @@ pub trait QdrantClientServiceTrait: Send + Sync {
         limit: u64,
     ) -> Result<Vec<ScoredPoint>, AppError>; // Added Retrieve Method
     async fn delete_points(&self, _point_ids: Vec<PointId>) -> Result<(), AppError>;
+    async fn delete_points_by_filter(&self, filter: Filter) -> Result<(), AppError>;
     async fn update_collection_settings(&self) -> Result<(), AppError>; // Added Update Settings Method
+    async fn get_point_by_id(&self, point_id: PointId) -> Result<Option<qdrant_client::qdrant::RetrievedPoint>, AppError>;
 }
 
 impl QdrantClientService {
@@ -976,5 +978,70 @@ impl QdrantClientServiceTrait for QdrantClientService {
         // Implement update settings functionality if needed
         // For now, return success
         Ok(())
+    }
+
+    #[instrument(skip(self, filter), name = "qdrant_delete_points_by_filter")]
+    async fn delete_points_by_filter(&self, filter: Filter) -> Result<(), AppError> {
+        info!(
+            collection = %self.collection_name,
+            ?filter,
+            "Deleting points from Qdrant by filter"
+        );
+
+        let points_selector = qdrant_client::qdrant::PointsSelector {
+            points_selector_one_of: Some(
+                qdrant_client::qdrant::points_selector::PointsSelectorOneOf::Filter(filter),
+            ),
+        };
+
+        self.client
+            .delete_points(qdrant_client::qdrant::DeletePoints {
+                collection_name: self.collection_name.clone(),
+                points: Some(points_selector),
+                wait: Some(true), // Wait for operation to complete
+                ordering: None,
+                shard_key_selector: None,
+            })
+            .await
+            .map_err(|e| {
+                error!(error = %e, collection = %self.collection_name, "Failed to delete points by filter from Qdrant");
+                AppError::VectorDbError(format!("Failed to delete points by filter: {}", e))
+            })?;
+
+        info!("Successfully deleted points by filter from collection '{}'", self.collection_name);
+        Ok(())
+    }
+
+    #[instrument(skip(self), fields(point_id = ?point_id.point_id_options), name = "qdrant_get_point_by_id_trait")]
+    async fn get_point_by_id(&self, point_id: PointId) -> Result<Option<qdrant_client::qdrant::RetrievedPoint>, AppError> {
+        let point_id_for_log = format!("{:?}", point_id.point_id_options);
+        info!(
+            collection = %self.collection_name,
+            point_id = %point_id_for_log,
+            "Trait: Getting point by ID from Qdrant"
+        );
+
+        // self.client is Arc<Qdrant>
+        let get_points_request = qdrant_client::qdrant::GetPoints {
+            collection_name: self.collection_name.clone(),
+            ids: vec![point_id], // Pass the single PointId in a vec
+            with_payload: Some(true.into()), // Include payload
+            with_vectors: Some(true.into()), // Include vectors
+            read_consistency: None,
+            shard_key_selector: None,
+            timeout: None, // Add missing timeout field
+        };
+
+        let response = self.client
+            .get_points(get_points_request) // Use get_points
+            .await
+            .map_err(|e| {
+                error!(error = %e, collection = %self.collection_name, point_id = %point_id_for_log, "Failed to get point by ID from Qdrant using get_points");
+                AppError::VectorDbError(format!("Failed to get point by ID {:?} using get_points: {}", point_id_for_log, e))
+            })?;
+        
+        // get_points returns a GetResponse which has a Vec<RetrievedPoint>
+        // We expect at most one point.
+        Ok(response.result.into_iter().next())
     }
 }
