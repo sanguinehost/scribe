@@ -15,7 +15,8 @@ use crate::models::chats::{
   use crate::prompt_builder;
   use crate::routes::chats::{get_chat_settings_handler, update_chat_settings_handler};
   use crate::schema::{self as app_schema, chat_sessions}; // Added app_schema for characters table
-  use crate::services::chat_service::{self, ScribeSseEvent};
+  use crate::services::chat;
+  use crate::services::chat::types::ScribeSseEvent;
   // RetrievedMetadata is no longer directly used in this file for RAG string construction
   // use crate::services::embedding_pipeline::RetrievedMetadata;
   // RetrievedChunk is used by prompt_builder, not directly here.
@@ -102,7 +103,7 @@ pub async fn create_chat_session_handler(
     debug!(user_id = %user_id, character_id = %payload.character_id, active_custom_persona_id=?payload.active_custom_persona_id, "User, character, and persona ID extracted");
 
     // Call the service function to create the chat session
-    let created_chat_session = chat_service::create_session_and_maybe_first_message(
+    let created_chat_session = chat::session_management::create_session_and_maybe_first_message(
         state.into(),
         user_id,
         payload.character_id,
@@ -226,7 +227,7 @@ pub async fn generate_chat_response(
         // -- Original history management settings --
         _hist_management_strategy,          // 22: String (was 21)
         _hist_management_limit,             // 23: i32 (was 22)
-    ) = chat_service::get_session_data_for_generation(
+    ) = chat::generation::get_session_data_for_generation(
         state_arc.clone(),
         user_id_value,
         session_id,
@@ -370,7 +371,7 @@ pub async fn generate_chat_response(
             // DbInsertableChatMessage has role, parts, attachments as Option<String>, Option<Value>, Option<Value>
             // However, user_message_struct_to_save.content is Vec<u8> (potentially encrypted or raw bytes of current_user_content)
 
-            match chat_service::save_message(
+            match chat::message_handling::save_message(
                 state_arc.clone(),
                 session_id,
                 user_id_value,
@@ -398,7 +399,7 @@ pub async fn generate_chat_response(
             // The assistant's message will be saved by stream_ai_response_and_save_message.
 
             let dek_for_stream_service = session_dek_arc.clone();
-            match chat_service::stream_ai_response_and_save_message(
+            match chat::generation::stream_ai_response_and_save_message(
                 state_arc.clone(),
                 session_id,
                 user_id_value,
@@ -491,7 +492,7 @@ pub async fn generate_chat_response(
             // The content is current_user_content.
 
             let dek_for_user_save_json = session_dek_arc.clone();
-            let _user_saved_message = match chat_service::save_message(
+            let _user_saved_message = match chat::message_handling::save_message(
                 state_arc.clone(),
                 session_id,
                 user_id_value,
@@ -569,7 +570,7 @@ pub async fn generate_chat_response(
                         let state_for_ai_save = state_arc.clone();
                         let response_content_for_save = response_content.clone();
                         tokio::spawn(async move {
-                            match chat_service::save_message(
+                            match chat::message_handling::save_message(
                                 state_for_ai_save,
                                 session_id,
                                 user_id_value,
@@ -615,7 +616,7 @@ pub async fn generate_chat_response(
 
             // This is largely a copy of the SSE path above.
             let dek_for_fallback_stream_service = session_dek_arc.clone(); // MODIFIED: Use Arc clone
-            match chat_service::stream_ai_response_and_save_message(
+            match chat::generation::stream_ai_response_and_save_message(
                 state_arc.clone(),
                 session_id,
                 user_id_value,

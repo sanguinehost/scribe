@@ -13,7 +13,7 @@ use scribe_backend::{
         users::{User, UserDbQuery},
     },
     schema::{user_personas, users, characters}, // Added schema::characters
-    services::chat_service,
+    services::chat::session_management::create_session_and_maybe_first_message,
     test_helpers::{spawn_app, TestDataGuard, db, login_user_via_api, TestAppStateBuilder}, // Changed TestUser
 };
 
@@ -126,7 +126,7 @@ async fn create_session_uses_default_persona_when_active_persona_is_none() {
     let app_state_arc = Arc::new(app_state_for_service);
 
     // 4. Call create_session_and_maybe_first_message with active_custom_persona_id = None
-    let created_chat_session = chat_service::create_session_and_maybe_first_message(
+    let created_chat_session = create_session_and_maybe_first_message(
         app_state_arc, // Use constructed AppState
         user_db.id,
         character.id,
@@ -228,7 +228,7 @@ async fn create_session_no_default_persona_falls_back_to_character_prompt() {
     let app_state_arc = Arc::new(app_state_for_service);
 
     // 3. Call create_session_and_maybe_first_message with active_custom_persona_id = None
-    let created_chat_session = chat_service::create_session_and_maybe_first_message(
+    let created_chat_session = create_session_and_maybe_first_message(
         app_state_arc,
         user_db.id,
         character.id,
@@ -358,7 +358,7 @@ async fn create_session_default_persona_deleted_falls_back_to_character_prompt()
     let app_state_arc = Arc::new(app_state_for_service);
 
     // 4. Call create_session_and_maybe_first_message
-    let created_chat_session = chat_service::create_session_and_maybe_first_message(
+    let created_chat_session = create_session_and_maybe_first_message(
         app_state_arc,
         user_db.id, // Use user_db.id
         character.id,

@@ -24,7 +24,8 @@ use scribe_backend::models::chats::{
     Chat as DbChat, ChatSettingsResponse, NewChat, UpdateChatSettingsRequest,
 };
 use scribe_backend::schema::{characters, chat_sessions};
-use scribe_backend::services::chat_service;
+use scribe_backend::services::chat::settings::get_session_settings;
+use scribe_backend::services::chat::session_management::create_session_and_maybe_first_message;
 use scribe_backend::state::AppState;
 use scribe_backend::test_helpers;
 use scribe_backend::services::lorebook_service::LorebookService; // Added LorebookService
@@ -466,7 +467,7 @@ async fn get_chat_settings_defaults() {
     let dummy_dek_bytes = vec![0u8; 32];
     let user_dek_for_service_call = Some(Arc::new(SecretBox::new(Box::new(dummy_dek_bytes))));
 
-    let created_chat_session = chat_service::create_session_and_maybe_first_message(
+    let created_chat_session = create_session_and_maybe_first_message(
         Arc::new(app_state_for_service),
         user.id,
         character.id,
@@ -477,7 +478,7 @@ async fn get_chat_settings_defaults() {
     .expect("Failed to create chat session via service");
 
     // Call the service function directly to bypass API DEK extractor issues for this test
-    let settings_resp: ChatSettingsResponse = chat_service::get_session_settings(
+    let settings_resp: ChatSettingsResponse = get_session_settings(
         &test_app.db_pool,
         user.id,
         created_chat_session.id,

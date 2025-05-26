@@ -1313,7 +1313,7 @@ async fn test_create_session_saves_first_mes() -> Result<(), AnyhowError> {
     // The function create_session_and_maybe_first_message returns Result<scribe_backend::models::chats::Chat, ...>
     // In chat_session_api_tests.rs, DbChatSession is an alias for scribe_backend::models::chats::Chat.
     // So, `session` will be of the correct type.
-    let result = scribe_backend::services::chat_service::create_session_and_maybe_first_message(
+    let result = scribe_backend::services::chat::session_management::create_session_and_maybe_first_message(
         app_state_arc,
         user.id,
         character_id,
