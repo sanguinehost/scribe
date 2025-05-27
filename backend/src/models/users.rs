@@ -186,6 +186,8 @@ pub struct User {
     pub recovery_dek_nonce: Option<Vec<u8>>,
 
     // DEK field now uses the newtype wrapper
+    // THIS MUST NOT BE SERIALIZED INTO THE SESSION. IT IS CACHED SERVER-SIDE.
+    #[serde(skip_serializing, skip_deserializing)]
     pub dek: Option<SerializableSecretDek>,
 
     // Recovery phrase field for registration process (not stored in DB)
