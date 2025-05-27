@@ -23,7 +23,7 @@ use tower_sessions::Session; // Import tower_sessions::Session
 use crate::auth::user_store::Backend as AuthBackend;
 type CurrentAuthSession = AuthSession<AuthBackend>;
 
-use crate::models::users::{SerializableSecretDek, User, UserDbQuery}; // Added SerializableSecretDek
+use crate::models::users::{User, UserDbQuery};
 use crate::schema::sessions;
 use crate::schema::users::{self}; // Import users table (dsl::* is unused)
 use axum::extract::Path;
@@ -174,50 +174,15 @@ pub async fn login_handler(
 ) -> Result<Response, AppError> {
     info!("Attempting login");
 
-    // Directly call verify_credentials to get User and DEK
-    let verification_result = state
-        .pool
-        .get()
-        .await
-        .map_err(|e| {
-            error!("Failed to get DB connection for login: {:?}", e);
-            AppError::DbPoolError(e.to_string())
-        })?
-        .interact(move |conn| {
-            // Clone password for the closure. Identifier is String, so it's cloned by value.
-            auth::verify_credentials(conn, &payload.identifier, payload.password)
-        })
-        .await
-        .map_err(|e| {
-            error!("Interact error during credential verification: {:?}", e);
-            AppError::InternalServerErrorGeneric(format!(
-                "Credential verification process failed: {}",
-                e
-            ))
-        })?;
-
-    debug!("Credential verification successful");
-
-    match verification_result {
-        Ok((mut user, maybe_dek_secret_box)) => {
+    // Use axum-login's authenticate method which will call our AuthBackend::authenticate
+    // This ensures the DEK is properly cached
+    match auth_session.authenticate(payload).await {
+        Ok(Some(user)) => {
             let user_id = user.id;
-            // let login_username = user.username.clone(); // PII
-            // let login_email = user.email.clone(); // PII
-            info!(%user_id, "Credential verification successful.");
+            info!(%user_id, "Authentication successful via AuthBackend.");
 
-            // Set the DEK on the user object
-            let _dek_bytes_for_session = if let Some(dek_secret_box) = maybe_dek_secret_box {
-                user.dek = Some(SerializableSecretDek(dek_secret_box)); // Wrap in SerializableSecretDek
-                debug!(%user_id, "DEK successfully set on user object before login.");
-
-                // Get the raw bytes for storing directly in the session
-                // Access inner SecretBox then expose_secret, or use helper
-                let dek_bytes = user.dek.as_ref().unwrap().expose_secret_bytes().to_vec();
-                Some(dek_bytes)
-            } else {
-                info!(%user_id, "No DEK present for this user or login type.");
-                None
-            };
+            // SECURITY: The DEK is now cached in AuthBackend, NOT stored in the session
+            // The user object returned from authenticate has dek=None to prevent session storage
 
             // Serialize the user object to see what's going into the session
             match serde_json::to_string(&user) {
@@ -234,52 +199,21 @@ pub async fn login_handler(
             // Log the session ID BEFORE auth_session.login
             debug!(session_id = ?session.id(), user_id = %user_id, "Session ID BEFORE axum-login.login() call");
 
-            // Debugging: Log DEK presence before login call
-            if let Some(ref wrapped_dek) = user.dek {
-                info!(%user_id, "User.dek is PRESENT before auth_session.login() call. Length: {}", wrapped_dek.expose_secret_bytes().len());
+            // Debugging: User returned from authenticate should have dek=None
+            if user.dek.is_some() {
+                error!(%user_id, "SECURITY WARNING: User.dek should be None after authenticate but it's present!");
             } else {
-                warn!(%user_id, "User.dek is MISSING before auth_session.login() call.");
+                debug!(%user_id, "User.dek is correctly None after authenticate (DEK is cached in AuthBackend)");
             }
 
-            // Proceed with axum-login's session login
-            info!(user_id = %user_id, "Attempting explicit axum-login session.login...");
-            auth_session.login(&user).await.map_err(|e| {
-                error!(user_id = %user_id, "axum-login session.login() failed: {}", e);
-                AppError::InternalServerErrorGeneric(format!(
-                    "Login process failed for user {}: {}",
-                    user_id, e
-                ))
-            })?;
-
-            // MANUAL FIX: Explicitly insert axum-login.user key with user.id as a string since axum-login.login() appears to not be doing it
-            session
-                .insert("axum-login.user", user.id.to_string())
-                .await
-                .map_err(|e| {
-                    error!(
-                        user_id = %user.id,
-                        "Failed to manually insert axum-login.user key into session: {}",
-                        e
-                    );
-                    AppError::SessionError(format!("Failed to store user ID in session: {}", e))
-                })?;
-
-            // --- Log session data immediately after axum_session.login() ---
-            let axum_login_user_key_after_login = session.get::<String>("axum-login.user").await;
-            let dek_session_key_str_after_login = format!("_user_dek_{}", user.id); // Reconstruct for logging
-            let our_dek_after_login = session
-                .get::<SerializableSecretDek>(&dek_session_key_str_after_login)
-                .await;
-            info!(
-                user_id = %user.id,
-                session_id = ?session.id(),
-                axum_login_user_key_val = ?axum_login_user_key_after_login,
-                our_dek_key_val = ?our_dek_after_login,
-                "Session data immediately AFTER auth_session.login() (specific keys)"
-            );
-            // --- End log ---
-
-            info!(user_id = %user.id, "Explicit auth_session.login successful");
+            // Now we need to explicitly log the user in
+            if let Err(e) = auth_session.login(&user).await {
+                error!(%user_id, error = ?e, "Failed to log in user after successful authentication");
+                return Err(AppError::InternalServerErrorGeneric(
+                    "Failed to establish session after authentication".to_string(),
+                ));
+            }
+            info!(user_id = %user_id, "Login successful via authenticate");
 
             // Log the session ID AFTER auth_session.login
             debug!(session_id = ?session.id(), user_id = %user_id, "Session ID AFTER axum-login.login() call");
@@ -320,44 +254,9 @@ pub async fn login_handler(
                 }
             }
 
-            // Store the DEK directly in the session.
-            if let Some(dek_secret_box) = user.dek {
-                info!(user_id = %user.id, "User.dek is PRESENT in auth_session.user AFTER login. Length: {}", dek_secret_box.expose_secret_bytes().len());
-
-                // Use a user-specific key format matching the SessionDek extractor's expectations
-                let user_specific_dek_key = format!("_user_dek_{}", user.id);
-
-                // Store the DEK directly - SerializableSecretDek already implements Serialize/Deserialize correctly
-                session
-                    .insert(&user_specific_dek_key, dek_secret_box) // Use the SerializableSecretDek directly
-                    .await
-                    .map_err(|e| {
-                        error!(
-                            user_id = %user.id,
-                            "Failed to store DEK in session: {}",
-                            e
-                        );
-                        AppError::SessionError(format!("Failed to store DEK in session: {}", e))
-                    })?;
-
-                // --- Log session data immediately after our DEK insert ---
-                let axum_login_user_key_val = session.get::<String>("axum-login.user").await;
-                let our_dek_key_val = session
-                    .get::<SerializableSecretDek>(&user_specific_dek_key)
-                    .await;
-                info!(
-                    user_id = %user.id,
-                    session_id = ?session.id(),
-                    axum_login_user_key_val = ?axum_login_user_key_val,
-                    our_dek_key_val = ?our_dek_key_val,
-                    "Session data immediately AFTER our custom DEK insert (specific keys)"
-                );
-                // --- End log ---
-
-                info!(user_id = %user.id, "Successfully stored DEK directly in session");
-            } else {
-                warn!(user_id = %user.id, "User has no DEK in database. New account?");
-            }
+            // SECURITY FIX: We no longer store the DEK in the session.
+            // The DEK is now only stored in the server-side AuthBackend cache.
+            // This comment block replaces the code that previously stored the DEK in the session.
 
             let response_data = AuthResponse {
                 user_id: user.id,
@@ -369,48 +268,95 @@ pub async fn login_handler(
             };
             Ok((StatusCode::OK, Json(response_data)).into_response())
         }
-        Err(AuthError::WrongCredentials) => {
+        Ok(None) => {
+            // Authentication failed - wrong credentials
             warn!("Login failed: Wrong credentials.");
             Err(AppError::Unauthorized(
                 "Invalid identifier or password".to_string(),
             ))
         }
-        Err(AuthError::AccountLocked) => {
-            warn!("Login failed: Account locked.");
-            Err(AppError::Unauthorized(
-                "Your account is locked. Please contact an administrator.".to_string(),
-            ))
-        }
         Err(e) => {
-            error!(error = ?e, "Login failed due to an unexpected authentication error.");
-            // Map other AuthErrors to appropriate AppErrors or a generic internal server error
+            error!(error = ?e, "Login failed due to authentication error.");
+            // axum_login::Error wraps our AuthError
             match e {
-                AuthError::UserNotFound => Err(AppError::Unauthorized(
-                    "Invalid identifier or password".to_string(),
-                )), // Treat as wrong credentials
-                AuthError::HashingError => Err(AppError::PasswordProcessingError), // Use new specific variant
-                AuthError::CryptoOperationFailed(_) => Err(AppError::InternalServerErrorGeneric(
-                    "Encryption error during login.".to_string(),
-                )),
-                AuthError::DatabaseError(db_err) => Err(AppError::DatabaseQueryError(db_err)),
-                AuthError::PoolError(pool_err) => Err(AppError::DbPoolError(pool_err.to_string())),
-                AuthError::InteractError(int_err) => {
-                    Err(AppError::InternalServerErrorGeneric(int_err.to_string()))
+                axum_login::Error::Backend(auth_err) => {
+                    // Extract our AuthError from the axum_login wrapper
+                    match auth_err {
+                        AuthError::WrongCredentials | AuthError::UserNotFound => {
+                            warn!("Login failed: Wrong credentials.");
+                            Err(AppError::Unauthorized(
+                                "Invalid identifier or password".to_string(),
+                            ))
+                        }
+                        AuthError::AccountLocked => {
+                            warn!("Login failed: Account locked.");
+                            Err(AppError::Unauthorized(
+                                "Your account is locked. Please contact an administrator.".to_string(),
+                            ))
+                        }
+                        AuthError::HashingError => Err(AppError::PasswordProcessingError),
+                        AuthError::CryptoOperationFailed(_) => Err(AppError::InternalServerErrorGeneric(
+                            "Encryption error during login.".to_string(),
+                        )),
+                        AuthError::DatabaseError(db_err) => Err(AppError::DatabaseQueryError(db_err)),
+                        AuthError::PoolError(pool_err) => Err(AppError::DbPoolError(pool_err.to_string())),
+                        AuthError::InteractError(int_err) => {
+                            Err(AppError::InternalServerErrorGeneric(int_err.to_string()))
+                        }
+                        AuthError::UsernameTaken => {
+                            warn!("Login failed: Username taken (shouldn't happen during login).");
+                            Err(AppError::InternalServerErrorGeneric(
+                                "Unexpected error during login.".to_string(),
+                            ))
+                        }
+                        AuthError::EmailTaken => {
+                            warn!("Login failed: Email taken (shouldn't happen during login).");
+                            Err(AppError::InternalServerErrorGeneric(
+                                "Unexpected error during login.".to_string(),
+                            ))
+                        }
+                        AuthError::RecoveryNotSetup => {
+                            warn!("Login failed: Recovery not setup (shouldn't happen during login).");
+                            Err(AppError::InternalServerErrorGeneric(
+                                "Unexpected error during login.".to_string(),
+                            ))
+                        }
+                        AuthError::InvalidRecoveryPhrase => {
+                            warn!("Login failed: Invalid recovery phrase (shouldn't happen during login).");
+                            Err(AppError::InternalServerErrorGeneric(
+                                "Unexpected error during login.".to_string(),
+                            ))
+                        }
+                        AuthError::SessionDeletionError(msg) => {
+                            error!("Login failed: Session deletion error: {}", msg);
+                            Err(AppError::SessionError(format!("Session error: {}", msg)))
+                        }
+                    }
                 }
-                _ => Err(AppError::InternalServerErrorGeneric(format!(
-                    "An unexpected auth error occurred: {}",
-                    e
-                ))),
+                axum_login::Error::Session(session_err) => {
+                    error!("Session error during login: {:?}", session_err);
+                    Err(AppError::SessionError(format!("Session error: {}", session_err)))
+                }
             }
         }
     }
 }
 
-#[instrument(skip(auth_session), err)]
-pub async fn logout_handler(mut auth_session: CurrentAuthSession) -> Result<Response, AppError> {
+#[instrument(skip(auth_session, state), err)]
+pub async fn logout_handler(
+    State(state): State<AppState>,
+    mut auth_session: CurrentAuthSession,
+) -> Result<Response, AppError> {
     info!("Logout handler entered.");
+    
+    // Remove DEK from cache before logging out
     if let Some(user) = &auth_session.user {
-        info!(user_id = %user.id(), "Attempting to log out user.");
+        let user_id = user.id();
+        info!(user_id = %user_id, "Attempting to log out user.");
+        
+        // Remove the DEK from the AuthBackend cache
+        state.auth_backend.remove_dek_from_cache(&user_id).await;
+        info!(user_id = %user_id, "DEK removed from cache during logout");
     } else {
         debug!("Logout called, but no user session found in request.");
     }

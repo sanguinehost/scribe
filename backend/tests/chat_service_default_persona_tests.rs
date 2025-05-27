@@ -4,7 +4,7 @@ use secrecy::ExposeSecret; // Added import
 
 use diesel::prelude::*;
 use secrecy::SecretBox;
-use reqwest::header::COOKIE; // Added
+use reqwest::header::COOKIE;
 
 use scribe_backend::{
     models::{
@@ -14,7 +14,7 @@ use scribe_backend::{
     },
     schema::{user_personas, users, characters}, // Added schema::characters
     services::chat::session_management::create_session_and_maybe_first_message,
-    test_helpers::{spawn_app, TestDataGuard, db, login_user_via_api, TestAppStateBuilder}, // Changed TestUser
+    test_helpers::{spawn_app, TestDataGuard, db, login_user_via_router, TestAppStateBuilder}, // Changed TestUser
 };
 
 #[tokio::test]
@@ -29,7 +29,10 @@ async fn create_session_uses_default_persona_when_active_persona_is_none() {
     // Create user_dek_secret_box early
     let user_dek_secret_box: Option<Arc<SecretBox<Vec<u8>>>> = user_db.dek.as_ref().map(|user_dek_struct| Arc::new(SecretBox::new(Box::new(user_dek_struct.0.expose_secret().clone()))));
 
-    let (client, auth_cookie) = login_user_via_api(&app, username, password).await;
+    let auth_cookie = login_user_via_router(&app.router, username, password).await;
+
+    // Create HTTP client for API requests
+    let client = reqwest::Client::new();
 
     // 1. Create a character for the user
     let character_name = "Test Character for Default Persona";
@@ -281,8 +284,10 @@ async fn create_session_default_persona_deleted_falls_back_to_character_prompt()
     // Create user_dek_secret_box early
     let user_dek_secret_box: Option<Arc<SecretBox<Vec<u8>>>> = user_db.dek.as_ref().map(|user_dek_struct| Arc::new(SecretBox::new(Box::new(user_dek_struct.0.expose_secret().clone()))));
     tdg.add_user(user_db.id);
-    let (client, auth_cookie) = login_user_via_api(&app, username, password).await;
+    let auth_cookie = login_user_via_router(&app.router, username, password).await;
 
+    // Create HTTP client for API requests
+    let client = reqwest::Client::new();
 
     // 1. Create a character
     let character_system_prompt_val = "Character prompt for deleted persona test.".to_string();

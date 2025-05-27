@@ -22,10 +22,21 @@ use anyhow::Context;
 use secrecy::{ExposeSecret, SecretBox, SecretString};
 
 // Manually implement Debug because DbPool doesn't implement it.
-#[derive(Clone)]
 pub struct Backend {
     pool: DbPool,
-    dek_cache: Arc<RwLock<HashMap<Uuid, SerializableSecretDek>>>,
+    pub dek_cache: Arc<RwLock<HashMap<Uuid, SerializableSecretDek>>>,
+}
+
+// Manual Clone implementation to ensure dek_cache is properly shared
+impl Clone for Backend {
+    fn clone(&self) -> Self {
+        Self {
+            pool: self.pool.clone(),
+            // CRITICAL: Clone the Arc, not create a new one
+            // This ensures all Backend instances share the same cache
+            dek_cache: self.dek_cache.clone(),
+        }
+    }
 }
 
 // Manual Debug implementation
@@ -58,6 +69,7 @@ impl AuthnBackend for Backend {
         &self,
         creds: Self::Credentials,
     ) -> Result<Option<Self::User>, Self::Error> {
+        warn!(target: "dek_cache_debug", "AuthBackend::authenticate CALLED");
         let pool = self.pool.clone();
         let identifier_clone = creds.identifier.clone();
         // Assuming SecretString can be cloned; if not, this needs adjustment or pass by ref if possible
@@ -75,20 +87,18 @@ impl AuthnBackend for Backend {
             .map_err(AuthError::from)?; // Map InteractError to AuthError
 
         match verify_result {
-            Ok((user, Some(dek_secret_box))) => {
-                let mut user_with_dek = user;
-                user_with_dek.dek =
-                    Some(crate::models::users::SerializableSecretDek(dek_secret_box));
+            Ok((mut user, Some(dek_secret_box))) => {
                 // Store the DEK in the cache
-                if let Some(ref dek_val) = user_with_dek.dek {
-                    let mut cache = self.dek_cache.write().await; // Use .await
-                    cache.insert(user_with_dek.id, dek_val.clone());
-                    // More verbose logging
-                    warn!(target: "dek_cache_debug", user_id = %user_with_dek.id, "AuthBackend::authenticate - DEK CACHED (key: {}, value_present: true)", user_with_dek.id);
-                } else {
-                    warn!(target: "dek_cache_debug", user_id = %user_with_dek.id, "AuthBackend::authenticate - User object had NO DEK to cache.");
-                }
-                Ok(Some(user_with_dek))
+                let dek_to_cache = crate::models::users::SerializableSecretDek(dek_secret_box);
+                let mut cache = self.dek_cache.write().await; // Use .await
+                cache.insert(user.id, dek_to_cache.clone());
+                // More verbose logging
+                warn!(target: "dek_cache_debug", user_id = %user.id, cache_ptr = ?Arc::as_ptr(&self.dek_cache), cache_size = cache.len(), "AuthBackend::authenticate - DEK CACHED (key: {}, value_present: true)", user.id);
+                
+                // CRITICAL: Set the user's DEK to None before returning
+                // This prevents axum-login from serializing the DEK into the session
+                user.dek = None;
+                Ok(Some(user))
             }
             Ok((user, None)) => {
                 warn!(user_id = %user.id, "User authenticated but DEK was not available/decryptable during login.");
@@ -133,7 +143,7 @@ impl AuthnBackend for Backend {
                     user_from_db.dek = Some(cached_dek);
                     warn!(target: "dek_cache_debug", user_id = %user_from_db.id, "AuthBackend::get_user - DEK POPULATED FROM CACHE (key: {})", user_from_db.id);
                 } else {
-                    warn!(target: "dek_cache_debug", user_id = %user_from_db.id, "AuthBackend::get_user - DEK NOT FOUND IN CACHE (key: {}). User.dek remains as loaded from DB (should be None). Cache size: {}", user_from_db.id, cache_read_guard.len());
+                    warn!(target: "dek_cache_debug", user_id = %user_from_db.id, cache_ptr = ?Arc::as_ptr(&self.dek_cache), cache_size = cache_read_guard.len(), "AuthBackend::get_user - DEK NOT FOUND IN CACHE (key: {}). User.dek remains as loaded from DB (should be None).", user_from_db.id);
                 }
                 Ok(Some(user_from_db))
             }
@@ -219,6 +229,20 @@ impl Backend {
                 error!(user_id = %user_id, error = ?diesel_error, "AuthBackend: Database error during password and keys update.");
                 Err(AuthError::DatabaseError(diesel_error.to_string()))
             }
+        }
+    }
+
+    /// Removes the DEK from the in-memory cache for a given user.
+    /// This should be called when a user logs out to ensure their DEK
+    /// is not kept in memory after their session ends.
+    #[instrument(skip(self))]
+    pub async fn remove_dek_from_cache(&self, user_id: &uuid::Uuid) {
+        let mut cache = self.dek_cache.write().await;
+        if cache.remove(user_id).is_some() {
+            warn!(target: "dek_cache_debug", user_id = %user_id, "AuthBackend::remove_dek_from_cache - DEK REMOVED from cache (key: {})", user_id);
+            info!(user_id = %user_id, "Successfully removed DEK from cache on logout");
+        } else {
+            debug!(user_id = %user_id, "No DEK found in cache to remove for user");
         }
     }
 }
