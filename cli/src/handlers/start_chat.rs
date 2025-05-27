@@ -174,7 +174,7 @@ pub async fn handle_start_chat_action<H: IoHandler, C: HttpClient>(
     };
 
     // 2. Create the chat session
-    let chat_session = match client.create_chat_session(character_id, selected_persona_id).await {
+    let chat_session = match client.create_chat_session(character_id, selected_persona_id, selected_lorebook_ids.clone()).await {
         Ok(session) => session,
         Err(e) => {
             tracing::error!(error = ?e, %character_id, ?selected_lorebook_ids, "Failed to create chat session");

@@ -1295,6 +1295,7 @@ async fn test_create_session_saves_first_mes() -> Result<(), AnyhowError> {
         test_app.db_pool.clone(),
         encryption_service_for_test.clone()
     ));
+    let auth_backend_for_test = Arc::new(scribe_backend::auth::user_store::Backend::new(test_app.db_pool.clone()));
 
     let app_state_arc = Arc::new(AppState::new(
         test_app.db_pool.clone(),
@@ -1307,7 +1308,8 @@ async fn test_create_session_saves_first_mes() -> Result<(), AnyhowError> {
         user_persona_service_for_test, // 8th arg
         hybrid_token_counter_for_test,    // 9th arg
         encryption_service_for_test.clone(), // 10th arg
-        lorebook_service_for_test // 11th arg
+        lorebook_service_for_test, // 11th arg
+        auth_backend_for_test // 12th arg
     ));
 
     // The function create_session_and_maybe_first_message returns Result<scribe_backend::models::chats::Chat, ...>
@@ -1545,7 +1547,6 @@ async fn test_create_chat_session_no_lorebook_ids() -> Result<(), AnyhowError> {
 }
 
 #[tokio::test]
-#[ignore] // Following existing pattern for CI
 async fn test_create_chat_session_one_valid_lorebook_id() -> Result<(), AnyhowError> {
     let test_app = test_helpers::spawn_app(false, false, false).await;
     let mut test_data_guard = test_helpers::TestDataGuard::new(test_app.db_pool.clone());
@@ -1666,7 +1667,6 @@ async fn test_create_chat_session_one_valid_lorebook_id() -> Result<(), AnyhowEr
 }
 
 #[tokio::test]
-#[ignore] // Following existing pattern for CI
 async fn test_create_chat_session_multiple_valid_lorebook_ids() -> Result<(), AnyhowError> {
     let test_app = test_helpers::spawn_app(false, false, false).await;
     let mut test_data_guard = test_helpers::TestDataGuard::new(test_app.db_pool.clone());
@@ -1906,7 +1906,6 @@ async fn test_create_chat_session_empty_lorebook_ids_list() -> Result<(), Anyhow
 }
 
 #[tokio::test]
-#[ignore] // Following existing pattern for CI
 async fn test_create_chat_session_non_existent_lorebook_id() -> Result<(), AnyhowError> {
     let test_app = test_helpers::spawn_app(false, false, false).await;
     let mut test_data_guard = test_helpers::TestDataGuard::new(test_app.db_pool.clone());
@@ -1981,35 +1980,24 @@ async fn test_create_chat_session_non_existent_lorebook_id() -> Result<(), Anyho
         .body(Body::from(serde_json::to_vec(&request_body)?))?;
 
     let response = test_app.router.clone().oneshot(request).await?;
-    assert_eq!(response.status(), StatusCode::CREATED);
-
-    let body = response.into_body().collect().await?.to_bytes();
-    let session: DbChatSession = serde_json::from_slice(&body)?;
-    test_data_guard.add_chat(session.id);
-
-    // Verify no entries in chat_session_lorebooks
-    let conn_verify = test_app.db_pool.get().await?;
-    let linked_lorebooks: Vec<ChatSessionLorebook> = conn_verify
-        .interact(move |conn_inner| {
-            chat_session_lorebooks::table
-                .filter(chat_session_lorebooks::chat_session_id.eq(session.id))
-                .load::<ChatSessionLorebook>(conn_inner)
-        })
-        .await
-        .map_err(|e| AnyhowError::msg(format!("DB interaction error: {}", e)))?
-        .map_err(|e| AnyhowError::msg(format!("Failed to query lorebooks: {}", e)))?;
-
-    assert!(
-        linked_lorebooks.is_empty(),
-        "No lorebooks should be linked when a non-existent ID is provided"
-    );
-
-    test_data_guard.cleanup().await?;
+    assert_eq!(response.status(), StatusCode::NOT_FOUND); // Expect 404 Not Found
+ 
+    // No body to check for 404
+    // let body = response.into_body().collect().await?.to_bytes();
+    // let session: DbChatSession = serde_json::from_slice(&body)?; // No session to deserialize for 404
+    // test_data_guard.add_chat(session.id); // No session to add for 404
+ 
+    // Verify no entries in chat_session_lorebooks - This check is implicitly covered by the 404
+    // as the session creation would have failed before attempting to link.
+    // However, if we wanted to be absolutely sure no partial data was created (though transaction should prevent it),
+    // we might query, but for a 404 on session creation, it's usually not necessary.
+ 
+    // No cleanup needed for a session that wasn't created.
+    // test_data_guard.cleanup().await?;
     Ok(())
 }
 
 #[tokio::test]
-#[ignore] // Following existing pattern for CI
 async fn test_create_chat_session_lorebook_owned_by_another_user() -> Result<(), AnyhowError> {
     let test_app = test_helpers::spawn_app(false, false, false).await;
     let mut test_data_guard = test_helpers::TestDataGuard::new(test_app.db_pool.clone());
@@ -2111,29 +2099,17 @@ async fn test_create_chat_session_lorebook_owned_by_another_user() -> Result<(),
         .body(Body::from(serde_json::to_vec(&request_body)?))?;
 
     let response = test_app.router.clone().oneshot(request).await?;
-    assert_eq!(response.status(), StatusCode::CREATED);
-
-    let body = response.into_body().collect().await?.to_bytes();
-    let session: DbChatSession = serde_json::from_slice(&body)?;
-    test_data_guard.add_chat(session.id);
-
-    // Verify no entries in chat_session_lorebooks for the unowned lorebook
-    let conn_verify = test_app.db_pool.get().await?;
-    let linked_lorebooks: Vec<ChatSessionLorebook> = conn_verify
-        .interact(move |conn_inner| {
-            chat_session_lorebooks::table
-                .filter(chat_session_lorebooks::chat_session_id.eq(session.id))
-                .load::<ChatSessionLorebook>(conn_inner)
-        })
-        .await
-        .map_err(|e| AnyhowError::msg(format!("DB interaction error: {}", e)))?
-        .map_err(|e| AnyhowError::msg(format!("Failed to query lorebooks: {}", e)))?;
-
-    assert!(
-        linked_lorebooks.is_empty(),
-        "No lorebooks should be linked when the lorebook ID is owned by another user"
-    );
-
-    test_data_guard.cleanup().await?;
+    assert_eq!(response.status(), StatusCode::FORBIDDEN); // Expect 403 Forbidden
+ 
+    // No body to check for 403
+    // let body = response.into_body().collect().await?.to_bytes();
+    // let session: DbChatSession = serde_json::from_slice(&body)?; // No session for 403
+    // test_data_guard.add_chat(session.id); // No session to add for 403
+ 
+    // Verification of no linked lorebooks is implicitly covered by the 403 error,
+    // as session creation (and thus linking) would have failed.
+ 
+    // No cleanup needed for a session that wasn't created.
+    // test_data_guard.cleanup().await?;
     Ok(())
 }

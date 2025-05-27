@@ -61,6 +61,7 @@ async fn test_process_and_embed_message_integration() {
     let hybrid_token_counter_for_test = Arc::new(HybridTokenCounter::new_local_only(tokenizer_service_for_test));
     let user_persona_service_for_test = Arc::new(UserPersonaService::new(test_app.db_pool.clone(), encryption_service_for_test.clone()));
     let lorebook_service_for_test = Arc::new(LorebookService::new(test_app.db_pool.clone(), encryption_service_for_test.clone()));
+    let auth_backend = Arc::new(scribe_backend::auth::user_store::Backend::new(test_app.db_pool.clone()));
 
     let app_state = Arc::new(AppState::new(
         test_app.db_pool.clone(),
@@ -73,7 +74,8 @@ async fn test_process_and_embed_message_integration() {
         user_persona_service_for_test, // Added user_persona_service
         hybrid_token_counter_for_test.clone(),
         encryption_service_for_test.clone(),
-        lorebook_service_for_test
+        lorebook_service_for_test,
+        auth_backend
     ));
 
     // 2. Prepare test data
@@ -234,6 +236,7 @@ async fn test_process_and_embed_message_all_chunks_fail_embedding() {
             .expect("Failed to create tokenizer for test")));
     let user_persona_service_for_test_2 = Arc::new(UserPersonaService::new(test_app.db_pool.clone(), encryption_service_for_test_2.clone()));
     let lorebook_service_for_test_2 = Arc::new(LorebookService::new(test_app.db_pool.clone(), encryption_service_for_test_2.clone()));
+    let auth_backend_2 = Arc::new(scribe_backend::auth::user_store::Backend::new(test_app.db_pool.clone()));
 
     let app_state = Arc::new(AppState::new(
         test_app.db_pool.clone(),
@@ -246,7 +249,8 @@ async fn test_process_and_embed_message_all_chunks_fail_embedding() {
         user_persona_service_for_test_2, // Added user_persona_service
         hybrid_token_counter_for_test_2.clone(),
         encryption_service_for_test_2.clone(),
-        lorebook_service_for_test_2
+        lorebook_service_for_test_2,
+        auth_backend_2
     ));
 
     // 2. Prepare test data
@@ -391,6 +395,7 @@ async fn test_retrieve_relevant_chunks_success() {
     let hybrid_token_counter_for_test_3 = Arc::new(HybridTokenCounter::new_local_only(tokenizer_service_for_test_3));
     let user_persona_service_for_test_3 = Arc::new(UserPersonaService::new(test_app.db_pool.clone(), encryption_service_for_test_3.clone()));
     let lorebook_service_for_test_3 = Arc::new(LorebookService::new(test_app.db_pool.clone(), encryption_service_for_test_3.clone()));
+    let auth_backend_3 = Arc::new(scribe_backend::auth::user_store::Backend::new(test_app.db_pool.clone()));
 
     let app_state = Arc::new(AppState::new(
         test_app.db_pool.clone(),
@@ -403,7 +408,8 @@ async fn test_retrieve_relevant_chunks_success() {
         user_persona_service_for_test_3, // Added user_persona_service
         hybrid_token_counter_for_test_3,
         encryption_service_for_test_3.clone(),
-        lorebook_service_for_test_3
+        lorebook_service_for_test_3,
+        auth_backend_3
     ));
 
     // 2. Prepare mock responses and expectations
@@ -545,6 +551,7 @@ async fn test_retrieve_relevant_chunks_no_results() {
     let hybrid_token_counter_for_test_4 = Arc::new(HybridTokenCounter::new_local_only(tokenizer_service_for_test_4));
     let user_persona_service_for_test_4 = Arc::new(UserPersonaService::new(test_app.db_pool.clone(), encryption_service_for_test_4.clone()));
     let lorebook_service_for_test_4 = Arc::new(LorebookService::new(test_app.db_pool.clone(), encryption_service_for_test_4.clone()));
+    let auth_backend_4 = Arc::new(scribe_backend::auth::user_store::Backend::new(test_app.db_pool.clone()));
 
     let app_state = Arc::new(AppState::new(
         test_app.db_pool.clone(),
@@ -557,7 +564,8 @@ async fn test_retrieve_relevant_chunks_no_results() {
         user_persona_service_for_test_4, // Added user_persona_service
         hybrid_token_counter_for_test_4,
         encryption_service_for_test_4.clone(),
-        lorebook_service_for_test_4
+        lorebook_service_for_test_4,
+        auth_backend_4
     ));
 
     // 2. Configure mock Qdrant service to return no results
@@ -605,6 +613,7 @@ async fn test_retrieve_relevant_chunks_qdrant_error() {
     let hybrid_token_counter_for_test_5 = Arc::new(HybridTokenCounter::new_local_only(tokenizer_service_for_test_5));
     let user_persona_service_for_test_5 = Arc::new(UserPersonaService::new(test_app.db_pool.clone(), encryption_service_for_test_5.clone()));
     let lorebook_service_for_test_5 = Arc::new(LorebookService::new(test_app.db_pool.clone(), encryption_service_for_test_5.clone()));
+    let auth_backend_5 = Arc::new(scribe_backend::auth::user_store::Backend::new(test_app.db_pool.clone()));
     
     let app_state = Arc::new(AppState::new(
         test_app.db_pool.clone(),
@@ -617,7 +626,8 @@ async fn test_retrieve_relevant_chunks_qdrant_error() {
         user_persona_service_for_test_5, // Added user_persona_service
         hybrid_token_counter_for_test_5,
         encryption_service_for_test_5.clone(),
-        lorebook_service_for_test_5
+        lorebook_service_for_test_5,
+        auth_backend_5
     ));
 
     // 2. Configure mock Qdrant service to return an error
@@ -657,6 +667,7 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_uuid() {
     let hybrid_token_counter_for_test_6 = Arc::new(HybridTokenCounter::new_local_only(tokenizer_service_for_test_6));
     let user_persona_service_for_test_6 = Arc::new(UserPersonaService::new(test_app.db_pool.clone(), encryption_service_for_test_6.clone()));
     let lorebook_service_for_test_6 = Arc::new(LorebookService::new(test_app.db_pool.clone(), encryption_service_for_test_6.clone()));
+    let auth_backend_6 = Arc::new(scribe_backend::auth::user_store::Backend::new(test_app.db_pool.clone()));
 
     let app_state_arc = Arc::new(AppState::new(
         test_app.db_pool.clone(),
@@ -669,7 +680,8 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_uuid() {
         user_persona_service_for_test_6, // Added user_persona_service
         hybrid_token_counter_for_test_6,
         encryption_service_for_test_6.clone(),
-        lorebook_service_for_test_6
+        lorebook_service_for_test_6,
+        auth_backend_6
     ));
 
     // Mock Qdrant to return a point with an invalid UUID in metadata
@@ -727,6 +739,7 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_uuid() {
         app_state_arc.token_counter.clone(),
         app_state_arc.encryption_service.clone(),
         app_state_arc.lorebook_service.clone(),
+        app_state_arc.auth_backend.clone(), // Reuse auth_backend from app_state_arc
     ));
     
     // Modify the second point in the mock Qdrant response to have an invalid message_id
@@ -778,6 +791,7 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_timestamp() {
     let hybrid_token_counter_for_test_7 = Arc::new(HybridTokenCounter::new_local_only(tokenizer_service_for_test_7));
     let user_persona_service_for_test_7 = Arc::new(UserPersonaService::new(test_app.db_pool.clone(), encryption_service_for_test_7.clone()));
     let lorebook_service_for_test_7 = Arc::new(LorebookService::new(test_app.db_pool.clone(), encryption_service_for_test_7.clone()));
+    let auth_backend_7 = Arc::new(scribe_backend::auth::user_store::Backend::new(test_app.db_pool.clone()));
 
     let app_state_arc = Arc::new(AppState::new(
         test_app.db_pool.clone(),
@@ -790,7 +804,8 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_timestamp() {
         user_persona_service_for_test_7, // Added user_persona_service
         hybrid_token_counter_for_test_7,
         encryption_service_for_test_7.clone(),
-        lorebook_service_for_test_7
+        lorebook_service_for_test_7,
+        auth_backend_7
     ));
 
     // Mock Qdrant to return a point with an invalid timestamp in metadata
@@ -834,6 +849,7 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_timestamp() {
         app_state_arc.token_counter.clone(),
         app_state_arc.encryption_service.clone(),
         app_state_arc.lorebook_service.clone(),
+        app_state_arc.auth_backend.clone(),
     ));
 
     let result = app_state_for_metadata_test.embedding_pipeline_service.retrieve_relevant_chunks(
@@ -874,6 +890,7 @@ async fn test_retrieve_relevant_chunks_metadata_missing_field() {
     let hybrid_token_counter_for_test_8 = Arc::new(HybridTokenCounter::new_local_only(tokenizer_service_for_test_8));
     let user_persona_service_for_test_8 = Arc::new(UserPersonaService::new(test_app.db_pool.clone(), encryption_service_for_test_8.clone()));
     let lorebook_service_for_test_8 = Arc::new(LorebookService::new(test_app.db_pool.clone(), encryption_service_for_test_8.clone()));
+    let auth_backend_8 = Arc::new(scribe_backend::auth::user_store::Backend::new(test_app.db_pool.clone()));
     
     // This app_state_arc is not needed here as we are creating app_state_for_metadata_test below
     // let app_state_arc = Arc::new(AppState::new(
@@ -931,6 +948,7 @@ async fn test_retrieve_relevant_chunks_metadata_missing_field() {
         hybrid_token_counter_for_test_8,
         encryption_service_for_test_8.clone(),
         lorebook_service_for_test_8,
+        auth_backend_8,
     ));
 
     let result = app_state_for_metadata_test.embedding_pipeline_service.retrieve_relevant_chunks(
@@ -972,6 +990,7 @@ async fn test_retrieve_relevant_chunks_metadata_wrong_type() {
     let hybrid_token_counter_for_test_9 = Arc::new(HybridTokenCounter::new_local_only(tokenizer_service_for_test_9));
     let user_persona_service_for_test_9 = Arc::new(UserPersonaService::new(test_app.db_pool.clone(), encryption_service_for_test_9.clone()));
     let lorebook_service_for_test_9 = Arc::new(LorebookService::new(test_app.db_pool.clone(), encryption_service_for_test_9.clone()));
+    let auth_backend_9 = Arc::new(scribe_backend::auth::user_store::Backend::new(test_app.db_pool.clone()));
 
     // This _app_state is not needed here as we are creating app_state_for_metadata_test below
     // let _app_state = Arc::new(AppState::new( // Renamed to avoid conflict, though it's unused now
@@ -1030,6 +1049,7 @@ async fn test_retrieve_relevant_chunks_metadata_wrong_type() {
         hybrid_token_counter_for_test_9,
         encryption_service_for_test_9.clone(),
         lorebook_service_for_test_9,
+        auth_backend_9,
     ));
 
     let result = app_state_for_metadata_test.embedding_pipeline_service.retrieve_relevant_chunks(
@@ -1128,6 +1148,7 @@ async fn test_rag_context_injection_with_qdrant() {
     let hybrid_token_counter_for_test_10 = Arc::new(HybridTokenCounter::new_local_only(tokenizer_service_for_test_10));
     let user_persona_service_for_test_10 = Arc::new(UserPersonaService::new(test_app.db_pool.clone(), encryption_service_for_test_10.clone()));
     let lorebook_service_for_test_10 = Arc::new(LorebookService::new(test_app.db_pool.clone(), encryption_service_for_test_10.clone()));
+    let auth_backend_10 = Arc::new(scribe_backend::auth::user_store::Backend::new(test_app.db_pool.clone()));
     
     let app_state_for_rag = Arc::new(AppState::new(
         test_app.db_pool.clone(),
@@ -1140,7 +1161,8 @@ async fn test_rag_context_injection_with_qdrant() {
         user_persona_service_for_test_10,
         hybrid_token_counter_for_test_10,
         encryption_service_for_test_10.clone(),
-        lorebook_service_for_test_10
+        lorebook_service_for_test_10,
+        auth_backend_10
     ));
 
     // Step 1a: Process and embed a chat message
@@ -1384,6 +1406,7 @@ async fn test_rag_chat_history_isolation_by_user_and_session() {
     let hybrid_token_counter = Arc::new(HybridTokenCounter::new_local_only(tokenizer_service));
     let user_persona_service = Arc::new(UserPersonaService::new(test_app.db_pool.clone(), encryption_service.clone()));
     let lorebook_service = Arc::new(LorebookService::new(test_app.db_pool.clone(), encryption_service.clone()));
+    let auth_backend = Arc::new(scribe_backend::auth::user_store::Backend::new(test_app.db_pool.clone()));
 
     let app_state = Arc::new(AppState::new(
         test_app.db_pool.clone(),
@@ -1396,7 +1419,8 @@ async fn test_rag_chat_history_isolation_by_user_and_session() {
         user_persona_service,
         hybrid_token_counter,
         encryption_service.clone(),
-        lorebook_service
+        lorebook_service,
+        auth_backend
     ));
 
     // 2. Define User IDs and Session IDs
@@ -1564,6 +1588,7 @@ async fn test_rag_lorebook_isolation_by_user_and_id() {
     let hybrid_token_counter = Arc::new(HybridTokenCounter::new_local_only(tokenizer_service));
     let user_persona_service = Arc::new(UserPersonaService::new(test_app.db_pool.clone(), encryption_service.clone()));
     let lorebook_service = Arc::new(LorebookService::new(test_app.db_pool.clone(), encryption_service.clone()));
+    let auth_backend = Arc::new(scribe_backend::auth::user_store::Backend::new(test_app.db_pool.clone()));
 
     let app_state = Arc::new(AppState::new(
         test_app.db_pool.clone(),
@@ -1576,7 +1601,8 @@ async fn test_rag_lorebook_isolation_by_user_and_id() {
         user_persona_service,
         hybrid_token_counter,
         encryption_service.clone(),
-        lorebook_service
+        lorebook_service,
+        auth_backend
     ));
 
     // 2. Define User IDs and Lorebook IDs

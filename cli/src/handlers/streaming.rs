@@ -21,7 +21,7 @@ pub async fn handle_stream_test_action<H: IoHandler, C: HttpClient>(
 
     // 2. Create Chat Session
     io_handler.write_line("Creating a new chat session for the test...")?;
-    let chat_session = client.create_chat_session(character_id, None).await?;
+    let chat_session = client.create_chat_session(character_id, None, None).await?;
     let chat_id = chat_session.id;
     tracing::info!(%chat_id, "Chat session created for streaming test");
     io_handler.write_line(&format!("Chat session created (ID: {}).", chat_id))?;

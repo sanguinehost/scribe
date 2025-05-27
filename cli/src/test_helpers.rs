@@ -310,7 +310,7 @@ impl HttpClient for MockHttpClient {
         mock_result.map_err(Into::into)
     }
 
-    async fn create_chat_session(&self, _character_id: Uuid, _active_custom_persona_id: Option<Uuid>) -> Result<Chat, CliError> {
+    async fn create_chat_session(&self, _character_id: Uuid, _active_custom_persona_id: Option<Uuid>, _lorebook_ids: Option<Vec<Uuid>>) -> Result<Chat, CliError> {
         let mock_result =
             Arc::unwrap_or_clone(self.create_chat_session_result.clone().unwrap_or_else(|| {
                 Arc::new(Err(MockCliError::Internal(

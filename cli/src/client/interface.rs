@@ -50,7 +50,7 @@ pub trait HttpClient: Send + Sync {
 
     // Characters
     async fn list_characters(&self) -> Result<Vec<ClientCharacterDataForClient>, CliError>;
-    async fn create_chat_session(&self, character_id: Uuid, active_custom_persona_id: Option<Uuid>) -> Result<Chat, CliError>;
+    async fn create_chat_session(&self, character_id: Uuid, active_custom_persona_id: Option<Uuid>, lorebook_ids: Option<Vec<Uuid>>) -> Result<Chat, CliError>;
     async fn upload_character(
         &self,
         name: &str,

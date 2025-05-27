@@ -22,6 +22,7 @@ use crate::services::chat_override_service::ChatOverrideService; // <<< ADDED TH
 use crate::services::user_persona_service::UserPersonaService; // <<< ADDED THIS IMPORT
 use crate::services::encryption_service::EncryptionService; // Added for EncryptionService
 use crate::services::lorebook_service::LorebookService; // Added for LorebookService
+use crate::auth::user_store::Backend as AuthBackend; // Added for shared AuthBackend
 use std::fmt;
 use uuid::Uuid; // For embedding_call_tracker // For manual Debug impl
 
@@ -52,6 +53,7 @@ pub struct AppState {
     pub token_counter: Arc<HybridTokenCounter>,             // Added for token counting
     pub encryption_service: Arc<EncryptionService>,         // Added for lorebook and other encryption needs
     pub lorebook_service: Arc<LorebookService>,           // Added for LorebookService
+    pub auth_backend: Arc<AuthBackend>,                      // Added for shared AuthBackend instance
 }
 
 // Manual Debug implementation for AppState
@@ -73,6 +75,7 @@ impl fmt::Debug for AppState {
             .field("token_counter", &"<Arc<HybridTokenCounter>>") // Added
             .field("encryption_service", &"<Arc<EncryptionService>>") // Added
             .field("lorebook_service", &"<Arc<LorebookService>>") // Added for LorebookService
+            .field("auth_backend", &"<Arc<AuthBackend>>") // Added
             .finish()
     }
 }
@@ -92,6 +95,7 @@ impl AppState {
         token_counter: Arc<HybridTokenCounter>,                                           // Added
         encryption_service: Arc<EncryptionService>, // Added
         lorebook_service: Arc<LorebookService>, // Added for LorebookService
+        auth_backend: Arc<AuthBackend>, // Added for shared AuthBackend
     ) -> Self {
         Self {
             pool,
@@ -109,6 +113,7 @@ impl AppState {
             token_counter,                                                 // Added
             encryption_service, // Added
             lorebook_service,   // Added for LorebookService
+            auth_backend,       // Added for shared AuthBackend
         }
     }
 }

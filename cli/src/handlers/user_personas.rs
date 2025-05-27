@@ -61,7 +61,10 @@ pub async fn handle_persona_list_action<C: HttpClient, H: IoHandler>(
             } else {
                 io_handler.write_line("User Personas:")?;
                 for persona in personas {
-                    io_handler.write_line(&format!("  - {} (ID: {})", persona.name, persona.id))?;
+                    io_handler.write_line(&format!("- Name: {}", persona.name))?;
+                    io_handler.write_line(&format!("  ID: {}", persona.id))?;
+                    io_handler.write_line(&format!("  Description: {}", persona.description))?;
+                    io_handler.write_line("")?; // Empty line between personas
                 }
             }
             Ok(())

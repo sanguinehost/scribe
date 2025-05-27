@@ -240,6 +240,7 @@ async fn main() -> Result<()> {
 
     // Configure the auth backend
     let auth_backend = AuthBackend::new(pool.clone());
+    let auth_backend_arc = Arc::new(auth_backend.clone());
 
     // Build the auth layer, passing the SessionManagerLayer
     let auth_layer = AuthManagerLayerBuilder::new(auth_backend, session_manager_layer.clone())
@@ -275,6 +276,7 @@ async fn main() -> Result<()> {
         hybrid_token_counter_arc,   // Added
         encryption_service_arc.clone(), // Pass the encryption service
         lorebook_service_arc,       // Pass the lorebook service
+        auth_backend_arc,           // Pass the shared AuthBackend
     );
 
     // --- Define Protected Routes ---
