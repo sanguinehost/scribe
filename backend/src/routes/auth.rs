@@ -230,29 +230,19 @@ pub async fn login_handler(
 
             // Debugging: Log DEK presence after login call (from auth_session.user)
             if let Some(ref user_after_login) = auth_session.user {
-                if let Some(ref wrapped_dek_after_login) = user_after_login.dek {
-                    info!(%user_id, "User.dek is PRESENT in auth_session.user AFTER login. Length: {}", wrapped_dek_after_login.expose_secret_bytes().len());
+                if let Some(ref _wrapped_dek_after_login) = user_after_login.dek { // _wrapped_dek_after_login as it's not used in the error
+                    error!(%user_id, "SECURITY WARNING: User.dek is UNEXPECTEDLY PRESENT in auth_session.user AFTER login. DEK should be None and cached server-side.");
                 } else {
-                    error!(%user_id, "User.dek is MISSING in auth_session.user AFTER login.");
+                    debug!(%user_id, "User.dek is None in auth_session.user AFTER login (expected, as DEK is cached server-side).");
                 }
             } else {
                 error!(%user_id, "auth_session.user is NONE after login.");
             }
 
-            // Log the state of the tower_sessions::Session AFTER axum-login has done its work.
-            match session.get::<String>("axum-login.user").await {
-                Ok(Some(user_session_data_str)) => {
-                    debug!(session_id = ?session.id(), user_id = %user_id, "Raw 'axum-login.user' data (as string) after login: {}", user_session_data_str);
-                }
-                Ok(None) => {
-                    warn!(session_id = ?session.id(), user_id = %user_id, "'axum-login.user' key not found in session after login.");
-                }
-                Err(e) => {
-                    // This error means the key was found but couldn't be deserialized into String,
-                    // or some other session store error occurred.
-                    error!(session_id = ?session.id(), user_id = %user_id, "Error trying to get/deserialize 'axum-login.user' as String from session after login: {:?}. This might indicate the data is not stored as a simple string (e.g., it might be binary).", e);
-                }
-            }
+            // SECURITY FIX: We no longer store the DEK in the session.
+            // The following block for checking "axum-login.user" key immediately after login has been removed.
+            // This check is unreliable as the session instance in the handler may not be synchronously updated.
+            // Session persistence is handled by middleware and verified by integration tests.
 
             // SECURITY FIX: We no longer store the DEK in the session.
             // The DEK is now only stored in the server-side AuthBackend cache.

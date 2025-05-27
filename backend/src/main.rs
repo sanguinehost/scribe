@@ -236,7 +236,7 @@ async fn main() -> Result<()> {
         .with_secure(config.session_cookie_secure) // Use config value directly
         .with_same_site(SameSite::Lax)
         // .with_signed(signing_key.clone()) // CookieManagerLayer will handle signing
-        .with_expiry(Expiry::OnInactivity(time::Duration::days(7)));
+        .with_expiry(Expiry::OnInactivity(time::Duration::hours(24)));
 
     // Configure the auth backend
     // IMPORTANT: Wrap in Arc first to ensure the same instance is shared
