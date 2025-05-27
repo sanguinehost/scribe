@@ -165,15 +165,17 @@ fn chunk_recursive(
             // this split is unproductive, likely leading to infinite recursion.
             // Skip this separator and hope a later one (or fallback) works better.
             // Note: segment_size (char count) was already calculated at the start of the function.
-            let part1_char_count = part1_trimmed.chars().count(); // Char count of the first part
-            let part2_trimmed_char_count = part2_trimmed.chars().count(); // Char count of the second part
+            let _part1_char_count = part1_trimmed.chars().count(); // Char count of the first part (kept for potential future use)
+            let _part2_trimmed_char_count = part2_trimmed.chars().count(); // Char count of the second part (kept for potential future use)
 
-            // Ensure the split is productive: at least one part must be strictly smaller,
-            // and neither part can be larger than the original segment's character count.
-            let is_productive = (part1_char_count < segment_size
-                || part2_trimmed_char_count < segment_size)
-                && part1_char_count <= segment_size
-                && part2_trimmed_char_count <= segment_size;
+            // FIX: Measure sizes consistently using the configured metric
+            let part1_size = measure_size(part1_trimmed, config.metric, word_segmenter);
+            let part2_size = measure_size(part2_trimmed, config.metric, word_segmenter);
+
+            // Ensure the split is productive: at least one part must be strictly smaller
+            let is_productive = (part1_size < segment_size || part2_size < segment_size)
+                && part1_size <= segment_size
+                && part2_size <= segment_size;
 
             if is_productive {
                 // Recursively chunk the first part
@@ -203,7 +205,7 @@ fn chunk_recursive(
                     chunks,
                 )?;
             } else {
-                warn!(original_segment_char_count = segment_size, part1_char_count, part2_trimmed_char_count, metric = ?config.metric, separator, "Unproductive split detected (character count did not decrease for both parts), skipping separator to avoid potential infinite recursion.");
+                warn!(original_segment_size = segment_size, part1_size, part2_size, metric = ?config.metric, separator, "Unproductive split detected (size did not decrease for both parts), skipping separator");
                 // Allow trying other separators by just not setting split_occurred = true.
                 continue; // Try next separator
             }
@@ -332,12 +334,12 @@ fn try_split_by_sentences(
     for sentence_end_byte in sentence_breaks {
         let sentence = &segment[sentence_start_byte..sentence_end_byte].trim();
         if !sentence.is_empty() {
-            let sentence_char_count = sentence.chars().count();
-            // --- FIX: Ensure progress before recursing ---
-            if sentence_char_count >= original_segment_size {
+            let sentence_size = measure_size(sentence, config.metric, word_segmenter);
+            // FIX: Compare using the same metric
+            if sentence_size >= original_segment_size {
                 trace!(
                     original_segment_size,
-                    sentence_char_count,
+                    sentence_size,
                     "Sentence split did not reduce size, skipping recursion for this sentence."
                 );
                 // Skip this 'sentence' as it doesn't make progress. Update offsets and continue loop.
@@ -560,14 +562,11 @@ fn split_fallback(
 }
 
 /// Measures the size of a text segment based on the configured metric.
-/// Measures the size of a text segment based *only* on character count.
-/// The `metric` parameter influences *where* splits happen, not the size measurement itself,
-/// as `max_size` is defined in characters.
 #[inline]
 fn measure_size(text: &str, metric: ChunkingMetric, word_segmenter: &WordSegmenter) -> usize {
     match metric {
         ChunkingMetric::Char => text.chars().count(),
-        ChunkingMetric::Word => word_segmenter.segment_str(text).count(), // Use ICU word count
+        ChunkingMetric::Word => word_segmenter.segment_str(text).count(),
     }
 }
 
@@ -577,8 +576,8 @@ fn find_best_split_point(
     text: &str,
     separator: &str,
     max_size: usize,
-    _metric: ChunkingMetric,         // Prefix unused variable
-    _word_segmenter: &WordSegmenter, // Prefix unused variable
+    metric: ChunkingMetric,
+    word_segmenter: &WordSegmenter,
 ) -> Option<usize> {
     if separator.is_empty() {
         return None;
@@ -590,10 +589,10 @@ fn find_best_split_point(
     while let Some(found_pos) = text[current_pos..].find(separator) {
         let split_point = current_pos + found_pos;
         let first_part = &text[..split_point];
-        // Compare character count directly against max_size
-        let first_part_char_count = first_part.chars().count();
+        // FIX: Measure size using the configured metric
+        let first_part_size = measure_size(first_part, metric, word_segmenter);
 
-        if first_part_char_count <= max_size {
+        if first_part_size <= max_size {
             // This split point is valid based on character count, store it as the current best
             best_split = Some(split_point);
             // Move search position past this separator
