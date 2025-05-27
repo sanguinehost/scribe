@@ -616,6 +616,8 @@ async fn test_first_mes_included_in_history() {
         encryption_service.clone()
     ));
 
+    let auth_backend = Arc::new(scribe_backend::auth::user_store::Backend::new(test_app.db_pool.clone()));
+    
     let state_for_service = AppState::new(
         test_app.db_pool.clone(),
         test_app.config.clone(),
@@ -627,7 +629,8 @@ async fn test_first_mes_included_in_history() {
         user_persona_service, // Use the created service
         token_counter_service, // Use the created service
         encryption_service.clone(),
-        lorebook_service      // Add LorebookService
+        lorebook_service,     // Add LorebookService
+        auth_backend          // Add auth_backend
     );
     let state_arc = std::sync::Arc::new(state_for_service);
 

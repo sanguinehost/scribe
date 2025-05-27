@@ -448,6 +448,7 @@ async fn get_chat_settings_defaults() {
                 .expect("Failed to create tokenizer for test");
     let hybrid_token_counter_for_test = Arc::new(scribe_backend::services::hybrid_token_counter::HybridTokenCounter::new_local_only(tokenizer_service_for_test));
     let lorebook_service_for_test = Arc::new(LorebookService::new(test_app.db_pool.clone(), encryption_service_for_test.clone()));
+    let auth_backend_for_test = Arc::new(scribe_backend::auth::user_store::Backend::new(test_app.db_pool.clone()));
 
     let app_state_for_service = AppState::new(
         test_app.db_pool.clone(),
@@ -460,7 +461,8 @@ async fn get_chat_settings_defaults() {
         user_persona_service_for_test,
         hybrid_token_counter_for_test,
         encryption_service_for_test.clone(),
-        lorebook_service_for_test
+        lorebook_service_for_test,
+        auth_backend_for_test
     );
 
     // Create a dummy DEK for the test

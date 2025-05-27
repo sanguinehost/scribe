@@ -114,12 +114,14 @@ async fn create_session_uses_default_persona_when_active_persona_is_none() {
         .unwrap();
     assert_eq!(db_user_check.default_persona_id, Some(created_persona.id));
 
+    let auth_backend = Arc::new(scribe_backend::auth::user_store::Backend::new(app.db_pool.clone()));
     let app_state_for_service = TestAppStateBuilder::new(
         app.db_pool.clone(),
         app.config.clone(),
         app.ai_client.clone(),
         app.mock_embedding_client.clone(),
         app.qdrant_service.clone(),
+        auth_backend,
     )
     .with_embedding_pipeline_service(app.mock_embedding_pipeline_service.clone())
     .build();
@@ -217,12 +219,14 @@ async fn create_session_no_default_persona_falls_back_to_character_prompt() {
         .unwrap();
     assert!(db_user_check.default_persona_id.is_none());
 
+    let auth_backend = Arc::new(scribe_backend::auth::user_store::Backend::new(app.db_pool.clone()));
     let app_state_for_service = TestAppStateBuilder::new(
         app.db_pool.clone(),
         app.config.clone(),
         app.ai_client.clone(),
         app.mock_embedding_client.clone(),
         app.qdrant_service.clone(),
+        auth_backend,
     )
     .with_embedding_pipeline_service(app.mock_embedding_pipeline_service.clone())
     .build();
@@ -348,12 +352,14 @@ async fn create_session_default_persona_deleted_falls_back_to_character_prompt()
         .unwrap()
         .unwrap();
     
+        let auth_backend = Arc::new(scribe_backend::auth::user_store::Backend::new(app.db_pool.clone()));
         let app_state_for_service = TestAppStateBuilder::new(
             app.db_pool.clone(),
         app.config.clone(),
         app.ai_client.clone(),
         app.mock_embedding_client.clone(),
         app.qdrant_service.clone(),
+        auth_backend,
     )
     .with_embedding_pipeline_service(app.mock_embedding_pipeline_service.clone())
     .build();

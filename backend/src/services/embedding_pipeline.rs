@@ -1126,6 +1126,7 @@ mod tests {
             .expect("Failed to create tokenizer for test")
         ));
         let lorebook_service = Arc::new(LorebookService::new(pool.clone(), encryption_service.clone()));
+        let auth_backend = Arc::new(crate::auth::user_store::Backend::new(pool.clone()));
 
         let app_state = Arc::new(AppState::new(
             pool,
@@ -1139,6 +1140,7 @@ mod tests {
             token_counter_service,
             encryption_service.clone(),
             lorebook_service, // Added lorebook_service
+            auth_backend,     // Added auth_backend
         ));
         (app_state, mock_qdrant, mock_embed_client)
     }

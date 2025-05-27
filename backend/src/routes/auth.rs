@@ -807,9 +807,9 @@ pub async fn change_password_handler(
 
     // 4. Call the core password change logic
     debug!(user_id = %current_db_user.id, "Calling auth::change_user_password function.");
-    let auth_backend = crate::auth::user_store::Backend::new(state.pool.clone());
+    // Use the shared auth_backend from AppState
     match auth::change_user_password(
-        &auth_backend,
+        &state.auth_backend,
         current_db_user.id,
         current_db_user, // Pass the full user object fetched from DB
         payload.current_password,
@@ -883,9 +883,9 @@ pub async fn recover_password_handler(
 
     // 2. Call the core password recovery logic
     debug!("Calling auth::recover_user_password_with_phrase function.");
-    let auth_backend = crate::auth::user_store::Backend::new(state.pool.clone());
+    // Use the shared auth_backend from AppState
     match recover_user_password_with_phrase(
-        &auth_backend,
+        &state.auth_backend,
         &state.pool,
         payload.identifier.clone(), // identifier is still needed for the function call
         payload.recovery_phrase,

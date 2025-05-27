@@ -764,6 +764,7 @@ pub struct TestAppStateBuilder {
     user_persona_service: Option<Arc<UserPersonaService>>,
     token_counter: Option<Arc<HybridTokenCounter>>,
     lorebook_service: Option<Arc<crate::services::lorebook_service::LorebookService>>, // Fully qualify
+    auth_backend: Arc<AuthBackend>, // Add auth_backend to builder
 }
 
 impl TestAppStateBuilder {
@@ -773,6 +774,7 @@ impl TestAppStateBuilder {
         ai_client: Arc<dyn AiClient + Send + Sync>,
         embedding_client: Arc<dyn EmbeddingClient + Send + Sync>,
         qdrant_service: Arc<dyn QdrantClientServiceTrait + Send + Sync>,
+        auth_backend: Arc<AuthBackend>,
     ) -> Self {
         Self {
             db_pool,
@@ -785,6 +787,7 @@ impl TestAppStateBuilder {
             user_persona_service: None,
             token_counter: None,
             lorebook_service: None,
+            auth_backend,
         }
     }
 
@@ -890,6 +893,7 @@ impl TestAppStateBuilder {
             token_counter,
             encryption_service, // Added encryption_service
             lorebook_service, // Added lorebook_service
+            self.auth_backend, // Use the provided auth_backend
         )
     }
 }
@@ -1024,6 +1028,10 @@ pub async fn spawn_app_with_options(multi_thread: bool, use_real_ai: bool, use_r
         (mock_qdrant.clone() as Arc<dyn QdrantClientServiceTrait + Send + Sync>, Some(mock_qdrant))
     };
 
+    // Create auth_backend early so it can be shared
+    let auth_backend = AuthBackend::new(pool.clone());
+    let auth_backend_for_state = auth_backend.clone(); // Clone for AppState
+
     let mut builder; // Declare builder without initializing
 
     if use_real_qdrant { // If true, use real embedding client and pipeline for AppState
@@ -1041,6 +1049,7 @@ pub async fn spawn_app_with_options(multi_thread: bool, use_real_ai: bool, use_r
             ai_client_for_state.clone(),
             embedding_client_for_state.clone(), // Pass the real one for AppState
             qdrant_service_for_state.clone(),
+            Arc::new(auth_backend_for_state.clone()),
         );
         // Only use real embedding pipeline if explicitly requested
         if !use_real_embedding_pipeline {
@@ -1058,6 +1067,7 @@ pub async fn spawn_app_with_options(multi_thread: bool, use_real_ai: bool, use_r
             ai_client_for_state.clone(),
             embedding_client_for_state.clone(), // Pass the mock one for AppState
             qdrant_service_for_state.clone(),
+            Arc::new(auth_backend_for_state.clone()),
         );
 
         // Configure builder with the mock pipeline service for AppState
@@ -1079,8 +1089,7 @@ pub async fn spawn_app_with_options(multi_thread: bool, use_real_ai: bool, use_r
         .with_same_site(SameSite::Lax)
         .with_expiry(Expiry::OnInactivity(time::Duration::days(7)));
 
-    let auth_backend = AuthBackend::new(pool.clone());
-    let _auth_layer = AuthManagerLayerBuilder::new(auth_backend, session_manager_layer.clone()).build();
+    let auth_layer = AuthManagerLayerBuilder::new(auth_backend, session_manager_layer.clone()).build();
     
     let listener = TcpListener::bind(format!("127.0.0.1:{}", config_arc.port))
         .await
@@ -1116,7 +1125,7 @@ pub async fn spawn_app_with_options(multi_thread: bool, use_real_ai: bool, use_r
     let router_for_server = Router::new() // Renamed to avoid conflict with router field in TestApp
         .nest("/api", all_api_routes) // Nest all combined API routes under /api
         .layer(CookieManagerLayer::new())
-        // .layer(auth_layer) // Temporarily commented out for debugging E0277
+        .layer(auth_layer) // Re-enabled auth layer
         .with_state(app_state_inner.clone());
 
     let router_for_test_app = router_for_server.clone(); // Clone before moving

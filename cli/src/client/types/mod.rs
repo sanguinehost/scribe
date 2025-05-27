@@ -2,11 +2,6 @@
 
 pub mod lorebook_import; // Added for SillyTavern lorebook parsing
 pub mod user_personas;
-// Add other type modules here as needed, e.g.:
-// pub mod characters;
-// pub mod chat_sessions;
-
-// Potentially re-export common types if desired for easier access
 pub use self::user_personas::{CreateUserPersonaDto, UserPersonaDataForClient, UpdateUserPersonaDto};
 pub use self::lorebooks::LorebookMetadataResponse; // Added for lorebook metadata
 

@@ -158,10 +158,14 @@ async fn persona_cli_list_success() -> Result<(), Box<dyn std::error::Error>> {
     let list_result = handle_persona_list_action(&http_client, &mut mock_io_list).await;
     assert!(list_result.is_ok(), "List handler failed: {:?}", list_result.err());
 
-    let output_str = mock_io_list.get_all_output().join("
-");
-    assert!(output_str.contains(&format!("- {} (ID: {})", persona_name1, id1)));
-    assert!(output_str.contains(&format!("- {} (ID: {})", persona_name2, id2)));
+    let output_str = mock_io_list.get_all_output().join("\n");
+    // Check for persona 1
+    assert!(output_str.contains(&format!("- Name: {}", persona_name1)), "Output should contain name for persona 1. Output: {}", output_str);
+    assert!(output_str.contains(&format!("  ID: {}", id1)), "Output should contain ID for persona 1. Output: {}", output_str);
+    
+    // Check for persona 2
+    assert!(output_str.contains(&format!("- Name: {}", persona_name2)), "Output should contain name for persona 2. Output: {}", output_str);
+    assert!(output_str.contains(&format!("  ID: {}", id2)), "Output should contain ID for persona 2. Output: {}", output_str);
 
     Ok(())
 }

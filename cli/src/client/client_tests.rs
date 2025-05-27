@@ -10,7 +10,7 @@ use httptest::{
     Expectation,
     ServerHandle,
     ServerPool,
-    matchers::{all_of, contains, key, matches, request}, // Added matches
+    matchers::{all_of, contains, eq, key, json_decoded, matches, request}, // Added matches, json_decoded, eq
     responders::{json_encoded, status_code},
 };
 use reqwest::{Client as ReqwestClient, StatusCode, Url}; // Added StatusCode
@@ -29,10 +29,6 @@ use super::types::{
 use crate::error::CliError;
 use scribe_backend::models::{
     auth::LoginPayload,
-    // The original test used CharacterDataForClient, but it was aliased from the main client file.
-    // Since ClientCharacterDataForClient is now a distinct struct in types.rs and re-exported,
-    // we should use that if the tests were indeed using the client's representation.
-    // Let's stick to what was in the original test's direct use statements for now.
     chats::{ApiChatMessage, Chat, ChatForClient, GenerateChatRequest, MessageRole},
 };
 
@@ -965,17 +961,22 @@ async fn test_create_chat_session_success() {
         active_impersonated_character_id: None,
     };
 
-    let request_payload = json!({ "character_id": character_id, "active_custom_persona_id": serde_json::Value::Null });
+    let request_payload = json!({ 
+        "title": "",
+        "character_id": character_id, 
+        "lorebook_ids": serde_json::Value::Null,
+        "active_custom_persona_id": serde_json::Value::Null 
+    });
 
     server.expect(
         Expectation::matching(all_of![
             request::method_path("POST", "/api/chats/create_session"),
-            request::body(request_payload.to_string()),
+            request::body(json_decoded(eq(request_payload.clone()))),
         ])
         .respond_with(json_encoded(mock_session.clone())),
     );
 
-    let result = client.create_chat_session(character_id, None).await;
+    let result = client.create_chat_session(character_id, None, None).await;
 
     assert!(result.is_ok());
     let created_session = result.unwrap();
@@ -995,17 +996,22 @@ async fn test_create_chat_session_char_not_found() {
         }
     });
 
-    let request_payload = json!({ "character_id": character_id, "active_custom_persona_id": serde_json::Value::Null });
+    let request_payload = json!({ 
+        "title": "",
+        "character_id": character_id, 
+        "lorebook_ids": serde_json::Value::Null,
+        "active_custom_persona_id": serde_json::Value::Null 
+    });
 
     server.expect(
         Expectation::matching(all_of![
             request::method_path("POST", "/api/chats/create_session"),
-            request::body(request_payload.to_string()),
+            request::body(json_decoded(eq(request_payload.clone()))), // Use request::body with json_decoded and eq
         ])
         .respond_with(status_code(404).body(error_body.to_string())),
     );
 
-    let result = client.create_chat_session(character_id, None).await;
+    let result = client.create_chat_session(character_id, None, None).await;
 
     assert!(result.is_err());
     match result.err().unwrap() {

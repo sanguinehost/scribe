@@ -141,12 +141,14 @@ impl HttpClient for ReqwestClientWrapper {
         handle_response(response).await
     }
 
-    async fn create_chat_session(&self, character_id: Uuid, active_custom_persona_id: Option<Uuid>) -> Result<Chat, CliError> {
-        let url = build_url(&self.base_url, "/api/chat/create_session")?; // Corrected path to match backend routes/chat.rs
-        tracing::info!(target: "scribe_cli::client::implementation", %url, %character_id, ?active_custom_persona_id, "Creating chat session via HttpClient");
-        // Use the backend's CreateChatSessionPayload struct
-        let payload = scribe_backend::models::chats::CreateChatSessionPayload {
+    async fn create_chat_session(&self, character_id: Uuid, active_custom_persona_id: Option<Uuid>, lorebook_ids: Option<Vec<Uuid>>) -> Result<Chat, CliError> {
+        let url = build_url(&self.base_url, "/api/chats/create_session")?; // Use chats endpoint that supports lorebooks
+        tracing::info!(target: "scribe_cli::client::implementation", %url, %character_id, ?active_custom_persona_id, ?lorebook_ids, "Creating chat session with lorebooks via HttpClient");
+        // Use the backend's CreateChatRequest struct that supports lorebook_ids
+        let payload = scribe_backend::models::chats::CreateChatRequest {
+            title: String::new(), // Default empty title
             character_id,
+            lorebook_ids,
             active_custom_persona_id,
         };
         let response = self

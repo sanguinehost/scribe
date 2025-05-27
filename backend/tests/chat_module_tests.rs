@@ -273,12 +273,14 @@ mod get_session_data_for_generation_tests {
         // Create an Arc for the concrete MockEmbeddingPipelineService to store in TestSetup
         let mock_embedding_pipeline_for_test_setup = Arc::new(mock_embedding_pipeline_service_concrete.clone());
 
+        let auth_backend = Arc::new(scribe_backend::auth::user_store::Backend::new(pool.clone()));
         let app_state_instance = TestAppStateBuilder::new(
             pool.clone(),
             config_arc.clone(),
             mock_ai_client_instance.clone(),
             mock_embedding_client_instance.clone(),
             mock_qdrant_service_instance.clone(),
+            auth_backend,
         )
         .with_token_counter(token_counter_service.clone())
         // Pass the concrete mock service to the builder, it will be cast internally if needed by AppState::new

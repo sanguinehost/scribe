@@ -7,7 +7,7 @@ use diesel::{
     prelude::*,
     result::Error as DieselError,
 };
-use tracing::{error, info, instrument, warn};
+use tracing::{debug, error, info, instrument, warn};
 
 use crate::{
     AppState,
@@ -237,17 +237,47 @@ pub async fn create_session_and_maybe_first_message(
             }
             
             // Insert lorebook associations if provided
-            if let Some(ids) = lorebook_ids_for_closure {
+            if let Some(ref ids) = lorebook_ids_for_closure { // Changed to `ref ids` to borrow
                 if !ids.is_empty() {
-                    info!(session_id = %new_session_id, lorebook_ids = ?ids, "Associating lorebooks with chat session");
-                    let new_associations: Vec<_> = ids.into_iter().map(|lorebook_id| {
+                    debug!(session_id = %new_session_id, user_id = %user_id, lorebook_ids = ?ids, "Preparing to associate lorebooks. Provided IDs: {:?}", ids);
+                    
+                    // Validate lorebook IDs
+                    for lorebook_id_to_check in ids {
+                        use crate::schema::lorebooks::dsl as lorebooks_dsl;
+                        match lorebooks_dsl::lorebooks
+                            .filter(lorebooks_dsl::id.eq(lorebook_id_to_check))
+                            .select((lorebooks_dsl::id, lorebooks_dsl::user_id))
+                            .first::<(Uuid, Uuid)>(transaction_conn)
+                            .optional()
+                        {
+                            Ok(Some((_, owner_id))) => {
+                                if owner_id != user_id {
+                                    error!(session_id = %new_session_id, lorebook_id = %lorebook_id_to_check, owner_id = %owner_id, "User does not own lorebook.");
+                                    return Err(AppError::Forbidden); // Or a more specific error like AppError::LorebookAccessDenied
+                                }
+                            }
+                            Ok(None) => {
+                                error!(session_id = %new_session_id, lorebook_id = %lorebook_id_to_check, "Lorebook not found.");
+                                return Err(AppError::NotFound(format!("Lorebook with ID {} not found.", lorebook_id_to_check)));
+                            }
+                            Err(e) => {
+                                error!(session_id = %new_session_id, lorebook_id = %lorebook_id_to_check, error = ?e, "Error querying lorebook.");
+                                return Err(AppError::DatabaseQueryError(e.to_string()));
+                            }
+                        }
+                    }
+                    
+                    info!(session_id = %new_session_id, lorebook_ids = ?ids, "Associating lorebooks with chat session after validation");
+                    // Clone ids again here for into_iter as it was only borrowed before
+                    let new_associations: Vec<_> = ids.clone().into_iter().map(|lorebook_id| {
                         (
                             chat_session_lorebooks::dsl::chat_session_id.eq(new_session_id),
                             chat_session_lorebooks::dsl::lorebook_id.eq(lorebook_id),
+                            chat_session_lorebooks::dsl::user_id.eq(user_id),
                             // created_at and updated_at will use DB defaults
                         )
                     }).collect();
-
+ 
                     diesel::insert_into(chat_session_lorebooks::table)
                         .values(new_associations)
                         .execute(transaction_conn)
