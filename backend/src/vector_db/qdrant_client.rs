@@ -498,12 +498,16 @@ mod tests {
     use qdrant_client::qdrant::{Condition, FieldCondition, Filter, Match, value::Kind};
     use qdrant_client::qdrant::{PointId, Value, Vectors}; // Correct the import path for PointId and Vectors if they are part of the public API
     use serde_json::json; // Moved import here
-    use std::sync::Arc;
+    use std::sync::Arc; // Removed Once
     use tokio; // Add tokio for async tests
     use uuid::Uuid; // Import for PointId variants
     // Use Rng trait for gen method, StdRng for concrete type, SeedableRng for seeding
     use rand::rngs::StdRng;
     use rand::{Rng, SeedableRng};
+    // Removed: use rustls;
+    use tracing::info; // Already used
+
+    // Removed static INIT_RUSTLS_PROVIDER and local ensure_rustls_provider_installed function
 
     // Helper function to load config and create a real Qdrant client for integration tests
     async fn setup_test_qdrant_client() -> Result<QdrantClientService, AppError> {
@@ -511,6 +515,8 @@ mod tests {
     }
 
     async fn setup_test_qdrant_client_with_name(collection_name: Option<String>) -> Result<QdrantClientService, AppError> {
+        crate::test_helpers::ensure_rustls_provider_installed(); // Call public helper
+
         dotenv().ok(); // Load .env file for QDRANT_URL
         let mut config = Config::load().expect("Failed to load config for integration test");
         

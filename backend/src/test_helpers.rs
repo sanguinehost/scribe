@@ -72,6 +72,7 @@ use uuid::Uuid;
 use hex; // Added for hex::decode
 use time; // For time::Duration for session expiry
 use reqwest;
+use rustls; // Added for CryptoProvider
 
 #[derive(Clone)]
 pub struct MockAiClient {
@@ -921,7 +922,29 @@ pub fn ensure_tracing_initialized() {
             .unwrap_or_else(|e| eprintln!("Failed to initialize tracing: {}", e));
     });
 }
-// --- End Tracing Initialization ---
+
+// --- Rustls Crypto Provider Initialization for Tests ---
+static RUSTLS_PROVIDER_INIT: Once = Once::new();
+
+// Helper function to ensure rustls default crypto provider is installed (idempotent)
+// Made public to be accessible from integration tests.
+pub fn ensure_rustls_provider_installed() {
+    RUSTLS_PROVIDER_INIT.call_once(|| {
+        match rustls::crypto::ring::default_provider().install_default() {
+            Ok(_) => tracing::info!("Successfully installed rustls default crypto provider for tests."),
+            Err(e) => {
+                // install_default() panics if called more than once when a provider is already installed.
+                // call_once ensures this block runs only once, so a panic here means a genuine failure.
+                // If try_install_default() were used, we might log an info! if it returned an error
+                // indicating it was already installed by someone else.
+                tracing::error!("Failed to install rustls default crypto provider: {:?}. This might cause TLS handshake errors in tests.", e);
+                // Depending on strictness, we might panic here.
+                // For now, let it proceed and potentially fail later if TLS is actually used and needs it.
+            }
+        }
+    });
+}
+// --- End Rustls Crypto Provider Initialization ---
 
 /// Structure to hold information about the running test application.
 #[derive(Clone)]
@@ -976,6 +999,7 @@ pub async fn spawn_app(multi_thread: bool, use_real_ai: bool, use_real_qdrant: b
 #[instrument(skip_all, fields(multi_thread, use_real_ai, use_real_qdrant, use_real_embedding_pipeline))]
 pub async fn spawn_app_with_options(multi_thread: bool, use_real_ai: bool, use_real_qdrant: bool, use_real_embedding_pipeline: bool) -> TestApp {
     ensure_tracing_initialized();
+    ensure_rustls_provider_installed(); // Ensure rustls crypto provider is set up
     dotenv().ok();
 
     let test_db_name_suffix = if multi_thread {

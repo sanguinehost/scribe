@@ -4,6 +4,8 @@ use anyhow::Error as AnyhowError;
 use scribe_backend::config::Config;
 use scribe_backend::errors::AppError;
 use scribe_backend::vector_db::qdrant_client::{QdrantClientService, create_qdrant_point};
+use scribe_backend::test_helpers::ensure_rustls_provider_installed;
+use dotenvy::dotenv; // Added
 // Import necessary types for direct client use in setup
 use qdrant_client::Qdrant;
 use qdrant_client::qdrant::Match;
@@ -28,22 +30,45 @@ const EMBEDDING_DIMENSION: u64 = 768; // Redefine locally
 
 // Helper function to create a Qdrant client service for testing (uses shared name)
 async fn create_test_qdrant_service() -> Result<QdrantClientService, AppError> {
-    // Set up a test configuration
-    let mut config = Config::default();
-    config.qdrant_url = Some("http://localhost:6334".to_string());
-    // Use the constant test collection name
-    config.qdrant_collection_name = TEST_COLLECTION_NAME.to_string();
+    dotenv().ok(); // Load .env file
+    ensure_rustls_provider_installed();
 
-    // Create the service
+    // Load config from environment
+    let base_config = Config::load().map_err(|e| {
+        AppError::ConfigError(format!("Failed to load configuration for test: {}", e))
+    })?;
+
+    // Ensure qdrant_url is present, otherwise this test setup is invalid.
+    if base_config.qdrant_url.is_none() {
+        return Err(AppError::ConfigError(
+            "QDRANT_URL must be set in the environment for integration tests.".to_string(),
+        ));
+    }
+
+    // Create a new config for the service, ensuring the test collection name is used.
+    // We use the loaded config as a base, then override the collection name.
+    let service_config = Config {
+        qdrant_collection_name: TEST_COLLECTION_NAME.to_string(),
+        ..base_config // Use other values from loaded config (like qdrant_url, api_key if any)
+    };
+    
     // NOTE: This will *still* call ensure_collection_exists internally, but because the name
     // is constant, it should just log "already exists" after the first test.
-    QdrantClientService::new(Arc::new(config)).await
+    QdrantClientService::new(Arc::new(service_config)).await
 }
 
 // Helper function to delete and recreate the test collection
 async fn cleanup_and_prepare_collection() -> Result<(), anyhow::Error> {
-    // Create a raw client directly
-    let client = Qdrant::from_url("http://localhost:6334").build()?;
+    dotenv().ok(); // Load .env file
+    ensure_rustls_provider_installed();
+
+    let config = Config::load().map_err(|e| anyhow::anyhow!("Failed to load config: {}", e))?;
+    let qdrant_url = config.qdrant_url.ok_or_else(|| {
+        anyhow::anyhow!("QDRANT_URL not set in environment, required for cleanup/prepare.")
+    })?;
+
+    // Create a raw client directly using the URL from config
+    let client = Qdrant::from_url(&qdrant_url).build()?;
 
     // Attempt to delete the collection, ignore errors (it might not exist)
     let _ = client.delete_collection(TEST_COLLECTION_NAME).await;
@@ -445,7 +470,13 @@ async fn test_qdrant_ensure_collection_already_exists() -> Result<(), AnyhowErro
     // Second call should find the existing collection (covers line 165 in qdrant_client.rs)
     let _service2 = create_test_qdrant_service().await?;
     // Check if the collection still exists using the raw client for verification
-    let client = Qdrant::from_url("http://localhost:6334").build()?;
+    dotenvy::dotenv().ok(); // Ensure .env is loaded for this part too
+    ensure_rustls_provider_installed(); // Ensure rustls is installed for this client
+    let config = Config::load().map_err(|e| anyhow::anyhow!("Failed to load config for verification: {}", e))?;
+    let qdrant_url = config.qdrant_url.ok_or_else(|| {
+        anyhow::anyhow!("QDRANT_URL not set in environment, required for verification client.")
+    })?;
+    let client = Qdrant::from_url(&qdrant_url).build()?;
     let exists = client.collection_exists(TEST_COLLECTION_NAME).await?;
     assert!(
         exists,
