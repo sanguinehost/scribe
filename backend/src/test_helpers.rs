@@ -67,6 +67,7 @@ use tokio::net::TcpListener;
 use tower::ServiceExt; // For .oneshot
 use tower_cookies::CookieManagerLayer; // Removed unused: Key as TowerCookieKey
 use tower_sessions::{Expiry, SessionManagerLayer, cookie::Key as TowerSessionKey, cookie::SameSite}; // Added SameSite
+use http_body_util::BodyExt; // For collect() on Body
 use tracing::{debug, instrument, warn}; // Added debug
 use uuid::Uuid;
 use hex; // Added for hex::decode
@@ -1053,8 +1054,9 @@ pub async fn spawn_app_with_options(multi_thread: bool, use_real_ai: bool, use_r
     };
 
     // Create auth_backend early so it can be shared
-    let auth_backend = AuthBackend::new(pool.clone());
-    let auth_backend_for_state = auth_backend.clone(); // Clone for AppState
+    // IMPORTANT: We wrap AuthBackend in Arc to ensure the same instance is shared
+    // This is critical for the DEK cache to work properly across requests
+    let auth_backend = Arc::new(AuthBackend::new(pool.clone()));
 
     let mut builder; // Declare builder without initializing
 
@@ -1073,7 +1075,7 @@ pub async fn spawn_app_with_options(multi_thread: bool, use_real_ai: bool, use_r
             ai_client_for_state.clone(),
             embedding_client_for_state.clone(), // Pass the real one for AppState
             qdrant_service_for_state.clone(),
-            Arc::new(auth_backend_for_state.clone()),
+            auth_backend.clone(),
         );
         // Only use real embedding pipeline if explicitly requested
         if !use_real_embedding_pipeline {
@@ -1091,7 +1093,7 @@ pub async fn spawn_app_with_options(multi_thread: bool, use_real_ai: bool, use_r
             ai_client_for_state.clone(),
             embedding_client_for_state.clone(), // Pass the mock one for AppState
             qdrant_service_for_state.clone(),
-            Arc::new(auth_backend_for_state.clone()),
+            auth_backend.clone(),
         );
 
         // Configure builder with the mock pipeline service for AppState
@@ -1113,7 +1115,8 @@ pub async fn spawn_app_with_options(multi_thread: bool, use_real_ai: bool, use_r
         .with_same_site(SameSite::Lax)
         .with_expiry(Expiry::OnInactivity(time::Duration::days(7)));
 
-    let auth_layer = AuthManagerLayerBuilder::new(auth_backend, session_manager_layer.clone()).build();
+    // AuthManagerLayerBuilder needs the backend directly, it will handle cloning internally
+    let auth_layer = AuthManagerLayerBuilder::new((*auth_backend).clone(), session_manager_layer.clone()).build();
     
     let listener = TcpListener::bind(format!("127.0.0.1:{}", config_arc.port))
         .await
@@ -1809,6 +1812,45 @@ pub async fn create_user_with_dek_in_session(
 
     // 4. Return User and cookie
     Ok((mock_user_for_assertion, actual_cookie_value)) // Use the cookie from step 2
+}
+
+// Helper function for router-based login (for tests that use router.oneshot)
+pub async fn login_user_via_router(router: &Router, username: &str, password: &str) -> String {
+    let login_payload = json!({
+        "identifier": username,
+        "password": password
+    });
+
+    let request = Request::builder()
+        .method("POST")
+        .uri("/api/auth/login")
+        .header("Content-Type", "application/json")
+        .body(Body::from(serde_json::to_vec(&login_payload).expect("Failed to serialize login payload")))
+        .expect("Failed to build login request");
+
+    let response = router.clone().oneshot(request).await.expect("Login request failed");
+
+    if response.status() != StatusCode::OK {
+        let status = response.status();
+        let body = response.into_body().collect().await
+            .expect("Failed to read response body")
+            .to_bytes();
+        let body_text = String::from_utf8_lossy(&body);
+        panic!(
+            "Router login failed for user '{}'. Status: {}. Body: {}",
+            username, status, body_text
+        );
+    }
+
+    // Extract the session cookie from headers
+    response
+        .headers()
+        .get("set-cookie")
+        .and_then(|value| value.to_str().ok())
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| {
+            panic!("Session cookie not found in login response for user {}", username)
+        })
 }
 
 // Helper function for API-based login

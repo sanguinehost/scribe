@@ -866,7 +866,8 @@ async fn test_create_chat_session_with_empty_first_mes() -> Result<(), AnyhowErr
     .await
     .expect("Failed to create test user");
     test_data_guard.add_user(user.id);
-    let (_client, auth_cookie) = test_helpers::login_user_via_api(&test_app, username, password).await;
+    // Use router-based login to ensure we're using the same AuthBackend instance
+    let auth_cookie = test_helpers::login_user_via_router(&test_app.router, username, password).await;
 
     let conn = test_app.db_pool.get().await?;
 
@@ -1019,7 +1020,8 @@ async fn test_create_chat_session_with_null_first_mes() -> anyhow::Result<()> {
     .await
     .expect("Failed to create test user");
     test_data_guard.add_user(user.id);
-    let (_client, auth_cookie) = test_helpers::login_user_via_api(&test_app, username, password).await;
+    // Use router-based login to ensure we're using the same AuthBackend instance
+    let auth_cookie = test_helpers::login_user_via_router(&test_app.router, username, password).await;
 
     let conn = test_app.db_pool.get().await?;
 
@@ -1455,8 +1457,9 @@ async fn test_create_chat_session_no_lorebook_ids() -> Result<(), AnyhowError> {
     .await?;
     test_data_guard.add_user(user.id);
 
-    let (_client, auth_cookie) =
-        test_helpers::login_user_via_api(&test_app, username, password).await;
+    // Use router-based login to ensure we're using the same AuthBackend instance
+    let auth_cookie =
+        test_helpers::login_user_via_router(&test_app.router, username, password).await;
 
     // Create a character
     let character_id = Uuid::new_v4();
@@ -1561,8 +1564,9 @@ async fn test_create_chat_session_one_valid_lorebook_id() -> Result<(), AnyhowEr
     .await?;
     test_data_guard.add_user(user.id);
 
-    let (_client, auth_cookie) =
-        test_helpers::login_user_via_api(&test_app, username, password).await;
+    // Use router-based login to ensure we're using the same AuthBackend instance
+    let auth_cookie =
+        test_helpers::login_user_via_router(&test_app.router, username, password).await;
 
     // Create a character
     let character_id = Uuid::new_v4();
@@ -1681,8 +1685,9 @@ async fn test_create_chat_session_multiple_valid_lorebook_ids() -> Result<(), An
     .await?;
     test_data_guard.add_user(user.id);
 
-    let (_client, auth_cookie) =
-        test_helpers::login_user_via_api(&test_app, username, password).await;
+    // Use router-based login to ensure we're using the same AuthBackend instance
+    let auth_cookie =
+        test_helpers::login_user_via_router(&test_app.router, username, password).await;
 
     // Create a character
     let character_id = Uuid::new_v4();
@@ -1820,8 +1825,9 @@ async fn test_create_chat_session_empty_lorebook_ids_list() -> Result<(), Anyhow
     .await?;
     test_data_guard.add_user(user.id);
 
-    let (_client, auth_cookie) =
-        test_helpers::login_user_via_api(&test_app, username, password).await;
+    // Use router-based login to ensure we're using the same AuthBackend instance
+    let auth_cookie =
+        test_helpers::login_user_via_router(&test_app.router, username, password).await;
 
     // Create a character
     let character_id = Uuid::new_v4();
@@ -1920,8 +1926,9 @@ async fn test_create_chat_session_non_existent_lorebook_id() -> Result<(), Anyho
     .await?;
     test_data_guard.add_user(user.id);
 
-    let (_client, auth_cookie) =
-        test_helpers::login_user_via_api(&test_app, username, password).await;
+    // Use router-based login to ensure we're using the same AuthBackend instance
+    let auth_cookie =
+        test_helpers::login_user_via_router(&test_app.router, username, password).await;
 
     // Create a character
     let character_id = Uuid::new_v4();
@@ -2024,8 +2031,9 @@ async fn test_create_chat_session_lorebook_owned_by_another_user() -> Result<(),
     .await?;
     test_data_guard.add_user(requester_user.id);
 
-    let (_client, requester_auth_cookie) =
-        test_helpers::login_user_via_api(&test_app, requester_username, requester_password).await;
+    // Use router-based login to ensure we're using the same AuthBackend instance
+    let requester_auth_cookie =
+        test_helpers::login_user_via_router(&test_app.router, requester_username, requester_password).await;
 
     // Create a character for the requester_user
     let character_id = Uuid::new_v4();

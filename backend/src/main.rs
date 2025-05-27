@@ -239,11 +239,13 @@ async fn main() -> Result<()> {
         .with_expiry(Expiry::OnInactivity(time::Duration::days(7)));
 
     // Configure the auth backend
-    let auth_backend = AuthBackend::new(pool.clone());
-    let auth_backend_arc = Arc::new(auth_backend.clone());
+    // IMPORTANT: Wrap in Arc first to ensure the same instance is shared
+    let auth_backend_arc = Arc::new(AuthBackend::new(pool.clone()));
+    let auth_backend = auth_backend_arc.clone();
 
     // Build the auth layer, passing the SessionManagerLayer
-    let auth_layer = AuthManagerLayerBuilder::new(auth_backend, session_manager_layer.clone())
+    // AuthManagerLayerBuilder needs the backend directly, it will handle cloning internally
+    let auth_layer = AuthManagerLayerBuilder::new((*auth_backend).clone(), session_manager_layer.clone())
         // .with_login_key(SignedLoginKey::new(signing_key.clone())) // Removed: No longer part of axum-login API here
         .build();
 

@@ -142,9 +142,24 @@ async fn test_lorebook_import_retrieval_and_rag_integration() {
     .await
     .expect("Failed to create test user");
 
-    let (auth_client, _user_token_str) =
-        scribe_backend::test_helpers::login_user_via_api(&test_app, user_credentials.0, user_credentials.1)
-            .await;
+    // Create HTTP client with cookie store for authentication
+    let auth_client = reqwest::Client::builder().cookie_store(true).build().unwrap();
+    
+    // Login via HTTP to get cookies automatically stored in client
+    let login_payload = serde_json::json!({
+        "identifier": user_credentials.0,
+        "password": user_credentials.1
+    });
+    
+    let login_response = auth_client
+        .post(format!("{}/api/auth/login", test_app.address))
+        .header(reqwest::header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
+        .json(&login_payload)
+        .send()
+        .await
+        .expect("Failed to send login request");
+    
+    assert_eq!(login_response.status(), reqwest::StatusCode::OK, "Login failed");
 
     // 2. Create a lorebook via the API
     let lorebook_payload = CreateLorebookPayload {
@@ -578,9 +593,24 @@ async fn test_associate_lorebook_triggers_initial_embedding() {
     .await
     .expect("Failed to create test user");
 
-    let (auth_client, _token) =
-        scribe_backend::test_helpers::login_user_via_api(&test_app, user_credentials.0, user_credentials.1)
-            .await;
+    // Create HTTP client with cookie store for authentication
+    let auth_client = reqwest::Client::builder().cookie_store(true).build().unwrap();
+    
+    // Login via HTTP to get cookies automatically stored in client
+    let login_payload = serde_json::json!({
+        "identifier": user_credentials.0,
+        "password": user_credentials.1
+    });
+    
+    let login_response = auth_client
+        .post(format!("{}/api/auth/login", test_app.address))
+        .header(reqwest::header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
+        .json(&login_payload)
+        .send()
+        .await
+        .expect("Failed to send login request");
+    
+    assert_eq!(login_response.status(), reqwest::StatusCode::OK, "Login failed");
 
     // Create Lorebook
     let lorebook_payload = CreateLorebookPayload {
@@ -742,9 +772,24 @@ async fn test_update_lorebook_entry_triggers_re_embedding() {
     .await
     .expect("Failed to create test user");
 
-    let (auth_client, _token) =
-        scribe_backend::test_helpers::login_user_via_api(&test_app, user_credentials.0, user_credentials.1)
-            .await;
+    // Create HTTP client with cookie store for authentication
+    let auth_client = reqwest::Client::builder().cookie_store(true).build().unwrap();
+    
+    // Login via HTTP to get cookies automatically stored in client
+    let login_payload = serde_json::json!({
+        "identifier": user_credentials.0,
+        "password": user_credentials.1
+    });
+    
+    let login_response = auth_client
+        .post(format!("{}/api/auth/login", test_app.address))
+        .header(reqwest::header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
+        .json(&login_payload)
+        .send()
+        .await
+        .expect("Failed to send login request");
+    
+    assert_eq!(login_response.status(), reqwest::StatusCode::OK, "Login failed");
 
     // Create Lorebook
     let lorebook_payload = CreateLorebookPayload {
@@ -869,9 +914,24 @@ async fn test_rag_retrieves_lorebook_entry_after_embedding_completion() -> anyho
     .await
     .expect("Failed to create test user for China RAG test");
 
-    let (auth_client, _user_token_str) =
-        scribe_backend::test_helpers::login_user_via_api(&test_app, user_credentials.0, user_credentials.1)
-            .await;
+    // Create HTTP client with cookie store for authentication
+    let auth_client = reqwest::Client::builder().cookie_store(true).build().unwrap();
+    
+    // Login via HTTP to get cookies automatically stored in client
+    let login_payload = serde_json::json!({
+        "identifier": user_credentials.0,
+        "password": user_credentials.1
+    });
+    
+    let login_response = auth_client
+        .post(format!("{}/api/auth/login", test_app.address))
+        .header(reqwest::header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
+        .json(&login_payload)
+        .send()
+        .await
+        .expect("Failed to send login request");
+    
+    assert_eq!(login_response.status(), reqwest::StatusCode::OK, "Login failed");
 
     // Create a character
     let character = scribe_backend::test_helpers::db::create_test_character(
@@ -1136,9 +1196,24 @@ async fn test_rag_retrieves_lorebook_entry_with_mocks() -> anyhow::Result<()> {
     .await
     .expect("Failed to create test user for RAG mock test");
 
-    let (auth_client, _user_token_str) =
-        scribe_backend::test_helpers::login_user_via_api(&test_app, user_credentials.0, user_credentials.1)
-            .await;
+    // Create HTTP client with cookie store for authentication
+    let auth_client = reqwest::Client::builder().cookie_store(true).build().unwrap();
+    
+    // Login via HTTP to get cookies automatically stored in client
+    let login_payload = serde_json::json!({
+        "identifier": user_credentials.0,
+        "password": user_credentials.1
+    });
+    
+    let login_response = auth_client
+        .post(format!("{}/api/auth/login", test_app.address))
+        .header(reqwest::header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
+        .json(&login_payload)
+        .send()
+        .await
+        .expect("Failed to send login request");
+    
+    assert_eq!(login_response.status(), reqwest::StatusCode::OK, "Login failed");
 
     // Create a character
     let character = scribe_backend::test_helpers::db::create_test_character(

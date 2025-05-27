@@ -8,7 +8,7 @@ This document outlines the architecture for encrypting all user-generated conten
     *   **Data Encryption Key (DEK):** A strong, randomly generated symmetric key (e.g., AES-256, implemented as `SecretBox<Vec<u8>>`) unique to each user. This key directly encrypts the user's actual data (e.g., chat messages, character details).
     *   **Key Encryption Key (KEK):** Derived from the user's password and a unique, per-user salt (`kek_salt`) using a strong KDF (Argon2id). The KEK encrypts the user's DEK.
     *   **Encrypted DEK Storage:** The DEK, encrypted by the KEK (along with a nonce, `dek_nonce`), is stored in the database alongside the user's record.
-    *   **DEK in Memory:** The plaintext DEK only exists in server memory (wrapped in `SerializableSecretDek` which holds a `SecretBox<Vec<u8>>`) during an active, authenticated user session after being decrypted by the KEK. It is **never stored persistently in plaintext**.
+    *   **DEK in Memory:** The plaintext DEK only exists in server memory (wrapped in `SerializableSecretDek` which holds a `SecretBox<Vec<u8>>`) during an active, authenticated user session after being decrypted by the KEK. It is **never stored persistently in plaintext** and **never stored in the session store**. The DEK is kept only in a server-side, in-memory cache within the `AuthBackend`.
 2.  **Key Derivation Salt (`kek_salt`):**
     *   A field, `kek_salt` (e.g., `String` storing Base64 encoded bytes), is added to the `users` table and relevant `User` structs.
     *   Generated randomly and uniquely for each user upon registration. Stored in the database.
@@ -63,7 +63,8 @@ This document outlines the architecture for encrypting all user-generated conten
         *   Retrieves `user.kek_salt`, `user.encrypted_dek`, and `user.dek_nonce`.
         *   Derives KEK from `payload.password` and `user.kek_salt`.
         *   Decrypts `user.encrypted_dek` using the derived KEK and `user.dek_nonce` to get the plaintext DEK.
-        *   Stores plaintext DEK in `user.dek = Some(SerializableSecretDek(SecretBox::new(Box::new(plaintext_dek_bytes))));`.
+        *   Stores plaintext DEK in the `AuthBackend::dek_cache` (server-side memory cache).
+        *   Sets `user.dek = None` before returning the user object to `axum-login` to ensure the DEK is NOT serialized into the session.
         *   Proceeds with `auth_session.login(&user).await`.
 5.  **Cryptographic Module (`crate::crypto`):**
     *   Functions for:
@@ -71,17 +72,25 @@ This document outlines the architecture for encrypting all user-generated conten
         *   DEK generation (secure random, returns `SecretBox<Vec<u8>>`).
         *   AES-256-GCM encryption/decryption (takes `&SecretBox<Vec<u8>>` for key, returns ciphertext and nonce separately for encryption; takes ciphertext, nonce, key for decryption).
     *   Handles nonces correctly.
-6.  **Data Access Layer Modifications (e.g., `ChatService`, `CharacterService`):**
-    *   **Writes:** Retrieve plaintext DEK from `auth_session.user.dek`. Pass DEK to `EncryptionService` (or use `crypto.rs` functions directly) to encrypt data. Store ciphertext + nonce.
-    *   **Reads:** Retrieve plaintext DEK from `auth_session.user.dek`. Pass DEK, ciphertext, and nonce to `EncryptionService` (or `crypto.rs`) to decrypt data.
-7.  **Password Change Functionality (`auth::change_user_password`):**
+6.  **Session Security & DEK Retrieval:**
+    *   **Session Store Security:** The DEK is **NEVER** stored in the session store (neither in cookies nor in the database-backed session storage). This prevents exposure if sessions are compromised.
+    *   **DEK Cache:** The `AuthBackend` maintains an in-memory cache (`dek_cache: Arc<RwLock<HashMap<Uuid, SerializableSecretDek>>>`) that maps user IDs to their decrypted DEKs.
+    *   **SessionDek Extractor:** The `SessionDek` extractor in [`backend/src/auth/session_dek.rs`](backend/src/auth/session_dek.rs):
+        *   Extracts the authenticated user from `AuthSession<AuthBackend>`.
+        *   Retrieves the DEK from the `AuthBackend::dek_cache` using the user's ID.
+        *   Returns an error if the DEK is not found (user needs to log in again).
+    *   **Logout Cleanup:** When a user logs out, the `logout_handler` calls `AuthBackend::remove_dek_from_cache()` to remove the DEK from memory.
+7.  **Data Access Layer Modifications (e.g., `ChatService`, `CharacterService`):**
+    *   **Writes:** Retrieve plaintext DEK via the `SessionDek` extractor. Pass DEK to `EncryptionService` (or use `crypto.rs` functions directly) to encrypt data. Store ciphertext + nonce.
+    *   **Reads:** Retrieve plaintext DEK via the `SessionDek` extractor. Pass DEK, ciphertext, and nonce to `EncryptionService` (or `crypto.rs`) to decrypt data.
+8.  **Password Change Functionality (`auth::change_user_password`):**
     *   User provides old password, new password.
     *   Verifies old password. Derives old KEK. Decrypts `encrypted_dek` (with `dek_nonce`) to get plaintext DEK.
     *   Generates new `kek_salt`. Derives *new* KEK from new password and new `kek_salt`.
     *   Re-encrypts the plaintext DEK with the *new* KEK, obtaining new `encrypted_dek` and new `dek_nonce`.
     *   Updates `password_hash`, `kek_salt`, `encrypted_dek`, and `dek_nonce` in the database.
     *   `encrypted_dek_by_recovery` and `recovery_dek_nonce` remain unchanged as the recovery phrase itself hasn't changed.
-8.  **Password Recovery via Recovery Phrase (`auth::recover_user_password_with_phrase`):**
+9.  **Password Recovery via Recovery Phrase (`auth::recover_user_password_with_phrase`):**
     *   User provides recovery phrase and new password.
     *   Server retrieves `user.encrypted_dek_by_recovery`, `user.recovery_kek_salt`, and `user.recovery_dek_nonce`.
     *   Derives RKEK from provided recovery phrase and `user.recovery_kek_salt`.
@@ -89,10 +98,10 @@ This document outlines the architecture for encrypting all user-generated conten
     *   Generates new `kek_salt`. Derives new KEK from new password and new `kek_salt`.
     *   Re-encrypts the plaintext DEK with this new KEK, obtaining new `encrypted_dek` and new `dek_nonce`.
     *   Updates `password_hash`, `kek_salt`, `encrypted_dek`, and `dek_nonce` in the database.
-9.  **Data Export & Deletion (GDPR):**
+10. **Data Export & Deletion (GDPR):**
     *   **Export:** User provides password -> KEK derived -> DEK decrypted -> Data decrypted and exported.
     *   **Deletion:** Delete user record (including salts, encrypted DEKs, nonces). Data becomes cryptographically irrecoverable.
-10. **User Experience & Security Enhancements (Current & Planned):**
+11. **User Experience & Security Enhancements (Current & Planned):**
     *   Strong Password Guidance: During registration.
     *   Clear Communication: About password loss implications and recovery phrase importance.
     *   (Post-MVP) 2FA (TOTP/Hardware Key): Implement for account login (protects access to KEK derivation).
