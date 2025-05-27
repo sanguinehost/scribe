@@ -1,11 +1,11 @@
 #![cfg(test)]
 
 use anyhow::Error as AnyhowError;
+use dotenvy::dotenv;
 use scribe_backend::config::Config;
 use scribe_backend::errors::AppError;
-use scribe_backend::vector_db::qdrant_client::{QdrantClientService, create_qdrant_point};
 use scribe_backend::test_helpers::ensure_rustls_provider_installed;
-use dotenvy::dotenv; // Added
+use scribe_backend::vector_db::qdrant_client::{QdrantClientService, create_qdrant_point}; // Added
 // Import necessary types for direct client use in setup
 use qdrant_client::Qdrant;
 use qdrant_client::qdrant::Match;
@@ -51,7 +51,7 @@ async fn create_test_qdrant_service() -> Result<QdrantClientService, AppError> {
         qdrant_collection_name: TEST_COLLECTION_NAME.to_string(),
         ..base_config // Use other values from loaded config (like qdrant_url, api_key if any)
     };
-    
+
     // NOTE: This will *still* call ensure_collection_exists internally, but because the name
     // is constant, it should just log "already exists" after the first test.
     QdrantClientService::new(Arc::new(service_config)).await
@@ -472,7 +472,8 @@ async fn test_qdrant_ensure_collection_already_exists() -> Result<(), AnyhowErro
     // Check if the collection still exists using the raw client for verification
     dotenvy::dotenv().ok(); // Ensure .env is loaded for this part too
     ensure_rustls_provider_installed(); // Ensure rustls is installed for this client
-    let config = Config::load().map_err(|e| anyhow::anyhow!("Failed to load config for verification: {}", e))?;
+    let config = Config::load()
+        .map_err(|e| anyhow::anyhow!("Failed to load config for verification: {}", e))?;
     let qdrant_url = config.qdrant_url.ok_or_else(|| {
         anyhow::anyhow!("QDRANT_URL not set in environment, required for verification client.")
     })?;

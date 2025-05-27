@@ -83,9 +83,11 @@ pub(super) async fn handle_response<T: DeserializeOwned + std::fmt::Debug>(
                 );
                 // Don't print the full response body as it might contain binary data
                 let truncated_body = if response_body.len() > 200 {
-                    format!("{}... (truncated, {} total bytes)", 
-                            &response_body.chars().take(200).collect::<String>(), 
-                            response_body.len())
+                    format!(
+                        "{}... (truncated, {} total bytes)",
+                        &response_body.chars().take(200).collect::<String>(),
+                        response_body.len()
+                    )
                 } else {
                     response_body.clone()
                 };

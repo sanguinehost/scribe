@@ -1,4 +1,3 @@
-
 use diesel::{prelude::*, result::Error as DieselError};
 use tracing::{error, instrument};
 use uuid::Uuid;
@@ -6,7 +5,9 @@ use uuid::Uuid;
 use crate::{
     crypto::encrypt_gcm, // Corrected encryption service import
     errors::AppError,
-    models::chat_override::{ChatCharacterOverride, NewChatCharacterOverride, CharacterOverrideDto},
+    models::chat_override::{
+        CharacterOverrideDto, ChatCharacterOverride, NewChatCharacterOverride,
+    },
     schema::{chat_character_overrides, chat_sessions},
     state::DbPool, // Corrected DbPool import
 };
@@ -29,8 +30,8 @@ pub async fn set_character_override(
     let value_clone = payload.value.clone();
 
     // Manually clone the inner secret data to create an owned SecretBox for the closure
-    let owned_user_dek_opt: Option<SecretBox<Vec<u8>>> = user_dek_secret_box
-        .map(|sb_ref| SecretBox::new(Box::new(sb_ref.expose_secret().clone())));
+    let owned_user_dek_opt: Option<SecretBox<Vec<u8>>> =
+        user_dek_secret_box.map(|sb_ref| SecretBox::new(Box::new(sb_ref.expose_secret().clone())));
 
     conn.interact(move |conn| {
         conn.transaction(|transaction_conn| {
@@ -40,10 +41,9 @@ pub async fn set_character_override(
                 .select((chat_sessions::user_id, chat_sessions::character_id))
                 .first::<(Uuid, Uuid)>(transaction_conn)
                 .map_err(|e| match e {
-                    DieselError::NotFound => AppError::NotFound(format!(
-                        "Chat session {} not found.",
-                        session_id
-                    )),
+                    DieselError::NotFound => {
+                        AppError::NotFound(format!("Chat session {} not found.", session_id))
+                    }
                     _ => AppError::DatabaseQueryError(e.to_string()),
                 })?;
 
@@ -56,9 +56,12 @@ pub async fn set_character_override(
             }
 
             // 2. Encrypt the value
-            let (encrypted_value, nonce) = match &owned_user_dek_opt { // Use the owned Option
-                Some(dek) => { // dek is &SecretBox<Vec<u8>>
-                    encrypt_gcm(value_clone.as_bytes(), dek).map_err(|e| { // Use direct call
+            let (encrypted_value, nonce) = match &owned_user_dek_opt {
+                // Use the owned Option
+                Some(dek) => {
+                    // dek is &SecretBox<Vec<u8>>
+                    encrypt_gcm(value_clone.as_bytes(), dek).map_err(|e| {
+                        // Use direct call
                         error!("Failed to encrypt override value: {}", e);
                         AppError::EncryptionError("Failed to encrypt override value".to_string())
                     })?
@@ -82,7 +85,7 @@ pub async fn set_character_override(
                 original_character_id: original_character_id_from_session,
                 field_name: field_name_clone,
                 overridden_value: encrypted_value.clone(), // Clone for insert
-                overridden_value_nonce: nonce.clone(),   // Clone for insert
+                overridden_value_nonce: nonce.clone(),     // Clone for insert
             };
 
             // Upsert logic: Insert, and on conflict on (chat_session_id, field_name), update the value and nonce.

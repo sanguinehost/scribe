@@ -17,12 +17,12 @@ use crate::services::embedding_pipeline::EmbeddingPipelineServiceTrait;
 use crate::vector_db::qdrant_client::QdrantClientServiceTrait;
 // use crate::auth::user_store::Backend as AuthBackend; // For axum-login
 // use crate::services::email_service::EmailService; // For email service
-use crate::services::hybrid_token_counter::HybridTokenCounter; // Added for token counting
-use crate::services::chat_override_service::ChatOverrideService; // <<< ADDED THIS IMPORT
-use crate::services::user_persona_service::UserPersonaService; // <<< ADDED THIS IMPORT
-use crate::services::encryption_service::EncryptionService; // Added for EncryptionService
-use crate::services::lorebook_service::LorebookService; // Added for LorebookService
 use crate::auth::user_store::Backend as AuthBackend; // Added for shared AuthBackend
+use crate::services::chat_override_service::ChatOverrideService; // <<< ADDED THIS IMPORT
+use crate::services::encryption_service::EncryptionService; // Added for EncryptionService
+use crate::services::hybrid_token_counter::HybridTokenCounter; // Added for token counting
+use crate::services::lorebook_service::LorebookService; // Added for LorebookService
+use crate::services::user_persona_service::UserPersonaService; // <<< ADDED THIS IMPORT
 use std::fmt;
 use uuid::Uuid; // For embedding_call_tracker // For manual Debug impl
 
@@ -47,13 +47,13 @@ pub struct AppState {
     pub qdrant_service: Arc<dyn QdrantClientServiceTrait + Send + Sync>,
     pub embedding_pipeline_service: Arc<dyn EmbeddingPipelineServiceTrait + Send + Sync>, // Add Send + Sync
     pub chat_override_service: Arc<ChatOverrideService>, // <<< ADDED THIS FIELD
-    pub user_persona_service: Arc<UserPersonaService>, // <<< ADDED THIS FIELD
+    pub user_persona_service: Arc<UserPersonaService>,   // <<< ADDED THIS FIELD
     // Remove #[cfg(test)]
     pub embedding_call_tracker: Arc<TokioMutex<Vec<Uuid>>>, // Track message IDs for embedding calls
     pub token_counter: Arc<HybridTokenCounter>,             // Added for token counting
-    pub encryption_service: Arc<EncryptionService>,         // Added for lorebook and other encryption needs
-    pub lorebook_service: Arc<LorebookService>,           // Added for LorebookService
-    pub auth_backend: Arc<AuthBackend>,                      // Added for shared AuthBackend instance
+    pub encryption_service: Arc<EncryptionService>, // Added for lorebook and other encryption needs
+    pub lorebook_service: Arc<LorebookService>,     // Added for LorebookService
+    pub auth_backend: Arc<AuthBackend>,             // Added for shared AuthBackend instance
 }
 
 // Manual Debug implementation for AppState
@@ -91,11 +91,11 @@ impl AppState {
         qdrant_service: Arc<dyn QdrantClientServiceTrait + Send + Sync>,
         embedding_pipeline_service: Arc<dyn EmbeddingPipelineServiceTrait + Send + Sync>, // Add Send + Sync
         chat_override_service: Arc<ChatOverrideService>, // <<< ADDED THIS PARAMETER
-        user_persona_service: Arc<UserPersonaService>, // <<< ADDED THIS PARAMETER
-        token_counter: Arc<HybridTokenCounter>,                                           // Added
-        encryption_service: Arc<EncryptionService>, // Added
-        lorebook_service: Arc<LorebookService>, // Added for LorebookService
-        auth_backend: Arc<AuthBackend>, // Added for shared AuthBackend
+        user_persona_service: Arc<UserPersonaService>,   // <<< ADDED THIS PARAMETER
+        token_counter: Arc<HybridTokenCounter>,          // Added
+        encryption_service: Arc<EncryptionService>,      // Added
+        lorebook_service: Arc<LorebookService>,          // Added for LorebookService
+        auth_backend: Arc<AuthBackend>,                  // Added for shared AuthBackend
     ) -> Self {
         Self {
             pool,
@@ -106,14 +106,14 @@ impl AppState {
             embedding_client,           // Add this assignment
             qdrant_service,             // Assign the trait object
             embedding_pipeline_service, // Add this assignment
-            chat_override_service,    // <<< ADDED THIS ASSIGNMENT
-            user_persona_service,     // <<< ADDED THIS ASSIGNMENT
+            chat_override_service,      // <<< ADDED THIS ASSIGNMENT
+            user_persona_service,       // <<< ADDED THIS ASSIGNMENT
             // Remove #[cfg(test)]
             embedding_call_tracker: Arc::new(TokioMutex::new(Vec::new())), // Initialize tracker for tests
             token_counter,                                                 // Added
-            encryption_service, // Added
-            lorebook_service,   // Added for LorebookService
-            auth_backend,       // Added for shared AuthBackend
+            encryption_service,                                            // Added
+            lorebook_service, // Added for LorebookService
+            auth_backend,     // Added for shared AuthBackend
         }
     }
 }

@@ -867,7 +867,8 @@ async fn test_create_chat_session_with_empty_first_mes() -> Result<(), AnyhowErr
     .expect("Failed to create test user");
     test_data_guard.add_user(user.id);
     // Use router-based login to ensure we're using the same AuthBackend instance
-    let auth_cookie = test_helpers::login_user_via_router(&test_app.router, username, password).await;
+    let auth_cookie =
+        test_helpers::login_user_via_router(&test_app.router, username, password).await;
 
     let conn = test_app.db_pool.get().await?;
 
@@ -1021,7 +1022,8 @@ async fn test_create_chat_session_with_null_first_mes() -> anyhow::Result<()> {
     .expect("Failed to create test user");
     test_data_guard.add_user(user.id);
     // Use router-based login to ensure we're using the same AuthBackend instance
-    let auth_cookie = test_helpers::login_user_via_router(&test_app.router, username, password).await;
+    let auth_cookie =
+        test_helpers::login_user_via_router(&test_app.router, username, password).await;
 
     let conn = test_app.db_pool.get().await?;
 
@@ -1287,17 +1289,37 @@ async fn test_create_session_saves_first_mes() -> Result<(), AnyhowError> {
     test_data_guard.add_character(character_id);
 
     // Create dependent services for AppState
-    let encryption_service_for_test = Arc::new(scribe_backend::services::encryption_service::EncryptionService::new());
-    let chat_override_service_for_test = Arc::new(scribe_backend::services::chat_override_service::ChatOverrideService::new(test_app.db_pool.clone(), encryption_service_for_test.clone()));
-    let user_persona_service_for_test = Arc::new(scribe_backend::services::user_persona_service::UserPersonaService::new(test_app.db_pool.clone(), encryption_service_for_test.clone()));
-    let tokenizer_service_for_test = scribe_backend::services::tokenizer_service::TokenizerService::new("/home/socol/Workspace/sanguine-scribe/backend/resources/tokenizers/gemma.model")
-                .expect("Failed to create tokenizer for test");
-    let hybrid_token_counter_for_test = Arc::new(scribe_backend::services::hybrid_token_counter::HybridTokenCounter::new_local_only(tokenizer_service_for_test));
+    let encryption_service_for_test =
+        Arc::new(scribe_backend::services::encryption_service::EncryptionService::new());
+    let chat_override_service_for_test = Arc::new(
+        scribe_backend::services::chat_override_service::ChatOverrideService::new(
+            test_app.db_pool.clone(),
+            encryption_service_for_test.clone(),
+        ),
+    );
+    let user_persona_service_for_test = Arc::new(
+        scribe_backend::services::user_persona_service::UserPersonaService::new(
+            test_app.db_pool.clone(),
+            encryption_service_for_test.clone(),
+        ),
+    );
+    let tokenizer_service_for_test =
+        scribe_backend::services::tokenizer_service::TokenizerService::new(
+            "/home/socol/Workspace/sanguine-scribe/backend/resources/tokenizers/gemma.model",
+        )
+        .expect("Failed to create tokenizer for test");
+    let hybrid_token_counter_for_test = Arc::new(
+        scribe_backend::services::hybrid_token_counter::HybridTokenCounter::new_local_only(
+            tokenizer_service_for_test,
+        ),
+    );
     let lorebook_service_for_test = Arc::new(LorebookService::new(
         test_app.db_pool.clone(),
-        encryption_service_for_test.clone()
+        encryption_service_for_test.clone(),
     ));
-    let auth_backend_for_test = Arc::new(scribe_backend::auth::user_store::Backend::new(test_app.db_pool.clone()));
+    let auth_backend_for_test = Arc::new(scribe_backend::auth::user_store::Backend::new(
+        test_app.db_pool.clone(),
+    ));
 
     let app_state_arc = Arc::new(AppState::new(
         test_app.db_pool.clone(),
@@ -1306,26 +1328,27 @@ async fn test_create_session_saves_first_mes() -> Result<(), AnyhowError> {
         test_app.mock_embedding_client.clone(),
         test_app.qdrant_service.clone(), // Assuming qdrant_service is used, else provide mock_qdrant_service
         test_app.mock_embedding_pipeline_service.clone(),
-        chat_override_service_for_test, // 7th arg
-        user_persona_service_for_test, // 8th arg
-        hybrid_token_counter_for_test,    // 9th arg
+        chat_override_service_for_test,      // 7th arg
+        user_persona_service_for_test,       // 8th arg
+        hybrid_token_counter_for_test,       // 9th arg
         encryption_service_for_test.clone(), // 10th arg
-        lorebook_service_for_test, // 11th arg
-        auth_backend_for_test // 12th arg
+        lorebook_service_for_test,           // 11th arg
+        auth_backend_for_test,               // 12th arg
     ));
 
     // The function create_session_and_maybe_first_message returns Result<scribe_backend::models::chats::Chat, ...>
     // In chat_session_api_tests.rs, DbChatSession is an alias for scribe_backend::models::chats::Chat.
     // So, `session` will be of the correct type.
-    let result = scribe_backend::services::chat::session_management::create_session_and_maybe_first_message(
-        app_state_arc,
-        user.id,
-        character_id,
-        None, // active_custom_persona_id
-        None, // lorebook_ids
-        Some(user_dek.clone()), // user_dek_secret_box
-    )
-    .await;
+    let result =
+        scribe_backend::services::chat::session_management::create_session_and_maybe_first_message(
+            app_state_arc,
+            user.id,
+            character_id,
+            None,                   // active_custom_persona_id
+            None,                   // lorebook_ids
+            Some(user_dek.clone()), // user_dek_secret_box
+        )
+        .await;
 
     assert!(
         result.is_ok(),
@@ -1408,7 +1431,7 @@ async fn create_test_lorebook(
         name: name.to_string(),
         description: None, // Set to None as per NewLorebook definition
         source_format: "test_data".to_string(), // Provide a default source_format
-        is_public: false, // Corrected field name from 'public'
+        is_public: false,  // Corrected field name from 'public'
         created_at: Some(Utc::now()), // Corrected to Option<DateTime<Utc>>
         updated_at: Some(Utc::now()), // Corrected to Option<DateTime<Utc>>
     };
@@ -1479,23 +1502,67 @@ async fn test_create_chat_session_no_lorebook_ids() -> Result<(), AnyhowError> {
         creator_notes: None,
         system_prompt: None,
         post_history_instructions: None,
-        tags: None, creator: None, character_version: None, alternate_greetings: None,
-        nickname: None, creator_notes_multilingual: None, source: None, group_only_greetings: None,
-        creation_date: None, modification_date: None, persona: None, world_scenario: None,
-        avatar: None, chat: None, greeting: None, definition: None, default_voice: None,
-        extensions: None, data_id: None, category: None, definition_visibility: None,
-        depth: None, example_dialogue: None, favorite: None, first_message_visibility: None,
-        height: None, last_activity: None, migrated_from: None, model_prompt: None,
-        model_prompt_visibility: None, model_temperature: None, num_interactions: None,
-        permanence: None, persona_visibility: None, revision: None, sharing_visibility: None,
-        status: None, system_prompt_visibility: None, system_tags: None, token_budget: None,
-        usage_hints: None, user_persona: None, user_persona_visibility: None, visibility: None,
-        weight: None, world_scenario_visibility: None, description_nonce: None,
-        personality_nonce: None, scenario_nonce: None, first_mes_nonce: None,
-        mes_example_nonce: None, creator_notes_nonce: None, system_prompt_nonce: None,
-        post_history_instructions_nonce: None, persona_nonce: None, world_scenario_nonce: None,
-        greeting_nonce: None, definition_nonce: None, example_dialogue_nonce: None,
-        model_prompt_nonce: None, user_persona_nonce: None,
+        tags: None,
+        creator: None,
+        character_version: None,
+        alternate_greetings: None,
+        nickname: None,
+        creator_notes_multilingual: None,
+        source: None,
+        group_only_greetings: None,
+        creation_date: None,
+        modification_date: None,
+        persona: None,
+        world_scenario: None,
+        avatar: None,
+        chat: None,
+        greeting: None,
+        definition: None,
+        default_voice: None,
+        extensions: None,
+        data_id: None,
+        category: None,
+        definition_visibility: None,
+        depth: None,
+        example_dialogue: None,
+        favorite: None,
+        first_message_visibility: None,
+        height: None,
+        last_activity: None,
+        migrated_from: None,
+        model_prompt: None,
+        model_prompt_visibility: None,
+        model_temperature: None,
+        num_interactions: None,
+        permanence: None,
+        persona_visibility: None,
+        revision: None,
+        sharing_visibility: None,
+        status: None,
+        system_prompt_visibility: None,
+        system_tags: None,
+        token_budget: None,
+        usage_hints: None,
+        user_persona: None,
+        user_persona_visibility: None,
+        visibility: None,
+        weight: None,
+        world_scenario_visibility: None,
+        description_nonce: None,
+        personality_nonce: None,
+        scenario_nonce: None,
+        first_mes_nonce: None,
+        mes_example_nonce: None,
+        creator_notes_nonce: None,
+        system_prompt_nonce: None,
+        post_history_instructions_nonce: None,
+        persona_nonce: None,
+        world_scenario_nonce: None,
+        greeting_nonce: None,
+        definition_nonce: None,
+        example_dialogue_nonce: None,
+        model_prompt_nonce: None,
+        user_persona_nonce: None,
     };
     let conn = test_app.db_pool.get().await?;
     conn.interact(move |conn_inner| {
@@ -1578,41 +1645,95 @@ async fn test_create_chat_session_one_valid_lorebook_id() -> Result<(), AnyhowEr
         spec_version: "1.0".to_string(),
         created_at: Utc::now(),
         updated_at: Utc::now(),
-        first_mes: None, description: None, personality: None, scenario: None, mes_example: None,
-        creator_notes: None, system_prompt: None, post_history_instructions: None, tags: None,
-        creator: None, character_version: None, alternate_greetings: None, nickname: None,
-        creator_notes_multilingual: None, source: None, group_only_greetings: None,
-        creation_date: None, modification_date: None, persona: None, world_scenario: None,
-        avatar: None, chat: None, greeting: None, definition: None, default_voice: None,
-        extensions: None, data_id: None, category: None, definition_visibility: None,
-        depth: None, example_dialogue: None, favorite: None, first_message_visibility: None,
-        height: None, last_activity: None, migrated_from: None, model_prompt: None,
-        model_prompt_visibility: None, model_temperature: None, num_interactions: None,
-        permanence: None, persona_visibility: None, revision: None, sharing_visibility: None,
-        status: None, system_prompt_visibility: None, system_tags: None, token_budget: None,
-        usage_hints: None, user_persona: None, user_persona_visibility: None, visibility: None,
-        weight: None, world_scenario_visibility: None, description_nonce: None,
-        personality_nonce: None, scenario_nonce: None, first_mes_nonce: None,
-        mes_example_nonce: None, creator_notes_nonce: None, system_prompt_nonce: None,
-        post_history_instructions_nonce: None, persona_nonce: None, world_scenario_nonce: None,
-        greeting_nonce: None, definition_nonce: None, example_dialogue_nonce: None,
-        model_prompt_nonce: None, user_persona_nonce: None,
+        first_mes: None,
+        description: None,
+        personality: None,
+        scenario: None,
+        mes_example: None,
+        creator_notes: None,
+        system_prompt: None,
+        post_history_instructions: None,
+        tags: None,
+        creator: None,
+        character_version: None,
+        alternate_greetings: None,
+        nickname: None,
+        creator_notes_multilingual: None,
+        source: None,
+        group_only_greetings: None,
+        creation_date: None,
+        modification_date: None,
+        persona: None,
+        world_scenario: None,
+        avatar: None,
+        chat: None,
+        greeting: None,
+        definition: None,
+        default_voice: None,
+        extensions: None,
+        data_id: None,
+        category: None,
+        definition_visibility: None,
+        depth: None,
+        example_dialogue: None,
+        favorite: None,
+        first_message_visibility: None,
+        height: None,
+        last_activity: None,
+        migrated_from: None,
+        model_prompt: None,
+        model_prompt_visibility: None,
+        model_temperature: None,
+        num_interactions: None,
+        permanence: None,
+        persona_visibility: None,
+        revision: None,
+        sharing_visibility: None,
+        status: None,
+        system_prompt_visibility: None,
+        system_tags: None,
+        token_budget: None,
+        usage_hints: None,
+        user_persona: None,
+        user_persona_visibility: None,
+        visibility: None,
+        weight: None,
+        world_scenario_visibility: None,
+        description_nonce: None,
+        personality_nonce: None,
+        scenario_nonce: None,
+        first_mes_nonce: None,
+        mes_example_nonce: None,
+        creator_notes_nonce: None,
+        system_prompt_nonce: None,
+        post_history_instructions_nonce: None,
+        persona_nonce: None,
+        world_scenario_nonce: None,
+        greeting_nonce: None,
+        definition_nonce: None,
+        example_dialogue_nonce: None,
+        model_prompt_nonce: None,
+        user_persona_nonce: None,
     };
     let conn_char = test_app.db_pool.get().await?;
-    conn_char.interact(move |conn_inner| {
-        diesel::insert_into(characters::table)
-            .values(&new_character)
-            .execute(conn_inner)
-    })
-    .await
-    .map_err(|e| AnyhowError::msg(format!("DB interaction error: {}", e)))?;
+    conn_char
+        .interact(move |conn_inner| {
+            diesel::insert_into(characters::table)
+                .values(&new_character)
+                .execute(conn_inner)
+        })
+        .await
+        .map_err(|e| AnyhowError::msg(format!("DB interaction error: {}", e)))?;
     test_data_guard.add_character(character_id);
 
     // Create a Lorebook
-    let encryption_service_for_lorebook = Arc::new(scribe_backend::services::encryption_service::EncryptionService::new());
+    let encryption_service_for_lorebook =
+        Arc::new(scribe_backend::services::encryption_service::EncryptionService::new());
     let mut rng_dek = rand::rngs::OsRng;
     let mut dek_bytes_lorebook = [0u8; 32];
-    rng_dek.try_fill_bytes(&mut dek_bytes_lorebook).expect("Failed to fill bytes for DEK");
+    rng_dek
+        .try_fill_bytes(&mut dek_bytes_lorebook)
+        .expect("Failed to fill bytes for DEK");
     let user_dek_lorebook = Arc::new(SecretBox::new(Box::new(dek_bytes_lorebook.to_vec())));
 
     let lorebook1 = create_test_lorebook(
@@ -1699,41 +1820,95 @@ async fn test_create_chat_session_multiple_valid_lorebook_ids() -> Result<(), An
         spec_version: "1.0".to_string(),
         created_at: Utc::now(),
         updated_at: Utc::now(),
-        first_mes: None, description: None, personality: None, scenario: None, mes_example: None,
-        creator_notes: None, system_prompt: None, post_history_instructions: None, tags: None,
-        creator: None, character_version: None, alternate_greetings: None, nickname: None,
-        creator_notes_multilingual: None, source: None, group_only_greetings: None,
-        creation_date: None, modification_date: None, persona: None, world_scenario: None,
-        avatar: None, chat: None, greeting: None, definition: None, default_voice: None,
-        extensions: None, data_id: None, category: None, definition_visibility: None,
-        depth: None, example_dialogue: None, favorite: None, first_message_visibility: None,
-        height: None, last_activity: None, migrated_from: None, model_prompt: None,
-        model_prompt_visibility: None, model_temperature: None, num_interactions: None,
-        permanence: None, persona_visibility: None, revision: None, sharing_visibility: None,
-        status: None, system_prompt_visibility: None, system_tags: None, token_budget: None,
-        usage_hints: None, user_persona: None, user_persona_visibility: None, visibility: None,
-        weight: None, world_scenario_visibility: None, description_nonce: None,
-        personality_nonce: None, scenario_nonce: None, first_mes_nonce: None,
-        mes_example_nonce: None, creator_notes_nonce: None, system_prompt_nonce: None,
-        post_history_instructions_nonce: None, persona_nonce: None, world_scenario_nonce: None,
-        greeting_nonce: None, definition_nonce: None, example_dialogue_nonce: None,
-        model_prompt_nonce: None, user_persona_nonce: None,
+        first_mes: None,
+        description: None,
+        personality: None,
+        scenario: None,
+        mes_example: None,
+        creator_notes: None,
+        system_prompt: None,
+        post_history_instructions: None,
+        tags: None,
+        creator: None,
+        character_version: None,
+        alternate_greetings: None,
+        nickname: None,
+        creator_notes_multilingual: None,
+        source: None,
+        group_only_greetings: None,
+        creation_date: None,
+        modification_date: None,
+        persona: None,
+        world_scenario: None,
+        avatar: None,
+        chat: None,
+        greeting: None,
+        definition: None,
+        default_voice: None,
+        extensions: None,
+        data_id: None,
+        category: None,
+        definition_visibility: None,
+        depth: None,
+        example_dialogue: None,
+        favorite: None,
+        first_message_visibility: None,
+        height: None,
+        last_activity: None,
+        migrated_from: None,
+        model_prompt: None,
+        model_prompt_visibility: None,
+        model_temperature: None,
+        num_interactions: None,
+        permanence: None,
+        persona_visibility: None,
+        revision: None,
+        sharing_visibility: None,
+        status: None,
+        system_prompt_visibility: None,
+        system_tags: None,
+        token_budget: None,
+        usage_hints: None,
+        user_persona: None,
+        user_persona_visibility: None,
+        visibility: None,
+        weight: None,
+        world_scenario_visibility: None,
+        description_nonce: None,
+        personality_nonce: None,
+        scenario_nonce: None,
+        first_mes_nonce: None,
+        mes_example_nonce: None,
+        creator_notes_nonce: None,
+        system_prompt_nonce: None,
+        post_history_instructions_nonce: None,
+        persona_nonce: None,
+        world_scenario_nonce: None,
+        greeting_nonce: None,
+        definition_nonce: None,
+        example_dialogue_nonce: None,
+        model_prompt_nonce: None,
+        user_persona_nonce: None,
     };
     let conn_char = test_app.db_pool.get().await?;
-    conn_char.interact(move |conn_inner| {
-        diesel::insert_into(characters::table)
-            .values(&new_character)
-            .execute(conn_inner)
-    })
-    .await
-    .map_err(|e| AnyhowError::msg(format!("DB interaction error: {}", e)))?;
+    conn_char
+        .interact(move |conn_inner| {
+            diesel::insert_into(characters::table)
+                .values(&new_character)
+                .execute(conn_inner)
+        })
+        .await
+        .map_err(|e| AnyhowError::msg(format!("DB interaction error: {}", e)))?;
     test_data_guard.add_character(character_id);
 
     // Create Lorebooks
-    let encryption_service_for_lorebook = Arc::new(scribe_backend::services::encryption_service::EncryptionService::new());
+    let encryption_service_for_lorebook =
+        Arc::new(scribe_backend::services::encryption_service::EncryptionService::new());
     let mut rng_dek = rand::rngs::OsRng;
     let mut dek_bytes_lorebook = [0u8; 32];
-    rng_dek.try_fill_bytes(&mut dek_bytes_lorebook).expect("Failed to fill bytes for DEK");
+    rng_dek
+        .try_fill_bytes(&mut dek_bytes_lorebook)
+        .expect("Failed to fill bytes for DEK");
     let user_dek_lorebook = Arc::new(SecretBox::new(Box::new(dek_bytes_lorebook.to_vec())));
 
     let lorebook1 = create_test_lorebook(
@@ -1801,9 +1976,16 @@ async fn test_create_chat_session_multiple_valid_lorebook_ids() -> Result<(), An
     let mut expected_ids = vec![lorebook1.id, lorebook2.id];
     expected_ids.sort();
 
-    assert_eq!(actual_linked_ids, expected_ids, "Linked lorebook IDs do not match expected IDs");
+    assert_eq!(
+        actual_linked_ids, expected_ids,
+        "Linked lorebook IDs do not match expected IDs"
+    );
 
-    assert!(linked_lorebooks.iter().all(|l| l.chat_session_id == session.id));
+    assert!(
+        linked_lorebooks
+            .iter()
+            .all(|l| l.chat_session_id == session.id)
+    );
 
     test_data_guard.cleanup().await?;
     Ok(())
@@ -1839,34 +2021,85 @@ async fn test_create_chat_session_empty_lorebook_ids_list() -> Result<(), Anyhow
         spec_version: "1.0".to_string(),
         created_at: Utc::now(),
         updated_at: Utc::now(),
-        first_mes: None, description: None, personality: None, scenario: None, mes_example: None,
-        creator_notes: None, system_prompt: None, post_history_instructions: None, tags: None,
-        creator: None, character_version: None, alternate_greetings: None, nickname: None,
-        creator_notes_multilingual: None, source: None, group_only_greetings: None,
-        creation_date: None, modification_date: None, persona: None, world_scenario: None,
-        avatar: None, chat: None, greeting: None, definition: None, default_voice: None,
-        extensions: None, data_id: None, category: None, definition_visibility: None,
-        depth: None, example_dialogue: None, favorite: None, first_message_visibility: None,
-        height: None, last_activity: None, migrated_from: None, model_prompt: None,
-        model_prompt_visibility: None, model_temperature: None, num_interactions: None,
-        permanence: None, persona_visibility: None, revision: None, sharing_visibility: None,
-        status: None, system_prompt_visibility: None, system_tags: None, token_budget: None,
-        usage_hints: None, user_persona: None, user_persona_visibility: None, visibility: None,
-        weight: None, world_scenario_visibility: None, description_nonce: None,
-        personality_nonce: None, scenario_nonce: None, first_mes_nonce: None,
-        mes_example_nonce: None, creator_notes_nonce: None, system_prompt_nonce: None,
-        post_history_instructions_nonce: None, persona_nonce: None, world_scenario_nonce: None,
-        greeting_nonce: None, definition_nonce: None, example_dialogue_nonce: None,
-        model_prompt_nonce: None, user_persona_nonce: None,
+        first_mes: None,
+        description: None,
+        personality: None,
+        scenario: None,
+        mes_example: None,
+        creator_notes: None,
+        system_prompt: None,
+        post_history_instructions: None,
+        tags: None,
+        creator: None,
+        character_version: None,
+        alternate_greetings: None,
+        nickname: None,
+        creator_notes_multilingual: None,
+        source: None,
+        group_only_greetings: None,
+        creation_date: None,
+        modification_date: None,
+        persona: None,
+        world_scenario: None,
+        avatar: None,
+        chat: None,
+        greeting: None,
+        definition: None,
+        default_voice: None,
+        extensions: None,
+        data_id: None,
+        category: None,
+        definition_visibility: None,
+        depth: None,
+        example_dialogue: None,
+        favorite: None,
+        first_message_visibility: None,
+        height: None,
+        last_activity: None,
+        migrated_from: None,
+        model_prompt: None,
+        model_prompt_visibility: None,
+        model_temperature: None,
+        num_interactions: None,
+        permanence: None,
+        persona_visibility: None,
+        revision: None,
+        sharing_visibility: None,
+        status: None,
+        system_prompt_visibility: None,
+        system_tags: None,
+        token_budget: None,
+        usage_hints: None,
+        user_persona: None,
+        user_persona_visibility: None,
+        visibility: None,
+        weight: None,
+        world_scenario_visibility: None,
+        description_nonce: None,
+        personality_nonce: None,
+        scenario_nonce: None,
+        first_mes_nonce: None,
+        mes_example_nonce: None,
+        creator_notes_nonce: None,
+        system_prompt_nonce: None,
+        post_history_instructions_nonce: None,
+        persona_nonce: None,
+        world_scenario_nonce: None,
+        greeting_nonce: None,
+        definition_nonce: None,
+        example_dialogue_nonce: None,
+        model_prompt_nonce: None,
+        user_persona_nonce: None,
     };
     let conn_char = test_app.db_pool.get().await?;
-    conn_char.interact(move |conn_inner| {
-        diesel::insert_into(characters::table)
-            .values(&new_character)
-            .execute(conn_inner)
-    })
-    .await
-    .map_err(|e| AnyhowError::msg(format!("DB interaction error: {}", e)))?;
+    conn_char
+        .interact(move |conn_inner| {
+            diesel::insert_into(characters::table)
+                .values(&new_character)
+                .execute(conn_inner)
+        })
+        .await
+        .map_err(|e| AnyhowError::msg(format!("DB interaction error: {}", e)))?;
     test_data_guard.add_character(character_id);
 
     // Create chat session request with an empty lorebook_ids list
@@ -1940,34 +2173,85 @@ async fn test_create_chat_session_non_existent_lorebook_id() -> Result<(), Anyho
         spec_version: "1.0".to_string(),
         created_at: Utc::now(),
         updated_at: Utc::now(),
-        first_mes: None, description: None, personality: None, scenario: None, mes_example: None,
-        creator_notes: None, system_prompt: None, post_history_instructions: None, tags: None,
-        creator: None, character_version: None, alternate_greetings: None, nickname: None,
-        creator_notes_multilingual: None, source: None, group_only_greetings: None,
-        creation_date: None, modification_date: None, persona: None, world_scenario: None,
-        avatar: None, chat: None, greeting: None, definition: None, default_voice: None,
-        extensions: None, data_id: None, category: None, definition_visibility: None,
-        depth: None, example_dialogue: None, favorite: None, first_message_visibility: None,
-        height: None, last_activity: None, migrated_from: None, model_prompt: None,
-        model_prompt_visibility: None, model_temperature: None, num_interactions: None,
-        permanence: None, persona_visibility: None, revision: None, sharing_visibility: None,
-        status: None, system_prompt_visibility: None, system_tags: None, token_budget: None,
-        usage_hints: None, user_persona: None, user_persona_visibility: None, visibility: None,
-        weight: None, world_scenario_visibility: None, description_nonce: None,
-        personality_nonce: None, scenario_nonce: None, first_mes_nonce: None,
-        mes_example_nonce: None, creator_notes_nonce: None, system_prompt_nonce: None,
-        post_history_instructions_nonce: None, persona_nonce: None, world_scenario_nonce: None,
-        greeting_nonce: None, definition_nonce: None, example_dialogue_nonce: None,
-        model_prompt_nonce: None, user_persona_nonce: None,
+        first_mes: None,
+        description: None,
+        personality: None,
+        scenario: None,
+        mes_example: None,
+        creator_notes: None,
+        system_prompt: None,
+        post_history_instructions: None,
+        tags: None,
+        creator: None,
+        character_version: None,
+        alternate_greetings: None,
+        nickname: None,
+        creator_notes_multilingual: None,
+        source: None,
+        group_only_greetings: None,
+        creation_date: None,
+        modification_date: None,
+        persona: None,
+        world_scenario: None,
+        avatar: None,
+        chat: None,
+        greeting: None,
+        definition: None,
+        default_voice: None,
+        extensions: None,
+        data_id: None,
+        category: None,
+        definition_visibility: None,
+        depth: None,
+        example_dialogue: None,
+        favorite: None,
+        first_message_visibility: None,
+        height: None,
+        last_activity: None,
+        migrated_from: None,
+        model_prompt: None,
+        model_prompt_visibility: None,
+        model_temperature: None,
+        num_interactions: None,
+        permanence: None,
+        persona_visibility: None,
+        revision: None,
+        sharing_visibility: None,
+        status: None,
+        system_prompt_visibility: None,
+        system_tags: None,
+        token_budget: None,
+        usage_hints: None,
+        user_persona: None,
+        user_persona_visibility: None,
+        visibility: None,
+        weight: None,
+        world_scenario_visibility: None,
+        description_nonce: None,
+        personality_nonce: None,
+        scenario_nonce: None,
+        first_mes_nonce: None,
+        mes_example_nonce: None,
+        creator_notes_nonce: None,
+        system_prompt_nonce: None,
+        post_history_instructions_nonce: None,
+        persona_nonce: None,
+        world_scenario_nonce: None,
+        greeting_nonce: None,
+        definition_nonce: None,
+        example_dialogue_nonce: None,
+        model_prompt_nonce: None,
+        user_persona_nonce: None,
     };
     let conn_char = test_app.db_pool.get().await?;
-    conn_char.interact(move |conn_inner| {
-        diesel::insert_into(characters::table)
-            .values(&new_character)
-            .execute(conn_inner)
-    })
-    .await
-    .map_err(|e| AnyhowError::msg(format!("DB interaction error: {}", e)))?;
+    conn_char
+        .interact(move |conn_inner| {
+            diesel::insert_into(characters::table)
+                .values(&new_character)
+                .execute(conn_inner)
+        })
+        .await
+        .map_err(|e| AnyhowError::msg(format!("DB interaction error: {}", e)))?;
     test_data_guard.add_character(character_id);
 
     let non_existent_lorebook_id = Uuid::new_v4();
@@ -1988,17 +2272,17 @@ async fn test_create_chat_session_non_existent_lorebook_id() -> Result<(), Anyho
 
     let response = test_app.router.clone().oneshot(request).await?;
     assert_eq!(response.status(), StatusCode::NOT_FOUND); // Expect 404 Not Found
- 
+
     // No body to check for 404
     // let body = response.into_body().collect().await?.to_bytes();
     // let session: DbChatSession = serde_json::from_slice(&body)?; // No session to deserialize for 404
     // test_data_guard.add_chat(session.id); // No session to add for 404
- 
+
     // Verify no entries in chat_session_lorebooks - This check is implicitly covered by the 404
     // as the session creation would have failed before attempting to link.
     // However, if we wanted to be absolutely sure no partial data was created (though transaction should prevent it),
     // we might query, but for a 404 on session creation, it's usually not necessary.
- 
+
     // No cleanup needed for a session that wasn't created.
     // test_data_guard.cleanup().await?;
     Ok(())
@@ -2032,8 +2316,12 @@ async fn test_create_chat_session_lorebook_owned_by_another_user() -> Result<(),
     test_data_guard.add_user(requester_user.id);
 
     // Use router-based login to ensure we're using the same AuthBackend instance
-    let requester_auth_cookie =
-        test_helpers::login_user_via_router(&test_app.router, requester_username, requester_password).await;
+    let requester_auth_cookie = test_helpers::login_user_via_router(
+        &test_app.router,
+        requester_username,
+        requester_password,
+    )
+    .await;
 
     // Create a character for the requester_user
     let character_id = Uuid::new_v4();
@@ -2045,41 +2333,95 @@ async fn test_create_chat_session_lorebook_owned_by_another_user() -> Result<(),
         spec_version: "1.0".to_string(),
         created_at: Utc::now(),
         updated_at: Utc::now(),
-        first_mes: None, description: None, personality: None, scenario: None, mes_example: None,
-        creator_notes: None, system_prompt: None, post_history_instructions: None, tags: None,
-        creator: None, character_version: None, alternate_greetings: None, nickname: None,
-        creator_notes_multilingual: None, source: None, group_only_greetings: None,
-        creation_date: None, modification_date: None, persona: None, world_scenario: None,
-        avatar: None, chat: None, greeting: None, definition: None, default_voice: None,
-        extensions: None, data_id: None, category: None, definition_visibility: None,
-        depth: None, example_dialogue: None, favorite: None, first_message_visibility: None,
-        height: None, last_activity: None, migrated_from: None, model_prompt: None,
-        model_prompt_visibility: None, model_temperature: None, num_interactions: None,
-        permanence: None, persona_visibility: None, revision: None, sharing_visibility: None,
-        status: None, system_prompt_visibility: None, system_tags: None, token_budget: None,
-        usage_hints: None, user_persona: None, user_persona_visibility: None, visibility: None,
-        weight: None, world_scenario_visibility: None, description_nonce: None,
-        personality_nonce: None, scenario_nonce: None, first_mes_nonce: None,
-        mes_example_nonce: None, creator_notes_nonce: None, system_prompt_nonce: None,
-        post_history_instructions_nonce: None, persona_nonce: None, world_scenario_nonce: None,
-        greeting_nonce: None, definition_nonce: None, example_dialogue_nonce: None,
-        model_prompt_nonce: None, user_persona_nonce: None,
+        first_mes: None,
+        description: None,
+        personality: None,
+        scenario: None,
+        mes_example: None,
+        creator_notes: None,
+        system_prompt: None,
+        post_history_instructions: None,
+        tags: None,
+        creator: None,
+        character_version: None,
+        alternate_greetings: None,
+        nickname: None,
+        creator_notes_multilingual: None,
+        source: None,
+        group_only_greetings: None,
+        creation_date: None,
+        modification_date: None,
+        persona: None,
+        world_scenario: None,
+        avatar: None,
+        chat: None,
+        greeting: None,
+        definition: None,
+        default_voice: None,
+        extensions: None,
+        data_id: None,
+        category: None,
+        definition_visibility: None,
+        depth: None,
+        example_dialogue: None,
+        favorite: None,
+        first_message_visibility: None,
+        height: None,
+        last_activity: None,
+        migrated_from: None,
+        model_prompt: None,
+        model_prompt_visibility: None,
+        model_temperature: None,
+        num_interactions: None,
+        permanence: None,
+        persona_visibility: None,
+        revision: None,
+        sharing_visibility: None,
+        status: None,
+        system_prompt_visibility: None,
+        system_tags: None,
+        token_budget: None,
+        usage_hints: None,
+        user_persona: None,
+        user_persona_visibility: None,
+        visibility: None,
+        weight: None,
+        world_scenario_visibility: None,
+        description_nonce: None,
+        personality_nonce: None,
+        scenario_nonce: None,
+        first_mes_nonce: None,
+        mes_example_nonce: None,
+        creator_notes_nonce: None,
+        system_prompt_nonce: None,
+        post_history_instructions_nonce: None,
+        persona_nonce: None,
+        world_scenario_nonce: None,
+        greeting_nonce: None,
+        definition_nonce: None,
+        example_dialogue_nonce: None,
+        model_prompt_nonce: None,
+        user_persona_nonce: None,
     };
     let conn_char = test_app.db_pool.get().await?;
-    conn_char.interact(move |conn_inner| {
-        diesel::insert_into(characters::table)
-            .values(&new_character)
-            .execute(conn_inner)
-    })
-    .await
-    .map_err(|e| AnyhowError::msg(format!("DB interaction error: {}", e)))?;
+    conn_char
+        .interact(move |conn_inner| {
+            diesel::insert_into(characters::table)
+                .values(&new_character)
+                .execute(conn_inner)
+        })
+        .await
+        .map_err(|e| AnyhowError::msg(format!("DB interaction error: {}", e)))?;
     test_data_guard.add_character(character_id);
 
     // Create a Lorebook owned by owner_user
-    let encryption_service_for_lorebook = Arc::new(scribe_backend::services::encryption_service::EncryptionService::new());
+    let encryption_service_for_lorebook =
+        Arc::new(scribe_backend::services::encryption_service::EncryptionService::new());
     let mut rng_dek = rand::rngs::OsRng;
     let mut dek_bytes_lorebook_owner = [0u8; 32];
-    rng_dek.try_fill_bytes(&mut dek_bytes_lorebook_owner).expect("Failed to fill bytes for DEK");
+    rng_dek
+        .try_fill_bytes(&mut dek_bytes_lorebook_owner)
+        .expect("Failed to fill bytes for DEK");
     let owner_user_dek = Arc::new(SecretBox::new(Box::new(dek_bytes_lorebook_owner.to_vec())));
 
     let lorebook_other_owner = create_test_lorebook(
@@ -2108,15 +2450,15 @@ async fn test_create_chat_session_lorebook_owned_by_another_user() -> Result<(),
 
     let response = test_app.router.clone().oneshot(request).await?;
     assert_eq!(response.status(), StatusCode::FORBIDDEN); // Expect 403 Forbidden
- 
+
     // No body to check for 403
     // let body = response.into_body().collect().await?.to_bytes();
     // let session: DbChatSession = serde_json::from_slice(&body)?; // No session for 403
     // test_data_guard.add_chat(session.id); // No session to add for 403
- 
+
     // Verification of no linked lorebooks is implicitly covered by the 403 error,
     // as session creation (and thus linking) would have failed.
- 
+
     // No cleanup needed for a session that wasn't created.
     // test_data_guard.cleanup().await?;
     Ok(())

@@ -3,46 +3,54 @@
 
 // Make sure all necessary imports from the main crate and external crates are included.
 use crate::errors::AppError;
-use crate::llm::{AiClient, ChatStream, EmbeddingClient, BatchEmbeddingContentRequest}; // Add EmbeddingClient and BatchEmbeddingContentRequest
-use crate::services::embedding_pipeline::{EmbeddingPipelineService, EmbeddingPipelineServiceTrait, RetrievedChunk}; // Added EmbeddingPipelineService
+use crate::llm::{AiClient, BatchEmbeddingContentRequest, ChatStream, EmbeddingClient}; // Add EmbeddingClient and BatchEmbeddingContentRequest
+use crate::services::embedding_pipeline::{
+    EmbeddingPipelineService, EmbeddingPipelineServiceTrait, RetrievedChunk,
+}; // Added EmbeddingPipelineService
 use crate::text_processing::chunking::ChunkConfig; // Added ChunkConfig
 // Unused ChunkConfig, ChunkingMetric were previously noted as removed.
 use crate::models::users::User as DbUser;
 use crate::models::users::{SerializableSecretDek, User}; // Added SerializableSecretDek
 use crate::vector_db::qdrant_client::{PointStruct, QdrantClientServiceTrait};
 use crate::{
-PgPool, // This is deadpool_diesel::postgres::Pool
-auth::{session_store::DieselSessionStore, user_store::Backend as AuthBackend}, // Use crate::auth and alias Backend, Added RegisterPayload
-config::Config,
-// Ensure build_gemini_client is removed if present
-models::chats::{ChatMessage, UpdateChatSettingsRequest}, // Added UpdateChatSettingsRequest
-models::users::AccountStatus,
-routes::{
-    auth as auth_routes_module, characters, chat::chat_routes, chats,
-    documents::document_routes, health::health_check, lorebook_routes, // Added lorebook_routes
-    user_persona_routes, user_settings_routes,
-},
-schema,
-state::AppState,
-services::chat_override_service::ChatOverrideService, // <<< ENSURED IMPORT
-services::encryption_service::EncryptionService, // <<< ENSURED IMPORT
-services::gemini_token_client::GeminiTokenClient,
-services::hybrid_token_counter::HybridTokenCounter,
-services::tokenizer_service::TokenizerService,
-services::user_persona_service::UserPersonaService, // <<< ADDED THIS IMPORT
-vector_db::qdrant_client::QdrantClientService, // Import constants module alias
+    PgPool, // This is deadpool_diesel::postgres::Pool
+    auth::{session_store::DieselSessionStore, user_store::Backend as AuthBackend}, // Use crate::auth and alias Backend, Added RegisterPayload
+    config::Config,
+    // Ensure build_gemini_client is removed if present
+    models::chats::{ChatMessage, UpdateChatSettingsRequest}, // Added UpdateChatSettingsRequest
+    models::users::AccountStatus,
+    routes::{
+        auth as auth_routes_module,
+        characters,
+        chat::chat_routes,
+        chats,
+        documents::document_routes,
+        health::health_check,
+        lorebook_routes, // Added lorebook_routes
+        user_persona_routes,
+        user_settings_routes,
+    },
+    schema,
+    services::chat_override_service::ChatOverrideService, // <<< ENSURED IMPORT
+    services::encryption_service::EncryptionService,      // <<< ENSURED IMPORT
+    services::gemini_token_client::GeminiTokenClient,
+    services::hybrid_token_counter::HybridTokenCounter,
+    services::tokenizer_service::TokenizerService,
+    services::user_persona_service::UserPersonaService, // <<< ADDED THIS IMPORT
+    state::AppState,
+    vector_db::qdrant_client::QdrantClientService, // Import constants module alias
 };
 use anyhow::Context; // Added for TestDataGuard cleanup
 use async_trait::async_trait;
 use axum::{
-Router,
-middleware::{self, Next},
-response::Response as AxumResponse, // Alias to avoid conflict if Response is used elsewhere
-routing::get, // <<< ADD THIS IMPORT
+    Router,
+    middleware::{self, Next},
+    response::Response as AxumResponse, // Alias to avoid conflict if Response is used elsewhere
+    routing::get,                       // <<< ADD THIS IMPORT
 };
 use axum::{
-body::Body,
-http::{Request, StatusCode}, // Removed unused Method, header
+    body::Body,
+    http::{Request, StatusCode}, // Removed unused Method, header
 };
 use axum_login::{AuthManagerLayerBuilder, AuthSession}; // Removed unused login_required
 use diesel::RunQueryDsl;
@@ -59,21 +67,23 @@ use mime; // Added for mime::APPLICATION_JSON
 use qdrant_client::qdrant::{Filter, PointId, ScoredPoint};
 use secrecy::{ExposeSecret, SecretBox, SecretString};
 use serde_json::json;
+use std::collections::VecDeque; // Added for MockQdrantClientService response queue
 use std::fmt;
 use std::sync::{Arc, Mutex}; // Add Mutex import
-use std::collections::VecDeque; // Added for MockQdrantClientService response queue
 use tokio::net::TcpListener;
 // use tokio::sync::Mutex as TokioMutex; // Removed unused import
+use hex; // Added for hex::decode
+use http_body_util::BodyExt; // For collect() on Body
+use reqwest;
+use rustls;
+use time; // For time::Duration for session expiry
 use tower::ServiceExt; // For .oneshot
 use tower_cookies::CookieManagerLayer; // Removed unused: Key as TowerCookieKey
-use tower_sessions::{Expiry, SessionManagerLayer, cookie::Key as TowerSessionKey, cookie::SameSite}; // Added SameSite
-use http_body_util::BodyExt; // For collect() on Body
+use tower_sessions::{
+    Expiry, SessionManagerLayer, cookie::Key as TowerSessionKey, cookie::SameSite,
+}; // Added SameSite
 use tracing::{debug, instrument, warn}; // Added debug
-use uuid::Uuid;
-use hex; // Added for hex::decode
-use time; // For time::Duration for session expiry
-use reqwest;
-use rustls; // Added for CryptoProvider
+use uuid::Uuid; // Added for CryptoProvider
 
 #[derive(Clone)]
 pub struct MockAiClient {
@@ -281,12 +291,18 @@ impl MockEmbeddingClient {
 
 #[async_trait]
 impl EmbeddingClient for MockEmbeddingClient {
-    async fn embed_content(&self, text: &str, task_type: &str, title: Option<&str>) -> Result<Vec<f32>, AppError> {
+    async fn embed_content(
+        &self,
+        text: &str,
+        task_type: &str,
+        title: Option<&str>,
+    ) -> Result<Vec<f32>, AppError> {
         // Record the call
-        self.calls
-            .lock()
-            .unwrap()
-            .push((text.to_string(), task_type.to_string(), title.map(String::from)));
+        self.calls.lock().unwrap().push((
+            text.to_string(),
+            task_type.to_string(),
+            title.map(String::from),
+        ));
 
         // Try to get response from sequence first
         let mut sequence_guard = self.response_sequence.lock().unwrap();
@@ -301,7 +317,9 @@ impl EmbeddingClient for MockEmbeddingClient {
             Some(res) => res,
             None => {
                 // Default behavior if no response is set
-                warn!("MockEmbeddingClient response and sequence not set, returning default OK response."); // Keep warning
+                warn!(
+                    "MockEmbeddingClient response and sequence not set, returning default OK response."
+                ); // Keep warning
                 Ok(vec![0.0; 768]) // Restore default Ok(...) behavior
             }
         }
@@ -328,7 +346,9 @@ impl EmbeddingClient for MockEmbeddingClient {
         match self.batch_response.lock().unwrap().clone() {
             Some(res) => res,
             None => {
-                warn!("MockEmbeddingClient batch_response not set, returning default Ok(vec![]) response.");
+                warn!(
+                    "MockEmbeddingClient batch_response not set, returning default Ok(vec![]) response."
+                );
                 Ok(Vec::new()) // Default to empty vec of embeddings
             }
         }
@@ -338,7 +358,7 @@ impl EmbeddingClient for MockEmbeddingClient {
 #[derive(Clone, Debug)] // Added Clone, Debug
 pub enum PipelineCall {
     RetrieveRelevantChunks {
-        user_id: Uuid, // Renamed from chat_id
+        user_id: Uuid,                             // Renamed from chat_id
         session_id_for_chat_history: Option<Uuid>, // New field - Updated to Option<Uuid>
         query_text: String,
         limit: u64,
@@ -387,22 +407,28 @@ impl MockEmbeddingPipelineService {
 
     #[allow(dead_code)] // May not be used immediately but good to have
     pub fn add_retrieve_response(&self, response: Result<Vec<RetrievedChunk>, AppError>) {
-        self.retrieve_response_queue.lock().unwrap().push_back(response);
+        self.retrieve_response_queue
+            .lock()
+            .unwrap()
+            .push_back(response);
     }
 
-    pub fn set_retrieve_responses_sequence(&self, responses: Vec<Result<Vec<RetrievedChunk>, AppError>>) {
+    pub fn set_retrieve_responses_sequence(
+        &self,
+        responses: Vec<Result<Vec<RetrievedChunk>, AppError>>,
+    ) {
         let mut queue = self.retrieve_response_queue.lock().unwrap();
         queue.clear();
         for response in responses {
             queue.push_back(response);
         }
     }
- 
+
     pub fn clear_calls(&self) {
         self.calls.lock().unwrap().clear();
     }
 }
- 
+
 #[async_trait]
 impl EmbeddingPipelineServiceTrait for MockEmbeddingPipelineService {
     async fn process_and_embed_message(
@@ -455,11 +481,11 @@ impl EmbeddingPipelineServiceTrait for MockEmbeddingPipelineService {
     async fn retrieve_relevant_chunks(
         &self,
         _state: Arc<AppState>,
-        user_id: Uuid, // New parameter
+        user_id: Uuid,                                     // New parameter
         session_id_for_chat_history: Option<Uuid>, // New parameter - Updated to Option<Uuid>
         active_lorebook_ids_for_search: Option<Vec<Uuid>>, // New parameter
         query_text: &str,
-        limit: u64
+        limit: u64,
     ) -> Result<Vec<RetrievedChunk>, AppError> {
         // Record the call
         self.calls
@@ -469,7 +495,7 @@ impl EmbeddingPipelineServiceTrait for MockEmbeddingPipelineService {
                 user_id,
                 session_id_for_chat_history, // This is Option<Uuid>
                 query_text: query_text.to_string(), // Corrected order
-                limit, // Corrected order
+                limit,                       // Corrected order
                 active_lorebook_ids_for_search, // Corrected order
             });
 
@@ -480,7 +506,9 @@ impl EmbeddingPipelineServiceTrait for MockEmbeddingPipelineService {
         } else {
             // It's important for tests to set up responses correctly.
             // Panicking here makes it clear if a response was expected but not provided.
-            panic!("MockEmbeddingPipelineService::retrieve_relevant_chunks called but no more responses were queued. Ensure your test sets up enough responses.");
+            panic!(
+                "MockEmbeddingPipelineService::retrieve_relevant_chunks called but no more responses were queued. Ensure your test sets up enough responses."
+            );
         }
     }
 
@@ -547,7 +575,10 @@ impl MockQdrantClientService {
         self.search_response.lock().unwrap().push_back(response);
     }
 
-    pub fn set_search_responses_sequence(&self, responses: Vec<Result<Vec<ScoredPoint>, AppError>>) {
+    pub fn set_search_responses_sequence(
+        &self,
+        responses: Vec<Result<Vec<ScoredPoint>, AppError>>,
+    ) {
         let mut queue = self.search_response.lock().unwrap();
         queue.clear();
         for response in responses {
@@ -610,7 +641,9 @@ impl MockQdrantClientService {
             );
             response // This is Result<Vec<ScoredPoint>, AppError>
         } else {
-            panic!("MockQdrantClientService::search_points called but no more responses were queued. Ensure your test sets up enough responses.");
+            panic!(
+                "MockQdrantClientService::search_points called but no more responses were queued. Ensure your test sets up enough responses."
+            );
         }
     }
 
@@ -625,7 +658,9 @@ impl MockQdrantClientService {
         if let Some(response) = queue.pop_front() {
             response
         } else {
-            warn!("MockQdrantClientService::retrieve_points (standalone) called but no response was queued. Returning Ok(vec![]).");
+            warn!(
+                "MockQdrantClientService::retrieve_points (standalone) called but no response was queued. Returning Ok(vec![])."
+            );
             Ok(vec![])
         }
     }
@@ -696,7 +731,9 @@ impl QdrantClientServiceTrait for MockQdrantClientService {
             // This branch should ideally not be hit if tests correctly set up responses.
             // For safety in tests that might not set up enough, we could panic or return a specific error.
             // For now, keeping the warn and returning empty Ok to match previous behavior for un-queued calls.
-            warn!("MockQdrantClientService::search_points (trait) called but no response was queued. Returning Ok(vec![]).");
+            warn!(
+                "MockQdrantClientService::search_points (trait) called but no response was queued. Returning Ok(vec![])."
+            );
             Ok(vec![])
         }
     }
@@ -711,7 +748,9 @@ impl QdrantClientServiceTrait for MockQdrantClientService {
         if let Some(response) = queue.pop_front() {
             response
         } else {
-            warn!("MockQdrantClientService::retrieve_points (trait) called but no response was queued. Returning Ok(vec![]).");
+            warn!(
+                "MockQdrantClientService::retrieve_points (trait) called but no response was queued. Returning Ok(vec![])."
+            );
             Ok(vec![])
         }
     }
@@ -736,7 +775,10 @@ impl QdrantClientServiceTrait for MockQdrantClientService {
         Ok(())
     }
 
-    async fn get_point_by_id(&self, point_id: PointId) -> Result<Option<qdrant_client::qdrant::RetrievedPoint>, AppError> {
+    async fn get_point_by_id(
+        &self,
+        point_id: PointId,
+    ) -> Result<Option<qdrant_client::qdrant::RetrievedPoint>, AppError> {
         // For the mock, we don't have a sophisticated way to store/retrieve individual points yet.
         // We can extend this if tests need to verify specific point retrieval.
         // For now, let's log the call and return Ok(None) or a pre-set response if we add one.
@@ -858,9 +900,11 @@ impl TestAppStateBuilder {
             let tokenizer_service = TokenizerService::new(&tokenizer_model_path)
                 .expect("Failed to load tokenizer model for TestAppStateBuilder");
 
-            let gemini_token_client = self.config.gemini_api_key.as_ref().map(|api_key| {
-                GeminiTokenClient::new(api_key.clone())
-            });
+            let gemini_token_client = self
+                .config
+                .gemini_api_key
+                .as_ref()
+                .map(|api_key| GeminiTokenClient::new(api_key.clone()));
 
             let default_model = self
                 .config
@@ -877,7 +921,8 @@ impl TestAppStateBuilder {
         });
 
         let lorebook_service = self.lorebook_service.unwrap_or_else(|| {
-            Arc::new(crate::services::lorebook_service::LorebookService::new( // Fully qualify
+            Arc::new(crate::services::lorebook_service::LorebookService::new(
+                // Fully qualify
                 self.db_pool.clone(),
                 encryption_service.clone(),
             ))
@@ -894,8 +939,8 @@ impl TestAppStateBuilder {
             user_persona_service,
             token_counter,
             encryption_service, // Added encryption_service
-            lorebook_service, // Added lorebook_service
-            self.auth_backend, // Use the provided auth_backend
+            lorebook_service,   // Added lorebook_service
+            self.auth_backend,  // Use the provided auth_backend
         )
     }
 }
@@ -997,8 +1042,21 @@ pub async fn spawn_app(multi_thread: bool, use_real_ai: bool, use_real_qdrant: b
     spawn_app_with_options(multi_thread, use_real_ai, use_real_qdrant, false).await
 }
 
-#[instrument(skip_all, fields(multi_thread, use_real_ai, use_real_qdrant, use_real_embedding_pipeline))]
-pub async fn spawn_app_with_options(multi_thread: bool, use_real_ai: bool, use_real_qdrant: bool, use_real_embedding_pipeline: bool) -> TestApp {
+#[instrument(
+    skip_all,
+    fields(
+        multi_thread,
+        use_real_ai,
+        use_real_qdrant,
+        use_real_embedding_pipeline
+    )
+)]
+pub async fn spawn_app_with_options(
+    multi_thread: bool,
+    use_real_ai: bool,
+    use_real_qdrant: bool,
+    use_real_embedding_pipeline: bool,
+) -> TestApp {
     ensure_tracing_initialized();
     ensure_rustls_provider_installed(); // Ensure rustls crypto provider is set up
     dotenv().ok();
@@ -1014,11 +1072,13 @@ pub async fn spawn_app_with_options(multi_thread: bool, use_real_ai: bool, use_r
     if let Some(ref suffix) = test_db_name_suffix {
         config_loader.database_url = Some(format!(
             "{}_{}",
-            config_loader.database_url.unwrap_or_else(|| "postgres://user:pass@localhost/testdb".to_string()), // Provide a default if None
+            config_loader
+                .database_url
+                .unwrap_or_else(|| "postgres://user:pass@localhost/testdb".to_string()), // Provide a default if None
             suffix
         ));
     }
-    config_loader.port = 0; 
+    config_loader.port = 0;
     let config_arc = Arc::new(config_loader);
 
     let (ai_client_for_state, mock_ai_client_for_test_app): (
@@ -1031,26 +1091,37 @@ pub async fn spawn_app_with_options(multi_thread: bool, use_real_ai: bool, use_r
         (Arc::new(real_ai_client), None)
     } else {
         let mock_client = Arc::new(MockAiClient::new());
-        (mock_client.clone() as Arc<dyn AiClient + Send + Sync>, Some(mock_client))
+        (
+            mock_client.clone() as Arc<dyn AiClient + Send + Sync>,
+            Some(mock_client),
+        )
     };
 
     // Determine EmbeddingClient and EmbeddingPipelineService based on use_real_qdrant (acting as use_real_embedding_components)
     let embedding_client_for_state: Arc<dyn EmbeddingClient + Send + Sync>;
     // Initialize these directly as TestApp expects non-optional Arcs.
     let mock_embedding_client_for_test_app = Arc::new(MockEmbeddingClient::new());
-    let mock_embedding_pipeline_service_for_test_app = Arc::new(MockEmbeddingPipelineService::new());
+    let mock_embedding_pipeline_service_for_test_app =
+        Arc::new(MockEmbeddingPipelineService::new());
 
     let (qdrant_service_for_state, mock_qdrant_service_for_test_app): (
         Arc<dyn QdrantClientServiceTrait + Send + Sync>,
         Option<Arc<MockQdrantClientService>>,
-    ) = if use_real_qdrant { // This flag now also controls embedding components
+    ) = if use_real_qdrant {
+        // This flag now also controls embedding components
         let real_qdrant_service = QdrantClientService::new(config_arc.clone())
             .await
             .expect("Failed to create real Qdrant client for test");
-        (Arc::new(real_qdrant_service) as Arc<dyn QdrantClientServiceTrait + Send + Sync>, None)
+        (
+            Arc::new(real_qdrant_service) as Arc<dyn QdrantClientServiceTrait + Send + Sync>,
+            None,
+        )
     } else {
         let mock_qdrant = Arc::new(MockQdrantClientService::new());
-        (mock_qdrant.clone() as Arc<dyn QdrantClientServiceTrait + Send + Sync>, Some(mock_qdrant))
+        (
+            mock_qdrant.clone() as Arc<dyn QdrantClientServiceTrait + Send + Sync>,
+            Some(mock_qdrant),
+        )
     };
 
     // Create auth_backend early so it can be shared
@@ -1060,14 +1131,16 @@ pub async fn spawn_app_with_options(multi_thread: bool, use_real_ai: bool, use_r
 
     let mut builder; // Declare builder without initializing
 
-    if use_real_qdrant { // If true, use real embedding client and pipeline for AppState
-        let real_embedding_client = crate::llm::gemini_embedding_client::build_gemini_embedding_client(config_arc.clone())
-            .expect("Failed to build real Gemini embedding client for test");
+    if use_real_qdrant {
+        // If true, use real embedding client and pipeline for AppState
+        let real_embedding_client =
+            crate::llm::gemini_embedding_client::build_gemini_embedding_client(config_arc.clone())
+                .expect("Failed to build real Gemini embedding client for test");
         embedding_client_for_state = Arc::new(real_embedding_client);
-        
+
         // mock_embedding_client_for_test_app and mock_embedding_pipeline_service_for_test_app are already initialized.
         // AppState will use the real embedding pipeline service (created by builder if not specified).
-        
+
         // Initialize builder with the real embedding client for AppState
         builder = TestAppStateBuilder::new(
             pool.clone(),
@@ -1079,12 +1152,15 @@ pub async fn spawn_app_with_options(multi_thread: bool, use_real_ai: bool, use_r
         );
         // Only use real embedding pipeline if explicitly requested
         if !use_real_embedding_pipeline {
-            builder = builder.with_embedding_pipeline_service(mock_embedding_pipeline_service_for_test_app.clone());
+            builder = builder.with_embedding_pipeline_service(
+                mock_embedding_pipeline_service_for_test_app.clone(),
+            );
         }
-
-    } else { // Use mock embedding client and pipeline for AppState
+    } else {
+        // Use mock embedding client and pipeline for AppState
         // Set embedding_client_for_state to the mock one (which is also stored in TestApp)
-        embedding_client_for_state = mock_embedding_client_for_test_app.clone() as Arc<dyn EmbeddingClient + Send + Sync>;
+        embedding_client_for_state =
+            mock_embedding_client_for_test_app.clone() as Arc<dyn EmbeddingClient + Send + Sync>;
 
         // Re-initialize builder with the mock embedding client for AppState
         builder = TestAppStateBuilder::new(
@@ -1098,16 +1174,20 @@ pub async fn spawn_app_with_options(multi_thread: bool, use_real_ai: bool, use_r
 
         // Configure builder with the mock pipeline service for AppState
         // This mock_embedding_pipeline_service_for_test_app is the one initialized earlier.
-        builder = builder.with_embedding_pipeline_service(mock_embedding_pipeline_service_for_test_app.clone());
+        builder = builder
+            .with_embedding_pipeline_service(mock_embedding_pipeline_service_for_test_app.clone());
     }
-    
+
     let app_state_inner = builder.build();
 
     let session_store = DieselSessionStore::new(pool.clone());
-    let secret_key_hex_str: &String = config_arc.cookie_signing_key.as_ref()
+    let secret_key_hex_str: &String = config_arc
+        .cookie_signing_key
+        .as_ref()
         .expect("COOKIE_SIGNING_KEY must be set for tests");
-    let key_bytes = hex::decode(secret_key_hex_str.as_bytes()) // .as_bytes() on String
-        .expect("Invalid COOKIE_SIGNING_KEY format in test config (must be hex)");
+    let key_bytes =
+        hex::decode(secret_key_hex_str.as_bytes()) // .as_bytes() on String
+            .expect("Invalid COOKIE_SIGNING_KEY format in test config (must be hex)");
     let _signing_key = TowerSessionKey::from(&key_bytes);
 
     let session_manager_layer = SessionManagerLayer::new(session_store)
@@ -1116,8 +1196,10 @@ pub async fn spawn_app_with_options(multi_thread: bool, use_real_ai: bool, use_r
         .with_expiry(Expiry::OnInactivity(time::Duration::days(7)));
 
     // AuthManagerLayerBuilder needs the backend directly, it will handle cloning internally
-    let auth_layer = AuthManagerLayerBuilder::new((*auth_backend).clone(), session_manager_layer.clone()).build();
-    
+    let auth_layer =
+        AuthManagerLayerBuilder::new((*auth_backend).clone(), session_manager_layer.clone())
+            .build();
+
     let listener = TcpListener::bind(format!("127.0.0.1:{}", config_arc.port))
         .await
         .expect("Failed to bind to random port for test server");
@@ -1135,14 +1217,26 @@ pub async fn spawn_app_with_options(multi_thread: bool, use_real_ai: bool, use_r
         .merge(Router::new().nest("/auth", auth_routes_module::auth_routes())); // Align with main.rs
 
     let protected_api_routes_for_test = Router::new()
-        .nest("/characters", characters::characters_router(app_state_inner.clone()))
+        .nest(
+            "/characters",
+            characters::characters_router(app_state_inner.clone()),
+        )
         .nest("/chat", chat_routes(app_state_inner.clone()))
         .nest("/chats", chats::chat_routes()) // Assuming this returns Router<AppState> or is already stateful
         .nest("/documents", document_routes()) // Assuming this returns Router<AppState> or is already stateful
-        .nest("/personas", user_persona_routes::user_personas_router(app_state_inner.clone())) // Add persona routes
-        .nest("/user-settings", user_settings_routes::user_settings_routes(app_state_inner.clone())) // Add user settings routes
+        .nest(
+            "/personas",
+            user_persona_routes::user_personas_router(app_state_inner.clone()),
+        ) // Add persona routes
+        .nest(
+            "/user-settings",
+            user_settings_routes::user_settings_routes(app_state_inner.clone()),
+        ) // Add user settings routes
         .nest("/", lorebook_routes::lorebook_routes()) // Add lorebook routes
-        .route_layer(middleware::from_fn_with_state(app_state_inner.clone(), auth_log_wrapper));
+        .route_layer(middleware::from_fn_with_state(
+            app_state_inner.clone(),
+            auth_log_wrapper,
+        ));
 
     // Combine public and protected routes before nesting under /api
     let all_api_routes = Router::new()
@@ -1166,8 +1260,8 @@ pub async fn spawn_app_with_options(multi_thread: bool, use_real_ai: bool, use_r
     TestApp {
         address: app_address,
         router: router_for_test_app, // Use the cloned router
-                               // Direct reqwest calls are made to `app_address`.
-                               // Keeping it to satisfy struct, but should ideally be removed or used consistently.
+        // Direct reqwest calls are made to `app_address`.
+        // Keeping it to satisfy struct, but should ideally be removed or used consistently.
         db_pool: pool,
         config: config_arc,
         ai_client: ai_client_for_state,
@@ -1455,10 +1549,10 @@ pub mod db {
 pub struct TestDataGuard {
     pool: PgPool, // Changed to PgPool type alias
     user_ids: Vec<Uuid>,
-    character_ids: Vec<Uuid>, // Added for characters
-    chat_ids: Vec<Uuid>,      // Added for chats/sessions
+    character_ids: Vec<Uuid>,    // Added for characters
+    chat_ids: Vec<Uuid>,         // Added for chats/sessions
     user_persona_ids: Vec<Uuid>, // Added for user personas
-    lorebook_ids: Vec<Uuid>, // Added for lorebooks
+    lorebook_ids: Vec<Uuid>,     // Added for lorebooks
 }
 
 // Manual implementation of Debug for TestDataGuard
@@ -1576,8 +1670,9 @@ impl TestDataGuard {
                 .interact(move |conn_interaction| {
                     // First delete lorebook entries
                     diesel::delete(
-                        schema::lorebook_entries::table
-                            .filter(schema::lorebook_entries::lorebook_id.eq_any(&lorebook_ids_clone)),
+                        schema::lorebook_entries::table.filter(
+                            schema::lorebook_entries::lorebook_id.eq_any(&lorebook_ids_clone),
+                        ),
                     )
                     .execute(conn_interaction)?;
                     // Then delete lorebooks
@@ -1825,14 +1920,23 @@ pub async fn login_user_via_router(router: &Router, username: &str, password: &s
         .method("POST")
         .uri("/api/auth/login")
         .header("Content-Type", "application/json")
-        .body(Body::from(serde_json::to_vec(&login_payload).expect("Failed to serialize login payload")))
+        .body(Body::from(
+            serde_json::to_vec(&login_payload).expect("Failed to serialize login payload"),
+        ))
         .expect("Failed to build login request");
 
-    let response = router.clone().oneshot(request).await.expect("Login request failed");
+    let response = router
+        .clone()
+        .oneshot(request)
+        .await
+        .expect("Login request failed");
 
     if response.status() != StatusCode::OK {
         let status = response.status();
-        let body = response.into_body().collect().await
+        let body = response
+            .into_body()
+            .collect()
+            .await
             .expect("Failed to read response body")
             .to_bytes();
         let body_text = String::from_utf8_lossy(&body);
@@ -1849,12 +1953,19 @@ pub async fn login_user_via_router(router: &Router, username: &str, password: &s
         .and_then(|value| value.to_str().ok())
         .map(|s| s.to_string())
         .unwrap_or_else(|| {
-            panic!("Session cookie not found in login response for user {}", username)
+            panic!(
+                "Session cookie not found in login response for user {}",
+                username
+            )
         })
 }
 
 // Helper function for API-based login
-pub async fn login_user_via_api(test_app: &TestApp, username: &str, password: &str) -> (reqwest::Client, String) {
+pub async fn login_user_via_api(
+    test_app: &TestApp,
+    username: &str,
+    password: &str,
+) -> (reqwest::Client, String) {
     let login_payload = json!({
         "identifier": username,
         "password": password
@@ -1877,7 +1988,10 @@ pub async fn login_user_via_api(test_app: &TestApp, username: &str, password: &s
 
     if response.status() != reqwest::StatusCode::OK {
         let status = response.status();
-        let body_text = response.text().await.unwrap_or_else(|e| format!("Failed to read error body: {}", e));
+        let body_text = response
+            .text()
+            .await
+            .unwrap_or_else(|e| format!("Failed to read error body: {}", e));
         panic!(
             "API login failed for user '{}'. Status: {}. URL: {}. Body: {}",
             username, status, login_url, body_text
@@ -2103,9 +2217,15 @@ pub async fn set_history_settings(
 
     let client = reqwest::Client::new();
     let response = client
-        .put(format!("{}/api/chat/{}/settings", test_app.address, session_id))
+        .put(format!(
+            "{}/api/chat/{}/settings",
+            test_app.address, session_id
+        ))
         .header(reqwest::header::COOKIE, auth_cookie)
-        .header(reqwest::header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
+        .header(
+            reqwest::header::CONTENT_TYPE,
+            mime::APPLICATION_JSON.as_ref(),
+        )
         .json(&payload)
         .send()
         .await?;

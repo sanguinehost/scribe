@@ -1,15 +1,12 @@
 #![cfg(test)]
-use super::helpers::{
-    insert_test_character, insert_test_user_with_password,
-    run_db_op, spawn_app,
-};
+use super::helpers::{insert_test_character, insert_test_user_with_password, run_db_op, spawn_app};
 use axum::{
-    body::{to_bytes, Body},
+    body::{Body, to_bytes},
     http::{Request, StatusCode},
 };
 use reqwest::Client;
 use reqwest::StatusCode as ReqwestStatusCode;
-use scribe_backend::test_helpers::{ensure_tracing_initialized, TestDataGuard};
+use scribe_backend::test_helpers::{TestDataGuard, ensure_tracing_initialized};
 use tower::ServiceExt; // For oneshot
 use uuid::Uuid;
 

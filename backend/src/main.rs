@@ -14,7 +14,6 @@ use tower_http::trace::{DefaultMakeSpan, TraceLayer};
 // Use modules from the library crate
 use anyhow::Context;
 use anyhow::Result;
-use std::env; // Added for current_dir
 use scribe_backend::PgPool;
 use scribe_backend::auth::session_store::DieselSessionStore;
 use scribe_backend::auth::user_store::Backend as AuthBackend;
@@ -32,6 +31,7 @@ use scribe_backend::routes::{
     user_settings_routes::user_settings_routes, // Added for user settings routes
 };
 use scribe_backend::state::AppState;
+use std::env; // Added for current_dir
 
 // Imports for axum-login and tower-sessions
 use axum_login::{AuthManagerLayerBuilder, login_required}; // Modified
@@ -54,16 +54,16 @@ use tower_cookies::CookieManagerLayer; // Re-add CookieManagerLayer
 use tower_sessions::cookie::Key; // Use Key from tower_sessions::cookie for with_signed
 use tower_sessions::{Expiry, SessionManagerLayer, cookie::SameSite}; // Add Arc for config // Add Qdrant service import // Add embedding pipeline service import
 // Removed unused: use tokio::net::TcpListener;
-use axum_server::tls_rustls::RustlsConfig; // <-- ADD this
-use rustls::crypto::ring;
-use std::path::PathBuf; // <-- Add PathBuf import // <-- Import the ring provider module
 use axum::extract::Request as AxumRequest;
 use axum::middleware::{self as axum_middleware, Next};
 use axum::response::Response as AxumResponse;
+use axum_server::tls_rustls::RustlsConfig; // <-- ADD this
+use rustls::crypto::ring;
 use scribe_backend::services::chat_override_service::ChatOverrideService; // <<< ADDED IMPORT
 use scribe_backend::services::encryption_service::EncryptionService;
 use scribe_backend::services::lorebook_service::LorebookService; // Added for LorebookService
-use scribe_backend::services::user_persona_service::UserPersonaService; // <<< ADDED THIS IMPORT
+use scribe_backend::services::user_persona_service::UserPersonaService;
+use std::path::PathBuf; // <-- Add PathBuf import // <-- Import the ring provider module // <<< ADDED THIS IMPORT
 
 // Define the embedded migrations macro
 pub const MIGRATIONS: EmbeddedMigrations = embed_migrations!("./migrations");
@@ -194,27 +194,20 @@ async fn main() -> Result<()> {
 
     // --- Initialize Chat Override Service ---
     let encryption_service_arc_for_chat_override = encryption_service_arc.clone(); // Clone Arc for ChatOverrideService
-    let chat_override_service = ChatOverrideService::new(
-        pool.clone(),
-        encryption_service_arc_for_chat_override,
-    );
+    let chat_override_service =
+        ChatOverrideService::new(pool.clone(), encryption_service_arc_for_chat_override);
     let chat_override_service_arc = Arc::new(chat_override_service);
     tracing::info!("ChatOverrideService initialized.");
 
     // --- Create User Persona Service ---
     let encryption_service_arc_for_persona = encryption_service_arc.clone(); // Clone Arc for UserPersonaService
-    let user_persona_service = UserPersonaService::new(
-        pool.clone(),
-        encryption_service_arc_for_persona
-    );
+    let user_persona_service =
+        UserPersonaService::new(pool.clone(), encryption_service_arc_for_persona);
     let user_persona_service_arc = Arc::new(user_persona_service);
 
     // --- Initialize Lorebook Service ---
     let encryption_service_arc_for_lorebook = encryption_service_arc.clone();
-    let lorebook_service = LorebookService::new(
-        pool.clone(),
-        encryption_service_arc_for_lorebook,
-    );
+    let lorebook_service = LorebookService::new(pool.clone(), encryption_service_arc_for_lorebook);
     let lorebook_service_arc = Arc::new(lorebook_service);
     tracing::info!("LorebookService initialized.");
 
@@ -245,9 +238,10 @@ async fn main() -> Result<()> {
 
     // Build the auth layer, passing the SessionManagerLayer
     // AuthManagerLayerBuilder needs the backend directly, it will handle cloning internally
-    let auth_layer = AuthManagerLayerBuilder::new((*auth_backend).clone(), session_manager_layer.clone())
-        // .with_login_key(SignedLoginKey::new(signing_key.clone())) // Removed: No longer part of axum-login API here
-        .build();
+    let auth_layer =
+        AuthManagerLayerBuilder::new((*auth_backend).clone(), session_manager_layer.clone())
+            // .with_login_key(SignedLoginKey::new(signing_key.clone())) // Removed: No longer part of axum-login API here
+            .build();
 
     // -- Create Chunking Config from main Config --
     let chunk_metric = match config.chunking_metric.to_lowercase().as_str() {
@@ -274,7 +268,7 @@ async fn main() -> Result<()> {
         qdrant_service_arc,
         embedding_pipeline_service, // Add the embedding pipeline service
         chat_override_service_arc,  // <<< PASSING THE SERVICE TO APPSTATE
-        user_persona_service_arc, // <<< PASSING THE NEW SERVICE TO APPSTATE
+        user_persona_service_arc,   // <<< PASSING THE NEW SERVICE TO APPSTATE
         hybrid_token_counter_arc,   // Added
         encryption_service_arc.clone(), // Pass the encryption service
         lorebook_service_arc,       // Pass the lorebook service

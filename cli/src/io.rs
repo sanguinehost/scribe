@@ -58,7 +58,10 @@ pub fn input_required<H: IoHandler>(io_handler: &mut H, prompt: &str) -> Result<
 }
 
 /// Prompts the user for optional input.
-pub fn input_optional<H: IoHandler>(io_handler: &mut H, prompt: &str) -> Result<Option<String>, CliError> {
+pub fn input_optional<H: IoHandler>(
+    io_handler: &mut H,
+    prompt: &str,
+) -> Result<Option<String>, CliError> {
     let value = io_handler.read_line(prompt)?;
     if value.is_empty() {
         Ok(None)
@@ -70,7 +73,10 @@ pub fn input_optional<H: IoHandler>(io_handler: &mut H, prompt: &str) -> Result<
 /// Asks the user for confirmation (yes/no).
 pub fn confirm_action<H: IoHandler>(io_handler: &mut H, prompt: &str) -> Result<bool, CliError> {
     loop {
-        let choice = io_handler.read_line(&format!("{} (yes/no): ", prompt))?.trim().to_lowercase();
+        let choice = io_handler
+            .read_line(&format!("{} (yes/no): ", prompt))?
+            .trim()
+            .to_lowercase();
         match choice.as_str() {
             "yes" | "y" => return Ok(true),
             "no" | "n" => return Ok(false),
@@ -91,7 +97,9 @@ where
     T: Clone, // Ensure T can be cloned if needed, or adjust as necessary
 {
     if items.is_empty() {
-        return Err(CliError::InputError("Cannot select from an empty list.".to_string()));
+        return Err(CliError::InputError(
+            "Cannot select from an empty list.".to_string(),
+        ));
     }
 
     io_handler.write_line(prompt)?;
@@ -109,7 +117,6 @@ where
         }
     }
 }
-
 
 #[cfg(test)]
 mod tests {

@@ -505,11 +505,7 @@ mod tests {
         let client = GeminiTokenClient::new(api_key.clone());
         let model_path = get_test_model_path();
         let tokenizer = TokenizerService::new(model_path).expect("Failed to create tokenizer");
-        let counter = HybridTokenCounter::new(
-            tokenizer,
-            Some(client),
-            model_name,
-        );
+        let counter = HybridTokenCounter::new(tokenizer, Some(client), model_name);
 
         let text = "The quick brown fox jumps over the lazy dog.";
 

@@ -30,7 +30,8 @@ use scribe_backend::{
     services::{
         chat::generation::get_session_data_for_generation, // Updated to new path
         hybrid_token_counter::HybridTokenCounter,
-        lorebook_service::LorebookService, tokenizer_service::TokenizerService,
+        lorebook_service::LorebookService,
+        tokenizer_service::TokenizerService,
     },
     state::AppState,
     test_helpers::{self, ParsedSseEvent, collect_full_sse_events},
@@ -510,7 +511,8 @@ async fn test_first_mes_included_in_history() {
     // Create a test character with first_mes content
     let conn_pool = test_app.db_pool.clone();
     let user_id_clone = user.id;
-    let first_mes_content_plain = "Hello! I'm the character's first message that should be included.";
+    let first_mes_content_plain =
+        "Hello! I'm the character's first message that should be included.";
 
     let (encrypted_first_mes, first_mes_nonce) = {
         let (encrypted_content, nonce) = scribe_backend::crypto::encrypt_gcm(
@@ -518,10 +520,7 @@ async fn test_first_mes_included_in_history() {
             session_dek_for_char_creation.as_ref(),
         )
         .expect("Failed to encrypt first_mes_content");
-        (
-            Some(encrypted_content),
-            Some(nonce.to_vec()),
-        )
+        (Some(encrypted_content), Some(nonce.to_vec()))
     };
 
     let character: DbCharacter = conn_pool
@@ -536,7 +535,7 @@ async fn test_first_mes_included_in_history() {
                 spec_version: "1.0".to_string(),
                 description: Some("Test description".to_string().into_bytes()),
                 first_mes: encrypted_first_mes, // Use encrypted content
-                first_mes_nonce,               // Store the nonce
+                first_mes_nonce,                // Store the nonce
                 greeting: Some("Hello".to_string().into_bytes()),
                 visibility: Some("private".to_string()),
                 creator: Some("test_creator".to_string()),
@@ -602,22 +601,40 @@ async fn test_first_mes_included_in_history() {
 
     // Create a state Arc for testing chat_service directly
     // Create AppState similar to how it's done in spawn_app
-    let encryption_service = Arc::new(scribe_backend::services::encryption_service::EncryptionService::new());
-    let chat_override_service = Arc::new(scribe_backend::services::chat_override_service::ChatOverrideService::new(test_app.db_pool.clone(), encryption_service.clone()));
-    let user_persona_service = Arc::new(scribe_backend::services::user_persona_service::UserPersonaService::new(test_app.db_pool.clone(), encryption_service.clone()));
+    let encryption_service =
+        Arc::new(scribe_backend::services::encryption_service::EncryptionService::new());
+    let chat_override_service = Arc::new(
+        scribe_backend::services::chat_override_service::ChatOverrideService::new(
+            test_app.db_pool.clone(),
+            encryption_service.clone(),
+        ),
+    );
+    let user_persona_service = Arc::new(
+        scribe_backend::services::user_persona_service::UserPersonaService::new(
+            test_app.db_pool.clone(),
+            encryption_service.clone(),
+        ),
+    );
     let token_counter_service = Arc::new(HybridTokenCounter::new_local_only(
         TokenizerService::new(
-            test_app.config.tokenizer_model_path.as_ref().expect("Tokenizer path is None").as_str(),
+            test_app
+                .config
+                .tokenizer_model_path
+                .as_ref()
+                .expect("Tokenizer path is None")
+                .as_str(),
         )
         .expect("Failed to create tokenizer for test"),
     ));
     let lorebook_service = Arc::new(LorebookService::new(
         test_app.db_pool.clone(),
-        encryption_service.clone()
+        encryption_service.clone(),
     ));
 
-    let auth_backend = Arc::new(scribe_backend::auth::user_store::Backend::new(test_app.db_pool.clone()));
-    
+    let auth_backend = Arc::new(scribe_backend::auth::user_store::Backend::new(
+        test_app.db_pool.clone(),
+    ));
+
     let state_for_service = AppState::new(
         test_app.db_pool.clone(),
         test_app.config.clone(),
@@ -626,11 +643,11 @@ async fn test_first_mes_included_in_history() {
         test_app.qdrant_service.clone(),
         test_app.mock_embedding_pipeline_service.clone(),
         chat_override_service, // Use the created service
-        user_persona_service, // Use the created service
+        user_persona_service,  // Use the created service
         token_counter_service, // Use the created service
         encryption_service.clone(),
-        lorebook_service,     // Add LorebookService
-        auth_backend          // Add auth_backend
+        lorebook_service, // Add LorebookService
+        auth_backend,     // Add auth_backend
     );
     let state_arc = std::sync::Arc::new(state_for_service);
 
@@ -655,7 +672,8 @@ async fn test_first_mes_included_in_history() {
     .expect("Failed to get session data for generation");
 
     // Extract the managed history from the generation data
-    let (managed_history, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _) = generation_data;
+    let (managed_history, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _) =
+        generation_data;
 
     // Assert that the history contains the character's first_mes
     assert!(
@@ -676,7 +694,8 @@ async fn test_first_mes_included_in_history() {
         "First message role should be Assistant"
     );
     assert_eq!(
-        String::from_utf8_lossy(&first_msg.content).as_ref(), first_mes_content_plain,
+        String::from_utf8_lossy(&first_msg.content).as_ref(),
+        first_mes_content_plain,
         "First message content should match character's first_mes"
     );
 }

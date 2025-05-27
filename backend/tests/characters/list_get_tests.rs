@@ -1,14 +1,11 @@
 #![cfg(test)]
-use super::helpers::{
-    insert_test_character, insert_test_user_with_password,
-    run_db_op, spawn_app,
-};
+use super::helpers::{insert_test_character, insert_test_user_with_password, run_db_op, spawn_app};
 use anyhow::Context;
 use diesel::prelude::*;
 use reqwest::Client;
 use reqwest::StatusCode as ReqwestStatusCode;
 use scribe_backend::models::characters::Character as DbCharacter;
-use scribe_backend::test_helpers::{ensure_tracing_initialized, TestDataGuard};
+use scribe_backend::test_helpers::{TestDataGuard, ensure_tracing_initialized};
 use uuid::Uuid;
 
 #[tokio::test]
@@ -146,12 +143,15 @@ async fn test_get_unauthorized() -> Result<(), anyhow::Error> {
     let client = Client::new();
 
     let character_id = Uuid::new_v4();
-    let get_url = format!("http://{}/api/characters/fetch/{}", server_addr, character_id); // Adjusted path
+    let get_url = format!(
+        "http://{}/api/characters/fetch/{}",
+        server_addr, character_id
+    ); // Adjusted path
     tracing::info!(target: "auth_debug", "test_get_unauthorized: Sending GET to {}", get_url);
 
     let response = client.get(&get_url).send().await?;
     tracing::info!(target: "auth_debug", "test_get_unauthorized: Received status {}", response.status());
-    
+
     // Based on current behavior in original tests, expecting 404 when unauthenticated for this specific path
     assert_eq!(response.status(), ReqwestStatusCode::UNAUTHORIZED);
     Ok(())
@@ -228,13 +228,21 @@ async fn test_get_character_forbidden() -> Result<(), anyhow::Error> {
     let user_a_id_for_insert = user_a.id;
     let dek_a_clone = dek_a.clone();
     let character_a = run_db_op(&pool, move |conn| {
-        insert_test_character(conn, user_a_id_for_insert, "Character A For Get", &dek_a_clone)
+        insert_test_character(
+            conn,
+            user_a_id_for_insert,
+            "Character A For Get",
+            &dek_a_clone,
+        )
     })
     .await?;
     guard.add_character(character_a.id);
 
     // User B tries to get User A's character
-    let conn_b = pool.get().await.context("Failed to get DB conn for User B query")?;
+    let conn_b = pool
+        .get()
+        .await
+        .context("Failed to get DB conn for User B query")?;
     let char_id_for_b_query = character_a.id;
     let user_b_id_for_query = user_b.id;
     let character_result_b: Option<DbCharacter> = conn_b
@@ -254,7 +262,10 @@ async fn test_get_character_forbidden() -> Result<(), anyhow::Error> {
     );
 
     // User A (owner) gets their character
-    let conn_a = pool.get().await.context("Failed to get DB conn for User A query")?;
+    let conn_a = pool
+        .get()
+        .await
+        .context("Failed to get DB conn for User A query")?;
     let char_id_for_a_query = character_a.id;
     let user_a_id_for_query = user_a.id;
     let character_result_a: Option<DbCharacter> = conn_a

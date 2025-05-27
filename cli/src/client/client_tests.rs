@@ -10,7 +10,7 @@ use httptest::{
     Expectation,
     ServerHandle,
     ServerPool,
-    matchers::{all_of, contains, eq, key, json_decoded, matches, request}, // Added matches, json_decoded, eq
+    matchers::{all_of, contains, eq, json_decoded, key, matches, request}, // Added matches, json_decoded, eq
     responders::{json_encoded, status_code},
 };
 use reqwest::{Client as ReqwestClient, StatusCode, Url}; // Added StatusCode
@@ -934,7 +934,7 @@ async fn test_create_chat_session_success() {
         character_id,
         // title: Some("New Chat".to_string()), // This was the old field
         title_ciphertext: Some("New Chat".as_bytes().to_vec()), // Mocking as if "New Chat" was encrypted
-        title_nonce: Some(vec![0u8; 12]), // Mock nonce
+        title_nonce: Some(vec![0u8; 12]),                       // Mock nonce
         created_at: now,
         updated_at: now,
         // system_prompt: None, // This was the old field
@@ -961,11 +961,11 @@ async fn test_create_chat_session_success() {
         active_impersonated_character_id: None,
     };
 
-    let request_payload = json!({ 
+    let request_payload = json!({
         "title": "",
-        "character_id": character_id, 
+        "character_id": character_id,
         "lorebook_ids": serde_json::Value::Null,
-        "active_custom_persona_id": serde_json::Value::Null 
+        "active_custom_persona_id": serde_json::Value::Null
     });
 
     server.expect(
@@ -996,11 +996,11 @@ async fn test_create_chat_session_char_not_found() {
         }
     });
 
-    let request_payload = json!({ 
+    let request_payload = json!({
         "title": "",
-        "character_id": character_id, 
+        "character_id": character_id,
         "lorebook_ids": serde_json::Value::Null,
-        "active_custom_persona_id": serde_json::Value::Null 
+        "active_custom_persona_id": serde_json::Value::Null
     });
 
     server.expect(

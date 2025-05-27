@@ -230,7 +230,8 @@ pub async fn login_handler(
 
             // Debugging: Log DEK presence after login call (from auth_session.user)
             if let Some(ref user_after_login) = auth_session.user {
-                if let Some(ref _wrapped_dek_after_login) = user_after_login.dek { // _wrapped_dek_after_login as it's not used in the error
+                if let Some(ref _wrapped_dek_after_login) = user_after_login.dek {
+                    // _wrapped_dek_after_login as it's not used in the error
                     error!(%user_id, "SECURITY WARNING: User.dek is UNEXPECTEDLY PRESENT in auth_session.user AFTER login. DEK should be None and cached server-side.");
                 } else {
                     debug!(%user_id, "User.dek is None in auth_session.user AFTER login (expected, as DEK is cached server-side).");
@@ -281,15 +282,22 @@ pub async fn login_handler(
                         AuthError::AccountLocked => {
                             warn!("Login failed: Account locked.");
                             Err(AppError::Unauthorized(
-                                "Your account is locked. Please contact an administrator.".to_string(),
+                                "Your account is locked. Please contact an administrator."
+                                    .to_string(),
                             ))
                         }
                         AuthError::HashingError => Err(AppError::PasswordProcessingError),
-                        AuthError::CryptoOperationFailed(_) => Err(AppError::InternalServerErrorGeneric(
-                            "Encryption error during login.".to_string(),
-                        )),
-                        AuthError::DatabaseError(db_err) => Err(AppError::DatabaseQueryError(db_err)),
-                        AuthError::PoolError(pool_err) => Err(AppError::DbPoolError(pool_err.to_string())),
+                        AuthError::CryptoOperationFailed(_) => {
+                            Err(AppError::InternalServerErrorGeneric(
+                                "Encryption error during login.".to_string(),
+                            ))
+                        }
+                        AuthError::DatabaseError(db_err) => {
+                            Err(AppError::DatabaseQueryError(db_err))
+                        }
+                        AuthError::PoolError(pool_err) => {
+                            Err(AppError::DbPoolError(pool_err.to_string()))
+                        }
                         AuthError::InteractError(int_err) => {
                             Err(AppError::InternalServerErrorGeneric(int_err.to_string()))
                         }
@@ -306,13 +314,17 @@ pub async fn login_handler(
                             ))
                         }
                         AuthError::RecoveryNotSetup => {
-                            warn!("Login failed: Recovery not setup (shouldn't happen during login).");
+                            warn!(
+                                "Login failed: Recovery not setup (shouldn't happen during login)."
+                            );
                             Err(AppError::InternalServerErrorGeneric(
                                 "Unexpected error during login.".to_string(),
                             ))
                         }
                         AuthError::InvalidRecoveryPhrase => {
-                            warn!("Login failed: Invalid recovery phrase (shouldn't happen during login).");
+                            warn!(
+                                "Login failed: Invalid recovery phrase (shouldn't happen during login)."
+                            );
                             Err(AppError::InternalServerErrorGeneric(
                                 "Unexpected error during login.".to_string(),
                             ))
@@ -325,7 +337,10 @@ pub async fn login_handler(
                 }
                 axum_login::Error::Session(session_err) => {
                     error!("Session error during login: {:?}", session_err);
-                    Err(AppError::SessionError(format!("Session error: {}", session_err)))
+                    Err(AppError::SessionError(format!(
+                        "Session error: {}",
+                        session_err
+                    )))
                 }
             }
         }
@@ -338,12 +353,12 @@ pub async fn logout_handler(
     mut auth_session: CurrentAuthSession,
 ) -> Result<Response, AppError> {
     info!("Logout handler entered.");
-    
+
     // Remove DEK from cache before logging out
     if let Some(user) = &auth_session.user {
         let user_id = user.id();
         info!(user_id = %user_id, "Attempting to log out user.");
-        
+
         // Remove the DEK from the AuthBackend cache
         state.auth_backend.remove_dek_from_cache(&user_id).await;
         info!(user_id = %user_id, "DEK removed from cache during logout");
@@ -891,5 +906,3 @@ pub async fn recover_password_handler(
         }
     }
 }
-
-

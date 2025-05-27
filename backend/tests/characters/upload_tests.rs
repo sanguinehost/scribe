@@ -1,17 +1,17 @@
 #![cfg(test)]
-use base64::Engine;
 use super::helpers::{
     create_multipart_request, create_test_character_png, get_text_body,
     insert_test_user_with_password, run_db_op, spawn_app,
 };
 use axum::{
-    body::{to_bytes, Body},
-    http::{header, Method, Request, StatusCode},
+    body::{Body, to_bytes},
+    http::{Method, Request, StatusCode, header},
 };
+use base64::Engine;
 use mime;
 use reqwest::Client;
 use reqwest::StatusCode as ReqwestStatusCode;
-use scribe_backend::test_helpers::{ensure_tracing_initialized, TestDataGuard};
+use scribe_backend::test_helpers::{TestDataGuard, ensure_tracing_initialized};
 use serde_json::json;
 use tower::ServiceExt; // For oneshot
 use uuid::Uuid;
@@ -223,8 +223,7 @@ async fn test_upload_real_card_file() -> Result<(), anyhow::Error> {
 
     assert!(
         status == StatusCode::CREATED
-            || (status == StatusCode::BAD_REQUEST
-                && body_text.contains("Character data chunk")),
+            || (status == StatusCode::BAD_REQUEST && body_text.contains("Character data chunk")),
         "Upload failed with unexpected status/error: {} - {}",
         status,
         body_text
@@ -379,7 +378,11 @@ async fn test_upload_png_no_data_chunk() -> Result<(), anyhow::Error> {
 
     assert_eq!(status, StatusCode::BAD_REQUEST);
     // assert!(body_text.contains("Character data chunk not found in PNG"));
-    assert!(body_text.contains("{\"error\":\"Failed to parse character data\"}"), "Actual error message: {}", body_text);
+    assert!(
+        body_text.contains("{\"error\":\"Failed to parse character data\"}"),
+        "Actual error message: {}",
+        body_text
+    );
 
     guard.cleanup().await?;
     Ok(())
@@ -604,7 +607,7 @@ async fn test_upload_missing_file_field() -> Result<(), anyhow::Error> {
     tracing::info!(user_id = %user.id, username = %username, "Test user created for upload_missing_field_test");
 
     let boundary = "----WebKitFormBoundaryTest456";
-    
+
     // Login to get session cookie
     let login_body = json!({
         "identifier": username.clone(),
@@ -617,21 +620,26 @@ async fn test_upload_missing_file_field() -> Result<(), anyhow::Error> {
         .body(Body::from(serde_json::to_vec(&login_body)?))?;
 
     let login_response = test_app.router.clone().oneshot(login_request_built).await?;
-    assert_eq!(login_response.status(), StatusCode::OK, "Login failed for missing field test");
+    assert_eq!(
+        login_response.status(),
+        StatusCode::OK,
+        "Login failed for missing field test"
+    );
 
     let session_cookie = login_response
         .headers()
         .get(header::SET_COOKIE)
-        .ok_or_else(|| anyhow::anyhow!("Login response missing Set-Cookie header for missing field test"))?
+        .ok_or_else(|| {
+            anyhow::anyhow!("Login response missing Set-Cookie header for missing field test")
+        })?
         .to_str()?
         .split(';')
         .next()
         .ok_or_else(|| anyhow::anyhow!("Invalid Set-Cookie format for missing field test"))?
         .to_string();
 
-
     // Rebuild request with cookie
-     let request_with_auth = Request::builder()
+    let request_with_auth = Request::builder()
         .method(Method::POST)
         .uri("/api/characters/upload")
         .header(
@@ -639,18 +647,20 @@ async fn test_upload_missing_file_field() -> Result<(), anyhow::Error> {
             format!("multipart/form-data; boundary={}", boundary),
         )
         .header(header::COOKIE, session_cookie) // Add authentication cookie
-        .body(Body::from( // Re-create body as it might have been consumed
+        .body(Body::from(
+            // Re-create body as it might have been consumed
             {
                 let mut body_content_clone = Vec::new();
                 body_content_clone.extend_from_slice(format!("--{}\r\n", boundary).as_bytes());
-                body_content_clone.extend_from_slice(b"Content-Disposition: form-data; name=\"other_field\"\r\n\r\n");
+                body_content_clone.extend_from_slice(
+                    b"Content-Disposition: form-data; name=\"other_field\"\r\n\r\n",
+                );
                 body_content_clone.extend_from_slice(b"some_value");
                 body_content_clone.extend_from_slice(b"\r\n");
                 body_content_clone.extend_from_slice(format!("--{}--\r\n", boundary).as_bytes());
                 body_content_clone
-            }
+            },
         ))?;
-
 
     let response = test_app.router.clone().oneshot(request_with_auth).await?;
     let status = response.status();
@@ -659,8 +669,15 @@ async fn test_upload_missing_file_field() -> Result<(), anyhow::Error> {
 
     tracing::info!(status = %status, body = %body_text, "Received response for missing field");
 
-    assert_eq!(status, StatusCode::BAD_REQUEST, "Expected Bad Request for missing 'character_card' field");
-    assert!(body_text.contains("Missing 'character_card' field"), "Response body should indicate missing field");
+    assert_eq!(
+        status,
+        StatusCode::BAD_REQUEST,
+        "Expected Bad Request for missing 'character_card' field"
+    );
+    assert!(
+        body_text.contains("Missing 'character_card' field"),
+        "Response body should indicate missing field"
+    );
 
     guard.cleanup().await?;
     Ok(())

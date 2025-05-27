@@ -46,8 +46,8 @@ pub struct CreateLorebookEntryPayload {
     pub content: String,
     #[validate(length(max = 10000))]
     pub comment: Option<String>,
-    pub is_enabled: Option<bool>,   // Defaults to true in service
-    pub is_constant: Option<bool>,  // Defaults to false in service
+    pub is_enabled: Option<bool>,     // Defaults to true in service
+    pub is_constant: Option<bool>,    // Defaults to false in service
     pub insertion_order: Option<i32>, // Defaults to 100 in service
     #[validate(length(max = 50))]
     pub placement_hint: Option<String>, // e.g., "before_prompt", "after_prompt"

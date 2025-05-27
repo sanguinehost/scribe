@@ -11,10 +11,10 @@ use crate::services::user_persona_service::UserPersonaService;
 use crate::state::AppState;
 
 use axum::{
+    Json, Router,
     extract::{Path, State},
     http::StatusCode,
     routing::{get, post},
-    Json, Router,
 };
 use axum_login::AuthSession;
 use std::sync::Arc;
@@ -32,7 +32,7 @@ pub fn user_personas_router(state: AppState) -> Router<AppState> {
         )
         .route(
             "/:persona_id",
-            get(get_user_persona_handler)     // GET a specific persona
+            get(get_user_persona_handler) // GET a specific persona
                 .put(update_user_persona_handler) // UPDATE a specific persona
                 .delete(delete_user_persona_handler), // DELETE a specific persona
         )
@@ -137,7 +137,6 @@ async fn delete_user_persona_handler(
     // as it only verifies ownership and deletes.
     let enc_service = Arc::new(EncryptionService::new()); // Still needed for service instantiation
     let user_persona_service = UserPersonaService::new(state.pool.clone(), enc_service);
-
 
     user_persona_service
         .delete_user_persona(&user, persona_id)

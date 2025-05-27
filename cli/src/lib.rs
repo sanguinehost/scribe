@@ -1,17 +1,17 @@
 // cli/src/lib.rs
 
 // Declare modules
+pub mod chat; // Ensure chat module is declared if it exists and is needed by handlers/main
 pub mod client;
 pub mod error;
 pub mod handlers;
 pub mod io;
-pub mod chat; // Ensure chat module is declared if it exists and is needed by handlers/main
 pub mod test_helpers; // Added test_helpers module
 
 // Re-export items needed by main.rs and tests
-pub use clap::{Parser, Subcommand, Args as ClapArgs};
-pub use uuid::Uuid;
-pub use error::CliError; // Ensure CliError is available for MenuResult
+pub use clap::{Args as ClapArgs, Parser, Subcommand};
+pub use error::CliError;
+pub use uuid::Uuid; // Ensure CliError is available for MenuResult
 
 // --- Menu Navigation Enums and Types ---
 
@@ -38,7 +38,6 @@ pub enum MenuNavigation {
 
 /// Helper type alias for results from menu handling functions in main.rs
 pub type MenuResult = Result<MenuNavigation, CliError>;
-
 
 // --- Clap Argument Structs ---
 
@@ -114,9 +113,9 @@ pub struct CharacterCreateArgs {
     pub alternate_greetings: Option<Vec<String>>,
     #[arg(long)]
     pub creator: Option<String>,
-    #[arg(long, name="character-version")]
+    #[arg(long, name = "character-version")]
     pub character_version: Option<String>,
-    
+
     /// Run in interactive wizard mode (prompts for all fields)
     #[arg(long, short, default_value_t = false)]
     pub interactive: bool,
@@ -142,7 +141,7 @@ pub struct CharacterEditArgs {
     pub scenario: Option<String>,
     #[arg(long, name = "system-prompt")]
     pub system_prompt: Option<String>,
-    
+
     /// Run in interactive wizard mode (prompts for ID and then fields to edit)
     #[arg(long, short, default_value_t = false)]
     pub interactive: bool,
@@ -313,7 +312,6 @@ pub struct PersonaSetDefaultArgs {
 pub struct PersonaClearDefaultArgs {
     // No arguments needed for clearing the default
 }
-
 
 // Helper function for parsing comma-separated lists
 pub fn parse_comma_separated_list(s: &str) -> Result<Vec<String>, String> {

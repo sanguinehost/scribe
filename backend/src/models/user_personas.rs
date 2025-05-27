@@ -3,10 +3,10 @@ use diesel::prelude::*;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::models::users::User;
 use crate::errors::AppError;
+use crate::models::users::User;
 use crate::services::encryption_service::EncryptionService;
-use secrecy::{SecretBox, ExposeSecret};
+use secrecy::{ExposeSecret, SecretBox};
 
 #[derive(
     Queryable,
@@ -27,19 +27,19 @@ use secrecy::{SecretBox, ExposeSecret};
 pub struct UserPersona {
     pub id: Uuid,
     pub user_id: Uuid,
-    pub name: String, // In schema.rs: Varchar
-    pub description: Vec<u8>, // In schema.rs: Bytea (NOT NULL)
-    pub spec: Option<String>, // In schema.rs: Nullable<Varchar>
-    pub spec_version: Option<String>, // In schema.rs: Nullable<Varchar>
-    pub personality: Option<Vec<u8>>, // In schema.rs: Nullable<Bytea>
-    pub scenario: Option<Vec<u8>>,    // In schema.rs: Nullable<Bytea>
-    pub first_mes: Option<Vec<u8>>,   // In schema.rs: Nullable<Bytea>
-    pub mes_example: Option<Vec<u8>>, // In schema.rs: Nullable<Bytea>
-    pub system_prompt: Option<Vec<u8>>, // In schema.rs: Nullable<Bytea>
+    pub name: String,                               // In schema.rs: Varchar
+    pub description: Vec<u8>,                       // In schema.rs: Bytea (NOT NULL)
+    pub spec: Option<String>,                       // In schema.rs: Nullable<Varchar>
+    pub spec_version: Option<String>,               // In schema.rs: Nullable<Varchar>
+    pub personality: Option<Vec<u8>>,               // In schema.rs: Nullable<Bytea>
+    pub scenario: Option<Vec<u8>>,                  // In schema.rs: Nullable<Bytea>
+    pub first_mes: Option<Vec<u8>>,                 // In schema.rs: Nullable<Bytea>
+    pub mes_example: Option<Vec<u8>>,               // In schema.rs: Nullable<Bytea>
+    pub system_prompt: Option<Vec<u8>>,             // In schema.rs: Nullable<Bytea>
     pub post_history_instructions: Option<Vec<u8>>, // In schema.rs: Nullable<Bytea>
-    pub tags: Option<Vec<Option<String>>>, // In schema.rs: Nullable<Array<Nullable<Text>>>
-    pub avatar: Option<String>,       // In schema.rs: Nullable<Varchar>
-    
+    pub tags: Option<Vec<Option<String>>>,          // In schema.rs: Nullable<Array<Nullable<Text>>>
+    pub avatar: Option<String>,                     // In schema.rs: Nullable<Varchar>
+
     // Nonces
     pub description_nonce: Option<Vec<u8>>, // In schema.rs: Nullable<Bytea> - but tied to non-nullable description
     pub personality_nonce: Option<Vec<u8>>,
@@ -48,7 +48,7 @@ pub struct UserPersona {
     pub mes_example_nonce: Option<Vec<u8>>,
     pub system_prompt_nonce: Option<Vec<u8>>,
     pub post_history_instructions_nonce: Option<Vec<u8>>,
-    
+
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -62,21 +62,72 @@ impl std::fmt::Debug for UserPersona {
             .field("description", &"[REDACTED_BYTES]")
             .field("spec", &self.spec)
             .field("spec_version", &self.spec_version)
-            .field("personality", &self.personality.as_ref().map(|_| "[REDACTED_BYTES]"))
-            .field("scenario", &self.scenario.as_ref().map(|_| "[REDACTED_BYTES]"))
-            .field("first_mes", &self.first_mes.as_ref().map(|_| "[REDACTED_BYTES]"))
-            .field("mes_example", &self.mes_example.as_ref().map(|_| "[REDACTED_BYTES]"))
-            .field("system_prompt", &self.system_prompt.as_ref().map(|_| "[REDACTED_BYTES]"))
-            .field("post_history_instructions", &self.post_history_instructions.as_ref().map(|_| "[REDACTED_BYTES]"))
+            .field(
+                "personality",
+                &self.personality.as_ref().map(|_| "[REDACTED_BYTES]"),
+            )
+            .field(
+                "scenario",
+                &self.scenario.as_ref().map(|_| "[REDACTED_BYTES]"),
+            )
+            .field(
+                "first_mes",
+                &self.first_mes.as_ref().map(|_| "[REDACTED_BYTES]"),
+            )
+            .field(
+                "mes_example",
+                &self.mes_example.as_ref().map(|_| "[REDACTED_BYTES]"),
+            )
+            .field(
+                "system_prompt",
+                &self.system_prompt.as_ref().map(|_| "[REDACTED_BYTES]"),
+            )
+            .field(
+                "post_history_instructions",
+                &self
+                    .post_history_instructions
+                    .as_ref()
+                    .map(|_| "[REDACTED_BYTES]"),
+            )
             .field("tags", &self.tags.as_ref().map(|_| "[REDACTED_LIST]"))
-            .field("avatar", &self.avatar.as_ref().map(|_| "[REDACTED_AVATAR_URL_OR_ID]"))
-            .field("description_nonce", &self.description_nonce.as_ref().map(|_| "[REDACTED_NONCE]"))
-            .field("personality_nonce", &self.personality_nonce.as_ref().map(|_| "[REDACTED_NONCE]"))
-            .field("scenario_nonce", &self.scenario_nonce.as_ref().map(|_| "[REDACTED_NONCE]"))
-            .field("first_mes_nonce", &self.first_mes_nonce.as_ref().map(|_| "[REDACTED_NONCE]"))
-            .field("mes_example_nonce", &self.mes_example_nonce.as_ref().map(|_| "[REDACTED_NONCE]"))
-            .field("system_prompt_nonce", &self.system_prompt_nonce.as_ref().map(|_| "[REDACTED_NONCE]"))
-            .field("post_history_instructions_nonce", &self.post_history_instructions_nonce.as_ref().map(|_| "[REDACTED_NONCE]"))
+            .field(
+                "avatar",
+                &self.avatar.as_ref().map(|_| "[REDACTED_AVATAR_URL_OR_ID]"),
+            )
+            .field(
+                "description_nonce",
+                &self.description_nonce.as_ref().map(|_| "[REDACTED_NONCE]"),
+            )
+            .field(
+                "personality_nonce",
+                &self.personality_nonce.as_ref().map(|_| "[REDACTED_NONCE]"),
+            )
+            .field(
+                "scenario_nonce",
+                &self.scenario_nonce.as_ref().map(|_| "[REDACTED_NONCE]"),
+            )
+            .field(
+                "first_mes_nonce",
+                &self.first_mes_nonce.as_ref().map(|_| "[REDACTED_NONCE]"),
+            )
+            .field(
+                "mes_example_nonce",
+                &self.mes_example_nonce.as_ref().map(|_| "[REDACTED_NONCE]"),
+            )
+            .field(
+                "system_prompt_nonce",
+                &self
+                    .system_prompt_nonce
+                    .as_ref()
+                    .map(|_| "[REDACTED_NONCE]"),
+            )
+            .field(
+                "post_history_instructions_nonce",
+                &self
+                    .post_history_instructions_nonce
+                    .as_ref()
+                    .map(|_| "[REDACTED_NONCE]"),
+            )
             .field("created_at", &self.created_at)
             .field("updated_at", &self.updated_at)
             .finish()
@@ -91,11 +142,11 @@ pub struct UserPersonaDataForClient {
     pub description: String, // Decrypted
     pub spec: Option<String>,
     pub spec_version: Option<String>,
-    pub personality: Option<String>, // Decrypted
-    pub scenario: Option<String>,    // Decrypted
-    pub first_mes: Option<String>,   // Decrypted
-    pub mes_example: Option<String>, // Decrypted
-    pub system_prompt: Option<String>, // Decrypted
+    pub personality: Option<String>,               // Decrypted
+    pub scenario: Option<String>,                  // Decrypted
+    pub first_mes: Option<String>,                 // Decrypted
+    pub mes_example: Option<String>,               // Decrypted
+    pub system_prompt: Option<String>,             // Decrypted
     pub post_history_instructions: Option<String>, // Decrypted
     pub tags: Option<Vec<Option<String>>>,
     pub avatar: Option<String>,
@@ -113,25 +164,42 @@ impl UserPersona {
     ) -> Result<Option<String>, AppError> {
         match (ciphertext, nonce) {
             (Some(ct), Some(n)) => {
-                if ct.is_empty() && n.is_empty() { // Convention for empty encrypted field
+                if ct.is_empty() && n.is_empty() {
+                    // Convention for empty encrypted field
                     return Ok(Some("".to_string()));
-                } else if ct.is_empty() || n.is_empty() { // Invalid state
-                     return Err(AppError::DecryptionError(format!(
-                        "Mismatched ciphertext/nonce for {}: one is empty, the other is not.", field_name_for_error
+                } else if ct.is_empty() || n.is_empty() {
+                    // Invalid state
+                    return Err(AppError::DecryptionError(format!(
+                        "Mismatched ciphertext/nonce for {}: one is empty, the other is not.",
+                        field_name_for_error
                     )));
                 }
-                
+
                 let decrypted_bytes = encryption_service
                     .decrypt(&ct, &n, dek.expose_secret().as_slice())
                     .await
-                    .map_err(|e| AppError::DecryptionError(format!("Failed to decrypt {}: {}", field_name_for_error, e)))?;
-                String::from_utf8(decrypted_bytes)
-                    .map(Some)
-                    .map_err(|e| AppError::DecryptionError(format!("Invalid UTF-8 for {}: {}", field_name_for_error, e)))
+                    .map_err(|e| {
+                        AppError::DecryptionError(format!(
+                            "Failed to decrypt {}: {}",
+                            field_name_for_error, e
+                        ))
+                    })?;
+                String::from_utf8(decrypted_bytes).map(Some).map_err(|e| {
+                    AppError::DecryptionError(format!(
+                        "Invalid UTF-8 for {}: {}",
+                        field_name_for_error, e
+                    ))
+                })
             }
             (None, None) => Ok(None), // Field was not set
-            (Some(_), None) => Err(AppError::DecryptionError(format!("Ciphertext present but nonce missing for {}", field_name_for_error))),
-            (None, Some(_)) => Err(AppError::DecryptionError(format!("Nonce present but ciphertext missing for {}", field_name_for_error))),
+            (Some(_), None) => Err(AppError::DecryptionError(format!(
+                "Ciphertext present but nonce missing for {}",
+                field_name_for_error
+            ))),
+            (None, Some(_)) => Err(AppError::DecryptionError(format!(
+                "Nonce present but ciphertext missing for {}",
+                field_name_for_error
+            ))),
         }
     }
 
@@ -141,36 +209,103 @@ impl UserPersona {
     ) -> Result<UserPersonaDataForClient, AppError> {
         let encryption_service = EncryptionService::new();
 
-        let (decrypted_description, 
-             decrypted_personality, 
-             decrypted_scenario, 
-             decrypted_first_mes, 
-             decrypted_mes_example, 
-             decrypted_system_prompt, 
-             decrypted_post_history_instructions) = if let Some(dek) = dek_opt {
-            
-            let desc_nonce = self.description_nonce.ok_or_else(|| AppError::DecryptionError("Description nonce is missing for non-optional field".to_string()))?;
-            let description_val = encryption_service.decrypt(&self.description, &desc_nonce, dek.expose_secret().as_slice()).await?;
-            let description_str = String::from_utf8(description_val).map_err(|e| AppError::DecryptionError(format!("Invalid UTF-8 for description: {}", e)))?;
+        let (
+            decrypted_description,
+            decrypted_personality,
+            decrypted_scenario,
+            decrypted_first_mes,
+            decrypted_mes_example,
+            decrypted_system_prompt,
+            decrypted_post_history_instructions,
+        ) = if let Some(dek) = dek_opt {
+            let desc_nonce = self.description_nonce.ok_or_else(|| {
+                AppError::DecryptionError(
+                    "Description nonce is missing for non-optional field".to_string(),
+                )
+            })?;
+            let description_val = encryption_service
+                .decrypt(
+                    &self.description,
+                    &desc_nonce,
+                    dek.expose_secret().as_slice(),
+                )
+                .await?;
+            let description_str = String::from_utf8(description_val).map_err(|e| {
+                AppError::DecryptionError(format!("Invalid UTF-8 for description: {}", e))
+            })?;
 
-            let personality_str = Self::decrypt_optional_field_async(&encryption_service, dek, self.personality, self.personality_nonce, "personality").await?;
-            let scenario_str = Self::decrypt_optional_field_async(&encryption_service, dek, self.scenario, self.scenario_nonce, "scenario").await?;
-            let first_mes_str = Self::decrypt_optional_field_async(&encryption_service, dek, self.first_mes, self.first_mes_nonce, "first_mes").await?;
-            let mes_example_str = Self::decrypt_optional_field_async(&encryption_service, dek, self.mes_example, self.mes_example_nonce, "mes_example").await?;
-            let system_prompt_str = Self::decrypt_optional_field_async(&encryption_service, dek, self.system_prompt, self.system_prompt_nonce, "system_prompt").await?;
-            let post_hist_instr_str = Self::decrypt_optional_field_async(&encryption_service, dek, self.post_history_instructions, self.post_history_instructions_nonce, "post_history_instructions").await?;
-            
-            (description_str, personality_str, scenario_str, first_mes_str, mes_example_str, system_prompt_str, post_hist_instr_str)
+            let personality_str = Self::decrypt_optional_field_async(
+                &encryption_service,
+                dek,
+                self.personality,
+                self.personality_nonce,
+                "personality",
+            )
+            .await?;
+            let scenario_str = Self::decrypt_optional_field_async(
+                &encryption_service,
+                dek,
+                self.scenario,
+                self.scenario_nonce,
+                "scenario",
+            )
+            .await?;
+            let first_mes_str = Self::decrypt_optional_field_async(
+                &encryption_service,
+                dek,
+                self.first_mes,
+                self.first_mes_nonce,
+                "first_mes",
+            )
+            .await?;
+            let mes_example_str = Self::decrypt_optional_field_async(
+                &encryption_service,
+                dek,
+                self.mes_example,
+                self.mes_example_nonce,
+                "mes_example",
+            )
+            .await?;
+            let system_prompt_str = Self::decrypt_optional_field_async(
+                &encryption_service,
+                dek,
+                self.system_prompt,
+                self.system_prompt_nonce,
+                "system_prompt",
+            )
+            .await?;
+            let post_hist_instr_str = Self::decrypt_optional_field_async(
+                &encryption_service,
+                dek,
+                self.post_history_instructions,
+                self.post_history_instructions_nonce,
+                "post_history_instructions",
+            )
+            .await?;
+
+            (
+                description_str,
+                personality_str,
+                scenario_str,
+                first_mes_str,
+                mes_example_str,
+                system_prompt_str,
+                post_hist_instr_str,
+            )
         } else {
             // No DEK provided, return placeholders for encrypted fields
             let placeholder = Some("[Encrypted]".to_string());
-            (self.description.is_empty().then(|| String::new()).unwrap_or_else(|| "[Encrypted]".to_string()), // Non-optional description gets placeholder if not empty
-             self.personality.as_ref().and(placeholder.clone()), 
-             self.scenario.as_ref().and(placeholder.clone()), 
-             self.first_mes.as_ref().and(placeholder.clone()), 
-             self.mes_example.as_ref().and(placeholder.clone()), 
-             self.system_prompt.as_ref().and(placeholder.clone()), 
-             self.post_history_instructions.as_ref().and(placeholder)
+            (
+                self.description
+                    .is_empty()
+                    .then(|| String::new())
+                    .unwrap_or_else(|| "[Encrypted]".to_string()), // Non-optional description gets placeholder if not empty
+                self.personality.as_ref().and(placeholder.clone()),
+                self.scenario.as_ref().and(placeholder.clone()),
+                self.first_mes.as_ref().and(placeholder.clone()),
+                self.mes_example.as_ref().and(placeholder.clone()),
+                self.system_prompt.as_ref().and(placeholder.clone()),
+                self.post_history_instructions.as_ref().and(placeholder),
             )
         };
 
@@ -197,7 +332,7 @@ impl UserPersona {
 
 #[derive(Debug, Deserialize, Serialize, Clone, Default, PartialEq)]
 pub struct CreateUserPersonaDto {
-    pub name: String, // Name is mandatory for creation
+    pub name: String,        // Name is mandatory for creation
     pub description: String, // Description is mandatory for creation
     pub spec: Option<String>,
     pub spec_version: Option<String>,
@@ -228,16 +363,16 @@ pub struct UpdateUserPersonaDto {
 }
 
 // TODO: Implement custom Debug formatting to redact sensitive fields
-// TODO: Add CreateUserPersonaDto and UpdateUserPersonaDto 
+// TODO: Add CreateUserPersonaDto and UpdateUserPersonaDto
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json;
-    use uuid::Uuid;
+    use crate::crypto;
     use chrono::Utc;
     use secrecy::SecretBox;
-    use crate::crypto;
+    use serde_json;
+    use uuid::Uuid;
 
     fn generate_dummy_dek_for_persona_tests() -> SecretBox<Vec<u8>> {
         // Use a fixed, known key for reproducible tests if needed, or random for general tests.
@@ -337,10 +472,14 @@ mod tests {
             personality_nonce: Some(pers_n),
             scenario: None, // Test with a None field too
             scenario_nonce: None,
-            first_mes: None, first_mes_nonce: None,
-            mes_example: None, mes_example_nonce: None,
-            system_prompt: None, system_prompt_nonce: None,
-            post_history_instructions: None, post_history_instructions_nonce: None,
+            first_mes: None,
+            first_mes_nonce: None,
+            mes_example: None,
+            mes_example_nonce: None,
+            system_prompt: None,
+            system_prompt_nonce: None,
+            post_history_instructions: None,
+            post_history_instructions_nonce: None,
             tags: None,
             avatar: None,
             created_at: Utc::now(),
@@ -348,16 +487,30 @@ mod tests {
         };
 
         // Test with DEK
-        let client_data_with_dek = persona_encrypted.clone().into_data_for_client(Some(&dek)).await.unwrap();
+        let client_data_with_dek = persona_encrypted
+            .clone()
+            .into_data_for_client(Some(&dek))
+            .await
+            .unwrap();
         assert_eq!(client_data_with_dek.description, original_description);
         assert_eq!(client_data_with_dek.personality, Some(original_personality));
         assert_eq!(client_data_with_dek.scenario, None);
         assert_eq!(client_data_with_dek.name, "Encrypted Persona");
 
         // Test without DEK
-        let client_data_without_dek = persona_encrypted.clone().into_data_for_client(None).await.unwrap();
-        assert_eq!(client_data_without_dek.description, "[Encrypted]".to_string());
-        assert_eq!(client_data_without_dek.personality, Some("[Encrypted]".to_string()));
+        let client_data_without_dek = persona_encrypted
+            .clone()
+            .into_data_for_client(None)
+            .await
+            .unwrap();
+        assert_eq!(
+            client_data_without_dek.description,
+            "[Encrypted]".to_string()
+        );
+        assert_eq!(
+            client_data_without_dek.personality,
+            Some("[Encrypted]".to_string())
+        );
         assert_eq!(client_data_without_dek.scenario, None);
 
         // Test scenario: description was empty originally
@@ -370,12 +523,23 @@ mod tests {
             ..create_dummy_user_persona_encrypted() // Fill other fields
         };
 
-        let client_empty_desc_with_dek = persona_empty_desc.clone().into_data_for_client(Some(&dek)).await.unwrap();
+        let client_empty_desc_with_dek = persona_empty_desc
+            .clone()
+            .into_data_for_client(Some(&dek))
+            .await
+            .unwrap();
         assert_eq!(client_empty_desc_with_dek.description, "");
         assert_eq!(client_empty_desc_with_dek.personality, None);
 
-        let client_empty_desc_without_dek = persona_empty_desc.clone().into_data_for_client(None).await.unwrap();
-        assert_eq!(client_empty_desc_without_dek.description, "[Encrypted]".to_string());
+        let client_empty_desc_without_dek = persona_empty_desc
+            .clone()
+            .into_data_for_client(None)
+            .await
+            .unwrap();
+        assert_eq!(
+            client_empty_desc_without_dek.description,
+            "[Encrypted]".to_string()
+        );
         assert_eq!(client_empty_desc_without_dek.personality, None);
     }
 
@@ -420,4 +584,4 @@ mod tests {
         let deserialized: UpdateUserPersonaDto = serde_json::from_str(&serialized).unwrap();
         assert_eq!(dto, deserialized);
     }
-} 
+}

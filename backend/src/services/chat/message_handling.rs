@@ -1,32 +1,38 @@
 use std::sync::Arc;
 
-use diesel::{prelude::*, result::{Error as DieselError, DatabaseErrorKind}}; // Added DatabaseErrorKind
-use tracing::{debug, error, info, instrument, warn, trace}; // Added trace
-use uuid::Uuid;
+use diesel::{
+    prelude::*,
+    result::{DatabaseErrorKind, Error as DieselError},
+}; // Added DatabaseErrorKind
+use secrecy::{ExposeSecret, SecretBox};
 use serde_json::Value; // Added Value
-use secrecy::{ExposeSecret, SecretBox}; // Added SecretBox, ExposeSecret
+use tracing::{debug, error, info, instrument, trace, warn}; // Added trace
+use uuid::Uuid; // Added SecretBox, ExposeSecret
 
 use crate::{
     AppState, // Added AppState
-    state::DbPool, // Changed db::Db to state::DbPool
+    crypto,   // Added crypto
     errors::AppError,
     models::chats::{
-            ChatMessage, DbInsertableChatMessage, MessageRole, // Changed NewChatMessagePayload to NewChatMessage
-        },
+        ChatMessage,
+        DbInsertableChatMessage,
+        MessageRole, // Changed NewChatMessagePayload to NewChatMessage
+    },
     schema::{chat_messages, chat_sessions},
     services::hybrid_token_counter::CountingMode,
-    crypto, // Added crypto
+    state::DbPool, // Changed db::Db to state::DbPool
 };
 
 // This function will be in a sibling module
- // This might be unused if not called
+// This might be unused if not called
 /// Gets messages for a specific chat session, verifying ownership.
 #[instrument(skip(pool), err)]
 pub async fn get_messages_for_session(
     pool: &DbPool, // Already correct
     user_id: Uuid,
     session_id: Uuid,
-) -> Result<Vec<ChatMessage>, AppError> { // Changed DbChatMessage to ChatMessage
+) -> Result<Vec<ChatMessage>, AppError> {
+    // Changed DbChatMessage to ChatMessage
     let conn = pool.get().await?;
     conn.interact(move |conn| {
         let session_owner_id = chat_sessions::table
@@ -58,10 +64,12 @@ pub async fn get_messages_for_session(
 }
 /// Internal helper to save a chat message within a transaction.
 #[instrument(skip(conn), err)]
-pub fn save_chat_message_internal( // Made function public
+pub fn save_chat_message_internal(
+    // Made function public
     conn: &mut PgConnection,
     message: DbInsertableChatMessage,
-) -> Result<ChatMessage, AppError> { // Changed DbChatMessage to ChatMessage
+) -> Result<ChatMessage, AppError> {
+    // Changed DbChatMessage to ChatMessage
     match diesel::insert_into(chat_messages::table)
         .values(&message)
         .returning(ChatMessage::as_select()) // Changed DbChatMessage
@@ -96,7 +104,8 @@ pub async fn save_message(
     attachments: Option<Value>,     // ADDED: Attachments
     user_dek_secret_box: Option<Arc<SecretBox<Vec<u8>>>>,
     model_name: &str, // Added model_name parameter
-) -> Result<ChatMessage, AppError> { // Changed DbChatMessage to ChatMessage
+) -> Result<ChatMessage, AppError> {
+    // Changed DbChatMessage to ChatMessage
     trace!(%session_id, %user_id, %message_type_enum, ?role_str, content_len = content.len(), dek_present = user_dek_secret_box.is_some(), %model_name, "Attempting to save message");
 
     if content.trim().is_empty()

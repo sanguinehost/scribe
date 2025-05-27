@@ -812,7 +812,8 @@ fn test_chat_session_insert_and_query() {
     let mut conn = establish_connection();
 
     // Run migrations before starting the transaction
-    conn.run_pending_migrations(MIGRATIONS).expect("Failed to run migrations for test_chat_session_insert_and_query");
+    conn.run_pending_migrations(MIGRATIONS)
+        .expect("Failed to run migrations for test_chat_session_insert_and_query");
 
     conn.test_transaction::<_, DieselError, _>(|conn| {
         // --- Setup: Insert User and Character ---
@@ -834,10 +835,10 @@ fn test_chat_session_insert_and_query() {
             model_name: "gemini-2.5-flash-preview-04-17".to_string(), // Added model_name field
             active_custom_persona_id: None,
             active_impersonated_character_id: None,
-                                                                      // Optional fields removed from NewChat
-                                                                      // system_prompt: Some("Test System Prompt".to_string()),
-                                                                      // temperature: Some(BigDecimal::from_str("0.8").unwrap()), // Convert float to BigDecimal
-                                                                      // max_output_tokens: Some(256),
+            // Optional fields removed from NewChat
+            // system_prompt: Some("Test System Prompt".to_string()),
+            // temperature: Some(BigDecimal::from_str("0.8").unwrap()), // Convert float to BigDecimal
+            // max_output_tokens: Some(256),
         };
 
         let inserted_session: Chat = diesel::insert_into(chat_sessions::table)
@@ -951,7 +952,7 @@ async fn test_chat_message_insert_and_query() -> Result<(), AnyhowError> {
                     model_name: "gemini-2.5-flash-preview-04-17".to_string(), // Added model_name field
                     active_custom_persona_id: None,
                     active_impersonated_character_id: None,
-                                                                              // Removed ..Default::default() as it's not implemented and unnecessary
+                    // Removed ..Default::default() as it's not implemented and unnecessary
                 };
                 diesel::insert_into(chat_sessions::table)
                     .values(&new_session)

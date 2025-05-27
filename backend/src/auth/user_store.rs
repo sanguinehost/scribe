@@ -94,7 +94,7 @@ impl AuthnBackend for Backend {
                 cache.insert(user.id, dek_to_cache.clone());
                 // More verbose logging
                 warn!(target: "dek_cache_debug", user_id = %user.id, cache_ptr = ?Arc::as_ptr(&self.dek_cache), cache_size = cache.len(), "AuthBackend::authenticate - DEK CACHED (key: {}, value_present: true)", user.id);
-                
+
                 // CRITICAL: Set the user's DEK to None before returning
                 // This prevents axum-login from serializing the DEK into the session
                 user.dek = None;
@@ -133,7 +133,8 @@ impl AuthnBackend for Backend {
             .await;
 
         match interact_result {
-            Ok(Ok(mut user_from_db)) => { // user_from_db is of type User
+            Ok(Ok(mut user_from_db)) => {
+                // user_from_db is of type User
                 // Inner Ok: crate::auth::get_user succeeded
                 info!(user_id = %user_from_db.id, initial_dek_is_some = user_from_db.dek.is_some(), "AuthBackend::get_user: user loaded from DB.");
 

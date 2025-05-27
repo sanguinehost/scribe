@@ -11,10 +11,10 @@ use http_body_util::BodyExt;
 use mime;
 use serde_json; // Added for to_vec in set_history_settings
 // Removed unused: use serde_json::{Value, json};
+use secrecy::SecretBox;
 use std::str::FromStr;
 use tower::ServiceExt;
-use uuid::Uuid;
-use secrecy::SecretBox; // Added import
+use uuid::Uuid; // Added import
 
 // Diesel and model imports
 use diesel::prelude::*;
@@ -24,11 +24,11 @@ use scribe_backend::models::chats::{
     Chat as DbChat, ChatSettingsResponse, NewChat, UpdateChatSettingsRequest,
 };
 use scribe_backend::schema::{characters, chat_sessions};
-use scribe_backend::services::chat::settings::get_session_settings;
 use scribe_backend::services::chat::session_management::create_session_and_maybe_first_message;
+use scribe_backend::services::chat::settings::get_session_settings;
+use scribe_backend::services::lorebook_service::LorebookService; // Added LorebookService
 use scribe_backend::state::AppState;
 use scribe_backend::test_helpers;
-use scribe_backend::services::lorebook_service::LorebookService; // Added LorebookService
 use std::sync::Arc; // Added for Result in set_history_settings
 
 // --- Tests for GET /api/chat/{id}/settings ---
@@ -195,7 +195,10 @@ async fn get_chat_settings_success() {
         .interact(move |actual_conn| {
             diesel::update(chat_sessions::table.find(session_id_for_update))
                 .set((
-                    (chat_sessions::system_prompt_ciphertext.eq(None::<Vec<u8>>), chat_sessions::system_prompt_nonce.eq(None::<Vec<u8>>)),
+                    (
+                        chat_sessions::system_prompt_ciphertext.eq(None::<Vec<u8>>),
+                        chat_sessions::system_prompt_nonce.eq(None::<Vec<u8>>),
+                    ),
                     chat_sessions::temperature.eq(Some(BigDecimal::from_str("0.9").unwrap())),
                     chat_sessions::max_output_tokens.eq(Some(1024_i32)),
                     chat_sessions::frequency_penalty.eq(Some(BigDecimal::from_str("0.3").unwrap())),
@@ -441,14 +444,37 @@ async fn get_chat_settings_defaults() {
 
     // Construct AppState for the service call
     // Create dependent services for AppState
-    let encryption_service_for_test = Arc::new(scribe_backend::services::encryption_service::EncryptionService::new());
-    let chat_override_service_for_test = Arc::new(scribe_backend::services::chat_override_service::ChatOverrideService::new(test_app.db_pool.clone(), encryption_service_for_test.clone()));
-    let user_persona_service_for_test = Arc::new(scribe_backend::services::user_persona_service::UserPersonaService::new(test_app.db_pool.clone(), encryption_service_for_test.clone()));
-    let tokenizer_service_for_test = scribe_backend::services::tokenizer_service::TokenizerService::new("/home/socol/Workspace/sanguine-scribe/backend/resources/tokenizers/gemma.model")
-                .expect("Failed to create tokenizer for test");
-    let hybrid_token_counter_for_test = Arc::new(scribe_backend::services::hybrid_token_counter::HybridTokenCounter::new_local_only(tokenizer_service_for_test));
-    let lorebook_service_for_test = Arc::new(LorebookService::new(test_app.db_pool.clone(), encryption_service_for_test.clone()));
-    let auth_backend_for_test = Arc::new(scribe_backend::auth::user_store::Backend::new(test_app.db_pool.clone()));
+    let encryption_service_for_test =
+        Arc::new(scribe_backend::services::encryption_service::EncryptionService::new());
+    let chat_override_service_for_test = Arc::new(
+        scribe_backend::services::chat_override_service::ChatOverrideService::new(
+            test_app.db_pool.clone(),
+            encryption_service_for_test.clone(),
+        ),
+    );
+    let user_persona_service_for_test = Arc::new(
+        scribe_backend::services::user_persona_service::UserPersonaService::new(
+            test_app.db_pool.clone(),
+            encryption_service_for_test.clone(),
+        ),
+    );
+    let tokenizer_service_for_test =
+        scribe_backend::services::tokenizer_service::TokenizerService::new(
+            "/home/socol/Workspace/sanguine-scribe/backend/resources/tokenizers/gemma.model",
+        )
+        .expect("Failed to create tokenizer for test");
+    let hybrid_token_counter_for_test = Arc::new(
+        scribe_backend::services::hybrid_token_counter::HybridTokenCounter::new_local_only(
+            tokenizer_service_for_test,
+        ),
+    );
+    let lorebook_service_for_test = Arc::new(LorebookService::new(
+        test_app.db_pool.clone(),
+        encryption_service_for_test.clone(),
+    ));
+    let auth_backend_for_test = Arc::new(scribe_backend::auth::user_store::Backend::new(
+        test_app.db_pool.clone(),
+    ));
 
     let app_state_for_service = AppState::new(
         test_app.db_pool.clone(),
@@ -462,7 +488,7 @@ async fn get_chat_settings_defaults() {
         hybrid_token_counter_for_test,
         encryption_service_for_test.clone(),
         lorebook_service_for_test,
-        auth_backend_for_test
+        auth_backend_for_test,
     );
 
     // Create a dummy DEK for the test
@@ -473,8 +499,8 @@ async fn get_chat_settings_defaults() {
         Arc::new(app_state_for_service),
         user.id,
         character.id,
-        None, // active_custom_persona_id
-        None, // lorebook_ids
+        None,                              // active_custom_persona_id
+        None,                              // lorebook_ids
         user_dek_for_service_call.clone(), // Pass the created DEK
     )
     .await
@@ -858,7 +884,11 @@ async fn update_chat_settings_success_full() {
         id: Uuid::new_v4(),
         user_id: user.id,
         character_id: character.id,
-        title_ciphertext: Some("Chat for update_chat_settings_success_full".as_bytes().to_vec()),
+        title_ciphertext: Some(
+            "Chat for update_chat_settings_success_full"
+                .as_bytes()
+                .to_vec(),
+        ),
         title_nonce: Some(vec![0u8; 12]), // Dummy nonce
         created_at: Utc::now(),
         updated_at: Utc::now(),
@@ -1064,7 +1094,11 @@ async fn update_chat_settings_success_partial() {
         id: Uuid::new_v4(),
         user_id: user.id,
         character_id: character.id,
-        title_ciphertext: Some("Chat for update_chat_settings_success_partial".as_bytes().to_vec()),
+        title_ciphertext: Some(
+            "Chat for update_chat_settings_success_partial"
+                .as_bytes()
+                .to_vec(),
+        ),
         title_nonce: Some(vec![0u8; 12]), // Dummy nonce
         created_at: Utc::now(),
         updated_at: Utc::now(),
@@ -1103,7 +1137,10 @@ async fn update_chat_settings_success_partial() {
         .interact(move |actual_conn| {
             diesel::update(chat_sessions::table.find(session_id_for_update))
                 .set((
-                    (chat_sessions::system_prompt_ciphertext.eq(None::<Vec<u8>>), chat_sessions::system_prompt_nonce.eq(None::<Vec<u8>>)),
+                    (
+                        chat_sessions::system_prompt_ciphertext.eq(None::<Vec<u8>>),
+                        chat_sessions::system_prompt_nonce.eq(None::<Vec<u8>>),
+                    ),
                     chat_sessions::temperature.eq(Some(initial_temp_clone)),
                     chat_sessions::max_output_tokens.eq(Some(initial_max_tokens_val)),
                 ))
@@ -1286,7 +1323,11 @@ async fn update_chat_settings_invalid_data() {
         id: Uuid::new_v4(),
         user_id: user.id,
         character_id: character.id,
-        title_ciphertext: Some("Chat for update_chat_settings_invalid_data".as_bytes().to_vec()),
+        title_ciphertext: Some(
+            "Chat for update_chat_settings_invalid_data"
+                .as_bytes()
+                .to_vec(),
+        ),
         title_nonce: Some(vec![0u8; 12]), // Dummy nonce
         created_at: Utc::now(),
         updated_at: Utc::now(),
@@ -1461,7 +1502,11 @@ async fn update_chat_settings_forbidden() {
         id: Uuid::new_v4(),
         user_id: user1.id,
         character_id: character_user1.id,
-        title_ciphertext: Some("Chat for update_chat_settings_forbidden".as_bytes().to_vec()),
+        title_ciphertext: Some(
+            "Chat for update_chat_settings_forbidden"
+                .as_bytes()
+                .to_vec(),
+        ),
         title_nonce: Some(vec![0u8; 12]), // Dummy nonce
         created_at: Utc::now(),
         updated_at: Utc::now(),

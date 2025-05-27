@@ -269,25 +269,30 @@ impl IntoResponse for AppError {
             AppError::ValidationError(validation_errors) => {
                 let status = StatusCode::UNPROCESSABLE_ENTITY;
                 let error_message = "Validation error".to_string();
-                
+
                 // Manually construct a serializable representation of ValidationErrors
                 let mut error_details = serde_json::Map::new();
                 for (field, errors) in validation_errors.field_errors() {
-                    let field_errors: Vec<serde_json::Value> = errors.iter().map(|error| {
-                        let mut err_map = serde_json::Map::new();
-                        err_map.insert("code".to_string(), json!(error.code));
-                        if let Some(message) = &error.message {
-                            err_map.insert("message".to_string(), json!(message));
-                        }
-                        // Add params if they exist and are useful
-                        let params: serde_json::Map<String, serde_json::Value> = error.params.iter()
-                            .map(|(k, v)| (k.to_string(), json!(v)))
-                            .collect();
-                        if !params.is_empty() {
-                            err_map.insert("params".to_string(), json!(params));
-                        }
-                        json!(err_map)
-                    }).collect();
+                    let field_errors: Vec<serde_json::Value> = errors
+                        .iter()
+                        .map(|error| {
+                            let mut err_map = serde_json::Map::new();
+                            err_map.insert("code".to_string(), json!(error.code));
+                            if let Some(message) = &error.message {
+                                err_map.insert("message".to_string(), json!(message));
+                            }
+                            // Add params if they exist and are useful
+                            let params: serde_json::Map<String, serde_json::Value> = error
+                                .params
+                                .iter()
+                                .map(|(k, v)| (k.to_string(), json!(v)))
+                                .collect();
+                            if !params.is_empty() {
+                                err_map.insert("params".to_string(), json!(params));
+                            }
+                            json!(err_map)
+                        })
+                        .collect();
                     error_details.insert(field.to_string(), json!(field_errors));
                 }
 
@@ -297,7 +302,8 @@ impl IntoResponse for AppError {
                 }));
                 (status, body).into_response()
             }
-            app_error => { // Handle all other AppError variants
+            app_error => {
+                // Handle all other AppError variants
                 let (status, error_message) = match app_error {
                     AppError::InvalidCredentials => {
                         (StatusCode::UNAUTHORIZED, "Invalid credentials".to_string())
@@ -316,7 +322,9 @@ impl IntoResponse for AppError {
                         StatusCode::CONFLICT,
                         "Username is already taken".to_string(),
                     ),
-                    AppError::EmailTaken => (StatusCode::CONFLICT, "Email is already taken".to_string()),
+                    AppError::EmailTaken => {
+                        (StatusCode::CONFLICT, "Email is already taken".to_string())
+                    }
                     AppError::InvalidInput(msg) => {
                         (StatusCode::BAD_REQUEST, format!("Invalid input: {}", msg))
                     }
@@ -495,7 +503,10 @@ impl IntoResponse for AppError {
                     }
                     AppError::GenerationError(e) => {
                         error!("LLM generation error: {}", e);
-                        (StatusCode::BAD_GATEWAY, "AI service request failed".to_string())
+                        (
+                            StatusCode::BAD_GATEWAY,
+                            "AI service request failed".to_string(),
+                        )
                     }
                     AppError::EmbeddingError(e) => {
                         error!("LLM embedding error: {}", e);
@@ -515,9 +526,10 @@ impl IntoResponse for AppError {
                         error!("AI Service Error: {}", e);
                         (StatusCode::INTERNAL_SERVER_ERROR, e)
                     }
-                    AppError::PasswordProcessingError => {
-                        (StatusCode::INTERNAL_SERVER_ERROR, "Internal Server Error: Password processing error.".to_string())
-                    } 
+                    AppError::PasswordProcessingError => (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "Internal Server Error: Password processing error.".to_string(),
+                    ),
                     AppError::InternalServerErrorGeneric(e) => {
                         error!("Internal server error: {}", e);
                         (
@@ -572,7 +584,9 @@ impl IntoResponse for AppError {
                         )
                     }
                     // This case should not be reachable due to the outer match
-                    AppError::ValidationError(_) => unreachable!("ValidationError should be handled by the outer match arm"),
+                    AppError::ValidationError(_) => {
+                        unreachable!("ValidationError should be handled by the outer match arm")
+                    }
                     AppError::BadGateway(msg) => {
                         error!("Bad Gateway error: {}", msg);
                         (StatusCode::BAD_GATEWAY, msg)

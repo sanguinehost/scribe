@@ -153,7 +153,7 @@ pub async fn handle_chat_config_action<H: IoHandler, C: HttpClient>(
             io_handler.write_line(&format!("Error updating settings: {}", e))?;
         }
     }
-    
+
     io_handler.write_line("\n[Chat config completed successfully]")?;
 
     Ok(())
@@ -168,7 +168,7 @@ fn display_settings<H: IoHandler>(
     if !settings.model_name.is_ascii() {
         tracing::warn!("Model name contains non-ASCII characters");
     }
-    
+
     io_handler.write_line("\n--- Current Chat Settings ---")?;
 
     // Display model name
@@ -195,12 +195,12 @@ fn display_settings<H: IoHandler>(
     }
 
     io_handler.write_line("---")?;
-    
+
     // Flush output to ensure everything is properly displayed
     io_handler.flush()?;
-    
+
     // Add a small delay to ensure terminal has processed output
     std::thread::sleep(std::time::Duration::from_millis(10));
-    
+
     Ok(())
 }

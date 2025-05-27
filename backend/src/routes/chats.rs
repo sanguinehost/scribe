@@ -36,9 +36,9 @@ use serde_json::json;
 use std::sync::Arc;
 use tracing::{error, info};
 // ExposeSecret already imported above
+use serde::Serialize;
 use uuid::Uuid;
-use validator::Validate;
-use serde::Serialize; // Remove unused Deserialize
+use validator::Validate; // Remove unused Deserialize
 
 // Shorthand for auth session
 type CurrentAuthSession = AuthSession<AuthBackend>;
@@ -78,7 +78,7 @@ pub fn chat_routes() -> Router<crate::state::AppState> {
 pub async fn set_chat_character_override_handler(
     auth_session: CurrentAuthSession,
     State(state): State<AppState>,
-    dek: SessionDek, // Added SessionDek extractor
+    dek: SessionDek,              // Added SessionDek extractor
     Path(session_id): Path<Uuid>, // Renamed id to session_id for clarity
     Json(payload): Json<CharacterOverrideDto>,
 ) -> Result<impl IntoResponse, AppError> {
@@ -98,7 +98,7 @@ pub async fn set_chat_character_override_handler(
         user.id,
         session_id,
         payload.clone(), // Clone payload for use in client response
-        Some(&dek.0), // Pass the SecretBox from SessionDek
+        Some(&dek.0),    // Pass the SecretBox from SessionDek
     )
     .await?;
 
@@ -120,11 +120,14 @@ pub async fn set_chat_character_override_handler(
     }
 
     let client_response = OverrideResponse {
-        message: format!("Override for '{}' applied successfully.", override_db_response.field_name),
+        message: format!(
+            "Override for '{}' applied successfully.",
+            override_db_response.field_name
+        ),
         session_id: override_db_response.chat_session_id,
         field_name: override_db_response.field_name.clone(),
         new_value: payload.value, // Use the unencrypted value from the request
-        
+
         // Include original fields
         id: override_db_response.id,
         chat_session_id: override_db_response.chat_session_id,
@@ -168,12 +171,9 @@ pub async fn get_chats_handler(
     let mut decrypted_chats = Vec::new();
     for chat in chats {
         let mut client_chat = ChatForClient::from(chat.clone());
-        
+
         // Decrypt title if available
-        client_chat.title = match (
-            chat.title_ciphertext.as_ref(),
-            chat.title_nonce.as_ref()
-        ) {
+        client_chat.title = match (chat.title_ciphertext.as_ref(), chat.title_nonce.as_ref()) {
             (Some(ciphertext), Some(nonce)) if !ciphertext.is_empty() && !nonce.is_empty() => {
                 match crypto::decrypt_gcm(ciphertext, nonce, &dek.0) {
                     Ok(plaintext_secret) => {
@@ -181,16 +181,16 @@ pub async fn get_chats_handler(
                             Ok(decrypted_text) => Some(decrypted_text),
                             Err(_) => Some("[Invalid UTF-8]".to_string()),
                         }
-                    },
+                    }
                     Err(_) => Some("[Decryption Failed]".to_string()),
                 }
-            },
+            }
             _ => None,
         };
-        
+
         decrypted_chats.push(client_chat);
     }
-    
+
     Ok(Json(decrypted_chats))
 }
 
@@ -217,7 +217,7 @@ pub async fn create_chat_handler(
         user.id,
         payload.character_id,
         payload.active_custom_persona_id, // active_custom_persona_id
-        payload.lorebook_ids.clone(), // lorebook_ids
+        payload.lorebook_ids.clone(),     // lorebook_ids
         user_dek_arc,
     )
     .await?;
@@ -227,7 +227,7 @@ pub async fn create_chat_handler(
         let pool = state.pool.clone();
         let session_id = chat.id;
         let custom_title = payload.title.clone();
-        
+
         // Encrypt the title using the DEK from the SessionDek extractor
         let dek_for_title_encryption = &dek.0; // dek is SessionDek, dek.0 is SecretBox<Vec<u8>>
         match crypto::encrypt_gcm(custom_title.as_bytes(), dek_for_title_encryption) {
@@ -247,10 +247,12 @@ pub async fn create_chat_handler(
                     })
                     .await
                     .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
-            },
+            }
             Err(e) => {
                 error!(error = ?e, "Failed to encrypt chat title");
-                return Err(AppError::EncryptionError("Failed to encrypt title".to_string()));
+                return Err(AppError::EncryptionError(
+                    "Failed to encrypt title".to_string(),
+                ));
             }
         }
     }
@@ -1002,7 +1004,7 @@ pub async fn update_chat_visibility_handler(
 pub async fn get_chat_settings_handler(
     auth_session: CurrentAuthSession,
     State(state): State<AppState>,
-    dek: SessionDek, // Added SessionDek extractor
+    dek: SessionDek,      // Added SessionDek extractor
     Path(id): Path<Uuid>, // This is session_id
 ) -> Result<impl IntoResponse, AppError> {
     let user = auth_session
@@ -1014,7 +1016,7 @@ pub async fn get_chat_settings_handler(
     let chat_settings_response = chat::settings::get_session_settings(
         &state.pool,
         user.id,
-        id, // session_id
+        id,           // session_id
         Some(&dek.0), // Pass the DEK for decryption
     )
     .await?;
@@ -1045,7 +1047,8 @@ pub async fn update_chat_settings_handler(
         id,
         payload,
         Some(&dek.0), // Pass the DEK from SessionDek
-    ).await?;
+    )
+    .await?;
 
     Ok((StatusCode::OK, Json(response)))
 }

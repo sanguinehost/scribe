@@ -49,7 +49,7 @@ pub trait EmbeddingClient: Send + Sync {
     async fn embed_content(
         &self,
         text: &str,
-        task_type: &str, // e.g., "RETRIEVAL_DOCUMENT", "RETRIEVAL_QUERY"
+        task_type: &str,     // e.g., "RETRIEVAL_DOCUMENT", "RETRIEVAL_QUERY"
         title: Option<&str>, // Added title parameter
     ) -> Result<Vec<f32>, AppError>;
 

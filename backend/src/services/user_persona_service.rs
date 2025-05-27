@@ -1,15 +1,15 @@
-use std::sync::Arc;
-use uuid::Uuid;
 use diesel::prelude::*;
 use secrecy::{ExposeSecret, SecretBox};
-use tracing::debug; // Added for logging
+use std::sync::Arc;
+use tracing::debug;
+use uuid::Uuid; // Added for logging
 
-use crate::state::DbPool;
 use crate::errors::AppError;
 use crate::models::user_personas::*;
 use crate::models::users::{User, UserDbQuery};
 use crate::schema::{user_personas::dsl as user_personas_dsl, users::dsl as users_dsl};
 use crate::services::encryption_service::EncryptionService;
+use crate::state::DbPool;
 
 #[derive(Clone)]
 pub struct UserPersonaService {
@@ -32,7 +32,8 @@ impl UserPersonaService {
     ) -> Result<(Option<Vec<u8>>, Option<Vec<u8>>), AppError> {
         match plaintext_opt {
             Some(plaintext) if !plaintext.is_empty() => {
-                let (ciphertext, nonce) = self.encryption_service
+                let (ciphertext, nonce) = self
+                    .encryption_service
                     .encrypt(&plaintext, dek.expose_secret().as_slice())
                     .await?;
                 Ok((Some(ciphertext), Some(nonce)))
@@ -50,7 +51,9 @@ impl UserPersonaService {
     ) -> Result<UserPersonaDataForClient, AppError> {
         // Basic validation (more can be added via a validator crate if complex)
         if create_dto.name.is_empty() || create_dto.name.len() > 255 {
-            return Err(AppError::BadRequest("Persona name must be between 1 and 255 characters.".to_string()));
+            return Err(AppError::BadRequest(
+                "Persona name must be between 1 and 255 characters.".to_string(),
+            ));
         }
         if create_dto.description.is_empty() {
             // For now, let's allow empty description, but typically this would be validated.
@@ -63,16 +66,29 @@ impl UserPersonaService {
         }
         // Add other DTO field validations as necessary
 
-        let (description_ciphertext, description_nonce_val) = self.encryption_service
+        let (description_ciphertext, description_nonce_val) = self
+            .encryption_service
             .encrypt(&create_dto.description, dek.expose_secret().as_slice())
             .await?;
 
-        let (personality_ct, personality_n) = self.encrypt_optional_string_for_db(create_dto.personality, dek).await?;
-        let (scenario_ct, scenario_n) = self.encrypt_optional_string_for_db(create_dto.scenario, dek).await?;
-        let (first_mes_ct, first_mes_n) = self.encrypt_optional_string_for_db(create_dto.first_mes, dek).await?;
-        let (mes_example_ct, mes_example_n) = self.encrypt_optional_string_for_db(create_dto.mes_example, dek).await?;
-        let (system_prompt_ct, system_prompt_n) = self.encrypt_optional_string_for_db(create_dto.system_prompt, dek).await?;
-        let (post_history_instructions_ct, post_history_instructions_n) = self.encrypt_optional_string_for_db(create_dto.post_history_instructions, dek).await?;
+        let (personality_ct, personality_n) = self
+            .encrypt_optional_string_for_db(create_dto.personality, dek)
+            .await?;
+        let (scenario_ct, scenario_n) = self
+            .encrypt_optional_string_for_db(create_dto.scenario, dek)
+            .await?;
+        let (first_mes_ct, first_mes_n) = self
+            .encrypt_optional_string_for_db(create_dto.first_mes, dek)
+            .await?;
+        let (mes_example_ct, mes_example_n) = self
+            .encrypt_optional_string_for_db(create_dto.mes_example, dek)
+            .await?;
+        let (system_prompt_ct, system_prompt_n) = self
+            .encrypt_optional_string_for_db(create_dto.system_prompt, dek)
+            .await?;
+        let (post_history_instructions_ct, post_history_instructions_n) = self
+            .encrypt_optional_string_for_db(create_dto.post_history_instructions, dek)
+            .await?;
 
         let new_persona_db = UserPersona {
             id: Uuid::new_v4(),
@@ -101,7 +117,10 @@ impl UserPersonaService {
         };
 
         let pool = self.db_pool.clone();
-        let conn = pool.get().await.map_err(|e| AppError::DbPoolError(e.to_string()))?;
+        let conn = pool
+            .get()
+            .await
+            .map_err(|e| AppError::DbPoolError(e.to_string()))?;
         let inserted_persona = conn
             .interact(move |db_conn| {
                 diesel::insert_into(user_personas_dsl::user_personas)
@@ -110,8 +129,10 @@ impl UserPersonaService {
                     .map_err(AppError::from) // Convert DieselError to AppError
             })
             .await
-            .map_err(|e| AppError::InternalServerErrorGeneric(format!("DB interact join error: {}", e)))??; // Flatten Result<Result<T, E1>, E2>
-        
+            .map_err(|e| {
+                AppError::InternalServerErrorGeneric(format!("DB interact join error: {}", e))
+            })??; // Flatten Result<Result<T, E1>, E2>
+
         tracing::info!(user_id = %current_user.id, persona_id = %inserted_persona.id, "Successfully created user persona");
 
         inserted_persona.into_data_for_client(Some(dek)).await
@@ -125,7 +146,10 @@ impl UserPersonaService {
         persona_id: Uuid,
     ) -> Result<UserPersonaDataForClient, AppError> {
         let pool = self.db_pool.clone();
-        let conn = pool.get().await.map_err(|e| AppError::DbPoolError(e.to_string()))?;
+        let conn = pool
+            .get()
+            .await
+            .map_err(|e| AppError::DbPoolError(e.to_string()))?;
         let found_persona_db = conn
             .interact(move |db_conn| {
                 user_personas_dsl::user_personas
@@ -134,7 +158,12 @@ impl UserPersonaService {
                     .optional()
             })
             .await
-            .map_err(|e| AppError::InternalServerErrorGeneric(format!("DB interact join error for get_user_persona: {}", e)))??;
+            .map_err(|e| {
+                AppError::InternalServerErrorGeneric(format!(
+                    "DB interact join error for get_user_persona: {}",
+                    e
+                ))
+            })??;
 
         match found_persona_db {
             Some(persona_db) => {
@@ -150,7 +179,10 @@ impl UserPersonaService {
                 tracing::info!(user_id = %current_user.id, persona_id = %persona_db.id, "Successfully fetched user persona, attempting conversion to client data.");
                 persona_db.into_data_for_client(dek_opt).await
             }
-            None => Err(AppError::NotFound(format!("User persona with ID {} not found", persona_id))),
+            None => Err(AppError::NotFound(format!(
+                "User persona with ID {} not found",
+                persona_id
+            ))),
         }
     }
 
@@ -162,7 +194,10 @@ impl UserPersonaService {
     ) -> Result<Vec<UserPersonaDataForClient>, AppError> {
         let pool = self.db_pool.clone();
         let user_id_for_query = current_user.id;
-        let conn = pool.get().await.map_err(|e| AppError::DbPoolError(e.to_string()))?;
+        let conn = pool
+            .get()
+            .await
+            .map_err(|e| AppError::DbPoolError(e.to_string()))?;
 
         let personas_db = conn
             .interact(move |db_conn| {
@@ -173,7 +208,12 @@ impl UserPersonaService {
                     .map_err(AppError::from)
             })
             .await
-            .map_err(|e| AppError::InternalServerErrorGeneric(format!("DB interact join error for list_user_personas: {}", e)))??;
+            .map_err(|e| {
+                AppError::InternalServerErrorGeneric(format!(
+                    "DB interact join error for list_user_personas: {}",
+                    e
+                ))
+            })??;
 
         let mut personas_for_client = Vec::new();
         for persona_db in personas_db {
@@ -204,7 +244,10 @@ impl UserPersonaService {
         update_dto: UpdateUserPersonaDto,
     ) -> Result<UserPersonaDataForClient, AppError> {
         let pool = self.db_pool.clone();
-        let conn_fetch = pool.get().await.map_err(|e| AppError::DbPoolError(e.to_string()))?;
+        let conn_fetch = pool
+            .get()
+            .await
+            .map_err(|e| AppError::DbPoolError(e.to_string()))?;
         let persona_to_update_db = conn_fetch
             .interact(move |db_conn| {
                 user_personas_dsl::user_personas
@@ -213,11 +256,21 @@ impl UserPersonaService {
                     .optional()
             })
             .await
-            .map_err(|e| AppError::InternalServerErrorGeneric(format!("DB interact join error for update_user_persona (fetch): {}", e)))??;
+            .map_err(|e| {
+                AppError::InternalServerErrorGeneric(format!(
+                    "DB interact join error for update_user_persona (fetch): {}",
+                    e
+                ))
+            })??;
 
         let mut persona = match persona_to_update_db {
             Some(p) => p,
-            None => return Err(AppError::NotFound(format!("User persona with ID {} not found for update", persona_id))),
+            None => {
+                return Err(AppError::NotFound(format!(
+                    "User persona with ID {} not found for update",
+                    persona_id
+                )));
+            }
         };
 
         if persona.user_id != current_user.id {
@@ -274,7 +327,7 @@ impl UserPersonaService {
                 // encrypt_optional_string_for_db returns (None, None) which clears the field.
                 // If dto_field_value is Some("text"), this encrypts "text".
                 let (new_ct, new_n) = self.encrypt_optional_string_for_db(dto_field_value, dek).await?;
-                
+
                 // Check if the current DB values differ from the new (potentially None) values.
                 if persona.$field_name != new_ct || persona.$nonce_field_name != new_n {
                     persona.$field_name = new_ct;
@@ -292,11 +345,17 @@ impl UserPersonaService {
         // Apply for description. If update_dto.description is None or an empty string, encrypt an empty string.
         // Otherwise, encrypt the provided string.
         let string_to_encrypt_for_description = update_dto.description.as_deref().unwrap_or("");
-        let (new_description_ct, new_description_n) = self.encryption_service
-            .encrypt(string_to_encrypt_for_description, dek.expose_secret().as_slice())
+        let (new_description_ct, new_description_n) = self
+            .encryption_service
+            .encrypt(
+                string_to_encrypt_for_description,
+                dek.expose_secret().as_slice(),
+            )
             .await?;
 
-        if persona.description != new_description_ct || persona.description_nonce != Some(new_description_n.clone()) {
+        if persona.description != new_description_ct
+            || persona.description_nonce != Some(new_description_n.clone())
+        {
             persona.description = new_description_ct;
             persona.description_nonce = Some(new_description_n);
             changed = true;
@@ -307,7 +366,10 @@ impl UserPersonaService {
         update_optional_encrypted_field!(first_mes, first_mes_nonce);
         update_optional_encrypted_field!(mes_example, mes_example_nonce);
         update_optional_encrypted_field!(system_prompt, system_prompt_nonce);
-        update_optional_encrypted_field!(post_history_instructions, post_history_instructions_nonce);
+        update_optional_encrypted_field!(
+            post_history_instructions,
+            post_history_instructions_nonce
+        );
 
         if !changed {
             tracing::debug!(user_id = %current_user.id, %persona_id, "No changes detected for user persona update. Returning existing.");
@@ -318,17 +380,27 @@ impl UserPersonaService {
 
         // Get a new connection instance from the cloned pool for the update interaction
         // pool was cloned at the start of the function. We need a connection from it.
-        let conn_update = self.db_pool.get().await.map_err(|e| AppError::DbPoolError(e.to_string()))?;
+        let conn_update = self
+            .db_pool
+            .get()
+            .await
+            .map_err(|e| AppError::DbPoolError(e.to_string()))?;
         let updated_persona_db = conn_update
-            .interact(move |db_conn| { // Changed conn to db_conn
+            .interact(move |db_conn| {
+                // Changed conn to db_conn
                 diesel::update(user_personas_dsl::user_personas.find(persona_id))
                     .set(&persona) // UserPersona derives AsChangeset
                     .get_result::<UserPersona>(db_conn) // Changed conn to db_conn
                     .map_err(AppError::from)
             })
             .await
-            .map_err(|e| AppError::InternalServerErrorGeneric(format!("DB interact join error for update_user_persona (update): {}", e)))??;
-        
+            .map_err(|e| {
+                AppError::InternalServerErrorGeneric(format!(
+                    "DB interact join error for update_user_persona (update): {}",
+                    e
+                ))
+            })??;
+
         tracing::info!(user_id = %current_user.id, persona_id = %updated_persona_db.id, "Successfully updated user persona");
         updated_persona_db.into_data_for_client(Some(dek)).await
     }
@@ -340,18 +412,27 @@ impl UserPersonaService {
         persona_id: Uuid,
     ) -> Result<(), AppError> {
         let pool = self.db_pool.clone();
-        
+
         // First, fetch to verify ownership before deleting
-        let conn_fetch = pool.get().await.map_err(|e| AppError::DbPoolError(e.to_string()))?;
+        let conn_fetch = pool
+            .get()
+            .await
+            .map_err(|e| AppError::DbPoolError(e.to_string()))?;
         let persona_to_delete_opt = conn_fetch
-            .interact(move |db_conn| { // Changed conn to db_conn
+            .interact(move |db_conn| {
+                // Changed conn to db_conn
                 user_personas_dsl::user_personas
                     .filter(user_personas_dsl::id.eq(persona_id))
                     .first::<UserPersona>(db_conn) // Changed conn to db_conn
                     .optional()
             })
             .await
-            .map_err(|e| AppError::InternalServerErrorGeneric(format!("DB interact join error for delete_user_persona (fetch): {}", e)))??;
+            .map_err(|e| {
+                AppError::InternalServerErrorGeneric(format!(
+                    "DB interact join error for delete_user_persona (fetch): {}",
+                    e
+                ))
+            })??;
 
         match persona_to_delete_opt {
             Some(persona) => {
@@ -368,30 +449,46 @@ impl UserPersonaService {
                 // Proceed with deletion
                 // Get a new connection instance from the cloned pool for the delete interaction
                 // pool was cloned at the start of the function.
-                let conn_delete = self.db_pool.get().await.map_err(|e| AppError::DbPoolError(e.to_string()))?;
+                let conn_delete = self
+                    .db_pool
+                    .get()
+                    .await
+                    .map_err(|e| AppError::DbPoolError(e.to_string()))?;
                 let num_deleted = conn_delete
-                    .interact(move |db_conn| { // Changed conn to db_conn
+                    .interact(move |db_conn| {
+                        // Changed conn to db_conn
                         diesel::delete(
                             user_personas_dsl::user_personas
-                                .filter(user_personas_dsl::id.eq(persona_id)) // Ensure we use persona_id from outer scope
+                                .filter(user_personas_dsl::id.eq(persona_id)), // Ensure we use persona_id from outer scope
                         )
                         .execute(db_conn) // Changed conn to db_conn
                         .map_err(AppError::from)
                     })
                     .await
-                    .map_err(|e| AppError::InternalServerErrorGeneric(format!("DB interact join error for delete_user_persona (delete): {}", e)))??;
+                    .map_err(|e| {
+                        AppError::InternalServerErrorGeneric(format!(
+                            "DB interact join error for delete_user_persona (delete): {}",
+                            e
+                        ))
+                    })??;
 
                 if num_deleted == 0 {
                     // This case should ideally not be reached if the fetch & ownership check passed,
                     // unless there was a race condition (persona deleted between fetch and delete query).
                     tracing::warn!(user_id = %current_user.id, %persona_id, "Delete operation affected 0 rows, though persona was fetched and owned.");
-                    Err(AppError::NotFound(format!("User persona with ID {} not found during delete, or already deleted.", persona_id)))
+                    Err(AppError::NotFound(format!(
+                        "User persona with ID {} not found during delete, or already deleted.",
+                        persona_id
+                    )))
                 } else {
                     tracing::info!(user_id = %current_user.id, %persona_id, "Successfully deleted user persona");
                     Ok(())
                 }
             }
-            None => Err(AppError::NotFound(format!("User persona with ID {} not found for deletion.", persona_id))),
+            None => Err(AppError::NotFound(format!(
+                "User persona with ID {} not found for deletion.",
+                persona_id
+            ))),
         }
     }
 
@@ -400,8 +497,12 @@ impl UserPersonaService {
         pool: &DbPool, // Changed to pass pool directly as it's a static-like method now
         user_id_val: Uuid,
         persona_id_val: Option<Uuid>,
-    ) -> Result<User, AppError> { // Return the updated User
-        let conn = pool.get().await.map_err(|e| AppError::DbPoolError(e.to_string()))?;
+    ) -> Result<User, AppError> {
+        // Return the updated User
+        let conn = pool
+            .get()
+            .await
+            .map_err(|e| AppError::DbPoolError(e.to_string()))?;
 
         let updated_user_db_query = conn
             .interact(move |db_conn| {
@@ -411,16 +512,21 @@ impl UserPersonaService {
                     .map_err(AppError::from)
             })
             .await
-            .map_err(|e| AppError::InternalServerErrorGeneric(format!("DB interact join error for set_default_persona: {}", e)))??;
-        
+            .map_err(|e| {
+                AppError::InternalServerErrorGeneric(format!(
+                    "DB interact join error for set_default_persona: {}",
+                    e
+                ))
+            })??;
+
         tracing::info!(user_id = %user_id_val, default_persona_id = ?persona_id_val, "Successfully set default persona for user");
-        
+
         // Convert UserDbQuery to User before returning
         // This assumes User::from(UserDbQuery) handles DEK decryption or sets it to None appropriately.
         // If DEK is needed, it must be fetched and passed here. For now, assuming it's not needed for this response.
         Ok(User::from(updated_user_db_query))
     }
-    
+
     // Helper to fetch a persona by ID and user ID, ensuring ownership.
     // This can be used by the route handler before calling set_default_persona.
     #[tracing::instrument(skip(pool), err)]
@@ -430,7 +536,10 @@ impl UserPersonaService {
         user_id_val: Uuid,
     ) -> Result<Option<UserPersona>, AppError> {
         debug!(%persona_id_val, %user_id_val, "Attempting to get user persona by ID and user ID");
-        let conn = pool.get().await.map_err(|e| AppError::DbPoolError(e.to_string()))?;
+        let conn = pool
+            .get()
+            .await
+            .map_err(|e| AppError::DbPoolError(e.to_string()))?;
         let persona_result = conn
             .interact(move |db_conn| {
                 user_personas_dsl::user_personas
@@ -441,9 +550,17 @@ impl UserPersonaService {
                     .map_err(AppError::from)
             })
             .await
-            .map_err(|e| AppError::InternalServerErrorGeneric(format!("DB interact join error for get_user_persona_by_id_and_user_id: {}", e)))??;
-        
-        debug!(?persona_result, "Result of database query in get_user_persona_by_id_and_user_id");
+            .map_err(|e| {
+                AppError::InternalServerErrorGeneric(format!(
+                    "DB interact join error for get_user_persona_by_id_and_user_id: {}",
+                    e
+                ))
+            })??;
+
+        debug!(
+            ?persona_result,
+            "Result of database query in get_user_persona_by_id_and_user_id"
+        );
         Ok(persona_result)
     }
 }

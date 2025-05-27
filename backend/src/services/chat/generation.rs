@@ -1,24 +1,23 @@
-use std::{sync::Arc, pin::Pin, cmp::min};
+use std::{cmp::min, pin::Pin, sync::Arc};
 
 use bigdecimal::{BigDecimal, ToPrimitive};
-use diesel::{
-    prelude::*,
-    result::Error as DieselError,
-};
+use diesel::{prelude::*, result::Error as DieselError};
 use futures_util::Stream; // Required for stream_ai_response_and_save_message
 use futures_util::StreamExt; // Required for .next() on streams
 use genai::chat::{
     ChatMessage as GenAiChatMessage, ChatOptions as GenAiChatOptions,
-    ChatRequest as GenAiChatRequest,
-    ChatStreamEvent as GeminiResponseChunkAlias, FunctionCallingMode, ToolConfig,
+    ChatRequest as GenAiChatRequest, ChatStreamEvent as GeminiResponseChunkAlias,
+    FunctionCallingMode, ToolConfig,
 };
 use secrecy::{ExposeSecret, SecretBox};
 use serde_json::Value;
- // Required for stream_ai_response_and_save_message
-use tracing::{debug, error, info, instrument, warn, trace}; // Added trace
+// Required for stream_ai_response_and_save_message
+use tracing::{debug, error, info, instrument, trace, warn}; // Added trace
 use uuid::Uuid;
 
 use crate::{
+    // vector_db::qdrant_client::QdrantClient, // Moved to direct crate import below
+    AppState,
     errors::AppError,
     models::{
         characters::Character,
@@ -26,20 +25,15 @@ use crate::{
         chats::DbInsertableChatMessage, // ChatMessage and MessageRole will be from super::types
         lorebooks::ChatSessionLorebook, // User is used by get_session_data_for_generation
     },
-    schema::{
-        characters, chat_character_overrides, chat_messages,
-        chat_sessions,
-    },
+    schema::{characters, chat_character_overrides, chat_messages, chat_sessions},
     services::{
         embedding_pipeline::RetrievedChunk, // Corrected struct name
         // history_manager::HistoryManager, // Removed, manage_history is a free function
         hybrid_token_counter::CountingMode,
         tokenizer_service::TokenEstimate,
     },
-    // vector_db::qdrant_client::QdrantClient, // Moved to direct crate import below
-    AppState,
 };
- // Corrected QdrantClient import
+// Corrected QdrantClient import
 
 // These functions/types will be in sibling modules
 use super::{
@@ -67,55 +61,96 @@ pub async fn get_session_data_for_generation(
     // --- Determine Effective System Prompt & Lorebook IDs (Pre-Main-Interact) ---
     let maybe_active_persona_id_from_session: Option<Uuid> = {
         let conn_clone_for_persona_check = state.pool.get().await?;
-        conn_clone_for_persona_check.interact(move |c| {
-            chat_sessions::table
-                .filter(chat_sessions::id.eq(session_id))
-                .filter(chat_sessions::user_id.eq(user_id))
-                .select(chat_sessions::active_custom_persona_id)
-                .first::<Option<Uuid>>(c)
-        }).await??
+        conn_clone_for_persona_check
+            .interact(move |c| {
+                chat_sessions::table
+                    .filter(chat_sessions::id.eq(session_id))
+                    .filter(chat_sessions::user_id.eq(user_id))
+                    .select(chat_sessions::active_custom_persona_id)
+                    .first::<Option<Uuid>>(c)
+            })
+            .await??
     };
     info!(target: "chat_service_persona_debug", %session_id, ?maybe_active_persona_id_from_session, "Fetched active_custom_persona_id from session.");
 
-    let mut effective_system_prompt: Option<String> = None; 
+    let mut effective_system_prompt: Option<String> = None;
 
     if let Some(persona_id) = maybe_active_persona_id_from_session {
         if let Some(ref dek_arc_outer) = user_dek_secret_box {
             let user_for_service_call: crate::models::users::User = {
-                let conn_for_user_fetch = state.pool.get().await.map_err(|e| AppError::DbPoolError(e.to_string()))?;
-                let user_db_query_result = conn_for_user_fetch.interact(move |c| {
-                    crate::schema::users::table
-                        .filter(crate::schema::users::id.eq(user_id))
-                        .select(crate::models::users::UserDbQuery::as_select())
-                        .first::<crate::models::users::UserDbQuery>(c)
-                }).await.map_err(|e| AppError::InternalServerErrorGeneric(format!("DB interact error fetching user_db_query: {}", e)))?;
-                
-                let user_db_query = user_db_query_result.map_err(|e| AppError::NotFound(format!("UserDbQuery for user {} not found: {}", user_id, e)))?;
+                let conn_for_user_fetch = state
+                    .pool
+                    .get()
+                    .await
+                    .map_err(|e| AppError::DbPoolError(e.to_string()))?;
+                let user_db_query_result = conn_for_user_fetch
+                    .interact(move |c| {
+                        crate::schema::users::table
+                            .filter(crate::schema::users::id.eq(user_id))
+                            .select(crate::models::users::UserDbQuery::as_select())
+                            .first::<crate::models::users::UserDbQuery>(c)
+                    })
+                    .await
+                    .map_err(|e| {
+                        AppError::InternalServerErrorGeneric(format!(
+                            "DB interact error fetching user_db_query: {}",
+                            e
+                        ))
+                    })?;
+
+                let user_db_query = user_db_query_result.map_err(|e| {
+                    AppError::NotFound(format!("UserDbQuery for user {} not found: {}", user_id, e))
+                })?;
                 user_db_query.into()
             };
             let dek_ref_for_service: Option<&SecretBox<Vec<u8>>> = Some(dek_arc_outer.as_ref());
-            match state.user_persona_service.get_user_persona(&user_for_service_call, dek_ref_for_service, persona_id).await {
+            match state
+                .user_persona_service
+                .get_user_persona(&user_for_service_call, dek_ref_for_service, persona_id)
+                .await
+            {
                 Ok(client_persona_dto) => {
                     if let Some(ref sp_from_persona) = client_persona_dto.system_prompt {
                         if !sp_from_persona.trim().is_empty() {
                             effective_system_prompt = Some(sp_from_persona.replace('\0', ""));
                         }
                     }
-                    if effective_system_prompt.is_none() { 
+                    if effective_system_prompt.is_none() {
                         let mut constructed_parts = Vec::new();
                         let base_prompt_part = if client_persona_dto.description.trim().is_empty() {
-                            format!("You are chatting with {}.", client_persona_dto.name.replace('\0', ""))
+                            format!(
+                                "You are chatting with {}.",
+                                client_persona_dto.name.replace('\0', "")
+                            )
                         } else {
-                            format!("You are chatting with {}. Their description is: {}.", client_persona_dto.name.replace('\0', ""), client_persona_dto.description.replace('\0', ""))
+                            format!(
+                                "You are chatting with {}. Their description is: {}.",
+                                client_persona_dto.name.replace('\0', ""),
+                                client_persona_dto.description.replace('\0', "")
+                            )
                         };
                         constructed_parts.push(base_prompt_part);
-                        if let Some(ref p) = client_persona_dto.personality { if !p.trim().is_empty() { constructed_parts.push(format!("Personality: {}", p.replace('\0', ""))); }}
-                        if let Some(ref s) = client_persona_dto.scenario { if !s.trim().is_empty() { constructed_parts.push(format!("Scenario: {}", s.replace('\0', ""))); }}
+                        if let Some(ref p) = client_persona_dto.personality {
+                            if !p.trim().is_empty() {
+                                constructed_parts
+                                    .push(format!("Personality: {}", p.replace('\0', "")));
+                            }
+                        }
+                        if let Some(ref s) = client_persona_dto.scenario {
+                            if !s.trim().is_empty() {
+                                constructed_parts
+                                    .push(format!("Scenario: {}", s.replace('\0', "")));
+                            }
+                        }
                         let constructed = constructed_parts.join("\n");
-                        if !constructed.trim().is_empty() { effective_system_prompt = Some(constructed); }
+                        if !constructed.trim().is_empty() {
+                            effective_system_prompt = Some(constructed);
+                        }
                     }
                 }
-                Err(e) => error!(target: "chat_service_trace_prompt", %session_id, %persona_id, error = %e, "Error fetching active persona via service."),
+                Err(e) => {
+                    error!(target: "chat_service_trace_prompt", %session_id, %persona_id, error = %e, "Error fetching active persona via service.")
+                }
             }
         } else {
             warn!(target: "chat_service_trace_prompt", %session_id, %persona_id, "Active persona ID present, but no user DEK available.");
@@ -124,12 +159,25 @@ pub async fn get_session_data_for_generation(
 
     let active_lorebook_ids_for_search: Option<Vec<Uuid>> = {
         let pool_clone_lore = state.pool.clone();
-        match pool_clone_lore.get().await.map_err(AppError::from)?.interact(move |conn_lore| {
-            ChatSessionLorebook::get_active_lorebook_ids_for_session(conn_lore, session_id).map_err(AppError::from)
-        }).await {
+        match pool_clone_lore
+            .get()
+            .await
+            .map_err(AppError::from)?
+            .interact(move |conn_lore| {
+                ChatSessionLorebook::get_active_lorebook_ids_for_session(conn_lore, session_id)
+                    .map_err(AppError::from)
+            })
+            .await
+        {
             Ok(Ok(ids)) => ids,
-            Ok(Err(e)) => { warn!(%session_id, error = %e, "Failed to get active lorebook IDs (DB error)."); None }
-            Err(e) => { warn!(%session_id, error = %e, "Failed to get active lorebook IDs (InteractError)."); None }
+            Ok(Err(e)) => {
+                warn!(%session_id, error = %e, "Failed to get active lorebook IDs (DB error).");
+                None
+            }
+            Err(e) => {
+                warn!(%session_id, error = %e, "Failed to get active lorebook IDs (InteractError).");
+                None
+            }
         }
     };
     info!(%session_id, ?active_lorebook_ids_for_search, "Active lorebook IDs for search determined.");
@@ -159,65 +207,141 @@ pub async fn get_session_data_for_generation(
         final_effective_system_prompt, // This is the system_prompt for the builder (persona/override only)
         raw_character_system_prompt,   // This is the raw system_prompt from the character itself
     ) = {
-        let conn = state.pool.get().await.map_err(|e| AppError::DbPoolError(e.to_string()))?;
+        let conn = state
+            .pool
+            .get()
+            .await
+            .map_err(|e| AppError::DbPoolError(e.to_string()))?;
         let dek_for_interact_cloned = user_dek_secret_box.clone();
         let initial_effective_system_prompt = effective_system_prompt; // Capture current state
 
         conn.interact(move |conn_interaction| {
             let (
-                hist_strat, hist_limit, sess_char_id, _sess_sys_prompt_ciphertext, _sess_sys_prompt_nonce, 
-                temp, max_tokens, freq_pen, pres_pen, top_k_val, top_p_val, rep_pen, min_p_val, top_a_val, seed_val, logit_b, model_n,
-                gem_think_budget, gem_enable_code_exec
+                hist_strat,
+                hist_limit,
+                sess_char_id,
+                _sess_sys_prompt_ciphertext,
+                _sess_sys_prompt_nonce,
+                temp,
+                max_tokens,
+                freq_pen,
+                pres_pen,
+                top_k_val,
+                top_p_val,
+                rep_pen,
+                min_p_val,
+                top_a_val,
+                seed_val,
+                logit_b,
+                model_n,
+                gem_think_budget,
+                gem_enable_code_exec,
             ) = chat_sessions::table
                 .filter(chat_sessions::id.eq(session_id))
                 .filter(chat_sessions::user_id.eq(user_id))
                 .select((
-                    chat_sessions::history_management_strategy, chat_sessions::history_management_limit,
-                    chat_sessions::character_id, chat_sessions::system_prompt_ciphertext, chat_sessions::system_prompt_nonce,
-                    chat_sessions::temperature, chat_sessions::max_output_tokens,
-                    chat_sessions::frequency_penalty, chat_sessions::presence_penalty,
-                    chat_sessions::top_k, chat_sessions::top_p, chat_sessions::repetition_penalty,
-                    chat_sessions::min_p, chat_sessions::top_a, chat_sessions::seed,
-                    chat_sessions::logit_bias, chat_sessions::model_name,
-                    chat_sessions::gemini_thinking_budget, chat_sessions::gemini_enable_code_execution,
+                    chat_sessions::history_management_strategy,
+                    chat_sessions::history_management_limit,
+                    chat_sessions::character_id,
+                    chat_sessions::system_prompt_ciphertext,
+                    chat_sessions::system_prompt_nonce,
+                    chat_sessions::temperature,
+                    chat_sessions::max_output_tokens,
+                    chat_sessions::frequency_penalty,
+                    chat_sessions::presence_penalty,
+                    chat_sessions::top_k,
+                    chat_sessions::top_p,
+                    chat_sessions::repetition_penalty,
+                    chat_sessions::min_p,
+                    chat_sessions::top_a,
+                    chat_sessions::seed,
+                    chat_sessions::logit_bias,
+                    chat_sessions::model_name,
+                    chat_sessions::gemini_thinking_budget,
+                    chat_sessions::gemini_enable_code_execution,
                 ))
-                .first::<(String, i32, Uuid, Option<Vec<u8>>, Option<Vec<u8>>, Option<BigDecimal>, Option<i32>, Option<BigDecimal>, Option<BigDecimal>, Option<i32>, Option<BigDecimal>, Option<BigDecimal>, Option<BigDecimal>, Option<BigDecimal>, Option<i32>, Option<Value>, String, Option<i32>, Option<bool>)>(conn_interaction)
+                .first::<(
+                    String,
+                    i32,
+                    Uuid,
+                    Option<Vec<u8>>,
+                    Option<Vec<u8>>,
+                    Option<BigDecimal>,
+                    Option<i32>,
+                    Option<BigDecimal>,
+                    Option<BigDecimal>,
+                    Option<i32>,
+                    Option<BigDecimal>,
+                    Option<BigDecimal>,
+                    Option<BigDecimal>,
+                    Option<BigDecimal>,
+                    Option<i32>,
+                    Option<Value>,
+                    String,
+                    Option<i32>,
+                    Option<bool>,
+                )>(conn_interaction)
                 .map_err(|e| match e {
-                    DieselError::NotFound => AppError::NotFound(format!("Chat session {} not found", session_id)),
-                    _ => AppError::DatabaseQueryError(format!("Failed to query chat session {}: {}", session_id, e)),
+                    DieselError::NotFound => {
+                        AppError::NotFound(format!("Chat session {} not found", session_id))
+                    }
+                    _ => AppError::DatabaseQueryError(format!(
+                        "Failed to query chat session {}: {}",
+                        session_id, e
+                    )),
                 })?;
 
             let character_db: Character = characters::table
                 .filter(characters::id.eq(sess_char_id))
                 .first::<Character>(conn_interaction)
                 .map_err(|e| match e {
-                    DieselError::NotFound => AppError::NotFound(format!("Character {} not found", sess_char_id)),
-                    _ => AppError::DatabaseQueryError(format!("Failed to query character {}: {}", sess_char_id, e)),
+                    DieselError::NotFound => {
+                        AppError::NotFound(format!("Character {} not found", sess_char_id))
+                    }
+                    _ => AppError::DatabaseQueryError(format!(
+                        "Failed to query character {}: {}",
+                        sess_char_id, e
+                    )),
                 })?;
 
             let overrides_db: Vec<ChatCharacterOverride> = chat_character_overrides::table
                 .filter(chat_character_overrides::chat_session_id.eq(session_id))
                 .filter(chat_character_overrides::original_character_id.eq(sess_char_id))
                 .load::<ChatCharacterOverride>(conn_interaction)
-                .map_err(|e| AppError::DatabaseQueryError(format!("Failed to query overrides: {}", e)))?;
+                .map_err(|e| {
+                    AppError::DatabaseQueryError(format!("Failed to query overrides: {}", e))
+                })?;
 
             let messages_raw_db: Vec<DbChatMessage> = chat_messages::table
                 .filter(chat_messages::session_id.eq(session_id))
                 .order(chat_messages::created_at.asc()) // Fetch in ascending order for correct processing later
                 .select(DbChatMessage::as_select())
                 .load::<DbChatMessage>(conn_interaction)
-                .map_err(|e| AppError::DatabaseQueryError(format!("Failed to load messages: {}", e)))?;
-            
+                .map_err(|e| {
+                    AppError::DatabaseQueryError(format!("Failed to load messages: {}", e))
+                })?;
+
             let mut current_effective_system_prompt = initial_effective_system_prompt;
 
-            if current_effective_system_prompt.is_none() { 
-                let mut override_values_map: std::collections::HashMap<String, String> = std::collections::HashMap::new();
-                 for override_data in &overrides_db {
+            if current_effective_system_prompt.is_none() {
+                let mut override_values_map: std::collections::HashMap<String, String> =
+                    std::collections::HashMap::new();
+                for override_data in &overrides_db {
                     if let Some(dek) = &dek_for_interact_cloned {
-                         if !override_data.overridden_value.is_empty() && !override_data.overridden_value_nonce.is_empty() {
-                            if let Ok(dec_bytes) = crate::crypto::decrypt_gcm(&override_data.overridden_value, &override_data.overridden_value_nonce, dek.as_ref()) {
-                                if let Ok(s) = String::from_utf8(dec_bytes.expose_secret().to_vec()) {
-                                    if !s.trim().is_empty() { override_values_map.insert(override_data.field_name.clone(), s); }
+                        if !override_data.overridden_value.is_empty()
+                            && !override_data.overridden_value_nonce.is_empty()
+                        {
+                            if let Ok(dec_bytes) = crate::crypto::decrypt_gcm(
+                                &override_data.overridden_value,
+                                &override_data.overridden_value_nonce,
+                                dek.as_ref(),
+                            ) {
+                                if let Ok(s) = String::from_utf8(dec_bytes.expose_secret().to_vec())
+                                {
+                                    if !s.trim().is_empty() {
+                                        override_values_map
+                                            .insert(override_data.field_name.clone(), s);
+                                    }
                                 }
                             }
                         }
@@ -231,32 +355,59 @@ pub async fn get_session_data_for_generation(
             // That fallback is handled by the prompt_builder itself if this is None.
 
             // Extract the raw character system prompt separately
-            let raw_character_system_prompt_from_db: Option<String> = character_db.system_prompt.as_ref()
+            let raw_character_system_prompt_from_db: Option<String> = character_db
+                .system_prompt
+                .as_ref()
                 .and_then(|val| {
                     if val.is_empty() {
                         None
                     } else {
-                        String::from_utf8(val.clone()).ok().map(|s| s.replace('\0', ""))
+                        String::from_utf8(val.clone())
+                            .ok()
+                            .map(|s| s.replace('\0', ""))
                     }
                 })
                 .filter(|s| !s.trim().is_empty());
-            
+
             Ok::<_, AppError>((
-                hist_strat, hist_limit, sess_char_id, temp, max_tokens, freq_pen, pres_pen, top_k_val, top_p_val, rep_pen, min_p_val, top_a_val, seed_val, logit_b, model_n,
-                gem_think_budget, gem_enable_code_exec,
-                messages_raw_db, character_db, overrides_db,
+                hist_strat,
+                hist_limit,
+                sess_char_id,
+                temp,
+                max_tokens,
+                freq_pen,
+                pres_pen,
+                top_k_val,
+                top_p_val,
+                rep_pen,
+                min_p_val,
+                top_a_val,
+                seed_val,
+                logit_b,
+                model_n,
+                gem_think_budget,
+                gem_enable_code_exec,
+                messages_raw_db,
+                character_db,
+                overrides_db,
                 current_effective_system_prompt, // This is the one for the builder (persona/override only)
-                raw_character_system_prompt_from_db // The new one
+                raw_character_system_prompt_from_db, // The new one
             ))
-        }).await.map_err(|e| AppError::DbInteractError(format!("Interact dispatch error: {}", e)))??
+        })
+        .await
+        .map_err(|e| AppError::DbInteractError(format!("Interact dispatch error: {}", e)))??
     };
-    
+
     // --- Calculate User Prompt Tokens (Now that model_name is available) ---
-    let user_prompt_tokens_val: Option<i32> = match state.token_counter.count_tokens(
-        &user_message_content,
-        CountingMode::LocalOnly,
-        Some(&session_model_name_db),
-    ).await {
+    let user_prompt_tokens_val: Option<i32> = match state
+        .token_counter
+        .count_tokens(
+            &user_message_content,
+            CountingMode::LocalOnly,
+            Some(&session_model_name_db),
+        )
+        .await
+    {
         Ok(estimate) => Some(estimate.total as i32),
         Err(e) => {
             warn!("Failed to count prompt tokens for new user message: {}", e);
@@ -273,39 +424,67 @@ pub async fn get_session_data_for_generation(
     // Iterate newest to oldest (reverse of DB query order)
     for db_msg_raw in existing_messages_db_raw.iter().rev() {
         debug!(target: "test_debug", %session_id, message_id = %db_msg_raw.id, "Processing message for recent history.");
-        let decrypted_content_str = match (db_msg_raw.content_nonce.as_ref(), &user_dek_secret_box) {
-            (Some(nonce_vec), Some(dek_arc)) if !db_msg_raw.content.is_empty() && !nonce_vec.is_empty() => {
-                let decrypted_bytes_secret = crate::crypto::decrypt_gcm(&db_msg_raw.content, nonce_vec, dek_arc.as_ref())
-                    .map_err(|e| AppError::DecryptionError(format!("Failed to decrypt message {}: {}", db_msg_raw.id, e)))?;
-                String::from_utf8(decrypted_bytes_secret.expose_secret().to_vec())
-                    .map_err(|e| AppError::InternalServerErrorGeneric(format!("Invalid UTF-8 in decrypted message {}: {}", db_msg_raw.id, e)))?
+        let decrypted_content_str = match (db_msg_raw.content_nonce.as_ref(), &user_dek_secret_box)
+        {
+            (Some(nonce_vec), Some(dek_arc))
+                if !db_msg_raw.content.is_empty() && !nonce_vec.is_empty() =>
+            {
+                let decrypted_bytes_secret =
+                    crate::crypto::decrypt_gcm(&db_msg_raw.content, nonce_vec, dek_arc.as_ref())
+                        .map_err(|e| {
+                            AppError::DecryptionError(format!(
+                                "Failed to decrypt message {}: {}",
+                                db_msg_raw.id, e
+                            ))
+                        })?;
+                String::from_utf8(decrypted_bytes_secret.expose_secret().to_vec()).map_err(|e| {
+                    AppError::InternalServerErrorGeneric(format!(
+                        "Invalid UTF-8 in decrypted message {}: {}",
+                        db_msg_raw.id, e
+                    ))
+                })?
             }
-            _ => {
-                String::from_utf8(db_msg_raw.content.clone())
-                    .map_err(|e| AppError::InternalServerErrorGeneric(format!("Invalid UTF-8 in plaintext message {}: {}", db_msg_raw.id, e)))?
-            }
+            _ => String::from_utf8(db_msg_raw.content.clone()).map_err(|e| {
+                AppError::InternalServerErrorGeneric(format!(
+                    "Invalid UTF-8 in plaintext message {}: {}",
+                    db_msg_raw.id, e
+                ))
+            })?,
         };
 
         if decrypted_content_str.trim().is_empty() {
-             // Create a new DbChatMessage with decrypted (empty) content
+            // Create a new DbChatMessage with decrypted (empty) content
             let mut updated_msg = db_msg_raw.clone();
             updated_msg.content = decrypted_content_str.into_bytes();
             updated_msg.content_nonce = None; // Content is now plaintext
             managed_recent_history.insert(0, updated_msg);
             continue;
         }
-        
-        let token_estimate: TokenEstimate = state.token_counter.count_tokens(
-            &decrypted_content_str,
-            CountingMode::LocalOnly,
-            Some(&session_model_name_db),
-        ).await.map_err(|e| AppError::InternalServerErrorGeneric(format!("Token counting failed for history message {}: {}", db_msg_raw.id, e)))?;
+
+        let token_estimate: TokenEstimate = state
+            .token_counter
+            .count_tokens(
+                &decrypted_content_str,
+                CountingMode::LocalOnly,
+                Some(&session_model_name_db),
+            )
+            .await
+            .map_err(|e| {
+                AppError::InternalServerErrorGeneric(format!(
+                    "Token counting failed for history message {}: {}",
+                    db_msg_raw.id, e
+                ))
+            })?;
 
         let message_tokens = token_estimate.total as usize; // Cast to usize
         debug!(target: "test_debug", %session_id, message_id = %db_msg_raw.id, %message_tokens, current_actual_tokens = %actual_recent_history_tokens, %recent_history_token_budget, "Message tokens calculated. Checking budget.");
 
-        if actual_recent_history_tokens.saturating_add(message_tokens) <= recent_history_token_budget { // Compare usize with usize
-            actual_recent_history_tokens = actual_recent_history_tokens.saturating_add(message_tokens);
+        if actual_recent_history_tokens.saturating_add(message_tokens)
+            <= recent_history_token_budget
+        {
+            // Compare usize with usize
+            actual_recent_history_tokens =
+                actual_recent_history_tokens.saturating_add(message_tokens);
             debug!(target: "test_debug", %session_id, message_id = %db_msg_raw.id, "Message FITS budget. Adding to managed_recent_history. New actual_recent_history_tokens: {}", actual_recent_history_tokens);
             // Create a new DbChatMessage with decrypted content before adding
             let mut updated_msg = db_msg_raw.clone();
@@ -323,7 +502,10 @@ pub async fn get_session_data_for_generation(
     // --- RAG Context Budgeting and Assembly ---
     let available_rag_tokens = min(
         state.config.context_rag_token_budget,
-        state.config.context_total_token_limit.saturating_sub(actual_recent_history_tokens)
+        state
+            .config
+            .context_total_token_limit
+            .saturating_sub(actual_recent_history_tokens),
     );
     info!(%session_id, %actual_recent_history_tokens, %available_rag_tokens, "Calculated RAG token budget.");
     let mut rag_context_items: Vec<RetrievedChunk> = Vec::new();
@@ -337,14 +519,18 @@ pub async fn get_session_data_for_generation(
         if let Some(lorebook_ids) = &active_lorebook_ids_for_search {
             if !lorebook_ids.is_empty() {
                 info!(%session_id, ?lorebook_ids, "Retrieving lorebook chunks for RAG.");
-                match state.embedding_pipeline_service.retrieve_relevant_chunks(
-                    state.clone(),
-                    user_id,
-                    None, // Not searching chat history here
-                    Some(lorebook_ids.clone()),
-                    &user_message_content, // query_text
-                    rag_query_limit_per_source,
-                ).await {
+                match state
+                    .embedding_pipeline_service
+                    .retrieve_relevant_chunks(
+                        state.clone(),
+                        user_id,
+                        None, // Not searching chat history here
+                        Some(lorebook_ids.clone()),
+                        &user_message_content, // query_text
+                        rag_query_limit_per_source,
+                    )
+                    .await
+                {
                     Ok(lore_chunks) => {
                         info!(%session_id, num_lore_chunks = lore_chunks.len(), "Retrieved lorebook chunks.");
                         combined_rag_candidates.extend(lore_chunks);
@@ -358,22 +544,29 @@ pub async fn get_session_data_for_generation(
 
         // Retrieve Older Chat History Chunks
         info!(%session_id, "Retrieving older chat history chunks for RAG.");
-        match state.embedding_pipeline_service.retrieve_relevant_chunks(
-            state.clone(),
-            user_id,
-            Some(session_id), // Searching chat history for the current session
-            None, // Not searching lorebooks here
-            &user_message_content, // query_text
-            rag_query_limit_per_source,
-        ).await {
+        match state
+            .embedding_pipeline_service
+            .retrieve_relevant_chunks(
+                state.clone(),
+                user_id,
+                Some(session_id), // Searching chat history for the current session
+                None,             // Not searching lorebooks here
+                &user_message_content, // query_text
+                rag_query_limit_per_source,
+            )
+            .await
+        {
             Ok(mut older_chat_chunks) => {
                 info!(%session_id, num_older_chat_chunks_raw = older_chat_chunks.len(), "Retrieved older chat history chunks (raw).");
-                let recent_message_ids: std::collections::HashSet<Uuid> = managed_recent_history.iter().map(|msg| msg.id).collect();
+                let recent_message_ids: std::collections::HashSet<Uuid> =
+                    managed_recent_history.iter().map(|msg| msg.id).collect();
                 debug!(target: "rag_debug", %session_id, num_recent_ids = recent_message_ids.len(), ?recent_message_ids, "Recent message IDs for RAG filtering determined.");
 
                 debug!(target: "rag_debug", %session_id, num_raw_older_chunks = older_chat_chunks.len(), "Raw older chat RAG chunks before filtering:");
                 for (i, chunk) in older_chat_chunks.iter().enumerate() {
-                    if let crate::services::embedding_pipeline::RetrievedMetadata::Chat(chat_meta) = &chunk.metadata {
+                    if let crate::services::embedding_pipeline::RetrievedMetadata::Chat(chat_meta) =
+                        &chunk.metadata
+                    {
                         debug!(target: "rag_debug", %session_id, chunk_idx = i, message_id = %chat_meta.message_id, score = chunk.score, text_preview = %chunk.text.chars().take(100).collect::<String>(), "  Raw older chat RAG chunk");
                     } else {
                         debug!(target: "rag_debug", %session_id, chunk_idx = i, score = chunk.score, text_preview = %chunk.text.chars().take(100).collect::<String>(), metadata_type = ?chunk.metadata, "  Raw older RAG chunk (non-chat metadata)");
@@ -417,7 +610,11 @@ pub async fn get_session_data_for_generation(
         debug!(target: "test_debug", %session_id, num_combined_candidates = combined_rag_candidates.len(), "Combined RAG candidates before assembly loop.");
         if !combined_rag_candidates.is_empty() {
             info!(%session_id, num_combined_candidates = combined_rag_candidates.len(), "Assembling and budgeting RAG context.");
-            combined_rag_candidates.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+            combined_rag_candidates.sort_by(|a, b| {
+                b.score
+                    .partial_cmp(&a.score)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
             debug!(target: "test_debug", %session_id, "Combined RAG candidates after sorting (first 5 texts): {:?}", combined_rag_candidates.iter().take(5).map(|c| c.text.chars().take(50).collect::<String>() ).collect::<Vec<_>>());
 
             for chunk in combined_rag_candidates {
@@ -427,17 +624,24 @@ pub async fn get_session_data_for_generation(
                     break;
                 }
 
-                match state.token_counter.count_tokens(
-                    &chunk.text,
-                    CountingMode::LocalOnly,
-                    Some(&session_model_name_db),
-                ).await {
+                match state
+                    .token_counter
+                    .count_tokens(
+                        &chunk.text,
+                        CountingMode::LocalOnly,
+                        Some(&session_model_name_db),
+                    )
+                    .await
+                {
                     Ok(token_estimate) => {
                         let chunk_tokens = token_estimate.total as usize;
                         debug!(target: "test_debug", %session_id, %chunk_tokens, current_rag_tokens_before_add = %current_rag_tokens_used, %available_rag_tokens, "RAG chunk tokens calculated. Checking budget for chunk: {:?}", chunk.text.chars().take(50).collect::<String>());
-                        if current_rag_tokens_used.saturating_add(chunk_tokens) <= available_rag_tokens {
+                        if current_rag_tokens_used.saturating_add(chunk_tokens)
+                            <= available_rag_tokens
+                        {
                             rag_context_items.push(chunk);
-                            current_rag_tokens_used = current_rag_tokens_used.saturating_add(chunk_tokens);
+                            current_rag_tokens_used =
+                                current_rag_tokens_used.saturating_add(chunk_tokens);
                             debug!(target: "test_debug", %session_id, "RAG Chunk ADDED. New current_rag_tokens_used: {}. Items count: {}", current_rag_tokens_used, rag_context_items.len());
                         } else {
                             debug!(target: "test_debug", %session_id, %chunk_tokens, %current_rag_tokens_used, %available_rag_tokens, "Chunk too large for remaining RAG budget. SKIPPING chunk: {:?}", chunk.text.chars().take(50).collect::<String>());
@@ -462,24 +666,43 @@ pub async fn get_session_data_for_generation(
     // --- First Message Logic (applied to token-managed history) ---
     if managed_recent_history.is_empty() {
         info!(%session_id, "Managed recent history is empty. Checking for character's first_mes.");
-        
-        let decrypt_field_local = |data: Option<&Vec<u8>>, nonce: Option<&Vec<u8>>, dek_opt: &Option<Arc<SecretBox<Vec<u8>>>>| -> Result<Option<String>, AppError> {
+
+        let decrypt_field_local = |data: Option<&Vec<u8>>,
+                                   nonce: Option<&Vec<u8>>,
+                                   dek_opt: &Option<Arc<SecretBox<Vec<u8>>>>|
+         -> Result<Option<String>, AppError> {
             if let (Some(d), Some(n), Some(dek)) = (data, nonce, dek_opt) {
                 if !d.is_empty() && !n.is_empty() {
-                    let decrypted = crate::crypto::decrypt_gcm(d, n, dek.as_ref())
-                        .map_err(|e: crate::crypto::CryptoError| AppError::DecryptionError(format!("Failed to decrypt field: {}", e)))?;
-                    return Ok(Some(String::from_utf8(decrypted.expose_secret().to_vec())
-                        .map_err(|e: std::string::FromUtf8Error| AppError::InternalServerErrorGeneric(format!("Invalid UTF-8 in decrypted field: {}", e)))?));
+                    let decrypted = crate::crypto::decrypt_gcm(d, n, dek.as_ref()).map_err(
+                        |e: crate::crypto::CryptoError| {
+                            AppError::DecryptionError(format!("Failed to decrypt field: {}", e))
+                        },
+                    )?;
+                    return Ok(Some(
+                        String::from_utf8(decrypted.expose_secret().to_vec()).map_err(
+                            |e: std::string::FromUtf8Error| {
+                                AppError::InternalServerErrorGeneric(format!(
+                                    "Invalid UTF-8 in decrypted field: {}",
+                                    e
+                                ))
+                            },
+                        )?,
+                    ));
                 }
             }
             Ok(None)
         };
-        
+
         let mut first_mes_content_to_add: Option<String> = None;
-        let mut override_values_map: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+        let mut override_values_map: std::collections::HashMap<String, String> =
+            std::collections::HashMap::new();
 
         for override_data in &character_overrides_for_first_mes {
-             if let Ok(Some(dec_val)) = decrypt_field_local(Some(&override_data.overridden_value), Some(&override_data.overridden_value_nonce), &user_dek_secret_box) {
+            if let Ok(Some(dec_val)) = decrypt_field_local(
+                Some(&override_data.overridden_value),
+                Some(&override_data.overridden_value_nonce),
+                &user_dek_secret_box,
+            ) {
                 if !dec_val.trim().is_empty() {
                     override_values_map.insert(override_data.field_name.clone(), dec_val);
                 }
@@ -491,7 +714,7 @@ pub async fn get_session_data_for_generation(
         } else if let Some(char_first_mes) = decrypt_field_local(
             character_for_first_mes.first_mes.as_ref(),
             character_for_first_mes.first_mes_nonce.as_ref(),
-            &user_dek_secret_box
+            &user_dek_secret_box,
         )? {
             if !char_first_mes.is_empty() {
                 first_mes_content_to_add = Some(char_first_mes);
@@ -500,12 +723,15 @@ pub async fn get_session_data_for_generation(
 
         if let Some(content) = first_mes_content_to_add {
             let first_mes_db_chat_message = DbChatMessage {
-                 id: Uuid::new_v4(), session_id, user_id, 
-                 message_type: MessageRole::Assistant,
-                 content: content.into_bytes(), // Content is already decrypted String
-                 content_nonce: None,
-                 created_at: chrono::Utc::now(),
-                 prompt_tokens: None, completion_tokens: None,
+                id: Uuid::new_v4(),
+                session_id,
+                user_id,
+                message_type: MessageRole::Assistant,
+                content: content.into_bytes(), // Content is already decrypted String
+                content_nonce: None,
+                created_at: chrono::Utc::now(),
+                prompt_tokens: None,
+                completion_tokens: None,
             };
             managed_recent_history.insert(0, first_mes_db_chat_message);
             info!(%session_id, "Prepended character's first_mes to managed_recent_history.");
@@ -514,9 +740,11 @@ pub async fn get_session_data_for_generation(
 
     // --- Prepare User Message Struct ---
     let user_db_message_to_save = DbInsertableChatMessage::new(
-        session_id, user_id, MessageRole::User,
-        user_message_content_for_closure.into_bytes(), 
-        None, 
+        session_id,
+        user_id,
+        MessageRole::User,
+        user_message_content_for_closure.into_bytes(),
+        None,
         Some("user".to_string()),
         Some(serde_json::json!([{"text": user_message_content}])),
         None,
@@ -526,27 +754,27 @@ pub async fn get_session_data_for_generation(
 
     // --- Construct Final Tuple ---
     Ok((
-        managed_recent_history,        // 0: managed_db_history
-        final_effective_system_prompt, // 1: system_prompt (for builder, persona/override only)
-        active_lorebook_ids_for_search,// 2: active_lorebook_ids_for_search
-        session_character_id_db,       // 3: session_character_id
-        raw_character_system_prompt,   // 4: raw_character_system_prompt (NEW)
-        session_temperature_db,        // 5: temperature
-        session_max_output_tokens_db,  // 6: max_output_tokens
-        session_frequency_penalty_db,  // 7: frequency_penalty
-        session_presence_penalty_db,   // 8: presence_penalty
-        session_top_k_db,              // 9: top_k
-        session_top_p_db,              // 10: top_p
-        session_repetition_penalty_db, // 11: repetition_penalty
-        session_min_p_db,              // 12: min_p
-        session_top_a_db,              // 13: top_a
-        session_seed_db,               // 14: seed
-        session_logit_bias_db,         // 15: logit_bias
-        session_model_name_db,         // 16: model_name
+        managed_recent_history,         // 0: managed_db_history
+        final_effective_system_prompt,  // 1: system_prompt (for builder, persona/override only)
+        active_lorebook_ids_for_search, // 2: active_lorebook_ids_for_search
+        session_character_id_db,        // 3: session_character_id
+        raw_character_system_prompt,    // 4: raw_character_system_prompt (NEW)
+        session_temperature_db,         // 5: temperature
+        session_max_output_tokens_db,   // 6: max_output_tokens
+        session_frequency_penalty_db,   // 7: frequency_penalty
+        session_presence_penalty_db,    // 8: presence_penalty
+        session_top_k_db,               // 9: top_k
+        session_top_p_db,               // 10: top_p
+        session_repetition_penalty_db,  // 11: repetition_penalty
+        session_min_p_db,               // 12: min_p
+        session_top_a_db,               // 13: top_a
+        session_seed_db,                // 14: seed
+        session_logit_bias_db,          // 15: logit_bias
+        session_model_name_db,          // 16: model_name
         // -- Gemini Specific Options --
-        session_gemini_thinking_budget_db,      // 17: gemini_thinking_budget
-        session_gemini_enable_code_execution_db,// 18: gemini_enable_code_execution
-        user_db_message_to_save,                // 19: The user message struct
+        session_gemini_thinking_budget_db, // 17: gemini_thinking_budget
+        session_gemini_enable_code_execution_db, // 18: gemini_enable_code_execution
+        user_db_message_to_save,           // 19: The user message struct
         // -- RAG Context & Recent History Tokens --
         actual_recent_history_tokens, // 20: actual_recent_history_tokens
         rag_context_items,            // 21: rag_context_items
@@ -578,7 +806,8 @@ pub async fn stream_ai_response_and_save_message(
     gemini_enable_code_execution: Option<bool>,
     request_thinking: bool,                    // New parameter
     user_dek: Option<Arc<SecretBox<Vec<u8>>>>, // Changed to Option<Arc<SecretBox>>
-) -> Result<std::pin::Pin<Box<dyn Stream<Item = Result<ScribeSseEvent, AppError>> + Send>>, AppError> {
+) -> Result<std::pin::Pin<Box<dyn Stream<Item = Result<ScribeSseEvent, AppError>> + Send>>, AppError>
+{
     let service_model_name = model_name.clone(); // Clone for use in this function scope, esp. for save_message calls
     trace!(
         ?system_prompt,
@@ -692,7 +921,10 @@ pub async fn stream_ai_response_and_save_message(
         genai_chat_options
     );
 
-    let genai_stream_result: Result<Pin<Box<dyn Stream<Item = Result<GeminiResponseChunkAlias, AppError>> + Send>>, AppError> = state
+    let genai_stream_result: Result<
+        Pin<Box<dyn Stream<Item = Result<GeminiResponseChunkAlias, AppError>> + Send>>,
+        AppError,
+    > = state
         .ai_client
         .stream_chat(&model_name, chat_request, Some(genai_chat_options))
         .await;

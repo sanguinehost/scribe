@@ -87,10 +87,28 @@ impl std::fmt::Debug for Chat {
             .field("id", &self.id)
             .field("user_id", &self.user_id)
             .field("character_id", &self.character_id)
-            .field("title_ciphertext", &self.title_ciphertext.as_ref().map(|_| "[REDACTED_BYTES]"))
-            .field("title_nonce", &self.title_nonce.as_ref().map(|_| "[REDACTED_BYTES]"))
-            .field("system_prompt_ciphertext", &self.system_prompt_ciphertext.as_ref().map(|_| "[REDACTED_BYTES]"))
-            .field("system_prompt_nonce", &self.system_prompt_nonce.as_ref().map(|_| "[REDACTED_BYTES]"))
+            .field(
+                "title_ciphertext",
+                &self.title_ciphertext.as_ref().map(|_| "[REDACTED_BYTES]"),
+            )
+            .field(
+                "title_nonce",
+                &self.title_nonce.as_ref().map(|_| "[REDACTED_BYTES]"),
+            )
+            .field(
+                "system_prompt_ciphertext",
+                &self
+                    .system_prompt_ciphertext
+                    .as_ref()
+                    .map(|_| "[REDACTED_BYTES]"),
+            )
+            .field(
+                "system_prompt_nonce",
+                &self
+                    .system_prompt_nonce
+                    .as_ref()
+                    .map(|_| "[REDACTED_BYTES]"),
+            )
             .field("temperature", &self.temperature)
             .field("max_output_tokens", &self.max_output_tokens)
             .field("created_at", &self.created_at)
@@ -121,7 +139,10 @@ impl std::fmt::Debug for Chat {
             .field("visibility", &self.visibility)
             // Add new fields to Debug output
             .field("active_custom_persona_id", &self.active_custom_persona_id)
-            .field("active_impersonated_character_id", &self.active_impersonated_character_id)
+            .field(
+                "active_impersonated_character_id",
+                &self.active_impersonated_character_id,
+            )
             .finish()
     }
 }
@@ -165,7 +186,10 @@ impl std::fmt::Debug for NewChat {
             .field("visibility", &self.visibility)
             // Added to debug output
             .field("active_custom_persona_id", &self.active_custom_persona_id)
-            .field("active_impersonated_character_id", &self.active_impersonated_character_id)
+            .field(
+                "active_impersonated_character_id",
+                &self.active_impersonated_character_id,
+            )
             .finish()
     }
 }
@@ -933,10 +957,10 @@ pub struct GenerateChatRequest {
     #[validate(length(min = 1))] // History must contain at least one message
     #[validate(nested)] // Validate each ApiChatMessage within the Vec
     pub history: Vec<ApiChatMessage>,
-    pub model: Option<String>, // Keep optional model override
+    pub model: Option<String>,              // Keep optional model override
     pub query_text_for_rag: Option<String>, // ADDED: Optional override for RAG query
 }
- 
+
 impl std::fmt::Debug for GenerateChatRequest {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("GenerateChatRequest")
@@ -960,7 +984,7 @@ pub struct ChatForClient {
     pub id: Uuid,
     pub user_id: Uuid,
     pub character_id: Uuid,
-    pub title: Option<String>, // Decrypted title
+    pub title: Option<String>,         // Decrypted title
     pub system_prompt: Option<String>, // Decrypted system prompt (if needed)
     pub temperature: Option<bigdecimal::BigDecimal>,
     pub max_output_tokens: Option<i32>,
@@ -991,7 +1015,7 @@ impl From<Chat> for ChatForClient {
             id: chat.id,
             user_id: chat.user_id,
             character_id: chat.character_id,
-            title: None, // Will be set by decryption logic
+            title: None,         // Will be set by decryption logic
             system_prompt: None, // Will be set by decryption logic
             temperature: chat.temperature,
             max_output_tokens: chat.max_output_tokens,

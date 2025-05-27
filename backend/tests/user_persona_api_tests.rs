@@ -1,12 +1,10 @@
 // backend/tests/user_persona_api_tests.rs
 
+use reqwest; // For making HTTP calls
 use scribe_backend::models::user_personas::{
     CreateUserPersonaDto, UpdateUserPersonaDto, UserPersonaDataForClient,
 };
-use scribe_backend::test_helpers::{
-    db::create_test_user, login_user_via_api, spawn_app,
-};
-use reqwest; // For making HTTP calls
+use scribe_backend::test_helpers::{db::create_test_user, login_user_via_api, spawn_app};
 use uuid::Uuid;
 // serde_json::json is not used
 
@@ -147,10 +145,7 @@ async fn get_user_persona_success() {
     let persona_id = created_persona.id;
 
     let response = client
-        .get(&format!(
-            "{}/api/personas/{}",
-            &app.address, persona_id
-        ))
+        .get(&format!("{}/api/personas/{}", &app.address, persona_id))
         .header("Cookie", auth_cookie)
         .send()
         .await
@@ -236,7 +231,6 @@ async fn get_user_persona_forbidden() {
     assert_eq!(response.status().as_u16(), 403, "Expected 403 Forbidden");
 }
 
-
 #[tokio::test]
 async fn update_user_persona_success() {
     let app = spawn_app(false, false, false).await;
@@ -294,7 +288,10 @@ async fn update_user_persona_success() {
     assert_eq!(updated_persona.id, persona_id);
     assert_eq!(updated_persona.name, update_dto.name.unwrap());
     assert_eq!(updated_persona.description, update_dto.description.unwrap());
-    assert!(updated_persona.personality.is_none(), "Personality should be cleared");
+    assert!(
+        updated_persona.personality.is_none(),
+        "Personality should be cleared"
+    );
     assert_eq!(updated_persona.scenario, update_dto.scenario);
 }
 
@@ -324,10 +321,7 @@ async fn delete_user_persona_success() {
     let persona_id = created_persona.id;
 
     let response = client
-        .delete(&format!(
-            "{}/api/personas/{}",
-            &app.address, persona_id
-        ))
+        .delete(&format!("{}/api/personas/{}", &app.address, persona_id))
         .header("Cookie", auth_cookie.clone())
         .send()
         .await
@@ -337,15 +331,16 @@ async fn delete_user_persona_success() {
 
     // Verify it's actually deleted
     let get_response = client
-        .get(&format!(
-            "{}/api/personas/{}",
-            &app.address, persona_id
-        ))
+        .get(&format!("{}/api/personas/{}", &app.address, persona_id))
         .header("Cookie", auth_cookie)
         .send()
         .await
         .expect("Failed to execute get request after delete.");
-    assert_eq!(get_response.status().as_u16(), 404, "Expected 404 Not Found after delete");
+    assert_eq!(
+        get_response.status().as_u16(),
+        404,
+        "Expected 404 Not Found after delete"
+    );
 }
 
 #[tokio::test]
