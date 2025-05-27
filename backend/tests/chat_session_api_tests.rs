@@ -1565,13 +1565,14 @@ async fn test_create_chat_session_no_lorebook_ids() -> Result<(), AnyhowError> {
         user_persona_nonce: None,
     };
     let conn = test_app.db_pool.get().await?;
-    let _ = conn.interact(move |conn_inner| {
-        diesel::insert_into(characters::table)
-            .values(&new_character)
-            .execute(conn_inner)
-    })
-    .await
-    .map_err(|e| AnyhowError::msg(format!("DB interaction error: {}", e)))?;
+    let _ = conn
+        .interact(move |conn_inner| {
+            diesel::insert_into(characters::table)
+                .values(&new_character)
+                .execute(conn_inner)
+        })
+        .await
+        .map_err(|e| AnyhowError::msg(format!("DB interaction error: {}", e)))?;
     test_data_guard.add_character(character_id);
 
     // Create chat session request without lorebook_ids
