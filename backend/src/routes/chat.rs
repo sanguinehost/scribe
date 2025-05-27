@@ -4,25 +4,29 @@ use crate::auth::session_dek::SessionDek;
 use crate::auth::user_store::Backend as AuthBackend;
 // use crate::crypto; // Added for decryption - will be needed later
 use crate::errors::AppError;
-use secrecy::ExposeSecret; // Added for ExposeSecret
+use crate::models::characters::{Character, CharacterMetadata}; // Added Character
+use crate::models::chat_override::{CharacterOverrideDto, ChatCharacterOverride};
 use crate::models::chats::CreateChatSessionPayload;
 use crate::models::chats::{
-    Chat, GenerateChatRequest, MessageRole, SuggestedActionItem, SuggestedActionsRequest,
+    Chat,
+    GenerateChatRequest,
+    MessageRole,
+    SuggestedActionItem,
+    SuggestedActionsRequest,
     SuggestedActionsResponse, // Corrected DbChatMessage to ChatMessage
-  };
-  use crate::models::chat_override::{CharacterOverrideDto, ChatCharacterOverride};
-  use crate::models::characters::{Character, CharacterMetadata}; // Added Character
-  use crate::prompt_builder;
-  use crate::routes::chats::{get_chat_settings_handler, update_chat_settings_handler};
-  use crate::schema::{self as app_schema, chat_sessions}; // Added app_schema for characters table
-  use crate::services::chat;
-  use crate::services::chat::types::ScribeSseEvent;
-  // RetrievedMetadata is no longer directly used in this file for RAG string construction
-  // use crate::services::embedding_pipeline::RetrievedMetadata;
-  // RetrievedChunk is used by prompt_builder, not directly here.
-  // use crate::services::embedding_pipeline::RetrievedChunk;
-  use crate::state::AppState;
-  use axum::{
+};
+use crate::prompt_builder;
+use crate::routes::chats::{get_chat_settings_handler, update_chat_settings_handler};
+use crate::schema::{self as app_schema, chat_sessions}; // Added app_schema for characters table
+use crate::services::chat;
+use crate::services::chat::types::ScribeSseEvent;
+use secrecy::ExposeSecret; // Added for ExposeSecret
+// RetrievedMetadata is no longer directly used in this file for RAG string construction
+// use crate::services::embedding_pipeline::RetrievedMetadata;
+// RetrievedChunk is used by prompt_builder, not directly here.
+// use crate::services::embedding_pipeline::RetrievedChunk;
+use crate::state::AppState;
+use axum::{
     Json, Router,
     extract::{Path, Query, State},
     http::{HeaderMap, StatusCode},
@@ -108,8 +112,8 @@ pub async fn create_chat_session_handler(
         user_id,
         payload.character_id,
         payload.active_custom_persona_id, // Pass the new field
-        None,                             // lorebook_ids (CreateChatSessionPayload doesn't have this)
-        Some(Arc::new(session_dek.0)),    // Pass the DEK, wrapped in Arc for the service
+        None, // lorebook_ids (CreateChatSessionPayload doesn't have this)
+        Some(Arc::new(session_dek.0)), // Pass the DEK, wrapped in Arc for the service
     )
     .await?;
 
@@ -202,32 +206,32 @@ pub async fn generate_chat_response(
 
     // Get comprehensive data for generation from chat_service
     let (
-        managed_db_history,                 // 0: Vec<DbChatMessage>
-        system_prompt_from_service,         // 1: Option<String> (persona/override only)
-        _active_lorebook_ids_for_search,    // 2: Option<Vec<Uuid>> - Now handled by prompt_builder
-        session_character_id,               // 3: Uuid
-        raw_character_system_prompt,        // 4: Option<String> (NEW - from character_db.system_prompt)
-        gen_temperature,                    // 5: Option<BigDecimal> (was 4)
-        gen_max_output_tokens,              // 6: Option<i32> (was 5)
-        gen_frequency_penalty,              // 7: Option<BigDecimal> (was 6)
-        gen_presence_penalty,               // 8: Option<BigDecimal> (was 7)
-        gen_top_k,                          // 9: Option<i32> (was 8)
-        gen_top_p,                          // 10: Option<BigDecimal> (was 9)
-        gen_repetition_penalty,             // 11: Option<BigDecimal> (was 10)
-        gen_min_p,                          // 12: Option<BigDecimal> (was 11)
-        gen_top_a,                          // 13: Option<BigDecimal> (was 12)
-        gen_seed,                           // 14: Option<i32> (was 13)
-        gen_logit_bias,                     // 15: Option<Value> (was 14)
-        gen_model_name_from_service,        // 16: String (was 15)
-        gen_gemini_thinking_budget,         // 17: Option<i32> (was 16)
-        gen_gemini_enable_code_execution,   // 18: Option<bool> (was 17)
-        user_message_struct_to_save,        // 19: DbInsertableChatMessage (was 18)
+        managed_db_history,               // 0: Vec<DbChatMessage>
+        system_prompt_from_service,       // 1: Option<String> (persona/override only)
+        _active_lorebook_ids_for_search,  // 2: Option<Vec<Uuid>> - Now handled by prompt_builder
+        session_character_id,             // 3: Uuid
+        raw_character_system_prompt, // 4: Option<String> (NEW - from character_db.system_prompt)
+        gen_temperature,             // 5: Option<BigDecimal> (was 4)
+        gen_max_output_tokens,       // 6: Option<i32> (was 5)
+        gen_frequency_penalty,       // 7: Option<BigDecimal> (was 6)
+        gen_presence_penalty,        // 8: Option<BigDecimal> (was 7)
+        gen_top_k,                   // 9: Option<i32> (was 8)
+        gen_top_p,                   // 10: Option<BigDecimal> (was 9)
+        gen_repetition_penalty,      // 11: Option<BigDecimal> (was 10)
+        gen_min_p,                   // 12: Option<BigDecimal> (was 11)
+        gen_top_a,                   // 13: Option<BigDecimal> (was 12)
+        gen_seed,                    // 14: Option<i32> (was 13)
+        gen_logit_bias,              // 15: Option<Value> (was 14)
+        gen_model_name_from_service, // 16: String (was 15)
+        gen_gemini_thinking_budget,  // 17: Option<i32> (was 16)
+        gen_gemini_enable_code_execution, // 18: Option<bool> (was 17)
+        user_message_struct_to_save, // 19: DbInsertableChatMessage (was 18)
         // -- New RAG related fields --
         _actual_recent_history_tokens_from_service, // 20: usize (NEW) - Handled by prompt_builder (was 19)
-        rag_context_items_from_service,             // 21: Vec<RetrievedChunk> (NEW) - Passed to prompt_builder (was 20)
+        rag_context_items_from_service, // 21: Vec<RetrievedChunk> (NEW) - Passed to prompt_builder (was 20)
         // -- Original history management settings --
-        _hist_management_strategy,          // 22: String (was 21)
-        _hist_management_limit,             // 23: i32 (was 22)
+        _hist_management_strategy, // 22: String (was 21)
+        _hist_management_limit,    // 23: i32 (was 22)
     ) = chat::generation::get_session_data_for_generation(
         state_arc.clone(),
         user_id_value,
@@ -299,12 +303,16 @@ pub async fn generate_chat_response(
     };
     trace!(%session_id, character_id = %character_metadata_for_prompt_builder.id, "Constructed CharacterMetadata for prompt builder.");
 
-    let model_to_use = payload.model.clone().unwrap_or_else(|| gen_model_name_from_service.clone());
+    let model_to_use = payload
+        .model
+        .clone()
+        .unwrap_or_else(|| gen_model_name_from_service.clone());
     debug!(%model_to_use, "Determined final model to use for AI calls.");
 
     // Convert DbChatMessage history to GenAiChatMessage history
     let mut gen_ai_recent_history: Vec<GenAiChatMessage> = Vec::new();
-    for db_msg in managed_db_history { // managed_db_history is Vec<DbChatMessage>
+    for db_msg in managed_db_history {
+        // managed_db_history is Vec<DbChatMessage>
         // Content in managed_db_history from get_session_data_for_generation should already be decrypted
         let content_str = String::from_utf8_lossy(&db_msg.content).into_owned();
         let chat_role = match db_msg.message_type {
@@ -325,7 +333,7 @@ pub async fn generate_chat_response(
         content: MessageContent::from_text(current_user_content.clone()),
         options: None,
     };
-    
+
     // Call the new prompt builder
     let (final_system_prompt_str, final_genai_message_list) =
         match prompt_builder::build_final_llm_prompt(
@@ -338,7 +346,9 @@ pub async fn generate_chat_response(
             Some(&character_metadata_for_prompt_builder),
             current_user_genai_message,
             &model_to_use,
-        ).await {
+        )
+        .await
+        {
             Ok(prompt_data) => prompt_data,
             Err(e) => {
                 error!(%session_id, error = ?e, "Failed to build final LLM prompt");
@@ -347,7 +357,7 @@ pub async fn generate_chat_response(
         };
 
     trace!(history_len = final_genai_message_list.len(), %session_id, "Prepared final message list for AI using new prompt builder.");
-    
+
     let accept_header = headers
         .get(axum::http::header::ACCEPT)
         .and_then(|value| value.to_str().ok())
@@ -355,7 +365,7 @@ pub async fn generate_chat_response(
 
     let request_thinking = query_params.request_thinking;
     debug!(%session_id, %request_thinking, "request_thinking value from query parameters");
-    
+
     // The system_prompt_from_service is now part of final_system_prompt_str
     // The old final_system_prompt logic is removed.
 
@@ -376,12 +386,12 @@ pub async fn generate_chat_response(
                 state_arc.clone(),
                 session_id,
                 user_id_value,
-                MessageRole::User,        // message_type_enum
-                &current_user_content,    // content: &str (original user input)
-                user_message_struct_to_save.role.clone(), // role_str from DbInsertableChatMessage
+                MessageRole::User,                         // message_type_enum
+                &current_user_content,                     // content: &str (original user input)
+                user_message_struct_to_save.role.clone(),  // role_str from DbInsertableChatMessage
                 user_message_struct_to_save.parts.clone(), // parts from DbInsertableChatMessage
                 user_message_struct_to_save.attachments.clone(), // attachments from DbInsertableChatMessage
-                Some(session_dek_arc.clone()), // DEK for potential encryption
+                Some(session_dek_arc.clone()),                   // DEK for potential encryption
                 &model_to_use,
             )
             .await
@@ -529,22 +539,26 @@ pub async fn generate_chat_response(
                     chat_options = chat_options.with_temperature(temp_f32.into());
                 }
             }
-            if let Some(tokens_i32) = gen_max_output_tokens { // tokens_i32 is Option<i32>
+            if let Some(tokens_i32) = gen_max_output_tokens {
+                // tokens_i32 is Option<i32>
                 chat_options = chat_options.with_max_tokens(tokens_i32 as u32);
             }
-            if let Some(p_bd) = gen_top_p { // p_bd is Option<BigDecimal>
+            if let Some(p_bd) = gen_top_p {
+                // p_bd is Option<BigDecimal>
                 if let Some(p_f32) = p_bd.to_f32() {
                     chat_options = chat_options.with_top_p(p_f32.into());
                 }
             }
             // Add other gen_... parameters to chat_options as needed
-            if let Some(budget_i32) = gen_gemini_thinking_budget { // budget_i32 is Option<i32>
+            if let Some(budget_i32) = gen_gemini_thinking_budget {
+                // budget_i32 is Option<i32>
                 if budget_i32 > 0 {
-                     // Ensure budget_i32 is cast to u32 if with_gemini_thinking_budget expects u32
+                    // Ensure budget_i32 is cast to u32 if with_gemini_thinking_budget expects u32
                     chat_options = chat_options.with_gemini_thinking_budget(budget_i32 as u32);
                 }
             }
-            if let Some(enable_exec_bool) = gen_gemini_enable_code_execution { // enable_exec_bool is Option<bool>
+            if let Some(enable_exec_bool) = gen_gemini_enable_code_execution {
+                // enable_exec_bool is Option<bool>
                 chat_options = chat_options.with_gemini_enable_code_execution(enable_exec_bool);
             }
             // TODO: Add other gen_ parameters like top_k, frequency_penalty etc. if supported by ChatOptions
@@ -897,27 +911,29 @@ pub async fn get_chat_session_with_dek(
 
     if let Some(session_db) = chat_session_db {
         let dek_present = user.dek.is_some();
-        
+
         // Decrypt title if possible
         let decrypted_title = match (
             session_db.title_ciphertext.as_ref(),
             session_db.title_nonce.as_ref(),
-            user.dek.as_ref()
+            user.dek.as_ref(),
         ) {
-            (Some(ciphertext), Some(nonce), Some(dek_wrapped)) if !ciphertext.is_empty() && !nonce.is_empty() => {
+            (Some(ciphertext), Some(nonce), Some(dek_wrapped))
+                if !ciphertext.is_empty() && !nonce.is_empty() =>
+            {
                 match crate::crypto::decrypt_gcm(ciphertext, nonce, &dek_wrapped.0) {
                     Ok(plaintext_secret) => {
                         match String::from_utf8(plaintext_secret.expose_secret().to_vec()) {
                             Ok(decrypted_text) => Some(decrypted_text),
                             Err(_) => Some("[Invalid UTF-8]".to_string()),
                         }
-                    },
+                    }
                     Err(_) => Some("[Decryption Failed]".to_string()),
                 }
-            },
+            }
             _ => None,
         };
-        
+
         Ok(Json(ChatSessionWithDekResponse {
             id: session_db.id,
             user_id: session_db.user_id,
@@ -949,7 +965,10 @@ pub async fn create_or_update_chat_character_override_handler(
     tracing::Span::current().record("user_id", &tracing::field::display(user_id));
 
     // 1. Verify ownership of the chat_session and get original_character_id
-    let chat_session_details = state.pool.get().await?
+    let chat_session_details = state
+        .pool
+        .get()
+        .await?
         .interact(move |conn| {
             chat_sessions::table
                 .filter(chat_sessions::id.eq(session_id))
@@ -970,11 +989,12 @@ pub async fn create_or_update_chat_character_override_handler(
     let original_character_id = chat_session_details.1;
 
     // 2. Call the ChatOverrideService to handle the logic
-    let upserted_override: ChatCharacterOverride = state.chat_override_service // Use the service from AppState
+    let upserted_override: ChatCharacterOverride = state
+        .chat_override_service // Use the service from AppState
         .create_or_update_chat_override(
             session_id,
             original_character_id,
-            user_id, // Pass user_id for logging/future checks in service
+            user_id,            // Pass user_id for logging/future checks in service
             payload.field_name, // field_name is already a String
             payload.value,      // value is already a String
             &session_dek,
@@ -982,6 +1002,6 @@ pub async fn create_or_update_chat_character_override_handler(
         .await?;
 
     info!(override_id = %upserted_override.id, "Chat character override created/updated successfully via handler calling service");
-    
+
     Ok(Json(upserted_override))
 }

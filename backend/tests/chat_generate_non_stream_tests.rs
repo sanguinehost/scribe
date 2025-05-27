@@ -192,17 +192,24 @@ async fn generate_chat_response_uses_session_settings() -> Result<(), anyhow::Er
     });
     info!("Sending login request");
     // let login_response = test_app.router.clone().oneshot(login_request).await?; // OLD WAY, login_request was used here
-    
+
     // New way using reqwest client
     let client = reqwest::Client::builder().cookie_store(true).build()?; // Enable cookie store
     let login_response_reqwest = client
         .post(format!("{}/api/auth/login", test_app.address))
-        .header(reqwest::header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
+        .header(
+            reqwest::header::CONTENT_TYPE,
+            mime::APPLICATION_JSON.as_ref(),
+        )
         .json(&login_payload)
         .send()
         .await?;
 
-    assert_eq!(login_response_reqwest.status(), reqwest::StatusCode::OK, "Login failed");
+    assert_eq!(
+        login_response_reqwest.status(),
+        reqwest::StatusCode::OK,
+        "Login failed"
+    );
 
     // Extract and log all cookies
     // The reqwest::Client `client` was built with cookie_store(true),
@@ -211,15 +218,24 @@ async fn generate_chat_response_uses_session_settings() -> Result<(), anyhow::Er
     let mut auth_cookie_value_for_logging = String::new();
     info!("Cookies from login response:");
     for cookie in login_response_reqwest.cookies() {
-        info!("Found cookie: name={}, value={}", cookie.name(), cookie.value());
+        info!(
+            "Found cookie: name={}, value={}",
+            cookie.name(),
+            cookie.value()
+        );
         if cookie.name() == "tower.sid" {
             auth_cookie_value_for_logging = format!("{}={}", cookie.name(), cookie.value());
         }
     }
     if auth_cookie_value_for_logging.is_empty() {
-        warn!("Session cookie (tower.sid) not found in login response for logging purposes. Client will still attempt to use stored cookies.");
+        warn!(
+            "Session cookie (tower.sid) not found in login response for logging purposes. Client will still attempt to use stored cookies."
+        );
     } else {
-        info!("Logged session cookie for verification: {}", auth_cookie_value_for_logging);
+        info!(
+            "Logged session cookie for verification: {}",
+            auth_cookie_value_for_logging
+        );
     }
 
     // Give the session store time to persist the session
@@ -377,7 +393,11 @@ async fn generate_chat_response_uses_session_settings() -> Result<(), anyhow::Er
     let ttopa_clone = test_top_a.clone();
     let tlb_clone = test_logit_bias.clone(); // Value might not be Copy
 
-    let user_dek_secret_box = user.dek.as_ref().map(|user_dek_struct| std::sync::Arc::new(secrecy::SecretBox::new(Box::new(user_dek_struct.0.expose_secret().clone()))));
+    let user_dek_secret_box = user.dek.as_ref().map(|user_dek_struct| {
+        std::sync::Arc::new(secrecy::SecretBox::new(Box::new(
+            user_dek_struct.0.expose_secret().clone(),
+        )))
+    });
     let (sp_ciphertext, sp_nonce) = if let Some(dek_arc) = &user_dek_secret_box {
         scribe_backend::crypto::encrypt_gcm(test_prompt.as_bytes(), dek_arc.as_ref()).unwrap()
     } else {
@@ -499,8 +519,14 @@ async fn generate_chat_response_uses_session_settings() -> Result<(), anyhow::Er
     // let response = test_app.router.clone().oneshot(request).await?; // OLD WAY
 
     let generate_response = client // Reuse the reqwest client with its cookie store
-        .post(format!("{}/api/chat/{}/generate", test_app.address, session.id))
-        .header(reqwest::header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
+        .post(format!(
+            "{}/api/chat/{}/generate",
+            test_app.address, session.id
+        ))
+        .header(
+            reqwest::header::CONTENT_TYPE,
+            mime::APPLICATION_JSON.as_ref(),
+        )
         .header(reqwest::header::ACCEPT, mime::APPLICATION_JSON.as_ref())
         // No need to manually set the cookie header if the client's cookie_store is working
         .json(&payload)
@@ -601,12 +627,19 @@ async fn generate_chat_response_uses_session_settings() -> Result<(), anyhow::Er
         diesel_result?
     };
     let decrypted_system_prompt = user_dek_secret_box.as_ref().and_then(|dek_arc| {
-        db_chat_settings.system_prompt_ciphertext.as_ref().and_then(|ct| {
-            db_chat_settings.system_prompt_nonce.as_ref().and_then(|nonce| {
-                scribe_backend::crypto::decrypt_gcm(ct, nonce, dek_arc.as_ref()).ok()
-                    .and_then(|ps| String::from_utf8(ps.expose_secret().to_vec()).ok())
+        db_chat_settings
+            .system_prompt_ciphertext
+            .as_ref()
+            .and_then(|ct| {
+                db_chat_settings
+                    .system_prompt_nonce
+                    .as_ref()
+                    .and_then(|nonce| {
+                        scribe_backend::crypto::decrypt_gcm(ct, nonce, dek_arc.as_ref())
+                            .ok()
+                            .and_then(|ps| String::from_utf8(ps.expose_secret().to_vec()).ok())
+                    })
             })
-        })
     });
     assert_eq!(
         decrypted_system_prompt,
@@ -921,7 +954,11 @@ async fn generate_chat_response_json_stream_initiation_error() -> Result<(), any
     let ttopa_clone_err = test_top_a.clone();
     let tlb_clone_err = test_logit_bias.clone();
 
-    let user_dek_secret_box_err_test = user.dek.as_ref().map(|user_dek_struct| std::sync::Arc::new(secrecy::SecretBox::new(Box::new(user_dek_struct.0.expose_secret().clone()))));
+    let user_dek_secret_box_err_test = user.dek.as_ref().map(|user_dek_struct| {
+        std::sync::Arc::new(secrecy::SecretBox::new(Box::new(
+            user_dek_struct.0.expose_secret().clone(),
+        )))
+    });
     let (sp_err_ciphertext, sp_err_nonce) = if let Some(dek_arc) = &user_dek_secret_box_err_test {
         scribe_backend::crypto::encrypt_gcm(test_prompt.as_bytes(), dek_arc.as_ref()).unwrap()
     } else {
@@ -961,7 +998,7 @@ async fn generate_chat_response_json_stream_initiation_error() -> Result<(), any
         .mock_embedding_pipeline_service
         .set_retrieve_responses_sequence(vec![Ok(vec![]), Ok(vec![])]);
     // --- End Mock RAG Response ---
- 
+
     // Set mock AI client to return an error
     if let Some(mock_client) = test_app.mock_ai_client.as_ref() {
         mock_client.set_response(Err(AppError::AiServiceError(
@@ -983,9 +1020,15 @@ async fn generate_chat_response_json_stream_initiation_error() -> Result<(), any
 
     let client = reqwest::Client::new(); // Initialize client
     let response = client
-        .post(format!("{}/api/chat/{}/generate", test_app.address, session.id))
+        .post(format!(
+            "{}/api/chat/{}/generate",
+            test_app.address, session.id
+        ))
         .header(reqwest::header::COOKIE, cookie_header_value)
-        .header(reqwest::header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
+        .header(
+            reqwest::header::CONTENT_TYPE,
+            mime::APPLICATION_JSON.as_ref(),
+        )
         .header(reqwest::header::ACCEPT, mime::APPLICATION_JSON.as_ref())
         .json(&payload)
         .send()
@@ -1087,14 +1130,22 @@ async fn generate_chat_response_json_stream_initiation_error() -> Result<(), any
     };
 
     // Check that the system_prompt is what we set earlier
-    let decrypted_system_prompt_err_test = user_dek_secret_box_err_test.as_ref().and_then(|dek_arc| {
-        db_chat_settings.system_prompt_ciphertext.as_ref().and_then(|ct| {
-            db_chat_settings.system_prompt_nonce.as_ref().and_then(|nonce| {
-                scribe_backend::crypto::decrypt_gcm(ct, nonce, dek_arc.as_ref()).ok()
-                    .and_then(|ps| String::from_utf8(ps.expose_secret().to_vec()).ok())
-            })
-        })
-    });
+    let decrypted_system_prompt_err_test =
+        user_dek_secret_box_err_test.as_ref().and_then(|dek_arc| {
+            db_chat_settings
+                .system_prompt_ciphertext
+                .as_ref()
+                .and_then(|ct| {
+                    db_chat_settings
+                        .system_prompt_nonce
+                        .as_ref()
+                        .and_then(|nonce| {
+                            scribe_backend::crypto::decrypt_gcm(ct, nonce, dek_arc.as_ref())
+                                .ok()
+                                .and_then(|ps| String::from_utf8(ps.expose_secret().to_vec()).ok())
+                        })
+                })
+        });
     assert_eq!(
         decrypted_system_prompt_err_test,
         Some("Error test system prompt".to_string())
@@ -1190,7 +1241,8 @@ async fn generate_chat_response_history_sliding_window_messages() -> anyhow::Res
     .await
     .expect("Failed to create test user");
     test_data_guard.add_user(user.id);
-    let (client, auth_cookie) = test_helpers::login_user_via_api(&test_app, username, password).await;
+    let (client, auth_cookie) =
+        test_helpers::login_user_via_api(&test_app, username, password).await;
 
     let character_id = Uuid::new_v4();
     let new_character = DbCharacter {
@@ -1430,7 +1482,7 @@ async fn generate_chat_response_history_sliding_window_messages() -> anyhow::Res
         .mock_embedding_pipeline_service
         .set_retrieve_responses_sequence(vec![Ok(vec![]), Ok(vec![])]);
     // --- End Mock RAG Response ---
- 
+
     test_app
         .mock_ai_client
         .as_ref()
@@ -1458,9 +1510,15 @@ async fn generate_chat_response_history_sliding_window_messages() -> anyhow::Res
     };
     // client is from login_user_via_api
     let response = client
-        .post(format!("{}/api/chat/{}/generate", test_app.address, session_id))
+        .post(format!(
+            "{}/api/chat/{}/generate",
+            test_app.address, session_id
+        ))
         .header(reqwest::header::COOKIE, &auth_cookie)
-        .header(reqwest::header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
+        .header(
+            reqwest::header::CONTENT_TYPE,
+            mime::APPLICATION_JSON.as_ref(),
+        )
         .json(&payload)
         .send()
         .await?;
@@ -1500,7 +1558,8 @@ async fn generate_chat_response_history_sliding_window_tokens() -> anyhow::Resul
     .await
     .expect("Failed to create test user");
     test_data_guard.add_user(user.id);
-    let (client, auth_cookie) = test_helpers::login_user_via_api(&test_app, username, password).await;
+    let (client, auth_cookie) =
+        test_helpers::login_user_via_api(&test_app, username, password).await;
 
     let character_id = Uuid::new_v4();
     let new_character = DbCharacter {
@@ -1725,7 +1784,7 @@ async fn generate_chat_response_history_sliding_window_tokens() -> anyhow::Resul
         .mock_embedding_pipeline_service
         .set_retrieve_responses_sequence(vec![Ok(vec![]), Ok(vec![])]);
     // --- End Mock RAG Response ---
- 
+
     test_app
         .mock_ai_client
         .as_ref()
@@ -1753,9 +1812,15 @@ async fn generate_chat_response_history_sliding_window_tokens() -> anyhow::Resul
     };
     // client is from login_user_via_api
     let response = client
-        .post(format!("{}/api/chat/{}/generate", test_app.address, session_id))
+        .post(format!(
+            "{}/api/chat/{}/generate",
+            test_app.address, session_id
+        ))
         .header(reqwest::header::COOKIE, &auth_cookie)
-        .header(reqwest::header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
+        .header(
+            reqwest::header::CONTENT_TYPE,
+            mime::APPLICATION_JSON.as_ref(),
+        )
         .json(&payload)
         .send()
         .await?;
@@ -1793,7 +1858,8 @@ async fn test_generate_chat_response_history_truncate_tokens() -> anyhow::Result
     .await
     .expect("Failed to create test user");
     test_data_guard.add_user(user.id);
-    let (client, auth_cookie) = test_helpers::login_user_via_api(&test_app, username, password).await;
+    let (client, auth_cookie) =
+        test_helpers::login_user_via_api(&test_app, username, password).await;
 
     let character_id = Uuid::new_v4();
     let new_character = DbCharacter {
@@ -2019,7 +2085,7 @@ async fn test_generate_chat_response_history_truncate_tokens() -> anyhow::Result
         .mock_embedding_pipeline_service
         .set_retrieve_responses_sequence(vec![Ok(vec![]), Ok(vec![])]);
     // --- End Mock RAG Response ---
- 
+
     test_app
         .mock_ai_client
         .as_ref()
@@ -2047,9 +2113,15 @@ async fn test_generate_chat_response_history_truncate_tokens() -> anyhow::Result
     };
     // client is from login_user_via_api
     let response = client
-        .post(format!("{}/api/chat/{}/generate", test_app.address, session_id))
+        .post(format!(
+            "{}/api/chat/{}/generate",
+            test_app.address, session_id
+        ))
         .header(reqwest::header::COOKIE, &auth_cookie)
-        .header(reqwest::header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
+        .header(
+            reqwest::header::CONTENT_TYPE,
+            mime::APPLICATION_JSON.as_ref(),
+        )
         .json(&payload)
         .send()
         .await?;
@@ -2098,9 +2170,15 @@ async fn test_generate_chat_response_history_truncate_tokens() -> anyhow::Result
         }));
     // Client is reused from above
     let response_2 = client
-        .post(format!("{}/api/chat/{}/generate", test_app.address, session_id))
+        .post(format!(
+            "{}/api/chat/{}/generate",
+            test_app.address, session_id
+        ))
         .header(reqwest::header::COOKIE, &auth_cookie)
-        .header(reqwest::header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
+        .header(
+            reqwest::header::CONTENT_TYPE,
+            mime::APPLICATION_JSON.as_ref(),
+        )
         .json(&payload) // Same payload for simplicity
         .send()
         .await?;
@@ -2140,7 +2218,8 @@ async fn generate_chat_response_history_none() -> anyhow::Result<()> {
     .await
     .expect("Failed to create test user");
     test_data_guard.add_user(user.id);
-    let (client, auth_cookie) = test_helpers::login_user_via_api(&test_app, username, password).await;
+    let (client, auth_cookie) =
+        test_helpers::login_user_via_api(&test_app, username, password).await;
 
     let character_id = Uuid::new_v4();
     let new_character = DbCharacter {
@@ -2330,7 +2409,7 @@ async fn generate_chat_response_history_none() -> anyhow::Result<()> {
         .mock_embedding_pipeline_service
         .set_retrieve_responses_sequence(vec![Ok(vec![]), Ok(vec![])]);
     // --- End Mock RAG Response ---
- 
+
     test_app
         .mock_ai_client
         .as_ref()
@@ -2358,9 +2437,15 @@ async fn generate_chat_response_history_none() -> anyhow::Result<()> {
     };
     // client is from login_user_via_api
     let response = client
-        .post(format!("{}/api/chat/{}/generate", test_app.address, session_id))
+        .post(format!(
+            "{}/api/chat/{}/generate",
+            test_app.address, session_id
+        ))
         .header(reqwest::header::COOKIE, &auth_cookie)
-        .header(reqwest::header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
+        .header(
+            reqwest::header::CONTENT_TYPE,
+            mime::APPLICATION_JSON.as_ref(),
+        )
         .json(&payload)
         .send()
         .await?;
@@ -2392,7 +2477,8 @@ async fn generate_chat_response_history_truncate_tokens_limit_30() -> anyhow::Re
     .await
     .expect("Failed to create test user");
     test_data_guard.add_user(user.id);
-    let (client, auth_cookie) = test_helpers::login_user_via_api(&test_app, username, password).await;
+    let (client, auth_cookie) =
+        test_helpers::login_user_via_api(&test_app, username, password).await;
 
     let character_id = Uuid::new_v4();
     let new_character = DbCharacter {
@@ -2618,7 +2704,7 @@ async fn generate_chat_response_history_truncate_tokens_limit_30() -> anyhow::Re
         .mock_embedding_pipeline_service
         .set_retrieve_responses_sequence(vec![Ok(vec![]), Ok(vec![])]);
     // --- End Mock RAG Response ---
- 
+
     test_app
         .mock_ai_client
         .as_ref()
@@ -2646,9 +2732,15 @@ async fn generate_chat_response_history_truncate_tokens_limit_30() -> anyhow::Re
     };
     // client is from login_user_via_api
     let response = client
-        .post(format!("{}/api/chat/{}/generate", test_app.address, session_id))
+        .post(format!(
+            "{}/api/chat/{}/generate",
+            test_app.address, session_id
+        ))
         .header(reqwest::header::COOKIE, &auth_cookie)
-        .header(reqwest::header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
+        .header(
+            reqwest::header::CONTENT_TYPE,
+            mime::APPLICATION_JSON.as_ref(),
+        )
         .json(&payload)
         .send()
         .await?;
@@ -2697,9 +2789,15 @@ async fn generate_chat_response_history_truncate_tokens_limit_30() -> anyhow::Re
         }));
     // Client is reused from above
     let response_2 = client
-        .post(format!("{}/api/chat/{}/generate", test_app.address, session_id))
+        .post(format!(
+            "{}/api/chat/{}/generate",
+            test_app.address, session_id
+        ))
         .header(reqwest::header::COOKIE, &auth_cookie)
-        .header(reqwest::header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
+        .header(
+            reqwest::header::CONTENT_TYPE,
+            mime::APPLICATION_JSON.as_ref(),
+        )
         .json(&payload) // Same payload for simplicity
         .send()
         .await?;
@@ -2743,7 +2841,8 @@ async fn test_get_chat_messages_success() -> anyhow::Result<()> {
     .expect("Failed to create test user");
     test_data_guard.add_user(user.id);
     tracing::info!("Created test user with ID: {}", user.id);
-    let (client, auth_cookie) = test_helpers::login_user_via_api(&test_app, username, password).await;
+    let (client, auth_cookie) =
+        test_helpers::login_user_via_api(&test_app, username, password).await;
     tracing::info!("Logged in with auth cookie: {}", auth_cookie);
 
     // Create a test character
@@ -2862,9 +2961,15 @@ async fn test_get_chat_messages_success() -> anyhow::Result<()> {
 
     // client is from login_user_via_api
     let response = client
-        .post(format!("{}/api/chat/{}/generate", test_app.address, session_id))
+        .post(format!(
+            "{}/api/chat/{}/generate",
+            test_app.address, session_id
+        ))
         .header(reqwest::header::COOKIE, &auth_cookie)
-        .header(reqwest::header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
+        .header(
+            reqwest::header::CONTENT_TYPE,
+            mime::APPLICATION_JSON.as_ref(),
+        )
         .json(&json!({"history": [{"role": "user", "content": "Test message"}]}))
         .send()
         .await?;
@@ -2909,7 +3014,8 @@ async fn test_get_chat_messages_forbidden() -> anyhow::Result<()> {
     .await
     .expect("Failed to create test user B");
     test_data_guard.add_user(user_b.id);
-    let (client_b, auth_cookie_b) = test_helpers::login_user_via_api(&test_app, username_b, password_b).await;
+    let (client_b, auth_cookie_b) =
+        test_helpers::login_user_via_api(&test_app, username_b, password_b).await;
 
     let character_a_id = Uuid::new_v4();
     let new_character_a = DbCharacter {
@@ -3048,9 +3154,15 @@ async fn test_get_chat_messages_forbidden() -> anyhow::Result<()> {
     };
     // client_b is from login_user_via_api
     let response = client_b
-        .post(format!("{}/api/chat/{}/generate", test_app.address, session_a_id)) // User B tries to access User A's session
+        .post(format!(
+            "{}/api/chat/{}/generate",
+            test_app.address, session_a_id
+        )) // User B tries to access User A's session
         .header(reqwest::header::COOKIE, &auth_cookie_b)
-        .header(reqwest::header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
+        .header(
+            reqwest::header::CONTENT_TYPE,
+            mime::APPLICATION_JSON.as_ref(),
+        )
         .json(&payload)
         .send()
         .await?;
@@ -3073,11 +3185,14 @@ async fn test_get_chat_messages_unauthorized() -> Result<(), Box<dyn std::error:
         model: None,
         query_text_for_rag: None,
     };
-    
+
     let client = reqwest::Client::new();
     let response = client
         .post(format!("{}/api/chat/{}/generate", test_app.address, uuid))
-        .header(reqwest::header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
+        .header(
+            reqwest::header::CONTENT_TYPE,
+            mime::APPLICATION_JSON.as_ref(),
+        )
         .json(&payload)
         .send()
         .await?;

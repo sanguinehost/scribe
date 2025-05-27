@@ -207,7 +207,8 @@ async fn test_get_chat_messages_session_not_found() -> anyhow::Result<()> {
     .await
     .expect("Failed to create test user");
     test_data_guard.add_user(user.id);
-    let (_client, auth_cookie) = test_helpers::login_user_via_api(&test_app, username, password).await;
+    let (_client, auth_cookie) =
+        test_helpers::login_user_via_api(&test_app, username, password).await;
 
     let non_existent_session_id = Uuid::new_v4();
 
@@ -240,7 +241,8 @@ mod delete_chat_message {
         )
         .await
         .expect("Failed to create test user");
-        let (_client, _auth_cookie) = test_helpers::login_user_via_api(&test_app, username, password).await;
+        let (_client, _auth_cookie) =
+            test_helpers::login_user_via_api(&test_app, username, password).await;
 
         let _session_id = Uuid::new_v4();
         let _message_id = Uuid::new_v4();
@@ -274,7 +276,8 @@ mod delete_chat_message {
         )
         .await
         .expect("Failed to create test user");
-        let (_client, auth_cookie) = test_helpers::login_user_via_api(&test_app, username, password).await;
+        let (_client, auth_cookie) =
+            test_helpers::login_user_via_api(&test_app, username, password).await;
 
         let session_id = Uuid::new_v4();
         let message_id = Uuid::new_v4();

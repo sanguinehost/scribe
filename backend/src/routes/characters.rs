@@ -19,22 +19,22 @@ use axum::{
     routing::{delete, get, post, put}, // ADDED delete here
 };
 use diesel::prelude::*; // Needed for .filter(), .load(), .first(), etc.
+use std::sync::Arc;
 use tracing::{error, info, instrument, trace}; // Use needed tracing macros, ADDED error, warn
 use uuid::Uuid;
-use std::sync::Arc;
 // use anyhow::anyhow; // Unused import
 use crate::auth::user_store::Backend as AuthBackend; // <-- Import the backend type
+use crate::models::character_dto::{CharacterCreateDto, CharacterUpdateDto};
 use crate::schema::chat_sessions;
-use crate::services::encryption_service::EncryptionService; // Added import
 use crate::services::character_service::CharacterService;
+use crate::services::encryption_service::EncryptionService; // Added import
 use axum::body::Bytes;
 use axum_login::AuthSession; // <-- Removed login_required import
 use diesel::RunQueryDsl;
 use diesel::SelectableHelper;
 use diesel::result::Error as DieselError; // Add import for DieselError
 use secrecy::ExposeSecret; // Added for DEK expose
-use serde::Deserialize; // Add serde import // Added for querying chat_sessions table
-use crate::models::character_dto::{CharacterCreateDto, CharacterUpdateDto}; // Added DTO imports
+use serde::Deserialize; // Add serde import // Added for querying chat_sessions table // Added DTO imports
 
 // Define the type alias for the auth session specific to our AuthBackend
 // type CurrentAuthSession = AuthSession<AppState>;
@@ -50,7 +50,10 @@ pub struct GenerateCharacterPayload {
 pub fn characters_router(state: AppState) -> Router<AppState> {
     Router::new()
         .route("/upload", post(upload_character_handler))
-        .route("/", get(list_characters_handler).post(create_character_handler)) // Added POST for manual creation
+        .route(
+            "/",
+            get(list_characters_handler).post(create_character_handler),
+        ) // Added POST for manual creation
         // NOTE (of frustration): The routes for getting and deleting a character were changed
         // to `/fetch/:id` and `/remove/:id` respectively.
         // Attempts to use  `/:id` for GET and DELETE resulted in
@@ -67,7 +70,6 @@ pub fn characters_router(state: AppState) -> Router<AppState> {
         // It checks auth_session.user and returns 401 if None.
         .with_state(state)
 }
-
 
 // POST /api/characters/upload
 #[instrument(skip(state, multipart, auth_session), err)]

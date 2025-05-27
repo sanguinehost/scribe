@@ -2,8 +2,8 @@ use crate::chat::run_interactive_streaming_chat_loop;
 use crate::client::HttpClient;
 use crate::error::CliError;
 use crate::handlers::characters::select_character;
-use crate::handlers::user_personas::get_user_personas;
 use crate::handlers::default_settings::apply_default_settings_to_session;
+use crate::handlers::user_personas::get_user_personas;
 use crate::io::IoHandler;
 use scribe_backend::models::chats::UpdateChatSettingsRequest;
 use tracing;
@@ -17,25 +17,34 @@ async fn select_persona_for_chat<H: IoHandler, C: HttpClient>(
     match get_user_personas(client).await {
         Ok(personas) => {
             if personas.is_empty() {
-                io_handler.write_line("No custom personas found. Starting chat without a specific persona.")?;
+                io_handler.write_line(
+                    "No custom personas found. Starting chat without a specific persona.",
+                )?;
                 return Ok(None);
             }
 
             io_handler.write_line("\nAvailable custom personas:")?;
             for (index, persona) in personas.iter().enumerate() {
-                io_handler.write_line(&format!("  [{}] {} (ID: {})", index + 1, persona.name, persona.id))?;
+                io_handler.write_line(&format!(
+                    "  [{}] {} (ID: {})",
+                    index + 1,
+                    persona.name,
+                    persona.id
+                ))?;
             }
             io_handler.write_line("  [N] Continue without a custom persona")?;
 
             loop {
-                let choice_str = io_handler.read_line("Select persona by number or N to continue without: ")?;
+                let choice_str =
+                    io_handler.read_line("Select persona by number or N to continue without: ")?;
                 if choice_str.trim().eq_ignore_ascii_case("n") {
                     return Ok(None);
                 }
                 match choice_str.trim().parse::<usize>() {
                     Ok(num) if num > 0 && num <= personas.len() => {
                         let selected_persona = &personas[num - 1];
-                        io_handler.write_line(&format!("Using persona: {}", selected_persona.name))?;
+                        io_handler
+                            .write_line(&format!("Using persona: {}", selected_persona.name))?;
                         return Ok(Some(selected_persona.id));
                     }
                     _ => {
@@ -45,7 +54,10 @@ async fn select_persona_for_chat<H: IoHandler, C: HttpClient>(
             }
         }
         Err(e) => {
-            io_handler.write_line(&format!("Error fetching personas: {}. Continuing without persona selection.", e))?;
+            io_handler.write_line(&format!(
+                "Error fetching personas: {}. Continuing without persona selection.",
+                e
+            ))?;
             Ok(None) // Proceed without persona if fetching fails
         }
     }
@@ -65,10 +77,16 @@ async fn select_lorebooks_for_chat<H: IoHandler, C: HttpClient>(
 
             io_handler.write_line("\nAvailable lorebooks:")?;
             for (index, lorebook) in lorebooks.iter().enumerate() {
-                io_handler.write_line(&format!("  [{}] {} (ID: {})", index + 1, lorebook.name, lorebook.id))?;
+                io_handler.write_line(&format!(
+                    "  [{}] {} (ID: {})",
+                    index + 1,
+                    lorebook.name,
+                    lorebook.id
+                ))?;
             }
             io_handler.write_line("  [N] Continue without selecting lorebooks")?;
-            io_handler.write_line("  Enter numbers separated by commas (e.g., 1,3) or N to skip.")?;
+            io_handler
+                .write_line("  Enter numbers separated by commas (e.g., 1,3) or N to skip.")?;
 
             loop {
                 let choice_str = io_handler.read_line("Select lorebooks: ")?;
@@ -80,13 +98,14 @@ async fn select_lorebooks_for_chat<H: IoHandler, C: HttpClient>(
                 let choices: Vec<&str> = choice_str.trim().split(',').map(|s| s.trim()).collect();
                 let mut all_valid = true;
 
-                if choices.is_empty() && !choice_str.trim().is_empty() { // Handle single invalid number not caught by split
+                if choices.is_empty() && !choice_str.trim().is_empty() {
+                    // Handle single invalid number not caught by split
                     all_valid = false;
                 }
 
-
                 for choice in choices {
-                    if choice.is_empty() { // Skip empty strings that might result from trailing commas
+                    if choice.is_empty() {
+                        // Skip empty strings that might result from trailing commas
                         continue;
                     }
                     match choice.parse::<usize>() {
@@ -103,22 +122,24 @@ async fn select_lorebooks_for_chat<H: IoHandler, C: HttpClient>(
                 if all_valid && !selected_ids.is_empty() {
                     io_handler.write_line(&format!("Selected lorebook IDs: {:?}", selected_ids))?;
                     return Ok(Some(selected_ids));
-                } else if all_valid && choice_str.trim().is_empty() { // User just pressed enter
-                     io_handler.write_line("No lorebooks selected.")?;
-                     return Ok(None);
-                }
-                else {
+                } else if all_valid && choice_str.trim().is_empty() {
+                    // User just pressed enter
+                    io_handler.write_line("No lorebooks selected.")?;
+                    return Ok(None);
+                } else {
                     io_handler.write_line("Invalid selection. Please enter comma-separated numbers from the list, or N to skip.")?;
                 }
             }
         }
         Err(e) => {
-            io_handler.write_line(&format!("Error fetching lorebooks: {}. Continuing without lorebook selection.", e))?;
+            io_handler.write_line(&format!(
+                "Error fetching lorebooks: {}. Continuing without lorebook selection.",
+                e
+            ))?;
             Ok(None) // Proceed without lorebooks if fetching fails
         }
     }
 }
-
 
 /// Handler function for starting a new chat session with improved UX
 pub async fn handle_start_chat_action<H: IoHandler, C: HttpClient>(
@@ -174,7 +195,14 @@ pub async fn handle_start_chat_action<H: IoHandler, C: HttpClient>(
     };
 
     // 2. Create the chat session
-    let chat_session = match client.create_chat_session(character_id, selected_persona_id, selected_lorebook_ids.clone()).await {
+    let chat_session = match client
+        .create_chat_session(
+            character_id,
+            selected_persona_id,
+            selected_lorebook_ids.clone(),
+        )
+        .await
+    {
         Ok(session) => session,
         Err(e) => {
             tracing::error!(error = ?e, %character_id, ?selected_lorebook_ids, "Failed to create chat session");

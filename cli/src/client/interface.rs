@@ -6,12 +6,15 @@ use futures_util::Stream;
 use scribe_backend::models::{
     auth::LoginPayload,
     // characters::CharacterDataForClient as BackendCharacterDataForClient, // Unused
-    chats::{ApiChatMessage, Chat, ChatForClient, ChatMessage, ChatSettingsResponse, UpdateChatSettingsRequest}, // Removed GenerateChatRequest
+    chats::{
+        ApiChatMessage, Chat, ChatForClient, ChatMessage, ChatSettingsResponse,
+        UpdateChatSettingsRequest,
+    }, // Removed GenerateChatRequest
     lorebook_dtos::{
         AssociateLorebookToChatPayload, ChatSessionBasicInfo,
-        ChatSessionLorebookAssociationResponse, CreateLorebookEntryPayload,
-        CreateLorebookPayload, LorebookEntryResponse, LorebookEntrySummaryResponse,
-        LorebookResponse, UpdateLorebookEntryPayload, UpdateLorebookPayload,
+        ChatSessionLorebookAssociationResponse, CreateLorebookEntryPayload, CreateLorebookPayload,
+        LorebookEntryResponse, LorebookEntrySummaryResponse, LorebookResponse,
+        UpdateLorebookEntryPayload, UpdateLorebookPayload,
     },
     users::User,
 };
@@ -19,23 +22,26 @@ use std::pin::Pin;
 use uuid::Uuid;
 
 // Re-exporting local types from super::types for use in the trait definition
-use crate::client::types::{ // Changed from super::types to crate::client::types
-    // User persona types are now directly available under crate::client::types
-    CreateUserPersonaDto, UpdateUserPersonaDto, UserPersonaDataForClient,
+use crate::client::types::{
     AdminUserDetailResponse,
     // UpdateUserRoleRequest is used as a payload, not a return type here
     AdminUserListResponse,
-    ClientCharacterDataForClient, // This is the primary character type the client deals with
-    ClientChatMessageResponse,
-    HealthStatus,
-    RegisterPayload, // CLI specific payload
-    StreamEvent,
     // New DTOs for character and chat management
     CharacterCreateDto,
     CharacterUpdateDto,
     ChatSessionDetails,
+    ClientCharacterDataForClient, // This is the primary character type the client deals with
+    ClientChatMessageResponse,
+    // Changed from super::types to crate::client::types
+    // User persona types are now directly available under crate::client::types
+    CreateUserPersonaDto,
+    HealthStatus,
     // CharacterOverrideRequest, // This is a request payload, not directly returned by trait methods
     OverrideSuccessResponse,
+    RegisterPayload, // CLI specific payload
+    StreamEvent,
+    UpdateUserPersonaDto,
+    UserPersonaDataForClient,
 };
 
 /// Trait for abstracting HTTP client interactions to allow mocking in tests.
@@ -50,7 +56,12 @@ pub trait HttpClient: Send + Sync {
 
     // Characters
     async fn list_characters(&self) -> Result<Vec<ClientCharacterDataForClient>, CliError>;
-    async fn create_chat_session(&self, character_id: Uuid, active_custom_persona_id: Option<Uuid>, lorebook_ids: Option<Vec<Uuid>>) -> Result<Chat, CliError>;
+    async fn create_chat_session(
+        &self,
+        character_id: Uuid,
+        active_custom_persona_id: Option<Uuid>,
+        lorebook_ids: Option<Vec<Uuid>>,
+    ) -> Result<Chat, CliError>;
     async fn upload_character(
         &self,
         name: &str,
@@ -76,7 +87,10 @@ pub trait HttpClient: Send + Sync {
         persona_data: CreateUserPersonaDto,
     ) -> Result<UserPersonaDataForClient, CliError>;
     async fn list_user_personas(&self) -> Result<Vec<UserPersonaDataForClient>, CliError>;
-    async fn get_user_persona(&self, persona_id: Uuid) -> Result<UserPersonaDataForClient, CliError>;
+    async fn get_user_persona(
+        &self,
+        persona_id: Uuid,
+    ) -> Result<UserPersonaDataForClient, CliError>;
     async fn update_user_persona(
         &self,
         persona_id: Uuid,
@@ -87,25 +101,66 @@ pub trait HttpClient: Send + Sync {
     async fn clear_default_persona(&self) -> Result<(), CliError>;
 
     // Lorebooks
-    async fn create_lorebook(&self, payload: &CreateLorebookPayload) -> Result<LorebookResponse, CliError>;
+    async fn create_lorebook(
+        &self,
+        payload: &CreateLorebookPayload,
+    ) -> Result<LorebookResponse, CliError>;
     async fn list_lorebooks(&self) -> Result<Vec<LorebookResponse>, CliError>;
     async fn get_lorebook(&self, lorebook_id: Uuid) -> Result<LorebookResponse, CliError>;
-    async fn update_lorebook(&self, lorebook_id: Uuid, payload: &UpdateLorebookPayload) -> Result<LorebookResponse, CliError>;
+    async fn update_lorebook(
+        &self,
+        lorebook_id: Uuid,
+        payload: &UpdateLorebookPayload,
+    ) -> Result<LorebookResponse, CliError>;
     async fn delete_lorebook(&self, lorebook_id: Uuid) -> Result<(), CliError>;
 
     // Lorebook Entries
-    async fn create_lorebook_entry(&self, lorebook_id: Uuid, payload: &CreateLorebookEntryPayload) -> Result<LorebookEntryResponse, CliError>;
-    async fn list_lorebook_entries(&self, lorebook_id: Uuid) -> Result<Vec<LorebookEntrySummaryResponse>, CliError>;
-    async fn get_lorebook_entry(&self, lorebook_id: Uuid, entry_id: Uuid) -> Result<LorebookEntryResponse, CliError>;
-    async fn update_lorebook_entry(&self, lorebook_id: Uuid, entry_id: Uuid, payload: &UpdateLorebookEntryPayload) -> Result<LorebookEntryResponse, CliError>;
-    async fn delete_lorebook_entry(&self, lorebook_id: Uuid, entry_id: Uuid) -> Result<(), CliError>;
+    async fn create_lorebook_entry(
+        &self,
+        lorebook_id: Uuid,
+        payload: &CreateLorebookEntryPayload,
+    ) -> Result<LorebookEntryResponse, CliError>;
+    async fn list_lorebook_entries(
+        &self,
+        lorebook_id: Uuid,
+    ) -> Result<Vec<LorebookEntrySummaryResponse>, CliError>;
+    async fn get_lorebook_entry(
+        &self,
+        lorebook_id: Uuid,
+        entry_id: Uuid,
+    ) -> Result<LorebookEntryResponse, CliError>;
+    async fn update_lorebook_entry(
+        &self,
+        lorebook_id: Uuid,
+        entry_id: Uuid,
+        payload: &UpdateLorebookEntryPayload,
+    ) -> Result<LorebookEntryResponse, CliError>;
+    async fn delete_lorebook_entry(
+        &self,
+        lorebook_id: Uuid,
+        entry_id: Uuid,
+    ) -> Result<(), CliError>;
 
     // Chat Session Lorebook Associations
-    async fn associate_lorebook_to_chat(&self, chat_session_id: Uuid, payload: &AssociateLorebookToChatPayload) -> Result<ChatSessionLorebookAssociationResponse, CliError>;
-    async fn list_chat_lorebook_associations(&self, chat_session_id: Uuid) -> Result<Vec<ChatSessionLorebookAssociationResponse>, CliError>;
-    async fn disassociate_lorebook_from_chat(&self, chat_session_id: Uuid, lorebook_id: Uuid) -> Result<(), CliError>;
-    async fn list_associated_chat_sessions_for_lorebook(&self, lorebook_id: Uuid) -> Result<Vec<ChatSessionBasicInfo>, CliError>;
- 
+    async fn associate_lorebook_to_chat(
+        &self,
+        chat_session_id: Uuid,
+        payload: &AssociateLorebookToChatPayload,
+    ) -> Result<ChatSessionLorebookAssociationResponse, CliError>;
+    async fn list_chat_lorebook_associations(
+        &self,
+        chat_session_id: Uuid,
+    ) -> Result<Vec<ChatSessionLorebookAssociationResponse>, CliError>;
+    async fn disassociate_lorebook_from_chat(
+        &self,
+        chat_session_id: Uuid,
+        lorebook_id: Uuid,
+    ) -> Result<(), CliError>;
+    async fn list_associated_chat_sessions_for_lorebook(
+        &self,
+        lorebook_id: Uuid,
+    ) -> Result<Vec<ChatSessionBasicInfo>, CliError>;
+
     // Chat
     async fn list_chat_sessions(&self) -> Result<Vec<ChatForClient>, CliError>;
     async fn get_chat_session(&self, session_id: Uuid) -> Result<ChatSessionDetails, CliError>;

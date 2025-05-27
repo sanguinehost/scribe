@@ -1,13 +1,10 @@
 use std::sync::Arc;
 
+use diesel::{prelude::*, result::Error as DieselError};
 use secrecy::{ExposeSecret, SecretBox};
 use serde_json::json;
-use uuid::Uuid;
-use diesel::{
-    prelude::*,
-    result::Error as DieselError,
-};
 use tracing::{debug, error, info, instrument, warn};
+use uuid::Uuid;
 
 use crate::{
     AppState,
@@ -16,13 +13,13 @@ use crate::{
         characters::Character,
         chats::{
             Chat,
-            NewChat, // Changed from DbInsertableChatSession
             MessageRole,
             // ChatSessionSettings, // Removed, settings are part of Chat struct
             // HistoryManagementStrategy, // Removed, strategy is a field in Chat struct
+            NewChat, // Changed from DbInsertableChatSession
         },
     },
-    schema::{characters, chat_sessions, users::dsl as users_dsl, chat_session_lorebooks},
+    schema::{characters, chat_session_lorebooks, chat_sessions, users::dsl as users_dsl},
     state::DbPool,
 };
 
@@ -107,7 +104,6 @@ pub async fn create_session_and_maybe_first_message(
                 error!("No DEK available for title encryption");
                 return Err(AppError::EncryptionError("No encryption key available".to_string()));
             };
-            
             let new_chat_for_insert = NewChat { // Changed to NewChat
                 id: new_session_id,
                 user_id,
@@ -235,12 +231,10 @@ pub async fn create_session_and_maybe_first_message(
                     }
                 }
             }
-            
             // Insert lorebook associations if provided
             if let Some(ref ids) = lorebook_ids_for_closure { // Changed to `ref ids` to borrow
                 if !ids.is_empty() {
                     debug!(session_id = %new_session_id, user_id = %user_id, lorebook_ids = ?ids, "Preparing to associate lorebooks. Provided IDs: {:?}", ids);
-                    
                     // Validate lorebook IDs
                     for lorebook_id_to_check in ids {
                         use crate::schema::lorebooks::dsl as lorebooks_dsl;
@@ -266,7 +260,6 @@ pub async fn create_session_and_maybe_first_message(
                             }
                         }
                     }
-                    
                     info!(session_id = %new_session_id, lorebook_ids = ?ids, "Associating lorebooks with chat session after validation");
                     // Clone ids again here for into_iter as it was only borrowed before
                     let new_associations: Vec<_> = ids.clone().into_iter().map(|lorebook_id| {
@@ -277,7 +270,6 @@ pub async fn create_session_and_maybe_first_message(
                             // created_at and updated_at will use DB defaults
                         )
                     }).collect();
- 
                     diesel::insert_into(chat_session_lorebooks::table)
                         .values(new_associations)
                         .execute(transaction_conn)
@@ -317,7 +309,8 @@ pub async fn create_session_and_maybe_first_message(
                                 Ok(content_str) => {
                                     if !content_str.trim().is_empty() {
                                         info!(session_id = %created_session.id, "Character has non-empty decrypted first_mes, saving via save_message");
-                                        let _ = save_message( // Direct call, assuming 'use' brings it into scope
+                                        let _ = save_message(
+                                            // Direct call, assuming 'use' brings it into scope
                                             state.clone(),
                                             created_session.id,
                                             user_id, // user_id of the session creator

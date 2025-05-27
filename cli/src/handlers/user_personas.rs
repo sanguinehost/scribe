@@ -1,6 +1,13 @@
 //! Handlers for User Persona CLI commands.
 
 use crate::{
+    PersonaClearDefaultArgs,
+    // Argument structs from lib.rs
+    PersonaCreateArgs,
+    PersonaDeleteArgs,
+    PersonaGetArgs,
+    PersonaSetDefaultArgs,
+    PersonaUpdateArgs,
     client::{
         interface::HttpClient,
         // User persona types are now directly available under crate::client::types
@@ -8,8 +15,6 @@ use crate::{
     },
     error::CliError,
     io::IoHandler,
-    // Argument structs from lib.rs
-    PersonaCreateArgs, PersonaUpdateArgs, PersonaGetArgs, PersonaDeleteArgs, PersonaSetDefaultArgs, PersonaClearDefaultArgs,
 };
 use uuid::Uuid; // Needed for parsing input for set-default
 
@@ -19,7 +24,7 @@ pub async fn handle_persona_create_action<C: HttpClient, H: IoHandler>(
     args: PersonaCreateArgs,
 ) -> Result<(), CliError> {
     io_handler.write_line("Creating new user persona...")?;
-    
+
     let create_dto = CreateUserPersonaDto {
         name: args.name,
         description: args.description,
@@ -37,7 +42,10 @@ pub async fn handle_persona_create_action<C: HttpClient, H: IoHandler>(
 
     match http_client.create_user_persona(create_dto).await {
         Ok(persona) => {
-            io_handler.write_line(&format!("Successfully created persona: '{}' (ID: {})", persona.name, persona.id))?;
+            io_handler.write_line(&format!(
+                "Successfully created persona: '{}' (ID: {})",
+                persona.name, persona.id
+            ))?;
             // Optionally print more details of the created persona
             print_persona_details(io_handler, &persona)?;
             Ok(())
@@ -100,7 +108,7 @@ pub async fn handle_persona_update_action<C: HttpClient, H: IoHandler>(
     args: PersonaUpdateArgs,
 ) -> Result<(), CliError> {
     io_handler.write_line(&format!("Updating user persona with ID: {}...", args.id))?;
-    
+
     let update_dto = UpdateUserPersonaDto {
         name: args.name,
         description: args.description,
@@ -118,7 +126,10 @@ pub async fn handle_persona_update_action<C: HttpClient, H: IoHandler>(
 
     match http_client.update_user_persona(args.id, update_dto).await {
         Ok(persona) => {
-            io_handler.write_line(&format!("Successfully updated persona: '{}' (ID: {})", persona.name, persona.id))?;
+            io_handler.write_line(&format!(
+                "Successfully updated persona: '{}' (ID: {})",
+                persona.name, persona.id
+            ))?;
             print_persona_details(io_handler, &persona)?;
             Ok(())
         }
@@ -137,7 +148,10 @@ pub async fn handle_persona_delete_action<C: HttpClient, H: IoHandler>(
     io_handler.write_line(&format!("Deleting user persona with ID: {}...", args.id))?;
     match http_client.delete_user_persona(args.id).await {
         Ok(()) => {
-            io_handler.write_line(&format!("Successfully deleted persona with ID: {}", args.id))?;
+            io_handler.write_line(&format!(
+                "Successfully deleted persona with ID: {}",
+                args.id
+            ))?;
             Ok(())
         }
         Err(e) => {
@@ -158,7 +172,10 @@ pub async fn get_user_personas<C: HttpClient>(
 }
 
 // Helper function to print persona details
-fn print_persona_details<H: IoHandler>(io_handler: &mut H, persona: &UserPersonaDataForClient) -> Result<(), CliError> {
+fn print_persona_details<H: IoHandler>(
+    io_handler: &mut H,
+    persona: &UserPersonaDataForClient,
+) -> Result<(), CliError> {
     io_handler.write_line(&format!("--- Persona Details: {} ---", persona.name))?;
     io_handler.write_line(&format!("ID: {}", persona.id))?;
     io_handler.write_line(&format!("User ID: {}", persona.user_id))?;
@@ -188,8 +205,16 @@ fn print_persona_details<H: IoHandler>(io_handler: &mut H, persona: &UserPersona
         io_handler.write_line(&format!("Post History Instructions: {}", post_hist))?;
     }
     if let Some(tags) = &persona.tags {
-        let tag_str = tags.iter().filter_map(|t| t.as_ref()).cloned().collect::<Vec<String>>().join(", ");
-        io_handler.write_line(&format!("Tags: {}", if tag_str.is_empty() { "None" } else { &tag_str }))?;
+        let tag_str = tags
+            .iter()
+            .filter_map(|t| t.as_ref())
+            .cloned()
+            .collect::<Vec<String>>()
+            .join(", ");
+        io_handler.write_line(&format!(
+            "Tags: {}",
+            if tag_str.is_empty() { "None" } else { &tag_str }
+        ))?;
     }
     if let Some(avatar) = &persona.avatar {
         io_handler.write_line(&format!("Avatar: {}", avatar))?;
@@ -221,10 +246,16 @@ pub async fn handle_persona_set_default_action<C: HttpClient, H: IoHandler>(
 
     io_handler.write_line("Available personas:")?;
     for (index, persona) in personas.iter().enumerate() {
-        io_handler.write_line(&format!("  [{}] {} (ID: {})", index + 1, persona.name, persona.id))?;
+        io_handler.write_line(&format!(
+            "  [{}] {} (ID: {})",
+            index + 1,
+            persona.name,
+            persona.id
+        ))?;
     }
 
-    let selection_prompt = "Enter the number or ID of the persona to set as default (or 'c' to cancel):";
+    let selection_prompt =
+        "Enter the number or ID of the persona to set as default (or 'c' to cancel):";
     let choice_str = io_handler.read_line(selection_prompt)?.trim().to_string();
 
     if choice_str.eq_ignore_ascii_case("c") {
@@ -243,7 +274,9 @@ pub async fn handle_persona_set_default_action<C: HttpClient, H: IoHandler>(
         // Check if this ID is in the list of fetched personas to ensure user owns it
         if !personas.iter().any(|p| p.id == id) {
             io_handler.write_line("Selected Persona ID not found in your list of personas.")?;
-            return Err(CliError::InputError("Persona ID not found or not owned by user.".to_string()));
+            return Err(CliError::InputError(
+                "Persona ID not found or not owned by user.".to_string(),
+            ));
         }
         id
     } else {
@@ -251,12 +284,16 @@ pub async fn handle_persona_set_default_action<C: HttpClient, H: IoHandler>(
         return Err(CliError::InputError("Invalid input format.".to_string()));
     };
 
-    io_handler.write_line(&format!("Setting persona {} as default...", selected_persona_id))?;
+    io_handler.write_line(&format!(
+        "Setting persona {} as default...",
+        selected_persona_id
+    ))?;
     match http_client.set_default_persona(selected_persona_id).await {
         Ok(user) => {
             io_handler.write_line(&format!(
                 "Successfully set persona {} as default for user {}.",
-                user.default_persona_id.map_or_else(|| "None".to_string(), |id| id.to_string()),
+                user.default_persona_id
+                    .map_or_else(|| "None".to_string(), |id| id.to_string()),
                 user.username
             ))?;
             Ok(())

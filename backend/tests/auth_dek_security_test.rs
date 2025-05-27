@@ -7,13 +7,13 @@ use axum::{
     body::Body,
     http::{Method, Request, StatusCode, header},
 };
+use diesel::prelude::*;
 use scribe_backend::test_helpers;
 use serde_json::{Value, json};
-use tracing::info;
-use uuid::Uuid;
 use tower::util::ServiceExt;
 use tower_cookies::Cookie;
-use diesel::prelude::*;
+use tracing::info;
+use uuid::Uuid;
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_dek_not_stored_in_session() -> AnyhowResult<()> {
@@ -45,7 +45,11 @@ async fn test_dek_not_stored_in_session() -> AnyhowResult<()> {
         .body(Body::from(login_payload.to_string()))?;
 
     let login_response = test_app.router.clone().oneshot(login_request).await?;
-    assert_eq!(login_response.status(), StatusCode::OK, "Login should succeed");
+    assert_eq!(
+        login_response.status(),
+        StatusCode::OK,
+        "Login should succeed"
+    );
 
     // Extract session cookie
     let mut session_id = String::new();
@@ -90,7 +94,10 @@ async fn test_dek_not_stored_in_session() -> AnyhowResult<()> {
         None => {
             // If session not found, try with alternate session ID format
             // Sometimes the session ID might be stored differently
-            info!("Session not found with ID: {}, trying to list all sessions", session_id);
+            info!(
+                "Session not found with ID: {}, trying to list all sessions",
+                session_id
+            );
             let conn2 = test_app.db_pool.get().await?;
             let all_sessions = conn2
                 .interact(move |conn| {
@@ -102,9 +109,12 @@ async fn test_dek_not_stored_in_session() -> AnyhowResult<()> {
                 .await
                 .map_err(|e| anyhow::anyhow!("Interaction error: {}", e))?
                 .map_err(|e| anyhow::anyhow!("Database error: {}", e))?;
-            
-            info!("All sessions in DB: {:?}", all_sessions.iter().map(|(id, _)| id).collect::<Vec<_>>());
-            
+
+            info!(
+                "All sessions in DB: {:?}",
+                all_sessions.iter().map(|(id, _)| id).collect::<Vec<_>>()
+            );
+
             // Since we just logged in, there should be only one session (or we take the most recent)
             // The session ID format mismatch is due to how tower-sessions stores IDs
             match all_sessions.into_iter().last() {
@@ -118,7 +128,7 @@ async fn test_dek_not_stored_in_session() -> AnyhowResult<()> {
 
     // Parse the session data
     let session_json: Value = serde_json::from_str(&session_data)?;
-    
+
     // Check that the session does NOT contain any DEK-related keys
     // The session should only contain auth-related data, not the DEK
     let dek_keys = [
@@ -127,7 +137,7 @@ async fn test_dek_not_stored_in_session() -> AnyhowResult<()> {
         &format!("_user_dek_{}", user.id),
         "SerializableSecretDek",
         "encrypted_dek",
-        "plaintext_dek"
+        "plaintext_dek",
     ];
 
     for key in &dek_keys {
@@ -144,9 +154,10 @@ async fn test_dek_not_stored_in_session() -> AnyhowResult<()> {
     fn looks_like_base64_dek(value: &Value) -> bool {
         if let Some(s) = value.as_str() {
             // Check if it's a base64 string of appropriate length for a DEK
-            s.len() >= 40 && s.len() <= 50 && s.chars().all(|c| {
-                c.is_ascii_alphanumeric() || c == '+' || c == '/' || c == '='
-            })
+            s.len() >= 40
+                && s.len() <= 50
+                && s.chars()
+                    .all(|c| c.is_ascii_alphanumeric() || c == '+' || c == '/' || c == '=')
         } else {
             false
         }
@@ -155,13 +166,9 @@ async fn test_dek_not_stored_in_session() -> AnyhowResult<()> {
     fn check_no_dek_values(value: &Value) -> bool {
         match value {
             Value::String(_) => !looks_like_base64_dek(value),
-            Value::Object(map) => {
-                map.values().all(|v| check_no_dek_values(v))
-            }
-            Value::Array(arr) => {
-                arr.iter().all(|v| check_no_dek_values(v))
-            }
-            _ => true
+            Value::Object(map) => map.values().all(|v| check_no_dek_values(v)),
+            Value::Array(arr) => arr.iter().all(|v| check_no_dek_values(v)),
+            _ => true,
         }
     }
 
@@ -221,7 +228,11 @@ async fn test_dek_removed_from_cache_on_logout() -> AnyhowResult<()> {
         .body(Body::from(login_payload.to_string()))?;
 
     let login_response = test_app.router.clone().oneshot(login_request).await?;
-    assert_eq!(login_response.status(), StatusCode::OK, "Login should succeed");
+    assert_eq!(
+        login_response.status(),
+        StatusCode::OK,
+        "Login should succeed"
+    );
 
     // Extract session cookie
     let mut session_id = String::new();
@@ -252,7 +263,11 @@ async fn test_dek_removed_from_cache_on_logout() -> AnyhowResult<()> {
         .body(Body::empty())?;
 
     let me_response = test_app.router.clone().oneshot(me_request).await?;
-    assert_eq!(me_response.status(), StatusCode::OK, "Me endpoint should work");
+    assert_eq!(
+        me_response.status(),
+        StatusCode::OK,
+        "Me endpoint should work"
+    );
 
     // Now logout
     let logout_request = Request::builder()
@@ -277,7 +292,7 @@ async fn test_dek_removed_from_cache_on_logout() -> AnyhowResult<()> {
         .body(Body::empty())?;
 
     let protected_response = test_app.router.clone().oneshot(protected_request).await?;
-    
+
     // After logout, the session should be invalid, so this should return unauthorized
     assert_eq!(
         protected_response.status(),

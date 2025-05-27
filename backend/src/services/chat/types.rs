@@ -17,30 +17,30 @@ pub type HistoryForGeneration = Vec<(MessageRole, String)>;
 // AND the unsaved user message struct
 // NOTE: HistoryForGeneration here will now contain the *managed* history.
 pub type GenerationDataWithUnsavedUserMessage = (
-    Vec<ChatMessage>,   // 0: managed_db_history (CHANGED from HistoryForGeneration) - Changed DbChatMessage to ChatMessage
-    Option<String>,       // 1: system_prompt (this is the final_effective_system_prompt for the builder, from persona/override only)
-    Option<Vec<Uuid>>,    // 2: active_lorebook_ids_for_search
-    Uuid,                 // 3: session_character_id (NEW)
-    Option<String>,       // 4: raw_character_system_prompt (NEW - from character_db.system_prompt)
-    Option<BigDecimal>,   // 5: temperature (was 4)
-    Option<i32>,          // 6: max_output_tokens (was 5)
-    Option<BigDecimal>,   // 7: frequency_penalty (was 6)
-    Option<BigDecimal>,   // 8: presence_penalty (was 7)
-    Option<i32>,          // 9: top_k (was 8)
-    Option<BigDecimal>,   // 10: top_p (was 9)
-    Option<BigDecimal>,   // 11: repetition_penalty (was 10)
-    Option<BigDecimal>,   // 12: min_p (was 11)
-    Option<BigDecimal>,   // 13: top_a (was 12)
-    Option<i32>,          // 14: seed (was 13)
-    Option<Value>,        // 15: logit_bias (was 14)
-    String,               // 16: model_name (Fetched from DB) (was 15)
+    Vec<ChatMessage>, // 0: managed_db_history (CHANGED from HistoryForGeneration) - Changed DbChatMessage to ChatMessage
+    Option<String>, // 1: system_prompt (this is the final_effective_system_prompt for the builder, from persona/override only)
+    Option<Vec<Uuid>>, // 2: active_lorebook_ids_for_search
+    Uuid,           // 3: session_character_id (NEW)
+    Option<String>, // 4: raw_character_system_prompt (NEW - from character_db.system_prompt)
+    Option<BigDecimal>, // 5: temperature (was 4)
+    Option<i32>,    // 6: max_output_tokens (was 5)
+    Option<BigDecimal>, // 7: frequency_penalty (was 6)
+    Option<BigDecimal>, // 8: presence_penalty (was 7)
+    Option<i32>,    // 9: top_k (was 8)
+    Option<BigDecimal>, // 10: top_p (was 9)
+    Option<BigDecimal>, // 11: repetition_penalty (was 10)
+    Option<BigDecimal>, // 12: min_p (was 11)
+    Option<BigDecimal>, // 13: top_a (was 12)
+    Option<i32>,    // 14: seed (was 13)
+    Option<Value>,  // 15: logit_bias (was 14)
+    String,         // 16: model_name (Fetched from DB) (was 15)
     // -- Gemini Specific Options --
     Option<i32>,             // 17: gemini_thinking_budget (was 16)
     Option<bool>,            // 18: gemini_enable_code_execution (was 17)
     DbInsertableChatMessage, // 19: The user message struct, ready to be saved (was 18)
     // -- RAG Context & Recent History Tokens --
-    usize,                // 20: actual_recent_history_tokens (NEW) (was 19)
-    Vec<RetrievedChunk>,  // 21: rag_context_items (NEW) (was 20)
+    usize,               // 20: actual_recent_history_tokens (NEW) (was 19)
+    Vec<RetrievedChunk>, // 21: rag_context_items (NEW) (was 20)
     // History Management Settings (still returned for potential future use/logging)
     String, // 22: history_management_strategy (was 21)
     i32,    // 23: history_management_limit (was 22)

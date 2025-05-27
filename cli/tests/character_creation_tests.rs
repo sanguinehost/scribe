@@ -1,10 +1,12 @@
 #[cfg(test)]
 mod character_creation_tests {
+    use scribe_cli::CharacterCreateArgs; // Ensure this is pub in lib.rs or main.rs if main.rs is a lib
     use scribe_cli::handlers::characters::{
         handle_character_create_oneliner, handle_character_create_wizard,
     };
-    use scribe_cli::test_helpers::{mock_character_data_for_client, MockCliError, MockHttpClient, MockIoHandler};
-    use scribe_cli::CharacterCreateArgs; // Ensure this is pub in lib.rs or main.rs if main.rs is a lib
+    use scribe_cli::test_helpers::{
+        MockCliError, MockHttpClient, MockIoHandler, mock_character_data_for_client,
+    };
     use std::sync::Arc;
     use uuid::Uuid;
 
@@ -32,10 +34,10 @@ mod character_creation_tests {
 
         let char_id = Uuid::new_v4();
         let expected_char_name = "Test Character OneLiner";
-        let mock_created_char = mock_character_data_for_client(char_id, expected_char_name, Some("Desc"));
-        
-        mock_http_client.create_character_result =
-            Some(Arc::new(Ok(mock_created_char.clone())));
+        let mock_created_char =
+            mock_character_data_for_client(char_id, expected_char_name, Some("Desc"));
+
+        mock_http_client.create_character_result = Some(Arc::new(Ok(mock_created_char.clone())));
 
         let args = CharacterCreateArgs {
             name: Some(expected_char_name.to_string()),
@@ -83,7 +85,7 @@ mod character_creation_tests {
     #[tokio::test]
     async fn test_handle_character_create_wizard_success() {
         let inputs = vec![
-            "Wizard Character".to_string(), // Name
+            "Wizard Character".to_string(),   // Name
             "Wizard Description".to_string(), // Description
             "Wizard First Mes".to_string(),   // First Message
             "Wizard Personality".to_string(), // Personality
@@ -99,11 +101,11 @@ mod character_creation_tests {
 
         let char_id = Uuid::new_v4();
         let expected_char_name = "Wizard Character";
-        let mock_created_char = mock_character_data_for_client(char_id, expected_char_name, Some("Wizard Description"));
+        let mock_created_char =
+            mock_character_data_for_client(char_id, expected_char_name, Some("Wizard Description"));
 
-        mock_http_client.create_character_result =
-            Some(Arc::new(Ok(mock_created_char.clone())));
-        
+        mock_http_client.create_character_result = Some(Arc::new(Ok(mock_created_char.clone())));
+
         // Mock the DTO that would be created by the wizard
         // This is a simplification; in a real test, you'd verify the DTO construction.
         // For now, we focus on the handler calling the client.
@@ -131,10 +133,10 @@ mod character_creation_tests {
             "Wizard Cancel".to_string(),
             "Cancel Desc".to_string(),
             "Cancel First Mes".to_string(),
-            "".to_string(), // Personality skip
-            "".to_string(), // Scenario skip
-            "".to_string(), // System Prompt (optional)
-            "".to_string(), // Creator Notes (optional)
+            "".to_string(),  // Personality skip
+            "".to_string(),  // Scenario skip
+            "".to_string(),  // System Prompt (optional)
+            "".to_string(),  // Creator Notes (optional)
             "n".to_string(), // Tags skip
             "n".to_string(), // Alt greetings skip
             "n".to_string(), // Submit? No
@@ -156,9 +158,9 @@ mod character_creation_tests {
         let mut mock_io_handler = MockIoHandler::new(vec![]);
         let mut mock_http_client = MockHttpClient::new();
 
-        mock_http_client.create_character_result = Some(Arc::new(Err(
-            MockCliError::ApiError("Failed to create character on server".to_string()),
-        )));
+        mock_http_client.create_character_result = Some(Arc::new(Err(MockCliError::ApiError(
+            "Failed to create character on server".to_string(),
+        ))));
 
         let args = CharacterCreateArgs {
             name: Some("Error Character".to_string()),

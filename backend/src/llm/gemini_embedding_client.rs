@@ -6,10 +6,10 @@ use crate::llm::EmbeddingClient;
 use async_trait::async_trait;
 use reqwest::Client as ReqwestClient;
 // use serde::ser::SerializeStruct; // Not needed with skip_serializing_if
+use rand::Rng; // Added for jitter
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::time::Duration; // Removed Instant as it's only used in tests
-use rand::Rng; // Added for jitter
 use tokio::time::sleep; // Added for async sleep
 use tracing::{debug, error, instrument, warn}; // Added debug, warn
 
@@ -73,14 +73,12 @@ struct BatchEmbedRequestContainerInternal<'a> {
     requests: Vec<SingleBatchRequestInternal<'a>>,
 }
 
-
 // --- Batch Embedding Response Structs ---
 
 #[derive(Deserialize, Debug)] // Added Debug
 struct BatchEmbeddingResponse {
     embeddings: Vec<EmbeddingData>, // API returns a list of embeddings
 }
-
 
 // --- Common Error Response Struct ---
 #[derive(Deserialize, Debug)]
@@ -148,9 +146,8 @@ impl EmbeddingClient for RestGeminiEmbeddingClient {
             "{}/v1beta/{}:embedContent?key={}",
             base_url, self.model_name, api_key
         );
-        
+
         debug!("Embedding request URL: {}", url);
-        
 
         let request_body = EmbeddingRequest {
             model: &self.model_name,
@@ -185,8 +182,11 @@ impl EmbeddingClient for RestGeminiEmbeddingClient {
                         })?;
                         return Ok(embedding_response.embedding.values);
                     } else if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
-                        let error_body_text = response.text().await.unwrap_or_else(|e| format!("Failed to read error body: {}", e));
-                        
+                        let error_body_text = response
+                            .text()
+                            .await
+                            .unwrap_or_else(|e| format!("Failed to read error body: {}", e));
+
                         warn!(
                             status = %status,
                             attempt = retries + 1,
@@ -204,7 +204,8 @@ impl EmbeddingClient for RestGeminiEmbeddingClient {
                                 "Embedding API still returning 429 after {} retries. Giving up.",
                                 MAX_RETRIES
                             );
-                            let parsed_error: Result<GeminiApiErrorResponse, _> = serde_json::from_str(&error_body_text);
+                            let parsed_error: Result<GeminiApiErrorResponse, _> =
+                                serde_json::from_str(&error_body_text);
                             let error_message = parsed_error
                                 .map(|b| b.error.message)
                                 .unwrap_or_else(|_| error_body_text);
@@ -215,10 +216,16 @@ impl EmbeddingClient for RestGeminiEmbeddingClient {
                         }
                         // Fallback logic removed
 
-                        let jitter = (current_backoff_ms as f64 * JITTER_FACTOR * rand::rng().random_range(-1.0..1.0)) as i64; // Use exclusive upper bound for gen_range
+                        let jitter = (current_backoff_ms as f64
+                            * JITTER_FACTOR
+                            * rand::rng().random_range(-1.0..1.0))
+                            as i64; // Use exclusive upper bound for gen_range
                         let sleep_duration_ms = (current_backoff_ms as i64 + jitter).max(0) as u64;
-                        
-                        debug!("Sleeping for {}ms before next retry (backoff: {}ms, jitter: {}ms)", sleep_duration_ms, current_backoff_ms, jitter);
+
+                        debug!(
+                            "Sleeping for {}ms before next retry (backoff: {}ms, jitter: {}ms)",
+                            sleep_duration_ms, current_backoff_ms, jitter
+                        );
                         sleep(Duration::from_millis(sleep_duration_ms)).await;
 
                         current_backoff_ms = (current_backoff_ms * 2).min(MAX_BACKOFF_MS);
@@ -291,7 +298,7 @@ impl EmbeddingClient for RestGeminiEmbeddingClient {
         let request_body = BatchEmbedRequestContainerInternal {
             requests: internal_requests,
         };
-        
+
         let mut retries = 0;
         let mut current_backoff_ms = INITIAL_BACKOFF_MS;
         // Removed unused last_error variable
@@ -322,7 +329,10 @@ impl EmbeddingClient for RestGeminiEmbeddingClient {
                             .collect();
                         return Ok(embeddings_data);
                     } else if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
-                        let error_body_text = response.text().await.unwrap_or_else(|e| format!("Failed to read error body: {}", e));
+                        let error_body_text = response
+                            .text()
+                            .await
+                            .unwrap_or_else(|e| format!("Failed to read error body: {}", e));
 
                         warn!(
                             status = %status,
@@ -334,14 +344,15 @@ impl EmbeddingClient for RestGeminiEmbeddingClient {
                         );
 
                         if retries >= MAX_RETRIES {
-                             error!(
+                            error!(
                                 status = %status,
                                 attempts = retries + 1,
                                 model = %self.model_name,
                                 "Batch Embedding API still returning 429 after {} retries. Giving up.",
                                 MAX_RETRIES
                             );
-                            let parsed_error: Result<GeminiApiErrorResponse, _> = serde_json::from_str(&error_body_text);
+                            let parsed_error: Result<GeminiApiErrorResponse, _> =
+                                serde_json::from_str(&error_body_text);
                             let error_message = parsed_error
                                 .map(|b| b.error.message)
                                 .unwrap_or_else(|_| error_body_text);
@@ -351,13 +362,19 @@ impl EmbeddingClient for RestGeminiEmbeddingClient {
                             )));
                         }
                         // Fallback logic removed
-                        
-                        let jitter = (current_backoff_ms as f64 * JITTER_FACTOR * rand::rng().random_range(-1.0..1.0)) as i64; // Use exclusive upper bound for gen_range
+
+                        let jitter = (current_backoff_ms as f64
+                            * JITTER_FACTOR
+                            * rand::rng().random_range(-1.0..1.0))
+                            as i64; // Use exclusive upper bound for gen_range
                         let sleep_duration_ms = (current_backoff_ms as i64 + jitter).max(0) as u64;
 
-                        debug!("Sleeping for {}ms before next batch retry (backoff: {}ms, jitter: {}ms)", sleep_duration_ms, current_backoff_ms, jitter);
+                        debug!(
+                            "Sleeping for {}ms before next batch retry (backoff: {}ms, jitter: {}ms)",
+                            sleep_duration_ms, current_backoff_ms, jitter
+                        );
                         sleep(Duration::from_millis(sleep_duration_ms)).await;
-                        
+
                         current_backoff_ms = (current_backoff_ms * 2).min(MAX_BACKOFF_MS);
                         retries += 1;
                         // Removed assignment to last_error as it's not used
@@ -421,7 +438,7 @@ mod tests {
     use std::sync::Arc;
     use std::time::Instant; // Added for test timing
     // Removed unused: use tokio::time::sleep;
-    
+
     // Helper to create a mock config
     fn create_test_config(api_key: Option<String>, base_url: Option<String>) -> Arc<Config> {
         Arc::new(Config {
@@ -543,7 +560,6 @@ mod tests {
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), vec![0.7, 0.8, 0.9]);
     }
-
 
     #[tokio::test]
     async fn test_embed_content_api_error_response() {
@@ -826,7 +842,7 @@ mod tests {
             config,
             model_name: DEFAULT_EMBEDDING_MODEL.to_string(),
         };
- 
+
         let text = "Testing the fallback embedding model.";
         let task_type = "RETRIEVAL_DOCUMENT";
 
@@ -1018,22 +1034,20 @@ mod tests {
     // #[ignore] // Ignore by default, requires real API key
 
     // --- Retry Logic Tests ---
-    
+
     #[tokio::test]
     async fn test_simple_mock_works() {
         let server = MockServer::start();
         let url = format!("{}/test", server.base_url());
-        
+
         let mock = server.mock(|when, then| {
-            when.method(POST)
-                .path("/test");
-            then.status(200)
-                .body("OK");
+            when.method(POST).path("/test");
+            then.status(200).body("OK");
         });
-        
+
         let client = ReqwestClient::new();
         let response = client.post(&url).send().await.unwrap();
-        
+
         assert_eq!(response.status(), 200);
         assert_eq!(response.text().await.unwrap(), "OK");
         mock.assert();
@@ -1044,10 +1058,12 @@ mod tests {
         // For retry logic tests, we should test at a higher level
         // or use a different approach since httpmock doesn't easily support
         // stateful mocking for retry scenarios
-        
+
         // Skip this test for now as it requires a more sophisticated mocking approach
         // The retry logic is tested in the integration tests with real API
-        println!("Skipping test_embed_content_retry_success_after_429s - tested via integration tests");
+        println!(
+            "Skipping test_embed_content_retry_success_after_429s - tested via integration tests"
+        );
     }
 
     #[tokio::test]
@@ -1077,9 +1093,7 @@ mod tests {
         // Fallback mock removed as client does not switch models
 
         let start_time = Instant::now();
-        let result = client
-            .embed_content(text_to_embed, task_type, None)
-            .await;
+        let result = client.embed_content(text_to_embed, task_type, None).await;
         let duration = start_time.elapsed();
 
         assert!(result.is_err(), "Expected failure after max retries");
@@ -1087,38 +1101,55 @@ mod tests {
             AppError::GeminiError(msg) => {
                 assert!(msg.contains("429"));
                 assert!(msg.contains("Persistently rate limited"));
-                assert!(msg.contains(&format!("after {} retries with model {}", MAX_RETRIES, client.model_name))); // Corrected to use client.model_name
+                assert!(msg.contains(&format!(
+                    "after {} retries with model {}",
+                    MAX_RETRIES, client.model_name
+                ))); // Corrected to use client.model_name
             }
             other_err => panic!("Expected GeminiError, got {:?}", other_err),
         }
-        
+
         // Primary model should have been called MAX_RETRIES + 1 times (initial attempt + MAX_RETRIES)
         primary_429_mock.assert_hits(MAX_RETRIES as usize + 1);
         // Fallback model assertion removed
 
         let mut expected_total_delay_ms = 0;
         let mut current_backoff = INITIAL_BACKOFF_MS; // Now 1000ms
-        for _ in 0..MAX_RETRIES { // Now 2 retries
+        for _ in 0..MAX_RETRIES {
+            // Now 2 retries
             expected_total_delay_ms += current_backoff;
             current_backoff = (current_backoff * 2).min(MAX_BACKOFF_MS); // Max backoff now 5000ms
         }
         // expected_total_delay_ms = 1000 (1st retry sleep) + 2000 (2nd retry sleep) = 3000ms
-        
+
         // Jitter makes exact prediction hard, so check it's roughly in the ballpark
         // For 2 retries, total sleep is INITIAL_BACKOFF_MS + min(INITIAL_BACKOFF_MS*2, MAX_BACKOFF_MS)
         // = 1000 + min(2000, 5000) = 1000 + 2000 = 3000ms.
         // Allow for jitter, e.g., 70% of non-jittered sum.
-        let min_expected_total_duration = Duration::from_millis((expected_total_delay_ms as f64 * (1.0 - JITTER_FACTOR * 2.0)).max(0.0) as u64);
+        let min_expected_total_duration = Duration::from_millis(
+            (expected_total_delay_ms as f64 * (1.0 - JITTER_FACTOR * 2.0)).max(0.0) as u64,
+        );
 
-        assert!(duration >= min_expected_total_duration, "Duration {:?} was less than minimum expected total delay {:?} (calculated from {}ms base)", duration, min_expected_total_duration, expected_total_delay_ms);
-        println!("test_embed_content_retry_failure_after_max_429s duration: {:?}", duration);
+        assert!(
+            duration >= min_expected_total_duration,
+            "Duration {:?} was less than minimum expected total delay {:?} (calculated from {}ms base)",
+            duration,
+            min_expected_total_duration,
+            expected_total_delay_ms
+        );
+        println!(
+            "test_embed_content_retry_failure_after_max_429s duration: {:?}",
+            duration
+        );
     }
 
     #[tokio::test]
     async fn test_batch_embed_contents_retry_success_after_429s() {
         // Skip this test for now as it requires a more sophisticated mocking approach
         // The retry logic is tested in the integration tests with real API
-        println!("Skipping test_batch_embed_contents_retry_success_after_429s - tested via integration tests");
+        println!(
+            "Skipping test_batch_embed_contents_retry_success_after_429s - tested via integration tests"
+        );
     }
 
     #[tokio::test]
@@ -1133,17 +1164,20 @@ mod tests {
             model_name: model_name.to_string(),
         };
 
-        let requests = vec![BatchEmbeddingContentRequest { text: "text1", task_type: "RETRIEVAL_DOCUMENT" }];
+        let requests = vec![BatchEmbeddingContentRequest {
+            text: "text1",
+            task_type: "RETRIEVAL_DOCUMENT",
+        }];
 
         let primary_batch_429_mock = server.mock(|when, then| {
             when.method(POST)
                 .path(format!("/v1beta/{}:batchEmbedContents", model_name))
                 .query_param("key", api_key);
-            then.status(429).json_body(json!({"error": {"message": "Batch persistently rate limited"}}));
+            then.status(429)
+                .json_body(json!({"error": {"message": "Batch persistently rate limited"}}));
         });
         // Fallback mock removed as client does not switch models
-        
-        
+
         let start_time = Instant::now();
         let result = client.batch_embed_contents(requests).await;
         let duration = start_time.elapsed();
@@ -1153,7 +1187,10 @@ mod tests {
             AppError::GeminiError(msg) => {
                 assert!(msg.contains("429"));
                 assert!(msg.contains("Batch persistently rate limited"));
-                assert!(msg.contains(&format!("after {} retries with model {}", MAX_RETRIES, client.model_name))); // Corrected to use client.model_name
+                assert!(msg.contains(&format!(
+                    "after {} retries with model {}",
+                    MAX_RETRIES, client.model_name
+                ))); // Corrected to use client.model_name
             }
             other_err => panic!("Expected GeminiError, got {:?}", other_err),
         }
@@ -1163,15 +1200,27 @@ mod tests {
 
         let mut expected_total_delay_ms = 0;
         let mut current_backoff = INITIAL_BACKOFF_MS; // Now 1000ms
-        for _ in 0..MAX_RETRIES { // Now 2 retries
+        for _ in 0..MAX_RETRIES {
+            // Now 2 retries
             expected_total_delay_ms += current_backoff;
             current_backoff = (current_backoff * 2).min(MAX_BACKOFF_MS); // Max backoff now 5000ms
         }
         // expected_total_delay_ms = 1000 (1st retry sleep) + 2000 (2nd retry sleep) = 3000ms
 
         // Allow for jitter, e.g., 70% of non-jittered sum.
-        let min_expected_total_duration = Duration::from_millis((expected_total_delay_ms as f64 * (1.0 - JITTER_FACTOR * 2.0)).max(0.0) as u64);
-        assert!(duration >= min_expected_total_duration, "Duration {:?} was less than minimum expected total delay {:?} (calculated from {}ms base)", duration, min_expected_total_duration, expected_total_delay_ms);
-        println!("test_batch_embed_contents_retry_failure_after_max_429s duration: {:?}", duration);
+        let min_expected_total_duration = Duration::from_millis(
+            (expected_total_delay_ms as f64 * (1.0 - JITTER_FACTOR * 2.0)).max(0.0) as u64,
+        );
+        assert!(
+            duration >= min_expected_total_duration,
+            "Duration {:?} was less than minimum expected total delay {:?} (calculated from {}ms base)",
+            duration,
+            min_expected_total_duration,
+            expected_total_delay_ms
+        );
+        println!(
+            "test_batch_embed_contents_retry_failure_after_max_429s duration: {:?}",
+            duration
+        );
     }
 }

@@ -8,14 +8,14 @@ use scribe_backend::models::{
     auth::LoginPayload,
     // No need to import CharacterDataForClient from backend here, as we use ClientCharacterDataForClient
     chats::{
-        ApiChatMessage, Chat, ChatForClient, ChatMessage, ChatSettingsResponse, GenerateChatRequest,
-        UpdateChatSettingsRequest,
+        ApiChatMessage, Chat, ChatForClient, ChatMessage, ChatSettingsResponse,
+        GenerateChatRequest, UpdateChatSettingsRequest,
     },
     lorebook_dtos::{
         AssociateLorebookToChatPayload, ChatSessionBasicInfo,
-        ChatSessionLorebookAssociationResponse, CreateLorebookEntryPayload,
-        CreateLorebookPayload, LorebookEntryResponse, LorebookEntrySummaryResponse,
-        LorebookResponse, UpdateLorebookEntryPayload, UpdateLorebookPayload,
+        ChatSessionLorebookAssociationResponse, CreateLorebookEntryPayload, CreateLorebookPayload,
+        LorebookEntryResponse, LorebookEntrySummaryResponse, LorebookResponse,
+        UpdateLorebookEntryPayload, UpdateLorebookPayload,
     },
     users::User,
 };
@@ -29,25 +29,27 @@ use crate::error::CliError;
 // Imports from sibling modules
 use super::interface::HttpClient;
 use super::types::{
-    // User persona types are now directly available under super::types
-    CreateUserPersonaDto, UpdateUserPersonaDto, UserPersonaDataForClient,
     AdminUserDetailResponse,
     AdminUserListResponse,
     AuthUserResponse, // Used in login/register/me
+    // New DTOs
+    CharacterCreateDto,
+    CharacterOverrideRequest, // For the payload of set_chat_character_override
+    CharacterUpdateDto,
+    ChatSessionDetails,
     ClientCharacterDataForClient,
     ClientChatMessageResponse,
+    // User persona types are now directly available under super::types
+    CreateUserPersonaDto,
     HealthStatus,
+    OverrideSuccessResponse,
     RegisterPayload,             // Used in register method signature
     SerializableLoginPayload,    // Internal helper for login
     SerializableRegisterPayload, // Internal helper for register
     StreamEvent,
+    UpdateUserPersonaDto,
     UpdateUserRoleRequest,
-    // New DTOs
-    CharacterCreateDto,
-    CharacterUpdateDto,
-    ChatSessionDetails,
-    CharacterOverrideRequest, // For the payload of set_chat_character_override
-    OverrideSuccessResponse,
+    UserPersonaDataForClient,
 };
 use super::util::{build_url, handle_non_streaming_chat_response, handle_response};
 
@@ -141,7 +143,12 @@ impl HttpClient for ReqwestClientWrapper {
         handle_response(response).await
     }
 
-    async fn create_chat_session(&self, character_id: Uuid, active_custom_persona_id: Option<Uuid>, lorebook_ids: Option<Vec<Uuid>>) -> Result<Chat, CliError> {
+    async fn create_chat_session(
+        &self,
+        character_id: Uuid,
+        active_custom_persona_id: Option<Uuid>,
+        lorebook_ids: Option<Vec<Uuid>>,
+    ) -> Result<Chat, CliError> {
         let url = build_url(&self.base_url, "/api/chats/create_session")?; // Use chats endpoint that supports lorebooks
         tracing::info!(target: "scribe_cli::client::implementation", %url, %character_id, ?active_custom_persona_id, ?lorebook_ids, "Creating chat session with lorebooks via HttpClient");
         // Use the backend's CreateChatRequest struct that supports lorebook_ids
@@ -830,7 +837,10 @@ impl HttpClient for ReqwestClientWrapper {
         handle_response(response).await
     }
 
-    async fn get_user_persona(&self, persona_id: Uuid) -> Result<UserPersonaDataForClient, CliError> {
+    async fn get_user_persona(
+        &self,
+        persona_id: Uuid,
+    ) -> Result<UserPersonaDataForClient, CliError> {
         let url = build_url(&self.base_url, &format!("/api/personas/{}", persona_id))?;
         tracing::info!(target: "scribe_cli::client::implementation", %url, %persona_id, "Fetching user persona via HttpClient");
         let response = self
@@ -886,7 +896,10 @@ impl HttpClient for ReqwestClientWrapper {
     }
 
     async fn set_default_persona(&self, persona_id: Uuid) -> Result<User, CliError> {
-        let url = build_url(&self.base_url, &format!("/api/user-settings/set_default_persona/{}", persona_id))?;
+        let url = build_url(
+            &self.base_url,
+            &format!("/api/user-settings/set_default_persona/{}", persona_id),
+        )?;
         tracing::info!(target: "scribe_cli::client::implementation", %url, %persona_id, "Setting default persona via HttpClient");
         let response = self
             .client
@@ -902,7 +915,7 @@ impl HttpClient for ReqwestClientWrapper {
         let auth_response = handle_response::<AuthUserResponse>(response)
             .await
             .map_err(|e| CliError::OperationFailed(format!("Set default persona failed: {}", e)))?;
-        
+
         Ok(User::from(auth_response))
     }
 
@@ -933,7 +946,10 @@ impl HttpClient for ReqwestClientWrapper {
     }
 
     // Lorebooks
-    async fn create_lorebook(&self, payload: &CreateLorebookPayload) -> Result<LorebookResponse, CliError> {
+    async fn create_lorebook(
+        &self,
+        payload: &CreateLorebookPayload,
+    ) -> Result<LorebookResponse, CliError> {
         let url = build_url(&self.base_url, "/api/lorebooks")?;
         tracing::info!(target: "scribe_cli::client::implementation", %url, "Creating lorebook via HttpClient");
         let response = self
@@ -970,7 +986,11 @@ impl HttpClient for ReqwestClientWrapper {
         handle_response(response).await
     }
 
-    async fn update_lorebook(&self, lorebook_id: Uuid, payload: &UpdateLorebookPayload) -> Result<LorebookResponse, CliError> {
+    async fn update_lorebook(
+        &self,
+        lorebook_id: Uuid,
+        payload: &UpdateLorebookPayload,
+    ) -> Result<LorebookResponse, CliError> {
         let url = build_url(&self.base_url, &format!("/api/lorebooks/{}", lorebook_id))?;
         tracing::info!(target: "scribe_cli::client::implementation", %url, %lorebook_id, "Updating lorebook via HttpClient");
         let response = self
@@ -996,14 +1016,27 @@ impl HttpClient for ReqwestClientWrapper {
             Ok(())
         } else {
             let status = response.status();
-            let error_text = response.text().await.unwrap_or_else(|_| "Failed to read error body".to_string());
-            Err(CliError::ApiError { status, message: error_text })
+            let error_text = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Failed to read error body".to_string());
+            Err(CliError::ApiError {
+                status,
+                message: error_text,
+            })
         }
     }
 
     // Lorebook Entries
-    async fn create_lorebook_entry(&self, lorebook_id: Uuid, payload: &CreateLorebookEntryPayload) -> Result<LorebookEntryResponse, CliError> {
-        let url = build_url(&self.base_url, &format!("/api/lorebooks/{}/entries", lorebook_id))?;
+    async fn create_lorebook_entry(
+        &self,
+        lorebook_id: Uuid,
+        payload: &CreateLorebookEntryPayload,
+    ) -> Result<LorebookEntryResponse, CliError> {
+        let url = build_url(
+            &self.base_url,
+            &format!("/api/lorebooks/{}/entries", lorebook_id),
+        )?;
         tracing::info!(target: "scribe_cli::client::implementation", %url, %lorebook_id, "Creating lorebook entry via HttpClient");
         let response = self
             .client
@@ -1015,8 +1048,14 @@ impl HttpClient for ReqwestClientWrapper {
         handle_response(response).await
     }
 
-    async fn list_lorebook_entries(&self, lorebook_id: Uuid) -> Result<Vec<LorebookEntrySummaryResponse>, CliError> {
-        let url = build_url(&self.base_url, &format!("/api/lorebooks/{}/entries", lorebook_id))?;
+    async fn list_lorebook_entries(
+        &self,
+        lorebook_id: Uuid,
+    ) -> Result<Vec<LorebookEntrySummaryResponse>, CliError> {
+        let url = build_url(
+            &self.base_url,
+            &format!("/api/lorebooks/{}/entries", lorebook_id),
+        )?;
         tracing::info!(target: "scribe_cli::client::implementation", %url, %lorebook_id, "Listing lorebook entries via HttpClient");
         let response = self
             .client
@@ -1027,8 +1066,15 @@ impl HttpClient for ReqwestClientWrapper {
         handle_response(response).await
     }
 
-    async fn get_lorebook_entry(&self, lorebook_id: Uuid, entry_id: Uuid) -> Result<LorebookEntryResponse, CliError> {
-        let url = build_url(&self.base_url, &format!("/api/lorebooks/{}/entries/{}", lorebook_id, entry_id))?;
+    async fn get_lorebook_entry(
+        &self,
+        lorebook_id: Uuid,
+        entry_id: Uuid,
+    ) -> Result<LorebookEntryResponse, CliError> {
+        let url = build_url(
+            &self.base_url,
+            &format!("/api/lorebooks/{}/entries/{}", lorebook_id, entry_id),
+        )?;
         tracing::info!(target: "scribe_cli::client::implementation", %url, %lorebook_id, %entry_id, "Fetching lorebook entry via HttpClient");
         let response = self
             .client
@@ -1039,8 +1085,16 @@ impl HttpClient for ReqwestClientWrapper {
         handle_response(response).await
     }
 
-    async fn update_lorebook_entry(&self, lorebook_id: Uuid, entry_id: Uuid, payload: &UpdateLorebookEntryPayload) -> Result<LorebookEntryResponse, CliError> {
-        let url = build_url(&self.base_url, &format!("/api/lorebooks/{}/entries/{}", lorebook_id, entry_id))?;
+    async fn update_lorebook_entry(
+        &self,
+        lorebook_id: Uuid,
+        entry_id: Uuid,
+        payload: &UpdateLorebookEntryPayload,
+    ) -> Result<LorebookEntryResponse, CliError> {
+        let url = build_url(
+            &self.base_url,
+            &format!("/api/lorebooks/{}/entries/{}", lorebook_id, entry_id),
+        )?;
         tracing::info!(target: "scribe_cli::client::implementation", %url, %lorebook_id, %entry_id, "Updating lorebook entry via HttpClient");
         let response = self
             .client
@@ -1052,8 +1106,15 @@ impl HttpClient for ReqwestClientWrapper {
         handle_response(response).await
     }
 
-    async fn delete_lorebook_entry(&self, lorebook_id: Uuid, entry_id: Uuid) -> Result<(), CliError> {
-        let url = build_url(&self.base_url, &format!("/api/lorebooks/{}/entries/{}", lorebook_id, entry_id))?;
+    async fn delete_lorebook_entry(
+        &self,
+        lorebook_id: Uuid,
+        entry_id: Uuid,
+    ) -> Result<(), CliError> {
+        let url = build_url(
+            &self.base_url,
+            &format!("/api/lorebooks/{}/entries/{}", lorebook_id, entry_id),
+        )?;
         tracing::info!(target: "scribe_cli::client::implementation", %url, %lorebook_id, %entry_id, "Deleting lorebook entry via HttpClient");
         let response = self
             .client
@@ -1065,14 +1126,27 @@ impl HttpClient for ReqwestClientWrapper {
             Ok(())
         } else {
             let status = response.status();
-            let error_text = response.text().await.unwrap_or_else(|_| "Failed to read error body".to_string());
-            Err(CliError::ApiError { status, message: error_text })
+            let error_text = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Failed to read error body".to_string());
+            Err(CliError::ApiError {
+                status,
+                message: error_text,
+            })
         }
     }
 
     // Chat Session Lorebook Associations
-    async fn associate_lorebook_to_chat(&self, chat_session_id: Uuid, payload: &AssociateLorebookToChatPayload) -> Result<ChatSessionLorebookAssociationResponse, CliError> {
-        let url = build_url(&self.base_url, &format!("/api/chats/{}/lorebooks", chat_session_id))?;
+    async fn associate_lorebook_to_chat(
+        &self,
+        chat_session_id: Uuid,
+        payload: &AssociateLorebookToChatPayload,
+    ) -> Result<ChatSessionLorebookAssociationResponse, CliError> {
+        let url = build_url(
+            &self.base_url,
+            &format!("/api/chats/{}/lorebooks", chat_session_id),
+        )?;
         tracing::info!(target: "scribe_cli::client::implementation", %url, %chat_session_id, lorebook_id = %payload.lorebook_id, "Associating lorebook to chat session via HttpClient");
         let response = self
             .client
@@ -1084,8 +1158,14 @@ impl HttpClient for ReqwestClientWrapper {
         handle_response(response).await
     }
 
-    async fn list_chat_lorebook_associations(&self, chat_session_id: Uuid) -> Result<Vec<ChatSessionLorebookAssociationResponse>, CliError> {
-        let url = build_url(&self.base_url, &format!("/api/chats/{}/lorebooks", chat_session_id))?;
+    async fn list_chat_lorebook_associations(
+        &self,
+        chat_session_id: Uuid,
+    ) -> Result<Vec<ChatSessionLorebookAssociationResponse>, CliError> {
+        let url = build_url(
+            &self.base_url,
+            &format!("/api/chats/{}/lorebooks", chat_session_id),
+        )?;
         tracing::info!(target: "scribe_cli::client::implementation", %url, %chat_session_id, "Listing chat lorebook associations via HttpClient");
         let response = self
             .client
@@ -1096,8 +1176,15 @@ impl HttpClient for ReqwestClientWrapper {
         handle_response(response).await
     }
 
-    async fn disassociate_lorebook_from_chat(&self, chat_session_id: Uuid, lorebook_id: Uuid) -> Result<(), CliError> {
-        let url = build_url(&self.base_url, &format!("/api/chats/{}/lorebooks/{}", chat_session_id, lorebook_id))?;
+    async fn disassociate_lorebook_from_chat(
+        &self,
+        chat_session_id: Uuid,
+        lorebook_id: Uuid,
+    ) -> Result<(), CliError> {
+        let url = build_url(
+            &self.base_url,
+            &format!("/api/chats/{}/lorebooks/{}", chat_session_id, lorebook_id),
+        )?;
         tracing::info!(target: "scribe_cli::client::implementation", %url, %chat_session_id, %lorebook_id, "Disassociating lorebook from chat session via HttpClient");
         let response = self
             .client
@@ -1109,8 +1196,14 @@ impl HttpClient for ReqwestClientWrapper {
             Ok(())
         } else {
             let status = response.status();
-            let error_text = response.text().await.unwrap_or_else(|_| "Failed to read error body".to_string());
-            Err(CliError::ApiError { status, message: error_text })
+            let error_text = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Failed to read error body".to_string());
+            Err(CliError::ApiError {
+                status,
+                message: error_text,
+            })
         }
     }
 
@@ -1118,7 +1211,10 @@ impl HttpClient for ReqwestClientWrapper {
         &self,
         lorebook_id: Uuid,
     ) -> Result<Vec<ChatSessionBasicInfo>, CliError> {
-        let url = build_url(&self.base_url, &format!("/api/lorebooks/{}/fetch/associated_chats", lorebook_id))?; // Updated path
+        let url = build_url(
+            &self.base_url,
+            &format!("/api/lorebooks/{}/fetch/associated_chats", lorebook_id),
+        )?; // Updated path
         tracing::info!(target: "scribe_cli::client::implementation", %url, %lorebook_id, "Listing associated chat sessions for lorebook via HttpClient");
         let response = self
             .client

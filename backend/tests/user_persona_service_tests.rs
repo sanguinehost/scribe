@@ -3,33 +3,30 @@
 #![cfg(test)]
 
 use anyhow::Result as AnyhowResult;
+use secrecy::{ExposeSecret, SecretBox, SecretString};
 use std::sync::Arc;
 use uuid::Uuid;
-use secrecy::{ExposeSecret, SecretBox, SecretString};
 
+use diesel::prelude::*; // For direct DB queries
+use scribe_backend::schema::users::dsl as users_dsl;
+use scribe_backend::state::DbPool; // Make sure DbPool is in scope
 use scribe_backend::{
-    services::{
-        UserPersonaService,
-        EncryptionService,
-    },
-    models::{
-        users::{User, UserDbQuery}, // Added UserDbQuery for direct DB check
-        user_personas::{CreateUserPersonaDto, UpdateUserPersonaDto},
-    },
-    test_helpers::{self, TestDataGuard},
     errors::AppError,
     // state::DbPool, // Marked as unused
-};
-use scribe_backend::state::DbPool; // Make sure DbPool is in scope
-use diesel::prelude::*; // For direct DB queries
-use scribe_backend::schema::users::dsl as users_dsl; // For direct DB queries
+    models::{
+        user_personas::{CreateUserPersonaDto, UpdateUserPersonaDto},
+        users::{User, UserDbQuery}, // Added UserDbQuery for direct DB check
+    },
+    services::{EncryptionService, UserPersonaService},
+    test_helpers::{self, TestDataGuard},
+}; // For direct DB queries
 
 // Helper to set up the service and a test user
 struct TestContext {
     service: UserPersonaService,
     user: User,
     dek: SecretBox<Vec<u8>>,
-    db_pool: DbPool, // Added DbPool
+    db_pool: DbPool,       // Added DbPool
     _guard: TestDataGuard, // To clean up DB entries
 }
 
@@ -52,16 +49,20 @@ async fn setup_service_test() -> AnyhowResult<TestContext> {
     .await?;
     guard.add_user(user.id);
 
-    let dek_bytes = plaintext_dek_secret_string.expose_secret().as_bytes().to_vec();
-    let dek_secret_box = SecretBox::new(Box::new(dek_bytes)); 
+    let dek_bytes = plaintext_dek_secret_string
+        .expose_secret()
+        .as_bytes()
+        .to_vec();
+    let dek_secret_box = SecretBox::new(Box::new(dek_bytes));
 
     let encryption_service = Arc::new(EncryptionService::new());
-    let user_persona_service = UserPersonaService::new(test_app.db_pool.clone(), encryption_service);
+    let user_persona_service =
+        UserPersonaService::new(test_app.db_pool.clone(), encryption_service);
 
     Ok(TestContext {
         service: user_persona_service,
-        user, // User object from create_user_with_dek_in_session
-        dek: dek_secret_box, // The reconstructed DEK
+        user,                              // User object from create_user_with_dek_in_session
+        dek: dek_secret_box,               // The reconstructed DEK
         db_pool: test_app.db_pool.clone(), // Store DbPool
         _guard: guard,
     })
@@ -73,7 +74,7 @@ async fn setup_service_test() -> AnyhowResult<TestContext> {
 // - test_list_user_personas_success
 // - test_update_user_persona_success_and_forbidden
 // - test_delete_user_persona_success_and_forbidden
-// - ... and error cases (not found, validation etc.) 
+// - ... and error cases (not found, validation etc.)
 
 #[tokio::test]
 async fn test_update_user_persona_success() -> AnyhowResult<()> {
@@ -88,7 +89,10 @@ async fn test_update_user_persona_success() -> AnyhowResult<()> {
         scenario: None, // Start with scenario as None
         ..Default::default()
     };
-    let mut current_persona_state = ctx.service.create_user_persona(&ctx.user, &ctx.dek, initial_create_dto.clone()).await?;
+    let mut current_persona_state = ctx
+        .service
+        .create_user_persona(&ctx.user, &ctx.dek, initial_create_dto.clone())
+        .await?;
     let persona_id = current_persona_state.id;
 
     // 2. Test Case: Update name and spec (non-encrypted)
@@ -97,11 +101,28 @@ async fn test_update_user_persona_success() -> AnyhowResult<()> {
         spec: Some("spec_v2".to_string()),
         ..Default::default()
     };
-    let updated_name_spec_result = ctx.service.update_user_persona(&ctx.user, &ctx.dek, persona_id, update_dto_name_spec.clone()).await?;
-    assert_eq!(updated_name_spec_result.name, update_dto_name_spec.name.unwrap());
+    let updated_name_spec_result = ctx
+        .service
+        .update_user_persona(
+            &ctx.user,
+            &ctx.dek,
+            persona_id,
+            update_dto_name_spec.clone(),
+        )
+        .await?;
+    assert_eq!(
+        updated_name_spec_result.name,
+        update_dto_name_spec.name.unwrap()
+    );
     assert_eq!(updated_name_spec_result.spec, update_dto_name_spec.spec);
-    assert_eq!(updated_name_spec_result.description, "", "Description should be cleared to empty string when DTO field is None and it's mandatory in client view");
-    assert!(updated_name_spec_result.personality.is_none(), "Personality should be cleared to None when DTO field is None");
+    assert_eq!(
+        updated_name_spec_result.description, "",
+        "Description should be cleared to empty string when DTO field is None and it's mandatory in client view"
+    );
+    assert!(
+        updated_name_spec_result.personality.is_none(),
+        "Personality should be cleared to None when DTO field is None"
+    );
     current_persona_state = updated_name_spec_result;
     let original_updated_at = current_persona_state.updated_at;
 
@@ -114,19 +135,42 @@ async fn test_update_user_persona_success() -> AnyhowResult<()> {
         scenario: Some("New scenario added.".to_string()),
         ..Default::default()
     };
-    let updated_desc_scenario_result = ctx.service.update_user_persona(&ctx.user, &ctx.dek, persona_id, update_dto_desc_scenario.clone()).await?;
-    assert_eq!(updated_desc_scenario_result.name, current_persona_state.name); // Should be from previous update
-    assert_eq!(updated_desc_scenario_result.description, update_dto_desc_scenario.description.unwrap());
-    assert_eq!(updated_desc_scenario_result.scenario, update_dto_desc_scenario.scenario);
-    assert_eq!(updated_desc_scenario_result.personality, current_persona_state.personality); // Should be unchanged
-    assert!(updated_desc_scenario_result.updated_at > original_updated_at, "updated_at should change after modification");
+    let updated_desc_scenario_result = ctx
+        .service
+        .update_user_persona(
+            &ctx.user,
+            &ctx.dek,
+            persona_id,
+            update_dto_desc_scenario.clone(),
+        )
+        .await?;
+    assert_eq!(
+        updated_desc_scenario_result.name,
+        current_persona_state.name
+    ); // Should be from previous update
+    assert_eq!(
+        updated_desc_scenario_result.description,
+        update_dto_desc_scenario.description.unwrap()
+    );
+    assert_eq!(
+        updated_desc_scenario_result.scenario,
+        update_dto_desc_scenario.scenario
+    );
+    assert_eq!(
+        updated_desc_scenario_result.personality,
+        current_persona_state.personality
+    ); // Should be unchanged
+    assert!(
+        updated_desc_scenario_result.updated_at > original_updated_at,
+        "updated_at should change after modification"
+    );
     current_persona_state = updated_desc_scenario_result;
     let previous_updated_at = current_persona_state.updated_at;
     tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
 
     // 4. Test Case: Update personality (Some to SomeOther, encrypted) and clear scenario (Some to None/empty)
     // Service logic for clearing: sending empty string for an optional field might be treated as "clear"
-    // or `None` in DTO means no change. `UpdateUserPersonaDto` uses `Option<String>`. 
+    // or `None` in DTO means no change. `UpdateUserPersonaDto` uses `Option<String>`.
     // The service method `encrypt_optional_string_for_db` treats `Some("")` as `(None, None)` for DB.
     // So, to clear `scenario`, we'd send `Some("".to_string())` in DTO, or if DTO has `Option<Option<String>>`, then `Some(None)`.
     // Current DTO is `Option<String>`. The service handles `Some(empty_string)` as clear.
@@ -139,26 +183,50 @@ async fn test_update_user_persona_success() -> AnyhowResult<()> {
     let update_dto_pers_clear_scenario = UpdateUserPersonaDto {
         personality: Some("Updated personality again.".to_string()),
         description: Some(current_persona_state.description.clone()), // Preserve description
-        scenario: Some("".to_string()), // Attempt to clear scenario
+        scenario: Some("".to_string()),                               // Attempt to clear scenario
         ..Default::default()
     };
-    let updated_pers_clear_scenario_result = ctx.service.update_user_persona(&ctx.user, &ctx.dek, persona_id, update_dto_pers_clear_scenario.clone()).await?;
-    assert_eq!(updated_pers_clear_scenario_result.personality, update_dto_pers_clear_scenario.personality);
-    assert!(updated_pers_clear_scenario_result.scenario.is_none() || updated_pers_clear_scenario_result.scenario == Some("".to_string()), "Scenario should be cleared to None or empty string");
+    let updated_pers_clear_scenario_result = ctx
+        .service
+        .update_user_persona(
+            &ctx.user,
+            &ctx.dek,
+            persona_id,
+            update_dto_pers_clear_scenario.clone(),
+        )
+        .await?;
+    assert_eq!(
+        updated_pers_clear_scenario_result.personality,
+        update_dto_pers_clear_scenario.personality
+    );
+    assert!(
+        updated_pers_clear_scenario_result.scenario.is_none()
+            || updated_pers_clear_scenario_result.scenario == Some("".to_string()),
+        "Scenario should be cleared to None or empty string"
+    );
     // The `into_data_for_client` would convert a decrypted empty string back to `Some("")` or `None` based on its logic
     // `decrypt_optional_field_async` maps empty decrypted bytes to `Some("")` if `ct` and `n` were non-empty originally (convention for empty encrypted)
     // The service's `encrypt_optional_string_for_db` sets db fields to (None,None) if input is empty. So this should decrypt to None.
-    assert!(updated_pers_clear_scenario_result.scenario.is_none(), "Scenario should decrypt to None after being set to empty string update.");
+    assert!(
+        updated_pers_clear_scenario_result.scenario.is_none(),
+        "Scenario should decrypt to None after being set to empty string update."
+    );
     assert!(updated_pers_clear_scenario_result.updated_at > previous_updated_at);
     current_persona_state = updated_pers_clear_scenario_result;
     let last_updated_at = current_persona_state.updated_at;
 
     // 5. Verify by fetching again
-    let fetched_after_updates = ctx.service.get_user_persona(&ctx.user, Some(&ctx.dek), persona_id).await?;
+    let fetched_after_updates = ctx
+        .service
+        .get_user_persona(&ctx.user, Some(&ctx.dek), persona_id)
+        .await?;
     assert_eq!(fetched_after_updates.name, "Updated Name");
     assert_eq!(fetched_after_updates.spec, Some("spec_v2".to_string()));
     assert_eq!(fetched_after_updates.description, "Updated description.");
-    assert_eq!(fetched_after_updates.personality, Some("Updated personality again.".to_string()));
+    assert_eq!(
+        fetched_after_updates.personality,
+        Some("Updated personality again.".to_string())
+    );
     assert!(fetched_after_updates.scenario.is_none());
     assert_eq!(fetched_after_updates.updated_at, last_updated_at);
 
@@ -173,22 +241,36 @@ async fn test_update_user_persona_no_changes() -> AnyhowResult<()> {
         description: "This persona will not change.".to_string(),
         ..Default::default()
     };
-    let created_persona = ctx.service.create_user_persona(&ctx.user, &ctx.dek, create_dto).await?;
+    let created_persona = ctx
+        .service
+        .create_user_persona(&ctx.user, &ctx.dek, create_dto)
+        .await?;
     let original_updated_at = created_persona.updated_at;
 
     // Short delay to ensure updated_at would change IF an update occurs
     tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
 
-    let update_dto_empty = UpdateUserPersonaDto { ..Default::default() };
-    let result = ctx.service.update_user_persona(&ctx.user, &ctx.dek, created_persona.id, update_dto_empty).await?;
+    let update_dto_empty = UpdateUserPersonaDto {
+        ..Default::default()
+    };
+    let result = ctx
+        .service
+        .update_user_persona(&ctx.user, &ctx.dek, created_persona.id, update_dto_empty)
+        .await?;
 
     assert_eq!(result.name, created_persona.name);
-    assert_eq!(result.description, "", "Description should be cleared to empty string when DTO field is None");
+    assert_eq!(
+        result.description, "",
+        "Description should be cleared to empty string when DTO field is None"
+    );
     // The service *will* update `updated_at` even if no fields change because it re-saves the model.
     // This is because `changed` flag is set to `true` then the model is saved which updates the `updated_at` via DB trigger.
     // Let's read the service again. The service has a `changed` boolean.
     // If `changed` is false, it returns early *before* saving. So updated_at should NOT change.
-    assert_ne!(result.updated_at, original_updated_at, "updated_at should change because description is cleared to empty string when DTO field is None.");
+    assert_ne!(
+        result.updated_at, original_updated_at,
+        "updated_at should change because description is cleared to empty string when DTO field is None."
+    );
 
     Ok(())
 }
@@ -197,17 +279,27 @@ async fn test_update_user_persona_no_changes() -> AnyhowResult<()> {
 async fn test_update_user_persona_not_found() -> AnyhowResult<()> {
     let ctx = setup_service_test().await?;
     let random_uuid = Uuid::new_v4();
-    let update_dto = UpdateUserPersonaDto { name: Some("New Name".to_string()), ..Default::default() };
+    let update_dto = UpdateUserPersonaDto {
+        name: Some("New Name".to_string()),
+        ..Default::default()
+    };
 
-    let result = ctx.service.update_user_persona(&ctx.user, &ctx.dek, random_uuid, update_dto).await;
-    assert!(matches!(result, Err(AppError::NotFound(_))), "Expected NotFound, got {:?}", result);
+    let result = ctx
+        .service
+        .update_user_persona(&ctx.user, &ctx.dek, random_uuid, update_dto)
+        .await;
+    assert!(
+        matches!(result, Err(AppError::NotFound(_))),
+        "Expected NotFound, got {:?}",
+        result
+    );
 
     Ok(())
 }
 
 #[tokio::test]
 async fn test_update_user_persona_forbidden() -> AnyhowResult<()> {
-    let ctx1 = setup_service_test().await?; 
+    let ctx1 = setup_service_test().await?;
     let test_app_for_ctx2 = test_helpers::spawn_app(true, false, false).await;
     let mut guard2 = TestDataGuard::new(test_app_for_ctx2.db_pool.clone());
 
@@ -222,7 +314,8 @@ async fn test_update_user_persona_forbidden() -> AnyhowResult<()> {
         user2_username.to_string(),
         user2_password.to_string(),
         Some(user2_plaintext_dek.clone()),
-    ).await?;
+    )
+    .await?;
     guard2.add_user(user2.id.clone());
     let dek2_bytes = user2_plaintext_dek.expose_secret().as_bytes().to_vec();
     let dek2 = SecretBox::new(Box::new(dek2_bytes));
@@ -232,11 +325,24 @@ async fn test_update_user_persona_forbidden() -> AnyhowResult<()> {
         description: "Belongs to user1.".to_string(),
         ..Default::default()
     };
-    let persona_for_user1 = ctx1.service.create_user_persona(&ctx1.user, &ctx1.dek, create_dto).await?;
+    let persona_for_user1 = ctx1
+        .service
+        .create_user_persona(&ctx1.user, &ctx1.dek, create_dto)
+        .await?;
 
-    let update_dto = UpdateUserPersonaDto { name: Some("Attempted Update by User2".to_string()), ..Default::default() };
-    let result = ctx1.service.update_user_persona(&user2, &dek2, persona_for_user1.id, update_dto).await;
-    assert!(matches!(result, Err(AppError::Forbidden)), "Expected Forbidden, got {:?}", result);
+    let update_dto = UpdateUserPersonaDto {
+        name: Some("Attempted Update by User2".to_string()),
+        ..Default::default()
+    };
+    let result = ctx1
+        .service
+        .update_user_persona(&user2, &dek2, persona_for_user1.id, update_dto)
+        .await;
+    assert!(
+        matches!(result, Err(AppError::Forbidden)),
+        "Expected Forbidden, got {:?}",
+        result
+    );
 
     Ok(())
 }
@@ -249,15 +355,32 @@ async fn test_delete_user_persona_success() -> AnyhowResult<()> {
         description: "This persona will be deleted.".to_string(),
         ..Default::default()
     };
-    let created_persona = ctx.service.create_user_persona(&ctx.user, &ctx.dek, create_dto).await?;
+    let created_persona = ctx
+        .service
+        .create_user_persona(&ctx.user, &ctx.dek, create_dto)
+        .await?;
 
     // Delete the persona
-    let delete_result = ctx.service.delete_user_persona(&ctx.user, created_persona.id).await;
-    assert!(delete_result.is_ok(), "delete_user_persona failed: {:?}", delete_result.err());
+    let delete_result = ctx
+        .service
+        .delete_user_persona(&ctx.user, created_persona.id)
+        .await;
+    assert!(
+        delete_result.is_ok(),
+        "delete_user_persona failed: {:?}",
+        delete_result.err()
+    );
 
     // Try to get the deleted persona
-    let get_result = ctx.service.get_user_persona(&ctx.user, Some(&ctx.dek), created_persona.id).await;
-    assert!(matches!(get_result, Err(AppError::NotFound(_))), "Expected NotFound after delete, got {:?}", get_result);
+    let get_result = ctx
+        .service
+        .get_user_persona(&ctx.user, Some(&ctx.dek), created_persona.id)
+        .await;
+    assert!(
+        matches!(get_result, Err(AppError::NotFound(_))),
+        "Expected NotFound after delete, got {:?}",
+        get_result
+    );
 
     Ok(())
 }
@@ -267,9 +390,16 @@ async fn test_delete_user_persona_not_found() -> AnyhowResult<()> {
     let ctx = setup_service_test().await?;
     let random_uuid = Uuid::new_v4();
 
-    let delete_result = ctx.service.delete_user_persona(&ctx.user, random_uuid).await;
+    let delete_result = ctx
+        .service
+        .delete_user_persona(&ctx.user, random_uuid)
+        .await;
     // The service first tries to fetch the persona. If not found, it returns NotFound.
-    assert!(matches!(delete_result, Err(AppError::NotFound(_))), "Expected NotFound when deleting non-existent persona, got {:?}", delete_result);
+    assert!(
+        matches!(delete_result, Err(AppError::NotFound(_))),
+        "Expected NotFound when deleting non-existent persona, got {:?}",
+        delete_result
+    );
 
     Ok(())
 }
@@ -292,7 +422,8 @@ async fn test_delete_user_persona_forbidden() -> AnyhowResult<()> {
         user2_username.to_string(),
         user2_password.to_string(),
         Some(user2_plaintext_dek.clone()), // Pass DEK, though not strictly needed for delete forbidden check
-    ).await?;
+    )
+    .await?;
     guard2.add_user(user2.id.clone());
     // let _dek2_bytes = user2_plaintext_dek.expose_secret().as_bytes().to_vec();
     // let _dek2 = SecretBox::new(Box::new(_dek2_bytes)); // _dek2 is not used in this test
@@ -302,14 +433,30 @@ async fn test_delete_user_persona_forbidden() -> AnyhowResult<()> {
         description: "Belongs to user1, user2 cannot delete.".to_string(),
         ..Default::default()
     };
-    let persona_for_user1 = ctx1.service.create_user_persona(&ctx1.user, &ctx1.dek, create_dto).await?;
+    let persona_for_user1 = ctx1
+        .service
+        .create_user_persona(&ctx1.user, &ctx1.dek, create_dto)
+        .await?;
 
-    let delete_result = ctx1.service.delete_user_persona(&user2, persona_for_user1.id).await;
-    assert!(matches!(delete_result, Err(AppError::Forbidden)), "Expected Forbidden, got {:?}", delete_result);
+    let delete_result = ctx1
+        .service
+        .delete_user_persona(&user2, persona_for_user1.id)
+        .await;
+    assert!(
+        matches!(delete_result, Err(AppError::Forbidden)),
+        "Expected Forbidden, got {:?}",
+        delete_result
+    );
 
     // Verify persona still exists for user1
-    let get_result = ctx1.service.get_user_persona(&ctx1.user, Some(&ctx1.dek), persona_for_user1.id).await;
-    assert!(get_result.is_ok(), "Persona should still exist for user1 after forbidden delete attempt.");
+    let get_result = ctx1
+        .service
+        .get_user_persona(&ctx1.user, Some(&ctx1.dek), persona_for_user1.id)
+        .await;
+    assert!(
+        get_result.is_ok(),
+        "Persona should still exist for user1 after forbidden delete attempt."
+    );
 
     Ok(())
 }
@@ -331,7 +478,8 @@ async fn test_get_user_persona_forbidden() -> AnyhowResult<()> {
         user2_username.to_string(),
         user2_password.to_string(),
         Some(user2_plaintext_dek.clone()),
-    ).await?;
+    )
+    .await?;
     guard2.add_user(user2.id.clone());
     let dek2_bytes = user2_plaintext_dek.expose_secret().as_bytes().to_vec();
     let dek2 = SecretBox::new(Box::new(dek2_bytes));
@@ -341,10 +489,20 @@ async fn test_get_user_persona_forbidden() -> AnyhowResult<()> {
         description: "This persona belongs to user1.".to_string(),
         ..Default::default()
     };
-    let persona_for_user1 = ctx1.service.create_user_persona(&ctx1.user, &ctx1.dek, create_dto).await?;
+    let persona_for_user1 = ctx1
+        .service
+        .create_user_persona(&ctx1.user, &ctx1.dek, create_dto)
+        .await?;
 
-    let result = ctx1.service.get_user_persona(&user2, Some(&dek2), persona_for_user1.id).await;
-    assert!(matches!(result, Err(AppError::Forbidden)), "Expected Forbidden, got {:?}", result);
+    let result = ctx1
+        .service
+        .get_user_persona(&user2, Some(&dek2), persona_for_user1.id)
+        .await;
+    assert!(
+        matches!(result, Err(AppError::Forbidden)),
+        "Expected Forbidden, got {:?}",
+        result
+    );
 
     Ok(())
 }
@@ -359,18 +517,23 @@ async fn test_user_persona_service_set_default_persona() -> AnyhowResult<()> {
         description: "This persona can be set as default.".to_string(),
         ..Default::default()
     };
-    let persona = ctx.service.create_user_persona(&ctx.user, &ctx.dek, persona_create_dto).await?;
+    let persona = ctx
+        .service
+        .create_user_persona(&ctx.user, &ctx.dek, persona_create_dto)
+        .await?;
     ctx._guard.add_user_persona(persona.id); // Ensure cleanup
 
     // 2. Set the created persona as default
-    let updated_user = UserPersonaService::set_default_persona(
-        &ctx.db_pool,
-        ctx.user.id,
-        Some(persona.id)
-    ).await?;
+    let updated_user =
+        UserPersonaService::set_default_persona(&ctx.db_pool, ctx.user.id, Some(persona.id))
+            .await?;
 
     assert_eq!(updated_user.id, ctx.user.id);
-    assert_eq!(updated_user.default_persona_id, Some(persona.id), "Default persona ID should be set on the returned user object.");
+    assert_eq!(
+        updated_user.default_persona_id,
+        Some(persona.id),
+        "Default persona ID should be set on the returned user object."
+    );
 
     // Verify directly from DB
     let pool_clone_1 = ctx.db_pool.clone();
@@ -385,21 +548,27 @@ async fn test_user_persona_service_set_default_persona() -> AnyhowResult<()> {
                 .map_err(AppError::from) // Ensure DieselError is converted
         })
         .await
-        .map_err(|e| AppError::InternalServerErrorGeneric(format!("DB interact join error: {}", e)))??;
-    assert_eq!(user_from_db.default_persona_id, Some(persona.id), "Default persona ID should be updated in the database.");
+        .map_err(|e| {
+            AppError::InternalServerErrorGeneric(format!("DB interact join error: {}", e))
+        })??;
+    assert_eq!(
+        user_from_db.default_persona_id,
+        Some(persona.id),
+        "Default persona ID should be updated in the database."
+    );
 
     // Update ctx.user to reflect the change for subsequent steps
     ctx.user = updated_user;
 
     // 3. Clear the default persona
-    let cleared_user = UserPersonaService::set_default_persona(
-        &ctx.db_pool,
-        ctx.user.id,
-        None
-    ).await?;
+    let cleared_user =
+        UserPersonaService::set_default_persona(&ctx.db_pool, ctx.user.id, None).await?;
 
-    assert_eq!(cleared_user.default_persona_id, None, "Default persona ID should be cleared on the returned user object.");
-    
+    assert_eq!(
+        cleared_user.default_persona_id, None,
+        "Default persona ID should be cleared on the returned user object."
+    );
+
     let pool_clone_2 = ctx.db_pool.clone();
     let user_id_clone_2 = ctx.user.id;
     let user_from_db_after_clear = pool_clone_2
@@ -412,8 +581,13 @@ async fn test_user_persona_service_set_default_persona() -> AnyhowResult<()> {
                 .map_err(AppError::from)
         })
         .await
-        .map_err(|e| AppError::InternalServerErrorGeneric(format!("DB interact join error: {}", e)))??;
-    assert_eq!(user_from_db_after_clear.default_persona_id, None, "Default persona ID should be cleared in the database.");
+        .map_err(|e| {
+            AppError::InternalServerErrorGeneric(format!("DB interact join error: {}", e))
+        })??;
+    assert_eq!(
+        user_from_db_after_clear.default_persona_id, None,
+        "Default persona ID should be cleared in the database."
+    );
 
     // 4. Set default persona to a non-existent (but valid UUID) persona ID
     // The service method itself doesn't validate existence, only the route handler does.
@@ -421,8 +595,9 @@ async fn test_user_persona_service_set_default_persona() -> AnyhowResult<()> {
     let user_with_non_existent_default = UserPersonaService::set_default_persona(
         &ctx.db_pool,
         ctx.user.id,
-        Some(non_existent_persona_id)
-    ).await;
+        Some(non_existent_persona_id),
+    )
+    .await;
 
     assert!(
         match user_with_non_existent_default {
@@ -431,7 +606,8 @@ async fn test_user_persona_service_set_default_persona() -> AnyhowResult<()> {
                 // This is a bit brittle but necessary given the current AppError structure.
                 // PostgreSQL typically includes "violates foreign key constraint"
                 // and the constraint name like "fk_default_user_persona".
-                s.contains("violates foreign key constraint") && s.contains("fk_default_user_persona")
+                s.contains("violates foreign key constraint")
+                    && s.contains("fk_default_user_persona")
             }
             _ => false,
         },

@@ -507,7 +507,7 @@ impl Character {
                         // Data exists but no DEK, return placeholder
                         Ok(Some("[Encrypted]".to_string()))
                     }
-                     // No data, or data is empty, or nonce is missing with DEK
+                    // No data, or data is empty, or nonce is missing with DEK
                     _ => Ok(None),
                 }
             };
@@ -522,11 +522,10 @@ impl Character {
                 Err(e) => Err(e),
             }
         };
-        
+
         // For non-encrypted string fields, we default to Some("") if None
-        let default_empty_string_if_none = |opt: Option<String>| -> Option<String> {
-            opt.or_else(|| Some("".to_string()))
-        };
+        let default_empty_string_if_none =
+            |opt: Option<String>| -> Option<String> { opt.or_else(|| Some("".to_string())) };
 
         let client_char = CharacterDataForClient {
             id: self.id,
@@ -534,13 +533,41 @@ impl Character {
             spec: self.spec,
             spec_version: self.spec_version,
             name: self.name,
-            description: process_encrypted_field(decrypt_field!(&self.description, &self.description_nonce, dek))?,
-            personality: process_encrypted_field(decrypt_field!(&self.personality, &self.personality_nonce, dek))?,
-            scenario: process_encrypted_field(decrypt_field!(&self.scenario, &self.scenario_nonce, dek))?,
-            first_mes: process_encrypted_field(decrypt_field!(&self.first_mes, &self.first_mes_nonce, dek))?,
-            mes_example: process_encrypted_field(decrypt_field!(&self.mes_example, &self.mes_example_nonce, dek))?,
-            creator_notes: process_encrypted_field(decrypt_field!(&self.creator_notes, &self.creator_notes_nonce, dek))?,
-            system_prompt: process_encrypted_field(decrypt_field!(&self.system_prompt, &self.system_prompt_nonce, dek))?,
+            description: process_encrypted_field(decrypt_field!(
+                &self.description,
+                &self.description_nonce,
+                dek
+            ))?,
+            personality: process_encrypted_field(decrypt_field!(
+                &self.personality,
+                &self.personality_nonce,
+                dek
+            ))?,
+            scenario: process_encrypted_field(decrypt_field!(
+                &self.scenario,
+                &self.scenario_nonce,
+                dek
+            ))?,
+            first_mes: process_encrypted_field(decrypt_field!(
+                &self.first_mes,
+                &self.first_mes_nonce,
+                dek
+            ))?,
+            mes_example: process_encrypted_field(decrypt_field!(
+                &self.mes_example,
+                &self.mes_example_nonce,
+                dek
+            ))?,
+            creator_notes: process_encrypted_field(decrypt_field!(
+                &self.creator_notes,
+                &self.creator_notes_nonce,
+                dek
+            ))?,
+            system_prompt: process_encrypted_field(decrypt_field!(
+                &self.system_prompt,
+                &self.system_prompt_nonce,
+                dek
+            ))?,
             post_history_instructions: process_encrypted_field(decrypt_field!(
                 &self.post_history_instructions,
                 &self.post_history_instructions_nonce,
@@ -561,14 +588,33 @@ impl Character {
             modification_date: self.modification_date,
             created_at: self.created_at,
             updated_at: self.updated_at,
-            persona: process_encrypted_field(decrypt_field!(&self.persona, &self.persona_nonce, dek))?,
-            world_scenario: process_encrypted_field(decrypt_field!(&self.world_scenario, &self.world_scenario_nonce, dek))?,
+            persona: process_encrypted_field(decrypt_field!(
+                &self.persona,
+                &self.persona_nonce,
+                dek
+            ))?,
+            world_scenario: process_encrypted_field(decrypt_field!(
+                &self.world_scenario,
+                &self.world_scenario_nonce,
+                dek
+            ))?,
             avatar: default_empty_string_if_none(self.avatar),
             chat: default_empty_string_if_none(self.chat),
-            greeting: process_encrypted_field(decrypt_field!(&self.greeting, &self.greeting_nonce, dek))?,
-            definition: process_encrypted_field(decrypt_field!(&self.definition, &self.definition_nonce, dek))?,
+            greeting: process_encrypted_field(decrypt_field!(
+                &self.greeting,
+                &self.greeting_nonce,
+                dek
+            ))?,
+            definition: process_encrypted_field(decrypt_field!(
+                &self.definition,
+                &self.definition_nonce,
+                dek
+            ))?,
             default_voice: default_empty_string_if_none(self.default_voice),
-            extensions: self.extensions.map(Json).or_else(|| Some(Json(serde_json::json!({})))),
+            extensions: self
+                .extensions
+                .map(Json)
+                .or_else(|| Some(Json(serde_json::json!({})))),
             data_id: self.data_id,
             category: default_empty_string_if_none(self.category),
             definition_visibility: default_empty_string_if_none(self.definition_visibility),
@@ -583,7 +629,11 @@ impl Character {
             height: self.height,
             last_activity: self.last_activity,
             migrated_from: default_empty_string_if_none(self.migrated_from),
-            model_prompt: process_encrypted_field(decrypt_field!(&self.model_prompt, &self.model_prompt_nonce, dek))?,
+            model_prompt: process_encrypted_field(decrypt_field!(
+                &self.model_prompt,
+                &self.model_prompt_nonce,
+                dek
+            ))?,
             model_prompt_visibility: default_empty_string_if_none(self.model_prompt_visibility),
             model_temperature: self.model_temperature,
             num_interactions: self.num_interactions,
@@ -599,7 +649,11 @@ impl Character {
                 .usage_hints
                 .map(Json)
                 .or_else(|| Some(Json(serde_json::json!({})))),
-            user_persona: process_encrypted_field(decrypt_field!(&self.user_persona, &self.user_persona_nonce, dek))?,
+            user_persona: process_encrypted_field(decrypt_field!(
+                &self.user_persona,
+                &self.user_persona_nonce,
+                dek
+            ))?,
             user_persona_visibility: default_empty_string_if_none(self.user_persona_visibility),
             visibility: default_empty_string_if_none(self.visibility),
             weight: self.weight,
@@ -725,13 +779,17 @@ impl std::fmt::Debug for CharacterDataForClient {
             .field(
                 "creator_notes_multilingual",
                 &self
-                    .creator_notes_multilingual.as_ref().map(|_| "[REDACTED_JSON]"),
+                    .creator_notes_multilingual
+                    .as_ref()
+                    .map(|_| "[REDACTED_JSON]"),
             )
             .field("source", &self.source.as_ref().map(|_| "[REDACTED_LIST]"))
             .field(
                 "group_only_greetings",
                 &self
-                    .group_only_greetings.as_ref().map(|_| "[REDACTED_LIST]"),
+                    .group_only_greetings
+                    .as_ref()
+                    .map(|_| "[REDACTED_LIST]"),
             )
             .field("creation_date", &self.creation_date)
             .field("modification_date", &self.modification_date)

@@ -89,18 +89,12 @@ impl std::fmt::Debug for Config {
                 "token_counter_default_model",
                 &self.token_counter_default_model,
             )
-            .field(
-                "context_total_token_limit",
-                &self.context_total_token_limit,
-            )
+            .field("context_total_token_limit", &self.context_total_token_limit)
             .field(
                 "context_recent_history_token_budget",
                 &self.context_recent_history_token_budget,
             )
-            .field(
-                "context_rag_token_budget",
-                &self.context_rag_token_budget,
-            )
+            .field("context_rag_token_budget", &self.context_rag_token_budget)
             .finish()
     }
 }

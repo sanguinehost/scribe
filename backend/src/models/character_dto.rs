@@ -79,7 +79,7 @@ impl CharacterCreateDto {
     /// Validates that all required fields are provided and not empty
     pub fn validate(&self) -> Result<(), String> {
         let mut errors = Vec::new();
-        
+
         match &self.name {
             Some(name_val) if name_val.trim().is_empty() => {
                 errors.push("name cannot be empty if provided".to_string());
@@ -89,7 +89,7 @@ impl CharacterCreateDto {
             }
             _ => {}
         }
-        
+
         match &self.description {
             Some(desc_val) if desc_val.trim().is_empty() => {
                 errors.push("description cannot be empty if provided".to_string());
@@ -99,7 +99,7 @@ impl CharacterCreateDto {
             }
             _ => {}
         }
-        
+
         match &self.first_mes {
             Some(fm_val) if fm_val.trim().is_empty() => {
                 errors.push("first_mes cannot be empty if provided".to_string());
@@ -109,7 +109,7 @@ impl CharacterCreateDto {
             }
             _ => {}
         }
-        
+
         if errors.is_empty() {
             Ok(())
         } else {

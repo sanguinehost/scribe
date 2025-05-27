@@ -72,12 +72,19 @@ async fn test_generate_chat_response_triggers_embeddings() -> anyhow::Result<()>
 
     let login_response = client
         .post(format!("{}/api/auth/login", &test_app.address))
-        .header(reqwest::header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
+        .header(
+            reqwest::header::CONTENT_TYPE,
+            mime::APPLICATION_JSON.as_ref(),
+        )
         .json(&login_payload)
         .send()
         .await?;
 
-    assert_eq!(login_response.status(), reqwest::StatusCode::OK, "Login failed");
+    assert_eq!(
+        login_response.status(),
+        reqwest::StatusCode::OK,
+        "Login failed"
+    );
 
     // Extract cookie for subsequent non-reqwest client requests or for verification
     let auth_cookie = login_response
@@ -247,7 +254,7 @@ async fn test_generate_chat_response_triggers_embeddings() -> anyhow::Result<()>
         model: Some("test-embed-trigger-model".to_string()),
         query_text_for_rag: None,
     };
- 
+
     let request = Request::builder()
         .method(Method::POST)
         .uri(format!("/api/chat/{}/generate", session.id))
@@ -363,12 +370,19 @@ async fn test_generate_chat_response_triggers_embeddings_with_existing_session()
 
     let login_response = client
         .post(format!("{}/api/auth/login", &test_app.address))
-        .header(reqwest::header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
+        .header(
+            reqwest::header::CONTENT_TYPE,
+            mime::APPLICATION_JSON.as_ref(),
+        )
         .json(&login_payload)
         .send()
         .await?;
 
-    assert_eq!(login_response.status(), reqwest::StatusCode::OK, "Login failed");
+    assert_eq!(
+        login_response.status(),
+        reqwest::StatusCode::OK,
+        "Login failed"
+    );
 
     // Extract cookie for subsequent non-reqwest client requests or for verification
     let auth_cookie = login_response
@@ -561,7 +575,7 @@ async fn test_generate_chat_response_triggers_embeddings_with_existing_session()
         model: None,
         query_text_for_rag: None,
     };
- 
+
     let request = Request::builder()
         .method(Method::POST)
         .uri(format!("/api/chat/{}/generate", session.id))
@@ -622,12 +636,19 @@ async fn test_rag_context_injection_in_prompt() -> anyhow::Result<()> {
 
     let login_response = client
         .post(format!("{}/api/auth/login", &test_app.address))
-        .header(reqwest::header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
+        .header(
+            reqwest::header::CONTENT_TYPE,
+            mime::APPLICATION_JSON.as_ref(),
+        )
         .json(&login_payload)
         .send()
         .await?;
 
-    assert_eq!(login_response.status(), reqwest::StatusCode::OK, "Login failed");
+    assert_eq!(
+        login_response.status(),
+        reqwest::StatusCode::OK,
+        "Login failed"
+    );
 
     // Extract cookie for subsequent non-reqwest client requests or for verification
     let auth_cookie = login_response
@@ -770,10 +791,11 @@ async fn test_rag_context_injection_in_prompt() -> anyhow::Result<()> {
         })?; // Handles diesel::result::Error
 
     let mock_chunk_text = "The secret code is Ouroboros.".to_string();
-    let chat_message_chunk_metadata = ChatMessageChunkMetadata { // Changed to ChatMessageChunkMetadata
+    let chat_message_chunk_metadata = ChatMessageChunkMetadata {
+        // Changed to ChatMessageChunkMetadata
         message_id: Uuid::new_v4(),
         session_id: session.id,
-        user_id: user.id, // Added user_id
+        user_id: user.id,                 // Added user_id
         speaker: "Assistant".to_string(), // Assuming speaker is not encrypted
         timestamp: Utc::now(),
         text: mock_chunk_text.clone(), // Use String directly
@@ -790,7 +812,7 @@ async fn test_rag_context_injection_in_prompt() -> anyhow::Result<()> {
             // build_prompt_with_rag calls retrieve_relevant_chunks once
             Ok(vec![mock_retrieved_chunk.clone()]), // Clone here
         ]);
- 
+
     let mock_ai_response = ChatResponse {
         model_iden: genai::ModelIden::new(genai::adapter::AdapterKind::Gemini, "mock-rag-model"),
         provider_model_iden: genai::ModelIden::new(
@@ -818,7 +840,7 @@ async fn test_rag_context_injection_in_prompt() -> anyhow::Result<()> {
         model: None,
         query_text_for_rag: Some(query_text.to_string()),
     };
- 
+
     let request = Request::builder()
         .method(Method::POST)
         .uri(format!("/api/chat/{}/generate", session.id))
@@ -843,7 +865,11 @@ async fn test_rag_context_injection_in_prompt() -> anyhow::Result<()> {
         .iter()
         .filter(|call| matches!(call, PipelineCall::RetrieveRelevantChunks { .. }))
         .collect();
-    assert_eq!(retrieve_calls.len(), 1, "Expected one call to retrieve_relevant_chunks");
+    assert_eq!(
+        retrieve_calls.len(),
+        1,
+        "Expected one call to retrieve_relevant_chunks"
+    );
 
     if let Some(PipelineCall::RetrieveRelevantChunks {
         user_id: called_user_id,
@@ -866,7 +892,6 @@ async fn test_rag_context_injection_in_prompt() -> anyhow::Result<()> {
         panic!("RetrieveRelevantChunks call not found or has unexpected structure");
     }
 
-
     // Check the AI request for the RAG-enhanced system prompt
     let last_ai_request = test_app
         .mock_ai_client
@@ -875,7 +900,10 @@ async fn test_rag_context_injection_in_prompt() -> anyhow::Result<()> {
         .get_last_request()
         .expect("AI client was not called");
 
-    println!("Checking AI request contents. System prompt: {:?}", last_ai_request.system);
+    println!(
+        "Checking AI request contents. System prompt: {:?}",
+        last_ai_request.system
+    );
 
     // System prompt should now match the default RAG prompt.
     let expected_system_prompt = format!(
@@ -893,7 +921,8 @@ async fn test_rag_context_injection_in_prompt() -> anyhow::Result<()> {
         - End your responses with action or dialogue to maintain active immersion. Avoid summarization or out-of-character commentary.\n\n\
         [System Instructions End]\n\
         Based on all the above and the story so far, write the next part of the story as the narrator and any relevant non-player characters. Ensure your response is engaging and moves the story forward.",
-        character.name, character.name // Use the character's name from the test context
+        character.name,
+        character.name // Use the character's name from the test context
     );
     assert_eq!(
         last_ai_request.system.as_deref(),
@@ -921,7 +950,9 @@ async fn test_rag_context_injection_in_prompt() -> anyhow::Result<()> {
     );
     let expected_rag_context_header = "---\nRelevant Context:\n"; // Updated to match actual generated header
 
-    if let genai::chat::MessageContent::Text(user_content) = &last_user_message_in_ai_request.content {
+    if let genai::chat::MessageContent::Text(user_content) =
+        &last_user_message_in_ai_request.content
+    {
         assert!(
             user_content.contains(expected_rag_context_header),
             "User message content should contain RAG context header. Got: '{}'",
@@ -930,7 +961,8 @@ async fn test_rag_context_injection_in_prompt() -> anyhow::Result<()> {
         assert!(
             user_content.contains(&expected_rag_chunk_text),
             "User message content should contain RAG chunk text. Expected: '{}'. Got: '{}'",
-            expected_rag_chunk_text, user_content
+            expected_rag_chunk_text,
+            user_content
         );
         assert!(
             user_content.ends_with(query_text), // Original query should be at the end
@@ -965,12 +997,19 @@ async fn generate_chat_response_rag_retrieval_error() -> anyhow::Result<()> {
 
     let login_response = client
         .post(format!("{}/api/auth/login", &test_app.address))
-        .header(reqwest::header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
+        .header(
+            reqwest::header::CONTENT_TYPE,
+            mime::APPLICATION_JSON.as_ref(),
+        )
         .json(&login_payload)
         .send()
         .await?;
 
-    assert_eq!(login_response.status(), reqwest::StatusCode::OK, "Login failed");
+    assert_eq!(
+        login_response.status(),
+        reqwest::StatusCode::OK,
+        "Login failed"
+    );
 
     // Extract cookie for subsequent non-reqwest client requests or for verification
     let auth_cookie = login_response
@@ -1114,7 +1153,8 @@ async fn generate_chat_response_rag_retrieval_error() -> anyhow::Result<()> {
 
     // Set up the mock embedding pipeline service to return an error for the single call
     // made by build_prompt_with_rag
-    let retrieval_error_message = "Mock Qdrant retrieval failure for build_prompt_with_rag".to_string();
+    let retrieval_error_message =
+        "Mock Qdrant retrieval failure for build_prompt_with_rag".to_string();
     test_app
         .mock_embedding_pipeline_service
         .set_retrieve_responses_sequence(vec![Err(AppError::VectorDbError(
@@ -1143,7 +1183,7 @@ async fn generate_chat_response_rag_retrieval_error() -> anyhow::Result<()> {
         model: Some("test-rag-err-model".to_string()),
         query_text_for_rag: None,
     };
- 
+
     let request = Request::builder()
         .method(Method::POST)
         .uri(format!("/api/chat/{}/generate", session.id))
@@ -1155,8 +1195,12 @@ async fn generate_chat_response_rag_retrieval_error() -> anyhow::Result<()> {
         .body(Body::from(serde_json::to_vec(&payload)?))?;
 
     let response = test_app.router.clone().oneshot(request).await?;
-    assert_eq!(response.status(), StatusCode::OK, "Expected 200 OK even with RAG retrieval error");
- 
+    assert_eq!(
+        response.status(),
+        StatusCode::OK,
+        "Expected 200 OK even with RAG retrieval error"
+    );
+
     // Since prompt_builder now handles the error and proceeds, AI client should be called.
     let last_ai_request = test_app
         .mock_ai_client
@@ -1164,7 +1208,7 @@ async fn generate_chat_response_rag_retrieval_error() -> anyhow::Result<()> {
         .expect("Mock client required")
         .get_last_request()
         .expect("AI Client SHOULD have been called");
- 
+
     // The system prompt should now match the default RAG prompt, even if RAG retrieval fails,
     // as the prompt_builder prepares it assuming RAG might be used.
     let expected_system_prompt = format!(
@@ -1182,7 +1226,8 @@ async fn generate_chat_response_rag_retrieval_error() -> anyhow::Result<()> {
         - End your responses with action or dialogue to maintain active immersion. Avoid summarization or out-of-character commentary.\n\n\
         [System Instructions End]\n\
         Based on all the above and the story so far, write the next part of the story as the narrator and any relevant non-player characters. Ensure your response is engaging and moves the story forward.",
-        character.name, character.name // Use the character's name from the test context
+        character.name,
+        character.name // Use the character's name from the test context
     );
     assert_eq!(
         last_ai_request.system.as_deref(),
@@ -1191,13 +1236,16 @@ async fn generate_chat_response_rag_retrieval_error() -> anyhow::Result<()> {
         expected_system_prompt,
         last_ai_request.system
     );
- 
+
     // Verify the AI response content matches the mock
     let response_body = response.into_body().collect().await?.to_bytes();
     let response_json: Value = serde_json::from_slice(&response_body)?;
     // The content from the AI should be the mock_ai_content, not encrypted in this mock path.
-    assert_eq!(response_json.get("content").and_then(Value::as_str), Some(mock_ai_content));
- 
+    assert_eq!(
+        response_json.get("content").and_then(Value::as_str),
+        Some(mock_ai_content)
+    );
+
     // User message and AI message should be saved.
     tokio::time::sleep(Duration::from_millis(200)).await; // Increased sleep
     let session_id_for_fetch = session.id;
@@ -1218,16 +1266,19 @@ async fn generate_chat_response_rag_retrieval_error() -> anyhow::Result<()> {
         .map_err(|e| {
             anyhow::anyhow!("Database query failed (inner diesel::result::Error): {}", e)
         })?;
-    
+
     assert_eq!(
         messages.len(),
         2,
-        "Should have user and AI message saved even after RAG retrieval failure. Messages: {:?}", messages
+        "Should have user and AI message saved even after RAG retrieval failure. Messages: {:?}",
+        messages
     );
     // The DEK is now directly available on the `user` object from `create_test_user`
-    let session_dek_secret_box = &user.dek.as_ref()
-      .expect("User DEK not found in test setup for generate_chat_response_rag_retrieval_error")
-      .0; // Access the inner SecretBox<Vec<u8>> from SerializableSecretDek and take a reference
+    let session_dek_secret_box = &user
+        .dek
+        .as_ref()
+        .expect("User DEK not found in test setup for generate_chat_response_rag_retrieval_error")
+        .0; // Access the inner SecretBox<Vec<u8>> from SerializableSecretDek and take a reference
 
     let user_message_found_and_correct = messages.iter().any(|m| {
         if m.message_type == MessageRole::User {
@@ -1242,16 +1293,28 @@ async fn generate_chat_response_rag_retrieval_error() -> anyhow::Result<()> {
             false
         }
     });
-    assert!(user_message_found_and_correct, "User message with correct decrypted content not found");
-    
-    let saved_ai_msg = messages.iter().find(|m| m.message_type == MessageRole::Assistant).expect("AI message not saved");
-    
+    assert!(
+        user_message_found_and_correct,
+        "User message with correct decrypted content not found"
+    );
+
+    let saved_ai_msg = messages
+        .iter()
+        .find(|m| m.message_type == MessageRole::Assistant)
+        .expect("AI message not saved");
+
     // Decrypt the saved AI message content for assertion
 
-    let decrypted_ai_content = saved_ai_msg.decrypt_content_field(&session_dek_secret_box)
-        .expect("Failed to decrypt AI message content in generate_chat_response_rag_retrieval_error");
-    assert_eq!(decrypted_ai_content, mock_ai_content, "Saved AI message content mismatch after decryption");
- 
+    let decrypted_ai_content = saved_ai_msg
+        .decrypt_content_field(&session_dek_secret_box)
+        .expect(
+            "Failed to decrypt AI message content in generate_chat_response_rag_retrieval_error",
+        );
+    assert_eq!(
+        decrypted_ai_content, mock_ai_content,
+        "Saved AI message content mismatch after decryption"
+    );
+
     Ok(())
 }
 
@@ -1275,12 +1338,19 @@ async fn setup_test_data(use_real_ai: bool) -> anyhow::Result<RagTestContext> {
 
     let login_response = client
         .post(format!("{}/api/auth/login", &test_app.address))
-        .header(reqwest::header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
+        .header(
+            reqwest::header::CONTENT_TYPE,
+            mime::APPLICATION_JSON.as_ref(),
+        )
         .json(&login_payload)
         .send()
         .await?;
 
-    assert_eq!(login_response.status(), reqwest::StatusCode::OK, "Login failed in setup");
+    assert_eq!(
+        login_response.status(),
+        reqwest::StatusCode::OK,
+        "Login failed in setup"
+    );
 
     // Extract cookie for subsequent non-reqwest client requests or for verification
     let auth_cookie = login_response
@@ -1443,7 +1513,7 @@ async fn setup_test_data(use_real_ai: bool) -> anyhow::Result<RagTestContext> {
         model: Some("test-embed-trigger-model".to_string()),
         query_text_for_rag: None,
     };
- 
+
     // Ensure responses are queued for the retrieve_relevant_chunks calls (system prompt + user message)
     // within setup_test_data
     test_app
@@ -1590,7 +1660,7 @@ async fn generate_chat_response_rag_success() -> anyhow::Result<()> {
         model: Some("gemini-2.5-flash-preview-04-17".to_string()),
         query_text_for_rag: None,
     };
- 
+
     let request = Request::builder()
         .method(Method::POST)
         .uri(format!("/api/chat/{}/generate", context.session.id))
@@ -1600,26 +1670,39 @@ async fn generate_chat_response_rag_success() -> anyhow::Result<()> {
         // Ensure RAG is enabled, though no chunks will be found by mock
         .header("X-Scribe-Enable-RAG", "true")
         .body(Body::from(serde_json::to_vec(&payload)?))?;
- 
+
     context.app.mock_embedding_pipeline_service.clear_calls(); // Clear before this test's action
     let response = context.app.router.clone().oneshot(request).await?;
     assert_eq!(response.status(), StatusCode::OK);
- 
+
     tokio::time::sleep(Duration::from_millis(200)).await; // Allow for async RAG call
     let pipeline_calls = context.app.mock_embedding_pipeline_service.get_calls();
     let retrieve_calls: Vec<_> = pipeline_calls
         .iter()
         .filter(|call| matches!(call, PipelineCall::RetrieveRelevantChunks { .. }))
         .collect();
-    assert_eq!(retrieve_calls.len(), 1, "Expected one call to retrieve_relevant_chunks for this test action");
- 
-    if let Some(PipelineCall::RetrieveRelevantChunks { query_text: called_query_text, .. }) = retrieve_calls.first() {
+    assert_eq!(
+        retrieve_calls.len(),
+        1,
+        "Expected one call to retrieve_relevant_chunks for this test action"
+    );
+
+    if let Some(PipelineCall::RetrieveRelevantChunks {
+        query_text: called_query_text,
+        ..
+    }) = retrieve_calls.first()
+    {
         // When payload.query_text_for_rag is None, it defaults to current_user_content from the payload.
-        assert_eq!(*called_query_text, user_query, "query_text_for_rag mismatch in generate_chat_response_rag_success");
+        assert_eq!(
+            *called_query_text, user_query,
+            "query_text_for_rag mismatch in generate_chat_response_rag_success"
+        );
     } else {
-        panic!("RetrieveRelevantChunks call not found or has unexpected structure in generate_chat_response_rag_success");
+        panic!(
+            "RetrieveRelevantChunks call not found or has unexpected structure in generate_chat_response_rag_success"
+        );
     }
- 
+
     let last_ai_request = context
         .app
         .mock_ai_client
@@ -1661,7 +1744,6 @@ async fn generate_chat_response_rag_success() -> anyhow::Result<()> {
         last_ai_request.system
     );
 
-
     let last_user_message_in_ai_request = last_ai_request
         .messages
         .iter()
@@ -1669,7 +1751,9 @@ async fn generate_chat_response_rag_success() -> anyhow::Result<()> {
         .last()
         .expect("No user message found in AI request");
 
-    if let genai::chat::MessageContent::Text(text_content) = &last_user_message_in_ai_request.content {
+    if let genai::chat::MessageContent::Text(text_content) =
+        &last_user_message_in_ai_request.content
+    {
         assert_eq!(text_content, &user_query);
     } else {
         panic!("Expected last user message to be text content");
@@ -1708,14 +1792,15 @@ async fn generate_chat_response_rag_empty_history_success() -> anyhow::Result<()
 
     let user_query_empty_hist = "Query for empty history RAG success".to_string();
     let payload = GenerateChatRequest {
-        history: vec![ApiChatMessage { // API history is just the current message
+        history: vec![ApiChatMessage {
+            // API history is just the current message
             role: "user".to_string(),
             content: user_query_empty_hist.clone(),
         }],
         model: Some("gemini-2.5-flash-preview-04-17".to_string()),
         query_text_for_rag: None,
     };
- 
+
     let request = Request::builder()
         .method(Method::POST)
         .uri(format!("/api/chat/{}/generate", context.session.id))
@@ -1724,26 +1809,39 @@ async fn generate_chat_response_rag_empty_history_success() -> anyhow::Result<()
         .header(header::ACCEPT, mime::APPLICATION_JSON.as_ref())
         .header("X-Scribe-Enable-RAG", "true")
         .body(Body::from(serde_json::to_vec(&payload)?))?;
- 
+
     context.app.mock_embedding_pipeline_service.clear_calls(); // Clear before this test's action
     let response = context.app.router.clone().oneshot(request).await?;
     assert_eq!(response.status(), StatusCode::OK);
- 
+
     tokio::time::sleep(Duration::from_millis(200)).await; // Allow for async RAG call
     let pipeline_calls = context.app.mock_embedding_pipeline_service.get_calls();
     let retrieve_calls: Vec<_> = pipeline_calls
         .iter()
         .filter(|call| matches!(call, PipelineCall::RetrieveRelevantChunks { .. }))
         .collect();
-    assert_eq!(retrieve_calls.len(), 1, "Expected one call to retrieve_relevant_chunks for this test action");
- 
-    if let Some(PipelineCall::RetrieveRelevantChunks { query_text: called_query_text, .. }) = retrieve_calls.first() {
+    assert_eq!(
+        retrieve_calls.len(),
+        1,
+        "Expected one call to retrieve_relevant_chunks for this test action"
+    );
+
+    if let Some(PipelineCall::RetrieveRelevantChunks {
+        query_text: called_query_text,
+        ..
+    }) = retrieve_calls.first()
+    {
         // When payload.query_text_for_rag is None, it defaults to current_user_content from the payload.
-        assert_eq!(*called_query_text, user_query_empty_hist, "query_text_for_rag mismatch in generate_chat_response_rag_empty_history_success");
+        assert_eq!(
+            *called_query_text, user_query_empty_hist,
+            "query_text_for_rag mismatch in generate_chat_response_rag_empty_history_success"
+        );
     } else {
-        panic!("RetrieveRelevantChunks call not found or has unexpected structure in generate_chat_response_rag_empty_history_success");
+        panic!(
+            "RetrieveRelevantChunks call not found or has unexpected structure in generate_chat_response_rag_empty_history_success"
+        );
     }
- 
+
     let last_ai_request = context
         .app
         .mock_ai_client
@@ -1785,7 +1883,9 @@ async fn generate_chat_response_rag_empty_history_success() -> anyhow::Result<()
         .last()
         .expect("No user message found in AI request");
 
-    if let genai::chat::MessageContent::Text(text_content) = &last_user_message_in_ai_request.content {
+    if let genai::chat::MessageContent::Text(text_content) =
+        &last_user_message_in_ai_request.content
+    {
         assert_eq!(text_content, &user_query_empty_hist);
     } else {
         panic!("Expected last user message to be text content");
@@ -1829,7 +1929,7 @@ async fn generate_chat_response_rag_no_relevant_chunks_found() -> anyhow::Result
         model: Some("gemini-2.5-flash-preview-04-17".to_string()),
         query_text_for_rag: None,
     };
- 
+
     let request = Request::builder()
         .method(Method::POST)
         .uri(format!("/api/chat/{}/generate", context.session.id))
@@ -1838,26 +1938,39 @@ async fn generate_chat_response_rag_no_relevant_chunks_found() -> anyhow::Result
         .header(header::ACCEPT, mime::APPLICATION_JSON.as_ref())
         .header("X-Scribe-Enable-RAG", "true")
         .body(Body::from(serde_json::to_vec(&payload)?))?;
- 
+
     context.app.mock_embedding_pipeline_service.clear_calls(); // Clear before this test's action
     let response = context.app.router.clone().oneshot(request).await?;
     assert_eq!(response.status(), StatusCode::OK);
- 
+
     tokio::time::sleep(Duration::from_millis(200)).await; // Allow for async RAG call
     let pipeline_calls = context.app.mock_embedding_pipeline_service.get_calls();
     let retrieve_calls: Vec<_> = pipeline_calls
         .iter()
         .filter(|call| matches!(call, PipelineCall::RetrieveRelevantChunks { .. }))
         .collect();
-    assert_eq!(retrieve_calls.len(), 1, "Expected one call to retrieve_relevant_chunks for this test action");
- 
-    if let Some(PipelineCall::RetrieveRelevantChunks { query_text: called_query_text, .. }) = retrieve_calls.first() {
+    assert_eq!(
+        retrieve_calls.len(),
+        1,
+        "Expected one call to retrieve_relevant_chunks for this test action"
+    );
+
+    if let Some(PipelineCall::RetrieveRelevantChunks {
+        query_text: called_query_text,
+        ..
+    }) = retrieve_calls.first()
+    {
         // When payload.query_text_for_rag is None, it defaults to current_user_content from the payload.
-        assert_eq!(*called_query_text, user_query_no_chunks, "query_text_for_rag mismatch in generate_chat_response_rag_no_relevant_chunks_found");
+        assert_eq!(
+            *called_query_text, user_query_no_chunks,
+            "query_text_for_rag mismatch in generate_chat_response_rag_no_relevant_chunks_found"
+        );
     } else {
-        panic!("RetrieveRelevantChunks call not found or has unexpected structure in generate_chat_response_rag_no_relevant_chunks_found");
+        panic!(
+            "RetrieveRelevantChunks call not found or has unexpected structure in generate_chat_response_rag_no_relevant_chunks_found"
+        );
     }
- 
+
     let last_ai_request = context
         .app
         .mock_ai_client
@@ -1899,7 +2012,9 @@ async fn generate_chat_response_rag_no_relevant_chunks_found() -> anyhow::Result
         .last()
         .expect("No user message found in AI request");
 
-    if let genai::chat::MessageContent::Text(text_content) = &last_user_message_in_ai_request.content {
+    if let genai::chat::MessageContent::Text(text_content) =
+        &last_user_message_in_ai_request.content
+    {
         assert_eq!(text_content, &user_query_no_chunks); // AI should still be called with original user query
     } else {
         panic!("Expected last user message to be text content");
@@ -1986,7 +2101,7 @@ async fn generate_chat_response_rag_uses_character_settings_if_no_session() -> a
         model: Some("gemini-2.5-flash-preview-04-17".to_string()),
         query_text_for_rag: None,
     };
- 
+
     // Ensure responses are queued for this specific /generate call (system prompt + user message)
     context
         .app

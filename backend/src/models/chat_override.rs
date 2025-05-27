@@ -2,8 +2,8 @@ use crate::schema::chat_character_overrides;
 use chrono::{DateTime, Utc};
 use diesel::{AsChangeset, Identifiable, Insertable, Queryable, Selectable};
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 use std::fmt;
+use uuid::Uuid;
 
 #[derive(Queryable, Selectable, Identifiable, AsChangeset, Serialize, Deserialize)]
 #[diesel(table_name = chat_character_overrides)]
@@ -63,4 +63,4 @@ pub struct CharacterOverrideDto {
     pub field_name: String,
     #[validate(length(min = 1))] // Assuming value shouldn't be empty, adjust if needed
     pub value: String, // This will be encrypted before storing as Vec<u8>
-} 
+}

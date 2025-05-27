@@ -47,7 +47,10 @@ pub trait QdrantClientServiceTrait: Send + Sync {
     async fn delete_points(&self, _point_ids: Vec<PointId>) -> Result<(), AppError>;
     async fn delete_points_by_filter(&self, filter: Filter) -> Result<(), AppError>;
     async fn update_collection_settings(&self) -> Result<(), AppError>; // Added Update Settings Method
-    async fn get_point_by_id(&self, point_id: PointId) -> Result<Option<qdrant_client::qdrant::RetrievedPoint>, AppError>;
+    async fn get_point_by_id(
+        &self,
+        point_id: PointId,
+    ) -> Result<Option<qdrant_client::qdrant::RetrievedPoint>, AppError>;
 }
 
 impl QdrantClientService {
@@ -152,7 +155,7 @@ impl QdrantClientService {
             // Use the create_collection method on the new client
             // Pass the CreateCollection struct directly by value
             let target_hnsw_config = HnswConfigDiff {
-                m: Some(0), // Disable global HNSW
+                m: Some(0),          // Disable global HNSW
                 payload_m: Some(16), // Enable per-group HNSW
                 ..Default::default()
             };
@@ -179,13 +182,17 @@ impl QdrantClientService {
                 Ok(_) => {
                     // Creation succeeded
                     info!("Successfully created collection '{}'", self.collection_name);
-                    
+
                     // Wait for collection to be fully ready
                     for i in 0..10 {
                         tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
                         match self.client.collection_exists(&self.collection_name).await {
                             Ok(true) => {
-                                info!("Collection '{}' confirmed ready after {}ms", self.collection_name, (i + 1) * 100);
+                                info!(
+                                    "Collection '{}' confirmed ready after {}ms",
+                                    self.collection_name,
+                                    (i + 1) * 100
+                                );
                                 break;
                             }
                             Ok(false) => {
@@ -249,39 +256,56 @@ impl QdrantClientService {
                         self.collection_name, e
                     ))
                 })?;
-            info!("Successfully updated HNSW config for collection '{}'", self.collection_name);
+            info!(
+                "Successfully updated HNSW config for collection '{}'",
+                self.collection_name
+            );
         }
 
         // Ensure payload indexes exist for group_id fields
         for field_name in ["user_id", "lorebook_id"].iter() {
-            info!("Ensuring payload index exists for field '{}' in collection '{}'", field_name, self.collection_name);
+            info!(
+                "Ensuring payload index exists for field '{}' in collection '{}'",
+                field_name, self.collection_name
+            );
             // It's possible the index already exists. Qdrant's create_field_index
             // is idempotent if the index already exists with the same parameters.
             // If it exists with different parameters, it might error.
             // We'll log errors but proceed, as the main goal is to *try* to create them.
-            let result = self.client.create_field_index(CreateFieldIndexCollection {
-                collection_name: self.collection_name.clone(),
-                wait: Some(true),
-                field_name: field_name.to_string(),
-                field_type: Some(FieldType::Keyword.into()),
-                field_index_params: None, // Use default index params for keyword
-                ordering: None,
-            }).await;
+            let result = self
+                .client
+                .create_field_index(CreateFieldIndexCollection {
+                    collection_name: self.collection_name.clone(),
+                    wait: Some(true),
+                    field_name: field_name.to_string(),
+                    field_type: Some(FieldType::Keyword.into()),
+                    field_index_params: None, // Use default index params for keyword
+                    ordering: None,
+                })
+                .await;
 
             match result {
-                Ok(_) => info!("Successfully ensured payload index for field '{}'", field_name),
+                Ok(_) => info!(
+                    "Successfully ensured payload index for field '{}'",
+                    field_name
+                ),
                 Err(e) => {
                     // Check if the error indicates the index already exists (common case)
                     // Qdrant error for "already exists" might be specific, e.g., involving "Wrong input" if types mismatch
                     // or a more generic "already exists". For now, we log and continue.
                     // A more robust check might involve trying to get collection info and inspect existing indexes.
                     let error_string = e.to_string();
-                    if error_string.contains("already exists") || error_string.contains("exists with different parameters") {
-                         warn!(error = %e, collection = %self.collection_name, field = %field_name, "Payload index for field may already exist or have different params. Proceeding.");
+                    if error_string.contains("already exists")
+                        || error_string.contains("exists with different parameters")
+                    {
+                        warn!(error = %e, collection = %self.collection_name, field = %field_name, "Payload index for field may already exist or have different params. Proceeding.");
                     } else {
                         error!(error = %e, collection = %self.collection_name, field = %field_name, "Failed to create payload index for field. This might be an issue if filtering is required on this field.");
                         // Decide if this should be a hard error. For now, let's make it a hard error to be safe.
-                        return Err(AppError::VectorDbError(format!("Failed to create payload index for field '{}': {}", field_name, e)));
+                        return Err(AppError::VectorDbError(format!(
+                            "Failed to create payload index for field '{}': {}",
+                            field_name, e
+                        )));
                     }
                 }
             }
@@ -514,29 +538,34 @@ mod tests {
         setup_test_qdrant_client_with_name(None).await
     }
 
-    async fn setup_test_qdrant_client_with_name(collection_name: Option<String>) -> Result<QdrantClientService, AppError> {
+    async fn setup_test_qdrant_client_with_name(
+        collection_name: Option<String>,
+    ) -> Result<QdrantClientService, AppError> {
         crate::test_helpers::ensure_rustls_provider_installed(); // Call public helper
 
         dotenv().ok(); // Load .env file for QDRANT_URL
         let mut config = Config::load().expect("Failed to load config for integration test");
-        
+
         // Use a unique collection name for each test to avoid conflicts
         let unique_collection_name = collection_name.unwrap_or_else(|| {
-            format!("test_collection_{}", Uuid::new_v4().to_string().replace('-', "_"))
+            format!(
+                "test_collection_{}",
+                Uuid::new_v4().to_string().replace('-', "_")
+            )
         });
         config.qdrant_collection_name = unique_collection_name.clone();
-        
+
         let config = Arc::new(config);
-        
+
         // Add a small random delay to stagger concurrent test execution
         use rand::random;
         let delay_ms = random::<u64>() % 1000; // 0-999 ms
         tokio::time::sleep(tokio::time::Duration::from_millis(delay_ms)).await;
-        
+
         let service = QdrantClientService::new(config).await?;
 
         info!("Setting up test collection '{}'", service.collection_name);
-        
+
         // Ensure the collection exists (create it fresh for the test)
         service.ensure_collection_exists().await?;
         info!("Collection '{}' ready for test.", service.collection_name);
@@ -547,7 +576,10 @@ mod tests {
     // Helper to cleanup test collection
     async fn cleanup_test_collection(service: &QdrantClientService) {
         info!("Cleaning up test collection '{}'", service.collection_name);
-        let _ = service.client.delete_collection(&service.collection_name).await;
+        let _ = service
+            .client
+            .delete_collection(&service.collection_name)
+            .await;
     }
 
     // Helper to create a simple filter for testing
@@ -699,11 +731,17 @@ mod tests {
         );
 
         let service = result.unwrap();
-        
+
         // Verify the collection actually exists
-        let exists = service.client.collection_exists(&service.collection_name).await;
-        assert!(exists.is_ok() && exists.unwrap(), "Collection should exist after service initialization");
-        
+        let exists = service
+            .client
+            .collection_exists(&service.collection_name)
+            .await;
+        assert!(
+            exists.is_ok() && exists.unwrap(),
+            "Collection should exist after service initialization"
+        );
+
         // Clean up the test collection
         cleanup_test_collection(&service).await;
     }
@@ -1014,12 +1052,18 @@ impl QdrantClientServiceTrait for QdrantClientService {
                 AppError::VectorDbError(format!("Failed to delete points by filter: {}", e))
             })?;
 
-        info!("Successfully deleted points by filter from collection '{}'", self.collection_name);
+        info!(
+            "Successfully deleted points by filter from collection '{}'",
+            self.collection_name
+        );
         Ok(())
     }
 
     #[instrument(skip(self), fields(point_id = ?point_id.point_id_options), name = "qdrant_get_point_by_id_trait")]
-    async fn get_point_by_id(&self, point_id: PointId) -> Result<Option<qdrant_client::qdrant::RetrievedPoint>, AppError> {
+    async fn get_point_by_id(
+        &self,
+        point_id: PointId,
+    ) -> Result<Option<qdrant_client::qdrant::RetrievedPoint>, AppError> {
         let point_id_for_log = format!("{:?}", point_id.point_id_options);
         info!(
             collection = %self.collection_name,
@@ -1030,7 +1074,7 @@ impl QdrantClientServiceTrait for QdrantClientService {
         // self.client is Arc<Qdrant>
         let get_points_request = qdrant_client::qdrant::GetPoints {
             collection_name: self.collection_name.clone(),
-            ids: vec![point_id], // Pass the single PointId in a vec
+            ids: vec![point_id],             // Pass the single PointId in a vec
             with_payload: Some(true.into()), // Include payload
             with_vectors: Some(true.into()), // Include vectors
             read_consistency: None,
@@ -1045,7 +1089,7 @@ impl QdrantClientServiceTrait for QdrantClientService {
                 error!(error = %e, collection = %self.collection_name, point_id = %point_id_for_log, "Failed to get point by ID from Qdrant using get_points");
                 AppError::VectorDbError(format!("Failed to get point by ID {:?} using get_points: {}", point_id_for_log, e))
             })?;
-        
+
         // get_points returns a GetResponse which has a Vec<RetrievedPoint>
         // We expect at most one point.
         Ok(response.result.into_iter().next())

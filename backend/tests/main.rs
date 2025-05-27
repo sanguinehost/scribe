@@ -16,11 +16,21 @@ fn initialize_tests() {
 
     if dot_env_path.exists() {
         match dotenvy::from_path(dot_env_path.as_path()) {
-            Ok(_) => eprintln!("[tests/main.rs @ initialize_tests] Successfully loaded .env from: {}", dot_env_path.display()),
-            Err(e) => eprintln!("[tests/main.rs @ initialize_tests] Error loading .env from {}: {}", dot_env_path.display(), e),
+            Ok(_) => eprintln!(
+                "[tests/main.rs @ initialize_tests] Successfully loaded .env from: {}",
+                dot_env_path.display()
+            ),
+            Err(e) => eprintln!(
+                "[tests/main.rs @ initialize_tests] Error loading .env from {}: {}",
+                dot_env_path.display(),
+                e
+            ),
         }
     } else {
-        eprintln!("[tests/main.rs @ initialize_tests] .env file not found at: {}. Environment variables will not be loaded from this file.", dot_env_path.display());
+        eprintln!(
+            "[tests/main.rs @ initialize_tests] .env file not found at: {}. Environment variables will not be loaded from this file.",
+            dot_env_path.display()
+        );
     }
 }
 
@@ -38,10 +48,10 @@ pub mod chat_generate_stream_misc_tests;
 pub mod chat_generate_stream_rag_tests;
 pub mod chat_generate_stream_success_tests;
 pub mod chat_message_api_tests;
+pub mod chat_overrides_api_tests;
 pub mod chat_session_api_tests;
 pub mod chat_settings_api_tests;
 pub mod chat_suggested_actions_tests;
-pub mod chat_overrides_api_tests;
 pub mod db_integration_tests;
 pub mod embedding_pipeline_tests;
 pub mod first_user_admin_tests;
@@ -52,8 +62,8 @@ pub mod qdrant_pipeline_tests;
 pub mod recovery_key_tests;
 pub mod token_counter_tests;
 pub mod tokenizer_tests;
-pub mod user_store_tests;
-pub mod user_persona_api_tests; // Added for User Persona API tests
+pub mod user_persona_api_tests;
+pub mod user_store_tests; // Added for User Persona API tests
 
 // New characters test module (directory)
 pub mod characters;

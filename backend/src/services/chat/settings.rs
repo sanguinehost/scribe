@@ -1,4 +1,3 @@
-
 use bigdecimal::BigDecimal;
 // use chrono::Utc; // Likely unused after removing updated_at from changeset directly
 use diesel::prelude::*;
@@ -10,9 +9,7 @@ use uuid::Uuid;
 use crate::{
     crypto::{decrypt_gcm, encrypt_gcm},
     errors::AppError,
-    models::chats::{
-            ChatSettingsResponse, SettingsTuple, UpdateChatSettingsRequest,
-        },
+    models::chats::{ChatSettingsResponse, SettingsTuple, UpdateChatSettingsRequest},
     schema::chat_sessions,
     state::DbPool, // Corrected DbPool import
 };
@@ -329,7 +326,6 @@ pub async fn update_session_settings(
                     } else {
                         info!(%session_id, "No changes provided to update chat session settings.");
                     }
-                    
                     // Return Ok(()) from the transaction closure. The actual response will be fetched outside.
                     Ok(())
                 }

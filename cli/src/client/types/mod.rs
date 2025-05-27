@@ -2,8 +2,10 @@
 
 pub mod lorebook_import; // Added for SillyTavern lorebook parsing
 pub mod user_personas;
-pub use self::user_personas::{CreateUserPersonaDto, UserPersonaDataForClient, UpdateUserPersonaDto};
-pub use self::lorebooks::LorebookMetadataResponse; // Added for lorebook metadata
+pub use self::lorebooks::LorebookMetadataResponse;
+pub use self::user_personas::{
+    CreateUserPersonaDto, UpdateUserPersonaDto, UserPersonaDataForClient,
+}; // Added for lorebook metadata
 
 // --- Custom Lorebook DTOs for CLI ---
 pub mod lorebooks {

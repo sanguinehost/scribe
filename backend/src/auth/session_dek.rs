@@ -1,8 +1,8 @@
+use crate::auth::user_store::Backend as AuthBackend;
 use crate::errors::AppError;
 use async_trait::async_trait;
 use axum::{extract::FromRequestParts, http::request::Parts};
 use axum_login::AuthSession;
-use crate::auth::user_store::Backend as AuthBackend;
 use secrecy::{ExposeSecret, SecretBox}; // Removed SecretVec
 use std::fmt;
 use tracing::{debug, error, warn};
@@ -57,15 +57,12 @@ where
         debug!("SessionDek extractor: Attempting to retrieve DEK from user object.");
 
         // Extract the AuthSession to get the authenticated user
-        let auth_session: AuthSession<AuthBackend> = AuthSession::from_request_parts(parts, state).await.map_err(
-            |err| {
-                error!(
-                    "SessionDek: Failed to extract AuthSession: {:?}",
-                    err
-                );
+        let auth_session: AuthSession<AuthBackend> = AuthSession::from_request_parts(parts, state)
+            .await
+            .map_err(|err| {
+                error!("SessionDek: Failed to extract AuthSession: {:?}", err);
                 AppError::Unauthorized("Failed to extract auth session".to_string())
-            },
-        )?;
+            })?;
 
         // Get the authenticated user
         let user = auth_session.user.ok_or_else(|| {
@@ -96,7 +93,7 @@ where
                     user_id = %user_id,
                     "SessionDek extractor: DEK not found in user object. User may need to log in again."
                 );
-                
+
                 Err(AppError::Unauthorized(
                     "DEK not found. Please log in again.".to_string(),
                 ))

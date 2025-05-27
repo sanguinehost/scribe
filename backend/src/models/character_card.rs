@@ -334,7 +334,7 @@ mod tests;
 
 // --- Diesel Database Models ---
 
-use crate::schema::{character_assets};
+use crate::schema::character_assets;
 // use crate::models::users::User; // Unused import
 
 // Note: For Insertable, we might need a separate struct `NewCharacter`
@@ -807,7 +807,6 @@ impl std::fmt::Debug for NewCharacterAsset {
     }
 }
 
-
 // --- Unit tests ---
 #[cfg(test)]
 mod tests {
@@ -1121,7 +1120,6 @@ mod tests {
             ext: "png".to_string(),
         };
         let _ = format!("{:?}", new_char_asset);
-
     }
 
     // --- Tests for NewCharacter::from_parsed_card (covering lines 433, 451, 457, 468, 471, 477-478, 528, 533) ---

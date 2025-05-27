@@ -1,5 +1,5 @@
-use crate::client::{ClientCharacterDataForClient, HttpClient};
 use crate::client::types::{CharacterCreateDto, CharacterUpdateDto};
+use crate::client::{ClientCharacterDataForClient, HttpClient};
 use crate::error::CliError;
 use crate::io::IoHandler;
 use crate::{CharacterCreateArgs, CharacterEditArgs}; // Assuming CharacterEditArgs is made public
@@ -191,8 +191,14 @@ pub async fn handle_character_create_oneliner<H: IoHandler, C: HttpClient>(
                 created_char.name, created_char.id
             ))?;
             // Optionally show more details
-            io_handler.write_line(&format!("  Description: {}", created_char.description.as_deref().unwrap_or("N/A")))?;
-            io_handler.write_line(&format!("  First Message: {}", created_char.first_mes.as_deref().unwrap_or("N/A")))?;
+            io_handler.write_line(&format!(
+                "  Description: {}",
+                created_char.description.as_deref().unwrap_or("N/A")
+            ))?;
+            io_handler.write_line(&format!(
+                "  First Message: {}",
+                created_char.first_mes.as_deref().unwrap_or("N/A")
+            ))?;
         }
         Err(e) => {
             io_handler.write_line(&format!("Error creating character: {}", e))?;
@@ -221,28 +227,45 @@ pub async fn handle_character_create_wizard<H: IoHandler, C: HttpClient>(
     };
 
     // Optional fields
-    character_data.personality = prompt_optional_field_string(io_handler, "Personality (optional):")?.unwrap_or_default();
-    character_data.scenario = prompt_optional_field_string(io_handler, "Scenario (optional):")?.unwrap_or_default();
-    character_data.system_prompt = prompt_optional_field_string(io_handler, "System Prompt (optional):")?.unwrap_or_default();
-    character_data.creator_notes = prompt_optional_field_string(io_handler, "Creator Notes (optional):")?.unwrap_or_default();
-    
+    character_data.personality =
+        prompt_optional_field_string(io_handler, "Personality (optional):")?.unwrap_or_default();
+    character_data.scenario =
+        prompt_optional_field_string(io_handler, "Scenario (optional):")?.unwrap_or_default();
+    character_data.system_prompt =
+        prompt_optional_field_string(io_handler, "System Prompt (optional):")?.unwrap_or_default();
+    character_data.creator_notes =
+        prompt_optional_field_string(io_handler, "Creator Notes (optional):")?.unwrap_or_default();
+
     if prompt_yes_no(io_handler, "Add tags? (y/N)")? {
         let tags_str = io_handler.read_line("Tags (comma-separated):")?;
         character_data.tags = tags_str.split(',').map(|s| s.trim().to_string()).collect();
     }
     if prompt_yes_no(io_handler, "Add alternate greetings? (y/N)")? {
         let alt_greetings_str = io_handler.read_line("Alternate Greetings (comma-separated):")?;
-        character_data.alternate_greetings = alt_greetings_str.split(',').map(|s| s.trim().to_string()).collect();
+        character_data.alternate_greetings = alt_greetings_str
+            .split(',')
+            .map(|s| s.trim().to_string())
+            .collect();
     }
-    
+
     // TODO: Add prompts for other CharacterCreateDto fields as desired
 
     io_handler.write_line("\n--- Review Character ---")?;
     io_handler.write_line(&format!("Name: {}", character_data.name.as_ref().unwrap()))?;
-    io_handler.write_line(&format!("Description: {}", character_data.description.as_ref().unwrap()))?;
-    io_handler.write_line(&format!("First Message: {}", character_data.first_mes.as_ref().unwrap()))?;
-    if !character_data.personality.is_empty() { io_handler.write_line(&format!("Personality: {}", character_data.personality))?; }
-    if !character_data.scenario.is_empty() { io_handler.write_line(&format!("Scenario: {}", character_data.scenario))?; }
+    io_handler.write_line(&format!(
+        "Description: {}",
+        character_data.description.as_ref().unwrap()
+    ))?;
+    io_handler.write_line(&format!(
+        "First Message: {}",
+        character_data.first_mes.as_ref().unwrap()
+    ))?;
+    if !character_data.personality.is_empty() {
+        io_handler.write_line(&format!("Personality: {}", character_data.personality))?;
+    }
+    if !character_data.scenario.is_empty() {
+        io_handler.write_line(&format!("Scenario: {}", character_data.scenario))?;
+    }
     // ... review other fields ...
 
     if prompt_yes_no(io_handler, "\nSubmit this character? (Y/n)")? {
@@ -266,7 +289,10 @@ pub async fn handle_character_create_wizard<H: IoHandler, C: HttpClient>(
 }
 
 // Helper to prompt for a mandatory text field
-fn prompt_mandatory_field<H: IoHandler>(io_handler: &mut H, prompt: &str) -> Result<String, CliError> {
+fn prompt_mandatory_field<H: IoHandler>(
+    io_handler: &mut H,
+    prompt: &str,
+) -> Result<String, CliError> {
     loop {
         let value = io_handler.read_line(prompt)?;
         if value.trim().is_empty() {
@@ -278,7 +304,10 @@ fn prompt_mandatory_field<H: IoHandler>(io_handler: &mut H, prompt: &str) -> Res
 }
 
 // Helper to prompt for an optional text field
-fn prompt_optional_field_string<H: IoHandler>(io_handler: &mut H, prompt: &str) -> Result<Option<String>, CliError> {
+fn prompt_optional_field_string<H: IoHandler>(
+    io_handler: &mut H,
+    prompt: &str,
+) -> Result<Option<String>, CliError> {
     let value = io_handler.read_line(prompt)?;
     if value.trim().is_empty() {
         Ok(None)
@@ -288,7 +317,10 @@ fn prompt_optional_field_string<H: IoHandler>(io_handler: &mut H, prompt: &str) 
 }
 
 // Helper to prompt for a yes/no question, defaulting to 'yes' if input is empty or 'y'
-pub(crate) fn prompt_yes_no<H: IoHandler>(io_handler: &mut H, prompt: &str) -> Result<bool, CliError> {
+pub(crate) fn prompt_yes_no<H: IoHandler>(
+    io_handler: &mut H,
+    prompt: &str,
+) -> Result<bool, CliError> {
     let response = io_handler.read_line(prompt)?.trim().to_lowercase();
     Ok(response.is_empty() || response == "y" || response == "yes")
 }
@@ -359,21 +391,23 @@ pub async fn handle_character_edit_wizard<H: IoHandler, C: HttpClient>(
     io_handler.write_line("\n--- Edit Existing Character (Wizard) ---")?;
 
     let character_id_str = io_handler.read_line("Enter Character ID (UUID) to edit:")?;
-    let character_id = Uuid::parse_str(&character_id_str).map_err(|_| {
-        CliError::InputError(format!("Invalid UUID format: {}", character_id_str))
-    })?;
+    let character_id = Uuid::parse_str(&character_id_str)
+        .map_err(|_| CliError::InputError(format!("Invalid UUID format: {}", character_id_str)))?;
 
     io_handler.write_line("Fetching current character data...")?;
     let mut current_char = client.get_character(character_id).await.map_err(|e| {
         io_handler
-            .write_line(&format!("Failed to fetch character {}: {}", character_id, e))
-            .ok(); 
+            .write_line(&format!(
+                "Failed to fetch character {}: {}",
+                character_id, e
+            ))
+            .ok();
         e
     })?;
 
     io_handler.write_line("\n--- Current Character Details ---")?;
     display_character_details(io_handler, &current_char)?;
-    
+
     let mut update_dto = CharacterUpdateDto::default();
     let mut changed_fields_summary = Vec::new();
 
@@ -417,31 +451,80 @@ pub async fn handle_character_edit_wizard<H: IoHandler, C: HttpClient>(
 
     // For ClientCharacterDataForClient, name is String, not Option<String>.
     // We'll handle it slightly differently:
-    if prompt_yes_no(io_handler, &format!("Edit Name ('{}')? (y/N)", current_char.name))? {
+    if prompt_yes_no(
+        io_handler,
+        &format!("Edit Name ('{}')? (y/N)", current_char.name),
+    )? {
         let new_name_val = prompt_mandatory_field(io_handler, "New Name:")?; // Name is mandatory if changed
         update_dto.name = Some(new_name_val.clone());
-        changed_fields_summary.push(format!("Name: '{}' -> '{}'", current_char.name, new_name_val));
+        changed_fields_summary.push(format!(
+            "Name: '{}' -> '{}'",
+            current_char.name, new_name_val
+        ));
         current_char.name = new_name_val;
     }
 
-    edit_optional_field!(description, "Description", current_char.description.as_deref().unwrap_or("N/A"));
-    edit_optional_field!(personality, "Personality", current_char.personality.as_deref().unwrap_or("N/A"));
-    edit_optional_field!(scenario, "Scenario", current_char.scenario.as_deref().unwrap_or("N/A"));
-    edit_optional_field!(first_mes, "First Message", current_char.first_mes.as_deref().unwrap_or("N/A"));
-    edit_optional_field!(system_prompt, "System Prompt", current_char.system_prompt.as_deref().unwrap_or("N/A"));
-    edit_optional_field!(creator_notes, "Creator Notes", current_char.creator_notes.as_deref().unwrap_or("N/A"));
-    
+    edit_optional_field!(
+        description,
+        "Description",
+        current_char.description.as_deref().unwrap_or("N/A")
+    );
+    edit_optional_field!(
+        personality,
+        "Personality",
+        current_char.personality.as_deref().unwrap_or("N/A")
+    );
+    edit_optional_field!(
+        scenario,
+        "Scenario",
+        current_char.scenario.as_deref().unwrap_or("N/A")
+    );
+    edit_optional_field!(
+        first_mes,
+        "First Message",
+        current_char.first_mes.as_deref().unwrap_or("N/A")
+    );
+    edit_optional_field!(
+        system_prompt,
+        "System Prompt",
+        current_char.system_prompt.as_deref().unwrap_or("N/A")
+    );
+    edit_optional_field!(
+        creator_notes,
+        "Creator Notes",
+        current_char.creator_notes.as_deref().unwrap_or("N/A")
+    );
+
     // Example for Vec<String> field: tags
-    let current_tags_display = current_char.tags.as_ref().map(|v| v.iter().filter_map(|s| s.as_ref().map(|x| x.as_str())).collect::<Vec<&str>>().join(", ")).unwrap_or_else(|| "N/A".to_string());
-    if prompt_yes_no(io_handler, &format!("Edit Tags ('{}')? (y/N)", current_tags_display))? {
+    let current_tags_display = current_char
+        .tags
+        .as_ref()
+        .map(|v| {
+            v.iter()
+                .filter_map(|s| s.as_ref().map(|x| x.as_str()))
+                .collect::<Vec<&str>>()
+                .join(", ")
+        })
+        .unwrap_or_else(|| "N/A".to_string());
+    if prompt_yes_no(
+        io_handler,
+        &format!("Edit Tags ('{}')? (y/N)", current_tags_display),
+    )? {
         let new_tags_str = io_handler.read_line("New Tags (comma-separated, 'none' to clear):")?;
         if new_tags_str.trim().to_lowercase() == "none" {
             update_dto.tags = Some(vec![]);
             changed_fields_summary.push(format!("Tags: '{}' -> (cleared)", current_tags_display));
         } else if !new_tags_str.is_empty() {
-            let new_tags_vec = new_tags_str.split(',').map(|s| s.trim().to_string()).collect::<Vec<String>>();
+            let new_tags_vec = new_tags_str
+                .split(',')
+                .map(|s| s.trim().to_string())
+                .collect::<Vec<String>>();
             update_dto.tags = Some(new_tags_vec.clone());
-            changed_fields_summary.push(format!("Tags: '{}' -> '{}'", current_tags_display, new_tags_vec.join(", ")));
+            changed_fields_summary.push(format!(
+                "Tags: '{}' -> '{}'",
+                current_tags_display,
+                new_tags_vec.join(", ")
+            ));
         }
     }
     // TODO: Add prompts for ALL other editable fields in CharacterUpdateDto
@@ -455,7 +538,7 @@ pub async fn handle_character_edit_wizard<H: IoHandler, C: HttpClient>(
     for change in changed_fields_summary {
         io_handler.write_line(&format!("  - {}", change))?;
     }
-    
+
     if prompt_yes_no(io_handler, "\nSubmit these changes? (Y/n)")? {
         match client.update_character(character_id, update_dto).await {
             Ok(updated_char_response) => {
@@ -483,19 +566,51 @@ fn display_character_details<H: IoHandler>(
 ) -> Result<(), CliError> {
     io_handler.write_line(&format!("  ID: {}", character.id))?;
     io_handler.write_line(&format!("  Name: {}", character.name))?; // Name is String
-    io_handler.write_line(&format!("  Description: {}", character.description.as_deref().unwrap_or("N/A")))?;
-    io_handler.write_line(&format!("  Personality: {}", character.personality.as_deref().unwrap_or("N/A")))?;
-    io_handler.write_line(&format!("  Scenario: {}", character.scenario.as_deref().unwrap_or("N/A")))?;
-    io_handler.write_line(&format!("  First Message: {}", character.first_mes.as_deref().unwrap_or("N/A")))?;
-    io_handler.write_line(&format!("  System Prompt: {}", character.system_prompt.as_deref().unwrap_or("N/A")))?;
-    io_handler.write_line(&format!("  Creator Notes: {}", character.creator_notes.as_deref().unwrap_or("N/A")))?;
-    let tags_display = character.tags.as_ref()
-        .map(|v| v.iter().filter_map(|s| s.as_ref().map(String::as_str)).collect::<Vec<&str>>().join(", "))
+    io_handler.write_line(&format!(
+        "  Description: {}",
+        character.description.as_deref().unwrap_or("N/A")
+    ))?;
+    io_handler.write_line(&format!(
+        "  Personality: {}",
+        character.personality.as_deref().unwrap_or("N/A")
+    ))?;
+    io_handler.write_line(&format!(
+        "  Scenario: {}",
+        character.scenario.as_deref().unwrap_or("N/A")
+    ))?;
+    io_handler.write_line(&format!(
+        "  First Message: {}",
+        character.first_mes.as_deref().unwrap_or("N/A")
+    ))?;
+    io_handler.write_line(&format!(
+        "  System Prompt: {}",
+        character.system_prompt.as_deref().unwrap_or("N/A")
+    ))?;
+    io_handler.write_line(&format!(
+        "  Creator Notes: {}",
+        character.creator_notes.as_deref().unwrap_or("N/A")
+    ))?;
+    let tags_display = character
+        .tags
+        .as_ref()
+        .map(|v| {
+            v.iter()
+                .filter_map(|s| s.as_ref().map(String::as_str))
+                .collect::<Vec<&str>>()
+                .join(", ")
+        })
         .filter(|s| !s.is_empty())
         .unwrap_or_else(|| "N/A".to_string());
     io_handler.write_line(&format!("  Tags: {}", tags_display))?;
-    let alt_greetings_display = character.alternate_greetings.as_ref()
-        .map(|v| v.iter().filter_map(|s| s.as_ref().map(String::as_str)).collect::<Vec<&str>>().join("; "))
+    let alt_greetings_display = character
+        .alternate_greetings
+        .as_ref()
+        .map(|v| {
+            v.iter()
+                .filter_map(|s| s.as_ref().map(String::as_str))
+                .collect::<Vec<&str>>()
+                .join("; ")
+        })
         .filter(|s| !s.is_empty())
         .unwrap_or_else(|| "N/A".to_string());
     io_handler.write_line(&format!("  Alternate Greetings: {}", alt_greetings_display))?;

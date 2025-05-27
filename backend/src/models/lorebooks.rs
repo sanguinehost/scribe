@@ -11,7 +11,16 @@ use uuid::Uuid;
 // --------------------
 
 #[derive(
-    Queryable, Selectable, Identifiable, Associations, Serialize, Deserialize, Debug, Clone, PartialEq, Default,
+    Queryable,
+    Selectable,
+    Identifiable,
+    Associations,
+    Serialize,
+    Deserialize,
+    Debug,
+    Clone,
+    PartialEq,
+    Default,
 )]
 #[diesel(table_name = lorebooks)]
 #[diesel(belongs_to(User))]
@@ -44,7 +53,16 @@ pub struct NewLorebook {
 // -------------------------
 
 #[derive(
-    Queryable, Selectable, Identifiable, Associations, Serialize, Deserialize, Debug, Clone, PartialEq, AsChangeset,
+    Queryable,
+    Selectable,
+    Identifiable,
+    Associations,
+    Serialize,
+    Deserialize,
+    Debug,
+    Clone,
+    PartialEq,
+    AsChangeset,
 )]
 #[diesel(table_name = lorebook_entries, treat_none_as_null = true)]
 #[diesel(belongs_to(Lorebook))]

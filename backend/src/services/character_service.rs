@@ -1,23 +1,23 @@
 use std::sync::Arc;
 
-use deadpool_diesel::postgres::Pool as DeadpoolPgPool; // Changed from sqlx::PgPool
-use uuid::Uuid;
 use chrono::{DateTime, Utc}; // For timestamps
+use deadpool_diesel::postgres::Pool as DeadpoolPgPool; // Changed from sqlx::PgPool
 use secrecy::ExposeSecret; // For DEK
-use tracing::{info, instrument}; // For logging
+use tracing::{info, instrument};
+use uuid::Uuid; // For logging
 
 use crate::auth::session_dek::SessionDek;
-use crate::services::encryption_service::EncryptionService;
 use crate::errors::AppError;
 use crate::models::character_card::NewCharacter;
-use crate::models::characters::{Character, CharacterDataForClient};
 use crate::models::character_dto::{CharacterCreateDto, CharacterUpdateDto}; // Added CharacterUpdateDto
+use crate::models::characters::{Character, CharacterDataForClient};
 use crate::schema::characters; // For characters::table, characters::id
 use crate::schema::characters::dsl::{id as character_dsl_id, user_id as character_dsl_user_id}; // for explicit column access
-use diesel::prelude::*; // For .values(), .returning(), .get_result(), etc.
-use diesel::result::Error as DieselError; // Added DieselError
+use crate::services::encryption_service::EncryptionService;
 use diesel::RunQueryDsl; // Explicitly for insert_into, select, find
 use diesel::SelectableHelper;
+use diesel::prelude::*; // For .values(), .returning(), .get_result(), etc.
+use diesel::result::Error as DieselError; // Added DieselError
 use diesel_json; // For Json<Value> type in Diesel models
 use serde_json; // For json!({}) macro
 
@@ -28,7 +28,8 @@ pub struct CharacterService {
 }
 
 impl CharacterService {
-    pub fn new(db_pool: DeadpoolPgPool, encryption_service: Arc<EncryptionService>) -> Self { // Changed db_pool type
+    pub fn new(db_pool: DeadpoolPgPool, encryption_service: Arc<EncryptionService>) -> Self {
+        // Changed db_pool type
         Self {
             db_pool,
             encryption_service,
@@ -49,10 +50,7 @@ impl CharacterService {
             Ok((None, None))
         } else {
             // Corrected: pass plaintext as &str if EncryptionService::encrypt expects it
-            let (ciphertext, nonce) = self
-                .encryption_service
-                .encrypt(plaintext, dek_key)
-                .await?;
+            let (ciphertext, nonce) = self.encryption_service.encrypt(plaintext, dek_key).await?;
             Ok((Some(ciphertext), Some(nonce)))
         }
     }
@@ -103,7 +101,10 @@ impl CharacterService {
         // Encrypt fields from DTO using the service's helper method
         let (description_enc, description_nonce_enc) = self
             ._encrypt_string_field_with_nonce(
-                create_dto.description.as_deref().expect("Description guaranteed by validation"),
+                create_dto
+                    .description
+                    .as_deref()
+                    .expect("Description guaranteed by validation"),
                 dek_key_bytes,
             )
             .await?;
@@ -115,7 +116,10 @@ impl CharacterService {
             .await?;
         let (first_mes_enc, first_mes_nonce_enc) = self
             ._encrypt_string_field_with_nonce(
-                create_dto.first_mes.as_deref().expect("First message guaranteed by validation"),
+                create_dto
+                    .first_mes
+                    .as_deref()
+                    .expect("First message guaranteed by validation"),
                 dek_key_bytes,
             )
             .await?;
@@ -135,7 +139,9 @@ impl CharacterService {
         // Create a NewCharacter from the DTO
         let new_character_for_db = NewCharacter {
             user_id: user_id_val,
-            name: create_dto.name.expect("Name should be present after validation"),
+            name: create_dto
+                .name
+                .expect("Name should be present after validation"),
             spec: "chara_card_v3".to_string(),
             spec_version: "3.0".to_string(),
             description: description_enc,
@@ -154,17 +160,66 @@ impl CharacterService {
             system_prompt_nonce: system_prompt_nonce_enc,
             post_history_instructions: post_history_instructions_enc,
             post_history_instructions_nonce: post_history_instructions_nonce_enc,
-            tags: if create_dto.tags.is_empty() { None } else { Some(create_dto.tags.into_iter().map(Some).collect()) },
-            creator: if create_dto.creator.is_empty() { None } else { Some(create_dto.creator) },
-            character_version: if create_dto.character_version.is_empty() { None } else { Some(create_dto.character_version) },
-            alternate_greetings: if create_dto.alternate_greetings.is_empty() { None } else { Some(create_dto.alternate_greetings.into_iter().map(Some).collect()) },
-            creator_notes_multilingual: create_dto.creator_notes_multilingual.map(|j| diesel_json::Json(j.0)),
+            tags: if create_dto.tags.is_empty() {
+                None
+            } else {
+                Some(create_dto.tags.into_iter().map(Some).collect())
+            },
+            creator: if create_dto.creator.is_empty() {
+                None
+            } else {
+                Some(create_dto.creator)
+            },
+            character_version: if create_dto.character_version.is_empty() {
+                None
+            } else {
+                Some(create_dto.character_version)
+            },
+            alternate_greetings: if create_dto.alternate_greetings.is_empty() {
+                None
+            } else {
+                Some(
+                    create_dto
+                        .alternate_greetings
+                        .into_iter()
+                        .map(Some)
+                        .collect(),
+                )
+            },
+            creator_notes_multilingual: create_dto
+                .creator_notes_multilingual
+                .map(|j| diesel_json::Json(j.0)),
             nickname: create_dto.nickname,
-            source: create_dto.source.and_then(|s_vec| if s_vec.is_empty() { None } else { Some(s_vec.into_iter().map(Some).collect()) }),
-            group_only_greetings: if create_dto.group_only_greetings.is_empty() { None } else { Some(create_dto.group_only_greetings.into_iter().map(Some).collect()) },
-            creation_date: create_dto.creation_date.and_then(|ts| DateTime::from_timestamp(ts, 0)),
-            modification_date: create_dto.modification_date.and_then(|ts| DateTime::from_timestamp(ts, 0)),
-            extensions: Some(create_dto.extensions.map(|j| diesel_json::Json(j.0)).unwrap_or_else(|| diesel_json::Json(serde_json::json!({})))),
+            source: create_dto.source.and_then(|s_vec| {
+                if s_vec.is_empty() {
+                    None
+                } else {
+                    Some(s_vec.into_iter().map(Some).collect())
+                }
+            }),
+            group_only_greetings: if create_dto.group_only_greetings.is_empty() {
+                None
+            } else {
+                Some(
+                    create_dto
+                        .group_only_greetings
+                        .into_iter()
+                        .map(Some)
+                        .collect(),
+                )
+            },
+            creation_date: create_dto
+                .creation_date
+                .and_then(|ts| DateTime::from_timestamp(ts, 0)),
+            modification_date: create_dto
+                .modification_date
+                .and_then(|ts| DateTime::from_timestamp(ts, 0)),
+            extensions: Some(
+                create_dto
+                    .extensions
+                    .map(|j| diesel_json::Json(j.0))
+                    .unwrap_or_else(|| diesel_json::Json(serde_json::json!({}))),
+            ),
             persona: None,
             persona_nonce: None,
             world_scenario: None,
@@ -219,17 +274,18 @@ impl CharacterService {
             .map_err(|e| {
                 AppError::InternalServerErrorGeneric(format!("Insert interaction error: {}", e))
             })?
-            .map_err(|e| {
-                AppError::DatabaseQueryError(format!("Insert DB error: {}", e))
-            })?;
+            .map_err(|e| AppError::DatabaseQueryError(format!("Insert DB error: {}", e)))?;
 
         info!(character_id = %returned_id, "Character basic info returned after manual insertion");
 
         // Fetch the inserted character to return its full data
         let conn_fetch = self.db_pool.get().await.map_err(|e| {
-            AppError::DbPoolError(format!("Failed to get DB connection from pool for fetch: {}", e))
+            AppError::DbPoolError(format!(
+                "Failed to get DB connection from pool for fetch: {}",
+                e
+            ))
         })?;
-        
+
         let inserted_character: Character = conn_fetch
             .interact(move |conn_select_block| {
                 characters::table
@@ -241,9 +297,7 @@ impl CharacterService {
             .map_err(|e| {
                 AppError::InternalServerErrorGeneric(format!("Fetch interaction error: {}", e))
             })?
-            .map_err(|e| {
-                AppError::DatabaseQueryError(format!("Fetch DB error: {}", e))
-            })?;
+            .map_err(|e| AppError::DatabaseQueryError(format!("Fetch DB error: {}", e)))?;
 
         info!(character_id = %inserted_character.id, "Character manually created and saved (full data fetched)");
 
@@ -268,13 +322,20 @@ impl CharacterService {
 
         // Fetch the existing character from the database to verify ownership
         let conn_fetch = self.db_pool.get().await.map_err(|e| {
-            AppError::DbPoolError(format!("Failed to get DB connection from pool for fetch: {}", e))
+            AppError::DbPoolError(format!(
+                "Failed to get DB connection from pool for fetch: {}",
+                e
+            ))
         })?;
-        
+
         let mut existing_character: Character = conn_fetch
             .interact(move |conn_select_block| {
                 characters::table
-                    .filter(character_dsl_id.eq(character_id_to_update).and(character_dsl_user_id.eq(user_id_val)))
+                    .filter(
+                        character_dsl_id
+                            .eq(character_id_to_update)
+                            .and(character_dsl_user_id.eq(user_id_val)),
+                    )
                     .select(Character::as_select())
                     .get_result::<Character>(conn_select_block)
             })
@@ -300,27 +361,91 @@ impl CharacterService {
         }
 
         // Encrypted fields
-        self._update_optional_encrypted_string_field(&update_dto.description, dek_key_bytes, &mut existing_character.description, &mut existing_character.description_nonce).await?;
-        self._update_optional_encrypted_string_field(&update_dto.personality, dek_key_bytes, &mut existing_character.personality, &mut existing_character.personality_nonce).await?;
-        self._update_optional_encrypted_string_field(&update_dto.scenario, dek_key_bytes, &mut existing_character.scenario, &mut existing_character.scenario_nonce).await?;
-        self._update_optional_encrypted_string_field(&update_dto.first_mes, dek_key_bytes, &mut existing_character.first_mes, &mut existing_character.first_mes_nonce).await?;
-        self._update_optional_encrypted_string_field(&update_dto.mes_example, dek_key_bytes, &mut existing_character.mes_example, &mut existing_character.mes_example_nonce).await?;
-        self._update_optional_encrypted_string_field(&update_dto.creator_notes, dek_key_bytes, &mut existing_character.creator_notes, &mut existing_character.creator_notes_nonce).await?;
-        self._update_optional_encrypted_string_field(&update_dto.system_prompt, dek_key_bytes, &mut existing_character.system_prompt, &mut existing_character.system_prompt_nonce).await?;
-        self._update_optional_encrypted_string_field(&update_dto.post_history_instructions, dek_key_bytes, &mut existing_character.post_history_instructions, &mut existing_character.post_history_instructions_nonce).await?;
-        
+        self._update_optional_encrypted_string_field(
+            &update_dto.description,
+            dek_key_bytes,
+            &mut existing_character.description,
+            &mut existing_character.description_nonce,
+        )
+        .await?;
+        self._update_optional_encrypted_string_field(
+            &update_dto.personality,
+            dek_key_bytes,
+            &mut existing_character.personality,
+            &mut existing_character.personality_nonce,
+        )
+        .await?;
+        self._update_optional_encrypted_string_field(
+            &update_dto.scenario,
+            dek_key_bytes,
+            &mut existing_character.scenario,
+            &mut existing_character.scenario_nonce,
+        )
+        .await?;
+        self._update_optional_encrypted_string_field(
+            &update_dto.first_mes,
+            dek_key_bytes,
+            &mut existing_character.first_mes,
+            &mut existing_character.first_mes_nonce,
+        )
+        .await?;
+        self._update_optional_encrypted_string_field(
+            &update_dto.mes_example,
+            dek_key_bytes,
+            &mut existing_character.mes_example,
+            &mut existing_character.mes_example_nonce,
+        )
+        .await?;
+        self._update_optional_encrypted_string_field(
+            &update_dto.creator_notes,
+            dek_key_bytes,
+            &mut existing_character.creator_notes,
+            &mut existing_character.creator_notes_nonce,
+        )
+        .await?;
+        self._update_optional_encrypted_string_field(
+            &update_dto.system_prompt,
+            dek_key_bytes,
+            &mut existing_character.system_prompt,
+            &mut existing_character.system_prompt_nonce,
+        )
+        .await?;
+        self._update_optional_encrypted_string_field(
+            &update_dto.post_history_instructions,
+            dek_key_bytes,
+            &mut existing_character.post_history_instructions,
+            &mut existing_character.post_history_instructions_nonce,
+        )
+        .await?;
+
         // Non-encrypted fields
         if let Some(tags_val) = update_dto.tags {
-            existing_character.tags = if tags_val.is_empty() { None } else { Some(tags_val.into_iter().map(Some).collect()) };
+            existing_character.tags = if tags_val.is_empty() {
+                None
+            } else {
+                Some(tags_val.into_iter().map(Some).collect())
+            };
         }
         if let Some(creator_val) = update_dto.creator {
-            existing_character.creator = if creator_val.is_empty() { None } else { Some(creator_val) };
+            existing_character.creator = if creator_val.is_empty() {
+                None
+            } else {
+                Some(creator_val)
+            };
         }
         if let Some(cv_val) = update_dto.character_version {
-            existing_character.character_version = if cv_val.is_empty() { None } else { Some(cv_val) };
+            existing_character.character_version = if cv_val.is_empty() {
+                None
+            } else {
+                Some(cv_val)
+            };
         }
         if let Some(ag_val) = update_dto.alternate_greetings {
-            existing_character.alternate_greetings = if ag_val.is_empty() { None } else { Some(ag_val.into_iter().map(Some).collect()) };
+            existing_character.alternate_greetings = if ag_val.is_empty() {
+                None
+            } else {
+                Some(ag_val.into_iter().map(Some).collect())
+            };
         }
         if let Some(cnm_val) = update_dto.creator_notes_multilingual {
             existing_character.creator_notes_multilingual = Some(cnm_val.0);
@@ -329,10 +454,18 @@ impl CharacterService {
             existing_character.nickname = Some(nick_val);
         }
         if let Some(source_val) = update_dto.source {
-            existing_character.source = if source_val.is_empty() { None } else { Some(source_val.into_iter().map(Some).collect()) };
+            existing_character.source = if source_val.is_empty() {
+                None
+            } else {
+                Some(source_val.into_iter().map(Some).collect())
+            };
         }
         if let Some(gog_val) = update_dto.group_only_greetings {
-            existing_character.group_only_greetings = if gog_val.is_empty() { None } else { Some(gog_val.into_iter().map(Some).collect()) };
+            existing_character.group_only_greetings = if gog_val.is_empty() {
+                None
+            } else {
+                Some(gog_val.into_iter().map(Some).collect())
+            };
         }
         if let Some(cd_ts) = update_dto.creation_date {
             existing_character.creation_date = DateTime::from_timestamp(cd_ts, 0);
@@ -353,9 +486,12 @@ impl CharacterService {
 
         // Save the updated character
         let conn_update = self.db_pool.get().await.map_err(|e| {
-            AppError::DbPoolError(format!("Failed to get DB connection from pool for update: {}", e))
+            AppError::DbPoolError(format!(
+                "Failed to get DB connection from pool for update: {}",
+                e
+            ))
         })?;
-        
+
         let updated_character_db: Character = conn_update
             .interact(move |conn_update_block| {
                 diesel::update(characters::table.find(character_id_to_update))
@@ -367,9 +503,7 @@ impl CharacterService {
             .map_err(|e| {
                 AppError::InternalServerErrorGeneric(format!("Update interaction error: {}", e))
             })?
-            .map_err(|e| {
-                AppError::DatabaseQueryError(format!("Update DB error: {}", e))
-            })?;
+            .map_err(|e| AppError::DatabaseQueryError(format!("Update DB error: {}", e)))?;
 
         info!(character_id = %character_id_to_update, "Character updated successfully in CharacterService");
 

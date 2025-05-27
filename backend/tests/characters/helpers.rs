@@ -1,18 +1,18 @@
 #![cfg(test)]
 use anyhow::Context;
 use axum::{
+    Router,
     body::Body,
-    http::{header, Method, Request, Response as AxumResponse, StatusCode},
+    http::{Method, Request, Response as AxumResponse, StatusCode, header},
     middleware::Next,
     response::IntoResponse,
-    Router,
 };
 use axum_login::AuthSession;
-use base64::{engine::general_purpose::STANDARD as base64_standard, Engine as _};
+use base64::{Engine as _, engine::general_purpose::STANDARD as base64_standard};
 use bcrypt;
 use crc32fast;
 use deadpool_diesel::postgres::Pool;
-use diesel::{prelude::*, PgConnection, RunQueryDsl};
+use diesel::{PgConnection, RunQueryDsl, prelude::*};
 use http_body_util::BodyExt;
 use scribe_backend::auth::session_dek::SessionDek;
 use scribe_backend::{

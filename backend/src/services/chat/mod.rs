@@ -1,11 +1,11 @@
 // backend/src/services/chat/mod.rs
 
-pub mod types;
-pub mod session_management;
-pub mod message_handling;
 pub mod generation;
-pub mod settings;
+pub mod message_handling;
 pub mod overrides;
+pub mod session_management;
+pub mod settings;
+pub mod types;
 
 // Re-export key functions/types if desired, or allow users to import from submodules directly.
 // Example:

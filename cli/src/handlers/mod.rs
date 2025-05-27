@@ -8,8 +8,8 @@ pub mod chat_management; // Add the chat management module
 pub mod chat_overrides; // Add the chat overrides module
 pub mod default_settings;
 pub mod health;
-pub mod model;
 pub mod lorebooks; // Added lorebooks module
+pub mod model;
 pub mod start_chat;
 pub mod streaming; // Add the default settings module
 pub mod user_personas;
@@ -35,10 +35,10 @@ pub use self::chat_overrides::{
 };
 pub use self::default_settings::handle_default_settings_action;
 pub use self::health::handle_health_check_action;
+pub use self::lorebooks::handle_lorebook_management_menu; // Added lorebook handler
 pub use self::model::handle_model_settings_action;
 pub use self::start_chat::handle_start_chat_action;
-pub use self::lorebooks::handle_lorebook_management_menu; // Added lorebook handler
 pub use self::user_personas::{
-    handle_persona_create_action, handle_persona_list_action, handle_persona_get_action,
-    handle_persona_update_action, handle_persona_delete_action,
+    handle_persona_create_action, handle_persona_delete_action, handle_persona_get_action,
+    handle_persona_list_action, handle_persona_update_action,
 };
