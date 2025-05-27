@@ -472,6 +472,7 @@ async fn get_chat_settings_defaults() {
         user.id,
         character.id,
         None, // active_custom_persona_id
+        None, // lorebook_ids
         user_dek_for_service_call.clone(), // Pass the created DEK
     )
     .await

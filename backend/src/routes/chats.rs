@@ -209,15 +209,16 @@ pub async fn create_chat_handler(
         dek.0.expose_secret().clone(),
     ))));
 
-    info!(%user.id, character_id=%payload.character_id, "Creating chat session");
+    info!(%user.id, character_id=%payload.character_id, lorebook_ids=?payload.lorebook_ids, "Creating chat session");
 
     let app_state = Arc::new(state.clone());
     let chat = chat::session_management::create_session_and_maybe_first_message(
         app_state,
         user.id,
         payload.character_id,
-        None, // Added missing active_custom_persona_id argument
-        user_dek_arc, // Pass Option<Arc<SecretBox>> instead of Option<&SecretBox>
+        payload.active_custom_persona_id, // active_custom_persona_id
+        payload.lorebook_ids.clone(), // lorebook_ids
+        user_dek_arc,
     )
     .await?;
 

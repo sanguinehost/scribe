@@ -22,7 +22,7 @@ use crate::{
             // HistoryManagementStrategy, // Removed, strategy is a field in Chat struct
         },
     },
-    schema::{characters, chat_sessions, users::dsl as users_dsl},
+    schema::{characters, chat_sessions, users::dsl as users_dsl, chat_session_lorebooks},
     state::DbPool,
 };
 
@@ -34,12 +34,14 @@ pub async fn create_session_and_maybe_first_message(
     user_id: Uuid,
     character_id: Uuid,
     active_custom_persona_id: Option<Uuid>,
+    lorebook_ids: Option<Vec<Uuid>>,
     user_dek_secret_box: Option<Arc<SecretBox<Vec<u8>>>>,
 ) -> Result<Chat, AppError> {
     let pool: DbPool = state.pool.clone();
     let conn = pool.get().await?;
-    // Clone user_dek_secret_box for use inside the 'move' closure
+    // Clone user_dek_secret_box and lorebook_ids for use inside the 'move' closure
     let user_dek_for_closure = user_dek_secret_box.clone();
+    let lorebook_ids_for_closure = lorebook_ids.clone();
     let (created_session, first_mes_ciphertext_opt, first_mes_nonce_opt) = conn.interact(move |conn| {
         conn.transaction(|transaction_conn| {
             let mut effective_active_persona_id = active_custom_persona_id;
@@ -233,6 +235,29 @@ pub async fn create_session_and_maybe_first_message(
                     }
                 }
             }
+            
+            // Insert lorebook associations if provided
+            if let Some(ids) = lorebook_ids_for_closure {
+                if !ids.is_empty() {
+                    info!(session_id = %new_session_id, lorebook_ids = ?ids, "Associating lorebooks with chat session");
+                    let new_associations: Vec<_> = ids.into_iter().map(|lorebook_id| {
+                        (
+                            chat_session_lorebooks::dsl::chat_session_id.eq(new_session_id),
+                            chat_session_lorebooks::dsl::lorebook_id.eq(lorebook_id),
+                            // created_at and updated_at will use DB defaults
+                        )
+                    }).collect();
+
+                    diesel::insert_into(chat_session_lorebooks::table)
+                        .values(new_associations)
+                        .execute(transaction_conn)
+                        .map_err(|e| {
+                            error!(session_id = %new_session_id, error = ?e, "Failed to insert chat session lorebook associations");
+                            AppError::DatabaseQueryError(format!("Failed to associate lorebooks: {}", e))
+                        })?;
+                }
+            }
+
             let fully_created_session: Chat = chat_sessions::table
                 .filter(chat_sessions::id.eq(new_session_id))
                 .select(Chat::as_select())

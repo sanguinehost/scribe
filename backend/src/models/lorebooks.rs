@@ -123,6 +123,8 @@ pub struct ChatSessionLorebook {
     pub chat_session_id: Uuid,
     pub lorebook_id: Uuid,
     pub user_id: Uuid,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
 }
 
 impl ChatSessionLorebook {
@@ -161,4 +163,7 @@ pub struct NewChatSessionLorebook {
     pub chat_session_id: Uuid,
     pub lorebook_id: Uuid,
     pub user_id: Uuid,
+    // Timestamps are typically optional for New structs, allowing DB defaults
+    pub created_at: Option<DateTime<Utc>>,
+    pub updated_at: Option<DateTime<Utc>>,
 }

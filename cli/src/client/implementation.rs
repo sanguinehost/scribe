@@ -19,7 +19,7 @@ use scribe_backend::models::{
     },
     users::User,
 };
-use serde_json::{json, Value};
+use serde_json::Value;
 use std::{fs, path::Path, pin::Pin};
 use tracing;
 use uuid::Uuid;
@@ -142,12 +142,13 @@ impl HttpClient for ReqwestClientWrapper {
     }
 
     async fn create_chat_session(&self, character_id: Uuid, active_custom_persona_id: Option<Uuid>) -> Result<Chat, CliError> {
-        let url = build_url(&self.base_url, "/api/chats/create_session")?; // Updated path
+        let url = build_url(&self.base_url, "/api/chat/create_session")?; // Corrected path to match backend routes/chat.rs
         tracing::info!(target: "scribe_cli::client::implementation", %url, %character_id, ?active_custom_persona_id, "Creating chat session via HttpClient");
-        let payload = json!({
-            "character_id": character_id,
-            "active_custom_persona_id": active_custom_persona_id
-        });
+        // Use the backend's CreateChatSessionPayload struct
+        let payload = scribe_backend::models::chats::CreateChatSessionPayload {
+            character_id,
+            active_custom_persona_id,
+        };
         let response = self
             .client
             .post(url)

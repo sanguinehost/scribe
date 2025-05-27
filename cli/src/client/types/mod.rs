@@ -8,7 +8,26 @@ pub mod user_personas;
 
 // Potentially re-export common types if desired for easier access
 pub use self::user_personas::{CreateUserPersonaDto, UserPersonaDataForClient, UpdateUserPersonaDto};
+pub use self::lorebooks::LorebookMetadataResponse; // Added for lorebook metadata
 
+// --- Custom Lorebook DTOs for CLI ---
+pub mod lorebooks {
+    use chrono::{DateTime, Utc};
+    use serde::{Deserialize, Serialize};
+    use uuid::Uuid;
+
+    #[derive(Debug, Serialize, Deserialize, Clone)]
+    pub struct LorebookMetadataResponse {
+        pub id: Uuid,
+        pub user_id: Uuid,
+        pub name: String,
+        pub description: Option<String>,
+        pub source_format: String,
+        pub is_public: bool,
+        pub created_at: DateTime<Utc>,
+        pub updated_at: DateTime<Utc>,
+    }
+}
 // --- Content from old cli/src/client/types.rs below ---
 
 use bigdecimal::BigDecimal;
@@ -659,6 +678,19 @@ pub struct ChatSessionDetails {
     pub updated_at: DateTime<Utc>,
     // Add other fields from backend ChatSession if needed by CLI
     // e.g., settings, model_name, etc.
+}
+/// Payload for creating a new chat session via the CLI client.
+/// This mirrors the backend's `CreateChatRequest` struct.
+#[derive(Serialize, Debug, Clone)]
+pub struct CreateChatSessionPayload {
+    #[serde(default)]
+    pub title: String,
+    pub character_id: Uuid,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lorebook_ids: Option<Vec<Uuid>>,
+    // The backend's `create_session_and_maybe_first_message` service function
+    // also takes an `active_custom_persona_id`. This should be added if the CLI
+    // intends to send it as part of this payload. For now, sticking to `CreateChatRequest`.
 }
 
 /// DTO for the request to set a character override for a chat session.

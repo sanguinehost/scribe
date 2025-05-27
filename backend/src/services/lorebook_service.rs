@@ -1351,7 +1351,8 @@ impl LorebookService {
             chat_session_id,
             lorebook_id: lorebook_id_to_associate,
             user_id: current_user_id,
-            // id, created_at, updated_at are not part of NewChatSessionLorebook struct
+            created_at: Some(Utc::now()), // Or None if DB default is preferred
+            updated_at: Some(Utc::now()), // Or None if DB default is preferred
         };
 
         conn.interact(move |conn_sync| {

@@ -131,6 +131,7 @@ async fn create_session_uses_default_persona_when_active_persona_is_none() {
         user_db.id,
         character.id,
         None, // active_custom_persona_id is None
+        None, // lorebook_ids
         user_dek_secret_box.clone(), // Clone the Option<Arc>
     )
     .await
@@ -233,6 +234,7 @@ async fn create_session_no_default_persona_falls_back_to_character_prompt() {
         user_db.id,
         character.id,
         None, // active_custom_persona_id is None
+        None, // lorebook_ids
         user_dek_secret_box.clone(),
     )
     .await
@@ -363,6 +365,7 @@ async fn create_session_default_persona_deleted_falls_back_to_character_prompt()
         user_db.id, // Use user_db.id
         character.id,
         None, // active_custom_persona_id is None
+        None, // lorebook_ids
         user_dek_secret_box.clone(),
     )
     .await

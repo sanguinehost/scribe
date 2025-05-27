@@ -28,7 +28,7 @@ use scribe_backend::{
         chat_sessions::dsl as chat_sessions_dsl,
     },
     services::{
-        chat::generation::{get_session_data_for_generation, stream_ai_response_and_save_message}, // Updated to new path
+        chat::generation::get_session_data_for_generation, // Updated to new path
         hybrid_token_counter::HybridTokenCounter,
         lorebook_service::LorebookService, tokenizer_service::TokenizerService,
     },
