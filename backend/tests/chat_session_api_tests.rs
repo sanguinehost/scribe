@@ -1565,7 +1565,7 @@ async fn test_create_chat_session_no_lorebook_ids() -> Result<(), AnyhowError> {
         user_persona_nonce: None,
     };
     let conn = test_app.db_pool.get().await?;
-    conn.interact(move |conn_inner| {
+    let _ = conn.interact(move |conn_inner| {
         diesel::insert_into(characters::table)
             .values(&new_character)
             .execute(conn_inner)
@@ -1716,7 +1716,7 @@ async fn test_create_chat_session_one_valid_lorebook_id() -> Result<(), AnyhowEr
         user_persona_nonce: None,
     };
     let conn_char = test_app.db_pool.get().await?;
-    conn_char
+    let _ = conn_char
         .interact(move |conn_inner| {
             diesel::insert_into(characters::table)
                 .values(&new_character)
@@ -1891,7 +1891,7 @@ async fn test_create_chat_session_multiple_valid_lorebook_ids() -> Result<(), An
         user_persona_nonce: None,
     };
     let conn_char = test_app.db_pool.get().await?;
-    conn_char
+    let _ = conn_char
         .interact(move |conn_inner| {
             diesel::insert_into(characters::table)
                 .values(&new_character)
@@ -2092,7 +2092,7 @@ async fn test_create_chat_session_empty_lorebook_ids_list() -> Result<(), Anyhow
         user_persona_nonce: None,
     };
     let conn_char = test_app.db_pool.get().await?;
-    conn_char
+    let _ = conn_char
         .interact(move |conn_inner| {
             diesel::insert_into(characters::table)
                 .values(&new_character)
@@ -2244,7 +2244,7 @@ async fn test_create_chat_session_non_existent_lorebook_id() -> Result<(), Anyho
         user_persona_nonce: None,
     };
     let conn_char = test_app.db_pool.get().await?;
-    conn_char
+    let _ = conn_char
         .interact(move |conn_inner| {
             diesel::insert_into(characters::table)
                 .values(&new_character)
@@ -2404,7 +2404,7 @@ async fn test_create_chat_session_lorebook_owned_by_another_user() -> Result<(),
         user_persona_nonce: None,
     };
     let conn_char = test_app.db_pool.get().await?;
-    conn_char
+    let _ = conn_char
         .interact(move |conn_inner| {
             diesel::insert_into(characters::table)
                 .values(&new_character)
