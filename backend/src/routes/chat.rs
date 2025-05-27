@@ -108,6 +108,7 @@ pub async fn create_chat_session_handler(
         user_id,
         payload.character_id,
         payload.active_custom_persona_id, // Pass the new field
+        None,                             // lorebook_ids (CreateChatSessionPayload doesn't have this)
         Some(Arc::new(session_dek.0)),    // Pass the DEK, wrapped in Arc for the service
     )
     .await?;

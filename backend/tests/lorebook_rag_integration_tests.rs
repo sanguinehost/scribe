@@ -239,7 +239,9 @@ async fn test_lorebook_import_retrieval_and_rag_integration() {
     let chat_session_payload = CreateChatRequest {
         title: "RAG Test Chat Session".to_string(), // CreateChatRequest expects String
         character_id,
-        // model_name, settings, active_custom_persona_id, active_impersonated_character_id
+        lorebook_ids: None,
+        active_custom_persona_id: None,
+        // model_name, settings, active_impersonated_character_id
         // are not part of CreateChatRequest. Assuming the API changed or these are set elsewhere/defaulted.
     };
 
@@ -662,6 +664,8 @@ async fn test_associate_lorebook_triggers_initial_embedding() {
     let chat_session_payload = CreateChatRequest {
         title: "Chat for Lorebook Association Test".to_string(),
         character_id: test_character.id,
+        lorebook_ids: None,
+        active_custom_persona_id: None,
     };
     let chat_response = auth_client
         .post(&format!("{}/api/chats/create_session", test_app.address))
@@ -931,6 +935,8 @@ async fn test_rag_retrieves_lorebook_entry_after_embedding_completion() -> anyho
     let chat_session_payload = CreateChatRequest {
         title: "China RAG Test Session".to_string(),
         character_id: character.id,
+        lorebook_ids: None,
+        active_custom_persona_id: None,
     };
     let chat_response = auth_client
         .post(&format!("{}/api/chats/create_session", test_app.address))
@@ -1194,6 +1200,8 @@ async fn test_rag_retrieves_lorebook_entry_with_mocks() -> anyhow::Result<()> {
     let chat_session_payload = CreateChatRequest {
         title: "China RAG Test Session Mock".to_string(),
         character_id: character.id,
+        lorebook_ids: None,
+        active_custom_persona_id: None,
     };
     let chat_response = auth_client
         .post(&format!("{}/api/chats/create_session", test_app.address))

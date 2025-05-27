@@ -269,6 +269,10 @@ pub struct CreateChatRequest {
     #[serde(default)]
     pub title: String,
     pub character_id: Uuid,
+    #[serde(default)]
+    pub lorebook_ids: Option<Vec<Uuid>>,
+    #[serde(default)]
+    pub active_custom_persona_id: Option<Uuid>,
 }
 
 impl std::fmt::Debug for CreateChatRequest {
@@ -276,6 +280,8 @@ impl std::fmt::Debug for CreateChatRequest {
         f.debug_struct("CreateChatRequest")
             .field("title", &"[REDACTED]")
             .field("character_id", &self.character_id)
+            .field("lorebook_ids", &self.lorebook_ids)
+            .field("active_custom_persona_id", &self.active_custom_persona_id)
             .finish()
     }
 }
@@ -858,7 +864,7 @@ impl std::fmt::Debug for NewChatMessageRequest {
 
 // API Request/Response Structures
 
-#[derive(Deserialize)] // Removed Debug
+#[derive(Deserialize, Serialize)] // Removed Debug
 pub struct CreateChatSessionPayload {
     pub character_id: Uuid,
     pub active_custom_persona_id: Option<Uuid>, // Added new field

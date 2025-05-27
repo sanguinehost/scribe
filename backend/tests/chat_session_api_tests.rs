@@ -1318,6 +1318,7 @@ async fn test_create_session_saves_first_mes() -> Result<(), AnyhowError> {
         user.id,
         character_id,
         None, // active_custom_persona_id
+        None, // lorebook_ids
         Some(user_dek.clone()), // user_dek_secret_box
     )
     .await;
@@ -1372,6 +1373,765 @@ async fn test_create_session_saves_first_mes() -> Result<(), AnyhowError> {
     assert_eq!(
         initial_message.session_id, session.id,
         "Initial message session_id should match"
+    );
+
+    test_data_guard.cleanup().await?;
+    Ok(())
+}
+
+// Added for lorebook tests
+use scribe_backend::models::lorebooks::{ChatSessionLorebook, Lorebook as DbLorebook, NewLorebook};
+use scribe_backend::schema::{chat_session_lorebooks, lorebooks};
+// EncryptionService is likely already imported or can be added if not.
+// It's used in test_create_session_saves_first_mes.
+
+// Helper function to create a lorebook for testing
+async fn create_test_lorebook(
+    db_pool: &deadpool_diesel::postgres::Pool,
+    _encryption_service: Arc<scribe_backend::services::encryption_service::EncryptionService>, // Assuming this is how it's passed or constructed
+    user_id: Uuid,
+    name: &str,
+    _user_dek: Arc<SecretBox<Vec<u8>>>,
+    test_data_guard: &mut test_helpers::TestDataGuard,
+) -> Result<DbLorebook, AnyhowError> {
+    // The NewLorebook struct expects plain text for name and description.
+    // Encryption should be handled by the service or model if the database stores ciphertext.
+    // Based on models/lorebooks.rs, NewLorebook and Lorebook store plain name/description.
+
+    let new_lorebook = NewLorebook {
+        id: Uuid::new_v4(),
+        user_id,
+        name: name.to_string(),
+        description: None, // Set to None as per NewLorebook definition
+        source_format: "test_data".to_string(), // Provide a default source_format
+        is_public: false, // Corrected field name from 'public'
+        created_at: Some(Utc::now()), // Corrected to Option<DateTime<Utc>>
+        updated_at: Some(Utc::now()), // Corrected to Option<DateTime<Utc>>
+    };
+
+    let lorebook = db_pool
+        .get()
+        .await?
+        .interact(move |conn| {
+            diesel::insert_into(lorebooks::table)
+                .values(&new_lorebook)
+                .returning((
+                    lorebooks::id,
+                    lorebooks::user_id,
+                    lorebooks::name,
+                    lorebooks::description,
+                    lorebooks::source_format,
+                    lorebooks::is_public,
+                    lorebooks::created_at,
+                    lorebooks::updated_at,
+                ))
+                .get_result::<DbLorebook>(conn)
+        })
+        .await
+        .map_err(|e| AnyhowError::msg(format!("DB interaction error: {}", e)))?
+        .map_err(|e| AnyhowError::msg(format!("Failed to insert lorebook: {}", e)))?;
+
+    test_data_guard.add_lorebook(lorebook.id); // Assumes TestDataGuard has this method
+    Ok(lorebook)
+}
+
+// --- Chat Session Creation with Lorebooks Tests ---
+
+#[tokio::test]
+#[ignore] // Following existing pattern for CI
+async fn test_create_chat_session_no_lorebook_ids() -> Result<(), AnyhowError> {
+    let test_app = test_helpers::spawn_app(false, false, false).await;
+    let mut test_data_guard = test_helpers::TestDataGuard::new(test_app.db_pool.clone());
+
+    let username = "user_no_lorebooks";
+    let password = "password";
+    let user = test_helpers::db::create_test_user(
+        &test_app.db_pool,
+        username.to_string(),
+        password.to_string(),
+    )
+    .await?;
+    test_data_guard.add_user(user.id);
+
+    let (_client, auth_cookie) =
+        test_helpers::login_user_via_api(&test_app, username, password).await;
+
+    // Create a character
+    let character_id = Uuid::new_v4();
+    let new_character = DbCharacter {
+        id: character_id,
+        user_id: user.id,
+        name: "No Lorebooks Char".to_string(),
+        spec: "test_spec".to_string(),
+        spec_version: "1.0".to_string(),
+        created_at: Utc::now(),
+        updated_at: Utc::now(),
+        first_mes: None,
+        description: None,
+        personality: None,
+        scenario: None,
+        mes_example: None,
+        creator_notes: None,
+        system_prompt: None,
+        post_history_instructions: None,
+        tags: None, creator: None, character_version: None, alternate_greetings: None,
+        nickname: None, creator_notes_multilingual: None, source: None, group_only_greetings: None,
+        creation_date: None, modification_date: None, persona: None, world_scenario: None,
+        avatar: None, chat: None, greeting: None, definition: None, default_voice: None,
+        extensions: None, data_id: None, category: None, definition_visibility: None,
+        depth: None, example_dialogue: None, favorite: None, first_message_visibility: None,
+        height: None, last_activity: None, migrated_from: None, model_prompt: None,
+        model_prompt_visibility: None, model_temperature: None, num_interactions: None,
+        permanence: None, persona_visibility: None, revision: None, sharing_visibility: None,
+        status: None, system_prompt_visibility: None, system_tags: None, token_budget: None,
+        usage_hints: None, user_persona: None, user_persona_visibility: None, visibility: None,
+        weight: None, world_scenario_visibility: None, description_nonce: None,
+        personality_nonce: None, scenario_nonce: None, first_mes_nonce: None,
+        mes_example_nonce: None, creator_notes_nonce: None, system_prompt_nonce: None,
+        post_history_instructions_nonce: None, persona_nonce: None, world_scenario_nonce: None,
+        greeting_nonce: None, definition_nonce: None, example_dialogue_nonce: None,
+        model_prompt_nonce: None, user_persona_nonce: None,
+    };
+    let conn = test_app.db_pool.get().await?;
+    conn.interact(move |conn_inner| {
+        diesel::insert_into(characters::table)
+            .values(&new_character)
+            .execute(conn_inner)
+    })
+    .await
+    .map_err(|e| AnyhowError::msg(format!("DB interaction error: {}", e)))?;
+    test_data_guard.add_character(character_id);
+
+    // Create chat session request without lorebook_ids
+    let request_body = json!({
+        "character_id": character_id,
+        "title": "Chat without Lorebooks"
+        // lorebook_ids is omitted, so it should be treated as None or empty
+    });
+
+    let request = Request::builder()
+        .method(Method::POST)
+        .uri("/api/chats/create_session")
+        .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
+        .header(header::COOKIE, auth_cookie)
+        .body(Body::from(serde_json::to_vec(&request_body)?))?;
+
+    let response = test_app.router.clone().oneshot(request).await?;
+    assert_eq!(response.status(), StatusCode::CREATED);
+
+    let body = response.into_body().collect().await?.to_bytes();
+    let session: DbChatSession = serde_json::from_slice(&body)?;
+    test_data_guard.add_chat(session.id);
+
+    // Verify no entries in chat_session_lorebooks
+    let conn = test_app.db_pool.get().await?;
+    let linked_lorebooks: Vec<ChatSessionLorebook> = conn
+        .interact(move |conn_inner| {
+            chat_session_lorebooks::table
+                .filter(chat_session_lorebooks::chat_session_id.eq(session.id))
+                .load::<ChatSessionLorebook>(conn_inner)
+        })
+        .await
+        .map_err(|e| AnyhowError::msg(format!("DB interaction error: {}", e)))?
+        .map_err(|e| AnyhowError::msg(format!("Failed to query lorebooks: {}", e)))?;
+
+    assert!(
+        linked_lorebooks.is_empty(),
+        "No lorebooks should be linked to the chat session"
+    );
+
+    test_data_guard.cleanup().await?;
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore] // Following existing pattern for CI
+async fn test_create_chat_session_one_valid_lorebook_id() -> Result<(), AnyhowError> {
+    let test_app = test_helpers::spawn_app(false, false, false).await;
+    let mut test_data_guard = test_helpers::TestDataGuard::new(test_app.db_pool.clone());
+
+    let username = "user_one_lorebook";
+    let password = "password";
+    let user = test_helpers::db::create_test_user(
+        &test_app.db_pool,
+        username.to_string(),
+        password.to_string(),
+    )
+    .await?;
+    test_data_guard.add_user(user.id);
+
+    let (_client, auth_cookie) =
+        test_helpers::login_user_via_api(&test_app, username, password).await;
+
+    // Create a character
+    let character_id = Uuid::new_v4();
+    let new_character = DbCharacter {
+        id: character_id,
+        user_id: user.id,
+        name: "One Lorebook Char".to_string(),
+        spec: "test_spec".to_string(),
+        spec_version: "1.0".to_string(),
+        created_at: Utc::now(),
+        updated_at: Utc::now(),
+        first_mes: None, description: None, personality: None, scenario: None, mes_example: None,
+        creator_notes: None, system_prompt: None, post_history_instructions: None, tags: None,
+        creator: None, character_version: None, alternate_greetings: None, nickname: None,
+        creator_notes_multilingual: None, source: None, group_only_greetings: None,
+        creation_date: None, modification_date: None, persona: None, world_scenario: None,
+        avatar: None, chat: None, greeting: None, definition: None, default_voice: None,
+        extensions: None, data_id: None, category: None, definition_visibility: None,
+        depth: None, example_dialogue: None, favorite: None, first_message_visibility: None,
+        height: None, last_activity: None, migrated_from: None, model_prompt: None,
+        model_prompt_visibility: None, model_temperature: None, num_interactions: None,
+        permanence: None, persona_visibility: None, revision: None, sharing_visibility: None,
+        status: None, system_prompt_visibility: None, system_tags: None, token_budget: None,
+        usage_hints: None, user_persona: None, user_persona_visibility: None, visibility: None,
+        weight: None, world_scenario_visibility: None, description_nonce: None,
+        personality_nonce: None, scenario_nonce: None, first_mes_nonce: None,
+        mes_example_nonce: None, creator_notes_nonce: None, system_prompt_nonce: None,
+        post_history_instructions_nonce: None, persona_nonce: None, world_scenario_nonce: None,
+        greeting_nonce: None, definition_nonce: None, example_dialogue_nonce: None,
+        model_prompt_nonce: None, user_persona_nonce: None,
+    };
+    let conn_char = test_app.db_pool.get().await?;
+    conn_char.interact(move |conn_inner| {
+        diesel::insert_into(characters::table)
+            .values(&new_character)
+            .execute(conn_inner)
+    })
+    .await
+    .map_err(|e| AnyhowError::msg(format!("DB interaction error: {}", e)))?;
+    test_data_guard.add_character(character_id);
+
+    // Create a Lorebook
+    let encryption_service_for_lorebook = Arc::new(scribe_backend::services::encryption_service::EncryptionService::new());
+    let mut rng_dek = rand::rngs::OsRng;
+    let mut dek_bytes_lorebook = [0u8; 32];
+    rng_dek.try_fill_bytes(&mut dek_bytes_lorebook).expect("Failed to fill bytes for DEK");
+    let user_dek_lorebook = Arc::new(SecretBox::new(Box::new(dek_bytes_lorebook.to_vec())));
+
+    let lorebook1 = create_test_lorebook(
+        &test_app.db_pool,
+        encryption_service_for_lorebook.clone(),
+        user.id,
+        "Test Lorebook 1",
+        user_dek_lorebook.clone(),
+        &mut test_data_guard,
+    )
+    .await?;
+
+    // Create chat session request with one lorebook_id
+    let request_body = json!({
+        "character_id": character_id,
+        "title": "Chat with One Lorebook",
+        "lorebook_ids": [lorebook1.id]
+    });
+
+    let request = Request::builder()
+        .method(Method::POST)
+        .uri("/api/chats/create_session")
+        .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
+        .header(header::COOKIE, auth_cookie)
+        .body(Body::from(serde_json::to_vec(&request_body)?))?;
+
+    let response = test_app.router.clone().oneshot(request).await?;
+    assert_eq!(response.status(), StatusCode::CREATED);
+
+    let body = response.into_body().collect().await?.to_bytes();
+    let session: DbChatSession = serde_json::from_slice(&body)?;
+    test_data_guard.add_chat(session.id);
+
+    // Verify one entry in chat_session_lorebooks
+    let conn_verify = test_app.db_pool.get().await?;
+    let linked_lorebooks: Vec<ChatSessionLorebook> = conn_verify
+        .interact(move |conn_inner| {
+            chat_session_lorebooks::table
+                .filter(chat_session_lorebooks::chat_session_id.eq(session.id))
+                .load::<ChatSessionLorebook>(conn_inner)
+        })
+        .await
+        .map_err(|e| AnyhowError::msg(format!("DB interaction error: {}", e)))?
+        .map_err(|e| AnyhowError::msg(format!("Failed to query lorebooks: {}", e)))?;
+
+    assert_eq!(
+        linked_lorebooks.len(),
+        1,
+        "One lorebook should be linked to the chat session"
+    );
+    assert_eq!(linked_lorebooks[0].lorebook_id, lorebook1.id);
+    assert_eq!(linked_lorebooks[0].chat_session_id, session.id);
+
+    test_data_guard.cleanup().await?;
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore] // Following existing pattern for CI
+async fn test_create_chat_session_multiple_valid_lorebook_ids() -> Result<(), AnyhowError> {
+    let test_app = test_helpers::spawn_app(false, false, false).await;
+    let mut test_data_guard = test_helpers::TestDataGuard::new(test_app.db_pool.clone());
+
+    let username = "user_multi_lorebooks";
+    let password = "password";
+    let user = test_helpers::db::create_test_user(
+        &test_app.db_pool,
+        username.to_string(),
+        password.to_string(),
+    )
+    .await?;
+    test_data_guard.add_user(user.id);
+
+    let (_client, auth_cookie) =
+        test_helpers::login_user_via_api(&test_app, username, password).await;
+
+    // Create a character
+    let character_id = Uuid::new_v4();
+    let new_character = DbCharacter {
+        id: character_id,
+        user_id: user.id,
+        name: "Multi Lorebooks Char".to_string(),
+        spec: "test_spec".to_string(),
+        spec_version: "1.0".to_string(),
+        created_at: Utc::now(),
+        updated_at: Utc::now(),
+        first_mes: None, description: None, personality: None, scenario: None, mes_example: None,
+        creator_notes: None, system_prompt: None, post_history_instructions: None, tags: None,
+        creator: None, character_version: None, alternate_greetings: None, nickname: None,
+        creator_notes_multilingual: None, source: None, group_only_greetings: None,
+        creation_date: None, modification_date: None, persona: None, world_scenario: None,
+        avatar: None, chat: None, greeting: None, definition: None, default_voice: None,
+        extensions: None, data_id: None, category: None, definition_visibility: None,
+        depth: None, example_dialogue: None, favorite: None, first_message_visibility: None,
+        height: None, last_activity: None, migrated_from: None, model_prompt: None,
+        model_prompt_visibility: None, model_temperature: None, num_interactions: None,
+        permanence: None, persona_visibility: None, revision: None, sharing_visibility: None,
+        status: None, system_prompt_visibility: None, system_tags: None, token_budget: None,
+        usage_hints: None, user_persona: None, user_persona_visibility: None, visibility: None,
+        weight: None, world_scenario_visibility: None, description_nonce: None,
+        personality_nonce: None, scenario_nonce: None, first_mes_nonce: None,
+        mes_example_nonce: None, creator_notes_nonce: None, system_prompt_nonce: None,
+        post_history_instructions_nonce: None, persona_nonce: None, world_scenario_nonce: None,
+        greeting_nonce: None, definition_nonce: None, example_dialogue_nonce: None,
+        model_prompt_nonce: None, user_persona_nonce: None,
+    };
+    let conn_char = test_app.db_pool.get().await?;
+    conn_char.interact(move |conn_inner| {
+        diesel::insert_into(characters::table)
+            .values(&new_character)
+            .execute(conn_inner)
+    })
+    .await
+    .map_err(|e| AnyhowError::msg(format!("DB interaction error: {}", e)))?;
+    test_data_guard.add_character(character_id);
+
+    // Create Lorebooks
+    let encryption_service_for_lorebook = Arc::new(scribe_backend::services::encryption_service::EncryptionService::new());
+    let mut rng_dek = rand::rngs::OsRng;
+    let mut dek_bytes_lorebook = [0u8; 32];
+    rng_dek.try_fill_bytes(&mut dek_bytes_lorebook).expect("Failed to fill bytes for DEK");
+    let user_dek_lorebook = Arc::new(SecretBox::new(Box::new(dek_bytes_lorebook.to_vec())));
+
+    let lorebook1 = create_test_lorebook(
+        &test_app.db_pool,
+        encryption_service_for_lorebook.clone(),
+        user.id,
+        "Test Lorebook Multi 1",
+        user_dek_lorebook.clone(),
+        &mut test_data_guard,
+    )
+    .await?;
+    let lorebook2 = create_test_lorebook(
+        &test_app.db_pool,
+        encryption_service_for_lorebook.clone(),
+        user.id,
+        "Test Lorebook Multi 2",
+        user_dek_lorebook.clone(),
+        &mut test_data_guard,
+    )
+    .await?;
+
+    // Create chat session request with multiple lorebook_ids
+    let request_body = json!({
+        "character_id": character_id,
+        "title": "Chat with Multiple Lorebooks",
+        "lorebook_ids": [lorebook1.id, lorebook2.id]
+    });
+
+    let request = Request::builder()
+        .method(Method::POST)
+        .uri("/api/chats/create_session")
+        .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
+        .header(header::COOKIE, auth_cookie)
+        .body(Body::from(serde_json::to_vec(&request_body)?))?;
+
+    let response = test_app.router.clone().oneshot(request).await?;
+    assert_eq!(response.status(), StatusCode::CREATED);
+
+    let body = response.into_body().collect().await?.to_bytes();
+    let session: DbChatSession = serde_json::from_slice(&body)?;
+    test_data_guard.add_chat(session.id);
+
+    // Verify two entries in chat_session_lorebooks
+    let conn_verify = test_app.db_pool.get().await?;
+    let linked_lorebooks: Vec<ChatSessionLorebook> = conn_verify
+        .interact(move |conn_inner| {
+            chat_session_lorebooks::table
+                .filter(chat_session_lorebooks::chat_session_id.eq(session.id))
+                .order(chat_session_lorebooks::lorebook_id.asc()) // Ensure consistent order for assertion
+                .load::<ChatSessionLorebook>(conn_inner)
+        })
+        .await
+        .map_err(|e| AnyhowError::msg(format!("DB interaction error: {}", e)))?
+        .map_err(|e| AnyhowError::msg(format!("Failed to query lorebooks: {}", e)))?;
+
+    assert_eq!(
+        linked_lorebooks.len(),
+        2,
+        "Two lorebooks should be linked to the chat session"
+    );
+
+    // Sort expected and actual IDs to ensure order doesn't matter for the content of the list
+    let mut actual_linked_ids: Vec<Uuid> = linked_lorebooks.iter().map(|l| l.lorebook_id).collect();
+    actual_linked_ids.sort();
+    let mut expected_ids = vec![lorebook1.id, lorebook2.id];
+    expected_ids.sort();
+
+    assert_eq!(actual_linked_ids, expected_ids, "Linked lorebook IDs do not match expected IDs");
+
+    assert!(linked_lorebooks.iter().all(|l| l.chat_session_id == session.id));
+
+    test_data_guard.cleanup().await?;
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore] // Following existing pattern for CI
+async fn test_create_chat_session_empty_lorebook_ids_list() -> Result<(), AnyhowError> {
+    let test_app = test_helpers::spawn_app(false, false, false).await;
+    let mut test_data_guard = test_helpers::TestDataGuard::new(test_app.db_pool.clone());
+
+    let username = "user_empty_lorebook_list";
+    let password = "password";
+    let user = test_helpers::db::create_test_user(
+        &test_app.db_pool,
+        username.to_string(),
+        password.to_string(),
+    )
+    .await?;
+    test_data_guard.add_user(user.id);
+
+    let (_client, auth_cookie) =
+        test_helpers::login_user_via_api(&test_app, username, password).await;
+
+    // Create a character
+    let character_id = Uuid::new_v4();
+    let new_character = DbCharacter {
+        id: character_id,
+        user_id: user.id,
+        name: "Empty Lorebook List Char".to_string(),
+        spec: "test_spec".to_string(),
+        spec_version: "1.0".to_string(),
+        created_at: Utc::now(),
+        updated_at: Utc::now(),
+        first_mes: None, description: None, personality: None, scenario: None, mes_example: None,
+        creator_notes: None, system_prompt: None, post_history_instructions: None, tags: None,
+        creator: None, character_version: None, alternate_greetings: None, nickname: None,
+        creator_notes_multilingual: None, source: None, group_only_greetings: None,
+        creation_date: None, modification_date: None, persona: None, world_scenario: None,
+        avatar: None, chat: None, greeting: None, definition: None, default_voice: None,
+        extensions: None, data_id: None, category: None, definition_visibility: None,
+        depth: None, example_dialogue: None, favorite: None, first_message_visibility: None,
+        height: None, last_activity: None, migrated_from: None, model_prompt: None,
+        model_prompt_visibility: None, model_temperature: None, num_interactions: None,
+        permanence: None, persona_visibility: None, revision: None, sharing_visibility: None,
+        status: None, system_prompt_visibility: None, system_tags: None, token_budget: None,
+        usage_hints: None, user_persona: None, user_persona_visibility: None, visibility: None,
+        weight: None, world_scenario_visibility: None, description_nonce: None,
+        personality_nonce: None, scenario_nonce: None, first_mes_nonce: None,
+        mes_example_nonce: None, creator_notes_nonce: None, system_prompt_nonce: None,
+        post_history_instructions_nonce: None, persona_nonce: None, world_scenario_nonce: None,
+        greeting_nonce: None, definition_nonce: None, example_dialogue_nonce: None,
+        model_prompt_nonce: None, user_persona_nonce: None,
+    };
+    let conn_char = test_app.db_pool.get().await?;
+    conn_char.interact(move |conn_inner| {
+        diesel::insert_into(characters::table)
+            .values(&new_character)
+            .execute(conn_inner)
+    })
+    .await
+    .map_err(|e| AnyhowError::msg(format!("DB interaction error: {}", e)))?;
+    test_data_guard.add_character(character_id);
+
+    // Create chat session request with an empty lorebook_ids list
+    let request_body = json!({
+        "character_id": character_id,
+        "title": "Chat with Empty Lorebook List",
+        "lorebook_ids": [] // Empty list
+    });
+
+    let request = Request::builder()
+        .method(Method::POST)
+        .uri("/api/chats/create_session")
+        .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
+        .header(header::COOKIE, auth_cookie)
+        .body(Body::from(serde_json::to_vec(&request_body)?))?;
+
+    let response = test_app.router.clone().oneshot(request).await?;
+    assert_eq!(response.status(), StatusCode::CREATED);
+
+    let body = response.into_body().collect().await?.to_bytes();
+    let session: DbChatSession = serde_json::from_slice(&body)?;
+    test_data_guard.add_chat(session.id);
+
+    // Verify no entries in chat_session_lorebooks
+    let conn_verify = test_app.db_pool.get().await?;
+    let linked_lorebooks: Vec<ChatSessionLorebook> = conn_verify
+        .interact(move |conn_inner| {
+            chat_session_lorebooks::table
+                .filter(chat_session_lorebooks::chat_session_id.eq(session.id))
+                .load::<ChatSessionLorebook>(conn_inner)
+        })
+        .await
+        .map_err(|e| AnyhowError::msg(format!("DB interaction error: {}", e)))?
+        .map_err(|e| AnyhowError::msg(format!("Failed to query lorebooks: {}", e)))?;
+
+    assert!(
+        linked_lorebooks.is_empty(),
+        "No lorebooks should be linked when an empty list is provided"
+    );
+
+    test_data_guard.cleanup().await?;
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore] // Following existing pattern for CI
+async fn test_create_chat_session_non_existent_lorebook_id() -> Result<(), AnyhowError> {
+    let test_app = test_helpers::spawn_app(false, false, false).await;
+    let mut test_data_guard = test_helpers::TestDataGuard::new(test_app.db_pool.clone());
+
+    let username = "user_non_existent_lorebook";
+    let password = "password";
+    let user = test_helpers::db::create_test_user(
+        &test_app.db_pool,
+        username.to_string(),
+        password.to_string(),
+    )
+    .await?;
+    test_data_guard.add_user(user.id);
+
+    let (_client, auth_cookie) =
+        test_helpers::login_user_via_api(&test_app, username, password).await;
+
+    // Create a character
+    let character_id = Uuid::new_v4();
+    let new_character = DbCharacter {
+        id: character_id,
+        user_id: user.id,
+        name: "Non-Existent Lorebook Char".to_string(),
+        spec: "test_spec".to_string(),
+        spec_version: "1.0".to_string(),
+        created_at: Utc::now(),
+        updated_at: Utc::now(),
+        first_mes: None, description: None, personality: None, scenario: None, mes_example: None,
+        creator_notes: None, system_prompt: None, post_history_instructions: None, tags: None,
+        creator: None, character_version: None, alternate_greetings: None, nickname: None,
+        creator_notes_multilingual: None, source: None, group_only_greetings: None,
+        creation_date: None, modification_date: None, persona: None, world_scenario: None,
+        avatar: None, chat: None, greeting: None, definition: None, default_voice: None,
+        extensions: None, data_id: None, category: None, definition_visibility: None,
+        depth: None, example_dialogue: None, favorite: None, first_message_visibility: None,
+        height: None, last_activity: None, migrated_from: None, model_prompt: None,
+        model_prompt_visibility: None, model_temperature: None, num_interactions: None,
+        permanence: None, persona_visibility: None, revision: None, sharing_visibility: None,
+        status: None, system_prompt_visibility: None, system_tags: None, token_budget: None,
+        usage_hints: None, user_persona: None, user_persona_visibility: None, visibility: None,
+        weight: None, world_scenario_visibility: None, description_nonce: None,
+        personality_nonce: None, scenario_nonce: None, first_mes_nonce: None,
+        mes_example_nonce: None, creator_notes_nonce: None, system_prompt_nonce: None,
+        post_history_instructions_nonce: None, persona_nonce: None, world_scenario_nonce: None,
+        greeting_nonce: None, definition_nonce: None, example_dialogue_nonce: None,
+        model_prompt_nonce: None, user_persona_nonce: None,
+    };
+    let conn_char = test_app.db_pool.get().await?;
+    conn_char.interact(move |conn_inner| {
+        diesel::insert_into(characters::table)
+            .values(&new_character)
+            .execute(conn_inner)
+    })
+    .await
+    .map_err(|e| AnyhowError::msg(format!("DB interaction error: {}", e)))?;
+    test_data_guard.add_character(character_id);
+
+    let non_existent_lorebook_id = Uuid::new_v4();
+
+    // Create chat session request with a non-existent lorebook_id
+    let request_body = json!({
+        "character_id": character_id,
+        "title": "Chat with Non-Existent Lorebook",
+        "lorebook_ids": [non_existent_lorebook_id]
+    });
+
+    let request = Request::builder()
+        .method(Method::POST)
+        .uri("/api/chats/create_session")
+        .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
+        .header(header::COOKIE, auth_cookie)
+        .body(Body::from(serde_json::to_vec(&request_body)?))?;
+
+    let response = test_app.router.clone().oneshot(request).await?;
+    assert_eq!(response.status(), StatusCode::CREATED);
+
+    let body = response.into_body().collect().await?.to_bytes();
+    let session: DbChatSession = serde_json::from_slice(&body)?;
+    test_data_guard.add_chat(session.id);
+
+    // Verify no entries in chat_session_lorebooks
+    let conn_verify = test_app.db_pool.get().await?;
+    let linked_lorebooks: Vec<ChatSessionLorebook> = conn_verify
+        .interact(move |conn_inner| {
+            chat_session_lorebooks::table
+                .filter(chat_session_lorebooks::chat_session_id.eq(session.id))
+                .load::<ChatSessionLorebook>(conn_inner)
+        })
+        .await
+        .map_err(|e| AnyhowError::msg(format!("DB interaction error: {}", e)))?
+        .map_err(|e| AnyhowError::msg(format!("Failed to query lorebooks: {}", e)))?;
+
+    assert!(
+        linked_lorebooks.is_empty(),
+        "No lorebooks should be linked when a non-existent ID is provided"
+    );
+
+    test_data_guard.cleanup().await?;
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore] // Following existing pattern for CI
+async fn test_create_chat_session_lorebook_owned_by_another_user() -> Result<(), AnyhowError> {
+    let test_app = test_helpers::spawn_app(false, false, false).await;
+    let mut test_data_guard = test_helpers::TestDataGuard::new(test_app.db_pool.clone());
+
+    // User who will own the lorebook
+    let owner_username = "lorebook_owner_user";
+    let owner_password = "password";
+    let owner_user = test_helpers::db::create_test_user(
+        &test_app.db_pool,
+        owner_username.to_string(),
+        owner_password.to_string(),
+    )
+    .await?;
+    test_data_guard.add_user(owner_user.id);
+
+    // User who will try to create the chat session
+    let requester_username = "chat_requester_user";
+    let requester_password = "password";
+    let requester_user = test_helpers::db::create_test_user(
+        &test_app.db_pool,
+        requester_username.to_string(),
+        requester_password.to_string(),
+    )
+    .await?;
+    test_data_guard.add_user(requester_user.id);
+
+    let (_client, requester_auth_cookie) =
+        test_helpers::login_user_via_api(&test_app, requester_username, requester_password).await;
+
+    // Create a character for the requester_user
+    let character_id = Uuid::new_v4();
+    let new_character = DbCharacter {
+        id: character_id,
+        user_id: requester_user.id, // Character owned by requester
+        name: "Requester Char For Unowned Lorebook".to_string(),
+        spec: "test_spec".to_string(),
+        spec_version: "1.0".to_string(),
+        created_at: Utc::now(),
+        updated_at: Utc::now(),
+        first_mes: None, description: None, personality: None, scenario: None, mes_example: None,
+        creator_notes: None, system_prompt: None, post_history_instructions: None, tags: None,
+        creator: None, character_version: None, alternate_greetings: None, nickname: None,
+        creator_notes_multilingual: None, source: None, group_only_greetings: None,
+        creation_date: None, modification_date: None, persona: None, world_scenario: None,
+        avatar: None, chat: None, greeting: None, definition: None, default_voice: None,
+        extensions: None, data_id: None, category: None, definition_visibility: None,
+        depth: None, example_dialogue: None, favorite: None, first_message_visibility: None,
+        height: None, last_activity: None, migrated_from: None, model_prompt: None,
+        model_prompt_visibility: None, model_temperature: None, num_interactions: None,
+        permanence: None, persona_visibility: None, revision: None, sharing_visibility: None,
+        status: None, system_prompt_visibility: None, system_tags: None, token_budget: None,
+        usage_hints: None, user_persona: None, user_persona_visibility: None, visibility: None,
+        weight: None, world_scenario_visibility: None, description_nonce: None,
+        personality_nonce: None, scenario_nonce: None, first_mes_nonce: None,
+        mes_example_nonce: None, creator_notes_nonce: None, system_prompt_nonce: None,
+        post_history_instructions_nonce: None, persona_nonce: None, world_scenario_nonce: None,
+        greeting_nonce: None, definition_nonce: None, example_dialogue_nonce: None,
+        model_prompt_nonce: None, user_persona_nonce: None,
+    };
+    let conn_char = test_app.db_pool.get().await?;
+    conn_char.interact(move |conn_inner| {
+        diesel::insert_into(characters::table)
+            .values(&new_character)
+            .execute(conn_inner)
+    })
+    .await
+    .map_err(|e| AnyhowError::msg(format!("DB interaction error: {}", e)))?;
+    test_data_guard.add_character(character_id);
+
+    // Create a Lorebook owned by owner_user
+    let encryption_service_for_lorebook = Arc::new(scribe_backend::services::encryption_service::EncryptionService::new());
+    let mut rng_dek = rand::rngs::OsRng;
+    let mut dek_bytes_lorebook_owner = [0u8; 32];
+    rng_dek.try_fill_bytes(&mut dek_bytes_lorebook_owner).expect("Failed to fill bytes for DEK");
+    let owner_user_dek = Arc::new(SecretBox::new(Box::new(dek_bytes_lorebook_owner.to_vec())));
+
+    let lorebook_other_owner = create_test_lorebook(
+        &test_app.db_pool,
+        encryption_service_for_lorebook.clone(),
+        owner_user.id, // Lorebook owned by owner_user
+        "Lorebook Of Other User",
+        owner_user_dek.clone(),
+        &mut test_data_guard,
+    )
+    .await?;
+
+    // Create chat session request with lorebook_id owned by another user
+    let request_body = json!({
+        "character_id": character_id,
+        "title": "Chat with Unowned Lorebook",
+        "lorebook_ids": [lorebook_other_owner.id]
+    });
+
+    let request = Request::builder()
+        .method(Method::POST)
+        .uri("/api/chats/create_session")
+        .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
+        .header(header::COOKIE, requester_auth_cookie) // Authenticated as requester_user
+        .body(Body::from(serde_json::to_vec(&request_body)?))?;
+
+    let response = test_app.router.clone().oneshot(request).await?;
+    assert_eq!(response.status(), StatusCode::CREATED);
+
+    let body = response.into_body().collect().await?.to_bytes();
+    let session: DbChatSession = serde_json::from_slice(&body)?;
+    test_data_guard.add_chat(session.id);
+
+    // Verify no entries in chat_session_lorebooks for the unowned lorebook
+    let conn_verify = test_app.db_pool.get().await?;
+    let linked_lorebooks: Vec<ChatSessionLorebook> = conn_verify
+        .interact(move |conn_inner| {
+            chat_session_lorebooks::table
+                .filter(chat_session_lorebooks::chat_session_id.eq(session.id))
+                .load::<ChatSessionLorebook>(conn_inner)
+        })
+        .await
+        .map_err(|e| AnyhowError::msg(format!("DB interaction error: {}", e)))?
+        .map_err(|e| AnyhowError::msg(format!("Failed to query lorebooks: {}", e)))?;
+
+    assert!(
+        linked_lorebooks.is_empty(),
+        "No lorebooks should be linked when the lorebook ID is owned by another user"
     );
 
     test_data_guard.cleanup().await?;

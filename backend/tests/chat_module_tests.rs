@@ -15,7 +15,6 @@ mod get_session_data_for_generation_tests {
     use scribe_backend::models::chats::{DbInsertableChatMessage, ChatMessage as DbChatMessage, NewChat};
     use scribe_backend::schema::{characters as character_schema, chat_messages as chat_messages_schema, chat_sessions as chat_sessions_schema, users};
     use scribe_backend::models::users::{NewUser, UserRole, AccountStatus};
-    use diesel::prelude::*; // Added for Diesel traits
     use diesel::{RunQueryDsl, ExpressionMethods, QueryDsl, SelectableHelper}; // Added for specific Diesel traits
     use scribe_backend::services::embedding_pipeline::{RetrievedChunk};
     use scribe_backend::services::hybrid_token_counter::HybridTokenCounter;
@@ -604,6 +603,8 @@ mod get_session_data_for_generation_tests {
                     chat_session_id: setup.session_id,
                     lorebook_id,
                     user_id: setup.user_id,
+                    created_at: None,
+                    updated_at: None,
                 };
                 diesel::insert_into(chat_session_lorebooks::table)
                     .values(&new_link)
@@ -1029,6 +1030,8 @@ mod get_session_data_for_generation_tests {
             use scribe_backend::schema::chat_session_lorebooks;
             let new_link = scribe_backend::models::lorebooks::NewChatSessionLorebook {
                 chat_session_id: setup.session_id, lorebook_id, user_id: setup.user_id,
+                created_at: None,
+                updated_at: None,
             };
             diesel::insert_into(chat_session_lorebooks::table).values(&new_link).execute(conn_link)
         }}).await.unwrap().unwrap();

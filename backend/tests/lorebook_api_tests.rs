@@ -704,6 +704,8 @@ mod lorebook_tests {
         let chat_payload = CreateChatRequest {
             character_id: character.id,
             title: "Chat for Lorebook Association Test".to_string(),
+            lorebook_ids: None,
+            active_custom_persona_id: None,
         };
         let chat_response = auth_client
             .post(&format!("{}/api/chats/create_session", test_app.address)) // Updated path
