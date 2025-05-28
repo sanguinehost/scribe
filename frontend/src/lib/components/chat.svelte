@@ -9,7 +9,6 @@
 	import MultimodalInput from './multimodal-input.svelte';
 	import SuggestedActions from './suggested-actions.svelte'; // Import SuggestedActions
 	import { untrack } from 'svelte'; // Remove incorrect effect import
-	import { Button } from '$lib/components/ui/button';
 
 	let {
 		user,

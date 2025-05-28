@@ -1,41 +1,30 @@
 <script lang="ts">
-	import VercelIcon from '../icons/vercel.svelte';
-	import MessageIcon from '../icons/message.svelte';
+	// Removed VercelIcon and MessageIcon imports
 	import { scale } from 'svelte/transition';
 </script>
 
 <div class="mx-auto max-w-3xl md:mt-20" transition:scale={{ opacity: 0, start: 0.98 }}>
 	<div class="flex max-w-xl flex-col gap-8 rounded-xl p-6 text-center leading-relaxed">
 		<p class="flex flex-row items-center justify-center gap-4">
-			<VercelIcon size={32} />
-			<span>+</span>
-			<MessageIcon size={32} />
+			<!-- Using a generic Pen Tool icon as a placeholder -->
+			<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-pen-tool"><path d="m12 19 7-7 3 3-7 7-3-3z"/><path d="m18 13-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/><path d="m2 2 7.586 7.586"/><path d="m11 19-3-3"/></svg>
 		</p>
 		<p>
-			This is an
-			<a
-				class="font-medium underline underline-offset-4"
-				href="https://github.com/vercel/ai-chatbot-svelte"
-				target="_blank"
-			>
-				open source
-			</a>
-			chatbot template built with SvelteKit and the AI SDK by Vercel. It uses the
-			<code class="rounded-md bg-muted px-1 py-0.5">streamText</code>
-			function in the server and the
-			<code class="rounded-md bg-muted px-1 py-0.5">useChat</code> hook on the client to create a seamless
-			chat experience.
+			Welcome to <strong>Scribe</strong>, a next-generation AI chat and storytelling interface by Sanguine.
 		</p>
 		<p>
-			You can learn more about the AI SDK by visiting the
+			Scribe is designed for seamless long-term context using RAG, robust prompt engineering, and a modern user experience, all powered by a secure and performant Rust backend. We prioritize your privacy with server-side encryption of your data.
+		</p>
+		<p>
+			Explore the future of interactive storytelling, with a commitment to user empowerment and open-source principles. You can follow our progress
+			<!-- Adjusted to a plausible GitHub link -->
 			<a
 				class="font-medium underline underline-offset-4"
-				href="https://sdk.vercel.ai/docs"
+				href="https://github.com/sanguinehost/scribe"
 				target="_blank"
 			>
-				docs
-			</a>
-			.
+				on GitHub
+			</a>.
 		</p>
 	</div>
 </div>
