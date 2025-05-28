@@ -35,22 +35,23 @@ export function createSession(token: string, userId: string, fetchFn: typeof fet
 	);
 }
 
-export function validateSessionToken(token: string, fetchFn: typeof fetch = globalThis.fetch): ResultAsync<SessionValidationResult, ApiError> {
+export function validateSessionToken(_token: string, fetchFn: typeof fetch = globalThis.fetch): ResultAsync<SessionValidationResult, ApiError> {
 	console.log(`[${new Date().toISOString()}] validateSessionToken: ENTER`);
 	return fromPromise(
 		(async () => {
-			const sessionId = encodeHexLowerCase(sha256(new TextEncoder().encode(token)));
+			// The '_token' parameter is now unused in this function's logic
+			// as session validation relies on cookies being sent by fetchFn.
 			
 			// Use fetchFn to avoid errors with server-side relative URLs
-			console.log(`[${new Date().toISOString()}] validateSessionToken: Fetching session ${sessionId}`);
-			const sessionResult = await apiClient.getSession(sessionId, fetchFn);
+			console.log(`[${new Date().toISOString()}] validateSessionToken: Fetching current session`);
+			const sessionResult = await apiClient.getSession(fetchFn);
 
 			// Explicitly check for errors BEFORE accessing .value
 			if (sessionResult.isErr()) {
 				const apiError = sessionResult.error;
 				// Check if the error is specifically an ApiResponseError with status 404 (Not Found)
 				if (apiError instanceof ApiResponseError && apiError.statusCode === 404) {
-					console.log(`[${new Date().toISOString()}] validateSessionToken: Session ${sessionId} not found (404). Treating as logged out.`);
+					console.log(`[${new Date().toISOString()}] validateSessionToken: Session not found (404). Treating as logged out.`);
 					console.log(`[${new Date().toISOString()}] validateSessionToken: EXIT - not found`);
 					return { session: null, user: null } as const; // Return success with null session/user
 				} else {
@@ -72,8 +73,8 @@ export function validateSessionToken(token: string, fetchFn: typeof fetch = glob
 			};
 			
 			if (Date.now() >= session.expires_at.getTime()) {
-				console.log(`[${new Date().toISOString()}] validateSessionToken: Session ${sessionId} expired, deleting`);
-				await apiClient.deleteSession(sessionId, fetchFn).catch(error => {
+				console.log(`[${new Date().toISOString()}] validateSessionToken: Session ${session.id} expired, deleting`);
+				await apiClient.deleteSession(session.id, fetchFn).catch(error => {
 					console.error('Failed to delete expired session:', error);
 				});
 				console.log(`[${new Date().toISOString()}] validateSessionToken: EXIT - expired`);

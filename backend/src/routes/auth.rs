@@ -19,6 +19,7 @@ use tracing::{debug, error, info, instrument, warn};
 // use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64}; // Add Base64 import - Removed unused
 // For session DEK handling
 use tower_sessions::Session; // Import tower_sessions::Session
+use crate::auth::session_store::offset_to_utc; // Added for time conversion
 
 use crate::auth::user_store::Backend as AuthBackend;
 type CurrentAuthSession = AuthSession<AuthBackend>;
@@ -59,10 +60,8 @@ pub fn auth_routes() -> Router<AppState> {
         .route("/change-password", post(change_password_handler))
         .route("/recover-password", post(recover_password_handler)) // New route
         .route("/session", post(create_session_handler))
-        .route(
-            "/session/{id}",
-            get(get_session_handler).delete(delete_session_handler),
-        )
+        .route("/session/current", get(get_session_handler)) // Changed route for GET
+        .route("/session/{id}", delete(delete_session_handler)) // DELETE remains on old path for now
         .route("/session/{id}/extend", post(extend_session_handler))
         .route("/user/{id}/sessions", delete(delete_user_sessions_handler))
 }
@@ -438,127 +437,68 @@ pub async fn create_session_handler(
     Ok((StatusCode::CREATED, Json(session_response)))
 }
 
-/// Get session with user details
-#[instrument(skip(state), err)]
+/// Get current session details if a valid session exists
+#[instrument(skip_all, err)] // Skip all to avoid issues with AppState and Session not being Debug
 pub async fn get_session_handler(
-    State(state): State<AppState>,
-    Path(session_id): Path<String>,
+    State(_state): State<AppState>, // _state might be needed if we fetch more user details not in AuthUser
+    auth_session: CurrentAuthSession,
+    session: tower_sessions::Session, // tower_sessions::Session to get session ID and expiry
 ) -> Result<impl IntoResponse, AppError> {
-    info!(%session_id, "Get session handler entered");
-    let pool = state.pool.clone();
+    info!("Get current session handler entered");
 
-    #[derive(Deserialize, Debug)]
-    struct StoredSessionData {
-        user_id: Uuid,
-    }
+    if let Some(user) = auth_session.user {
+        let user_id = user.id;
+        info!(%user_id, "Valid session found. Returning user and session details.");
 
-    let session_id_for_closure = session_id.clone(); // Clone for the closure
-    let session_info_result = pool
-        .get()
-        .await
-        .map_err(|e| AppError::DbPoolError(e.to_string()))?
-        .interact(move |conn| {
-            sessions::table
-                .filter(sessions::id.eq(&session_id_for_closure))
-                .select((sessions::id, sessions::session, sessions::expires))
-                .first::<(String, String, Option<chrono::DateTime<chrono::Utc>>)>(conn)
-        })
-        .await
-        .map_err(|e| {
-            AppError::InternalServerErrorGeneric(format!("Interact error fetching session: {}", e))
+        // The session ID from tower_sessions::Session is an i128, convert to string.
+        let session_actual_id_str = match session.id() {
+            Some(id) => id.0.to_string(),
+            None => {
+                // This case should ideally not happen if auth_session.user is Some,
+                // as it implies an active session object without an ID.
+                error!("Critical: tower_sessions::Session present but session.id() is None in get_session_handler");
+                return Err(AppError::InternalServerErrorGeneric(
+                    "Failed to retrieve session ID from active session".to_string(),
+                ));
+            }
+        };
+        
+        // The expiry date from tower_sessions::Session is time::OffsetDateTime.
+        let session_expiry_offset = session.expiry_date();
+
+        // Convert time::OffsetDateTime to chrono::DateTime<Utc> for the response model.
+        // The offset_to_utc helper is available in crate::auth::session_store.
+        let expires_at_utc = offset_to_utc(Some(session_expiry_offset)).ok_or_else(|| {
+            error!(session_id = %session_actual_id_str, "Failed to convert session expiry to UTC");
+            AppError::InternalServerErrorGeneric("Failed to process session expiry.".to_string())
         })?;
 
-    match session_info_result {
-        Ok((retrieved_session_id, session_json_string, expires_at_opt)) => {
-            // Deserialize the session string to get user_id
-            let stored_data: StoredSessionData = match serde_json::from_str(&session_json_string) {
-                Ok(data) => data,
-                Err(e) => {
-                    error!(%retrieved_session_id, error = ?e, "Failed to deserialize session JSON string");
-                    return Err(AppError::InternalServerErrorGeneric(format!(
-                        "Invalid session data format: {}",
-                        e
-                    )));
-                }
-            };
-            let user_id = stored_data.user_id;
+        let user_response = AuthResponse {
+            user_id: user.id,
+            username: user.username.clone(), // Assuming User struct has these fields and they are cloneable
+            email: user.email.clone(),
+            role: format!("{:?}", user.role), // Assuming role is an enum
+            recovery_key: None, // Session response doesn't typically include recovery key
+            default_persona_id: user.default_persona_id,
+        };
 
-            let expires_at = match expires_at_opt {
-                Some(dt) => dt,
-                None => {
-                    // This case should ideally not happen if sessions always have an expiry.
-                    // If they can be non-expiring, this needs different handling.
-                    // For now, error out or use a default past time if that makes sense.
-                    error!(%retrieved_session_id, "Session found but has no expiration time in DB.");
-                    return Err(AppError::InternalServerErrorGeneric(
-                        "Session has no expiration time.".to_string(),
-                    ));
-                }
-            };
+        let session_data_response = SessionResponse {
+            id: session_actual_id_str, // Use the actual session ID from tower_sessions
+            user_id,
+            expires_at: expires_at_utc,
+        };
 
-            debug!(%retrieved_session_id, %user_id, %expires_at, "Session found and parsed. Fetching user details.");
-
-            let user_details_result = pool // Re-acquire pool for the second interact
-                .get()
-                .await
-                .map_err(|e| AppError::DbPoolError(e.to_string()))?
-                .interact(move |conn_user_fetch| {
-                    // Renamed conn to avoid conflict in some tracing
-                    users::table
-                        .filter(users::id.eq(user_id))
-                        .select(UserDbQuery::as_select())
-                        .first::<UserDbQuery>(conn_user_fetch)
-                        .map(User::from)
-                })
-                .await
-                .map_err(|e| {
-                    AppError::InternalServerErrorGeneric(format!(
-                        "Interact error fetching user for session: {}",
-                        e
-                    ))
-                })?;
-
-            match user_details_result {
-                Ok(user) => {
-                    let user_response = AuthResponse {
-                        user_id: user.id,
-                        username: user.username.clone(), // Clone if User.username is String
-                        email: user.email.clone(),       // Clone if User.email is String
-                        role: format!("{:?}", user.role),
-                        recovery_key: None, // Session response doesn't include recovery key
-                        default_persona_id: user.default_persona_id,
-                    };
-                    let response = SessionWithUserResponse {
-                        session: SessionResponse {
-                            id: retrieved_session_id, // Use the ID retrieved from DB
-                            user_id,
-                            expires_at,
-                        },
-                        user: user_response,
-                    };
-                    Ok((StatusCode::OK, Json(response)).into_response())
-                }
-                Err(diesel::result::Error::NotFound) => {
-                    error!(%user_id, "User not found for session, but session exists.");
-                    Err(AppError::UserNotFound)
-                }
-                Err(e) => {
-                    error!(%user_id, error = ?e, "Database error fetching user for session.");
-                    // Convert diesel::result::Error to AppError properly
-                    // This could be diesel::result::Error or deadpool_diesel::PoolError if interact fails
-                    // The map_err above for interact handles pool errors. This is likely a diesel error.
-                    Err(AppError::DatabaseQueryError(e.to_string()))
-                }
-            }
-        }
-        Err(diesel::result::Error::NotFound) => {
-            warn!(%session_id, "Session not found.");
-            Err(AppError::SessionNotFound)
-        }
-        Err(e) => {
-            error!(%session_id, error = ?e, "Database error fetching session details.");
-            Err(AppError::DatabaseQueryError(e.to_string()))
-        }
+        let response = SessionWithUserResponse {
+            session: session_data_response,
+            user: user_response,
+        };
+        Ok((StatusCode::OK, Json(response)).into_response())
+    } else {
+        info!("No active session found.");
+        // This error should be handled by AppError's IntoResponse to return a JSON error
+        Err(AppError::Unauthorized(
+            "No active session. Please log in.".to_string(),
+        ))
     }
 }
 

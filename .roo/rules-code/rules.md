@@ -77,3 +77,51 @@ You are an AI Pair Programmer assisting with development on the Sanguine Scribe 
 *   **Maintain Docs:** Keep code comments and project docs up-to-date.
 *   **Conventional Commits:** Follow the standard.
 *   **Acknowledge Bias:** Actively challenge your own initial assumptions and verify thoroughly; don't assume tests cover everything or that code works just because it compiles.
+
+---
+**Frontend Project Overview & Key Practices**
+
+This section summarizes key details about the Sanguine Scribe frontend to guide development.
+
+*   **Framework & Language:** SvelteKit ([`frontend/svelte.config.js`](frontend/svelte.config.js:1)) with TypeScript ([`frontend/tsconfig.json`](frontend/tsconfig.json)).
+*   **Package Manager:** PNPM ([`frontend/pnpm-lock.yaml`](frontend/pnpm-lock.yaml), [`frontend/package.json`](frontend/package.json:74)).
+*   **Styling:**
+    *   Tailwind CSS ([`frontend/tailwind.config.ts`](frontend/tailwind.config.ts)) with PostCSS and Autoprefixer ([`frontend/postcss.config.js`](frontend/postcss.config.js)).
+    *   Custom fonts: 'geist' and 'geist-mono' ([`frontend/tailwind.config.ts`](frontend/tailwind.config.ts:68), [`frontend/static/fonts/`](frontend/static/fonts/)).
+    *   Dark mode support is configured ([`frontend/tailwind.config.ts`](frontend/tailwind.config.ts:5)).
+*   **UI Components:**
+    *   Utilizes shadcn-svelte ([`frontend/components.json`](frontend/components.json), [`frontend/src/lib/components/ui/`](frontend/src/lib/components/ui/)).
+    *   Bits UI ([`frontend/package.json`](frontend/package.json:36)) for specific components like accordions.
+    *   Lucide Svelte icons ([`frontend/package.json`](frontend/package.json:21), [`frontend/src/lib/components/icons/`](frontend/src/lib/components/icons/)).
+    *   Markdown rendering components are present in [`frontend/src/lib/components/markdown/`](frontend/src/lib/components/markdown/).
+*   **Build & Development:**
+    *   Vite is the build tool, configured in [`frontend/vite.config.ts`](frontend/vite.config.ts:1).
+    *   Local development uses HTTPS and proxies API requests to `https://localhost:8080`.
+*   **Linting & Formatting:**
+    *   ESLint with TypeScript and Svelte plugins ([`frontend/eslint.config.js`](frontend/eslint.config.js)).
+    *   Prettier with Svelte and Tailwind CSS plugins ([`frontend/.prettierrc`](frontend/.prettierrc)).
+*   **Testing:**
+    *   Vitest ([`frontend/vitest.config.ts`](frontend/vitest.config.ts)) with Testing Library for Svelte ([`frontend/package.json`](frontend/package.json:29)).
+    *   Test mocks are located in [`frontend/src/__mocks__/`](frontend/src/__mocks__/).
+    *   Setup file: [`frontend/src/vitest-setup.ts`](frontend/src/vitest-setup.ts).
+*   **State Management:** Primarily Svelte stores and Svelte Runes (e.g., [`frontend/src/lib/hooks/chat-history.svelte.ts`](frontend/src/lib/hooks/chat-history.svelte.ts)).
+*   **API Client:** A centralized API client is located at [`frontend/src/lib/api/index.ts`](frontend/src/lib/api/index.ts:1).
+*   **Key Directories:**
+    *   Routes: [`frontend/src/routes/`](frontend/src/routes/)
+    *   Reusable Svelte components, utilities, types, server logic: [`frontend/src/lib/`](frontend/src/lib/)
+    *   Static assets (fonts, favicon): [`frontend/static/`](frontend/static/)
+    *   shadcn-svelte UI components: [`frontend/src/lib/components/ui/`](frontend/src/lib/components/ui/)
+*   **CI/CD:**
+    *   GitHub Actions workflow in [`frontend/.github/workflows/quality.yml`](frontend/.github/workflows/quality.yml:1) runs `pnpm lint` and `pnpm check` on push/pull_request to `main`.
+*   **Key Documentation (in `docs/frontend/`):**
+    *   [`frontend_design_overview.md`](docs/frontend/frontend_design_overview.md)
+    *   [`frontend_backend_alignment_and_new_features_plan.md`](docs/frontend/frontend_backend_alignment_and_new_features_plan.md)
+    *   [`lorebook_ui_ux_flows.md`](docs/frontend/lorebook_ui_ux_flows.md)
+    *   [`persona_ui_ux_flows.md`](docs/frontend/persona_ui_ux_flows.md)
+*   **Backend Interaction:**
+    *   The frontend is designed to interact with a Rust/Axum backend.
+    *   Follows DTOs and API endpoint definitions outlined in the backend code and the alignment plan ([`docs/frontend/frontend_backend_alignment_and_new_features_plan.md`](docs/frontend/frontend_backend_alignment_and_new_features_plan.md)).
+    *   Uses Server-Sent Events (SSE) for real-time chat updates.
+*   **Authentication:**
+    *   Relies on the backend (Axum-login) to set session cookies upon successful login.
+    *   Frontend initiates logout by calling a `POST /api/auth/logout` endpoint via the [`apiClient`](frontend/src/lib/api/index.ts:1).

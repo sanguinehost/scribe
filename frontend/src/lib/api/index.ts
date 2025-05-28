@@ -194,8 +194,9 @@ class ApiClient {
 		}, fetchFn);
 	}
 
-	async getSession(sessionId: string, fetchFn: typeof fetch = globalThis.fetch): Promise<Result<SessionResponse, ApiError>> {
-		return this.fetch<SessionResponse>(`/api/auth/session/${sessionId}`, {}, fetchFn);
+	// Updated to call /api/auth/session/current and not take sessionId
+	async getSession(fetchFn: typeof fetch = globalThis.fetch): Promise<Result<SessionResponse, ApiError>> {
+		return this.fetch<SessionResponse>('/api/auth/session/current', {}, fetchFn);
 	}
 
 	async extendSession(sessionId: string, fetchFn: typeof fetch = globalThis.fetch): Promise<Result<Session, ApiError>> {
