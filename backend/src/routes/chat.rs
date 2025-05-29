@@ -41,8 +41,8 @@ use bigdecimal::ToPrimitive;
 use diesel::{ExpressionMethods, QueryDsl, RunQueryDsl, SelectableHelper, prelude::*};
 use futures_util::StreamExt;
 use genai::chat::{
-    ChatMessage as GenAiChatMessage, ChatOptions, ChatRequest, ChatResponseFormat, ChatRole,
-    JsonSpec, MessageContent,
+    ChatMessage as GenAiChatMessage, ChatOptions, ChatRequest, ChatResponseFormat, ChatRole, JsonSpec,
+    MessageContent, ReasoningEffort,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -553,14 +553,13 @@ pub async fn generate_chat_response(
             if let Some(budget_i32) = gen_gemini_thinking_budget {
                 // budget_i32 is Option<i32>
                 if budget_i32 > 0 {
-                    // Ensure budget_i32 is cast to u32 if with_gemini_thinking_budget expects u32
-                    chat_options = chat_options.with_gemini_thinking_budget(budget_i32 as u32);
+                    // Ensure budget_i32 is cast to u32 if with_reasoning_effort expects u32
+                    chat_options = chat_options.with_reasoning_effort(ReasoningEffort::Budget(budget_i32 as u32));
                 }
             }
-            if let Some(enable_exec_bool) = gen_gemini_enable_code_execution {
-                // enable_exec_bool is Option<bool>
-                chat_options = chat_options.with_gemini_enable_code_execution(enable_exec_bool);
-            }
+            // `with_gemini_enable_code_execution` removed as it's no longer a direct ChatOption.
+            // The `gen_gemini_enable_code_execution` variable is still available if needed for other logic.
+
             // TODO: Add other gen_ parameters like top_k, frequency_penalty etc. if supported by ChatOptions
 
             trace!(%session_id, chat_request = ?chat_request, chat_options = ?chat_options, "Prepared ChatRequest and Options for AI (non-streaming, JSON path)");

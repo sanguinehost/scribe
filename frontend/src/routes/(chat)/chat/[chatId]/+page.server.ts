@@ -20,7 +20,7 @@ export async function load({ params: { chatId }, fetch, cookies }) {
 		const headers = sessionCookie ? { Cookie: `session=${sessionCookie}` } : undefined;
 
 		// Fetch chat session details
-		const chatRes = await fetch(`/api/chats/${chatId}`, { headers });
+		const chatRes = await fetch(`/api/chats/fetch/${chatId}`, { headers });
 		if (!chatRes.ok) {
 			if (chatRes.status === 404) {
 				error(404, 'Chat not found');

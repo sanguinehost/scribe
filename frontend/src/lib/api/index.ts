@@ -1,7 +1,7 @@
 import { Result, err, ok } from 'neverthrow';
 import type { ApiError } from '$lib/errors/api';
 import { ApiResponseError, ApiNetworkError } from '$lib/errors/api';
-import type { User, Message, Vote, Suggestion, Session, AuthUser, ScribeChatSession } from '$lib/types'; // Added ScribeChatSession, removed unused Chat
+import type { User, Message, Vote, Suggestion, Session, AuthUser, ScribeChatSession, LoginSuccessData } from '$lib/types'; // Added LoginSuccessData
 
 // Placeholder for Character type - Define based on expected fields from GET /api/characters/{id}
 // Assuming these fields based on the task description and common patterns
@@ -164,18 +164,20 @@ class ApiClient {
 		return this.fetch<User>('/api/auth/me', {}, fetchFn);
 	}
 
-	async authenticateUser(data: { identifier: string; password: string }, fetchFn: typeof fetch = globalThis.fetch): Promise<Result<AuthUser, ApiError>> {
-		return this.fetch<AuthUser>('/api/auth/login', {
+	async authenticateUser(data: { identifier: string; password: string }, fetchFn: typeof fetch = globalThis.fetch): Promise<Result<LoginSuccessData, ApiError>> {
+		return this.fetch<LoginSuccessData>('/api/auth/login', {
 			method: 'POST',
 			body: JSON.stringify(data)
 		}, fetchFn);
 	}
 
-	async getAuthUser(data: { email: string }, fetchFn: typeof fetch = globalThis.fetch): Promise<Result<AuthUser, ApiError>> {
+	async getAuthUser(data: { email: string }, fetchFn: typeof fetch = globalThis.fetch): Promise<Result<LoginSuccessData, ApiError>> {
 		console.warn('getAuthUser called - consider using authenticateUser for standard login flow');
-		return this.fetch<AuthUser>('/api/auth/login', {
+		// This method likely also needs to align with the LoginSuccessData response if it's hitting the same /api/auth/login endpoint
+		// For now, assuming it should also return LoginSuccessData. If it's a different flow, this might need adjustment.
+		return this.fetch<LoginSuccessData>('/api/auth/login', {
 			method: 'POST',
-			body: JSON.stringify({ identifier: data.email, password: '' })
+			body: JSON.stringify({ identifier: data.email, password: '' }) // Assuming password can be empty for this specific getAuthUser flow
 		}, fetchFn);
 	}
 
@@ -183,6 +185,12 @@ class ApiClient {
 		return this.fetch<AuthUser>('/api/auth/register', {
 			method: 'POST',
 			body: JSON.stringify(data)
+		}, fetchFn);
+	}
+
+	async logout(fetchFn: typeof fetch = globalThis.fetch): Promise<Result<void, ApiError>> {
+		return this.fetch<void>('/api/auth/logout', {
+			method: 'POST'
 		}, fetchFn);
 	}
 
@@ -225,14 +233,14 @@ class ApiClient {
 	// Updated createChat to accept and send character details
 	async createChat(data: CreateChatRequest): Promise<Result<ScribeChatSession, ApiError>> { // Use ScribeChatSession
 		console.log(`[${new Date().toISOString()}] ApiClient.createChat: Creating chat with data:`, data);
-		return this.fetch<ScribeChatSession>('/api/chats', { // Use ScribeChatSession
+		return this.fetch<ScribeChatSession>('/api/chat/create_session', { // Use ScribeChatSession
 			method: 'POST',
 			body: JSON.stringify(data)
 		});
 	}
 
 	async getChatById(id: string): Promise<Result<ScribeChatSession, ApiError>> { // Use ScribeChatSession
-		return this.fetch<ScribeChatSession>(`/api/chats/${id}`); // Fixed type argument
+		return this.fetch<ScribeChatSession>(`/api/chats/fetch/${id}`); // Fixed type argument
 	}
 
 	// Character methods (Added)
@@ -243,7 +251,7 @@ class ApiClient {
 
 	async getCharacter(id: string): Promise<Result<Character, ApiError>> {
 		console.log(`[${new Date().toISOString()}] ApiClient.getCharacter: Fetching character ${id}`);
-		return this.fetch<Character>(`/api/characters/${id}`);
+		return this.fetch<Character>(`/api/characters/fetch/${id}`);
 	}
 	// End Character methods
 

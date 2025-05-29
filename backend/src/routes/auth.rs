@@ -24,11 +24,11 @@ use crate::auth::session_store::offset_to_utc; // Added for time conversion
 use crate::auth::user_store::Backend as AuthBackend;
 type CurrentAuthSession = AuthSession<AuthBackend>;
 
-use crate::models::users::{User, UserDbQuery};
+use crate::models::users::User; // Removed UserDbQuery
 use crate::schema::sessions;
-use crate::schema::users::{self}; // Import users table (dsl::* is unused)
+// use crate::schema::users::{self}; // Import users table (dsl::* is unused) - Removed self
 use axum::extract::Path;
-use diesel::{ExpressionMethods, QueryDsl, RunQueryDsl, SelectableHelper}; // Added SelectableHelper back
+use diesel::{ExpressionMethods, QueryDsl, RunQueryDsl}; // Removed SelectableHelper
 use uuid::Uuid;
 
 #[derive(Debug, Deserialize)]
@@ -41,13 +41,21 @@ pub struct SessionRequest {
 #[derive(Debug, Serialize)]
 pub struct SessionWithUserResponse {
     pub session: SessionResponse,
-    pub user: AuthResponse, // Renamed UserResponse to AuthResponse
+    pub user: AuthResponse,
 }
 
 #[derive(Debug, Serialize)]
 pub struct SessionResponse {
-    pub id: String,
+    pub id: String, // This is the session_id from tower_sessions
     pub user_id: Uuid,
+    pub expires_at: chrono::DateTime<chrono::Utc>,
+}
+
+// New response structure for successful login
+#[derive(Debug, Serialize)]
+pub struct LoginSuccessResponse {
+    pub user: AuthResponse,
+    pub session_id: String,
     pub expires_at: chrono::DateTime<chrono::Utc>,
 }
 
@@ -248,15 +256,38 @@ pub async fn login_handler(
             // The DEK is now only stored in the server-side AuthBackend cache.
             // This comment block replaces the code that previously stored the DEK in the session.
 
-            let response_data = AuthResponse {
-                user_id: user.id,
-                username: user.username,
-                email: user.email,
-                role: format!("{:?}", user.role),
-                recovery_key: None, // Login response doesn't include recovery key
-                default_persona_id: user.default_persona_id,
+            // Get session ID and expiry from tower_sessions::Session
+            let session_id_str = session.id().map_or_else(
+                || {
+                    error!(user_id = %user.id, "Failed to get session ID after login for response");
+                    // Fallback or handle error appropriately, though this should ideally not happen
+                    // For now, let's use a placeholder or consider this a critical error.
+                    // However, axum-login should have ensured a session exists.
+                    // If this fails, the cookie setting itself might be problematic.
+                    // For now, we'll proceed, but this indicates an issue if it occurs.
+                    "error_retrieving_session_id".to_string()
+                },
+                |id| id.0.to_string(), // tower_sessions::SessionId is OwnedSessionId(SessionId(i128))
+            );
+
+            let expires_at_utc = offset_to_utc(Some(session.expiry_date())).ok_or_else(|| {
+                error!(user_id = %user.id, session_id = %session_id_str, "Failed to convert session expiry to UTC for login response");
+                AppError::InternalServerErrorGeneric("Failed to process session expiry for login response.".to_string())
+            })?;
+
+            let login_success_response = LoginSuccessResponse {
+                user: AuthResponse {
+                    user_id: user.id,
+                    username: user.username.clone(),
+                    email: user.email.clone(),
+                    role: format!("{:?}", user.role),
+                    recovery_key: None, // Login response doesn't include recovery key
+                    default_persona_id: user.default_persona_id,
+                },
+                session_id: session_id_str,
+                expires_at: expires_at_utc,
             };
-            Ok((StatusCode::OK, Json(response_data)).into_response())
+            Ok((StatusCode::OK, Json(login_success_response)).into_response())
         }
         Ok(None) => {
             // Authentication failed - wrong credentials

@@ -144,3 +144,9 @@ export type Suggestion = {
 	userId: string;
 	createdAt: Date;
 };
+// Added for the new login response structure
+export type LoginSuccessData = {
+	user: User; // Existing User type
+	session_id: string;
+	expires_at: string | Date; // Match backend (chrono::DateTime&lt;Utc&gt; serializes to ISO string)
+};

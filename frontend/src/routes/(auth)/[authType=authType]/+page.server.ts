@@ -1,8 +1,4 @@
-import {
-	generateSessionToken,
-	setSessionTokenCookie,
-	createSession
-} from '$lib/server/auth/index.js';
+import { setSessionTokenCookie } from '$lib/server/auth/index.js'; // generateSessionToken and createSession will not be used for signup
 import { fail, redirect, type ActionFailure } from '@sveltejs/kit';
 import { z } from 'zod';
 import { apiClient } from '$lib/api';
@@ -108,8 +104,8 @@ export const actions = {
 				}
 
 				// Assuming createUser returns AuthUser with a 'user_id' property
-				const createdUser = signupResult.value;
-				userId = createdUser.user_id; // Use .user_id property
+				const createdUser = signupResult.value; // This is AuthUser
+				userId = createdUser.user_id;
 				if (!userId) {
 					console.error('Signup response missing user ID:', createdUser);
 					return fail(500, { success: false, message: 'Signup failed: User ID missing in response.', email, username });
@@ -147,51 +143,30 @@ export const actions = {
 					});
 				}
 
-				// Assuming authenticateUser returns AuthUser with a 'user_id' property
-				const loggedInUser = loginResult.value;
-				userId = loggedInUser.user_id; // Use .user_id property
+				// authenticateUser now returns LoginSuccessData
+				const loginData = loginResult.value; // This is LoginSuccessData
+				userId = loginData.user.user_id; // Access nested user object
 				if (!userId) {
-					console.error('Login response missing user ID:', loggedInUser);
+					console.error('Login response missing user ID:', loginData);
 					return fail(500, { success: false, message: 'Login failed: User ID missing in response.', email: identifier });
 				}
-				console.log('User logged in successfully via apiClient:', loggedInUser);
+				console.log('User logged in successfully via apiClient:', loginData.user);
+
+				// For signin, use the session_id and expires_at from the login API response
+				// to set the cookie. The session_id is what axum-login expects.
+				setSessionTokenCookie(cookies, loginData.session_id, new Date(loginData.expires_at));
+				console.log('Signin successful, cookie set with session_id from backend.');
+				return redirect(303, '/');
 			}
 
-			// --- Session Creation using createSession helper ---
-			// Generate a temporary token (will be hashed by createSession for ID)
-			// Ideally, the backend should generate the session ID/token entirely.
-			// But for now, we follow the existing createSession pattern.
-			const frontendToken = generateSessionToken();
-
-			const sessionResult = await createSession(frontendToken, userId, fetch);
-
-			if (sessionResult.isErr()) {
-				const apiError = sessionResult.error;
-				console.error('Session creation error:', apiError);
-				const errorData: AuthErrorData = {
-					success: false,
-					message: `Session creation failed (${apiError.name}). Please try again later.`
-				};
-				// Repopulate form based on authType
-				if (authType === 'signup') {
-					errorData.email = formData.get('email') as string | undefined;
-					errorData.username = formData.get('username') as string | undefined;
-				} else {
-					errorData.email = formData.get('identifier') as string | undefined;
-				}
-				return fail(500, errorData);
+			// THIS BLOCK IS NOW ONLY FOR authType === 'signup'
+			if (authType === 'signup') {
+				// After successful user creation, redirect to signin page.
+				// Do not attempt to auto-login or set cookies here.
+				console.log('Signup successful. User created. Redirecting to /signin.');
+				// Optionally, could pass a query param to /signin to show a "Registration successful" message
+				return redirect(303, '/signin?registration=success');
 			}
-
-			// Session created successfully by the backend via createSession -> apiClient.createSession
-			const backendSession = sessionResult.value;
-
-			// Set cookie using the original frontendToken (as the handle hook expects this)
-			// and the expiry from the backend response
-			setSessionTokenCookie(cookies, frontendToken, backendSession.expires_at);
-
-			// Redirect to home
-			console.log('Session created and cookie set successfully.');
-			return redirect(303, '/');
 
 		} catch (error) {
 			// Re-throw redirect responses by checking shape, handle other errors
