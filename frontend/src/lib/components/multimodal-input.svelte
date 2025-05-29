@@ -110,10 +110,6 @@
 </script>
 
 <div class="relative flex w-full flex-col gap-4">
-	{#if mounted && (!attachments || attachments.length === 0) && uploadQueue.length === 0}
-		<SuggestedActions {user} {sendMessage} actions={[]} />
-	{/if}
-
 	<input
 		type="file"
 		class="pointer-events-none fixed -left-4 -top-4 size-0.5 opacity-0"

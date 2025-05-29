@@ -58,7 +58,7 @@ export async function load({ params: { chatId }, fetch, cookies }) {
 		// Fetch character details using the character_id from the chat session
 		let character: ScribeCharacter | null = null;
 		if (chat.character_id) {
-			const characterRes = await fetch(`/api/characters/${chat.character_id}`, { headers });
+			const characterRes = await fetch(`/api/characters/fetch/${chat.character_id}`, { headers });
 			if (characterRes.ok) {
 				character = await characterRes.json();
 			} else {

@@ -722,7 +722,7 @@ pub fn chat_routes(state: AppState) -> Router<AppState> {
     Router::new()
         .route("/create_session", post(create_chat_session_handler))
         .route(
-            "/:chat_id/suggested-actions",
+            "/actions/:chat_id/suggest",
             post(generate_suggested_actions),
         )
         .route("/ping", get(ping_handler))
@@ -742,78 +742,188 @@ async fn ping_handler() -> &'static str {
     "pong_from_chat_routes"
 }
 
-#[instrument(skip(state, auth_session, payload), fields(chat_id = %chat_id))]
+#[instrument(skip(state, auth_session, _payload), fields(chat_id = %chat_id))] // _payload as it's not used
 pub async fn generate_suggested_actions(
     State(state): State<AppState>,
     auth_session: AuthSession<AuthBackend>,
-    Path(chat_id): Path<String>,
-    Json(payload): Json<SuggestedActionsRequest>,
+    Path(chat_id): Path<Uuid>,
+    session_dek: SessionDek,
+    Json(_payload): Json<SuggestedActionsRequest>, // _payload as it's an empty struct now
 ) -> Result<Json<SuggestedActionsResponse>, AppError> {
-    info!("Entering generate_suggested_actions");
-    tracing::info!(
-        "@@@ GENERATE_SUGGESTED_ACTIONS HANDLER ENTERED (chat_id: {}) @@@",
-        chat_id
-    );
+    info!("Entering generate_suggested_actions for chat_id: {}", chat_id);
 
-    info!(
-        "Received request for suggested actions (chat_id: {})",
-        chat_id
-    );
-    payload.validate()?;
+    let state_arc = Arc::new(state);
+    let session_dek_arc = Arc::new(session_dek.0);
 
     let user = auth_session.user.ok_or_else(|| {
-        error!(
-            "User not found in session for suggested actions (chat_id: {})",
-            chat_id
-        );
+        error!("User not found in session for suggested actions (chat_id: {})", chat_id);
         AppError::Unauthorized("User not found in session".to_string())
     })?;
     let user_id = user.id;
-    debug!(user_id = %user_id, chat_id = %chat_id, "User and chat_id extracted for suggested actions");
+    debug!(user_id = %user_id, chat_id = %chat_id, "User and chat_id extracted");
 
-    let chat_id = Uuid::parse_str(&chat_id).map_err(|_| {
-        error!("Invalid chat UUID format: {}", chat_id);
-        AppError::BadRequest("Invalid chat UUID format".to_string())
-    })?;
-    debug!(%chat_id, "Parsed chat_id from parameter");
+    // Placeholder content for get_session_data_for_generation as we are not saving a new user message here.
+    let current_user_content_for_service_call = "".to_string(); // Or a system message like "System: Requesting suggestions."
 
-    let chat_session = state
+    let (
+        managed_db_history,
+        system_prompt_from_service,
+        _active_lorebook_ids_for_search,
+        session_character_id,
+        raw_character_system_prompt,
+        gen_temperature, // We might use a fixed temp for suggestions
+        _gen_max_output_tokens, // We use fixed max_tokens for suggestions
+        _gen_frequency_penalty,
+        _gen_presence_penalty,
+        _gen_top_k,
+        _gen_top_p,
+        _gen_repetition_penalty,
+        _gen_min_p,
+        _gen_top_a,
+        _gen_seed,
+        _gen_logit_bias,
+        _gen_model_name_from_service, // We might use a fixed model for suggestions
+        _gen_gemini_thinking_budget,
+        _gen_gemini_enable_code_execution,
+        _user_message_struct_to_save, // Not saving a user message here
+        _actual_recent_history_tokens_from_service,
+        _rag_context_items_from_service, // RAG not typically used for suggestions
+        _hist_management_strategy,
+        _hist_management_limit,
+    ) = chat::generation::get_session_data_for_generation(
+        state_arc.clone(),
+        user_id,
+        chat_id,
+        current_user_content_for_service_call,
+        Some(session_dek_arc.clone()),
+    )
+    .await?;
+
+    debug!(%chat_id, "Fetched session data for suggestions. History items: {}", managed_db_history.len());
+
+    // Fetch Character model from DB
+    let character_db_model = state_arc
         .pool
         .get()
-        .await
-        .map_err(|e| AppError::DbPoolError(e.to_string()))?
+        .await?
         .interact(move |conn| {
-            chat_sessions::table
-                .filter(chat_sessions::id.eq(chat_id))
-                .select(Chat::as_select())
-                .first::<Chat>(conn)
-                .map_err(AppError::from)
+            app_schema::characters::table
+                .filter(app_schema::characters::id.eq(session_character_id))
+                .filter(app_schema::characters::user_id.eq(user_id)) // Ensure user owns character
+                .select(Character::as_select())
+                .first::<Character>(conn)
         })
-        .await
-        .map_err(|e| {
-            AppError::InternalServerErrorGeneric(format!("Interact error fetching chat: {}", e))
-        })??;
+        .await??; // Double question mark for interact and then DB result
 
-    if chat_session.user_id != user_id {
-        return Err(AppError::Forbidden);
+    let character_metadata_for_prompt_builder = CharacterMetadata {
+        id: character_db_model.id,
+        user_id: character_db_model.user_id,
+        name: character_db_model.name.clone(),
+        description: character_db_model.description.clone(),
+        description_nonce: character_db_model.description_nonce.clone(),
+        first_mes: character_db_model.first_mes.clone(), // Assuming first_mes is already decrypted or plaintext
+        created_at: character_db_model.created_at,
+        updated_at: character_db_model.updated_at,
+    };
+
+    // Construct context for the suggestion prompt
+    let mut suggestion_context_parts: Vec<String> = Vec::new();
+
+    let decrypted_first_mes_str = match (&character_db_model.first_mes, &character_db_model.first_mes_nonce) {
+        (Some(fm_bytes), Some(fm_nonce_bytes)) if !fm_bytes.is_empty() && !fm_nonce_bytes.is_empty() => {
+            match crate::crypto::decrypt_gcm(fm_bytes, fm_nonce_bytes, &session_dek_arc) { // Use &session_dek_arc
+                Ok(decrypted_secret_vec) => {
+                    String::from_utf8(decrypted_secret_vec.expose_secret().to_vec())
+                        .unwrap_or_else(|e| {
+                            error!("Failed to convert decrypted first_mes to UTF-8: {}. Using empty string.", e);
+                            String::new()
+                        })
+                }
+                Err(e) => {
+                    error!("Failed to decrypt first_mes: {}. Using empty string.", e);
+                    String::new()
+                }
+            }
+        }
+        (Some(fm_bytes), None) if !fm_bytes.is_empty() => {
+            // No nonce, assume plaintext (less secure, but might be intended for some characters)
+            String::from_utf8_lossy(fm_bytes).into_owned()
+        }
+        _ => String::new(), // No first_mes or empty
+    };
+
+    if !decrypted_first_mes_str.is_empty() {
+        suggestion_context_parts.push(format!("Character Introduction: \"{}\"", decrypted_first_mes_str));
     }
-    debug!(%chat_id, "User authorized for chat session");
 
-    let prompt_text = format!(
-        "Given the following start of a conversation:\n\nCharacter Introduction: \"{}\"\n\nUser's First Message: \"{}\"\n\nAI's First Response: \"{}\"\n\n\nGenerate 2-4 short, contextually relevant follow-up actions or questions that the user might want to take next.\n\nEach action should be a concise sentence suitable for display in a small button.",
-        payload.character_first_message,
-        payload.user_first_message.as_deref().unwrap_or(""),
-        payload.ai_first_response.as_deref().unwrap_or("")
+    // Use last 2-3 messages from history for context
+    let history_for_prompt = managed_db_history.iter().rev().take(3).rev(); // Take last 3, then reverse to chronological
+    for msg in history_for_prompt {
+        // managed_db_history content is already decrypted by get_session_data_for_generation
+        let content_str = String::from_utf8_lossy(&msg.content).into_owned();
+        match msg.message_type {
+            MessageRole::User => suggestion_context_parts.push(format!("User: \"{}\"", content_str)),
+            MessageRole::Assistant => suggestion_context_parts.push(format!("Assistant: \"{}\"", content_str)),
+            MessageRole::System => {} // Usually don't include system messages directly in this context
+        }
+    }
+    
+    let context_str_for_suggestions = suggestion_context_parts.join("\n");
+    let prompt_text_for_llm_suggestions = format!(
+        "Based on this conversation snippet:\n\n{}\n\nWhat are 2-4 concise follow-up actions or questions the user might say next? These should be suitable for buttons.",
+        context_str_for_suggestions
     );
-    trace!(%chat_id, "Constructed prompt for Gemini suggested actions: {}", prompt_text);
+    trace!(%chat_id, "Constructed prompt for LLM suggested actions: {}", prompt_text_for_llm_suggestions);
 
-    let messages = vec![GenAiChatMessage {
-        role: ChatRole::User,
-        content: MessageContent::Text(prompt_text),
+    let suggestion_request_genai_message = GenAiChatMessage {
+        role: ChatRole::User, // We are "asking" the LLM on behalf of the system/user for suggestions
+        content: MessageContent::Text(prompt_text_for_llm_suggestions),
         options: None,
-    }];
+    };
 
-    let chat_request = ChatRequest::new(messages);
+    // Convert DbChatMessage history (already decrypted) to GenAiChatMessage history for prompt builder
+    // This history is what *precedes* our special suggestion_request_genai_message
+    let mut gen_ai_processed_history: Vec<GenAiChatMessage> = Vec::new();
+    for db_msg in managed_db_history { // This is the full relevant history
+        let content_str = String::from_utf8_lossy(&db_msg.content).into_owned();
+        let chat_role = match db_msg.message_type {
+            MessageRole::User => ChatRole::User,
+            MessageRole::Assistant => ChatRole::Assistant,
+            MessageRole::System => ChatRole::System,
+        };
+        gen_ai_processed_history.push(GenAiChatMessage {
+            role: chat_role,
+            content: MessageContent::from_text(content_str),
+            options: None,
+        });
+    }
+    
+    // Model for suggestions - can be from settings or fixed. Using fixed for now.
+    let model_for_suggestions = "gemini-1.5-flash-latest".to_string(); // Or use gen_model_name_from_service if desired
+
+    let (final_system_prompt_for_suggestions, final_messages_for_suggestions_llm) =
+        match prompt_builder::build_final_llm_prompt(
+            state_arc.config.clone(),
+            state_arc.token_counter.clone(),
+            gen_ai_processed_history, // The actual chat history
+            Vec::new(), // No RAG for suggestions
+            system_prompt_from_service,
+            raw_character_system_prompt,
+            Some(&character_metadata_for_prompt_builder),
+            suggestion_request_genai_message, // Our special message asking for suggestions
+            &model_for_suggestions,
+        )
+        .await
+        {
+            Ok(prompt_data) => prompt_data,
+            Err(e) => {
+                error!(%chat_id, error = ?e, "Failed to build final LLM prompt for suggestions");
+                return Err(e);
+            }
+        };
+
+    let chat_request = ChatRequest::new(final_messages_for_suggestions_llm)
+        .with_system(final_system_prompt_for_suggestions);
 
     let suggested_actions_schema_value = json!({
         "type": "ARRAY",
@@ -830,23 +940,19 @@ pub async fn generate_suggested_actions(
     });
 
     let chat_options = ChatOptions::default()
-        .with_temperature(0.7)
-        .with_max_tokens(150)
+        .with_temperature(gen_temperature.and_then(|t| t.to_f32()).unwrap_or(0.7).into()) // Use session temp or default
+        .with_max_tokens(150) // Fixed max tokens for suggestions
         .with_response_format(ChatResponseFormat::JsonSpec(JsonSpec {
             name: "suggested_actions".to_string(),
             description: Some("A list of suggested follow-up actions or questions.".to_string()),
             schema: suggested_actions_schema_value,
         }));
+    
+    trace!(%chat_id, model = %model_for_suggestions, ?chat_request, ?chat_options, "Sending request to Gemini for suggested actions");
 
-    trace!(%chat_id, model = "gemini-2.5-flash-preview-04-17", ?chat_request, ?chat_options, "Sending request to Gemini for suggested actions (manual JSON parsing)");
-
-    let gemini_response = state
+    let gemini_response = state_arc
         .ai_client
-        .exec_chat(
-            "gemini-2.5-flash-preview-04-17",
-            chat_request,
-            Some(chat_options),
-        )
+        .exec_chat(&model_for_suggestions, chat_request, Some(chat_options))
         .await
         .map_err(|e| {
             error!(%chat_id, "Gemini API error for suggested actions: {:?}", e);
@@ -871,7 +977,7 @@ pub async fn generate_suggested_actions(
         serde_json::from_str(&response_text).map_err(|e| {
             error!(
                 %chat_id,
-                "Failed to parse Gemini JSON response into expected structure for suggested actions: {:?}. Response text: {}", 
+                "Failed to parse Gemini JSON response into expected structure for suggested actions: {:?}. Response text: {}",
                 e,
                 response_text
             );

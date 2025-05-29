@@ -107,6 +107,14 @@ export type SessionResponse = {
 	user: User;
 };
 
+export interface SuggestedActionItem {
+	action: string;
+}
+
+export type SuggestedActionsResponse = {
+	suggestions: SuggestedActionItem[];
+};
+
 // Actual API client
 class ApiClient {
 	private baseUrl: string;
@@ -268,6 +276,13 @@ class ApiClient {
 		return this.fetch<void>(`/api/chats/${id}/visibility`, {
 			method: 'PUT',
 			body: JSON.stringify({ visibility })
+		});
+	}
+
+	async fetchSuggestedActions(chatId: string): Promise<Result<SuggestedActionsResponse, ApiError>> {
+		return this.fetch<SuggestedActionsResponse>(`/api/chat/actions/${chatId}/suggest`, {
+			method: 'POST',
+			body: JSON.stringify({}) // Empty JSON object
 		});
 	}
 

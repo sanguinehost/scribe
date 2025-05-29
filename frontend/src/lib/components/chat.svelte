@@ -1,6 +1,7 @@
 <script lang="ts">
 	// Removed Attachment import
 	import { toast } from 'svelte-sonner';
+	import { apiClient } from '$lib/api'; // Import apiClient
 	import { ChatHistory } from '$lib/hooks/chat-history.svelte';
 	import ChatHeader from './chat-header.svelte';
 	import type { User, ScribeCharacter } from '$lib/types'; // Updated import path & Add ScribeCharacter
@@ -103,62 +104,33 @@
 	async function fetchSuggestedActions() {
 		console.log('fetchSuggestedActions: Entered function.');
 
-		if (!currentChat || !currentCharacter?.first_mes) {
-			console.log('fetchSuggestedActions: Aborting, missing currentChat or character.first_mes.');
+		if (!currentChat?.id) { // Check only for currentChat.id as per new endpoint
+			console.log('fetchSuggestedActions: Aborting, missing currentChat.id.');
 			return;
 		}
 
-		const characterFirstMessage = currentCharacter.first_mes;
-		let userFirstMessageContent: string | null = null;
-		let aiFirstResponseContent: string | null = null;
-
-		const firstUserMessage = messages.find(m => m.message_type === 'User');
-
-		if (firstUserMessage) {
-			userFirstMessageContent = firstUserMessage.content;
-			const firstUserMessageDate = new Date(firstUserMessage.created_at);
-			
-			const firstAiResponseAfterUser = messages.find(m =>
-				m.message_type === 'Assistant' &&
-				m.id !== `first-message-${currentChat.id ?? 'initial'}` && // Exclude character's initial greeting
-				new Date(m.created_at) > firstUserMessageDate
-			);
-
-			if (firstAiResponseAfterUser) {
-				aiFirstResponseContent = firstAiResponseAfterUser.content;
-			}
-		}
-		
-		const payload = {
-			character_first_message: characterFirstMessage,
-			user_first_message: userFirstMessageContent,
-			ai_first_response: aiFirstResponseContent
-		};
-
-		console.log('Fetching suggested actions for chat:', currentChat.id, payload);
+		console.log('Fetching suggested actions for chat:', currentChat.id);
 
 		try {
 			isLoadingSuggestions = true;
-			const response = await fetch(`/api/chats/${currentChat.id}/suggested-actions`, {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify(payload)
-			});
+			const result = await apiClient.fetchSuggestedActions(currentChat.id);
 
-			if (!response.ok) {
-				const errorData = await response.json().catch(() => ({ message: 'Failed to fetch suggestions' }));
-				throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
-			}
-
-			const data: { suggestions: Array<{ action: string }> } = await response.json();
-			if (data.suggestions && data.suggestions.length > 0) {
-				dynamicSuggestedActions = data.suggestions;
-				console.log('Successfully fetched suggested actions:', dynamicSuggestedActions);
+			if (result.isOk()) {
+				const responseData = result.value; // This is { suggestions: [...] }
+				if (responseData.suggestions && responseData.suggestions.length > 0) {
+					dynamicSuggestedActions = responseData.suggestions;
+					console.log('Successfully fetched suggested actions:', dynamicSuggestedActions);
+				} else {
+					console.log('No suggestions returned or suggestions array is empty.');
+					dynamicSuggestedActions = [];
+				}
 			} else {
-				console.log('No suggestions returned or suggestions array is empty.');
+				const error = result.error;
+				console.error('Error fetching suggested actions:', error.message);
+				toast.error(`Could not load suggested actions: ${error.message}`);
 				dynamicSuggestedActions = [];
 			}
-		} catch (err: any) {
+		} catch (err: any) { // Catch any unexpected errors during the API client call itself
 			console.error('Error fetching suggested actions:', err);
 			toast.error(`Could not load suggested actions: ${err.message}`);
 			dynamicSuggestedActions = [];
@@ -168,6 +140,8 @@
 	}
 
 	async function sendMessage(content: string) {
+		dynamicSuggestedActions = []; // Clear suggestions when a message (including a suggestion) is sent
+
 		// Use user.user_id instead of user.id
 		if (!currentChat?.id || !user?.user_id) {
 			error = 'Chat session or user information is missing.';
@@ -230,7 +204,7 @@
 		let fetchError: any = null; // Variable to store error from fetch/parsing
 
 		try {
-			const response = await fetch(`/api/chats/${currentChat.id}/generate`, {
+			const response = await fetch(`/api/chat/${currentChat.id}/generate`, {
 				method: 'POST',
 				headers: {
 					'Content-Type': 'application/json',

@@ -1325,40 +1325,13 @@ fn validate_optional_logit_bias(value: &Value) -> Result<(), ValidationError> {
 // --- Suggested Actions API Structures ---
 
 /// Payload for requesting suggested actions.
-#[derive(Serialize, Deserialize, Validate)] // Removed Debug
+#[derive(Serialize, Deserialize, Debug)] // Removed Validate, added Debug
 pub struct SuggestedActionsRequest {
-    /// The history of messages in the chat so far.
-    /// This provides context for generating relevant suggestions.
-    #[validate(length(min = 0))] // Example: allow empty history
-    pub message_history: Vec<ApiChatMessage>,
-    pub character_first_message: String,
-    pub user_first_message: Option<String>,
-    pub ai_first_response: Option<String>,
+    // This struct is now empty. Context will be derived by the handler.
+    // Potential future fields: num_suggestions_hint, etc.
 }
 
-impl std::fmt::Debug for SuggestedActionsRequest {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("SuggestedActionsRequest")
-            .field(
-                "message_history",
-                &self
-                    .message_history
-                    .iter()
-                    .map(|_| "[REDACTED_ApiChatMessage]")
-                    .collect::<Vec<_>>(),
-            )
-            .field("character_first_message", &"[REDACTED]")
-            .field(
-                "user_first_message",
-                &self.user_first_message.as_ref().map(|_| "[REDACTED]"),
-            )
-            .field(
-                "ai_first_response",
-                &self.ai_first_response.as_ref().map(|_| "[REDACTED]"),
-            )
-            .finish()
-    }
-}
+// Manual Debug impl removed as derive is sufficient for the empty struct.
 
 /// Structure for a single suggested action
 #[derive(Clone, Serialize, Deserialize)] // Removed Debug
