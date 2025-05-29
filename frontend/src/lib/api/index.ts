@@ -1,7 +1,7 @@
 import { Result, err, ok } from 'neverthrow';
 import type { ApiError } from '$lib/errors/api';
 import { ApiResponseError, ApiNetworkError } from '$lib/errors/api';
-import type { User, Message, Vote, Suggestion, Session, AuthUser, ScribeChatSession, LoginSuccessData } from '$lib/types'; // Added LoginSuccessData
+import type { User, Message, Vote, Suggestion, Session, AuthUser, ScribeChatSession, LoginSuccessData, VisibilityType } from '$lib/types'; // Added LoginSuccessData, VisibilityType
 
 // Placeholder for Character type - Define based on expected fields from GET /api/characters/{id}
 // Assuming these fields based on the task description and common patterns
@@ -14,6 +14,56 @@ export interface Character {
 	scenario?: string | null;
 	avatar_url?: string | null;
 	greeting?: string | null;
+}
+
+// User Persona types
+export interface UserPersona {
+	id: string;
+	user_id: string;
+	name: string;
+	description: string;
+	spec?: string | null;
+	spec_version?: string | null;
+	personality?: string | null;
+	scenario?: string | null;
+	first_mes?: string | null;
+	mes_example?: string | null;
+	system_prompt?: string | null;
+	post_history_instructions?: string | null;
+	tags?: string[] | null;
+	avatar?: string | null;
+	created_at: string;
+	updated_at: string;
+}
+
+export interface CreateUserPersonaRequest {
+	name: string;
+	description: string;
+	spec?: string | null;
+	spec_version?: string | null;
+	personality?: string | null;
+	scenario?: string | null;
+	first_mes?: string | null;
+	mes_example?: string | null;
+	system_prompt?: string | null;
+	post_history_instructions?: string | null;
+	tags?: string[] | null;
+	avatar?: string | null;
+}
+
+export interface UpdateUserPersonaRequest {
+	name?: string;
+	description?: string;
+	spec?: string | null;
+	spec_version?: string | null;
+	personality?: string | null;
+	scenario?: string | null;
+	first_mes?: string | null;
+	mes_example?: string | null;
+	system_prompt?: string | null;
+	post_history_instructions?: string | null;
+	tags?: string[] | null;
+	avatar?: string | null;
 }
 
 
@@ -116,6 +166,40 @@ export type SuggestedActionsResponse = {
 	suggestions: SuggestedActionItem[];
 };
 
+
+// Types for Chat Session Settings
+// export interface ContextBudgetInput { // Removed as fields will be flat
+// 	total_token_limit?: number | null;
+// 	recent_history_budget?: number | null;
+// 	rag_budget?: number | null;
+// }
+
+export interface UpdateChatSessionSettingsRequest {
+	title?: string | null;
+	system_prompt?: string | null;
+	temperature?: number | null;
+	max_output_tokens?: number | null;
+	frequency_penalty?: number | null;
+	presence_penalty?: number | null;
+	top_k?: number | null;
+	top_p?: number | null;
+	repetition_penalty?: number | null;
+	min_p?: number | null;
+	top_a?: number | null;
+	seed?: number | null;
+	logit_bias?: Record<string, number> | null;
+	history_management_strategy?: string | null;
+	history_management_limit?: number | null;
+	visibility?: VisibilityType | null;
+	active_custom_persona_id?: string | null;
+	model_name?: string | null;
+	gemini_thinking_budget?: number | null;
+	gemini_enable_code_execution?: boolean | null;
+	// context_budget?: ContextBudgetInput | null; // Replaced with flat fields
+	context_total_token_limit?: number | null;
+	context_recent_history_budget?: number | null;
+	context_rag_budget?: number | null;
+}
 // Actual API client
 class ApiClient {
 	private baseUrl: string;
@@ -363,6 +447,56 @@ class ApiClient {
 
 	async getSuggestionsByDocumentId(documentId: string): Promise<Result<Suggestion[], ApiError>> {
 		return this.fetch<Suggestion[]>(`/api/suggestions/document/${documentId}`);
+	}
+
+	// Chat Session Settings methods
+	async getChatSessionSettings(sessionId: string): Promise<Result<ScribeChatSession, ApiError>> {
+		return this.fetch<ScribeChatSession>(`/api/chat/settings/${sessionId}`);
+	}
+
+	async updateChatSessionSettings(
+		sessionId: string,
+		settings: UpdateChatSessionSettingsRequest
+	): Promise<Result<ScribeChatSession, ApiError>> {
+		return this.fetch<ScribeChatSession>(`/api/chat/settings/${sessionId}`, {
+			method: 'PUT',
+			body: JSON.stringify(settings)
+		});
+	}
+
+	// User Persona methods
+	async createUserPersona(data: CreateUserPersonaRequest): Promise<Result<UserPersona, ApiError>> {
+		return this.fetch<UserPersona>('/api/personas', {
+			method: 'POST',
+			body: JSON.stringify(data)
+		});
+	}
+
+	async getUserPersonas(): Promise<Result<UserPersona[], ApiError>> {
+		return this.fetch<UserPersona[]>('/api/personas');
+	}
+
+	async getUserPersona(id: string): Promise<Result<UserPersona, ApiError>> {
+		return this.fetch<UserPersona>(`/api/personas/${id}`);
+	}
+
+	async updateUserPersona(id: string, data: UpdateUserPersonaRequest): Promise<Result<UserPersona, ApiError>> {
+		return this.fetch<UserPersona>(`/api/personas/${id}`, {
+			method: 'PUT',
+			body: JSON.stringify(data)
+		});
+	}
+
+	async deleteUserPersona(id: string): Promise<Result<void, ApiError>> {
+		return this.fetch<void>(`/api/personas/${id}`, {
+			method: 'DELETE'
+		});
+	}
+
+	async setDefaultPersona(personaId: string): Promise<Result<void, ApiError>> {
+		return this.fetch<void>(`/api/user-settings/set_default_persona/${personaId}`, {
+			method: 'PUT'
+		});
 	}
 }
 

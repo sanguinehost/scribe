@@ -36,6 +36,43 @@ vi.mock('$lib/hooks/chat-history.svelte', () => {
   };
 });
 
+// Mock SelectedCharacterStore and SelectedPersonaStore
+vi.mock('$lib/stores/selected-character.svelte', () => {
+  class MockSelectedCharacterStore {
+    characterId = null;
+    static fromContext() {
+      return new MockSelectedCharacterStore();
+    }
+    clear() {
+      this.characterId = null;
+    }
+    select(id: string | null) {
+      this.characterId = id;
+    }
+  }
+  return {
+    SelectedCharacterStore: MockSelectedCharacterStore,
+  };
+});
+
+vi.mock('$lib/stores/selected-persona.svelte', () => {
+  class MockSelectedPersonaStore {
+    personaId = null;
+    static fromContext() {
+      return new MockSelectedPersonaStore();
+    }
+    clear() {
+      this.personaId = null;
+    }
+    selectPersona(id: string | null) {
+      this.personaId = id;
+    }
+  }
+  return {
+    SelectedPersonaStore: MockSelectedPersonaStore,
+  };
+});
+
 // --- Mock Browser & SvelteKit APIs ---
 vi.mock('svelte/reactivity/window', () => ({
   innerWidth: { current: 1024, subscribe: vi.fn(() => () => {}) }
@@ -455,15 +492,11 @@ describe('Chat.svelte Component', () => {
     // 7. Assert fetch was called for suggestions API
     await waitFor(() => {
       expect(mockApiFetch).toHaveBeenCalledWith(
-        `/api/chats/${mockChatSession.id}/suggested-actions`,
+        `/api/chat/actions/${mockChatSession.id}/suggest`,
         expect.objectContaining({
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            character_first_message: mockCharacter.first_mes,
-            user_first_message: testUserMessage.content,
-            ai_first_response: testAssistantResponse.content
-          }),
+          body: JSON.stringify({}), // API client sends empty object
         })
       );
     });
@@ -530,15 +563,11 @@ describe('Chat.svelte Component', () => {
     // 7. Assert fetch was called for suggestions API with correct payload
     await waitFor(() => {
       expect(mockApiFetch).toHaveBeenCalledWith(
-        `/api/chats/${mockChatSession.id}/suggested-actions`,
+        `/api/chat/actions/${mockChatSession.id}/suggest`,
         expect.objectContaining({
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            character_first_message: characterWithOnlyFirstMes.first_mes,
-            user_first_message: null, // Expect null as no user messages
-            ai_first_response: null    // Expect null as no AI response after a user message
-          }),
+          body: JSON.stringify({}), // API client sends empty object
         })
       );
     });

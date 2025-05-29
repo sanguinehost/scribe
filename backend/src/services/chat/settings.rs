@@ -68,6 +68,10 @@ pub async fn get_session_settings(
                             // -- Gemini Specific Options --
                             chat_sessions::gemini_thinking_budget,
                             chat_sessions::gemini_enable_code_execution,
+                            // -- Context Budget Options --
+                            chat_sessions::context_total_token_limit,
+                            chat_sessions::context_recent_history_budget,
+                            chat_sessions::context_rag_budget,
                         ))
                         .first::<SettingsTuple>(conn) // Expect a result now
                         .map_err(|e| {
@@ -95,6 +99,10 @@ pub async fn get_session_settings(
                         // -- Gemini Specific Options --
                         gemini_thinking_budget,
                         gemini_enable_code_execution,
+                        // -- Context Budget Options --
+                        context_total_token_limit,
+                        context_recent_history_budget,
+                        context_rag_budget,
                     ) = settings_tuple;
 
                     // Decrypt system_prompt if available
@@ -146,6 +154,10 @@ pub async fn get_session_settings(
                         // -- Gemini Specific Options --
                         gemini_thinking_budget,
                         gemini_enable_code_execution,
+                        // -- Context Budget Options --
+                        context_total_token_limit,
+                        context_recent_history_budget,
+                        context_rag_budget,
                     })
                 }
             }
@@ -210,6 +222,10 @@ pub async fn update_session_settings(
                         model_name: Option<String>,
                         gemini_thinking_budget: Option<i32>,
                         gemini_enable_code_execution: Option<bool>,
+                        // Context Budget fields
+                        context_total_token_limit: Option<i32>,
+                        context_recent_history_budget: Option<i32>,
+                        context_rag_budget: Option<i32>,
                         updated_at: Option<chrono::DateTime<chrono::Utc>>,
                     }
 
@@ -311,6 +327,18 @@ pub async fn update_session_settings(
                     if let Some(gem_exec) = payload.gemini_enable_code_execution {
                         changes_made = true;
                         changeset.gemini_enable_code_execution = Some(gem_exec);
+                    }
+                    if let Some(total_limit) = payload.context_total_token_limit {
+                        changes_made = true;
+                        changeset.context_total_token_limit = Some(total_limit);
+                    }
+                    if let Some(recent_budget) = payload.context_recent_history_budget {
+                        changes_made = true;
+                        changeset.context_recent_history_budget = Some(recent_budget);
+                    }
+                    if let Some(rag_budget) = payload.context_rag_budget {
+                        changes_made = true;
+                        changeset.context_rag_budget = Some(rag_budget);
                     }
 
                     if changes_made {

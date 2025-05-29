@@ -1,4 +1,9 @@
-export const DEFAULT_CHAT_MODEL: string = 'gemini-2.5-pro-preview-03-25';
+export const DEFAULT_CHAT_MODEL: string = 'gemini-2.5-flash-preview-04-17'; // Changed as per previous conversation summary
+
+// Default Context Allocation
+export const DEFAULT_CONTEXT_TOTAL_TOKEN_LIMIT = 200000;
+export const DEFAULT_CONTEXT_RECENT_HISTORY_BUDGET = 150000;
+export const DEFAULT_CONTEXT_RAG_BUDGET = 40000; // Leaves 10k buffer
 
 interface ChatModel {
 	id: string;
@@ -8,7 +13,7 @@ interface ChatModel {
 
 export const chatModels: Array<ChatModel> = [
     {
-		id: 'gemini-2.5-pro-preview-03-25',
+		id: 'gemini-2.5-pro-preview-05-06',
 		name: 'Gemini 2.5 Pro Preview',
 		description: 'Stable preview of the Pro model'
 	},

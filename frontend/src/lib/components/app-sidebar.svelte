@@ -16,21 +16,30 @@
 	// import { SidebarHistory } from './sidebar-history'; // Remove SidebarHistory import
 	import CharacterList from './CharacterList.svelte'; // Import the new CharacterList component
 	import CharacterUploader from './CharacterUploader.svelte'; // Import the uploader component
+	import PersonaList from './PersonaList.svelte'; // Import the PersonaList component
+	import SettingsIcon from './icons/settings.svelte'; // Import the new SettingsIcon
+	import { SettingsStore } from '$lib/stores/settings.svelte'; // Import SettingsStore
 	import { SelectedCharacterStore } from '$lib/stores/selected-character.svelte';
+	import { SelectedPersonaStore } from '$lib/stores/selected-persona.svelte';
 
 	let { user }: { user?: User } = $props();
 
 	const context = useSidebar();
+	const settingsStore = SettingsStore.fromContext(); // Initialize SettingsStore
 	const selectedCharacterStore = SelectedCharacterStore.fromContext();
+	const selectedPersonaStore = SelectedPersonaStore.fromContext();
 	let isUploaderOpen = $state(false); // State for dialog visibility (Changed to $state)
-	let characterListComp: CharacterList; // Reference to CharacterList component instance
+	let activeTab = $state<'characters' | 'personas'>('characters'); // Track active tab
+	let characterListComp = $state<CharacterList | undefined>(undefined); // Reference to CharacterList component instance
+	let personaListComp = $state<PersonaList | undefined>(undefined); // Reference to PersonaList component instance
 
-	// Placeholder handlers for events from CharacterList
+	// Character handlers
 	async function handleSelectCharacter(event: CustomEvent<{ characterId: string }>) {
 		const characterId = event.detail.characterId;
 		console.log('Character selected:', characterId);
 		
-		// Set the selected character in the store
+		// Clear any selected persona and set the selected character
+		selectedPersonaStore.clear();
 		selectedCharacterStore.select(characterId);
 		
 		// Navigate to home to show the character overview
@@ -50,6 +59,54 @@
 			await characterListComp.refresh(); // Call refresh on the CharacterList instance
 		}
 	}
+
+	async function handlePersonaCreated() {
+		console.log('Persona created, refreshing list...');
+		if (personaListComp) {
+			await personaListComp.refresh(); // Call refresh on the PersonaList instance
+		}
+	}
+
+	// Persona handlers
+	async function handleSelectPersona(event: CustomEvent<{ personaId: string }>) {
+		const personaId = event.detail.personaId;
+		console.log('Persona selected:', personaId);
+		
+		// Clear any selected character and set the selected persona
+		selectedCharacterStore.clear();
+		selectedPersonaStore.selectPersona(personaId);
+		
+		// Navigate to home to show the persona overview
+		goto('/', { invalidateAll: true });
+		context.setOpenMobile(false); // Close mobile sidebar on selection
+	}
+
+	function handleCreatePersona() {
+		console.log('Create persona triggered');
+		
+		// Clear any selected character and set the persona store to creating mode
+		selectedCharacterStore.clear();
+		selectedPersonaStore.showCreating();
+		
+		// Navigate to home to show the persona editor
+		goto('/', { invalidateAll: true });
+		context.setOpenMobile(false); // Close mobile sidebar
+	}
+
+	function switchTab(tab: 'characters' | 'personas') {
+		activeTab = tab;
+		// Clear any selections when switching tabs
+		if (tab === 'characters') {
+			selectedPersonaStore.clear();
+		} else {
+			selectedCharacterStore.clear();
+		}
+	}
+
+	function openSettings() {
+		settingsStore.show();
+		context.setOpenMobile(false); // Close mobile sidebar if open
+	}
 </script>
 
 <Sidebar class="group-data-[side=left]:border-r-0">
@@ -61,6 +118,7 @@
 					onclick={() => {
 						context.setOpenMobile(false);
 						selectedCharacterStore.clear(); // Clear any selected character
+						selectedPersonaStore.clear(); // Clear any selected persona
 					}}
 					class="flex flex-row items-center gap-3"
 				>
@@ -74,6 +132,7 @@
 						onclick={() => {
 							context.setOpenMobile(false);
 							selectedCharacterStore.clear(); // Clear any selected character
+							selectedPersonaStore.clear(); // Clear any selected persona
 							goto('/', { invalidateAll: true });
 						}}
 					>
@@ -85,14 +144,46 @@
 		</SidebarMenu>
 	</SidebarHeader>
 	<SidebarContent class="p-0">
-		<!-- Replace SidebarHistory with CharacterList -->
-		<CharacterList
-			bind:this={characterListComp}
-			on:selectCharacter={handleSelectCharacter}
-			on:uploadCharacter={handleUploadCharacter}
-		/>
+		<!-- Tab Navigation -->
+		<div class="flex border-b">
+			<button
+				class="flex-1 px-4 py-2 text-sm font-medium transition-colors {activeTab === 'characters'
+					? 'bg-background text-foreground border-b-2 border-primary'
+					: 'text-muted-foreground hover:text-foreground'}"
+				onclick={() => switchTab('characters')}
+			>
+				Characters
+			</button>
+			<button
+				class="flex-1 px-4 py-2 text-sm font-medium transition-colors {activeTab === 'personas'
+					? 'bg-background text-foreground border-b-2 border-primary'
+					: 'text-muted-foreground hover:text-foreground'}"
+				onclick={() => switchTab('personas')}
+			>
+				Personas
+			</button>
+		</div>
+
+		<!-- Tab Content -->
+		{#if activeTab === 'characters'}
+			<CharacterList
+				bind:this={characterListComp}
+				on:selectCharacter={handleSelectCharacter}
+				on:uploadCharacter={handleUploadCharacter}
+			/>
+		{:else}
+			<PersonaList
+				bind:this={personaListComp}
+				on:selectPersona={handleSelectPersona}
+				on:createPersona={handleCreatePersona}
+			/>
+		{/if}
 	</SidebarContent>
-	<SidebarFooter>
+	<SidebarFooter class="flex flex-col gap-2">
+		<Button variant="ghost" class="w-full justify-start" onclick={openSettings}>
+			<SettingsIcon size={16} class="mr-2" />
+			Settings
+		</Button>
 		{#if user}
 			<SidebarUserNav {user} />
 		{/if}

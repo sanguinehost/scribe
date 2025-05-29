@@ -1,5 +1,6 @@
 <script lang="ts">
 	// Removed VercelIcon and MessageIcon imports
+	// Removed Button and SettingsStore imports
 	import { scale } from 'svelte/transition';
 </script>
 
@@ -26,5 +27,7 @@
 				on GitHub
 			</a>.
 		</p>
+		
+		<!-- Removed settings button div -->
 	</div>
 </div>
