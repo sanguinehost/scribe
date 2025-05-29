@@ -1,6 +1,7 @@
 <script lang="ts">
 	import ThinkingMessage from './messages/thinking-message.svelte';
 	import Overview from './messages/overview.svelte';
+	import CharacterOverview from './messages/character-overview.svelte';
 	import { onMount } from 'svelte';
 	import PreviewMessage from './messages/preview-message.svelte';
 	import type { ScribeChatMessage } from '$lib/types';
@@ -12,11 +13,13 @@
 	let {
 		readonly,
 		loading,
-		messages
+		messages,
+		selectedCharacterId = null
 	}: {
 		readonly: boolean;
 		loading: boolean;
 		messages: ScribeChatMessage[];
+		selectedCharacterId?: string | null;
 	} = $props();
 
 	let mounted = $state(false);
@@ -47,7 +50,11 @@
 
 <div bind:this={containerRef} class="flex min-w-0 flex-1 flex-col gap-6 overflow-y-scroll pt-4">
 	{#if mounted && messages.length === 0}
-		<Overview />
+		{#if selectedCharacterId}
+			<CharacterOverview characterId={selectedCharacterId} />
+		{:else}
+			<Overview />
+		{/if}
 	{/if}
 
 	{#each messages as message (message.id)}

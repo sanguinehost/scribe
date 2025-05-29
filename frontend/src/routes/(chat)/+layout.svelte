@@ -2,6 +2,7 @@
 	import AppSidebar from '$lib/components/app-sidebar.svelte';
 	import { SidebarInset, SidebarProvider } from '$lib/components/ui/sidebar';
 	import { ChatHistory } from '$lib/hooks/chat-history.svelte.js';
+	import { SelectedCharacterStore } from '$lib/stores/selected-character.svelte';
 	import { toast } from 'svelte-sonner';
 	import { onMount } from 'svelte';
 
@@ -10,6 +11,9 @@
 	const chatHistory = new ChatHistory(data.chats);
 	chatHistory.setContext();
 	data.selectedChatModel.setContext();
+
+	const selectedCharacterStore = new SelectedCharacterStore();
+	selectedCharacterStore.setContext();
 
 	// Show toast notification if chat loading failed during SSR/initial load
 	onMount(() => {

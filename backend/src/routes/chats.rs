@@ -50,6 +50,7 @@ pub fn chat_routes() -> Router<crate::state::AppState> {
         .route("/create_session", post(create_chat_handler)) // More distinct path for POST
         .route("/fetch/:id", get(get_chat_by_id_handler))
         .route("/remove/:id", delete(delete_chat_handler))
+        .route("/by-character/:character_id", get(get_chats_by_character_handler)) // NEW: Get chats by character
         .route("/:id/messages", {
             tracing::debug!(
                 "chat_routes: mapping /:id/messages to get_messages_by_chat_id_handler"
@@ -139,6 +140,61 @@ pub async fn set_chat_character_override_handler(
     };
 
     Ok((StatusCode::OK, Json(client_response)))
+}
+
+// Get chats by character ID for current user
+pub async fn get_chats_by_character_handler(
+    auth_session: CurrentAuthSession,
+    State(state): State<AppState>,
+    dek: SessionDek,
+    Path(character_id): Path<Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    let user = auth_session
+        .user
+        .ok_or(AppError::Unauthorized("Not logged in".to_string()))?;
+    let pool = state.pool.clone();
+
+    let chats = pool
+        .get()
+        .await
+        .map_err(|e| AppError::DbPoolError(e.to_string()))?
+        .interact(move |conn| {
+            chat_sessions::table
+                .filter(chat_sessions::user_id.eq(user.id))
+                .filter(chat_sessions::character_id.eq(character_id))
+                .order_by(chat_sessions::created_at.desc())
+                .select(Chat::as_select())
+                .load::<Chat>(conn)
+                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
+        })
+        .await
+        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
+
+    // Decrypt the titles for client display
+    let mut decrypted_chats = Vec::new();
+    for chat in chats {
+        let mut client_chat = ChatForClient::from(chat.clone());
+
+        // Decrypt title if available
+        client_chat.title = match (chat.title_ciphertext.as_ref(), chat.title_nonce.as_ref()) {
+            (Some(ciphertext), Some(nonce)) if !ciphertext.is_empty() && !nonce.is_empty() => {
+                match crypto::decrypt_gcm(ciphertext, nonce, &dek.0) {
+                    Ok(plaintext_secret) => {
+                        match String::from_utf8(plaintext_secret.expose_secret().to_vec()) {
+                            Ok(decrypted_text) => Some(decrypted_text),
+                            Err(_) => Some("[Invalid UTF-8]".to_string()),
+                        }
+                    }
+                    Err(_) => Some("[Decryption Failed]".to_string()),
+                }
+            }
+            _ => None,
+        };
+
+        decrypted_chats.push(client_chat);
+    }
+
+    Ok(Json(decrypted_chats))
 }
 
 // Get all chats for current user
