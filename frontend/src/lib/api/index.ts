@@ -12,7 +12,8 @@ export interface Character {
 	system_prompt?: string | null;
 	personality?: string | null;
 	scenario?: string | null;
-	// Add other fields as needed, e.g., avatar_url
+	avatar_url?: string | null;
+	greeting?: string | null;
 }
 
 
@@ -238,6 +239,10 @@ class ApiClient {
 		return this.fetch<ScribeChatSession[]>('/api/chats');
 	}
 
+	async getChatsByCharacter(characterId: string): Promise<Result<ScribeChatSession[], ApiError>> {
+		return this.fetch<ScribeChatSession[]>(`/api/chats/by-character/${characterId}`);
+	}
+
 	// Updated createChat to accept and send character details
 	async createChat(data: CreateChatRequest): Promise<Result<ScribeChatSession, ApiError>> { // Use ScribeChatSession
 		console.log(`[${new Date().toISOString()}] ApiClient.createChat: Creating chat with data:`, data);
@@ -264,7 +269,7 @@ class ApiClient {
 	// End Character methods
 
 	async deleteChatById(id: string): Promise<Result<void, ApiError>> {
-		return this.fetch<void>(`/api/chats/${id}`, {
+		return this.fetch<void>(`/api/chats/remove/${id}`, {
 			method: 'DELETE'
 		});
 	}

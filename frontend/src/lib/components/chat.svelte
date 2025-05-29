@@ -10,6 +10,7 @@
 	import MultimodalInput from './multimodal-input.svelte';
 	import SuggestedActions from './suggested-actions.svelte'; // Import SuggestedActions
 	import { untrack } from 'svelte'; // Remove incorrect effect import
+	import { SelectedCharacterStore } from '$lib/stores/selected-character.svelte';
 
 	let {
 		user,
@@ -27,12 +28,21 @@
 		initialChatInputValue?: string;
 	} = $props();
 
+	const selectedCharacterStore = SelectedCharacterStore.fromContext();
+
 	// State variables
 	const currentInitialMessages = initialMessagesProp;
 	const currentCharacter = characterProp;
 	const currentChat = chat; // chat prop is also used in logic
 
 	const chatHistory = ChatHistory.fromContext();
+
+	// Clear selected character when we have a chat
+	$effect(() => {
+		if (chat?.id) {
+			selectedCharacterStore.clear();
+		}
+	});
 
 	// Scribe chat state management
 	let messages = $state<ScribeChatMessage[]>([]); // Start with a truly empty array
@@ -412,6 +422,7 @@
 		{readonly}
 		loading={isLoading}
 		messages={messages}
+		selectedCharacterId={selectedCharacterStore.characterId}
 	/>
 
 	<!-- Add Button Here -->
