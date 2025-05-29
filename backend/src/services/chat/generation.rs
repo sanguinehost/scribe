@@ -6,8 +6,7 @@ use futures_util::Stream; // Required for stream_ai_response_and_save_message
 use futures_util::StreamExt; // Required for .next() on streams
 use genai::chat::{
     ChatMessage as GenAiChatMessage, ChatOptions as GenAiChatOptions,
-    ChatRequest as GenAiChatRequest, ChatStreamEvent as GeminiResponseChunkAlias,
-    FunctionCallingMode, ToolConfig,
+    ChatRequest as GenAiChatRequest, ChatStreamEvent as GeminiResponseChunkAlias, ReasoningEffort,
 };
 use secrecy::{ExposeSecret, SecretBox};
 use serde_json::Value;
@@ -841,17 +840,14 @@ pub async fn stream_ai_response_and_save_message(
     }
     if let Some(budget) = gemini_thinking_budget {
         if budget > 0 {
-            genai_chat_options = genai_chat_options.with_gemini_thinking_budget(budget as u32);
+            genai_chat_options = genai_chat_options.with_reasoning_effort(ReasoningEffort::Budget(budget as u32));
         }
     }
-    if let Some(enable_exec) = gemini_enable_code_execution {
-        genai_chat_options = genai_chat_options.with_gemini_enable_code_execution(enable_exec);
-    }
+    // `with_gemini_enable_code_execution` removed as it's no longer a direct ChatOption.
+    // The `gemini_enable_code_execution` variable will still affect tool declaration logic below.
 
     // NEW LOGIC FOR TOOL CONFIGURATION
-    // use genai::chat::{FunctionCallingConfig, FunctionCallingMode, ToolConfig}; // Already imported at top
     let mut tools_to_declare: Vec<genai::chat::Tool> = Vec::new();
-    let final_mode: genai::chat::FunctionCallingMode;
 
     // Declare scribe_tool_invoker if thinking is requested or code execution is enabled
     // (as it's our stand-in for a generic tool for now when code execution is on)
@@ -877,32 +873,9 @@ pub async fn stream_ai_response_and_save_message(
         chat_request = chat_request.with_tools(tools_to_declare.clone());
         info!(?tools_to_declare, "Tools added to ChatRequest for Gemini.");
     }
-
-    // Determine the FunctionCallingMode
-    if gemini_enable_code_execution == Some(true) {
-        debug!("Gemini code execution is enabled. Setting ToolConfig mode to Any.");
-        final_mode = FunctionCallingMode::Any;
-    } else if request_thinking {
-        debug!(
-            "Requesting thinking (and code execution is not enabled). Setting ToolConfig mode to Auto for scribe_tool_invoker."
-        );
-        final_mode = FunctionCallingMode::Auto;
-    } else {
-        debug!(
-            "Neither request_thinking nor gemini_enable_code_execution is active. Setting ToolConfig mode to None."
-        );
-        final_mode = FunctionCallingMode::None;
-    }
-
-    let final_tool_config = ToolConfig {
-        function_calling_config: Some(genai::chat::FunctionCallingConfig {
-            mode: Some(final_mode.clone()),
-            allowed_function_names: None, // Typically None for Any/Auto, unless specifically restricting
-        }),
-    };
-    genai_chat_options = genai_chat_options.with_gemini_tool_config(final_tool_config.clone());
-    info!(mode = ?final_mode, tool_config = ?final_tool_config, "Final Gemini ToolConfig set.");
     // END NEW LOGIC FOR TOOL CONFIGURATION
+    // The explicit FunctionCallingMode, FunctionCallingConfig, and with_gemini_tool_config
+    // have been removed as the new genai adapter handles tools via `ChatRequest::with_tools`.
 
     trace!(
         ?chat_request,
@@ -980,11 +953,11 @@ pub async fn stream_ai_response_and_save_message(
                         yield Ok(ScribeSseEvent::Thinking(chunk.content.clone()));
                        }
                       }
-                      Ok(GeminiResponseChunkAlias::ToolCall(tool_call)) => {
-                                      debug!(tool_call_id = %tool_call.call_id, tool_fn_name = %tool_call.fn_name, "Received ToolCall event from AI stream in chat_service");
-                                      let thinking_message = format!("Attempting to use tool: {} with ID: {}", tool_call.fn_name, tool_call.call_id);
-                                      yield Ok(ScribeSseEvent::Thinking(thinking_message));
-                                  }
+                      // Ok(GeminiResponseChunkAlias::ToolCall(tool_call)) => { // Removed as ToolCall is not part of ChatStreamEvent for Gemini
+                      //                 debug!(tool_call_id = %tool_call.call_id, tool_fn_name = %tool_call.fn_name, "Received ToolCall event from AI stream in chat_service");
+                      //                 let thinking_message = format!("Attempting to use tool: {} with ID: {}", tool_call.fn_name, tool_call.call_id);
+                      //                 yield Ok(ScribeSseEvent::Thinking(thinking_message));
+                      //             }
                       Ok(GeminiResponseChunkAlias::End(_)) => {
                        debug!("Received End event from AI stream in chat_service");
                 }

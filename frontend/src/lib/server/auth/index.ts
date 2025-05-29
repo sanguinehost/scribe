@@ -49,10 +49,10 @@ export function validateSessionToken(_token: string, fetchFn: typeof fetch = glo
 			// Explicitly check for errors BEFORE accessing .value
 			if (sessionResult.isErr()) {
 				const apiError = sessionResult.error;
-				// Check if the error is specifically an ApiResponseError with status 404 (Not Found)
-				if (apiError instanceof ApiResponseError && apiError.statusCode === 404) {
-					console.log(`[${new Date().toISOString()}] validateSessionToken: Session not found (404). Treating as logged out.`);
-					console.log(`[${new Date().toISOString()}] validateSessionToken: EXIT - not found`);
+				// Check if the error is specifically an ApiResponseError with status 404 (Not Found) or 401 (Unauthorized)
+				if (apiError instanceof ApiResponseError && (apiError.statusCode === 404 || apiError.statusCode === 401)) {
+					console.log(`[${new Date().toISOString()}] validateSessionToken: Session not found or unauthorized (${apiError.statusCode}). Treating as logged out.`);
+					console.log(`[${new Date().toISOString()}] validateSessionToken: EXIT - not found or unauthorized`);
 					return { session: null, user: null } as const; // Return success with null session/user
 				} else {
 					// For Network errors or other API response errors, re-throw it to be caught by the fromPromise error handler
@@ -130,7 +130,8 @@ export function setSessionTokenCookie(cookies: Cookies, token: string, expiresAt
 		httpOnly: true,
 		sameSite: 'lax',
 		expires: expiresAt,
-		path: '/'
+		path: '/',
+		secure: true // Ensure cookie is only sent over HTTPS
 	});
 }
 

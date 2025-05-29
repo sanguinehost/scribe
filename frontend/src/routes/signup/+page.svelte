@@ -6,6 +6,7 @@
 	import Input from '$lib/components/ui/input/input.svelte';
 	import Label from '$lib/components/ui/label/label.svelte';
 	import * as Card from '$lib/components/ui/card';
+	import { toast } from 'svelte-sonner'; // Added toast import
 
 	let email = '';
 	let username = '';
@@ -15,16 +16,16 @@
 	let errorMessage = '';
 
 	async function handleSubmit() {
-        // Basic client-side validation (optional, enhance as needed)
-        if (!email || !username || !password || password !== confirmPassword) {
-        errorMessage = 'Please fill all fields correctly. Passwords must match.';
-        return;
-        }
-        if (password.length < 8) {
-            errorMessage = 'Password must be at least 8 characters long.';
-            return;
-        }
-        // TODO: Add email format check if desired
+		// Basic client-side validation (optional, enhance as needed)
+		if (!email || !username || !password || password !== confirmPassword) {
+			errorMessage = 'Please fill all fields correctly. Passwords must match.';
+			return;
+		}
+		if (password.length < 8) {
+			errorMessage = 'Password must be at least 8 characters long.';
+			return;
+		}
+		// TODO: Add email format check if desired
 
 		loading = true;
 		errorMessage = '';
@@ -37,19 +38,9 @@
 				const authUser = registerResult.value;
 				console.log('User registered successfully via apiClient:', authUser);
 
-				// 2. Log the user in immediately after registration
-                // Use the email as the identifier for login
-				const loginResult = await apiClient.authenticateUser({ identifier: email, password });
-
-				if (loginResult.isOk()) {
-					console.log('Auto-login successful after registration.');
-                    // Login handler sets the session cookie automatically
-					goto('/'); // Redirect to home page after successful login
-				} else {
-					// Handle potential login error after registration (should be rare)
-					console.error('Auto-login failed after registration:', loginResult.error);
-					errorMessage = `Registration succeeded, but auto-login failed: ${loginResult.error.message}. Please try logging in manually.`;
-				}
+				// Registration successful, redirect to signin page
+				toast.success('Registration successful! Please sign in.');
+				goto('/signin'); 
 			} else {
 				// Handle registration error
 				console.error('Registration failed:', registerResult.error);
@@ -61,14 +52,14 @@
 			}
 		} catch (error: unknown) {
 			console.error('Error during signup process:', error);
-            // Check if it's an ApiError we know how to handle
-            if (error instanceof ApiResponseError || error instanceof ApiNetworkError || error instanceof ApiClientError) {
-                errorMessage = `An unexpected error occurred: ${error.message}`;
-            } else if (error instanceof Error) { // Handle generic Error objects
-                errorMessage = `An unexpected error occurred: ${error.message}`;
-            } else { // Fallback for unknown error types
-                errorMessage = 'An unexpected error occurred.';
-            }
+			// Check if it's an ApiError we know how to handle
+			if (error instanceof ApiResponseError || error instanceof ApiNetworkError || error instanceof ApiClientError) {
+				errorMessage = `An unexpected error occurred: ${error.message}`;
+			} else if (error instanceof Error) { // Handle generic Error objects
+				errorMessage = `An unexpected error occurred: ${error.message}`;
+			} else { // Fallback for unknown error types
+				errorMessage = 'An unexpected error occurred.';
+			}
 		} finally {
 			loading = false;
 		}
@@ -111,4 +102,4 @@
 			Already have an account? <a href="/signin" class="underline">Sign In</a>
 		</Card.Footer>
 	</Card.Root>
-</div> 
+</div>

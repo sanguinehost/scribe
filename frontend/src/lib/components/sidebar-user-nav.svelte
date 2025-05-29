@@ -11,9 +11,31 @@
 	} from './ui/dropdown-menu';
 	import { SidebarMenu, SidebarMenuButton, SidebarMenuItem } from './ui/sidebar';
 	import { getTheme } from '@sejohnson/svelte-themes';
+	import { apiClient } from '$lib/api';
+	import { goto } from '$app/navigation';
+	import { page } from '$app/stores';
 
 	let { user }: { user: User } = $props();
 	const theme = getTheme();
+
+	async function handleSignOut() {
+		const result = await apiClient.logout();
+		if (result.isOk()) {
+			// For SvelteKit, navigating to a page that requires auth
+			// (or simply reloading) after logout should trigger the hooks
+			// to redirect to login if the current page is protected.
+			// A full reload is often the most robust way to clear all client state.
+			if (typeof window !== 'undefined') {
+				window.location.href = '/signin'; // Or simply window.location.reload();
+			} else {
+				// Fallback for server-side context if needed, though less likely for a click handler
+				await goto('/signin');
+			}
+		} else {
+			console.error('Logout failed:', result.error);
+			// Optionally, show an error message to the user
+		}
+	}
 </script>
 
 <SidebarMenu>
@@ -46,16 +68,8 @@
 					Toggle {theme.resolvedTheme === 'light' ? 'dark' : 'light'} mode
 				</DropdownMenuItem>
 				<DropdownMenuSeparator />
-				<DropdownMenuItem>
-					{#snippet child({ props })}
-						<a
-							{...props}
-							href="/signout"
-							class={cn('w-full cursor-pointer', props.class as string)}
-							data-sveltekit-preload-data="false"
-							data-sveltekit-reload>Sign out</a
-						>
-					{/snippet}
+				<DropdownMenuItem class="cursor-pointer" onSelect={handleSignOut}>
+					Sign out
 				</DropdownMenuItem>
 			</DropdownMenuContent>
 		</DropdownMenu>

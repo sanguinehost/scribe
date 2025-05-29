@@ -1999,13 +1999,33 @@ dependencies = [
 
 [[package]]
 name = "genai"
-version = "0.3.2-WIP"
+version = "0.3.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8957a26f596fad1248e60f6cd4c08eecaf1933168ce92f70a97c0d0773334620"
 dependencies = [
  "bytes",
  "derive_more 2.0.1",
  "eventsource-stream",
  "futures",
- "futures-util",
+ "reqwest",
+ "reqwest-eventsource",
+ "serde",
+ "serde_json",
+ "serde_with",
+ "tokio",
+ "tokio-stream",
+ "tracing",
+ "value-ext",
+]
+
+[[package]]
+name = "genai"
+version = "0.3.6-WIP"
+dependencies = [
+ "bytes",
+ "derive_more 2.0.1",
+ "eventsource-stream",
+ "futures",
  "reqwest",
  "reqwest-eventsource",
  "serde",
@@ -4865,7 +4885,7 @@ dependencies = [
  "envy",
  "futures",
  "futures-util",
- "genai",
+ "genai 0.3.5",
  "hex",
  "http 1.3.1",
  "http-body-util",
@@ -4940,7 +4960,7 @@ dependencies = [
  "diesel_json",
  "dirs",
  "futures-util",
- "genai",
+ "genai 0.3.6-WIP",
  "httptest",
  "predicates",
  "qdrant-client",
