@@ -44,6 +44,37 @@
 		return name ? name.charAt(0).toUpperCase() : '?';
 	}
 
+	// Basic HTML sanitization to prevent XSS while preserving formatting
+	function sanitizeHtml(html: string | null | undefined): string {
+		if (!html) return '';
+		
+		// Create a temporary div to parse HTML
+		const temp = document.createElement('div');
+		temp.innerHTML = html;
+		
+		// Remove script tags and event handlers
+		const scripts = temp.querySelectorAll('script');
+		scripts.forEach(script => script.remove());
+		
+		// Remove all event handlers
+		const allElements = temp.querySelectorAll('*');
+		allElements.forEach(el => {
+			// Remove all attributes that start with 'on'
+			Array.from(el.attributes).forEach(attr => {
+				if (attr.name.startsWith('on')) {
+					el.removeAttribute(attr.name);
+				}
+			});
+			
+			// Remove javascript: hrefs
+			if (el.tagName === 'A' && el.getAttribute('href')?.startsWith('javascript:')) {
+				el.removeAttribute('href');
+			}
+		});
+		
+		return temp.innerHTML;
+	}
+
 	function formatDate(date: string | Date): string {
 		const d = new Date(date);
 		const now = new Date();
@@ -171,6 +202,29 @@
 	});
 </script>
 
+<style>
+	/* Override inline styles from HTML content to respect theme */
+	:global(.prose *[style*="color: #000000"]),
+	:global(.prose *[style*="color: rgb(0, 0, 0)"]),
+	:global(.prose *[style*="color:#000000"]),
+	:global(.prose *[style*="color:rgb(0,0,0)"]) {
+		color: hsl(var(--foreground)) !important;
+	}
+	
+	/* Ensure text remains visible in both themes */
+	:global(.prose p),
+	:global(.prose span),
+	:global(.prose strong) {
+		color: hsl(var(--foreground)) !important;
+	}
+	
+	/* Properly style centered text */
+	:global(.prose p[style*="text-align: center"]) {
+		margin-top: 1rem;
+		margin-bottom: 1rem;
+	}
+</style>
+
 <div class="mx-auto max-w-4xl px-4" transition:scale={{ opacity: 0, start: 0.98 }}>
 	<div class="space-y-6">
 		<!-- Character Header Card -->
@@ -221,19 +275,25 @@
 						{#if character.scenario}
 							<div class="rounded-lg bg-muted/50 p-4">
 								<h4 class="text-sm font-semibold text-muted-foreground mb-2">Scenario</h4>
-								<p class="text-sm">{character.scenario}</p>
+								<div class="text-sm prose prose-sm max-w-none prose-p:my-2 prose-p:leading-relaxed prose-strong:font-semibold prose-headings:font-bold dark:prose-invert [&_p]:!text-foreground [&_span]:!text-foreground [&_strong]:!text-foreground [&_*[style*='color']]:!text-foreground">
+									{@html sanitizeHtml(character.scenario)}
+								</div>
 							</div>
 						{/if}
 						{#if character.personality}
 							<div class="rounded-lg bg-muted/50 p-4">
 								<h4 class="text-sm font-semibold text-muted-foreground mb-2">Personality</h4>
-								<p class="text-sm">{character.personality}</p>
+								<div class="text-sm prose prose-sm max-w-none prose-p:my-2 prose-p:leading-relaxed prose-strong:font-semibold prose-headings:font-bold dark:prose-invert [&_p]:!text-foreground [&_span]:!text-foreground [&_strong]:!text-foreground [&_*[style*='color']]:!text-foreground">
+									{@html sanitizeHtml(character.personality)}
+								</div>
 							</div>
 						{/if}
 						{#if character.greeting}
 							<div class="rounded-lg bg-muted/50 p-4">
 								<h4 class="text-sm font-semibold text-muted-foreground mb-2">Greeting</h4>
-								<p class="text-sm italic">"{character.greeting}"</p>
+								<div class="text-sm prose prose-sm max-w-none italic dark:prose-invert [&_p]:!text-foreground [&_span]:!text-foreground [&_strong]:!text-foreground [&_*[style*='color']]:!text-foreground">
+									{@html sanitizeHtml(character.greeting)}
+								</div>
 							</div>
 						{/if}
 					</CardContent>

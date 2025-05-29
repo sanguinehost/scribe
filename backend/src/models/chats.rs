@@ -43,6 +43,10 @@ pub type SettingsTuple = (
     // -- Gemini Specific Options --
     Option<i32>,  // gemini_thinking_budget
     Option<bool>, // gemini_enable_code_execution
+    // -- Context Budget Options --
+    Option<i32>, // context_total_token_limit
+    Option<i32>, // context_recent_history_budget
+    Option<i32>, // context_rag_budget
 );
 #[derive(Queryable, Selectable, Identifiable, Serialize, Deserialize, Clone)] // Removed Debug
 #[diesel(table_name = chat_sessions)]
@@ -70,6 +74,10 @@ pub struct Chat {
     // -- Gemini Specific Options -- (Moved before visibility to match schema)
     pub gemini_thinking_budget: Option<i32>,
     pub gemini_enable_code_execution: Option<bool>,
+    // -- Context Budget Options --
+    pub context_total_token_limit: Option<i32>,
+    pub context_recent_history_budget: Option<i32>,
+    pub context_rag_budget: Option<i32>,
     pub visibility: Option<String>, // Moved to last
     // Add new fields to match schema.rs for chat_sessions table
     pub active_custom_persona_id: Option<Uuid>,
@@ -136,6 +144,12 @@ impl std::fmt::Debug for Chat {
                 "gemini_enable_code_execution",
                 &self.gemini_enable_code_execution,
             )
+            .field("context_total_token_limit", &self.context_total_token_limit)
+            .field(
+                "context_recent_history_budget",
+                &self.context_recent_history_budget,
+            )
+            .field("context_rag_budget", &self.context_rag_budget)
             .field("visibility", &self.visibility)
             // Add new fields to Debug output
             .field("active_custom_persona_id", &self.active_custom_persona_id)
@@ -1068,6 +1082,10 @@ pub struct ChatSettingsResponse {
     // Gemini Specific Options
     pub gemini_thinking_budget: Option<i32>,
     pub gemini_enable_code_execution: Option<bool>,
+    // Context Budget fields
+    pub context_total_token_limit: Option<i32>,
+    pub context_recent_history_budget: Option<i32>,
+    pub context_rag_budget: Option<i32>,
 }
 
 impl std::fmt::Debug for ChatSettingsResponse {
@@ -1102,6 +1120,12 @@ impl std::fmt::Debug for ChatSettingsResponse {
                 "gemini_enable_code_execution",
                 &self.gemini_enable_code_execution,
             )
+            .field("context_total_token_limit", &self.context_total_token_limit)
+            .field(
+                "context_recent_history_budget",
+                &self.context_recent_history_budget,
+            )
+            .field("context_rag_budget", &self.context_rag_budget)
             .finish()
     }
 }
@@ -1126,6 +1150,9 @@ impl From<Chat> for ChatSettingsResponse {
             model_name: chat.model_name,
             gemini_thinking_budget: chat.gemini_thinking_budget,
             gemini_enable_code_execution: chat.gemini_enable_code_execution,
+            context_total_token_limit: chat.context_total_token_limit,
+            context_recent_history_budget: chat.context_recent_history_budget,
+            context_rag_budget: chat.context_rag_budget,
         }
     }
 }
@@ -1167,6 +1194,13 @@ pub struct UpdateChatSettingsRequest {
     // Gemini Specific Options
     pub gemini_thinking_budget: Option<i32>,
     pub gemini_enable_code_execution: Option<bool>,
+    // Context Budget fields
+    #[validate(range(min = 0))]
+    pub context_total_token_limit: Option<i32>,
+    #[validate(range(min = 0))]
+    pub context_recent_history_budget: Option<i32>,
+    #[validate(range(min = 0))]
+    pub context_rag_budget: Option<i32>,
 }
 
 impl std::fmt::Debug for UpdateChatSettingsRequest {
@@ -1201,6 +1235,12 @@ impl std::fmt::Debug for UpdateChatSettingsRequest {
                 "gemini_enable_code_execution",
                 &self.gemini_enable_code_execution,
             )
+            .field("context_total_token_limit", &self.context_total_token_limit)
+            .field(
+                "context_recent_history_budget",
+                &self.context_recent_history_budget,
+            )
+            .field("context_rag_budget", &self.context_rag_budget)
             .finish()
     }
 }

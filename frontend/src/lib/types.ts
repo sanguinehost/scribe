@@ -48,9 +48,20 @@ export interface ScribeChatSession {
 	top_a: number | null;
 	seed: number | null;
 	logit_bias: Record<string, number> | null; // Assuming JSON object maps to this
-	history_management_strategy: string;
-	history_management_limit: number;
-	visibility: VisibilityType; // Added visibility property
+	history_management_strategy: string | null; // Can be null
+	history_management_limit: number | null; // Can be null
+	visibility: VisibilityType;
+
+	// Added from chat-config-sidebar.svelte
+	active_custom_persona_id?: string | null;
+	model_name?: string | null;
+	gemini_thinking_budget?: number | null;
+	gemini_enable_code_execution?: boolean | null;
+
+	// Context budget fields (ensure these match backend names if they exist there)
+	context_total_token_limit?: number | null;
+	context_recent_history_budget?: number | null;
+	context_rag_budget?: number | null;
 }
 
 /**

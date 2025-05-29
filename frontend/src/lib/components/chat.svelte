@@ -6,11 +6,15 @@
 	import ChatHeader from './chat-header.svelte';
 	import type { User, ScribeCharacter } from '$lib/types'; // Updated import path & Add ScribeCharacter
 	import type { ScribeChatSession, ScribeChatMessage } from '$lib/types'; // Import Scribe types
+	import type { UserPersona } from '$lib/api';
 	import Messages from './messages.svelte';
 	import MultimodalInput from './multimodal-input.svelte';
 	import SuggestedActions from './suggested-actions.svelte'; // Import SuggestedActions
+	import ChatConfigSidebar from './chat-config-sidebar.svelte';
 	import { untrack } from 'svelte'; // Remove incorrect effect import
 	import { SelectedCharacterStore } from '$lib/stores/selected-character.svelte';
+	import { SelectedPersonaStore } from '$lib/stores/selected-persona.svelte';
+	import { SettingsStore } from '$lib/stores/settings.svelte';
 
 	let {
 		user,
@@ -29,6 +33,8 @@
 	} = $props();
 
 	const selectedCharacterStore = SelectedCharacterStore.fromContext();
+	const selectedPersonaStore = SelectedPersonaStore.fromContext();
+	const settingsStore = SettingsStore.toContext(new SettingsStore());
 
 	// State variables
 	const currentInitialMessages = initialMessagesProp;
@@ -37,10 +43,11 @@
 
 	const chatHistory = ChatHistory.fromContext();
 
-	// Clear selected character when we have a chat
+	// Clear selected character and persona when we have a chat
 	$effect(() => {
 		if (chat?.id) {
 			selectedCharacterStore.clear();
+			selectedPersonaStore.clear();
 		}
 	});
 
@@ -81,6 +88,10 @@
 	let dynamicSuggestedActions = $state<Array<{ action: string }>>([]);
 	let isLoadingSuggestions = $state(false);
 
+	// --- Chat Config Sidebar State ---
+	let isChatConfigOpen = $state(false);
+	let availablePersonas = $state<UserPersona[]>([]);
+
 	// --- Derived state for button disabled logic ---
 	// Button is enabled if there's a chat and the character has a first message.
 	// The actual context for suggestions will be determined by fetchSuggestedActions.
@@ -106,6 +117,25 @@
 					(messages.find(um => um.message_type === 'User') ? new Date(m.created_at) > new Date(messages.find(um => um.message_type === 'User')!.created_at) : false)
 				)
 			});
+		}
+	});
+
+	// --- Load Available Personas ---
+	async function loadAvailablePersonas() {
+		try {
+			const response = await fetch('/api/personas');
+			if (response.ok) {
+				availablePersonas = await response.json();
+			}
+		} catch (error) {
+			console.error('Failed to load personas:', error);
+		}
+	}
+
+	// Load personas when component mounts
+	$effect(() => {
+		if (currentChat) {
+			loadAvailablePersonas();
 		}
 	});
 
@@ -423,6 +453,7 @@
 		loading={isLoading}
 		messages={messages}
 		selectedCharacterId={selectedCharacterStore.characterId}
+		on:personaCreated
 	/>
 
 	<!-- Add Button Here -->
@@ -471,3 +502,18 @@
 		{/if}
 	</form>
 </div>
+
+<!-- Chat Configuration Sidebar -->
+{#if currentChat}
+	<ChatConfigSidebar
+		bind:isOpen={isChatConfigOpen}
+		chat={currentChat}
+		{availablePersonas}
+		on:settingsUpdated={(event) => {
+			console.log('Chat settings updated:', event.detail);
+		}}
+		on:personaChanged={(event) => {
+			console.log('Persona changed:', event.detail);
+		}}
+	/>
+{/if}
