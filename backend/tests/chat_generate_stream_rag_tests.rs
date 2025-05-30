@@ -17,7 +17,7 @@ use scribe_backend::{
         characters::Character as DbCharacter,
         chats::{
             ApiChatMessage, Chat as ChatSession, GenerateChatRequest, MessageRole, NewChat,
-            NewMessage,
+            NewChatMessage,
         },
     },
     schema::{
@@ -132,6 +132,18 @@ async fn test_rag_context_injection_real_ai() {
                 visibility: Some("private".to_string()),
                 active_custom_persona_id: None,
                 active_impersonated_character_id: None,
+                temperature: None,
+                max_output_tokens: None,
+                frequency_penalty: None,
+                presence_penalty: None,
+                top_k: None,
+                top_p: None,
+                seed: None,
+                stop_sequences: None,
+                gemini_thinking_budget: None,
+                gemini_enable_code_execution: None,
+                system_prompt_ciphertext: None,
+                system_prompt_nonce: None,
             };
             diesel::insert_into(chat_sessions_dsl::chat_sessions)
                 .values(&new_chat_session)
@@ -154,7 +166,7 @@ async fn test_rag_context_injection_real_ai() {
         .await
         .expect("Failed to get DB conn for msg save")
         .interact(move |conn_sync| {
-            let new_message = NewMessage {
+            let new_message = NewChatMessage {
                 id: Uuid::new_v4(),
                 session_id: session_id_clone_msg,
                 user_id: user_id_clone_msg,

@@ -31,7 +31,7 @@ use scribe_backend::{
         characters::Character as DbCharacter, // Renamed to DbCharacter as per plan
         chats::{
             ApiChatMessage, Chat as DbChat, ChatMessage as DbChatMessage, GenerateChatRequest,
-            MessageRole, NewChat, NewMessage,
+            MessageRole, NewChat, NewChatMessage,
         },
         users::User,
     },
@@ -215,6 +215,18 @@ async fn test_generate_chat_response_triggers_embeddings() -> anyhow::Result<()>
                 visibility: Some("private".to_string()), // Added required field
                 active_custom_persona_id: None,
                 active_impersonated_character_id: None,
+                temperature: None,
+                max_output_tokens: None,
+                frequency_penalty: None,
+                presence_penalty: None,
+                top_k: None,
+                top_p: None,
+                seed: None,
+                stop_sequences: None,
+                gemini_thinking_budget: None,
+                gemini_enable_code_execution: None,
+                system_prompt_ciphertext: None,
+                system_prompt_nonce: None,
             };
             diesel::insert_into(schema::chat_sessions::table)
                 .values(&new_chat)
@@ -513,6 +525,18 @@ async fn test_generate_chat_response_triggers_embeddings_with_existing_session()
                 visibility: Some("private".to_string()), // Added required field
                 active_custom_persona_id: None,
                 active_impersonated_character_id: None,
+                temperature: None,
+                max_output_tokens: None,
+                frequency_penalty: None,
+                presence_penalty: None,
+                top_k: None,
+                top_p: None,
+                seed: None,
+                stop_sequences: None,
+                gemini_thinking_budget: None,
+                gemini_enable_code_execution: None,
+                system_prompt_ciphertext: None,
+                system_prompt_nonce: None,
             };
             diesel::insert_into(schema::chat_sessions::table)
                 .values(&new_chat)
@@ -534,9 +558,9 @@ async fn test_generate_chat_response_triggers_embeddings_with_existing_session()
         .await
         .map_err(|e| anyhow::anyhow!("Failed to get DB connection: {}", e))?
         .interact(move |conn| {
-            // Match fields from NewMessage definition in models/chat.rs
+            // Match fields from NewChatMessage definition in models/chat.rs
             let now = Utc::now();
-            let new_message = NewMessage {
+            let new_message = NewChatMessage {
                 id: Uuid::new_v4(),
                 session_id: session_id_for_msg, // Changed from chat_session_id
                 user_id: user_id_for_msg,
@@ -779,6 +803,18 @@ async fn test_rag_context_injection_in_prompt() -> anyhow::Result<()> {
                 visibility: Some("private".to_string()), // Added required field
                 active_custom_persona_id: None,
                 active_impersonated_character_id: None,
+                temperature: None,
+                max_output_tokens: None,
+                frequency_penalty: None,
+                presence_penalty: None,
+                top_k: None,
+                top_p: None,
+                seed: None,
+                stop_sequences: None,
+                gemini_thinking_budget: None,
+                gemini_enable_code_execution: None,
+                system_prompt_ciphertext: None,
+                system_prompt_nonce: None,
             };
             diesel::insert_into(schema::chat_sessions::table)
                 .values(&new_chat)
@@ -1140,6 +1176,18 @@ async fn generate_chat_response_rag_retrieval_error() -> anyhow::Result<()> {
                 visibility: Some("private".to_string()), // Added required field
                 active_custom_persona_id: None,
                 active_impersonated_character_id: None,
+                temperature: None,
+                max_output_tokens: None,
+                frequency_penalty: None,
+                presence_penalty: None,
+                top_k: None,
+                top_p: None,
+                seed: None,
+                stop_sequences: None,
+                gemini_thinking_budget: None,
+                gemini_enable_code_execution: None,
+                system_prompt_ciphertext: None,
+                system_prompt_nonce: None,
             };
             diesel::insert_into(schema::chat_sessions::table)
                 .values(&new_chat)
@@ -1481,6 +1529,18 @@ async fn setup_test_data(use_real_ai: bool) -> anyhow::Result<RagTestContext> {
                 visibility: Some("private".to_string()), // Added required field
                 active_custom_persona_id: None,
                 active_impersonated_character_id: None,
+                temperature: None,
+                max_output_tokens: None,
+                frequency_penalty: None,
+                presence_penalty: None,
+                top_k: None,
+                top_p: None,
+                seed: None,
+                stop_sequences: None,
+                gemini_thinking_budget: None,
+                gemini_enable_code_execution: None,
+                system_prompt_ciphertext: None,
+                system_prompt_nonce: None,
             };
             diesel::insert_into(schema::chat_sessions::table)
                 .values(&new_chat)

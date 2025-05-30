@@ -109,6 +109,18 @@ async fn test_suggested_actions_success() -> anyhow::Result<()> {
         visibility: Some("private".to_string()),
         active_custom_persona_id: None,
         active_impersonated_character_id: None,
+        temperature: None,
+        max_output_tokens: None,
+        frequency_penalty: None,
+        presence_penalty: None,
+        top_k: None,
+        top_p: None,
+        seed: None,
+        stop_sequences: None,
+        gemini_thinking_budget: None,
+        gemini_enable_code_execution: None,
+        system_prompt_ciphertext: None,
+        system_prompt_nonce: None,
     };
 
     let session = conn_pool_obj
@@ -313,6 +325,18 @@ async fn test_suggested_actions_forbidden() -> anyhow::Result<()> {
         visibility: Some("private".to_string()),
         active_custom_persona_id: None,
         active_impersonated_character_id: None,
+        temperature: None,
+        max_output_tokens: None,
+        frequency_penalty: None,
+        presence_penalty: None,
+        top_k: None,
+        top_p: None,
+        seed: None,
+        stop_sequences: None,
+        gemini_thinking_budget: None,
+        gemini_enable_code_execution: None,
+        system_prompt_ciphertext: None,
+        system_prompt_nonce: None,
     };
 
     let session_a = conn_pool_obj
@@ -507,6 +531,18 @@ async fn test_suggested_actions_ai_error() -> anyhow::Result<()> {
         visibility: Some("private".to_string()),
         active_custom_persona_id: None,
         active_impersonated_character_id: None,
+        temperature: None,
+        max_output_tokens: None,
+        frequency_penalty: None,
+        presence_penalty: None,
+        top_k: None,
+        top_p: None,
+        seed: None,
+        stop_sequences: None,
+        gemini_thinking_budget: None,
+        gemini_enable_code_execution: None,
+        system_prompt_ciphertext: None,
+        system_prompt_nonce: None,
     };
 
     let session = conn_pool_obj
@@ -661,6 +697,18 @@ async fn test_suggested_actions_invalid_json_response() -> anyhow::Result<()> {
         visibility: Some("private".to_string()),
         active_custom_persona_id: None,
         active_impersonated_character_id: None,
+        temperature: None,
+        max_output_tokens: None,
+        frequency_penalty: None,
+        presence_penalty: None,
+        top_k: None,
+        top_p: None,
+        seed: None,
+        stop_sequences: None,
+        gemini_thinking_budget: None,
+        gemini_enable_code_execution: None,
+        system_prompt_ciphertext: None,
+        system_prompt_nonce: None,
     };
 
     let session = conn_pool_obj
@@ -800,6 +848,18 @@ async fn test_suggested_actions_success_optional_fields_none() -> anyhow::Result
         visibility: Some("private".to_string()),
         active_custom_persona_id: None,
         active_impersonated_character_id: None,
+        temperature: None,
+        max_output_tokens: None,
+        frequency_penalty: None,
+        presence_penalty: None,
+        top_k: None,
+        top_p: None,
+        seed: None,
+        stop_sequences: None,
+        gemini_thinking_budget: None,
+        gemini_enable_code_execution: None,
+        system_prompt_ciphertext: None,
+        system_prompt_nonce: None,
     };
 
     let session = conn_pool_obj
@@ -966,6 +1026,18 @@ async fn test_suggested_actions_success_optional_fields_some() -> anyhow::Result
         visibility: Some("private".to_string()),
         active_custom_persona_id: None,
         active_impersonated_character_id: None,
+        temperature: None,
+        max_output_tokens: None,
+        frequency_penalty: None,
+        presence_penalty: None,
+        top_k: None,
+        top_p: None,
+        seed: None,
+        stop_sequences: None,
+        gemini_thinking_budget: None,
+        gemini_enable_code_execution: None,
+        system_prompt_ciphertext: None,
+        system_prompt_nonce: None,
     };
 
     let session = conn_pool_obj

@@ -11,7 +11,7 @@ use diesel::prelude::*;
 use genai::chat::{ChatRole, MessageContent};
 use mime;
 use reqwest;
-use serde_json::{Value, json};
+use serde_json::json;
 use std::str::FromStr;
 use tower::ServiceExt;
 use tower_cookies::Cookie;
@@ -34,7 +34,7 @@ use scribe_backend::models::{
         Message as DbChatMessage, // DbChatMessage is used for message
         MessageRole,
         NewChat,
-        NewMessage, // Added NewMessage
+        NewChatMessage, // Added NewChatMessage
     },
     users::User, // Directly import User
 };
@@ -347,6 +347,18 @@ async fn generate_chat_response_uses_session_settings() -> Result<(), anyhow::Er
         visibility: Some("private".to_string()),
         active_custom_persona_id: None,
         active_impersonated_character_id: None,
+        temperature: None,
+        max_output_tokens: None,
+        frequency_penalty: None,
+        presence_penalty: None,
+        top_k: None,
+        top_p: None,
+        seed: None,
+        stop_sequences: None,
+        gemini_thinking_budget: None,
+        gemini_enable_code_execution: None,
+        system_prompt_ciphertext: None,
+        system_prompt_nonce: None,
     };
 
     info!(
@@ -377,21 +389,13 @@ async fn generate_chat_response_uses_session_settings() -> Result<(), anyhow::Er
     let test_freq_penalty = BigDecimal::from_str("0.5").unwrap();
     let test_pres_penalty = BigDecimal::from_str("0.3").unwrap();
     let test_top_k = 50_i32;
-    let test_rep_penalty = BigDecimal::from_str("1.3").unwrap();
-    let test_min_p = BigDecimal::from_str("0.05").unwrap();
-    let test_top_a = BigDecimal::from_str("0.75").unwrap();
     let test_seed: Option<i32> = Some(12345);
-    let test_logit_bias: Option<Value> = None;
 
     // Clone non-Copy values needed inside and after the closure
     let tt_clone = test_temp.clone();
     let tfp_clone = test_freq_penalty.clone();
     let tpp_clone = test_pres_penalty.clone();
     let ttop_clone = test_top_p.clone();
-    let trp_clone = test_rep_penalty.clone();
-    let tminp_clone = test_min_p.clone();
-    let ttopa_clone = test_top_a.clone();
-    let tlb_clone = test_logit_bias.clone(); // Value might not be Copy
 
     let user_dek_secret_box = user.dek.as_ref().map(|user_dek_struct| {
         std::sync::Arc::new(secrecy::SecretBox::new(Box::new(
@@ -417,11 +421,7 @@ async fn generate_chat_response_uses_session_settings() -> Result<(), anyhow::Er
                         chat_sessions::presence_penalty.eq(Some(tpp_clone)),
                         chat_sessions::top_k.eq(Some(test_top_k)),
                         chat_sessions::top_p.eq(Some(ttop_clone)),
-                        chat_sessions::repetition_penalty.eq(Some(trp_clone)),
-                        chat_sessions::min_p.eq(Some(tminp_clone)),
-                        chat_sessions::top_a.eq(Some(ttopa_clone)),
                         chat_sessions::seed.eq(test_seed),
-                        chat_sessions::logit_bias.eq(tlb_clone),
                     ))
                     .execute(conn_actual)
             })
@@ -651,11 +651,7 @@ async fn generate_chat_response_uses_session_settings() -> Result<(), anyhow::Er
     assert_eq!(db_chat_settings.presence_penalty, Some(test_pres_penalty));
     assert_eq!(db_chat_settings.top_k, Some(test_top_k));
     assert_eq!(db_chat_settings.top_p, Some(test_top_p));
-    assert_eq!(db_chat_settings.repetition_penalty, Some(test_rep_penalty));
-    assert_eq!(db_chat_settings.min_p, Some(test_min_p));
-    assert_eq!(db_chat_settings.top_a, Some(test_top_a));
     assert_eq!(db_chat_settings.seed, test_seed);
-    assert_eq!(db_chat_settings.logit_bias, test_logit_bias);
     assert_eq!(
         Some(db_chat_settings.history_management_strategy.as_str()),
         Some("truncate_summary")
@@ -915,6 +911,18 @@ async fn generate_chat_response_json_stream_initiation_error() -> Result<(), any
         visibility: Some("private".to_string()),
         active_custom_persona_id: None,
         active_impersonated_character_id: None,
+        temperature: None,
+        max_output_tokens: None,
+        frequency_penalty: None,
+        presence_penalty: None,
+        top_k: None,
+        top_p: None,
+        seed: None,
+        stop_sequences: None,
+        gemini_thinking_budget: None,
+        gemini_enable_code_execution: None,
+        system_prompt_ciphertext: None,
+        system_prompt_nonce: None,
     };
     let session: DbChat = {
         let interact_result = conn
@@ -938,21 +946,13 @@ async fn generate_chat_response_json_stream_initiation_error() -> Result<(), any
     let test_freq_penalty = BigDecimal::from_str("0.4").unwrap();
     let test_pres_penalty = BigDecimal::from_str("0.2").unwrap();
     let test_top_k = 40_i32;
-    let test_rep_penalty = BigDecimal::from_str("1.2").unwrap();
-    let test_min_p = BigDecimal::from_str("0.04").unwrap();
-    let test_top_a = BigDecimal::from_str("0.65").unwrap();
     let test_seed: Option<i32> = Some(54321);
-    let test_logit_bias: Option<Value> = None;
 
     // Clone non-Copy values needed inside and after the closure
     let tt_clone_err = test_temp.clone();
     let tfp_clone_err = test_freq_penalty.clone();
     let tpp_clone_err = test_pres_penalty.clone();
     let ttop_clone_err = test_top_p.clone();
-    let trp_clone_err = test_rep_penalty.clone();
-    let tminp_clone_err = test_min_p.clone();
-    let ttopa_clone_err = test_top_a.clone();
-    let tlb_clone_err = test_logit_bias.clone();
 
     let user_dek_secret_box_err_test = user.dek.as_ref().map(|user_dek_struct| {
         std::sync::Arc::new(secrecy::SecretBox::new(Box::new(
@@ -978,11 +978,7 @@ async fn generate_chat_response_json_stream_initiation_error() -> Result<(), any
                         chat_sessions::presence_penalty.eq(Some(tpp_clone_err)),
                         chat_sessions::top_k.eq(Some(test_top_k)),
                         chat_sessions::top_p.eq(Some(ttop_clone_err)),
-                        chat_sessions::repetition_penalty.eq(Some(trp_clone_err)),
-                        chat_sessions::min_p.eq(Some(tminp_clone_err)),
-                        chat_sessions::top_a.eq(Some(ttopa_clone_err)),
                         chat_sessions::seed.eq(test_seed),
-                        chat_sessions::logit_bias.eq(tlb_clone_err),
                     ))
                     .execute(conn_actual)
             })
@@ -1156,11 +1152,7 @@ async fn generate_chat_response_json_stream_initiation_error() -> Result<(), any
     assert_eq!(db_chat_settings.presence_penalty, Some(test_pres_penalty));
     assert_eq!(db_chat_settings.top_k, Some(test_top_k));
     assert_eq!(db_chat_settings.top_p, Some(test_top_p));
-    assert_eq!(db_chat_settings.repetition_penalty, Some(test_rep_penalty));
-    assert_eq!(db_chat_settings.min_p, Some(test_min_p));
-    assert_eq!(db_chat_settings.top_a, Some(test_top_a));
     assert_eq!(db_chat_settings.seed, test_seed);
-    assert_eq!(db_chat_settings.logit_bias, test_logit_bias);
     assert_eq!(
         Some(db_chat_settings.history_management_strategy.as_str()),
         Some("truncate_summary")
@@ -1353,6 +1345,18 @@ async fn generate_chat_response_history_sliding_window_messages() -> anyhow::Res
         visibility: None,
         active_custom_persona_id: None,
         active_impersonated_character_id: None,
+        temperature: None,
+        max_output_tokens: None,
+        frequency_penalty: None,
+        presence_penalty: None,
+        top_k: None,
+        top_p: None,
+        seed: None,
+        stop_sequences: None,
+        gemini_thinking_budget: None,
+        gemini_enable_code_execution: None,
+        system_prompt_ciphertext: None,
+        system_prompt_nonce: None,
     };
 
     let result = conn
@@ -1369,7 +1373,7 @@ async fn generate_chat_response_history_sliding_window_messages() -> anyhow::Res
     debug!("Inserted session: {} rows affected", insert_result);
     test_data_guard.add_chat(session_id);
 
-    let common_msg_fields = |role: MessageRole, content: &str| NewMessage {
+    let common_msg_fields = |role: MessageRole, content: &str| NewChatMessage {
         id: Uuid::new_v4(),
         session_id,
         user_id: user.id,
@@ -1670,6 +1674,18 @@ async fn generate_chat_response_history_sliding_window_tokens() -> anyhow::Resul
         visibility: None,
         active_custom_persona_id: None,
         active_impersonated_character_id: None,
+        temperature: None,
+        max_output_tokens: None,
+        frequency_penalty: None,
+        presence_penalty: None,
+        top_k: None,
+        top_p: None,
+        seed: None,
+        stop_sequences: None,
+        gemini_thinking_budget: None,
+        gemini_enable_code_execution: None,
+        system_prompt_ciphertext: None,
+        system_prompt_nonce: None,
     };
 
     let result = conn
@@ -1686,7 +1702,7 @@ async fn generate_chat_response_history_sliding_window_tokens() -> anyhow::Resul
     debug!("Inserted session: {} rows affected", insert_result);
     test_data_guard.add_chat(session_id);
 
-    let common_msg_fields = |role: MessageRole, content: &str| NewMessage {
+    let common_msg_fields = |role: MessageRole, content: &str| NewChatMessage {
         id: Uuid::new_v4(),
         session_id,
         user_id: user.id,
@@ -1970,6 +1986,18 @@ async fn test_generate_chat_response_history_truncate_tokens() -> anyhow::Result
         visibility: None,
         active_custom_persona_id: None,
         active_impersonated_character_id: None,
+        temperature: None,
+        max_output_tokens: None,
+        frequency_penalty: None,
+        presence_penalty: None,
+        top_k: None,
+        top_p: None,
+        seed: None,
+        stop_sequences: None,
+        gemini_thinking_budget: None,
+        gemini_enable_code_execution: None,
+        system_prompt_ciphertext: None,
+        system_prompt_nonce: None,
     };
 
     let result = conn
@@ -1986,7 +2014,7 @@ async fn test_generate_chat_response_history_truncate_tokens() -> anyhow::Result
     debug!("Inserted session: {} rows affected", insert_result);
     test_data_guard.add_chat(session_id);
 
-    let common_msg_fields = |role: MessageRole, content: &str| NewMessage {
+    let common_msg_fields = |role: MessageRole, content: &str| NewChatMessage {
         id: Uuid::new_v4(),
         session_id,
         user_id: user.id,
@@ -2330,6 +2358,18 @@ async fn generate_chat_response_history_none() -> anyhow::Result<()> {
         visibility: None,
         active_custom_persona_id: None,
         active_impersonated_character_id: None,
+        temperature: None,
+        max_output_tokens: None,
+        frequency_penalty: None,
+        presence_penalty: None,
+        top_k: None,
+        top_p: None,
+        seed: None,
+        stop_sequences: None,
+        gemini_thinking_budget: None,
+        gemini_enable_code_execution: None,
+        system_prompt_ciphertext: None,
+        system_prompt_nonce: None,
     };
 
     let result = conn
@@ -2346,7 +2386,7 @@ async fn generate_chat_response_history_none() -> anyhow::Result<()> {
     debug!("Inserted session: {} rows affected", insert_result);
     test_data_guard.add_chat(session_id);
 
-    let common_msg_fields = |role: MessageRole, content: &str| NewMessage {
+    let common_msg_fields = |role: MessageRole, content: &str| NewChatMessage {
         id: Uuid::new_v4(),
         session_id,
         user_id: user.id,
@@ -2589,6 +2629,18 @@ async fn generate_chat_response_history_truncate_tokens_limit_30() -> anyhow::Re
         visibility: None,
         active_custom_persona_id: None,
         active_impersonated_character_id: None,
+        temperature: None,
+        max_output_tokens: None,
+        frequency_penalty: None,
+        presence_penalty: None,
+        top_k: None,
+        top_p: None,
+        seed: None,
+        stop_sequences: None,
+        gemini_thinking_budget: None,
+        gemini_enable_code_execution: None,
+        system_prompt_ciphertext: None,
+        system_prompt_nonce: None,
     };
 
     let result = conn
@@ -2605,7 +2657,7 @@ async fn generate_chat_response_history_truncate_tokens_limit_30() -> anyhow::Re
     debug!("Inserted session: {} rows affected", insert_result);
     test_data_guard.add_chat(session_id);
 
-    let common_msg_fields = |role: MessageRole, content: &str| NewMessage {
+    let common_msg_fields = |role: MessageRole, content: &str| NewChatMessage {
         id: Uuid::new_v4(),
         session_id,
         user_id: user.id,
@@ -2875,6 +2927,18 @@ async fn test_get_chat_messages_success() -> anyhow::Result<()> {
         visibility: Some("private".to_string()),
         active_custom_persona_id: None,
         active_impersonated_character_id: None,
+        temperature: None,
+        max_output_tokens: None,
+        frequency_penalty: None,
+        presence_penalty: None,
+        top_k: None,
+        top_p: None,
+        seed: None,
+        stop_sequences: None,
+        gemini_thinking_budget: None,
+        gemini_enable_code_execution: None,
+        system_prompt_ciphertext: None,
+        system_prompt_nonce: None,
     };
 
     let create_session_result = conn
@@ -2897,7 +2961,7 @@ async fn test_get_chat_messages_success() -> anyhow::Result<()> {
     tracing::info!("Generated message_id: {}", message_id);
 
     let conn = test_app.db_pool.get().await?;
-    let new_message = NewMessage {
+    let new_message = NewChatMessage {
         id: message_id,
         session_id,
         user_id: user.id,
@@ -3127,6 +3191,18 @@ async fn test_get_chat_messages_forbidden() -> anyhow::Result<()> {
         visibility: Some("private".to_string()),
         active_custom_persona_id: None,
         active_impersonated_character_id: None,
+        temperature: None,
+        max_output_tokens: None,
+        frequency_penalty: None,
+        presence_penalty: None,
+        top_k: None,
+        top_p: None,
+        seed: None,
+        stop_sequences: None,
+        gemini_thinking_budget: None,
+        gemini_enable_code_execution: None,
+        system_prompt_ciphertext: None,
+        system_prompt_nonce: None,
     };
 
     let conn_clone = test_app.db_pool.get().await?; // Re-acquire connection as it was moved

@@ -776,6 +776,18 @@ async fn test_get_chat_session_details_unauthorized() {
                 visibility: Some("private".to_string()),
                 active_custom_persona_id: None,
                 active_impersonated_character_id: None,
+                temperature: None,
+                max_output_tokens: None,
+                frequency_penalty: None,
+                presence_penalty: None,
+                top_k: None,
+                top_p: None,
+                seed: None,
+                stop_sequences: None,
+                gemini_thinking_budget: None,
+                gemini_enable_code_execution: None,
+                system_prompt_ciphertext: None,
+                system_prompt_nonce: None,
             };
             diesel::insert_into(chat_sessions::table)
                 .values(&new_chat_values)

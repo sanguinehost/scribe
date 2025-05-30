@@ -2,7 +2,6 @@ use bigdecimal::BigDecimal;
 // use chrono::Utc; // Likely unused after removing updated_at from changeset directly
 use diesel::prelude::*;
 use secrecy::{ExposeSecret, SecretBox};
-use serde_json::Value;
 use tracing::{error, info, instrument, warn};
 use uuid::Uuid;
 
@@ -35,13 +34,13 @@ pub async fn get_session_settings(
         match owner_id_result {
             None => {
                 // Session does not exist
-                warn!(%session_id, %user_id, "Attempted to get settings for non-existent session");
+                warn!(target: "scribe_backend::services::chat::settings", %session_id, %user_id, "get_session_settings: Attempted to get settings for non-existent session. Returning NotFound.");
                 Err(AppError::NotFound("Chat session not found".into()))
             }
             Some(owner_id) => {
                 // 2. Check if the requesting user owns the session
                 if owner_id != user_id {
-                    warn!(%session_id, %user_id, owner_id=%owner_id, "Forbidden attempt to get settings for session owned by another user");
+                    warn!(target: "scribe_backend::services::chat::settings", %session_id, requesting_user_id = %user_id, actual_owner_id = %owner_id, "get_session_settings: Forbidden attempt to get settings for session owned by another user. Returning Forbidden.");
                     Err(AppError::Forbidden) // Correct error for unauthorized access
                 } else {
                     // 3. Fetch the actual settings since ownership is confirmed
@@ -57,18 +56,14 @@ pub async fn get_session_settings(
                             chat_sessions::presence_penalty,
                             chat_sessions::top_k,
                             chat_sessions::top_p,
-                            chat_sessions::repetition_penalty,
-                            chat_sessions::min_p,
-                            chat_sessions::top_a,
                             chat_sessions::seed,
-                            chat_sessions::logit_bias,
+                            chat_sessions::stop_sequences,
                             chat_sessions::history_management_strategy,
                             chat_sessions::history_management_limit,
                             chat_sessions::model_name,
                             // -- Gemini Specific Options --
                             chat_sessions::gemini_thinking_budget,
                             chat_sessions::gemini_enable_code_execution,
-                            // -- Context Budget Options --
                         ))
                         .first::<SettingsTuple>(conn) // Expect a result now
                         .map_err(|e| {
@@ -85,18 +80,14 @@ pub async fn get_session_settings(
                         presence_penalty,
                         top_k,
                         top_p,
-                        repetition_penalty,
-                        min_p,
-                        top_a,
                         seed,
-                        logit_bias,
+                        stop_sequences,
                         history_management_strategy,
                         history_management_limit,
                         model_name,
                         // -- Gemini Specific Options --
                         gemini_thinking_budget,
                         gemini_enable_code_execution,
-                        // -- Context Budget Options --
                     ) = settings_tuple;
 
                     // Decrypt system_prompt if available
@@ -137,11 +128,8 @@ pub async fn get_session_settings(
                         presence_penalty,
                         top_k,
                         top_p,
-                        repetition_penalty,
-                        min_p,
-                        top_a,
                         seed,
-                        logit_bias,
+                        stop_sequences,
                         history_management_strategy,
                         history_management_limit,
                         model_name,
@@ -202,11 +190,8 @@ pub async fn update_session_settings(
                         presence_penalty: Option<BigDecimal>,
                         top_k: Option<i32>,
                         top_p: Option<BigDecimal>,
-                        repetition_penalty: Option<BigDecimal>,
-                        min_p: Option<BigDecimal>,
-                        top_a: Option<BigDecimal>,
                         seed: Option<i32>,
-                        logit_bias: Option<Value>,
+                        stop_sequences: Option<Vec<String>>,
                         history_management_strategy: Option<String>,
                         history_management_limit: Option<i32>,
                         model_name: Option<String>,
@@ -274,25 +259,13 @@ pub async fn update_session_settings(
                         changes_made = true;
                         changeset.top_p = Some(tp);
                     }
-                    if let Some(rep_pen) = payload.repetition_penalty {
-                        changes_made = true;
-                        changeset.repetition_penalty = Some(rep_pen);
-                    }
-                    if let Some(m_p) = payload.min_p {
-                        changes_made = true;
-                        changeset.min_p = Some(m_p);
-                    }
-                    if let Some(t_a) = payload.top_a {
-                        changes_made = true;
-                        changeset.top_a = Some(t_a);
-                    }
                     if let Some(s) = payload.seed {
                         changes_made = true;
                         changeset.seed = Some(s);
                     }
-                    if let Some(lb) = payload.logit_bias {
+                    if let Some(ss_option_vec) = payload.stop_sequences {
                         changes_made = true;
-                        changeset.logit_bias = Some(lb);
+                        changeset.stop_sequences = Some(ss_option_vec.into_iter().flatten().collect());
                     }
                     if let Some(hist_strat) = payload.history_management_strategy {
                         changes_made = true;

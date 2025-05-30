@@ -17,7 +17,7 @@ use scribe_backend::{
     models::{
         character_card::NewCharacter,
         characters::Character as DbCharacter,
-        chats::{Chat, MessageRole, NewChat, NewMessage},
+        chats::{Chat, MessageRole, NewChat, NewChatMessage},
         users::User,
     },
     schema::{characters, chat_messages, chat_sessions},
@@ -88,6 +88,18 @@ async fn get_chat_messages_success_integration() -> anyhow::Result<()> {
         visibility: Some("private".to_string()),
         active_custom_persona_id: None,
         active_impersonated_character_id: None,
+        temperature: None,
+        max_output_tokens: None,
+        frequency_penalty: None,
+        presence_penalty: None,
+        top_k: None,
+        top_p: None,
+        seed: None,
+        stop_sequences: None,
+        gemini_thinking_budget: None,
+        gemini_enable_code_execution: None,
+        system_prompt_ciphertext: None,
+        system_prompt_nonce: None,
     };
     let session_a: Chat = test_app
         .db_pool
@@ -105,7 +117,7 @@ async fn get_chat_messages_success_integration() -> anyhow::Result<()> {
 
     // Insert a dummy message for session_a to ensure it's not empty
     let dummy_message_content = "Initial message for session_a";
-    let new_dummy_message = NewMessage {
+    let new_dummy_message = NewChatMessage {
         id: Uuid::new_v4(),
         session_id: session_a.id,
         user_id: user_a.id, // Message from user_a

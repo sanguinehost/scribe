@@ -119,6 +119,19 @@ pub async fn create_session_and_maybe_first_message(
                 visibility: Some("private".to_string()),
                 active_custom_persona_id: effective_active_persona_id,
                 active_impersonated_character_id: None,
+                // Additional optional fields
+                temperature: None,
+                max_output_tokens: None,
+                frequency_penalty: None,
+                presence_penalty: None,
+                top_k: None,
+                top_p: None,
+                seed: None,
+                stop_sequences: None,
+                gemini_thinking_budget: None,
+                gemini_enable_code_execution: None,
+                system_prompt_ciphertext: None,
+                system_prompt_nonce: None,
             };
 
             diesel::insert_into(chat_sessions::table)

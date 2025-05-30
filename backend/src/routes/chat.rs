@@ -217,21 +217,17 @@ pub async fn generate_chat_response(
         gen_presence_penalty,        // 8: Option<BigDecimal> (was 7)
         gen_top_k,                   // 9: Option<i32> (was 8)
         gen_top_p,                   // 10: Option<BigDecimal> (was 9)
-        gen_repetition_penalty,      // 11: Option<BigDecimal> (was 10)
-        gen_min_p,                   // 12: Option<BigDecimal> (was 11)
-        gen_top_a,                   // 13: Option<BigDecimal> (was 12)
-        gen_seed,                    // 14: Option<i32> (was 13)
-        gen_logit_bias,              // 15: Option<Value> (was 14)
-        gen_model_name_from_service, // 16: String (was 15)
-        gen_gemini_thinking_budget,  // 17: Option<i32> (was 16)
-        gen_gemini_enable_code_execution, // 18: Option<bool> (was 17)
-        user_message_struct_to_save, // 19: DbInsertableChatMessage (was 18)
+        gen_seed,                    // 11: Option<i32> (was 13)
+        gen_model_name_from_service, // 12: String (was 15)
+        gen_gemini_thinking_budget,  // 13: Option<i32> (was 16)
+        gen_gemini_enable_code_execution, // 14: Option<bool> (was 17)
+        user_message_struct_to_save, // 15: DbInsertableChatMessage (was 18)
         // -- New RAG related fields --
-        _actual_recent_history_tokens_from_service, // 20: usize (NEW) - Handled by prompt_builder (was 19)
-        rag_context_items_from_service, // 21: Vec<RetrievedChunk> (NEW) - Passed to prompt_builder (was 20)
+        _actual_recent_history_tokens_from_service, // 16: usize (NEW) - Handled by prompt_builder (was 19)
+        rag_context_items_from_service, // 17: Vec<RetrievedChunk> (NEW) - Passed to prompt_builder (was 20)
         // -- Original history management settings --
-        _hist_management_strategy, // 22: String (was 21)
-        _hist_management_limit,    // 23: i32 (was 22)
+        _hist_management_strategy, // 18: String (was 21)
+        _hist_management_limit,    // 19: i32 (was 22)
     ) = chat::generation::get_session_data_for_generation(
         state_arc.clone(),
         user_id_value,
@@ -411,27 +407,24 @@ pub async fn generate_chat_response(
 
             let dek_for_stream_service = session_dek_arc.clone();
             match chat::generation::stream_ai_response_and_save_message(
-                state_arc.clone(),
-                session_id,
-                user_id_value,
-                final_genai_message_list.clone(), // Use messages from prompt_builder
-                Some(final_system_prompt_str.clone()), // Use system prompt from prompt_builder
-                gen_temperature,
-                gen_max_output_tokens,
-                gen_frequency_penalty,
-                gen_presence_penalty,
-                gen_top_k,
-                gen_top_p,
-                gen_repetition_penalty,
-                gen_min_p,
-                gen_top_a,
-                gen_seed,
-                gen_logit_bias,
-                model_to_use.clone(),
-                gen_gemini_thinking_budget,
-                gen_gemini_enable_code_execution,
-                request_thinking,
-                Some(dek_for_stream_service),
+                state_arc.clone(),                  // state
+                session_id,                         // session_id
+                user_id_value,                      // user_id
+                final_genai_message_list.clone(),   // incoming_genai_messages
+                Some(final_system_prompt_str.clone()), // system_prompt
+                gen_temperature,                    // temperature
+                gen_max_output_tokens,              // max_output_tokens
+                gen_frequency_penalty,              // _frequency_penalty
+                gen_presence_penalty,               // _presence_penalty
+                gen_top_k,                          // _top_k
+                gen_top_p,                          // top_p
+                None,                               // stop_sequences (Was gen_repetition_penalty)
+                gen_seed,                           // _seed (Was gen_min_p, gen_top_a, gen_seed)
+                model_to_use.clone(),               // model_name (Was gen_logit_bias, model_to_use.clone())
+                gen_gemini_thinking_budget,         // gemini_thinking_budget
+                gen_gemini_enable_code_execution,   // gemini_enable_code_execution
+                request_thinking,                   // request_thinking
+                Some(dek_for_stream_service),       // user_dek
             )
             .await
             {
@@ -635,27 +628,24 @@ pub async fn generate_chat_response(
             // This is largely a copy of the SSE path above.
             let dek_for_fallback_stream_service = session_dek_arc.clone(); // MODIFIED: Use Arc clone
             match chat::generation::stream_ai_response_and_save_message(
-                state_arc.clone(),
-                session_id,
-                user_id_value,
-                final_genai_message_list.clone(), // Use messages from prompt_builder
-                Some(final_system_prompt_str.clone()), // Use system prompt from prompt_builder
-                gen_temperature,
-                gen_max_output_tokens,
-                gen_frequency_penalty,
-                gen_presence_penalty,
-                gen_top_k,
-                gen_top_p,
-                gen_repetition_penalty,
-                gen_min_p,
-                gen_top_a,
-                gen_seed,
-                gen_logit_bias,
-                model_to_use,
-                gen_gemini_thinking_budget,
-                gen_gemini_enable_code_execution,
-                request_thinking,
-                Some(dek_for_fallback_stream_service),
+                state_arc.clone(),                  // state
+                session_id,                         // session_id
+                user_id_value,                      // user_id
+                final_genai_message_list.clone(),   // incoming_genai_messages
+                Some(final_system_prompt_str.clone()), // system_prompt
+                gen_temperature,                    // temperature
+                gen_max_output_tokens,              // max_output_tokens
+                gen_frequency_penalty,              // _frequency_penalty
+                gen_presence_penalty,               // _presence_penalty
+                gen_top_k,                          // _top_k
+                gen_top_p,                          // top_p
+                None,                               // stop_sequences (Was gen_repetition_penalty)
+                gen_seed,                           // _seed (Was gen_min_p, gen_top_a, gen_seed)
+                model_to_use.clone(),               // model_name (Was gen_logit_bias, model_to_use) - .clone() added
+                gen_gemini_thinking_budget,         // gemini_thinking_budget
+                gen_gemini_enable_code_execution,   // gemini_enable_code_execution
+                request_thinking,                   // request_thinking
+                Some(dek_for_fallback_stream_service), // user_dek
             )
             .await
             {
@@ -816,11 +806,7 @@ pub async fn generate_suggested_actions(
         _gen_presence_penalty,
         _gen_top_k,
         _gen_top_p,
-        _gen_repetition_penalty,
-        _gen_min_p,
-        _gen_top_a,
         _gen_seed,
-        _gen_logit_bias,
         _gen_model_name_from_service, // We might use a fixed model for suggestions
         _gen_gemini_thinking_budget,
         _gen_gemini_enable_code_execution,

@@ -1,6 +1,5 @@
 // backend/src/services/chat/types.rs
 use bigdecimal::BigDecimal;
-use serde_json::Value;
 use uuid::Uuid;
 
 // Imports needed for the types defined in this file, based on original chat_service.rs
@@ -28,22 +27,18 @@ pub type GenerationDataWithUnsavedUserMessage = (
     Option<BigDecimal>, // 8: presence_penalty (was 7)
     Option<i32>,    // 9: top_k (was 8)
     Option<BigDecimal>, // 10: top_p (was 9)
-    Option<BigDecimal>, // 11: repetition_penalty (was 10)
-    Option<BigDecimal>, // 12: min_p (was 11)
-    Option<BigDecimal>, // 13: top_a (was 12)
-    Option<i32>,    // 14: seed (was 13)
-    Option<Value>,  // 15: logit_bias (was 14)
-    String,         // 16: model_name (Fetched from DB) (was 15)
+    Option<i32>,    // 11: seed (was 13)
+    String,         // 12: model_name (Fetched from DB) (was 15)
     // -- Gemini Specific Options --
-    Option<i32>,             // 17: gemini_thinking_budget (was 16)
-    Option<bool>,            // 18: gemini_enable_code_execution (was 17)
-    DbInsertableChatMessage, // 19: The user message struct, ready to be saved (was 18)
+    Option<i32>,             // 13: gemini_thinking_budget (was 16)
+    Option<bool>,            // 14: gemini_enable_code_execution (was 17)
+    DbInsertableChatMessage, // 15: The user message struct, ready to be saved (was 18)
     // -- RAG Context & Recent History Tokens --
-    usize,               // 20: actual_recent_history_tokens (NEW) (was 19)
-    Vec<RetrievedChunk>, // 21: rag_context_items (NEW) (was 20)
+    usize,               // 16: actual_recent_history_tokens (NEW) (was 19)
+    Vec<RetrievedChunk>, // 17: rag_context_items (NEW) (was 20)
     // History Management Settings (still returned for potential future use/logging)
-    String, // 22: history_management_strategy (was 21)
-    i32,    // 23: history_management_limit (was 22)
+    String, // 18: history_management_strategy (was 21)
+    i32,    // 19: history_management_limit (was 22)
 );
 
 #[derive(Debug)]

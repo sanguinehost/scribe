@@ -169,6 +169,18 @@ async fn get_chat_settings_success() {
         visibility: Some("private".to_string()),
         active_custom_persona_id: None,
         active_impersonated_character_id: None,
+        temperature: None,
+        max_output_tokens: None,
+        frequency_penalty: None,
+        presence_penalty: None,
+        top_k: None,
+        top_p: None,
+        seed: None,
+        stop_sequences: None,
+        gemini_thinking_budget: None,
+        gemini_enable_code_execution: None,
+        system_prompt_ciphertext: None,
+        system_prompt_nonce: None,
     };
     let new_chat_data_clone = new_chat_data.clone();
     let session_conn_pool = conn_pool.clone();
@@ -205,13 +217,7 @@ async fn get_chat_settings_success() {
                     chat_sessions::presence_penalty.eq(Some(BigDecimal::from_str("0.2").unwrap())),
                     chat_sessions::top_k.eq(Some(40_i32)),
                     chat_sessions::top_p.eq(Some(BigDecimal::from_str("0.95").unwrap())),
-                    chat_sessions::repetition_penalty
-                        .eq(Some(BigDecimal::from_str("1.1").unwrap())),
-                    chat_sessions::min_p.eq(Some(BigDecimal::from_str("0.01").unwrap())),
-                    chat_sessions::top_a.eq(Some(BigDecimal::from_str("0.1").unwrap())),
                     chat_sessions::seed.eq(Some(12345_i32)),
-                    chat_sessions::logit_bias
-                        .eq(Some(serde_json::json!({ "20001": -50, "20002": 50 }))),
                     chat_sessions::model_name.eq("gemini-2.5-flash-preview-04-17".to_string()),
                     chat_sessions::history_management_strategy.eq("truncate_summary".to_string()),
                     chat_sessions::history_management_limit.eq(20),
@@ -259,23 +265,7 @@ async fn get_chat_settings_success() {
         settings_resp.top_p,
         Some(BigDecimal::from_str("0.95").unwrap())
     );
-    assert_eq!(
-        settings_resp.repetition_penalty,
-        Some(BigDecimal::from_str("1.1").unwrap())
-    );
-    assert_eq!(
-        settings_resp.min_p,
-        Some(BigDecimal::from_str("0.01").unwrap())
-    );
-    assert_eq!(
-        settings_resp.top_a,
-        Some(BigDecimal::from_str("0.1").unwrap())
-    );
     assert_eq!(settings_resp.seed, Some(12345_i32));
-    assert_eq!(
-        settings_resp.logit_bias,
-        Some(serde_json::json!({ "20001": -50, "20002": 50 }))
-    );
     assert_eq!(
         settings_resp.model_name,
         "gemini-2.5-flash-preview-04-17".to_string()
@@ -425,6 +415,18 @@ async fn get_chat_settings_defaults() {
         visibility: Some("private".to_string()),
         active_custom_persona_id: None,
         active_impersonated_character_id: None,
+        temperature: None,
+        max_output_tokens: None,
+        frequency_penalty: None,
+        presence_penalty: None,
+        top_k: None,
+        top_p: None,
+        seed: None,
+        stop_sequences: None,
+        gemini_thinking_budget: None,
+        gemini_enable_code_execution: None,
+        system_prompt_ciphertext: None,
+        system_prompt_nonce: None,
     };
     let new_chat_data_clone = new_chat_data.clone();
     let session_conn_pool = conn_pool.clone();
@@ -527,11 +529,7 @@ async fn get_chat_settings_defaults() {
     assert_eq!(settings_resp.presence_penalty, None);
     assert_eq!(settings_resp.top_k, None);
     assert_eq!(settings_resp.top_p, None);
-    assert_eq!(settings_resp.repetition_penalty, None);
-    assert_eq!(settings_resp.min_p, None);
-    assert_eq!(settings_resp.top_a, None);
     assert_eq!(settings_resp.seed, None);
-    assert_eq!(settings_resp.logit_bias, None);
 
     assert_eq!(settings_resp.model_name, "gemini-2.5-pro-preview-03-25");
     assert_eq!(settings_resp.history_management_strategy, "message_window");
@@ -731,6 +729,18 @@ async fn test_get_chat_settings_forbidden() {
         visibility: Some("private".to_string()),
         active_custom_persona_id: None,
         active_impersonated_character_id: None,
+        temperature: None,
+        max_output_tokens: None,
+        frequency_penalty: None,
+        presence_penalty: None,
+        top_k: None,
+        top_p: None,
+        seed: None,
+        stop_sequences: None,
+        gemini_thinking_budget: None,
+        gemini_enable_code_execution: None,
+        system_prompt_ciphertext: None,
+        system_prompt_nonce: None,
     };
     let new_chat_a_data_clone = new_chat_a_data.clone();
     let session_a_conn_pool = conn_pool.clone();
@@ -898,6 +908,18 @@ async fn update_chat_settings_success_full() {
         visibility: Some("private".to_string()),
         active_custom_persona_id: None,
         active_impersonated_character_id: None,
+        temperature: None,
+        max_output_tokens: None,
+        frequency_penalty: None,
+        presence_penalty: None,
+        top_k: None,
+        top_p: None,
+        seed: None,
+        stop_sequences: None,
+        gemini_thinking_budget: None,
+        gemini_enable_code_execution: None,
+        system_prompt_ciphertext: None,
+        system_prompt_nonce: None,
     };
     let new_chat_data_clone = new_chat_data.clone();
     let session_conn_pool = conn_pool.clone();
@@ -923,11 +945,8 @@ async fn update_chat_settings_success_full() {
         presence_penalty: Some(BigDecimal::from_str("0.12").unwrap()),
         top_k: Some(30_i32),
         top_p: Some(BigDecimal::from_str("0.88").unwrap()),
-        repetition_penalty: Some(BigDecimal::from_str("1.05").unwrap()),
-        min_p: Some(BigDecimal::from_str("0.03").unwrap()),
-        top_a: Some(BigDecimal::from_str("0.08").unwrap()),
         seed: Some(54321_i32),
-        logit_bias: Some(serde_json::json!({ "30001": -20, "30002": 20})),
+        stop_sequences: None,
         model_name: Some("updated-model-name".to_string()),
         history_management_strategy: Some("token_limit".to_string()),
         history_management_limit: Some(100),
@@ -1108,6 +1127,18 @@ async fn update_chat_settings_success_partial() {
         visibility: Some("private".to_string()),
         active_custom_persona_id: None,
         active_impersonated_character_id: None,
+        temperature: None,
+        max_output_tokens: None,
+        frequency_penalty: None,
+        presence_penalty: None,
+        top_k: None,
+        top_p: None,
+        seed: None,
+        stop_sequences: None,
+        gemini_thinking_budget: None,
+        gemini_enable_code_execution: None,
+        system_prompt_ciphertext: None,
+        system_prompt_nonce: None,
     };
     let new_chat_data_clone = new_chat_data.clone();
     let session_conn_pool = conn_pool.clone();
@@ -1158,11 +1189,8 @@ async fn update_chat_settings_success_partial() {
         presence_penalty: None,
         top_k: None,
         top_p: None,
-        repetition_penalty: None,
-        min_p: None,
-        top_a: None,
         seed: None,
-        logit_bias: None,
+        stop_sequences: None,
         model_name: None,
         history_management_strategy: None,
         history_management_limit: None,
@@ -1337,6 +1365,18 @@ async fn update_chat_settings_invalid_data() {
         visibility: Some("private".to_string()),
         active_custom_persona_id: None,
         active_impersonated_character_id: None,
+        temperature: None,
+        max_output_tokens: None,
+        frequency_penalty: None,
+        presence_penalty: None,
+        top_k: None,
+        top_p: None,
+        seed: None,
+        stop_sequences: None,
+        gemini_thinking_budget: None,
+        gemini_enable_code_execution: None,
+        system_prompt_ciphertext: None,
+        system_prompt_nonce: None,
     };
     let new_chat_data_clone = new_chat_data.clone();
     let session_conn_pool = conn_pool.clone();
@@ -1516,6 +1556,18 @@ async fn update_chat_settings_forbidden() {
         visibility: Some("private".to_string()),
         active_custom_persona_id: None,
         active_impersonated_character_id: None,
+        temperature: None,
+        max_output_tokens: None,
+        frequency_penalty: None,
+        presence_penalty: None,
+        top_k: None,
+        top_p: None,
+        seed: None,
+        stop_sequences: None,
+        gemini_thinking_budget: None,
+        gemini_enable_code_execution: None,
+        system_prompt_ciphertext: None,
+        system_prompt_nonce: None,
     };
     let new_chat_user1_data_clone = new_chat_user1_data.clone();
     let session1_conn_pool = conn_pool.clone();
@@ -1541,11 +1593,8 @@ async fn update_chat_settings_forbidden() {
         presence_penalty: None,
         top_k: None,
         top_p: None,
-        repetition_penalty: None,
-        min_p: None,
-        top_a: None,
         seed: None,
-        logit_bias: None,
+        stop_sequences: None,
         model_name: None,
         history_management_strategy: None,
         history_management_limit: None,
@@ -1608,11 +1657,8 @@ async fn update_chat_settings_not_found() {
         presence_penalty: None,
         top_k: None,
         top_p: None,
-        repetition_penalty: None,
-        min_p: None,
-        top_a: None,
         seed: None,
-        logit_bias: None,
+        stop_sequences: None,
         model_name: None,
         history_management_strategy: None,
         history_management_limit: None,
@@ -1663,11 +1709,8 @@ async fn update_chat_settings_unauthorized() {
         presence_penalty: None,
         top_k: None,
         top_p: None,
-        repetition_penalty: None,
-        min_p: None,
-        top_a: None,
         seed: None,
-        logit_bias: None,
+        stop_sequences: None,
         model_name: None,
         history_management_strategy: None,
         history_management_limit: None,

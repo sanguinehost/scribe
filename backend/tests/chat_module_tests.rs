@@ -454,6 +454,18 @@ mod get_session_data_for_generation_tests {
             visibility: Some("private".to_string()),
             active_custom_persona_id: None,
             active_impersonated_character_id: None,
+            temperature: None,
+            max_output_tokens: None,
+            frequency_penalty: None,
+            presence_penalty: None,
+            top_k: None,
+            top_p: None,
+            seed: None,
+            stop_sequences: None,
+            gemini_thinking_budget: None,
+            gemini_enable_code_execution: None,
+            system_prompt_ciphertext: None,
+            system_prompt_nonce: None,
         };
         conn.interact(move |conn_insert| {
             diesel::insert_into(chat_sessions_schema::table)
@@ -554,18 +566,14 @@ mod get_session_data_for_generation_tests {
             _,
             _,
             _,
+            _model_name, // 12: model_name
             _,
             _,
-            _,
-            _,
-            _model_name, // Added one underscore
-            _,
-            _,
-            _user_msg_struct,
-            actual_recent_tokens,
-            rag_items,
-            _,
-            _,
+            _user_msg_struct, // 15: DbInsertableChatMessage
+            actual_recent_tokens, // 16: actual_recent_history_tokens
+            rag_items, // 17: rag_context_items
+            _, // 18: history_management_strategy
+            _, // 19: history_management_limit
         ) = result.unwrap();
 
         assert_eq!(
@@ -714,6 +722,18 @@ mod get_session_data_for_generation_tests {
             visibility: Some("private".to_string()),
             active_custom_persona_id: None,
             active_impersonated_character_id: None,
+            temperature: None,
+            max_output_tokens: None,
+            frequency_penalty: None,
+            presence_penalty: None,
+            top_k: None,
+            top_p: None,
+            seed: None,
+            stop_sequences: None,
+            gemini_thinking_budget: None,
+            gemini_enable_code_execution: None,
+            system_prompt_ciphertext: None,
+            system_prompt_nonce: None,
         };
         conn.interact(move |conn_insert_session| {
             diesel::insert_into(chat_sessions_schema::table)
@@ -875,18 +895,14 @@ mod get_session_data_for_generation_tests {
             _,
             _,
             _,
+            _model_name, // 12: model_name
             _,
             _,
-            _,
-            _,
-            _model_name, // Added one underscore
-            _,
-            _,
-            _user_msg_struct,
-            actual_recent_tokens,
-            rag_items,
-            _,
-            _,
+            _user_msg_struct, // 15: DbInsertableChatMessage
+            actual_recent_tokens, // 16: actual_recent_history_tokens
+            rag_items, // 17: rag_context_items
+            _, // 18: history_management_strategy
+            _, // 19: history_management_limit
         ) = result.unwrap();
 
         assert_eq!(
@@ -1060,6 +1076,18 @@ mod get_session_data_for_generation_tests {
             visibility: Some("private".to_string()),
             active_custom_persona_id: None,
             active_impersonated_character_id: None,
+            temperature: None,
+            max_output_tokens: None,
+            frequency_penalty: None,
+            presence_penalty: None,
+            top_k: None,
+            top_p: None,
+            seed: None,
+            stop_sequences: None,
+            gemini_thinking_budget: None,
+            gemini_enable_code_execution: None,
+            system_prompt_ciphertext: None,
+            system_prompt_nonce: None,
         };
         conn.interact(move |conn_insert| {
             diesel::insert_into(chat_sessions_schema::table)
@@ -1154,18 +1182,14 @@ mod get_session_data_for_generation_tests {
             _,
             _,
             _,
+            _model_name, // 12: model_name
             _,
             _,
-            _,
-            _,
-            _model_name, // Added one underscore
-            _,
-            _,
-            _user_msg_struct,
-            actual_recent_tokens,
-            rag_items,
-            _,
-            _,
+            _user_msg_struct, // 15: DbInsertableChatMessage
+            actual_recent_tokens, // 16: actual_recent_history_tokens
+            rag_items, // 17: rag_context_items
+            _, // 18: history_management_strategy
+            _, // 19: history_management_limit
         ) = result.unwrap();
 
         // Token counts with Gemma for "Okay then." (3) and "See you." (2) = 5. Budget is 8.
@@ -1312,6 +1336,18 @@ mod get_session_data_for_generation_tests {
             visibility: Some("private".to_string()),
             active_custom_persona_id: None,
             active_impersonated_character_id: None,
+            temperature: None,
+            max_output_tokens: None,
+            frequency_penalty: None,
+            presence_penalty: None,
+            top_k: None,
+            top_p: None,
+            seed: None,
+            stop_sequences: None,
+            gemini_thinking_budget: None,
+            gemini_enable_code_execution: None,
+            system_prompt_ciphertext: None,
+            system_prompt_nonce: None,
         };
         conn.interact(move |conn_insert_session| {
             diesel::insert_into(chat_sessions_schema::table)
@@ -1558,18 +1594,14 @@ mod get_session_data_for_generation_tests {
             _,
             _,
             _,
+            _model_name, // 12: model_name
             _,
             _,
-            _,
-            _,
-            _model_name, // Added one underscore
-            _,
-            _,
-            _user_msg_struct,
-            actual_recent_tokens_from_result,
-            rag_items,
-            _,
-            _,
+            _user_msg_struct, // 15: DbInsertableChatMessage
+            actual_recent_tokens_from_result, // 16: actual_recent_history_tokens
+            rag_items, // 17: rag_context_items
+            _, // 18: history_management_strategy
+            _, // 19: history_management_limit
         ) = result.unwrap();
 
         // Verify actual_recent_history_tokens is what we set up (around 140)
@@ -1686,6 +1718,18 @@ mod get_session_data_for_generation_tests {
             visibility: Some("private".to_string()),
             active_custom_persona_id: None,
             active_impersonated_character_id: None,
+            temperature: None,
+            max_output_tokens: None,
+            frequency_penalty: None,
+            presence_penalty: None,
+            top_k: None,
+            top_p: None,
+            seed: None,
+            stop_sequences: None,
+            gemini_thinking_budget: None,
+            gemini_enable_code_execution: None,
+            system_prompt_ciphertext: None,
+            system_prompt_nonce: None,
         };
         conn.interact(move |conn_insert_session| {
             diesel::insert_into(chat_sessions_schema::table)
@@ -1964,18 +2008,14 @@ mod get_session_data_for_generation_tests {
             _,
             _,
             _,
+            _model_name, // 12: model_name
             _,
             _,
-            _,
-            _,
-            _model_name, // Added one underscore
-            _,
-            _,
-            _user_msg_struct,
-            actual_recent_tokens,
-            rag_items,
-            _,
-            _,
+            _user_msg_struct, // 15: DbInsertableChatMessage
+            actual_recent_tokens, // 16: actual_recent_history_tokens
+            rag_items, // 17: rag_context_items
+            _, // 18: history_management_strategy
+            _, // 19: history_management_limit
         ) = result.unwrap();
 
         assert_eq!(
