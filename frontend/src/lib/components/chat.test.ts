@@ -165,11 +165,7 @@ describe('Chat.svelte Component', () => {
     presence_penalty: 0,
     top_k: 50,
     top_p: 0.9,
-    repetition_penalty: 1.0,
-    min_p: 0.01,
-    top_a: 0,
     seed: null,
-    logit_bias: null,
     history_management_strategy: 'truncate_start',
     history_management_limit: 10,
   };

@@ -183,11 +183,7 @@ export interface UpdateChatSessionSettingsRequest {
 	presence_penalty?: number | null;
 	top_k?: number | null;
 	top_p?: number | null;
-	repetition_penalty?: number | null;
-	min_p?: number | null;
-	top_a?: number | null;
 	seed?: number | null;
-	logit_bias?: Record<string, number> | null;
 	history_management_strategy?: string | null;
 	history_management_limit?: number | null;
 	visibility?: VisibilityType | null;
@@ -369,7 +365,7 @@ class ApiClient {
 	}
 
 	async fetchSuggestedActions(chatId: string): Promise<Result<SuggestedActionsResponse, ApiError>> {
-		return this.fetch<SuggestedActionsResponse>(`/api/chat/actions/${chatId}/suggest`, {
+		return this.fetch<SuggestedActionsResponse>(`/api/chat/${chatId}/suggested-actions`, {
 			method: 'POST',
 			body: JSON.stringify({}) // Empty JSON object
 		});
@@ -451,14 +447,14 @@ class ApiClient {
 
 	// Chat Session Settings methods
 	async getChatSessionSettings(sessionId: string): Promise<Result<ScribeChatSession, ApiError>> {
-		return this.fetch<ScribeChatSession>(`/api/chat/settings/${sessionId}`);
+		return this.fetch<ScribeChatSession>(`/api/chats/${sessionId}/settings`);
 	}
 
 	async updateChatSessionSettings(
 		sessionId: string,
 		settings: UpdateChatSessionSettingsRequest
 	): Promise<Result<ScribeChatSession, ApiError>> {
-		return this.fetch<ScribeChatSession>(`/api/chat/settings/${sessionId}`, {
+		return this.fetch<ScribeChatSession>(`/api/chats/${sessionId}/settings`, {
 			method: 'PUT',
 			body: JSON.stringify(settings)
 		});

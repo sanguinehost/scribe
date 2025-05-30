@@ -36,11 +36,7 @@
 		presence_penalty: 0.0,
 		top_p: 0.95,
 		top_k: 40,
-		repetition_penalty: 1.0,
-		min_p: 0.0,
-		top_a: 0.0,
 		seed: null as number | null,
-		logit_bias: null as any,
 		system_prompt: '',
 		active_custom_persona_id: null as string | null,
 		model_name: '',
@@ -73,11 +69,7 @@
 				presence_penalty: settings.presence_penalty ?? 0.0,
 				top_p: settings.top_p ?? 0.95,
 				top_k: settings.top_k ?? 40,
-				repetition_penalty: settings.repetition_penalty ?? 1.0,
-				min_p: settings.min_p ?? 0.0,
-				top_a: settings.top_a ?? 0.0,
 				seed: settings.seed ?? null,
-				logit_bias: settings.logit_bias ?? null,
 				system_prompt: settings.system_prompt ?? '',
 				active_custom_persona_id: chat.active_custom_persona_id ?? null, // This comes from the chat prop
 				model_name: settings.model_name ?? '',
@@ -110,11 +102,7 @@
 			presence_penalty: localSettings.presence_penalty,
 			top_p: localSettings.top_p,
 			top_k: localSettings.top_k,
-			repetition_penalty: localSettings.repetition_penalty,
-			min_p: localSettings.min_p,
-			top_a: localSettings.top_a,
 			seed: localSettings.seed,
-			logit_bias: localSettings.logit_bias,
 			system_prompt: localSettings.system_prompt,
 			active_custom_persona_id: localSettings.active_custom_persona_id,
 			model_name: localSettings.model_name,
@@ -327,41 +315,6 @@
 								</div>
 							</div>
 
-							<div class="grid grid-cols-3 gap-3">
-								<div class="space-y-2">
-									<Label for="repetition-penalty">Repetition Penalty</Label>
-									<Input
-										id="repetition-penalty"
-										type="number"
-										min="0"
-										max="2"
-										step="0.1"
-										bind:value={localSettings.repetition_penalty}
-									/>
-								</div>
-								<div class="space-y-2">
-									<Label for="min-p">Min P</Label>
-									<Input
-										id="min-p"
-										type="number"
-										min="0"
-										max="1"
-										step="0.05"
-										bind:value={localSettings.min_p}
-									/>
-								</div>
-								<div class="space-y-2">
-									<Label for="top-a">Top A</Label>
-									<Input
-										id="top-a"
-										type="number"
-										min="0"
-										max="1"
-										step="0.05"
-										bind:value={localSettings.top_a}
-									/>
-								</div>
-							</div>
 
 							<div class="space-y-2">
 								<Label for="seed">Seed (optional)</Label>

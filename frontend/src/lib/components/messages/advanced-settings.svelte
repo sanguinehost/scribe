@@ -14,9 +14,6 @@
 	let advancedSettings = $state({
 		frequency_penalty: 0.0,
 		presence_penalty: 0.0,
-		repetition_penalty: 1.0,
-		min_p: 0.0,
-		top_a: 0.0,
 		seed: null as number | null,
 		gemini_thinking_budget: null as number | null,
 		gemini_enable_code_execution: false,
@@ -117,41 +114,6 @@
 							</div>
 						</div>
 
-						<div class="grid grid-cols-3 gap-4">
-							<div class="space-y-2">
-								<Label for="adv-repetition-penalty">Repetition Penalty</Label>
-								<Input
-									id="adv-repetition-penalty"
-									type="number"
-									min="0"
-									max="2"
-									step="0.1"
-									bind:value={advancedSettings.repetition_penalty}
-								/>
-							</div>
-							<div class="space-y-2">
-								<Label for="adv-min-p">Min P</Label>
-								<Input
-									id="adv-min-p"
-									type="number"
-									min="0"
-									max="1"
-									step="0.05"
-									bind:value={advancedSettings.min_p}
-								/>
-							</div>
-							<div class="space-y-2">
-								<Label for="adv-top-a">Top A</Label>
-								<Input
-									id="adv-top-a"
-									type="number"
-									min="0"
-									max="1"
-									step="0.05"
-									bind:value={advancedSettings.top_a}
-								/>
-							</div>
-						</div>
 
 						<div class="space-y-2">
 							<Label for="adv-seed">Default Seed (optional)</Label>
