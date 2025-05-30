@@ -24,7 +24,7 @@ use scribe_backend::models::chats::{
     Message as DbChatMessage, // Added for the new test (alias for scribe_backend::models::chats::Message)
     MessageRole,
     NewChat,    // Renamed from NewChat
-    NewMessage, // Added for the new test
+    NewChatMessage, // Added for the new test
 };
 use scribe_backend::models::users::UserCredentials; // Add credentials import
 use scribe_backend::models::users::{AccountStatus, NewUser, User, UserDbQuery, UserRole};
@@ -835,10 +835,19 @@ fn test_chat_session_insert_and_query() {
             model_name: "gemini-2.5-flash-preview-04-17".to_string(), // Added model_name field
             active_custom_persona_id: None,
             active_impersonated_character_id: None,
-            // Optional fields removed from NewChat
-            // system_prompt: Some("Test System Prompt".to_string()),
-            // temperature: Some(BigDecimal::from_str("0.8").unwrap()), // Convert float to BigDecimal
-            // max_output_tokens: Some(256),
+            // Additional optional fields
+            temperature: None,
+            max_output_tokens: None,
+            frequency_penalty: None,
+            presence_penalty: None,
+            top_k: None,
+            top_p: None,
+            seed: None,
+            stop_sequences: None,
+            gemini_thinking_budget: None,
+            gemini_enable_code_execution: None,
+            system_prompt_ciphertext: None,
+            system_prompt_nonce: None,
         };
 
         let inserted_session: Chat = diesel::insert_into(chat_sessions::table)
@@ -952,7 +961,19 @@ async fn test_chat_message_insert_and_query() -> Result<(), AnyhowError> {
                     model_name: "gemini-2.5-flash-preview-04-17".to_string(), // Added model_name field
                     active_custom_persona_id: None,
                     active_impersonated_character_id: None,
-                    // Removed ..Default::default() as it's not implemented and unnecessary
+                    // Additional optional fields
+                    temperature: None,
+                    max_output_tokens: None,
+                    frequency_penalty: None,
+                    presence_penalty: None,
+                    top_k: None,
+                    top_p: None,
+                    seed: None,
+                    stop_sequences: None,
+                    gemini_thinking_budget: None,
+                    gemini_enable_code_execution: None,
+                    system_prompt_ciphertext: None,
+                    system_prompt_nonce: None,
                 };
                 diesel::insert_into(chat_sessions::table)
                     .values(&new_session)
@@ -1136,6 +1157,19 @@ async fn test_data_guard_cleanup_logic() -> anyhow::Result<()> {
         visibility: None,
         active_custom_persona_id: None,
         active_impersonated_character_id: None,
+        // Additional optional fields
+        temperature: None,
+        max_output_tokens: None,
+        frequency_penalty: None,
+        presence_penalty: None,
+        top_k: None,
+        top_p: None,
+        seed: None,
+        stop_sequences: None,
+        gemini_thinking_budget: None,
+        gemini_enable_code_execution: None,
+        system_prompt_ciphertext: None,
+        system_prompt_nonce: None,
     };
 
     conn_setup
@@ -1150,11 +1184,11 @@ async fn test_data_guard_cleanup_logic() -> anyhow::Result<()> {
     guard.add_session_id(session_id); // Use new method
 
     let message_id = Uuid::new_v4();
-    // Use scribe_backend::models::chats::NewMessage
-    let new_message = NewMessage {
+    // Use scribe_backend::models::chats::NewChatMessage
+    let new_message = NewChatMessage {
         id: message_id,
         session_id,
-        user_id: user.id, // Fix: NewMessage expects Uuid directly, not Option<Uuid>
+        user_id: user.id, // Fix: NewChatMessage expects Uuid directly, not Option<Uuid>
         message_type: MessageRole::User,
         content: "Guard message content".as_bytes().to_vec(),
         content_nonce: None,

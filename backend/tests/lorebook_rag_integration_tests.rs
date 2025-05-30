@@ -336,7 +336,7 @@ async fn test_lorebook_import_retrieval_and_rag_integration() {
 
     // 5. Initiate a chat session
     let chat_session_payload = CreateChatRequest {
-        title: "RAG Test Chat Session".to_string(), // CreateChatRequest expects String
+        title: Some("RAG Test Chat Session".to_string()), // CreateChatRequest expects Option<String>
         character_id,
         lorebook_ids: None,
         active_custom_persona_id: None,
@@ -865,7 +865,7 @@ async fn test_associate_lorebook_triggers_initial_embedding() {
     .expect("Failed to create test character for association test");
 
     let chat_session_payload = CreateChatRequest {
-        title: "Chat for Lorebook Association Test".to_string(),
+        title: Some("Chat for Lorebook Association Test".to_string()),
         character_id: test_character.id,
         lorebook_ids: None,
         active_custom_persona_id: None,
@@ -1355,7 +1355,7 @@ async fn test_rag_retrieves_lorebook_entry_after_embedding_completion() -> anyho
 
     // Create a chat session
     let chat_session_payload = CreateChatRequest {
-        title: "China RAG Test Session".to_string(),
+        title: Some("China RAG Test Session".to_string()),
         character_id: character.id,
         lorebook_ids: None,
         active_custom_persona_id: None,
@@ -1695,7 +1695,7 @@ async fn test_rag_retrieves_lorebook_entry_with_mocks() -> anyhow::Result<()> {
 
     // Create a chat session
     let chat_session_payload = CreateChatRequest {
-        title: "China RAG Test Session Mock".to_string(),
+        title: Some("China RAG Test Session Mock".to_string()),
         character_id: character.id,
         lorebook_ids: None,
         active_custom_persona_id: None,

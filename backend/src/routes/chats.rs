@@ -7,15 +7,15 @@ use crate::models::chats::{
     Chat,
     ChatForClient, // Added for client responses
     // ChatSettingsResponse, // Not used directly in this file anymore
-    CreateChatRequest,
-    CreateMessageRequest,
+    CreateChatRequest, // Now available
+    CreateMessageRequest, // Now available
     Message,
-    MessageResponse,
-    MessageRole, // Added ChatMessage and ChatMessageForClient
+    MessageResponse, // Now available
+    MessageRole,
     UpdateChatSettingsRequest,
-    UpdateChatVisibilityRequest,
-    Vote,
-    VoteRequest,
+    UpdateChatVisibilityRequest, // Now available
+    Vote, // Now available
+    VoteRequest, // Now available
 };
 use crate::schema::{chat_messages, chat_sessions};
 use axum::{
@@ -279,14 +279,15 @@ pub async fn create_chat_handler(
     .await?;
 
     // Generate a custom title if provided (default title is set by the service)
-    if !payload.title.trim().is_empty() {
-        let pool = state.pool.clone();
-        let session_id = chat.id;
-        let custom_title = payload.title.clone();
+    if let Some(ref title) = payload.title {
+        if !title.trim().is_empty() {
+            let pool = state.pool.clone();
+            let session_id = chat.id;
+            let custom_title = title.clone();
 
-        // Encrypt the title using the DEK from the SessionDek extractor
-        let dek_for_title_encryption = &dek.0; // dek is SessionDek, dek.0 is SecretBox<Vec<u8>>
-        match crypto::encrypt_gcm(custom_title.as_bytes(), dek_for_title_encryption) {
+            // Encrypt the title using the DEK from the SessionDek extractor
+            let dek_for_title_encryption = &dek.0; // dek is SessionDek, dek.0 is SecretBox<Vec<u8>>
+            match crypto::encrypt_gcm(custom_title.as_bytes(), dek_for_title_encryption) {
             Ok((ciphertext, nonce)) => {
                 // Update with encrypted title
                 pool.get()
@@ -310,6 +311,7 @@ pub async fn create_chat_handler(
                     "Failed to encrypt title".to_string(),
                 ));
             }
+        }
         }
     }
 

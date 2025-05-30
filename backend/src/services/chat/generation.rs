@@ -9,7 +9,6 @@ use genai::chat::{
     ChatRequest as GenAiChatRequest, ChatStreamEvent as GeminiResponseChunkAlias, ReasoningEffort,
 };
 use secrecy::{ExposeSecret, SecretBox};
-use serde_json::Value;
 // Required for stream_ai_response_and_save_message
 use tracing::{debug, error, info, instrument, trace, warn}; // Added trace
 use uuid::Uuid;
@@ -192,11 +191,8 @@ pub async fn get_session_data_for_generation(
         session_presence_penalty_db,
         session_top_k_db,
         session_top_p_db,
-        session_repetition_penalty_db,
-        session_min_p_db,
-        session_top_a_db,
         session_seed_db,
-        session_logit_bias_db,
+        _session_stop_sequences_db,
         session_model_name_db,
         session_gemini_thinking_budget_db,
         session_gemini_enable_code_execution_db,
@@ -215,11 +211,8 @@ pub async fn get_session_data_for_generation(
         Option<BigDecimal>, // presence_penalty
         Option<i32>, // top_k
         Option<BigDecimal>, // top_p
-        Option<BigDecimal>, // repetition_penalty
-        Option<BigDecimal>, // min_p
-        Option<BigDecimal>, // top_a
         Option<i32>, // seed
-        Option<Value>, // logit_bias
+        Option<Vec<Option<String>>>, // stop_sequences
         String, // model_name
         Option<i32>, // gemini_thinking_budget
         Option<bool>, // gemini_enable_code_execution
@@ -250,11 +243,8 @@ pub async fn get_session_data_for_generation(
                 pres_pen,
                 top_k_val,
                 top_p_val,
-                rep_pen,
-                min_p_val,
-                top_a_val,
                 seed_val,
-                logit_b,
+                stop_seqs,
                 model_n,
                 gem_think_budget,
                 gem_enable_code_exec,
@@ -273,11 +263,8 @@ pub async fn get_session_data_for_generation(
                     chat_sessions::presence_penalty,
                     chat_sessions::top_k,
                     chat_sessions::top_p,
-                    chat_sessions::repetition_penalty,
-                    chat_sessions::min_p,
-                    chat_sessions::top_a,
                     chat_sessions::seed,
-                    chat_sessions::logit_bias,
+                    chat_sessions::stop_sequences,
                     chat_sessions::model_name,
                     chat_sessions::gemini_thinking_budget,
                     chat_sessions::gemini_enable_code_execution,
@@ -294,11 +281,8 @@ pub async fn get_session_data_for_generation(
                     Option<BigDecimal>,
                     Option<i32>,
                     Option<BigDecimal>,
-                    Option<BigDecimal>,
-                    Option<BigDecimal>,
-                    Option<BigDecimal>,
                     Option<i32>,
-                    Option<Value>,
+                    Option<Vec<Option<String>>>,
                     String,
                     Option<i32>,
                     Option<bool>,
@@ -401,11 +385,8 @@ pub async fn get_session_data_for_generation(
                 pres_pen,
                 top_k_val,
                 top_p_val,
-                rep_pen,
-                min_p_val,
-                top_a_val,
                 seed_val,
-                logit_b,
+                stop_seqs,
                 model_n,
                 gem_think_budget,
                 gem_enable_code_exec,
@@ -776,33 +757,29 @@ pub async fn get_session_data_for_generation(
 
     // --- Construct Final Tuple ---
     Ok((
-        managed_recent_history,         // 0: managed_db_history
-        final_effective_system_prompt,  // 1: system_prompt (for builder, persona/override only)
-        active_lorebook_ids_for_search, // 2: active_lorebook_ids_for_search
-        session_character_id_db,        // 3: session_character_id
-        raw_character_system_prompt,    // 4: raw_character_system_prompt (NEW)
-        session_temperature_db,         // 5: temperature
-        session_max_output_tokens_db,   // 6: max_output_tokens
-        session_frequency_penalty_db,   // 7: frequency_penalty
-        session_presence_penalty_db,    // 8: presence_penalty
-        session_top_k_db,               // 9: top_k
-        session_top_p_db,               // 10: top_p
-        session_repetition_penalty_db,  // 11: repetition_penalty
-        session_min_p_db,               // 12: min_p
-        session_top_a_db,               // 13: top_a
-        session_seed_db,                // 14: seed
-        session_logit_bias_db,          // 15: logit_bias
-        session_model_name_db,          // 16: model_name
+        managed_recent_history,         // 0: managed_db_history (Vec<DbChatMessage> -> Vec<ChatMessage> in type alias)
+        final_effective_system_prompt,  // 1: system_prompt (Option<String>)
+        active_lorebook_ids_for_search, // 2: active_lorebook_ids_for_search (Option<Vec<Uuid>>)
+        session_character_id_db,        // 3: session_character_id (Uuid)
+        raw_character_system_prompt,    // 4: raw_character_system_prompt (Option<String>)
+        session_temperature_db,         // 5: temperature (Option<BigDecimal>)
+        session_max_output_tokens_db,   // 6: max_output_tokens (Option<i32>)
+        session_frequency_penalty_db,   // 7: frequency_penalty (Option<BigDecimal>)
+        session_presence_penalty_db,    // 8: presence_penalty (Option<BigDecimal>)
+        session_top_k_db,               // 9: top_k (Option<i32>)
+        session_top_p_db,               // 10: top_p (Option<BigDecimal>)
+        session_seed_db,                // 11: seed (Option<i32>) - MOVED
+        session_model_name_db,          // 12: model_name (String) - MOVED
         // -- Gemini Specific Options --
-        session_gemini_thinking_budget_db, // 17: gemini_thinking_budget
-        session_gemini_enable_code_execution_db, // 18: gemini_enable_code_execution
-        user_db_message_to_save,           // 19: The user message struct
+        session_gemini_thinking_budget_db, // 13: gemini_thinking_budget (Option<i32>) - MOVED
+        session_gemini_enable_code_execution_db, // 14: gemini_enable_code_execution (Option<bool>) - MOVED
+        user_db_message_to_save,           // 15: The user message struct (DbInsertableChatMessage) - MOVED
         // -- RAG Context & Recent History Tokens --
-        actual_recent_history_tokens, // 20: actual_recent_history_tokens
-        rag_context_items,            // 21: rag_context_items
+        actual_recent_history_tokens, // 16: actual_recent_history_tokens (usize) - MOVED
+        rag_context_items,            // 17: rag_context_items (Vec<RetrievedChunk>) - MOVED
         // History Management Settings
-        history_management_strategy_db_val, // 22: history_management_strategy
-        history_management_limit_db_val,    // 23: history_management_limit
+        history_management_strategy_db_val, // 18: history_management_strategy (String) - MOVED
+        history_management_limit_db_val,    // 19: history_management_limit (i32) - MOVED
     ))
 }
 #[instrument(skip_all, err, fields(session_id = %session_id, user_id = %user_id, model_name = %model_name))]
@@ -818,11 +795,8 @@ pub async fn stream_ai_response_and_save_message(
     _presence_penalty: Option<BigDecimal>,  // Mark as unused for now
     _top_k: Option<i32>,                    // Mark as unused for now
     top_p: Option<BigDecimal>,
-    _repetition_penalty: Option<BigDecimal>, // Mark as unused for now
-    _min_p: Option<BigDecimal>,              // Mark as unused for now
-    _top_a: Option<BigDecimal>,              // Mark as unused for now
+    stop_sequences: Option<Vec<String>>, // New parameter
     _seed: Option<i32>,                      // Mark as unused for now
-    _logit_bias: Option<Value>,              // Mark as unused for now
     model_name: String,
     gemini_thinking_budget: Option<i32>,
     gemini_enable_code_execution: Option<bool>,
@@ -860,6 +834,9 @@ pub async fn stream_ai_response_and_save_message(
         if let Some(f_val) = p_val.to_f32() {
             genai_chat_options = genai_chat_options.with_top_p(f_val.into());
         }
+    }
+    if let Some(seqs) = stop_sequences {
+        genai_chat_options = genai_chat_options.with_stop_sequences(seqs);
     }
     if let Some(budget) = gemini_thinking_budget {
         if budget > 0 {

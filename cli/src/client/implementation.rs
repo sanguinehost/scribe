@@ -153,7 +153,7 @@ impl HttpClient for ReqwestClientWrapper {
         tracing::info!(target: "scribe_cli::client::implementation", %url, %character_id, ?active_custom_persona_id, ?lorebook_ids, "Creating chat session with lorebooks via HttpClient");
         // Use the backend's CreateChatRequest struct that supports lorebook_ids
         let payload = scribe_backend::models::chats::CreateChatRequest {
-            title: String::new(), // Default empty title
+            title: Some(String::new()), // Default empty title
             character_id,
             lorebook_ids,
             active_custom_persona_id,

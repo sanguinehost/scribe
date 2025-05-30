@@ -224,6 +224,7 @@ diesel::table! {
         system_prompt_nonce -> Nullable<Bytea>,
         title_ciphertext -> Nullable<Bytea>,
         title_nonce -> Nullable<Bytea>,
+        stop_sequences -> Nullable<Array<Nullable<Text>>>,
     }
 }
 

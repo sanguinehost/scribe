@@ -874,7 +874,7 @@ mod lorebook_tests {
         // 3. Create a chat session
         let chat_payload = CreateChatRequest {
             character_id: character.id,
-            title: "Chat for Lorebook Association Test".to_string(),
+            title: Some("Chat for Lorebook Association Test".to_string()),
             lorebook_ids: None,
             active_custom_persona_id: None,
         };

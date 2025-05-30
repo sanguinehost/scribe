@@ -20,7 +20,7 @@ use scribe_backend::{
         characters::Character as DbCharacter,
         chats::{
             ApiChatMessage, Chat as ChatSession, ChatMessage as DbChatMessage, GenerateChatRequest,
-            MessageRole, NewChat, NewMessage,
+            MessageRole, NewChat, NewChatMessage,
         },
     },
     schema::{
@@ -142,6 +142,18 @@ async fn generate_chat_response_streaming_success() {
                 visibility: Some("private".to_string()),
                 active_custom_persona_id: None,
                 active_impersonated_character_id: None,
+                temperature: None,
+                max_output_tokens: None,
+                frequency_penalty: None,
+                presence_penalty: None,
+                top_k: None,
+                top_p: None,
+                seed: None,
+                stop_sequences: None,
+                gemini_thinking_budget: None,
+                gemini_enable_code_execution: None,
+                system_prompt_ciphertext: None,
+                system_prompt_nonce: None,
             };
             diesel::insert_into(chat_sessions_dsl::chat_sessions)
                 .values(&new_chat_session)
@@ -160,7 +172,7 @@ async fn generate_chat_response_streaming_success() {
         .await
         .expect("Failed to get DB conn for msg1 save")
         .interact(move |conn_sync| {
-            let new_message1 = NewMessage {
+            let new_message1 = NewChatMessage {
                 id: Uuid::new_v4(),
                 session_id: session_id_clone1,
                 user_id: user_id_clone1,
@@ -191,7 +203,7 @@ async fn generate_chat_response_streaming_success() {
         .await
         .expect("Failed to get DB conn for msg2 save")
         .interact(move |conn_sync| {
-            let new_message2 = NewMessage {
+            let new_message2 = NewChatMessage {
                 id: Uuid::new_v4(),
                 session_id: session_id_clone2,
                 user_id: user_id_clone2,
@@ -575,6 +587,18 @@ async fn test_first_mes_included_in_history() {
                 visibility: Some("private".to_string()),
                 active_custom_persona_id: None,
                 active_impersonated_character_id: None,
+                temperature: None,
+                max_output_tokens: None,
+                frequency_penalty: None,
+                presence_penalty: None,
+                top_k: None,
+                top_p: None,
+                seed: None,
+                stop_sequences: None,
+                gemini_thinking_budget: None,
+                gemini_enable_code_execution: None,
+                system_prompt_ciphertext: None,
+                system_prompt_nonce: None,
             };
             diesel::insert_into(chat_sessions_dsl::chat_sessions)
                 .values(&new_chat_session)
@@ -672,7 +696,7 @@ async fn test_first_mes_included_in_history() {
     .expect("Failed to get session data for generation");
 
     // Extract the managed history from the generation data
-    let (managed_history, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _) =
+    let (managed_history, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _) =
         generation_data;
 
     // Assert that the history contains the character's first_mes

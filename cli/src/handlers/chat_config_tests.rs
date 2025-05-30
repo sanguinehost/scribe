@@ -21,7 +21,6 @@ mod tests {
         // 2. Setup mock response for chat settings update
         let temp_bd = BigDecimal::from_str("0.8").unwrap();
         let updated_settings = ChatSettingsResponse {
-            id: chat_id,
             system_prompt: Some("Updated system prompt".to_string()),
             temperature: Some(temp_bd),
             max_output_tokens: Some(1024),
@@ -29,14 +28,11 @@ mod tests {
             presence_penalty: None,
             top_k: None,
             top_p: None,
-            repetition_penalty: None,
-            min_p: None,
-            top_a: None,
             seed: None,
-            logit_bias: None,
+            stop_sequences: None,
             history_management_strategy: "window".to_string(),
             history_management_limit: 20,
-            model_name: Some("custom-model".to_string()),
+            model_name: "custom-model".to_string(),
             gemini_thinking_budget: Some(2048),
             gemini_enable_code_execution: Some(true),
         };
@@ -131,7 +127,6 @@ mod tests {
         // 2. Setup mock response for chat settings update
         let temp_bd = BigDecimal::from_str("0.8").unwrap();
         let updated_settings = ChatSettingsResponse {
-            id: chat_id,
             system_prompt: Some("Updated system prompt".to_string()),
             temperature: Some(temp_bd),
             max_output_tokens: Some(1024),
@@ -139,14 +134,11 @@ mod tests {
             presence_penalty: None,
             top_k: None,
             top_p: None,
-            repetition_penalty: None,
-            min_p: None,
-            top_a: None,
             seed: None,
-            logit_bias: None,
+            stop_sequences: None,
             history_management_strategy: "window".to_string(),
             history_management_limit: 20,
-            model_name: Some("custom-model".to_string()),
+            model_name: "custom-model".to_string(),
             gemini_thinking_budget: Some(2048),
             gemini_enable_code_execution: Some(true),
         };

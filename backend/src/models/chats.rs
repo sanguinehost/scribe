@@ -3,8 +3,7 @@ use bigdecimal::BigDecimal;
 use chrono::{DateTime, Utc};
 use diesel::prelude::*;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
-use tracing::error; // Added warn
+use tracing::error;
 use uuid::Uuid;
 use validator::{Validate, ValidationError};
 
@@ -15,11 +14,10 @@ use diesel::serialize::{self, IsNull, Output, ToSql};
 use diesel::{AsExpression, FromSqlRow};
 use std::io::Write;
 
-use crate::crypto::{decrypt_gcm, encrypt_gcm}; // For encryption/decryption
+use crate::crypto::{decrypt_gcm, encrypt_gcm};
 use crate::errors::AppError;
-use secrecy::ExposeSecret; // Added for ExposeSecret
-use secrecy::SecretBox; // For DEK (SecretBox<Vec<u8>>) // For error handling
-// Import the newtype
+use secrecy::ExposeSecret;
+use secrecy::SecretBox;
 
 // Main Chat model (similar to the frontend Chat type)
 // Type alias for the tuple returned when selecting/returning chat settings
@@ -32,11 +30,8 @@ pub type SettingsTuple = (
     Option<BigDecimal>, // presence_penalty
     Option<i32>,        // top_k
     Option<BigDecimal>, // top_p
-    Option<BigDecimal>, // repetition_penalty
-    Option<BigDecimal>, // min_p
-    Option<BigDecimal>, // top_a
     Option<i32>,        // seed
-    Option<Value>,      // logit_bias
+    Option<Vec<Option<String>>>, // stop_sequences
     String,             // history_management_strategy
     i32,                // history_management_limit
     String,             // model_name
@@ -59,25 +54,20 @@ pub struct Chat {
     pub presence_penalty: Option<bigdecimal::BigDecimal>,
     pub top_k: Option<i32>,
     pub top_p: Option<bigdecimal::BigDecimal>,
-    pub repetition_penalty: Option<bigdecimal::BigDecimal>,
-    pub min_p: Option<bigdecimal::BigDecimal>,
-    pub top_a: Option<bigdecimal::BigDecimal>,
     pub seed: Option<i32>,
-    pub logit_bias: Option<serde_json::Value>,
     pub history_management_strategy: String,
     pub history_management_limit: i32,
     pub model_name: String,
     pub gemini_thinking_budget: Option<i32>,
     pub gemini_enable_code_execution: Option<bool>,
-    pub visibility: Option<String>, // Moved to last
-    // Add new fields to match schema.rs for chat_sessions table
+    pub visibility: Option<String>,
     pub active_custom_persona_id: Option<Uuid>,
     pub active_impersonated_character_id: Option<Uuid>,
-    // Encrypted fields
-    pub title_ciphertext: Option<Vec<u8>>,
-    pub title_nonce: Option<Vec<u8>>,
     pub system_prompt_ciphertext: Option<Vec<u8>>,
     pub system_prompt_nonce: Option<Vec<u8>>,
+    pub title_ciphertext: Option<Vec<u8>>,
+    pub title_nonce: Option<Vec<u8>>,
+    pub stop_sequences: Option<Vec<Option<String>>>,
 }
 
 impl std::fmt::Debug for Chat {
@@ -116,20 +106,19 @@ impl std::fmt::Debug for Chat {
             .field("presence_penalty", &self.presence_penalty)
             .field("top_k", &self.top_k)
             .field("top_p", &self.top_p)
-            .field("repetition_penalty", &self.repetition_penalty)
-            .field("min_p", &self.min_p)
-            .field("top_a", &self.top_a)
             .field("seed", &self.seed)
-            .field(
-                "logit_bias",
-                &self.logit_bias.as_ref().map(|_| "[REDACTED_JSON]"),
-            )
+            .field("stop_sequences", &self.stop_sequences)
             .field(
                 "history_management_strategy",
                 &self.history_management_strategy,
             )
             .field("history_management_limit", &self.history_management_limit)
             .field("model_name", &self.model_name)
+            .field("gemini_thinking_budget", &self.gemini_thinking_budget)
+            .field(
+                "gemini_enable_code_execution",
+                &self.gemini_enable_code_execution,
+            )
             .field("visibility", &self.visibility)
             // Add new fields to Debug output
             .field("active_custom_persona_id", &self.active_custom_persona_id)
@@ -142,7 +131,7 @@ impl std::fmt::Debug for Chat {
 }
 
 // New Chat for insertion
-#[derive(Insertable, Clone)] // Removed Debug
+#[derive(Insertable, Clone)]
 #[diesel(table_name = chat_sessions)]
 pub struct NewChat {
     pub id: Uuid,
@@ -159,6 +148,19 @@ pub struct NewChat {
     // Added to match schema and Chat struct
     pub active_custom_persona_id: Option<Uuid>,
     pub active_impersonated_character_id: Option<Uuid>,
+    // Additional optional fields that can be set during insertion
+    pub temperature: Option<BigDecimal>,
+    pub max_output_tokens: Option<i32>,
+    pub frequency_penalty: Option<BigDecimal>,
+    pub presence_penalty: Option<BigDecimal>,
+    pub top_k: Option<i32>,
+    pub top_p: Option<BigDecimal>,
+    pub seed: Option<i32>,
+    pub stop_sequences: Option<Vec<Option<String>>>,
+    pub gemini_thinking_budget: Option<i32>,
+    pub gemini_enable_code_execution: Option<bool>,
+    pub system_prompt_ciphertext: Option<Vec<u8>>,
+    pub system_prompt_nonce: Option<Vec<u8>>,
 }
 
 impl std::fmt::Debug for NewChat {
@@ -178,251 +180,30 @@ impl std::fmt::Debug for NewChat {
             .field("history_management_limit", &self.history_management_limit)
             .field("model_name", &self.model_name)
             .field("visibility", &self.visibility)
-            // Added to debug output
             .field("active_custom_persona_id", &self.active_custom_persona_id)
             .field(
                 "active_impersonated_character_id",
                 &self.active_impersonated_character_id,
             )
+            .field("temperature", &self.temperature)
+            .field("max_output_tokens", &self.max_output_tokens)
+            .field("frequency_penalty", &self.frequency_penalty)
+            .field("presence_penalty", &self.presence_penalty)
+            .field("top_k", &self.top_k)
+            .field("top_p", &self.top_p)
+            .field("seed", &self.seed)
+            .field("stop_sequences", &self.stop_sequences)
+            .field("gemini_thinking_budget", &self.gemini_thinking_budget)
+            .field("gemini_enable_code_execution", &self.gemini_enable_code_execution)
+            .field("system_prompt_ciphertext", &self.system_prompt_ciphertext.as_ref().map(|_| "[REDACTED_BYTES]"))
+            .field("system_prompt_nonce", &self.system_prompt_nonce.as_ref().map(|_| "[REDACTED_BYTES]"))
             .finish()
     }
 }
 
-// Chat Message model
-#[derive(Queryable, Selectable, Identifiable, Serialize, Deserialize, Clone)] // Removed Debug
-#[diesel(table_name = chat_messages)]
-#[diesel(check_for_backend(diesel::pg::Pg))]
-pub struct Message {
-    pub id: Uuid,
-    pub session_id: Uuid,
-    pub message_type: MessageRole, // Changed String to MessageRole
-    pub content: Vec<u8>,
-    pub rag_embedding_id: Option<Uuid>, // Moved before content_nonce to match schema
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
-    pub user_id: Uuid,
-    pub content_nonce: Option<Vec<u8>>, // Moved after rag_embedding_id and user_id
-    pub role: Option<String>,
-    pub parts: Option<serde_json::Value>,
-    pub attachments: Option<serde_json::Value>,
-    pub prompt_tokens: Option<i32>,     // Added
-    pub completion_tokens: Option<i32>, // Added
-}
-
-impl std::fmt::Debug for Message {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Message")
-            .field("id", &self.id)
-            .field("session_id", &self.session_id)
-            .field("message_type", &self.message_type)
-            .field("content", &"[REDACTED_BYTES]")
-            .field("rag_embedding_id", &self.rag_embedding_id)
-            .field("created_at", &self.created_at)
-            .field("updated_at", &self.updated_at)
-            .field("user_id", &self.user_id)
-            .field(
-                "content_nonce",
-                &self.content_nonce.as_ref().map(|_| "[REDACTED_NONCE]"),
-            )
-            .field("role", &self.role)
-            .field("parts", &self.parts.as_ref().map(|_| "[REDACTED_JSON]"))
-            .field(
-                "attachments",
-                &self.attachments.as_ref().map(|_| "[REDACTED_JSON]"),
-            )
-            .field("prompt_tokens", &self.prompt_tokens) // Added
-            .field("completion_tokens", &self.completion_tokens) // Added
-            .finish()
-    }
-}
-
-// New Message for insertion
-#[derive(Insertable, Clone)] // Removed Debug
-#[diesel(table_name = chat_messages)]
-pub struct NewMessage {
-    pub id: Uuid,
-    pub session_id: Uuid,
-    pub message_type: MessageRole, // Changed String to MessageRole
-    pub content: Vec<u8>,
-    pub content_nonce: Option<Vec<u8>>, // Added nonce
-    pub user_id: Uuid,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
-    pub role: Option<String>,
-    pub parts: Option<serde_json::Value>,
-    pub attachments: Option<serde_json::Value>,
-    pub prompt_tokens: Option<i32>,     // Added
-    pub completion_tokens: Option<i32>, // Added
-}
-
-impl std::fmt::Debug for NewMessage {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("NewMessage")
-            .field("id", &self.id)
-            .field("session_id", &self.session_id)
-            .field("message_type", &self.message_type)
-            .field("content", &"[REDACTED_BYTES]")
-            .field(
-                "content_nonce",
-                &self.content_nonce.as_ref().map(|_| "[REDACTED_NONCE]"),
-            )
-            .field("user_id", &self.user_id)
-            .field("created_at", &self.created_at)
-            .field("updated_at", &self.updated_at)
-            .field("role", &self.role)
-            .field("parts", &self.parts.as_ref().map(|_| "[REDACTED_JSON]"))
-            .field(
-                "attachments",
-                &self.attachments.as_ref().map(|_| "[REDACTED_JSON]"),
-            )
-            .field("prompt_tokens", &self.prompt_tokens) // Added
-            .field("completion_tokens", &self.completion_tokens) // Added
-            .finish()
-    }
-}
-
-// Request/Response DTOs
-#[derive(Deserialize, Serialize)] // Removed Debug, Added Serialize
-pub struct CreateChatRequest {
-    #[serde(default)]
-    pub title: String,
-    pub character_id: Uuid,
-    #[serde(default)]
-    pub lorebook_ids: Option<Vec<Uuid>>,
-    #[serde(default)]
-    pub active_custom_persona_id: Option<Uuid>,
-}
-
-impl std::fmt::Debug for CreateChatRequest {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("CreateChatRequest")
-            .field("title", &"[REDACTED]")
-            .field("character_id", &self.character_id)
-            .field("lorebook_ids", &self.lorebook_ids)
-            .field("active_custom_persona_id", &self.active_custom_persona_id)
-            .finish()
-    }
-}
-
-#[derive(Serialize)] // Removed Debug
-pub struct ChatResponse {
-    pub id: Uuid,
-    pub title: String,
-    pub created_at: DateTime<Utc>,
-    pub user_id: Uuid,
-    pub visibility: Option<String>,
-}
-
-impl std::fmt::Debug for ChatResponse {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("ChatResponse")
-            .field("id", &self.id)
-            .field("title", &"[REDACTED]")
-            .field("created_at", &self.created_at)
-            .field("user_id", &self.user_id)
-            .field("visibility", &self.visibility)
-            .finish()
-    }
-}
-
-#[derive(Deserialize)] // Removed Debug
-pub struct CreateMessageRequest {
-    pub role: String,
-    pub content: String,
-    pub parts: Option<serde_json::Value>,
-    pub attachments: Option<serde_json::Value>,
-}
-
-impl std::fmt::Debug for CreateMessageRequest {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("CreateMessageRequest")
-            .field("role", &self.role)
-            .field("content", &"[REDACTED]")
-            .field("parts", &self.parts.as_ref().map(|_| "[REDACTED_JSON]"))
-            .field(
-                "attachments",
-                &self.attachments.as_ref().map(|_| "[REDACTED_JSON]"),
-            )
-            .finish()
-    }
-}
-
-#[derive(Serialize, Deserialize, Clone)] // Removed Debug
-pub struct MessageResponse {
-    pub id: Uuid,
-    pub session_id: Uuid,          // Renamed from chat_id
-    pub message_type: MessageRole, // Added missing field
-    pub role: String, // TODO: Consider removing this if message_type covers it? Check usage.
-    pub parts: serde_json::Value,
-    pub attachments: serde_json::Value,
-    pub created_at: DateTime<Utc>,
-}
-
-impl std::fmt::Debug for MessageResponse {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("MessageResponse")
-            .field("id", &self.id)
-            .field("session_id", &self.session_id)
-            .field("message_type", &self.message_type)
-            .field("role", &self.role)
-            .field("parts", &"[REDACTED_JSON]")
-            .field("attachments", &"[REDACTED_JSON]")
-            .field("created_at", &self.created_at)
-            .finish()
-    }
-}
-
-// Vote model
-#[derive(Serialize, Deserialize, Clone)] // Removed Debug
-pub struct Vote {
-    pub chat_id: Uuid,
-    pub message_id: Uuid,
-    pub is_upvoted: bool,
-}
-
-impl std::fmt::Debug for Vote {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Vote")
-            .field("chat_id", &self.chat_id)
-            .field("message_id", &self.message_id)
-            .field("is_upvoted", &self.is_upvoted)
-            .finish()
-    }
-}
-
-#[derive(Deserialize)] // Removed Debug
-pub struct VoteRequest {
-    pub message_id: Uuid,
-    pub type_: String, // "up" or "down"
-}
-
-impl std::fmt::Debug for VoteRequest {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("VoteRequest")
-            .field("message_id", &self.message_id)
-            .field("type_", &self.type_)
-            .finish()
-    }
-}
-
-// Visibility update
-#[derive(Deserialize)] // Removed Debug
-pub struct UpdateChatVisibilityRequest {
-    pub visibility: String, // "public" or "private"
-}
-
-impl std::fmt::Debug for UpdateChatVisibilityRequest {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("UpdateChatVisibilityRequest")
-            .field("visibility", &self.visibility)
-            .finish()
-    }
-}
-
-// Enum to represent the role of the sender
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default, AsExpression, FromSqlRow,
-)]
+// MessageRole enum for database storage
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[derive(AsExpression, FromSqlRow)]
 #[diesel(sql_type = crate::schema::sql_types::MessageType)]
 pub enum MessageRole {
     #[default]
@@ -473,8 +254,8 @@ impl std::fmt::Display for MessageRole {
 }
 
 // Represents a chat message in the database
-#[derive(Queryable, Selectable, Identifiable, Associations, Clone, Serialize, Deserialize)] // Removed Debug
-#[diesel(belongs_to(Chat, foreign_key = session_id))] // CORRECTED: ChatSession -> Chat
+#[derive(Queryable, Selectable, Identifiable, Associations, Clone, Serialize, Deserialize)]
+#[diesel(belongs_to(Chat, foreign_key = session_id))]
 #[diesel(table_name = chat_messages)]
 pub struct ChatMessage {
     pub id: Uuid,
@@ -483,13 +264,11 @@ pub struct ChatMessage {
     #[diesel(column_name = message_type)]
     pub message_type: MessageRole,
     pub content: Vec<u8>,
-    pub content_nonce: Option<Vec<u8>>, // Added nonce
+    pub content_nonce: Option<Vec<u8>>,
     pub created_at: DateTime<Utc>,
-    pub user_id: Uuid, // Changed to non-optional Uuid to match schema
-    // pub embedding: Option<Vec<f32>>, // Maybe store embeddings here later? Or Qdrant?
-    // pub token_count: Option<i32>,
-    pub prompt_tokens: Option<i32>,     // Added
-    pub completion_tokens: Option<i32>, // Added
+    pub user_id: Uuid,
+    pub prompt_tokens: Option<i32>,
+    pub completion_tokens: Option<i32>,
 }
 
 impl std::fmt::Debug for ChatMessage {
@@ -505,8 +284,8 @@ impl std::fmt::Debug for ChatMessage {
             )
             .field("created_at", &self.created_at)
             .field("user_id", &self.user_id)
-            .field("prompt_tokens", &self.prompt_tokens) // Added
-            .field("completion_tokens", &self.completion_tokens) // Added
+            .field("prompt_tokens", &self.prompt_tokens)
+            .field("completion_tokens", &self.completion_tokens)
             .finish()
     }
 }
@@ -517,7 +296,7 @@ impl ChatMessage {
     pub fn encrypt_content_field(
         &mut self,
         dek: &SecretBox<Vec<u8>>,
-        plaintext_content: String, // Assuming plaintext comes as String
+        plaintext_content: String,
     ) -> Result<(), AppError> {
         if !plaintext_content.is_empty() {
             let (ciphertext, nonce) = encrypt_gcm(plaintext_content.as_bytes(), dek)
@@ -526,7 +305,182 @@ impl ChatMessage {
             self.content_nonce = Some(nonce);
         } else {
             self.content = Vec::new();
-            self.content_nonce = None; // No nonce if content is empty
+            self.content_nonce = None;
+        }
+        Ok(())
+    }
+
+    /// Decrypts the content field if a DEK is available and content is encrypted.
+    /// Returns the decrypted string.
+    pub fn decrypt_content_field(
+        &self,
+        dek: &SecretBox<Vec<u8>>,
+    ) -> Result<String, AppError> {
+        if !self.content.is_empty() {
+            if let Some(nonce) = &self.content_nonce {
+                if !nonce.is_empty() {
+                    match decrypt_gcm(&self.content, nonce, dek) {
+                        Ok(plaintext_secret) => {
+                            String::from_utf8(plaintext_secret.expose_secret().to_vec())
+                                .map_err(|e| {
+                                    tracing::error!(
+                                        "Failed to convert decrypted message content to UTF-8: {}",
+                                        e
+                                    );
+                                    AppError::DecryptionError(
+                                        "Failed to convert message content to UTF-8".to_string(),
+                                    )
+                                })
+                        }
+                        Err(e) => {
+                            error!(
+                                "Failed to decrypt chat message content for ID {}: {}",
+                                self.id, e
+                            );
+                            Err(AppError::DecryptionError(format!(
+                                "Decryption failed for message content: {}",
+                                e
+                            )))
+                        }
+                    }
+                } else {
+                    tracing::error!(
+                        "ChatMessage ID {} content is present but nonce is empty. Cannot decrypt.",
+                        self.id
+                    );
+                    Err(AppError::DecryptionError(
+                        "Nonce is empty for content decryption".to_string(),
+                    ))
+                }
+            } else {
+                tracing::error!(
+                    "ChatMessage ID {} content is present but nonce is missing. Cannot decrypt.",
+                    self.id
+                );
+                Err(AppError::DecryptionError(
+                    "Missing nonce for content decryption".to_string(),
+                ))
+            }
+        } else {
+            Ok(String::new())
+        }
+    }
+
+    /// Convert this ChatMessage to a decrypted ChatMessageForClient
+    pub fn into_decrypted_for_client(
+        self,
+        user_dek_secret_box: Option<&SecretBox<Vec<u8>>>,
+    ) -> Result<ChatMessageForClient, AppError> {
+        let decrypted_content_result: Result<String, AppError> =
+            if let Some(nonce) = &self.content_nonce {
+                if let Some(dek_sb) = user_dek_secret_box {
+                    match decrypt_gcm(&self.content, nonce, dek_sb) {
+                        Ok(plaintext_secret_vec) => {
+                            String::from_utf8(plaintext_secret_vec.expose_secret().to_vec())
+                                .map_err(|e| {
+                                    error!("UTF-8 conversion error for msg {}: {:?}", self.id, e);
+                                    AppError::DecryptionError(format!("UTF-8 conversion: {}", e))
+                                })
+                        }
+                        Err(e) => {
+                            error!("Decryption error for msg {}: {:?}", self.id, e);
+                            Err(AppError::DecryptionError(format!("Decryption error: {}", e)))
+                        }
+                    }
+                } else {
+                    // No DEK provided but content appears encrypted
+                    Ok("[Content encrypted, DEK not available]".to_string())
+                }
+            } else {
+                // No nonce implies content might not be encrypted or is empty
+                String::from_utf8(self.content.clone()).map_err(|e| {
+                    error!("UTF-8 conversion error for msg {}: {:?}", self.id, e);
+                    AppError::DecryptionError(format!("UTF-8 conversion: {}", e))
+                })
+            };
+
+        let final_content = decrypted_content_result.unwrap_or_else(|_| {
+            error!("Failed to decrypt content for message {}", self.id);
+            "[Decryption failed]".to_string()
+        });
+
+        Ok(ChatMessageForClient {
+            id: self.id,
+            session_id: self.session_id,
+            message_type: self.message_type,
+            content: final_content,
+            created_at: self.created_at,
+            user_id: self.user_id,
+            prompt_tokens: self.prompt_tokens,
+            completion_tokens: self.completion_tokens,
+        })
+    }
+}
+
+// Chat Message model
+#[derive(Queryable, Selectable, Identifiable, Serialize, Deserialize, Clone)]
+#[diesel(table_name = chat_messages)]
+#[diesel(check_for_backend(diesel::pg::Pg))]
+pub struct Message {
+    pub id: Uuid,
+    pub session_id: Uuid,
+    pub message_type: MessageRole,
+    pub content: Vec<u8>,
+    pub rag_embedding_id: Option<Uuid>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    pub user_id: Uuid,
+    pub content_nonce: Option<Vec<u8>>,
+    pub role: Option<String>,
+    pub parts: Option<serde_json::Value>,
+    pub attachments: Option<serde_json::Value>,
+    pub prompt_tokens: Option<i32>,
+    pub completion_tokens: Option<i32>,
+}
+
+impl std::fmt::Debug for Message {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Message")
+            .field("id", &self.id)
+            .field("session_id", &self.session_id)
+            .field("message_type", &self.message_type)
+            .field("content", &"[REDACTED_BYTES]")
+            .field("rag_embedding_id", &self.rag_embedding_id)
+            .field("created_at", &self.created_at)
+            .field("updated_at", &self.updated_at)
+            .field("user_id", &self.user_id)
+            .field(
+                "content_nonce",
+                &self.content_nonce.as_ref().map(|_| "[REDACTED_NONCE]"),
+            )
+            .field("role", &self.role)
+            .field("parts", &self.parts.as_ref().map(|_| "[REDACTED_JSON]"))
+            .field(
+                "attachments",
+                &self.attachments.as_ref().map(|_| "[REDACTED_JSON]"),
+            )
+            .field("prompt_tokens", &self.prompt_tokens)
+            .field("completion_tokens", &self.completion_tokens)
+            .finish()
+    }
+}
+
+impl Message {
+    /// Encrypts the content field if plaintext is provided and a DEK is available.
+    /// Updates self.content and self.content_nonce.
+    pub fn encrypt_content_field(
+        &mut self,
+        dek: &SecretBox<Vec<u8>>,
+        plaintext_content: String,
+    ) -> Result<(), AppError> {
+        if !plaintext_content.is_empty() {
+            let (ciphertext, nonce) = encrypt_gcm(plaintext_content.as_bytes(), dek)
+                .map_err(|e| AppError::CryptoError(e.to_string()))?;
+            self.content = ciphertext;
+            self.content_nonce = Some(nonce);
+        } else {
+            self.content = Vec::new();
+            self.content_nonce = None;
         }
         Ok(())
     }
@@ -534,9 +488,8 @@ impl ChatMessage {
     /// Decrypts the content field if ciphertext and nonce are present and a DEK is available.
     /// Returns String representing the decrypted content.
     pub fn decrypt_content_field(&self, dek: &SecretBox<Vec<u8>>) -> Result<String, AppError> {
-        // content_nonce is taken from self.content_nonce
         if self.content.is_empty() {
-            return Ok(String::new()); // Return empty string if content is empty
+            return Ok(String::new());
         }
 
         match &self.content_nonce {
@@ -613,12 +566,9 @@ impl ChatMessage {
                     }
                 } else {
                     error!("Msg {} is encrypted but no DEK provided.", self.id);
-                    // This case should probably be an error too if strict decryption is required.
-                    // For now, matches previous behavior of returning placeholder.
                     Ok("[Content encrypted, DEK not available]".to_string())
                 }
             } else {
-                // No nonce, assume plaintext
                 String::from_utf8(self.content.clone()).map_err(|e| {
                     error!("Invalid UTF-8 in plaintext for msg {}: {:?}", self.id, e);
                     AppError::InternalServerErrorGeneric(format!("Invalid UTF-8: {}", e))
@@ -634,14 +584,14 @@ impl ChatMessage {
             content: final_decrypted_content,
             created_at: self.created_at,
             user_id: self.user_id,
-            prompt_tokens: self.prompt_tokens,         // Added
-            completion_tokens: self.completion_tokens, // Added
+            prompt_tokens: self.prompt_tokens,
+            completion_tokens: self.completion_tokens,
         })
     }
 }
 
 /// JSON-friendly structure for client responses
-#[derive(Serialize, Deserialize, Clone)] // Removed Debug
+#[derive(Serialize, Deserialize, Clone)]
 pub struct ClientChatMessage {
     pub id: Uuid,
     pub chat_id: Uuid,
@@ -667,20 +617,16 @@ impl std::fmt::Debug for ClientChatMessage {
 }
 
 /// Structure for sending ChatMessage data to the client, with decrypted content.
-#[derive(Serialize, Deserialize, Clone)] // Removed Debug
+#[derive(Serialize, Deserialize, Clone)]
 pub struct ChatMessageForClient {
     pub id: Uuid,
     pub session_id: Uuid,
     pub message_type: MessageRole,
-    pub content: String, // Decrypted content
+    pub content: String,
     pub created_at: DateTime<Utc>,
     pub user_id: Uuid,
-    // Include other fields from ChatMessage if they are also sent to client
-    // pub role: Option<String>, // from Message struct, if needed
-    // pub parts: Option<serde_json::Value>, // from Message struct, if needed
-    // pub attachments: Option<serde_json::Value>, // from Message struct, if needed
-    pub prompt_tokens: Option<i32>,     // Added
-    pub completion_tokens: Option<i32>, // Added
+    pub prompt_tokens: Option<i32>,
+    pub completion_tokens: Option<i32>,
 }
 
 impl std::fmt::Debug for ChatMessageForClient {
@@ -692,120 +638,67 @@ impl std::fmt::Debug for ChatMessageForClient {
             .field("content", &"[REDACTED]")
             .field("created_at", &self.created_at)
             .field("user_id", &self.user_id)
-            .field("prompt_tokens", &self.prompt_tokens) // Added
-            .field("completion_tokens", &self.completion_tokens) // Added
+            .field("prompt_tokens", &self.prompt_tokens)
+            .field("completion_tokens", &self.completion_tokens)
             .finish()
     }
 }
 
-// Moved into_decrypted_for_client from ChatMessage to Message struct
-impl Message {
-    pub fn into_decrypted_for_client(
-        self,
-        dek: Option<&SecretBox<Vec<u8>>>,
-    ) -> Result<ChatMessageForClient, AppError> {
-        let decrypted_content_string = if !self.content.is_empty() {
-            match dek {
-                Some(actual_dek) => {
-                    let nonce_bytes = self.content_nonce.as_deref().ok_or_else(|| {
-                        AppError::DecryptionError(
-                            "Nonce missing for content decryption".to_string(),
-                        )
-                    })?;
-                    if nonce_bytes.is_empty() {
-                        return Err(AppError::DecryptionError(
-                            "Nonce is empty for content decryption".to_string(),
-                        ));
-                    }
-                    match decrypt_gcm(&self.content, nonce_bytes, actual_dek) {
-                        Ok(plaintext_bytes_secret) => {
-                            String::from_utf8(plaintext_bytes_secret.expose_secret().to_vec())
-                                .map_err(|e| {
-                                    tracing::error!(
-                                        "Failed to convert decrypted message content to UTF-8: {}",
-                                        e
-                                    );
-                                    AppError::DecryptionError(
-                                        "Failed to convert message content to UTF-8".to_string(),
-                                    )
-                                })
-                        }
-                        Err(e) => {
-                            error!(
-                                "Failed to decrypt chat message content for ID {}: {}",
-                                self.id, e
-                            );
-                            Err(AppError::DecryptionError(format!(
-                                "Decryption failed for message content: {}",
-                                e
-                            )))
-                        }
-                    }
-                }
-                None => {
-                    error!(
-                        "Attempted to decrypt chat message (ID: {}) but no DEK provided in session.",
-                        self.id
-                    );
-                    Err(AppError::DecryptionError(
-                        "DEK not available for message decryption".to_string(),
-                    ))
-                }
-            }
-        } else {
-            Ok(String::new()) // Content was empty to begin with
-        }?;
-
-        Ok(ChatMessageForClient {
-            id: self.id,
-            session_id: self.session_id,
-            message_type: self.message_type,
-            content: decrypted_content_string,
-            created_at: self.created_at,
-            user_id: self.user_id,
-            prompt_tokens: self.prompt_tokens,         // Added
-            completion_tokens: self.completion_tokens, // Added
-        })
-    }
-}
-
 // For inserting a new chat message
-#[derive(Insertable, Default, Clone)] // Removed Debug
+#[derive(Insertable, Default, Clone)]
 #[diesel(table_name = chat_messages)]
 pub struct NewChatMessage {
+    pub id: Uuid,
     pub session_id: Uuid,
     pub message_type: MessageRole,
-    pub content: Vec<u8>, // This will store encrypted content
-                          // Add user_id if it's part of NewChatMessage and not set by default in DB
-                          // pub user_id: Uuid, // Example, check schema and insertion logic
+    pub content: Vec<u8>,
+    pub content_nonce: Option<Vec<u8>>,
+    pub user_id: Uuid,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    pub role: Option<String>,
+    pub parts: Option<serde_json::Value>,
+    pub attachments: Option<serde_json::Value>,
+    pub prompt_tokens: Option<i32>,
+    pub completion_tokens: Option<i32>,
 }
 
 impl std::fmt::Debug for NewChatMessage {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("NewChatMessage")
+            .field("id", &self.id)
             .field("session_id", &self.session_id)
             .field("message_type", &self.message_type)
             .field("content", &"[REDACTED_BYTES]")
+            .field("content_nonce", &self.content_nonce.as_ref().map(|_| "[REDACTED_NONCE]"))
+            .field("user_id", &self.user_id)
+            .field("created_at", &self.created_at)
+            .field("updated_at", &self.updated_at)
+            .field("role", &self.role)
+            .field("parts", &self.parts.as_ref().map(|_| "[REDACTED_JSON]"))
+            .field("attachments", &self.attachments.as_ref().map(|_| "[REDACTED_JSON]"))
+            .field("prompt_tokens", &self.prompt_tokens)
+            .field("completion_tokens", &self.completion_tokens)
             .finish()
     }
 }
 
 // For inserting a new chat message with better naming clarity
-#[derive(Insertable, Clone)] // Removed Debug
+#[derive(Insertable, Clone)]
 #[diesel(table_name = chat_messages)]
 pub struct DbInsertableChatMessage {
     #[diesel(column_name = session_id)]
-    pub chat_id: Uuid, // Maps to session_id in the database
+    pub chat_id: Uuid,
     #[diesel(column_name = message_type)]
-    pub msg_type: MessageRole, // Maps to message_type in the database
+    pub msg_type: MessageRole,
     pub content: Vec<u8>,
-    pub content_nonce: Option<Vec<u8>>,         // Added nonce
-    pub user_id: Uuid,                          // Add the user_id field
-    pub role: Option<String>,                   // ADDED: For Gemini role (user, model)
-    pub parts: Option<serde_json::Value>,       // ADDED: For structured content
-    pub attachments: Option<serde_json::Value>, // ADDED: For attachments
-    pub prompt_tokens: Option<i32>,             // Added
-    pub completion_tokens: Option<i32>,         // Added
+    pub content_nonce: Option<Vec<u8>>,
+    pub user_id: Uuid,
+    pub role: Option<String>,
+    pub parts: Option<serde_json::Value>,
+    pub attachments: Option<serde_json::Value>,
+    pub prompt_tokens: Option<i32>,
+    pub completion_tokens: Option<i32>,
 }
 
 impl std::fmt::Debug for DbInsertableChatMessage {
@@ -819,42 +712,41 @@ impl std::fmt::Debug for DbInsertableChatMessage {
                 &self.content_nonce.as_ref().map(|_| "[REDACTED_NONCE]"),
             )
             .field("user_id", &self.user_id)
-            .field("role", &self.role) // ADDED
-            .field("parts", &self.parts.as_ref().map(|_| "[REDACTED_JSON]")) // ADDED
+            .field("role", &self.role)
+            .field("parts", &self.parts.as_ref().map(|_| "[REDACTED_JSON]"))
             .field(
                 "attachments",
                 &self.attachments.as_ref().map(|_| "[REDACTED_JSON]"),
-            ) // ADDED
-            .field("prompt_tokens", &self.prompt_tokens) // Added
-            .field("completion_tokens", &self.completion_tokens) // Added
+            )
+            .field("prompt_tokens", &self.prompt_tokens)
+            .field("completion_tokens", &self.completion_tokens)
             .finish()
     }
 }
 
 impl DbInsertableChatMessage {
-    #[allow(clippy::too_many_arguments)] // Allow more arguments for this constructor
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         chat_id: Uuid,
-        user_id: Uuid,              // Change parameter to non-optional Uuid
-        msg_type_enum: MessageRole, // Changed name for clarity
+        user_id: Uuid,
+        msg_type_enum: MessageRole,
         text: Vec<u8>,
-        nonce: Option<Vec<u8>>,                      // Added nonce parameter
-        role_str: Option<String>,                    // ADDED
-        parts_json: Option<serde_json::Value>,       // ADDED
-        attachments_json: Option<serde_json::Value>, // ADDED
+        nonce: Option<Vec<u8>>,
+        role_str: Option<String>,
+        parts_json: Option<serde_json::Value>,
+        attachments_json: Option<serde_json::Value>,
         prompt_tokens: Option<i32>,
         completion_tokens: Option<i32>,
     ) -> Self {
-        // let created_timestamp = Utc::now(); // Not needed here, DB handles it
         DbInsertableChatMessage {
             chat_id,
-            user_id, // Ensure this is correctly passed and non-optional
+            user_id,
             msg_type: msg_type_enum,
             content: text,
             content_nonce: nonce,
-            role: role_str,                // ADDED
-            parts: parts_json,             // ADDED
-            attachments: attachments_json, // ADDED
+            role: role_str,
+            parts: parts_json,
+            attachments: attachments_json,
             prompt_tokens,
             completion_tokens,
         }
@@ -862,13 +754,10 @@ impl DbInsertableChatMessage {
 }
 
 // Request body for sending a new message (used by generate endpoint)
-// Added Serialize for cases where it might be returned or logged
-#[derive(Deserialize, Serialize)] // Removed Debug
+#[derive(Deserialize, Serialize)]
 pub struct NewChatMessageRequest {
     pub content: String,
-    // Add optional model field
     pub model: Option<String>,
-    // Role is often implicit based on the sender/endpoint being called
 }
 
 impl std::fmt::Debug for NewChatMessageRequest {
@@ -882,10 +771,10 @@ impl std::fmt::Debug for NewChatMessageRequest {
 
 // API Request/Response Structures
 
-#[derive(Deserialize, Serialize)] // Removed Debug
+#[derive(Deserialize, Serialize)]
 pub struct CreateChatSessionPayload {
     pub character_id: Uuid,
-    pub active_custom_persona_id: Option<Uuid>, // Added new field
+    pub active_custom_persona_id: Option<Uuid>,
 }
 
 impl std::fmt::Debug for CreateChatSessionPayload {
@@ -897,10 +786,10 @@ impl std::fmt::Debug for CreateChatSessionPayload {
     }
 }
 
-#[derive(Deserialize, Serialize)] // Removed Debug
+#[derive(Deserialize, Serialize)]
 pub struct GenerateResponsePayload {
     pub content: String,
-    pub model: Option<String>, // Added optional model field
+    pub model: Option<String>,
 }
 
 impl std::fmt::Debug for GenerateResponsePayload {
@@ -912,7 +801,7 @@ impl std::fmt::Debug for GenerateResponsePayload {
     }
 }
 
-#[derive(Serialize, Deserialize)] // Removed Debug, Added Deserialize
+#[derive(Serialize, Deserialize)]
 pub struct GenerateResponse {
     pub ai_message: ChatMessage,
 }
@@ -920,7 +809,7 @@ pub struct GenerateResponse {
 impl std::fmt::Debug for GenerateResponse {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("GenerateResponse")
-            .field("ai_message", &self.ai_message) // ChatMessage already has custom Debug
+            .field("ai_message", &self.ai_message)
             .finish()
     }
 }
@@ -928,11 +817,11 @@ impl std::fmt::Debug for GenerateResponse {
 // --- Generate Endpoint Payload Structures ---
 
 /// Represents a single message within the chat history payload.
-#[derive(Deserialize, Serialize, Clone, Validate)] // Removed Debug
+#[derive(Deserialize, Serialize, Clone, Validate)]
 pub struct ApiChatMessage {
-    #[validate(length(min = 1))] // Role cannot be empty
-    pub role: String, // Expecting "user", "assistant", "system"
-    #[validate(length(min = 1))] // Content cannot be empty
+    #[validate(length(min = 1))]
+    pub role: String,
+    #[validate(length(min = 1))]
     pub content: String,
 }
 
@@ -946,13 +835,13 @@ impl std::fmt::Debug for ApiChatMessage {
 }
 
 /// Request body for POST /api/chat/{session_id}/generate
-#[derive(Deserialize, Serialize, Validate)] // Removed Debug
+#[derive(Deserialize, Serialize, Validate)]
 pub struct GenerateChatRequest {
-    #[validate(length(min = 1))] // History must contain at least one message
-    #[validate(nested)] // Validate each ApiChatMessage within the Vec
+    #[validate(length(min = 1))]
+    #[validate(nested)]
     pub history: Vec<ApiChatMessage>,
-    pub model: Option<String>,              // Keep optional model override
-    pub query_text_for_rag: Option<String>, // ADDED: Optional override for RAG query
+    pub model: Option<String>,
+    pub query_text_for_rag: Option<String>,
 }
 
 impl std::fmt::Debug for GenerateChatRequest {
@@ -978,8 +867,8 @@ pub struct ChatForClient {
     pub id: Uuid,
     pub user_id: Uuid,
     pub character_id: Uuid,
-    pub title: Option<String>,         // Decrypted title
-    pub system_prompt: Option<String>, // Decrypted system prompt (if needed)
+    pub title: Option<String>,
+    pub system_prompt: Option<String>,
     pub temperature: Option<bigdecimal::BigDecimal>,
     pub max_output_tokens: Option<i32>,
     pub created_at: DateTime<Utc>,
@@ -988,11 +877,8 @@ pub struct ChatForClient {
     pub presence_penalty: Option<bigdecimal::BigDecimal>,
     pub top_k: Option<i32>,
     pub top_p: Option<bigdecimal::BigDecimal>,
-    pub repetition_penalty: Option<bigdecimal::BigDecimal>,
-    pub min_p: Option<bigdecimal::BigDecimal>,
-    pub top_a: Option<bigdecimal::BigDecimal>,
     pub seed: Option<i32>,
-    pub logit_bias: Option<serde_json::Value>,
+    pub stop_sequences: Option<Vec<Option<String>>>,
     pub history_management_strategy: String,
     pub history_management_limit: i32,
     pub model_name: String,
@@ -1009,8 +895,8 @@ impl From<Chat> for ChatForClient {
             id: chat.id,
             user_id: chat.user_id,
             character_id: chat.character_id,
-            title: None,         // Will be set by decryption logic
-            system_prompt: None, // Will be set by decryption logic
+            title: None,
+            system_prompt: None,
             temperature: chat.temperature,
             max_output_tokens: chat.max_output_tokens,
             created_at: chat.created_at,
@@ -1019,11 +905,8 @@ impl From<Chat> for ChatForClient {
             presence_penalty: chat.presence_penalty,
             top_k: chat.top_k,
             top_p: chat.top_p,
-            repetition_penalty: chat.repetition_penalty,
-            min_p: chat.min_p,
-            top_a: chat.top_a,
             seed: chat.seed,
-            logit_bias: chat.logit_bias,
+            stop_sequences: chat.stop_sequences,
             history_management_strategy: chat.history_management_strategy,
             history_management_limit: chat.history_management_limit,
             model_name: chat.model_name,
@@ -1039,21 +922,17 @@ impl From<Chat> for ChatForClient {
 // --- Chat Settings API Structures ---
 
 /// Response body for GET /api/chat/{id}/settings
-#[derive(Serialize, Deserialize, Clone, PartialEq)] // Removed Debug
+#[derive(Serialize, Deserialize, Clone, PartialEq)]
 pub struct ChatSettingsResponse {
     pub system_prompt: Option<String>,
-    pub temperature: Option<BigDecimal>, // Changed f32 to BigDecimal
+    pub temperature: Option<BigDecimal>,
     pub max_output_tokens: Option<i32>,
-    // New generation settings fields
     pub frequency_penalty: Option<BigDecimal>,
     pub presence_penalty: Option<BigDecimal>,
     pub top_k: Option<i32>,
     pub top_p: Option<BigDecimal>,
-    pub repetition_penalty: Option<BigDecimal>,
-    pub min_p: Option<BigDecimal>,
-    pub top_a: Option<BigDecimal>,
     pub seed: Option<i32>,
-    pub logit_bias: Option<Value>,
+    pub stop_sequences: Option<Vec<Option<String>>>,
     // History Management Fields
     pub history_management_strategy: String,
     pub history_management_limit: i32,
@@ -1077,20 +956,19 @@ impl std::fmt::Debug for ChatSettingsResponse {
             .field("presence_penalty", &self.presence_penalty)
             .field("top_k", &self.top_k)
             .field("top_p", &self.top_p)
-            .field("repetition_penalty", &self.repetition_penalty)
-            .field("min_p", &self.min_p)
-            .field("top_a", &self.top_a)
             .field("seed", &self.seed)
-            .field(
-                "logit_bias",
-                &self.logit_bias.as_ref().map(|_| "[REDACTED_JSON]"),
-            )
+            .field("stop_sequences", &self.stop_sequences)
             .field(
                 "history_management_strategy",
                 &self.history_management_strategy,
             )
             .field("history_management_limit", &self.history_management_limit)
             .field("model_name", &self.model_name)
+            .field("gemini_thinking_budget", &self.gemini_thinking_budget)
+            .field(
+                "gemini_enable_code_execution",
+                &self.gemini_enable_code_execution,
+            )
             .finish()
     }
 }
@@ -1098,18 +976,15 @@ impl std::fmt::Debug for ChatSettingsResponse {
 impl From<Chat> for ChatSettingsResponse {
     fn from(chat: Chat) -> Self {
         ChatSettingsResponse {
-            system_prompt: None, // Cannot decrypt without DEK in this context
+            system_prompt: None,
             temperature: chat.temperature,
             max_output_tokens: chat.max_output_tokens,
             frequency_penalty: chat.frequency_penalty,
             presence_penalty: chat.presence_penalty,
             top_k: chat.top_k,
             top_p: chat.top_p,
-            repetition_penalty: chat.repetition_penalty,
-            min_p: chat.min_p,
-            top_a: chat.top_a,
             seed: chat.seed,
-            logit_bias: chat.logit_bias,
+            stop_sequences: chat.stop_sequences,
             history_management_strategy: chat.history_management_strategy,
             history_management_limit: chat.history_management_limit,
             model_name: chat.model_name,
@@ -1121,14 +996,13 @@ impl From<Chat> for ChatSettingsResponse {
 
 /// Request body for PUT /api/chat/{id}/settings
 /// All fields are optional to allow partial updates.
-#[derive(Serialize, Deserialize, Clone, PartialEq, Validate, Default)] // Removed Debug and AsChangeset
+#[derive(Serialize, Deserialize, Clone, PartialEq, Validate, Default)]
 pub struct UpdateChatSettingsRequest {
     pub system_prompt: Option<String>,
     #[validate(custom(function = "validate_optional_temperature"))]
-    pub temperature: Option<BigDecimal>, // Changed f32 to BigDecimal
+    pub temperature: Option<BigDecimal>,
     #[validate(range(min = 1))]
     pub max_output_tokens: Option<i32>,
-    // New generation settings fields
     #[validate(custom(function = "validate_optional_frequency_penalty"))]
     pub frequency_penalty: Option<BigDecimal>,
     #[validate(custom(function = "validate_optional_presence_penalty"))]
@@ -1137,15 +1011,8 @@ pub struct UpdateChatSettingsRequest {
     pub top_k: Option<i32>,
     #[validate(custom(function = "validate_optional_top_p"))]
     pub top_p: Option<BigDecimal>,
-    #[validate(custom(function = "validate_optional_repetition_penalty"))]
-    pub repetition_penalty: Option<BigDecimal>,
-    #[validate(custom(function = "validate_optional_min_p"))]
-    pub min_p: Option<BigDecimal>,
-    #[validate(custom(function = "validate_optional_top_a"))]
-    pub top_a: Option<BigDecimal>,
     pub seed: Option<i32>,
-    #[validate(custom(function = "validate_optional_logit_bias"))]
-    pub logit_bias: Option<Value>,
+    pub stop_sequences: Option<Vec<Option<String>>>,
     // History Management Fields
     #[validate(custom(function = "validate_optional_history_strategy"))]
     pub history_management_strategy: Option<String>,
@@ -1171,20 +1038,19 @@ impl std::fmt::Debug for UpdateChatSettingsRequest {
             .field("presence_penalty", &self.presence_penalty)
             .field("top_k", &self.top_k)
             .field("top_p", &self.top_p)
-            .field("repetition_penalty", &self.repetition_penalty)
-            .field("min_p", &self.min_p)
-            .field("top_a", &self.top_a)
             .field("seed", &self.seed)
-            .field(
-                "logit_bias",
-                &self.logit_bias.as_ref().map(|_| "[REDACTED_JSON]"),
-            )
+            .field("stop_sequences", &self.stop_sequences)
             .field(
                 "history_management_strategy",
                 &self.history_management_strategy,
             )
             .field("history_management_limit", &self.history_management_limit)
             .field("model_name", &self.model_name)
+            .field("gemini_thinking_budget", &self.gemini_thinking_budget)
+            .field(
+                "gemini_enable_code_execution",
+                &self.gemini_enable_code_execution,
+            )
             .finish()
     }
 }
@@ -1259,66 +1125,18 @@ fn validate_optional_top_p(value: &BigDecimal) -> Result<(), ValidationError> {
     Ok(())
 }
 
-// Custom validation function for optional repetition penalty (> 0)
-fn validate_optional_repetition_penalty(value: &BigDecimal) -> Result<(), ValidationError> {
-    let zero = BigDecimal::from(0);
-    if *value <= zero {
-        let mut err = ValidationError::new("range");
-        err.add_param("min".into(), &"greater than 0");
-        return Err(err);
-    }
-    Ok(())
-}
-
-// Custom validation function for optional min-p (0.0 to 1.0)
-fn validate_optional_min_p(value: &BigDecimal) -> Result<(), ValidationError> {
-    let zero = BigDecimal::from(0);
-    let one = BigDecimal::from(1);
-    if *value < zero || *value > one {
-        let mut err = ValidationError::new("range");
-        err.add_param("min".into(), &0.0);
-        err.add_param("max".into(), &1.0);
-        return Err(err);
-    }
-    Ok(())
-}
-
-// Custom validation function for optional top-a (0.0 to 1.0)
-fn validate_optional_top_a(value: &BigDecimal) -> Result<(), ValidationError> {
-    let zero = BigDecimal::from(0);
-    let one = BigDecimal::from(1);
-    if *value < zero || *value > one {
-        let mut err = ValidationError::new("range");
-        err.add_param("min".into(), &0.0);
-        err.add_param("max".into(), &1.0);
-        return Err(err);
-    }
-    Ok(())
-}
-
-// Custom validation function for optional logit_bias (must be an object)
-fn validate_optional_logit_bias(value: &Value) -> Result<(), ValidationError> {
-    if !value.is_object() {
-        let mut err = ValidationError::new("type");
-        err.add_param("expected".into(), &"object");
-        return Err(err);
-    }
-    Ok(())
-}
 
 // --- Suggested Actions API Structures ---
 
 /// Payload for requesting suggested actions.
-#[derive(Serialize, Deserialize, Debug)] // Removed Validate, added Debug
+#[derive(Serialize, Deserialize, Debug)]
 pub struct SuggestedActionsRequest {
     // This struct is now empty. Context will be derived by the handler.
     // Potential future fields: num_suggestions_hint, etc.
 }
 
-// Manual Debug impl removed as derive is sufficient for the empty struct.
-
 /// Structure for a single suggested action
-#[derive(Clone, Serialize, Deserialize)] // Removed Debug
+#[derive(Clone, Serialize, Deserialize)]
 pub struct SuggestedActionItem {
     pub action: String,
 }
@@ -1332,7 +1150,7 @@ impl std::fmt::Debug for SuggestedActionItem {
 }
 
 /// Response structure for suggested actions API
-#[derive(Clone, Serialize, Deserialize)] // Removed Debug
+#[derive(Clone, Serialize, Deserialize)]
 pub struct SuggestedActionsResponse {
     pub suggestions: Vec<SuggestedActionItem>,
 }
@@ -1352,21 +1170,134 @@ impl std::fmt::Debug for SuggestedActionsResponse {
     }
 }
 
+// MessageResponse struct for API responses
+#[derive(Clone, Serialize, Deserialize)]
+pub struct MessageResponse {
+    pub id: Uuid,
+    pub session_id: Uuid,
+    pub message_type: MessageRole,
+    pub role: String,
+    pub parts: serde_json::Value,
+    pub attachments: serde_json::Value,
+    pub created_at: DateTime<Utc>,
+}
+
+impl std::fmt::Debug for MessageResponse {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("MessageResponse")
+            .field("id", &self.id)
+            .field("session_id", &self.session_id)
+            .field("message_type", &self.message_type)
+            .field("role", &self.role)
+            .field("parts", &"[REDACTED_JSON]")
+            .field("attachments", &"[REDACTED_JSON]")
+            .field("created_at", &self.created_at)
+            .finish()
+    }
+}
+
+// Vote struct for message voting
+#[derive(Clone, Serialize, Deserialize)]
+pub struct Vote {
+    pub chat_id: Uuid,
+    pub message_id: Uuid,
+    pub is_upvoted: bool,
+}
+
+impl std::fmt::Debug for Vote {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Vote")
+            .field("chat_id", &self.chat_id)
+            .field("message_id", &self.message_id)
+            .field("is_upvoted", &self.is_upvoted)
+            .finish()
+    }
+}
+
+// VoteRequest struct for API requests
+#[derive(Clone, Serialize, Deserialize)]
+pub struct VoteRequest {
+    pub message_id: Uuid,
+    pub type_: String, // "up" or "down"
+}
+
+impl std::fmt::Debug for VoteRequest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("VoteRequest")
+            .field("message_id", &self.message_id)
+            .field("type_", &self.type_)
+            .finish()
+    }
+}
+
+// UpdateChatVisibilityRequest struct for API requests
+#[derive(Clone, Serialize, Deserialize)]
+pub struct UpdateChatVisibilityRequest {
+    pub visibility: String, // "public" or "private"
+}
+
+impl std::fmt::Debug for UpdateChatVisibilityRequest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("UpdateChatVisibilityRequest")
+            .field("visibility", &self.visibility)
+            .finish()
+    }
+}
+
+// CreateChatRequest struct for API requests
+#[derive(Clone, Serialize, Deserialize)]
+pub struct CreateChatRequest {
+    pub character_id: Uuid,
+    pub title: Option<String>,
+    pub active_custom_persona_id: Option<Uuid>,
+    pub lorebook_ids: Option<Vec<Uuid>>,
+}
+
+impl std::fmt::Debug for CreateChatRequest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CreateChatRequest")
+            .field("character_id", &self.character_id)
+            .field("title", &self.title.as_ref().map(|_| "[REDACTED]"))
+            .field("active_custom_persona_id", &self.active_custom_persona_id)
+            .field("lorebook_ids", &self.lorebook_ids)
+            .finish()
+    }
+}
+
+// CreateMessageRequest struct for API requests
+#[derive(Clone, Serialize, Deserialize)]
+pub struct CreateMessageRequest {
+    pub content: String,
+    pub role: String,
+    pub parts: Option<serde_json::Value>,
+    pub attachments: Option<serde_json::Value>,
+}
+
+impl std::fmt::Debug for CreateMessageRequest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CreateMessageRequest")
+            .field("content", &"[REDACTED]")
+            .field("role", &self.role)
+            .field("parts", &self.parts.as_ref().map(|_| "[REDACTED_JSON]"))
+            .field("attachments", &self.attachments.as_ref().map(|_| "[REDACTED_JSON]"))
+            .finish()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use bigdecimal::BigDecimal; // Import BigDecimal
+    use bigdecimal::BigDecimal;
     use chrono::Utc;
     use ring::rand::{SecureRandom, SystemRandom};
-    use secrecy::SecretBox; // For testing encryption/decryption
-    use serde_json::json;
+    use secrecy::SecretBox;
     use std::str::FromStr;
     use uuid::Uuid;
-    use validator::Validate; // Import the Validate trait for tests // For generating a dummy DEK
+    use validator::Validate;
 
     // Helper function to generate a dummy DEK for testing
     fn generate_dummy_dek() -> SecretBox<Vec<u8>> {
-        let mut key_bytes = vec![0u8; 32]; // AES-256-GCM needs a 32-byte key
+        let mut key_bytes = vec![0u8; 32];
         let rng = SystemRandom::new();
         rng.fill(&mut key_bytes).unwrap();
         SecretBox::new(Box::new(key_bytes))
@@ -1395,11 +1326,8 @@ mod tests {
             presence_penalty: Some(bd("0.0")),
             top_k: Some(50),
             top_p: Some(bd("0.9")),
-            repetition_penalty: Some(bd("1.1")),
-            min_p: Some(bd("0.05")),
-            top_a: Some(bd("0.0")),
             seed: Some(12345),
-            logit_bias: Some(json!({"50256": -100})),
+            stop_sequences: Some(vec![Some("\n\n".to_string()), Some("##".to_string())]),
             history_management_strategy: "none".to_string(),
             history_management_limit: 4096,
             model_name: "gemini-2.5-flash-preview-04-17".to_string(),
@@ -1429,7 +1357,6 @@ mod tests {
         let original = create_sample_chat_session();
         let cloned = original.clone();
         assert_eq!(original.id, cloned.id);
-        // ... (rest of assertions for Chat fields)
     }
 
     #[test]
@@ -1455,7 +1382,6 @@ mod tests {
 
     // Helper function to create a sample chat message
     fn create_sample_chat_message_db() -> ChatMessage {
-        // Renamed to avoid conflict
         ChatMessage {
             id: Uuid::new_v4(),
             session_id: Uuid::new_v4(),
@@ -1483,7 +1409,6 @@ mod tests {
         let original = create_sample_chat_message_db();
         let cloned = original.clone();
         assert_eq!(original.id, cloned.id);
-        // ... (rest of assertions for ChatMessage fields)
         assert_eq!(original.user_id, cloned.user_id);
     }
 
@@ -1494,14 +1419,13 @@ mod tests {
         let deserialized: ChatMessage =
             serde_json::from_str(&serialized).expect("Deserialization failed");
         assert_eq!(message.id, deserialized.id);
-        // ... (rest of assertions, minding DateTime precision)
         assert_eq!(message.user_id, deserialized.user_id);
     }
 
     #[test]
     fn test_encrypt_decrypt_chat_message_content() {
         let dek = generate_dummy_dek();
-        let mut message = create_sample_chat_message_db(); // Gets a message with plaintext content
+        let mut message = create_sample_chat_message_db();
         let original_content_str = String::from_utf8(message.content.clone()).unwrap();
 
         // Encrypt
@@ -1559,11 +1483,10 @@ mod tests {
         assert_eq!(
             client_message_without_dek.content,
             "[Content encrypted, DEK not available]"
-        ); // Match implementation
-
+        );
         // Test with initially empty content
         let mut empty_content_msg_db = create_sample_chat_message_db();
-        empty_content_msg_db.content = Vec::new(); // Set content to empty
+        empty_content_msg_db.content = Vec::new();
         let client_empty_with_dek = empty_content_msg_db
             .clone()
             .into_decrypted_for_client(Some(&dek))
@@ -1578,11 +1501,20 @@ mod tests {
 
     // Helper function to create a sample new chat message
     fn create_sample_new_chat_message_db() -> NewChatMessage {
-        // Renamed
         NewChatMessage {
+            id: Uuid::new_v4(),
             session_id: Uuid::new_v4(),
             message_type: MessageRole::User,
-            content: "Hello!".as_bytes().to_vec(), // Will be encrypted by handler
+            content: "Hello!".as_bytes().to_vec(),
+            content_nonce: None,
+            user_id: Uuid::new_v4(),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+            role: Some("user".to_string()),
+            parts: None,
+            attachments: None,
+            prompt_tokens: None,
+            completion_tokens: None,
         }
     }
 
@@ -1610,7 +1542,7 @@ mod tests {
         let user_id = Uuid::new_v4();
         let role = MessageRole::User;
         let content_str = "Test message";
-        let content_vec = content_str.as_bytes().to_vec(); // Will be encrypted by handler
+        let content_vec = content_str.as_bytes().to_vec();
 
         let message = DbInsertableChatMessage::new(
             chat_id,
@@ -1640,12 +1572,8 @@ mod tests {
             presence_penalty: Some(bd("0.0")),
             top_k: Some(50),
             top_p: Some(bd("0.9")),
-            repetition_penalty: Some(bd("1.1")),
-            min_p: Some(bd("0.05")),
-            top_a: Some(bd("0.0")),
             seed: Some(12345),
-            logit_bias: Some(json!({"50256": -100})),
-            // Add new fields to response helper
+            stop_sequences: Some(vec![Some("\n\n".to_string()), Some("##".to_string())]),
             history_management_strategy: "none".to_string(),
             history_management_limit: 4096,
             model_name: "gemini-2.5-flash-preview-04-17".to_string(),
@@ -1661,7 +1589,7 @@ mod tests {
         assert!(debug_str.contains("ChatSettingsResponse"));
         assert!(debug_str.contains("system_prompt: Some(\"[REDACTED]\")"));
         assert!(debug_str.contains("temperature: Some"));
-        assert!(debug_str.contains("history_management_strategy: \"none\"")); // Check new field
+        assert!(debug_str.contains("history_management_strategy: \"none\""));
     }
 
     #[test]
@@ -1672,7 +1600,6 @@ mod tests {
         assert_eq!(original.system_prompt, cloned.system_prompt);
         assert_eq!(original.temperature, cloned.temperature);
         assert_eq!(original.max_output_tokens, cloned.max_output_tokens);
-        // Add assertions for new fields
         assert_eq!(
             original.history_management_strategy,
             cloned.history_management_strategy
@@ -1694,11 +1621,8 @@ mod tests {
             presence_penalty: Some(bd("0.5")),
             top_k: Some(40),
             top_p: Some(bd("0.95")),
-            repetition_penalty: Some(bd("1.1")),
-            min_p: Some(bd("0.05")),
-            top_a: Some(bd("0.1")),
             seed: Some(42),
-            logit_bias: Some(json!({"50256": -100})),
+            stop_sequences: Some(vec![Some("\n\n".to_string()), Some("##".to_string())]),
             history_management_strategy: Some("sliding_window_tokens".to_string()),
             history_management_limit: Some(2000),
             model_name: Some("gemini-2.5-pro-preview-03-25".to_string()),
@@ -1714,7 +1638,7 @@ mod tests {
         assert!(debug_str.contains("UpdateChatSettingsRequest"));
         assert!(debug_str.contains("system_prompt: Some(\"[REDACTED]\")"));
         assert!(debug_str.contains("temperature: Some"));
-        assert!(debug_str.contains("history_management_strategy: Some(\"sliding_window_tokens\")")); // Check new field
+        assert!(debug_str.contains("history_management_strategy: Some(\"sliding_window_tokens\")"));
     }
 
     #[test]
@@ -1725,7 +1649,6 @@ mod tests {
         assert_eq!(original.system_prompt, cloned.system_prompt);
         assert_eq!(original.temperature, cloned.temperature);
         assert_eq!(original.max_output_tokens, cloned.max_output_tokens);
-        // Add assertions for new fields
         assert_eq!(
             original.history_management_strategy,
             cloned.history_management_strategy
@@ -1747,7 +1670,6 @@ mod tests {
         assert_eq!(settings.system_prompt, deserialized.system_prompt);
         assert_eq!(settings.temperature, deserialized.temperature);
         assert_eq!(settings.max_output_tokens, deserialized.max_output_tokens);
-        // Add assertions for new fields
         assert_eq!(
             settings.history_management_strategy,
             deserialized.history_management_strategy
@@ -1769,7 +1691,6 @@ mod tests {
         assert_eq!(settings.system_prompt, deserialized.system_prompt);
         assert_eq!(settings.temperature, deserialized.temperature);
         assert_eq!(settings.max_output_tokens, deserialized.max_output_tokens);
-        // Add assertions for new fields
         assert_eq!(
             settings.history_management_strategy,
             deserialized.history_management_strategy
@@ -1821,7 +1742,6 @@ mod tests {
         settings2.temperature = Some(bd("0.9"));
         assert_ne!(settings1, settings2);
 
-        // Add test for new fields inequality
         settings2 = settings1.clone();
         settings2.history_management_limit = 1000;
         assert_ne!(settings1, settings2);
@@ -1829,8 +1749,6 @@ mod tests {
         settings2 = settings1.clone();
         settings2.history_management_strategy = "sliding_window_messages".to_string();
         assert_ne!(settings1, settings2);
-
-
     }
 
     #[test]
@@ -1843,7 +1761,6 @@ mod tests {
         settings2.temperature = Some(bd("0.8"));
         assert_ne!(settings1, settings2);
 
-        // Add test for new fields inequality
         settings2 = settings1.clone();
         settings2.history_management_strategy = Some("none".to_string());
         assert_ne!(settings1, settings2);
@@ -1851,8 +1768,6 @@ mod tests {
         settings2 = settings1.clone();
         settings2.history_management_limit = Some(100);
         assert_ne!(settings1, settings2);
-
-
     }
 
     #[test]
@@ -1861,13 +1776,13 @@ mod tests {
         let valid_settings = UpdateChatSettingsRequest {
             history_management_strategy: Some("sliding_window_tokens".to_string()),
             history_management_limit: Some(1000),
-            ..Default::default() // Use default for other fields
+            ..Default::default()
         };
         assert!(valid_settings.validate().is_ok());
 
         let valid_settings_none = UpdateChatSettingsRequest {
             history_management_strategy: Some("none".to_string()),
-            history_management_limit: Some(1), // Min limit
+            history_management_limit: Some(1),
             ..Default::default()
         };
         assert!(valid_settings_none.validate().is_ok());

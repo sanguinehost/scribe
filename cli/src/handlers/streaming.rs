@@ -38,11 +38,8 @@ pub async fn handle_stream_test_action<H: IoHandler, C: HttpClient>(
         presence_penalty: None,
         top_k: None,
         top_p: None,
-        repetition_penalty: None,
-        min_p: None,
-        top_a: None,
         seed: None,
-        logit_bias: None,
+        stop_sequences: None,
         history_management_strategy: None,
         history_management_limit: None,
         model_name: Some(current_model.to_string()), // Use the current model

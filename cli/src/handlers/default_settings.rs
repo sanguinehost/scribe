@@ -15,6 +15,7 @@ pub struct DefaultSettings {
     pub system_prompt: Option<String>,
     pub temperature: Option<String>, // Store as string to handle BigDecimal
     pub max_output_tokens: Option<i32>,
+    pub stop_sequences: Option<Vec<String>>,
 }
 
 impl Default for DefaultSettings {
@@ -26,6 +27,7 @@ impl Default for DefaultSettings {
             system_prompt: None,
             temperature: None,
             max_output_tokens: None,
+            stop_sequences: None,
         }
     }
 }
@@ -44,11 +46,10 @@ impl DefaultSettings {
             presence_penalty: None,
             top_k: None,
             top_p: None,
-            repetition_penalty: None,
-            min_p: None,
-            top_a: None,
             seed: None,
-            logit_bias: None,
+            stop_sequences: self.stop_sequences.as_ref().map(|sequences| {
+                sequences.iter().map(|s| Some(s.clone())).collect()
+            }),
             history_management_strategy: None,
             history_management_limit: None,
             model_name: Some(self.model_name.clone()),
@@ -148,6 +149,13 @@ pub async fn handle_default_settings_action<H: IoHandler, C: HttpClient>(
         "  Max Output Tokens: {}",
         settings.max_output_tokens.unwrap_or(0)
     ))?;
+    io_handler.write_line(&format!(
+        "  Stop Sequences: {}",
+        settings
+            .stop_sequences
+            .as_ref()
+            .map_or("None".to_string(), |v| format!("{:?}", v))
+    ))?;
 
     // Let the user choose which setting to update
     io_handler.write_line("\nSelect setting to update (or 's' to save, 'c' to cancel):")?;
@@ -156,6 +164,7 @@ pub async fn handle_default_settings_action<H: IoHandler, C: HttpClient>(
     io_handler.write_line("[3] System Prompt")?;
     io_handler.write_line("[4] Temperature (0.0 to 1.0, suggested: 0.7)")?;
     io_handler.write_line("[5] Max Output Tokens (suggested: 1024)")?;
+    io_handler.write_line("[6] Stop Sequences (comma-separated)")?;
 
     let choice = io_handler
         .read_line("Enter choice: ")?
@@ -221,6 +230,19 @@ pub async fn handle_default_settings_action<H: IoHandler, C: HttpClient>(
             } else {
                 io_handler.write_line("Invalid input. Max output tokens not updated.")?;
             }
+        }
+        "6" => {
+            let input = io_handler.read_line("Enter stop sequences (comma-separated, leave empty to clear): ")?;
+            let trimmed_input = input.trim();
+            settings.stop_sequences = if trimmed_input.is_empty() {
+                None
+            } else {
+                Some(trimmed_input.split(',').map(|s| s.trim().to_string()).collect())
+            };
+            io_handler.write_line(&format!(
+                "Stop sequences updated to: {:?}",
+                settings.stop_sequences
+            ))?;
         }
         "s" => {
             match save_default_settings(&settings) {
