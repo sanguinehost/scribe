@@ -572,10 +572,14 @@ pub async fn generate_chat_response(
                 Ok(chat_response) => {
                     debug!(%session_id, "Received successful non-streaming AI response (JSON path)");
 
-                    let response_content = match chat_response.content {
-                        Some(genai::chat::MessageContent::Text(text)) => text,
-                        _ => String::new(),
-                    };
+                    let response_content = chat_response.contents
+                        .into_iter()
+                        .next()
+                        .and_then(|content| match content {
+                            genai::chat::MessageContent::Text(text) => Some(text),
+                            _ => None,
+                        })
+                        .unwrap_or_default();
 
                     trace!(%session_id, ?response_content, "Full non-streaming AI response (JSON path)");
 
@@ -722,7 +726,7 @@ pub fn chat_routes(state: AppState) -> Router<AppState> {
     Router::new()
         .route("/create_session", post(create_chat_session_handler))
         .route(
-            "/actions/:chat_id/suggest",
+            "/:session_id/suggested-actions",
             post(generate_suggested_actions),
         )
         .route("/ping", get(ping_handler))
@@ -742,25 +746,60 @@ async fn ping_handler() -> &'static str {
     "pong_from_chat_routes"
 }
 
-#[instrument(skip(state, auth_session, _payload), fields(chat_id = %chat_id))] // _payload as it's not used
+#[instrument(skip(state, auth_session, _payload), fields(session_id = %session_id))] // _payload as it's not used
 pub async fn generate_suggested_actions(
     State(state): State<AppState>,
     auth_session: AuthSession<AuthBackend>,
-    Path(chat_id): Path<Uuid>,
+    Path(session_id): Path<Uuid>,
     session_dek: SessionDek,
     Json(_payload): Json<SuggestedActionsRequest>, // _payload as it's an empty struct now
 ) -> Result<Json<SuggestedActionsResponse>, AppError> {
-    info!("Entering generate_suggested_actions for chat_id: {}", chat_id);
+    info!("Entering generate_suggested_actions for session_id: {}", session_id);
 
     let state_arc = Arc::new(state);
     let session_dek_arc = Arc::new(session_dek.0);
 
     let user = auth_session.user.ok_or_else(|| {
-        error!("User not found in session for suggested actions (chat_id: {})", chat_id);
+        error!("User not found in session for suggested actions (session_id: {})", session_id);
         AppError::Unauthorized("User not found in session".to_string())
     })?;
     let user_id = user.id;
-    debug!(user_id = %user_id, chat_id = %chat_id, "User and chat_id extracted");
+    debug!(user_id = %user_id, session_id = %session_id, "User and session_id extracted");
+
+    // Fetch chat session owner ID for authorization check
+    let chat_session_owner_id = state_arc
+        .pool
+        .get()
+        .await
+        .map_err(|e| AppError::DbPoolError(e.to_string()))?
+        .interact(move |conn| {
+            chat_sessions::table
+                .filter(chat_sessions::id.eq(session_id))
+                .select(chat_sessions::user_id)
+                .first::<Uuid>(conn)
+        })
+        .await
+        .map_err(|e| {
+            AppError::InternalServerErrorGeneric(format!(
+                "Interact dispatch error checking session owner: {}",
+                e
+            ))
+        })?
+        .map_err(|e_db| match e_db {
+            diesel::result::Error::NotFound => {
+                AppError::NotFound(format!("Chat session {} not found.", session_id))
+            }
+            _ => AppError::DatabaseQueryError(format!(
+                "Failed to query chat session owner for {}: {}",
+                session_id, e_db
+            )),
+        })?;
+
+    if chat_session_owner_id != user_id {
+        error!(%session_id, expected_owner = %user_id, actual_owner = %chat_session_owner_id, "User forbidden from accessing chat session for suggested actions.");
+        return Err(AppError::Forbidden);
+    }
+    debug!(%session_id, "User authorized for chat session");
 
     // Placeholder content for get_session_data_for_generation as we are not saving a new user message here.
     let current_user_content_for_service_call = "".to_string(); // Or a system message like "System: Requesting suggestions."
@@ -793,13 +832,13 @@ pub async fn generate_suggested_actions(
     ) = chat::generation::get_session_data_for_generation(
         state_arc.clone(),
         user_id,
-        chat_id,
+        session_id,
         current_user_content_for_service_call,
         Some(session_dek_arc.clone()),
     )
     .await?;
 
-    debug!(%chat_id, "Fetched session data for suggestions. History items: {}", managed_db_history.len());
+    debug!(%session_id, "Fetched session data for suggestions. History items: {}", managed_db_history.len());
 
     // Fetch Character model from DB
     let character_db_model = state_arc
@@ -873,7 +912,7 @@ pub async fn generate_suggested_actions(
         "Based on this conversation snippet:\n\n{}\n\nWhat are 2-4 concise follow-up actions or questions the user might say next? These should be suitable for buttons.",
         context_str_for_suggestions
     );
-    trace!(%chat_id, "Constructed prompt for LLM suggested actions: {}", prompt_text_for_llm_suggestions);
+    trace!(%session_id, "Constructed prompt for LLM suggested actions: {}", prompt_text_for_llm_suggestions);
 
     let suggestion_request_genai_message = GenAiChatMessage {
         role: ChatRole::User, // We are "asking" the LLM on behalf of the system/user for suggestions
@@ -917,7 +956,7 @@ pub async fn generate_suggested_actions(
         {
             Ok(prompt_data) => prompt_data,
             Err(e) => {
-                error!(%chat_id, error = ?e, "Failed to build final LLM prompt for suggestions");
+                error!(%session_id, error = ?e, "Failed to build final LLM prompt for suggestions");
                 return Err(e);
             }
         };
@@ -948,35 +987,35 @@ pub async fn generate_suggested_actions(
             schema: suggested_actions_schema_value,
         }));
     
-    trace!(%chat_id, model = %model_for_suggestions, ?chat_request, ?chat_options, "Sending request to Gemini for suggested actions");
+    trace!(%session_id, model = %model_for_suggestions, ?chat_request, ?chat_options, "Sending request to Gemini for suggested actions");
 
     let gemini_response = state_arc
         .ai_client
         .exec_chat(&model_for_suggestions, chat_request, Some(chat_options))
         .await
         .map_err(|e| {
-            error!(%chat_id, "Gemini API error for suggested actions: {:?}", e);
+            error!(%session_id, "Gemini API error for suggested actions: {:?}", e);
             AppError::AiServiceError(format!("Gemini API error: {}", e))
         })?;
 
-    debug!(%chat_id, "Received response from Gemini for suggested actions");
-    trace!(%chat_id, ?gemini_response, "Full Gemini response object for suggested actions");
+    debug!(%session_id, "Received response from Gemini for suggested actions");
+    trace!(%session_id, ?gemini_response, "Full Gemini response object for suggested actions");
 
-    let response_text = match gemini_response.content {
-        Some(MessageContent::Text(text)) => text,
+    let response_text = match gemini_response.first_content_text_as_str() {
+        Some(text) => text.to_string(),
         _ => {
-            error!(%chat_id, "Gemini response for suggested actions did not contain text content or was empty.");
+            error!(%session_id, "Gemini response for suggested actions did not contain text content or was empty.");
             return Err(AppError::InternalServerErrorGeneric(
                 "AI response was empty or not in the expected format".to_string(),
             ));
         }
     };
-    trace!(%chat_id, "Gemini response text for suggested actions: {}", response_text);
+    trace!(%session_id, "Gemini response text for suggested actions: {}", response_text);
 
     let suggestions: Vec<SuggestedActionItem> =
         serde_json::from_str(&response_text).map_err(|e| {
             error!(
-                %chat_id,
+                %session_id,
                 "Failed to parse Gemini JSON response into expected structure for suggested actions: {:?}. Response text: {}",
                 e,
                 response_text
@@ -984,7 +1023,7 @@ pub async fn generate_suggested_actions(
             AppError::InternalServerErrorGeneric("Failed to parse structured response from AI".to_string())
         })?;
 
-    info!(%chat_id, "Successfully generated {} suggested actions", suggestions.len());
+    info!(%session_id, "Successfully generated {} suggested actions", suggestions.len());
 
     Ok(Json(SuggestedActionsResponse { suggestions }))
 }

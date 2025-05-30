@@ -205,6 +205,29 @@ pub async fn get_session_data_for_generation(
         character_overrides_for_first_mes, // Overrides for first_mes logic
         final_effective_system_prompt, // This is the system_prompt for the builder (persona/override only)
         raw_character_system_prompt,   // This is the raw system_prompt from the character itself
+    ): (
+        String, // history_management_strategy
+        i32,    // history_management_limit
+        Uuid,   // session_character_id
+        Option<BigDecimal>, // temperature
+        Option<i32>, // max_output_tokens
+        Option<BigDecimal>, // frequency_penalty
+        Option<BigDecimal>, // presence_penalty
+        Option<i32>, // top_k
+        Option<BigDecimal>, // top_p
+        Option<BigDecimal>, // repetition_penalty
+        Option<BigDecimal>, // min_p
+        Option<BigDecimal>, // top_a
+        Option<i32>, // seed
+        Option<Value>, // logit_bias
+        String, // model_name
+        Option<i32>, // gemini_thinking_budget
+        Option<bool>, // gemini_enable_code_execution
+        Vec<DbChatMessage>, // messages
+        Character, // character
+        Vec<ChatCharacterOverride>, // overrides
+        Option<String>, // effective_system_prompt
+        Option<String>, // raw_character_system_prompt
     ) = {
         let conn = state
             .pool

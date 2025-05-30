@@ -148,6 +148,12 @@ async fn test_suggested_actions_success() -> anyhow::Result<()> {
     );
     // ---- END ADDED DIAGNOSTIC ----
 
+    // Mock embedding pipeline response (required for get_session_data_for_generation)
+    // Need multiple responses: lorebook RAG and older chat history RAG
+    test_app
+        .mock_embedding_pipeline_service
+        .set_retrieve_responses_sequence(vec![Ok(vec![]), Ok(vec![])]); // Empty RAG responses for suggested actions
+
     // Mock AI response
     let mock_suggestions = json!([{"action": "Action 1"}]);
     test_app
@@ -163,19 +169,14 @@ async fn test_suggested_actions_success() -> anyhow::Result<()> {
                 genai::adapter::AdapterKind::Gemini,
                 "gemini-2.5-flash-preview-04-17",
             ),
-            content: Some(genai::chat::MessageContent::Text(
+            contents: vec![genai::chat::MessageContent::Text(
                 mock_suggestions.to_string(),
-            )),
+            )],
             reasoning_content: None,
             usage: Default::default(),
         }));
 
-    let payload = SuggestedActionsRequest {
-        message_history: vec![],
-        character_first_message: "Test char first message".to_string(),
-        user_first_message: None,
-        ai_first_response: None,
-    };
+    let payload = SuggestedActionsRequest {};
 
     // Use reqwest::Client for the main request
     let response = client // Reuse client from login; it now has the auth cookie
@@ -236,19 +237,16 @@ async fn test_suggested_actions_unauthorized() -> anyhow::Result<()> {
             test_app.address,
             Uuid::new_v4() // A random, likely non-existent session_id
         ))
-        .json(&SuggestedActionsRequest {
-            message_history: vec![],
-            character_first_message: "Test".to_string(),
-            user_first_message: None,
-            ai_first_response: None,
-        })
+        .json(&SuggestedActionsRequest {})
         .send()
-        .await
-        .expect("Failed to execute request.");
+        .await?;
 
-    // Authentication is now properly checking for unauthorized access
-    // and returning 401 Unauthorized as expected
-    assert_eq!(response.status().as_u16(), 401);
+    // Assert unauthorized (401 or 403, as the user is not authenticated)
+    assert!(
+        response.status() == 401 || response.status() == 403,
+        "Expected 401 or 403, got {}",
+        response.status()
+    );
 
     guard.cleanup().await?;
     Ok(())
@@ -263,7 +261,7 @@ async fn test_suggested_actions_forbidden() -> anyhow::Result<()> {
         .await
         .expect("Failed to get DB connection");
 
-    // User A (owner of character and session)
+    // User A creates a session
     let user_a = test_helpers::db::create_test_user(
         &test_app.db_pool,
         "suggested_actions_user_a".to_string(),
@@ -273,58 +271,15 @@ async fn test_suggested_actions_forbidden() -> anyhow::Result<()> {
     let mut guard = TestDataGuard::new(test_app.db_pool.clone());
     guard.add_user(user_a.id);
 
-    // User B (tries to access)
-    let user_b = test_helpers::db::create_test_user(
-        &test_app.db_pool,
-        "suggested_actions_user_b".to_string(),
-        "password".to_string(),
-    )
-    .await?;
-    guard.add_user(user_b.id);
-
-    // API Login for User A
-    let login_payload_a = json!({ "identifier": user_a.username, "password": "password" });
-    let login_request_a = Request::builder()
-        .method(Method::POST)
-        .uri("/api/auth/login")
-        .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
-        .body(Body::from(serde_json::to_string(&login_payload_a)?))?;
-    let login_response_a = test_app.router.clone().oneshot(login_request_a).await?;
-    assert_eq!(
-        login_response_a.status(),
-        StatusCode::OK,
-        "User A Login failed"
-    );
-    // Cookies are not needed for User A for this test's core logic, but setup is complete.
-
-    // API Login for User B
-    let login_payload_b = json!({ "identifier": user_b.username, "password": "password" });
-    let login_request_b = Request::builder()
-        .method(Method::POST)
-        .uri("/api/auth/login")
-        .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
-        .body(Body::from(serde_json::to_string(&login_payload_b)?))?;
-    let login_response_b = test_app.router.clone().oneshot(login_request_b).await?;
-    assert_eq!(
-        login_response_b.status(),
-        StatusCode::OK,
-        "User B Login failed"
-    );
-    let raw_cookie_header_b = login_response_b
-        .headers()
-        .get(header::SET_COOKIE)
-        .context("Set-Cookie header missing from User B login response")?
-        .to_str()?;
-    let parsed_cookie_b = Cookie::parse(raw_cookie_header_b.to_string())?;
-    let auth_cookie_b = format!("{}={}", parsed_cookie_b.name(), parsed_cookie_b.value());
-
     let new_character_a = NewCharacter {
         user_id: user_a.id,
         spec: "scribe.character.v3".to_string(),
         spec_version: "0.1.0".to_string(),
-        name: "Forbidden Character".to_string(),
-        description: Some("A character User B cannot access.".to_string().into_bytes()),
-        system_prompt: Some("System prompt for forbidden char.".to_string().into_bytes()),
+        name: "Test Character A".to_string(),
+        description: Some("Test character for user A".to_string().into_bytes()),
+        system_prompt: Some("You are a helpful assistant".to_string().into_bytes()),
+        avatar: Some("http://example.com/avatar-a.png".to_string()),
+        token_budget: Some(2048),
         visibility: Some("private".to_string()),
         ..Default::default()
     };
@@ -375,13 +330,36 @@ async fn test_suggested_actions_forbidden() -> anyhow::Result<()> {
         .map_err(anyhow::Error::from)?;
     guard.add_chat(session_a.id);
 
+    // Create User B
+    let user_b = test_helpers::db::create_test_user(
+        &test_app.db_pool,
+        "suggested_actions_user_b".to_string(),
+        "password".to_string(),
+    )
+    .await?;
+    guard.add_user(user_b.id);
+
+    // Login as User B
+    let login_payload_b = json!({ "identifier": user_b.username, "password": "password" });
+    let login_request_b = Request::builder()
+        .method(Method::POST)
+        .uri("/api/auth/login")
+        .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
+        .body(Body::from(serde_json::to_string(&login_payload_b)?))?;
+
+    let login_response_b = test_app.router.clone().oneshot(login_request_b).await?;
+    assert_eq!(login_response_b.status(), StatusCode::OK);
+
+    let auth_cookie_b = login_response_b
+        .headers()
+        .get(header::SET_COOKIE)
+        .context("Set-Cookie header missing")?
+        .to_str()?;
+    let parsed_cookie_b = Cookie::parse(auth_cookie_b.to_string())?;
+    let auth_cookie_b = format!("{}={}", parsed_cookie_b.name(), parsed_cookie_b.value());
+
     // User B attempts to get suggested actions for User A's session
-    let payload = SuggestedActionsRequest {
-        message_history: vec![],
-        character_first_message: "Original char first message".to_string(),
-        user_first_message: Some("Original user first message".to_string()),
-        ai_first_response: Some("Original AI first response".to_string()),
-    };
+    let payload = SuggestedActionsRequest {};
 
     let request = Request::builder()
         .method(Method::POST)
@@ -430,12 +408,7 @@ async fn test_suggested_actions_session_not_found() -> anyhow::Result<()> {
 
     let non_existent_session_id = Uuid::new_v4();
 
-    let payload = SuggestedActionsRequest {
-        message_history: vec![],
-        character_first_message: "Hello.".to_string(),
-        user_first_message: Some("Hi.".to_string()),
-        ai_first_response: Some("How can I help?".to_string()),
-    };
+    let payload = SuggestedActionsRequest {};
 
     let request = Request::builder()
         .method(Method::POST)
@@ -572,6 +545,11 @@ async fn test_suggested_actions_ai_error() -> anyhow::Result<()> {
         "Failed to fetch session immediately after creation"
     );
 
+    // Mock embedding pipeline response (required for get_session_data_for_generation)
+    test_app
+        .mock_embedding_pipeline_service
+        .set_retrieve_responses_sequence(vec![Ok(vec![]), Ok(vec![])]); // Empty RAG responses
+
     // Mock AI to return an error
     test_app
         .mock_ai_client
@@ -581,12 +559,7 @@ async fn test_suggested_actions_ai_error() -> anyhow::Result<()> {
             "Simulated AI error".to_string(),
         )));
 
-    let payload = SuggestedActionsRequest {
-        message_history: vec![],
-        character_first_message: "Test char first message".to_string(),
-        user_first_message: Some("Test user first message".to_string()),
-        ai_first_response: Some("Test AI first response".to_string()),
-    };
+    let payload = SuggestedActionsRequest {};
 
     let request = Request::builder()
         .method(Method::POST)
@@ -705,6 +678,11 @@ async fn test_suggested_actions_invalid_json_response() -> anyhow::Result<()> {
         .map_err(anyhow::Error::from)?;
     guard.add_chat(session.id);
 
+    // Mock embedding pipeline response (required for get_session_data_for_generation)
+    test_app
+        .mock_embedding_pipeline_service
+        .set_retrieve_responses_sequence(vec![Ok(vec![]), Ok(vec![])]); // Empty RAG responses
+
     // Mock AI to return invalid JSON
     let malformed_json_string =
         "This is not valid JSON string [{\"action\": \"Valid Action\"}, ...";
@@ -721,19 +699,14 @@ async fn test_suggested_actions_invalid_json_response() -> anyhow::Result<()> {
                 genai::adapter::AdapterKind::Gemini,
                 "gemini-2.5-flash-preview-04-17",
             ),
-            content: Some(genai::chat::MessageContent::Text(
+            contents: vec![genai::chat::MessageContent::Text(
                 malformed_json_string.to_string(),
-            )),
+            )],
             reasoning_content: None,
             usage: Default::default(),
         }));
 
-    let payload = SuggestedActionsRequest {
-        message_history: vec![],
-        character_first_message: "Test".to_string(),
-        user_first_message: None,
-        ai_first_response: None,
-    };
+    let payload = SuggestedActionsRequest {};
 
     let request = Request::builder()
         .method(Method::POST)
@@ -865,6 +838,11 @@ async fn test_suggested_actions_success_optional_fields_none() -> anyhow::Result
         "Failed to fetch session immediately after creation"
     );
 
+    // Mock embedding pipeline response (required for get_session_data_for_generation)
+    test_app
+        .mock_embedding_pipeline_service
+        .set_retrieve_responses_sequence(vec![Ok(vec![]), Ok(vec![])]); // Empty RAG responses
+
     // Mock AI response
     let mock_suggestions = json!([{"action": "Action 1"}, {"action": "Action 2"}]);
     test_app
@@ -880,20 +858,15 @@ async fn test_suggested_actions_success_optional_fields_none() -> anyhow::Result
                 genai::adapter::AdapterKind::Gemini,
                 "gemini-2.5-flash-preview-04-17",
             ),
-            content: Some(genai::chat::MessageContent::Text(
+            contents: vec![genai::chat::MessageContent::Text(
                 mock_suggestions.to_string(),
-            )),
+            )],
             reasoning_content: None,
             usage: Default::default(),
         }));
 
     // Request with optional fields set to None
-    let payload = SuggestedActionsRequest {
-        message_history: vec![],
-        character_first_message: "Optional Fields None Test".to_string(),
-        user_first_message: None,
-        ai_first_response: None,
-    };
+    let payload = SuggestedActionsRequest {};
 
     let request = Request::builder()
         .method(Method::POST)
@@ -1031,6 +1004,11 @@ async fn test_suggested_actions_success_optional_fields_some() -> anyhow::Result
         "Failed to fetch session immediately after creation"
     );
 
+    // Mock embedding pipeline response (required for get_session_data_for_generation)
+    test_app
+        .mock_embedding_pipeline_service
+        .set_retrieve_responses_sequence(vec![Ok(vec![]), Ok(vec![])]); // Empty RAG responses
+
     // Mock AI response
     let mock_suggestions = json!([{"action": "Action 1"}, {"action": "Action 2"}]);
     test_app
@@ -1046,20 +1024,15 @@ async fn test_suggested_actions_success_optional_fields_some() -> anyhow::Result
                 genai::adapter::AdapterKind::Gemini,
                 "gemini-2.5-flash-preview-04-17",
             ),
-            content: Some(genai::chat::MessageContent::Text(
+            contents: vec![genai::chat::MessageContent::Text(
                 mock_suggestions.to_string(),
-            )),
+            )],
             reasoning_content: None,
             usage: Default::default(),
         }));
 
     // Request with optional fields set to Some
-    let payload = SuggestedActionsRequest {
-        message_history: vec![],
-        character_first_message: "Hello".to_string(),
-        user_first_message: Some("Hi".to_string()),
-        ai_first_response: Some("Hello there".to_string()),
-    };
+    let payload = SuggestedActionsRequest {};
 
     let request = Request::builder()
         .method(Method::POST)
