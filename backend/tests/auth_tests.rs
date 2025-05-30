@@ -128,6 +128,14 @@ where
 
 // --- Test Cases ---
 
+// Helper struct for login response
+#[derive(serde::Deserialize)]
+struct TestLoginSuccessResponse {
+    user: scribe_backend::models::auth::AuthResponse,
+    session_id: String,
+    expires_at: chrono::DateTime<chrono::Utc>,
+}
+
 #[tokio::test(flavor = "multi_thread")]
 #[ignore] // Added ignore for CI
 async fn test_register_success() -> AnyhowResult<()> {
@@ -369,7 +377,8 @@ async fn test_login_success() -> AnyhowResult<()> {
     assert_eq!(response.status(), StatusCode::OK, "Login failed");
 
     let body = response.into_body().collect().await?.to_bytes();
-    let auth_response: AuthResponse = serde_json::from_slice(&body)?;
+    let login_response: TestLoginSuccessResponse = serde_json::from_slice(&body)?;
+    let auth_response = login_response.user;
 
     assert_eq!(
         auth_response.username, username,
@@ -435,7 +444,8 @@ async fn test_login_success_with_email() -> AnyhowResult<()> {
     assert_eq!(response.status(), StatusCode::OK, "Login with email failed");
 
     let body = response.into_body().collect().await?.to_bytes();
-    let auth_response: AuthResponse = serde_json::from_slice(&body)?;
+    let login_response: TestLoginSuccessResponse = serde_json::from_slice(&body)?;
+    let auth_response = login_response.user;
 
     assert_eq!(
         auth_response.username, username,

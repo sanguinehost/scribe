@@ -162,7 +162,7 @@ pub async fn generate_simple_response(
     tracing::debug!(%model_name, "Executing chat with specified model via trait");
     let response = client.exec_chat(model_name, chat_request, None).await?;
     let content = response
-        .content_text_as_str()
+        .first_content_text_as_str()
         .ok_or_else(|| AppError::BadRequest("No text content in LLM response".to_string()))?
         .to_string();
     Ok(content)
@@ -290,10 +290,10 @@ mod tests {
             self.exec_chat_called.load(Ordering::SeqCst)
         }
 
-        // Helper to create a ChatResponse with no text content (content: None)
+        // Helper to create a ChatResponse with no text content (empty vector)
         fn create_empty_chat_response() -> ChatResponse {
             ChatResponse {
-                content: None,
+                contents: vec![],
                 reasoning_content: None,
                 // Use ModelIden::new with AdapterKind::Gemini
                 model_iden: ModelIden::new(adapter::AdapterKind::Gemini, "mock-model-empty"),
@@ -308,8 +308,8 @@ mod tests {
         // Helper to create a ChatResponse with some text content
         fn create_text_chat_response(text: &str) -> ChatResponse {
             ChatResponse {
-                // Use MessageContent::from_text
-                content: Some(genai::chat::MessageContent::from_text(text)),
+                // Use MessageContent::from_text in a vector
+                contents: vec![genai::chat::MessageContent::from_text(text)],
                 reasoning_content: None,
                 // Use ModelIden::new with AdapterKind::Gemini
                 model_iden: ModelIden::new(adapter::AdapterKind::Gemini, "mock-model-text"),
@@ -367,8 +367,8 @@ mod tests {
 
         assert!(result.is_ok());
         assert_eq!(
-            result.unwrap().content_text_as_str(),
-            expected_response.content_text_as_str()
+            result.unwrap().first_content_text_as_str(),
+            expected_response.first_content_text_as_str()
         );
         assert!(
             client_arc_mock.was_exec_chat_called(),
@@ -383,7 +383,7 @@ mod tests {
         let mut mock_client = MockAiClient::new();
         let response_without_text = MockAiClient::create_empty_chat_response();
         assert!(
-            response_without_text.content_text_as_str().is_none(),
+            response_without_text.first_content_text_as_str().is_none(),
             "Empty ChatResponse unexpectedly has text content"
         );
 

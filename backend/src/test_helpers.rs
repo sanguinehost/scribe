@@ -112,9 +112,9 @@ impl MockAiClient {
             response_to_return: std::sync::Arc::new(std::sync::Mutex::new(Ok(ChatResponse {
                 model_iden: ModelIden::new(AdapterKind::Gemini, "gemini/mock-model"),
                 provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini/mock-model"),
-                content: Some(genai::chat::MessageContent::Text(
+                contents: vec![genai::chat::MessageContent::Text(
                     "Mock AI response".to_string(),
-                )),
+                )],
                 reasoning_content: None,
                 usage: Default::default(),
             }))),

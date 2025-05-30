@@ -480,7 +480,7 @@ async fn generate_chat_response_uses_session_settings() -> Result<(), anyhow::Er
                 genai::adapter::AdapterKind::Gemini,
                 "gemini/mock-model",
             ),
-            content: Some(genai::chat::MessageContent::Text(ai_response_content)),
+            contents: vec![genai::chat::MessageContent::Text(ai_response_content)],
             reasoning_content: None,
             usage: Default::default(),
         };
@@ -1493,9 +1493,9 @@ async fn generate_chat_response_history_sliding_window_messages() -> anyhow::Res
                 genai::adapter::AdapterKind::Gemini,
                 "mock-model",
             ),
-            content: Some(genai::chat::MessageContent::Text(
+            contents: vec![genai::chat::MessageContent::Text(
                 "Mock response".to_string(),
-            )),
+            )],
             reasoning_content: None,
             usage: Default::default(),
         }));
@@ -1795,9 +1795,9 @@ async fn generate_chat_response_history_sliding_window_tokens() -> anyhow::Resul
                 genai::adapter::AdapterKind::Gemini,
                 "mock-model",
             ),
-            content: Some(genai::chat::MessageContent::Text(
+            contents: vec![genai::chat::MessageContent::Text(
                 "Mock response".to_string(),
-            )),
+            )],
             reasoning_content: None,
             usage: Default::default(),
         }));
@@ -2096,9 +2096,9 @@ async fn test_generate_chat_response_history_truncate_tokens() -> anyhow::Result
                 genai::adapter::AdapterKind::Gemini,
                 "mock-model",
             ),
-            content: Some(genai::chat::MessageContent::Text(
+            contents: vec![genai::chat::MessageContent::Text(
                 "Mock response".to_string(),
-            )),
+            )],
             reasoning_content: None,
             usage: Default::default(),
         }));
@@ -2162,9 +2162,9 @@ async fn test_generate_chat_response_history_truncate_tokens() -> anyhow::Result
                 genai::adapter::AdapterKind::Gemini,
                 "mock-model",
             ),
-            content: Some(genai::chat::MessageContent::Text(
+            contents: vec![genai::chat::MessageContent::Text(
                 "Mock response 2".to_string(),
-            )),
+            )],
             reasoning_content: None,
             usage: Default::default(),
         }));
@@ -2420,9 +2420,9 @@ async fn generate_chat_response_history_none() -> anyhow::Result<()> {
                 genai::adapter::AdapterKind::Gemini,
                 "mock-model",
             ),
-            content: Some(genai::chat::MessageContent::Text(
+            contents: vec![genai::chat::MessageContent::Text(
                 "Mock response".to_string(),
-            )),
+            )],
             reasoning_content: None,
             usage: Default::default(),
         }));
@@ -2715,9 +2715,9 @@ async fn generate_chat_response_history_truncate_tokens_limit_30() -> anyhow::Re
                 genai::adapter::AdapterKind::Gemini,
                 "mock-model",
             ),
-            content: Some(genai::chat::MessageContent::Text(
+            contents: vec![genai::chat::MessageContent::Text(
                 "Mock response".to_string(),
-            )),
+            )],
             reasoning_content: None,
             usage: Default::default(),
         }));
@@ -2781,9 +2781,9 @@ async fn generate_chat_response_history_truncate_tokens_limit_30() -> anyhow::Re
                 genai::adapter::AdapterKind::Gemini,
                 "mock-model",
             ),
-            content: Some(genai::chat::MessageContent::Text(
+            contents: vec![genai::chat::MessageContent::Text(
                 "Mock response 2".to_string(),
-            )),
+            )],
             reasoning_content: None,
             usage: Default::default(),
         }));
@@ -2950,7 +2950,7 @@ async fn test_get_chat_messages_success() -> anyhow::Result<()> {
                 genai::adapter::AdapterKind::Gemini,
                 "gemini/mock-model",
             ),
-            content: Some(genai::chat::MessageContent::Text(ai_response_content)),
+            contents: vec![genai::chat::MessageContent::Text(ai_response_content)],
             reasoning_content: None,
             usage: Default::default(),
         };

@@ -41,14 +41,10 @@ pub type SettingsTuple = (
     i32,                // history_management_limit
     String,             // model_name
     // -- Gemini Specific Options --
-    Option<i32>,  // gemini_thinking_budget
-    Option<bool>, // gemini_enable_code_execution
-    // -- Context Budget Options --
-    Option<i32>, // context_total_token_limit
-    Option<i32>, // context_recent_history_budget
-    Option<i32>, // context_rag_budget
-);
-#[derive(Queryable, Selectable, Identifiable, Serialize, Deserialize, Clone)] // Removed Debug
+    Option<i32>,        // gemini_thinking_budget
+    Option<bool>,       // gemini_enable_code_execution
+); // Close the tuple definition
+#[derive(Queryable, Selectable, Identifiable, Serialize, Deserialize, Clone)]
 #[diesel(table_name = chat_sessions)]
 #[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct Chat {
@@ -71,13 +67,8 @@ pub struct Chat {
     pub history_management_strategy: String,
     pub history_management_limit: i32,
     pub model_name: String,
-    // -- Gemini Specific Options -- (Moved before visibility to match schema)
     pub gemini_thinking_budget: Option<i32>,
     pub gemini_enable_code_execution: Option<bool>,
-    // -- Context Budget Options --
-    pub context_total_token_limit: Option<i32>,
-    pub context_recent_history_budget: Option<i32>,
-    pub context_rag_budget: Option<i32>,
     pub visibility: Option<String>, // Moved to last
     // Add new fields to match schema.rs for chat_sessions table
     pub active_custom_persona_id: Option<Uuid>,
@@ -139,17 +130,6 @@ impl std::fmt::Debug for Chat {
             )
             .field("history_management_limit", &self.history_management_limit)
             .field("model_name", &self.model_name)
-            .field("gemini_thinking_budget", &self.gemini_thinking_budget)
-            .field(
-                "gemini_enable_code_execution",
-                &self.gemini_enable_code_execution,
-            )
-            .field("context_total_token_limit", &self.context_total_token_limit)
-            .field(
-                "context_recent_history_budget",
-                &self.context_recent_history_budget,
-            )
-            .field("context_rag_budget", &self.context_rag_budget)
             .field("visibility", &self.visibility)
             // Add new fields to Debug output
             .field("active_custom_persona_id", &self.active_custom_persona_id)
@@ -1079,13 +1059,9 @@ pub struct ChatSettingsResponse {
     pub history_management_limit: i32,
     // Model Name
     pub model_name: String,
-    // Gemini Specific Options
+    // Gemini-specific options
     pub gemini_thinking_budget: Option<i32>,
     pub gemini_enable_code_execution: Option<bool>,
-    // Context Budget fields
-    pub context_total_token_limit: Option<i32>,
-    pub context_recent_history_budget: Option<i32>,
-    pub context_rag_budget: Option<i32>,
 }
 
 impl std::fmt::Debug for ChatSettingsResponse {
@@ -1115,17 +1091,6 @@ impl std::fmt::Debug for ChatSettingsResponse {
             )
             .field("history_management_limit", &self.history_management_limit)
             .field("model_name", &self.model_name)
-            .field("gemini_thinking_budget", &self.gemini_thinking_budget)
-            .field(
-                "gemini_enable_code_execution",
-                &self.gemini_enable_code_execution,
-            )
-            .field("context_total_token_limit", &self.context_total_token_limit)
-            .field(
-                "context_recent_history_budget",
-                &self.context_recent_history_budget,
-            )
-            .field("context_rag_budget", &self.context_rag_budget)
             .finish()
     }
 }
@@ -1150,9 +1115,6 @@ impl From<Chat> for ChatSettingsResponse {
             model_name: chat.model_name,
             gemini_thinking_budget: chat.gemini_thinking_budget,
             gemini_enable_code_execution: chat.gemini_enable_code_execution,
-            context_total_token_limit: chat.context_total_token_limit,
-            context_recent_history_budget: chat.context_recent_history_budget,
-            context_rag_budget: chat.context_rag_budget,
         }
     }
 }
@@ -1191,16 +1153,9 @@ pub struct UpdateChatSettingsRequest {
     pub history_management_limit: Option<i32>,
     // Model Name
     pub model_name: Option<String>,
-    // Gemini Specific Options
+    // Gemini-specific options
     pub gemini_thinking_budget: Option<i32>,
     pub gemini_enable_code_execution: Option<bool>,
-    // Context Budget fields
-    #[validate(range(min = 0))]
-    pub context_total_token_limit: Option<i32>,
-    #[validate(range(min = 0))]
-    pub context_recent_history_budget: Option<i32>,
-    #[validate(range(min = 0))]
-    pub context_rag_budget: Option<i32>,
 }
 
 impl std::fmt::Debug for UpdateChatSettingsRequest {
@@ -1230,17 +1185,6 @@ impl std::fmt::Debug for UpdateChatSettingsRequest {
             )
             .field("history_management_limit", &self.history_management_limit)
             .field("model_name", &self.model_name)
-            .field("gemini_thinking_budget", &self.gemini_thinking_budget)
-            .field(
-                "gemini_enable_code_execution",
-                &self.gemini_enable_code_execution,
-            )
-            .field("context_total_token_limit", &self.context_total_token_limit)
-            .field(
-                "context_recent_history_budget",
-                &self.context_recent_history_budget,
-            )
-            .field("context_rag_budget", &self.context_rag_budget)
             .finish()
     }
 }
@@ -1459,9 +1403,9 @@ mod tests {
             history_management_strategy: "none".to_string(),
             history_management_limit: 4096,
             model_name: "gemini-2.5-flash-preview-04-17".to_string(),
+            gemini_thinking_budget: None,
+            gemini_enable_code_execution: None,
             visibility: Some("private".to_string()),
-            gemini_thinking_budget: Some(100),
-            gemini_enable_code_execution: Some(true),
             active_custom_persona_id: None,
             active_impersonated_character_id: None,
         }
@@ -1486,10 +1430,6 @@ mod tests {
         let cloned = original.clone();
         assert_eq!(original.id, cloned.id);
         // ... (rest of assertions for Chat fields)
-        assert_eq!(
-            original.gemini_enable_code_execution,
-            cloned.gemini_enable_code_execution
-        );
     }
 
     #[test]
@@ -1709,8 +1649,8 @@ mod tests {
             history_management_strategy: "none".to_string(),
             history_management_limit: 4096,
             model_name: "gemini-2.5-flash-preview-04-17".to_string(),
-            gemini_thinking_budget: Some(1000),
-            gemini_enable_code_execution: Some(true),
+            gemini_thinking_budget: None,
+            gemini_enable_code_execution: None,
         }
     }
 
@@ -1742,14 +1682,6 @@ mod tests {
             cloned.history_management_limit
         );
         assert_eq!(original.model_name, cloned.model_name);
-        assert_eq!(
-            original.gemini_thinking_budget,
-            cloned.gemini_thinking_budget
-        );
-        assert_eq!(
-            original.gemini_enable_code_execution,
-            cloned.gemini_enable_code_execution
-        );
     }
 
     // Helper function to create a sample update chat settings request
@@ -1770,8 +1702,8 @@ mod tests {
             history_management_strategy: Some("sliding_window_tokens".to_string()),
             history_management_limit: Some(2000),
             model_name: Some("gemini-2.5-pro-preview-03-25".to_string()),
-            gemini_thinking_budget: Some(512),
-            gemini_enable_code_execution: Some(false),
+            gemini_thinking_budget: None,
+            gemini_enable_code_execution: None,
         }
     }
 
@@ -1803,14 +1735,6 @@ mod tests {
             cloned.history_management_limit
         );
         assert_eq!(original.model_name, cloned.model_name);
-        assert_eq!(
-            original.gemini_thinking_budget,
-            cloned.gemini_thinking_budget
-        );
-        assert_eq!(
-            original.gemini_enable_code_execution,
-            cloned.gemini_enable_code_execution
-        );
     }
 
     #[test]
@@ -1833,14 +1757,6 @@ mod tests {
             deserialized.history_management_limit
         );
         assert_eq!(settings.model_name, deserialized.model_name);
-        assert_eq!(
-            settings.gemini_thinking_budget,
-            deserialized.gemini_thinking_budget
-        );
-        assert_eq!(
-            settings.gemini_enable_code_execution,
-            deserialized.gemini_enable_code_execution
-        );
     }
 
     #[test]
@@ -1863,14 +1779,6 @@ mod tests {
             deserialized.history_management_limit
         );
         assert_eq!(settings.model_name, deserialized.model_name);
-        assert_eq!(
-            settings.gemini_thinking_budget,
-            deserialized.gemini_thinking_budget
-        );
-        assert_eq!(
-            settings.gemini_enable_code_execution,
-            deserialized.gemini_enable_code_execution
-        );
     }
 
     #[test]
@@ -1922,15 +1830,7 @@ mod tests {
         settings2.history_management_strategy = "sliding_window_messages".to_string();
         assert_ne!(settings1, settings2);
 
-        settings2 = settings1.clone();
-        settings2.gemini_thinking_budget = Some(0);
-        assert_ne!(settings1, settings2);
 
-        settings2 = settings1.clone();
-        settings2.gemini_enable_code_execution = Some(false);
-        // If original sample has true, this will be assert_ne. Check sample.
-        // create_sample_chat_settings_response has gemini_enable_code_execution: Some(true)
-        assert_ne!(settings1, settings2);
     }
 
     #[test]
@@ -1952,14 +1852,7 @@ mod tests {
         settings2.history_management_limit = Some(100);
         assert_ne!(settings1, settings2);
 
-        settings2 = settings1.clone();
-        settings2.gemini_thinking_budget = Some(1024);
-        assert_ne!(settings1, settings2);
 
-        settings2 = settings1.clone();
-        settings2.gemini_enable_code_execution = Some(true);
-        // create_sample_update_chat_settings_request has gemini_enable_code_execution: Some(false)
-        assert_ne!(settings1, settings2);
     }
 
     #[test]

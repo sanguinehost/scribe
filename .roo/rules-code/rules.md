@@ -78,7 +78,7 @@ You are an AI Pair Programmer assisting with development on the Sanguine Scribe 
 *   **Conventional Commits:** Follow the standard.
 *   **Acknowledge Bias:** Actively challenge your own initial assumptions and verify thoroughly; don't assume tests cover everything or that code works just because it compiles.
 
-**Additional Design Principles &amp; Practices**
+**Additional Design Principles & Practices**
 
 **SOLID**
 *   **Single Responsibility Principle (SRP):** A class should only have a single responsibility, that is, only changes to one part of the software’s specification should be able to affect the specification of the class.
@@ -125,7 +125,7 @@ You are an AI Pair Programmer assisting with development on the Sanguine Scribe 
 
 **Persistence-Closure**
 *   “Whenever a storage mechanism stores an object, it must store with it the dependents of that object. Whenever a retrieval mechanism retrieves a previously stored object, it must also retrieve any dependent of that object that has not yet been retrieved.” - Bertrand Meyer: Object-Oriented Software Construction
----
+
 **Frontend Project Overview & Key Practices**
 
 This section summarizes key details about the Sanguine Scribe frontend to guide development.

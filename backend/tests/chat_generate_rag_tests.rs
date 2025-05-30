@@ -231,7 +231,7 @@ async fn test_generate_chat_response_triggers_embeddings() -> anyhow::Result<()>
     let mock_response = ChatResponse {
         model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash-preview-04-17"),
         provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash-preview-04-17"),
-        content: Some(MessageContent::Text(mock_ai_content.to_string())),
+        contents: vec![MessageContent::Text(mock_ai_content.to_string())],
         reasoning_content: None,
         usage: Usage::default(),
     };
@@ -819,9 +819,9 @@ async fn test_rag_context_injection_in_prompt() -> anyhow::Result<()> {
             genai::adapter::AdapterKind::Gemini,
             "mock-rag-model",
         ),
-        content: Some(genai::chat::MessageContent::Text(
+        contents: vec![genai::chat::MessageContent::Text(
             "Mock AI response to RAG query".to_string(),
-        )),
+        )],
         reasoning_content: None,
         usage: Default::default(),
     };
@@ -1163,7 +1163,7 @@ async fn generate_chat_response_rag_retrieval_error() -> anyhow::Result<()> {
 
     let mock_ai_content = "Response without RAG context.";
     let mock_response = ChatResponse {
-        /* ... */ content: Some(MessageContent::Text(mock_ai_content.to_string())),
+        /* ... */ contents: vec![MessageContent::Text(mock_ai_content.to_string())],
         model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash-preview-04-17"),
         provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash-preview-04-17"),
         reasoning_content: None,
@@ -1494,7 +1494,7 @@ async fn setup_test_data(use_real_ai: bool) -> anyhow::Result<RagTestContext> {
 
     let mock_ai_content = "Response to trigger embedding.";
     let mock_response = ChatResponse {
-        /* ... */ content: Some(MessageContent::Text(mock_ai_content.to_string())),
+        /* ... */ contents: vec![MessageContent::Text(mock_ai_content.to_string())],
         model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash-preview-04-17"),
         provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash-preview-04-17"),
         reasoning_content: None,
@@ -1627,9 +1627,9 @@ async fn generate_chat_response_rag_success() -> anyhow::Result<()> {
 
     let mock_response = genai::chat::ChatResponse {
         /* ... */
-        content: Some(MessageContent::Text(
+        contents: vec![MessageContent::Text(
             "Mock AI response to RAG query".to_string(),
-        )),
+        )],
         model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash-preview-04-17"),
         provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash-preview-04-17"),
         reasoning_content: None,
@@ -1767,9 +1767,9 @@ async fn generate_chat_response_rag_empty_history_success() -> anyhow::Result<()
 
     let mock_response = genai::chat::ChatResponse {
         /* ... */
-        content: Some(MessageContent::Text(
+        contents: vec![MessageContent::Text(
             "Mock AI response to RAG query".to_string(),
-        )),
+        )],
         model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash-preview-04-17"),
         provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash-preview-04-17"),
         reasoning_content: None,
@@ -1899,9 +1899,9 @@ async fn generate_chat_response_rag_no_relevant_chunks_found() -> anyhow::Result
 
     let mock_response = genai::chat::ChatResponse {
         /* ... */
-        content: Some(MessageContent::Text(
+        contents: vec![MessageContent::Text(
             "Mock AI response to RAG query".to_string(),
-        )),
+        )],
         model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash-preview-04-17"),
         provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash-preview-04-17"),
         reasoning_content: None,
@@ -2028,9 +2028,9 @@ async fn generate_chat_response_rag_uses_session_settings() -> anyhow::Result<()
 
     let mock_response = genai::chat::ChatResponse {
         /* ... */
-        content: Some(MessageContent::Text(
+        contents: vec![MessageContent::Text(
             "Mock AI response to RAG query".to_string(),
-        )),
+        )],
         model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash-preview-04-17"),
         provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash-preview-04-17"),
         reasoning_content: None,
@@ -2070,9 +2070,9 @@ async fn generate_chat_response_rag_uses_character_settings_if_no_session() -> a
 
     let mock_response = genai::chat::ChatResponse {
         /* ... */
-        content: Some(MessageContent::Text(
+        contents: vec![MessageContent::Text(
             "Mock AI response to RAG query".to_string(),
-        )),
+        )],
         model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash-preview-04-17"),
         provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash-preview-04-17"),
         reasoning_content: None,
