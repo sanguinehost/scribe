@@ -34,7 +34,7 @@
 
 	const selectedCharacterStore = SelectedCharacterStore.fromContext();
 	const selectedPersonaStore = SelectedPersonaStore.fromContext();
-	const settingsStore = SettingsStore.toContext(new SettingsStore());
+	const settingsStore = SettingsStore.fromContext();
 
 	// State variables
 	const currentInitialMessages = initialMessagesProp;

@@ -4,6 +4,7 @@
 	import { ChatHistory } from '$lib/hooks/chat-history.svelte.js';
 	import { SelectedCharacterStore } from '$lib/stores/selected-character.svelte';
 	import { SelectedPersonaStore } from '$lib/stores/selected-persona.svelte';
+	import { SettingsStore } from '$lib/stores/settings.svelte';
 	import { toast } from 'svelte-sonner';
 	import { onMount } from 'svelte';
 
@@ -18,6 +19,8 @@
 
 	const selectedPersonaStore = new SelectedPersonaStore();
 	selectedPersonaStore.setContext();
+
+	const settingsStore = SettingsStore.toContext(new SettingsStore());
 
 	// Show toast notification if chat loading failed during SSR/initial load
 	onMount(() => {

@@ -43,11 +43,7 @@ export interface ScribeChatSession {
 	presence_penalty: number | null;
 	top_k: number | null;
 	top_p: number | null;
-	repetition_penalty: number | null;
-	min_p: number | null;
-	top_a: number | null;
 	seed: number | null;
-	logit_bias: Record<string, number> | null; // Assuming JSON object maps to this
 	history_management_strategy: string | null; // Can be null
 	history_management_limit: number | null; // Can be null
 	visibility: VisibilityType;
