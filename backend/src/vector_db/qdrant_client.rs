@@ -167,7 +167,7 @@ impl QdrantClientService {
                         config: Some(QdrantVectorsConfig::Params(VectorParams {
                             size: self.embedding_dimension,
                             distance: self.distance_metric.into(), // Use configured distance
-                            hnsw_config: Some(target_hnsw_config.clone()),
+                            hnsw_config: Some(target_hnsw_config),
                             quantization_config: None,
                             on_disk: self.on_disk, // Use configured on_disk setting
                             datatype: None,
@@ -183,28 +183,29 @@ impl QdrantClientService {
                     // Creation succeeded
                     info!("Successfully created collection '{}'", self.collection_name);
 
-                    // Wait for collection to be fully ready
-                    for i in 0..10 {
-                        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+                    // Wait for collection to be fully ready with increased timeout
+                    for i in 0..20 { // Increased retries
+                        tokio::time::sleep(tokio::time::Duration::from_millis(200)).await; // Increased sleep duration
                         match self.client.collection_exists(&self.collection_name).await {
                             Ok(true) => {
                                 info!(
                                     "Collection '{}' confirmed ready after {}ms",
                                     self.collection_name,
-                                    (i + 1) * 100
+                                    (i + 1) * 200
                                 );
                                 break;
                             }
                             Ok(false) => {
-                                if i == 9 {
+                                if i == 19 { // Adjusted for new retry count
                                     return Err(AppError::VectorDbError(format!(
-                                        "Collection '{}' was created but is not accessible after 1 second",
-                                        self.collection_name
+                                        "Collection '{}' was created but is not accessible after {} seconds",
+                                        self.collection_name,
+                                        (i + 1) * 200 / 1000
                                     )));
                                 }
                             }
                             Err(e) => {
-                                if i == 9 {
+                                if i == 19 { // Adjusted for new retry count
                                     return Err(AppError::VectorDbError(format!(
                                         "Failed to verify collection '{}' exists after creation: {}",
                                         self.collection_name, e
@@ -369,7 +370,7 @@ impl QdrantClientService {
             vector: query_vector,
             limit,
             with_payload: Some(true.into()), // Request payload
-            filter: filter,                  // Use the passed-in filter directly
+            filter,                  // Use the passed-in filter directly
             // Initialize other fields as needed, using defaults or None
             offset: None,
             score_threshold: None,
@@ -716,12 +717,13 @@ mod tests {
         assert_eq!(dummy_service.collection_name, DEFAULT_COLLECTION_NAME);
         assert_eq!(dummy_service.embedding_dimension, 768); // Check against the dummy default
         // We don't assert on the client itself as it's expected to be non-functional.
+        drop(dummy_service);
     }
     // --- Integration Tests (Require running Qdrant instance) ---
     // Run these tests with `cargo test -- --ignored`
 
     #[tokio::test]
-    #[ignore] // Ignore this test by default, requires running Qdrant
+    #[ignore] // Re-added as it's an integration test
     async fn test_integration_connection_and_collection() {
         let result = setup_test_qdrant_client().await;
         assert!(
@@ -729,8 +731,9 @@ mod tests {
             "Failed to connect to Qdrant and ensure collection exists: {:?}",
             result.err()
         );
+        drop(result);
 
-        let service = result.unwrap();
+        let service = setup_test_qdrant_client().await.unwrap();
 
         // Verify the collection actually exists
         let exists = service
@@ -744,16 +747,17 @@ mod tests {
 
         // Clean up the test collection
         cleanup_test_collection(&service).await;
+        drop(service);
     }
 
     #[tokio::test]
-    #[ignore]
+    #[ignore] // Re-added as it's an integration test
     async fn test_integration_upsert_and_search() {
         let service = setup_test_qdrant_client()
             .await
             .expect("Failed to setup Qdrant client");
         let _collection_name = service.collection_name.clone(); // Prefix unused variable
-        let embedding_dim = service.embedding_dimension as usize;
+        let embedding_dim = usize::try_from(service.embedding_dimension).expect("embedding dimension should fit in usize");
 
         let point_id_1 = Uuid::new_v4();
         // Use slightly more distinct vectors for testing
@@ -828,21 +832,20 @@ mod tests {
 
         // Clean up the test collection
         cleanup_test_collection(&service).await;
+        drop(service);
     }
 
     #[tokio::test]
-    #[ignore]
+    #[ignore] // Re-added as it's an integration test
+    #[allow(clippy::too_many_lines)]
     async fn test_integration_search_with_filter() {
-        if std::env::var("RUN_INTEGRATION_TESTS").is_err() {
-            println!("Skipping Qdrant integration test: RUN_INTEGRATION_TESTS not set");
-            return;
-        }
+        const MAX_RETRIES: u32 = 3;
 
         let service = setup_test_qdrant_client()
             .await
             .expect("Failed to setup Qdrant client");
         let _collection_name = service.collection_name.clone(); // Prefix unused variable
-        let embedding_dim = service.embedding_dimension as usize;
+        let embedding_dim = usize::try_from(service.embedding_dimension).expect("embedding dimension should fit in usize");
 
         let point_id_filter = Uuid::new_v4();
         let mut rng3 = StdRng::seed_from_u64(123);
@@ -870,39 +873,33 @@ mod tests {
 
         // Add retry logic for the upsert operation
         let points_to_upsert = vec![point_filter, point_other];
-        const MAX_RETRIES: u32 = 3;
         let mut attempt = 0;
 
         loop {
             attempt += 1;
             match service.upsert_points(points_to_upsert.clone()).await {
-                Ok(_) => break, // Success
+                Ok(()) => break, // Success
                 Err(e) => {
                     if let AppError::VectorDbError(msg) = &e {
-                        if msg.contains("Collection")
-                            && (msg.contains("doesn't exist") || msg.contains("not found"))
-                        {
-                            if attempt < MAX_RETRIES {
-                                warn!(
-                                    "Upsert failed because collection was not found (attempt {}). Ensuring and retrying...",
-                                    attempt
-                                );
-                                tokio::time::sleep(tokio::time::Duration::from_millis(
-                                    100 * attempt as u64,
-                                ))
-                                .await; // Exponential backoff
-                                service
-                                    .ensure_collection_exists()
-                                    .await
-                                    .expect("Retry ensure_collection_exists failed");
-                                continue; // Retry upsert
-                            }
+                        if msg.contains("Collection") && (msg.contains("doesn't exist") || msg.contains("not found")) && attempt < MAX_RETRIES {
+                            warn!(
+                                "Upsert failed because collection was not found (attempt {}). Ensuring and retrying...",
+                                attempt
+                            );
+                            tokio::time::sleep(tokio::time::Duration::from_millis(
+                                100 * u64::from(attempt),
+                            ))
+                            .await; // Exponential backoff
+                            service
+                                .ensure_collection_exists()
+                                .await
+                                .expect("Retry ensure_collection_exists failed");
+                            continue; // Retry upsert
                         }
                     }
                     // For other errors or max retries reached, panic with the original assertion message
                     panic!(
-                        "Failed to upsert points for filter test: {:?} (attempt {})",
-                        e, attempt
+                        "Failed to upsert points for filter test: {e:?} (attempt {attempt})"
                     );
                 }
             }
@@ -960,6 +957,7 @@ mod tests {
 
         // Clean up the test collection
         cleanup_test_collection(&service).await;
+        drop(service);
     }
 }
 

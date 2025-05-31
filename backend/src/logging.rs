@@ -38,6 +38,11 @@ mod tests {
     use std::env;
     // Removed unused Level and FilterExt imports
 
+    // Using a mutex to serialize access to the env var modification
+    // This helps prevent race conditions if tests run in parallel.
+    // Note: `cargo test` runs tests in parallel by default.
+    static ENV_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(()); // Fixed < and >
+
     // Helper function moved outside specific tests, but still in `mod tests`
     fn with_rust_log<F>(var: Option<&str>, f: F)
     // Fixed &
@@ -46,10 +51,6 @@ mod tests {
     {
         let original_val = env::var("RUST_LOG").ok();
 
-        // Using a mutex to serialize access to the env var modification
-        // This helps prevent race conditions if tests run in parallel.
-        // Note: `cargo test` runs tests in parallel by default.
-        static ENV_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(()); // Fixed < and >
         let _guard = ENV_MUTEX.lock().unwrap();
 
         match var {

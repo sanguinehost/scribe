@@ -53,7 +53,7 @@ pub struct CreateLorebookEntryPayload {
     pub placement_hint: Option<String>, // e.g., "before_prompt", "after_prompt"
 }
 
-#[derive(Debug, Serialize, Deserialize, Validate, Clone, Default, PartialEq)]
+#[derive(Debug, Serialize, Deserialize, Validate, Clone, Default, PartialEq, Eq)]
 pub struct UpdateLorebookEntryPayload {
     #[validate(length(min = 1, max = 255))]
     pub entry_title: Option<String>,

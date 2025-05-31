@@ -222,7 +222,7 @@ pub trait HttpClient: Send + Sync {
     async fn admin_unlock_user(&self, user_id: Uuid) -> Result<(), CliError>;
 
     // Legacy - Keep for compatibility but mark unused
-    #[allow(dead_code)]
+    
     async fn generate_response(
         &self,
         chat_id: Uuid,

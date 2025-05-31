@@ -105,7 +105,7 @@ async fn main() -> Result<()> {
     run_migrations(&pool).await?; // Extract migration logic to function
 
     // --- Initialize GenAI Client Asynchronously ---
-    let ai_client = build_gemini_client().await?;
+    let ai_client = build_gemini_client()?;
     let ai_client_arc = Arc::new(ai_client); // Wrap in Arc for AppState
 
     // --- Initialize Embedding Client ---
@@ -120,11 +120,7 @@ async fn main() -> Result<()> {
 
     // --- Initialize Tokenizer Service ---
     tracing::info!("Initializing TokenizerService...");
-    let tokenizer_model_relative_path_str = config
-        .tokenizer_model_path
-        .as_ref()
-        .cloned()
-        .context("Tokenizer model path not set in config")?;
+    let tokenizer_model_relative_path_str = config.tokenizer_model_path.clone();
 
     // Determine the absolute path to the tokenizer model using CARGO_MANIFEST_DIR
     let backend_crate_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -171,11 +167,7 @@ async fn main() -> Result<()> {
 
     // --- Initialize Hybrid Token Counter ---
     tracing::info!("Initializing HybridTokenCounter...");
-    let token_counter_default_model = config
-        .token_counter_default_model
-        .as_ref()
-        .cloned()
-        .context("Token counter default model not set in config")?;
+    let token_counter_default_model = config.token_counter_default_model.clone();
     let hybrid_token_counter = HybridTokenCounter::new(
         tokenizer_service,
         gemini_token_client,

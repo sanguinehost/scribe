@@ -424,7 +424,7 @@ mod tests {
 
         // Limit allows only part of the first message, second message fully
         let limit = 20;
-        let managed = manage_history(history, "truncate_tokens", limit as i32);
+        let managed = manage_history(history, "truncate_tokens", limit);
 
         assert_eq!(
             managed.len(),

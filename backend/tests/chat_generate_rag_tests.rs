@@ -230,7 +230,8 @@ async fn test_generate_chat_response_triggers_embeddings() -> anyhow::Result<()>
             };
             diesel::insert_into(schema::chat_sessions::table)
                 .values(&new_chat)
-                .get_result::<DbChat>(conn)
+                .returning(DbChat::as_select())
+                .get_result(conn)
         })
         .await
         .map_err(|e| anyhow::anyhow!("Database interaction failed (outer InteractError): {}", e))? // Handles InteractError
@@ -540,7 +541,8 @@ async fn test_generate_chat_response_triggers_embeddings_with_existing_session()
             };
             diesel::insert_into(schema::chat_sessions::table)
                 .values(&new_chat)
-                .get_result::<DbChat>(conn)
+                .returning(DbChat::as_select())
+                .get_result(conn)
         })
         .await
         .map_err(|e| anyhow::anyhow!("Database interaction failed (outer InteractError): {}", e))? // Handles InteractError
@@ -818,7 +820,8 @@ async fn test_rag_context_injection_in_prompt() -> anyhow::Result<()> {
             };
             diesel::insert_into(schema::chat_sessions::table)
                 .values(&new_chat)
-                .get_result::<DbChat>(conn)
+                .returning(DbChat::as_select())
+                .get_result(conn)
         })
         .await
         .map_err(|e| anyhow::anyhow!("Database interaction failed (outer InteractError): {}", e))? // Handles InteractError
@@ -1191,7 +1194,8 @@ async fn generate_chat_response_rag_retrieval_error() -> anyhow::Result<()> {
             };
             diesel::insert_into(schema::chat_sessions::table)
                 .values(&new_chat)
-                .get_result::<DbChat>(conn)
+                .returning(DbChat::as_select())
+                .get_result(conn)
         })
         .await
         .map_err(|e| anyhow::anyhow!("Database interaction failed (outer InteractError): {}", e))? // Handles InteractError
@@ -1544,7 +1548,8 @@ async fn setup_test_data(use_real_ai: bool) -> anyhow::Result<RagTestContext> {
             };
             diesel::insert_into(schema::chat_sessions::table)
                 .values(&new_chat)
-                .get_result::<DbChat>(conn)
+                .returning(DbChat::as_select())
+                .get_result(conn)
         })
         .await
         .map_err(|e| anyhow::anyhow!("Database interaction failed (outer InteractError): {}", e))? // Handles InteractError

@@ -25,18 +25,18 @@ pub fn build_prompt_with_rag(
 
     if let Some(char_data) = character {
         if let Some(description_vec) = &char_data.description {
-            if !description_vec.is_empty() {
+            if description_vec.is_empty() {
+                // No description, return empty string (no character persona to instruct on)
+                return Ok(String::new());
+            } else {
                 prompt.push_str(&format!("Character Name: {}\n", char_data.name));
                 prompt.push_str(&format!(
                     "Description: {}\n",
                     String::from_utf8_lossy(description_vec)
                 ));
-                prompt.push_str("\n");
+                prompt.push('\n');
                 // Only add static instruction if there's a character description
                 prompt.push_str("---\nInstruction:\nContinue the chat based on the conversation history. Stay in character.\n---\n\n");
-            } else {
-                // No description, return empty string (no character persona to instruct on)
-                return Ok(String::new());
             }
         } else {
             // No description, return empty string
@@ -70,7 +70,7 @@ fn build_character_info_string(character_metadata: Option<&CharacterMetadata>) -
     String::new()
 }
 
-/// Counts tokens for a single GenAiChatMessage.
+/// Counts tokens for a single `GenAiChatMessage`.
 async fn count_tokens_for_genai_message(
     message: &GenAiChatMessage,
     token_counter: &HybridTokenCounter,
@@ -84,7 +84,7 @@ async fn count_tokens_for_genai_message(
             total_tokens += token_counter
                 .count_tokens(text, CountingMode::LocalOnly, Some(model_name))
                 .await?
-                .total as usize;
+                .total;
         }
         MessageContent::Parts(parts_vec) => {
             // parts_vec is Vec<genai::types::Part>
@@ -94,7 +94,7 @@ async fn count_tokens_for_genai_message(
                     total_tokens += token_counter
                         .count_tokens(text, CountingMode::LocalOnly, Some(model_name))
                         .await?
-                        .total as usize;
+                        .total;
                 }
                 // TODO: Consider other Part variants if they contribute to token count (e.g., InlineData)
             }
@@ -154,7 +154,7 @@ pub async fn build_final_llm_prompt(
             Some(model_name),
         )
         .await?
-        .total as usize;
+        .total;
 
     // system_prompt_base is from Persona/Override
     let persona_override_prompt_str = system_prompt_base.unwrap_or_default();
@@ -168,7 +168,7 @@ pub async fn build_final_llm_prompt(
                 Some(model_name),
             )
             .await?
-            .total as usize
+            .total
     };
 
     // raw_character_system_prompt is directly from Character.system_prompt
@@ -183,7 +183,7 @@ pub async fn build_final_llm_prompt(
                 Some(model_name),
             )
             .await?
-            .total as usize
+            .total
     };
 
     // character_info_str is built from CharacterMetadata (name, description)
@@ -198,7 +198,7 @@ pub async fn build_final_llm_prompt(
                 Some(model_name),
             )
             .await?
-            .total as usize
+            .total
     };
 
     let current_user_message_tokens =
@@ -210,7 +210,7 @@ pub async fn build_final_llm_prompt(
         let tokens = token_counter
             .count_tokens(&item.text, CountingMode::LocalOnly, Some(model_name))
             .await?
-            .total as usize;
+            .total;
         rag_items_with_tokens.push((item, tokens));
     }
     // Sort RAG items by score (descending) so less relevant are popped first if needed,

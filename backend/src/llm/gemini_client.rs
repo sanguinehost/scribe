@@ -10,25 +10,70 @@ use super::{AiClient, ChatStream};
 use crate::errors::AppError;
 
 #[derive(Debug)]
+#[allow(dead_code)] // Fields are used in Debug formatting
 struct ChatRequestLogSummary {
-    #[allow(dead_code)]
+    
     has_system_prompt: bool,
-    #[allow(dead_code)]
+    
     num_messages: usize,
-    #[allow(dead_code)]
+    
     has_tools: bool,
 }
 
 impl<'a> From<&'a genai::chat::ChatRequest> for ChatRequestLogSummary {
     fn from(req: &'a genai::chat::ChatRequest) -> Self {
-        ChatRequestLogSummary {
+        Self {
             has_system_prompt: req.system.is_some(),
             num_messages: req.messages.len(),
             has_tools: req.tools.is_some(),
         }
     }
 }
-/// Wrapper struct around the genai::Client to implement our AiClient trait.
+
+/// Logs and converts `genai::Error` to `AppError` for better error handling
+#[allow(clippy::cognitive_complexity)]
+fn log_and_convert_genai_error(gen_err: genai::Error) -> AppError {
+    match &gen_err {
+        genai::Error::StreamEventError { model_iden, body } => {
+            // This body is a serde_json::Value containing the error from Gemini API
+            tracing::error!(
+                target: "gemini_client",
+                model_iden = ?model_iden,
+                "Gemini stream API request failed. Error body: {}. Full genai::Error: {:?}",
+                serde_json::to_string_pretty(body).unwrap_or_else(|_| format!("{body:?}")),
+                gen_err
+            );
+        }
+        genai::Error::ReqwestEventSource(event_source_error) => {
+            tracing::error!(
+                target: "gemini_client",
+                "Gemini stream API request failed due to an EventSource error: {:?}. Full genai::Error: {:?}",
+                event_source_error,
+                gen_err
+            );
+        }
+        genai::Error::StreamParse { model_iden, serde_error } => {
+            tracing::error!(
+                target: "gemini_client",
+                model_iden = ?model_iden,
+                "Failed to parse stream event from Gemini: {:?}. Full genai::Error: {:?}",
+                serde_error,
+                gen_err
+            );
+        }
+        // Log other genai::Error variants generically
+        _ => {
+            tracing::error!(
+                target: "gemini_client",
+                "Gemini stream API request failed with an unhandled genai::Error type: {:?}",
+                gen_err
+            );
+        }
+    }
+    AppError::from(gen_err)
+}
+
+/// Wrapper struct around the `genai::Client` to implement our `AiClient` trait.
 pub struct ScribeGeminiClient {
     inner: Client,
 }
@@ -72,46 +117,7 @@ impl AiClient for ScribeGeminiClient {
             .inner
             .exec_chat_stream(model_name, request, config_override.as_ref())
             .await
-            .map_err(|gen_err: genai::Error| {
-                match &gen_err {
-                    genai::Error::StreamEventError { model_iden, body } => {
-                        // This body is a serde_json::Value containing the error from Gemini API
-                        tracing::error!(
-                            target: "gemini_client",
-                            model_iden = ?model_iden,
-                            "Gemini stream API request failed. Error body: {}. Full genai::Error: {:?}",
-                            serde_json::to_string_pretty(body).unwrap_or_else(|_| format!("{:?}", body)),
-                            gen_err
-                        );
-                    }
-                    genai::Error::ReqwestEventSource(event_source_error) => {
-                        tracing::error!(
-                            target: "gemini_client",
-                            "Gemini stream API request failed due to an EventSource error: {:?}. Full genai::Error: {:?}",
-                            event_source_error,
-                            gen_err
-                        );
-                    }
-                    genai::Error::StreamParse { model_iden, serde_error } => {
-                        tracing::error!(
-                            target: "gemini_client",
-                            model_iden = ?model_iden,
-                            "Failed to parse stream event from Gemini: {:?}. Full genai::Error: {:?}",
-                            serde_error,
-                            gen_err
-                        );
-                    }
-                    // Log other genai::Error variants generically
-                    _ => {
-                        tracing::error!(
-                            target: "gemini_client",
-                            "Gemini stream API request failed with an unhandled genai::Error type: {:?}",
-                            gen_err
-                        );
-                    }
-                }
-                AppError::from(gen_err)
-            })?;
+            .map_err(log_and_convert_genai_error)?;
 
         let inner_stream = chat_stream_response.stream;
         let mapped_stream = inner_stream.map(|result| result.map_err(AppError::from));
@@ -144,9 +150,9 @@ impl AiClient for Arc<ScribeGeminiClient> {
     }
 }
 
-/// Builds the ScribeGeminiClient wrapper.
-/// Relies on genai::ClientBuilder::default() which typically checks GOOGLE_API_KEY env var.
-pub async fn build_gemini_client() -> Result<Arc<ScribeGeminiClient>, AppError> {
+/// Builds the `ScribeGeminiClient` wrapper.
+/// Relies on `genai::ClientBuilder::default()` which typically checks `GOOGLE_API_KEY` env var.
+pub fn build_gemini_client() -> Result<Arc<ScribeGeminiClient>, AppError> {
     let client = ClientBuilder::default().build();
     Ok(Arc::new(ScribeGeminiClient { inner: client }))
 }
@@ -179,7 +185,7 @@ mod tests {
     // --- Existing Integration Tests (Keep them) ---
     #[tokio::test]
     async fn test_build_gemini_client_wrapper_ok() {
-        let result = build_gemini_client().await;
+        let result = build_gemini_client();
         assert!(
             result.is_ok(),
             "Failed to build Gemini client wrapper: {:?}",
@@ -191,7 +197,6 @@ mod tests {
     #[ignore]
     async fn test_generate_simple_response_integration_via_wrapper() {
         let client_wrapper = build_gemini_client()
-            .await
             .expect("Failed to build Gemini client wrapper");
         let user_message = "Test Wrapper: Say hello!".to_string();
         let model_name_for_test = "gemini-2.5-flash-preview-04-17";
@@ -199,7 +204,7 @@ mod tests {
             generate_simple_response(&*client_wrapper, user_message, model_name_for_test).await;
         match result {
             Ok(response) => assert!(!response.is_empty(), "Gemini returned an empty response"),
-            Err(e) => panic!("Gemini API call (via wrapper) failed: {:?}", e),
+            Err(e) => panic!("Gemini API call (via wrapper) failed: {e:?}"),
         }
     }
 
@@ -207,7 +212,6 @@ mod tests {
     #[ignore]
     async fn test_stream_chat_integration_via_wrapper() {
         let client_wrapper = build_gemini_client()
-            .await
             .expect("Failed to build Gemini client wrapper");
         let user_message = "Test Stream Wrapper: Say hello stream!".to_string();
         let model_name_for_test = "gemini-2.5-flash-preview-04-17";
@@ -228,7 +232,7 @@ mod tests {
                             }
                         }
                         Ok(ChatStreamEvent::End(_)) => break,
-                        Err(e) => panic!("Error during stream processing: {:?}", e),
+                        Err(e) => panic!("Error during stream processing: {e:?}"),
                         _ => {}
                     }
                 }
@@ -238,7 +242,7 @@ mod tests {
                 );
                 assert!(chunk_count > 0, "Gemini stream did not produce any chunks");
             }
-            Err(e) => panic!("Gemini API stream call (via wrapper) failed: {:?}", e),
+            Err(e) => panic!("Gemini API stream call (via wrapper) failed: {e:?}"),
         }
     }
 
@@ -246,22 +250,20 @@ mod tests {
     #[ignore]
     async fn test_generate_simple_response_with_different_models() {
         let client_wrapper = build_gemini_client()
-            .await
             .expect("Failed to build Gemini client wrapper");
         let models_to_test = vec![
             "gemini-2.5-pro-preview-05-06",
             "gemini-2.5-flash-preview-04-17",
         ];
         for model_name in models_to_test {
-            let user_message = format!("Test Model [{}]: Say hello!", model_name);
+            let user_message = format!("Test Model [{model_name}]: Say hello!");
             let result = generate_simple_response(&*client_wrapper, user_message, model_name).await;
             match result {
                 Ok(response) => assert!(
-                    !response.is_empty(),
-                    "Gemini model {} returned an empty response",
-                    model_name
-                ),
-                Err(e) => panic!("Gemini API call for model {} failed: {:?}", model_name, e),
+                  !response.is_empty(),
+                  "Gemini model {model_name} returned an empty response"
+              ),
+                Err(e) => panic!("Gemini API call for model {model_name} failed: {e:?}"),
             }
         }
     }
@@ -332,7 +334,7 @@ mod tests {
         ) -> Result<ChatResponse, AppError> {
             self.exec_chat_called.store(true, Ordering::SeqCst);
             self.exec_chat_response.clone().unwrap_or_else(|| {
-                Ok(MockAiClient::create_text_chat_response(
+                Ok(Self::create_text_chat_response(
                     "Default mock response",
                 ))
             })
@@ -395,10 +397,9 @@ mod tests {
         assert!(result.is_err());
         match result.err().unwrap() {
             AppError::BadRequest(msg) => {
-                assert_eq!(msg, "No text content in LLM response") // Check error from line 95
+                assert_eq!(msg, "No text content in LLM response"); // Check error from line 95
             }
-            e => panic!("Expected AppError::BadRequest, got {:?}", e),
+            e => panic!("Expected AppError::BadRequest, got {e:?}"),
         }
-        // Covers line 95.
     }
 }

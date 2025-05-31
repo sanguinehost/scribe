@@ -50,6 +50,7 @@ impl Debug for Backend {
 }
 
 impl Backend {
+    #[must_use]
     pub fn new(pool: DbPool) -> Self {
         Self {
             pool,
@@ -103,10 +104,12 @@ impl AuthnBackend for Backend {
             Ok((user, None)) => {
                 warn!(user_id = %user.id, "User authenticated but DEK was not available/decryptable during login.");
                 // Clear any potentially stale DEK from cache for this user if login proceeds without DEK
-                let mut cache = self.dek_cache.write().await; // Use .await
-                if cache.remove(&user.id).is_some() {
-                    warn!(target: "dek_cache_debug", user_id = %user.id, "AuthBackend::authenticate - STALE DEK REMOVED from cache (key: {})", user.id);
-                }
+                {
+                    let mut cache = self.dek_cache.write().await; // Use .await
+                    if cache.remove(&user.id).is_some() {
+                        warn!(target: "dek_cache_debug", user_id = %user.id, "AuthBackend::authenticate - STALE DEK REMOVED from cache (key: {})", user.id);
+                    }
+                } // cache lock is dropped here
                 Ok(Some(user))
             }
             Err(e) => Err(e),
@@ -172,25 +175,26 @@ impl Backend {
         skip(
             self,
             new_password_hash,
-            new_kek_salt,
-            new_encrypted_dek,
+            new_dek_ciphertext,
             new_dek_nonce,
-            new_encrypted_dek_by_recovery,
-            new_recovery_dek_nonce
+            new_kek_salt,
+            new_recovery_dek_ciphertext,
+            new_recovery_dek_nonce,
         ),
         err
     )]
-    pub async fn update_password_and_encryption_keys(
+    #[allow(clippy::too_many_arguments)] // This is a necessary evil for this specific update function
+    pub async fn update_user_crypto_fields(
         &self,
         user_id: uuid::Uuid,
-        new_password_hash: String,
-        new_kek_salt: String, // KEK salt might not change if password changes, but DEK is re-encrypted with new KEK
-        new_encrypted_dek: Vec<u8>,
-        new_dek_nonce: Vec<u8>,                         // Added
-        new_encrypted_dek_by_recovery: Option<Vec<u8>>, // This would also need re-encryption if recovery phrase is involved
+        new_password_hash: Option<String>,
+        new_dek_ciphertext: Option<Vec<u8>>,
+        new_dek_nonce: Option<Vec<u8>>,
+        new_kek_salt: Option<String>, // KEK salt is stored as string
+        new_recovery_dek_ciphertext: Option<Vec<u8>>, // Added
         new_recovery_dek_nonce: Option<Vec<u8>>,        // Added
     ) -> Result<(), AuthError> {
-        use crate::schema::users::dsl::*;
+        use crate::schema::users::dsl::{encrypted_dek, encrypted_dek_by_recovery, kek_salt, password_hash, updated_at, users};
         use diesel::prelude::*;
 
         let pool = self.pool.clone();
@@ -202,14 +206,28 @@ impl Backend {
             .await
             .map_err(AuthError::PoolError)?
             .interact(move |conn| {
+                // Validate required fields (non-nullable in DB)
+                let pwd_hash = new_password_hash.ok_or_else(|| {
+                    diesel::result::Error::QueryBuilderError("password_hash must be provided".into())
+                })?;
+                let kek_salt_value = new_kek_salt.ok_or_else(|| {
+                    diesel::result::Error::QueryBuilderError("kek_salt must be provided".into())
+                })?;
+                let dek_ciphertext = new_dek_ciphertext.ok_or_else(|| {
+                    diesel::result::Error::QueryBuilderError("encrypted_dek must be provided".into())
+                })?;
+                let dek_nonce_value = new_dek_nonce.ok_or_else(|| {
+                    diesel::result::Error::QueryBuilderError("dek_nonce must be provided".into())
+                })?;
+                
                 diesel::update(users.find(user_id))
                     .set((
-                        password_hash.eq(new_password_hash),
-                        kek_salt.eq(new_kek_salt), // Assuming KEK salt might be updated or is passed even if same
-                        encrypted_dek.eq(new_encrypted_dek),
-                        crate::schema::users::dsl::dek_nonce.eq(new_dek_nonce), // Added
-                        encrypted_dek_by_recovery.eq(new_encrypted_dek_by_recovery),
-                        crate::schema::users::dsl::recovery_dek_nonce.eq(new_recovery_dek_nonce), // Added
+                        password_hash.eq(pwd_hash),
+                        kek_salt.eq(kek_salt_value),
+                        encrypted_dek.eq(dek_ciphertext),
+                        crate::schema::users::dsl::dek_nonce.eq(dek_nonce_value),
+                        encrypted_dek_by_recovery.eq(new_recovery_dek_ciphertext), // This is nullable
+                        crate::schema::users::dsl::recovery_dek_nonce.eq(new_recovery_dek_nonce), // This is nullable
                         updated_at.eq(diesel::dsl::now),
                     ))
                     .execute(conn)

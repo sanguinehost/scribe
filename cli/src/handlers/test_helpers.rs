@@ -28,7 +28,7 @@ use uuid::Uuid;
 
 // Define a simple, cloneable error for mocking purposes
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[allow(dead_code)]
+
 pub enum MockCliError {
     AuthFailed(String),
     RegistrationFailed(String),
@@ -59,7 +59,7 @@ pub struct MockIoHandler {
     outputs: RefCell<Vec<String>>,
 }
 
-#[allow(dead_code)]
+
 impl MockIoHandler {
     pub fn new(inputs: Vec<&str>) -> Self {
         MockIoHandler {
@@ -159,11 +159,11 @@ pub struct MockHttpClient {
     pub called_endpoints: Arc<std::sync::Mutex<Vec<String>>>,
 
     // Expected endpoint patterns for validation
-    #[allow(dead_code)]
+    
     pub expected_endpoints: Arc<std::sync::Mutex<std::collections::HashMap<String, String>>>,
 }
 
-#[allow(dead_code)]
+
 impl MockHttpClient {
     pub fn new() -> Self {
         Self {
@@ -586,7 +586,7 @@ impl HttpClient for MockHttpClient {
 // --- Helper Functions for Creating Mocks ---
 
 /// Creates a mock user for testing
-#[allow(dead_code)]
+
 pub fn mock_user(username: &str) -> User {
     User {
         id: Uuid::new_v4(),
@@ -609,7 +609,7 @@ pub fn mock_user(username: &str) -> User {
 }
 
 /// Creates a mock character for testing
-#[allow(dead_code)]
+
 pub fn mock_character_data_for_client(
     id: Uuid,
     name: &str,
@@ -681,7 +681,7 @@ pub fn mock_character_data_for_client(
 }
 
 /// Creates a mock chat session for testing
-#[allow(dead_code)]
+
 pub fn mock_chat_session(id: Uuid, character_id: Uuid) -> Chat {
     Chat {
         id,
@@ -713,7 +713,7 @@ pub fn mock_chat_session(id: Uuid, character_id: Uuid) -> Chat {
 }
 
 /// Creates a mock chat message for testing
-#[allow(dead_code)]
+
 pub fn mock_chat_message(
     id: Uuid,
     session_id: Uuid,

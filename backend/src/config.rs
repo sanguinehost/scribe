@@ -9,7 +9,7 @@ pub struct Config {
     pub database_url: Option<String>,
     pub gemini_api_key: Option<String>,
     #[serde(default = "default_gemini_api_base_url")]
-    pub gemini_api_base_url: Option<String>,
+    pub gemini_api_base_url: String,
 
     // Server Config
     #[serde(default = "default_port")]
@@ -39,9 +39,9 @@ pub struct Config {
 
     // Tokenizer Config - Added
     #[serde(default = "default_tokenizer_model_path")]
-    pub tokenizer_model_path: Option<String>,
+    pub tokenizer_model_path: String,
     #[serde(default = "default_token_counter_default_model")]
-    pub token_counter_default_model: Option<String>,
+    pub token_counter_default_model: String,
 
     // Context Token Limits - Added
     #[serde(default = "default_context_total_token_limit")]
@@ -65,7 +65,7 @@ impl std::fmt::Debug for Config {
             )
             .field(
                 "gemini_api_base_url",
-                &self.gemini_api_base_url.as_ref().map(|_| "[REDACTED]"),
+                &"[REDACTED]",
             )
             .field("port", &self.port)
             .field(
@@ -99,58 +99,58 @@ impl std::fmt::Debug for Config {
     }
 }
 
-fn default_gemini_api_base_url() -> Option<String> {
-    Some("https://generativelanguage.googleapis.com".to_string())
+fn default_gemini_api_base_url() -> String {
+    "https://generativelanguage.googleapis.com".to_string()
 }
 
 // Default value functions for serde
-fn default_port() -> u16 {
+const fn default_port() -> u16 {
     8080
 }
-fn default_session_cookie_secure() -> bool {
+const fn default_session_cookie_secure() -> bool {
     true
 } // Default to secure
 fn default_qdrant_collection_name() -> String {
     "scribe_embeddings".to_string()
 }
-fn default_embedding_dimension() -> u64 {
+const fn default_embedding_dimension() -> u64 {
     768
 } // Default for models/text-embedding-004
 fn default_qdrant_distance_metric() -> String {
     "Cosine".to_string()
 } // Added
-fn default_qdrant_on_disk() -> Option<bool> {
+const fn default_qdrant_on_disk() -> Option<bool> {
     None
 } // Added
 fn default_chunking_metric() -> String {
     "word".to_string()
 }
-fn default_chunking_max_size() -> usize {
+const fn default_chunking_max_size() -> usize {
     200
 } // Default for word metric
-fn default_chunking_overlap() -> usize {
+const fn default_chunking_overlap() -> usize {
     20
 } // Default for word metric
-fn default_tokenizer_model_path() -> Option<String> {
+fn default_tokenizer_model_path() -> String {
     let manifest_dir = env!("CARGO_MANIFEST_DIR");
     let model_path = std::path::Path::new(manifest_dir)
         .join("resources")
         .join("tokenizers")
         .join("gemma.model");
-    Some(model_path.to_string_lossy().into_owned())
+    model_path.to_string_lossy().into_owned()
 } // Path relative to crate root (backend/)
-fn default_token_counter_default_model() -> Option<String> {
-    Some("gemini-2.5-flash-preview-04-17".to_string())
+fn default_token_counter_default_model() -> String {
+    "gemini-2.5-flash-preview-04-17".to_string()
 } // Added
 
 // Defaults for context token limits
-fn default_context_total_token_limit() -> usize {
+const fn default_context_total_token_limit() -> usize {
     200_000
 }
-fn default_context_recent_history_token_budget() -> usize {
+const fn default_context_recent_history_token_budget() -> usize {
     150_000
 }
-fn default_context_rag_token_budget() -> usize {
+const fn default_context_rag_token_budget() -> usize {
     50_000
 }
 
@@ -167,7 +167,7 @@ impl Config {
         // envy::from_env::<Config>().map_err(anyhow::Error::from)
         // Ok(Config::default()) // Return default for now
         // Load config from environment variables using envy
-        envy::from_env::<Config>().map_err(anyhow::Error::from)
+        envy::from_env::<Self>().map_err(anyhow::Error::from)
     }
 }
 

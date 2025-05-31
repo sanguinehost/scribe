@@ -26,7 +26,7 @@ use crate::services::encryption_service::EncryptionService; // Added
     Serialize,
     Deserialize,
     Clone,
-    PartialEq,
+    PartialEq, Eq,
     AsChangeset,
 )] // Removed Debug for custom impl
 #[diesel(belongs_to(User, foreign_key = user_id))]
@@ -112,6 +112,7 @@ pub struct Character {
 }
 
 impl std::fmt::Debug for Character {
+    #[allow(clippy::too_many_lines)]
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Character")
             .field("id", &self.id)
@@ -328,7 +329,7 @@ impl std::fmt::Debug for Character {
 
 impl Character {
     /// Encrypts the description field if plaintext is provided and a DEK is available.
-    /// Updates self.description and self.description_nonce.
+    /// Updates `self.description` and `self.description_nonce`.
     pub fn encrypt_description_field(
         &mut self,
         dek: &SecretBox<Vec<u8>>,
@@ -338,7 +339,7 @@ impl Character {
             Some(plaintext) if !plaintext.is_empty() => {
                 let (ciphertext, nonce) = crate::crypto::encrypt_gcm(plaintext.as_bytes(), dek)
                     .map_err(|e| {
-                        AppError::EncryptionError(format!("Failed to encrypt description: {}", e))
+                        AppError::EncryptionError(format!("Failed to encrypt description: {e}"))
                     })?;
                 self.description = Some(ciphertext);
                 self.description_nonce = Some(nonce);
@@ -352,7 +353,7 @@ impl Character {
         Ok(())
     }
 
-    /// Convert this Character into a json-friendly ClientCharacter response
+    /// Convert this Character into a json-friendly `ClientCharacter` response
     /// If DEK is available, decrypt encrypted fields
     pub async fn into_client_character(
         self,
@@ -397,13 +398,12 @@ impl Character {
                     )
                     .await
                     .map_err(|e| {
-                        AppError::EncryptionError(format!("Failed to decrypt system_prompt: {}", e))
+                        AppError::EncryptionError(format!("Failed to decrypt system_prompt: {e}"))
                     })?;
 
                 client_char.system_prompt = String::from_utf8(decrypted_bytes).map_err(|e| {
                     AppError::EncryptionError(format!(
-                        "Invalid UTF-8 in decrypted system_prompt: {}",
-                        e
+                        "Invalid UTF-8 in decrypted system_prompt: {e}"
                     ))
                 })?;
             }
@@ -421,14 +421,13 @@ impl Character {
                     .decrypt(voice_data, voice_nonce, dek_val.expose_secret())
                     .await
                     .map_err(|e| {
-                        AppError::EncryptionError(format!("Failed to decrypt voice data: {}", e))
+                        AppError::EncryptionError(format!("Failed to decrypt voice data: {e}"))
                     })?;
 
                 client_char.voice_instructions =
                     String::from_utf8(decrypted_bytes).map_err(|e| {
                         AppError::EncryptionError(format!(
-                            "Invalid UTF-8 in decrypted voice data: {}",
-                            e
+                            "Invalid UTF-8 in decrypted voice data: {e}"
                         ))
                     })?;
             }
@@ -450,14 +449,13 @@ impl Character {
                     .decrypt(description_data, nonce_val, dek_val.expose_secret())
                     .await
                     .map_err(|e| {
-                        AppError::EncryptionError(format!("Failed to decrypt description: {}", e))
+                        AppError::EncryptionError(format!("Failed to decrypt description: {e}"))
                     })?;
 
                 // Convert bytes to UTF-8 string
                 let decrypted_text = String::from_utf8(decrypted_bytes).map_err(|e| {
                     AppError::EncryptionError(format!(
-                        "Invalid UTF-8 in decrypted description: {}",
-                        e
+                        "Invalid UTF-8 in decrypted description: {e}"
                     ))
                 })?;
 
@@ -475,8 +473,9 @@ impl Character {
         Ok(client_char)
     }
 
-    /// Convert this Character into a CharacterDataForClient response
-    /// This is similar to into_client_character but with a more detailed output format
+    /// Convert this Character into a `CharacterDataForClient` response
+    /// This is similar to `into_client_character` but with a more detailed output format
+    #[allow(clippy::too_many_lines)]
     pub async fn into_decrypted_for_client(
         self,
         dek: Option<&SecretBox<Vec<u8>>>,
@@ -518,14 +517,14 @@ impl Character {
         let process_encrypted_field = |decrypted_result: Result<Option<String>, AppError>| -> Result<Option<String>, AppError> {
             match decrypted_result {
                 Ok(Some(s)) if !s.is_empty() => Ok(Some(s)), // Keep both normal text and "[Encrypted]"
-                Ok(_) => Ok(Some("".to_string())), // Return Some("") instead of None for empty string or None results
+                Ok(_) => Ok(Some(String::new())), // Return Some("") instead of None for empty string or None results
                 Err(e) => Err(e),
             }
         };
 
         // For non-encrypted string fields, we default to Some("") if None
         let default_empty_string_if_none =
-            |opt: Option<String>| -> Option<String> { opt.or_else(|| Some("".to_string())) };
+            |opt: Option<String>| -> Option<String> { opt.or_else(|| Some(String::new())) };
 
         let client_char = CharacterDataForClient {
             id: self.id,
@@ -732,6 +731,7 @@ pub struct CharacterDataForClient {
 }
 
 impl std::fmt::Debug for CharacterDataForClient {
+    #[allow(clippy::too_many_lines)]
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("CharacterDataForClient")
             .field("id", &self.id)
@@ -884,7 +884,7 @@ pub struct UpdatableCharacter<'a> {
     // Map other DB fields if needed
 }
 
-impl<'a> std::fmt::Debug for UpdatableCharacter<'a> {
+impl std::fmt::Debug for UpdatableCharacter<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("UpdatableCharacter")
             .field("spec", &self.spec.map(|_| "[REDACTED]"))
@@ -931,7 +931,7 @@ impl<'a> From<&'a ParsedCharacterCard> for UpdatableCharacter<'a> {
                     let mapped: Vec<&'a str> = v
                         .iter()
                         .filter(|s| !s.is_empty())
-                        .map(|s| s.as_str()) // Use as_str()
+                        .map(std::string::String::as_str) // Use as_str()
                         .collect(); // Compiler should infer Vec<&str>
                     if mapped.is_empty() {
                         None
@@ -973,7 +973,7 @@ impl<'a> From<&'a ParsedCharacterCard> for UpdatableCharacter<'a> {
                     let mapped: Vec<&'a str> = v
                         .iter()
                         .filter(|s| !s.is_empty())
-                        .map(|s| s.as_str()) // Use as_str()
+                        .map(std::string::String::as_str) // Use as_str()
                         .collect();
                     if mapped.is_empty() {
                         None
@@ -1049,6 +1049,7 @@ impl std::fmt::Debug for CharacterMetadata {
 }
 
 // Helper function to create a dummy Character instance
+#[must_use] 
 pub fn create_dummy_character() -> Character {
     // Made pub for potential use in other tests
     let now = Utc::now();

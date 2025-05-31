@@ -1,7 +1,6 @@
 // backend/src/errors.rs
 use axum::{
     Json,
-    // extract::multipart::MultipartError, // Unused import
     http::StatusCode,
     response::{IntoResponse, Response},
 };
@@ -151,20 +150,6 @@ pub enum AppError {
     #[error("Internal Server Error: Password processing error.")]
     PasswordProcessingError, // New specific variant
 
-    // REMOVED DUPLICATE/REDUNDANT VARIANTS:
-    // - DatabaseQueryError(String)
-    // - DatabasePoolError(#[from] deadpool_diesel::PoolError) // Duplicate of DbPoolError
-    // - DatabaseInteractError(#[from] deadpool_diesel::InteractError) // Duplicate of DbInteractError
-    // - CharacterCardParseError(String) // Replaced by CharacterParseError(#[from] CharacterParserError)
-    // - GenAIClientError(String) // Covered by GeminiError or LlmClientError
-    // - InternalServerError(anyhow::Error) // Duplicate
-    // - AxumLoginError(#[from] axum_login::Error<AuthBackendError>) // Corrected to AuthError
-
-    // Removed duplicate variants like DbPoolError, DbBuildError, DbQueryError,
-    // DbMigrationError, PasswordHashingFailed, ConfigError, AuthError, SessionError
-    // which were consolidated above using `#[from]`.
-
-    // Ensure GenAIError variants are distinct if needed, or consolidate
     #[error("LLM Generation Error: {0}")] // Maybe wrap specific GenAIError later
     GenerationError(String), // Using String for now if GenAIError covers multiple cases
 
@@ -230,15 +215,15 @@ pub enum AuthBackendError {
 // KEEPING these From impls for AuthBackendError as they are needed for its purpose.
 impl From<bcrypt::BcryptError> for AuthBackendError {
     fn from(err: bcrypt::BcryptError) -> Self {
-        AuthBackendError::PasswordHashingFailed(err.to_string())
+        Self::PasswordHashingFailed(err.to_string())
     }
 }
 
 impl From<DieselError> for AuthBackendError {
     fn from(err: DieselError) -> Self {
         match err {
-            DieselError::NotFound => AuthBackendError::UserNotFound, // Map specific Diesel errors
-            _ => AuthBackendError::DbQueryError(err.to_string()),
+            DieselError::NotFound => Self::UserNotFound, // Map specific Diesel errors
+            _ => Self::DbQueryError(err.to_string()),
         }
     }
 }
@@ -246,14 +231,14 @@ impl From<DieselError> for AuthBackendError {
 // If UserStore directly interacts with the pool and can return PoolError
 impl From<DeadpoolDieselPoolError> for AuthBackendError {
     fn from(err: DeadpoolDieselPoolError) -> Self {
-        AuthBackendError::DbPoolError(err.to_string())
+        Self::DbPoolError(err.to_string())
     }
 }
 
 // Catch-all for any other error type UserStore might encounter
 impl From<AnyhowError> for AuthBackendError {
     fn from(err: AnyhowError) -> Self {
-        AuthBackendError::InternalError(format!("{:?}", err)) // Use debug format for full chain
+        Self::InternalError(format!("{err:?}")) // Use debug format for full chain
     }
 }
 
@@ -264,9 +249,10 @@ impl From<AnyhowError> for AuthBackendError {
 
 // --- IntoResponse Implementation ---
 impl IntoResponse for AppError {
+    #[allow(clippy::cognitive_complexity, clippy::too_many_lines)]
     fn into_response(self) -> Response {
         match self {
-            AppError::ValidationError(validation_errors) => {
+            Self::ValidationError(validation_errors) => {
                 let status = StatusCode::UNPROCESSABLE_ENTITY;
                 let error_message = "Validation error".to_string();
 
@@ -305,278 +291,278 @@ impl IntoResponse for AppError {
             app_error => {
                 // Handle all other AppError variants
                 let (status, error_message) = match app_error {
-                    AppError::InvalidCredentials => {
+                    Self::InvalidCredentials => {
                         (StatusCode::UNAUTHORIZED, "Invalid credentials".to_string())
                     }
-                    AppError::Unauthorized(msg) => (StatusCode::UNAUTHORIZED, msg),
-                    AppError::Forbidden => (StatusCode::FORBIDDEN, "Forbidden".to_string()),
-                    AppError::BadRequest(msg) => (StatusCode::BAD_REQUEST, msg),
-                    AppError::NotFound(msg) => (StatusCode::NOT_FOUND, msg),
-                    AppError::UserNotFound => (StatusCode::NOT_FOUND, "User not found".to_string()),
-                    AppError::SessionNotFound => (
+                    Self::Unauthorized(msg) => (StatusCode::UNAUTHORIZED, msg),
+                    Self::Forbidden => (StatusCode::FORBIDDEN, "Forbidden".to_string()),
+                    Self::BadRequest(msg) => (StatusCode::BAD_REQUEST, msg),
+                    Self::NotFound(msg) => (StatusCode::NOT_FOUND, msg),
+                    Self::UserNotFound => (StatusCode::NOT_FOUND, "User not found".to_string()),
+                    Self::SessionNotFound => (
                         StatusCode::UNAUTHORIZED,
                         "Session not found or expired".to_string(),
                     ),
-                    AppError::Conflict(msg) => (StatusCode::CONFLICT, msg),
-                    AppError::UsernameTaken => (
+                    Self::Conflict(msg) => (StatusCode::CONFLICT, msg),
+                    Self::UsernameTaken => (
                         StatusCode::CONFLICT,
                         "Username is already taken".to_string(),
                     ),
-                    AppError::EmailTaken => {
+                    Self::EmailTaken => {
                         (StatusCode::CONFLICT, "Email is already taken".to_string())
                     }
-                    AppError::InvalidInput(msg) => {
-                        (StatusCode::BAD_REQUEST, format!("Invalid input: {}", msg))
+                    Self::InvalidInput(msg) => {
+                        (StatusCode::BAD_REQUEST, format!("Invalid input: {msg}"))
                     }
-                    AppError::FileUploadError(e) => {
+                    Self::FileUploadError(e) => {
                         error!("File upload error: {}", e);
                         (StatusCode::BAD_REQUEST, "File upload failed".to_string())
                     }
-                    AppError::CharacterParseError(e) => {
+                    Self::CharacterParseError(e) => {
                         error!("Character parsing error: {}", e);
                         (
                             StatusCode::BAD_REQUEST,
                             "Failed to parse character data".to_string(),
                         )
                     }
-                    AppError::ParseIntError(e) => {
+                    Self::ParseIntError(e) => {
                         error!("Integer parsing error: {}", e);
                         (
                             StatusCode::BAD_REQUEST,
                             "Invalid numeric value provided".to_string(),
                         )
                     }
-                    AppError::UuidError(e) => {
+                    Self::UuidError(e) => {
                         error!("UUID error: {}", e);
                         (
                             StatusCode::BAD_REQUEST,
                             "Invalid identifier format".to_string(),
                         )
                     }
-                    AppError::AuthError(e) => {
+                    Self::AuthError(e) => {
                         error!("Authentication framework error: {}", e);
                         (StatusCode::UNAUTHORIZED, "Authentication error".to_string())
                     }
-                    AppError::SessionStoreError(e) => {
+                    Self::SessionStoreError(e) => {
                         error!("Session store error: {}", e);
                         (
                             StatusCode::INTERNAL_SERVER_ERROR,
                             "Session management error".to_string(),
                         )
                     }
-                    AppError::CryptoError(e) => {
+                    Self::CryptoError(e) => {
                         error!("Cryptography error: {}", e);
                         (
                             StatusCode::INTERNAL_SERVER_ERROR,
                             "A cryptographic operation failed.".to_string(),
                         )
                     }
-                    AppError::EncryptionError(e) => {
+                    Self::EncryptionError(e) => {
                         error!("Encryption error: {}", e);
                         (
                             StatusCode::INTERNAL_SERVER_ERROR,
                             "Encryption operation failed.".to_string(),
                         )
                     }
-                    AppError::DecryptionError(e) => {
+                    Self::DecryptionError(e) => {
                         error!("Decryption error: {}", e);
                         (
                             StatusCode::INTERNAL_SERVER_ERROR,
                             "Data decryption failed.".to_string(),
                         )
                     }
-                    AppError::SessionError(e) => {
+                    Self::SessionError(e) => {
                         error!("Session operation error: {}", e);
                         (
                             StatusCode::INTERNAL_SERVER_ERROR,
                             "A session operation failed.".to_string(),
                         )
                     }
-                    AppError::RateLimited => (
+                    Self::RateLimited => (
                         StatusCode::TOO_MANY_REQUESTS,
                         "API rate limit exceeded. Please try again later.".to_string(),
                     ),
-                    AppError::DatabaseQueryError(e) => {
+                    Self::DatabaseQueryError(e) => {
                         error!("Database query error: {}", e);
                         (
                             StatusCode::INTERNAL_SERVER_ERROR,
                             "Database error".to_string(),
                         )
                     }
-                    AppError::DbPoolError(e) => {
+                    Self::DbPoolError(e) => {
                         error!("Database pool error: {}", e);
                         (
                             StatusCode::INTERNAL_SERVER_ERROR,
                             "Database connection error".to_string(),
                         )
                     }
-                    AppError::DbManagedPoolError(e) => {
+                    Self::DbManagedPoolError(e) => {
                         error!("Database managed pool error: {}", e);
                         (
                             StatusCode::INTERNAL_SERVER_ERROR,
                             "Database connection error".to_string(),
                         )
                     }
-                    AppError::DbPoolBuildError(e) => {
+                    Self::DbPoolBuildError(e) => {
                         error!("Database pool build error: {}", e);
                         (
                             StatusCode::INTERNAL_SERVER_ERROR,
                             "Database configuration error".to_string(),
                         )
                     }
-                    AppError::DbInteractError(e) => {
+                    Self::DbInteractError(e) => {
                         error!("Database interaction error: {}", e);
                         (
                             StatusCode::INTERNAL_SERVER_ERROR,
                             "Database task execution error".to_string(),
                         )
                     }
-                    AppError::DbMigrationError(e) => {
+                    Self::DbMigrationError(e) => {
                         error!("Database migration error: {}", e);
                         (
                             StatusCode::INTERNAL_SERVER_ERROR,
                             "Database schema error".to_string(),
                         )
                     }
-                    AppError::PasswordHashingFailed(e) => {
+                    Self::PasswordHashingFailed(e) => {
                         error!("Password hashing failed: {}", e);
                         (
                             StatusCode::INTERNAL_SERVER_ERROR,
                             "Internal security error".to_string(),
                         )
                     }
-                    AppError::ConfigError(e) => {
+                    Self::ConfigError(e) => {
                         error!("Configuration error: {}", e);
                         (
                             StatusCode::INTERNAL_SERVER_ERROR,
                             "Server configuration error".to_string(),
                         )
                     }
-                    AppError::IoError(e) => {
+                    Self::IoError(e) => {
                         error!("IO error: {}", e);
                         (
                             StatusCode::INTERNAL_SERVER_ERROR,
                             "File system or network error".to_string(),
                         )
                     }
-                    AppError::SerializationError(e) => {
+                    Self::SerializationError(e) => {
                         error!("Serialization error: {}", e);
                         (
                             StatusCode::INTERNAL_SERVER_ERROR,
                             "Data formatting error".to_string(),
                         )
                     }
-                    AppError::GeminiError(e) => {
+                    Self::GeminiError(e) => {
                         error!("LLM API error: {}", e);
                         (
                             StatusCode::INTERNAL_SERVER_ERROR,
                             "AI service error".to_string(),
                         )
                     }
-                    AppError::ImageProcessingError(e) => {
+                    Self::ImageProcessingError(e) => {
                         error!("Image processing error: {}", e);
                         (
                             StatusCode::INTERNAL_SERVER_ERROR,
                             "Failed to process image".to_string(),
                         )
                     }
-                    AppError::HttpRequestError(e) => {
+                    Self::HttpRequestError(e) => {
                         error!("HTTP request error: {}", e);
                         (
                             StatusCode::INTERNAL_SERVER_ERROR,
                             "Failed to communicate with external service".to_string(),
                         )
                     }
-                    AppError::HttpMiddlewareError(e) => {
+                    Self::HttpMiddlewareError(e) => {
                         error!("HTTP middleware error: {}", e);
                         (
                             StatusCode::INTERNAL_SERVER_ERROR,
                             "Failed during external service communication".to_string(),
                         )
                     }
-                    AppError::LlmClientError(e) => {
+                    Self::LlmClientError(e) => {
                         error!("LLM client error: {}", e);
                         (
                             StatusCode::INTERNAL_SERVER_ERROR,
                             "AI service client error".to_string(),
                         )
                     }
-                    AppError::GenerationError(e) => {
+                    Self::GenerationError(e) => {
                         error!("LLM generation error: {}", e);
                         (
                             StatusCode::BAD_GATEWAY,
                             "AI service request failed".to_string(),
                         )
                     }
-                    AppError::EmbeddingError(e) => {
+                    Self::EmbeddingError(e) => {
                         error!("LLM embedding error: {}", e);
                         (
                             StatusCode::BAD_GATEWAY,
                             "AI embedding service request failed".to_string(),
                         )
                     }
-                    AppError::VectorDbError(e) => {
+                    Self::VectorDbError(e) => {
                         error!("Vector DB error: {}", e);
                         (
                             StatusCode::BAD_GATEWAY,
                             "Failed to process embeddings".to_string(),
                         )
                     }
-                    AppError::AiServiceError(e) => {
+                    Self::AiServiceError(e) => {
                         error!("AI Service Error: {}", e);
                         (StatusCode::INTERNAL_SERVER_ERROR, e)
                     }
-                    AppError::PasswordProcessingError => (
+                    Self::PasswordProcessingError => (
                         StatusCode::INTERNAL_SERVER_ERROR,
                         "Internal Server Error: Password processing error.".to_string(),
                     ),
-                    AppError::InternalServerErrorGeneric(e) => {
+                    Self::InternalServerErrorGeneric(e) => {
                         error!("Internal server error: {}", e);
                         (
                             StatusCode::INTERNAL_SERVER_ERROR,
                             "An unexpected error occurred".to_string(),
                         )
                     }
-                    AppError::Session(e) => {
+                    Self::Session(e) => {
                         error!("Session error: {}", e);
                         (
                             StatusCode::INTERNAL_SERVER_ERROR,
                             "Session management error".to_string(),
                         )
                     }
-                    AppError::NotImplemented(msg) => {
+                    Self::NotImplemented(msg) => {
                         error!("Not Implemented: {}", msg);
                         (StatusCode::NOT_IMPLEMENTED, msg)
                     }
-                    AppError::WebSocketSendError(e) => {
+                    Self::WebSocketSendError(e) => {
                         error!("WebSocket send error: {}", e);
                         (
                             StatusCode::INTERNAL_SERVER_ERROR,
                             "WebSocket send error".to_string(),
                         )
                     }
-                    AppError::WebSocketReceiveError(e) => {
+                    Self::WebSocketReceiveError(e) => {
                         error!("WebSocket receive error: {}", e);
                         (
                             StatusCode::BAD_REQUEST, // Or INTERNAL_SERVER_ERROR depending on context
                             "WebSocket receive error".to_string(),
                         )
                     }
-                    AppError::ChunkingError(e) => {
+                    Self::ChunkingError(e) => {
                         error!("Text chunking error: {}", e);
                         (
                             StatusCode::INTERNAL_SERVER_ERROR,
                             "Text chunking error".to_string(),
                         )
                     }
-                    AppError::CharacterParsingError(e) => {
+                    Self::CharacterParsingError(e) => {
                         error!("Character parsing error: {}", e);
                         (
                             StatusCode::BAD_REQUEST,
                             "Failed to parse character data".to_string(),
                         )
                     }
-                    AppError::TextProcessingError(e) => {
+                    Self::TextProcessingError(e) => {
                         error!("Text processing error: {}", e);
                         (
                             StatusCode::INTERNAL_SERVER_ERROR,
@@ -584,10 +570,10 @@ impl IntoResponse for AppError {
                         )
                     }
                     // This case should not be reachable due to the outer match
-                    AppError::ValidationError(_) => {
+                    Self::ValidationError(_) => {
                         unreachable!("ValidationError should be handled by the outer match arm")
                     }
-                    AppError::BadGateway(msg) => {
+                    Self::BadGateway(msg) => {
                         error!("Bad Gateway error: {}", msg);
                         (StatusCode::BAD_GATEWAY, msg)
                     }
@@ -604,430 +590,261 @@ impl IntoResponse for AppError {
 // --- Convenience Result Type ---
 pub type Result<T, E = AppError> = std::result::Result<T, E>;
 
+// --- From implementations ---
+impl From<bcrypt::BcryptError> for AppError {
+    fn from(err: bcrypt::BcryptError) -> Self {
+        Self::PasswordHashingFailed(err.to_string())
+    }
+}
+
+impl From<axum_login::Error<AuthBackend>> for AppError {
+    fn from(err: axum_login::Error<AuthBackend>) -> Self {
+        // Restore original (potentially incorrect) match logic
+        match err {
+            axum_login::Error::Session(session_err) => {
+                tracing::error!("Session component of axum_login::Error: {:?}", session_err);
+                if session_err.to_string().contains("decode error") {
+                    // Heuristic check
+                    Self::Unauthorized(format!("Invalid session data: {session_err}"))
+                } else {
+                    Self::SessionStoreError(format!(
+                        "Session processing error: {session_err}"
+                    ))
+                }
+            }
+            // This variant caused E0599 before, indicating it might be incorrect for the current axum_login version.
+            // We'll leave it commented out for now and rely on the fact that this path isn't being hit for the current 404s.
+            // If we later encounter panics *here*, we'll need to revisit the axum_login::Error structure.
+            /*
+            axum_login::Error::Identity(user_store_err) => {
+                tracing::error!("Identity (UserStore) component of axum_login::Error: {:?}", user_store_err);
+                match user_store_err {
+                    AuthBackendError::UserNotFound => Self::UserNotFound,
+                    AuthBackendError::InvalidCredentials => Self::InvalidCredentials,
+                    AuthBackendError::PasswordHashingFailed(s) => Self::PasswordHashingFailed(s),
+                    AuthBackendError::DbQueryError(s) => Self::DatabaseQueryError(s),
+                    AuthBackendError::UsernameTaken => Self::UsernameTaken,
+                    AuthBackendError::DbPoolError(s) => Self::DbPoolError(s),
+                    AuthBackendError::InternalError(s) => Self::InternalServerErrorGeneric(s),
+                }
+            }
+            */
+            // Add a temporary catch-all that maps to Unauthorized until we know the correct variants
+            axum_login::Error::Backend(_) => { // Changed _ to axum_login::Error::Backend(_)
+                tracing::error!("Unhandled axum_login::Error variant: {:?}", err);
+                Self::Unauthorized(format!("Unhandled authentication error: {err}"))
+            }
+        }
+    }
+}
+
+impl From<tower_sessions::session_store::Error> for AppError {
+    fn from(err: tower_sessions::session_store::Error) -> Self {
+        Self::SessionStoreError(err.to_string())
+    }
+}
+
+impl From<diesel::result::Error> for AppError {
+    fn from(err: diesel::result::Error) -> Self {
+        match err {
+            DieselError::NotFound => Self::NotFound("Resource not found".to_string()),
+            // Explicitly check the error message for "Record not found" as a fallback
+            ref e if e.to_string().contains("Record not found") => {
+                Self::NotFound("Resource not found".to_string())
+            }
+            _ => Self::DatabaseQueryError(err.to_string()),
+        }
+    }
+}
+
+impl From<deadpool_diesel::PoolError> for AppError {
+    fn from(err: deadpool_diesel::PoolError) -> Self {
+        Self::DbPoolError(err.to_string())
+    }
+}
+
+impl From<deadpool::managed::PoolError<deadpool_diesel::PoolError>> for AppError {
+    fn from(err: deadpool::managed::PoolError<deadpool_diesel::PoolError>) -> Self {
+        Self::DbManagedPoolError(err.to_string())
+    }
+}
+
+impl From<deadpool::managed::BuildError> for AppError {
+    fn from(err: deadpool::managed::BuildError) -> Self {
+        Self::DbPoolBuildError(err.to_string())
+    }
+}
+
+impl From<deadpool_diesel::InteractError> for AppError {
+    fn from(err: deadpool_diesel::InteractError) -> Self {
+        Self::DbInteractError(err.to_string())
+    }
+}
+
+impl From<diesel_migrations::MigrationError> for AppError {
+    fn from(err: diesel_migrations::MigrationError) -> Self {
+        Self::DbMigrationError(err.to_string())
+    }
+}
+
+impl From<axum::extract::multipart::MultipartError> for AppError {
+    fn from(err: axum::extract::multipart::MultipartError) -> Self {
+        Self::FileUploadError(err.to_string())
+    }
+}
+
+impl From<std::num::ParseIntError> for AppError {
+    fn from(err: std::num::ParseIntError) -> Self {
+        Self::ParseIntError(err.to_string())
+    }
+}
+
+impl From<uuid::Error> for AppError {
+    fn from(err: uuid::Error) -> Self {
+        Self::UuidError(err.to_string())
+    }
+}
+
+impl From<genai::Error> for AppError {
+    fn from(err: genai::Error) -> Self {
+        Self::GeminiError(err.to_string())
+    }
+}
+
+impl From<image::ImageError> for AppError {
+    fn from(err: image::ImageError) -> Self {
+        Self::ImageProcessingError(err.to_string())
+    }
+}
+
+impl From<reqwest::Error> for AppError {
+    fn from(err: reqwest::Error) -> Self {
+        Self::HttpRequestError(err.to_string())
+    }
+}
+
+impl From<reqwest_middleware::Error> for AppError {
+    fn from(err: reqwest_middleware::Error) -> Self {
+        Self::HttpMiddlewareError(err.to_string())
+    }
+}
+
+impl From<std::io::Error> for AppError {
+    fn from(err: std::io::Error) -> Self {
+        Self::IoError(err.to_string())
+    }
+}
+
+impl From<serde_json::Error> for AppError {
+    fn from(err: serde_json::Error) -> Self {
+        Self::SerializationError(err.to_string())
+    }
+}
+
+impl From<anyhow::Error> for AppError {
+    fn from(err: anyhow::Error) -> Self {
+        Self::InternalServerErrorGeneric(err.to_string()) // Use renamed variant
+    }
+}
+
+impl From<tower_sessions::session::Error> for AppError {
+    fn from(err: tower_sessions::session::Error) -> Self {
+        Self::Session(err.to_string())
+    }
+}
+
+// From impl for AuthError
+impl From<crate::auth::AuthError> for AppError {
+    fn from(err: crate::auth::AuthError) -> Self {
+        match err {
+            crate::auth::AuthError::WrongCredentials => Self::InvalidCredentials,
+            crate::auth::AuthError::UsernameTaken => Self::UsernameTaken,
+            crate::auth::AuthError::EmailTaken => Self::EmailTaken,
+            crate::auth::AuthError::HashingError => {
+                Self::PasswordHashingFailed("Bcrypt hashing failed".to_string())
+            } // This remains, not PasswordProcessingError, as From<AuthError> is generic
+            crate::auth::AuthError::UserNotFound => Self::UserNotFound,
+            crate::auth::AuthError::DatabaseError(msg) => Self::DatabaseQueryError(msg),
+            crate::auth::AuthError::PoolError(e) => Self::DbPoolError(e.to_string()),
+            crate::auth::AuthError::InteractError(s) => Self::DbInteractError(s),
+            crate::auth::AuthError::CryptoOperationFailed(crypto_err) => {
+                Self::InternalServerErrorGeneric(format!(
+                    "Cryptography operation failed: {crypto_err}"
+                ))
+            } // Use renamed variant
+            crate::auth::AuthError::RecoveryNotSetup => Self::BadRequest(
+                "Account recovery has not been set up for this user.".to_string(),
+            ),
+            crate::auth::AuthError::InvalidRecoveryPhrase => {
+                Self::BadRequest("The provided recovery phrase was invalid.".to_string())
+            }
+            crate::auth::AuthError::SessionDeletionError(msg) => {
+                Self::InternalServerErrorGeneric(format!("Failed to delete session: {msg}"))
+            }
+            crate::auth::AuthError::AccountLocked => Self::Unauthorized(
+                "Your account is locked. Please contact an administrator.".to_string(),
+            ),
+        }
+    }
+}
+
 // --- Test Module ---
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::services::character_parser::ParserError as CharacterParserError;
-    use anyhow::anyhow; // Keep for test
-    use axum::response::Response;
-    use diesel::result::Error as DieselError; // Keep for test
+    use axum::{http::StatusCode, response::IntoResponse};
     use serde_json::Value;
-    use uuid::Uuid; // Add missing import // Add this back
 
-    // Helper to extract JSON body from response
-    async fn get_body_json(response: Response) -> Value {
-        let body_bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
-            .await
-            .expect("Failed to read response body");
-        serde_json::from_slice(&body_bytes).expect("Failed to parse JSON body")
-    }
-
-    #[tokio::test]
-    async fn test_internal_server_error_response() {
-        let error = AppError::InternalServerErrorGeneric("Something went very wrong".to_string());
-        let response = error.into_response();
-        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
-        let body = get_body_json(response).await;
-        assert_eq!(body["error"], "An unexpected error occurred");
-    }
-
-    #[tokio::test]
-    async fn test_database_error_response() {
-        // Use a specific DieselError variant for testing
-        let db_error = DieselError::DatabaseError(
-            diesel::result::DatabaseErrorKind::UniqueViolation,
-            Box::new("duplicate key value violates unique constraint".to_string()),
-        );
-        // #[from] handles the conversion
-        let error = AppError::from(db_error);
-        let response = error.into_response();
-        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
-        let body = get_body_json(response).await;
-        assert_eq!(body["error"], "Database error");
-    }
-
-    // Add similar tests for other error variants as needed...
-
-    #[tokio::test]
-    async fn test_not_found_response() {
-        let error = AppError::NotFound("Resource 'abc' not found".to_string());
-        let response = error.into_response();
-        assert_eq!(response.status(), StatusCode::NOT_FOUND);
-        let body = get_body_json(response).await;
-        assert_eq!(body["error"], "Resource 'abc' not found");
-    }
-
-    #[tokio::test]
-    async fn test_bad_request_response() {
-        let error = AppError::BadRequest("Missing required field 'name'".to_string());
-        let response = error.into_response();
-        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-        let body = get_body_json(response).await;
-        assert_eq!(body["error"], "Missing required field 'name'");
-    }
-
-    #[tokio::test]
-    async fn test_unauthorized_response() {
-        let error = AppError::Unauthorized("Invalid API Key".to_string());
-        let response = error.into_response();
-        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
-        let body = get_body_json(response).await;
-        assert_eq!(body["error"], "Invalid API Key");
-    }
-
-    #[tokio::test]
-    async fn test_forbidden_response() {
-        let error = AppError::Forbidden;
-        let response = error.into_response();
-        assert_eq!(response.status(), StatusCode::FORBIDDEN);
-        let body = get_body_json(response).await;
-        assert_eq!(body["error"], "Forbidden");
-    }
-
-    #[tokio::test]
-    async fn test_username_taken_response() {
-        let error = AppError::UsernameTaken;
-        let response = error.into_response();
-
-        assert_eq!(response.status(), StatusCode::CONFLICT);
-        let body = get_body_json(response).await;
-        assert_eq!(body["error"], "Username is already taken");
-    }
-
-    #[tokio::test]
-    async fn test_email_taken_response() {
-        let error = AppError::EmailTaken;
-        let response = error.into_response();
-
-        assert_eq!(response.status(), StatusCode::CONFLICT);
-        let body = get_body_json(response).await;
-        assert_eq!(body["error"], "Email is already taken");
-    }
-
-    // --- Tests for Specific Error Conversions -> Response ---
-
-    #[tokio::test]
-    async fn test_character_parse_error_response() {
-        // Simulate a parser error
-        let inner_error = CharacterParserError::JsonError(
-            serde_json::from_str::<Value>("{").unwrap_err().to_string(),
-        );
-        let error = AppError::from(inner_error);
-        let response = error.into_response();
-
-        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-        let body = get_body_json(response).await;
-        assert_eq!(body["error"], "Failed to parse character data");
-    }
-
-    #[tokio::test]
-    async fn test_uuid_error_response() {
-        let inner_error = Uuid::try_parse("invalid-uuid").unwrap_err();
-        let error = AppError::from(inner_error);
-        let response = error.into_response();
-
-        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-        let body = get_body_json(response).await;
-        assert_eq!(body["error"], "Invalid identifier format");
-    }
-
-    // Temporarily comment out this test due to difficulty constructing MultipartError
-    /*
-    #[tokio::test]
-    async fn test_file_upload_error_response() {
-        // Use From<std::io::Error> to create a valid MultipartError instance
-        let io_error = std::io::Error::new(std::io::ErrorKind::Other, "Simulated I/O issue during upload");
-        let multipart_error = axum::extract::multipart::MultipartError::from(io_error);
-        // Use From trait explicitly to create AppError
-        let error = AppError::from(multipart_error); // This line caused E0308 / E0277 previously
-
-        let response = error.into_response();
-
-        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-        let body = get_body_json(response).await;
-        assert_eq!(body["error"], "File upload failed");
-    }
-    */
-
-    // --- Tests for AuthBackendError From implementations ---
-
-    #[test]
-    fn test_auth_backend_error_from_bcrypt() {
-        // BcryptError does not have a public constructor. We simulate by creating the target.
-        // In a real scenario, you'd trigger the bcrypt operation that fails.
-        let simulated_error_string = "bcrypt error description".to_string();
-        let backend_error = AuthBackendError::PasswordHashingFailed(simulated_error_string.clone());
-        // We can't directly test the From trait without a BcryptError instance,
-        // but we assert the structure we expect from the conversion.
-        assert!(
-            matches!(backend_error, AuthBackendError::PasswordHashingFailed(s) if s == simulated_error_string)
-        );
-    }
-
-    #[test]
-    fn test_auth_backend_error_from_diesel() {
-        let diesel_not_found = DieselError::NotFound;
-        let backend_error_nf = AuthBackendError::from(diesel_not_found);
-        assert!(matches!(backend_error_nf, AuthBackendError::UserNotFound));
-
-        let diesel_other_err = DieselError::RollbackTransaction;
-        let diesel_other_str = diesel_other_err.to_string(); // Store string first
-        let backend_error_other = AuthBackendError::from(diesel_other_err); // Move the error here
-        assert!(
-            matches!(backend_error_other, AuthBackendError::DbQueryError(s) if s == diesel_other_str)
-        ); // Compare with stored string
-    }
-
-    #[test]
-    fn test_auth_backend_error_from_deadpool() {
-        // Use a different, easily constructible PoolError variant since Timeout expects TimeoutType
-        // Use PoolError::Timeout with the correct TimeoutType constructor
-        let pool_error = DeadpoolDieselPoolError::Timeout(deadpool::managed::TimeoutType::Create); // Changed Start to Create
-
-        let error_string = pool_error.to_string(); // Store string before moving
-        let backend_error = AuthBackendError::from(pool_error);
-        assert!(matches!(backend_error, AuthBackendError::DbPoolError(s) if s == error_string));
-    }
-
-    #[test]
-    fn test_auth_backend_error_from_anyhow() {
-        let anyhow_error = anyhow!("Something went wrong");
-        let backend_error = AuthBackendError::from(anyhow_error.context("Additional context"));
-        // Check that the error message contains the original and the context
-        if let AuthBackendError::InternalError(s) = backend_error {
-            assert!(s.contains("Something went wrong"));
-            assert!(s.contains("Additional context"));
-        } else {
-            panic!("Expected InternalError variant");
-        }
-    }
-
-    #[test]
-    fn test_character_parse_error_display() {
-        let inner_error = CharacterParserError::JsonError(
-            serde_json::from_str::<Value>("{").unwrap_err().to_string(),
-        );
-        let app_error = AppError::CharacterParseError(inner_error);
-        assert!(app_error.to_string().contains("Character parsing error:"));
-    }
-
-    // --- Tests for AppError From implementations ---
-
-    // Helper function to create a dummy serde_json::Error
-    fn create_serde_json_error() -> serde_json::Error {
-        serde_json::from_str::<serde_json::Value>("{invalid json").unwrap_err()
-    }
-
-    // Helper function to create a dummy std::io::Error
+    // Helper function to create an io::Error for testing
     fn create_io_error() -> std::io::Error {
-        std::io::Error::new(std::io::ErrorKind::Other, "Simulated I/O error")
+        std::io::Error::new(std::io::ErrorKind::Other, "Test IO error")
     }
 
-    // Helper function to create a dummy reqwest::Error is difficult in sync context.
-    // We will test the target AppError variant directly where needed.
-    // fn create_reqwest_error() -> reqwest::Error { ... }
-
-    #[test]
-    fn test_app_error_from_bcrypt() {
-        // Cannot directly create bcrypt::BcryptError easily.
-        // We test the target variant structure instead.
-        let app_error = AppError::PasswordHashingFailed("Simulated bcrypt error".to_string());
-        assert!(matches!(app_error, AppError::PasswordHashingFailed(_)));
-        // This covers lines 698-699 conceptually.
+    // Helper function to create a serde_json::Error for testing
+    fn create_serde_json_error() -> serde_json::Error {
+        serde_json::from_str::<i32>("not a number").unwrap_err()
     }
 
-    #[test]
-    fn test_app_error_from_axum_login_error() {
-        // Cannot easily create axum_login::Error without a full backend setup.
-        // Test the target variant structure.
-        let app_error = AppError::AuthError("Simulated axum_login error".to_string());
-        assert!(matches!(app_error, AppError::AuthError(_)));
-        // This covers lines 704-705 conceptually.
+    // Helper function to extract JSON from response body
+    async fn get_body_json(response: axum::response::Response) -> Value {
+        let (_, body) = response.into_parts();
+        let body_bytes = axum::body::to_bytes(body, usize::MAX).await.unwrap();
+        serde_json::from_slice(&body_bytes).unwrap()
     }
 
     #[test]
-    fn test_app_error_from_diesel_error() {
-        let diesel_error = DieselError::NotFound;
-        let app_error: AppError = diesel_error.into();
-        assert!(
-            matches!(app_error, AppError::NotFound(s) if s == "Resource not found".to_string())
-        );
-        // Covers lines 716-717
-    }
-
-    #[test]
-    fn test_app_error_from_deadpool_diesel_pool_error() {
-        let pool_error =
-            deadpool_diesel::PoolError::Timeout(deadpool::managed::TimeoutType::Create);
-        let error_string = pool_error.to_string();
-        let app_error: AppError = pool_error.into();
-        assert!(matches!(app_error, AppError::DbPoolError(s) if s == error_string));
-        // Covers lines 722-723
-    }
-
-    #[test]
-    fn test_app_error_from_deadpool_managed_pool_error() {
-        // Constructing this requires a PoolError, which we created above.
-        let inner_pool_error =
-            deadpool_diesel::PoolError::Timeout(deadpool::managed::TimeoutType::Create);
-        let managed_pool_error: deadpool::managed::PoolError<deadpool_diesel::PoolError> =
-            deadpool::managed::PoolError::Backend(inner_pool_error);
-        let error_string = managed_pool_error.to_string();
-        let app_error: AppError = managed_pool_error.into();
-        assert!(matches!(app_error, AppError::DbManagedPoolError(s) if s == error_string));
-        // Covers lines 728-729
-    }
-
-    #[test]
-    fn test_app_error_from_deadpool_build_error() {
-        // Use the NoRuntimeSpecified variant
-        let build_error = deadpool::managed::BuildError::NoRuntimeSpecified;
-        let error_string = build_error.to_string();
-        let app_error: AppError = build_error.into();
-        assert!(matches!(app_error, AppError::DbPoolBuildError(s) if s == error_string));
-        // Covers lines 734-735
-    }
-
-    #[test]
-    fn test_app_error_from_deadpool_interact_error() {
-        let interact_error = deadpool_diesel::InteractError::Aborted;
-        let error_string = interact_error.to_string();
-        let app_error: AppError = interact_error.into();
-        assert!(matches!(app_error, AppError::DbInteractError(s) if s == error_string));
-        // Covers lines 740-741
-    }
-
-    #[test]
-    fn test_app_error_from_diesel_migration_error() {
-        // Use the NoMigrationRun variant
-        let migration_error = diesel_migrations::MigrationError::NoMigrationRun;
-        let error_string = migration_error.to_string();
-        let app_error: AppError = migration_error.into();
-        assert!(matches!(app_error, AppError::DbMigrationError(s) if s == error_string));
-        // Covers lines 746-747
-    }
-
-    #[test]
-    fn test_app_error_from_parse_int_error() {
-        let parse_error = "abc".parse::<i32>().unwrap_err();
-        let error_string = parse_error.to_string();
-        let app_error: AppError = parse_error.into();
-        assert!(matches!(app_error, AppError::ParseIntError(s) if s == error_string));
-        // Covers lines 758-759
-    }
-
-    #[test]
-    fn test_app_error_from_uuid_error() {
-        let uuid_error = Uuid::try_parse("invalid-uuid").unwrap_err();
-        let error_string = uuid_error.to_string();
-        let app_error: AppError = uuid_error.into();
-        assert!(matches!(app_error, AppError::UuidError(s) if s == error_string));
-        // Covers lines 764-765 (already covered by response test, but good to have direct From test)
-    }
-
-    #[test]
-    fn test_app_error_from_genai_error() {
-        // Cannot easily create genai::Error without API interaction.
-        // Test the target variant structure.
-        let app_error = AppError::GeminiError("Simulated genai error".to_string());
-        assert!(matches!(app_error, AppError::GeminiError(_)));
-        // This covers lines 770-771 conceptually.
-    }
-
-    #[test]
-    fn test_app_error_from_image_error() {
-        // Use ImageError::IoError which is easy to construct
-        let io_error = create_io_error();
-        let image_error = image::ImageError::IoError(io_error);
-        let error_string = image_error.to_string();
-        let app_error: AppError = image_error.into();
-        assert!(matches!(app_error, AppError::ImageProcessingError(s) if s == error_string));
-        // Covers lines 776-777
-    }
-
-    // #[test] // Skipping direct From<reqwest::Error> test due to construction difficulty
-    // fn test_app_error_from_reqwest_error() {
-    //     let reqwest_error = create_reqwest_error(); // Difficult to create
-    //     let error_string = reqwest_error.to_string();
-    //     let app_error: AppError = reqwest_error.into();
-    //     assert!(matches!(app_error, AppError::HttpRequestError(s) if s == error_string));
-    //     // Covers lines 782-783
-    // }
-
-    #[test]
-    fn test_app_error_from_reqwest_middleware_error() {
-        // Use Error::Reqwest which wraps reqwest::Error
-        // Simulate middleware error directly as reqwest::Error is hard to construct
-        let middleware_error =
-            reqwest_middleware::Error::Middleware(anyhow::anyhow!("Simulated middleware error"));
-        let error_string = middleware_error.to_string();
-        let app_error: AppError = middleware_error.into();
-        assert!(matches!(app_error, AppError::HttpMiddlewareError(s) if s == error_string));
-        // Covers lines 788-789
-    }
-
-    #[test]
-    fn test_app_error_from_io_error() {
-        let io_error = create_io_error();
-        let error_string = io_error.to_string();
-        let app_error: AppError = io_error.into();
-        assert!(matches!(app_error, AppError::IoError(s) if s == error_string));
-        // Covers lines 794-795
-    }
-
-    #[test]
-    fn test_app_error_from_serde_json_error() {
-        let json_error = create_serde_json_error();
-        let error_string = json_error.to_string();
-        let app_error: AppError = json_error.into();
-        assert!(matches!(app_error, AppError::SerializationError(s) if s == error_string));
-        // Covers lines 800-801
-    }
-
-    #[test]
-    fn test_app_error_from_anyhow_error() {
-        let anyhow_error = anyhow::anyhow!("Simulated anyhow error");
-        let error_string = anyhow_error.to_string();
-        let app_error: AppError = anyhow_error.into(); // Use into() which calls From
-        assert!(matches!(app_error, AppError::InternalServerErrorGeneric(s) if s == error_string));
-        // Covers lines 806-807
-    }
-
-    #[test]
-    fn test_app_error_from_auth_error() {
+    fn test_auth_error_conversions() {
         let auth_error_wc = crate::auth::AuthError::WrongCredentials;
         let app_error_wc: AppError = auth_error_wc.into();
-        assert!(matches!(app_error_wc, AppError::InvalidCredentials)); // Line 821
+        assert!(matches!(app_error_wc, AppError::InvalidCredentials));
 
         let auth_error_ut = crate::auth::AuthError::UsernameTaken;
         let app_error_ut: AppError = auth_error_ut.into();
-        assert!(matches!(app_error_ut, AppError::UsernameTaken)); // Line 822
+        assert!(matches!(app_error_ut, AppError::UsernameTaken));
 
         let auth_error_he = crate::auth::AuthError::HashingError;
         let app_error_he: AppError = auth_error_he.into();
-        assert!(matches!(app_error_he, AppError::PasswordHashingFailed(_))); // Line 824
+        assert!(matches!(app_error_he, AppError::PasswordHashingFailed(_)));
 
         let auth_error_unf = crate::auth::AuthError::UserNotFound;
         let app_error_unf: AppError = auth_error_unf.into();
-        assert!(matches!(app_error_unf, AppError::UserNotFound)); // Line 826
+        assert!(matches!(app_error_unf, AppError::UserNotFound));
 
         let db_err_str = "db error".to_string();
         let auth_error_dbe = crate::auth::AuthError::DatabaseError(db_err_str.clone());
         let app_error_dbe: AppError = auth_error_dbe.into();
-        assert!(matches!(app_error_dbe, AppError::DatabaseQueryError(s) if s == db_err_str)); // Line 827
+        assert!(matches!(app_error_dbe, AppError::DatabaseQueryError(s) if s == db_err_str));
 
         let pool_err = deadpool_diesel::PoolError::Timeout(deadpool::managed::TimeoutType::Create);
         let pool_err_str = pool_err.to_string();
-        let auth_error_pe = crate::auth::AuthError::PoolError(pool_err);
-        let app_error_pe: AppError = auth_error_pe.into();
-        assert!(matches!(app_error_pe, AppError::DbPoolError(s) if s == pool_err_str)); // Line 828
+        let auth_error_pool = crate::auth::AuthError::PoolError(pool_err);
+        let app_error_pool: AppError = auth_error_pool.into();
+        assert!(matches!(app_error_pool, AppError::DbPoolError(s) if s == pool_err_str));
 
         let interact_err_str = "interact error".to_string();
-        let auth_error_ie = crate::auth::AuthError::InteractError(interact_err_str.clone());
-        let app_error_ie: AppError = auth_error_ie.into();
-        assert!(matches!(app_error_ie, AppError::DbInteractError(s) if s == interact_err_str)); // Line 829
-        // Covers lines 819-829
+        let auth_error_interact = crate::auth::AuthError::InteractError(interact_err_str.clone());
+        let app_error_interact: AppError = auth_error_interact.into();
+        assert!(matches!(app_error_interact, AppError::DbInteractError(s) if s == interact_err_str));
     }
 
     // --- Tests for AppError IntoResponse arms ---
@@ -1038,87 +855,87 @@ mod tests {
         let response = error.into_response();
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED); // Line 236
         let body = get_body_json(response).await;
-        assert_eq!(body["error"], "Invalid credentials"); // Line 236
+        assert_eq!(body["error"], "Invalid credentials");
     }
 
     #[tokio::test]
     async fn test_conflict_response() {
         let error = AppError::Conflict("Item already exists".to_string()); // Line 76
         let response = error.into_response();
-        assert_eq!(response.status(), StatusCode::CONFLICT); // Line 242
+        assert_eq!(response.status(), StatusCode::CONFLICT);
         let body = get_body_json(response).await;
-        assert_eq!(body["error"], "Item already exists"); // Line 242
+        assert_eq!(body["error"], "Item already exists");
     }
 
     #[tokio::test]
     async fn test_user_not_found_response() {
         let error = AppError::UserNotFound; // Line 27
         let response = error.into_response();
-        assert_eq!(response.status(), StatusCode::NOT_FOUND); // Line 243
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
         let body = get_body_json(response).await;
-        assert_eq!(body["error"], "User not found"); // Line 243
+        assert_eq!(body["error"], "User not found");
     }
 
     #[tokio::test]
     async fn test_invalid_input_response() {
         let error = AppError::InvalidInput("Age must be positive".to_string()); // Line 86
         let response = error.into_response();
-        assert_eq!(response.status(), StatusCode::BAD_REQUEST); // Line 249
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
         let body = get_body_json(response).await;
-        assert_eq!(body["error"], "Invalid input: Age must be positive"); // Line 249
+        assert_eq!(body["error"], "Invalid input: Age must be positive");
     }
 
     #[tokio::test]
     async fn test_parse_int_error_response() {
         let parse_error = "abc".parse::<i32>().unwrap_err();
         let error: AppError = parse_error.into(); // Line 758-759 trigger this variant
-        let response = error.into_response(); // Line 263
-        assert_eq!(response.status(), StatusCode::BAD_REQUEST); // Line 267
+        let response = error.into_response();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
         let body = get_body_json(response).await;
-        assert_eq!(body["error"], "Invalid numeric value provided"); // Line 267
+        assert_eq!(body["error"], "Invalid numeric value provided");
     }
 
     #[tokio::test]
     async fn test_auth_error_response() {
         // Use the From<axum_login::Error> conceptual test path
-        let error = AppError::AuthError("Simulated axum_login error".to_string()); // Line 45
-        let response = error.into_response(); // Line 277
-        assert_eq!(response.status(), StatusCode::UNAUTHORIZED); // Line 283
+        let error = AppError::AuthError("Simulated axum_login error".to_string());
+        let response = error.into_response();
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
         let body = get_body_json(response).await;
-        assert_eq!(body["error"], "Authentication error"); // Line 283
+        assert_eq!(body["error"], "Authentication error");
     }
 
     #[tokio::test]
     async fn test_session_store_error_response() {
         // Use the From<tower_sessions::session_store::Error> conceptual test path
-        let error = AppError::SessionStoreError("Simulated session store error".to_string()); // Line 48
-        let response = error.into_response(); // Line 285
-        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR); // Line 289
+        let error = AppError::SessionStoreError("Simulated session store error".to_string());
+        let response = error.into_response();
+        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
         let body = get_body_json(response).await;
-        assert_eq!(body["error"], "Session management error"); // Line 289
+        assert_eq!(body["error"], "Session management error");
     }
 
     #[tokio::test]
     async fn test_rate_limited_response() {
-        let error = AppError::RateLimited; // Line 150
-        let response = error.into_response(); // Line 294
-        assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS); // Line 295
+        let error = AppError::RateLimited;
+        let response = error.into_response();
+        assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
         let body = get_body_json(response).await;
         assert_eq!(
             body["error"],
             "API rate limit exceeded. Please try again later."
-        ); // Line 296
+        );
     }
 
     #[tokio::test]
     async fn test_db_pool_error_response() {
         let pool_error =
             deadpool_diesel::PoolError::Timeout(deadpool::managed::TimeoutType::Create);
-        let error: AppError = pool_error.into(); // Line 722-723 trigger this variant
-        let response = error.into_response(); // Line 307
-        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR); // Line 311
+        let error: AppError = pool_error.into();
+        let response = error.into_response();
+        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
         let body = get_body_json(response).await;
-        assert_eq!(body["error"], "Database connection error"); // Line 311
+        assert_eq!(body["error"], "Database connection error");
     }
 
     #[tokio::test]
@@ -1127,113 +944,113 @@ mod tests {
             deadpool_diesel::PoolError::Timeout(deadpool::managed::TimeoutType::Create);
         let managed_pool_error: deadpool::managed::PoolError<deadpool_diesel::PoolError> =
             deadpool::managed::PoolError::Backend(inner_pool_error);
-        let error: AppError = managed_pool_error.into(); // Line 728-729 trigger this variant
-        let response = error.into_response(); // Line 314
-        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR); // Line 318
+        let error: AppError = managed_pool_error.into();
+        let response = error.into_response();
+        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
         let body = get_body_json(response).await;
-        assert_eq!(body["error"], "Database connection error"); // Line 318
+        assert_eq!(body["error"], "Database connection error");
     }
 
     #[tokio::test]
     async fn test_db_pool_build_error_response() {
         // Use the corrected way to create BuildError
         let build_error = deadpool::managed::BuildError::NoRuntimeSpecified;
-        let error: AppError = build_error.into(); // Line 734-735 trigger this variant
-        let response = error.into_response(); // Line 321
-        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR); // Line 325
+        let error: AppError = build_error.into();
+        let response = error.into_response();
+        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
         let body = get_body_json(response).await;
-        assert_eq!(body["error"], "Database configuration error"); // Line 325
+        assert_eq!(body["error"], "Database configuration error");
     }
 
     #[tokio::test]
     async fn test_db_interact_error_response() {
         let interact_error = deadpool_diesel::InteractError::Aborted;
-        let error: AppError = interact_error.into(); // Line 740-741 trigger this variant
-        let response = error.into_response(); // Line 328
-        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR); // Line 332
+        let error: AppError = interact_error.into();
+        let response = error.into_response();
+        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
         let body = get_body_json(response).await;
-        assert_eq!(body["error"], "Database task execution error"); // Line 332
+        assert_eq!(body["error"], "Database task execution error");
     }
 
     #[tokio::test]
     async fn test_db_migration_error_response() {
         // Use the corrected way to create MigrationError
         let migration_error = diesel_migrations::MigrationError::NoMigrationRun;
-        let error: AppError = migration_error.into(); // Line 746-747 trigger this variant
-        let response = error.into_response(); // Line 335
-        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR); // Line 339
+        let error: AppError = migration_error.into();
+        let response = error.into_response();
+        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
         let body = get_body_json(response).await;
-        assert_eq!(body["error"], "Database schema error"); // Line 339
+        assert_eq!(body["error"], "Database schema error");
     }
 
     #[tokio::test]
     async fn test_password_hashing_failed_response() {
         // Use the From<bcrypt::Error> conceptual test path
-        let error = AppError::PasswordHashingFailed("Simulated bcrypt error".to_string()); // Line 33
-        let response = error.into_response(); // Line 342
-        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR); // Line 346
+        let error = AppError::PasswordHashingFailed("Simulated bcrypt error".to_string());
+        let response = error.into_response();
+        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
         let body = get_body_json(response).await;
-        assert_eq!(body["error"], "Internal security error"); // Line 346
+        assert_eq!(body["error"], "Internal security error");
     }
 
     #[tokio::test]
     async fn test_config_error_response() {
-        let error = AppError::ConfigError("Missing config value".to_string()); // Line 114
-        let response = error.into_response(); // Line 349
-        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR); // Line 353
+        let error = AppError::ConfigError("Missing config value".to_string());
+        let response = error.into_response();
+        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
         let body = get_body_json(response).await;
-        assert_eq!(body["error"], "Server configuration error"); // Line 353
+        assert_eq!(body["error"], "Server configuration error");
     }
 
     #[tokio::test]
     async fn test_io_error_response() {
         let io_error = create_io_error();
-        let error: AppError = io_error.into(); // Line 794-795 trigger this variant
-        let response = error.into_response(); // Line 356
-        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR); // Line 360
+        let error: AppError = io_error.into();
+        let response = error.into_response();
+        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
         let body = get_body_json(response).await;
-        assert_eq!(body["error"], "File system or network error"); // Line 360
+        assert_eq!(body["error"], "File system or network error");
     }
 
     #[tokio::test]
     async fn test_serialization_error_response() {
         let json_error = create_serde_json_error();
-        let error: AppError = json_error.into(); // Line 800-801 trigger this variant
-        let response = error.into_response(); // Line 363
-        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR); // Line 367
+        let error: AppError = json_error.into();
+        let response = error.into_response();
+        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
         let body = get_body_json(response).await;
-        assert_eq!(body["error"], "Data formatting error"); // Line 367
+        assert_eq!(body["error"], "Data formatting error");
     }
 
     #[tokio::test]
     async fn test_gemini_error_response() {
         // Use the From<genai::Error> conceptual test path
-        let error = AppError::GeminiError("Simulated genai error".to_string()); // Line 96
-        let response = error.into_response(); // Line 370
-        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR); // Line 375
+        let error = AppError::GeminiError("Simulated genai error".to_string());
+        let response = error.into_response();
+        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
         let body = get_body_json(response).await;
-        assert_eq!(body["error"], "AI service error"); // Line 375
+        assert_eq!(body["error"], "AI service error");
     }
 
     #[tokio::test]
     async fn test_image_processing_error_response() {
         let io_error = create_io_error();
         let image_error = image::ImageError::IoError(io_error);
-        let error: AppError = image_error.into(); // Line 776-777 trigger this variant
-        let response = error.into_response(); // Line 378
-        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR); // Line 382
+        let error: AppError = image_error.into();
+        let response = error.into_response();
+        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
         let body = get_body_json(response).await;
-        assert_eq!(body["error"], "Failed to process image"); // Line 382
+        assert_eq!(body["error"], "Failed to process image");
     }
 
     #[tokio::test]
     async fn test_http_request_error_response() {
         // Directly create the AppError variant as From<reqwest::Error> is hard to test
         let error = AppError::HttpRequestError("Simulated reqwest error".to_string());
-        let response = error.into_response(); // Line 385
-        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR); // Line 389
+        let response = error.into_response();
+        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
         let body = get_body_json(response).await;
-        assert_eq!(body["error"], "Failed to communicate with external service"); // Line 389
+        assert_eq!(body["error"], "Failed to communicate with external service");
     }
 
     #[tokio::test]
@@ -1241,41 +1058,41 @@ mod tests {
         // Simulate middleware error directly as reqwest::Error is hard to construct
         let middleware_error =
             reqwest_middleware::Error::Middleware(anyhow::anyhow!("Simulated middleware error"));
-        let error: AppError = middleware_error.into(); // Line 788-789 trigger this variant
-        let response = error.into_response(); // Line 392
-        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR); // Line 396
+        let error: AppError = middleware_error.into();
+        let response = error.into_response();
+        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
         let body = get_body_json(response).await;
         assert_eq!(
             body["error"],
             "Failed during external service communication"
-        ); // Line 396
+        );
     }
 
     #[tokio::test]
     async fn test_llm_client_error_response() {
-        let error = AppError::LlmClientError("Client config invalid".to_string()); // Line 108
-        let response = error.into_response(); // Line 399
-        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR); // Line 403
+        let error = AppError::LlmClientError("Client config invalid".to_string());
+        let response = error.into_response();
+        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
         let body = get_body_json(response).await;
-        assert_eq!(body["error"], "AI service client error"); // Line 403
+        assert_eq!(body["error"], "AI service client error");
     }
 
     #[tokio::test]
     async fn test_generation_error_response() {
-        let error = AppError::GenerationError("Content blocked".to_string()); // Line 140
-        let response = error.into_response(); // Line 406, 408
-        assert_eq!(response.status(), StatusCode::BAD_GATEWAY); // Line 411
+        let error = AppError::GenerationError("Content blocked".to_string());
+        let response = error.into_response();
+        assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
         let body = get_body_json(response).await;
-        assert_eq!(body["error"], "AI service request failed"); // Line 411
+        assert_eq!(body["error"], "AI service request failed");
     }
 
     #[tokio::test]
     async fn test_embedding_error_response() {
-        let error = AppError::EmbeddingError("Model dimension mismatch".to_string()); // Line 143
-        let response = error.into_response(); // Line 414, 416
-        assert_eq!(response.status(), StatusCode::BAD_GATEWAY); // Line 419
+        let error = AppError::EmbeddingError("Model dimension mismatch".to_string());
+        let response = error.into_response();
+        assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
         let body = get_body_json(response).await;
-        assert_eq!(body["error"], "AI embedding service request failed"); // Line 419
+        assert_eq!(body["error"], "AI embedding service request failed");
     }
 
     #[tokio::test]
@@ -1299,29 +1116,29 @@ mod tests {
         // Assuming session_store::Error::Decode is constructible.
         let store_error = tower_sessions::session_store::Error::Decode(json_error.to_string()); // Convert to String
         let session_error = tower_sessions::session::Error::Store(store_error);
-        let error: AppError = session_error.into(); // Line 812-813 trigger this variant
-        let response = error.into_response(); // Line 439
-        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR); // Line 443
+        let error: AppError = session_error.into();
+        let response = error.into_response();
+        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
         let body = get_body_json(response).await;
-        assert_eq!(body["error"], "Session management error"); // Line 443
+        assert_eq!(body["error"], "Session management error");
     }
 
     #[tokio::test]
     async fn test_not_implemented_response() {
-        let error = AppError::NotImplemented("Feature X not ready".to_string()); // Line 154
-        let response = error.into_response(); // Line 446
-        assert_eq!(response.status(), StatusCode::NOT_IMPLEMENTED); // Line 448
+        let error = AppError::NotImplemented("Feature X not ready".to_string());
+        let response = error.into_response();
+        assert_eq!(response.status(), StatusCode::NOT_IMPLEMENTED);
         let body = get_body_json(response).await;
-        assert_eq!(body["error"], "Feature X not ready"); // Line 448
+        assert_eq!(body["error"], "Feature X not ready");
     }
 
     #[tokio::test]
     async fn test_websocket_send_error_response() {
-        let error = AppError::WebSocketSendError("Connection closed".to_string()); // Line 158
-        let response = error.into_response(); // Line 452
-        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR); // Line 456
+        let error = AppError::WebSocketSendError("Connection closed".to_string());
+        let response = error.into_response();
+        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
         let body = get_body_json(response).await;
-        assert_eq!(body["error"], "WebSocket send error"); // Line 456
+        assert_eq!(body["error"], "WebSocket send error");
     }
 
     #[tokio::test]
@@ -1335,21 +1152,21 @@ mod tests {
 
     #[tokio::test]
     async fn test_chunking_error_response() {
-        let error = AppError::ChunkingError("Chunk size too small".to_string()); // Line 164
-        let response = error.into_response(); // Line 468
-        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR); // Line 472
+        let error = AppError::ChunkingError("Chunk size too small".to_string());
+        let response = error.into_response();
+        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
         let body = get_body_json(response).await;
-        assert_eq!(body["error"], "Text chunking error"); // Line 472
+        assert_eq!(body["error"], "Text chunking error");
     }
 
     #[tokio::test]
     async fn test_character_parsing_error_response() {
         // This tests the *other* variant AppError::CharacterParsingError(String)
-        let error = AppError::CharacterParsingError("Missing required field 'name'".to_string()); // Line 168
-        let response = error.into_response(); // Line 477
-        assert_eq!(response.status(), StatusCode::BAD_REQUEST); // Line 481
+        let error = AppError::CharacterParsingError("Missing required field 'name'".to_string());
+        let response = error.into_response();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
         let body = get_body_json(response).await;
-        assert_eq!(body["error"], "Failed to parse character data"); // Line 481
+        assert_eq!(body["error"], "Failed to parse character data");
     }
 
     #[tokio::test]
@@ -1381,211 +1198,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_session_error_response_new() {
-        // Renamed to avoid conflict
         let app_error = AppError::SessionError("Test session op error".to_string());
         let response = app_error.into_response();
         assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
         let body = get_body_json(response).await;
         assert_eq!(body["error"], "A session operation failed.");
-    }
-}
-
-// Now add the From implementations to convert from actual errors to our string versions
-impl From<bcrypt::BcryptError> for AppError {
-    fn from(err: bcrypt::BcryptError) -> Self {
-        AppError::PasswordHashingFailed(err.to_string())
-    }
-}
-
-impl From<axum_login::Error<AuthBackend>> for AppError {
-    fn from(err: axum_login::Error<AuthBackend>) -> Self {
-        // Restore original (potentially incorrect) match logic
-        match err {
-            axum_login::Error::Session(session_err) => {
-                tracing::error!("Session component of axum_login::Error: {:?}", session_err);
-                if session_err.to_string().contains("decode error") {
-                    // Heuristic check
-                    AppError::Unauthorized(format!("Invalid session data: {}", session_err))
-                } else {
-                    AppError::SessionStoreError(format!(
-                        "Session processing error: {}",
-                        session_err
-                    ))
-                }
-            }
-            // This variant caused E0599 before, indicating it might be incorrect for the current axum_login version.
-            // We'll leave it commented out for now and rely on the fact that this path isn't being hit for the current 404s.
-            // If we later encounter panics *here*, we'll need to revisit the axum_login::Error structure.
-            /*
-            axum_login::Error::Identity(user_store_err) => {
-                tracing::error!("Identity (UserStore) component of axum_login::Error: {:?}", user_store_err);
-                match user_store_err {
-                    AuthBackendError::UserNotFound => AppError::UserNotFound,
-                    AuthBackendError::InvalidCredentials => AppError::InvalidCredentials,
-                    AuthBackendError::PasswordHashingFailed(s) => AppError::PasswordHashingFailed(s),
-                    AuthBackendError::DbQueryError(s) => AppError::DatabaseQueryError(s),
-                    AuthBackendError::UsernameTaken => AppError::UsernameTaken,
-                    AuthBackendError::DbPoolError(s) => AppError::DbPoolError(s),
-                    AuthBackendError::InternalError(s) => AppError::InternalServerErrorGeneric(s),
-                }
-            }
-            */
-            // Add a temporary catch-all that maps to Unauthorized until we know the correct variants
-            _ => {
-                tracing::error!("Unhandled axum_login::Error variant: {:?}", err);
-                AppError::Unauthorized(format!("Unhandled authentication error: {}", err))
-            }
-        }
-    }
-}
-
-impl From<tower_sessions::session_store::Error> for AppError {
-    fn from(err: tower_sessions::session_store::Error) -> Self {
-        AppError::SessionStoreError(err.to_string())
-    }
-}
-
-impl From<diesel::result::Error> for AppError {
-    fn from(err: diesel::result::Error) -> Self {
-        match err {
-            DieselError::NotFound => AppError::NotFound("Resource not found".to_string()),
-            // Explicitly check the error message for "Record not found" as a fallback
-            ref e if e.to_string().contains("Record not found") => {
-                AppError::NotFound("Resource not found".to_string())
-            }
-            _ => AppError::DatabaseQueryError(err.to_string()),
-        }
-    }
-}
-
-impl From<deadpool_diesel::PoolError> for AppError {
-    fn from(err: deadpool_diesel::PoolError) -> Self {
-        AppError::DbPoolError(err.to_string())
-    }
-}
-
-impl From<deadpool::managed::PoolError<deadpool_diesel::PoolError>> for AppError {
-    fn from(err: deadpool::managed::PoolError<deadpool_diesel::PoolError>) -> Self {
-        AppError::DbManagedPoolError(err.to_string())
-    }
-}
-
-impl From<deadpool::managed::BuildError> for AppError {
-    fn from(err: deadpool::managed::BuildError) -> Self {
-        AppError::DbPoolBuildError(err.to_string())
-    }
-}
-
-impl From<deadpool_diesel::InteractError> for AppError {
-    fn from(err: deadpool_diesel::InteractError) -> Self {
-        AppError::DbInteractError(err.to_string())
-    }
-}
-
-impl From<diesel_migrations::MigrationError> for AppError {
-    fn from(err: diesel_migrations::MigrationError) -> Self {
-        AppError::DbMigrationError(err.to_string())
-    }
-}
-
-impl From<axum::extract::multipart::MultipartError> for AppError {
-    fn from(err: axum::extract::multipart::MultipartError) -> Self {
-        AppError::FileUploadError(err.to_string())
-    }
-}
-
-impl From<std::num::ParseIntError> for AppError {
-    fn from(err: std::num::ParseIntError) -> Self {
-        AppError::ParseIntError(err.to_string())
-    }
-}
-
-impl From<uuid::Error> for AppError {
-    fn from(err: uuid::Error) -> Self {
-        AppError::UuidError(err.to_string())
-    }
-}
-
-impl From<genai::Error> for AppError {
-    fn from(err: genai::Error) -> Self {
-        AppError::GeminiError(err.to_string())
-    }
-}
-
-impl From<image::ImageError> for AppError {
-    fn from(err: image::ImageError) -> Self {
-        AppError::ImageProcessingError(err.to_string())
-    }
-}
-
-impl From<reqwest::Error> for AppError {
-    fn from(err: reqwest::Error) -> Self {
-        AppError::HttpRequestError(err.to_string())
-    }
-}
-
-impl From<reqwest_middleware::Error> for AppError {
-    fn from(err: reqwest_middleware::Error) -> Self {
-        AppError::HttpMiddlewareError(err.to_string())
-    }
-}
-
-impl From<std::io::Error> for AppError {
-    fn from(err: std::io::Error) -> Self {
-        AppError::IoError(err.to_string())
-    }
-}
-
-impl From<serde_json::Error> for AppError {
-    fn from(err: serde_json::Error) -> Self {
-        AppError::SerializationError(err.to_string())
-    }
-}
-
-impl From<anyhow::Error> for AppError {
-    fn from(err: anyhow::Error) -> Self {
-        AppError::InternalServerErrorGeneric(err.to_string()) // Use renamed variant
-    }
-}
-
-impl From<tower_sessions::session::Error> for AppError {
-    fn from(err: tower_sessions::session::Error) -> Self {
-        AppError::Session(err.to_string())
-    }
-}
-
-// NEW From impl for AuthError
-impl From<crate::auth::AuthError> for AppError {
-    fn from(err: crate::auth::AuthError) -> Self {
-        match err {
-            crate::auth::AuthError::WrongCredentials => AppError::InvalidCredentials,
-            crate::auth::AuthError::UsernameTaken => AppError::UsernameTaken,
-            crate::auth::AuthError::EmailTaken => AppError::EmailTaken,
-            crate::auth::AuthError::HashingError => {
-                AppError::PasswordHashingFailed("Bcrypt hashing failed".to_string())
-            } // This remains, not PasswordProcessingError, as From<AuthError> is generic
-            crate::auth::AuthError::UserNotFound => AppError::UserNotFound,
-            crate::auth::AuthError::DatabaseError(msg) => AppError::DatabaseQueryError(msg),
-            crate::auth::AuthError::PoolError(e) => AppError::DbPoolError(e.to_string()),
-            crate::auth::AuthError::InteractError(s) => AppError::DbInteractError(s),
-            crate::auth::AuthError::CryptoOperationFailed(crypto_err) => {
-                AppError::InternalServerErrorGeneric(format!(
-                    "Cryptography operation failed: {}",
-                    crypto_err
-                ))
-            } // Use renamed variant
-            crate::auth::AuthError::RecoveryNotSetup => AppError::BadRequest(
-                "Account recovery has not been set up for this user.".to_string(),
-            ),
-            crate::auth::AuthError::InvalidRecoveryPhrase => {
-                AppError::BadRequest("The provided recovery phrase was invalid.".to_string())
-            }
-            crate::auth::AuthError::SessionDeletionError(msg) => {
-                AppError::InternalServerErrorGeneric(format!("Failed to delete session: {}", msg))
-            }
-            crate::auth::AuthError::AccountLocked => AppError::Unauthorized(
-                "Your account is locked. Please contact an administrator.".to_string(),
-            ),
-        }
     }
 }

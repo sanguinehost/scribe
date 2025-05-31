@@ -405,7 +405,7 @@ impl MockEmbeddingPipelineService {
         queue.push_back(response);
     }
 
-    #[allow(dead_code)] // May not be used immediately but good to have
+     // May not be used immediately but good to have
     pub fn add_retrieve_response(&self, response: Result<Vec<RetrievedChunk>, AppError>) {
         self.retrieve_response_queue
             .lock()
@@ -540,6 +540,7 @@ pub struct MockQdrantClientService {
     last_search_params: Arc<Mutex<Option<(Vec<f32>, u64, Option<Filter>)>>>,
 }
 
+#[allow(dead_code)] // Mock methods may not all be used in current tests
 impl MockQdrantClientService {
     pub fn new() -> Self {
         MockQdrantClientService {
@@ -600,11 +601,8 @@ impl MockQdrantClientService {
     ) -> Result<(), AppError> {
         // Track call
         {
-            let mut count = self.upsert_call_count.lock().unwrap();
-            *count += 1;
-
-            let mut last_points = self.last_upsert_points.lock().unwrap();
-            *last_points = Some(points.clone());
+            *self.upsert_call_count.lock().unwrap() += 1;
+            *self.last_upsert_points.lock().unwrap() = Some(points.clone());
         }
 
         // Return response
@@ -612,7 +610,6 @@ impl MockQdrantClientService {
         response.unwrap_or(Ok(()))
     }
 
-    #[allow(dead_code)]
     async fn search_points(
         &self,
         vector: Vec<f32>,
@@ -621,8 +618,7 @@ impl MockQdrantClientService {
     ) -> Result<Vec<ScoredPoint>, AppError> {
         // Track call
         {
-            let mut count = self.search_call_count.lock().unwrap();
-            *count += 1;
+            *self.search_call_count.lock().unwrap() += 1;
 
             let mut last_params = self.last_search_params.lock().unwrap();
             *last_params = Some((vector.clone(), limit, filter.clone()));
@@ -636,7 +632,7 @@ impl MockQdrantClientService {
                 "MockQdrantClientService::search_points (standalone): Popped response: {:?}", // Corrected comment
                 match response.as_ref() { // Match directly on the Result
                     Ok(v) => format!("Ok(len={})", v.len()),
-                    Err(e) => format!("Err({})", e.to_string()), // AppError needs .to_string() for proper formatting
+                    Err(e) => format!("Err({})", e), // AppError needs .to_string() for proper formatting
                 }
             );
             response // This is Result<Vec<ScoredPoint>, AppError>
@@ -647,7 +643,7 @@ impl MockQdrantClientService {
         }
     }
 
-    #[allow(dead_code)]
+    
     async fn retrieve_points(
         &self,
         _filter: Option<Filter>,
@@ -665,12 +661,10 @@ impl MockQdrantClientService {
         }
     }
 
-    #[allow(dead_code)]
     async fn delete_points(&self, _point_ids: Vec<PointId>) -> Result<(), AppError> {
         Ok(()) // Just return success for the mock
     }
 
-    #[allow(dead_code)]
     async fn update_collection_settings(&self) -> Result<(), AppError> {
         Ok(()) // Just return success for the mock
     }
@@ -686,11 +680,8 @@ impl QdrantClientServiceTrait for MockQdrantClientService {
     async fn store_points(&self, points: Vec<PointStruct>) -> Result<(), AppError> {
         // Track call
         {
-            let mut count = self.upsert_call_count.lock().unwrap();
-            *count += 1;
-
-            let mut last_points = self.last_upsert_points.lock().unwrap();
-            *last_points = Some(points.clone());
+            *self.upsert_call_count.lock().unwrap() += 1;
+            *self.last_upsert_points.lock().unwrap() = Some(points.clone());
         }
 
         // Return response
@@ -706,8 +697,7 @@ impl QdrantClientServiceTrait for MockQdrantClientService {
     ) -> Result<Vec<ScoredPoint>, AppError> {
         // Track call
         {
-            let mut count = self.search_call_count.lock().unwrap();
-            *count += 1;
+            *self.search_call_count.lock().unwrap() += 1;
 
             let mut last_params = self.last_search_params.lock().unwrap();
             *last_params = Some((vector.clone(), limit, filter.clone()));
@@ -891,12 +881,7 @@ impl TestAppStateBuilder {
         });
 
         let token_counter = self.token_counter.unwrap_or_else(|| {
-            let tokenizer_model_path = self
-                .config
-                .tokenizer_model_path
-                .as_ref()
-                .cloned()
-                .expect("Tokenizer model path not set in config for TestAppStateBuilder");
+            let tokenizer_model_path = self.config.tokenizer_model_path.clone();
             let tokenizer_service = TokenizerService::new(&tokenizer_model_path)
                 .expect("Failed to load tokenizer model for TestAppStateBuilder");
 
@@ -906,12 +891,7 @@ impl TestAppStateBuilder {
                 .as_ref()
                 .map(|api_key| GeminiTokenClient::new(api_key.clone()));
 
-            let default_model = self
-                .config
-                .token_counter_default_model
-                .as_ref()
-                .cloned()
-                .expect("Token counter default model not set in config for TestAppStateBuilder");
+            let default_model = self.config.token_counter_default_model.clone();
 
             Arc::new(HybridTokenCounter::new(
                 tokenizer_service,
@@ -1086,7 +1066,6 @@ pub async fn spawn_app_with_options(
         Option<Arc<MockAiClient>>,
     ) = if use_real_ai {
         let real_ai_client = crate::llm::gemini_client::build_gemini_client()
-            .await
             .expect("Failed to build real AI client for test");
         (Arc::new(real_ai_client), None)
     } else {
@@ -2118,7 +2097,7 @@ pub fn assert_ai_history(
             genai::chat::ChatRole::User => "User",
             genai::chat::ChatRole::Assistant => "Assistant",
             genai::chat::ChatRole::System => "System",
-            _ => "Unknown",
+            genai::chat::ChatRole::Tool => "Tool",
         };
         let content = match &msg.content {
             genai::chat::MessageContent::Text(text) => text.as_str(),
@@ -2159,7 +2138,7 @@ pub fn assert_ai_history(
             genai::chat::ChatRole::User => "User",
             genai::chat::ChatRole::Assistant => "Assistant",
             genai::chat::ChatRole::System => "System",
-            _ => panic!("Unexpected role in AI history: {:?}", actual.role),
+            genai::chat::ChatRole::Tool => panic!("Unexpected role in AI history: {:?}", actual.role),
         };
         let actual_content = match &actual.content {
             genai::chat::MessageContent::Text(text) => text.as_str(),

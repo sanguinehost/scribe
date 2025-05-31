@@ -32,7 +32,7 @@ use uuid::Uuid;
 #[derive(Clone)]
 pub struct LorebookService {
     pool: PgPool,
-    #[allow(dead_code)] // TODO: Remove once encryption is implemented for lorebooks
+     // TODO: Remove once encryption is implemented for lorebooks
     encryption_service: Arc<EncryptionService>, // Store as Arc
 }
 
@@ -2046,7 +2046,7 @@ impl LorebookService {
     }
 
     // Helper to get user or return error
-    // #[allow(dead_code)] // Will be used once methods are implemented
+    //  // Will be used once methods are implemented
     fn get_user_from_session(
         &self,
         auth_session: &AuthSession<AuthBackend>,

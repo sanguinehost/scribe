@@ -18,6 +18,7 @@ use secrecy::{ExposeSecret, SecretBox};
     Deserialize,
     Clone,
     PartialEq,
+    Eq,
     // Debug, // Removed Debug, will use custom impl
     AsChangeset,
 )]
@@ -134,7 +135,7 @@ impl std::fmt::Debug for UserPersona {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct UserPersonaDataForClient {
     pub id: Uuid,
     pub user_id: Uuid,
@@ -166,12 +167,11 @@ impl UserPersona {
             (Some(ct), Some(n)) => {
                 if ct.is_empty() && n.is_empty() {
                     // Convention for empty encrypted field
-                    return Ok(Some("".to_string()));
+                    return Ok(Some(String::new()));
                 } else if ct.is_empty() || n.is_empty() {
                     // Invalid state
                     return Err(AppError::DecryptionError(format!(
-                        "Mismatched ciphertext/nonce for {}: one is empty, the other is not.",
-                        field_name_for_error
+                        "Mismatched ciphertext/nonce for {field_name_for_error}: one is empty, the other is not."
                     )));
                 }
 
@@ -180,29 +180,26 @@ impl UserPersona {
                     .await
                     .map_err(|e| {
                         AppError::DecryptionError(format!(
-                            "Failed to decrypt {}: {}",
-                            field_name_for_error, e
+                            "Failed to decrypt {field_name_for_error}: {e}"
                         ))
                     })?;
                 String::from_utf8(decrypted_bytes).map(Some).map_err(|e| {
                     AppError::DecryptionError(format!(
-                        "Invalid UTF-8 for {}: {}",
-                        field_name_for_error, e
+                        "Invalid UTF-8 for {field_name_for_error}: {e}"
                     ))
                 })
             }
             (None, None) => Ok(None), // Field was not set
             (Some(_), None) => Err(AppError::DecryptionError(format!(
-                "Ciphertext present but nonce missing for {}",
-                field_name_for_error
+                "Ciphertext present but nonce missing for {field_name_for_error}"
             ))),
             (None, Some(_)) => Err(AppError::DecryptionError(format!(
-                "Nonce present but ciphertext missing for {}",
-                field_name_for_error
+                "Nonce present but ciphertext missing for {field_name_for_error}"
             ))),
         }
     }
 
+    #[allow(clippy::too_many_lines)]
     pub async fn into_data_for_client(
         self,
         dek_opt: Option<&SecretBox<Vec<u8>>>,
@@ -231,7 +228,7 @@ impl UserPersona {
                 )
                 .await?;
             let description_str = String::from_utf8(description_val).map_err(|e| {
-                AppError::DecryptionError(format!("Invalid UTF-8 for description: {}", e))
+                AppError::DecryptionError(format!("Invalid UTF-8 for description: {e}"))
             })?;
 
             let personality_str = Self::decrypt_optional_field_async(
@@ -298,7 +295,7 @@ impl UserPersona {
             (
                 self.description
                     .is_empty()
-                    .then(|| String::new())
+                    .then(String::new)
                     .unwrap_or_else(|| "[Encrypted]".to_string()), // Non-optional description gets placeholder if not empty
                 self.personality.as_ref().and(placeholder.clone()),
                 self.scenario.as_ref().and(placeholder.clone()),
@@ -330,7 +327,7 @@ impl UserPersona {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize, Clone, Default, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, Clone, Default, PartialEq, Eq)]
 pub struct CreateUserPersonaDto {
     pub name: String,        // Name is mandatory for creation
     pub description: String, // Description is mandatory for creation
@@ -346,7 +343,7 @@ pub struct CreateUserPersonaDto {
     pub avatar: Option<String>,
 }
 
-#[derive(Debug, Deserialize, Serialize, Clone, Default, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, Clone, Default, PartialEq, Eq)]
 pub struct UpdateUserPersonaDto {
     pub name: Option<String>,
     pub description: Option<String>,

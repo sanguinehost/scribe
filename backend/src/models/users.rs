@@ -12,9 +12,10 @@ use tracing;
 use uuid::Uuid;
 
 // User role enum
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, diesel_derive_enum::DbEnum)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, diesel_derive_enum::DbEnum, Default)]
 #[ExistingTypePath = "crate::schema::sql_types::UserRole"]
 pub enum UserRole {
+    #[default]
     #[db_rename = "User"]
     User,
     #[db_rename = "Moderator"]
@@ -26,33 +27,24 @@ pub enum UserRole {
 impl std::fmt::Display for UserRole {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            UserRole::User => write!(f, "User"),
-            UserRole::Moderator => write!(f, "Moderator"),
-            UserRole::Administrator => write!(f, "Administrator"),
+            Self::User => write!(f, "User"),
+            Self::Moderator => write!(f, "Moderator"),
+            Self::Administrator => write!(f, "Administrator"),
         }
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, diesel_derive_enum::DbEnum)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, diesel_derive_enum::DbEnum, Default)]
 #[ExistingTypePath = "crate::schema::sql_types::AccountStatus"]
 pub enum AccountStatus {
+    #[default]
     #[db_rename = "active"]
     Active,
     #[db_rename = "locked"]
     Locked,
 }
 
-impl Default for UserRole {
-    fn default() -> Self {
-        UserRole::User
-    }
-}
 
-impl Default for AccountStatus {
-    fn default() -> Self {
-        AccountStatus::Active
-    }
-}
 
 // --- Newtype wrapper for DEK serialization ---
 #[derive(Debug)] // Manual Debug to redact SecretBox
@@ -60,6 +52,7 @@ pub struct SerializableSecretDek(pub SecretBox<Vec<u8>>); // Made pub for access
 
 impl SerializableSecretDek {
     // Helper to expose bytes, useful for clone or other operations
+    #[must_use]
     pub fn expose_secret_bytes(&self) -> &[u8] {
         self.0.expose_secret()
     }
@@ -68,7 +61,7 @@ impl SerializableSecretDek {
 // Manual Clone for SerializableSecretDek
 impl Clone for SerializableSecretDek {
     fn clone(&self) -> Self {
-        SerializableSecretDek(SecretBox::new(Box::new(self.0.expose_secret().to_vec())))
+        Self(SecretBox::new(Box::new(self.0.expose_secret().clone())))
     }
 }
 
@@ -96,7 +89,7 @@ impl<'de> Deserialize<'de> for SerializableSecretDek {
                     "SerializableSecretDek::deserialize: Successfully decoded base64, byte length: {}",
                     bytes.len()
                 );
-                Ok(SerializableSecretDek(SecretBox::new(Box::new(bytes))))
+                Ok(Self(SecretBox::new(Box::new(bytes))))
             }
             Err(e) => {
                 tracing::error!(
@@ -104,8 +97,7 @@ impl<'de> Deserialize<'de> for SerializableSecretDek {
                     e
                 );
                 Err(serde::de::Error::custom(format!(
-                    "Base64 decode error for DEK: {}",
-                    e
+                    "Base64 decode error for DEK: {e}"
                 )))
             }
         }
@@ -248,7 +240,7 @@ impl std::fmt::Debug for User {
 // Conversion from DB representation to application representation
 impl From<UserDbQuery> for User {
     fn from(user_from_db: UserDbQuery) -> Self {
-        User {
+        Self {
             id: user_from_db.id,
             username: user_from_db.username,
             password_hash: user_from_db.password_hash,
@@ -273,7 +265,7 @@ impl From<UserDbQuery> for User {
 // Manual Clone implementation for User
 impl Clone for User {
     fn clone(&self) -> Self {
-        User {
+        Self {
             id: self.id,
             username: self.username.clone(),
             email: self.email.clone(),

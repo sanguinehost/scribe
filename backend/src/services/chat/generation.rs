@@ -202,25 +202,25 @@ pub async fn get_session_data_for_generation(
         final_effective_system_prompt, // This is the system_prompt for the builder (persona/override only)
         raw_character_system_prompt,   // This is the raw system_prompt from the character itself
     ): (
-        String, // history_management_strategy
-        i32,    // history_management_limit
-        Uuid,   // session_character_id
-        Option<BigDecimal>, // temperature
-        Option<i32>, // max_output_tokens
-        Option<BigDecimal>, // frequency_penalty
-        Option<BigDecimal>, // presence_penalty
-        Option<i32>, // top_k
-        Option<BigDecimal>, // top_p
-        Option<i32>, // seed
+        String,                      // history_management_strategy
+        i32,                         // history_management_limit
+        Uuid,                        // session_character_id
+        Option<BigDecimal>,          // temperature
+        Option<i32>,                 // max_output_tokens
+        Option<BigDecimal>,          // frequency_penalty
+        Option<BigDecimal>,          // presence_penalty
+        Option<i32>,                 // top_k
+        Option<BigDecimal>,          // top_p
+        Option<i32>,                 // seed
         Option<Vec<Option<String>>>, // stop_sequences
-        String, // model_name
-        Option<i32>, // gemini_thinking_budget
-        Option<bool>, // gemini_enable_code_execution
-        Vec<DbChatMessage>, // messages
-        Character, // character
-        Vec<ChatCharacterOverride>, // overrides
-        Option<String>, // effective_system_prompt
-        Option<String>, // raw_character_system_prompt
+        String,                      // model_name
+        Option<i32>,                 // gemini_thinking_budget
+        Option<bool>,                // gemini_enable_code_execution
+        Vec<DbChatMessage>,          // messages
+        Character,                   // character
+        Vec<ChatCharacterOverride>,  // overrides
+        Option<String>,              // effective_system_prompt
+        Option<String>,              // raw_character_system_prompt
     ) = {
         let conn = state
             .pool
@@ -757,23 +757,23 @@ pub async fn get_session_data_for_generation(
 
     // --- Construct Final Tuple ---
     Ok((
-        managed_recent_history,         // 0: managed_db_history (Vec<DbChatMessage> -> Vec<ChatMessage> in type alias)
-        final_effective_system_prompt,  // 1: system_prompt (Option<String>)
+        managed_recent_history, // 0: managed_db_history (Vec<DbChatMessage> -> Vec<ChatMessage> in type alias)
+        final_effective_system_prompt, // 1: system_prompt (Option<String>)
         active_lorebook_ids_for_search, // 2: active_lorebook_ids_for_search (Option<Vec<Uuid>>)
-        session_character_id_db,        // 3: session_character_id (Uuid)
-        raw_character_system_prompt,    // 4: raw_character_system_prompt (Option<String>)
-        session_temperature_db,         // 5: temperature (Option<BigDecimal>)
-        session_max_output_tokens_db,   // 6: max_output_tokens (Option<i32>)
-        session_frequency_penalty_db,   // 7: frequency_penalty (Option<BigDecimal>)
-        session_presence_penalty_db,    // 8: presence_penalty (Option<BigDecimal>)
-        session_top_k_db,               // 9: top_k (Option<i32>)
-        session_top_p_db,               // 10: top_p (Option<BigDecimal>)
-        session_seed_db,                // 11: seed (Option<i32>) - MOVED
-        session_model_name_db,          // 12: model_name (String) - MOVED
+        session_character_id_db, // 3: session_character_id (Uuid)
+        raw_character_system_prompt, // 4: raw_character_system_prompt (Option<String>)
+        session_temperature_db, // 5: temperature (Option<BigDecimal>)
+        session_max_output_tokens_db, // 6: max_output_tokens (Option<i32>)
+        session_frequency_penalty_db, // 7: frequency_penalty (Option<BigDecimal>)
+        session_presence_penalty_db, // 8: presence_penalty (Option<BigDecimal>)
+        session_top_k_db,       // 9: top_k (Option<i32>)
+        session_top_p_db,       // 10: top_p (Option<BigDecimal>)
+        session_seed_db,        // 11: seed (Option<i32>) - MOVED
+        session_model_name_db,  // 12: model_name (String) - MOVED
         // -- Gemini Specific Options --
         session_gemini_thinking_budget_db, // 13: gemini_thinking_budget (Option<i32>) - MOVED
         session_gemini_enable_code_execution_db, // 14: gemini_enable_code_execution (Option<bool>) - MOVED
-        user_db_message_to_save,           // 15: The user message struct (DbInsertableChatMessage) - MOVED
+        user_db_message_to_save, // 15: The user message struct (DbInsertableChatMessage) - MOVED
         // -- RAG Context & Recent History Tokens --
         actual_recent_history_tokens, // 16: actual_recent_history_tokens (usize) - MOVED
         rag_context_items,            // 17: rag_context_items (Vec<RetrievedChunk>) - MOVED
@@ -796,7 +796,7 @@ pub async fn stream_ai_response_and_save_message(
     _top_k: Option<i32>,                    // Mark as unused for now
     top_p: Option<BigDecimal>,
     stop_sequences: Option<Vec<String>>, // New parameter
-    _seed: Option<i32>,                      // Mark as unused for now
+    _seed: Option<i32>,                  // Mark as unused for now
     model_name: String,
     gemini_thinking_budget: Option<i32>,
     gemini_enable_code_execution: Option<bool>,
@@ -840,7 +840,8 @@ pub async fn stream_ai_response_and_save_message(
     }
     if let Some(budget) = gemini_thinking_budget {
         if budget > 0 {
-            genai_chat_options = genai_chat_options.with_reasoning_effort(ReasoningEffort::Budget(budget as u32));
+            genai_chat_options =
+                genai_chat_options.with_reasoning_effort(ReasoningEffort::Budget(budget as u32));
         }
     }
     // `with_gemini_enable_code_execution` removed as it's no longer a direct ChatOption.

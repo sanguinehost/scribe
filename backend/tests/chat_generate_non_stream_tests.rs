@@ -48,7 +48,7 @@ use tracing::{debug, error, info, warn}; // Added debug
 
 // Add a custom ChatCompletionResponse struct since there doesn't seem to be one in scribe_backend::models::chats
 #[derive(Debug, serde::Deserialize)]
-#[allow(dead_code)]
+
 struct ChatCompletionResponse {
     content: String,
     message_id: String, // Expecting flat structure { "content": "...", "message_id": "..." }

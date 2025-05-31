@@ -705,7 +705,7 @@ impl HttpClient for ReqwestClientWrapper {
     }
 
     // Keep generate_response for mock compatibility if needed
-    #[allow(dead_code)]
+    
     async fn generate_response(
         &self,
         chat_id: Uuid,

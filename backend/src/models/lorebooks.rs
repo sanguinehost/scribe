@@ -20,6 +20,7 @@ use uuid::Uuid;
     Debug,
     Clone,
     PartialEq,
+    Eq,
     Default,
 )]
 #[diesel(table_name = lorebooks)]
@@ -62,6 +63,7 @@ pub struct NewLorebook {
     Debug,
     Clone,
     PartialEq,
+    Eq,
     AsChangeset,
 )]
 #[diesel(table_name = lorebook_entries, treat_none_as_null = true)]
@@ -131,6 +133,7 @@ pub struct NewLorebookEntry {
     Debug,
     Clone,
     PartialEq,
+    Eq,
 )]
 #[diesel(table_name = chat_session_lorebooks)]
 #[diesel(primary_key(chat_session_id, lorebook_id))]
@@ -163,7 +166,7 @@ impl ChatSessionLorebook {
         conn: &mut PgConnection,
         session_id_param: Uuid,
     ) -> QueryResult<Option<Vec<Uuid>>> {
-        use crate::schema::chat_session_lorebooks::dsl::*;
+        use crate::schema::chat_session_lorebooks::dsl::{chat_session_id, chat_session_lorebooks, lorebook_id};
 
         let ids = chat_session_lorebooks
             .filter(chat_session_id.eq(session_id_param))

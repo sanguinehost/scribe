@@ -21,12 +21,14 @@ impl Clone for SessionDek {
 }
 
 impl SessionDek {
-    /// Creates a new SessionDek from raw bytes.
+    /// Creates a new `SessionDek` from raw bytes.
+    #[must_use]
     pub fn new(dek_bytes: Vec<u8>) -> Self {
         Self(SecretBox::new(Box::new(dek_bytes)))
     }
 
     /// Access the inner DEK bytes
+    #[must_use]
     pub fn expose_bytes(&self) -> &[u8] {
         self.0.expose_secret() // Single expose
     }
@@ -75,19 +77,8 @@ where
 
         // The AuthBackend's get_user method populates the DEK from cache
         // So if the user has a DEK, it should be present in the user object
-        match user.dek {
-            Some(dek_wrapper) => {
-                tracing::warn!(target: "auth_debug", "SessionDek: Found DEK in user object for user_id: {}", user_id);
-                debug!(
-                    "SessionDek extractor: Successfully retrieved DEK from user object for user_id: {}",
-                    user_id
-                );
-
-                // Convert SerializableSecretDek to SessionDek
-                let dek_bytes_vec = dek_wrapper.expose_secret_bytes().to_vec();
-                Ok(SessionDek(SecretBox::new(Box::new(dek_bytes_vec))))
-            }
-            None => {
+        user.dek.map_or_else(
+            || {
                 tracing::warn!(target: "auth_debug", "SessionDek: DEK not found in user object for user_id: {}", user_id);
                 warn!(
                     user_id = %user_id,
@@ -97,8 +88,19 @@ where
                 Err(AppError::Unauthorized(
                     "DEK not found. Please log in again.".to_string(),
                 ))
-            }
-        }
+            },
+            |dek_wrapper| {
+                tracing::warn!(target: "auth_debug", "SessionDek: Found DEK in user object for user_id: {}", user_id);
+                debug!(
+                    "SessionDek extractor: Successfully retrieved DEK from user object for user_id: {}",
+                    user_id
+                );
+
+                // Convert SerializableSecretDek to SessionDek
+                let dek_bytes_vec = dek_wrapper.expose_secret_bytes().to_vec();
+                Ok(Self(SecretBox::new(Box::new(dek_bytes_vec))))
+            },
+        )
     }
 }
 

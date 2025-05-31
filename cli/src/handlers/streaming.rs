@@ -6,7 +6,7 @@ use crate::io::IoHandler;
 use scribe_backend::models::chats::{ApiChatMessage, UpdateChatSettingsRequest};
 
 /// Handler function for testing the streaming chat functionality
-#[allow(dead_code)]
+
 pub async fn handle_stream_test_action<H: IoHandler, C: HttpClient>(
     client: &C,
     io_handler: &mut H,

@@ -18,8 +18,8 @@ use serde_json::json;
 use tracing::{debug, error, info, instrument, warn};
 // use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64}; // Add Base64 import - Removed unused
 // For session DEK handling
-use tower_sessions::Session; // Import tower_sessions::Session
-use crate::auth::session_store::offset_to_utc; // Added for time conversion
+use crate::auth::session_store::offset_to_utc;
+use tower_sessions::Session; // Import tower_sessions::Session // Added for time conversion
 
 use crate::auth::user_store::Backend as AuthBackend;
 type CurrentAuthSession = AuthSession<AuthBackend>;
@@ -487,13 +487,15 @@ pub async fn get_session_handler(
             None => {
                 // This case should ideally not happen if auth_session.user is Some,
                 // as it implies an active session object without an ID.
-                error!("Critical: tower_sessions::Session present but session.id() is None in get_session_handler");
+                error!(
+                    "Critical: tower_sessions::Session present but session.id() is None in get_session_handler"
+                );
                 return Err(AppError::InternalServerErrorGeneric(
                     "Failed to retrieve session ID from active session".to_string(),
                 ));
             }
         };
-        
+
         // The expiry date from tower_sessions::Session is time::OffsetDateTime.
         let session_expiry_offset = session.expiry_date();
 

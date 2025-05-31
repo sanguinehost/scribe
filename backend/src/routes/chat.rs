@@ -41,8 +41,8 @@ use bigdecimal::ToPrimitive;
 use diesel::{ExpressionMethods, QueryDsl, RunQueryDsl, SelectableHelper, prelude::*};
 use futures_util::StreamExt;
 use genai::chat::{
-    ChatMessage as GenAiChatMessage, ChatOptions, ChatRequest, ChatResponseFormat, ChatRole, JsonSpec,
-    MessageContent, ReasoningEffort,
+    ChatMessage as GenAiChatMessage, ChatOptions, ChatRequest, ChatResponseFormat, ChatRole,
+    JsonSpec, MessageContent, ReasoningEffort,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -407,24 +407,24 @@ pub async fn generate_chat_response(
 
             let dek_for_stream_service = session_dek_arc.clone();
             match chat::generation::stream_ai_response_and_save_message(
-                state_arc.clone(),                  // state
-                session_id,                         // session_id
-                user_id_value,                      // user_id
-                final_genai_message_list.clone(),   // incoming_genai_messages
+                state_arc.clone(),                     // state
+                session_id,                            // session_id
+                user_id_value,                         // user_id
+                final_genai_message_list.clone(),      // incoming_genai_messages
                 Some(final_system_prompt_str.clone()), // system_prompt
-                gen_temperature,                    // temperature
-                gen_max_output_tokens,              // max_output_tokens
-                gen_frequency_penalty,              // _frequency_penalty
-                gen_presence_penalty,               // _presence_penalty
-                gen_top_k,                          // _top_k
-                gen_top_p,                          // top_p
-                None,                               // stop_sequences (Was gen_repetition_penalty)
-                gen_seed,                           // _seed (Was gen_min_p, gen_top_a, gen_seed)
-                model_to_use.clone(),               // model_name (Was gen_logit_bias, model_to_use.clone())
-                gen_gemini_thinking_budget,         // gemini_thinking_budget
-                gen_gemini_enable_code_execution,   // gemini_enable_code_execution
-                request_thinking,                   // request_thinking
-                Some(dek_for_stream_service),       // user_dek
+                gen_temperature,                       // temperature
+                gen_max_output_tokens,                 // max_output_tokens
+                gen_frequency_penalty,                 // _frequency_penalty
+                gen_presence_penalty,                  // _presence_penalty
+                gen_top_k,                             // _top_k
+                gen_top_p,                             // top_p
+                None,                             // stop_sequences (Was gen_repetition_penalty)
+                gen_seed,                         // _seed (Was gen_min_p, gen_top_a, gen_seed)
+                model_to_use.clone(), // model_name (Was gen_logit_bias, model_to_use.clone())
+                gen_gemini_thinking_budget, // gemini_thinking_budget
+                gen_gemini_enable_code_execution, // gemini_enable_code_execution
+                request_thinking,     // request_thinking
+                Some(dek_for_stream_service), // user_dek
             )
             .await
             {
@@ -547,7 +547,8 @@ pub async fn generate_chat_response(
                 // budget_i32 is Option<i32>
                 if budget_i32 > 0 {
                     // Ensure budget_i32 is cast to u32 if with_reasoning_effort expects u32
-                    chat_options = chat_options.with_reasoning_effort(ReasoningEffort::Budget(budget_i32 as u32));
+                    chat_options = chat_options
+                        .with_reasoning_effort(ReasoningEffort::Budget(budget_i32 as u32));
                 }
             }
             // `with_gemini_enable_code_execution` removed as it's no longer a direct ChatOption.
@@ -565,7 +566,8 @@ pub async fn generate_chat_response(
                 Ok(chat_response) => {
                     debug!(%session_id, "Received successful non-streaming AI response (JSON path)");
 
-                    let response_content = chat_response.contents
+                    let response_content = chat_response
+                        .contents
                         .into_iter()
                         .next()
                         .and_then(|content| match content {
@@ -628,23 +630,23 @@ pub async fn generate_chat_response(
             // This is largely a copy of the SSE path above.
             let dek_for_fallback_stream_service = session_dek_arc.clone(); // MODIFIED: Use Arc clone
             match chat::generation::stream_ai_response_and_save_message(
-                state_arc.clone(),                  // state
-                session_id,                         // session_id
-                user_id_value,                      // user_id
-                final_genai_message_list.clone(),   // incoming_genai_messages
+                state_arc.clone(),                     // state
+                session_id,                            // session_id
+                user_id_value,                         // user_id
+                final_genai_message_list.clone(),      // incoming_genai_messages
                 Some(final_system_prompt_str.clone()), // system_prompt
-                gen_temperature,                    // temperature
-                gen_max_output_tokens,              // max_output_tokens
-                gen_frequency_penalty,              // _frequency_penalty
-                gen_presence_penalty,               // _presence_penalty
-                gen_top_k,                          // _top_k
-                gen_top_p,                          // top_p
-                None,                               // stop_sequences (Was gen_repetition_penalty)
-                gen_seed,                           // _seed (Was gen_min_p, gen_top_a, gen_seed)
-                model_to_use.clone(),               // model_name (Was gen_logit_bias, model_to_use) - .clone() added
-                gen_gemini_thinking_budget,         // gemini_thinking_budget
-                gen_gemini_enable_code_execution,   // gemini_enable_code_execution
-                request_thinking,                   // request_thinking
+                gen_temperature,                       // temperature
+                gen_max_output_tokens,                 // max_output_tokens
+                gen_frequency_penalty,                 // _frequency_penalty
+                gen_presence_penalty,                  // _presence_penalty
+                gen_top_k,                             // _top_k
+                gen_top_p,                             // top_p
+                None,                             // stop_sequences (Was gen_repetition_penalty)
+                gen_seed,                         // _seed (Was gen_min_p, gen_top_a, gen_seed)
+                model_to_use.clone(), // model_name (Was gen_logit_bias, model_to_use) - .clone() added
+                gen_gemini_thinking_budget, // gemini_thinking_budget
+                gen_gemini_enable_code_execution, // gemini_enable_code_execution
+                request_thinking,     // request_thinking
                 Some(dek_for_fallback_stream_service), // user_dek
             )
             .await
@@ -744,13 +746,19 @@ pub async fn generate_suggested_actions(
     session_dek: SessionDek,
     Json(_payload): Json<SuggestedActionsRequest>, // _payload as it's an empty struct now
 ) -> Result<Json<SuggestedActionsResponse>, AppError> {
-    info!("Entering generate_suggested_actions for session_id: {}", session_id);
+    info!(
+        "Entering generate_suggested_actions for session_id: {}",
+        session_id
+    );
 
     let state_arc = Arc::new(state);
     let session_dek_arc = Arc::new(session_dek.0);
 
     let user = auth_session.user.ok_or_else(|| {
-        error!("User not found in session for suggested actions (session_id: {})", session_id);
+        error!(
+            "User not found in session for suggested actions (session_id: {})",
+            session_id
+        );
         AppError::Unauthorized("User not found in session".to_string())
     })?;
     let user_id = user.id;
@@ -800,7 +808,7 @@ pub async fn generate_suggested_actions(
         _active_lorebook_ids_for_search,
         session_character_id,
         raw_character_system_prompt,
-        gen_temperature, // We might use a fixed temp for suggestions
+        gen_temperature,        // We might use a fixed temp for suggestions
         _gen_max_output_tokens, // We use fixed max_tokens for suggestions
         _gen_frequency_penalty,
         _gen_presence_penalty,
@@ -854,16 +862,25 @@ pub async fn generate_suggested_actions(
     // Construct context for the suggestion prompt
     let mut suggestion_context_parts: Vec<String> = Vec::new();
 
-    let decrypted_first_mes_str = match (&character_db_model.first_mes, &character_db_model.first_mes_nonce) {
-        (Some(fm_bytes), Some(fm_nonce_bytes)) if !fm_bytes.is_empty() && !fm_nonce_bytes.is_empty() => {
-            match crate::crypto::decrypt_gcm(fm_bytes, fm_nonce_bytes, &session_dek_arc) { // Use &session_dek_arc
-                Ok(decrypted_secret_vec) => {
-                    String::from_utf8(decrypted_secret_vec.expose_secret().to_vec())
-                        .unwrap_or_else(|e| {
-                            error!("Failed to convert decrypted first_mes to UTF-8: {}. Using empty string.", e);
-                            String::new()
-                        })
-                }
+    let decrypted_first_mes_str = match (
+        &character_db_model.first_mes,
+        &character_db_model.first_mes_nonce,
+    ) {
+        (Some(fm_bytes), Some(fm_nonce_bytes))
+            if !fm_bytes.is_empty() && !fm_nonce_bytes.is_empty() =>
+        {
+            match crate::crypto::decrypt_gcm(fm_bytes, fm_nonce_bytes, &session_dek_arc) {
+                // Use &session_dek_arc
+                Ok(decrypted_secret_vec) => String::from_utf8(
+                    decrypted_secret_vec.expose_secret().to_vec(),
+                )
+                .unwrap_or_else(|e| {
+                    error!(
+                        "Failed to convert decrypted first_mes to UTF-8: {}. Using empty string.",
+                        e
+                    );
+                    String::new()
+                }),
                 Err(e) => {
                     error!("Failed to decrypt first_mes: {}. Using empty string.", e);
                     String::new()
@@ -878,7 +895,10 @@ pub async fn generate_suggested_actions(
     };
 
     if !decrypted_first_mes_str.is_empty() {
-        suggestion_context_parts.push(format!("Character Introduction: \"{}\"", decrypted_first_mes_str));
+        suggestion_context_parts.push(format!(
+            "Character Introduction: \"{}\"",
+            decrypted_first_mes_str
+        ));
     }
 
     // Use last 2-3 messages from history for context
@@ -887,12 +907,16 @@ pub async fn generate_suggested_actions(
         // managed_db_history content is already decrypted by get_session_data_for_generation
         let content_str = String::from_utf8_lossy(&msg.content).into_owned();
         match msg.message_type {
-            MessageRole::User => suggestion_context_parts.push(format!("User: \"{}\"", content_str)),
-            MessageRole::Assistant => suggestion_context_parts.push(format!("Assistant: \"{}\"", content_str)),
+            MessageRole::User => {
+                suggestion_context_parts.push(format!("User: \"{}\"", content_str))
+            }
+            MessageRole::Assistant => {
+                suggestion_context_parts.push(format!("Assistant: \"{}\"", content_str))
+            }
             MessageRole::System => {} // Usually don't include system messages directly in this context
         }
     }
-    
+
     let context_str_for_suggestions = suggestion_context_parts.join("\n");
     let prompt_text_for_llm_suggestions = format!(
         "Based on this conversation snippet:\n\n{}\n\nWhat are 2-4 concise follow-up actions or questions the user might say next? These should be suitable for buttons.",
@@ -909,7 +933,8 @@ pub async fn generate_suggested_actions(
     // Convert DbChatMessage history (already decrypted) to GenAiChatMessage history for prompt builder
     // This history is what *precedes* our special suggestion_request_genai_message
     let mut gen_ai_processed_history: Vec<GenAiChatMessage> = Vec::new();
-    for db_msg in managed_db_history { // This is the full relevant history
+    for db_msg in managed_db_history {
+        // This is the full relevant history
         let content_str = String::from_utf8_lossy(&db_msg.content).into_owned();
         let chat_role = match db_msg.message_type {
             MessageRole::User => ChatRole::User,
@@ -922,7 +947,7 @@ pub async fn generate_suggested_actions(
             options: None,
         });
     }
-    
+
     // Model for suggestions - can be from settings or fixed. Using fixed for now.
     let model_for_suggestions = "gemini-1.5-flash-latest".to_string(); // Or use gen_model_name_from_service if desired
 
@@ -931,7 +956,7 @@ pub async fn generate_suggested_actions(
             state_arc.config.clone(),
             state_arc.token_counter.clone(),
             gen_ai_processed_history, // The actual chat history
-            Vec::new(), // No RAG for suggestions
+            Vec::new(),               // No RAG for suggestions
             system_prompt_from_service,
             raw_character_system_prompt,
             Some(&character_metadata_for_prompt_builder),
@@ -965,14 +990,19 @@ pub async fn generate_suggested_actions(
     });
 
     let chat_options = ChatOptions::default()
-        .with_temperature(gen_temperature.and_then(|t| t.to_f32()).unwrap_or(0.7).into()) // Use session temp or default
+        .with_temperature(
+            gen_temperature
+                .and_then(|t| t.to_f32())
+                .unwrap_or(0.7)
+                .into(),
+        ) // Use session temp or default
         .with_max_tokens(150) // Fixed max tokens for suggestions
         .with_response_format(ChatResponseFormat::JsonSpec(JsonSpec {
             name: "suggested_actions".to_string(),
             description: Some("A list of suggested follow-up actions or questions.".to_string()),
             schema: suggested_actions_schema_value,
         }));
-    
+
     trace!(%session_id, model = %model_for_suggestions, ?chat_request, ?chat_options, "Sending request to Gemini for suggested actions");
 
     let gemini_response = state_arc

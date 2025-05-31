@@ -212,12 +212,11 @@ fn chunk_recursive(
             // --- End Safeguard ---
             split_occurred = true;
             break; // Stop trying major separators once a split is successful
-        } else {
-            trace!(
-                separator,
-                "No suitable split point found by major separator."
-            );
         }
+        trace!(
+            separator,
+            "No suitable split point found by major separator."
+        );
     }
     // --- End FIX ---
 
@@ -862,7 +861,7 @@ mod tests {
         let config = TEST_CONFIG_CHARS;
         let para1 = "First paragraph.";
         let _para2 = "Second paragraph, also short.";
-        let _expected = vec![
+        let _expected = [
             // NOTE: Current placeholder logic will likely fail this test.
             // This test needs adjustment once real splitting is done.
             TextChunk {
@@ -1033,7 +1032,7 @@ mod tests {
     fn test_chunk_unusual_whitespace() {
         let text = "  Leading space. \n\n \t Lots of \t tabs and spaces. \n\nTrailing space.  ";
         let config = TEST_CONFIG_CHARS;
-        let _expected = vec![
+        let _expected = [
             TextChunk {
                 // chunk_text now trims input initially
                 content: "Leading space.".to_string(),

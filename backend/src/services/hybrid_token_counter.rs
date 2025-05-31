@@ -211,7 +211,7 @@ impl HybridTokenCounter {
                         Ok(data) => {
                             // Determine mime type from extension
                             let mime_type = match path.extension().and_then(|e| e.to_str()) {
-                                Some("jpg") | Some("jpeg") => "image/jpeg",
+                                Some("jpg" | "jpeg") => "image/jpeg",
                                 Some("png") => "image/png",
                                 Some("webp") => "image/webp",
                                 Some("gif") => "image/gif",
