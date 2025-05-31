@@ -284,7 +284,7 @@ pub fn insert_test_user_with_password(
 }
 
 // Middleware to log request details for debugging routing
-#[allow(dead_code)]
+
 pub async fn log_requests_middleware(req: Request<Body>, next: Next) -> impl IntoResponse {
     tracing::info!(target: "LOG_REQ_MIDDLEWARE", "Received request: {} {}", req.method(), req.uri().path());
     next.run(req).await

@@ -1216,11 +1216,7 @@ mod tests {
         let token_counter_service = Arc::new(
             crate::services::hybrid_token_counter::HybridTokenCounter::new_local_only(
                 crate::services::tokenizer_service::TokenizerService::new(
-                    config
-                        .tokenizer_model_path
-                        .as_ref()
-                        .expect("Tokenizer path is None")
-                        .as_str(),
+                    &config.tokenizer_model_path
                 )
                 .expect("Failed to create tokenizer for test"),
             ),
@@ -2506,7 +2502,7 @@ mod tests {
             RetrievedMetadata::Lorebook(meta) => {
                 assert_eq!(meta.lorebook_id, lorebook_id1);
                 assert_eq!(meta.source_type, "lorebook_entry");
-                assert_eq!(meta.is_enabled, true);
+                assert!(meta.is_enabled);
             }
             _ => panic!("Expected Lorebook metadata"),
         }
@@ -2553,7 +2549,7 @@ mod tests {
                 if fc.key == "is_enabled" {
                     if let Some(m) = fc.r#match.as_ref() {
                         if let Some(MatchValue::Boolean(b_val)) = m.match_value.as_ref() {
-                            return *b_val == true;
+                            return *b_val;
                         }
                     }
                 }

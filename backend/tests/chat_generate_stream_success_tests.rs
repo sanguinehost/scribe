@@ -641,12 +641,9 @@ async fn test_first_mes_included_in_history() {
     );
     let token_counter_service = Arc::new(HybridTokenCounter::new_local_only(
         TokenizerService::new(
-            test_app
+            &test_app
                 .config
-                .tokenizer_model_path
-                .as_ref()
-                .expect("Tokenizer path is None")
-                .as_str(),
+                .tokenizer_model_path,
         )
         .expect("Failed to create tokenizer for test"),
     ));

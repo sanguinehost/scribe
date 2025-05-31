@@ -23,7 +23,7 @@ use scribe_backend::models::chats::{
     ChatMessage,
     Message as DbChatMessage, // Added for the new test (alias for scribe_backend::models::chats::Message)
     MessageRole,
-    NewChat,    // Renamed from NewChat
+    NewChat,        // Renamed from NewChat
     NewChatMessage, // Added for the new test
 };
 use scribe_backend::models::users::UserCredentials; // Add credentials import

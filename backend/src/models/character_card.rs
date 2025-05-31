@@ -135,7 +135,7 @@ impl std::fmt::Debug for Asset {
 
 // --- Lorebook Decorator Definitions ---
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum DecoratorRole {
     Assistant,
@@ -143,7 +143,7 @@ pub enum DecoratorRole {
     User,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum DecoratorPosition {
     AfterDesc,
@@ -155,7 +155,7 @@ pub enum DecoratorPosition {
     Unknown,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum DecoratorUiPromptType {
     PostHistoryInstructions,
@@ -208,7 +208,7 @@ fn parse_decorators_from_content(raw_content: &str) -> (Vec<Decorator>, String) 
                 .splitn(2, |c: char| c.is_whitespace())
                 .collect();
             // Trim potential trailing whitespace from name
-            let name = parts.get(0).unwrap_or(&"").trim_end().to_string();
+            let name = parts.first().unwrap_or(&"").trim_end().to_string();
 
             if name.is_empty() {
                 // Invalid decorator line, treat as content
@@ -222,19 +222,19 @@ fn parse_decorators_from_content(raw_content: &str) -> (Vec<Decorator>, String) 
             // Check subsequent lines for fallbacks (@@@)
             while let Some(next_line) = lines.peek() {
                 let trimmed_next = next_line.trim(); // Trim first to check prefix
-                if trimmed_next.starts_with("@@@") {
+                if let Some(stripped) = trimmed_next.strip_prefix("@@@") {
                     // Original line needed for whitespace check later: let fallback_line = lines.next().unwrap();
                     // Consume the fallback line
                     let fallback_line = lines.next().unwrap();
 
                     // Skip if the line is just "@@@" or "@@@" followed by whitespace
-                    if trimmed_next == "@@@" || trimmed_next[3..].trim().is_empty() {
+                    if trimmed_next == "@@@" || stripped.trim().is_empty() {
                         content_lines.push(fallback_line);
                         continue;
                     }
 
                     // Trim leading whitespace *after* the prefix before splitting
-                    let fallback_content_after_prefix = trimmed_next[3..].trim();
+                    let fallback_content_after_prefix = stripped.trim();
 
                     // If there's no content after @@@, treat it as content
                     if fallback_content_after_prefix.is_empty() {
@@ -246,7 +246,7 @@ fn parse_decorators_from_content(raw_content: &str) -> (Vec<Decorator>, String) 
                         .splitn(2, |c: char| c.is_whitespace())
                         .collect();
                     // Trim potential trailing whitespace from name
-                    let fallback_name = fallback_parts.get(0).unwrap_or(&"").trim_end().to_string();
+                    let fallback_name = fallback_parts.first().unwrap_or(&"").trim_end().to_string();
 
                     if fallback_name.is_empty() {
                         // Invalid fallback line, treat as content
@@ -499,48 +499,23 @@ use crate::services::character_parser::ParsedCharacterCard;
 
 impl NewCharacter {
     // Add user_id parameter
+    #[allow(clippy::too_many_lines)]
+    #[allow(clippy::too_many_lines)]
+    #[allow(clippy::too_many_lines)]
     pub fn from_parsed_card(parsed: &ParsedCharacterCard, user_id: Uuid) -> Self {
         match parsed {
-            ParsedCharacterCard::V3(data) => {
+            ParsedCharacterCard::V3(data_v3_card) => {
                 // --- Handling V3 Card ---
                 // Extract spec and version
-                let spec = data.spec.clone();
-                let spec_version = data.spec_version.clone();
-                let data = data.data.clone(); // Clone the inner data
+                let spec = data_v3_card.spec.clone();
+                let spec_version = data_v3_card.spec_version.clone();
+                let data = data_v3_card.data.clone(); // Clone the inner data
 
                 // Convert V3 Vec<String> to DB Option<Vec<Option<String>>>
-                let tags = if data.tags.is_empty() {
-                    None
-                } else {
-                    Some(data.tags.clone().into_iter().map(Some).collect())
-                };
-                let alternate_greetings = if data.alternate_greetings.is_empty() {
-                    None
-                } else {
-                    Some(
-                        data.alternate_greetings
-                            .clone()
-                            .into_iter()
-                            .map(Some)
-                            .collect(),
-                    )
-                };
-                let source = if data.source.as_ref().map_or(true, |s| s.is_empty()) {
-                    None
-                } else {
-                    data.source.map(|s| s.into_iter().map(Some).collect())
-                };
-                let group_only_greetings = if data.group_only_greetings.is_empty() {
-                    None
-                } else {
-                    Some(
-                        data.group_only_greetings
-                            .clone()
-                            .into_iter()
-                            .map(Some)
-                            .collect(),
-                    )
-                };
+                let tags = if data.tags.is_empty() { None } else { Some(data.tags.into_iter().map(Some).collect()) };
+                let alternate_greetings = if data.alternate_greetings.is_empty() { None } else { Some(data.alternate_greetings.into_iter().map(Some).collect()) };
+                let source = data.source.map(|v| v.into_iter().map(Some).collect());
+                let group_only_greetings = if data.group_only_greetings.is_empty() { None } else { Some(data.group_only_greetings.into_iter().map(Some).collect()) };
 
                 // Convert timestamps
                 let creation_date_ts = data
@@ -568,33 +543,25 @@ impl NewCharacter {
                     Some(Json(serde_json::Value::Object(extensions_json))) // Wrap Value in Json for Option<Json<Value>>
                 };
 
-                NewCharacter {
+                Self { // Changed from NewCharacter
                     user_id,                                     // Use passed user_id
                     name: data.name.clone().unwrap_or_default(), // V3 name is Option<String>, DB needs String
                     // Wrap non-optional V3 strings in Some() for DB Option<String>, filter empty
-                    description: Some(data.description.clone().into_bytes())
-                        .filter(|v| !v.is_empty()),
+                    description: if data.description.is_empty() { None } else { Some(data.description.into_bytes()) },
                     description_nonce: None,
-                    personality: Some(data.personality.clone().into_bytes())
-                        .filter(|v| !v.is_empty()),
+                    personality: if data.personality.is_empty() { None } else { Some(data.personality.into_bytes()) },
                     personality_nonce: None,
-                    scenario: Some(data.scenario.clone().into_bytes()).filter(|v| !v.is_empty()),
+                    scenario: if data.scenario.is_empty() { None } else { Some(data.scenario.into_bytes()) },
                     scenario_nonce: None,
-                    first_mes: Some(data.first_mes.clone().into_bytes()).filter(|v| !v.is_empty()),
+                    first_mes: if data.first_mes.is_empty() { None } else { Some(data.first_mes.into_bytes()) },
                     first_mes_nonce: None,
-                    mes_example: Some(data.mes_example.clone().into_bytes())
-                        .filter(|v| !v.is_empty()),
+                    mes_example: if data.mes_example.is_empty() { None } else { Some(data.mes_example.into_bytes()) },
                     mes_example_nonce: None,
-                    creator_notes: Some(data.creator_notes.clone().into_bytes())
-                        .filter(|v| !v.is_empty()),
+                    creator_notes: if data.creator_notes.is_empty() { None } else { Some(data.creator_notes.into_bytes()) },
                     creator_notes_nonce: None,
-                    system_prompt: Some(data.system_prompt.clone().into_bytes())
-                        .filter(|v| !v.is_empty()),
+                    system_prompt: if data.system_prompt.is_empty() { None } else { Some(data.system_prompt.into_bytes()) },
                     system_prompt_nonce: None,
-                    post_history_instructions: Some(
-                        data.post_history_instructions.clone().into_bytes(),
-                    )
-                    .filter(|v| !v.is_empty()),
+                    post_history_instructions: if data.post_history_instructions.is_empty() { None } else { Some(data.post_history_instructions.into_bytes()) },
                     post_history_instructions_nonce: None,
                     creator: Some(data.creator.clone()).filter(|s| !s.is_empty()),
                     character_version: Some(data.character_version.clone())
@@ -605,9 +572,9 @@ impl NewCharacter {
                     spec,         // Use extracted spec
                     spec_version, // Use extracted spec_version
                     // character_book: data.character_book.clone(), // DB has separate table, handle later if needed
-                    nickname: data.nickname.clone(), // Already Option<String>
+                    nickname: data.nickname, // Changed from .clone()
                     creator_notes_multilingual: creator_notes_multilingual_json, // Assign the wrapped value
-                    source,                          // Already Option<Vec<Option<String>>>
+                    source, // Already converted to Option<Vec<Option<String>>>>
                     group_only_greetings,            // Already Option<Vec<Option<String>>>
                     creation_date: creation_date_ts, // Already Option<DateTime<Utc>>
                     modification_date: modification_date_ts, // Already Option<DateTime<Utc>>
@@ -649,73 +616,53 @@ impl NewCharacter {
                     updated_at: None,
                 }
             }
-            ParsedCharacterCard::V2Fallback(data_v2) => {
-                // --- Handling V2 Fallback Card ---
-                // Map relevant V2 fields, set spec/version for fallback
+            ParsedCharacterCard::V2Fallback(data) => {
+                let description = if data.description.is_empty() { None } else { Some(data.description.clone().into_bytes()) };
+                let personality = if data.personality.is_empty() { None } else { Some(data.personality.clone().into_bytes()) };
+                let scenario = if data.scenario.is_empty() { None } else { Some(data.scenario.clone().into_bytes()) };
+                let first_mes = if data.first_mes.is_empty() { None } else { Some(data.first_mes.clone().into_bytes()) };
+                let mes_example = if data.mes_example.is_empty() { None } else { Some(data.mes_example.clone().into_bytes()) };
+                let creator_notes = if data.creator_notes.is_empty() { None } else { Some(data.creator_notes.clone().into_bytes()) };
+                let system_prompt = if data.system_prompt.is_empty() { None } else { Some(data.system_prompt.clone().into_bytes()) };
+                let post_history_instructions = if data.post_history_instructions.is_empty() { None } else { Some(data.post_history_instructions.clone().into_bytes()) };
 
-                // V2 tags/greetings are Vec<String>, DB wants Option<Vec<Option<String>>>
-                let tags = if data_v2.tags.is_empty() {
-                    None
-                } else {
-                    Some(data_v2.tags.clone().into_iter().map(Some).collect())
-                };
-                let alternate_greetings = if data_v2.alternate_greetings.is_empty() {
-                    None
-                } else {
-                    Some(
-                        data_v2
-                            .alternate_greetings
-                            .clone()
-                            .into_iter()
-                            .map(Some)
-                            .collect(),
-                    )
-                };
-
-                // Most V2 fields are String, DB wants Option<String>. Wrap in Some() and filter empty.
-                NewCharacter {
-                    user_id,                                        // Use passed user_id
-                    name: data_v2.name.clone().unwrap_or_default(), // V2 name is Option<String>, DB needs String
-                    description: Some(data_v2.description.clone().into_bytes())
-                        .filter(|v| !v.is_empty()),
+                Self {
+                    user_id,
+                    name: data.name.clone().unwrap_or_default(),
+                    description,
+                    personality,
+                    scenario,
+                    first_mes,
+                    mes_example,
+                    creator_notes,
+                    system_prompt,
+                    post_history_instructions,
+                    tags: if data.tags.is_empty() { None } else { Some(data.tags.clone().into_iter().map(Some).collect()) },
+                    alternate_greetings: if data.alternate_greetings.is_empty() { None } else { Some(data.alternate_greetings.clone().into_iter().map(Some).collect()) },
+                    extensions: if data.extensions.is_empty() { 
+                        None 
+                    } else { 
+                        Some(diesel_json::Json(serde_json::Value::Object(data.extensions.clone().into_iter().collect())))
+                    },
+                    spec: "chara_card_v2".to_string(), // V2 spec identifier
+                    spec_version: "2.0".to_string(), // V2 version
                     description_nonce: None,
-                    personality: Some(data_v2.personality.clone().into_bytes())
-                        .filter(|v| !v.is_empty()),
                     personality_nonce: None,
-                    scenario: Some(data_v2.scenario.clone().into_bytes()).filter(|v| !v.is_empty()),
                     scenario_nonce: None,
-                    first_mes: Some(data_v2.first_mes.clone().into_bytes())
-                        .filter(|v| !v.is_empty()),
                     first_mes_nonce: None,
-                    mes_example: Some(data_v2.mes_example.clone().into_bytes())
-                        .filter(|v| !v.is_empty()),
                     mes_example_nonce: None,
-                    creator_notes: Some(data_v2.creator_notes.clone().into_bytes())
-                        .filter(|v| !v.is_empty()),
                     creator_notes_nonce: None,
-                    system_prompt: Some(data_v2.system_prompt.clone().into_bytes())
-                        .filter(|v| !v.is_empty()),
                     system_prompt_nonce: None,
-                    post_history_instructions: Some(
-                        data_v2.post_history_instructions.clone().into_bytes(),
-                    )
-                    .filter(|v| !v.is_empty()),
                     post_history_instructions_nonce: None,
-                    tags, // Use converted tags
-                    creator: Some(data_v2.creator.clone()).filter(|s| !s.is_empty()),
-                    character_version: Some(data_v2.character_version.clone())
-                        .filter(|s| !s.is_empty()),
-                    alternate_greetings, // Use converted greetings
-                    spec: "chara_card_v2_fallback".to_string(), // Indicate fallback
-                    spec_version: "2.0".to_string(), // Indicate V2 origin
-                    // V3 specific fields are left None or default
-                    nickname: None,
-                    creator_notes_multilingual: None,
-                    source: None,
-                    group_only_greetings: None,
-                    creation_date: None,
-                    modification_date: None,
-                    extensions: None, // Ensure extensions is None for V2 fallback
+                    creator: Some(data.creator.clone()).filter(|s| !s.is_empty()),
+                    character_version: Some(data.character_version.clone()).filter(|s| !s.is_empty()),
+                    nickname: None, // V2 doesn't have nickname
+                    // V2 specific fields, map to V3 equivalents or default
+                    source: None, // V2 doesn't have a direct source field
+                    group_only_greetings: None, // V2 doesn't have this
+                    creation_date: None,              // V2 doesn't have this
+                    modification_date: None,          // V2 doesn't have this
+                    creator_notes_multilingual: None, // V2 doesn't have this
                     persona: None,
                     persona_nonce: None,
                     world_scenario: None,
@@ -1061,9 +1008,9 @@ mod tests {
 
         // V3 Card
         let card_v3 = CharacterCardV3::default();
-        let _ = format!("{:?}", card_v3);
+        let _ = format!("{card_v3:?}");
         let data_v3 = CharacterCardDataV3::default();
-        let _ = format!("{:?}", data_v3);
+        let _ = format!("{data_v3:?}");
 
         // Asset
         let asset = Asset {
@@ -1072,7 +1019,7 @@ mod tests {
             name: "name".to_string(),
             ext: "png".to_string(),
         };
-        let _ = format!("{:?}", asset);
+        let _ = format!("{asset:?}");
 
         // Decorator
         let decorator = Decorator {
@@ -1080,25 +1027,25 @@ mod tests {
             value: Some("value".to_string()),
             fallbacks: vec![],
         };
-        let _ = format!("{:?}", decorator);
+        let _ = format!("{decorator:?}");
 
         // LorebookEntryPosition
         let pos = LorebookEntryPosition::BeforeChar;
-        let _ = format!("{:?}", pos);
+        let _ = format!("{pos:?}");
 
         // StandaloneLorebook
         let standalone_book = StandaloneLorebook {
             spec: "lorebook_v3".to_string(),
             data: Lorebook::default(),
         };
-        let _ = format!("{:?}", standalone_book);
+        let _ = format!("{standalone_book:?}");
 
         // NewCharacter (needs user_id)
         let new_char = NewCharacter {
             user_id: Uuid::new_v4(),
             ..Default::default()
         };
-        let _ = format!("{:?}", new_char);
+        let _ = format!("{new_char:?}");
 
         // CharacterAsset (needs id, character_id)
         let char_asset = CharacterAsset {
@@ -1109,7 +1056,7 @@ mod tests {
             name: "name".to_string(),
             ext: "png".to_string(),
         };
-        let _ = format!("{:?}", char_asset);
+        let _ = format!("{char_asset:?}");
 
         // NewCharacterAsset (needs character_id)
         let new_char_asset = NewCharacterAsset {
@@ -1119,7 +1066,7 @@ mod tests {
             name: "name".to_string(),
             ext: "png".to_string(),
         };
-        let _ = format!("{:?}", new_char_asset);
+        let _ = format!("{new_char_asset:?}");
     }
 
     // --- Tests for NewCharacter::from_parsed_card (covering lines 433, 451, 457, 468, 471, 477-478, 528, 533) ---
@@ -1147,17 +1094,21 @@ mod tests {
     #[test]
     fn test_from_parsed_card_v3_fields() {
         let user_id = Uuid::new_v4();
-        let mut data_v3 = CharacterCardDataV3::default();
-        data_v3.name = Some("Test V3".to_string());
-        data_v3.tags = vec!["tag1".to_string(), "tag2".to_string()];
-        data_v3.source = Some(vec!["source1".to_string()]);
-        data_v3.group_only_greetings = vec!["group_greet1".to_string()];
-        data_v3.creation_date = Some(1678886400); // Example timestamp
-        data_v3.modification_date = Some(1678887400);
-        data_v3.creator_notes_multilingual =
-            Some(HashMap::from([("es".to_string(), "nota".to_string())]));
-        data_v3.extensions =
-            HashMap::from([("ext_key".to_string(), Value::String("ext_val".to_string()))]);
+        let data_v3 = CharacterCardDataV3 {
+            name: Some("Test V3".to_string()),
+            tags: vec!["tag1".to_string(), "tag2".to_string()],
+            source: Some(vec!["source1".to_string()]),
+            group_only_greetings: vec!["group_greet1".to_string()],
+            creation_date: Some(1_678_886_400), // Example Unix timestamp
+            modification_date: Some(1_678_887_400), // Example Unix timestamp
+            creator_notes_multilingual: Some(HashMap::from([
+                ("es".to_string(), "nota".to_string()),
+            ])),
+            extensions: HashMap::from([
+                ("ext_key".to_string(), serde_json::Value::String("ext_val".to_string())),
+            ]),
+            ..Default::default()
+        };
 
         let card_v3 = CharacterCardV3 {
             spec: "chara_card_v3".to_string(),
@@ -1189,8 +1140,8 @@ mod tests {
         // Test timestamp conversion (lines 468, 471)
         assert!(new_char.creation_date.is_some());
         assert!(new_char.modification_date.is_some());
-        assert_eq!(new_char.creation_date.unwrap().timestamp(), 1678886400);
-        assert_eq!(new_char.modification_date.unwrap().timestamp(), 1678887400);
+        assert_eq!(new_char.creation_date.unwrap().timestamp(), 1_678_886_400);
+        assert_eq!(new_char.modification_date.unwrap().timestamp(), 1_678_887_400);
 
         // Test HashMap -> Json conversion (line 477-478 for multilingual, 481-489 for extensions)
         assert!(new_char.creator_notes_multilingual.is_some());
@@ -1214,10 +1165,12 @@ mod tests {
     fn test_from_parsed_card_v2_fallback_fields() {
         let user_id = Uuid::new_v4();
         // Create a CharacterCardDataV3 instance populated with V2-like data
-        let mut data_v2_as_v3 = CharacterCardDataV3::default();
-        data_v2_as_v3.name = Some("Test V2".to_string());
-        data_v2_as_v3.tags = vec!["v2tag1".to_string()];
-        data_v2_as_v3.alternate_greetings = vec!["v2greet1".to_string()];
+        let data_v2_as_v3 = CharacterCardDataV3 {
+            name: Some("Test V2".to_string()),
+            tags: vec!["v2tag1".to_string()],
+            alternate_greetings: vec!["v2greet1".to_string()],
+            ..Default::default()
+        };
         // Populate other fields as needed if the V2Fallback variant expects them
 
         // Pass the V3 struct directly, not boxed
@@ -1227,7 +1180,7 @@ mod tests {
 
         assert_eq!(new_char.user_id, user_id);
         assert_eq!(new_char.name, "Test V2");
-        assert_eq!(new_char.spec, "chara_card_v2_fallback"); // Check fallback spec
+        assert_eq!(new_char.spec, "chara_card_v2"); // Check fallback spec
         assert_eq!(new_char.spec_version, "2.0"); // Check fallback version
 
         // Test V2 Vec<String> -> Option<Vec<Option<String>>> conversion (lines 528, 533)

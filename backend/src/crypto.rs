@@ -61,19 +61,19 @@ fn generate_dek_bytes() -> Result<Vec<u8>, CryptoError> {
     Ok(dek_bytes)
 }
 
-/// Generates a cryptographically secure random Data Encryption Key (DEK) wrapped in SecretBox.
+/// Generates a cryptographically secure random Data Encryption Key (DEK) wrapped in `SecretBox`.
 pub fn generate_dek() -> Result<SecretBox<Vec<u8>>, CryptoError> {
     let dek_bytes = generate_dek_bytes()?;
     Ok(SecretBox::new(Box::new(dek_bytes)))
 }
 
-/// Public version of generate_dek for use in other modules.
+/// Public version of `generate_dek` for use in other modules.
 pub fn crypto_generate_dek() -> Result<SecretBox<Vec<u8>>, CryptoError> {
     generate_dek()
 }
 
 /// Derives a Key Encryption Key (KEK) from a password and salt using Argon2id.
-/// The output key length will be DEK_LEN (32 bytes for AES-256).
+/// The output key length will be `DEK_LEN` (32 bytes for AES-256).
 pub fn derive_kek(
     password: &SecretString,
     salt_str: &str,
@@ -235,10 +235,7 @@ mod tests {
                 "Expected CryptoError::Base64DecodeError for invalid salt, got Ok({:?})",
                 secret_val.expose_secret() // Expose for test display if absolutely needed, or just indicate Ok type
             ),
-            Err(e) => panic!(
-                "Expected CryptoError::Base64DecodeError for invalid salt, got Err({:?})",
-                e
-            ),
+            Err(e) => panic!("Expected CryptoError::Base64DecodeError for invalid salt, got Err({e:?})"),
         }
     }
 
@@ -280,13 +277,9 @@ mod tests {
         let plaintext = b"Important data";
         let (mut ciphertext, nonce) = encrypt_gcm(plaintext, &key_material).unwrap();
 
-        // Tamper with the ciphertext portion
+        // Tamper with the ciphertext portion by corrupting first byte
         if !ciphertext.is_empty() {
-            if ciphertext.len() > AES_256_GCM.tag_len() {
-                ciphertext[0] ^= 0x01;
-            } else {
-                ciphertext[0] ^= 0x01;
-            }
+            ciphertext[0] ^= 0x01;
         }
 
         let result = decrypt_gcm(&ciphertext, &nonce, &key_material);
@@ -295,10 +288,7 @@ mod tests {
             Ok(_) => {
                 panic!("Expected DecryptionFailed for tampered ciphertext, got Ok(<secret data>)")
             }
-            Err(e) => panic!(
-                "Expected DecryptionFailed for tampered ciphertext, got Err({:?})",
-                e
-            ),
+            Err(e) => panic!("Expected DecryptionFailed for tampered ciphertext, got Err({e:?})"),
         }
     }
 
@@ -317,10 +307,7 @@ mod tests {
         match result {
             Err(CryptoError::DecryptionFailed) => { /* Test passes */ }
             Ok(_) => panic!("Expected DecryptionFailed for tampered nonce, got Ok(<secret data>)"),
-            Err(e) => panic!(
-                "Expected DecryptionFailed for tampered nonce, got Err({:?})",
-                e
-            ),
+            Err(e) => panic!("Expected DecryptionFailed for tampered nonce, got Err({e:?})"),
         }
     }
 
@@ -335,7 +322,7 @@ mod tests {
         match result {
             Err(CryptoError::DecryptionFailed) => { /* Test passes */ }
             Ok(_) => panic!("Expected DecryptionFailed for wrong key, got Ok(<secret data>)"),
-            Err(e) => panic!("Expected DecryptionFailed for wrong key, got Err({:?})", e),
+            Err(e) => panic!("Expected DecryptionFailed for wrong key, got Err({e:?})"),
         }
     }
 
@@ -377,8 +364,7 @@ mod tests {
         let result = encrypt_gcm(plaintext, &key_material);
         assert!(
             matches!(result, Err(CryptoError::InvalidKeyLength)),
-            "Expected InvalidKeyLength for short key material during encryption, got {:?}",
-            result
+            "Expected InvalidKeyLength for short key material during encryption, got {result:?}"
         );
     }
 
@@ -399,7 +385,7 @@ mod tests {
             "Expected InvalidKeyLength for short key material during decryption, got {}",
             match &result {
                 Ok(_) => "Ok(<secret data>)".to_string(), // Avoid exposing secret in logs
-                Err(e) => format!("Err({:?})", e),
+                Err(e) => format!("Err({e:?})"),
             }
         );
     }

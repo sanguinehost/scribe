@@ -47,9 +47,10 @@ impl DefaultSettings {
             top_k: None,
             top_p: None,
             seed: None,
-            stop_sequences: self.stop_sequences.as_ref().map(|sequences| {
-                sequences.iter().map(|s| Some(s.clone())).collect()
-            }),
+            stop_sequences: self
+                .stop_sequences
+                .as_ref()
+                .map(|sequences| sequences.iter().map(|s| Some(s.clone())).collect()),
             history_management_strategy: None,
             history_management_limit: None,
             model_name: Some(self.model_name.clone()),
@@ -232,12 +233,18 @@ pub async fn handle_default_settings_action<H: IoHandler, C: HttpClient>(
             }
         }
         "6" => {
-            let input = io_handler.read_line("Enter stop sequences (comma-separated, leave empty to clear): ")?;
+            let input = io_handler
+                .read_line("Enter stop sequences (comma-separated, leave empty to clear): ")?;
             let trimmed_input = input.trim();
             settings.stop_sequences = if trimmed_input.is_empty() {
                 None
             } else {
-                Some(trimmed_input.split(',').map(|s| s.trim().to_string()).collect())
+                Some(
+                    trimmed_input
+                        .split(',')
+                        .map(|s| s.trim().to_string())
+                        .collect(),
+                )
             };
             io_handler.write_line(&format!(
                 "Stop sequences updated to: {:?}",

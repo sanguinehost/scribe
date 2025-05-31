@@ -20,6 +20,9 @@ use crate::state::DbPool; // Added for delete_all_sessions_for_user
 // use crate::models::users::{UserDataForClient, UserDataForClientWithKekRecipients};
 // use crate::services::email_service::EmailServiceTrait;
 
+// Type alias for complex return type
+type VerifyCredentialsResult = Result<(User, Option<SecretBox<Vec<u8>>>), AuthError>;
+
 // Make AuthError enum public
 #[derive(Error, Debug)] // Removed Clone
 pub enum AuthError {
@@ -54,7 +57,7 @@ pub enum AuthError {
 // Manual From implementation for InteractError
 impl From<InteractError> for AuthError {
     fn from(err: InteractError) -> Self {
-        AuthError::InteractError(err.to_string())
+        Self::InteractError(err.to_string())
     }
 }
 
@@ -62,7 +65,7 @@ impl From<InteractError> for AuthError {
 impl From<diesel::result::Error> for AuthError {
     fn from(err: diesel::result::Error) -> Self {
         match err {
-            diesel::result::Error::NotFound => AuthError::UserNotFound,
+            diesel::result::Error::NotFound => Self::UserNotFound,
             diesel::result::Error::DatabaseError(
                 diesel::result::DatabaseErrorKind::UniqueViolation,
                 info,
@@ -70,17 +73,17 @@ impl From<diesel::result::Error> for AuthError {
                 // It's better to use .message() for the actual constraint name string if available
                 // and compare that. For now, assuming constraint_name() is sufficient.
                 if info.constraint_name() == Some("users_username_key") {
-                    AuthError::UsernameTaken
+                    Self::UsernameTaken
                 } else if info.constraint_name() == Some("users_email_key") {
-                    AuthError::EmailTaken
+                    Self::EmailTaken
                 } else {
-                    AuthError::DatabaseError(format!(
+                    Self::DatabaseError(format!(
                         "Unique constraint violation: {:?}",
                         info.message()
                     ))
                 }
             }
-            _ => AuthError::DatabaseError(err.to_string()),
+            _ => Self::DatabaseError(err.to_string()),
         }
     }
 }
@@ -88,7 +91,7 @@ impl From<diesel::result::Error> for AuthError {
 /// Check if there are any users in the database
 #[instrument(skip(conn), err)]
 pub fn are_there_any_users(conn: &mut PgConnection) -> Result<bool, AuthError> {
-    use crate::schema::users::dsl::*;
+    use crate::schema::users::dsl::{id, users};
     use diesel::dsl::count;
 
     debug!("Checking if there are any users in the database");
@@ -217,7 +220,7 @@ pub async fn create_user(
         Ok(user_db_query) => {
             let mut user = User::from(user_db_query); // Convert to User
             // Add the recovery phrase to the returned user
-            user.recovery_phrase = credentials.recovery_phrase.clone();
+            user.recovery_phrase.clone_from(&credentials.recovery_phrase);
             info!(user_id = %user.id, "User created successfully in DB.");
             Ok(user)
         }
@@ -260,7 +263,7 @@ pub fn verify_credentials(
     conn: &mut PgConnection,
     identifier: &str,       // Changed from username to identifier
     password: SecretString, // Corrected: Was Secret<String>
-) -> Result<(User, Option<SecretBox<Vec<u8>>>), AuthError> {
+) -> VerifyCredentialsResult {
     // --- Log identifier explicitly ---
     info!("Verifying credentials"); // Removed PII: identifier
 
@@ -277,7 +280,7 @@ pub fn verify_credentials(
 
     // Convert UserDbQuery to User. This User object already contains encrypted_dek, kek_salt, dek_nonce
     // if they were correctly populated in the database and UserDbQuery mapping.
-    let user = User::from(user_db_query.clone()); // Clone user_db_query if needed for User::from, or ensure User::from takes a ref
+    let user = User::from(user_db_query); // Clone user_db_query if needed for User::from, or ensure User::from takes a ref
 
     // Perform bcrypt verification synchronously within the function
     debug!(user_id = %user.id, "Verifying password hash..."); // Removed PII: identifier, username, email
@@ -443,12 +446,12 @@ pub async fn change_user_password(
         "Updating user record in database with new password hash, KEK salt, and encrypted DEK..."
     );
     backend
-        .update_password_and_encryption_keys(
+        .update_user_crypto_fields(
             user_id,
-            new_password_hash_str,
-            new_kek_salt_str,
-            new_ciphertext_dek_bytes, // Pass ciphertext
-            new_nonce_dek_bytes,      // Pass nonce
+            Some(new_password_hash_str),
+            Some(new_ciphertext_dek_bytes), // Pass ciphertext
+            Some(new_nonce_dek_bytes),      // Pass nonce
+            Some(new_kek_salt_str), // KEK salt (already a string)
             updated_encrypted_dek_by_recovery,
             current_db_user.recovery_dek_nonce.clone(), // Pass existing recovery nonce
         )
@@ -492,19 +495,13 @@ pub async fn recover_user_password_with_phrase(
 
     // 2. Check if recovery is set up
     debug!(user_id = %user.id, "Checking if recovery is set up for user...");
-    let recovery_kek_salt = match &user.recovery_kek_salt {
-        Some(salt) => salt,
-        None => {
-            warn!(user_id = %user.id, "Recovery KEK salt not found. Recovery not set up.");
-            return Err(AuthError::RecoveryNotSetup);
-        }
+    let Some(recovery_kek_salt) = &user.recovery_kek_salt else {
+        warn!(user_id = %user.id, "Recovery KEK salt not found. Recovery not set up.");
+        return Err(AuthError::RecoveryNotSetup);
     };
-    let encrypted_dek_by_recovery = match &user.encrypted_dek_by_recovery {
-        Some(dek) => dek,
-        None => {
-            warn!(user_id = %user.id, "Encrypted DEK by recovery not found. Recovery not set up.");
-            return Err(AuthError::RecoveryNotSetup);
-        }
+    let Some(encrypted_dek_by_recovery) = &user.encrypted_dek_by_recovery else {
+        warn!(user_id = %user.id, "Encrypted DEK by recovery not found. Recovery not set up.");
+        return Err(AuthError::RecoveryNotSetup);
     };
     debug!("Recovery appears to be set up. Proceeding with RKEK derivation.");
 
@@ -521,14 +518,11 @@ pub async fn recover_user_password_with_phrase(
     // 4. Decrypt encrypted_dek_by_recovery using RKEK to get plaintext DEK
     debug!("Decrypting DEK using RKEK...");
     // Use the dedicated recovery_dek_nonce field
-    let recovery_dek_nonce_bytes = match &user.recovery_dek_nonce {
-        Some(nonce) => nonce,
-        None => {
-            error!(user_id = %user.id, "Recovery DEK nonce not found, but encrypted_dek_by_recovery exists. Inconsistent state.");
-            return Err(AuthError::CryptoOperationFailed(
-                CryptoError::DecryptionFailed,
-            )); // Or a more specific error
-        }
+    let Some(recovery_dek_nonce_bytes) = &user.recovery_dek_nonce else {
+        error!(user_id = %user.id, "Recovery DEK nonce not found, but encrypted_dek_by_recovery exists. Inconsistent state.");
+        return Err(AuthError::CryptoOperationFailed(
+            CryptoError::DecryptionFailed,
+        )); // Or a more specific error
     };
     let plaintext_dek_secret =
         crypto::decrypt_gcm(encrypted_dek_by_recovery, recovery_dek_nonce_bytes, &rkek)
@@ -567,12 +561,12 @@ pub async fn recover_user_password_with_phrase(
     // recovery_kek_salt and encrypted_dek_by_recovery remain unchanged.
     debug!("Updating user record in database...");
     backend
-        .update_password_and_encryption_keys(
+        .update_user_crypto_fields(
             user.id,
-            new_password_hash_str,
-            new_kek_salt_str,                       // The new KEK salt
-            new_ciphertext_dek_bytes,               // Pass ciphertext
-            new_nonce_dek_bytes,                    // Pass nonce
+            Some(new_password_hash_str),
+            Some(new_ciphertext_dek_bytes),               // Pass ciphertext
+            Some(new_nonce_dek_bytes),                    // Pass nonce
+            Some(new_kek_salt_str),                       // The new KEK salt (already a string)
             user.encrypted_dek_by_recovery.clone(), // This remains unchanged
             user.recovery_dek_nonce.clone(),        // Pass existing recovery nonce
         )
@@ -580,6 +574,62 @@ pub async fn recover_user_password_with_phrase(
 
     info!(user_id = %user.id, "Password recovered and updated successfully.");
     Ok(user.id)
+}
+
+/// Extracts user ID from session data JSON
+fn extract_user_id_from_session(session_id: &str, data_json_str: &str) -> Option<Uuid> {
+    match serde_json::from_str::<serde_json::Value>(data_json_str) {
+        Ok(json_value) => {
+            json_value.get("userId").and_then(serde_json::Value::as_str).map_or_else(|| {
+                warn!(session_id, "Session data does not contain a 'userId' string field during invalidation sweep.");
+                None
+            }, |session_user_id_str| Uuid::parse_str(session_user_id_str).map_or_else(|_| {
+                warn!(session_id, "Failed to parse userId UUID from session data during invalidation sweep.");
+                None
+            }, Some))
+        }
+        Err(e) => {
+            warn!(session_id, error = ?e, "Failed to parse session data JSON during invalidation sweep.");
+            None
+        }
+    }
+}
+
+/// Filters sessions to find those belonging to the target user
+fn filter_sessions_for_user(
+    all_sessions_data: Vec<(String, String)>,
+    user_id_to_invalidate: Uuid,
+) -> Vec<String> {
+    all_sessions_data
+        .into_iter()
+        .filter_map(|(session_id, data_json_str)| {
+            extract_user_id_from_session(&session_id, &data_json_str)
+                .filter(|&session_user_id| session_user_id == user_id_to_invalidate)
+                .map(|_| session_id)
+        })
+        .collect()
+}
+
+/// Deletes sessions from the database
+fn delete_sessions_from_db(
+    conn: &mut diesel::PgConnection,
+    session_ids_to_delete: &[String],
+) -> Result<usize, AuthError> {
+    use crate::schema::sessions::dsl::{id as session_id_col, sessions};
+    use diesel::prelude::*;
+
+    if session_ids_to_delete.is_empty() {
+        debug!("No active sessions found for user to invalidate.");
+        return Ok(0);
+    }
+
+    debug!(num_sessions = session_ids_to_delete.len(), "Deleting identified sessions for user.");
+    diesel::delete(sessions.filter(session_id_col.eq_any(session_ids_to_delete)))
+        .execute(conn)
+        .map_err(|e| {
+            error!(error = ?e, "Failed to delete user sessions from DB.");
+            AuthError::DatabaseError(e.to_string())
+        })
 }
 
 #[instrument(skip(pool), err, fields(user_id = %user_id_to_invalidate))]
@@ -591,7 +641,6 @@ pub async fn delete_all_sessions_for_user(
         id as session_id_col, session as session_data_col, sessions,
     };
     use diesel::prelude::*;
-    use serde_json::Value;
 
     info!("Attempting to delete all sessions for user.");
 
@@ -608,41 +657,10 @@ pub async fn delete_all_sessions_for_user(
                 })?;
 
             // 2. Filter to find session IDs belonging to the target user
-            let mut session_ids_to_delete: Vec<String> = Vec::new();
-            for (current_session_id, data_json_str) in all_sessions_data {
-                match serde_json::from_str::<Value>(&data_json_str) {
-                    Ok(json_value) => {
-                        if let Some(session_user_id_str) = json_value.get("userId").and_then(Value::as_str) {
-                            if let Ok(session_user_id_uuid) = Uuid::parse_str(session_user_id_str) {
-                                if session_user_id_uuid == user_id_to_invalidate {
-                                    session_ids_to_delete.push(current_session_id);
-                                }
-                            } else {
-                                warn!(session_id = %current_session_id, "Failed to parse userId UUID from session data during invalidation sweep.");
-                            }
-                        } else {
-                             warn!(session_id = %current_session_id, "Session data does not contain a 'userId' string field during invalidation sweep.");
-                        }
-                    }
-                    Err(e) => {
-                        warn!(session_id = %current_session_id, error = ?e, "Failed to parse session data JSON during invalidation sweep.");
-                    }
-                }
-            }
+            let session_ids_to_delete = filter_sessions_for_user(all_sessions_data, user_id_to_invalidate);
 
             // 3. Delete the identified sessions
-            if !session_ids_to_delete.is_empty() {
-                debug!(num_sessions = session_ids_to_delete.len(), "Deleting identified sessions for user.");
-                diesel::delete(sessions.filter(session_id_col.eq_any(&session_ids_to_delete)))
-                    .execute(conn)
-                    .map_err(|e| {
-                        error!(error = ?e, "Failed to delete user sessions from DB.");
-                        AuthError::DatabaseError(e.to_string())
-                    })
-            } else {
-                debug!("No active sessions found for user to invalidate.");
-                Ok(0) // No sessions deleted
-            }
+            delete_sessions_from_db(conn, &session_ids_to_delete)
         })
         .await
         .map_err(AuthError::from)??; // Double ?? for InteractError then AuthError from inner logic
@@ -672,15 +690,11 @@ mod tests {
         let result = hash_password(password).await;
 
         // We can't reliably assert for JoinError here.
-        println!(
-            "test_hash_password_join_error_simulation executed. Result: {:?}",
-            result
-        );
+        println!("test_hash_password_join_error_simulation executed. Result: {result:?}");
         // Expect Ok or HashingError (if bcrypt itself fails, though unlikely here)
         assert!(
             result.is_ok() || matches!(result, Err(AuthError::HashingError)),
-            "Expected Ok or HashingError, got {:?}",
-            result
+            "Expected Ok or HashingError, got {result:?}"
         );
     }
 

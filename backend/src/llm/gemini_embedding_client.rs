@@ -138,8 +138,7 @@ impl EmbeddingClient for RestGeminiEmbeddingClient {
         let base_url = self
             .config
             .gemini_api_base_url
-            .as_deref()
-            .unwrap_or("https://generativelanguage.googleapis.com");
+            .as_str();
 
         // Construct URL (e.g., "https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-exp-03-07:embedContent?key=...")
         let url = format!(
@@ -175,17 +174,14 @@ impl EmbeddingClient for RestGeminiEmbeddingClient {
                     if status.is_success() {
                         let embedding_response = response.json::<EmbeddingResponse>().await.map_err(|e| {
                             error!(error = %e, "Failed to parse successful Gemini Embedding API response");
-                            AppError::SerializationError(format!(
-                                "Failed to parse Gemini embedding response: {}",
-                                e
-                            ))
+                            AppError::SerializationError(format!("Failed to parse Gemini embedding response: {e}"))
                         })?;
                         return Ok(embedding_response.embedding.values);
                     } else if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
                         let error_body_text = response
                             .text()
                             .await
-                            .unwrap_or_else(|e| format!("Failed to read error body: {}", e));
+                            .unwrap_or_else(|e| format!("Failed to read error body: {e}"));
 
                         warn!(
                             status = %status,
@@ -206,9 +202,7 @@ impl EmbeddingClient for RestGeminiEmbeddingClient {
                             );
                             let parsed_error: Result<GeminiApiErrorResponse, _> =
                                 serde_json::from_str(&error_body_text);
-                            let error_message = parsed_error
-                                .map(|b| b.error.message)
-                                .unwrap_or_else(|_| error_body_text);
+                            let error_message = parsed_error.map_or_else(|_| error_body_text, |b| b.error.message);
                             return Err(AppError::GeminiError(format!(
                                 "Gemini API error ({}): {} after {} retries with model {}",
                                 status, error_message, MAX_RETRIES, self.model_name
@@ -216,10 +210,12 @@ impl EmbeddingClient for RestGeminiEmbeddingClient {
                         }
                         // Fallback logic removed
 
+                        #[allow(clippy::cast_possible_truncation, clippy::cast_precision_loss)]
                         let jitter = (current_backoff_ms as f64
-                            * JITTER_FACTOR
-                            * rand::rng().random_range(-1.0..1.0))
-                            as i64; // Use exclusive upper bound for gen_range
+                          * JITTER_FACTOR
+                          * rand::rng().random_range(-1.0..1.0))
+                          as i64; // Use exclusive upper bound for gen_range
+                        #[allow(clippy::cast_sign_loss, clippy::cast_possible_wrap)]
                         let sleep_duration_ms = (current_backoff_ms as i64 + jitter).max(0) as u64;
 
                         debug!(
@@ -235,13 +231,10 @@ impl EmbeddingClient for RestGeminiEmbeddingClient {
                         // For other non-429 client/server errors, fail immediately
                         let error_body = response.json::<GeminiApiErrorResponse>().await;
                         error!(status = %status, error_details = ?error_body, "Gemini Embedding API returned non-429 error status");
-                        let error_message = error_body
-                            .map(|b| b.error.message)
-                            .unwrap_or_else(|e| format!("Failed to parse error body: {}", e));
+                        let error_message = error_body.map_or_else(|e| format!("Failed to parse error body: {e}"), |b| b.error.message);
                         return Err(AppError::GeminiError(format!(
-                            "Gemini API error ({}): {}",
-                            status, error_message
-                        )));
+                          "Gemini API error ({status}): {error_message}"
+                      )));
                     }
                 }
                 Err(e) => {
@@ -276,8 +269,7 @@ impl EmbeddingClient for RestGeminiEmbeddingClient {
         let base_url = self
             .config
             .gemini_api_base_url
-            .as_deref()
-            .unwrap_or("https://generativelanguage.googleapis.com");
+            .as_str();
 
         // Construct URL (e.g., "https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-exp-03-07:batchEmbedContents?key=...")
         let url = format!(
@@ -317,10 +309,7 @@ impl EmbeddingClient for RestGeminiEmbeddingClient {
                     if status.is_success() {
                         let batch_response = response.json::<BatchEmbeddingResponse>().await.map_err(|e| {
                             error!(error = %e, "Failed to parse successful Gemini Batch Embedding API response");
-                            AppError::SerializationError(format!(
-                                "Failed to parse Gemini batch embedding response: {}",
-                                e
-                            ))
+                            AppError::SerializationError(format!("Failed to parse Gemini batch embedding response: {e}"))
                         })?;
                         let embeddings_data = batch_response
                             .embeddings
@@ -332,7 +321,7 @@ impl EmbeddingClient for RestGeminiEmbeddingClient {
                         let error_body_text = response
                             .text()
                             .await
-                            .unwrap_or_else(|e| format!("Failed to read error body: {}", e));
+                            .unwrap_or_else(|e| format!("Failed to read error body: {e}"));
 
                         warn!(
                             status = %status,
@@ -353,9 +342,7 @@ impl EmbeddingClient for RestGeminiEmbeddingClient {
                             );
                             let parsed_error: Result<GeminiApiErrorResponse, _> =
                                 serde_json::from_str(&error_body_text);
-                            let error_message = parsed_error
-                                .map(|b| b.error.message)
-                                .unwrap_or_else(|_| error_body_text);
+                            let error_message = parsed_error.map_or_else(|_| error_body_text, |b| b.error.message);
                             return Err(AppError::GeminiError(format!(
                                 "Gemini Batch API error ({}): {} after {} retries with model {}",
                                 status, error_message, MAX_RETRIES, self.model_name
@@ -363,10 +350,12 @@ impl EmbeddingClient for RestGeminiEmbeddingClient {
                         }
                         // Fallback logic removed
 
+                        #[allow(clippy::cast_possible_truncation, clippy::cast_precision_loss)]
                         let jitter = (current_backoff_ms as f64
-                            * JITTER_FACTOR
-                            * rand::rng().random_range(-1.0..1.0))
-                            as i64; // Use exclusive upper bound for gen_range
+                          * JITTER_FACTOR
+                          * rand::rng().random_range(-1.0..1.0))
+                          as i64; // Use exclusive upper bound for gen_range
+                        #[allow(clippy::cast_sign_loss, clippy::cast_possible_wrap)]
                         let sleep_duration_ms = (current_backoff_ms as i64 + jitter).max(0) as u64;
 
                         debug!(
@@ -382,13 +371,10 @@ impl EmbeddingClient for RestGeminiEmbeddingClient {
                         // For other non-429 client/server errors, fail immediately
                         let error_body = response.json::<GeminiApiErrorResponse>().await;
                         error!(status = %status, error_details = ?error_body, "Gemini Batch Embedding API returned non-429 error status");
-                        let error_message = error_body
-                            .map(|b| b.error.message)
-                            .unwrap_or_else(|e| format!("Failed to parse error body: {}", e));
+                        let error_message = error_body.map_or_else(|e| format!("Failed to parse error body: {e}"), |b| b.error.message);
                         return Err(AppError::GeminiError(format!(
-                            "Gemini Batch API error ({}): {}",
-                            status, error_message
-                        )));
+                          "Gemini Batch API error ({status}): {error_message}"
+                      )));
                     }
                 }
                 Err(e) => {
@@ -413,7 +399,7 @@ pub fn build_gemini_embedding_client(
         .build()
         .map_err(|e| {
             error!("Failed to build Reqwest client for Gemini: {}", e);
-            AppError::InternalServerErrorGeneric(format!("Failed to build Reqwest client: {}", e))
+            AppError::InternalServerErrorGeneric(format!("Failed to build Reqwest client: {e}"))
         })?;
 
     // Potentially allow model name override via config later
@@ -444,7 +430,7 @@ mod tests {
         Arc::new(Config {
             database_url: Some("test_db_url".to_string()),
             gemini_api_key: api_key,
-            gemini_api_base_url: base_url,
+            gemini_api_base_url: base_url.unwrap_or_else(|| "https://generativelanguage.googleapis.com".to_string()),
             ..Default::default()
         })
     }
@@ -609,7 +595,7 @@ mod tests {
                 assert!(msg.contains("400"));
                 assert!(msg.contains("Invalid task type"));
             }
-            err => panic!("Expected GeminiError, got {:?}", err),
+            err => panic!("Expected GeminiError, got {err:?}"),
         }
     }
 
@@ -654,7 +640,7 @@ mod tests {
             AppError::SerializationError(msg) => {
                 assert!(msg.contains("Failed to parse Gemini embedding response"));
             }
-            err => panic!("Expected SerializationError, got {:?}", err),
+            err => panic!("Expected SerializationError, got {err:?}"),
         }
     }
 
@@ -697,7 +683,7 @@ mod tests {
             AppError::GeminiError(msg) => {
                 assert!(msg.contains("500"));
             }
-            err => panic!("Expected GeminiError, got {:?}", err),
+            err => panic!("Expected GeminiError, got {err:?}"),
         }
     }
 
@@ -775,10 +761,10 @@ mod tests {
         match result.unwrap_err() {
             AppError::HttpRequestError(msg) => {
                 // The exact error message from reqwest might vary depending on the simulated error
-                println!("Received expected HttpRequestError: {}", msg);
+                println!("Received expected HttpRequestError: {msg}");
                 assert!(!msg.is_empty(), "Error message should not be empty");
             }
-            err => panic!("Expected HttpRequestError, got {:?}", err),
+            err => panic!("Expected HttpRequestError, got {err:?}"),
         }
     }
 
@@ -817,10 +803,7 @@ mod tests {
                 );
             }
             Err(e) => {
-                panic!(
-                    "Integration test failed: embed_content returned error: {:?}",
-                    e
-                );
+                panic!("Integration test failed: embed_content returned error: {e:?}");
             }
         }
     }
@@ -867,10 +850,7 @@ mod tests {
                 );
             }
             Err(e) => {
-                panic!(
-                    "Integration test failed: fallback model embed_content returned error: {:?}",
-                    e
-                );
+                panic!("Integration test failed: fallback model embed_content returned error: {e:?}");
             }
         }
     }
@@ -894,15 +874,14 @@ mod tests {
 
         match result.err().unwrap() {
             AppError::GeminiError(msg) => {
-                println!("Received expected GeminiError: {}", msg);
+                println!("Received expected GeminiError: {msg}");
                 assert!(
                     msg.contains("API key not valid") || msg.contains("400"), // Gemini API might return 400 for invalid key
-                    "Error message should indicate an invalid API key problem. Actual: {}",
-                    msg
+                    "Error message should indicate an invalid API key problem. Actual: {msg}"
                 );
             }
             other_err => {
-                panic!("Expected AppError::GeminiError, but got {:?}", other_err);
+                panic!("Expected AppError::GeminiError, but got {other_err:?}");
             }
         }
     }
@@ -1084,7 +1063,7 @@ mod tests {
         // Mock: All calls return 429 for both primary and fallback models
         let primary_429_mock = server.mock(|when, then| {
             when.method(POST)
-                .path(format!("/v1beta/{}:embedContent", model_name))
+                .path(format!("/v1beta/{model_name}:embedContent"))
                 .query_param("key", api_key);
             then.status(429)
                 .header("content-type", "application/json")
@@ -1106,7 +1085,7 @@ mod tests {
                     MAX_RETRIES, client.model_name
                 ))); // Corrected to use client.model_name
             }
-            other_err => panic!("Expected GeminiError, got {:?}", other_err),
+            other_err => panic!("Expected GeminiError, got {other_err:?}"),
         }
 
         // Primary model should have been called MAX_RETRIES + 1 times (initial attempt + MAX_RETRIES)
@@ -1126,21 +1105,16 @@ mod tests {
         // For 2 retries, total sleep is INITIAL_BACKOFF_MS + min(INITIAL_BACKOFF_MS*2, MAX_BACKOFF_MS)
         // = 1000 + min(2000, 5000) = 1000 + 2000 = 3000ms.
         // Allow for jitter, e.g., 70% of non-jittered sum.
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss, clippy::cast_lossless, clippy::suboptimal_flops, clippy::cast_precision_loss)]
         let min_expected_total_duration = Duration::from_millis(
             (expected_total_delay_ms as f64 * (1.0 - JITTER_FACTOR * 2.0)).max(0.0) as u64,
         );
 
         assert!(
             duration >= min_expected_total_duration,
-            "Duration {:?} was less than minimum expected total delay {:?} (calculated from {}ms base)",
-            duration,
-            min_expected_total_duration,
-            expected_total_delay_ms
+            "Duration {duration:?} was less than minimum expected total delay {min_expected_total_duration:?} (calculated from {expected_total_delay_ms}ms base)"
         );
-        println!(
-            "test_embed_content_retry_failure_after_max_429s duration: {:?}",
-            duration
-        );
+        println!("test_embed_content_retry_failure_after_max_429s duration: {duration:?}");
     }
 
     #[tokio::test]
@@ -1171,7 +1145,7 @@ mod tests {
 
         let primary_batch_429_mock = server.mock(|when, then| {
             when.method(POST)
-                .path(format!("/v1beta/{}:batchEmbedContents", model_name))
+                .path(format!("/v1beta/{model_name}:batchEmbedContents"))
                 .query_param("key", api_key);
             then.status(429)
                 .json_body(json!({"error": {"message": "Batch persistently rate limited"}}));
@@ -1192,7 +1166,7 @@ mod tests {
                     MAX_RETRIES, client.model_name
                 ))); // Corrected to use client.model_name
             }
-            other_err => panic!("Expected GeminiError, got {:?}", other_err),
+            other_err => panic!("Expected GeminiError, got {other_err:?}"),
         }
 
         primary_batch_429_mock.assert_hits(MAX_RETRIES as usize + 1);
@@ -1208,19 +1182,14 @@ mod tests {
         // expected_total_delay_ms = 1000 (1st retry sleep) + 2000 (2nd retry sleep) = 3000ms
 
         // Allow for jitter, e.g., 70% of non-jittered sum.
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss, clippy::cast_lossless, clippy::suboptimal_flops, clippy::cast_precision_loss)]
         let min_expected_total_duration = Duration::from_millis(
             (expected_total_delay_ms as f64 * (1.0 - JITTER_FACTOR * 2.0)).max(0.0) as u64,
         );
         assert!(
             duration >= min_expected_total_duration,
-            "Duration {:?} was less than minimum expected total delay {:?} (calculated from {}ms base)",
-            duration,
-            min_expected_total_duration,
-            expected_total_delay_ms
+            "Duration {duration:?} was less than minimum expected total delay {min_expected_total_duration:?} (calculated from {expected_total_delay_ms}ms base)"
         );
-        println!(
-            "test_batch_embed_contents_retry_failure_after_max_429s duration: {:?}",
-            duration
-        );
+        println!("test_batch_embed_contents_retry_failure_after_max_429s duration: {duration:?}");
     }
 }

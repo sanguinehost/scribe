@@ -7,15 +7,15 @@ use crate::models::chats::{
     Chat,
     ChatForClient, // Added for client responses
     // ChatSettingsResponse, // Not used directly in this file anymore
-    CreateChatRequest, // Now available
+    CreateChatRequest,    // Now available
     CreateMessageRequest, // Now available
     Message,
     MessageResponse, // Now available
     MessageRole,
     UpdateChatSettingsRequest,
     UpdateChatVisibilityRequest, // Now available
-    Vote, // Now available
-    VoteRequest, // Now available
+    Vote,                        // Now available
+    VoteRequest,                 // Now available
 };
 use crate::schema::{chat_messages, chat_sessions};
 use axum::{
@@ -50,7 +50,10 @@ pub fn chat_routes() -> Router<crate::state::AppState> {
         .route("/create_session", post(create_chat_handler)) // More distinct path for POST
         .route("/fetch/:id", get(get_chat_by_id_handler))
         .route("/remove/:id", delete(delete_chat_handler))
-        .route("/by-character/:character_id", get(get_chats_by_character_handler)) // NEW: Get chats by character
+        .route(
+            "/by-character/:character_id",
+            get(get_chats_by_character_handler),
+        ) // NEW: Get chats by character
         .route("/:id/messages", {
             tracing::debug!(
                 "chat_routes: mapping /:id/messages to get_messages_by_chat_id_handler"
@@ -288,30 +291,30 @@ pub async fn create_chat_handler(
             // Encrypt the title using the DEK from the SessionDek extractor
             let dek_for_title_encryption = &dek.0; // dek is SessionDek, dek.0 is SecretBox<Vec<u8>>
             match crypto::encrypt_gcm(custom_title.as_bytes(), dek_for_title_encryption) {
-            Ok((ciphertext, nonce)) => {
-                // Update with encrypted title
-                pool.get()
-                    .await
-                    .map_err(|e| AppError::DbPoolError(e.to_string()))?
-                    .interact(move |conn| {
-                        diesel::update(chat_sessions::table.find(session_id))
-                            .set((
-                                chat_sessions::title_ciphertext.eq(Some(ciphertext)),
-                                chat_sessions::title_nonce.eq(Some(nonce)),
-                            ))
-                            .execute(conn)
-                            .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
-                    })
-                    .await
-                    .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
+                Ok((ciphertext, nonce)) => {
+                    // Update with encrypted title
+                    pool.get()
+                        .await
+                        .map_err(|e| AppError::DbPoolError(e.to_string()))?
+                        .interact(move |conn| {
+                            diesel::update(chat_sessions::table.find(session_id))
+                                .set((
+                                    chat_sessions::title_ciphertext.eq(Some(ciphertext)),
+                                    chat_sessions::title_nonce.eq(Some(nonce)),
+                                ))
+                                .execute(conn)
+                                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
+                        })
+                        .await
+                        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
+                }
+                Err(e) => {
+                    error!(error = ?e, "Failed to encrypt chat title");
+                    return Err(AppError::EncryptionError(
+                        "Failed to encrypt title".to_string(),
+                    ));
+                }
             }
-            Err(e) => {
-                error!(error = ?e, "Failed to encrypt chat title");
-                return Err(AppError::EncryptionError(
-                    "Failed to encrypt title".to_string(),
-                ));
-            }
-        }
         }
     }
 

@@ -174,7 +174,7 @@ fn test_from_parsed_card_v2_empty_collections() {
 
     assert_eq!(new_char.user_id, user_id);
     assert_eq!(new_char.name, "V2 Empty Collections");
-    assert_eq!(new_char.spec, "chara_card_v2_fallback");
+    assert_eq!(new_char.spec, "chara_card_v2");
     assert_eq!(new_char.spec_version, "2.0");
     assert!(new_char.tags.is_none()); // Should be None when empty
     assert!(new_char.alternate_greetings.is_none()); // Should be None when empty
@@ -198,7 +198,7 @@ fn test_from_parsed_card_v2_with_collections() {
 
     assert_eq!(new_char.user_id, user_id);
     assert_eq!(new_char.name, "V2 With Collections");
-    assert_eq!(new_char.spec, "chara_card_v2_fallback");
+    assert_eq!(new_char.spec, "chara_card_v2");
     assert_eq!(new_char.spec_version, "2.0");
     assert_eq!(
         new_char.tags,

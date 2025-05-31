@@ -114,9 +114,9 @@ mod get_session_data_for_generation_tests {
             cfg.context_recent_history_token_budget = 100;
             cfg.context_rag_token_budget = 50;
             cfg.context_total_token_limit = 200;
-            cfg.tokenizer_model_path = Some("./resources/tokenizers/gemma.model".to_string());
+            cfg.tokenizer_model_path = "./resources/tokenizers/gemma.model".to_string();
             cfg.gemini_api_key = Some("dummy_api_key".to_string());
-            cfg.token_counter_default_model = Some("gemini-test-model".to_string());
+            cfg.token_counter_default_model = "gemini-test-model".to_string();
             // Add other necessary default config fields if AppConfig::default() is not sufficient
             cfg
         });
@@ -129,9 +129,7 @@ mod get_session_data_for_generation_tests {
 
         let tokenizer_model_path_str = config_arc
             .tokenizer_model_path
-            .as_ref()
-            .cloned()
-            .expect("Tokenizer model path not set in config for test setup");
+            .clone();
         let tokenizer_service = TokenizerService::new(&tokenizer_model_path_str)
             .expect("Failed to load tokenizer model for test setup");
         let gemini_token_client = config_arc
@@ -140,9 +138,7 @@ mod get_session_data_for_generation_tests {
             .map(|api_key| GeminiTokenClient::new(api_key.clone()));
         let default_model_for_tc = config_arc
             .token_counter_default_model
-            .as_ref()
-            .cloned()
-            .expect("Token counter default model not set in config for test setup");
+            .clone();
         let token_counter_service = Arc::new(HybridTokenCounter::new(
             tokenizer_service,
             gemini_token_client,
@@ -358,9 +354,9 @@ mod get_session_data_for_generation_tests {
         test_config.context_recent_history_token_budget = 20;
         test_config.context_rag_token_budget = 50;
         test_config.context_total_token_limit = 100;
-        test_config.tokenizer_model_path = Some("./resources/tokenizers/gemma.model".to_string());
+        test_config.tokenizer_model_path = "./resources/tokenizers/gemma.model".to_string();
         test_config.gemini_api_key = Some("dummy_api_key".to_string());
-        test_config.token_counter_default_model = Some("gemini-test-model".to_string());
+        test_config.token_counter_default_model = "gemini-test-model".to_string();
 
         let setup = setup_test_env(
             Vec::new(), // messages are now inserted directly in the test
@@ -449,8 +445,7 @@ mod get_session_data_for_generation_tests {
             history_management_limit: 20,
             model_name: test_config
                 .token_counter_default_model
-                .clone()
-                .unwrap_or_else(|| "gemini-test-model".to_string()),
+                .clone(),
             visibility: Some("private".to_string()),
             active_custom_persona_id: None,
             active_impersonated_character_id: None,
@@ -569,11 +564,11 @@ mod get_session_data_for_generation_tests {
             _model_name, // 12: model_name
             _,
             _,
-            _user_msg_struct, // 15: DbInsertableChatMessage
+            _user_msg_struct,     // 15: DbInsertableChatMessage
             actual_recent_tokens, // 16: actual_recent_history_tokens
-            rag_items, // 17: rag_context_items
-            _, // 18: history_management_strategy
-            _, // 19: history_management_limit
+            rag_items,            // 17: rag_context_items
+            _,                    // 18: history_management_strategy
+            _,                    // 19: history_management_limit
         ) = result.unwrap();
 
         assert_eq!(
@@ -583,10 +578,8 @@ mod get_session_data_for_generation_tests {
         );
 
         // Calculate expected tokens dynamically using the same token counter and model
-        let model_name_for_assertion = test_config
-            .token_counter_default_model
-            .as_ref()
-            .expect("Model name should be in test_config");
+        let model_name_for_assertion = &test_config
+            .token_counter_default_model;
         let tokens_msg1 = setup
             .app_state
             .token_counter
@@ -640,10 +633,10 @@ mod get_session_data_for_generation_tests {
         test_config.context_recent_history_token_budget = 30;
         test_config.context_rag_token_budget = 40;
         test_config.context_total_token_limit = 100; // Total: 30 (hist) + 40 (RAG) + buffer
-        test_config.tokenizer_model_path = Some("./resources/tokenizers/gemma.model".to_string());
+        test_config.tokenizer_model_path = "./resources/tokenizers/gemma.model".to_string();
         test_config.gemini_api_key = Some("dummy_api_key_rag_lore".to_string());
         let model_name_for_test = "gemini-test-model-rag-lore".to_string();
-        test_config.token_counter_default_model = Some(model_name_for_test.clone());
+        test_config.token_counter_default_model = model_name_for_test.clone();
 
         let mut setup = setup_test_env(
             Vec::new(),
@@ -898,11 +891,11 @@ mod get_session_data_for_generation_tests {
             _model_name, // 12: model_name
             _,
             _,
-            _user_msg_struct, // 15: DbInsertableChatMessage
+            _user_msg_struct,     // 15: DbInsertableChatMessage
             actual_recent_tokens, // 16: actual_recent_history_tokens
-            rag_items, // 17: rag_context_items
-            _, // 18: history_management_strategy
-            _, // 19: history_management_limit
+            rag_items,            // 17: rag_context_items
+            _,                    // 18: history_management_strategy
+            _,                    // 19: history_management_limit
         ) = result.unwrap();
 
         assert_eq!(
@@ -985,10 +978,10 @@ mod get_session_data_for_generation_tests {
         test_config.context_recent_history_token_budget = 8; // Budget for 2 smaller messages
         test_config.context_rag_token_budget = 0; // No RAG for this test
         test_config.context_total_token_limit = 50;
-        test_config.tokenizer_model_path = Some("./resources/tokenizers/gemma.model".to_string());
+        test_config.tokenizer_model_path = "./resources/tokenizers/gemma.model".to_string();
         test_config.gemini_api_key = Some("dummy_api_key_for_trunc_test".to_string());
         let model_name_for_test = "gemini-test-model-trunc".to_string();
-        test_config.token_counter_default_model = Some(model_name_for_test.clone());
+        test_config.token_counter_default_model = model_name_for_test.clone();
 
         let setup = setup_test_env(
             Vec::new(),
@@ -1185,11 +1178,11 @@ mod get_session_data_for_generation_tests {
             _model_name, // 12: model_name
             _,
             _,
-            _user_msg_struct, // 15: DbInsertableChatMessage
+            _user_msg_struct,     // 15: DbInsertableChatMessage
             actual_recent_tokens, // 16: actual_recent_history_tokens
-            rag_items, // 17: rag_context_items
-            _, // 18: history_management_strategy
-            _, // 19: history_management_limit
+            rag_items,            // 17: rag_context_items
+            _,                    // 18: history_management_strategy
+            _,                    // 19: history_management_limit
         ) = result.unwrap();
 
         // Token counts with Gemma for "Okay then." (3) and "See you." (2) = 5. Budget is 8.
@@ -1254,10 +1247,10 @@ mod get_session_data_for_generation_tests {
         test_config.context_recent_history_token_budget = 150; // Allows significant history
         test_config.context_rag_token_budget = 50; // RAG budget itself is positive
         test_config.context_total_token_limit = 160; // Total limit is tight
-        test_config.tokenizer_model_path = Some("./resources/tokenizers/gemma.model".to_string());
+        test_config.tokenizer_model_path = "./resources/tokenizers/gemma.model".to_string();
         test_config.gemini_api_key = Some("dummy_api_key_rag_total_limit".to_string());
         let model_name_for_test = "gemini-test-model-rag-total-limit".to_string();
-        test_config.token_counter_default_model = Some(model_name_for_test.clone());
+        test_config.token_counter_default_model = model_name_for_test.clone();
 
         let mut setup = setup_test_env(
             Vec::new(),
@@ -1597,11 +1590,11 @@ mod get_session_data_for_generation_tests {
             _model_name, // 12: model_name
             _,
             _,
-            _user_msg_struct, // 15: DbInsertableChatMessage
+            _user_msg_struct,                 // 15: DbInsertableChatMessage
             actual_recent_tokens_from_result, // 16: actual_recent_history_tokens
-            rag_items, // 17: rag_context_items
-            _, // 18: history_management_strategy
-            _, // 19: history_management_limit
+            rag_items,                        // 17: rag_context_items
+            _,                                // 18: history_management_strategy
+            _,                                // 19: history_management_limit
         ) = result.unwrap();
 
         // Verify actual_recent_history_tokens is what we set up (around 140)
@@ -1636,10 +1629,10 @@ mod get_session_data_for_generation_tests {
         test_config.context_recent_history_token_budget = 10; // Adjusted from 50
         test_config.context_rag_token_budget = 100;
         test_config.context_total_token_limit = 200;
-        test_config.tokenizer_model_path = Some("./resources/tokenizers/gemma.model".to_string());
+        test_config.tokenizer_model_path = "./resources/tokenizers/gemma.model".to_string();
         test_config.gemini_api_key = Some("dummy_api_key_rag_older_hist".to_string());
         let model_name_for_test = "gemini-test-model-rag-older-hist".to_string();
-        test_config.token_counter_default_model = Some(model_name_for_test.clone());
+        test_config.token_counter_default_model = model_name_for_test.clone();
 
         let mut setup = setup_test_env(
             Vec::new(),
@@ -2011,11 +2004,11 @@ mod get_session_data_for_generation_tests {
             _model_name, // 12: model_name
             _,
             _,
-            _user_msg_struct, // 15: DbInsertableChatMessage
+            _user_msg_struct,     // 15: DbInsertableChatMessage
             actual_recent_tokens, // 16: actual_recent_history_tokens
-            rag_items, // 17: rag_context_items
-            _, // 18: history_management_strategy
-            _, // 19: history_management_limit
+            rag_items,            // 17: rag_context_items
+            _,                    // 18: history_management_strategy
+            _,                    // 19: history_management_limit
         ) = result.unwrap();
 
         assert_eq!(

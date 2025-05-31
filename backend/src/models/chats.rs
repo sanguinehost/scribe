@@ -22,22 +22,22 @@ use secrecy::SecretBox;
 // Main Chat model (similar to the frontend Chat type)
 // Type alias for the tuple returned when selecting/returning chat settings
 pub type SettingsTuple = (
-    Option<Vec<u8>>,    // system_prompt_ciphertext
-    Option<Vec<u8>>,    // system_prompt_nonce
-    Option<BigDecimal>, // temperature
-    Option<i32>,        // max_output_tokens
-    Option<BigDecimal>, // frequency_penalty
-    Option<BigDecimal>, // presence_penalty
-    Option<i32>,        // top_k
-    Option<BigDecimal>, // top_p
-    Option<i32>,        // seed
+    Option<Vec<u8>>,             // system_prompt_ciphertext
+    Option<Vec<u8>>,             // system_prompt_nonce
+    Option<BigDecimal>,          // temperature
+    Option<i32>,                 // max_output_tokens
+    Option<BigDecimal>,          // frequency_penalty
+    Option<BigDecimal>,          // presence_penalty
+    Option<i32>,                 // top_k
+    Option<BigDecimal>,          // top_p
+    Option<i32>,                 // seed
     Option<Vec<Option<String>>>, // stop_sequences
-    String,             // history_management_strategy
-    i32,                // history_management_limit
-    String,             // model_name
+    String,                      // history_management_strategy
+    i32,                         // history_management_limit
+    String,                      // model_name
     // -- Gemini Specific Options --
-    Option<i32>,        // gemini_thinking_budget
-    Option<bool>,       // gemini_enable_code_execution
+    Option<i32>,  // gemini_thinking_budget
+    Option<bool>, // gemini_enable_code_execution
 ); // Close the tuple definition
 #[derive(Queryable, Selectable, Identifiable, Serialize, Deserialize, Clone)]
 #[diesel(table_name = chat_sessions)]
@@ -194,16 +194,32 @@ impl std::fmt::Debug for NewChat {
             .field("seed", &self.seed)
             .field("stop_sequences", &self.stop_sequences)
             .field("gemini_thinking_budget", &self.gemini_thinking_budget)
-            .field("gemini_enable_code_execution", &self.gemini_enable_code_execution)
-            .field("system_prompt_ciphertext", &self.system_prompt_ciphertext.as_ref().map(|_| "[REDACTED_BYTES]"))
-            .field("system_prompt_nonce", &self.system_prompt_nonce.as_ref().map(|_| "[REDACTED_BYTES]"))
+            .field(
+                "gemini_enable_code_execution",
+                &self.gemini_enable_code_execution,
+            )
+            .field(
+                "system_prompt_ciphertext",
+                &self
+                    .system_prompt_ciphertext
+                    .as_ref()
+                    .map(|_| "[REDACTED_BYTES]"),
+            )
+            .field(
+                "system_prompt_nonce",
+                &self
+                    .system_prompt_nonce
+                    .as_ref()
+                    .map(|_| "[REDACTED_BYTES]"),
+            )
             .finish()
     }
 }
 
 // MessageRole enum for database storage
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
-#[derive(AsExpression, FromSqlRow)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default, AsExpression, FromSqlRow,
+)]
 #[diesel(sql_type = crate::schema::sql_types::MessageType)]
 pub enum MessageRole {
     #[default]
@@ -216,9 +232,9 @@ pub enum MessageRole {
 impl ToSql<crate::schema::sql_types::MessageType, Pg> for MessageRole {
     fn to_sql<'b>(&'b self, out: &mut Output<'b, '_, Pg>) -> serialize::Result {
         match *self {
-            MessageRole::User => out.write_all(b"User")?,
-            MessageRole::Assistant => out.write_all(b"Assistant")?,
-            MessageRole::System => out.write_all(b"System")?,
+            Self::User => out.write_all(b"User")?,
+            Self::Assistant => out.write_all(b"Assistant")?,
+            Self::System => out.write_all(b"System")?,
         }
         Ok(IsNull::No)
     }
@@ -228,9 +244,9 @@ impl ToSql<crate::schema::sql_types::MessageType, Pg> for MessageRole {
 impl FromSql<crate::schema::sql_types::MessageType, Pg> for MessageRole {
     fn from_sql(bytes: PgValue<'_>) -> deserialize::Result<Self> {
         match bytes.as_bytes() {
-            b"User" => Ok(MessageRole::User),
-            b"Assistant" => Ok(MessageRole::Assistant),
-            b"System" => Ok(MessageRole::System),
+            b"User" => Ok(Self::User),
+            b"Assistant" => Ok(Self::Assistant),
+            b"System" => Ok(Self::System),
             unrecognized => {
                 error!(
                     "Unrecognized message_type enum variant from DB: {:?}",
@@ -246,9 +262,9 @@ impl FromSql<crate::schema::sql_types::MessageType, Pg> for MessageRole {
 impl std::fmt::Display for MessageRole {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            MessageRole::User => write!(f, "User"),
-            MessageRole::Assistant => write!(f, "Assistant"),
-            MessageRole::System => write!(f, "System"),
+            Self::User => write!(f, "User"),
+            Self::Assistant => write!(f, "Assistant"),
+            Self::System => write!(f, "System"),
         }
     }
 }
@@ -292,58 +308,33 @@ impl std::fmt::Debug for ChatMessage {
 
 impl ChatMessage {
     /// Encrypts the content field if plaintext is provided and a DEK is available.
-    /// Updates self.content and self.content_nonce.
+    /// Updates `self.content` and `self.content_nonce`.
     pub fn encrypt_content_field(
         &mut self,
         dek: &SecretBox<Vec<u8>>,
-        plaintext_content: String,
+        plaintext_content: &str,
     ) -> Result<(), AppError> {
-        if !plaintext_content.is_empty() {
+        if plaintext_content.is_empty() {
+            self.content = Vec::new();
+            self.content_nonce = None;
+        } else {
             let (ciphertext, nonce) = encrypt_gcm(plaintext_content.as_bytes(), dek)
                 .map_err(|e| AppError::CryptoError(e.to_string()))?;
             self.content = ciphertext;
             self.content_nonce = Some(nonce);
-        } else {
-            self.content = Vec::new();
-            self.content_nonce = None;
         }
         Ok(())
     }
 
     /// Decrypts the content field if a DEK is available and content is encrypted.
     /// Returns the decrypted string.
-    pub fn decrypt_content_field(
-        &self,
-        dek: &SecretBox<Vec<u8>>,
-    ) -> Result<String, AppError> {
-        if !self.content.is_empty() {
+    #[allow(clippy::cognitive_complexity, clippy::collapsible_else_if, clippy::option_if_let_else)]
+    pub fn decrypt_content_field(&self, dek: &SecretBox<Vec<u8>>) -> Result<String, AppError> {
+        if self.content.is_empty() {
+            Ok(String::new())
+        } else {
             if let Some(nonce) = &self.content_nonce {
-                if !nonce.is_empty() {
-                    match decrypt_gcm(&self.content, nonce, dek) {
-                        Ok(plaintext_secret) => {
-                            String::from_utf8(plaintext_secret.expose_secret().to_vec())
-                                .map_err(|e| {
-                                    tracing::error!(
-                                        "Failed to convert decrypted message content to UTF-8: {}",
-                                        e
-                                    );
-                                    AppError::DecryptionError(
-                                        "Failed to convert message content to UTF-8".to_string(),
-                                    )
-                                })
-                        }
-                        Err(e) => {
-                            error!(
-                                "Failed to decrypt chat message content for ID {}: {}",
-                                self.id, e
-                            );
-                            Err(AppError::DecryptionError(format!(
-                                "Decryption failed for message content: {}",
-                                e
-                            )))
-                        }
-                    }
-                } else {
+                if nonce.is_empty() {
                     tracing::error!(
                         "ChatMessage ID {} content is present but nonce is empty. Cannot decrypt.",
                         self.id
@@ -351,6 +342,30 @@ impl ChatMessage {
                     Err(AppError::DecryptionError(
                         "Nonce is empty for content decryption".to_string(),
                     ))
+                } else {
+                    match decrypt_gcm(&self.content, nonce, dek) {
+                        Ok(plaintext_secret) => String::from_utf8(
+                            plaintext_secret.expose_secret().clone(),
+                        )
+                        .map_err(|e| {
+                            tracing::error!(
+                                "Failed to convert decrypted message content to UTF-8: {}",
+                                e
+                            );
+                            AppError::DecryptionError(
+                                "Failed to convert message content to UTF-8".to_string(),
+                            )
+                        }),
+                        Err(e) => {
+                            error!(
+                                "Failed to decrypt chat message content for ID {}: {}",
+                                self.id, e
+                            );
+                            Err(AppError::DecryptionError(format!(
+                                "Decryption failed for message content: {e}"
+                            )))
+                        }
+                    }
                 }
             } else {
                 tracing::error!(
@@ -361,12 +376,10 @@ impl ChatMessage {
                     "Missing nonce for content decryption".to_string(),
                 ))
             }
-        } else {
-            Ok(String::new())
         }
     }
 
-    /// Convert this ChatMessage to a decrypted ChatMessageForClient
+    /// Convert this `ChatMessage` to a decrypted `ChatMessageForClient`
     pub fn into_decrypted_for_client(
         self,
         user_dek_secret_box: Option<&SecretBox<Vec<u8>>>,
@@ -376,15 +389,17 @@ impl ChatMessage {
                 if let Some(dek_sb) = user_dek_secret_box {
                     match decrypt_gcm(&self.content, nonce, dek_sb) {
                         Ok(plaintext_secret_vec) => {
-                            String::from_utf8(plaintext_secret_vec.expose_secret().to_vec())
+                            String::from_utf8(plaintext_secret_vec.expose_secret().clone())
                                 .map_err(|e| {
                                     error!("UTF-8 conversion error for msg {}: {:?}", self.id, e);
-                                    AppError::DecryptionError(format!("UTF-8 conversion: {}", e))
+                                    AppError::DecryptionError(format!("UTF-8 conversion: {e}"))
                                 })
                         }
                         Err(e) => {
                             error!("Decryption error for msg {}: {:?}", self.id, e);
-                            Err(AppError::DecryptionError(format!("Decryption error: {}", e)))
+                            Err(AppError::DecryptionError(format!(
+                                "Decryption error: {e}"
+                            )))
                         }
                     }
                 } else {
@@ -395,7 +410,7 @@ impl ChatMessage {
                 // No nonce implies content might not be encrypted or is empty
                 String::from_utf8(self.content.clone()).map_err(|e| {
                     error!("UTF-8 conversion error for msg {}: {:?}", self.id, e);
-                    AppError::DecryptionError(format!("UTF-8 conversion: {}", e))
+                    AppError::DecryptionError(format!("UTF-8 conversion: {e}"))
                 })
             };
 
@@ -467,80 +482,76 @@ impl std::fmt::Debug for Message {
 
 impl Message {
     /// Encrypts the content field if plaintext is provided and a DEK is available.
-    /// Updates self.content and self.content_nonce.
+    /// Updates `self.content` and `self.content_nonce`.
     pub fn encrypt_content_field(
         &mut self,
         dek: &SecretBox<Vec<u8>>,
-        plaintext_content: String,
+        plaintext_content: &str,
     ) -> Result<(), AppError> {
-        if !plaintext_content.is_empty() {
+        if plaintext_content.is_empty() {
+            self.content = Vec::new();
+            self.content_nonce = None;
+        } else {
             let (ciphertext, nonce) = encrypt_gcm(plaintext_content.as_bytes(), dek)
                 .map_err(|e| AppError::CryptoError(e.to_string()))?;
             self.content = ciphertext;
             self.content_nonce = Some(nonce);
-        } else {
-            self.content = Vec::new();
-            self.content_nonce = None;
         }
         Ok(())
     }
 
     /// Decrypts the content field if ciphertext and nonce are present and a DEK is available.
     /// Returns String representing the decrypted content.
+    #[allow(clippy::cognitive_complexity)]
     pub fn decrypt_content_field(&self, dek: &SecretBox<Vec<u8>>) -> Result<String, AppError> {
         if self.content.is_empty() {
             return Ok(String::new());
         }
 
-        match &self.content_nonce {
-            Some(nonce_bytes) => {
-                if nonce_bytes.is_empty() {
-                    tracing::error!(
-                        "ChatMessage ID {} content nonce is present but empty. Cannot decrypt.",
-                        self.id
-                    );
-                    return Err(AppError::DecryptionError(
-                        "Missing nonce for content decryption".to_string(),
-                    ));
-                }
-                match decrypt_gcm(&self.content, nonce_bytes, dek) {
-                    Ok(plaintext_secret_vec) => String::from_utf8(
-                        plaintext_secret_vec.expose_secret().to_vec(),
-                    )
-                    .map_err(|e| {
-                        error!(
-                            "Failed to convert decrypted message content to UTF-8: {}",
-                            e
-                        );
-                        AppError::DecryptionError(
-                            "Failed to convert message content to UTF-8".to_string(),
-                        )
-                    }),
-                    Err(e) => {
-                        error!(
-                            "Failed to decrypt chat message content for ID {}: {}",
-                            self.id, e
-                        );
-                        Err(AppError::DecryptionError(format!(
-                            "Decryption failed for message content: {}",
-                            e
-                        )))
-                    }
-                }
-            }
-            None => {
+        if let Some(nonce_bytes) = &self.content_nonce {
+            if nonce_bytes.is_empty() {
                 tracing::error!(
-                    "ChatMessage ID {} content is present but nonce is missing. Cannot decrypt.",
+                    "ChatMessage ID {} content nonce is present but empty. Cannot decrypt.",
                     self.id
                 );
-                Err(AppError::DecryptionError(
+                return Err(AppError::DecryptionError(
                     "Missing nonce for content decryption".to_string(),
-                ))
+                ));
             }
+            match decrypt_gcm(&self.content, nonce_bytes, dek) {
+                Ok(plaintext_secret_vec) => String::from_utf8(
+                    plaintext_secret_vec.expose_secret().clone(),
+                )
+                .map_err(|e| {
+                    error!(
+                        "Failed to convert decrypted message content to UTF-8: {e}"
+                    );
+                    AppError::DecryptionError(
+                        "Failed to convert message content to UTF-8".to_string(),
+                    )
+                }),
+                Err(e) => {
+                    error!(
+                        "Failed to decrypt chat message content for ID {}: {e}",
+                        self.id
+                    );
+                    Err(AppError::DecryptionError(format!(
+                        "Decryption failed for message content: {e}"
+                    )))
+                }
+            }
+        } else {
+            tracing::error!(
+                "ChatMessage ID {} content is present but nonce is missing. Cannot decrypt.",
+                self.id
+            );
+            Err(AppError::DecryptionError(
+                "Missing nonce for content decryption".to_string(),
+            ))
         }
     }
 
-    /// Convert this ChatMessage to a decrypted ClientChatMessage
+    /// Convert this `ChatMessage` to a decrypted `ClientChatMessage`
     pub fn into_decrypted_for_client(
         self,
         user_dek_secret_box: Option<&SecretBox<Vec<u8>>>,
@@ -550,17 +561,16 @@ impl Message {
                 if let Some(dek_sb) = user_dek_secret_box {
                     match decrypt_gcm(&self.content, nonce, dek_sb) {
                         Ok(plaintext_secret_vec) => {
-                            String::from_utf8(plaintext_secret_vec.expose_secret().to_vec())
+                            String::from_utf8(plaintext_secret_vec.expose_secret().clone())
                                 .map_err(|e| {
                                     error!("UTF-8 conversion error for msg {}: {:?}", self.id, e);
-                                    AppError::DecryptionError(format!("UTF-8 conversion: {}", e))
+                                    AppError::DecryptionError(format!("UTF-8 conversion: {e}"))
                                 })
                         }
                         Err(e) => {
                             error!("Decryption failed for msg {}: {:?}", self.id, e);
                             Err(AppError::DecryptionError(format!(
-                                "Decryption failed: {}",
-                                e
+                                "Decryption failed: {e}"
                             )))
                         }
                     }
@@ -571,7 +581,7 @@ impl Message {
             } else {
                 String::from_utf8(self.content.clone()).map_err(|e| {
                     error!("Invalid UTF-8 in plaintext for msg {}: {:?}", self.id, e);
-                    AppError::InternalServerErrorGeneric(format!("Invalid UTF-8: {}", e))
+                    AppError::InternalServerErrorGeneric(format!("Invalid UTF-8: {e}"))
                 })
             };
 
@@ -616,7 +626,7 @@ impl std::fmt::Debug for ClientChatMessage {
     }
 }
 
-/// Structure for sending ChatMessage data to the client, with decrypted content.
+/// Structure for sending `ChatMessage` data to the client, with decrypted content.
 #[derive(Serialize, Deserialize, Clone)]
 pub struct ChatMessageForClient {
     pub id: Uuid,
@@ -670,13 +680,19 @@ impl std::fmt::Debug for NewChatMessage {
             .field("session_id", &self.session_id)
             .field("message_type", &self.message_type)
             .field("content", &"[REDACTED_BYTES]")
-            .field("content_nonce", &self.content_nonce.as_ref().map(|_| "[REDACTED_NONCE]"))
+            .field(
+                "content_nonce",
+                &self.content_nonce.as_ref().map(|_| "[REDACTED_NONCE]"),
+            )
             .field("user_id", &self.user_id)
             .field("created_at", &self.created_at)
             .field("updated_at", &self.updated_at)
             .field("role", &self.role)
             .field("parts", &self.parts.as_ref().map(|_| "[REDACTED_JSON]"))
-            .field("attachments", &self.attachments.as_ref().map(|_| "[REDACTED_JSON]"))
+            .field(
+                "attachments",
+                &self.attachments.as_ref().map(|_| "[REDACTED_JSON]"),
+            )
             .field("prompt_tokens", &self.prompt_tokens)
             .field("completion_tokens", &self.completion_tokens)
             .finish()
@@ -726,7 +742,8 @@ impl std::fmt::Debug for DbInsertableChatMessage {
 
 impl DbInsertableChatMessage {
     #[allow(clippy::too_many_arguments)]
-    pub fn new(
+    #[must_use]
+    pub const fn new(
         chat_id: Uuid,
         user_id: Uuid,
         msg_type_enum: MessageRole,
@@ -738,7 +755,7 @@ impl DbInsertableChatMessage {
         prompt_tokens: Option<i32>,
         completion_tokens: Option<i32>,
     ) -> Self {
-        DbInsertableChatMessage {
+        Self {
             chat_id,
             user_id,
             msg_type: msg_type_enum,
@@ -834,7 +851,7 @@ impl std::fmt::Debug for ApiChatMessage {
     }
 }
 
-/// Request body for POST /api/chat/{session_id}/generate
+/// Request body for POST `/api/chat/{session_id}/generate`
 #[derive(Deserialize, Serialize, Validate)]
 pub struct GenerateChatRequest {
     #[validate(length(min = 1))]
@@ -856,6 +873,7 @@ impl std::fmt::Debug for GenerateChatRequest {
                     .collect::<Vec<_>>(),
             )
             .field("model", &self.model)
+            .field("query_text_for_rag", &self.query_text_for_rag.as_ref().map(|_| "[REDACTED]"))
             .finish()
     }
 }
@@ -922,7 +940,7 @@ impl From<Chat> for ChatForClient {
 // --- Chat Settings API Structures ---
 
 /// Response body for GET /api/chat/{id}/settings
-#[derive(Serialize, Deserialize, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct ChatSettingsResponse {
     pub system_prompt: Option<String>,
     pub temperature: Option<BigDecimal>,
@@ -975,7 +993,7 @@ impl std::fmt::Debug for ChatSettingsResponse {
 // Implement From<Chat> for ChatSettingsResponse
 impl From<Chat> for ChatSettingsResponse {
     fn from(chat: Chat) -> Self {
-        ChatSettingsResponse {
+        Self {
             system_prompt: None,
             temperature: chat.temperature,
             max_output_tokens: chat.max_output_tokens,
@@ -996,7 +1014,7 @@ impl From<Chat> for ChatSettingsResponse {
 
 /// Request body for PUT /api/chat/{id}/settings
 /// All fields are optional to allow partial updates.
-#[derive(Serialize, Deserialize, Clone, PartialEq, Validate, Default)]
+#[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Validate, Default)]
 pub struct UpdateChatSettingsRequest {
     pub system_prompt: Option<String>,
     #[validate(custom(function = "validate_optional_temperature"))]
@@ -1067,7 +1085,7 @@ fn validate_optional_history_strategy(strategy: &String) -> Result<(), Validatio
         | "token_limit" => Ok(()),
         _ => {
             let mut err = ValidationError::new("unknown_strategy");
-            err.message = Some(format!("Unknown history management strategy: {}. Allowed values are: none, sliding_window_messages, message_window, sliding_window_tokens, truncate_tokens, token_limit", strategy).into());
+            err.message = Some(format!("Unknown history management strategy: {strategy}. Allowed values are: none, sliding_window_messages, message_window, sliding_window_tokens, truncate_tokens, token_limit").into());
             Err(err)
         }
     }
@@ -1124,7 +1142,6 @@ fn validate_optional_top_p(value: &BigDecimal) -> Result<(), ValidationError> {
     }
     Ok(())
 }
-
 
 // --- Suggested Actions API Structures ---
 
@@ -1279,7 +1296,10 @@ impl std::fmt::Debug for CreateMessageRequest {
             .field("content", &"[REDACTED]")
             .field("role", &self.role)
             .field("parts", &self.parts.as_ref().map(|_| "[REDACTED_JSON]"))
-            .field("attachments", &self.attachments.as_ref().map(|_| "[REDACTED_JSON]"))
+            .field(
+                "attachments",
+                &self.attachments.as_ref().map(|_| "[REDACTED_JSON]"),
+            )
             .finish()
     }
 }
@@ -1430,7 +1450,7 @@ mod tests {
 
         // Encrypt
         message
-            .encrypt_content_field(&dek, original_content_str.clone())
+            .encrypt_content_field(&dek, &original_content_str)
             .unwrap();
         assert_ne!(
             message.content,
@@ -1446,7 +1466,7 @@ mod tests {
         );
 
         // Test with empty string
-        message.encrypt_content_field(&dek, "".to_string()).unwrap();
+        message.encrypt_content_field(&dek, "").unwrap();
         assert!(
             message.content.is_empty(),
             "Encrypting empty string should result in empty bytes"
@@ -1466,7 +1486,7 @@ mod tests {
 
         // Encrypt the content for the DB version
         message_db
-            .encrypt_content_field(&dek, original_content_str.clone())
+            .encrypt_content_field(&dek, &original_content_str)
             .unwrap();
 
         // Test with DEK
