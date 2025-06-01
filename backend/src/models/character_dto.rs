@@ -77,6 +77,12 @@ pub struct CharacterUpdateDto {
 
 impl CharacterCreateDto {
     /// Validates that all required fields are provided and not empty
+    ///
+    /// # Errors
+    /// Returns a string with validation errors if:
+    /// - Name is None or empty
+    /// - Description is None or empty  
+    /// - First message is None or empty
     pub fn validate(&self) -> Result<(), String> {
         let mut errors = Vec::new();
 

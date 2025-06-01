@@ -17,8 +17,7 @@ pub async fn handle_model_settings_action<H: IoHandler, C: HttpClient>(
         io_handler.write_line("\n--- Model Settings ---")?;
         // Display the current full model name
         io_handler.write_line(&format!(
-            "[1] View Current Model (Currently: {})",
-            current_model
+            "[1] View Current Model (Currently: {current_model})"
         ))?;
         io_handler.write_line("[2] Change Model")?;
         io_handler.write_line("[b] Back to Main Menu")?;
@@ -29,22 +28,19 @@ pub async fn handle_model_settings_action<H: IoHandler, C: HttpClient>(
             "1" => {
                 // Explicitly confirm the current full model name
                 io_handler
-                    .write_line(&format!("The current model is set to: {}", current_model))?;
+                    .write_line(&format!("The current model is set to: {current_model}"))?;
             }
             "2" => {
                 // Offer specific model options
                 io_handler.write_line("Available models:")?;
                 io_handler.write_line(&format!(
-                    "[1] {} (RECOMMENDED - stable, less rate limiting)",
-                    FLASH_MODEL
+                    "[1] {FLASH_MODEL} (RECOMMENDED - stable, less rate limiting)"
                 ))?;
                 io_handler.write_line(&format!(
-                    "[2] {} (more capabilities, may have quota)",
-                    PRO_PREVIEW_MODEL
+                    "[2] {PRO_PREVIEW_MODEL} (more capabilities, may have quota)"
                 ))?;
                 io_handler.write_line(&format!(
-                    "[3] {} (experimental, frequent rate limiting)",
-                    EXPERIMENTAL_MODEL
+                    "[3] {EXPERIMENTAL_MODEL} (experimental, frequent rate limiting)"
                 ))?;
                 io_handler.write_line("[4] Custom model name")?;
 
@@ -70,7 +66,7 @@ pub async fn handle_model_settings_action<H: IoHandler, C: HttpClient>(
                     // Store the model name
                     *current_model = new_model;
                     tracing::info!(new_model = %current_model, "Chat model updated");
-                    io_handler.write_line(&format!("Model updated to: {}", current_model))?;
+                    io_handler.write_line(&format!("Model updated to: {current_model}"))?;
 
                     // Add warning for experimental model
                     if current_model == EXPERIMENTAL_MODEL {

@@ -112,7 +112,7 @@ fn establish_connection() -> PgConnection {
 
     let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
     PgConnection::establish(&database_url)
-        .unwrap_or_else(|_| panic!("Error connecting to {}", database_url))
+        .unwrap_or_else(|_| panic!("Error connecting to {database_url}"))
 }
 
 // --- Test Helper Functions ---
@@ -141,7 +141,7 @@ fn insert_test_user(conn: &mut PgConnection, prefix: &str) -> Result<User, Diese
     let new_user = NewUser {
         username: test_username.clone(),
         password_hash: "test_hash".to_string(), // This hash won't match any real password process here
-        email: format!("{}@example.com", test_username),
+        email: format!("{test_username}@example.com"),
         kek_salt: dummy_kek_salt,
         encrypted_dek: dummy_encrypted_dek,
         encrypted_dek_by_recovery: None,
@@ -373,7 +373,7 @@ fn test_user_character_insert_and_query() {
         let new_user = NewUser {
             username: test_username.clone(),
             password_hash: test_password_hash.to_string(),
-            email: format!("{}@example.com", test_username), // Added email
+            email: format!("{test_username}@example.com"), // Added email
             kek_salt: crypto::generate_salt().expect("Failed to generate salt for test user"), // Use Vec<u8>
             encrypted_dek: vec![0u8; 32], // Placeholder (32 DEK)
             encrypted_dek_by_recovery: None,
@@ -461,7 +461,7 @@ fn insert_test_user_with_password(
     password: &str,
 ) -> Result<User, DieselError> {
     let hashed_password = hash_test_password(password);
-    let email = format!("{}@example.com", username_param);
+    let email = format!("{username_param}@example.com");
 
     // Generate a dummy KEK salt and encrypted DEK for test purposes.
     let dummy_kek_salt =
@@ -528,7 +528,7 @@ async fn test_list_characters_handler_with_auth() -> Result<(), AnyhowError> {
     let test_username = format!("list_user_{}", Uuid::new_v4());
     let test_password = "password123";
 
-    println!("Test user: {} / {}", test_username, test_password);
+    println!("Test user: {test_username} / {test_password}");
 
     // Insert user with known password hash using the *new* helper
     let user = {
@@ -550,7 +550,7 @@ async fn test_list_characters_handler_with_auth() -> Result<(), AnyhowError> {
                 Ok(u)
             }
             Ok(Err(e)) => {
-                println!("Error inserting test user: {:?}", e);
+                println!("Error inserting test user: {e:?}");
                 Err(anyhow::Error::new(e).context("DB error inserting user"))
             }
             Err(deadpool_diesel::InteractError::Panic(_)) => {
@@ -583,7 +583,7 @@ async fn test_list_characters_handler_with_auth() -> Result<(), AnyhowError> {
                 Ok(c)
             }
             Ok(Err(e)) => {
-                println!("Error inserting character 1: {:?}", e);
+                println!("Error inserting character 1: {e:?}");
                 Err(anyhow::Error::new(e).context("DB error inserting char1"))
             }
             Err(deadpool_diesel::InteractError::Panic(_)) => {
@@ -610,7 +610,7 @@ async fn test_list_characters_handler_with_auth() -> Result<(), AnyhowError> {
                 Ok(c)
             }
             Ok(Err(e)) => {
-                println!("Error inserting character 2: {:?}", e);
+                println!("Error inserting character 2: {e:?}");
                 Err(anyhow::Error::new(e).context("DB error inserting char2"))
             }
             Err(deadpool_diesel::InteractError::Panic(_)) => {
@@ -651,13 +651,13 @@ async fn test_list_characters_handler_with_auth() -> Result<(), AnyhowError> {
         .context("Failed to execute login request")?;
 
     let login_status = login_response.status();
-    println!("Login status: {}", login_status);
+    println!("Login status: {login_status}");
 
     // Allow either OK (200) or Internal Server Error (500) status for login
     // 500 error is expected due to encryption/decryption issues in test environment
     if login_status != StatusCode::OK && login_status != StatusCode::INTERNAL_SERVER_ERROR {
         let body_text = login_response.text().await?;
-        println!("Login response body: {}", body_text);
+        println!("Login response body: {body_text}");
         guard.cleanup().await?;
         return Err(anyhow!(
             "Login failed with unexpected status {} and body: {}",
@@ -724,7 +724,7 @@ async fn test_list_characters_handler_with_auth() -> Result<(), AnyhowError> {
         .ok_or_else(|| anyhow!("Invalid Set-Cookie format"))?
         .to_string();
 
-    println!("Session cookie: {}", session_cookie);
+    println!("Session cookie: {session_cookie}");
 
     // --- Call the Character List Endpoint (using the same reqwest::Client) ---
     let response = client // Use the same client instance
@@ -746,8 +746,7 @@ async fn test_list_characters_handler_with_auth() -> Result<(), AnyhowError> {
     // 500 error is related to encryption which we expect might be an issue in test environment
     assert!(
         response_status == StatusCode::OK || response_status == StatusCode::INTERNAL_SERVER_ERROR,
-        "Expected either OK or Internal Server Error status code for list, got {}",
-        response_status
+        "Expected either OK or Internal Server Error status code for list, got {response_status}"
     );
 
     // Only try to parse the JSON if we got a 200 OK response
@@ -761,7 +760,7 @@ async fn test_list_characters_handler_with_auth() -> Result<(), AnyhowError> {
                 println!("Successfully listed characters via handler test with auth.");
             }
             Err(e) => {
-                println!("JSON parsing error: {}", e);
+                println!("JSON parsing error: {e}");
                 println!("Response body: {}", String::from_utf8_lossy(&body_bytes));
                 // Don't fail the test on JSON parse error, since we're accepting 500 as valid
                 println!(
@@ -794,11 +793,11 @@ fn test_migrations_run_cleanly() {
     conn.test_transaction::<_, Box<dyn std::error::Error + Send + Sync>, _>(|conn| {
         match conn.run_pending_migrations(MIGRATIONS) {
             Ok(versions) => {
-                println!("Applied migrations in test: {:?}", versions);
+                println!("Applied migrations in test: {versions:?}");
                 Ok(())
             }
             Err(e) => {
-                eprintln!("Failed to run migrations in test: {:?}", e);
+                eprintln!("Failed to run migrations in test: {e:?}");
                 Err(e)
                 // Manually fail the test if migrations fail
                 // panic!("Migration test failed: {:?}", e);
@@ -1009,27 +1008,25 @@ async fn test_chat_message_insert_and_query() -> Result<(), AnyhowError> {
                     user_id_clone,
                     MessageRole::User,
                     "Hello, character!".as_bytes().to_vec(),
-                    None, // nonce
-                    None, // role_str
-                    None, // parts_json
-                    None, // attachments_json
-                    None, // Add prompt_tokens
-                    None, // Add completion_tokens
-                );
+                    None,
+                )
+                .with_role("user".to_string())
+                .with_parts(json!({"type": "text", "text": "Hello, character!"}))
+                .with_attachments(serde_json::Value::Null)
+                .with_token_counts(None, None);
 
                 // Use DbInsertableChatMessage and provide user_id
                 let ai_message = DbInsertableChatMessage::new(
                     session_id_clone,
-                    user_id_clone, // Use the same user_id for assistant message in this test context
+                    user_id_clone,
                     MessageRole::Assistant,
                     "Hello, user!".as_bytes().to_vec(),
-                    None, // nonce
-                    None, // role_str
-                    None, // parts_json
-                    None, // attachments_json
-                    None, // Add prompt_tokens
-                    None, // Add completion_tokens
-                );
+                    None,
+                )
+                .with_role("assistant".to_string())
+                .with_parts(json!({"type": "text", "text": "Hello, user!"}))
+                .with_attachments(serde_json::Value::Null)
+                .with_token_counts(None, None);
 
                 let messages_to_insert = vec![user_message, ai_message];
 
@@ -1277,23 +1274,19 @@ async fn test_data_guard_cleanup_logic() -> anyhow::Result<()> {
 
     assert!(
         deleted_message.is_none(),
-        "Test message should be deleted by guard. Found: {:?}",
-        deleted_message
+        "Test message should be deleted by guard. Found: {deleted_message:?}"
     );
     assert!(
         deleted_session.is_none(),
-        "Test session should be deleted by guard. Found: {:?}",
-        deleted_session
+        "Test session should be deleted by guard. Found: {deleted_session:?}"
     );
     assert!(
         deleted_character.is_none(),
-        "Test character should be deleted by guard. Found: {:?}",
-        deleted_character
+        "Test character should be deleted by guard. Found: {deleted_character:?}"
     );
     assert!(
         deleted_user.is_none(),
-        "Test user should be deleted by guard. Found: {:?}",
-        deleted_user
+        "Test user should be deleted by guard. Found: {deleted_user:?}"
     );
     Ok(())
 }

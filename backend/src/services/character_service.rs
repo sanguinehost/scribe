@@ -14,12 +14,12 @@ use crate::models::characters::{Character, CharacterDataForClient};
 use crate::schema::characters; // For characters::table, characters::id
 use crate::schema::characters::dsl::{id as character_dsl_id, user_id as character_dsl_user_id}; // for explicit column access
 use crate::services::encryption_service::EncryptionService;
-use diesel::RunQueryDsl; // Explicitly for insert_into, select, find
-use diesel::SelectableHelper;
-use diesel::prelude::*; // For .values(), .returning(), .get_result(), etc.
-use diesel::result::Error as DieselError; // Added DieselError
+use diesel::{BoolExpressionMethods, QueryDsl, ExpressionMethods, RunQueryDsl, SelectableHelper, result::Error as DieselError}; // For .values(), .returning(), .get_result(), etc.
 use diesel_json; // For Json<Value> type in Diesel models
 use serde_json; // For json!({}) macro
+
+/// Type alias for the complex return type of encrypted field operations
+type EncryptedFieldResult = (Option<Vec<u8>>, Option<Vec<u8>>);
 
 #[derive(Clone)]
 pub struct CharacterService {
@@ -28,7 +28,8 @@ pub struct CharacterService {
 }
 
 impl CharacterService {
-    pub fn new(db_pool: DeadpoolPgPool, encryption_service: Arc<EncryptionService>) -> Self {
+    #[must_use]
+    pub const fn new(db_pool: DeadpoolPgPool, encryption_service: Arc<EncryptionService>) -> Self {
         // Changed db_pool type
         Self {
             db_pool,
@@ -41,16 +42,16 @@ impl CharacterService {
     /// If the plaintext is empty, returns `Ok((None, None))` indicating no encryption was performed
     /// and the fields should be cleared.
     /// Otherwise, returns `Ok((Some(ciphertext), Some(nonce)))`.
-    async fn _encrypt_string_field_with_nonce(
+    fn encrypt_string_field_with_nonce(
         &self,
         plaintext: &str,
         dek_key: &[u8],
-    ) -> Result<(Option<Vec<u8>>, Option<Vec<u8>>), AppError> {
+    ) -> Result<EncryptedFieldResult, AppError> {
         if plaintext.is_empty() {
             Ok((None, None))
         } else {
             // Corrected: pass plaintext as &str if EncryptionService::encrypt expects it
-            let (ciphertext, nonce) = self.encryption_service.encrypt(plaintext, dek_key).await?;
+            let (ciphertext, nonce) = self.encryption_service.encrypt(plaintext, dek_key)?;
             Ok((Some(ciphertext), Some(nonce)))
         }
     }
@@ -63,9 +64,9 @@ impl CharacterService {
     ///   - If `plaintext` is not empty, it's encrypted, and `current_ciphertext` and
     ///     `current_nonce` are updated with the new encrypted data and nonce.
     /// - If `dto_field_value` is `None`, no changes are made to `current_ciphertext` or `current_nonce`.
-    async fn _update_optional_encrypted_string_field(
+    fn update_optional_encrypted_string_field(
         &self,
-        dto_field_value: &Option<String>,
+        dto_field_value: Option<&String>,
         dek_key: &[u8],
         current_ciphertext: &mut Option<Vec<u8>>,
         current_nonce: &mut Option<Vec<u8>>,
@@ -76,8 +77,7 @@ impl CharacterService {
                 *current_nonce = None;
             } else {
                 let (encrypted_data, nonce_data) = self
-                    ._encrypt_string_field_with_nonce(plaintext_value, dek_key)
-                    .await?;
+                    .encrypt_string_field_with_nonce(plaintext_value, dek_key)?;
                 *current_ciphertext = encrypted_data;
                 *current_nonce = nonce_data;
             }
@@ -86,6 +86,15 @@ impl CharacterService {
         Ok(())
     }
 
+    /// Creates a new character manually with the provided data and encryption.
+    ///
+    /// # Errors
+    ///
+    /// Returns `AppError::BadRequest` if the DTO validation fails,
+    /// encryption service errors if field encryption fails,
+    /// `AppError::DbPoolError` if database connection cannot be obtained,
+    /// `AppError::InternalServerErrorGeneric` if database interaction fails,
+    /// `AppError::DatabaseQueryError` if the insert or fetch operation fails.
     #[instrument(skip(self, create_dto, dek), err)]
     pub async fn create_character_manually(
         &self,
@@ -100,41 +109,33 @@ impl CharacterService {
 
         // Encrypt fields from DTO using the service's helper method
         let (description_enc, description_nonce_enc) = self
-            ._encrypt_string_field_with_nonce(
+            .encrypt_string_field_with_nonce(
                 create_dto
                     .description
                     .as_deref()
                     .expect("Description guaranteed by validation"),
                 dek_key_bytes,
-            )
-            .await?;
+            )?;
         let (personality_enc, personality_nonce_enc) = self
-            ._encrypt_string_field_with_nonce(&create_dto.personality, dek_key_bytes)
-            .await?;
+            .encrypt_string_field_with_nonce(&create_dto.personality, dek_key_bytes)?;
         let (scenario_enc, scenario_nonce_enc) = self
-            ._encrypt_string_field_with_nonce(&create_dto.scenario, dek_key_bytes)
-            .await?;
+            .encrypt_string_field_with_nonce(&create_dto.scenario, dek_key_bytes)?;
         let (first_mes_enc, first_mes_nonce_enc) = self
-            ._encrypt_string_field_with_nonce(
+            .encrypt_string_field_with_nonce(
                 create_dto
                     .first_mes
                     .as_deref()
                     .expect("First message guaranteed by validation"),
                 dek_key_bytes,
-            )
-            .await?;
+            )?;
         let (mes_example_enc, mes_example_nonce_enc) = self
-            ._encrypt_string_field_with_nonce(&create_dto.mes_example, dek_key_bytes)
-            .await?;
+            .encrypt_string_field_with_nonce(&create_dto.mes_example, dek_key_bytes)?;
         let (creator_notes_enc, creator_notes_nonce_enc) = self
-            ._encrypt_string_field_with_nonce(&create_dto.creator_notes, dek_key_bytes)
-            .await?;
+            .encrypt_string_field_with_nonce(&create_dto.creator_notes, dek_key_bytes)?;
         let (system_prompt_enc, system_prompt_nonce_enc) = self
-            ._encrypt_string_field_with_nonce(&create_dto.system_prompt, dek_key_bytes)
-            .await?;
+            .encrypt_string_field_with_nonce(&create_dto.system_prompt, dek_key_bytes)?;
         let (post_history_instructions_enc, post_history_instructions_nonce_enc) = self
-            ._encrypt_string_field_with_nonce(&create_dto.post_history_instructions, dek_key_bytes)
-            .await?;
+            .encrypt_string_field_with_nonce(&create_dto.post_history_instructions, dek_key_bytes)?;
 
         // Create a NewCharacter from the DTO
         let new_character_for_db = NewCharacter {
@@ -217,8 +218,7 @@ impl CharacterService {
             extensions: Some(
                 create_dto
                     .extensions
-                    .map(|j| diesel_json::Json(j.0))
-                    .unwrap_or_else(|| diesel_json::Json(serde_json::json!({}))),
+                    .map_or_else(|| diesel_json::Json(serde_json::json!({})), |j| diesel_json::Json(j.0)),
             ),
             persona: None,
             persona_nonce: None,
@@ -260,7 +260,7 @@ impl CharacterService {
         info!(character_name = %new_character_for_db.name, user_id = %user_id_val, "Attempting to insert manually created character into DB for user");
 
         let conn = self.db_pool.get().await.map_err(|e| {
-            AppError::DbPoolError(format!("Failed to get DB connection from pool: {}", e))
+            AppError::DbPoolError(format!("Failed to get DB connection from pool: {e}"))
         })?;
 
         let returned_id: Uuid = conn
@@ -272,17 +272,16 @@ impl CharacterService {
             })
             .await
             .map_err(|e| {
-                AppError::InternalServerErrorGeneric(format!("Insert interaction error: {}", e))
+                AppError::InternalServerErrorGeneric(format!("Insert interaction error: {e}"))
             })?
-            .map_err(|e| AppError::DatabaseQueryError(format!("Insert DB error: {}", e)))?;
+            .map_err(|e| AppError::DatabaseQueryError(format!("Insert DB error: {e}")))?;
 
         info!(character_id = %returned_id, "Character basic info returned after manual insertion");
 
         // Fetch the inserted character to return its full data
         let conn_fetch = self.db_pool.get().await.map_err(|e| {
             AppError::DbPoolError(format!(
-                "Failed to get DB connection from pool for fetch: {}",
-                e
+                "Failed to get DB connection from pool for fetch: {e}"
             ))
         })?;
 
@@ -295,16 +294,15 @@ impl CharacterService {
             })
             .await
             .map_err(|e| {
-                AppError::InternalServerErrorGeneric(format!("Fetch interaction error: {}", e))
+                AppError::InternalServerErrorGeneric(format!("Fetch interaction error: {e}"))
             })?
-            .map_err(|e| AppError::DatabaseQueryError(format!("Fetch DB error: {}", e)))?;
+            .map_err(|e| AppError::DatabaseQueryError(format!("Fetch DB error: {e}")))?;
 
         info!(character_id = %inserted_character.id, "Character manually created and saved (full data fetched)");
 
         // Convert to client format with decryption
         let client_character_data = inserted_character
-            .into_decrypted_for_client(Some(&dek.0))
-            .await?;
+            .into_decrypted_for_client(Some(&dek.0))?;
 
         Ok(client_character_data)
     }
@@ -323,8 +321,7 @@ impl CharacterService {
         // Fetch the existing character from the database to verify ownership
         let conn_fetch = self.db_pool.get().await.map_err(|e| {
             AppError::DbPoolError(format!(
-                "Failed to get DB connection from pool for fetch: {}",
-                e
+                "Failed to get DB connection from pool for fetch: {e}"
             ))
         })?;
 
@@ -341,14 +338,13 @@ impl CharacterService {
             })
             .await
             .map_err(|e| {
-                AppError::InternalServerErrorGeneric(format!("Fetch interaction error: {}", e))
+                AppError::InternalServerErrorGeneric(format!("Fetch interaction error: {e}"))
             })?
             .map_err(|e| match e {
                 DieselError::NotFound => AppError::NotFound(format!(
-                    "Character {} not found or not owned by user {}",
-                    character_id_to_update, user_id_val
+                    "Character {character_id_to_update} not found or not owned by user {user_id_val}"
                 )),
-                _ => AppError::DatabaseQueryError(format!("Fetch DB error: {}", e)),
+                _ => AppError::DatabaseQueryError(format!("Fetch DB error: {e}")),
             })?;
 
         info!(character_id = %character_id_to_update, "Found character to update, applying changes");
@@ -361,62 +357,54 @@ impl CharacterService {
         }
 
         // Encrypted fields
-        self._update_optional_encrypted_string_field(
-            &update_dto.description,
+        self.update_optional_encrypted_string_field(
+            update_dto.description.as_ref(),
             dek_key_bytes,
             &mut existing_character.description,
             &mut existing_character.description_nonce,
-        )
-        .await?;
-        self._update_optional_encrypted_string_field(
-            &update_dto.personality,
+        )?;
+        self.update_optional_encrypted_string_field(
+            update_dto.personality.as_ref(),
             dek_key_bytes,
             &mut existing_character.personality,
             &mut existing_character.personality_nonce,
-        )
-        .await?;
-        self._update_optional_encrypted_string_field(
-            &update_dto.scenario,
+        )?;
+        self.update_optional_encrypted_string_field(
+            update_dto.scenario.as_ref(),
             dek_key_bytes,
             &mut existing_character.scenario,
             &mut existing_character.scenario_nonce,
-        )
-        .await?;
-        self._update_optional_encrypted_string_field(
-            &update_dto.first_mes,
+        )?;
+        self.update_optional_encrypted_string_field(
+            update_dto.first_mes.as_ref(),
             dek_key_bytes,
             &mut existing_character.first_mes,
             &mut existing_character.first_mes_nonce,
-        )
-        .await?;
-        self._update_optional_encrypted_string_field(
-            &update_dto.mes_example,
+        )?;
+        self.update_optional_encrypted_string_field(
+            update_dto.mes_example.as_ref(),
             dek_key_bytes,
             &mut existing_character.mes_example,
             &mut existing_character.mes_example_nonce,
-        )
-        .await?;
-        self._update_optional_encrypted_string_field(
-            &update_dto.creator_notes,
+        )?;
+        self.update_optional_encrypted_string_field(
+            update_dto.creator_notes.as_ref(),
             dek_key_bytes,
             &mut existing_character.creator_notes,
             &mut existing_character.creator_notes_nonce,
-        )
-        .await?;
-        self._update_optional_encrypted_string_field(
-            &update_dto.system_prompt,
+        )?;
+        self.update_optional_encrypted_string_field(
+            update_dto.system_prompt.as_ref(),
             dek_key_bytes,
             &mut existing_character.system_prompt,
             &mut existing_character.system_prompt_nonce,
-        )
-        .await?;
-        self._update_optional_encrypted_string_field(
-            &update_dto.post_history_instructions,
+        )?;
+        self.update_optional_encrypted_string_field(
+            update_dto.post_history_instructions.as_ref(),
             dek_key_bytes,
             &mut existing_character.post_history_instructions,
             &mut existing_character.post_history_instructions_nonce,
-        )
-        .await?;
+        )?;
 
         // Non-encrypted fields
         if let Some(tags_val) = update_dto.tags {
@@ -487,8 +475,7 @@ impl CharacterService {
         // Save the updated character
         let conn_update = self.db_pool.get().await.map_err(|e| {
             AppError::DbPoolError(format!(
-                "Failed to get DB connection from pool for update: {}",
-                e
+                "Failed to get DB connection from pool for update: {e}"
             ))
         })?;
 
@@ -501,16 +488,15 @@ impl CharacterService {
             })
             .await
             .map_err(|e| {
-                AppError::InternalServerErrorGeneric(format!("Update interaction error: {}", e))
+                AppError::InternalServerErrorGeneric(format!("Update interaction error: {e}"))
             })?
-            .map_err(|e| AppError::DatabaseQueryError(format!("Update DB error: {}", e)))?;
+            .map_err(|e| AppError::DatabaseQueryError(format!("Update DB error: {e}")))?;
 
         info!(character_id = %character_id_to_update, "Character updated successfully in CharacterService");
 
         // Convert to client format with decryption
         let client_character_data = updated_character_db
-            .into_decrypted_for_client(Some(&dek.0))
-            .await?;
+            .into_decrypted_for_client(Some(&dek.0))?;
 
         Ok(client_character_data)
     }
@@ -519,11 +505,11 @@ impl CharacterService {
 // TODO: Add unit tests for these helper methods in a new test module,
 // e.g., backend/tests/character_service_tests.rs or inline here.
 // Tests should cover:
-// - _encrypt_string_field_with_nonce:
+// - encrypt_string_field_with_nonce:
 //   - Empty plaintext
 //   - Non-empty plaintext
 //   - Encryption service error
-// - _update_optional_encrypted_string_field:
+// - update_optional_encrypted_string_field:
 //   - dto_field_value is None (no change)
 //   - dto_field_value is Some("") (fields cleared)
 //   - dto_field_value is Some("text") (fields updated)

@@ -13,7 +13,7 @@ pub async fn handle_stream_test_action<H: IoHandler, C: HttpClient>(
     current_model: &str,
 ) -> Result<(), CliError> {
     io_handler.write_line("\n--- Test Streaming Chat (with Thinking) ---")?;
-    io_handler.write_line(&format!("Using model: {}", current_model))?;
+    io_handler.write_line(&format!("Using model: {current_model}"))?;
 
     // 1. Select Character
     let character_id = select_character(client, io_handler).await?;
@@ -24,7 +24,7 @@ pub async fn handle_stream_test_action<H: IoHandler, C: HttpClient>(
     let chat_session = client.create_chat_session(character_id, None, None).await?;
     let chat_id = chat_session.id;
     tracing::info!(%chat_id, "Chat session created for streaming test");
-    io_handler.write_line(&format!("Chat session created (ID: {}).", chat_id))?;
+    io_handler.write_line(&format!("Chat session created (ID: {chat_id})."))?;
 
     // +++ Optional: Set Gemini-specific settings for this test session +++
     let mut settings_to_update = UpdateChatSettingsRequest {
@@ -74,8 +74,7 @@ pub async fn handle_stream_test_action<H: IoHandler, C: HttpClient>(
     {
         Ok(_) => io_handler.write_line("Test session settings updated.")?,
         Err(e) => io_handler.write_line(&format!(
-            "Warning: Failed to update test session settings: {}. Proceeding with defaults.",
-            e
+            "Warning: Failed to update test session settings: {e}. Proceeding with defaults."
         ))?,
     }
     // +++ End Gemini settings for test +++
@@ -88,7 +87,7 @@ pub async fn handle_stream_test_action<H: IoHandler, C: HttpClient>(
     }
 
     // +++ Construct initial history payload +++
-    let _initial_history = vec![ApiChatMessage {
+    let _initial_history = [ApiChatMessage {
         // Assuming ApiChatMessage has these fields based on backend usage
         role: "user".to_string(),      // Role should be "user"
         content: user_message.clone(), // Clone the user message content
@@ -107,7 +106,7 @@ pub async fn handle_stream_test_action<H: IoHandler, C: HttpClient>(
     .await
     {
         tracing::error!(error = ?e, "Streaming chat loop failed in test action");
-        io_handler.write_line(&format!("Chat encountered an error: {}", e))?;
+        io_handler.write_line(&format!("Chat encountered an error: {e}"))?;
     } else {
         io_handler.write_line("\nStreaming test finished.")?;
     }

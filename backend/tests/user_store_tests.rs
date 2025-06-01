@@ -181,8 +181,7 @@ mod user_store_tests {
                 duplicate_result,
                 Err(scribe_backend::auth::AuthError::UsernameTaken)
             ),
-            "Expected UsernameTaken error for duplicate username, got: {:?}",
-            duplicate_result
+            "Expected UsernameTaken error for duplicate username, got: {duplicate_result:?}"
         );
         guard.cleanup().await?;
         Ok(())
@@ -247,8 +246,7 @@ mod user_store_tests {
 
         assert!(
             found_user_result.is_ok(),
-            "Expected Ok, got {:?}",
-            found_user_result
+            "Expected Ok, got {found_user_result:?}"
         );
         let found_user: Option<User> = match found_user_result {
             Ok(user) => Some(user),
@@ -276,8 +274,7 @@ mod user_store_tests {
                 not_found_user_result,
                 Err(scribe_backend::auth::AuthError::UserNotFound)
             ),
-            "Expected UserNotFound error, got {:?}",
-            not_found_user_result
+            "Expected UserNotFound error, got {not_found_user_result:?}"
         );
         let not_found_user: Option<User> = None;
 
@@ -358,8 +355,7 @@ mod user_store_tests {
                 not_found_user_result,
                 Err(scribe_backend::auth::AuthError::UserNotFound)
             ),
-            "Expected UserNotFound error for non-existent ID, got {:?}",
-            not_found_user_result
+            "Expected UserNotFound error for non-existent ID, got {not_found_user_result:?}"
         );
         guard.cleanup().await?;
         Ok(())
@@ -544,7 +540,7 @@ mod user_store_tests {
                 "Expected CryptoOperationFailed due to invalid KEK salt. Actual: {}",
                 match verify_crypto_fail_result {
                     Ok((u, _)) => format!("Ok(User: {}, DEK: <secret>)", u.id),
-                    Err(e) => format!("Err({:?})", e),
+                    Err(e) => format!("Err({e:?})"),
                 }
             );
         }

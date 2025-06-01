@@ -78,7 +78,15 @@ pub fn chat_routes() -> Router<crate::state::AppState> {
         )
 }
 
-// Placeholder for the new handler
+/// Sets character overrides for a chat session.
+/// 
+/// # Errors
+/// 
+/// Returns an error if:
+/// - Authentication fails
+/// - Session does not exist or access is denied
+/// - Character override validation fails
+/// - Database operation fails
 pub async fn set_chat_character_override_handler(
     auth_session: CurrentAuthSession,
     State(state): State<AppState>,
@@ -86,27 +94,6 @@ pub async fn set_chat_character_override_handler(
     Path(session_id): Path<Uuid>, // Renamed id to session_id for clarity
     Json(payload): Json<CharacterOverrideDto>,
 ) -> Result<impl IntoResponse, AppError> {
-    // Validate the payload first
-    payload.validate()?;
-
-    let user = auth_session
-        .user
-        .ok_or(AppError::Unauthorized("Not logged in".to_string()))?;
-
-    tracing::info!(target: "scribe_backend::routes::chats", %session_id, user_id = %user.id, field_name = %payload.field_name, "Attempting to set chat character override");
-
-    // The user.dek from auth_session might not be the raw SecretBox<Vec<u8>> needed by the service.
-    // The SessionDek extractor provides the correct SecretBox<Vec<u8>>.
-    let override_db_response = chat::overrides::set_character_override(
-        &state.pool,
-        user.id,
-        session_id,
-        payload.clone(), // Clone payload for use in client response
-        Some(&dek.0),    // Pass the SecretBox from SessionDek
-    )
-    .await?;
-
-    // Create a response structure that includes the message field expected by the CLI
     #[derive(Serialize)]
     struct OverrideResponse {
         message: String,
@@ -122,6 +109,26 @@ pub async fn set_chat_character_override_handler(
         created_at: chrono::DateTime<chrono::Utc>,
         updated_at: chrono::DateTime<chrono::Utc>,
     }
+
+    // Validate the payload first
+    payload.validate()?;
+
+    let user = auth_session
+        .user
+        .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
+
+    tracing::info!(target: "scribe_backend::routes::chats", %session_id, user_id = %user.id, field_name = %payload.field_name, "Attempting to set chat character override");
+
+    // The user.dek from auth_session might not be the raw SecretBox<Vec<u8>> needed by the service.
+    // The SessionDek extractor provides the correct SecretBox<Vec<u8>>.
+    let override_db_response = chat::overrides::set_character_override(
+        &state.pool,
+        user.id,
+        session_id,
+        payload.clone(), // Clone payload for use in client response
+        Some(&dek.0),    // Pass the SecretBox from SessionDek
+    )
+    .await?;
 
     let client_response = OverrideResponse {
         message: format!(
@@ -145,7 +152,14 @@ pub async fn set_chat_character_override_handler(
     Ok((StatusCode::OK, Json(client_response)))
 }
 
-// Get chats by character ID for current user
+/// Retrieves chat sessions for a specific character for the current user.
+/// 
+/// # Errors
+/// 
+/// Returns an error if:
+/// - Authentication fails
+/// - Character access is denied
+/// - Database operation fails
 pub async fn get_chats_by_character_handler(
     auth_session: CurrentAuthSession,
     State(state): State<AppState>,
@@ -154,7 +168,7 @@ pub async fn get_chats_by_character_handler(
 ) -> Result<impl IntoResponse, AppError> {
     let user = auth_session
         .user
-        .ok_or(AppError::Unauthorized("Not logged in".to_string()))?;
+        .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
     let pool = state.pool.clone();
 
     let chats = pool
@@ -181,15 +195,15 @@ pub async fn get_chats_by_character_handler(
         // Decrypt title if available
         client_chat.title = match (chat.title_ciphertext.as_ref(), chat.title_nonce.as_ref()) {
             (Some(ciphertext), Some(nonce)) if !ciphertext.is_empty() && !nonce.is_empty() => {
-                match crypto::decrypt_gcm(ciphertext, nonce, &dek.0) {
-                    Ok(plaintext_secret) => {
-                        match String::from_utf8(plaintext_secret.expose_secret().to_vec()) {
-                            Ok(decrypted_text) => Some(decrypted_text),
-                            Err(_) => Some("[Invalid UTF-8]".to_string()),
-                        }
+                crypto::decrypt_gcm(ciphertext, nonce, &dek.0).map_or_else(
+                    |_| Some("[Decryption Failed]".to_string()),
+                    |plaintext_secret| {
+                        String::from_utf8(plaintext_secret.expose_secret().clone()).map_or_else(
+                            |_| Some("[Invalid UTF-8]".to_string()),
+                            Some
+                        )
                     }
-                    Err(_) => Some("[Decryption Failed]".to_string()),
-                }
+                )
             }
             _ => None,
         };
@@ -201,6 +215,14 @@ pub async fn get_chats_by_character_handler(
 }
 
 // Get all chats for current user
+/// Retrieves all chat sessions for the current user.
+/// 
+/// # Errors
+/// 
+/// Returns an error if:
+/// - Authentication fails
+/// - Database operation fails
+/// - Decryption fails
 pub async fn get_chats_handler(
     auth_session: CurrentAuthSession,
     State(state): State<AppState>,
@@ -208,7 +230,7 @@ pub async fn get_chats_handler(
 ) -> Result<impl IntoResponse, AppError> {
     let user = auth_session
         .user
-        .ok_or(AppError::Unauthorized("Not logged in".to_string()))?;
+        .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
     let pool = state.pool.clone();
 
     let chats = pool
@@ -234,15 +256,15 @@ pub async fn get_chats_handler(
         // Decrypt title if available
         client_chat.title = match (chat.title_ciphertext.as_ref(), chat.title_nonce.as_ref()) {
             (Some(ciphertext), Some(nonce)) if !ciphertext.is_empty() && !nonce.is_empty() => {
-                match crypto::decrypt_gcm(ciphertext, nonce, &dek.0) {
-                    Ok(plaintext_secret) => {
-                        match String::from_utf8(plaintext_secret.expose_secret().to_vec()) {
-                            Ok(decrypted_text) => Some(decrypted_text),
-                            Err(_) => Some("[Invalid UTF-8]".to_string()),
-                        }
+                crypto::decrypt_gcm(ciphertext, nonce, &dek.0).map_or_else(
+                    |_| Some("[Decryption Failed]".to_string()),
+                    |plaintext_secret| {
+                        String::from_utf8(plaintext_secret.expose_secret().clone()).map_or_else(
+                            |_| Some("[Invalid UTF-8]".to_string()),
+                            Some
+                        )
                     }
-                    Err(_) => Some("[Decryption Failed]".to_string()),
-                }
+                )
             }
             _ => None,
         };
@@ -254,6 +276,15 @@ pub async fn get_chats_handler(
 }
 
 // Create a new chat
+/// Creates a new chat session.
+/// 
+/// # Errors
+/// 
+/// Returns an error if:
+/// - Authentication fails
+/// - Validation fails
+/// - Database operation fails
+/// - Encryption fails
 pub async fn create_chat_handler(
     auth_session: CurrentAuthSession,
     State(state): State<AppState>,
@@ -262,7 +293,7 @@ pub async fn create_chat_handler(
 ) -> Result<impl IntoResponse, AppError> {
     let user = auth_session
         .user
-        .ok_or(AppError::Unauthorized("Not logged in".to_string()))?;
+        .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
     // Use the SessionDek which provides the user's DEK
     let user_dek_arc = Some(Arc::new(SecretBox::new(Box::new(
         dek.0.expose_secret().clone(),
@@ -334,6 +365,14 @@ pub async fn create_chat_handler(
 }
 
 // Get a chat by ID
+/// Retrieves a specific chat session by ID.
+/// 
+/// # Errors
+/// 
+/// Returns an error if:
+/// - Authentication fails
+/// - Chat not found or access denied
+/// - Database operation fails
 pub async fn get_chat_by_id_handler(
     auth_session: CurrentAuthSession,
     State(state): State<AppState>,
@@ -341,7 +380,7 @@ pub async fn get_chat_by_id_handler(
 ) -> Result<impl IntoResponse, AppError> {
     let user = auth_session
         .user
-        .ok_or(AppError::Unauthorized("Not logged in".to_string()))?;
+        .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
     let pool = state.pool.clone();
 
     let chat = pool
@@ -368,6 +407,14 @@ pub async fn get_chat_by_id_handler(
 }
 
 // Delete a chat
+/// Deletes a chat session by ID.
+/// 
+/// # Errors
+/// 
+/// Returns an error if:
+/// - Authentication fails
+/// - Chat not found or access denied
+/// - Database operation fails
 pub async fn delete_chat_handler(
     auth_session: CurrentAuthSession,
     State(state): State<AppState>,
@@ -375,7 +422,7 @@ pub async fn delete_chat_handler(
 ) -> Result<impl IntoResponse, AppError> {
     let user = auth_session
         .user
-        .ok_or(AppError::Unauthorized("Not logged in".to_string()))?;
+        .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
     let pool = state.pool.clone();
 
     // First check if user owns the chat
@@ -413,6 +460,16 @@ pub async fn delete_chat_handler(
 }
 
 // Get messages for a chat
+/// Retrieves all messages for a specific chat session.
+/// 
+/// # Errors
+/// 
+/// Returns an error if:
+/// - Authentication fails
+/// - Chat not found or access denied
+/// - Database operation fails
+/// - Decryption fails
+#[allow(clippy::too_many_lines, clippy::cognitive_complexity)]
 pub async fn get_messages_by_chat_id_handler(
     auth_session: CurrentAuthSession,
     State(state): State<AppState>,
@@ -430,7 +487,7 @@ pub async fn get_messages_by_chat_id_handler(
 
     let user = auth_session
         .user
-        .ok_or(AppError::Unauthorized("Not logged in".to_string()))?;
+        .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
     tracing::debug!(
         "get_messages_by_chat_id_handler: Authenticated user.id = {}",
         user.id
@@ -474,7 +531,7 @@ pub async fn get_messages_by_chat_id_handler(
                 Ok(chat) => Ok(chat),
                 Err(diesel::result::Error::NotFound) => {
                     tracing::error!("get_messages_by_chat_id_handler: Converting diesel::NotFound to AppError::NotFound explicitly");
-                    Err(AppError::NotFound(format!("Chat with id {} not found", uuid_id)))
+                    Err(AppError::NotFound(format!("Chat with id {uuid_id} not found")))
                 },
                 Err(e) => {
                     tracing::error!("get_messages_by_chat_id_handler: Converting other diesel error to DatabaseQueryError: {}", e);
@@ -485,7 +542,7 @@ pub async fn get_messages_by_chat_id_handler(
         .await // Evaluates the BlockingTask, returning Result<OutputOfClosure, JoinError>
         .map_err(|join_error| { // Handle potential JoinError from the .await
             tracing::error!("Interact task failed while fetching chat {}: {}", uuid_id, join_error);
-            AppError::InternalServerErrorGeneric(format!("Error processing chat request for {}: {}", uuid_id, join_error))
+            AppError::InternalServerErrorGeneric(format!("Error processing chat request for {uuid_id}: {join_error}"))
         })? // Unwraps Result<_, JoinError> or returns AppError (if JoinError). Leaves Result<Chat, AppError>
         ?; // Unwraps Result<Chat, AppError> or returns AppError (e.g. AppError::NotFound from closure)
 
@@ -563,6 +620,16 @@ pub async fn get_messages_by_chat_id_handler(
 }
 
 // Create a message
+/// Creates a new message in a chat session.
+/// 
+/// # Errors
+/// 
+/// Returns an error if:
+/// - Authentication fails
+/// - Chat not found or access denied
+/// - Validation fails
+/// - Database operation fails
+/// - Encryption fails
 pub async fn create_message_handler(
     auth_session: CurrentAuthSession,
     State(state): State<AppState>,
@@ -572,7 +639,7 @@ pub async fn create_message_handler(
 ) -> Result<impl IntoResponse, AppError> {
     let user = auth_session
         .user
-        .ok_or(AppError::Unauthorized("Not logged in".to_string()))?;
+        .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
     let user_id = user.id;
 
     // Use the SessionDek which provides the user's DEK
@@ -608,16 +675,18 @@ pub async fn create_message_handler(
 
     // Save the message
     let saved_db_message = chat::message_handling::save_message(
-        Arc::new(state.clone()),
-        chat_id,
-        user_id,
-        message_role_enum,           // The MessageRole enum (User or Assistant)
-        &payload.content,            // The primary textual content
-        Some(payload.role.clone()), // The specific role string (e.g., "user", "assistant") from payload
-        payload.parts.clone(),      // The structured parts from payload
-        payload.attachments.clone(), // The attachments from payload
-        user_dek_arc.clone(),
-        &chat.model_name,
+        chat::message_handling::SaveMessageParams {
+            state: Arc::new(state.clone()),
+            session_id: chat_id,
+            user_id,
+            message_type_enum: message_role_enum,
+            content: &payload.content,
+            role_str: Some(payload.role.clone()),
+            parts: payload.parts.clone(),
+            attachments: payload.attachments.clone(),
+            user_dek_secret_box: user_dek_arc.clone(),
+            model_name: chat.model_name.clone(),
+        }
     )
     .await?;
 
@@ -662,6 +731,14 @@ pub async fn create_message_handler(
 }
 
 // Get a message by ID
+/// Retrieves a specific message by ID.
+/// 
+/// # Errors
+/// 
+/// Returns an error if:
+/// - Authentication fails
+/// - Message not found or access denied
+/// - Database operation fails
 pub async fn get_message_by_id_handler(
     auth_session: CurrentAuthSession,
     State(state): State<AppState>,
@@ -670,7 +747,7 @@ pub async fn get_message_by_id_handler(
 ) -> Result<impl IntoResponse, AppError> {
     let user = auth_session
         .user
-        .ok_or(AppError::Unauthorized("Not logged in".to_string()))?;
+        .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
     let pool = state.pool.clone();
 
     let message_db: Message = pool
@@ -705,7 +782,9 @@ pub async fn get_message_by_id_handler(
         return Err(AppError::Forbidden);
     }
 
-    let decrypted_content_string = if !message_db.content.is_empty() {
+    let decrypted_content_string = if message_db.content.is_empty() {
+        String::new()
+    } else {
         let nonce_bytes_ref = message_db.content_nonce.as_deref().ok_or_else(|| {
             tracing::error!(
                 "Message ID {} content nonce is missing. Cannot decrypt.",
@@ -737,7 +816,7 @@ pub async fn get_message_by_id_handler(
                 ))
             })
             .and_then(|secret_bytes| {
-                String::from_utf8(secret_bytes.expose_secret().to_vec()).map_err(|e| {
+                String::from_utf8(secret_bytes.expose_secret().clone()).map_err(|e| {
                     tracing::error!(
                         "UTF-8 conversion error for decrypted message {}: {}",
                         message_db.id,
@@ -749,8 +828,6 @@ pub async fn get_message_by_id_handler(
                     ))
                 })
             })?
-    } else {
-        String::new()
     };
 
     let response_parts = message_db
@@ -773,6 +850,14 @@ pub async fn get_message_by_id_handler(
 }
 
 // Vote on a message
+/// Records a vote for a message.
+/// 
+/// # Errors
+/// 
+/// Returns an error if:
+/// - Authentication fails
+/// - Message not found or access denied
+/// - Database operation fails
 pub async fn vote_message_handler(
     auth_session: CurrentAuthSession,
     State(state): State<AppState>,
@@ -781,7 +866,7 @@ pub async fn vote_message_handler(
 ) -> Result<impl IntoResponse, AppError> {
     let user = auth_session
         .user
-        .ok_or(AppError::Unauthorized("Not logged in".to_string()))?;
+        .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
     let pool = state.pool.clone();
 
     // First get the message to find its chat ID
@@ -847,6 +932,14 @@ pub async fn vote_message_handler(
 }
 
 // Get votes for a chat
+/// Retrieves all votes for messages in a chat session.
+/// 
+/// # Errors
+/// 
+/// Returns an error if:
+/// - Authentication fails
+/// - Chat not found or access denied
+/// - Database operation fails
 pub async fn get_votes_by_chat_id_handler(
     auth_session: CurrentAuthSession,
     State(state): State<AppState>,
@@ -854,7 +947,7 @@ pub async fn get_votes_by_chat_id_handler(
 ) -> Result<impl IntoResponse, AppError> {
     let user = auth_session
         .user
-        .ok_or(AppError::Unauthorized("Not logged in".to_string()))?;
+        .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
     let pool = state.pool.clone();
 
     // First check if user has access to the chat
@@ -903,6 +996,14 @@ pub async fn get_votes_by_chat_id_handler(
 }
 
 // Delete messages after a certain point in a chat
+/// Deletes trailing messages from a chat session.
+/// 
+/// # Errors
+/// 
+/// Returns an error if:
+/// - Authentication fails
+/// - Chat not found or access denied
+/// - Database operation fails
 pub async fn delete_trailing_messages_handler(
     auth_session: CurrentAuthSession,
     State(state): State<AppState>,
@@ -910,7 +1011,7 @@ pub async fn delete_trailing_messages_handler(
 ) -> Result<impl IntoResponse, AppError> {
     let user = auth_session
         .user
-        .ok_or(AppError::Unauthorized("Not logged in".to_string()))?;
+        .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
     let pool = state.pool.clone();
 
     // First get the message to find its timestamp and chat ID
@@ -1009,6 +1110,14 @@ pub async fn delete_trailing_messages_handler(
 }
 
 // Update chat visibility
+/// Updates the visibility of a chat session.
+/// 
+/// # Errors
+/// 
+/// Returns an error if:
+/// - Authentication fails
+/// - Chat not found or access denied
+/// - Database operation fails
 pub async fn update_chat_visibility_handler(
     auth_session: CurrentAuthSession,
     State(state): State<AppState>,
@@ -1017,7 +1126,7 @@ pub async fn update_chat_visibility_handler(
 ) -> Result<impl IntoResponse, AppError> {
     let user = auth_session
         .user
-        .ok_or(AppError::Unauthorized("Not logged in".to_string()))?;
+        .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
     let pool = state.pool.clone();
 
     // First check if user owns the chat
@@ -1061,7 +1170,15 @@ pub async fn update_chat_visibility_handler(
     Ok(StatusCode::OK)
 }
 
-// Get chat settings by ID
+/// Retrieves chat settings for a specific session.
+/// 
+/// # Errors
+/// 
+/// Returns an error if:
+/// - Authentication fails
+/// - Chat not found or access denied
+/// - Database operation fails
+/// - Decryption fails
 pub async fn get_chat_settings_handler(
     auth_session: CurrentAuthSession,
     State(state): State<AppState>,
@@ -1070,7 +1187,7 @@ pub async fn get_chat_settings_handler(
 ) -> Result<impl IntoResponse, AppError> {
     let user = auth_session
         .user
-        .ok_or(AppError::Unauthorized("Not logged in".to_string()))?;
+        .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
 
     // Call the service function to get chat settings
     // The service function handles ownership check and constructing the response
@@ -1085,7 +1202,16 @@ pub async fn get_chat_settings_handler(
     Ok(Json(chat_settings_response))
 }
 
-// Update chat settings by ID
+/// Updates chat settings for a specific session.
+/// 
+/// # Errors
+/// 
+/// Returns an error if:
+/// - Authentication fails
+/// - Chat not found or access denied
+/// - Validation fails
+/// - Database operation fails
+/// - Encryption fails
 pub async fn update_chat_settings_handler(
     auth_session: CurrentAuthSession,
     State(state): State<AppState>,
@@ -1098,7 +1224,7 @@ pub async fn update_chat_settings_handler(
 
     let user = auth_session
         .user
-        .ok_or(AppError::Unauthorized("Not logged in".to_string()))?;
+        .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
     let user_id = user.id; // Clone user_id for use in service call
 
     // Use the service function which handles encryption and ownership checks

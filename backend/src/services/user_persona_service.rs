@@ -1,11 +1,11 @@
-use diesel::prelude::*;
+use diesel::{QueryDsl, ExpressionMethods, RunQueryDsl, OptionalExtension};
 use secrecy::{ExposeSecret, SecretBox};
 use std::sync::Arc;
 use tracing::debug;
 use uuid::Uuid; // Added for logging
 
 use crate::errors::AppError;
-use crate::models::user_personas::*;
+use crate::models::user_personas::{CreateUserPersonaDto, UpdateUserPersonaDto, UserPersona, UserPersonaDataForClient};
 use crate::models::users::{User, UserDbQuery};
 use crate::schema::{user_personas::dsl as user_personas_dsl, users::dsl as users_dsl};
 use crate::services::encryption_service::EncryptionService;
@@ -18,14 +18,15 @@ pub struct UserPersonaService {
 }
 
 impl UserPersonaService {
-    pub fn new(db_pool: DbPool, encryption_service: Arc<EncryptionService>) -> Self {
+    #[must_use]
+    pub const fn new(db_pool: DbPool, encryption_service: Arc<EncryptionService>) -> Self {
         Self {
             db_pool,
             encryption_service,
         }
     }
 
-    async fn encrypt_optional_string_for_db(
+    fn encrypt_optional_string_for_db(
         &self,
         plaintext_opt: Option<String>,
         dek: &SecretBox<Vec<u8>>,
@@ -34,14 +35,22 @@ impl UserPersonaService {
             Some(plaintext) if !plaintext.is_empty() => {
                 let (ciphertext, nonce) = self
                     .encryption_service
-                    .encrypt(&plaintext, dek.expose_secret().as_slice())
-                    .await?;
+                    .encrypt(&plaintext, dek.expose_secret().as_slice())?;
                 Ok((Some(ciphertext), Some(nonce)))
             }
             _ => Ok((None, None)), // Empty or None string results in None for data and nonce
         }
     }
 
+    /// Creates a new user persona with encrypted sensitive fields.
+    ///
+    /// # Errors
+    ///
+    /// Returns `AppError::BadRequest` if validation fails (name length, spec length),
+    /// encryption service errors if field encryption fails,
+    /// `AppError::DbPoolError` if database connection fails,
+    /// `AppError::InternalServerErrorGeneric` if database interaction fails,
+    /// `AppError::DatabaseQueryError` if the database insert operation fails.
     #[tracing::instrument(skip(self, current_user, dek, create_dto), err)]
     pub async fn create_user_persona(
         &self,
@@ -68,27 +77,20 @@ impl UserPersonaService {
 
         let (description_ciphertext, description_nonce_val) = self
             .encryption_service
-            .encrypt(&create_dto.description, dek.expose_secret().as_slice())
-            .await?;
+            .encrypt(&create_dto.description, dek.expose_secret().as_slice())?;
 
         let (personality_ct, personality_n) = self
-            .encrypt_optional_string_for_db(create_dto.personality, dek)
-            .await?;
+            .encrypt_optional_string_for_db(create_dto.personality, dek)?;
         let (scenario_ct, scenario_n) = self
-            .encrypt_optional_string_for_db(create_dto.scenario, dek)
-            .await?;
+            .encrypt_optional_string_for_db(create_dto.scenario, dek)?;
         let (first_mes_ct, first_mes_n) = self
-            .encrypt_optional_string_for_db(create_dto.first_mes, dek)
-            .await?;
+            .encrypt_optional_string_for_db(create_dto.first_mes, dek)?;
         let (mes_example_ct, mes_example_n) = self
-            .encrypt_optional_string_for_db(create_dto.mes_example, dek)
-            .await?;
+            .encrypt_optional_string_for_db(create_dto.mes_example, dek)?;
         let (system_prompt_ct, system_prompt_n) = self
-            .encrypt_optional_string_for_db(create_dto.system_prompt, dek)
-            .await?;
+            .encrypt_optional_string_for_db(create_dto.system_prompt, dek)?;
         let (post_history_instructions_ct, post_history_instructions_n) = self
-            .encrypt_optional_string_for_db(create_dto.post_history_instructions, dek)
-            .await?;
+            .encrypt_optional_string_for_db(create_dto.post_history_instructions, dek)?;
 
         let new_persona_db = UserPersona {
             id: Uuid::new_v4(),
@@ -130,12 +132,12 @@ impl UserPersonaService {
             })
             .await
             .map_err(|e| {
-                AppError::InternalServerErrorGeneric(format!("DB interact join error: {}", e))
+                AppError::InternalServerErrorGeneric(format!("DB interact join error: {e}"))
             })??; // Flatten Result<Result<T, E1>, E2>
 
         tracing::info!(user_id = %current_user.id, persona_id = %inserted_persona.id, "Successfully created user persona");
 
-        inserted_persona.into_data_for_client(Some(dek)).await
+        inserted_persona.into_data_for_client(Some(dek))
     }
 
     #[tracing::instrument(skip(self, current_user, dek_opt), err)]
@@ -160,8 +162,7 @@ impl UserPersonaService {
             .await
             .map_err(|e| {
                 AppError::InternalServerErrorGeneric(format!(
-                    "DB interact join error for get_user_persona: {}",
-                    e
+                    "DB interact join error for get_user_persona: {e}"
                 ))
             })??;
 
@@ -177,11 +178,10 @@ impl UserPersonaService {
                     return Err(AppError::Forbidden);
                 }
                 tracing::info!(user_id = %current_user.id, persona_id = %persona_db.id, "Successfully fetched user persona, attempting conversion to client data.");
-                persona_db.into_data_for_client(dek_opt).await
+                persona_db.into_data_for_client(dek_opt)
             }
             None => Err(AppError::NotFound(format!(
-                "User persona with ID {} not found",
-                persona_id
+                "User persona with ID {persona_id} not found"
             ))),
         }
     }
@@ -210,15 +210,14 @@ impl UserPersonaService {
             .await
             .map_err(|e| {
                 AppError::InternalServerErrorGeneric(format!(
-                    "DB interact join error for list_user_personas: {}",
-                    e
+                    "DB interact join error for list_user_personas: {e}"
                 ))
             })??;
 
         let mut personas_for_client = Vec::new();
         for persona_db in personas_db {
             let persona_id_for_log = persona_db.id; // Clone for logging before move
-            match persona_db.into_data_for_client(Some(dek)).await {
+            match persona_db.into_data_for_client(Some(dek)) {
                 Ok(client_data) => personas_for_client.push(client_data),
                 Err(e) => {
                     tracing::error!(
@@ -258,8 +257,7 @@ impl UserPersonaService {
             .await
             .map_err(|e| {
                 AppError::InternalServerErrorGeneric(format!(
-                    "DB interact join error for update_user_persona (fetch): {}",
-                    e
+                    "DB interact join error for update_user_persona (fetch): {e}"
                 ))
             })??;
 
@@ -267,8 +265,7 @@ impl UserPersonaService {
             Some(p) => p,
             None => {
                 return Err(AppError::NotFound(format!(
-                    "User persona with ID {} not found for update",
-                    persona_id
+                    "User persona with ID {persona_id} not found for update"
                 )));
             }
         };
@@ -326,7 +323,7 @@ impl UserPersonaService {
                 // Encrypt it. If dto_field_value is None or Some(""),
                 // encrypt_optional_string_for_db returns (None, None) which clears the field.
                 // If dto_field_value is Some("text"), this encrypts "text".
-                let (new_ct, new_n) = self.encrypt_optional_string_for_db(dto_field_value, dek).await?;
+                let (new_ct, new_n) = self.encrypt_optional_string_for_db(dto_field_value, dek)?;
 
                 // Check if the current DB values differ from the new (potentially None) values.
                 if persona.$field_name != new_ct || persona.$nonce_field_name != new_n {
@@ -350,8 +347,7 @@ impl UserPersonaService {
             .encrypt(
                 string_to_encrypt_for_description,
                 dek.expose_secret().as_slice(),
-            )
-            .await?;
+            )?;
 
         if persona.description != new_description_ct
             || persona.description_nonce != Some(new_description_n.clone())
@@ -373,7 +369,7 @@ impl UserPersonaService {
 
         if !changed {
             tracing::debug!(user_id = %current_user.id, %persona_id, "No changes detected for user persona update. Returning existing.");
-            return persona.into_data_for_client(Some(dek)).await;
+            return persona.into_data_for_client(Some(dek));
         }
 
         persona.updated_at = chrono::Utc::now();
@@ -396,13 +392,12 @@ impl UserPersonaService {
             .await
             .map_err(|e| {
                 AppError::InternalServerErrorGeneric(format!(
-                    "DB interact join error for update_user_persona (update): {}",
-                    e
+                    "DB interact join error for update_user_persona (update): {e}"
                 ))
             })??;
 
         tracing::info!(user_id = %current_user.id, persona_id = %updated_persona_db.id, "Successfully updated user persona");
-        updated_persona_db.into_data_for_client(Some(dek)).await
+        updated_persona_db.into_data_for_client(Some(dek))
     }
 
     #[tracing::instrument(skip(self, current_user), err)]
@@ -429,8 +424,7 @@ impl UserPersonaService {
             .await
             .map_err(|e| {
                 AppError::InternalServerErrorGeneric(format!(
-                    "DB interact join error for delete_user_persona (fetch): {}",
-                    e
+                    "DB interact join error for delete_user_persona (fetch): {e}"
                 ))
             })??;
 
@@ -467,8 +461,7 @@ impl UserPersonaService {
                     .await
                     .map_err(|e| {
                         AppError::InternalServerErrorGeneric(format!(
-                            "DB interact join error for delete_user_persona (delete): {}",
-                            e
+                            "DB interact join error for delete_user_persona (delete): {e}"
                         ))
                     })??;
 
@@ -477,8 +470,7 @@ impl UserPersonaService {
                     // unless there was a race condition (persona deleted between fetch and delete query).
                     tracing::warn!(user_id = %current_user.id, %persona_id, "Delete operation affected 0 rows, though persona was fetched and owned.");
                     Err(AppError::NotFound(format!(
-                        "User persona with ID {} not found during delete, or already deleted.",
-                        persona_id
+                        "User persona with ID {persona_id} not found during delete, or already deleted."
                     )))
                 } else {
                     tracing::info!(user_id = %current_user.id, %persona_id, "Successfully deleted user persona");
@@ -486,8 +478,7 @@ impl UserPersonaService {
                 }
             }
             None => Err(AppError::NotFound(format!(
-                "User persona with ID {} not found for deletion.",
-                persona_id
+                "User persona with ID {persona_id} not found for deletion."
             ))),
         }
     }
@@ -514,8 +505,7 @@ impl UserPersonaService {
             .await
             .map_err(|e| {
                 AppError::InternalServerErrorGeneric(format!(
-                    "DB interact join error for set_default_persona: {}",
-                    e
+                    "DB interact join error for set_default_persona: {e}"
                 ))
             })??;
 
@@ -552,8 +542,7 @@ impl UserPersonaService {
             .await
             .map_err(|e| {
                 AppError::InternalServerErrorGeneric(format!(
-                    "DB interact join error for get_user_persona_by_id_and_user_id: {}",
-                    e
+                    "DB interact join error for get_user_persona_by_id_and_user_id: {e}"
                 ))
             })??;
 

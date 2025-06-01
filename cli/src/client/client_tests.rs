@@ -70,7 +70,7 @@ fn test_build_url_invalid_path() {
     assert!(result.is_err());
     match result.err().unwrap() {
         CliError::UrlParse(_) => {} // Expected error variant
-        e => panic!("Expected UrlParse error, but got {:?}", e),
+        e => panic!("Expected UrlParse error, but got {e:?}"),
     }
 }
 
@@ -98,7 +98,7 @@ async fn test_login_success() {
     };
     let result = client_wrapper.login(&credentials).await;
 
-    eprintln!("Login test result: {:?}", result);
+    eprintln!("Login test result: {result:?}");
     assert!(result.is_ok(), "Login failed: {:?}", result.err());
     let user = result.unwrap();
     assert_eq!(user.id, user_id);
@@ -132,12 +132,11 @@ async fn test_login_failure_unauthorized() {
         CliError::AuthFailed(msg) => {
             assert!(
                 msg.contains("Invalid credentials"),
-                "Error message was: {}",
-                msg
+                "Error message was: {msg}"
             );
-            assert!(msg.contains("401"), "Error message was: {}", msg);
+            assert!(msg.contains("401"), "Error message was: {msg}");
         }
-        e => panic!("Expected CliError::AuthFailed, got {:?}", e),
+        e => panic!("Expected CliError::AuthFailed, got {e:?}"),
     }
 
     server.verify_and_clear();
@@ -165,14 +164,11 @@ async fn test_login_failure_rate_limit() {
             let expected_substring = "API rate limit exceeded";
             assert!(
                 msg.contains(expected_substring),
-                "Error message \"{}\" did not contain \"{}\"",
-                msg,
-                expected_substring
+                "Error message \"{msg}\" did not contain \"{expected_substring}\""
             );
         }
         e => panic!(
-            "Expected CliError::AuthFailed indicating rate limit, got {:?}",
-            e
+            "Expected CliError::AuthFailed indicating rate limit, got {e:?}"
         ),
     }
 
@@ -204,7 +200,7 @@ async fn test_register_success() {
     };
     let result = client_wrapper.register(&credentials).await;
 
-    eprintln!("Register test result: {:?}", result);
+    eprintln!("Register test result: {result:?}");
     assert!(result.is_ok(), "Registration failed: {:?}", result.err());
     let user = result.unwrap();
     assert_eq!(user.id, user_id);
@@ -240,12 +236,11 @@ async fn test_register_failure_conflict() {
         CliError::RegistrationFailed(msg) => {
             assert!(
                 msg.contains("Username already taken"),
-                "Error message was: {}",
-                msg
+                "Error message was: {msg}"
             );
-            assert!(msg.contains("409"), "Error message was: {}", msg);
+            assert!(msg.contains("409"), "Error message was: {msg}");
         }
-        e => panic!("Expected CliError::RegistrationFailed, got {:?}", e),
+        e => panic!("Expected CliError::RegistrationFailed, got {e:?}"),
     }
 
     server.verify_and_clear();
@@ -353,7 +348,7 @@ async fn test_list_characters_api_error() {
             assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
             assert!(message.contains("Database connection failed"));
         }
-        e => panic!("Expected CliError::ApiError, got {:?}", e),
+        e => panic!("Expected CliError::ApiError, got {e:?}"),
     }
 
     server.verify_and_clear();
@@ -429,7 +424,7 @@ async fn test_upload_character_file_not_found() {
         CliError::Io(io_error) => {
             assert_eq!(io_error.kind(), std::io::ErrorKind::NotFound);
         }
-        e => panic!("Expected CliError::Io(NotFound), got {:?}", e),
+        e => panic!("Expected CliError::Io(NotFound), got {e:?}"),
     }
 }
 
@@ -477,7 +472,7 @@ async fn test_health_check_api_error() {
             assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
             assert!(message.contains("Service Unavailable"));
         }
-        e => panic!("Expected CliError::ApiError, got {:?}", e),
+        e => panic!("Expected CliError::ApiError, got {e:?}"),
     }
 
     server.verify_and_clear();
@@ -521,7 +516,7 @@ async fn test_logout_api_error() {
             assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
             assert!(message.contains("Logout failed internally"));
         }
-        e => panic!("Expected CliError::ApiError, got {:?}", e),
+        e => panic!("Expected CliError::ApiError, got {e:?}"),
     }
 
     server.verify_and_clear();
@@ -546,7 +541,7 @@ async fn test_me_success() {
     );
 
     let result = client_wrapper.me().await;
-    eprintln!("Me test result: {:?}", result);
+    eprintln!("Me test result: {result:?}");
     assert!(result.is_ok(), "Fetching /me failed: {:?}", result.err());
     let user = result.unwrap();
     assert_eq!(user.id, user_id);
@@ -576,7 +571,7 @@ async fn test_me_unauthorized() {
             assert_eq!(status, StatusCode::UNAUTHORIZED);
             assert!(message.contains("Authentication token missing or invalid"));
         }
-        e => panic!("Expected CliError::ApiError, got {:?}", e),
+        e => panic!("Expected CliError::ApiError, got {e:?}"),
     }
 
     server.verify_and_clear();
@@ -602,7 +597,7 @@ async fn test_get_character_success() {
         "updated_at": now
     });
 
-    let path_string = format!("/api/characters/fetch/{}", character_id);
+    let path_string = format!("/api/characters/fetch/{character_id}");
     server.expect(
         Expectation::matching(all_of![
             request::method("GET"),
@@ -633,7 +628,7 @@ async fn test_get_character_not_found() {
         }
     });
 
-    let path_string = format!("/api/characters/fetch/{}", character_id);
+    let path_string = format!("/api/characters/fetch/{character_id}");
     server.expect(
         Expectation::matching(all_of![
             request::method("GET"),
@@ -648,9 +643,9 @@ async fn test_get_character_not_found() {
     match result.err().unwrap() {
         CliError::ApiError { status, message } => {
             assert_eq!(status, StatusCode::NOT_FOUND);
-            assert!(message.contains(&format!("Character {} not found", character_id)));
+            assert!(message.contains(&format!("Character {character_id} not found")));
         }
-        e => panic!("Expected CliError::ApiError with 404, got {:?}", e),
+        e => panic!("Expected CliError::ApiError with 404, got {e:?}"),
     }
 
     server.verify_and_clear();
@@ -778,7 +773,7 @@ async fn test_list_chat_sessions_api_error() {
             assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
             assert!(message.contains("Internal Server Error listing chats"));
         }
-        e => panic!("Expected CliError::ApiError, got {:?}", e),
+        e => panic!("Expected CliError::ApiError, got {e:?}"),
     }
 
     server.verify_and_clear();
@@ -814,7 +809,7 @@ async fn test_get_chat_messages_success() {
         }
     ]);
 
-    let path_string = format!("/api/chats/{}/messages", session_id);
+    let path_string = format!("/api/chats/{session_id}/messages");
     server.expect(
         Expectation::matching(all_of![
             request::method("GET"),
@@ -854,7 +849,7 @@ async fn test_get_chat_messages_success_empty() {
     let session_id = Uuid::new_v4();
     let mock_api_response: Vec<ClientChatMessageResponse> = vec![]; // Correct type
 
-    let path_string = format!("/api/chats/{}/messages", session_id);
+    let path_string = format!("/api/chats/{session_id}/messages");
     server.expect(
         Expectation::matching(all_of![
             request::method("GET"),
@@ -882,7 +877,7 @@ async fn test_get_chat_messages_not_found() {
         }
     });
 
-    let path_string = format!("/api/chats/{}/messages", session_id);
+    let path_string = format!("/api/chats/{session_id}/messages");
     server.expect(
         Expectation::matching(all_of![
             request::method("GET"),
@@ -897,9 +892,9 @@ async fn test_get_chat_messages_not_found() {
     match result.err().unwrap() {
         CliError::ApiError { status, message } => {
             assert_eq!(status, StatusCode::NOT_FOUND);
-            assert!(message.contains(&format!("Chat session {} not found", session_id)));
+            assert!(message.contains(&format!("Chat session {session_id} not found")));
         }
-        e => panic!("Expected CliError::ApiError with 404, got {:?}", e),
+        e => panic!("Expected CliError::ApiError with 404, got {e:?}"),
     }
 
     server.verify_and_clear();
@@ -1008,9 +1003,9 @@ async fn test_create_chat_session_char_not_found() {
     match result.err().unwrap() {
         CliError::ApiError { status, message } => {
             assert_eq!(status, StatusCode::NOT_FOUND);
-            assert!(message.contains(&format!("Character {} not found", character_id)));
+            assert!(message.contains(&format!("Character {character_id} not found")));
         }
-        e => panic!("Expected CliError::ApiError with 404, got {:?}", e),
+        e => panic!("Expected CliError::ApiError with 404, got {e:?}"),
     }
 
     server.verify_and_clear();
@@ -1031,7 +1026,7 @@ async fn test_send_message_success() {
     server.expect(
         Expectation::matching(all_of![
             request::method("POST"),
-            request::path(matches(format!("/api/chat/{}/generate.*", session_id)))
+            request::path(matches(format!("/api/chat/{session_id}/generate.*")))
         ])
         .respond_with(json_encoded(mock_api_response)),
     );
@@ -1057,7 +1052,7 @@ async fn test_send_message_success() {
     server.expect(
         Expectation::matching(all_of![
             request::method("POST"),
-            request::path(matches(format!("/api/chat/{}/generate.*", session_id)))
+            request::path(matches(format!("/api/chat/{session_id}/generate.*")))
         ])
         .respond_with(
             status_code(200)
@@ -1086,7 +1081,7 @@ async fn test_send_message_session_not_found() {
     let (mut server, client) = setup_test_server();
     let session_id = Uuid::new_v4();
     let message_content = "Does this exist?";
-    let error_message_text = format!("Session {} not found", session_id);
+    let error_message_text = format!("Session {session_id} not found");
     let error_body_json = json!({
         "error": {
             "message": error_message_text
@@ -1096,7 +1091,7 @@ async fn test_send_message_session_not_found() {
     server.expect(
         Expectation::matching(all_of![
             request::method("POST"),
-            request::path(matches(format!("/api/chat/{}/generate.*", session_id)))
+            request::path(matches(format!("/api/chat/{session_id}/generate.*")))
         ])
         .respond_with(status_code(404).body(error_body_json.to_string())),
     );
@@ -1109,23 +1104,21 @@ async fn test_send_message_session_not_found() {
             assert_eq!(status, StatusCode::NOT_FOUND);
             assert!(
                 message.contains(&error_message_text),
-                "Expected message to contain '{}', but got: '{}'",
-                error_message_text,
-                message
+                "Expected message to contain '{error_message_text}', but got: '{message}'"
             );
         }
-        e => panic!("Expected CliError::ApiError, got {:?}", e),
+        e => panic!("Expected CliError::ApiError, got {e:?}"),
     }
 
     server.verify_and_clear();
 
     // Test SSE error response format
-    let sse_error_body = format!("event: error\ndata: Session {} not found", session_id);
+    let sse_error_body = format!("event: error\ndata: Session {session_id} not found");
 
     server.expect(
         Expectation::matching(all_of![
             request::method("POST"),
-            request::path(matches(format!("/api/chat/{}/generate.*", session_id)))
+            request::path(matches(format!("/api/chat/{session_id}/generate.*")))
         ])
         .respond_with(
             status_code(200)
@@ -1142,7 +1135,7 @@ async fn test_send_message_session_not_found() {
             assert!(message.contains("Session"));
             assert!(message.contains("not found"));
         }
-        e => panic!("Expected CliError::Backend for SSE error, got {:?}", e),
+        e => panic!("Expected CliError::Backend for SSE error, got {e:?}"),
     }
 
     server.verify_and_clear();
@@ -1181,7 +1174,7 @@ async fn test_delete_chat_success() {
     server.expect(
         Expectation::matching(all_of![
             request::method("DELETE"),
-            request::path(matches(format!("/api/chats/remove/{}", chat_id)))
+            request::path(matches(format!("/api/chats/remove/{chat_id}")))
         ])
         .respond_with(status_code(204)),
     );
@@ -1208,7 +1201,7 @@ async fn test_delete_chat_not_found() {
     server.expect(
         Expectation::matching(all_of![
             request::method("DELETE"),
-            request::path(matches(format!("/api/chats/remove/{}", chat_id)))
+            request::path(matches(format!("/api/chats/remove/{chat_id}")))
         ])
         .respond_with(status_code(404).body(error_body.to_string())),
     );
@@ -1219,9 +1212,9 @@ async fn test_delete_chat_not_found() {
     match result.err().unwrap() {
         CliError::ApiError { status, message } => {
             assert_eq!(status, StatusCode::NOT_FOUND);
-            assert!(message.contains(&format!("Chat session {} not found", chat_id)));
+            assert!(message.contains(&format!("Chat session {chat_id} not found")));
         }
-        e => panic!("Expected CliError::ApiError with 404, got {:?}", e),
+        e => panic!("Expected CliError::ApiError with 404, got {e:?}"),
     }
 
     server.verify_and_clear();

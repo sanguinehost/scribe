@@ -110,13 +110,17 @@ struct GenerateContentResponse {
 /// Usage metadata from generateContent response
 #[derive(Debug, Deserialize)]
 struct UsageMetadata {
-    prompt_token_count: i32,
-    candidates_token_count: i32,
-    total_token_count: i32,
+    #[serde(rename = "promptTokenCount")]
+    prompt: i32,
+    #[serde(rename = "candidatesTokenCount")]
+    candidates: i32,
+    #[serde(rename = "totalTokenCount")]
+    total: i32,
 }
 
 impl GeminiTokenClient {
-    /// Create a new GeminiTokenClient
+    /// Create a new `GeminiTokenClient`
+    #[must_use]
     pub fn new(api_key: String) -> Self {
         Self::new_with_base_url(
             api_key,
@@ -124,7 +128,12 @@ impl GeminiTokenClient {
         )
     }
 
-    /// Create a new GeminiTokenClient with custom base URL
+    /// Create a new `GeminiTokenClient` with custom base URL
+    /// 
+    /// # Panics
+    /// 
+    /// Panics if the HTTP client cannot be created.
+    #[must_use]
     pub fn new_with_base_url(api_key: String, api_base_url: String) -> Self {
         let client = Client::builder()
             .build()
@@ -138,6 +147,10 @@ impl GeminiTokenClient {
     }
 
     /// Count tokens for a text-only input
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or if the response cannot be parsed.
     pub async fn count_tokens(&self, text: &str, model: &str) -> Result<TokenEstimate> {
         debug!("Counting tokens for text with Gemini API");
 
@@ -163,7 +176,7 @@ impl GeminiTokenClient {
             .await
             .map_err(|e| {
                 error!("Failed to send countTokens request: {}", e);
-                AppError::HttpRequestError(format!("Failed to count tokens: {}", e))
+                AppError::HttpRequestError(format!("Failed to count tokens: {e}"))
             })?;
 
         if !response.status().is_success() {
@@ -174,14 +187,13 @@ impl GeminiTokenClient {
                 .unwrap_or_else(|_| "Unknown error".to_string());
             error!("Gemini API returned error {}: {}", status, error_text);
             return Err(AppError::GeminiError(format!(
-                "Gemini API returned error {}: {}",
-                status, error_text
+                "Gemini API returned error {status}: {error_text}"
             )));
         }
 
         let count_response: CountTokensResponse = response.json().await.map_err(|e| {
             error!("Failed to parse countTokens response: {}", e);
-            AppError::SerializationError(format!("Failed to parse token count response: {}", e))
+            AppError::SerializationError(format!("Failed to parse token count response: {e}"))
         })?;
 
         debug!(
@@ -191,8 +203,8 @@ impl GeminiTokenClient {
 
         // Convert API response to TokenEstimate (all text tokens for countTokens API)
         Ok(TokenEstimate {
-            total: count_response.total_tokens as usize,
-            text: count_response.total_tokens as usize,
+            total: count_response.total_tokens.max(0).try_into().unwrap_or(0),
+            text: count_response.total_tokens.max(0).try_into().unwrap_or(0),
             images: 0,
             video: 0,
             audio: 0,
@@ -201,6 +213,10 @@ impl GeminiTokenClient {
     }
 
     /// Count tokens for multimodal content (uses generateContent with minimal output)
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails, image encoding fails, or if the response cannot be parsed.
     pub async fn count_tokens_multimodal(
         &self,
         text: &str,
@@ -251,7 +267,7 @@ impl GeminiTokenClient {
             .await
             .map_err(|e| {
                 error!("Failed to send generateContent request: {}", e);
-                AppError::HttpRequestError(format!("Failed to count multimodal tokens: {}", e))
+                AppError::HttpRequestError(format!("Failed to count multimodal tokens: {e}"))
             })?;
 
         if !response.status().is_success() {
@@ -262,42 +278,45 @@ impl GeminiTokenClient {
                 .unwrap_or_else(|_| "Unknown error".to_string());
             error!("Gemini API returned error {}: {}", status, error_text);
             return Err(AppError::GeminiError(format!(
-                "Gemini API returned error {}: {}",
-                status, error_text
+                "Gemini API returned error {status}: {error_text}"
             )));
         }
 
         let content_response: GenerateContentResponse = response.json().await.map_err(|e| {
             error!("Failed to parse generateContent response: {}", e);
-            AppError::SerializationError(format!("Failed to parse token count response: {}", e))
+            AppError::SerializationError(format!("Failed to parse token count response: {e}"))
         })?;
 
         // Extract usage metadata (if available)
-        if let Some(usage) = content_response.usage_metadata {
+        content_response.usage_metadata.map_or_else(|| {
+            error!("Gemini API response did not include usage metadata");
+            Err(AppError::GeminiError(
+                "Gemini API response did not include usage metadata".to_string(),
+            ))
+        }, |usage| {
             debug!(
                 "Received token counts - Prompt: {}, Output: {}, Total: {}",
-                usage.prompt_token_count, usage.candidates_token_count, usage.total_token_count
+                usage.prompt, usage.candidates, usage.total
             );
 
             // Since we can't differentiate between text and image tokens from the API directly,
             // we report the prompt tokens as the total with an unknown breakdown
             Ok(TokenEstimate {
-                total: usage.prompt_token_count as usize,
-                text: usage.prompt_token_count as usize, // Approximation - all counted as text
+                total: usage.prompt.max(0).try_into().unwrap_or(0),
+                text: usage.prompt.max(0).try_into().unwrap_or(0), // Approximation - all counted as text
                 images: 0,                               // No breakdown available from API
                 video: 0,
                 audio: 0,
                 is_estimate: true, // This is an estimate of the breakdown
             })
-        } else {
-            error!("Gemini API response did not include usage metadata");
-            Err(AppError::GeminiError(
-                "Gemini API response did not include usage metadata".to_string(),
-            ))
-        }
+        })
     }
 
     /// Count tokens for chat history
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or if the response cannot be parsed.
     pub async fn count_tokens_chat(
         &self,
         messages: &[(String, String)], // (role, text)
@@ -329,7 +348,7 @@ impl GeminiTokenClient {
             .await
             .map_err(|e| {
                 error!("Failed to send countTokens request: {}", e);
-                AppError::HttpRequestError(format!("Failed to count chat tokens: {}", e))
+                AppError::HttpRequestError(format!("Failed to count chat tokens: {e}"))
             })?;
 
         if !response.status().is_success() {
@@ -340,14 +359,13 @@ impl GeminiTokenClient {
                 .unwrap_or_else(|_| "Unknown error".to_string());
             error!("Gemini API returned error {}: {}", status, error_text);
             return Err(AppError::GeminiError(format!(
-                "Gemini API returned error {}: {}",
-                status, error_text
+                "Gemini API returned error {status}: {error_text}"
             )));
         }
 
         let count_response: CountTokensResponse = response.json().await.map_err(|e| {
             error!("Failed to parse countTokens response: {}", e);
-            AppError::SerializationError(format!("Failed to parse token count response: {}", e))
+            AppError::SerializationError(format!("Failed to parse token count response: {e}"))
         })?;
 
         debug!(
@@ -357,8 +375,8 @@ impl GeminiTokenClient {
 
         // Convert API response to TokenEstimate (all text tokens for countTokens API)
         Ok(TokenEstimate {
-            total: count_response.total_tokens as usize,
-            text: count_response.total_tokens as usize,
+            total: count_response.total_tokens.max(0).try_into().unwrap_or(0),
+            text: count_response.total_tokens.max(0).try_into().unwrap_or(0),
             images: 0,
             video: 0,
             audio: 0,

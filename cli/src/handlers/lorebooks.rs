@@ -40,24 +40,24 @@ pub async fn handle_lorebook_management_menu<C: HttpClient, H: IoHandler>(
         {
             "1" => {
                 if let Err(e) = list_my_lorebooks(client, io_handler).await {
-                    io_handler.write_line(&format!("Error listing lorebooks: {}", e))?;
+                    io_handler.write_line(&format!("Error listing lorebooks: {e}"))?;
                 }
             }
             "2" => {
                 if let Err(e) = create_new_lorebook(client, io_handler).await {
-                    io_handler.write_line(&format!("Error creating lorebook: {}", e))?;
+                    io_handler.write_line(&format!("Error creating lorebook: {e}"))?;
                 }
             }
             "3" => {
                 // New handler for upload
                 if let Err(e) = upload_lorebook_json_handler(client, io_handler).await {
-                    io_handler.write_line(&format!("Error uploading lorebook: {}", e))?;
+                    io_handler.write_line(&format!("Error uploading lorebook: {e}"))?;
                 }
             }
             "4" => {
                 // Shifted handler for manage specific
                 if let Err(e) = manage_specific_lorebook_entrypoint(client, io_handler).await {
-                    io_handler.write_line(&format!("Error managing specific lorebook: {}", e))?;
+                    io_handler.write_line(&format!("Error managing specific lorebook: {e}"))?;
                 }
             }
             "b" => return Ok(MenuNavigation::ReturnToMainMenu),
@@ -85,14 +85,14 @@ pub async fn list_my_lorebooks<C: HttpClient, H: IoHandler>(
                     ))?;
                     if let Some(description) = lorebook.description {
                         if !description.is_empty() {
-                            io_handler.write_line(&format!("    Description: {}", description))?;
+                            io_handler.write_line(&format!("    Description: {description}"))?;
                         }
                     }
                 }
             }
         }
         Err(e) => {
-            io_handler.write_line(&format!("Error listing lorebooks: {}", e))?;
+            io_handler.write_line(&format!("Error listing lorebooks: {e}"))?;
         }
     }
     Ok(())
@@ -124,7 +124,7 @@ pub async fn create_new_lorebook<C: HttpClient, H: IoHandler>(
             ))?;
         }
         Err(e) => {
-            io_handler.write_line(&format!("Error creating lorebook: {}", e))?;
+            io_handler.write_line(&format!("Error creating lorebook: {e}"))?;
         }
     }
     Ok(())
@@ -146,17 +146,17 @@ async fn manage_specific_lorebook_entrypoint<C: HttpClient, H: IoHandler>(
         }
     };
 
-    io_handler.write_line(&format!("Fetching lorebook {}...", lorebook_id))?;
+    io_handler.write_line(&format!("Fetching lorebook {lorebook_id}..."))?;
     match client.get_lorebook(lorebook_id).await {
         Ok(lorebook) => {
             // Call the next menu function, passing the fetched lorebook details
             handle_specific_lorebook_menu(client, io_handler, lorebook.id, lorebook.name).await?;
         }
         Err(CliError::NotFound) => {
-            io_handler.write_line(&format!("Lorebook with ID {} not found.", lorebook_id))?;
+            io_handler.write_line(&format!("Lorebook with ID {lorebook_id} not found."))?;
         }
         Err(e) => {
-            io_handler.write_line(&format!("Error fetching lorebook: {}", e))?;
+            io_handler.write_line(&format!("Error fetching lorebook: {e}"))?;
         }
     }
     Ok(())
@@ -171,8 +171,7 @@ async fn handle_specific_lorebook_menu<C: HttpClient, H: IoHandler>(
 ) -> Result<(), CliError> {
     loop {
         io_handler.write_line(&format!(
-            "\n--- Manage Lorebook: {} ({}) ---",
-            lorebook_name, lorebook_id
+            "\n--- Manage Lorebook: {lorebook_name} ({lorebook_id}) ---"
         ))?;
         io_handler.write_line("[1] Manage Entries")?;
         io_handler.write_line("[2] Manage Chat Associations")?;
@@ -195,7 +194,7 @@ async fn handle_specific_lorebook_menu<C: HttpClient, H: IoHandler>(
                 ) // Pass lorebook_name
                 .await
                 {
-                    io_handler.write_line(&format!("Error managing lorebook entries: {}", e))?;
+                    io_handler.write_line(&format!("Error managing lorebook entries: {e}"))?;
                 }
             }
             "2" => {
@@ -207,12 +206,12 @@ async fn handle_specific_lorebook_menu<C: HttpClient, H: IoHandler>(
                 )
                 .await
                 {
-                    io_handler.write_line(&format!("Error managing chat associations: {}", e))?;
+                    io_handler.write_line(&format!("Error managing chat associations: {e}"))?;
                 }
             }
             "3" => {
                 if let Err(e) = update_lorebook_details(client, io_handler, lorebook_id).await {
-                    io_handler.write_line(&format!("Error updating lorebook details: {}", e))?;
+                    io_handler.write_line(&format!("Error updating lorebook details: {e}"))?;
                 }
             }
             "4" => {
@@ -221,7 +220,7 @@ async fn handle_specific_lorebook_menu<C: HttpClient, H: IoHandler>(
                     Ok(true) => break, // Lorebook deleted, exit this menu
                     Ok(false) => {}    // Deletion cancelled or failed, continue menu
                     Err(e) => {
-                        io_handler.write_line(&format!("Error deleting lorebook: {}", e))?;
+                        io_handler.write_line(&format!("Error deleting lorebook: {e}"))?;
                     }
                 }
             }
@@ -238,8 +237,7 @@ async fn update_lorebook_details<C: HttpClient, H: IoHandler>(
     lorebook_id: Uuid,
 ) -> Result<(), CliError> {
     io_handler.write_line(&format!(
-        "\n--- Update Lorebook Details for ID: {} ---",
-        lorebook_id
+        "\n--- Update Lorebook Details for ID: {lorebook_id} ---"
     ))?;
 
     let new_name =
@@ -268,7 +266,7 @@ async fn update_lorebook_details<C: HttpClient, H: IoHandler>(
             ))?;
         }
         Err(e) => {
-            io_handler.write_line(&format!("Error updating lorebook: {}", e))?;
+            io_handler.write_line(&format!("Error updating lorebook: {e}"))?;
         }
     }
     Ok(())
@@ -282,26 +280,23 @@ async fn delete_lorebook<C: HttpClient, H: IoHandler>(
 ) -> Result<bool, CliError> {
     // Changed return type
     io_handler.write_line(&format!(
-        "\n--- Delete Lorebook: {} ({}) ---",
-        lorebook_name, lorebook_id
+        "\n--- Delete Lorebook: {lorebook_name} ({lorebook_id}) ---"
     ))?;
 
     let confirmation_prompt = format!(
-        "Are you sure you want to delete the lorebook '{}' (ID: {})? This action cannot be undone.",
-        lorebook_name, lorebook_id
+        "Are you sure you want to delete the lorebook '{lorebook_name}' (ID: {lorebook_id})? This action cannot be undone."
     );
     if io::confirm_action(io_handler, &confirmation_prompt)? {
-        io_handler.write_line(&format!("Deleting lorebook '{}'...", lorebook_name))?;
+        io_handler.write_line(&format!("Deleting lorebook '{lorebook_name}'..."))?;
         match client.delete_lorebook(lorebook_id).await {
             Ok(_) => {
                 io_handler.write_line(&format!(
-                    "Successfully deleted lorebook '{}'.",
-                    lorebook_name
+                    "Successfully deleted lorebook '{lorebook_name}'."
                 ))?;
                 Ok(true) // Signal successful deletion
             }
             Err(e) => {
-                io_handler.write_line(&format!("Error deleting lorebook: {}", e))?;
+                io_handler.write_line(&format!("Error deleting lorebook: {e}"))?;
                 Ok(false) // Signal deletion failed, but menu can continue
             }
         }
@@ -319,7 +314,7 @@ async fn handle_lorebook_entry_menu<C: HttpClient, H: IoHandler>(
     lorebook_name: String,
 ) -> Result<(), CliError> {
     loop {
-        io_handler.write_line(&format!("\n--- Manage Entries for: {} ---", lorebook_name))?;
+        io_handler.write_line(&format!("\n--- Manage Entries for: {lorebook_name} ---"))?;
         io_handler.write_line("[1] List Entries")?;
         io_handler.write_line("[2] Create New Entry")?;
         io_handler.write_line("[3] View/Edit Specific Entry")?;
@@ -333,12 +328,12 @@ async fn handle_lorebook_entry_menu<C: HttpClient, H: IoHandler>(
         {
             "1" => {
                 if let Err(e) = list_lorebook_entries(client, io_handler, lorebook_id).await {
-                    io_handler.write_line(&format!("Error listing lorebook entries: {}", e))?;
+                    io_handler.write_line(&format!("Error listing lorebook entries: {e}"))?;
                 }
             }
             "2" => {
                 if let Err(e) = create_new_lorebook_entry(client, io_handler, lorebook_id).await {
-                    io_handler.write_line(&format!("Error creating new lorebook entry: {}", e))?;
+                    io_handler.write_line(&format!("Error creating new lorebook entry: {e}"))?;
                 }
             }
             "3" => {
@@ -351,7 +346,7 @@ async fn handle_lorebook_entry_menu<C: HttpClient, H: IoHandler>(
                 )
                 .await
                 {
-                    io_handler.write_line(&format!("Error managing specific entry: {}", e))?;
+                    io_handler.write_line(&format!("Error managing specific entry: {e}"))?;
                 }
             }
             "b" => break,
@@ -368,8 +363,7 @@ async fn list_lorebook_entries<C: HttpClient, H: IoHandler>(
     lorebook_id: Uuid,
 ) -> Result<(), CliError> {
     io_handler.write_line(&format!(
-        "\nFetching entries for lorebook {}...",
-        lorebook_id
+        "\nFetching entries for lorebook {lorebook_id}..."
     ))?;
     match client.list_lorebook_entries(lorebook_id).await {
         Ok(entries) => {
@@ -392,7 +386,7 @@ async fn list_lorebook_entries<C: HttpClient, H: IoHandler>(
             }
         }
         Err(e) => {
-            io_handler.write_line(&format!("Error listing lorebook entries: {}", e))?;
+            io_handler.write_line(&format!("Error listing lorebook entries: {e}"))?;
         }
     }
     Ok(())
@@ -405,8 +399,7 @@ async fn create_new_lorebook_entry<C: HttpClient, H: IoHandler>(
     lorebook_id: Uuid,
 ) -> Result<(), CliError> {
     io_handler.write_line(&format!(
-        "\n--- Create New Entry for Lorebook ID: {} ---",
-        lorebook_id
+        "\n--- Create New Entry for Lorebook ID: {lorebook_id} ---"
     ))?;
 
     let entry_title = io::input_required(io_handler, "Enter entry title: ")?;
@@ -470,7 +463,7 @@ async fn create_new_lorebook_entry<C: HttpClient, H: IoHandler>(
             ))?;
         }
         Err(e) => {
-            io_handler.write_line(&format!("Error creating lorebook entry: {}", e))?;
+            io_handler.write_line(&format!("Error creating lorebook entry: {e}"))?;
         }
     }
 
@@ -485,8 +478,7 @@ async fn manage_specific_entry_entrypoint<C: HttpClient, H: IoHandler>(
     lorebook_name: String, // Added lorebook_name
 ) -> Result<(), CliError> {
     io_handler.write_line(&format!(
-        "\n--- Manage Specific Entry in Lorebook: {} ---",
-        lorebook_name
+        "\n--- Manage Specific Entry in Lorebook: {lorebook_name} ---"
     ))?;
     let entry_id_str = io::input_required(io_handler, "Enter Entry ID to manage: ")?;
     let entry_id = match Uuid::parse_str(&entry_id_str) {
@@ -497,7 +489,7 @@ async fn manage_specific_entry_entrypoint<C: HttpClient, H: IoHandler>(
         }
     };
 
-    io_handler.write_line(&format!("Fetching entry {}...", entry_id))?;
+    io_handler.write_line(&format!("Fetching entry {entry_id}..."))?;
     match client.get_lorebook_entry(lorebook_id, entry_id).await {
         Ok(entry) => {
             handle_specific_entry_menu(
@@ -511,12 +503,11 @@ async fn manage_specific_entry_entrypoint<C: HttpClient, H: IoHandler>(
         }
         Err(CliError::NotFound) => {
             io_handler.write_line(&format!(
-                "Entry with ID {} not found in lorebook {}.",
-                entry_id, lorebook_id
+                "Entry with ID {entry_id} not found in lorebook {lorebook_id}."
             ))?;
         }
         Err(e) => {
-            io_handler.write_line(&format!("Error fetching entry: {}", e))?;
+            io_handler.write_line(&format!("Error fetching entry: {e}"))?;
         }
     }
     Ok(())
@@ -532,8 +523,7 @@ async fn handle_specific_entry_menu<C: HttpClient, H: IoHandler>(
 ) -> Result<(), CliError> {
     loop {
         io_handler.write_line(&format!(
-            "\n--- Manage Entry: {} ({}) ---",
-            entry_title, entry_id
+            "\n--- Manage Entry: {entry_title} ({entry_id}) ---"
         ))?;
         io_handler.write_line("[1] View Entry Details")?;
         io_handler.write_line("[2] Update Entry")?;
@@ -550,14 +540,14 @@ async fn handle_specific_entry_menu<C: HttpClient, H: IoHandler>(
                 if let Err(e) =
                     view_lorebook_entry_details(client, io_handler, lorebook_id, entry_id).await
                 {
-                    io_handler.write_line(&format!("Error viewing entry details: {}", e))?;
+                    io_handler.write_line(&format!("Error viewing entry details: {e}"))?;
                 }
             }
             "2" => {
                 if let Err(e) =
                     update_lorebook_entry(client, io_handler, lorebook_id, entry_id).await
                 {
-                    io_handler.write_line(&format!("Error updating entry: {}", e))?;
+                    io_handler.write_line(&format!("Error updating entry: {e}"))?;
                 }
             }
             "3" => {
@@ -574,7 +564,7 @@ async fn handle_specific_entry_menu<C: HttpClient, H: IoHandler>(
                     Ok(true) => break, // Entry deleted, exit this menu
                     Ok(false) => {}    // Deletion cancelled or failed
                     Err(e) => {
-                        io_handler.write_line(&format!("Error deleting entry: {}", e))?;
+                        io_handler.write_line(&format!("Error deleting entry: {e}"))?;
                     }
                 }
             }
@@ -593,8 +583,7 @@ async fn view_lorebook_entry_details<C: HttpClient, H: IoHandler>(
     entry_id: Uuid,
 ) -> Result<(), CliError> {
     io_handler.write_line(&format!(
-        "\nFetching details for entry {} in lorebook {}...",
-        entry_id, lorebook_id
+        "\nFetching details for entry {entry_id} in lorebook {lorebook_id}..."
     ))?;
     match client.get_lorebook_entry(lorebook_id, entry_id).await {
         Ok(entry) => {
@@ -619,12 +608,11 @@ async fn view_lorebook_entry_details<C: HttpClient, H: IoHandler>(
         }
         Err(CliError::NotFound) => {
             io_handler.write_line(&format!(
-                "Entry with ID {} not found in lorebook {}.",
-                entry_id, lorebook_id
+                "Entry with ID {entry_id} not found in lorebook {lorebook_id}."
             ))?;
         }
         Err(e) => {
-            io_handler.write_line(&format!("Error fetching entry details: {}", e))?;
+            io_handler.write_line(&format!("Error fetching entry details: {e}"))?;
         }
     }
     Ok(())
@@ -637,7 +625,7 @@ async fn update_lorebook_entry<C: HttpClient, H: IoHandler>(
     lorebook_id: Uuid,
     entry_id: Uuid,
 ) -> Result<(), CliError> {
-    io_handler.write_line(&format!("\n--- Update Entry ID: {} ---", entry_id))?;
+    io_handler.write_line(&format!("\n--- Update Entry ID: {entry_id} ---"))?;
 
     let entry_title = io::input_optional(
         io_handler,
@@ -724,7 +712,7 @@ async fn update_lorebook_entry<C: HttpClient, H: IoHandler>(
             ))?;
         }
         Err(e) => {
-            io_handler.write_line(&format!("Error updating lorebook entry: {}", e))?;
+            io_handler.write_line(&format!("Error updating lorebook entry: {e}"))?;
         }
     }
     Ok(())
@@ -740,23 +728,21 @@ async fn delete_lorebook_entry<C: HttpClient, H: IoHandler>(
 ) -> Result<bool, CliError> {
     // Return bool to signal if menu should break
     io_handler.write_line(&format!(
-        "\n--- Delete Entry: {} ({}) ---",
-        entry_title, entry_id
+        "\n--- Delete Entry: {entry_title} ({entry_id}) ---"
     ))?;
 
     let confirmation_prompt = format!(
-        "Are you sure you want to delete the entry '{}' (ID: {})? This action cannot be undone.",
-        entry_title, entry_id
+        "Are you sure you want to delete the entry '{entry_title}' (ID: {entry_id})? This action cannot be undone."
     );
     if io::confirm_action(io_handler, &confirmation_prompt)? {
-        io_handler.write_line(&format!("Deleting entry '{}'...", entry_title))?;
+        io_handler.write_line(&format!("Deleting entry '{entry_title}'..."))?;
         match client.delete_lorebook_entry(lorebook_id, entry_id).await {
             Ok(_) => {
-                io_handler.write_line(&format!("Successfully deleted entry '{}'.", entry_title))?;
+                io_handler.write_line(&format!("Successfully deleted entry '{entry_title}'."))?;
                 Ok(true) // Signal successful deletion
             }
             Err(e) => {
-                io_handler.write_line(&format!("Error deleting entry: {}", e))?;
+                io_handler.write_line(&format!("Error deleting entry: {e}"))?;
                 Ok(false) // Signal deletion failed
             }
         }
@@ -775,8 +761,7 @@ async fn handle_lorebook_chat_association_menu<C: HttpClient, H: IoHandler>(
 ) -> Result<(), CliError> {
     loop {
         io_handler.write_line(&format!(
-            "\n--- Manage Chat Associations for Lorebook: {} ({}) ---",
-            lorebook_name, lorebook_id
+            "\n--- Manage Chat Associations for Lorebook: {lorebook_name} ({lorebook_id}) ---"
         ))?;
         io_handler.write_line("[1] List Associated Chat Sessions")?;
         io_handler.write_line("[2] Associate with Chat Session")?;
@@ -793,7 +778,7 @@ async fn handle_lorebook_chat_association_menu<C: HttpClient, H: IoHandler>(
                 if let Err(e) = list_associated_chat_sessions(client, io_handler, lorebook_id).await
                 {
                     io_handler
-                        .write_line(&format!("Error listing associated chat sessions: {}", e))?;
+                        .write_line(&format!("Error listing associated chat sessions: {e}"))?;
                 }
             }
             "2" => {
@@ -801,8 +786,7 @@ async fn handle_lorebook_chat_association_menu<C: HttpClient, H: IoHandler>(
                     associate_lorebook_with_chat_session(client, io_handler, lorebook_id).await
                 {
                     io_handler.write_line(&format!(
-                        "Error associating lorebook with chat session: {}",
-                        e
+                        "Error associating lorebook with chat session: {e}"
                     ))?;
                 }
             }
@@ -811,8 +795,7 @@ async fn handle_lorebook_chat_association_menu<C: HttpClient, H: IoHandler>(
                     disassociate_lorebook_from_chat_session(client, io_handler, lorebook_id).await
                 {
                     io_handler.write_line(&format!(
-                        "Error disassociating lorebook from chat session: {}",
-                        e
+                        "Error disassociating lorebook from chat session: {e}"
                     ))?;
                 }
             }
@@ -830,8 +813,7 @@ async fn list_associated_chat_sessions<C: HttpClient, H: IoHandler>(
     lorebook_id: Uuid,
 ) -> Result<(), CliError> {
     io_handler.write_line(&format!(
-        "\nFetching chat sessions associated with lorebook {}...",
-        lorebook_id
+        "\nFetching chat sessions associated with lorebook {lorebook_id}..."
     ))?;
     match client
         .list_associated_chat_sessions_for_lorebook(lorebook_id)
@@ -852,7 +834,7 @@ async fn list_associated_chat_sessions<C: HttpClient, H: IoHandler>(
             }
         }
         Err(e) => {
-            io_handler.write_line(&format!("Error listing associated chat sessions: {}", e))?;
+            io_handler.write_line(&format!("Error listing associated chat sessions: {e}"))?;
         }
     }
     Ok(())
@@ -864,8 +846,7 @@ async fn associate_lorebook_with_chat_session<C: HttpClient, H: IoHandler>(
     lorebook_id: Uuid,
 ) -> Result<(), CliError> {
     io_handler.write_line(&format!(
-        "\n--- Associate Lorebook ID: {} with Chat Session ---",
-        lorebook_id
+        "\n--- Associate Lorebook ID: {lorebook_id} with Chat Session ---"
     ))?;
 
     let chat_session_id_str =
@@ -881,9 +862,7 @@ async fn associate_lorebook_with_chat_session<C: HttpClient, H: IoHandler>(
     let payload = AssociateLorebookToChatPayload { lorebook_id }; // lorebook_id is the function parameter
 
     io_handler.write_line(&format!(
-        "Associating lorebook {} with chat session {}...",
-        lorebook_id,
-        chat_session_id // chat_session_id is from user prompt
+        "Associating lorebook {lorebook_id} with chat session {chat_session_id}..." // chat_session_id is from user prompt
     ))?;
     match client
         .associate_lorebook_to_chat(chat_session_id, &payload)
@@ -898,14 +877,12 @@ async fn associate_lorebook_with_chat_session<C: HttpClient, H: IoHandler>(
         }
         Err(CliError::Conflict(msg)) => {
             io_handler.write_line(&format!(
-                "Conflict: {}. This lorebook may already be associated with this chat session.",
-                msg
+                "Conflict: {msg}. This lorebook may already be associated with this chat session."
             ))?;
         }
         Err(e) => {
             io_handler.write_line(&format!(
-                "Error associating lorebook with chat session: {}",
-                e
+                "Error associating lorebook with chat session: {e}"
             ))?;
         }
     }
@@ -918,8 +895,7 @@ async fn disassociate_lorebook_from_chat_session<C: HttpClient, H: IoHandler>(
     lorebook_id: Uuid,
 ) -> Result<(), CliError> {
     io_handler.write_line(&format!(
-        "\n--- Disassociate Lorebook ID: {} from Chat Session ---",
-        lorebook_id
+        "\n--- Disassociate Lorebook ID: {lorebook_id} from Chat Session ---"
     ))?;
 
     let chat_session_id_str =
@@ -933,8 +909,7 @@ async fn disassociate_lorebook_from_chat_session<C: HttpClient, H: IoHandler>(
     };
 
     io_handler.write_line(&format!(
-        "Disassociating lorebook {} from chat session {}...",
-        lorebook_id, chat_session_id_to_disassociate
+        "Disassociating lorebook {lorebook_id} from chat session {chat_session_id_to_disassociate}..."
     ))?;
     match client
         .disassociate_lorebook_from_chat(lorebook_id, chat_session_id_to_disassociate)
@@ -942,20 +917,17 @@ async fn disassociate_lorebook_from_chat_session<C: HttpClient, H: IoHandler>(
     {
         Ok(_) => {
             io_handler.write_line(&format!(
-                "Successfully disassociated lorebook {} from chat session {}.",
-                lorebook_id, chat_session_id_to_disassociate
+                "Successfully disassociated lorebook {lorebook_id} from chat session {chat_session_id_to_disassociate}."
             ))?;
         }
         Err(CliError::NotFound) => {
             io_handler.write_line(&format!(
-                "Association not found between lorebook {} and chat session {}.",
-                lorebook_id, chat_session_id_to_disassociate
+                "Association not found between lorebook {lorebook_id} and chat session {chat_session_id_to_disassociate}."
             ))?;
         }
         Err(e) => {
             io_handler.write_line(&format!(
-                "Error disassociating lorebook from chat session: {}",
-                e
+                "Error disassociating lorebook from chat session: {e}"
             ))?;
         }
     }
@@ -974,12 +946,12 @@ async fn upload_lorebook_json_handler<C: HttpClient, H: IoHandler>(
 
     let file_path = file_path_str.unwrap_or_else(|| "test_data/test_lorebook.json".to_string());
 
-    io_handler.write_line(&format!("Reading lorebook file: {}...", file_path))?;
+    io_handler.write_line(&format!("Reading lorebook file: {file_path}..."))?;
 
     let file_content = match std::fs::read_to_string(&file_path) {
         Ok(content) => content,
         Err(e) => {
-            io_handler.write_line(&format!("Error reading file {}: {}", file_path, e))?;
+            io_handler.write_line(&format!("Error reading file {file_path}: {e}"))?;
             return Ok(());
         }
     };
@@ -987,7 +959,7 @@ async fn upload_lorebook_json_handler<C: HttpClient, H: IoHandler>(
     let parsed_lorebook: SillyTavernLorebookFile = match serde_json::from_str(&file_content) {
         Ok(parsed) => parsed,
         Err(e) => {
-            io_handler.write_line(&format!("Error parsing JSON from {}: {}", file_path, e))?;
+            io_handler.write_line(&format!("Error parsing JSON from {file_path}: {e}"))?;
             return Ok(());
         }
     };
@@ -1022,7 +994,7 @@ async fn upload_lorebook_json_handler<C: HttpClient, H: IoHandler>(
             lb
         }
         Err(e) => {
-            io_handler.write_line(&format!("Failed to create new lorebook: {}", e))?;
+            io_handler.write_line(&format!("Failed to create new lorebook: {e}"))?;
             return Ok(());
         }
     };
@@ -1083,8 +1055,7 @@ async fn upload_lorebook_json_handler<C: HttpClient, H: IoHandler>(
     }
 
     io_handler.write_line(&format!(
-        "Lorebook import complete. Successfully imported {} entries. Failed to import {} entries.",
-        success_count, fail_count
+        "Lorebook import complete. Successfully imported {success_count} entries. Failed to import {fail_count} entries."
     ))?;
 
     Ok(())

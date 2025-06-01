@@ -55,8 +55,7 @@ pub async fn handle_delete_chat_session_action<H: IoHandler, C: HttpClient>(
 
     // Confirm deletion
     let confirmation = io_handler.read_line(&format!(
-        "Are you sure you want to delete chat session {}? This action cannot be undone. (y/n):",
-        session_id
+        "Are you sure you want to delete chat session {session_id}? This action cannot be undone. (y/n):"
     ))?;
 
     if confirmation.trim().to_lowercase() != "y" {
@@ -65,14 +64,14 @@ pub async fn handle_delete_chat_session_action<H: IoHandler, C: HttpClient>(
     }
 
     // Proceed with deletion
-    io_handler.write_line(&format!("Deleting chat session {}...", session_id))?;
+    io_handler.write_line(&format!("Deleting chat session {session_id}..."))?;
     match client.delete_chat(session_id).await {
         Ok(_) => {
             io_handler.write_line("Chat session successfully deleted.")?;
             Ok(())
         }
         Err(e) => {
-            io_handler.write_line(&format!("Failed to delete chat session: {}", e))?;
+            io_handler.write_line(&format!("Failed to delete chat session: {e}"))?;
             Err(e)
         }
     }

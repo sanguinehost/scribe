@@ -6,7 +6,7 @@ use crate::errors::AppError;
 use crate::models::character_card::NewCharacter;
 use crate::models::characters::{Character, CharacterDataForClient}; // Added CharacterDataForClient // Added crypto for encrypt_gcm
 // use crate::models::users::User; // Removed unused import
-use crate::schema::characters::dsl::*; // DSL needed for table/columns
+use crate::schema::characters::dsl::{characters, id, user_id};
 use crate::services::character_parser::{self};
 use crate::state::AppState;
 use axum::{
@@ -18,9 +18,9 @@ use axum::{
     response::{IntoResponse, Json, Response},
     routing::{delete, get, post, put}, // ADDED delete here
 };
-use diesel::prelude::*; // Needed for .filter(), .load(), .first(), etc.
+use diesel::{BoolExpressionMethods, OptionalExtension, QueryDsl, ExpressionMethods, RunQueryDsl, SelectableHelper, result::Error as DieselError}; // Needed for .filter(), .load(), .first(), etc.
 use std::sync::Arc;
-use tracing::{error, info, instrument, trace}; // Use needed tracing macros, ADDED error, warn
+use tracing::{error, info, instrument, trace}; // Use needed tracing macros
 use uuid::Uuid;
 // use anyhow::anyhow; // Unused import
 use crate::auth::user_store::Backend as AuthBackend; // <-- Import the backend type
@@ -30,9 +30,7 @@ use crate::services::character_service::CharacterService;
 use crate::services::encryption_service::EncryptionService; // Added import
 use axum::body::Bytes;
 use axum_login::AuthSession; // <-- Removed login_required import
-use diesel::RunQueryDsl;
-use diesel::SelectableHelper;
-use diesel::result::Error as DieselError; // Add import for DieselError
+// DieselError moved to main diesel imports
 use secrecy::ExposeSecret; // Added for DEK expose
 use serde::Deserialize; // Add serde import // Added for querying chat_sessions table // Added DTO imports
 
@@ -87,13 +85,12 @@ pub async fn upload_character_handler(
     let local_user_id = user.id;
 
     let mut file_data: Option<Bytes> = None;
-    let mut _filename: Option<String> = None; // Renamed to _filename to silence warning
 
     while let Some(field) = multipart.next_field().await? {
         let local_field_name = field.name().unwrap_or("").to_string(); // Renamed variable
         if local_field_name == "character_card" {
             // Get filename *before* consuming the field with .bytes()
-            _filename = field.file_name().map(|f| f.to_string()); // Corrected method name: file_name
+            let _filename = field.file_name().map(std::string::ToString::to_string); // Corrected method name: file_name
             let data = field.bytes().await?; // Consumes the field
             file_data = Some(data); // Assign Bytes directly
             break;
@@ -119,7 +116,6 @@ pub async fn upload_character_handler(
                                 let enc_service = EncryptionService::new();
                                 match enc_service
                                     .encrypt(&string_version, $dek.expose_secret())
-                                    .await
                                 {
                                     Ok((ciphertext, nonce)) => {
                                         $self.$field = Some(ciphertext);
@@ -132,9 +128,8 @@ pub async fn upload_character_handler(
                                             e
                                         );
                                         return Err(AppError::EncryptionError(format!(
-                                            "Encryption failed for {}: {}",
-                                            stringify!($field),
-                                            e
+                                            "Encryption failed for {}: {e}",
+                                            stringify!($field)
                                         )));
                                     }
                                 }
@@ -225,9 +220,9 @@ pub async fn upload_character_handler(
         })
         .await
         .map_err(|e| {
-            AppError::InternalServerErrorGeneric(format!("Insert interaction error: {}", e))
+            AppError::InternalServerErrorGeneric(format!("Insert interaction error: {e}"))
         })?
-        .map_err(|e| AppError::InternalServerErrorGeneric(format!("Insert DB error: {}", e)))?;
+        .map_err(|e| AppError::InternalServerErrorGeneric(format!("Insert DB error: {e}")))?;
 
     info!(character_id = %returned_id, "Character basic info returned after insert");
 
@@ -245,15 +240,14 @@ pub async fn upload_character_handler(
         })
         .await
         .map_err(|e| {
-            AppError::InternalServerErrorGeneric(format!("Fetch interaction error: {}", e))
+            AppError::InternalServerErrorGeneric(format!("Fetch interaction error: {e}"))
         })?
-        .map_err(|e| AppError::InternalServerErrorGeneric(format!("Fetch DB error: {}", e)))?;
+        .map_err(|e| AppError::InternalServerErrorGeneric(format!("Fetch DB error: {e}")))?;
 
     info!(character_id = %inserted_character.id, "Character uploaded and saved (full data fetched)");
 
     let client_character_data = inserted_character
-        .into_decrypted_for_client(Some(&dek.0))
-        .await?;
+        .into_decrypted_for_client(Some(&dek.0))?;
 
     Ok((StatusCode::CREATED, Json(client_character_data)))
 }
@@ -317,7 +311,7 @@ pub async fn list_characters_handler(
 
     let mut characters_for_client = Vec::new();
     for char_db in characters_db {
-        characters_for_client.push(char_db.into_decrypted_for_client(Some(&dek.0)).await?);
+        characters_for_client.push(char_db.into_decrypted_for_client(Some(&dek.0))?);
     }
 
     Ok(Json(characters_for_client))
@@ -384,15 +378,14 @@ pub async fn get_character_handler(
                     "Interact error during direct ownership character fetch."
                 );
                 AppError::DbInteractError(format!(
-                    "Interact error during direct ownership character fetch: {}",
-                    interact_err
+                    "Interact error during direct ownership character fetch: {interact_err}"
                 ))
             })?;
 
     match directly_owned_character_result {
         Ok(Some(character)) => {
             info!(target: "test_log", handler = "get_character_handler", %character_id, %user_id_val, "Character directly owned, attempting decryption");
-            return match character.into_decrypted_for_client(Some(&dek.0)).await {
+            return match character.into_decrypted_for_client(Some(&dek.0)) {
                 Ok(character_for_client) => {
                     info!(target: "test_log", handler = "get_character_handler", %character_id, %user_id_val, "Decryption SUCCESSFUL (direct ownership)");
                     Ok(Json(character_for_client))
@@ -432,8 +425,7 @@ pub async fn get_character_handler(
                     .filter(chat_sessions::character_id.eq(character_id_for_session_clone))
             ))
             .get_result::<bool>(conn)
-            .or_else(|e| match e {
-                DieselError::NotFound => {
+            .or_else(|e| if e == DieselError::NotFound {
                      error!(
                         target: "test_log",
                         handler = "get_character_handler (session link exists query)",
@@ -443,8 +435,7 @@ pub async fn get_character_handler(
                         "DieselError::NotFound encountered unexpectedly for exists query. Interpreting as false."
                     );
                     Ok(false)
-                },
-                _ => {
+                } else {
                     error!(
                         target: "test_log",
                         handler = "get_character_handler (session link exists query)",
@@ -453,9 +444,8 @@ pub async fn get_character_handler(
                         error = %e,
                         "DB error checking session link."
                     );
-                    Err(AppError::DatabaseQueryError(format!("DB error checking session link: {}", e)))
-                }
-            })
+                    Err(AppError::DatabaseQueryError(format!("DB error checking session link: {e}")))
+                })
         })
         .await
         .map_err(|e| {
@@ -467,7 +457,7 @@ pub async fn get_character_handler(
                 error = %e,
                 "Interact dispatch error checking session link."
             );
-            AppError::DbInteractError(format!("Interact error checking session link: {}", e))
+            AppError::DbInteractError(format!("Interact error checking session link: {e}"))
         })??;
 
     if !has_session_with_character {
@@ -479,8 +469,7 @@ pub async fn get_character_handler(
             "User does not directly own AND does not have an active session with this character. Returning NotFound."
         );
         return Err(AppError::NotFound(format!(
-            "Character {} not found or not accessible by user {}",
-            character_id, user_id_val
+            "Character {character_id} not found or not accessible by user {user_id_val}"
         )));
     }
 
@@ -516,8 +505,7 @@ pub async fn get_character_handler(
                         "DB error fetching character by ID (after session auth)."
                     );
                     AppError::DatabaseQueryError(format!(
-                        "DB error fetching character by ID: {}",
-                        e
+                        "DB error fetching character by ID: {e}"
                     ))
                 })
         })
@@ -530,55 +518,51 @@ pub async fn get_character_handler(
                 error = %e,
                 "Interact dispatch error fetching character by ID."
             );
-            AppError::DbInteractError(format!("Interact error fetching character by ID: {}", e))
+            AppError::DbInteractError(format!("Interact error fetching character by ID: {e}"))
         })??;
 
-    match character_db_result {
-        Some(character) => {
-            info!(
-                target: "test_log",
-                handler = "get_character_handler",
-                %character_id,
-                %user_id_val,
-                "Character (via session auth) retrieved, attempting decryption"
-            );
-            match character.into_decrypted_for_client(Some(&dek.0)).await {
-                Ok(character_for_client) => {
-                    info!(
-                        target: "test_log",
-                        handler = "get_character_handler",
-                        %character_id,
-                        %user_id_val,
-                        "Decryption SUCCESSFUL (via session auth)"
-                    );
-                    Ok(Json(character_for_client))
-                }
-                Err(e) => {
-                    error!(
-                        target: "test_log",
-                        handler = "get_character_handler",
-                        %character_id,
-                        %user_id_val,
-                        error = ?e,
-                        "Decryption FAILED (via session auth)"
-                    );
-                    Err(e)
-                }
+    if let Some(character) = character_db_result {
+        info!(
+            target: "test_log",
+            handler = "get_character_handler",
+            %character_id,
+            %user_id_val,
+            "Character (via session auth) retrieved, attempting decryption"
+        );
+        match character.into_decrypted_for_client(Some(&dek.0)) {
+            Ok(character_for_client) => {
+                info!(
+                    target: "test_log",
+                    handler = "get_character_handler",
+                    %character_id,
+                    %user_id_val,
+                    "Decryption SUCCESSFUL (via session auth)"
+                );
+                Ok(Json(character_for_client))
+            }
+            Err(e) => {
+                error!(
+                    target: "test_log",
+                    handler = "get_character_handler",
+                    %character_id,
+                    %user_id_val,
+                    error = ?e,
+                    "Decryption FAILED (via session auth)"
+                );
+                Err(e)
             }
         }
-        None => {
-            error!(
-                target: "test_log",
-                handler = "get_character_handler",
-                %character_id,
-                %user_id_val,
-                "Character was linked in a session but now not found in characters table. Data inconsistency or deleted character?"
-            );
-            Err(AppError::NotFound(format!(
-                "Character {} was expected (due to session link) but not found",
-                character_id
-            )))
-        }
+    } else {
+        error!(
+            target: "test_log",
+            handler = "get_character_handler",
+            %character_id,
+            %user_id_val,
+            "Character was linked in a session but now not found in characters table. Data inconsistency or deleted character?"
+        );
+        Err(AppError::NotFound(format!(
+            "Character {character_id} was expected (due to session link) but not found"
+        )))
     }
 }
 
@@ -611,13 +595,13 @@ pub async fn generate_character_handler(
         name: "Generated Placeholder".to_string(),
         description: None, // Will be set after potential encryption
         description_nonce: None,
-        personality: Some("Placeholder".as_bytes().to_vec()),
+        personality: Some(b"Placeholder".to_vec()),
         personality_nonce: None,
-        scenario: Some("Placeholder".as_bytes().to_vec()),
+        scenario: Some(b"Placeholder".to_vec()),
         scenario_nonce: None,
-        first_mes: Some("Placeholder".as_bytes().to_vec()),
+        first_mes: Some(b"Placeholder".to_vec()),
         first_mes_nonce: None,
-        mes_example: Some("Placeholder".as_bytes().to_vec()),
+        mes_example: Some(b"Placeholder".to_vec()),
         mes_example_nonce: None,
         creator_notes: None,
         creator_notes_nonce: None,
@@ -700,8 +684,7 @@ pub async fn generate_character_handler(
     // then fetch it, then convert to client data.
     // For this placeholder, we convert the in-memory (potentially encrypted) Character.
     let client_data = dummy_char_for_db
-        .into_decrypted_for_client(Some(&dek.0))
-        .await?;
+        .into_decrypted_for_client(Some(&dek.0))?;
 
     // --- TODO: Save the character to DB if this route is meant to persist. ---
 
@@ -742,13 +725,12 @@ pub async fn delete_character_handler(
             exists.map(|opt| opt.is_some())
         })
         .await
-        .map_err(|e| AppError::DbInteractError(format!("Interact error checking character: {}", e)))?;
+        .map_err(|e| AppError::DbInteractError(format!("Interact error checking character: {e}")))?;
 
     if !character_exists? {
         info!(target: "test_log", %character_id, "Character does not exist at all");
         return Err(AppError::NotFound(format!(
-            "Character {} not found",
-            character_id
+            "Character {character_id} not found"
         )));
     }
 
@@ -775,15 +757,13 @@ pub async fn delete_character_handler(
             execution_result.map_err(|e| { // Map error after logging
                 error!(target: "test_log", handler = "delete_character_handler", character_id = %character_id, user_id = %local_user_id, "Delete query failed: {}", e); // Log DB error
                 // Convert DieselError to AppError before returning from interact
-                match e {
-                    // Note: .execute() returns usize, not typically DieselError::NotFound directly unless the connection fails entirely.
-                    // The check for 0 rows deleted later handles the "not found" case for the specific character/user combo.
-                    _ => AppError::DatabaseQueryError(e.to_string()),
-                }
+                // Note: .execute() returns usize, not typically DieselError::NotFound directly unless the connection fails entirely.
+                // The check for 0 rows deleted later handles the "not found" case for the specific character/user combo.
+                AppError::DatabaseQueryError(e.to_string())
             })
         })
         .await // First await for interact result
-        .map_err(|e| AppError::DbInteractError(format!("Interact error during delete: {}", e)))? // Handle interact error
+        .map_err(|e| AppError::DbInteractError(format!("Interact error during delete: {e}")))? // Handle interact error
         ?; // Second await for the Result<usize, AppError> inside interact
 
     // Log the result (rows_deleted)
@@ -795,8 +775,7 @@ pub async fn delete_character_handler(
         // But keep it as a safeguard / for debugging potential logic flaws.
         info!(target: "test_log", handler = "delete_character_handler", %character_id, %local_user_id, "Delete resulted in 0 rows deleted, returning NotFound (or Forbidden if applicable)");
         Err(AppError::NotFound(format!(
-            "Character {} not found or not owned by user {} (rows_deleted was 0)",
-            character_id, local_user_id
+            "Character {character_id} not found or not owned by user {local_user_id} (rows_deleted was 0)"
         )))
     } else {
         Ok(StatusCode::NO_CONTENT)

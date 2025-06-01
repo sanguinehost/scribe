@@ -93,7 +93,7 @@ async fn test_generate_unauthorized() -> Result<(), anyhow::Error> {
     let server_addr = spawn_app(app_router).await;
     let client = Client::new();
 
-    let generate_url = format!("http://{}/api/characters/generate", server_addr);
+    let generate_url = format!("http://{server_addr}/api/characters/generate");
     let prompt_data = json!({ "prompt": "Create a character." });
 
     let response = client.post(&generate_url).json(&prompt_data).send().await?;

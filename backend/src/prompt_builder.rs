@@ -15,6 +15,9 @@ use tracing::{debug, error, warn}; // Added error
 
 /// Assembles the character-specific part of the system prompt.
 /// RAG context is handled by the calling service and prepended to the user message.
+///
+/// # Errors
+/// Returns `AppError` if character description processing fails
 pub fn build_prompt_with_rag(
     // Renaming to build_system_prompt_character_info might be clearer later
     character: Option<&CharacterMetadata>,
@@ -28,16 +31,15 @@ pub fn build_prompt_with_rag(
             if description_vec.is_empty() {
                 // No description, return empty string (no character persona to instruct on)
                 return Ok(String::new());
-            } else {
-                prompt.push_str(&format!("Character Name: {}\n", char_data.name));
-                prompt.push_str(&format!(
-                    "Description: {}\n",
-                    String::from_utf8_lossy(description_vec)
-                ));
-                prompt.push('\n');
-                // Only add static instruction if there's a character description
-                prompt.push_str("---\nInstruction:\nContinue the chat based on the conversation history. Stay in character.\n---\n\n");
             }
+            prompt.push_str(&format!("Character Name: {}\n", char_data.name));
+            prompt.push_str(&format!(
+                "Description: {}\n",
+                String::from_utf8_lossy(description_vec)
+            ));
+            prompt.push('\n');
+            // Only add static instruction if there's a character description
+            prompt.push_str("---\nInstruction:\nContinue the chat based on the conversation history. Stay in character.\n---\n\n");
         } else {
             // No description, return empty string
             return Ok(String::new());
@@ -109,32 +111,37 @@ async fn count_tokens_for_genai_message(
     Ok(total_tokens)
 }
 
-/// Builds the final LLM prompt, managing token limits by truncating RAG context and recent history if necessary.
-pub async fn build_final_llm_prompt(
-    config: Arc<Config>,
-    token_counter: Arc<HybridTokenCounter>,
-    recent_history: Vec<GenAiChatMessage>,
-    rag_items: Vec<RetrievedChunk>,
-    system_prompt_base: Option<String>, // From Persona/Override
-    raw_character_system_prompt: Option<String>, // Directly from Character.system_prompt
-    character_metadata: Option<&CharacterMetadata>, // For name/description
-    current_user_message: GenAiChatMessage,
+/// Parameters for building the final LLM prompt.
+pub struct PromptBuildParams<'a> {
+    pub config: Arc<Config>,
+    pub token_counter: Arc<HybridTokenCounter>,
+    pub recent_history: Vec<GenAiChatMessage>,
+    pub rag_items: Vec<RetrievedChunk>,
+    pub system_prompt_base: Option<String>, // From Persona/Override
+    pub raw_character_system_prompt: Option<String>, // Directly from Character.system_prompt
+    pub character_metadata: Option<&'a CharacterMetadata>, // For name/description
+    pub current_user_message: GenAiChatMessage,
+    pub model_name: String,
+}
+
+/// Builds the meta system prompt template with character name substitution
+///
+/// # Errors
+/// Returns `AppError` if token counting fails
+async fn build_meta_system_prompt(
+    character_metadata: Option<&CharacterMetadata>,
+    token_counter: &HybridTokenCounter,
     model_name: &str,
-) -> Result<(String, Vec<GenAiChatMessage>), AppError> {
-    // 1. Construct and calculate tokens for the meta system prompt
+) -> Result<(String, usize), AppError> {
     let char_name_placeholder =
         character_metadata.map_or_else(|| "{{character_name}}".to_string(), |cm| cm.name.clone());
-    // Assuming user_name would be available or passed in if needed for {{user_name}}
-    // For now, let's use a generic placeholder or omit it if not readily available.
-    // Let's assume CharacterMetadata might eventually hold a user_name or similar.
-    // If not, we might need to adjust the template or pass user_name.
-    // For this iteration, we'll use a generic "the User".
+    
     let meta_system_prompt_template = format!(
         "You are the Narrator and supporting characters in a collaborative storytelling experience with a Human player. The Human controls a character (referred to as 'the User'). Your primary role is to describe the world, events, and the actions and dialogue of all characters *except* the User.\n\n\
         You will be provided with the following structured information to guide your responses:\n\
         1. <persona_override_prompt>: Specific instructions or style preferences from the User (if any).\n\
-        2. <character_definition>: The core definition and personality of the character '{char_name}'.\n\
-        3. <character_details>: Additional descriptive information about '{char_name}'.\n\
+        2. <character_definition>: The core definition and personality of the character '{char_name_placeholder}'.\n\
+        3. <character_details>: Additional descriptive information about '{char_name_placeholder}'.\n\
         4. <lorebook_entries>: Relevant background information about the world, other characters, or plot points.\n\
         5. <story_so_far>: The existing dialogue and narration.\n\n\
         Key Writing Principles:\n\
@@ -144,7 +151,6 @@ pub async fn build_final_llm_prompt(
         - End your responses with action or dialogue to maintain active immersion. Avoid summarization or out-of-character commentary.\n\n\
         [System Instructions End]\n\
         Based on all the above and the story so far, write the next part of the story as the narrator and any relevant non-player characters. Ensure your response is engaging and moves the story forward.",
-        char_name = char_name_placeholder
     );
 
     let meta_system_prompt_tokens = token_counter
@@ -156,14 +162,28 @@ pub async fn build_final_llm_prompt(
         .await?
         .total;
 
-    // system_prompt_base is from Persona/Override
+    Ok((meta_system_prompt_template, meta_system_prompt_tokens))
+}
+
+/// Calculates token counts for all prompt components
+///
+/// # Errors
+/// Returns `AppError` if token counting fails
+async fn calculate_component_tokens(
+    system_prompt_base: Option<&str>,
+    raw_character_system_prompt: Option<&str>,
+    character_metadata: Option<&CharacterMetadata>,
+    current_user_message: &GenAiChatMessage,
+    token_counter: &HybridTokenCounter,
+    model_name: &str,
+) -> Result<((String, usize), (String, usize), (String, usize), usize), AppError> {
     let persona_override_prompt_str = system_prompt_base.unwrap_or_default();
     let persona_override_prompt_tokens = if persona_override_prompt_str.is_empty() {
         0
     } else {
         token_counter
             .count_tokens(
-                &persona_override_prompt_str,
+                persona_override_prompt_str,
                 CountingMode::LocalOnly,
                 Some(model_name),
             )
@@ -171,14 +191,13 @@ pub async fn build_final_llm_prompt(
             .total
     };
 
-    // raw_character_system_prompt is directly from Character.system_prompt
     let character_definition_str = raw_character_system_prompt.unwrap_or_default();
     let character_definition_tokens = if character_definition_str.is_empty() {
         0
     } else {
         token_counter
             .count_tokens(
-                &character_definition_str,
+                character_definition_str,
                 CountingMode::LocalOnly,
                 Some(model_name),
             )
@@ -186,8 +205,7 @@ pub async fn build_final_llm_prompt(
             .total
     };
 
-    // character_info_str is built from CharacterMetadata (name, description)
-    let character_details_str = build_character_info_string(character_metadata); // This already includes name and description
+    let character_details_str = build_character_info_string(character_metadata);
     let character_details_tokens = if character_details_str.is_empty() {
         0
     } else {
@@ -202,27 +220,82 @@ pub async fn build_final_llm_prompt(
     };
 
     let current_user_message_tokens =
-        count_tokens_for_genai_message(&current_user_message, &token_counter, model_name).await?;
+        count_tokens_for_genai_message(current_user_message, token_counter, model_name).await?;
 
-    // Calculate tokens for RAG items and recent history messages
+    Ok((
+        (persona_override_prompt_str.to_string(), persona_override_prompt_tokens),
+        (character_definition_str.to_string(), character_definition_tokens),
+        (character_details_str, character_details_tokens),
+        current_user_message_tokens,
+    ))
+}
+
+/// Calculates tokens for RAG items and chat history
+///
+/// # Errors
+/// Returns `AppError` if token counting fails
+async fn calculate_content_tokens(
+    rag_items: &[RetrievedChunk],
+    recent_history: &[GenAiChatMessage],
+    token_counter: &HybridTokenCounter,
+    model_name: &str,
+) -> Result<(Vec<(RetrievedChunk, usize)>, Vec<(GenAiChatMessage, usize)>), AppError> {
     let mut rag_items_with_tokens: Vec<(RetrievedChunk, usize)> = Vec::new();
     for item in rag_items {
         let tokens = token_counter
             .count_tokens(&item.text, CountingMode::LocalOnly, Some(model_name))
             .await?
             .total;
-        rag_items_with_tokens.push((item, tokens));
+        rag_items_with_tokens.push((item.clone(), tokens));
     }
-    // Sort RAG items by score (descending) so less relevant are popped first if needed,
-    // though truncation will happen from the end of the vector (least relevant if not sorted, or last if sorted).
-    // For now, let's assume rag_items are already sorted by relevance (higher score = more relevant).
-    // We will remove from the end (lowest score if sorted descending, or just last item).
 
     let mut recent_history_with_tokens: Vec<(GenAiChatMessage, usize)> = Vec::new();
     for msg in recent_history {
-        let tokens = count_tokens_for_genai_message(&msg, &token_counter, model_name).await?;
-        recent_history_with_tokens.push((msg, tokens));
+        let tokens = count_tokens_for_genai_message(msg, token_counter, model_name).await?;
+        recent_history_with_tokens.push((msg.clone(), tokens));
     }
+
+    Ok((rag_items_with_tokens, recent_history_with_tokens))
+}
+
+/// Builds the final LLM prompt, managing token limits by truncating RAG context and recent history if necessary.
+///
+/// # Errors
+/// Returns `AppError` if token counting fails, prompt building encounters errors, or character metadata processing fails
+#[allow(clippy::too_many_lines)]
+pub async fn build_final_llm_prompt(
+    params: PromptBuildParams<'_>,
+) -> Result<(String, Vec<GenAiChatMessage>), AppError> {
+    let PromptBuildParams {
+        config,
+        token_counter,
+        recent_history,
+        rag_items,
+        system_prompt_base,
+        raw_character_system_prompt,
+        character_metadata,
+        current_user_message,
+        model_name,
+    } = params;
+
+    // 1. Build meta system prompt and calculate its tokens
+    let (meta_system_prompt_template, meta_system_prompt_tokens) = 
+        build_meta_system_prompt(character_metadata, &token_counter, &model_name).await?;
+
+    // 2. Calculate tokens for all components
+    let ((persona_override_prompt_str, persona_override_prompt_tokens), (character_definition_str, character_definition_tokens), (character_details_str, character_details_tokens), current_user_message_tokens) = 
+        calculate_component_tokens(
+            system_prompt_base.as_deref(),
+            raw_character_system_prompt.as_deref(),
+            character_metadata,
+            &current_user_message,
+            &token_counter,
+            &model_name,
+        ).await?;
+
+    // 3. Calculate tokens for RAG items and recent history
+    let (rag_items_with_tokens, recent_history_with_tokens) = 
+        calculate_content_tokens(&rag_items, &recent_history, &token_counter, &model_name).await?;
 
     // 2. Calculate initial total tokens
     let mut current_total_tokens = meta_system_prompt_tokens
@@ -323,14 +396,12 @@ pub async fn build_final_llm_prompt(
 
     if !persona_override_prompt_str.is_empty() {
         final_system_prompt_parts.push(format!(
-            "<persona_override_prompt>\n{}\n</persona_override_prompt>",
-            persona_override_prompt_str
+            "<persona_override_prompt>\n{persona_override_prompt_str}\n</persona_override_prompt>"
         ));
     }
     if !character_definition_str.is_empty() {
         final_system_prompt_parts.push(format!(
-            "<character_definition>\n{}\n</character_definition>",
-            character_definition_str
+            "<character_definition>\n{character_definition_str}\n</character_definition>"
         ));
     }
     if !character_details_str.is_empty() {
@@ -338,8 +409,7 @@ pub async fn build_final_llm_prompt(
         // We might want to refine build_character_info_string to return just the description if name is already in meta prompt.
         // For now, let's wrap what it returns.
         final_system_prompt_parts.push(format!(
-            "<character_details>\n{}\n</character_details>",
-            character_details_str
+            "<character_details>\n{character_details_str}\n</character_details>"
         ));
     }
     // Note: RAG items are handled separately and prepended to the user message, not part of the system prompt string here.
@@ -357,9 +427,7 @@ pub async fn build_final_llm_prompt(
                     let keywords_str = lore_meta
                         .keywords
                         .as_ref()
-                        .filter(|kws| !kws.is_empty())
-                        .map(|kws| kws.join(", "))
-                        .unwrap_or_else(|| "No Keywords".to_string());
+                        .filter(|kws| !kws.is_empty()).map_or_else(|| "No Keywords".to_string(), |kws| kws.join(", "));
                     format!("- Lorebook ({} - {}): {}", title, keywords_str, item.text)
                 }
             }
@@ -452,8 +520,7 @@ mod tests {
         let prompt = build_prompt_with_rag(None).unwrap();
         assert!(
             prompt.is_empty(),
-            "Expected empty prompt when no character is provided, got: {}",
-            prompt
+            "Expected empty prompt when no character is provided, got: {prompt}"
         );
     }
 
@@ -463,39 +530,34 @@ mod tests {
             id: Uuid::new_v4(),
             user_id: Uuid::new_v4(),
             name: "Test Bot".to_string(),
-            description: Some("A friendly test bot.".as_bytes().to_vec()),
+            description: Some(b"A friendly test bot.".to_vec()),
             description_nonce: None,
             created_at: Utc::now(),
             updated_at: Utc::now(),
-            first_mes: Some("Bot greeting".as_bytes().to_vec()),
+            first_mes: Some(b"Bot greeting".to_vec()),
         };
 
         let prompt = build_prompt_with_rag(Some(&char_meta)).unwrap();
 
         assert!(
             prompt.contains("Character Name: Test Bot"),
-            "Prompt missing character name. Got: '{}'",
-            prompt
+            "Prompt missing character name. Got: '{prompt}'"
         );
         assert!(
             prompt.contains("Description: A friendly test bot."),
-            "Prompt missing character description. Got: '{}'",
-            prompt
+            "Prompt missing character description. Got: '{prompt}'"
         );
         assert!(
             prompt.contains(EXPECTED_STATIC_INSTRUCTION),
-            "Prompt missing static instruction. Got: '{}'",
-            prompt
+            "Prompt missing static instruction. Got: '{prompt}'"
         );
         assert!(
             !prompt.contains("Relevant Context:"),
-            "Prompt should not contain RAG context. Got: '{}'",
-            prompt
+            "Prompt should not contain RAG context. Got: '{prompt}'"
         );
         assert!(
             !prompt.contains("---\nHistory:\n"),
-            "Prompt should not contain History. Got: '{}'",
-            prompt
+            "Prompt should not contain History. Got: '{prompt}'"
         );
     }
 
@@ -516,8 +578,7 @@ mod tests {
 
         assert!(
             prompt.is_empty(),
-            "Expected empty prompt for char without description, got: {}",
-            prompt
+            "Expected empty prompt for char without description, got: {prompt}"
         );
     }
 
@@ -527,7 +588,7 @@ mod tests {
             id: Uuid::new_v4(),
             user_id: Uuid::new_v4(),
             name: "Silent Bot".to_string(),
-            description: Some("".as_bytes().to_vec()), // Empty description
+            description: Some(b"".to_vec()), // Empty description
             description_nonce: None,
             created_at: Utc::now(),
             updated_at: Utc::now(),
@@ -538,8 +599,7 @@ mod tests {
 
         assert!(
             prompt.is_empty(),
-            "Expected empty prompt for char with empty description, got: {}",
-            prompt
+            "Expected empty prompt for char with empty description, got: {prompt}"
         );
     }
 }

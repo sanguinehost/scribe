@@ -32,11 +32,11 @@ fn test_gemma_tokenizer_integration() {
     ];
 
     for text in test_texts {
-        println!("Testing text: '{}'", text);
+        println!("Testing text: '{text}'");
 
         // Encode text to token IDs
         let token_ids = tokenizer.encode(text).expect("Failed to encode text");
-        println!("  Token IDs: {:?}", token_ids);
+        println!("  Token IDs: {token_ids:?}");
         println!("  Token count: {}", token_ids.len());
 
         // Ensure non-empty token sequence
@@ -46,7 +46,7 @@ fn test_gemma_tokenizer_integration() {
         let decoded_text = tokenizer
             .decode(&token_ids)
             .expect("Failed to decode tokens");
-        println!("  Decoded text: '{}'", decoded_text);
+        println!("  Decoded text: '{decoded_text}'");
 
         // The round-trip text might not match exactly due to tokenization nuances,
         // but should contain the core content
@@ -57,9 +57,7 @@ fn test_gemma_tokenizer_integration() {
                     decoded_text.contains(word) ||
                     // Handle potential partial matches for CJK characters
                     (word.chars().any(|c| c as u32 > 0x4E00) && word.chars().any(|c| decoded_text.contains(c.to_string().as_str()))),
-                    "Decoded text '{}' should contain the word '{}'",
-                    decoded_text,
-                    word
+                    "Decoded text '{decoded_text}' should contain the word '{word}'"
                 );
             }
         }

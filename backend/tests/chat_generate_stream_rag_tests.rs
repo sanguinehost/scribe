@@ -238,14 +238,12 @@ async fn test_rag_context_injection_real_ai() {
         .join("");
 
     println!(
-        "\n--- REAL AI Response Received ---\n{}\n---------------------------------\n",
-        combined_response
+        "\n--- REAL AI Response Received ---\n{combined_response}\n---------------------------------\n"
     );
     assert!(
         combined_response.to_lowercase().contains("serpent")
             || combined_response.to_lowercase().contains("dragon")
             || combined_response.to_lowercase().contains("tail"),
-        "Real AI response should mention serpent/dragon/tail for Ouroboros, but got: {}",
-        combined_response
+        "Real AI response should mention serpent/dragon/tail for Ouroboros, but got: {combined_response}"
     );
 }

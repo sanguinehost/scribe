@@ -34,7 +34,7 @@ pub struct DefaultPersonaResponse {
 
 impl From<User> for DefaultPersonaResponse {
     fn from(user: User) -> Self {
-        DefaultPersonaResponse {
+        Self {
             id: user.id,
             username: user.username,
             email: user.email,
@@ -92,8 +92,7 @@ async fn set_default_persona_handler(
 
     persona_lookup_result?.ok_or_else(|| {
         AppError::NotFound(format!(
-            "Persona with ID {} not found for this user.",
-            persona_id
+            "Persona with ID {persona_id} not found for this user."
         ))
     })?;
 

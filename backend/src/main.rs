@@ -30,13 +30,12 @@ use scribe_backend::routes::{
     user_persona_routes::user_personas_router, // Added for user persona routes
     user_settings_routes::user_settings_routes, // Added for user settings routes
 };
-use scribe_backend::state::AppState;
+use scribe_backend::state::{AppState, AppStateServices};
 use std::env; // Added for current_dir
 
 // Imports for axum-login and tower-sessions
 use axum_login::{AuthManagerLayerBuilder, login_required}; // Modified
 // Import SessionManagerLayer directly from tower_sessions
-use hex; // Added for hex::decode
 use scribe_backend::config::Config; // Import Config instead
 use scribe_backend::llm::gemini_client::build_gemini_client; // Import the async builder
 use scribe_backend::llm::gemini_embedding_client::build_gemini_embedding_client; // Add this
@@ -49,10 +48,11 @@ use scribe_backend::services::tokenizer_service::TokenizerService; // Added
 use scribe_backend::text_processing::chunking::{ChunkConfig, ChunkingMetric}; // Import chunking config structs
 use scribe_backend::vector_db::QdrantClientService;
 use std::sync::Arc;
-use time; // Used for tower_sessions::Expiry
 use tower_cookies::CookieManagerLayer; // Re-add CookieManagerLayer
 use tower_sessions::cookie::Key; // Use Key from tower_sessions::cookie for with_signed
 use tower_sessions::{Expiry, SessionManagerLayer, cookie::SameSite}; // Add Arc for config // Add Qdrant service import // Add embedding pipeline service import
+use hex::decode;
+use time::Duration;
 // Removed unused: use tokio::net::TcpListener;
 use axum::extract::Request as AxumRequest;
 use axum::middleware::{self as axum_middleware, Next};
@@ -212,7 +212,7 @@ async fn main() -> Result<()> {
         .cookie_signing_key
         .as_ref()
         .context("COOKIE_SIGNING_KEY must be set in config")?;
-    let key_bytes = hex::decode(secret_key)
+    let key_bytes = decode(secret_key)
         .context("Invalid COOKIE_SIGNING_KEY format in config (must be hex)")?;
     let _signing_key = Key::from(&key_bytes); // Key is now tower_sessions::cookie::Key (unused in current config)
 
@@ -221,7 +221,7 @@ async fn main() -> Result<()> {
         .with_secure(config.session_cookie_secure) // Use config value directly
         .with_same_site(SameSite::Lax)
         // .with_signed(signing_key.clone()) // CookieManagerLayer will handle signing
-        .with_expiry(Expiry::OnInactivity(time::Duration::hours(24)));
+        .with_expiry(Expiry::OnInactivity(Duration::hours(24)));
 
     // Configure the auth backend
     // IMPORTANT: Wrap in Arc first to ensure the same instance is shared
@@ -252,19 +252,23 @@ async fn main() -> Result<()> {
         as Arc<dyn EmbeddingPipelineServiceTrait>; // Instantiate with config
 
     // -- Create AppState --
+    let services = AppStateServices {
+        ai_client: ai_client_arc,
+        embedding_client: embedding_client_arc,
+        qdrant_service: qdrant_service_arc,
+        embedding_pipeline_service,
+        chat_override_service: chat_override_service_arc,
+        user_persona_service: user_persona_service_arc,
+        token_counter: hybrid_token_counter_arc,
+        encryption_service: encryption_service_arc.clone(),
+        lorebook_service: lorebook_service_arc,
+        auth_backend: auth_backend_arc,
+    };
+    
     let app_state = AppState::new(
         pool.clone(),
         config.clone(),
-        ai_client_arc,
-        embedding_client_arc,
-        qdrant_service_arc,
-        embedding_pipeline_service, // Add the embedding pipeline service
-        chat_override_service_arc,  // <<< PASSING THE SERVICE TO APPSTATE
-        user_persona_service_arc,   // <<< PASSING THE NEW SERVICE TO APPSTATE
-        hybrid_token_counter_arc,   // Added
-        encryption_service_arc.clone(), // Pass the encryption service
-        lorebook_service_arc,       // Pass the lorebook service
-        auth_backend_arc,           // Pass the shared AuthBackend
+        services,
     );
 
     // --- Define Protected Routes ---
@@ -329,7 +333,7 @@ async fn main() -> Result<()> {
 
     // Use port from config, default to 8080 (adjust if needed)
     let port = config.port;
-    let addr_str = format!("0.0.0.0:{}", port);
+    let addr_str = format!("0.0.0.0:{port}");
     let addr: SocketAddr = addr_str.parse().expect("Invalid address format");
 
     tracing::info!("Starting HTTPS server on {}", addr);

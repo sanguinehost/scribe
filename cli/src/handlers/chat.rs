@@ -77,14 +77,12 @@ pub async fn handle_view_chat_history_action<H: IoHandler, C: HttpClient>(
     };
 
     io_handler.write_line(&format!(
-        "\nFetching messages for session {}...",
-        selected_session_id
+        "\nFetching messages for session {selected_session_id}..."
     ))?;
     match client.get_chat_messages(selected_session_id).await {
         Ok(messages) => {
             io_handler.write_line(&format!(
-                "--- Chat History (Session: {}) ---",
-                selected_session_id
+                "--- Chat History (Session: {selected_session_id}) ---"
             ))?;
             if messages.is_empty() {
                 io_handler.write_line("  (No messages in this session yet)")?;
@@ -114,15 +112,14 @@ pub async fn handle_view_chat_history_action<H: IoHandler, C: HttpClient>(
                     let content_str = message
                         .parts
                         .as_array()
-                        .and_then(|parts_array| parts_array.get(0))
+                        .and_then(|parts_array| parts_array.first())
                         .and_then(|first_part| first_part.get("text"))
                         .and_then(|text_value| text_value.as_str())
                         .unwrap_or("[empty message]") // Fallback for missing content
                         .to_string();
 
                     io_handler.write_line(&format!(
-                        "  [{}] {}\n    {}",
-                        formatted_timestamp, prefix, content_str
+                        "  [{formatted_timestamp}] {prefix}\n    {content_str}"
                     ))?;
                 }
             }
@@ -179,14 +176,12 @@ pub async fn handle_resume_chat_session_action<H: IoHandler, C: HttpClient>(
     };
 
     io_handler.write_line(&format!(
-        "\nFetching recent messages for session {}...",
-        selected_session_id
+        "\nFetching recent messages for session {selected_session_id}..."
     ))?;
     match client.get_chat_messages(selected_session_id).await {
         Ok(messages) => {
             io_handler.write_line(&format!(
-                "--- Recent History (Session: {}) ---",
-                selected_session_id
+                "--- Recent History (Session: {selected_session_id}) ---"
             ))?;
             if messages.is_empty() {
                 io_handler.write_line("  (No messages in this session yet)")?;
@@ -215,15 +210,14 @@ pub async fn handle_resume_chat_session_action<H: IoHandler, C: HttpClient>(
                     let content_str = message
                         .parts
                         .as_array()
-                        .and_then(|parts_array| parts_array.get(0))
+                        .and_then(|parts_array| parts_array.first())
                         .and_then(|first_part| first_part.get("text"))
                         .and_then(|text_value| text_value.as_str())
                         .unwrap_or("[empty message]")
                         .to_string();
 
                     io_handler.write_line(&format!(
-                        "  [{}] {}\n    {}",
-                        formatted_timestamp, prefix, content_str
+                        "  [{formatted_timestamp}] {prefix}\n    {content_str}"
                     ))?;
                 }
             }
@@ -232,15 +226,14 @@ pub async fn handle_resume_chat_session_action<H: IoHandler, C: HttpClient>(
         Err(e) => {
             tracing::error!(error = ?e, %selected_session_id, "Failed to fetch chat history before resuming");
             io_handler.write_line(&format!(
-                "Warning: Could not fetch recent chat history: {}",
-                e
+                "Warning: Could not fetch recent chat history: {e}"
             ))?;
         }
     }
 
     // Configure streaming chat by default with standard settings
     tracing::info!(chat_id = %selected_session_id, "Resuming chat session");
-    io_handler.write_line(&format!("Using model for streaming: {}", current_model))?;
+    io_handler.write_line(&format!("Using model for streaming: {current_model}"))?;
 
     // Apply default settings from configuration
     io_handler.write_line("Applying default chat settings...")?;
@@ -250,8 +243,7 @@ pub async fn handle_resume_chat_session_action<H: IoHandler, C: HttpClient>(
         }
         Err(e) => {
             io_handler.write_line(&format!(
-                "Warning: Failed to apply default settings: {}. Proceeding with system defaults.",
-                e
+                "Warning: Failed to apply default settings: {e}. Proceeding with system defaults."
             ))?;
 
             // Fallback to basic settings if default settings application fails
@@ -281,8 +273,7 @@ pub async fn handle_resume_chat_session_action<H: IoHandler, C: HttpClient>(
                 }
                 Err(e) => {
                     io_handler.write_line(&format!(
-                        "Warning: Failed to update session settings: {}. Proceeding with defaults.",
-                        e
+                        "Warning: Failed to update session settings: {e}. Proceeding with defaults."
                     ))?;
                 }
             }
@@ -300,7 +291,7 @@ pub async fn handle_resume_chat_session_action<H: IoHandler, C: HttpClient>(
     .await
     {
         tracing::error!(error = ?e, "Streaming chat loop failed while resuming session");
-        io_handler.write_line(&format!("Chat encountered an error: {}", e))?;
+        io_handler.write_line(&format!("Chat encountered an error: {e}"))?;
     }
     io_handler.write_line("Chat finished.")?;
     Ok(())

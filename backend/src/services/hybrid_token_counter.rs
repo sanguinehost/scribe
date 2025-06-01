@@ -5,11 +5,11 @@ use crate::errors::{AppError, Result};
 use crate::services::gemini_token_client::GeminiTokenClient;
 use crate::services::tokenizer_service::{TokenEstimate, TokenizerService};
 
-/// HybridTokenCounter combines local tokenization with API-based counting
+/// `HybridTokenCounter` combines local tokenization with API-based counting
 ///
 /// This service provides a hybrid approach to token counting:
-/// 1. Local estimation using TokenizerService for quick client-side validation
-/// 2. API-based token counting using GeminiTokenClient for exact billing
+/// 1. Local estimation using `TokenizerService` for quick client-side validation
+/// 2. API-based token counting using `GeminiTokenClient` for exact billing
 /// 3. Fallback behavior when API is unavailable
 #[derive(Debug, Clone)]
 pub struct HybridTokenCounter {
@@ -78,7 +78,14 @@ impl HybridTokenCounter {
         self
     }
 
-    /// Count tokens for a text input, using the specified counting mode
+    /// Count tokens for a text input, using the specified counting mode.
+    ///
+    /// # Errors
+    ///
+    /// Returns tokenizer service errors for LocalOnly mode,
+    /// `AppError::ServiceNotAvailable` if API counting is requested but no API client is available,
+    /// Gemini API client errors for API-based counting modes,
+    /// or the fallback local tokenizer errors when API counting fails in hybrid modes.
     pub async fn count_tokens(
         &self,
         text: &str,
@@ -164,6 +171,11 @@ impl HybridTokenCounter {
     }
 
     /// Count tokens for multimodal content
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if file loading fails, external API requests fail, or tokenization fails.
+    #[allow(clippy::too_many_lines)]
     pub async fn count_tokens_multimodal(
         &self,
         text: &str,
@@ -299,6 +311,10 @@ impl HybridTokenCounter {
     }
 
     /// Count tokens for chat history
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if tokenization or external API requests fail.
     pub async fn count_tokens_chat(
         &self,
         messages: &[(String, String)], // (role, text)

@@ -3,9 +3,10 @@
 
 // Make sure all necessary imports from the main crate and external crates are included.
 use crate::errors::AppError;
+use genai::chat::Usage;
 use crate::llm::{AiClient, BatchEmbeddingContentRequest, ChatStream, EmbeddingClient}; // Add EmbeddingClient and BatchEmbeddingContentRequest
 use crate::services::embedding_pipeline::{
-    EmbeddingPipelineService, EmbeddingPipelineServiceTrait, RetrievedChunk,
+    EmbeddingPipelineService, EmbeddingPipelineServiceTrait, LorebookEntryParams, RetrievedChunk,
 }; // Added EmbeddingPipelineService
 use crate::text_processing::chunking::ChunkConfig; // Added ChunkConfig
 // Unused ChunkConfig, ChunkingMetric were previously noted as removed.
@@ -37,7 +38,7 @@ use crate::{
     services::hybrid_token_counter::HybridTokenCounter,
     services::tokenizer_service::TokenizerService,
     services::user_persona_service::UserPersonaService, // <<< ADDED THIS IMPORT
-    state::AppState,
+    state::{AppState, AppStateServices},
     vector_db::qdrant_client::QdrantClientService, // Import constants module alias
 };
 use anyhow::Context; // Added for TestDataGuard cleanup
@@ -61,7 +62,7 @@ use futures::TryStreamExt;
 use genai::ModelIden; // Import ModelIden directly
 use genai::adapter::AdapterKind; // Ensure AdapterKind is in scope
 use genai::chat::ChatStreamEvent; // Add import for chatstream types
-use genai::chat::{ChatOptions, ChatRequest, ChatResponse};
+use genai::chat::{ChatOptions, ChatRequest, ChatResponse, StreamEnd};
 // use http_body_util::BodyExt; // Removed unused import
 use mime; // Added for mime::APPLICATION_JSON
 use qdrant_client::qdrant::{Filter, PointId, ScoredPoint};
@@ -85,6 +86,16 @@ use tower_sessions::{
 use tracing::{debug, instrument, warn}; // Added debug
 use uuid::Uuid; // Added for CryptoProvider
 
+// Type aliases for complex test types
+type EmbeddingResponse = Arc<Mutex<Option<Result<Vec<f32>, AppError>>>>;
+type EmbeddingResponseSequence = Arc<Mutex<VecDeque<Result<Vec<f32>, AppError>>>>;
+type BatchEmbeddingResponse = Arc<Mutex<Option<Result<Vec<Vec<f32>>, AppError>>>>;
+type EmbeddingCalls = Arc<Mutex<Vec<(String, String, Option<String>)>>>;
+type BatchEmbeddingCalls = Arc<Mutex<Vec<Vec<(String, String, Option<String>)>>>>;
+type SearchParams = Arc<Mutex<Option<(Vec<f32>, u64, Option<Filter>)>>>;
+type ChatEventStream = std::sync::Arc<std::sync::Mutex<Option<Vec<Result<ChatStreamEvent, AppError>>>>>;
+type RetrievalResponseQueue = Arc<Mutex<VecDeque<Result<Vec<RetrievedChunk>, AppError>>>>;
+
 #[derive(Clone)]
 pub struct MockAiClient {
     // Add fields to store mock state, similar to previous mock impl
@@ -92,8 +103,7 @@ pub struct MockAiClient {
     last_request: std::sync::Arc<std::sync::Mutex<Option<ChatRequest>>>,
     last_options: std::sync::Arc<std::sync::Mutex<Option<ChatOptions>>>,
     response_to_return: std::sync::Arc<std::sync::Mutex<Result<ChatResponse, AppError>>>,
-    stream_to_return:
-        std::sync::Arc<std::sync::Mutex<Option<Vec<Result<ChatStreamEvent, AppError>>>>>,
+    stream_to_return: ChatEventStream,
     // Field to capture the messages sent to the stream_chat method
     last_received_messages: std::sync::Arc<std::sync::Mutex<Option<Vec<genai::chat::ChatMessage>>>>,
     // model_name: String, // Removed unused
@@ -116,7 +126,7 @@ impl MockAiClient {
                     "Mock AI response".to_string(),
                 )],
                 reasoning_content: None,
-                usage: Default::default(),
+                usage: Usage::default(),
             }))),
             stream_to_return: std::sync::Arc::new(std::sync::Mutex::new(None)),
             last_received_messages: std::sync::Arc::new(std::sync::Mutex::new(None)),
@@ -215,7 +225,7 @@ impl AiClient for MockAiClient {
                                     //     })
                                     // }
                                     ChatStreamEvent::End(_end_event) => {
-                                        ChatStreamEvent::End(Default::default())
+                                        ChatStreamEvent::End(StreamEnd::default())
                                     } // StreamEnd is not Clone, use Default
                                 };
                                 new_items.push(Ok(new_event));
@@ -239,11 +249,17 @@ impl AiClient for MockAiClient {
 
 #[derive(Clone)]
 pub struct MockEmbeddingClient {
-    response: Arc<Mutex<Option<Result<Vec<f32>, AppError>>>>,
-    response_sequence: Arc<Mutex<VecDeque<Result<Vec<f32>, AppError>>>>, // For sequential responses
-    batch_response: Arc<Mutex<Option<Result<Vec<Vec<f32>>, AppError>>>>, // For batch_embed_contents
-    calls: Arc<Mutex<Vec<(String, String, Option<String>)>>>, // Added Option<String> for title
-    batch_calls: Arc<Mutex<Vec<Vec<(String, String, Option<String>)>>>>, // For batch_embed_contents calls, storing Vec of batches, each batch is Vec of (text, task_type, title)
+    response: EmbeddingResponse,
+    response_sequence: EmbeddingResponseSequence, // For sequential responses
+    batch_response: BatchEmbeddingResponse, // For batch_embed_contents
+    calls: EmbeddingCalls, // Added Option<String> for title
+    batch_calls: BatchEmbeddingCalls, // For batch_embed_contents calls, storing Vec of batches, each batch is Vec of (text, task_type, title)
+}
+
+impl Default for MockEmbeddingClient {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl MockEmbeddingClient {
@@ -383,8 +399,14 @@ pub enum PipelineCall {
 // Updated MockEmbeddingPipelineService
 #[derive(Clone)] // Added Clone
 pub struct MockEmbeddingPipelineService {
-    retrieve_response_queue: Arc<Mutex<VecDeque<Result<Vec<RetrievedChunk>, AppError>>>>,
+    retrieve_response_queue: RetrievalResponseQueue,
     calls: Arc<Mutex<Vec<PipelineCall>>>, // Track calls
+}
+
+impl Default for MockEmbeddingPipelineService {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl MockEmbeddingPipelineService {
@@ -453,27 +475,20 @@ impl EmbeddingPipelineServiceTrait for MockEmbeddingPipelineService {
     async fn process_and_embed_lorebook_entry(
         &self,
         _state: Arc<AppState>,
-        original_lorebook_entry_id: Uuid,
-        lorebook_id: Uuid,
-        user_id: Uuid,
-        decrypted_content: String,
-        decrypted_title: Option<String>,
-        decrypted_keywords: Option<Vec<String>>,
-        is_enabled: bool,
-        is_constant: bool,
+        params: LorebookEntryParams,
     ) -> Result<(), AppError> {
         self.calls
             .lock()
             .unwrap()
             .push(PipelineCall::ProcessAndEmbedLorebookEntry {
-                original_lorebook_entry_id,
-                lorebook_id,
-                user_id,
-                decrypted_content,
-                decrypted_title,
-                decrypted_keywords,
-                is_enabled,
-                is_constant,
+                original_lorebook_entry_id: params.original_lorebook_entry_id,
+                lorebook_id: params.lorebook_id,
+                user_id: params.user_id,
+                decrypted_content: params.decrypted_content,
+                decrypted_title: params.decrypted_title,
+                decrypted_keywords: params.decrypted_keywords,
+                is_enabled: params.is_enabled,
+                is_constant: params.is_constant,
             });
         Ok(())
     }
@@ -537,10 +552,17 @@ pub struct MockQdrantClientService {
     upsert_call_count: Arc<Mutex<usize>>,
     search_call_count: Arc<Mutex<usize>>,
     last_upsert_points: Arc<Mutex<Option<Vec<qdrant_client::qdrant::PointStruct>>>>,
-    last_search_params: Arc<Mutex<Option<(Vec<f32>, u64, Option<Filter>)>>>,
+    last_search_params: SearchParams,
 }
 
 #[allow(dead_code)] // Mock methods may not all be used in current tests
+impl Default for MockQdrantClientService {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[allow(dead_code)] // Mock methods for testing
 impl MockQdrantClientService {
     pub fn new() -> Self {
         MockQdrantClientService {
@@ -595,7 +617,7 @@ impl MockQdrantClientService {
         self.last_search_params.lock().unwrap().clone()
     }
 
-    pub async fn upsert_points(
+    pub fn upsert_points(
         &self,
         points: Vec<qdrant_client::qdrant::PointStruct>,
     ) -> Result<(), AppError> {
@@ -610,6 +632,7 @@ impl MockQdrantClientService {
         response.unwrap_or(Ok(()))
     }
 
+    #[allow(clippy::unused_async)]
     async fn search_points(
         &self,
         vector: Vec<f32>,
@@ -632,7 +655,7 @@ impl MockQdrantClientService {
                 "MockQdrantClientService::search_points (standalone): Popped response: {:?}", // Corrected comment
                 match response.as_ref() { // Match directly on the Result
                     Ok(v) => format!("Ok(len={})", v.len()),
-                    Err(e) => format!("Err({})", e), // AppError needs .to_string() for proper formatting
+                    Err(e) => format!("Err({e})"), // AppError needs .to_string() for proper formatting
                 }
             );
             response // This is Result<Vec<ScoredPoint>, AppError>
@@ -644,6 +667,7 @@ impl MockQdrantClientService {
     }
 
     
+    #[allow(clippy::unused_async)]
     async fn retrieve_points(
         &self,
         _filter: Option<Filter>,
@@ -661,10 +685,12 @@ impl MockQdrantClientService {
         }
     }
 
+    #[allow(clippy::unused_async)]
     async fn delete_points(&self, _point_ids: Vec<PointId>) -> Result<(), AppError> {
         Ok(()) // Just return success for the mock
     }
 
+    #[allow(clippy::unused_async)]
     async fn update_collection_settings(&self) -> Result<(), AppError> {
         Ok(()) // Just return success for the mock
     }
@@ -689,6 +715,7 @@ impl QdrantClientServiceTrait for MockQdrantClientService {
         response.unwrap_or(Ok(()))
     }
 
+    #[allow(clippy::unused_async)]
     async fn search_points(
         &self,
         vector: Vec<f32>,
@@ -728,6 +755,7 @@ impl QdrantClientServiceTrait for MockQdrantClientService {
         }
     }
 
+    #[allow(clippy::unused_async)]
     async fn retrieve_points(
         &self,
         _filter: Option<Filter>,
@@ -745,14 +773,17 @@ impl QdrantClientServiceTrait for MockQdrantClientService {
         }
     }
 
+    #[allow(clippy::unused_async)]
     async fn delete_points(&self, _point_ids: Vec<PointId>) -> Result<(), AppError> {
         Ok(()) // Just return success for the mock
     }
 
+    #[allow(clippy::unused_async)]
     async fn update_collection_settings(&self) -> Result<(), AppError> {
         Ok(()) // Just return success for the mock
     }
 
+    #[allow(clippy::unused_async)]
     async fn delete_points_by_filter(&self, filter: Filter) -> Result<(), AppError> {
         tracing::info!(
             target: "mock_qdrant_client",
@@ -908,19 +939,23 @@ impl TestAppStateBuilder {
             ))
         });
 
-        AppState::new(
-            self.db_pool,
-            self.config,
-            self.ai_client,
-            self.embedding_client,
-            self.qdrant_service,
+        let services = AppStateServices {
+            ai_client: self.ai_client,
+            embedding_client: self.embedding_client,
+            qdrant_service: self.qdrant_service,
             embedding_pipeline_service,
             chat_override_service,
             user_persona_service,
             token_counter,
-            encryption_service, // Added encryption_service
-            lorebook_service,   // Added lorebook_service
-            self.auth_backend,  // Use the provided auth_backend
+            encryption_service,
+            lorebook_service,
+            auth_backend: self.auth_backend,
+        };
+
+        AppState::new(
+            self.db_pool,
+            self.config,
+            services,
         )
     }
 }
@@ -945,7 +980,7 @@ pub fn ensure_tracing_initialized() {
         tracing_fmt() // Use the aliased tracing_fmt
             .with_env_filter(filter)
             .try_init()
-            .unwrap_or_else(|e| eprintln!("Failed to initialize tracing: {}", e));
+            .unwrap_or_else(|e| eprintln!("Failed to initialize tracing: {e}"));
     });
 }
 
@@ -1183,7 +1218,7 @@ pub async fn spawn_app_with_options(
         .await
         .expect("Failed to bind to random port for test server");
     let local_addr = listener.local_addr().expect("Failed to get local address");
-    let app_address = format!("http://{}", local_addr);
+    let app_address = format!("http://{local_addr}");
 
     debug!("Test app address: {}", app_address);
 
@@ -1292,7 +1327,7 @@ pub mod db {
 
         // Create a connection pool to the default database (e.g., postgres) to create the test database
         let manager_default =
-            DeadpoolManager::new(format!("{}/postgres", main_db_url), DeadpoolRuntime::Tokio1);
+            DeadpoolManager::new(format!("{main_db_url}/postgres"), DeadpoolRuntime::Tokio1);
         let pool_default = DeadpoolPool::builder(manager_default)
             .max_size(1)
             .build()
@@ -1308,11 +1343,10 @@ pub mod db {
         conn_default
             .interact(move |conn| {
                 diesel::sql_query(format!(
-                    "DROP DATABASE IF EXISTS \"{}\" WITH (FORCE)",
-                    db_name_clone_drop
+                    "DROP DATABASE IF EXISTS \"{db_name_clone_drop}\" WITH (FORCE)"
                 ))
                 .execute(conn)?; // Added WITH (FORCE)
-                diesel::sql_query(format!("CREATE DATABASE \"{}\"", db_name_clone_create))
+                diesel::sql_query(format!("CREATE DATABASE \"{db_name_clone_create}\""))
                     .execute(conn)?;
                 Ok::<(), diesel::result::Error>(())
             })
@@ -1321,7 +1355,7 @@ pub mod db {
             .expect("Failed to create test DB");
 
         // Create a connection pool to the newly created test database
-        let test_db_url = format!("{}/{}", main_db_url, db_name);
+        let test_db_url = format!("{main_db_url}/{db_name}");
         let manager = DeadpoolManager::new(test_db_url, DeadpoolRuntime::Tokio1);
         let pool = DeadpoolPool::builder(manager)
             .build()
@@ -1348,7 +1382,7 @@ pub mod db {
         password_str: String,
     ) -> Result<DbUser, anyhow::Error> {
         let conn = pool.get().await?;
-        let email = format!("{}@test.com", username);
+        let email = format!("{username}@test.com");
 
         let password_str_for_kek = password_str.clone(); // Clone for KEK derivation
         let username_clone_for_payload = username.clone(); // Clone for NewUser payload
@@ -1431,19 +1465,19 @@ pub mod db {
             user_id,
             name: name_clone_for_payload.clone(),
             description: Some(
-                format!("Test description for {}", name_clone_for_payload).into_bytes(),
+                format!("Test description for {name_clone_for_payload}").into_bytes(),
             ),
-            greeting: Some(format!("Test greeting for {}", name_clone_for_payload).into_bytes()),
+            greeting: Some(format!("Test greeting for {name_clone_for_payload}").into_bytes()),
             example_dialogue: Some(
-                format!("Test example dialogue for {}", name_clone_for_payload).into_bytes(),
+                format!("Test example dialogue for {name_clone_for_payload}").into_bytes(),
             ),
             visibility: Some("private".to_string()),
             character_version: Some("2.0".to_string()),
             spec: "test_spec_v2.0".to_string(),
             spec_version: "2.0".to_string(),
-            persona: Some(format!("Test persona for {}", name_clone_for_payload).into_bytes()),
+            persona: Some(format!("Test persona for {name_clone_for_payload}").into_bytes()),
             world_scenario: Some(
-                format!("Test world scenario for {}", name_clone_for_payload).into_bytes(),
+                format!("Test world scenario for {name_clone_for_payload}").into_bytes(),
             ),
             avatar: None,
             chat: None,
@@ -1920,8 +1954,7 @@ pub async fn login_user_via_router(router: &Router, username: &str, password: &s
             .to_bytes();
         let body_text = String::from_utf8_lossy(&body);
         panic!(
-            "Router login failed for user '{}'. Status: {}. Body: {}",
-            username, status, body_text
+            "Router login failed for user '{username}'. Status: {status}. Body: {body_text}"
         );
     }
 
@@ -1933,13 +1966,16 @@ pub async fn login_user_via_router(router: &Router, username: &str, password: &s
         .map(|s| s.to_string())
         .unwrap_or_else(|| {
             panic!(
-                "Session cookie not found in login response for user {}",
-                username
+                "Session cookie not found in login response for user {username}"
             )
         })
 }
 
-// Helper function for API-based login
+/// Helper function for API-based login.
+/// 
+/// # Panics
+/// 
+/// Panics if the reqwest client cannot be built or login fails.
 pub async fn login_user_via_api(
     test_app: &TestApp,
     username: &str,
@@ -1970,10 +2006,9 @@ pub async fn login_user_via_api(
         let body_text = response
             .text()
             .await
-            .unwrap_or_else(|e| format!("Failed to read error body: {}", e));
+            .unwrap_or_else(|e| format!("Failed to read error body: {e}"));
         panic!(
-            "API login failed for user '{}'. Status: {}. URL: {}. Body: {}",
-            username, status, login_url, body_text
+            "API login failed for user '{username}'. Status: {status}. URL: {login_url}. Body: {body_text}"
         );
     }
 
@@ -1981,26 +2016,28 @@ pub async fn login_user_via_api(
     let session_cookie_string = response
         .cookies()
         .find(|c| c.name() == "id") // Assuming session cookie name is "id"
-        .map(|c| format!("{}={}", c.name(), c.value()))
-        .unwrap_or_else(|| {
+        .map_or_else(|| {
             let headers_debug = format!("{:?}", response.headers());
             panic!(
-                "Session cookie 'id' not found in login response for user {}. URL: {}. Headers: {}",
-                username, login_url, headers_debug
+                "Session cookie 'id' not found in login response for user {username}. URL: {login_url}. Headers: {headers_debug}"
             )
-        });
+        }, |c| format!("{}={}", c.name(), c.value()));
     (client, session_cookie_string)
 }
 
 // Helper structs and functions for testing SSE
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct ParsedSseEvent {
     pub event: Option<String>, // Name of the event (e.g., "content", "error")
     pub data: String,          // Raw data string
                                // Not parsing id or retry for now
 }
 
-// Revised helper to parse full SSE events
+/// Collects and parses SSE events from an HTTP response body.
+/// 
+/// # Panics
+/// 
+/// Panics if the SSE stream cannot be read or contains invalid UTF-8.
 pub async fn collect_full_sse_events(body: axum::body::Body) -> Vec<ParsedSseEvent> {
     let mut events = Vec::new();
     let mut current_event_name: Option<String> = None;
@@ -2066,10 +2103,17 @@ pub async fn collect_full_sse_events(body: axum::body::Body) -> Vec<ParsedSseEve
     events
 }
 
-// Helper to assert the history sent to the mock AI client
+/// Helper to assert the history sent to the mock AI client
+/// 
+/// # Panics
+/// 
+/// Panics if:
+/// - Mock AI client is not present in the test app
+/// - Mock AI client did not receive a request
+/// - Expected history doesn't match the actual history sent to AI
 pub fn assert_ai_history(
     test_app: &TestApp,
-    expected_history: Vec<(&str, &str)>, // (Role, Content)
+    expected_history: &[(&str, &str)], // (Role, Content)
 ) {
     let last_request = test_app
         .mock_ai_client
@@ -2103,7 +2147,7 @@ pub fn assert_ai_history(
             genai::chat::MessageContent::Text(text) => text.as_str(),
             _ => "<non-text content>",
         };
-        println!("  [{}] {}: {}", i, role_str, content);
+        println!("  [{i}] {role_str}: {content}");
     }
 
     println!(
@@ -2123,7 +2167,7 @@ pub fn assert_ai_history(
                 if let genai::chat::MessageContent::Text(t) = &m.content {
                     t.clone()
                 } else {
-                    "".to_string()
+                    String::new()
                 }
             ))
             .collect::<Vec<_>>(),
@@ -2149,24 +2193,33 @@ pub fn assert_ai_history(
         };
 
         println!(
-            "[DEBUG] Compare message {}: Expected {}:'{}' vs Actual {}:'{}'",
-            i, expected_role_str, expected_content, actual_role_str, actual_content
+            "[DEBUG] Compare message {i}: Expected {expected_role_str}:'{expected_content}' vs Actual {actual_role_str}:'{actual_content}'"
         );
 
         assert_eq!(
             actual_role_str, *expected_role_str,
-            "Role mismatch at index {}",
-            i
+            "Role mismatch at index {i}"
         );
         assert_eq!(
             actual_content, *expected_content,
-            "Content mismatch at index {}",
-            i
+            "Content mismatch at index {i}"
         );
     }
 }
 
 // Helper to set history management settings via API
+/// Sets history settings for a chat session via API
+/// 
+/// # Errors
+/// 
+/// Returns an error if:
+/// - HTTP request fails
+/// - Server returns a non-OK status
+/// - Response parsing fails
+/// 
+/// # Panics
+/// 
+/// Panics if the API response status is not OK
 pub async fn set_history_settings(
     test_app: &TestApp,
     session_id: Uuid,

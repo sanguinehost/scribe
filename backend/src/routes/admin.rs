@@ -48,9 +48,11 @@ pub struct UpdateUserRoleRequest {
 }
 
 // Middleware to check if user is Admin
-async fn require_admin(auth_session: &CurrentAuthSession) -> Result<(), AppError> {
-    match &auth_session.user {
-        Some(user) => {
+fn require_admin(auth_session: &CurrentAuthSession) -> Result<(), AppError> {
+    auth_session.user.as_ref().map_or_else(|| {
+            warn!("Unauthorized access attempt to admin endpoint");
+            Err(AppError::Unauthorized("Not logged in".to_string()))
+        }, |user| {
             // Access role from User struct
             let user_id = user.id;
             let username = user.username.clone();
@@ -67,27 +69,22 @@ async fn require_admin(auth_session: &CurrentAuthSession) -> Result<(), AppError
                     Err(AppError::Forbidden)
                 }
             }
-        }
-        None => {
-            warn!("Unauthorized access attempt to admin endpoint");
-            Err(AppError::Unauthorized("Not logged in".to_string()))
-        }
-    }
+        })
 }
 
 // List all users
-#[instrument(skip(_state, auth_session), err)]
+#[instrument(skip(state, auth_session), err)]
 async fn list_users_handler(
-    State(_state): State<AppState>,
+    State(state): State<AppState>,
     auth_session: CurrentAuthSession,
 ) -> Result<Response, AppError> {
     // Verify the user is an administrator
-    require_admin(&auth_session).await?;
+    require_admin(&auth_session)?;
 
     info!("Admin: listing all users");
 
     // Fetch all users from the database
-    let users = _state
+    let users = state
         .pool
         .get()
         .await
@@ -117,19 +114,19 @@ async fn list_users_handler(
 }
 
 // Get a specific user
-#[instrument(skip(_state, auth_session), err)]
+#[instrument(skip(state, auth_session), err)]
 async fn get_user_handler(
-    State(_state): State<AppState>,
+    State(state): State<AppState>,
     auth_session: CurrentAuthSession,
     Path(user_id): Path<Uuid>,
 ) -> Result<Response, AppError> {
     // Verify the user is an administrator
-    require_admin(&auth_session).await?;
+    require_admin(&auth_session)?;
 
     info!(user_id = %user_id, "Admin: getting specific user details");
 
     // Fetch the user from the database
-    let user = _state
+    let user = state
         .pool
         .get()
         .await
@@ -140,7 +137,7 @@ async fn get_user_handler(
                 .select(UserDbQuery::as_select())
                 .first::<UserDbQuery>(conn)
                 .map_err(|e| {
-                    if let diesel::result::Error::NotFound = e {
+                    if e == diesel::result::Error::NotFound {
                         AppError::UserNotFound
                     } else {
                         AppError::DatabaseQueryError(e.to_string())
@@ -165,14 +162,14 @@ async fn get_user_handler(
 }
 
 // Implement user account locking
-#[instrument(skip(_state, auth_session), err)]
+#[instrument(skip(state, auth_session), err)]
 async fn lock_user_handler(
-    State(_state): State<AppState>,
+    State(state): State<AppState>,
     auth_session: CurrentAuthSession,
     Path(user_id): Path<Uuid>,
 ) -> Result<Response, AppError> {
     // Verify the user is an administrator
-    require_admin(&auth_session).await?;
+    require_admin(&auth_session)?;
 
     info!(user_id = %user_id, "Admin: locking user account");
 
@@ -187,7 +184,7 @@ async fn lock_user_handler(
     }
 
     // Update the user's account status in the database
-    let updated_user = _state
+    let updated_user = state
         .pool
         .get()
         .await
@@ -199,7 +196,7 @@ async fn lock_user_handler(
                 .returning(UserDbQuery::as_select())
                 .get_result::<UserDbQuery>(conn)
                 .map_err(|e| {
-                    if let diesel::result::Error::NotFound = e {
+                    if e == diesel::result::Error::NotFound {
                         AppError::UserNotFound
                     } else {
                         AppError::DatabaseQueryError(e.to_string())
@@ -220,19 +217,19 @@ async fn lock_user_handler(
 }
 
 // Implement user account unlocking
-#[instrument(skip(_state, auth_session), err)]
+#[instrument(skip(state, auth_session), err)]
 async fn unlock_user_handler(
-    State(_state): State<AppState>,
+    State(state): State<AppState>,
     auth_session: CurrentAuthSession,
     Path(user_id): Path<Uuid>,
 ) -> Result<Response, AppError> {
     // Verify the user is an administrator
-    require_admin(&auth_session).await?;
+    require_admin(&auth_session)?;
 
     info!(user_id = %user_id, "Admin: unlocking user account");
 
     // Update the user's account status in the database
-    let updated_user = _state
+    let updated_user = state
         .pool
         .get()
         .await
@@ -244,7 +241,7 @@ async fn unlock_user_handler(
                 .returning(UserDbQuery::as_select())
                 .get_result::<UserDbQuery>(conn)
                 .map_err(|e| {
-                    if let diesel::result::Error::NotFound = e {
+                    if e == diesel::result::Error::NotFound {
                         AppError::UserNotFound
                     } else {
                         AppError::DatabaseQueryError(e.to_string())
@@ -265,15 +262,15 @@ async fn unlock_user_handler(
 }
 
 // Update user role
-#[instrument(skip(_state, auth_session, payload), err)]
+#[instrument(skip(state, auth_session, payload), err)]
 async fn update_user_role_handler(
-    State(_state): State<AppState>,
+    State(state): State<AppState>,
     auth_session: CurrentAuthSession,
     Path(user_id): Path<Uuid>,
     Json(payload): Json<UpdateUserRoleRequest>,
 ) -> Result<Response, AppError> {
     // Verify the user is an administrator
-    require_admin(&auth_session).await?;
+    require_admin(&auth_session)?;
 
     info!(user_id = %user_id, new_role = ?payload.role, "Admin: updating user role");
 
@@ -288,7 +285,7 @@ async fn update_user_role_handler(
     }
 
     // Update the user's role in the database
-    let updated_user = _state
+    let updated_user = state
         .pool
         .get()
         .await
@@ -300,7 +297,7 @@ async fn update_user_role_handler(
                 .returning(UserDbQuery::as_select())
                 .get_result::<UserDbQuery>(conn)
                 .map_err(|e| {
-                    if let diesel::result::Error::NotFound = e {
+                    if e == diesel::result::Error::NotFound {
                         AppError::UserNotFound
                     } else {
                         AppError::DatabaseQueryError(e.to_string())

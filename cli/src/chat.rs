@@ -19,8 +19,7 @@ pub async fn run_chat_loop<IO: IoHandler, Http: HttpClient>(
     current_model: &str,
 ) -> Result<(), CliError> {
     io_handler.write_line(&format!(
-        "\nEntering chat session (ID: {}). Type 'quit' or 'exit' to leave.",
-        chat_id
+        "\nEntering chat session (ID: {chat_id}). Type 'quit' or 'exit' to leave."
     ))?;
     io_handler.write_line("--------------------------------------------------")?;
 
@@ -44,7 +43,7 @@ pub async fn run_chat_loop<IO: IoHandler, Http: HttpClient>(
         {
             Ok(ai_message) => {
                 let content_str = String::from_utf8_lossy(&ai_message.content).to_string();
-                io_handler.write_line(&format!("AI: {}", content_str))?;
+                io_handler.write_line(&format!("AI: {content_str}"))?;
                 io_handler.write_line("--------------------------------------------------")?;
             }
             Err(CliError::RateLimitExceeded) => {
@@ -57,8 +56,7 @@ pub async fn run_chat_loop<IO: IoHandler, Http: HttpClient>(
             Err(e) => {
                 tracing::error!(error = ?e, chat_id = %chat_id, "Failed to send message or receive response");
                 io_handler.write_line(&format!(
-                    "Error sending message: {}. Try again or type 'quit' to exit.",
-                    e
+                    "Error sending message: {e}. Try again or type 'quit' to exit."
                 ))?;
                 io_handler.write_line("--------------------------------------------------")?;
             }
@@ -78,8 +76,7 @@ pub async fn run_interactive_streaming_chat_loop<IO: IoHandler, Http: HttpClient
     first_mes_content: Option<String>,
 ) -> Result<(), CliError> {
     io_handler.write_line(&format!(
-        "\nEntering streaming chat session (ID: {}). Type 'quit' or 'exit' to leave.",
-        chat_id
+        "\nEntering streaming chat session (ID: {chat_id}). Type 'quit' or 'exit' to leave."
     ))?;
 
     // Display the character's first message if provided
@@ -137,7 +134,7 @@ pub async fn run_interactive_streaming_chat_loop<IO: IoHandler, Http: HttpClient
                                 thinking_started = true;
                                 content_started = false;
                             }
-                            io_handler.write_line(&format!("- {}...", step))?;
+                            io_handler.write_line(&format!("- {step}..."))?;
                         }
                         Ok(StreamEvent::ReasoningChunk(text_chunk)) => {
                             if !thinking_started {
@@ -154,10 +151,10 @@ pub async fn run_interactive_streaming_chat_loop<IO: IoHandler, Http: HttpClient
                             while let Some(newline_pos) = current_line.find('\n') {
                                 let line_to_print =
                                     current_line.drain(..=newline_pos).collect::<String>();
-                                io_handler.write_raw(&format!("  {}", line_to_print))?;
+                                io_handler.write_raw(&format!("  {line_to_print}"))?;
                             }
                             if !current_line.is_empty() {
-                                io_handler.write_raw(&format!("  {}", current_line))?;
+                                io_handler.write_raw(&format!("  {current_line}"))?;
                                 current_line.clear();
                                 io_handler.flush()?;
                             }
@@ -223,7 +220,7 @@ pub async fn run_interactive_streaming_chat_loop<IO: IoHandler, Http: HttpClient
                             if let CliError::RateLimitExceeded = e {
                                 io_handler.write_line("API rate limit exceeded.")?;
                             } else {
-                                io_handler.write_line(&format!("Stream error: {}", e))?;
+                                io_handler.write_line(&format!("Stream error: {e}"))?;
                             }
                             break;
                         }
@@ -239,8 +236,7 @@ pub async fn run_interactive_streaming_chat_loop<IO: IoHandler, Http: HttpClient
             Err(e) => {
                 tracing::error!(error = ?e, chat_id = %chat_id, "Failed to initiate stream or send message");
                 io_handler.write_line(&format!(
-                    "Error in streaming chat: {}. Try again or type 'quit' to exit.",
-                    e
+                    "Error in streaming chat: {e}. Try again or type 'quit' to exit."
                 ))?;
                 io_handler.write_line("--------------------------------------------------")?;
             }

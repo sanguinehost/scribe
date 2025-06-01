@@ -1,5 +1,5 @@
 use chrono::{DateTime, Utc};
-use diesel::prelude::*;
+use diesel::{Queryable, Insertable, Identifiable, AsChangeset, Selectable, Associations};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -156,7 +156,11 @@ pub struct UserPersonaDataForClient {
 }
 
 impl UserPersona {
-    async fn decrypt_optional_field_async(
+    /// Decrypts an optional field if both ciphertext and nonce are present.
+    ///
+    /// # Errors
+    /// Returns `AppError::DecryptionError` if decryption fails or if ciphertext/nonce mismatch occurs
+    fn decrypt_optional_field(
         encryption_service: &EncryptionService,
         dek: &SecretBox<Vec<u8>>,
         ciphertext: Option<Vec<u8>>,
@@ -177,7 +181,6 @@ impl UserPersona {
 
                 let decrypted_bytes = encryption_service
                     .decrypt(&ct, &n, dek.expose_secret().as_slice())
-                    .await
                     .map_err(|e| {
                         AppError::DecryptionError(format!(
                             "Failed to decrypt {field_name_for_error}: {e}"
@@ -199,8 +202,12 @@ impl UserPersona {
         }
     }
 
+    /// Converts this `UserPersonaData` into a `UserPersonaDataForClient` by decrypting encrypted fields.
+    ///
+    /// # Errors
+    /// Returns `AppError::DecryptionError` if decryption fails or required encryption fields are missing
     #[allow(clippy::too_many_lines)]
-    pub async fn into_data_for_client(
+    pub fn into_data_for_client(
         self,
         dek_opt: Option<&SecretBox<Vec<u8>>>,
     ) -> Result<UserPersonaDataForClient, AppError> {
@@ -225,60 +232,53 @@ impl UserPersona {
                     &self.description,
                     &desc_nonce,
                     dek.expose_secret().as_slice(),
-                )
-                .await?;
+                )?;
             let description_str = String::from_utf8(description_val).map_err(|e| {
                 AppError::DecryptionError(format!("Invalid UTF-8 for description: {e}"))
             })?;
 
-            let personality_str = Self::decrypt_optional_field_async(
+            let personality_str = Self::decrypt_optional_field(
                 &encryption_service,
                 dek,
                 self.personality,
                 self.personality_nonce,
                 "personality",
-            )
-            .await?;
-            let scenario_str = Self::decrypt_optional_field_async(
+            )?;
+            let scenario_str = Self::decrypt_optional_field(
                 &encryption_service,
                 dek,
                 self.scenario,
                 self.scenario_nonce,
                 "scenario",
-            )
-            .await?;
-            let first_mes_str = Self::decrypt_optional_field_async(
+            )?;
+            let first_mes_str = Self::decrypt_optional_field(
                 &encryption_service,
                 dek,
                 self.first_mes,
                 self.first_mes_nonce,
                 "first_mes",
-            )
-            .await?;
-            let mes_example_str = Self::decrypt_optional_field_async(
+            )?;
+            let mes_example_str = Self::decrypt_optional_field(
                 &encryption_service,
                 dek,
                 self.mes_example,
                 self.mes_example_nonce,
                 "mes_example",
-            )
-            .await?;
-            let system_prompt_str = Self::decrypt_optional_field_async(
+            )?;
+            let system_prompt_str = Self::decrypt_optional_field(
                 &encryption_service,
                 dek,
                 self.system_prompt,
                 self.system_prompt_nonce,
                 "system_prompt",
-            )
-            .await?;
-            let post_hist_instr_str = Self::decrypt_optional_field_async(
+            )?;
+            let post_hist_instr_str = Self::decrypt_optional_field(
                 &encryption_service,
                 dek,
                 self.post_history_instructions,
                 self.post_history_instructions_nonce,
                 "post_history_instructions",
-            )
-            .await?;
+            )?;
 
             (
                 description_str,
@@ -445,19 +445,16 @@ mod tests {
 
     // TODO: Add encryption/decryption tests using mocked EncryptionService
     // This test covers the decryption part of the model
-    #[tokio::test]
-    async fn test_user_persona_into_data_for_client() {
-        let dek = generate_dummy_dek_for_persona_tests();
-        let _encryption_service_real = EncryptionService::new(); // For direct use if needed, though model creates its own
-
+    /// Helper function to create test persona with encrypted data
+    fn create_test_persona(dek: &SecretBox<Vec<u8>>) -> (UserPersona, String, String) {
         let original_description = "This is the main description.".to_string();
         let original_personality = "A very curious individual.".to_string();
 
         // Manually encrypt fields to simulate what the service would do before saving
-        let (desc_ct, desc_n) = crypto::encrypt_gcm(original_description.as_bytes(), &dek).unwrap();
-        let (pers_ct, pers_n) = crypto::encrypt_gcm(original_personality.as_bytes(), &dek).unwrap();
+        let (desc_ct, desc_n) = crypto::encrypt_gcm(original_description.as_bytes(), dek).unwrap();
+        let (pers_ct, pers_n) = crypto::encrypt_gcm(original_personality.as_bytes(), dek).unwrap();
 
-        let persona_encrypted = UserPersona {
+        let persona = UserPersona {
             id: Uuid::new_v4(),
             user_id: Uuid::new_v4(),
             name: "Encrypted Persona".to_string(),
@@ -483,22 +480,27 @@ mod tests {
             updated_at: Utc::now(),
         };
 
-        // Test with DEK
-        let client_data_with_dek = persona_encrypted
-            .clone()
+        (persona, original_description, original_personality)
+    }
+
+    #[test]
+    fn test_user_persona_into_data_for_client() {
+        let dek = generate_dummy_dek_for_persona_tests();
+
+        // Test with DEK - fresh instance
+        let (persona_with_dek, original_description, original_personality) = create_test_persona(&dek);
+        let client_data_with_dek = persona_with_dek
             .into_data_for_client(Some(&dek))
-            .await
             .unwrap();
         assert_eq!(client_data_with_dek.description, original_description);
         assert_eq!(client_data_with_dek.personality, Some(original_personality));
         assert_eq!(client_data_with_dek.scenario, None);
         assert_eq!(client_data_with_dek.name, "Encrypted Persona");
 
-        // Test without DEK
-        let client_data_without_dek = persona_encrypted
-            .clone()
+        // Test without DEK - fresh instance, no cloning needed
+        let (persona_without_dek, _, _) = create_test_persona(&dek);
+        let client_data_without_dek = persona_without_dek
             .into_data_for_client(None)
-            .await
             .unwrap();
         assert_eq!(
             client_data_without_dek.description,
@@ -511,27 +513,26 @@ mod tests {
         assert_eq!(client_data_without_dek.scenario, None);
 
         // Test scenario: description was empty originally
-        let (empty_desc_ct, empty_desc_n) = crypto::encrypt_gcm("".as_bytes(), &dek).unwrap();
-        let persona_empty_desc = UserPersona {
-            description: empty_desc_ct,
-            description_nonce: Some(empty_desc_n),
-            personality: None, // No personality
-            personality_nonce: None,
-            ..create_dummy_user_persona_encrypted() // Fill other fields
+        let create_empty_desc_persona = || {
+            let (empty_desc_ct, empty_desc_n) = crypto::encrypt_gcm(b"", &dek).unwrap();
+            UserPersona {
+                description: empty_desc_ct,
+                description_nonce: Some(empty_desc_n),
+                personality: None, // No personality
+                personality_nonce: None,
+                ..create_dummy_user_persona_encrypted() // Fill other fields
+            }
         };
 
-        let client_empty_desc_with_dek = persona_empty_desc
-            .clone()
+        let client_empty_desc_with_dek = create_empty_desc_persona()
             .into_data_for_client(Some(&dek))
-            .await
             .unwrap();
         assert_eq!(client_empty_desc_with_dek.description, "");
         assert_eq!(client_empty_desc_with_dek.personality, None);
 
-        let client_empty_desc_without_dek = persona_empty_desc
-            .clone()
+        // No cloning needed - fresh instance
+        let client_empty_desc_without_dek = create_empty_desc_persona()
             .into_data_for_client(None)
-            .await
             .unwrap();
         assert_eq!(
             client_empty_desc_without_dek.description,

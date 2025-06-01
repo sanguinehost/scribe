@@ -5,7 +5,7 @@ use reqwest::Client as ReqwestClient;
 use reqwest::cookie::Jar;
 use std::path::PathBuf;
 use std::sync::Arc;
-use tracing;
+use tracing::{error, info};
 use tracing_subscriber::{EnvFilter, fmt};
 
 // Items imported from the library crate
@@ -81,7 +81,7 @@ async fn main() -> Result<()> {
     let cli_args = CliArgs::parse();
     let mut io_handler = StdIoHandler::default();
 
-    tracing::info!(base_url = %cli_args.base_url, "Starting Scribe CLI client");
+    info!(base_url = %cli_args.base_url, "Starting Scribe CLI client");
 
     let reqwest_client = ReqwestClient::builder()
         .cookie_provider(Arc::new(Jar::default()))
@@ -372,7 +372,7 @@ async fn main() -> Result<()> {
                                                     .write_line("Successfully logged out.")?;
                                             }
                                             Err(e) => {
-                                                tracing::error!(error = ?e, "Failed to logout");
+                                                error!(error = ?e, "Failed to logout");
                                                 io_handler.write_line(&format!(
                                                     "Error logging out: {}",
                                                     e
@@ -391,7 +391,7 @@ async fn main() -> Result<()> {
                             }
                         }
                         Err(e) => {
-                            tracing::error!(error = ?e, "Login failed");
+                            error!(error = ?e, "Login failed");
                             io_handler.write_line(&format!("Login failed: {}", e))?;
                         }
                     }
@@ -416,7 +416,7 @@ async fn main() -> Result<()> {
                             }
                         }
                         Err(e) => {
-                            tracing::error!(error = ?e, "Registration failed");
+                            error!(error = ?e, "Registration failed");
                             io_handler.write_line(&format!("Registration failed: {}", e))?;
                         }
                     }
@@ -426,7 +426,7 @@ async fn main() -> Result<()> {
                     match handle_health_check_action(&http_client, &mut io_handler).await {
                         Ok(()) => { /* Success handled within function */ }
                         Err(e) => {
-                            tracing::error!(error = ?e, "Health check failed");
+                            error!(error = ?e, "Health check failed");
                             io_handler.write_line(&format!("Health check failed: {}", e))?;
                         }
                     }

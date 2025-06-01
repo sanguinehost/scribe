@@ -6,14 +6,14 @@ use scribe_backend::{
     models::chats::{ChatMessage, MessageRole},
     services::chat_override_service::ChatOverrideService,
     services::embedding_pipeline::{
-        ChatMessageChunkMetadata, EmbeddingPipelineService, RetrievedMetadata,
+        ChatMessageChunkMetadata, EmbeddingPipelineService, LorebookEntryParams, RetrievedMetadata,
     }, // Updated imports
     services::encryption_service::EncryptionService,
     services::hybrid_token_counter::HybridTokenCounter,
     services::lorebook_service::LorebookService, // Added LorebookService
     services::tokenizer_service::TokenizerService,
     services::user_persona_service::UserPersonaService, // Added UserPersonaService
-    state::AppState,                                    // Added AppState
+    state::{AppState, AppStateServices},                // Added AppState and AppStateServices
     test_helpers::{self, MockQdrantClientService}, // Removed AppStateBuilder, config. Added self for spawn_app
     text_processing::chunking::ChunkConfig,
     vector_db::qdrant_client::{QdrantClientServiceTrait, ScoredPoint, create_message_id_filter},
@@ -88,22 +88,26 @@ async fn test_process_and_embed_message_integration() {
         test_app.db_pool.clone(),
     ));
 
-    let app_state = Arc::new(AppState::new(
-        test_app.db_pool.clone(),
-        test_app.config.clone(),
-        test_app
+    let services = AppStateServices {
+        ai_client: test_app
             .mock_ai_client
             .clone()
             .expect("Mock AI client should be present"),
-        test_app.mock_embedding_client.clone(),
-        test_app.qdrant_service.clone(),
-        Arc::new(embedding_pipeline_service),
-        chat_override_service_for_test,
-        user_persona_service_for_test, // Added user_persona_service
-        hybrid_token_counter_for_test.clone(),
-        encryption_service_for_test.clone(),
-        lorebook_service_for_test,
+        embedding_client: test_app.mock_embedding_client.clone(),
+        qdrant_service: test_app.qdrant_service.clone(),
+        embedding_pipeline_service: Arc::new(embedding_pipeline_service),
+        chat_override_service: chat_override_service_for_test,
+        user_persona_service: user_persona_service_for_test,
+        token_counter: hybrid_token_counter_for_test.clone(),
+        encryption_service: encryption_service_for_test.clone(),
+        lorebook_service: lorebook_service_for_test,
         auth_backend,
+    };
+
+    let app_state = Arc::new(AppState::new(
+        test_app.db_pool.clone(),
+        test_app.config.clone(),
+        services,
     ));
 
     // 2. Prepare test data
@@ -286,22 +290,26 @@ async fn test_process_and_embed_message_all_chunks_fail_embedding() {
         test_app.db_pool.clone(),
     ));
 
-    let app_state = Arc::new(AppState::new(
-        test_app.db_pool.clone(),
-        test_app.config.clone(),
-        test_app
+    let services = AppStateServices {
+        ai_client: test_app
             .mock_ai_client
             .clone()
             .expect("Mock AI client should be present"),
-        test_app.mock_embedding_client.clone(),
-        test_app.qdrant_service.clone(), // Use the qdrant_service from test_app (which is the mock)
-        Arc::new(embedding_pipeline_service), // Use the real service instead of the mock
-        chat_override_service_for_test_2,
-        user_persona_service_for_test_2, // Added user_persona_service
-        hybrid_token_counter_for_test_2.clone(),
-        encryption_service_for_test_2.clone(),
-        lorebook_service_for_test_2,
-        auth_backend_2,
+        embedding_client: test_app.mock_embedding_client.clone(),
+        qdrant_service: test_app.qdrant_service.clone(), // Use the qdrant_service from test_app (which is the mock)
+        embedding_pipeline_service: Arc::new(embedding_pipeline_service), // Use the real service instead of the mock
+        chat_override_service: chat_override_service_for_test_2,
+        user_persona_service: user_persona_service_for_test_2,
+        token_counter: hybrid_token_counter_for_test_2.clone(),
+        encryption_service: encryption_service_for_test_2.clone(),
+        lorebook_service: lorebook_service_for_test_2,
+        auth_backend: auth_backend_2,
+    };
+
+    let app_state = Arc::new(AppState::new(
+        test_app.db_pool.clone(),
+        test_app.config.clone(),
+        services,
     ));
 
     // 2. Prepare test data
@@ -469,22 +477,26 @@ async fn test_retrieve_relevant_chunks_success() {
         test_app.db_pool.clone(),
     ));
 
-    let app_state = Arc::new(AppState::new(
-        test_app.db_pool.clone(),
-        test_app.config.clone(),
-        test_app
+    let services = AppStateServices {
+        ai_client: test_app
             .mock_ai_client
             .clone()
             .expect("Mock AI client should be present"),
-        test_app.mock_embedding_client.clone(),
-        test_app.qdrant_service.clone(),
-        Arc::new(embedding_pipeline_service), // Using a real EmbeddingPipelineService
-        chat_override_service_for_test_3,
-        user_persona_service_for_test_3, // Added user_persona_service
-        hybrid_token_counter_for_test_3,
-        encryption_service_for_test_3.clone(),
-        lorebook_service_for_test_3,
-        auth_backend_3,
+        embedding_client: test_app.mock_embedding_client.clone(),
+        qdrant_service: test_app.qdrant_service.clone(),
+        embedding_pipeline_service: Arc::new(embedding_pipeline_service), // Using a real EmbeddingPipelineService
+        chat_override_service: chat_override_service_for_test_3,
+        user_persona_service: user_persona_service_for_test_3,
+        token_counter: hybrid_token_counter_for_test_3,
+        encryption_service: encryption_service_for_test_3.clone(),
+        lorebook_service: lorebook_service_for_test_3,
+        auth_backend: auth_backend_3,
+    };
+
+    let app_state = Arc::new(AppState::new(
+        test_app.db_pool.clone(),
+        test_app.config.clone(),
+        services,
     ));
 
     // 2. Prepare mock responses and expectations
@@ -601,12 +613,12 @@ async fn test_retrieve_relevant_chunks_success() {
         last_search_params.0, mock_query_embedding,
         "Search vector mismatch"
     );
-    assert_eq!(last_search_params.1, 5 as u64, "Search limit mismatch"); // Use the actual limit passed
+    assert_eq!(last_search_params.1, 5_u64, "Search limit mismatch"); // Use the actual limit passed
     // Check filter (should be Some and match session_id)
     let filter = last_search_params.2.expect("Search filter was None");
     // Simple check: filter string representation contains session_id
     assert!(
-        format!("{:?}", filter).contains(&test_session_id.to_string()),
+        format!("{filter:?}").contains(&test_session_id.to_string()),
         "Filter does not contain session_id"
     );
 }
@@ -648,22 +660,26 @@ async fn test_retrieve_relevant_chunks_no_results() {
         test_app.db_pool.clone(),
     ));
 
-    let app_state = Arc::new(AppState::new(
-        test_app.db_pool.clone(),
-        test_app.config.clone(),
-        test_app
+    let services = AppStateServices {
+        ai_client: test_app
             .mock_ai_client
             .clone()
             .expect("Mock AI client should be present"),
-        test_app.mock_embedding_client.clone(),
-        test_app.qdrant_service.clone(),
-        Arc::new(embedding_pipeline_service),
-        chat_override_service_for_test_4,
-        user_persona_service_for_test_4, // Added user_persona_service
-        hybrid_token_counter_for_test_4,
-        encryption_service_for_test_4.clone(),
-        lorebook_service_for_test_4,
-        auth_backend_4,
+        embedding_client: test_app.mock_embedding_client.clone(),
+        qdrant_service: test_app.qdrant_service.clone(),
+        embedding_pipeline_service: Arc::new(embedding_pipeline_service),
+        chat_override_service: chat_override_service_for_test_4,
+        user_persona_service: user_persona_service_for_test_4,
+        token_counter: hybrid_token_counter_for_test_4,
+        encryption_service: encryption_service_for_test_4.clone(),
+        lorebook_service: lorebook_service_for_test_4,
+        auth_backend: auth_backend_4,
+    };
+
+    let app_state = Arc::new(AppState::new(
+        test_app.db_pool.clone(),
+        test_app.config.clone(),
+        services,
     ));
 
     // 2. Configure mock Qdrant service to return no results
@@ -732,22 +748,26 @@ async fn test_retrieve_relevant_chunks_qdrant_error() {
         test_app.db_pool.clone(),
     ));
 
-    let app_state = Arc::new(AppState::new(
-        test_app.db_pool.clone(),
-        test_app.config.clone(),
-        test_app
+    let services = AppStateServices {
+        ai_client: test_app
             .mock_ai_client
             .clone()
             .expect("Mock AI client should be present"),
-        test_app.mock_embedding_client.clone(),
-        test_app.qdrant_service.clone(),
-        Arc::new(embedding_pipeline_service),
-        chat_override_service_for_test_5,
-        user_persona_service_for_test_5, // Added user_persona_service
-        hybrid_token_counter_for_test_5,
-        encryption_service_for_test_5.clone(),
-        lorebook_service_for_test_5,
-        auth_backend_5,
+        embedding_client: test_app.mock_embedding_client.clone(),
+        qdrant_service: test_app.qdrant_service.clone(),
+        embedding_pipeline_service: Arc::new(embedding_pipeline_service),
+        chat_override_service: chat_override_service_for_test_5,
+        user_persona_service: user_persona_service_for_test_5,
+        token_counter: hybrid_token_counter_for_test_5,
+        encryption_service: encryption_service_for_test_5.clone(),
+        lorebook_service: lorebook_service_for_test_5,
+        auth_backend: auth_backend_5,
+    };
+
+    let app_state = Arc::new(AppState::new(
+        test_app.db_pool.clone(),
+        test_app.config.clone(),
+        services,
     ));
 
     // 2. Configure mock Qdrant service to return an error
@@ -814,22 +834,26 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_uuid() {
         test_app.db_pool.clone(),
     ));
 
-    let app_state_arc = Arc::new(AppState::new(
-        test_app.db_pool.clone(),
-        test_app.config.clone(),
-        test_app
+    let services = AppStateServices {
+        ai_client: test_app
             .mock_ai_client
             .clone()
             .expect("Mock AI client should be present"),
-        test_app.mock_embedding_client.clone(),
-        test_app.qdrant_service.clone(),
-        test_app.mock_embedding_pipeline_service.clone(),
-        chat_override_service_for_test_6,
-        user_persona_service_for_test_6, // Added user_persona_service
-        hybrid_token_counter_for_test_6,
-        encryption_service_for_test_6.clone(),
-        lorebook_service_for_test_6,
-        auth_backend_6,
+        embedding_client: test_app.mock_embedding_client.clone(),
+        qdrant_service: test_app.qdrant_service.clone(),
+        embedding_pipeline_service: test_app.mock_embedding_pipeline_service.clone(),
+        chat_override_service: chat_override_service_for_test_6,
+        user_persona_service: user_persona_service_for_test_6,
+        token_counter: hybrid_token_counter_for_test_6,
+        encryption_service: encryption_service_for_test_6.clone(),
+        lorebook_service: lorebook_service_for_test_6,
+        auth_backend: auth_backend_6,
+    };
+
+    let app_state_arc = Arc::new(AppState::new(
+        test_app.db_pool.clone(),
+        test_app.config.clone(),
+        services,
     ));
 
     // Mock Qdrant to return a point with an invalid UUID in metadata
@@ -877,22 +901,25 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_uuid() {
         EmbeddingPipelineService::new(ChunkConfig::from(test_app.config.as_ref()));
 
     // Create a new AppState with the real service
-    let app_state_for_metadata_test = Arc::new(AppState::new(
-        test_app.db_pool.clone(),
-        test_app.config.clone(),
-        test_app
+    let services_for_metadata_test = AppStateServices {
+        ai_client: test_app
             .mock_ai_client
             .clone()
             .expect("Mock AI client should be present"),
-        test_app.mock_embedding_client.clone(),
-        test_app.qdrant_service.clone(), // This is the MockQdrantClientService
-        Arc::new(real_embedding_pipeline_service), // Use the real service
-        app_state_arc.chat_override_service.clone(), // Reuse from previous app_state_arc
-        app_state_arc.user_persona_service.clone(),
-        app_state_arc.token_counter.clone(),
-        app_state_arc.encryption_service.clone(),
-        app_state_arc.lorebook_service.clone(),
-        app_state_arc.auth_backend.clone(), // Reuse auth_backend from app_state_arc
+        embedding_client: test_app.mock_embedding_client.clone(),
+        qdrant_service: test_app.qdrant_service.clone(), // This is the MockQdrantClientService
+        embedding_pipeline_service: Arc::new(real_embedding_pipeline_service), // Use the real service
+        chat_override_service: app_state_arc.chat_override_service.clone(), // Reuse from previous app_state_arc
+        user_persona_service: app_state_arc.user_persona_service.clone(),
+        token_counter: app_state_arc.token_counter.clone(),
+        encryption_service: app_state_arc.encryption_service.clone(),
+        lorebook_service: app_state_arc.lorebook_service.clone(),
+        auth_backend: app_state_arc.auth_backend.clone(), // Reuse auth_backend from app_state_arc
+    };
+    let app_state_for_metadata_test = Arc::new(AppState::new(
+        test_app.db_pool.clone(),
+        test_app.config.clone(),
+        services_for_metadata_test,
     ));
 
     // Modify the second point in the mock Qdrant response to have an invalid message_id
@@ -986,22 +1013,25 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_timestamp() {
         test_app.db_pool.clone(),
     ));
 
-    let app_state_arc = Arc::new(AppState::new(
-        test_app.db_pool.clone(),
-        test_app.config.clone(),
-        test_app
+    let services_for_test_7 = AppStateServices {
+        ai_client: test_app
             .mock_ai_client
             .clone()
             .expect("Mock AI client should be present"),
-        test_app.mock_embedding_client.clone(),
-        test_app.qdrant_service.clone(),
-        test_app.mock_embedding_pipeline_service.clone(),
-        chat_override_service_for_test_7,
-        user_persona_service_for_test_7, // Added user_persona_service
-        hybrid_token_counter_for_test_7,
-        encryption_service_for_test_7.clone(),
-        lorebook_service_for_test_7,
-        auth_backend_7,
+        embedding_client: test_app.mock_embedding_client.clone(),
+        qdrant_service: test_app.qdrant_service.clone(),
+        embedding_pipeline_service: test_app.mock_embedding_pipeline_service.clone(),
+        chat_override_service: chat_override_service_for_test_7,
+        user_persona_service: user_persona_service_for_test_7, // Added user_persona_service
+        token_counter: hybrid_token_counter_for_test_7,
+        encryption_service: encryption_service_for_test_7.clone(),
+        lorebook_service: lorebook_service_for_test_7,
+        auth_backend: auth_backend_7,
+    };
+    let app_state_arc = Arc::new(AppState::new(
+        test_app.db_pool.clone(),
+        test_app.config.clone(),
+        services_for_test_7,
     ));
 
     // Mock Qdrant to return a point with an invalid timestamp in metadata
@@ -1044,22 +1074,25 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_timestamp() {
 
     let real_embedding_pipeline_service =
         EmbeddingPipelineService::new(ChunkConfig::from(test_app.config.as_ref()));
-    let app_state_for_metadata_test = Arc::new(AppState::new(
-        test_app.db_pool.clone(),
-        test_app.config.clone(),
-        test_app
+    let services_for_metadata_test_2 = AppStateServices {
+        ai_client: test_app
             .mock_ai_client
             .clone()
             .expect("Mock AI client should be present"),
-        test_app.mock_embedding_client.clone(),
-        test_app.qdrant_service.clone(),
-        Arc::new(real_embedding_pipeline_service),
-        app_state_arc.chat_override_service.clone(),
-        app_state_arc.user_persona_service.clone(),
-        app_state_arc.token_counter.clone(),
-        app_state_arc.encryption_service.clone(),
-        app_state_arc.lorebook_service.clone(),
-        app_state_arc.auth_backend.clone(),
+        embedding_client: test_app.mock_embedding_client.clone(),
+        qdrant_service: test_app.qdrant_service.clone(),
+        embedding_pipeline_service: Arc::new(real_embedding_pipeline_service),
+        chat_override_service: app_state_arc.chat_override_service.clone(),
+        user_persona_service: app_state_arc.user_persona_service.clone(),
+        token_counter: app_state_arc.token_counter.clone(),
+        encryption_service: app_state_arc.encryption_service.clone(),
+        lorebook_service: app_state_arc.lorebook_service.clone(),
+        auth_backend: app_state_arc.auth_backend.clone(),
+    };
+    let app_state_for_metadata_test = Arc::new(AppState::new(
+        test_app.db_pool.clone(),
+        test_app.config.clone(),
+        services_for_metadata_test_2,
     ));
 
     let result = app_state_for_metadata_test
@@ -1176,22 +1209,25 @@ async fn test_retrieve_relevant_chunks_metadata_missing_field() {
 
     let real_embedding_pipeline_service =
         EmbeddingPipelineService::new(ChunkConfig::from(test_app.config.as_ref()));
-    let app_state_for_metadata_test = Arc::new(AppState::new(
-        test_app.db_pool.clone(),
-        test_app.config.clone(),
-        test_app
+    let services_for_metadata_test_3 = AppStateServices {
+        ai_client: test_app
             .mock_ai_client
             .clone()
             .expect("Mock AI client should be present"),
-        test_app.mock_embedding_client.clone(),
-        test_app.qdrant_service.clone(),
-        Arc::new(real_embedding_pipeline_service),
-        chat_override_service_for_test_8, // Use services created in this test
-        user_persona_service_for_test_8,
-        hybrid_token_counter_for_test_8,
-        encryption_service_for_test_8.clone(),
-        lorebook_service_for_test_8,
-        auth_backend_8,
+        embedding_client: test_app.mock_embedding_client.clone(),
+        qdrant_service: test_app.qdrant_service.clone(),
+        embedding_pipeline_service: Arc::new(real_embedding_pipeline_service),
+        chat_override_service: chat_override_service_for_test_8, // Use services created in this test
+        user_persona_service: user_persona_service_for_test_8,
+        token_counter: hybrid_token_counter_for_test_8,
+        encryption_service: encryption_service_for_test_8.clone(),
+        lorebook_service: lorebook_service_for_test_8,
+        auth_backend: auth_backend_8,
+    };
+    let app_state_for_metadata_test = Arc::new(AppState::new(
+        test_app.db_pool.clone(),
+        test_app.config.clone(),
+        services_for_metadata_test_3,
     ));
 
     let result = app_state_for_metadata_test
@@ -1312,22 +1348,25 @@ async fn test_retrieve_relevant_chunks_metadata_wrong_type() {
     let real_embedding_pipeline_service =
         EmbeddingPipelineService::new(ChunkConfig::from(test_app.config.as_ref()));
     // Use the app_state created within this test, not the one from the outer scope (app_state_arc)
-    let app_state_for_metadata_test = Arc::new(AppState::new(
-        test_app.db_pool.clone(),
-        test_app.config.clone(),
-        test_app
+    let services_for_metadata_test_4 = AppStateServices {
+        ai_client: test_app
             .mock_ai_client
             .clone()
             .expect("Mock AI client should be present"),
-        mock_embedding_client.clone(), // Use the mock_embedding_client from this test's scope
-        test_app.qdrant_service.clone(),
-        Arc::new(real_embedding_pipeline_service),
-        chat_override_service_for_test_9, // Use services created in this test
-        user_persona_service_for_test_9,
-        hybrid_token_counter_for_test_9,
-        encryption_service_for_test_9.clone(),
-        lorebook_service_for_test_9,
-        auth_backend_9,
+        embedding_client: mock_embedding_client.clone(), // Use the mock_embedding_client from this test's scope
+        qdrant_service: test_app.qdrant_service.clone(),
+        embedding_pipeline_service: Arc::new(real_embedding_pipeline_service),
+        chat_override_service: chat_override_service_for_test_9, // Use services created in this test
+        user_persona_service: user_persona_service_for_test_9,
+        token_counter: hybrid_token_counter_for_test_9,
+        encryption_service: encryption_service_for_test_9.clone(),
+        lorebook_service: lorebook_service_for_test_9,
+        auth_backend: auth_backend_9,
+    };
+    let app_state_for_metadata_test = Arc::new(AppState::new(
+        test_app.db_pool.clone(),
+        test_app.config.clone(),
+        services_for_metadata_test_4,
     ));
 
     let result = app_state_for_metadata_test
@@ -1453,19 +1492,22 @@ async fn test_rag_context_injection_with_qdrant() {
         test_app.db_pool.clone(),
     ));
 
+    let services_for_rag = AppStateServices {
+        ai_client: test_app.ai_client.clone(),
+        embedding_client: test_app.mock_embedding_client.clone(),
+        qdrant_service: test_app.qdrant_service.clone(),
+        embedding_pipeline_service: Arc::new(embedding_pipeline_service_instance), // Use the renamed instance
+        chat_override_service: chat_override_service_for_test_10,
+        user_persona_service: user_persona_service_for_test_10,
+        token_counter: hybrid_token_counter_for_test_10,
+        encryption_service: encryption_service_for_test_10.clone(),
+        lorebook_service: lorebook_service_for_test_10,
+        auth_backend: auth_backend_10,
+    };
     let app_state_for_rag = Arc::new(AppState::new(
         test_app.db_pool.clone(),
         test_app.config.clone(),
-        test_app.ai_client.clone(),
-        test_app.mock_embedding_client.clone(),
-        test_app.qdrant_service.clone(),
-        Arc::new(embedding_pipeline_service_instance), // Use the renamed instance
-        chat_override_service_for_test_10,
-        user_persona_service_for_test_10,
-        hybrid_token_counter_for_test_10,
-        encryption_service_for_test_10.clone(),
-        lorebook_service_for_test_10,
-        auth_backend_10,
+        services_for_rag,
     ));
 
     // Step 1a: Process and embed a chat message
@@ -1484,19 +1526,20 @@ async fn test_rag_context_injection_with_qdrant() {
     );
 
     // Step 1b: Process and embed a lorebook entry
+    let params = LorebookEntryParams {
+        original_lorebook_entry_id: original_lore_entry_id,
+        lorebook_id,
+        user_id, // Use consistent user_id
+        decrypted_content: lore_entry_content.to_string(),
+        decrypted_title: lore_entry_title.clone(),
+        decrypted_keywords: None,  // No keywords for this test
+        is_enabled: true,  // is_enabled
+        is_constant: false, // is_constant
+    };
+
     let process_lore_result = app_state_for_rag
         .embedding_pipeline_service
-        .process_and_embed_lorebook_entry(
-            app_state_for_rag.clone(),
-            original_lore_entry_id,
-            lorebook_id,
-            user_id, // Use consistent user_id
-            lore_entry_content.to_string(),
-            lore_entry_title.clone(),
-            None,  // No keywords for this test
-            true,  // is_enabled
-            false, // is_constant
-        )
+        .process_and_embed_lorebook_entry(app_state_for_rag.clone(), params)
         .await;
     assert!(
         process_lore_result.is_ok(),
@@ -1789,19 +1832,22 @@ async fn test_rag_chat_history_isolation_by_user_and_session() {
         test_app.db_pool.clone(),
     ));
 
+    let services_for_isolation_test = AppStateServices {
+        ai_client: test_app.ai_client.clone(),
+        embedding_client: mock_embedding_client.clone(),
+        qdrant_service: test_app.qdrant_service.clone(),
+        embedding_pipeline_service: Arc::new(embedding_pipeline_service_instance),
+        chat_override_service,
+        user_persona_service,
+        token_counter: hybrid_token_counter,
+        encryption_service: encryption_service.clone(),
+        lorebook_service,
+        auth_backend,
+    };
     let app_state = Arc::new(AppState::new(
         test_app.db_pool.clone(),
         test_app.config.clone(),
-        test_app.ai_client.clone(),
-        mock_embedding_client.clone(),
-        test_app.qdrant_service.clone(),
-        Arc::new(embedding_pipeline_service_instance),
-        chat_override_service,
-        user_persona_service,
-        hybrid_token_counter,
-        encryption_service.clone(),
-        lorebook_service,
-        auth_backend,
+        services_for_isolation_test,
     ));
 
     // 2. Define User IDs and Session IDs
@@ -2089,19 +2135,22 @@ async fn test_rag_lorebook_isolation_by_user_and_id() {
         test_app.db_pool.clone(),
     ));
 
+    let services_for_lorebook_isolation_test = AppStateServices {
+        ai_client: test_app.ai_client.clone(),
+        embedding_client: mock_embedding_client.clone(),
+        qdrant_service: test_app.qdrant_service.clone(),
+        embedding_pipeline_service: Arc::new(embedding_pipeline_service_instance),
+        chat_override_service,
+        user_persona_service,
+        token_counter: hybrid_token_counter,
+        encryption_service: encryption_service.clone(),
+        lorebook_service,
+        auth_backend,
+    };
     let app_state = Arc::new(AppState::new(
         test_app.db_pool.clone(),
         test_app.config.clone(),
-        test_app.ai_client.clone(),
-        mock_embedding_client.clone(),
-        test_app.qdrant_service.clone(),
-        Arc::new(embedding_pipeline_service_instance),
-        chat_override_service,
-        user_persona_service,
-        hybrid_token_counter,
-        encryption_service.clone(),
-        lorebook_service,
-        auth_backend,
+        services_for_lorebook_isolation_test,
     ));
 
     // 2. Define User IDs and Lorebook IDs
@@ -2146,49 +2195,52 @@ async fn test_rag_lorebook_isolation_by_user_and_id() {
     ]);
 
     // 5. Process and Embed Lorebook Entries
+    let params_c1 = LorebookEntryParams {
+        original_lorebook_entry_id: entry_c1_id,
+        lorebook_id: lorebook_c1_id,
+        user_id: user_c_id,
+        decrypted_content: entry_c1_content.to_string(),
+        decrypted_title: Some("Elves".to_string()),
+        decrypted_keywords: None,
+        is_enabled: true,
+        is_constant: false,
+    };
+
     app_state
         .embedding_pipeline_service
-        .process_and_embed_lorebook_entry(
-            app_state.clone(),
-            entry_c1_id,
-            lorebook_c1_id,
-            user_c_id,
-            entry_c1_content.to_string(),
-            Some("Elves".to_string()),
-            None,
-            true,
-            false,
-        )
+        .process_and_embed_lorebook_entry(app_state.clone(), params_c1)
         .await
         .unwrap();
+    let params_c2 = LorebookEntryParams {
+        original_lorebook_entry_id: entry_c2_id,
+        lorebook_id: lorebook_c2_id,
+        user_id: user_c_id,
+        decrypted_content: entry_c2_content.to_string(),
+        decrypted_title: Some("Dwarves".to_string()),
+        decrypted_keywords: None,
+        is_enabled: true,
+        is_constant: false,
+    };
+
     app_state
         .embedding_pipeline_service
-        .process_and_embed_lorebook_entry(
-            app_state.clone(),
-            entry_c2_id,
-            lorebook_c2_id,
-            user_c_id,
-            entry_c2_content.to_string(),
-            Some("Dwarves".to_string()),
-            None,
-            true,
-            false,
-        )
+        .process_and_embed_lorebook_entry(app_state.clone(), params_c2)
         .await
         .unwrap();
+    let params_d1 = LorebookEntryParams {
+        original_lorebook_entry_id: entry_d1_id,
+        lorebook_id: lorebook_d1_id,
+        user_id: user_d_id,
+        decrypted_content: entry_d1_content.to_string(),
+        decrypted_title: Some("Orcs".to_string()),
+        decrypted_keywords: None,
+        is_enabled: true,
+        is_constant: false,
+    };
+
     app_state
         .embedding_pipeline_service
-        .process_and_embed_lorebook_entry(
-            app_state.clone(),
-            entry_d1_id,
-            lorebook_d1_id,
-            user_d_id,
-            entry_d1_content.to_string(),
-            Some("Orcs".to_string()),
-            None,
-            true,
-            false,
-        )
+        .process_and_embed_lorebook_entry(app_state.clone(), params_d1)
         .await
         .unwrap();
 

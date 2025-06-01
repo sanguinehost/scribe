@@ -6,7 +6,6 @@ use axum::{
 };
 use diesel::prelude::*; // Added
 use http_body_util::BodyExt;
-use mime;
 use serde_json::json;
 use tower::ServiceExt;
 use tower_cookies::Cookie;
@@ -244,7 +243,7 @@ async fn test_suggested_actions_unauthorized() -> anyhow::Result<()> {
     // Using reqwest::Client for this test, similar to how other integration tests might do it
     let client = reqwest::Client::new();
     let response = client
-        .post(&format!(
+        .post(format!(
             "{}/api/chat/{}/suggested-actions",
             test_app.address,
             Uuid::new_v4() // A random, likely non-existent session_id
@@ -437,8 +436,7 @@ async fn test_suggested_actions_session_not_found() -> anyhow::Result<()> {
     let request = Request::builder()
         .method(Method::POST)
         .uri(format!(
-            "/api/chat/{}/suggested-actions",
-            non_existent_session_id
+            "/api/chat/{non_existent_session_id}/suggested-actions"
         ))
         .header(header::COOKIE, &auth_cookie)
         .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
@@ -1168,13 +1166,12 @@ async fn test_suggested_actions_success_login_user_a() -> anyhow::Result<()> {
 
     let status = response.status();
     let body = response.text().await.unwrap();
-    println!("Ping Test: Status: {}, Body: {}", status, body);
+    println!("Ping Test: Status: {status}, Body: {body}");
 
     assert_eq!(
         status,
         StatusCode::OK,
-        "Ping handler failed. Body: {}",
-        body
+        "Ping handler failed. Body: {body}"
     );
     assert_eq!(body, "pong_from_chat_routes");
 

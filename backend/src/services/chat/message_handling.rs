@@ -41,11 +41,10 @@ pub async fn get_messages_for_session(
             .first::<Uuid>(conn)
             .optional()?;
 
-        match session_owner_id {
-            Some(owner_id) => {
-                if owner_id != user_id {
-                    Err(AppError::Forbidden) // Keep as unit variant
-                } else {
+        session_owner_id.map_or_else(
+            || Err(AppError::NotFound("Chat session not found".into())),
+            |owner_id| {
+                if owner_id == user_id {
                     chat_messages::table
                         .filter(chat_messages::session_id.eq(session_id))
                         .select(<ChatMessage as SelectableHelper<diesel::pg::Pg>>::as_select()) // Changed DbChatMessage
@@ -55,10 +54,11 @@ pub async fn get_messages_for_session(
                             error!("Failed to load messages for session {}: {}", session_id, e);
                             AppError::DatabaseQueryError(e.to_string())
                         })
+                } else {
+                    Err(AppError::Forbidden) // Keep as unit variant
                 }
             }
-            None => Err(AppError::NotFound("Chat session not found".into())),
-        }
+        )
     })
     .await?
 }
@@ -91,25 +91,43 @@ pub fn save_chat_message_internal(
         }
     }
 }
+/// Parameters for saving a chat message.
+pub struct SaveMessageParams<'a> {
+    pub state: Arc<AppState>,
+    pub session_id: Uuid,
+    pub user_id: Uuid,
+    pub message_type_enum: MessageRole, // Renamed for clarity (this is the enum)
+    pub content: &'a str,                  // This is the primary textual content
+    pub role_str: Option<String>,       // ADDED: The string role ("user", "model", "assistant")
+    pub parts: Option<Value>,           // ADDED: The structured parts from the request/generation
+    pub attachments: Option<Value>,     // ADDED: Attachments
+    pub user_dek_secret_box: Option<Arc<SecretBox<Vec<u8>>>>,
+    pub model_name: String, // Added model_name parameter
+}
+
 /// Saves a single chat message (user or assistant) and triggers background embedding.
-#[instrument(skip(state, content, user_dek_secret_box), err)]
+#[instrument(skip(params), err)]
 pub async fn save_message(
-    state: Arc<AppState>,
-    session_id: Uuid,
-    user_id: Uuid,
-    message_type_enum: MessageRole, // Renamed for clarity (this is the enum)
-    content: &str,                  // This is the primary textual content
-    role_str: Option<String>,       // ADDED: The string role ("user", "model", "assistant")
-    parts: Option<Value>,           // ADDED: The structured parts from the request/generation
-    attachments: Option<Value>,     // ADDED: Attachments
-    user_dek_secret_box: Option<Arc<SecretBox<Vec<u8>>>>,
-    model_name: &str, // Added model_name parameter
+    params: SaveMessageParams<'_>,
 ) -> Result<ChatMessage, AppError> {
+    let SaveMessageParams {
+        state,
+        session_id,
+        user_id,
+        message_type_enum,
+        content,
+        role_str,
+        parts,
+        attachments,
+        user_dek_secret_box,
+        model_name,
+    } = params;
+    
     // Changed DbChatMessage to ChatMessage
     trace!(%session_id, %user_id, %message_type_enum, ?role_str, content_len = content.len(), dek_present = user_dek_secret_box.is_some(), %model_name, "Attempting to save message");
 
     if content.trim().is_empty()
-        && parts.as_ref().map_or(true, |p| {
+        && parts.as_ref().is_none_or(|p| {
             p.is_null() || (p.is_array() && p.as_array().unwrap().is_empty())
         })
     {
@@ -133,11 +151,13 @@ pub async fn save_message(
             .count_tokens(
                 content_for_token_counting,
                 CountingMode::LocalOnly,
-                Some(model_name),
+                Some(&model_name),
             )
             .await
         {
-            Ok(estimate) => prompt_tokens_val = Some(estimate.total as i32), // Use total from TokenEstimate
+            Ok(estimate) => {
+                prompt_tokens_val = Some(i32::try_from(estimate.total).unwrap_or(i32::MAX));
+            }
             Err(e) => warn!("Failed to count prompt tokens for user message: {}", e), // Log and continue
         }
     } else if message_type_enum == MessageRole::Assistant {
@@ -146,11 +166,13 @@ pub async fn save_message(
             .count_tokens(
                 content_for_token_counting,
                 CountingMode::LocalOnly,
-                Some(model_name),
+                Some(&model_name),
             )
             .await
         {
-            Ok(estimate) => completion_tokens_val = Some(estimate.total as i32), // Use total from TokenEstimate
+            Ok(estimate) => {
+                completion_tokens_val = Some(i32::try_from(estimate.total).unwrap_or(i32::MAX));
+            }
             Err(e) => warn!(
                 "Failed to count completion tokens for assistant message: {}",
                 e
@@ -160,35 +182,38 @@ pub async fn save_message(
 
     trace!(prompt_tokens=?prompt_tokens_val, completion_tokens=?completion_tokens_val, "Calculated token counts for message");
 
-    let (content_to_save, nonce_to_save) = match &user_dek_secret_box {
-        Some(dek_arc) => {
-            trace!(%session_id, "User DEK present, encrypting message content.");
-            // We encrypt the main `content` string. `parts` and `attachments` are stored as JSONB (plaintext in DB).
-            let (ciphertext, nonce) = crypto::encrypt_gcm(content.as_bytes(), &**dek_arc) // Use imported crypto
-                .map_err(|e| {
-                    error!(%session_id, "Failed to encrypt message content: {}", e);
-                    AppError::EncryptionError(format!("Failed to encrypt message: {}", e))
-                })?;
-            (ciphertext, Some(nonce))
-        }
-        None => {
-            trace!(%session_id, "User DEK not present, saving message content as plaintext.");
-            (content.as_bytes().to_vec(), None)
-        }
+    let (content_to_save, nonce_to_save) = if let Some(dek_arc) = &user_dek_secret_box {
+        trace!(%session_id, "User DEK present, encrypting message content.");
+        // We encrypt the main `content` string. `parts` and `attachments` are stored as JSONB (plaintext in DB).
+        let (ciphertext, nonce) = crypto::encrypt_gcm(content.as_bytes(), dek_arc) // Use imported crypto
+            .map_err(|e| {
+                error!(%session_id, "Failed to encrypt message content: {}", e);
+                AppError::EncryptionError(format!("Failed to encrypt message: {e}"))
+            })?;
+        (ciphertext, Some(nonce))
+    } else {
+        trace!(%session_id, "User DEK not present, saving message content as plaintext.");
+        (content.as_bytes().to_vec(), None)
     };
 
-    let new_message_to_insert = DbInsertableChatMessage::new(
+    let mut new_message_to_insert = DbInsertableChatMessage::new(
         session_id, // chat_id field in DbInsertableChatMessage
         user_id,
         message_type_enum, // msg_type field in DbInsertableChatMessage
         content_to_save,   // content field
         nonce_to_save,     // content_nonce field
-        role_str,          // role field (Option<String>)
-        parts,             // parts field (Option<Value>)
-        attachments,       // attachments field (Option<Value>)
-        prompt_tokens_val,
-        completion_tokens_val,
     );
+
+    if let Some(role) = role_str {
+        new_message_to_insert = new_message_to_insert.with_role(role);
+    }
+    if let Some(parts_val) = parts {
+        new_message_to_insert = new_message_to_insert.with_parts(parts_val);
+    }
+    if let Some(attachments_val) = attachments {
+        new_message_to_insert = new_message_to_insert.with_attachments(attachments_val);
+    }
+    new_message_to_insert = new_message_to_insert.with_token_counts(prompt_tokens_val, completion_tokens_val);
 
     let db_pool: DbPool = state.pool.clone(); // Ensure DbPool type
     let saved_message_db = db_pool

@@ -284,9 +284,7 @@ where
                             }
                         }
                     }
-                    Err(serde::de::Error::custom(format!(
-                        "Expected byte value 0-255"
-                    )))
+                    Err(serde::de::Error::custom("Expected byte value 0-255".to_string()))
                 })
                 .collect();
 
@@ -294,14 +292,13 @@ where
                 Ok(b) if b.is_empty() => Ok(None),
                 Ok(b) => String::from_utf8(b)
                     .map(Some)
-                    .map_err(|e| serde::de::Error::custom(format!("Invalid UTF-8: {}", e))),
+                    .map_err(|e| serde::de::Error::custom(format!("Invalid UTF-8: {e}"))),
                 Err(e) => Err(e),
             }
         }
         // Any other value type - error
         v => Err(serde::de::Error::custom(format!(
-            "Expected string, byte array, or null, got {:?}",
-            v
+            "Expected string, byte array, or null, got {v:?}"
         ))),
     }
 }
@@ -323,22 +320,19 @@ where
                             }
                         }
                     }
-                    Err(serde::de::Error::custom(format!(
-                        "Expected byte value 0-255"
-                    )))
+                    Err(serde::de::Error::custom("Expected byte value 0-255".to_string()))
                 })
                 .collect();
 
             match bytes {
                 Ok(b) => String::from_utf8(b)
-                    .map_err(|e| serde::de::Error::custom(format!("Invalid UTF-8: {}", e))),
+                    .map_err(|e| serde::de::Error::custom(format!("Invalid UTF-8: {e}"))),
                 Err(e) => Err(e),
             }
         }
         serde_json::Value::String(s) => Ok(s), // Allow if it's already a string
         v => Err(serde::de::Error::custom(format!(
-            "Expected byte array or string, got {:?}",
-            v
+            "Expected byte array or string, got {v:?}"
         ))),
     }
 }

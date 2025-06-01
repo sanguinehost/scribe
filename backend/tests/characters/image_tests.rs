@@ -56,9 +56,7 @@ async fn test_get_character_image_not_implemented() -> Result<(), anyhow::Error>
         status == StatusCode::UNAUTHORIZED
             || status == StatusCode::NOT_FOUND
             || status == StatusCode::NOT_IMPLEMENTED,
-        "Expected Unauthorized, Not Found, or Not Implemented, got: {} - {}",
-        status,
-        body_text
+        "Expected Unauthorized, Not Found, or Not Implemented, got: {status} - {body_text}"
     );
     Ok(())
 }
@@ -78,8 +76,7 @@ async fn test_get_character_image_unauthorized() -> Result<(), anyhow::Error> {
     // which implies a different routing structure than the `not_implemented` test above.
     // We'll keep it as is from the original test.
     let image_url = format!(
-        "http://{}/api/characters/fetch/{}/image",
-        server_addr, character_id
+        "http://{server_addr}/api/characters/fetch/{character_id}/image"
     );
 
     let response = client.get(&image_url).send().await?;

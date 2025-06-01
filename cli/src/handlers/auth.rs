@@ -73,7 +73,7 @@ pub async fn handle_registration_action<H: IoHandler, C: HttpClient>(
                 "1" => {
                     io_handler
                         .write_line("\n⚠️  RECOVERY KEY - DO NOT SHARE THIS WITH ANYONE ⚠️")?;
-                    io_handler.write_line(&format!("\n{}", recovery_key))?;
+                    io_handler.write_line(&format!("\n{recovery_key}"))?;
                     io_handler
                         .write_line("\n⚠️  Make sure to save this key in a secure location ⚠️")?;
                     io_handler.write_line("\nPress Enter when you have saved the key...")?;

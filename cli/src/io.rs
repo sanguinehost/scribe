@@ -20,7 +20,7 @@ pub struct StdIoHandler; // Made pub
 
 impl IoHandler for StdIoHandler {
     fn read_line(&mut self, prompt: &str) -> Result<String, CliError> {
-        print!("{} ", prompt);
+        print!("{prompt} ");
         stdout().flush().map_err(CliError::Io)?;
         let mut input = String::new();
         stdin().read_line(&mut input).map_err(CliError::Io)?;
@@ -28,12 +28,12 @@ impl IoHandler for StdIoHandler {
     }
 
     fn write_line(&mut self, line: &str) -> Result<(), CliError> {
-        println!("{}", line);
+        println!("{line}");
         Ok(())
     }
 
     fn write_raw(&mut self, text: &str) -> Result<(), CliError> {
-        print!("{}", text);
+        print!("{text}");
         stdout().flush().map_err(CliError::Io)?;
         Ok(())
     }
@@ -74,7 +74,7 @@ pub fn input_optional<H: IoHandler>(
 pub fn confirm_action<H: IoHandler>(io_handler: &mut H, prompt: &str) -> Result<bool, CliError> {
     loop {
         let choice = io_handler
-            .read_line(&format!("{} (yes/no): ", prompt))?
+            .read_line(&format!("{prompt} (yes/no): "))?
             .trim()
             .to_lowercase();
         match choice.as_str() {
@@ -155,12 +155,12 @@ mod tests {
         }
 
         fn write_line(&mut self, line: &str) -> Result<(), CliError> {
-            writeln!(&mut self.output, "{}", line).map_err(CliError::Io)?;
+            writeln!(&mut self.output, "{line}").map_err(CliError::Io)?;
             Ok(())
         }
 
         fn write_raw(&mut self, text: &str) -> Result<(), CliError> {
-            write!(&mut self.output, "{}", text).map_err(CliError::Io)?;
+            write!(&mut self.output, "{text}").map_err(CliError::Io)?;
             Ok(())
         }
 
@@ -201,7 +201,7 @@ mod tests {
         io.write_line("").unwrap();
 
         let result2 = io.read_line("Second prompt:").unwrap();
-        io.write_line(&format!("Response: {}", result2)).unwrap();
+        io.write_line(&format!("Response: {result2}")).unwrap();
 
         let expected = "First prompt: You entered:\nfirst\nSecond prompt: Response: second\n";
         assert_eq!(io.output_as_string(), expected);

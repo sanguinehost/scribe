@@ -17,7 +17,7 @@ use crate::{
         users::User,
     },
     schema::{lorebook_entries, lorebooks},
-    services::EncryptionService,
+    services::{EncryptionService, embedding_pipeline::LorebookEntryParams},
     state::AppState,
 };
 use axum_login::AuthSession;
@@ -37,7 +37,8 @@ pub struct LorebookService {
 }
 
 impl LorebookService {
-    pub fn new(pool: PgPool, encryption_service: Arc<EncryptionService>) -> Self {
+    #[must_use]
+    pub const fn new(pool: PgPool, encryption_service: Arc<EncryptionService>) -> Self {
         // Accept Arc
         Self {
             pool,
@@ -47,6 +48,13 @@ impl LorebookService {
 
     // --- Lorebook Methods ---
 
+    /// Creates a new lorebook for the authenticated user.
+    ///
+    /// # Errors
+    ///
+    /// Returns `AppError::Unauthorized` if the user is not authenticated,
+    /// `AppError::InternalServerErrorGeneric` if database connection fails or database interaction errors occur,
+    /// database-related errors if the lorebook insertion fails.
     #[instrument(skip(self, auth_session, payload), fields(user_id = ?auth_session.user.as_ref().map(|u| u.id)))]
     pub async fn create_lorebook(
         &self,
@@ -71,7 +79,7 @@ impl LorebookService {
         };
 
         let conn = self.pool.get().await.map_err(|e| {
-            AppError::InternalServerErrorGeneric(format!("Failed to get DB connection: {}", e))
+            AppError::InternalServerErrorGeneric(format!("Failed to get DB connection: {e}"))
         })?;
 
         let inserted_lorebook = conn
@@ -85,15 +93,13 @@ impl LorebookService {
             .map_err(|e| {
                 error!("Interaction error while inserting lorebook: {:?}", e);
                 AppError::InternalServerErrorGeneric(format!(
-                    "Database interaction failed while creating lorebook: {}",
-                    e
+                    "Database interaction failed while creating lorebook: {e}"
                 ))
             })?
             .map_err(|e| {
                 error!("Failed to insert lorebook into DB: {:?}", e);
                 AppError::InternalServerErrorGeneric(format!(
-                    "Failed to create lorebook in DB: {}",
-                    e
+                    "Failed to create lorebook in DB: {e}"
                 ))
             })?;
 
@@ -118,7 +124,7 @@ impl LorebookService {
         let user = self.get_user_from_session(auth_session)?;
 
         let conn = self.pool.get().await.map_err(|e| {
-            AppError::InternalServerErrorGeneric(format!("Failed to get DB connection: {}", e))
+            AppError::InternalServerErrorGeneric(format!("Failed to get DB connection: {e}"))
         })?;
 
         let lorebooks_db = conn
@@ -133,15 +139,13 @@ impl LorebookService {
             .map_err(|e| {
                 error!("Interaction error while listing lorebooks: {:?}", e);
                 AppError::InternalServerErrorGeneric(format!(
-                    "Database interaction failed while listing lorebooks: {}",
-                    e
+                    "Database interaction failed while listing lorebooks: {e}"
                 ))
             })?
             .map_err(|e| {
                 error!("Failed to list lorebooks from DB: {:?}", e);
                 AppError::InternalServerErrorGeneric(format!(
-                    "Failed to list lorebooks from DB: {}",
-                    e
+                    "Failed to list lorebooks from DB: {e}"
                 ))
             })?;
 
@@ -172,7 +176,7 @@ impl LorebookService {
         let user = self.get_user_from_session(auth_session)?;
 
         let conn = self.pool.get().await.map_err(|e| {
-            AppError::InternalServerErrorGeneric(format!("Failed to get DB connection: {}", e))
+            AppError::InternalServerErrorGeneric(format!("Failed to get DB connection: {e}"))
         })?;
 
         let lorebook_db = conn
@@ -187,8 +191,7 @@ impl LorebookService {
             .map_err(|e| {
                 error!("Interaction error while getting lorebook: {:?}", e);
                 AppError::InternalServerErrorGeneric(format!(
-                    "Database interaction failed while getting lorebook: {}",
-                    e
+                    "Database interaction failed while getting lorebook: {e}"
                 ))
             })?
             .map_err(|e| {
@@ -209,8 +212,7 @@ impl LorebookService {
                         user.id, lb.id, lb.user_id
                     );
                     return Err(AppError::NotFound(format!(
-                        "Lorebook with ID {} not found.",
-                        lorebook_id
+                        "Lorebook with ID {lorebook_id} not found."
                     )));
                 }
                 Ok(LorebookResponse {
@@ -225,8 +227,7 @@ impl LorebookService {
                 })
             }
             None => Err(AppError::NotFound(format!(
-                "Lorebook with ID {} not found.",
-                lorebook_id
+                "Lorebook with ID {lorebook_id} not found."
             ))),
         }
     }
@@ -252,7 +253,7 @@ impl LorebookService {
         // 2. Fetch lorebook by id and check ownership
         let updated_lorebook = conn
             .interact(move |conn| {
-                use crate::schema::lorebooks::dsl::*;
+                use crate::schema::lorebooks::dsl::{description, id, lorebooks, name, updated_at, user_id};
 
                 // First verify the lorebook exists and belongs to the user
                 let existing_lorebook = lorebooks
@@ -315,7 +316,7 @@ impl LorebookService {
             })
             .await
             .map_err(|e| {
-                AppError::DbInteractError(format!("Database interaction error: {}", e))
+                AppError::DbInteractError(format!("Database interaction error: {e}"))
             })??;
 
         // 6. Map to LorebookResponse
@@ -349,9 +350,11 @@ impl LorebookService {
             .map_err(|e| AppError::DbPoolError(e.to_string()))?;
 
         // 2. Delete lorebook and verify ownership in a single transaction
-        let result = conn
+        
+
+        conn
             .interact(move |conn| {
-                use crate::schema::lorebooks::dsl::*;
+                use crate::schema::lorebooks::dsl::{id, lorebooks, user_id};
 
                 // First verify the lorebook exists and belongs to the user
                 let lorebook_owner = lorebooks
@@ -395,9 +398,7 @@ impl LorebookService {
                 }
             })
             .await
-            .map_err(|e| AppError::DbInteractError(format!("Database interaction error: {}", e)))?;
-
-        result
+            .map_err(|e| AppError::DbInteractError(format!("Database interaction error: {e}")))?
     }
 
     // --- Lorebook Entry Methods ---
@@ -416,7 +417,7 @@ impl LorebookService {
         let user_id_for_embedding = user.id; // Clone for embedding task
 
         let conn = self.pool.get().await.map_err(|e| {
-            AppError::InternalServerErrorGeneric(format!("Failed to get DB connection: {}", e))
+            AppError::InternalServerErrorGeneric(format!("Failed to get DB connection: {e}"))
         })?;
 
         // 1. Fetch lorebook by id, check ownership
@@ -435,13 +436,12 @@ impl LorebookService {
             .map_err(|e| {
                 error!("Interaction error while fetching lorebook: {:?}", e);
                 AppError::InternalServerErrorGeneric(format!(
-                    "Database interaction failed while fetching lorebook: {}",
-                    e
+                    "Database interaction failed while fetching lorebook: {e}"
                 ))
             })?
             .map_err(|e| {
                 error!("Failed to query lorebook: {:?}", e);
-                AppError::DatabaseQueryError(format!("Failed to query lorebook: {}", e))
+                AppError::DatabaseQueryError(format!("Failed to query lorebook: {e}"))
             })?
             .ok_or_else(|| {
                 error!(
@@ -449,8 +449,7 @@ impl LorebookService {
                     lorebook_id, user.id
                 );
                 AppError::NotFound(format!(
-                    "Lorebook with ID {} not found or access denied.",
-                    lorebook_id
+                    "Lorebook with ID {lorebook_id} not found or access denied."
                 ))
             })?;
 
@@ -465,31 +464,27 @@ impl LorebookService {
 
         let (entry_title_ciphertext, entry_title_nonce) = self
             .encryption_service
-            .encrypt(&payload.entry_title, user_dek_bytes)
-            .await?;
+            .encrypt(&payload.entry_title, user_dek_bytes)?;
 
         let text_to_encrypt_for_keys = payload.keys_text.as_deref().unwrap_or("");
         let (keys_text_ciphertext, keys_text_nonce) = self
             .encryption_service
-            .encrypt(text_to_encrypt_for_keys, user_dek_bytes)
-            .await?;
+            .encrypt(text_to_encrypt_for_keys, user_dek_bytes)?;
 
         let (content_ciphertext, content_nonce) = self
             .encryption_service
-            .encrypt(&payload.content, user_dek_bytes)
-            .await?;
+            .encrypt(&payload.content, user_dek_bytes)?;
 
         let (comment_ciphertext, comment_nonce) = match payload.comment {
             Some(text) if !text.is_empty() => {
                 let (cipher, nonce) = self
                     .encryption_service
-                    .encrypt(&text, user_dek_bytes)
-                    .await?;
+                    .encrypt(&text, user_dek_bytes)?;
                 (Some(cipher), Some(nonce))
             }
             Some(_) => {
                 // Handles Some("")
-                let (cipher, nonce) = self.encryption_service.encrypt("", user_dek_bytes).await?;
+                let (cipher, nonce) = self.encryption_service.encrypt("", user_dek_bytes)?;
                 (Some(cipher), Some(nonce))
             }
             None => (None, None), // For None comment, store None for ciphertext and nonce
@@ -535,15 +530,13 @@ impl LorebookService {
             .map_err(|e| {
                 error!("Interaction error while inserting lorebook entry: {:?}", e);
                 AppError::InternalServerErrorGeneric(format!(
-                    "Database interaction failed while creating lorebook entry: {}",
-                    e
+                    "Database interaction failed while creating lorebook entry: {e}"
                 ))
             })?
             .map_err(|e| {
                 error!("Failed to insert lorebook entry into DB: {:?}", e);
                 AppError::InternalServerErrorGeneric(format!(
-                    "Failed to create lorebook entry in DB: {}",
-                    e
+                    "Failed to create lorebook entry in DB: {e}"
                 ))
             })?;
 
@@ -558,7 +551,6 @@ impl LorebookService {
                 &inserted_entry.entry_title_nonce,
                 user_dek_bytes_for_decrypt,
             )
-            .await
             .map_err(|e| {
                 error!(
                     "Failed to decrypt entry_title for new entry {}: {:?}",
@@ -593,7 +585,6 @@ impl LorebookService {
                         &inserted_entry.keys_text_nonce,
                         user_dek_bytes_for_decrypt,
                     )
-                    .await
                     .map_err(|e| {
                         error!(
                             "Failed to decrypt keys_text for new entry {}: {:?}",
@@ -634,7 +625,6 @@ impl LorebookService {
                 &inserted_entry.content_nonce,
                 user_dek_bytes_for_decrypt,
             )
-            .await
             .map_err(|e| {
                 error!(
                     "Failed to decrypt content for new entry {}: {:?}",
@@ -652,7 +642,6 @@ impl LorebookService {
                 let bytes = self
                     .encryption_service
                     .decrypt(cipher, nonce, user_dek_bytes_for_decrypt)
-                    .await
                     .map_err(|e| {
                         error!(
                             "Failed to decrypt comment for new entry {}: {:?}",
@@ -700,18 +689,20 @@ impl LorebookService {
                 "Spawning task to process and embed lorebook entry: {}",
                 original_lorebook_entry_id_for_embedding
             );
+
+            let params = LorebookEntryParams {
+                original_lorebook_entry_id: original_lorebook_entry_id_for_embedding,
+                lorebook_id: lorebook_id_for_embedding,
+                user_id: user_id_for_embedding,
+                decrypted_content: decrypted_content_for_embedding,
+                decrypted_title: decrypted_title_for_embedding,
+                decrypted_keywords: decrypted_keywords_for_embedding,
+                is_enabled: is_enabled_for_embedding,
+                is_constant: is_constant_for_embedding,
+            };
+
             if let Err(e) = embedding_pipeline_service
-                .process_and_embed_lorebook_entry(
-                    state_clone,
-                    original_lorebook_entry_id_for_embedding,
-                    lorebook_id_for_embedding,
-                    user_id_for_embedding,
-                    decrypted_content_for_embedding,
-                    decrypted_title_for_embedding,
-                    decrypted_keywords_for_embedding,
-                    is_enabled_for_embedding,
-                    is_constant_for_embedding,
-                )
+                .process_and_embed_lorebook_entry(state_clone, params)
                 .await
             {
                 error!(
@@ -756,7 +747,7 @@ impl LorebookService {
         let user = self.get_user_from_session(auth_session)?;
 
         let conn = self.pool.get().await.map_err(|e| {
-            AppError::InternalServerErrorGeneric(format!("Failed to get DB connection: {}", e))
+            AppError::InternalServerErrorGeneric(format!("Failed to get DB connection: {e}"))
         })?;
 
         // 1. Verify lorebook ownership
@@ -775,13 +766,12 @@ impl LorebookService {
             .map_err(|e| {
                 error!("Interaction error while fetching lorebook: {:?}", e);
                 AppError::InternalServerErrorGeneric(format!(
-                    "Database interaction failed while fetching lorebook: {}",
-                    e
+                    "Database interaction failed while fetching lorebook: {e}"
                 ))
             })?
             .map_err(|e| {
                 error!("Failed to query lorebook: {:?}", e);
-                AppError::DatabaseQueryError(format!("Failed to query lorebook: {}", e))
+                AppError::DatabaseQueryError(format!("Failed to query lorebook: {e}"))
             })?
             .ok_or_else(|| {
                 error!(
@@ -789,8 +779,7 @@ impl LorebookService {
                     lorebook_id, user.id
                 );
                 AppError::NotFound(format!(
-                    "Lorebook with ID {} not found or access denied.",
-                    lorebook_id
+                    "Lorebook with ID {lorebook_id} not found or access denied."
                 ))
             })?;
 
@@ -811,13 +800,12 @@ impl LorebookService {
             .map_err(|e| {
                 error!("Interaction error while fetching lorebook entries: {:?}", e);
                 AppError::InternalServerErrorGeneric(format!(
-                    "Database interaction failed while fetching entries: {}",
-                    e
+                    "Database interaction failed while fetching entries: {e}"
                 ))
             })?
             .map_err(|e| {
                 error!("Failed to query lorebook entries: {:?}", e);
-                AppError::DatabaseQueryError(format!("Failed to query lorebook entries: {}", e))
+                AppError::DatabaseQueryError(format!("Failed to query lorebook entries: {e}"))
             })?;
 
         // 3. Decrypt entry titles and map to response
@@ -842,7 +830,6 @@ impl LorebookService {
                     &entry.entry_title_nonce,
                     user_dek_bytes,
                 )
-                .await
                 .map_err(|e| {
                     error!(
                         "Failed to decrypt entry title for entry {}: {:?}",
@@ -881,7 +868,7 @@ impl LorebookService {
         let user = self.get_user_from_session(auth_session)?;
 
         let conn = self.pool.get().await.map_err(|e| {
-            AppError::InternalServerErrorGeneric(format!("Failed to get DB connection: {}", e))
+            AppError::InternalServerErrorGeneric(format!("Failed to get DB connection: {e}"))
         })?;
 
         // 1. Fetch the entry and verify ownership
@@ -902,13 +889,12 @@ impl LorebookService {
             .map_err(|e| {
                 error!("Interaction error while fetching lorebook entry: {:?}", e);
                 AppError::InternalServerErrorGeneric(format!(
-                    "Database interaction failed while fetching entry: {}",
-                    e
+                    "Database interaction failed while fetching entry: {e}"
                 ))
             })?
             .map_err(|e| {
                 error!("Failed to query lorebook entry: {:?}", e);
-                AppError::DatabaseQueryError(format!("Failed to query lorebook entry: {}", e))
+                AppError::DatabaseQueryError(format!("Failed to query lorebook entry: {e}"))
             })?
             .ok_or_else(|| {
                 error!(
@@ -916,8 +902,7 @@ impl LorebookService {
                     entry_id, user.id
                 );
                 AppError::NotFound(format!(
-                    "Lorebook entry with ID {} not found or access denied.",
-                    entry_id
+                    "Lorebook entry with ID {entry_id} not found or access denied."
                 ))
             })?;
 
@@ -941,7 +926,6 @@ impl LorebookService {
                 &entry.entry_title_nonce,
                 user_dek_bytes,
             )
-            .await
             .map_err(|e| {
                 error!("Failed to decrypt entry title: {:?}", e);
                 AppError::DecryptionError("Failed to decrypt entry title".to_string())
@@ -959,7 +943,6 @@ impl LorebookService {
                     &entry.keys_text_nonce,
                     user_dek_bytes,
                 )
-                .await
                 .map_err(|e| {
                     error!("Failed to decrypt keys_text: {:?}", e);
                     AppError::DecryptionError("Failed to decrypt keys text".to_string())
@@ -980,7 +963,6 @@ impl LorebookService {
                 &entry.content_nonce,
                 user_dek_bytes,
             )
-            .await
             .map_err(|e| {
                 error!("Failed to decrypt content: {:?}", e);
                 AppError::DecryptionError("Failed to decrypt content".to_string())
@@ -993,7 +975,6 @@ impl LorebookService {
                 let decrypted_comment_bytes = self
                     .encryption_service
                     .decrypt(cipher, nonce, user_dek_bytes)
-                    .await
                     .map_err(|e| {
                         error!("Failed to decrypt comment: {:?}", e);
                         AppError::DecryptionError("Failed to decrypt comment".to_string())
@@ -1041,7 +1022,7 @@ impl LorebookService {
         let user_id_for_embedding = user.id; // Clone for embedding task
 
         let conn = self.pool.get().await.map_err(|e| {
-            AppError::InternalServerErrorGeneric(format!("Failed to get DB connection: {}", e))
+            AppError::InternalServerErrorGeneric(format!("Failed to get DB connection: {e}"))
         })?;
 
         // 1. Fetch the existing entry to verify ownership and get current values
@@ -1062,15 +1043,13 @@ impl LorebookService {
             .await
             .map_err(|e| {
                 AppError::InternalServerErrorGeneric(format!(
-                    "DB interaction failed while fetching entry: {}",
-                    e
+                    "DB interaction failed while fetching entry: {e}"
                 ))
             })?
-            .map_err(|e| AppError::DatabaseQueryError(format!("Failed to query entry: {}", e)))?
+            .map_err(|e| AppError::DatabaseQueryError(format!("Failed to query entry: {e}")))?
             .ok_or_else(|| {
                 AppError::NotFound(format!(
-                    "Lorebook entry with ID {} not found or access denied.",
-                    entry_id
+                    "Lorebook entry with ID {entry_id} not found or access denied."
                 ))
             })?;
 
@@ -1092,8 +1071,7 @@ impl LorebookService {
         if let Some(title_str) = payload.entry_title {
             let (cipher, nonce) = self
                 .encryption_service
-                .encrypt(&title_str, user_dek_bytes)
-                .await?;
+                .encrypt(&title_str, user_dek_bytes)?;
             entry_to_update.entry_title_ciphertext = cipher;
             entry_to_update.entry_title_nonce = nonce;
             changes_made = true;
@@ -1103,8 +1081,7 @@ impl LorebookService {
             let keys_to_encrypt = payload.keys_text.as_deref().unwrap_or("");
             let (cipher, nonce) = self
                 .encryption_service
-                .encrypt(keys_to_encrypt, user_dek_bytes)
-                .await?;
+                .encrypt(keys_to_encrypt, user_dek_bytes)?;
             entry_to_update.keys_text_ciphertext = cipher;
             entry_to_update.keys_text_nonce = nonce;
             changes_made = true;
@@ -1113,8 +1090,7 @@ impl LorebookService {
         if let Some(content_str) = payload.content {
             let (cipher, nonce) = self
                 .encryption_service
-                .encrypt(&content_str, user_dek_bytes)
-                .await?;
+                .encrypt(&content_str, user_dek_bytes)?;
             entry_to_update.content_ciphertext = cipher;
             entry_to_update.content_nonce = nonce;
             changes_made = true;
@@ -1125,8 +1101,7 @@ impl LorebookService {
             let comment_to_encrypt = payload.comment.as_deref().unwrap_or("");
             let (cipher, nonce) = self
                 .encryption_service
-                .encrypt(comment_to_encrypt, user_dek_bytes)
-                .await?;
+                .encrypt(comment_to_encrypt, user_dek_bytes)?;
             entry_to_update.comment_ciphertext = Some(cipher);
             entry_to_update.comment_nonce = Some(nonce);
             changes_made = true;
@@ -1188,11 +1163,10 @@ impl LorebookService {
             .await
             .map_err(|e| {
                 AppError::InternalServerErrorGeneric(format!(
-                    "DB interaction failed while updating entry: {}",
-                    e
+                    "DB interaction failed while updating entry: {e}"
                 ))
             })?
-            .map_err(|e| AppError::DatabaseQueryError(format!("Failed to update entry: {}", e)))?;
+            .map_err(|e| AppError::DatabaseQueryError(format!("Failed to update entry: {e}")))?;
 
         // 5. Decrypt fields from the updated_db_entry for embedding and response
         let decrypted_title_for_response_and_embed = String::from_utf8_lossy(
@@ -1202,8 +1176,7 @@ impl LorebookService {
                     &updated_db_entry.entry_title_ciphertext,
                     &updated_db_entry.entry_title_nonce,
                     user_dek_bytes,
-                )
-                .await?,
+                )?,
         )
         .into_owned();
 
@@ -1217,8 +1190,7 @@ impl LorebookService {
                                 &updated_db_entry.keys_text_ciphertext,
                                 &updated_db_entry.keys_text_nonce,
                                 user_dek_bytes,
-                            )
-                            .await?,
+                            )?,
                     )
                     .into_owned(),
                 )
@@ -1234,8 +1206,7 @@ impl LorebookService {
                     &updated_db_entry.content_ciphertext,
                     &updated_db_entry.content_nonce,
                     user_dek_bytes,
-                )
-                .await?,
+                )?,
         )
         .into_owned();
 
@@ -1247,8 +1218,7 @@ impl LorebookService {
                 String::from_utf8_lossy(
                     &self
                         .encryption_service
-                        .decrypt(cipher, nonce, user_dek_bytes)
-                        .await?,
+                        .decrypt(cipher, nonce, user_dek_bytes)?,
                 )
                 .into_owned(),
             ),
@@ -1289,18 +1259,20 @@ impl LorebookService {
                 "Spawning task to re-process and embed updated lorebook entry: {}",
                 original_lorebook_entry_id_for_embedding
             );
+
+            let params = LorebookEntryParams {
+                original_lorebook_entry_id: original_lorebook_entry_id_for_embedding,
+                lorebook_id: lorebook_id_for_embedding,
+                user_id: user_id_for_embedding,
+                decrypted_content: content_for_embedding,
+                decrypted_title: title_for_embedding,
+                decrypted_keywords: keywords_for_embedding,
+                is_enabled: is_enabled_for_embedding,
+                is_constant: is_constant_for_embedding,
+            };
+
             if let Err(e) = embedding_pipeline_service
-                .process_and_embed_lorebook_entry(
-                    state_clone,
-                    original_lorebook_entry_id_for_embedding,
-                    lorebook_id_for_embedding,
-                    user_id_for_embedding,
-                    content_for_embedding,
-                    title_for_embedding,
-                    keywords_for_embedding,
-                    is_enabled_for_embedding,
-                    is_constant_for_embedding,
-                )
+                .process_and_embed_lorebook_entry(state_clone, params)
                 .await
             {
                 error!(
@@ -1354,9 +1326,11 @@ impl LorebookService {
             .map_err(|e| AppError::DbPoolError(e.to_string()))?;
 
         // 2. Fetch lorebook entry and verify ownership in a single query
-        let result = conn
+        
+
+        conn
             .interact(move |conn| {
-                use crate::schema::lorebook_entries::dsl::*;
+                use crate::schema::lorebook_entries::dsl::{id, lorebook_entries, lorebook_id, user_id};
 
                 // First, verify the entry exists and belongs to the user
                 let entry_owner = lorebook_entries
@@ -1396,9 +1370,7 @@ impl LorebookService {
                 }
             })
             .await
-            .map_err(|e| AppError::DbInteractError(format!("Database interaction error: {}", e)))?;
-
-        result
+            .map_err(|e| AppError::DbInteractError(format!("Database interaction error: {e}")))?
     }
 
     // --- Chat Session Lorebook Association Methods ---
@@ -1438,7 +1410,7 @@ impl LorebookService {
                 "DB interaction failed while verifying chat session ownership for session {}: {}",
                 chat_session_id, e
             );
-            AppError::DbInteractError(format!("DB interaction failed: {}", e))
+            AppError::DbInteractError(format!("DB interaction failed: {e}"))
         })?
         .map_err(|db_err| {
             error!(
@@ -1453,8 +1425,7 @@ impl LorebookService {
                 chat_session_id, current_user_id
             );
             AppError::NotFound(format!(
-                "Chat session with ID {} not found or access denied.",
-                chat_session_id
+                "Chat session with ID {chat_session_id} not found or access denied."
             ))
         })?;
 
@@ -1475,7 +1446,7 @@ impl LorebookService {
                     "DB interaction failed while verifying lorebook ownership for lorebook {}: {}",
                     lorebook_id_to_associate, e
                 );
-                AppError::DbInteractError(format!("DB interaction failed: {}", e))
+                AppError::DbInteractError(format!("DB interaction failed: {e}"))
             })?
             .map_err(|db_err| {
                 error!(
@@ -1490,8 +1461,7 @@ impl LorebookService {
                     lorebook_id_to_associate, current_user_id
                 );
                 AppError::NotFound(format!(
-                    "Lorebook with ID {} not found or access denied.",
-                    lorebook_id_to_associate
+                    "Lorebook with ID {lorebook_id_to_associate} not found or access denied."
                 ))
             })?;
 
@@ -1516,7 +1486,7 @@ impl LorebookService {
         .await
         .map_err(|e| {
             error!("DB interaction failed while creating association between chat {} and lorebook {}: {}", chat_session_id, lorebook_id_to_associate, e);
-            AppError::DbInteractError(format!("DB interaction failed: {}", e))
+            AppError::DbInteractError(format!("DB interaction failed: {e}"))
         })?
         .map_err(|db_err: DieselError| { // Explicitly type db_err
             error!("Failed to insert chat session lorebook association: {}", db_err);
@@ -1593,15 +1563,13 @@ impl LorebookService {
                                 &entry.entry_title_ciphertext,
                                 &entry.entry_title_nonce,
                                 &user_dek_bytes_entry_clone,
-                            )
-                            .await;
+                            );
                         let decrypted_content_result = encryption_service
                             .decrypt(
                                 &entry.content_ciphertext,
                                 &entry.content_nonce,
                                 &user_dek_bytes_entry_clone,
-                            )
-                            .await;
+                            );
                         let decrypted_keys_text_result = if !entry.keys_text_nonce.is_empty() {
                             encryption_service
                                 .decrypt(
@@ -1609,7 +1577,6 @@ impl LorebookService {
                                     &entry.keys_text_nonce,
                                     &user_dek_bytes_entry_clone,
                                 )
-                                .await
                                 .map(Some) // Wrap in Some if decryption is successful
                         } else {
                             Ok(None) // No keys text to decrypt
@@ -1661,17 +1628,22 @@ impl LorebookService {
                                         "Spawning task to process and embed lorebook entry {} from lorebook {} during chat association.",
                                         entry_id_for_embedding, lorebook_id_for_embedding_task
                                     );
+
+                                    let params = LorebookEntryParams {
+                                        original_lorebook_entry_id: entry_id_for_embedding,
+                                        lorebook_id: lorebook_id_for_embedding_task,
+                                        user_id: user_id_for_embedding_task,
+                                        decrypted_content: decrypted_content_for_embedding,
+                                        decrypted_title: Some(decrypted_title_for_embedding),
+                                        decrypted_keywords: decrypted_keywords_for_embedding,
+                                        is_enabled: is_enabled_for_embedding_task,
+                                        is_constant: is_constant_for_embedding_task,
+                                    };
+
                                     if let Err(e) = embedding_pipeline_service_clone
                                         .process_and_embed_lorebook_entry(
                                             state_clone_for_task,
-                                            entry_id_for_embedding,
-                                            lorebook_id_for_embedding_task,
-                                            user_id_for_embedding_task,
-                                            decrypted_content_for_embedding,
-                                            Some(decrypted_title_for_embedding),
-                                            decrypted_keywords_for_embedding,
-                                            is_enabled_for_embedding_task,
-                                            is_constant_for_embedding_task,
+                                            params,
                                         )
                                         .await
                                     {
@@ -1762,7 +1734,7 @@ impl LorebookService {
                 "DB interaction failed while verifying chat session ownership for session {}: {}",
                 chat_session_id_param, e
             );
-            AppError::DbInteractError(format!("DB interaction failed: {}", e))
+            AppError::DbInteractError(format!("DB interaction failed: {e}"))
         })?
         .map_err(|db_err| {
             error!(
@@ -1777,8 +1749,7 @@ impl LorebookService {
                 chat_session_id_param, current_user_id
             );
             AppError::NotFound(format!(
-                "Chat session with ID {} not found or access denied.",
-                chat_session_id_param
+                "Chat session with ID {chat_session_id_param} not found or access denied."
             ))
         })?;
 
@@ -1807,7 +1778,7 @@ impl LorebookService {
                     "DB interaction failed while listing associations for chat {}: {}",
                     chat_session_id_param, e
                 );
-                AppError::DbInteractError(format!("DB interaction failed: {}", e))
+                AppError::DbInteractError(format!("DB interaction failed: {e}"))
             })?
             .map_err(|db_err| {
                 error!(
@@ -1863,12 +1834,11 @@ impl LorebookService {
                 .optional()
         })
         .await
-        .map_err(|e| AppError::DbInteractError(format!("DB interaction failed: {}", e)))?
+        .map_err(|e| AppError::DbInteractError(format!("DB interaction failed: {e}")))?
         .map_err(|db_err| AppError::DatabaseQueryError(db_err.to_string()))?
         .ok_or_else(|| {
             AppError::NotFound(format!(
-                "Chat session with ID {} not found or access denied.",
-                chat_session_id_param
+                "Chat session with ID {chat_session_id_param} not found or access denied."
             ))
         })?;
 
@@ -1890,7 +1860,7 @@ impl LorebookService {
                     "DB interaction failed while disassociating lorebook {} from chat {}: {}",
                     lorebook_id_param, chat_session_id_param, e
                 );
-                AppError::DbInteractError(format!("DB interaction failed: {}", e))
+                AppError::DbInteractError(format!("DB interaction failed: {e}"))
             })?
             .map_err(|db_err| {
                 error!(
@@ -1951,7 +1921,7 @@ impl LorebookService {
                 "DB interaction failed while verifying lorebook ownership for lorebook {}: {}",
                 lorebook_id_param, e
             );
-            AppError::DbInteractError(format!("DB interaction failed: {}", e))
+            AppError::DbInteractError(format!("DB interaction failed: {e}"))
         })?
         .map_err(|db_err| {
             error!("Failed to query lorebook {}: {}", lorebook_id_param, db_err);
@@ -1963,8 +1933,7 @@ impl LorebookService {
                 lorebook_id_param, current_user_id
             );
             AppError::NotFound(format!(
-                "Lorebook with ID {} not found or access denied.",
-                lorebook_id_param
+                "Lorebook with ID {lorebook_id_param} not found or access denied."
             ))
         })?;
 
@@ -1991,7 +1960,7 @@ impl LorebookService {
                     "DB interaction failed while listing associated chats for lorebook {}: {}",
                     lorebook_id_param, e
                 );
-                AppError::DbInteractError(format!("DB interaction failed: {}", e))
+                AppError::DbInteractError(format!("DB interaction failed: {e}"))
             })?
             .map_err(|db_err| {
                 error!(
@@ -2021,7 +1990,6 @@ impl LorebookService {
                         match self
                             .encryption_service
                             .decrypt(&ciphertext, &nonce, dek_bytes)
-                            .await
                         {
                             Ok(decrypted_bytes) => String::from_utf8(decrypted_bytes).ok(),
                             Err(e) => {

@@ -27,7 +27,7 @@ use scribe_backend::schema::{characters, chat_sessions};
 use scribe_backend::services::chat::session_management::create_session_and_maybe_first_message;
 use scribe_backend::services::chat::settings::get_session_settings;
 use scribe_backend::services::lorebook_service::LorebookService; // Added LorebookService
-use scribe_backend::state::AppState;
+use scribe_backend::state::{AppState, AppStateServices};
 use scribe_backend::test_helpers;
 use std::sync::Arc; // Added for Result in set_history_settings
 
@@ -478,19 +478,23 @@ async fn get_chat_settings_defaults() {
         test_app.db_pool.clone(),
     ));
 
+    let services = AppStateServices {
+        ai_client: test_app.ai_client.clone(),
+        embedding_client: test_app.mock_embedding_client.clone(),
+        qdrant_service: test_app.qdrant_service.clone(),
+        embedding_pipeline_service: test_app.mock_embedding_pipeline_service.clone(),
+        chat_override_service: chat_override_service_for_test,
+        user_persona_service: user_persona_service_for_test,
+        token_counter: hybrid_token_counter_for_test,
+        encryption_service: encryption_service_for_test.clone(),
+        lorebook_service: lorebook_service_for_test,
+        auth_backend: auth_backend_for_test,
+    };
+
     let app_state_for_service = AppState::new(
         test_app.db_pool.clone(),
         test_app.config.clone(),
-        test_app.ai_client.clone(),
-        test_app.mock_embedding_client.clone(),
-        test_app.qdrant_service.clone(),
-        test_app.mock_embedding_pipeline_service.clone(),
-        chat_override_service_for_test,
-        user_persona_service_for_test,
-        hybrid_token_counter_for_test,
-        encryption_service_for_test.clone(),
-        lorebook_service_for_test,
-        auth_backend_for_test,
+        services,
     );
 
     // Create a dummy DEK for the test
@@ -578,7 +582,7 @@ async fn test_get_chat_settings_not_found() {
     let non_existent_session_id = Uuid::new_v4();
     let request = Request::builder()
         .method(Method::GET)
-        .uri(format!("/api/chat/{}/settings", non_existent_session_id))
+        .uri(format!("/api/chat/{non_existent_session_id}/settings"))
         .header(header::COOKIE, auth_cookie)
         .body(Body::empty())
         .unwrap();
@@ -1668,7 +1672,7 @@ async fn update_chat_settings_not_found() {
 
     let request = Request::builder()
         .method(Method::PUT)
-        .uri(format!("/api/chat/{}/settings", non_existent_session_id))
+        .uri(format!("/api/chat/{non_existent_session_id}/settings"))
         .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
         .header(header::COOKIE, auth_cookie.clone())
         .body(Body::from(serde_json::to_string(&update_data).unwrap()))
@@ -1686,7 +1690,7 @@ async fn get_chat_settings_unauthorized() {
 
     let request = Request::builder()
         .method(Method::GET)
-        .uri(format!("/api/chat/{}/settings", session_id_for_unauth))
+        .uri(format!("/api/chat/{session_id_for_unauth}/settings"))
         .body(Body::empty())
         .unwrap();
 
@@ -1720,7 +1724,7 @@ async fn update_chat_settings_unauthorized() {
 
     let request = Request::builder()
         .method(Method::PUT)
-        .uri(format!("/api/chat/{}/settings", session_id_for_unauth))
+        .uri(format!("/api/chat/{session_id_for_unauth}/settings"))
         .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
         .body(Body::from(serde_json::to_string(&update_data).unwrap()))
         .unwrap();

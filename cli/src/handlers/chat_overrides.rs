@@ -34,8 +34,7 @@ pub async fn handle_chat_edit_character_oneliner<H: IoHandler, C: HttpClient>(
     ]; // Add more as supported
     if !allowed_fields.contains(&field_name.as_str()) {
         io_handler.write_line(&format!(
-            "Warning: Field '{}' may not be overridable. Allowed fields are currently: {:?}.",
-            field_name, allowed_fields
+            "Warning: Field '{field_name}' may not be overridable. Allowed fields are currently: {allowed_fields:?}."
         ))?;
     }
 
@@ -51,7 +50,7 @@ pub async fn handle_chat_edit_character_oneliner<H: IoHandler, C: HttpClient>(
             io_handler.write_line(&format!("  New value: {}", response.new_value))?;
         }
         Err(e) => {
-            io_handler.write_line(&format!("Error setting chat character override: {}", e))?;
+            io_handler.write_line(&format!("Error setting chat character override: {e}"))?;
             return Err(e);
         }
     }
@@ -67,15 +66,14 @@ pub async fn handle_chat_edit_character_wizard<H: IoHandler, C: HttpClient>(
 
     let session_id_str = io_handler.read_line("Enter Chat Session ID (UUID):")?;
     let session_id = Uuid::parse_str(&session_id_str)
-        .map_err(|_| CliError::InputError(format!("Invalid UUID format: {}", session_id_str)))?;
+        .map_err(|_| CliError::InputError(format!("Invalid UUID format: {session_id_str}")))?;
 
     // Fetch chat session to get original_character_id
     io_handler.write_line("Fetching chat session details...")?;
     let chat_session = client.get_chat_session(session_id).await.map_err(|e| {
         io_handler
             .write_line(&format!(
-                "Failed to fetch chat session {}: {}",
-                session_id, e
+                "Failed to fetch chat session {session_id}: {e}"
             ))
             .ok();
         e
@@ -83,8 +81,7 @@ pub async fn handle_chat_edit_character_wizard<H: IoHandler, C: HttpClient>(
     let original_character_id = chat_session.character_id;
 
     io_handler.write_line(&format!(
-        "Fetching effective character data for session {} (Original Character ID: {})...",
-        session_id, original_character_id
+        "Fetching effective character data for session {session_id} (Original Character ID: {original_character_id})..."
     ))?;
 
     let effective_char = client
@@ -92,7 +89,7 @@ pub async fn handle_chat_edit_character_wizard<H: IoHandler, C: HttpClient>(
         .await
         .map_err(|e| {
             io_handler
-                .write_line(&format!("Failed to fetch effective character data: {}", e))
+                .write_line(&format!("Failed to fetch effective character data: {e}"))
                 .ok();
             e
         })?;
@@ -125,13 +122,11 @@ pub async fn handle_chat_edit_character_wizard<H: IoHandler, C: HttpClient>(
     io_handler.write_line("\n--- Select Field to Override ---")?;
     // Define overridable fields based on plan (description, personality, first_mes initially)
     // Extend this list as more fields become overridable.
-    let overridable_fields = vec![
-        "description",
+    let overridable_fields = ["description",
         "personality",
         "first_mes",
         "system_prompt",
-        "scenario",
-    ];
+        "scenario"];
     for (idx, field) in overridable_fields.iter().enumerate() {
         io_handler.write_line(&format!("[{}] {}", idx + 1, field))?;
     }
@@ -188,15 +183,13 @@ pub async fn handle_chat_edit_character_wizard<H: IoHandler, C: HttpClient>(
         }
     ))?;
     let new_value = io_handler.read_line(&format!(
-        "Enter new value for '{}' (leave blank to clear override, if supported by backend):",
-        field_to_override
+        "Enter new value for '{field_to_override}' (leave blank to clear override, if supported by backend):"
     ))?;
 
     if crate::handlers::characters::prompt_yes_no(
         io_handler,
         &format!(
-            "\nApply override for '{}' to '{}'? (Y/n)",
-            field_to_override, new_value
+            "\nApply override for '{field_to_override}' to '{new_value}'? (Y/n)"
         ),
     )? {
         match client
@@ -211,7 +204,7 @@ pub async fn handle_chat_edit_character_wizard<H: IoHandler, C: HttpClient>(
                 io_handler.write_line(&format!("  New value: {}", response.new_value))?;
             }
             Err(e) => {
-                io_handler.write_line(&format!("Error setting chat character override: {}", e))?;
+                io_handler.write_line(&format!("Error setting chat character override: {e}"))?;
                 return Err(e);
             }
         }

@@ -46,8 +46,7 @@ mod chat_overrides_api_tests {
         if response_status != ReqwestStatusCode::CREATED {
             let body_text = String::from_utf8_lossy(&response_body_bytes);
             panic!(
-                "Failed to create chat session via API for test setup. URL: {}. Status: {}. Body: {}",
-                request_url, response_status, body_text
+                "Failed to create chat session via API for test setup. URL: {request_url}. Status: {response_status}. Body: {body_text}"
             );
         }
 

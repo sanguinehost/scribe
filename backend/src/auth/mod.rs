@@ -4,7 +4,7 @@ pub use crate::models::auth::RegisterPayload; // Added for RegisterPayload
 use crate::models::users::{AccountStatus, NewUser, User, UserDbQuery};
 use crate::schema::users;
 // Required imports for synchronous Diesel
-use diesel::{PgConnection, prelude::*};
+use diesel::{BoolExpressionMethods, PgConnection, QueryDsl, ExpressionMethods, RunQueryDsl, SelectableHelper};
 // Removed DbPool import as functions will now take PgConnection
 // use crate::state::DbPool;
 use bcrypt::BcryptError;
@@ -347,6 +347,12 @@ pub use session_dek::SessionDek;
 pub use session_store::DieselSessionStore;
 pub use user_store::Backend as AuthBackend;
 
+/// Hashes a password using bcrypt with the default cost factor.
+///
+/// # Errors
+///
+/// Returns `AuthError::HashingError` if the bcrypt hashing operation fails
+/// or if the async task spawning fails.
 pub async fn hash_password(password: SecretString) -> Result<String, AuthError> {
     // Corrected: Was Secret<String>
     tokio::task::spawn_blocking(move || {
@@ -616,7 +622,7 @@ fn delete_sessions_from_db(
     session_ids_to_delete: &[String],
 ) -> Result<usize, AuthError> {
     use crate::schema::sessions::dsl::{id as session_id_col, sessions};
-    use diesel::prelude::*;
+    use diesel::{QueryDsl, RunQueryDsl};
 
     if session_ids_to_delete.is_empty() {
         debug!("No active sessions found for user to invalidate.");
@@ -640,7 +646,7 @@ pub async fn delete_all_sessions_for_user(
     use crate::schema::sessions::dsl::{
         id as session_id_col, session as session_data_col, sessions,
     };
-    use diesel::prelude::*;
+    use diesel::{QueryDsl, RunQueryDsl};
 
     info!("Attempting to delete all sessions for user.");
 

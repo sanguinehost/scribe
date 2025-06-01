@@ -155,7 +155,18 @@ const fn default_context_rag_token_budget() -> usize {
 }
 
 impl Config {
-    // Placeholder function to load settings (e.g., from file or env)
+    /// Loads configuration from environment variables.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if required environment variables are missing or invalid,
+    /// or if the configuration parsing fails.
+    /// Loads configuration from environment variables.
+    ///
+    /// # Errors
+    ///
+    /// Returns `anyhow::Error` if environment variable parsing fails,
+    /// such as when required variables are missing or have invalid formats.
     pub fn load() -> Result<Self, anyhow::Error> {
         // In a real scenario, load from config file (e.g., config.toml)
         // or environment variables using libraries like `config` or `dotenvy` + `envy`.
