@@ -376,7 +376,7 @@ async fn change_default_persona_success() {
     let (client, auth_cookie_str) = login_user_via_api(&app, username, password).await;
 
     // 1. Create Persona A
-    let persona_a_create = CreateUserPersonaDto {
+    let first_persona_create = CreateUserPersonaDto {
         name: "Persona A - Initial Default".to_string(),
         description: "This is Persona A.".to_string(),
         system_prompt: Some("I am Persona A.".to_string()),
@@ -384,7 +384,7 @@ async fn change_default_persona_success() {
     };
     let response_a = client
         .post(format!("{}/api/personas", app.address)) // Corrected path
-        .json(&persona_a_create)
+        .json(&first_persona_create)
         .header(COOKIE, &auth_cookie_str)
         .send()
         .await
@@ -394,7 +394,7 @@ async fn change_default_persona_success() {
     tdg.add_user_persona(persona_a.id);
 
     // 2. Create Persona B
-    let persona_b_create = CreateUserPersonaDto {
+    let second_persona_create = CreateUserPersonaDto {
         name: "Persona B - New Default".to_string(),
         description: "This is Persona B.".to_string(),
         system_prompt: Some("I am Persona B.".to_string()),
@@ -402,7 +402,7 @@ async fn change_default_persona_success() {
     };
     let response_b = client
         .post(format!("{}/api/personas", app.address)) // Corrected path
-        .json(&persona_b_create)
+        .json(&second_persona_create)
         .header(COOKIE, &auth_cookie_str)
         .send()
         .await

@@ -100,7 +100,37 @@ const MAX_RETRIES: u32 = 2; // Max retries for the single model
 // const MAX_FALLBACK_MODEL_RETRIES: u32 = 5; // REMOVED
 const INITIAL_BACKOFF_MS: u64 = 1000; // 1 second
 const MAX_BACKOFF_MS: u64 = 5000; // 5 seconds
-const JITTER_FACTOR: f64 = 0.25; // 25% jitter
+
+fn calculate_jitter_ms(backoff_ms: u64) -> i64 {
+    // Generate jitter using pure integer arithmetic
+    // JITTER_FACTOR is 0.25, so max jitter is backoff_ms / 4
+    
+    let backoff_i64 = i64::try_from(backoff_ms).unwrap_or(i64::MAX);
+    let max_jitter = backoff_i64 / 4; // 25% of backoff
+    
+    // Generate a random value between -max_jitter and +max_jitter
+    // Using integer random generation to avoid floating point issues
+    let random_range = max_jitter * 2; // Total range from -max_jitter to +max_jitter
+    if random_range <= 0 {
+        return 0;
+    }
+    
+    let random_offset = rand::rng().random_range(0..random_range);
+    random_offset - max_jitter
+}
+
+fn calculate_sleep_duration_ms(backoff_ms: u64, jitter_ms: i64) -> u64 {
+    let backoff_i64 = i64::try_from(backoff_ms).unwrap_or(i64::MAX);
+    let total_ms = backoff_i64.saturating_add(jitter_ms);
+    u64::try_from(total_ms.max(0)).unwrap_or(0)
+}
+
+#[cfg(test)]
+const fn calculate_min_expected_duration_ms(expected_delay_ms: u64) -> u64 {
+    // With 25% jitter factor, we expect at least 50% of the nominal delay
+    // (since jitter can be -25% to +25%, worst case is -25%)
+    expected_delay_ms * 3 / 4 // 75% of expected delay
+}
 
 #[derive(Clone)] // Add Clone
 pub struct RestGeminiEmbeddingClient {
@@ -210,13 +240,8 @@ impl EmbeddingClient for RestGeminiEmbeddingClient {
                         }
                         // Fallback logic removed
 
-                        #[allow(clippy::cast_possible_truncation, clippy::cast_precision_loss)]
-                        let jitter = (current_backoff_ms as f64
-                          * JITTER_FACTOR
-                          * rand::rng().random_range(-1.0..1.0))
-                          as i64; // Use exclusive upper bound for gen_range
-                        #[allow(clippy::cast_sign_loss, clippy::cast_possible_wrap)]
-                        let sleep_duration_ms = (current_backoff_ms as i64 + jitter).max(0) as u64;
+                        let jitter = calculate_jitter_ms(current_backoff_ms);
+                        let sleep_duration_ms = calculate_sleep_duration_ms(current_backoff_ms, jitter);
 
                         debug!(
                             "Sleeping for {}ms before next retry (backoff: {}ms, jitter: {}ms)",
@@ -350,13 +375,8 @@ impl EmbeddingClient for RestGeminiEmbeddingClient {
                         }
                         // Fallback logic removed
 
-                        #[allow(clippy::cast_possible_truncation, clippy::cast_precision_loss)]
-                        let jitter = (current_backoff_ms as f64
-                          * JITTER_FACTOR
-                          * rand::rng().random_range(-1.0..1.0))
-                          as i64; // Use exclusive upper bound for gen_range
-                        #[allow(clippy::cast_sign_loss, clippy::cast_possible_wrap)]
-                        let sleep_duration_ms = (current_backoff_ms as i64 + jitter).max(0) as u64;
+                        let jitter = calculate_jitter_ms(current_backoff_ms);
+                        let sleep_duration_ms = calculate_sleep_duration_ms(current_backoff_ms, jitter);
 
                         debug!(
                             "Sleeping for {}ms before next batch retry (backoff: {}ms, jitter: {}ms)",
@@ -1111,9 +1131,8 @@ mod tests {
         // For 2 retries, total sleep is INITIAL_BACKOFF_MS + min(INITIAL_BACKOFF_MS*2, MAX_BACKOFF_MS)
         // = 1000 + min(2000, 5000) = 1000 + 2000 = 3000ms.
         // Allow for jitter, e.g., 70% of non-jittered sum.
-        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss, clippy::cast_lossless, clippy::suboptimal_flops, clippy::cast_precision_loss)]
         let min_expected_total_duration = Duration::from_millis(
-            (expected_total_delay_ms as f64 * (1.0 - JITTER_FACTOR * 2.0)).max(0.0) as u64,
+            calculate_min_expected_duration_ms(expected_total_delay_ms),
         );
 
         assert!(
@@ -1188,9 +1207,8 @@ mod tests {
         // expected_total_delay_ms = 1000 (1st retry sleep) + 2000 (2nd retry sleep) = 3000ms
 
         // Allow for jitter, e.g., 70% of non-jittered sum.
-        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss, clippy::cast_lossless, clippy::suboptimal_flops, clippy::cast_precision_loss)]
         let min_expected_total_duration = Duration::from_millis(
-            (expected_total_delay_ms as f64 * (1.0 - JITTER_FACTOR * 2.0)).max(0.0) as u64,
+            calculate_min_expected_duration_ms(expected_total_delay_ms),
         );
         assert!(
             duration >= min_expected_total_duration,

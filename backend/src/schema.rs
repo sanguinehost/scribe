@@ -15,7 +15,7 @@ pub mod sql_types {
 }
 
 diesel::table! {
-    use diesel::sql_types::*;
+    use diesel::sql_types::{Int4, Text, Timestamptz, Uuid, Varchar};
     use diesel_derive_enum::DbEnum;
 
     character_assets (id) {
@@ -34,7 +34,7 @@ diesel::table! {
 }
 
 diesel::table! {
-    use diesel::sql_types::*;
+    use diesel::sql_types::{Array, Bool, Bytea, Int4, Int8, Jsonb, Nullable, Numeric, Text, Timestamptz, Uuid, Varchar};
     use diesel_derive_enum::DbEnum;
 
     characters (id) {
@@ -136,7 +136,7 @@ diesel::table! {
 }
 
 diesel::table! {
-    use diesel::sql_types::*;
+    use diesel::sql_types::{Bytea, Timestamptz, Uuid, Varchar};
     use diesel_derive_enum::DbEnum;
 
     chat_character_overrides (id) {
@@ -153,7 +153,7 @@ diesel::table! {
 }
 
 diesel::table! {
-    use diesel::sql_types::*;
+    use diesel::sql_types::{Bytea, Int4, Jsonb, Nullable, Timestamptz, Uuid, Varchar};
     use diesel_derive_enum::DbEnum;
     use super::sql_types::MessageType;
 
@@ -177,7 +177,7 @@ diesel::table! {
 }
 
 diesel::table! {
-    use diesel::sql_types::*;
+    use diesel::sql_types::{Timestamptz, Uuid};
     use diesel_derive_enum::DbEnum;
 
     chat_session_lorebooks (chat_session_id, lorebook_id) {
@@ -190,7 +190,7 @@ diesel::table! {
 }
 
 diesel::table! {
-    use diesel::sql_types::*;
+    use diesel::sql_types::{Array, Bool, Bytea, Int4, Jsonb, Nullable, Numeric, Text, Timestamptz, Uuid, Varchar};
     use diesel_derive_enum::DbEnum;
 
     chat_sessions (id) {
@@ -229,7 +229,7 @@ diesel::table! {
 }
 
 diesel::table! {
-    use diesel::sql_types::*;
+    use diesel::sql_types::{Bool, Bytea, Int4, Nullable, Timestamptz, Uuid, Varchar};
     use diesel_derive_enum::DbEnum;
 
     lorebook_entries (id) {
@@ -260,7 +260,7 @@ diesel::table! {
 }
 
 diesel::table! {
-    use diesel::sql_types::*;
+    use diesel::sql_types::{Bool, Nullable, Text, Timestamptz, Uuid, Varchar};
     use diesel_derive_enum::DbEnum;
 
     lorebooks (id) {
@@ -278,7 +278,7 @@ diesel::table! {
 }
 
 diesel::table! {
-    use diesel::sql_types::*;
+    use diesel::sql_types::{Nullable, Text, Timestamptz, Uuid, Varchar};
     use diesel_derive_enum::DbEnum;
 
     old_documents (id, created_at) {
@@ -292,7 +292,7 @@ diesel::table! {
 }
 
 diesel::table! {
-    use diesel::sql_types::*;
+    use diesel::sql_types::{Bool, Nullable, Text, Timestamptz, Uuid};
     use diesel_derive_enum::DbEnum;
 
     old_suggestions (id) {
@@ -309,7 +309,7 @@ diesel::table! {
 }
 
 diesel::table! {
-    use diesel::sql_types::*;
+    use diesel::sql_types::{Bool, Uuid};
     use diesel_derive_enum::DbEnum;
 
     old_votes (chat_id, message_id) {
@@ -320,7 +320,7 @@ diesel::table! {
 }
 
 diesel::table! {
-    use diesel::sql_types::*;
+    use diesel::sql_types::{Nullable, Text, Timestamptz};
     use diesel_derive_enum::DbEnum;
 
     sessions (id) {
@@ -331,7 +331,7 @@ diesel::table! {
 }
 
 diesel::table! {
-    use diesel::sql_types::*;
+    use diesel::sql_types::{Array, Bytea, Nullable, Text, Timestamptz, Uuid, Varchar};
     use diesel_derive_enum::DbEnum;
 
     user_personas (id) {
@@ -362,7 +362,7 @@ diesel::table! {
 }
 
 diesel::table! {
-    use diesel::sql_types::*;
+    use diesel::sql_types::{Bytea, Nullable, Text, Timestamptz, Uuid, Varchar};
     use diesel_derive_enum::DbEnum;
     use super::sql_types::UserRole;
     use super::sql_types::AccountStatus;

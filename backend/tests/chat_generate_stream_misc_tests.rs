@@ -435,7 +435,7 @@ async fn generate_chat_response_streaming_reasoning_chunk() {
                 session_id: session_id_clone_msg,
                 user_id: user_id_clone_msg,
                 message_type: MessageRole::User,
-                content: "User message for reasoning chunk".as_bytes().to_vec(),
+                content: b"User message for reasoning chunk".to_vec(),
                 content_nonce: None,
                 created_at: Utc::now(),
                 updated_at: Utc::now(),

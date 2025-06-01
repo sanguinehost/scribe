@@ -35,7 +35,8 @@ pub enum CountingMode {
 }
 
 impl HybridTokenCounter {
-    /// Create a new HybridTokenCounter with both local and API-based counting
+    /// Create a new `HybridTokenCounter` with both local and API-based counting
+    #[must_use]
     pub fn new(
         tokenizer: TokenizerService,
         api_client: Option<GeminiTokenClient>,
@@ -48,7 +49,8 @@ impl HybridTokenCounter {
         }
     }
 
-    /// Create a new HybridTokenCounter with only local estimation
+    /// Create a new `HybridTokenCounter` with only local estimation
+    #[must_use]
     pub fn new_local_only(tokenizer: TokenizerService) -> Self {
         Self {
             tokenizer,
@@ -57,7 +59,12 @@ impl HybridTokenCounter {
         }
     }
 
-    /// Create a new HybridTokenCounter with only API-based counting
+    /// Create a new `HybridTokenCounter` with only API-based counting
+    ///
+    /// # Panics
+    ///
+    /// Panics if the fallback tokenizer cannot be created from the embedded model file.
+    /// This should only happen if the tokenizer model file is corrupted or missing.
     pub fn new_api_only(api_client: GeminiTokenClient, default_model: impl Into<String>) -> Self {
         // Still need a tokenizer for fallback
         let tokenizer = TokenizerService::new(
@@ -73,6 +80,7 @@ impl HybridTokenCounter {
     }
 
     /// Set the default model to use for token counting
+    #[must_use]
     pub fn with_default_model(mut self, model: impl Into<String>) -> Self {
         self.default_model = model.into();
         self
@@ -82,7 +90,7 @@ impl HybridTokenCounter {
     ///
     /// # Errors
     ///
-    /// Returns tokenizer service errors for LocalOnly mode,
+    /// Returns tokenizer service errors for `LocalOnly` mode,
     /// `AppError::ServiceNotAvailable` if API counting is requested but no API client is available,
     /// Gemini API client errors for API-based counting modes,
     /// or the fallback local tokenizer errors when API counting fails in hybrid modes.
@@ -140,6 +148,7 @@ impl HybridTokenCounter {
                     match client.count_tokens(text, model_name).await {
                         Ok(api_estimate) => {
                             // Log any significant discrepancies
+                            #[allow(clippy::cast_precision_loss)] // Acceptable for logging/comparison purposes
                             let difference = if api_estimate.total > local_estimate.total {
                                 api_estimate.total as f64 / local_estimate.total as f64
                             } else {
@@ -175,7 +184,6 @@ impl HybridTokenCounter {
     /// # Errors
     ///
     /// Returns an error if file loading fails, external API requests fail, or tokenization fails.
-    #[allow(clippy::too_many_lines)]
     pub async fn count_tokens_multimodal(
         &self,
         text: &str,
@@ -223,11 +231,10 @@ impl HybridTokenCounter {
                         Ok(data) => {
                             // Determine mime type from extension
                             let mime_type = match path.extension().and_then(|e| e.to_str()) {
-                                Some("jpg" | "jpeg") => "image/jpeg",
                                 Some("png") => "image/png",
                                 Some("webp") => "image/webp",
                                 Some("gif") => "image/gif",
-                                _ => "image/jpeg", // Default to JPEG
+                                _ => "image/jpeg", // Default to JPEG for jpg/jpeg and unknown types
                             };
 
                             image_data.push((data, mime_type.to_string()));
@@ -240,12 +247,12 @@ impl HybridTokenCounter {
             }
 
             // Try to get token count from API
-            let api_result = if !image_data.is_empty() {
+            let api_result = if image_data.is_empty() {
+                client.count_tokens(text, model_name).await
+            } else {
                 client
                     .count_tokens_multimodal(text, image_data, model_name)
                     .await
-            } else {
-                client.count_tokens(text, model_name).await
             };
 
             // Handle API result based on mode

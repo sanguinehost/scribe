@@ -117,6 +117,12 @@ impl QdrantClientService {
     /// Private constructor for creating a dummy instance for tests where
     /// the actual Qdrant service is mocked at a higher level.
     /// Avoids hitting network or requiring config.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the Qdrant client cannot be built with the dummy URL.
+    /// This is intended for test use only.
+    #[must_use]
     pub fn new_test_dummy() -> Self {
         // NOTE: The Qdrant client here is likely non-functional or will panic if used.
         // This is acceptable ONLY because the AppStateBuilder uses this when the
@@ -147,7 +153,37 @@ impl QdrantClientService {
             AppError::VectorDbError(format!("Failed to check Qdrant collection existence: {e}"))
         })?;
 
-        if !collection_exists {
+        if collection_exists {
+            info!("Collection '{}' already exists.", self.collection_name);
+            // Ensure existing collection has the correct HNSW settings
+            let target_hnsw_config = HnswConfigDiff {
+                m: Some(0),
+                payload_m: Some(16),
+                ..Default::default()
+            };
+            info!(
+                "Updating HNSW config for existing collection '{}': m=0, payload_m=16",
+                self.collection_name
+            );
+            self.client
+                .update_collection(UpdateCollection {
+                    collection_name: self.collection_name.clone(),
+                    hnsw_config: Some(target_hnsw_config),
+                    ..Default::default()
+                })
+                .await
+                .map_err(|e| {
+                    error!(error = %e, collection = %self.collection_name, "Failed to update HNSW config for Qdrant collection");
+                    AppError::VectorDbError(format!(
+                        "Failed to update HNSW config for Qdrant collection '{}': {}",
+                        self.collection_name, e
+                    ))
+                })?;
+            info!(
+                "Successfully updated HNSW config for collection '{}'",
+                self.collection_name
+            );
+        } else {
             info!(
                 "Collection '{}' does not exist. Creating...",
                 self.collection_name
@@ -231,40 +267,10 @@ impl QdrantClientService {
                     }
                 }
             }
-        } else {
-            info!("Collection '{}' already exists.", self.collection_name);
-            // Ensure existing collection has the correct HNSW settings
-            let target_hnsw_config = HnswConfigDiff {
-                m: Some(0),
-                payload_m: Some(16),
-                ..Default::default()
-            };
-            info!(
-                "Updating HNSW config for existing collection '{}': m=0, payload_m=16",
-                self.collection_name
-            );
-            self.client
-                .update_collection(UpdateCollection {
-                    collection_name: self.collection_name.clone(),
-                    hnsw_config: Some(target_hnsw_config),
-                    ..Default::default()
-                })
-                .await
-                .map_err(|e| {
-                    error!(error = %e, collection = %self.collection_name, "Failed to update HNSW config for Qdrant collection");
-                    AppError::VectorDbError(format!(
-                        "Failed to update HNSW config for Qdrant collection '{}': {}",
-                        self.collection_name, e
-                    ))
-                })?;
-            info!(
-                "Successfully updated HNSW config for collection '{}'",
-                self.collection_name
-            );
         }
 
         // Ensure payload indexes exist for group_id fields
-        for field_name in ["user_id", "lorebook_id"].iter() {
+        for field_name in &["user_id", "lorebook_id"] {
             info!(
                 "Ensuring payload index exists for field '{}' in collection '{}'",
                 field_name, self.collection_name
@@ -278,7 +284,7 @@ impl QdrantClientService {
                 .create_field_index(CreateFieldIndexCollection {
                     collection_name: self.collection_name.clone(),
                     wait: Some(true),
-                    field_name: field_name.to_string(),
+                    field_name: (*field_name).to_string(),
                     field_type: Some(FieldType::Keyword.into()),
                     field_index_params: None, // Use default index params for keyword
                     ordering: None,
@@ -422,7 +428,7 @@ impl QdrantClientService {
         let scroll_request = qdrant_client::qdrant::ScrollPoints {
             collection_name: self.collection_name.clone(),
             filter,
-            limit: Some(limit as u32), // Scroll API uses u32 for limit
+            limit: Some(u32::try_from(limit).unwrap_or(u32::MAX)), // Scroll API uses u32 for limit
             with_payload: Some(true.into()),
             with_vectors: Some(true.into()), // Include vectors (optional)
             offset: None,                    // Start from the beginning
@@ -458,6 +464,11 @@ impl QdrantClientService {
 
 // --- Helper function to create PointStruct (Example) ---
 // This will likely live elsewhere (e.g., in the chunking/embedding pipeline)
+/// Creates a Qdrant point from the given parameters
+///
+/// # Errors
+///
+/// Returns an error if the payload is not a valid JSON object or if serialization fails
 pub fn create_qdrant_point(
     id: Uuid,
     vector: Vec<f32>,
@@ -495,6 +506,7 @@ pub fn create_qdrant_point(
 }
 
 // Add a helper function to create a filter for message_id
+#[must_use]
 pub fn create_message_id_filter(message_id: Uuid) -> Filter {
     Filter {
         must: vec![Condition {
@@ -515,7 +527,7 @@ pub fn create_message_id_filter(message_id: Uuid) -> Filter {
 impl QdrantClientServiceTrait for QdrantClientService {
     async fn ensure_collection_exists(&self) -> Result<(), AppError> {
         // Call the method directly instead of through the trait
-        QdrantClientService::ensure_collection_exists(self).await
+        self.ensure_collection_exists().await
     }
 
     async fn store_points(&self, points: Vec<PointStruct>) -> Result<(), AppError> {
@@ -530,7 +542,7 @@ impl QdrantClientServiceTrait for QdrantClientService {
         filter: Option<Filter>,
     ) -> Result<Vec<ScoredPoint>, AppError> {
         // Use the implementation's method directly
-        QdrantClientService::search_points(self, vector, limit, filter).await
+        self.search_points(vector, limit, filter).await
     }
 
     async fn retrieve_points(
@@ -540,7 +552,7 @@ impl QdrantClientServiceTrait for QdrantClientService {
     ) -> Result<Vec<ScoredPoint>, AppError> {
         // Call the implementation method which returns RetrievedPoint
         let retrieved_points =
-            QdrantClientService::retrieve_points(self, filter, limit as usize).await?;
+            self.retrieve_points(filter, usize::try_from(limit).unwrap_or(usize::MAX)).await?;
 
         // Convert RetrievedPoint to ScoredPoint
         let scored_points = retrieved_points
@@ -969,7 +981,6 @@ mod tests {
 
     #[tokio::test]
     #[ignore] // Re-added as it's an integration test
-    #[allow(clippy::too_many_lines)]
     async fn test_integration_search_with_filter() {
         const MAX_RETRIES: u32 = 3;
 

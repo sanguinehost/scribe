@@ -1,5 +1,4 @@
 use chrono::Utc;
-use log;
 use mockall::predicate::*;
 use qdrant_client::qdrant::{PointId, Value, point_id::PointIdOptions};
 use scribe_backend::{

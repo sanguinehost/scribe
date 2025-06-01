@@ -130,7 +130,6 @@ where
 
 // Helper struct for login response
 #[derive(serde::Deserialize)]
-#[allow(dead_code)] // Allow dead code for test struct fields
 struct TestLoginSuccessResponse {
     user: scribe_backend::models::auth::AuthResponse,
     session_id: String,

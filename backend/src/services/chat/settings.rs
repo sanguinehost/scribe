@@ -143,7 +143,7 @@ impl ChatSessionUpdateBuilder {
 
 #[derive(AsChangeset, Debug)]
 #[diesel(table_name = chat_sessions)]
-#[allow(clippy::option_option)] // Required for Diesel changeset pattern - only used internally
+#[allow(clippy::option_option)] // Needed to distinguish: not updating vs setting to NULL vs setting to value
 struct ChatSessionUpdateChangeset {
     system_prompt_ciphertext: Option<Option<Vec<u8>>>,
     system_prompt_nonce: Option<Option<Vec<u8>>>,

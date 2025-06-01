@@ -1441,12 +1441,11 @@ async fn test_rag_retrieves_lorebook_entry_after_embedding_completion() -> anyho
                     );
                     point_found_in_qdrant = true;
                     break;
-                } else {
-                    println!(
-                        "No points found in Qdrant for lorebook entry {} yet, retrying...",
-                        china_entry_id
-                    );
                 }
+                println!(
+                    "No points found in Qdrant for lorebook entry {} yet, retrying...",
+                    china_entry_id
+                );
             }
             Err(e) => {
                 // Error during polling, could be transient or collection not ready

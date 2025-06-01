@@ -27,7 +27,7 @@ struct TestContext {
     user: User,
     dek: SecretBox<Vec<u8>>,
     db_pool: DbPool,       // Added DbPool
-    _guard: TestDataGuard, // To clean up DB entries
+    guard: TestDataGuard, // To clean up DB entries
 }
 
 async fn setup_service_test() -> AnyhowResult<TestContext> {
@@ -64,7 +64,7 @@ async fn setup_service_test() -> AnyhowResult<TestContext> {
         user,                              // User object from create_user_with_dek_in_session
         dek: dek_secret_box,               // The reconstructed DEK
         db_pool: test_app.db_pool.clone(), // Store DbPool
-        _guard: guard,
+        guard,
     })
 }
 
@@ -183,7 +183,7 @@ async fn test_update_user_persona_success() -> AnyhowResult<()> {
     let update_dto_pers_clear_scenario = UpdateUserPersonaDto {
         personality: Some("Updated personality again.".to_string()),
         description: Some(current_persona_state.description.clone()), // Preserve description
-        scenario: Some("".to_string()),                               // Attempt to clear scenario
+        scenario: Some(String::new()),                               // Attempt to clear scenario
         ..Default::default()
     };
     let updated_pers_clear_scenario_result = ctx
@@ -201,7 +201,7 @@ async fn test_update_user_persona_success() -> AnyhowResult<()> {
     );
     assert!(
         updated_pers_clear_scenario_result.scenario.is_none()
-            || updated_pers_clear_scenario_result.scenario == Some("".to_string()),
+            || updated_pers_clear_scenario_result.scenario == Some(String::new()),
         "Scenario should be cleared to None or empty string"
     );
     // The `into_data_for_client` would convert a decrypted empty string back to `Some("")` or `None` based on its logic
@@ -515,7 +515,7 @@ async fn test_user_persona_service_set_default_persona() -> AnyhowResult<()> {
         .service
         .create_user_persona(&ctx.user, &ctx.dek, persona_create_dto)
         .await?;
-    ctx._guard.add_user_persona(persona.id); // Ensure cleanup
+    ctx.guard.add_user_persona(persona.id); // Ensure cleanup
 
     // 2. Set the created persona as default
     let updated_user =

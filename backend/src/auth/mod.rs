@@ -89,6 +89,10 @@ impl From<diesel::result::Error> for AuthError {
 }
 
 /// Check if there are any users in the database
+///
+/// # Errors
+///
+/// Returns an error if the database query fails
 #[instrument(skip(conn), err)]
 pub fn are_there_any_users(conn: &mut PgConnection) -> Result<bool, AuthError> {
     use crate::schema::users::dsl::{id, users};
@@ -231,7 +235,13 @@ pub async fn create_user(
     }
 }
 
-// Function to find a user by their username
+/// Function to find a user by their username
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - The database query fails
+/// - The user is not found
 #[instrument(skip(conn), err)]
 pub fn get_user_by_username(conn: &mut PgConnection, username: &str) -> Result<User, AuthError> {
     // --- Log username explicitly ---
@@ -244,7 +254,13 @@ pub fn get_user_by_username(conn: &mut PgConnection, username: &str) -> Result<U
         .map_err(AuthError::from)
 }
 
-// Function to find a user by their ID
+/// Function to find a user by their ID
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - The database query fails
+/// - The user is not found
 #[instrument(skip(conn), err)]
 pub fn get_user(conn: &mut PgConnection, user_id: Uuid) -> Result<User, AuthError> {
     // --- Log user_id explicitly ---
@@ -345,7 +361,7 @@ pub mod user_store;
 
 pub use session_dek::SessionDek;
 pub use session_store::DieselSessionStore;
-pub use user_store::Backend as AuthBackend;
+pub use user_store::{Backend as AuthBackend, UserCryptoFields};
 
 /// Hashes a password using bcrypt with the default cost factor.
 ///
@@ -454,12 +470,14 @@ pub async fn change_user_password(
     backend
         .update_user_crypto_fields(
             user_id,
-            Some(new_password_hash_str),
-            Some(new_ciphertext_dek_bytes), // Pass ciphertext
-            Some(new_nonce_dek_bytes),      // Pass nonce
-            Some(new_kek_salt_str), // KEK salt (already a string)
-            updated_encrypted_dek_by_recovery,
-            current_db_user.recovery_dek_nonce.clone(), // Pass existing recovery nonce
+            UserCryptoFields {
+                password_hash: Some(new_password_hash_str),
+                dek_ciphertext: Some(new_ciphertext_dek_bytes), // Pass ciphertext
+                dek_nonce: Some(new_nonce_dek_bytes),      // Pass nonce
+                kek_salt: Some(new_kek_salt_str), // KEK salt (already a string)
+                recovery_dek_ciphertext: updated_encrypted_dek_by_recovery,
+                recovery_dek_nonce: current_db_user.recovery_dek_nonce.clone(), // Pass existing recovery nonce
+            },
         )
         .await?;
 
@@ -569,12 +587,14 @@ pub async fn recover_user_password_with_phrase(
     backend
         .update_user_crypto_fields(
             user.id,
-            Some(new_password_hash_str),
-            Some(new_ciphertext_dek_bytes),               // Pass ciphertext
-            Some(new_nonce_dek_bytes),                    // Pass nonce
-            Some(new_kek_salt_str),                       // The new KEK salt (already a string)
-            user.encrypted_dek_by_recovery.clone(), // This remains unchanged
-            user.recovery_dek_nonce.clone(),        // Pass existing recovery nonce
+            UserCryptoFields {
+                password_hash: Some(new_password_hash_str),
+                dek_ciphertext: Some(new_ciphertext_dek_bytes),               // Pass ciphertext
+                dek_nonce: Some(new_nonce_dek_bytes),                    // Pass nonce
+                kek_salt: Some(new_kek_salt_str),                       // The new KEK salt (already a string)
+                recovery_dek_ciphertext: user.encrypted_dek_by_recovery.clone(), // This remains unchanged
+                recovery_dek_nonce: user.recovery_dek_nonce.clone(),        // Pass existing recovery nonce
+            },
         )
         .await?;
 

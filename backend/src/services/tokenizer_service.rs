@@ -51,7 +51,7 @@ impl TokenEstimate {
 }
 
 /// Supported content types for token counting
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ContentType {
     Text,
     Image,
@@ -61,7 +61,7 @@ pub enum ContentType {
 
 /// Model-specific tokenizer for LLM operations
 ///
-/// The TokenizerService wraps SentencePiece models and provides methods for
+/// The `TokenizerService` wraps `SentencePiece` models and provides methods for
 /// encoding text to token IDs and decoding token IDs back to text.
 #[derive(Debug, Clone)]
 pub struct TokenizerService {
@@ -70,7 +70,14 @@ pub struct TokenizerService {
 }
 
 impl TokenizerService {
-    /// Create a new TokenizerService from a SentencePiece model file
+    /// Create a new `TokenizerService` from a `SentencePiece` model file
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The model file cannot be read
+    /// - The model file is not a valid `SentencePiece` model
+    /// - The processor cannot be initialized
     pub fn new(model_path: impl AsRef<Path>) -> Result<Self> {
         let path = model_path.as_ref();
         let model_name = path
@@ -95,36 +102,46 @@ impl TokenizerService {
     }
 
     /// Returns the name of the model
+    #[must_use]
     pub fn model_name(&self) -> &str {
         &self.model_name
     }
 
     /// Returns the vocabulary size of the model
+    #[must_use]
     pub fn vocab_size(&self) -> usize {
         self.processor.len()
     }
 
     /// Returns the BOS (Beginning of Sequence) token ID if available
+    #[must_use]
     pub fn bos_id(&self) -> Option<u32> {
         self.processor.bos_id()
     }
 
     /// Returns the EOS (End of Sequence) token ID if available
+    #[must_use]
     pub fn eos_id(&self) -> Option<u32> {
         self.processor.eos_id()
     }
 
     /// Returns the PAD token ID if available
+    #[must_use]
     pub fn pad_id(&self) -> Option<u32> {
         self.processor.pad_id()
     }
 
     /// Returns the UNK (Unknown) token ID
+    #[must_use]
     pub fn unk_id(&self) -> u32 {
         self.processor.unk_id()
     }
 
     /// Encodes a single text string into token IDs
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the text cannot be encoded by the `SentencePiece` processor
     pub fn encode(&self, text: &str) -> Result<Vec<u32>> {
         let pieces = self.processor.encode(text).map_err(|e| {
             error!("Failed to encode text: {}", e);
@@ -135,6 +152,10 @@ impl TokenizerService {
     }
 
     /// Encodes a batch of text strings into token IDs
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any text in the batch cannot be encoded
     pub fn encode_batch(&self, texts: &[String]) -> Result<Vec<Vec<u32>>> {
         let mut results = Vec::with_capacity(texts.len());
 
@@ -147,6 +168,10 @@ impl TokenizerService {
     }
 
     /// Decodes token IDs back to text
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the token IDs cannot be decoded by the `SentencePiece` processor
     pub fn decode(&self, token_ids: &[u32]) -> Result<String> {
         self.processor.decode_piece_ids(token_ids).map_err(|e| {
             error!("Failed to decode token IDs: {}", e);
@@ -155,6 +180,10 @@ impl TokenizerService {
     }
 
     /// Gets the piece (token) for a given ID
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the ID cannot be converted to a piece
     pub fn id_to_piece(&self, id: u32) -> Result<Option<String>> {
         // This is a helper method - SentencePiece doesn't provide a direct id_to_piece method,
         // so we need to decode a single token
@@ -167,6 +196,10 @@ impl TokenizerService {
     }
 
     /// Gets the ID for a given piece (token)
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the piece cannot be converted to an ID
     pub fn piece_to_id(&self, piece: &str) -> Result<Option<u32>> {
         self.processor.piece_to_id(piece).map_err(|e| {
             error!("Failed to get ID for piece '{}': {}", piece, e);
@@ -175,12 +208,20 @@ impl TokenizerService {
     }
 
     /// Counts the number of tokens in a text string
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the text cannot be tokenized
     pub fn count_tokens(&self, text: &str) -> Result<usize> {
         let tokens = self.encode(text)?;
         Ok(tokens.len())
     }
 
-    /// Estimates tokens for text, returning a TokenEstimate object
+    /// Estimates tokens for text, returning a `TokenEstimate` object
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the text cannot be tokenized by the underlying `SentencePiece` model
     pub fn estimate_text_tokens(&self, text: &str) -> Result<TokenEstimate> {
         let token_count = self.count_tokens(text)?;
         Ok(TokenEstimate::new_text_only(token_count))
@@ -191,6 +232,13 @@ impl TokenizerService {
     /// Gemini 2.0 counts images as follows:
     /// - Images with both dimensions ≤ 384 pixels: 258 tokens
     /// - Larger images: 258 tokens per 768x768 tile (scaled and cropped as needed)
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The image file cannot be read or opened
+    /// - The image format is not supported
+    /// - Image dimensions cannot be determined
     pub fn estimate_image_tokens(&self, image_path: impl AsRef<Path>) -> Result<TokenEstimate> {
         let path = image_path.as_ref();
 
@@ -217,8 +265,8 @@ impl TokenizerService {
 
         // Larger images are processed into 768x768 tiles
         // Calculate how many tiles would be needed (ceiling division)
-        let tiles_x = (f64::from(width) / 768.0).ceil() as usize;
-        let tiles_y = (f64::from(height) / 768.0).ceil() as usize;
+        let tiles_x = ((width + 767) / 768) as usize; // Integer ceiling division
+        let tiles_y = ((height + 767) / 768) as usize; // Integer ceiling division
         let total_tiles = tiles_x * tiles_y;
 
         // Each tile is 258 tokens
@@ -240,8 +288,27 @@ impl TokenizerService {
     /// Estimates tokens for video content based on Gemini's counting rules
     ///
     /// For Gemini, video is counted at a fixed rate of 263 tokens per second
+    #[must_use]
     pub fn estimate_video_tokens(&self, duration_seconds: f64) -> TokenEstimate {
-        let token_count = (duration_seconds * 263.0).ceil() as usize;
+        // Calculate token count with safe conversion
+        let token_count = if duration_seconds <= 0.0 {
+            0
+        } else {
+            let tokens = duration_seconds * 263.0;
+            let tokens_ceiled = tokens.ceil();
+            // Use safe conversion with bounds checking
+            match tokens_ceiled {
+                x if x >= 1_000_000_000.0 => 1_000_000_000,
+                x if x <= 0.0 => 0,
+                x => {
+                    // Safe conversion: we've bounds-checked that x is positive and within usize range
+                    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+                    {
+                        x.trunc() as usize
+                    }
+                }
+            }
+        };
 
         TokenEstimate {
             total: token_count,
@@ -254,8 +321,27 @@ impl TokenizerService {
     /// Estimates tokens for audio content based on Gemini's counting rules
     ///
     /// For Gemini, audio is counted at a fixed rate of 32 tokens per second
+    #[must_use]
     pub fn estimate_audio_tokens(&self, duration_seconds: f64) -> TokenEstimate {
-        let token_count = (duration_seconds * 32.0).ceil() as usize;
+        // Calculate token count with safe conversion
+        let token_count = if duration_seconds <= 0.0 {
+            0
+        } else {
+            let tokens = duration_seconds * 32.0;
+            let tokens_ceiled = tokens.ceil();
+            // Use safe conversion with bounds checking
+            match tokens_ceiled {
+                x if x >= 1_000_000_000.0 => 1_000_000_000,
+                x if x <= 0.0 => 0,
+                x => {
+                    // Safe conversion: we've bounds-checked that x is positive and within usize range
+                    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+                    {
+                        x.trunc() as usize
+                    }
+                }
+            }
+        };
 
         TokenEstimate {
             total: token_count,
@@ -266,6 +352,13 @@ impl TokenizerService {
     }
 
     /// Estimates total tokens for mixed content
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - Text cannot be tokenized
+    /// - Any image files cannot be read or processed
+    /// - Image dimensions cannot be determined
     pub fn estimate_content_tokens(
         &self,
         text: Option<&str>,

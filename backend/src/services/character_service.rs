@@ -308,7 +308,6 @@ impl CharacterService {
     }
 
     #[instrument(skip(self, update_dto, dek), err)]
-    #[allow(clippy::too_many_lines)] // Allow for now, consider refactoring if it becomes too complex
     pub async fn update_character_details(
         &self,
         character_id_to_update: Uuid,

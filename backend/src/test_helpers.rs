@@ -93,6 +93,7 @@ type BatchEmbeddingResponse = Arc<Mutex<Option<Result<Vec<Vec<f32>>, AppError>>>
 type EmbeddingCalls = Arc<Mutex<Vec<(String, String, Option<String>)>>>;
 type BatchEmbeddingCalls = Arc<Mutex<Vec<Vec<(String, String, Option<String>)>>>>;
 type SearchParams = Arc<Mutex<Option<(Vec<f32>, u64, Option<Filter>)>>>;
+type SearchResponseQueue = Arc<Mutex<VecDeque<Result<Vec<ScoredPoint>, AppError>>>>;
 type ChatEventStream = std::sync::Arc<std::sync::Mutex<Option<Vec<Result<ChatStreamEvent, AppError>>>>>;
 type RetrievalResponseQueue = Arc<Mutex<VecDeque<Result<Vec<RetrievedChunk>, AppError>>>>;
 
@@ -113,6 +114,7 @@ pub struct MockAiClient {
 }
 
 impl MockAiClient {
+    #[must_use]
     pub fn new() -> Self {
         // Initialize fields with default values
         Self {
@@ -134,26 +136,54 @@ impl MockAiClient {
     }
 
     // Add placeholder methods called by tests
+    /// Gets the last request sent to the mock client
+    ///
+    /// # Panics
+    ///
+    /// Panics if the mutex is poisoned
+    #[must_use]
     pub fn get_last_request(&self) -> Option<ChatRequest> {
         // TODO: Implement mock logic
         self.last_request.lock().unwrap().clone()
     }
 
+    /// Gets the last options sent to the mock client
+    ///
+    /// # Panics
+    ///
+    /// Panics if the mutex is poisoned
+    #[must_use]
     pub fn get_last_options(&self) -> Option<ChatOptions> {
         // TODO: Implement mock logic
         self.last_options.lock().unwrap().clone()
     }
 
     // Method to retrieve the captured messages
+    /// Gets the last received messages from the mock client
+    ///
+    /// # Panics
+    ///
+    /// Panics if the mutex is poisoned
+    #[must_use]
     pub fn get_last_received_messages(&self) -> Option<Vec<genai::chat::ChatMessage>> {
         self.last_received_messages.lock().unwrap().clone()
     }
 
+    /// Sets the response for the mock AI client
+    ///
+    /// # Panics
+    ///
+    /// Panics if the mutex lock is poisoned
     pub fn set_response(&self, response: Result<ChatResponse, AppError>) {
         // TODO: Implement mock logic
         *self.response_to_return.lock().unwrap() = response;
     }
 
+    /// Sets the stream response for the mock AI client
+    ///
+    /// # Panics
+    ///
+    /// Panics if the mutex lock is poisoned
     pub fn set_stream_response(&self, stream_items: Vec<Result<ChatStreamEvent, AppError>>) {
         // TODO: Implement mock logic
         *self.stream_to_return.lock().unwrap() = Some(stream_items);
@@ -197,8 +227,7 @@ impl AiClient for MockAiClient {
         // Manually reconstruct the stream items because ChatStreamEvent is not Clone
         let items = {
             let guard = self.stream_to_return.lock().unwrap();
-            match &*guard {
-                Some(item_results) => {
+            (*guard).as_ref().map_or_else(Vec::new, |item_results| {
                     let mut new_items = Vec::with_capacity(item_results.len());
                     for item_result in item_results {
                         match item_result {
@@ -237,9 +266,7 @@ impl AiClient for MockAiClient {
                         }
                     }
                     new_items
-                }
-                None => Vec::new(), // Return empty Vec if None
-            }
+                })
         }; // Mutex guard is dropped here
 
         let stream = futures::stream::iter(items);
@@ -263,8 +290,9 @@ impl Default for MockEmbeddingClient {
 }
 
 impl MockEmbeddingClient {
+    #[must_use]
     pub fn new() -> Self {
-        MockEmbeddingClient {
+        Self {
             response: Arc::new(Mutex::new(None)),
             response_sequence: Arc::new(Mutex::new(VecDeque::new())),
             batch_response: Arc::new(Mutex::new(None)),
@@ -273,16 +301,31 @@ impl MockEmbeddingClient {
         }
     }
 
+    /// Sets the single embedding response for the mock client
+    ///
+    /// # Panics
+    ///
+    /// Panics if the mutex lock is poisoned
     pub fn set_response(&self, response: Result<Vec<f32>, AppError>) {
         let mut lock = self.response.lock().unwrap();
         *lock = Some(response);
     }
 
+    /// Sets the batch embedding response for the mock client
+    ///
+    /// # Panics
+    ///
+    /// Panics if the mutex lock is poisoned
     pub fn set_batch_response(&self, response: Result<Vec<Vec<f32>>, AppError>) {
         let mut lock = self.batch_response.lock().unwrap();
         *lock = Some(response);
     }
 
+    /// Sets a sequence of embedding responses for the mock client
+    ///
+    /// # Panics
+    ///
+    /// Panics if the mutex lock is poisoned
     pub fn set_responses_sequence(&self, responses: Vec<Result<Vec<f32>, AppError>>) {
         let mut queue = self.response_sequence.lock().unwrap();
         queue.clear();
@@ -291,14 +334,31 @@ impl MockEmbeddingClient {
         }
     }
 
+    /// Gets all embedding calls made to the mock client
+    ///
+    /// # Panics
+    ///
+    /// Panics if the mutex is poisoned
+    #[must_use]
     pub fn get_calls(&self) -> Vec<(String, String, Option<String>)> {
         self.calls.lock().unwrap().clone()
     }
 
+    /// Gets all batch embedding calls made to the mock client
+    ///
+    /// # Panics
+    ///
+    /// Panics if the mutex is poisoned
+    #[must_use]
     pub fn get_batch_calls(&self) -> Vec<Vec<(String, String, Option<String>)>> {
         self.batch_calls.lock().unwrap().clone()
     }
 
+    /// Clears all recorded calls for the mock client
+    ///
+    /// # Panics
+    ///
+    /// Panics if any mutex lock is poisoned
     pub fn clear_calls(&self) {
         self.calls.lock().unwrap().clear();
         self.batch_calls.lock().unwrap().clear();
@@ -329,16 +389,14 @@ impl EmbeddingClient for MockEmbeddingClient {
         drop(sequence_guard);
 
         // If sequence is empty, try the single response
-        match self.response.lock().unwrap().clone() {
-            Some(res) => res,
-            None => {
-                // Default behavior if no response is set
-                warn!(
-                    "MockEmbeddingClient response and sequence not set, returning default OK response."
-                ); // Keep warning
-                Ok(vec![0.0; 768]) // Restore default Ok(...) behavior
-            }
-        }
+        let value = self.response.lock().unwrap().clone();
+        value.unwrap_or_else(|| {
+            // Default behavior if no response is set
+            warn!(
+                "MockEmbeddingClient response and sequence not set, returning default OK response."
+            ); // Keep warning
+            Ok(vec![0.0; 768]) // Restore default Ok(...) behavior
+        })
     }
 
     async fn batch_embed_contents(
@@ -359,15 +417,13 @@ impl EmbeddingClient for MockEmbeddingClient {
         self.batch_calls.lock().unwrap().push(current_batch_owned);
 
         // Return the pre-set response or a default
-        match self.batch_response.lock().unwrap().clone() {
-            Some(res) => res,
-            None => {
-                warn!(
-                    "MockEmbeddingClient batch_response not set, returning default Ok(vec![]) response."
-                );
-                Ok(Vec::new()) // Default to empty vec of embeddings
-            }
-        }
+        let value = self.batch_response.lock().unwrap().clone();
+        value.unwrap_or_else(|| {
+            warn!(
+                "MockEmbeddingClient batch_response not set, returning default Ok(vec![]) response."
+            );
+            Ok(Vec::new()) // Default to empty vec of embeddings
+        })
     }
 }
 
@@ -410,24 +466,40 @@ impl Default for MockEmbeddingPipelineService {
 }
 
 impl MockEmbeddingPipelineService {
+    #[must_use]
     pub fn new() -> Self {
-        MockEmbeddingPipelineService {
+        Self {
             retrieve_response_queue: Arc::new(Mutex::new(VecDeque::new())),
             calls: Arc::new(Mutex::new(Vec::new())),
         }
     }
 
+    /// Gets all pipeline calls made to the mock service
+    ///
+    /// # Panics
+    ///
+    /// Panics if the mutex lock is poisoned
+    #[must_use]
     pub fn get_calls(&self) -> Vec<PipelineCall> {
         self.calls.lock().unwrap().clone()
     }
 
+    /// Sets the retrieve response for the mock service
+    ///
+    /// # Panics
+    ///
+    /// Panics if the mutex lock is poisoned
     pub fn set_retrieve_response(&self, response: Result<Vec<RetrievedChunk>, AppError>) {
         let mut queue = self.retrieve_response_queue.lock().unwrap();
         queue.clear();
         queue.push_back(response);
     }
 
-     // May not be used immediately but good to have
+    /// Adds a retrieve response to the queue for the mock service
+    ///
+    /// # Panics
+    ///
+    /// Panics if the mutex lock is poisoned
     pub fn add_retrieve_response(&self, response: Result<Vec<RetrievedChunk>, AppError>) {
         self.retrieve_response_queue
             .lock()
@@ -435,6 +507,11 @@ impl MockEmbeddingPipelineService {
             .push_back(response);
     }
 
+    /// Sets a sequence of retrieve responses for the mock service
+    ///
+    /// # Panics
+    ///
+    /// Panics if the mutex lock is poisoned
     pub fn set_retrieve_responses_sequence(
         &self,
         responses: Vec<Result<Vec<RetrievedChunk>, AppError>>,
@@ -446,6 +523,11 @@ impl MockEmbeddingPipelineService {
         }
     }
 
+    /// Clears all recorded calls for the mock service
+    ///
+    /// # Panics
+    ///
+    /// Panics if the mutex lock is poisoned
     pub fn clear_calls(&self) {
         self.calls.lock().unwrap().clear();
     }
@@ -516,15 +598,13 @@ impl EmbeddingPipelineServiceTrait for MockEmbeddingPipelineService {
 
         // Return the next response from the queue
         let mut queue = self.retrieve_response_queue.lock().unwrap();
-        if let Some(response) = queue.pop_front() {
-            response
-        } else {
+        queue.pop_front().map_or_else(|| {
             // It's important for tests to set up responses correctly.
             // Panicking here makes it clear if a response was expected but not provided.
             panic!(
                 "MockEmbeddingPipelineService::retrieve_relevant_chunks called but no more responses were queued. Ensure your test sets up enough responses."
             );
-        }
+        }, |response| response)
     }
 
     async fn delete_lorebook_entry_chunks(
@@ -548,24 +628,23 @@ impl EmbeddingPipelineServiceTrait for MockEmbeddingPipelineService {
 #[derive(Clone)]
 pub struct MockQdrantClientService {
     upsert_response: Arc<Mutex<Option<Result<(), AppError>>>>,
-    search_response: Arc<Mutex<VecDeque<Result<Vec<ScoredPoint>, AppError>>>>, // Changed to VecDeque
+    search_response: SearchResponseQueue,
     upsert_call_count: Arc<Mutex<usize>>,
     search_call_count: Arc<Mutex<usize>>,
     last_upsert_points: Arc<Mutex<Option<Vec<qdrant_client::qdrant::PointStruct>>>>,
     last_search_params: SearchParams,
 }
 
-#[allow(dead_code)] // Mock methods may not all be used in current tests
 impl Default for MockQdrantClientService {
     fn default() -> Self {
         Self::new()
     }
 }
 
-#[allow(dead_code)] // Mock methods for testing
 impl MockQdrantClientService {
+    #[must_use]
     pub fn new() -> Self {
-        MockQdrantClientService {
+        Self {
             upsert_response: Arc::new(Mutex::new(None)),
             search_response: Arc::new(Mutex::new(VecDeque::new())), // Initialize with an empty VecDeque
             upsert_call_count: Arc::new(Mutex::new(0)),
@@ -575,29 +654,61 @@ impl MockQdrantClientService {
         }
     }
 
+    /// Sets the response for the next upsert operation
+    /// 
+    /// # Panics
+    /// 
+    /// Panics if the mutex lock is poisoned
     pub fn set_upsert_response(&self, response: Result<(), AppError>) {
         let mut lock = self.upsert_response.lock().unwrap();
         *lock = Some(response);
     }
 
+    /// Gets the number of upsert calls made
+    /// 
+    /// # Panics
+    /// 
+    /// Panics if the mutex lock is poisoned
+    #[must_use]
     pub fn get_upsert_call_count(&self) -> usize {
         *self.upsert_call_count.lock().unwrap()
     }
 
+    /// Gets the points from the last upsert operation
+    /// 
+    /// # Panics
+    /// 
+    /// Panics if the mutex lock is poisoned
+    #[must_use]
     pub fn get_last_upsert_points(&self) -> Option<Vec<qdrant_client::qdrant::PointStruct>> {
         self.last_upsert_points.lock().unwrap().clone()
     }
 
+    /// Sets a single search response
+    /// 
+    /// # Panics
+    /// 
+    /// Panics if the mutex lock is poisoned
     pub fn set_search_response(&self, response: Result<Vec<ScoredPoint>, AppError>) {
         let mut queue = self.search_response.lock().unwrap();
         queue.clear();
         queue.push_back(response);
     }
 
+    /// Adds a search response to the queue
+    /// 
+    /// # Panics
+    /// 
+    /// Panics if the mutex lock is poisoned
     pub fn add_search_response(&self, response: Result<Vec<ScoredPoint>, AppError>) {
         self.search_response.lock().unwrap().push_back(response);
     }
 
+    /// Sets a sequence of search responses
+    /// 
+    /// # Panics
+    /// 
+    /// Panics if the mutex lock is poisoned
     pub fn set_search_responses_sequence(
         &self,
         responses: Vec<Result<Vec<ScoredPoint>, AppError>>,
@@ -609,14 +720,35 @@ impl MockQdrantClientService {
         }
     }
 
+    /// Returns the number of search calls made to this mock client.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the internal mutex is poisoned.
+    #[must_use]
     pub fn get_search_call_count(&self) -> usize {
         *self.search_call_count.lock().unwrap()
     }
 
+    /// Gets the parameters from the last search operation
+    /// 
+    /// # Panics
+    /// 
+    /// Panics if the mutex lock is poisoned
+    #[must_use]
     pub fn get_last_search_params(&self) -> Option<(Vec<f32>, u64, Option<Filter>)> {
         self.last_search_params.lock().unwrap().clone()
     }
 
+    /// Upserts points in the mock implementation
+    ///
+    /// # Errors
+    ///
+    /// Returns any error configured via `set_upsert_response`, or `Ok(())` if no error is configured
+    /// 
+    /// # Panics
+    /// 
+    /// Panics if the mutex lock is poisoned
     pub fn upsert_points(
         &self,
         points: Vec<qdrant_client::qdrant::PointStruct>,
@@ -624,7 +756,7 @@ impl MockQdrantClientService {
         // Track call
         {
             *self.upsert_call_count.lock().unwrap() += 1;
-            *self.last_upsert_points.lock().unwrap() = Some(points.clone());
+            *self.last_upsert_points.lock().unwrap() = Some(points);
         }
 
         // Return response
@@ -632,7 +764,7 @@ impl MockQdrantClientService {
         response.unwrap_or(Ok(()))
     }
 
-    #[allow(clippy::unused_async)]
+    #[allow(dead_code, clippy::unused_async)] // Used in tests as mock, must be async to match trait
     async fn search_points(
         &self,
         vector: Vec<f32>,
@@ -644,12 +776,16 @@ impl MockQdrantClientService {
             *self.search_call_count.lock().unwrap() += 1;
 
             let mut last_params = self.last_search_params.lock().unwrap();
-            *last_params = Some((vector.clone(), limit, filter.clone()));
+            *last_params = Some((vector, limit, filter));
         }
 
         // Return response
         let mut queue = self.search_response.lock().unwrap();
-        if let Some(response) = queue.pop_front() {
+        queue.pop_front().map_or_else(|| {
+            panic!(
+                "MockQdrantClientService::search_points called but no more responses were queued. Ensure your test sets up enough responses."
+            );
+        }, |response| {
             tracing::info!(
                 target: "mock_qdrant_search",
                 "MockQdrantClientService::search_points (standalone): Popped response: {:?}", // Corrected comment
@@ -659,15 +795,11 @@ impl MockQdrantClientService {
                 }
             );
             response // This is Result<Vec<ScoredPoint>, AppError>
-        } else {
-            panic!(
-                "MockQdrantClientService::search_points called but no more responses were queued. Ensure your test sets up enough responses."
-            );
-        }
+        })
     }
 
     
-    #[allow(clippy::unused_async)]
+    #[allow(dead_code, clippy::unused_async)] // Used in tests as mock, must be async to match trait
     async fn retrieve_points(
         &self,
         _filter: Option<Filter>,
@@ -675,22 +807,20 @@ impl MockQdrantClientService {
     ) -> Result<Vec<ScoredPoint>, AppError> {
         // Use the search response for retrieve as well
         let mut queue = self.search_response.lock().unwrap();
-        if let Some(response) = queue.pop_front() {
-            response
-        } else {
+        queue.pop_front().map_or_else(|| {
             warn!(
                 "MockQdrantClientService::retrieve_points (standalone) called but no response was queued. Returning Ok(vec![])."
             );
             Ok(vec![])
-        }
+        }, |response| response)
     }
 
-    #[allow(clippy::unused_async)]
+    #[allow(dead_code, clippy::unused_async)] // Used in tests as mock, must be async to match trait
     async fn delete_points(&self, _point_ids: Vec<PointId>) -> Result<(), AppError> {
         Ok(()) // Just return success for the mock
     }
 
-    #[allow(clippy::unused_async)]
+    #[allow(dead_code, clippy::unused_async)] // Used in tests as mock, must be async to match trait
     async fn update_collection_settings(&self) -> Result<(), AppError> {
         Ok(()) // Just return success for the mock
     }
@@ -707,7 +837,7 @@ impl QdrantClientServiceTrait for MockQdrantClientService {
         // Track call
         {
             *self.upsert_call_count.lock().unwrap() += 1;
-            *self.last_upsert_points.lock().unwrap() = Some(points.clone());
+            *self.last_upsert_points.lock().unwrap() = Some(points);
         }
 
         // Return response
@@ -715,7 +845,7 @@ impl QdrantClientServiceTrait for MockQdrantClientService {
         response.unwrap_or(Ok(()))
     }
 
-    #[allow(clippy::unused_async)]
+    #[allow(dead_code, clippy::unused_async)] // Used in tests as mock, must be async to match trait
     async fn search_points(
         &self,
         vector: Vec<f32>,
@@ -727,21 +857,12 @@ impl QdrantClientServiceTrait for MockQdrantClientService {
             *self.search_call_count.lock().unwrap() += 1;
 
             let mut last_params = self.last_search_params.lock().unwrap();
-            *last_params = Some((vector.clone(), limit, filter.clone()));
+            *last_params = Some((vector, limit, filter));
         }
 
         // Return response
         let mut queue = self.search_response.lock().unwrap();
-        if let Some(response_result) = queue.pop_front() {
-            // Apply the limit to the Ok variant
-            match response_result {
-                Ok(mut points) => {
-                    points.truncate(limit as usize);
-                    Ok(points)
-                }
-                Err(e) => Err(e), // Pass through errors
-            }
-        } else {
+        queue.pop_front().map_or_else(|| {
             // It's okay for retrieve_points to return empty if not specifically set up,
             // as it might be called unexpectedly in some test flows.
             // However, for search_points, we want to be strict.
@@ -752,10 +873,18 @@ impl QdrantClientServiceTrait for MockQdrantClientService {
                 "MockQdrantClientService::search_points (trait) called but no response was queued. Returning Ok(vec![])."
             );
             Ok(vec![])
-        }
+        }, |response_result| {
+            // Apply the limit to the Ok variant
+            match response_result {
+                Ok(mut points) => {
+                    points.truncate(usize::try_from(limit).unwrap_or(usize::MAX));
+                    Ok(points)
+                }
+                Err(e) => Err(e), // Pass through errors
+            }
+        })
     }
 
-    #[allow(clippy::unused_async)]
     async fn retrieve_points(
         &self,
         _filter: Option<Filter>,
@@ -763,27 +892,24 @@ impl QdrantClientServiceTrait for MockQdrantClientService {
     ) -> Result<Vec<ScoredPoint>, AppError> {
         // Use the search response for retrieve as well
         let mut queue = self.search_response.lock().unwrap();
-        if let Some(response) = queue.pop_front() {
-            response
-        } else {
+        queue.pop_front().map_or_else(|| {
             warn!(
                 "MockQdrantClientService::retrieve_points (trait) called but no response was queued. Returning Ok(vec![])."
             );
             Ok(vec![])
-        }
+        }, |response| response)
     }
 
-    #[allow(clippy::unused_async)]
+    #[allow(dead_code, clippy::unused_async)] // Used in tests as mock, must be async to match trait
     async fn delete_points(&self, _point_ids: Vec<PointId>) -> Result<(), AppError> {
         Ok(()) // Just return success for the mock
     }
 
-    #[allow(clippy::unused_async)]
+    #[allow(dead_code, clippy::unused_async)] // Used in tests as mock, must be async to match trait
     async fn update_collection_settings(&self) -> Result<(), AppError> {
         Ok(()) // Just return success for the mock
     }
 
-    #[allow(clippy::unused_async)]
     async fn delete_points_by_filter(&self, filter: Filter) -> Result<(), AppError> {
         tracing::info!(
             target: "mock_qdrant_client",
@@ -833,6 +959,7 @@ pub struct TestAppStateBuilder {
 }
 
 impl TestAppStateBuilder {
+    #[must_use]
     pub fn new(
         db_pool: PgPool,
         config: Arc<Config>,
@@ -856,6 +983,7 @@ impl TestAppStateBuilder {
         }
     }
 
+    #[must_use]
     pub fn with_embedding_pipeline_service(
         mut self,
         service: Arc<dyn EmbeddingPipelineServiceTrait + Send + Sync>,
@@ -864,21 +992,25 @@ impl TestAppStateBuilder {
         self
     }
 
+    #[must_use]
     pub fn with_chat_override_service(mut self, service: Arc<ChatOverrideService>) -> Self {
         self.chat_override_service = Some(service);
         self
     }
 
+    #[must_use]
     pub fn with_user_persona_service(mut self, service: Arc<UserPersonaService>) -> Self {
         self.user_persona_service = Some(service);
         self
     }
 
+    #[must_use]
     pub fn with_token_counter(mut self, counter: Arc<HybridTokenCounter>) -> Self {
         self.token_counter = Some(counter);
         self
     }
 
+    #[must_use]
     pub fn with_lorebook_service(
         mut self,
         service: Arc<crate::services::lorebook_service::LorebookService>, // Fully qualify
@@ -887,6 +1019,12 @@ impl TestAppStateBuilder {
         self
     }
 
+    /// Build the `AppState` instance
+    /// 
+    /// # Panics
+    /// 
+    /// Panics if the tokenizer model cannot be loaded from the expected path
+    #[must_use]
     pub fn build(self) -> AppState {
         let encryption_service = Arc::new(EncryptionService::new());
 
@@ -992,7 +1130,7 @@ static RUSTLS_PROVIDER_INIT: Once = Once::new();
 pub fn ensure_rustls_provider_installed() {
     RUSTLS_PROVIDER_INIT.call_once(|| {
         match rustls::crypto::ring::default_provider().install_default() {
-            Ok(_) => tracing::info!("Successfully installed rustls default crypto provider for tests."),
+            Ok(()) => tracing::info!("Successfully installed rustls default crypto provider for tests."),
             Err(e) => {
                 // install_default() panics if called more than once when a provider is already installed.
                 // call_once ensures this block runs only once, so a panic here means a genuine failure.
@@ -1309,12 +1447,16 @@ pub mod db {
     use dotenvy::dotenv; // For .env file loading
     use std::env; // For DATABASE_URL reading in setup_test_database // Corrected: Added hash_password, auth for module items
     // Ensure RegisterPayload is imported
-    use super::*; // To bring PgPool and DbUser etc. into scope
+    use super::{AccountStatus, Context, DbUser, ExposeSecret, SecretBox, SecretString, SerializableSecretDek};
     // Keep if CryptoError is used directly, else it comes via crate::crypto
     use crate::models::users::NewUser; // Removed User as DbUser from here, already aliased DbUser at top
     // and UserDbQuery is imported above
 
     /// Sets up a clean test database with migrations run.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the `DATABASE_URL` environment variable is not set
     pub async fn setup_test_database(db_name_suffix: Option<&str>) -> PgPool {
         dotenv().ok(); // Load .env
         let db_name = format!(
@@ -1376,6 +1518,11 @@ pub mod db {
 
     /// Creates a test user directly in the database.
     /// Note: This helper bypasses any application logic for user creation (e.g., sending emails).
+    /// Creates a test user in the database
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the database operation fails
     pub async fn create_test_user(
         pool: &PgPool,
         username: String,
@@ -1446,6 +1593,11 @@ pub mod db {
     }
 
     /// Creates a test character directly in the database.
+    /// Creates a test character in the database
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the database operation fails
     pub async fn create_test_character(
         pool: &PgPool,
         user_id: Uuid,
@@ -1583,9 +1735,10 @@ impl fmt::Debug for TestDataGuard {
 }
 
 impl TestDataGuard {
-    pub fn new(pool: PgPool) -> Self {
+    #[must_use]
+    pub const fn new(pool: PgPool) -> Self {
         // Changed to PgPool
-        TestDataGuard {
+        Self {
             pool,
             user_ids: Vec::new(),
             character_ids: Vec::new(),
@@ -1615,7 +1768,13 @@ impl TestDataGuard {
         self.lorebook_ids.push(lorebook_id);
     }
 
-    // Adapted from auth_tests.rs and db_integration_tests.rs
+    /// Adapted from `auth_tests.rs` and `db_integration_tests.rs`
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - Database connection cannot be obtained
+    /// - Any of the database deletion operations fail
     pub async fn cleanup(self) -> Result<(), anyhow::Error> {
         let conn = self
             .pool
@@ -1735,16 +1894,17 @@ impl Drop for TestDataGuard {
             // This is not ideal for drop, but better than panicking or doing nothing.
             // Consider making cleanup explicit in all tests.
             let _pool_clone = self.pool.clone(); // Renamed pool_clone
-            let user_ids_clone = self.user_ids.drain(..).collect::<Vec<_>>();
-            let character_ids_clone = self.character_ids.drain(..).collect::<Vec<_>>();
-            let chat_ids_clone = self.chat_ids.drain(..).collect::<Vec<_>>();
-            let user_persona_ids_clone = self.user_persona_ids.drain(..).collect::<Vec<_>>();
+            let has_cleanup_needed = !self.user_ids.is_empty()
+                || !self.character_ids.is_empty()
+                || !self.chat_ids.is_empty()
+                || !self.user_persona_ids.is_empty();
+            
+            let _user_ids_clone = self.user_ids.drain(..).collect::<Vec<_>>();
+            let _character_ids_clone = self.character_ids.drain(..).collect::<Vec<_>>();
+            let _chat_ids_clone = self.chat_ids.drain(..).collect::<Vec<_>>();
+            let _user_persona_ids_clone = self.user_persona_ids.drain(..).collect::<Vec<_>>();
 
-            if !user_ids_clone.is_empty()
-                || !character_ids_clone.is_empty()
-                || !chat_ids_clone.is_empty()
-                || !user_persona_ids_clone.is_empty()
-            {
+            if has_cleanup_needed {
                 tracing::warn!(
                     "TestDataGuard dropped without explicit cleanup. Attempting synchronous cleanup (best effort)."
                 );
@@ -1843,6 +2003,11 @@ impl Drop for TestDataGuard {
     }
 }
 
+/// Performs database cleanup for test data
+///
+/// # Errors
+///
+/// Returns an error if any of the database deletion operations fail
 pub fn db_specific_cleanup(
     conn: &mut PgConnection,
     test_data: &TestDataGuard,
@@ -1861,6 +2026,21 @@ pub fn db_specific_cleanup(
     Ok(())
 }
 
+/// Creates a user and returns the user with a session cookie string
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - User creation in the database fails
+/// - Login request fails
+/// - Session extraction from response fails
+///
+/// # Panics
+///
+/// Panics if:
+/// - The HTTP request cannot be built (malformed URL or headers)
+/// - The app router fails to process the request
+/// - The login response doesn't have the expected status code
 pub async fn create_user_with_dek_in_session(
     app_router: &Router, // Pass the app router to make login requests
     pool: &PgPool,
@@ -1922,7 +2102,15 @@ pub async fn create_user_with_dek_in_session(
     Ok((mock_user_for_assertion, actual_cookie_value)) // Use the cookie from step 2
 }
 
-// Helper function for router-based login (for tests that use router.oneshot)
+/// Helper function for router-based login (for tests that use router.oneshot)
+///
+/// # Panics
+///
+/// Panics if:
+/// - The login payload cannot be serialized to JSON
+/// - The HTTP request cannot be built (malformed URL or headers)
+/// - The router fails to process the request
+/// - The response doesn't contain a valid session cookie
 pub async fn login_user_via_router(router: &Router, username: &str, password: &str) -> String {
     let login_payload = json!({
         "identifier": username,
@@ -1963,12 +2151,11 @@ pub async fn login_user_via_router(router: &Router, username: &str, password: &s
         .headers()
         .get("set-cookie")
         .and_then(|value| value.to_str().ok())
-        .map(|s| s.to_string())
-        .unwrap_or_else(|| {
+        .map_or_else(|| {
             panic!(
                 "Session cookie not found in login response for user {username}"
             )
-        })
+        }, str::to_string)
 }
 
 /// Helper function for API-based login.

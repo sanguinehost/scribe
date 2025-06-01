@@ -210,7 +210,7 @@ fn test_from_parsed_card_v2_with_collections() {
     );
     assert_eq!(
         new_char.description,
-        Some("A description".as_bytes().to_vec())
+        Some(b"A description".to_vec())
     );
 }
 

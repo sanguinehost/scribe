@@ -12,8 +12,6 @@ use genai::{
     chat::{ChatResponse, MessageContent, Usage},
 };
 use http_body_util::BodyExt;
-use mime;
-use reqwest; // Added reqwest
 use serde_json::Value;
 use std::time::Duration;
 use tower::ServiceExt; // Keep for other requests if any still use oneshot

@@ -353,41 +353,42 @@ mod tests {
     use super::*;
     use chrono::Utc;
 
+    struct TestUserParams<'a> {
+        id: Uuid,
+        username: &'a str,
+        password_hash: &'a str,
+        email: &'a str,
+        kek_salt: &'a str,
+        encrypted_dek: Vec<u8>,
+        encrypted_dek_by_recovery: Option<Vec<u8>>,
+        recovery_kek_salt: Option<String>,
+        dek_nonce: Vec<u8>,
+        recovery_dek_nonce: Option<Vec<u8>>,
+        dek: Option<SerializableSecretDek>,
+        role: UserRole,
+        default_persona_id: Option<Uuid>,
+    }
+
     impl User {
-        #[allow(clippy::too_many_arguments)]
-        fn new_test_user(
-            id: Uuid,
-            username: &str,
-            password_hash: &str,
-            email: &str,
-            kek_salt: &str,
-            encrypted_dek: Vec<u8>,
-            encrypted_dek_by_recovery: Option<Vec<u8>>,
-            recovery_kek_salt: Option<String>,
-            dek_nonce: Vec<u8>,
-            recovery_dek_nonce: Option<Vec<u8>>,
-            dek: Option<SerializableSecretDek>,
-            role: UserRole,
-            default_persona_id: Option<Uuid>,
-        ) -> Self {
+        fn new_test_user(params: TestUserParams<'_>) -> Self {
             Self {
-                id,
-                username: username.to_string(),
-                password_hash: password_hash.to_string(),
-                email: email.to_string(),
-                kek_salt: kek_salt.to_string(),
-                encrypted_dek,
-                encrypted_dek_by_recovery,
-                recovery_kek_salt,
-                dek_nonce,
-                recovery_dek_nonce,
-                dek,
+                id: params.id,
+                username: params.username.to_string(),
+                password_hash: params.password_hash.to_string(),
+                email: params.email.to_string(),
+                kek_salt: params.kek_salt.to_string(),
+                encrypted_dek: params.encrypted_dek,
+                encrypted_dek_by_recovery: params.encrypted_dek_by_recovery,
+                recovery_kek_salt: params.recovery_kek_salt,
+                dek_nonce: params.dek_nonce,
+                recovery_dek_nonce: params.recovery_dek_nonce,
+                dek: params.dek,
                 created_at: chrono::Utc::now(),
                 updated_at: chrono::Utc::now(),
-                role,
+                role: params.role,
                 account_status: Some("active".to_string()),
                 recovery_phrase: None, // Add the recovery_phrase field
-                default_persona_id,
+                default_persona_id: params.default_persona_id,
             }
         }
     }
@@ -407,21 +408,21 @@ mod tests {
             test_dek_bytes.clone(),
         ))));
 
-        let user = User::new_test_user(
-            user_id,
-            "testuser",
-            "hashed_password",
-            "test@example.com",
-            &test_kek_salt,
-            test_encrypted_dek.clone(),
-            None,
-            None,
-            test_dek_nonce.clone(),
-            None,
-            initial_test_dek,
-            UserRole::User,
-            None, // default_persona_id
-        );
+        let user = User::new_test_user(TestUserParams {
+            id: user_id,
+            username: "testuser",
+            password_hash: "hashed_password",
+            email: "test@example.com",
+            kek_salt: &test_kek_salt,
+            encrypted_dek: test_encrypted_dek.clone(),
+            encrypted_dek_by_recovery: None,
+            recovery_kek_salt: None,
+            dek_nonce: test_dek_nonce.clone(),
+            recovery_dek_nonce: None,
+            dek: initial_test_dek,
+            role: UserRole::User,
+            default_persona_id: None,
+        });
 
         assert_eq!(user.username, "testuser");
         assert_eq!(user.email, "test@example.com");
@@ -436,8 +437,7 @@ mod tests {
         assert_eq!(user.role, UserRole::User);
         assert_eq!(user.default_persona_id, None);
 
-        #[allow(clippy::redundant_clone)] // Testing clone functionality
-        let cloned_user = user.clone();
+        let cloned_user = &user;
         assert!(
             cloned_user.dek.is_some(),
             "Cloned user DEK should be preserved"

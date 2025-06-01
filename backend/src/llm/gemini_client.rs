@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use futures::StreamExt;
 use genai::{
-    Client, ClientBuilder,
+    Client, ClientBuilder, ModelIden,
     chat::{ChatOptions, ChatRequest, ChatResponse},
 };
 use std::sync::Arc;
@@ -10,13 +10,10 @@ use super::{AiClient, ChatStream};
 use crate::errors::AppError;
 
 #[derive(Debug)]
-#[allow(dead_code)] // Fields are used in Debug formatting
+#[allow(dead_code)] // Used for debugging/logging purposes
 struct ChatRequestLogSummary {
-    
     has_system_prompt: bool,
-    
     num_messages: usize,
-    
     has_tools: bool,
 }
 
@@ -30,44 +27,57 @@ impl<'a> From<&'a genai::chat::ChatRequest> for ChatRequestLogSummary {
     }
 }
 
+fn log_stream_event_error(model_iden: &ModelIden, body: &serde_json::Value, gen_err: &genai::Error) {
+    tracing::error!(
+        target: "gemini_client",
+        model_iden = ?model_iden,
+        "Gemini stream API request failed. Error body: {}. Full genai::Error: {:?}",
+        serde_json::to_string_pretty(body).unwrap_or_else(|_| format!("{body:?}")),
+        gen_err
+    );
+}
+
+fn log_reqwest_event_source_error(event_source_error: &dyn std::error::Error, gen_err: &genai::Error) {
+    tracing::error!(
+        target: "gemini_client",
+        "Gemini stream API request failed due to an EventSource error: {:?}. Full genai::Error: {:?}",
+        event_source_error,
+        gen_err
+    );
+}
+
+fn log_stream_parse_error(model_iden: &ModelIden, serde_error: &serde_json::Error, gen_err: &genai::Error) {
+    tracing::error!(
+        target: "gemini_client",
+        model_iden = ?model_iden,
+        "Failed to parse stream event from Gemini: {:?}. Full genai::Error: {:?}",
+        serde_error,
+        gen_err
+    );
+}
+
+fn log_generic_error(gen_err: &genai::Error) {
+    tracing::error!(
+        target: "gemini_client",
+        "Gemini stream API request failed with an unhandled genai::Error type: {:?}",
+        gen_err
+    );
+}
+
 /// Logs and converts `genai::Error` to `AppError` for better error handling
-#[allow(clippy::cognitive_complexity)]
 fn log_and_convert_genai_error(gen_err: genai::Error) -> AppError {
     match &gen_err {
         genai::Error::StreamEventError { model_iden, body } => {
-            // This body is a serde_json::Value containing the error from Gemini API
-            tracing::error!(
-                target: "gemini_client",
-                model_iden = ?model_iden,
-                "Gemini stream API request failed. Error body: {}. Full genai::Error: {:?}",
-                serde_json::to_string_pretty(body).unwrap_or_else(|_| format!("{body:?}")),
-                gen_err
-            );
+            log_stream_event_error(model_iden, body, &gen_err);
         }
         genai::Error::ReqwestEventSource(event_source_error) => {
-            tracing::error!(
-                target: "gemini_client",
-                "Gemini stream API request failed due to an EventSource error: {:?}. Full genai::Error: {:?}",
-                event_source_error,
-                gen_err
-            );
+            log_reqwest_event_source_error(event_source_error, &gen_err);
         }
         genai::Error::StreamParse { model_iden, serde_error } => {
-            tracing::error!(
-                target: "gemini_client",
-                model_iden = ?model_iden,
-                "Failed to parse stream event from Gemini: {:?}. Full genai::Error: {:?}",
-                serde_error,
-                gen_err
-            );
+            log_stream_parse_error(model_iden, serde_error, &gen_err);
         }
-        // Log other genai::Error variants generically
         _ => {
-            tracing::error!(
-                target: "gemini_client",
-                "Gemini stream API request failed with an unhandled genai::Error type: {:?}",
-                gen_err
-            );
+            log_generic_error(&gen_err);
         }
     }
     AppError::from(gen_err)

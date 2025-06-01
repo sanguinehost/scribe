@@ -8,6 +8,17 @@ use crate::models::users::User;
 use crate::services::encryption_service::EncryptionService;
 use secrecy::{ExposeSecret, SecretBox};
 
+#[derive(Debug)]
+struct DecryptedPersonaFields {
+    description: String,
+    personality: Option<String>,
+    scenario: Option<String>,
+    first_mes: Option<String>,
+    mes_example: Option<String>,
+    system_prompt: Option<String>,
+    post_history_instructions: Option<String>,
+}
+
 #[derive(
     Queryable,
     Selectable,
@@ -206,124 +217,91 @@ impl UserPersona {
     ///
     /// # Errors
     /// Returns `AppError::DecryptionError` if decryption fails or required encryption fields are missing
-    #[allow(clippy::too_many_lines)]
     pub fn into_data_for_client(
         self,
         dek_opt: Option<&SecretBox<Vec<u8>>>,
     ) -> Result<UserPersonaDataForClient, AppError> {
-        let encryption_service = EncryptionService::new();
-
-        let (
-            decrypted_description,
-            decrypted_personality,
-            decrypted_scenario,
-            decrypted_first_mes,
-            decrypted_mes_example,
-            decrypted_system_prompt,
-            decrypted_post_history_instructions,
-        ) = if let Some(dek) = dek_opt {
-            let desc_nonce = self.description_nonce.ok_or_else(|| {
-                AppError::DecryptionError(
-                    "Description nonce is missing for non-optional field".to_string(),
-                )
-            })?;
-            let description_val = encryption_service
-                .decrypt(
-                    &self.description,
-                    &desc_nonce,
-                    dek.expose_secret().as_slice(),
-                )?;
-            let description_str = String::from_utf8(description_val).map_err(|e| {
-                AppError::DecryptionError(format!("Invalid UTF-8 for description: {e}"))
-            })?;
-
-            let personality_str = Self::decrypt_optional_field(
-                &encryption_service,
-                dek,
-                self.personality,
-                self.personality_nonce,
-                "personality",
-            )?;
-            let scenario_str = Self::decrypt_optional_field(
-                &encryption_service,
-                dek,
-                self.scenario,
-                self.scenario_nonce,
-                "scenario",
-            )?;
-            let first_mes_str = Self::decrypt_optional_field(
-                &encryption_service,
-                dek,
-                self.first_mes,
-                self.first_mes_nonce,
-                "first_mes",
-            )?;
-            let mes_example_str = Self::decrypt_optional_field(
-                &encryption_service,
-                dek,
-                self.mes_example,
-                self.mes_example_nonce,
-                "mes_example",
-            )?;
-            let system_prompt_str = Self::decrypt_optional_field(
-                &encryption_service,
-                dek,
-                self.system_prompt,
-                self.system_prompt_nonce,
-                "system_prompt",
-            )?;
-            let post_hist_instr_str = Self::decrypt_optional_field(
-                &encryption_service,
-                dek,
-                self.post_history_instructions,
-                self.post_history_instructions_nonce,
-                "post_history_instructions",
-            )?;
-
-            (
-                description_str,
-                personality_str,
-                scenario_str,
-                first_mes_str,
-                mes_example_str,
-                system_prompt_str,
-                post_hist_instr_str,
-            )
+        if let Some(dek) = dek_opt {
+            self.decrypt_and_build_client_data(dek)
         } else {
-            // No DEK provided, return placeholders for encrypted fields
-            let placeholder = Some("[Encrypted]".to_string());
-            (
-                self.description
-                    .is_empty()
-                    .then(String::new)
-                    .unwrap_or_else(|| "[Encrypted]".to_string()), // Non-optional description gets placeholder if not empty
-                self.personality.as_ref().and(placeholder.clone()),
-                self.scenario.as_ref().and(placeholder.clone()),
-                self.first_mes.as_ref().and(placeholder.clone()),
-                self.mes_example.as_ref().and(placeholder.clone()),
-                self.system_prompt.as_ref().and(placeholder.clone()),
-                self.post_history_instructions.as_ref().and(placeholder),
-            )
-        };
+            self.build_plaintext_client_data()
+        }
+    }
 
-        Ok(UserPersonaDataForClient {
+    fn decrypt_and_build_client_data(
+        self,
+        dek: &SecretBox<Vec<u8>>,
+    ) -> Result<UserPersonaDataForClient, AppError> {
+        let encryption_service = EncryptionService::new();
+        let decrypted_fields = self.decrypt_all_fields(&encryption_service, dek)?;
+        Ok(self.build_client_data_with_fields(decrypted_fields))
+    }
+
+    fn decrypt_all_fields(
+        &self,
+        encryption_service: &EncryptionService,
+        dek: &SecretBox<Vec<u8>>,
+    ) -> Result<DecryptedPersonaFields, AppError> {
+        Ok(DecryptedPersonaFields {
+            description: self.decrypt_required_description_field(encryption_service, dek)?,
+            personality: Self::decrypt_optional_field(encryption_service, dek, self.personality.clone(), self.personality_nonce.clone(), "personality")?,
+            scenario: Self::decrypt_optional_field(encryption_service, dek, self.scenario.clone(), self.scenario_nonce.clone(), "scenario")?,
+            first_mes: Self::decrypt_optional_field(encryption_service, dek, self.first_mes.clone(), self.first_mes_nonce.clone(), "first_mes")?,
+            mes_example: Self::decrypt_optional_field(encryption_service, dek, self.mes_example.clone(), self.mes_example_nonce.clone(), "mes_example")?,
+            system_prompt: Self::decrypt_optional_field(encryption_service, dek, self.system_prompt.clone(), self.system_prompt_nonce.clone(), "system_prompt")?,
+            post_history_instructions: Self::decrypt_optional_field(encryption_service, dek, self.post_history_instructions.clone(), self.post_history_instructions_nonce.clone(), "post_history_instructions")?,
+        })
+    }
+
+    fn decrypt_required_description_field(
+        &self,
+        encryption_service: &EncryptionService,
+        dek: &SecretBox<Vec<u8>>,
+    ) -> Result<String, AppError> {
+        let desc_nonce = self.description_nonce.as_ref().ok_or_else(|| {
+            AppError::DecryptionError("Description nonce is missing for non-optional field".to_string())
+        })?;
+        let description_val = encryption_service.decrypt(&self.description, desc_nonce, dek.expose_secret().as_slice())?;
+        String::from_utf8(description_val).map_err(|e| {
+            AppError::DecryptionError(format!("Invalid UTF-8 for description: {e}"))
+        })
+    }
+
+    fn build_plaintext_client_data(mut self) -> Result<UserPersonaDataForClient, AppError> {
+        let description = std::mem::take(&mut self.description);
+        let decrypted_fields = DecryptedPersonaFields {
+            description: String::from_utf8(description).map_err(|e| {
+                AppError::DecryptionError(format!("Invalid UTF-8 for description: {e}"))
+            })?,
+            personality: self.personality.take().map(|p| String::from_utf8_lossy(&p).to_string()),
+            scenario: self.scenario.take().map(|s| String::from_utf8_lossy(&s).to_string()),
+            first_mes: self.first_mes.take().map(|f| String::from_utf8_lossy(&f).to_string()),
+            mes_example: self.mes_example.take().map(|m| String::from_utf8_lossy(&m).to_string()),
+            system_prompt: self.system_prompt.take().map(|s| String::from_utf8_lossy(&s).to_string()),
+            post_history_instructions: self.post_history_instructions.take().map(|p| String::from_utf8_lossy(&p).to_string()),
+        };
+        Ok(self.build_client_data_with_fields(decrypted_fields))
+    }
+
+    fn build_client_data_with_fields(self, fields: DecryptedPersonaFields) -> UserPersonaDataForClient {
+        UserPersonaDataForClient {
             id: self.id,
             user_id: self.user_id,
             name: self.name,
-            description: decrypted_description,
+            description: fields.description,
             spec: self.spec,
             spec_version: self.spec_version,
-            personality: decrypted_personality,
-            scenario: decrypted_scenario,
-            first_mes: decrypted_first_mes,
-            mes_example: decrypted_mes_example,
-            system_prompt: decrypted_system_prompt,
-            post_history_instructions: decrypted_post_history_instructions,
+            personality: fields.personality,
+            scenario: fields.scenario,
+            first_mes: fields.first_mes,
+            mes_example: fields.mes_example,
+            system_prompt: fields.system_prompt,
+            post_history_instructions: fields.post_history_instructions,
             tags: self.tags,
             avatar: self.avatar,
             created_at: self.created_at,
             updated_at: self.updated_at,
-        })
+        }
     }
 }
 

@@ -67,20 +67,6 @@ fn extract_uuid_from_payload(
     })
 }
 
-/// Extracts an optional integer from Qdrant payload
-#[allow(dead_code)]
-fn extract_optional_i64_from_payload(
-    payload: &HashMap<String, QdrantValue>,
-    field_name: &str,
-) -> Option<i64> {
-    payload
-        .get(field_name)
-        .and_then(|v| v.kind.as_ref())
-        .and_then(|k| match k {
-            qdrant_client::qdrant::value::Kind::IntegerValue(i) => Some(*i),
-            _ => None,
-        })
-}
 
 /// Extracts an optional string from Qdrant payload
 fn extract_optional_string_from_payload(
@@ -233,7 +219,7 @@ impl TryFrom<HashMap<String, QdrantValue>> for LorebookChunkMetadata {
 // --- Service Trait and Implementation ---
 
 /// Parameters for processing a lorebook entry
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct LorebookEntryParams {
     pub original_lorebook_entry_id: Uuid,
     pub lorebook_id: Uuid,
@@ -897,7 +883,7 @@ pub struct RetrievedChunk {
 async fn retrieve_relevant_chunks_standalone(
     qdrant_service: Arc<dyn QdrantClientServiceTrait>,
     embedding_client: Arc<dyn EmbeddingClient>,
-    #[allow(unused_variables)] session_id: Uuid, // Parameter kept for signature compatibility, but filter is removed for broader search
+    session_id: Uuid,
     query_text: &str,
     limit: u64,
 ) -> Result<Vec<RetrievedChunk>, AppError> {
@@ -1330,49 +1316,52 @@ mod tests {
         }
     }
 
-    // Helper to create a mock ScoredPoint
-    fn create_mock_scored_point(
+    // Helper struct for creating mock ScoredPoint
+    struct MockScoredPointParams<'a> {
         id_uuid: Uuid,
         score: f32,
         session_id: Uuid,
         message_id: Uuid,
-        user_id: Uuid, // Added user_id
-        speaker: &str,
+        user_id: Uuid,
+        speaker: &'a str,
         timestamp: chrono::DateTime<Utc>,
-        text: &str,
-        source_type: &str,
-    ) -> ScoredPoint {
+        text: &'a str,
+        source_type: &'a str,
+    }
+
+    // Helper to create a mock ScoredPoint
+    fn create_mock_scored_point(params: &MockScoredPointParams<'_>) -> ScoredPoint {
         let mut payload = HashMap::new();
         payload.insert(
             "message_id".to_string(),
-            string_value(&message_id.to_string()),
+            string_value(&params.message_id.to_string()),
         );
         payload.insert(
             "session_id".to_string(),
-            string_value(&session_id.to_string()),
+            string_value(&params.session_id.to_string()),
         );
         payload.insert(
             // Added user_id to payload
             "user_id".to_string(),
-            string_value(&user_id.to_string()),
+            string_value(&params.user_id.to_string()),
         );
-        payload.insert("speaker".to_string(), string_value(speaker));
+        payload.insert("speaker".to_string(), string_value(params.speaker));
         payload.insert(
             "timestamp".to_string(),
-            string_value(&timestamp.to_rfc3339()),
+            string_value(&params.timestamp.to_rfc3339()),
         );
-        payload.insert("text".to_string(), string_value(text));
-        payload.insert("source_type".to_string(), string_value(source_type));
+        payload.insert("text".to_string(), string_value(params.text));
+        payload.insert("source_type".to_string(), string_value(params.source_type));
 
         ScoredPoint {
             id: Some(PointId {
                 // Consistent with PointIdOptions::Uuid usage
                 point_id_options: Some(qdrant_client::qdrant::point_id::PointIdOptions::Uuid(
-                    id_uuid.to_string(),
+                    params.id_uuid.to_string(),
                 )),
             }),
             payload,
-            score,
+            score: params.score,
             version: 0,    // Example version
             vectors: None, // Not usually needed for retrieval tests focusing on payload
             shard_key: None,
@@ -1395,28 +1384,28 @@ mod tests {
         let message_id_2 = Uuid::new_v4();
 
         let mock_qdrant_results = vec![
-            create_mock_scored_point(
-                mock_point_id_1,
-                0.95,
+            create_mock_scored_point(&MockScoredPointParams {
+                id_uuid: mock_point_id_1,
+                score: 0.95,
                 session_id,
-                message_id_1,
-                user_id, // Added user_id argument
-                "user",
-                Utc::now(),
-                "Cats are furry.",
-                "chat_message",
-            ),
-            create_mock_scored_point(
-                mock_point_id_2,
-                0.85,
+                message_id: message_id_1,
+                user_id,
+                speaker: "user",
+                timestamp: Utc::now(),
+                text: "Cats are furry.",
+                source_type: "chat_message",
+            }),
+            create_mock_scored_point(&MockScoredPointParams {
+                id_uuid: mock_point_id_2,
+                score: 0.85,
                 session_id,
-                message_id_2,
-                user_id, // Added user_id argument
-                "ai",
-                Utc::now(),
-                "They meow a lot.",
-                "chat_message",
-            ),
+                message_id: message_id_2,
+                user_id,
+                speaker: "ai",
+                timestamp: Utc::now(),
+                text: "They meow a lot.",
+                source_type: "chat_message",
+            }),
         ];
         mock_qdrant.set_search_response(Ok(mock_qdrant_results));
 
@@ -1865,81 +1854,162 @@ mod tests {
 
     // --- Tests for process_and_embed_lorebook_entry ---
 
-    #[tokio::test]
-    async fn test_process_and_embed_lorebook_entry_success() {
-        let (state, mock_qdrant, mock_embed_client) = setup_pipeline_test_env().await;
+    // Helper struct for test parameters
+    #[derive(Clone)]
+    struct TestLorebookParams {
+        params: LorebookEntryParams,
+        original_id: Uuid,
+        lorebook_id: Uuid,
+        user_id: Uuid,
+        content: String,
+    }
+    
+    // Helper function to create test lorebook entry parameters
+    fn create_test_lorebook_params() -> TestLorebookParams {
         let original_lorebook_entry_id = Uuid::new_v4();
         let lorebook_id = Uuid::new_v4();
         let user_id = Uuid::new_v4();
-        let decrypted_content =
-            "This is a lorebook entry about dragons. They breathe fire.".to_string();
-        let decrypted_title = Some("Dragons".to_string());
-        let decrypted_keywords = Some(vec!["dragon".to_string(), "mythical".to_string()]);
-        let is_enabled = true;
-        let is_constant = false;
-
-        // Mock Embedding Client
-        mock_embed_client.set_response(Ok(vec![0.1, 0.2, 0.3, 0.4])); // Example embedding
-        // Mock Qdrant to succeed on upsert
-        mock_qdrant.set_upsert_response(Ok(()));
-
+        let decrypted_content = "This is a lorebook entry about dragons. They breathe fire.".to_string();
+        
         let params = LorebookEntryParams {
             original_lorebook_entry_id,
             lorebook_id,
             user_id,
             decrypted_content: decrypted_content.clone(),
-            decrypted_title: decrypted_title.clone(),
-            decrypted_keywords: decrypted_keywords.clone(),
-            is_enabled,
-            is_constant,
+            decrypted_title: Some("Dragons".to_string()),
+            decrypted_keywords: Some(vec!["dragon".to_string(), "mythical".to_string()]),
+            is_enabled: true,
+            is_constant: false,
         };
+        
+        TestLorebookParams {
+            params,
+            original_id: original_lorebook_entry_id,
+            lorebook_id,
+            user_id,
+            content: decrypted_content,
+        }
+    }
+    
+    // Helper function to verify payload string value
+    fn assert_payload_string(point: &qdrant_client::qdrant::PointStruct, key: &str, expected: &str) {
+        let payload_value = point.payload.get(key).unwrap().kind.as_ref().unwrap();
+        if let qdrant_client::qdrant::value::Kind::StringValue(s) = payload_value {
+            assert_eq!(s, expected);
+        } else {
+            panic!("Wrong type for {key}");
+        }
+    }
+    
+    // Helper function to verify payload bool value
+    fn assert_payload_bool(point: &qdrant_client::qdrant::PointStruct, key: &str, expected: bool) {
+        let payload_value = point.payload.get(key).unwrap().kind.as_ref().unwrap();
+        if let qdrant_client::qdrant::value::Kind::BoolValue(b) = payload_value {
+            assert_eq!(*b, expected);
+        } else {
+            panic!("Wrong type for {key}");
+        }
+    }
 
+    #[tokio::test]
+    async fn test_process_lorebook_entry_succeeds() {
+        let (state, mock_qdrant, mock_embed_client) = setup_pipeline_test_env().await;
+        let test_params = create_test_lorebook_params();
+        
+        // Setup mocks
+        mock_embed_client.set_response(Ok(vec![0.1, 0.2, 0.3, 0.4]));
+        mock_qdrant.set_upsert_response(Ok(()));
+        
         let result = state
             .embedding_pipeline_service
-            .process_and_embed_lorebook_entry(state.clone(), params)
+            .process_and_embed_lorebook_entry(state.clone(), test_params.params)
             .await;
+            
+        assert!(result.is_ok(), "process_and_embed_lorebook_entry failed: {:?}", result.err());
+    }
 
-        assert!(
-            result.is_ok(),
-            "process_and_embed_lorebook_entry failed: {:?}",
-            result.err()
-        );
-
+    #[tokio::test]
+    async fn test_lorebook_entry_embedding_client_calls() {
+        let (state, mock_qdrant, mock_embed_client) = setup_pipeline_test_env().await;
+        let test_params = create_test_lorebook_params();
+        
+        // Setup mocks
+        mock_embed_client.set_response(Ok(vec![0.1, 0.2, 0.3, 0.4]));
+        mock_qdrant.set_upsert_response(Ok(()));
+        
+        let _ = state
+            .embedding_pipeline_service
+            .process_and_embed_lorebook_entry(state.clone(), test_params.params.clone())
+            .await;
+        
         // Verify embedding client calls
         let embed_calls = mock_embed_client.get_calls();
-        // Based on chunk_config (100/20), "This is a lorebook entry about dragons. They breathe fire." (56 chars) should be 1 chunk.
+        assert_eq!(embed_calls.len(), 1, "Expected 1 call to embedding client");
+        assert_eq!(embed_calls[0].0, test_params.content);
+        assert_eq!(embed_calls[0].1, "RETRIEVAL_DOCUMENT");
+        assert_eq!(embed_calls[0].2, test_params.params.decrypted_title);
+    }
+
+    #[tokio::test]
+    async fn test_lorebook_entry_qdrant_upsert() {
+        let (state, mock_qdrant, mock_embed_client) = setup_pipeline_test_env().await;
+        let test_params = create_test_lorebook_params();
+        
+        // Setup mocks
+        mock_embed_client.set_response(Ok(vec![0.1, 0.2, 0.3, 0.4]));
+        mock_qdrant.set_upsert_response(Ok(()));
+        
+        let _ = state
+            .embedding_pipeline_service
+            .process_and_embed_lorebook_entry(state.clone(), test_params.params)
+            .await;
+        
+        // Verify Qdrant upsert
+        let qdrant_upsert_points = mock_qdrant.get_last_upsert_points().unwrap_or_default();
+        assert_eq!(qdrant_upsert_points.len(), 1, "Expected 1 point in the batch upsert");
+        
+        let point = &qdrant_upsert_points[0];
+        assert!(
+            matches!(
+                point.vectors.as_ref().unwrap().vectors_options.as_ref().unwrap(),
+                qdrant_client::qdrant::vectors::VectorsOptions::Vector(_)
+            ),
+            "Expected a single unnamed vector"
+        );
+    }
+
+    // Helper function to verify embedding client calls
+    fn verify_embedding_calls(
+        embed_calls: &[(String, String, Option<String>)],
+        expected_content: &str,
+        expected_title: Option<&String>,
+    ) {
         assert_eq!(
             embed_calls.len(),
             1,
             "Expected 1 call to embedding client for the content"
         );
-        assert_eq!(embed_calls[0].0, decrypted_content); // Check content
-        assert_eq!(embed_calls[0].1, "RETRIEVAL_DOCUMENT"); // Check task type
-        assert_eq!(embed_calls[0].2, decrypted_title); // Check title
+        assert_eq!(embed_calls[0].0, expected_content);
+        assert_eq!(embed_calls[0].1, "RETRIEVAL_DOCUMENT");
+        assert_eq!(embed_calls[0].2.as_ref(), expected_title);
+    }
 
-        // Verify Qdrant client calls
-        let qdrant_upsert_points = mock_qdrant.get_last_upsert_points().unwrap_or_default();
-        assert_eq!(
-            qdrant_upsert_points.len(),
-            1,
-            "Expected 1 point in the batch upsert"
-        );
-
-        let point = &qdrant_upsert_points[0];
+    // Helper function to verify qdrant upsert structure
+    fn verify_qdrant_upsert_structure(points: &[qdrant_client::qdrant::PointStruct]) {
+        assert_eq!(points.len(), 1, "Expected 1 point in the batch upsert");
+        let point = &points[0];
         assert!(
             matches!(
-                point
-                    .vectors
-                    .as_ref()
-                    .unwrap()
-                    .vectors_options
-                    .as_ref()
-                    .unwrap(),
+                point.vectors.as_ref().unwrap().vectors_options.as_ref().unwrap(),
                 qdrant_client::qdrant::vectors::VectorsOptions::Vector(_)
             ),
             "Expected a single unnamed vector"
-        ); // Check vector presence
+        );
+    }
 
+    // Helper function to verify detailed payload fields (complementing assert_payload_* helpers)
+    fn verify_detailed_payload_fields(point: &qdrant_client::qdrant::PointStruct, test_params: &TestLorebookParams) {
+        // These detailed checks verify the same data as the helper functions but with raw access
         let payload_value = point
             .payload
             .get("original_lorebook_entry_id")
@@ -1948,7 +2018,7 @@ mod tests {
             .as_ref()
             .unwrap();
         if let qdrant_client::qdrant::value::Kind::StringValue(s) = payload_value {
-            assert_eq!(*s, original_lorebook_entry_id.to_string());
+            assert_eq!(*s, test_params.original_id.to_string());
         } else {
             panic!("Wrong type for original_lorebook_entry_id");
         }
@@ -1961,14 +2031,14 @@ mod tests {
             .as_ref()
             .unwrap();
         if let qdrant_client::qdrant::value::Kind::StringValue(s) = payload_value {
-            assert_eq!(*s, lorebook_id.to_string());
+            assert_eq!(*s, test_params.lorebook_id.to_string());
         } else {
             panic!("Wrong type for lorebook_id");
         }
 
         let payload_value = point.payload.get("user_id").unwrap().kind.as_ref().unwrap();
         if let qdrant_client::qdrant::value::Kind::StringValue(s) = payload_value {
-            assert_eq!(*s, user_id.to_string());
+            assert_eq!(*s, test_params.user_id.to_string());
         } else {
             panic!("Wrong type for user_id");
         }
@@ -1981,7 +2051,7 @@ mod tests {
             .as_ref()
             .unwrap();
         if let qdrant_client::qdrant::value::Kind::StringValue(s) = payload_value {
-            assert_eq!(*s, decrypted_content);
+            assert_eq!(*s, test_params.content);
         } else {
             panic!("Wrong type for chunk_text");
         }
@@ -1994,7 +2064,7 @@ mod tests {
             .as_ref()
             .unwrap();
         if let qdrant_client::qdrant::value::Kind::StringValue(s) = payload_value {
-            assert_eq!(*s, decrypted_title.as_ref().unwrap().clone());
+            assert_eq!(*s, test_params.params.decrypted_title.as_ref().unwrap().clone());
         } else {
             panic!("Wrong type for entry_title");
         }
@@ -2007,10 +2077,47 @@ mod tests {
             .as_ref()
             .unwrap();
         if let qdrant_client::qdrant::value::Kind::BoolValue(b) = payload_value {
-            assert_eq!(b, &is_enabled);
+            assert_eq!(b, &test_params.params.is_enabled);
         } else {
             panic!("Wrong type for is_enabled");
         }
+    }
+
+    #[tokio::test]
+    async fn test_lorebook_entry_payload_fields() {
+        let (state, mock_qdrant, mock_embed_client) = setup_pipeline_test_env().await;
+        let test_params = create_test_lorebook_params();
+        
+        // Setup mocks and process entry
+        mock_embed_client.set_response(Ok(vec![0.1, 0.2, 0.3, 0.4]));
+        mock_qdrant.set_upsert_response(Ok(()));
+        
+        let _ = state
+            .embedding_pipeline_service
+            .process_and_embed_lorebook_entry(state.clone(), test_params.params.clone())
+            .await;
+        
+        // Verify payload fields using helper functions
+        let points = mock_qdrant.get_last_upsert_points().unwrap_or_default();
+        let point = &points[0];
+        
+        assert_payload_string(point, "original_lorebook_entry_id", &test_params.original_id.to_string());
+        assert_payload_string(point, "lorebook_id", &test_params.lorebook_id.to_string());
+        assert_payload_string(point, "user_id", &test_params.user_id.to_string());
+        assert_payload_string(point, "chunk_text", &test_params.content);
+        assert_payload_string(point, "entry_title", test_params.params.decrypted_title.as_ref().unwrap());
+        assert_payload_bool(point, "is_enabled", test_params.params.is_enabled);
+
+        // Verify embedding client calls
+        let embed_calls = mock_embed_client.get_calls();
+        verify_embedding_calls(&embed_calls, &test_params.content, test_params.params.decrypted_title.as_ref());
+
+        // Verify Qdrant upsert structure
+        let qdrant_upsert_points = mock_qdrant.get_last_upsert_points().unwrap_or_default();
+        verify_qdrant_upsert_structure(&qdrant_upsert_points);
+
+        // Verify detailed payload fields (raw access verification)
+        verify_detailed_payload_fields(&qdrant_upsert_points[0], &test_params);
     }
 
     #[tokio::test]
@@ -2215,43 +2322,46 @@ mod tests {
     }
 
     // Helper to create a mock ScoredPoint for Lorebook entries
-    fn create_mock_lorebook_scored_point(
-        point_uuid: Uuid, // UUID for the qdrant point itself
+    // Helper struct for creating mock lorebook ScoredPoint
+    struct MockLorebookScoredPointParams<'a> {
+        point_uuid: Uuid,
         score: f32,
         original_lorebook_entry_id: Uuid,
         lorebook_id: Uuid,
         user_id: Uuid,
-        chunk_text: &str,
+        chunk_text: &'a str,
         entry_title: Option<String>,
         keywords: Option<Vec<String>>,
         is_enabled: bool,
         is_constant: bool,
-        source_type: &str,
-    ) -> ScoredPoint {
+        source_type: &'a str,
+    }
+
+    fn create_mock_lorebook_scored_point(params: MockLorebookScoredPointParams<'_>) -> ScoredPoint {
         let mut payload = HashMap::new();
         payload.insert(
             "original_lorebook_entry_id".to_string(),
-            string_value(&original_lorebook_entry_id.to_string()),
+            string_value(&params.original_lorebook_entry_id.to_string()),
         );
         payload.insert(
             "lorebook_id".to_string(),
-            string_value(&lorebook_id.to_string()),
+            string_value(&params.lorebook_id.to_string()),
         );
-        payload.insert("user_id".to_string(), string_value(&user_id.to_string()));
-        payload.insert("chunk_text".to_string(), string_value(chunk_text));
+        payload.insert("user_id".to_string(), string_value(&params.user_id.to_string()));
+        payload.insert("chunk_text".to_string(), string_value(params.chunk_text));
         payload.insert(
             "entry_title".to_string(),
-            optional_string_value(entry_title),
+            optional_string_value(params.entry_title),
         );
-        payload.insert("keywords".to_string(), optional_list_string_value(keywords));
-        payload.insert("is_enabled".to_string(), bool_value(is_enabled));
-        payload.insert("is_constant".to_string(), bool_value(is_constant));
-        payload.insert("source_type".to_string(), string_value(source_type));
+        payload.insert("keywords".to_string(), optional_list_string_value(params.keywords));
+        payload.insert("is_enabled".to_string(), bool_value(params.is_enabled));
+        payload.insert("is_constant".to_string(), bool_value(params.is_constant));
+        payload.insert("source_type".to_string(), string_value(params.source_type));
 
         ScoredPoint {
-            id: Some(PointId::from(point_uuid.to_string())),
+            id: Some(PointId::from(params.point_uuid.to_string())),
             payload,
-            score,
+            score: params.score,
             version: 0,
             vectors: None,
             shard_key: None,
@@ -2272,17 +2382,17 @@ mod tests {
         mock_embed_client.set_response(Ok(vec![0.1, 0.2, 0.3])); // Mock query embedding
 
         let chat_point_id = Uuid::new_v4();
-        let mock_chat_results = vec![create_mock_scored_point(
-            chat_point_id,
-            0.9,
+        let mock_chat_results = vec![create_mock_scored_point(&MockScoredPointParams {
+            id_uuid: chat_point_id,
+            score: 0.9,
             session_id,
-            Uuid::new_v4(), // message_id
-            user_id,        // user_id (this was missing)
-            "User",
-            Utc::now(),
-            "Test chat message content",
-            "chat_message",
-        )];
+            message_id: Uuid::new_v4(),
+            user_id,
+            speaker: "User",
+            timestamp: Utc::now(),
+            text: "Test chat message content",
+            source_type: "chat_message",
+        })];
         mock_qdrant.set_search_response(Ok(mock_chat_results.clone()));
 
         let result = state
@@ -2362,73 +2472,12 @@ mod tests {
         }));
     }
 
-    #[tokio::test]
-    async fn test_retrieve_chunks_lorebook_entries_only() {
-        let (state, mock_qdrant, mock_embed_client) = setup_pipeline_test_env().await;
-        let user_id = Uuid::new_v4();
-        let lorebook_id1 = Uuid::new_v4();
-        let lorebook_id2 = Uuid::new_v4();
-        let active_lorebook_ids = vec![lorebook_id1, lorebook_id2];
-        let query_text = "relevant query for lore";
-        let limit: u64 = 2;
-
-        mock_embed_client.set_response(Ok(vec![0.4, 0.5, 0.6]));
-
-        let lore_point_id = Uuid::new_v4();
-        let mock_lore_results = vec![create_mock_lorebook_scored_point(
-            lore_point_id,
-            0.85,
-            Uuid::new_v4(),
-            lorebook_id1,
-            user_id,
-            "Test lorebook entry content",
-            Some("Lore Title".to_string()),
-            None,
-            true,
-            false,
-            "lorebook_entry",
-        )];
-        mock_qdrant.set_search_response(Ok(mock_lore_results.clone()));
-
-        let result = state
-            .embedding_pipeline_service
-            .retrieve_relevant_chunks(
-                state.clone(),
-                user_id,
-                None,
-                Some(active_lorebook_ids.clone()),
-                query_text,
-                limit,
-            )
-            .await;
-
-        assert!(
-            result.is_ok(),
-            "retrieve_relevant_chunks failed: {:?}",
-            result.err()
-        );
-        let chunks = result.unwrap();
-        assert_eq!(chunks.len(), 1);
-        assert_eq!(chunks[0].text, "Test lorebook entry content");
-        match &chunks[0].metadata {
-            RetrievedMetadata::Lorebook(meta) => {
-                assert_eq!(meta.lorebook_id, lorebook_id1);
-                assert_eq!(meta.source_type, "lorebook_entry");
-                assert!(meta.is_enabled);
-            }
-            RetrievedMetadata::Chat(_) => panic!("Expected Lorebook metadata"),
-        }
-
-        let search_call_count = mock_qdrant.get_search_call_count();
-        assert_eq!(search_call_count, 1, "Expected one search call to Qdrant");
-        let search_params = mock_qdrant
-            .get_last_search_params()
-            .expect("Expected search_params to be set after one call");
-        let (_embedding, _limit, filter_opt) = &search_params;
-        assert!(filter_opt.is_some());
-        let filter = filter_opt.as_ref().unwrap();
-
-        // Verify lorebook filter construction
+    fn verify_lorebook_filter_conditions(
+        filter: &Filter,
+        user_id: Uuid,
+        lorebook_id1: Uuid,
+        lorebook_id2: Uuid,
+    ) {
         assert_eq!(filter.must.len(), 3); // user_id, source_type, is_enabled
         assert_eq!(filter.should.len(), 2); // lorebook_id1, lorebook_id2
 
@@ -2495,6 +2544,75 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_retrieve_chunks_lorebook_entries_only() {
+        let (state, mock_qdrant, mock_embed_client) = setup_pipeline_test_env().await;
+        let user_id = Uuid::new_v4();
+        let lorebook_id1 = Uuid::new_v4();
+        let lorebook_id2 = Uuid::new_v4();
+        let active_lorebook_ids = vec![lorebook_id1, lorebook_id2];
+        let query_text = "relevant query for lore";
+        let limit: u64 = 2;
+
+        mock_embed_client.set_response(Ok(vec![0.4, 0.5, 0.6]));
+
+        let lore_point_id = Uuid::new_v4();
+        let mock_lore_results = vec![create_mock_lorebook_scored_point(MockLorebookScoredPointParams {
+            point_uuid: lore_point_id,
+            score: 0.85,
+            original_lorebook_entry_id: Uuid::new_v4(),
+            lorebook_id: lorebook_id1,
+            user_id,
+            chunk_text: "Test lorebook entry content",
+            entry_title: Some("Lore Title".to_string()),
+            keywords: None,
+            is_enabled: true,
+            is_constant: false,
+            source_type: "lorebook_entry",
+        })];
+        mock_qdrant.set_search_response(Ok(mock_lore_results.clone()));
+
+        let result = state
+            .embedding_pipeline_service
+            .retrieve_relevant_chunks(
+                state.clone(),
+                user_id,
+                None,
+                Some(active_lorebook_ids.clone()),
+                query_text,
+                limit,
+            )
+            .await;
+
+        assert!(
+            result.is_ok(),
+            "retrieve_relevant_chunks failed: {:?}",
+            result.err()
+        );
+        let chunks = result.unwrap();
+        assert_eq!(chunks.len(), 1);
+        assert_eq!(chunks[0].text, "Test lorebook entry content");
+        match &chunks[0].metadata {
+            RetrievedMetadata::Lorebook(meta) => {
+                assert_eq!(meta.lorebook_id, lorebook_id1);
+                assert_eq!(meta.source_type, "lorebook_entry");
+                assert!(meta.is_enabled);
+            }
+            RetrievedMetadata::Chat(_) => panic!("Expected Lorebook metadata"),
+        }
+
+        let search_call_count = mock_qdrant.get_search_call_count();
+        assert_eq!(search_call_count, 1, "Expected one search call to Qdrant");
+        let search_params = mock_qdrant
+            .get_last_search_params()
+            .expect("Expected search_params to be set after one call");
+        let (_embedding, _limit, filter_opt) = &search_params;
+        assert!(filter_opt.is_some());
+        let filter = filter_opt.as_ref().unwrap();
+
+        verify_lorebook_filter_conditions(filter, user_id, lorebook_id1, lorebook_id2);
+    }
+
+    #[tokio::test]
     async fn test_retrieve_chunks_chat_and_lorebook() {
         let (state, mock_qdrant, mock_embed_client) = setup_pipeline_test_env().await;
         let user_id = Uuid::new_v4();
@@ -2509,30 +2627,30 @@ mod tests {
         let chat_point_id = Uuid::new_v4();
         let lore_point_id = Uuid::new_v4();
 
-        let mock_chat_results = vec![create_mock_scored_point(
-            chat_point_id,
-            0.95, // Higher score
+        let mock_chat_results = vec![create_mock_scored_point(&MockScoredPointParams {
+            id_uuid: chat_point_id,
+            score: 0.95,
             session_id,
-            Uuid::new_v4(), // message_id
-            user_id,        // user_id (this was missing)
-            "User",
-            Utc::now(),
-            "Chat content about topic",
-            "chat_message",
-        )];
-        let mock_lore_results = vec![create_mock_lorebook_scored_point(
-            lore_point_id,
-            0.90, // Lower score
-            Uuid::new_v4(),
+            message_id: Uuid::new_v4(),
+            user_id,
+            speaker: "User",
+            timestamp: Utc::now(),
+            text: "Chat content about topic",
+            source_type: "chat_message",
+        })];
+        let mock_lore_results = vec![create_mock_lorebook_scored_point(MockLorebookScoredPointParams {
+            point_uuid: lore_point_id,
+            score: 0.90,
+            original_lorebook_entry_id: Uuid::new_v4(),
             lorebook_id,
             user_id,
-            "Lore content about topic",
-            None,
-            None,
-            true,
-            false,
-            "lorebook_entry",
-        )];
+            chunk_text: "Lore content about topic",
+            entry_title: None,
+            keywords: None,
+            is_enabled: true,
+            is_constant: false,
+            source_type: "lorebook_entry",
+        })];
 
         // Mock Qdrant to return chat results first, then lore results using a sequence
         mock_qdrant.set_search_responses_sequence(vec![
@@ -2680,17 +2798,17 @@ mod tests {
         mock_embed_client.set_response(Ok(vec![0.1, 0.2, 0.3]));
 
         let chat_point_id = Uuid::new_v4();
-        let mock_chat_results = vec![create_mock_scored_point(
-            chat_point_id,
-            0.9,
+        let mock_chat_results = vec![create_mock_scored_point(&MockScoredPointParams {
+            id_uuid: chat_point_id,
+            score: 0.9,
             session_id,
-            Uuid::new_v4(), // message_id
-            user_id,        // user_id (this was missing)
-            "User",
-            Utc::now(),
-            "Chat message for this test",
-            "chat_message",
-        )];
+            message_id: Uuid::new_v4(),
+            user_id,
+            speaker: "User",
+            timestamp: Utc::now(),
+            text: "Chat message for this test",
+            source_type: "chat_message",
+        })];
         mock_qdrant.set_search_response(Ok(mock_chat_results.clone())); // Only chat results expected
 
         let result = state
@@ -2734,6 +2852,76 @@ mod tests {
         assert!(filter.should.is_empty()); // No lorebook conditions
     }
 
+    fn create_mock_chat_results_for_limit_test(
+        user_id: Uuid,
+        session_id: Uuid,
+    ) -> Vec<ScoredPoint> {
+        let chat_point1 = Uuid::new_v4();
+        let chat_point2 = Uuid::new_v4();
+        
+        vec![
+            create_mock_scored_point(&MockScoredPointParams {
+                id_uuid: chat_point1,
+                score: 0.99,
+                session_id,
+                message_id: Uuid::new_v4(),
+                user_id,
+                speaker: "U1",
+                timestamp: Utc::now(),
+                text: "Chat1",
+                source_type: "chat_message",
+            }),
+            create_mock_scored_point(&MockScoredPointParams {
+                id_uuid: chat_point2,
+                score: 0.98,
+                session_id,
+                message_id: Uuid::new_v4(),
+                user_id,
+                speaker: "U2",
+                timestamp: Utc::now(),
+                text: "Chat2",
+                source_type: "chat_message",
+            }),
+        ]
+    }
+
+    fn create_mock_lore_results_for_limit_test(
+        user_id: Uuid,
+        lorebook_id: Uuid,
+    ) -> Vec<ScoredPoint> {
+        let lore_point1 = Uuid::new_v4();
+        let lore_point2 = Uuid::new_v4();
+        
+        vec![
+            create_mock_lorebook_scored_point(MockLorebookScoredPointParams {
+                point_uuid: lore_point1,
+                score: 0.97,
+                original_lorebook_entry_id: Uuid::new_v4(),
+                lorebook_id,
+                user_id,
+                chunk_text: "Lore1",
+                entry_title: None,
+                keywords: None,
+                is_enabled: true,
+                is_constant: false,
+                source_type: "lorebook_entry",
+            }),
+            create_mock_lorebook_scored_point(MockLorebookScoredPointParams {
+                point_uuid: lore_point2,
+                score: 0.96,
+                original_lorebook_entry_id: Uuid::new_v4(),
+                lorebook_id,
+                user_id,
+                chunk_text: "Lore2",
+                entry_title: None,
+                keywords: None,
+                is_enabled: true,
+                is_constant: false,
+                source_type: "lorebook_entry",
+            }),
+        ]
+    }
+
     #[tokio::test]
     async fn test_retrieve_chunks_limit_per_source_respected() {
         let (state, mock_qdrant, mock_embed_client) = setup_pipeline_test_env().await;
@@ -2745,65 +2933,8 @@ mod tests {
 
         mock_embed_client.set_response(Ok(vec![0.5, 0.5, 0.5]));
 
-        // Mock Qdrant to return MORE than limit_per_source if it were asked for more
-        // The mock's search_points will be called with `limit_per_source`, so it should respect that.
-        let chat_point1 = Uuid::new_v4();
-        let chat_point2 = Uuid::new_v4();
-        let lore_point1 = Uuid::new_v4();
-        let lore_point2 = Uuid::new_v4();
-
-        let mock_chat_results_full = vec![
-            create_mock_scored_point(
-                chat_point1,
-                0.99,
-                session_id,
-                Uuid::new_v4(),
-                user_id,
-                "U1",
-                Utc::now(),
-                "Chat1",
-                "chat_message",
-            ),
-            create_mock_scored_point(
-                chat_point2,
-                0.98,
-                session_id,
-                Uuid::new_v4(),
-                user_id,
-                "U2",
-                Utc::now(),
-                "Chat2",
-                "chat_message",
-            ),
-        ];
-        let mock_lore_results_full = vec![
-            create_mock_lorebook_scored_point(
-                lore_point1,
-                0.97,
-                Uuid::new_v4(),
-                lorebook_id,
-                user_id,
-                "Lore1",
-                None,
-                None,
-                true,
-                false,
-                "lorebook_entry",
-            ),
-            create_mock_lorebook_scored_point(
-                lore_point2,
-                0.96,
-                Uuid::new_v4(),
-                lorebook_id,
-                user_id,
-                "Lore2",
-                None,
-                None,
-                true,
-                false,
-                "lorebook_entry",
-            ),
-        ];
+        let mock_chat_results_full = create_mock_chat_results_for_limit_test(user_id, session_id);
+        let mock_lore_results_full = create_mock_lore_results_for_limit_test(user_id, lorebook_id);
 
         // Mock Qdrant to provide full results; the mock's search_points method will truncate based on limit_per_source.
         mock_qdrant.set_search_responses_sequence(vec![
@@ -2876,19 +3007,19 @@ mod tests {
         mock_embed_client.set_response(Ok(vec![0.6, 0.6, 0.6]));
 
         let lore_point_id = Uuid::new_v4();
-        let mock_lore_results = vec![create_mock_lorebook_scored_point(
-            lore_point_id,
-            0.8,
-            Uuid::new_v4(),
+        let mock_lore_results = vec![create_mock_lorebook_scored_point(MockLorebookScoredPointParams {
+            point_uuid: lore_point_id,
+            score: 0.8,
+            original_lorebook_entry_id: Uuid::new_v4(),
             lorebook_id,
             user_id,
-            "Successful lore content",
-            None,
-            None,
-            true,
-            false,
-            "lorebook_entry",
-        )];
+            chunk_text: "Successful lore content",
+            entry_title: None,
+            keywords: None,
+            is_enabled: true,
+            is_constant: false,
+            source_type: "lorebook_entry",
+        })];
 
         // Chat search fails, Lorebook search succeeds using a sequence
         mock_qdrant.set_search_responses_sequence(vec![

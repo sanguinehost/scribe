@@ -2,8 +2,7 @@ use std::sync::Arc;
 
 use diesel::{prelude::*, result::Error as DieselError};
 use secrecy::{ExposeSecret, SecretBox};
-use serde_json::json;
-use tracing::{debug, error, info, instrument, warn};
+use tracing::{error, info, instrument, warn};
 use uuid::Uuid;
 
 use crate::{
@@ -16,45 +15,47 @@ use crate::{
             MessageRole,
             // ChatSessionSettings, // Removed, settings are part of Chat struct
             // HistoryManagementStrategy, // Removed, strategy is a field in Chat struct
-            NewChat, // Changed from DbInsertableChatSession
         },
     },
-    schema::{characters, chat_session_lorebooks, chat_sessions, users::dsl as users_dsl},
+    schema::{characters, chat_sessions, users::dsl as users_dsl},
     state::DbPool,
 };
 
 use super::message_handling::{save_message, SaveMessageParams};
 
-/// Helper function to determine the effective active persona ID
-#[allow(clippy::cognitive_complexity)]
-fn determine_effective_persona_id(
-    user_id: Uuid,
-    active_custom_persona_id: Option<Uuid>,
-    conn: &mut PgConnection,
-) -> Option<Uuid> {
-    if active_custom_persona_id.is_some() {
-        return active_custom_persona_id;
-    }
+/// Type alias for session creation result
+type SessionCreationResult = Result<(Chat, Option<Vec<u8>>, Option<Vec<u8>>), AppError>;
 
-    info!(%user_id, "No active_custom_persona_id provided, checking for user's default persona.");
-    match crate::schema::users::table
-        .filter(users_dsl::id.eq(user_id))
-        .select(users_dsl::default_persona_id)
-        .first::<Option<Uuid>>(conn)
-        .optional()
-    {
-        Ok(Some(Some(default_id))) => {
+/// Type alias for encrypted session data result
+type EncryptedSessionData = ((Vec<u8>, Vec<u8>), (Option<Vec<u8>>, Option<Vec<u8>>));
+
+/// Handles successful query result cases for default persona ID
+#[allow(clippy::option_option)]
+fn handle_successful_persona_query(user_id: Uuid, persona_result: Option<Option<Uuid>>) -> Option<Uuid> {
+    match persona_result {
+        Some(Some(default_id)) => {
             info!(%user_id, default_persona_id = %default_id, "Found user's default persona. Using it for this session.");
             Some(default_id)
         }
-        Ok(Some(None)) => {
+        Some(None) => {
             info!(%user_id, "User has no default persona set.");
             None
         }
-        Ok(None) => {
+        None => {
             warn!(%user_id, "User not found when trying to fetch default persona. This should not happen.");
             None
         }
+    }
+}
+
+/// Handles database query result for default persona ID
+#[allow(clippy::option_option)]
+fn handle_persona_query_result(
+    user_id: Uuid,
+    result: Result<Option<Option<Uuid>>, diesel::result::Error>,
+) -> Option<Uuid> {
+    match result {
+        Ok(persona_result) => handle_successful_persona_query(user_id, persona_result),
         Err(e) => {
             error!(%user_id, error = ?e, "Error fetching user's default persona. Proceeding without it.");
             None
@@ -62,81 +63,127 @@ fn determine_effective_persona_id(
     }
 }
 
+/// Fetches the user's default persona ID from the database
+fn get_user_default_persona_id(user_id: Uuid, conn: &mut PgConnection) -> Option<Uuid> {
+    let result = crate::schema::users::table
+        .filter(users_dsl::id.eq(user_id))
+        .select(users_dsl::default_persona_id)
+        .first::<Option<Uuid>>(conn)
+        .optional();
+
+    handle_persona_query_result(user_id, result)
+}
+
+/// Helper function to determine the effective active persona ID
+fn determine_effective_persona_id(
+    user_id: Uuid,
+    active_custom_persona_id: Option<Uuid>,
+    conn: &mut PgConnection,
+) -> Option<Uuid> {
+    if let Some(persona_id) = active_custom_persona_id {
+        return Some(persona_id);
+    }
+
+    info!(%user_id, "No active_custom_persona_id provided, checking for user's default persona.");
+    get_user_default_persona_id(user_id, conn)
+}
+
 /// Helper function to extract system prompt from persona
-#[allow(clippy::cognitive_complexity)]
 fn extract_persona_system_prompt(
     persona_id: Uuid,
     user_id: Uuid,
     user_dek: Option<&Arc<SecretBox<Vec<u8>>>>,
     conn: &mut PgConnection,
 ) -> Option<String> {
+    let persona = fetch_user_persona(persona_id, user_id, conn)?;
+    let sp_bytes_vec = persona.system_prompt.as_ref()?;
+    
+    if let (Some(sp_nonce_vec), Some(dek_arc)) = (&persona.system_prompt_nonce, user_dek) {
+        decrypt_persona_system_prompt(persona_id, sp_bytes_vec, sp_nonce_vec, dek_arc)
+    } else if persona.system_prompt_nonce.is_none() && user_dek.is_none() {
+        extract_plaintext_system_prompt(persona_id, sp_bytes_vec)
+    } else {
+        info!(%persona_id, nonce_present = persona.system_prompt_nonce.is_some(), dek_present = user_dek.is_some(), "Persona system_prompt could not be used (cannot decrypt or inconsistent state). Skipping.");
+        None
+    }
+}
+
+fn fetch_user_persona(
+    persona_id: Uuid,
+    user_id: Uuid,
+    conn: &mut PgConnection,
+) -> Option<crate::models::user_personas::UserPersona> {
     use crate::schema::user_personas;
     
-    let persona = match user_personas::table
+    match user_personas::table
         .filter(user_personas::id.eq(persona_id))
         .filter(user_personas::user_id.eq(user_id))
         .select(crate::models::user_personas::UserPersona::as_select())
         .first::<crate::models::user_personas::UserPersona>(conn)
         .optional()
     {
-        Ok(Some(persona)) => persona,
+        Ok(Some(persona)) => Some(persona),
         Ok(None) => {
             warn!(%persona_id, %user_id, "Active persona not found or not owned by user. Will fall back to character prompt.");
-            return None;
+            None
         }
         Err(e) => {
             error!(%persona_id, error = ?e, "Failed to query active persona. Will fall back to character prompt.");
-            return None;
+            None
         }
-    };
+    }
+}
 
-    let sp_bytes_vec = persona.system_prompt.as_ref()?;
-    
-    if let (Some(sp_nonce_vec), Some(dek_arc)) = (&persona.system_prompt_nonce, user_dek) {
-        // Try to decrypt
-        match crate::crypto::decrypt_gcm(sp_bytes_vec, sp_nonce_vec, dek_arc) {
-            Ok(decrypted_secret_vec) => {
-                match String::from_utf8(decrypted_secret_vec.expose_secret().clone()) {
-                    Ok(decrypted_sp_str) => {
-                        if decrypted_sp_str.trim().is_empty() {
-                            info!(%persona_id, "Decrypted persona system_prompt is empty. Skipping.");
-                            None
-                        } else {
-                            info!(%persona_id, "Using DECRYPTED system prompt from active persona.");
-                            Some(decrypted_sp_str.replace('\0', ""))
-                        }
-                    }
-                    Err(e) => {
-                        error!(%persona_id, error = ?e, "DECRYPTED Persona system_prompt is not valid UTF-8. Skipping.");
-                        None
-                    }
-                }
-            }
-            Err(e) => {
-                error!(%persona_id, error = ?e, "Failed to DECRYPT persona system_prompt. Skipping.");
+fn process_decrypted_bytes(persona_id: Uuid, decrypted_bytes: Vec<u8>) -> Option<String> {
+    match String::from_utf8(decrypted_bytes) {
+        Ok(decrypted_sp_str) => {
+            if decrypted_sp_str.trim().is_empty() {
+                info!(%persona_id, "Decrypted persona system_prompt is empty. Skipping.");
                 None
+            } else {
+                info!(%persona_id, "Using DECRYPTED system prompt from active persona.");
+                Some(decrypted_sp_str.replace('\0', ""))
             }
         }
-    } else if persona.system_prompt_nonce.is_none() && user_dek.is_none() {
-        // Try as plaintext
-        match String::from_utf8(sp_bytes_vec.clone()) {
-            Ok(plaintext_sp_str) => {
-                if plaintext_sp_str.trim().is_empty() {
-                    info!(%persona_id, "Persona system_prompt (plaintext, no nonce/DEK) is empty. Skipping.");
-                    None
-                } else {
-                    warn!(%persona_id, "Using persona system_prompt as PLAINTEXT (nonce and DEK were missing).");
-                    Some(plaintext_sp_str.replace('\0', ""))
-                }
-            }
-            Err(e) => {
-                error!(%persona_id, error = ?e, "Persona system_prompt (plaintext, no nonce/DEK) is not valid UTF-8. Skipping.");
+        Err(e) => {
+            error!(%persona_id, error = ?e, "DECRYPTED Persona system_prompt is not valid UTF-8. Skipping.");
+            None
+        }
+    }
+}
+
+fn decrypt_persona_system_prompt(
+    persona_id: Uuid,
+    sp_bytes_vec: &[u8],
+    sp_nonce_vec: &[u8],
+    dek_arc: &Arc<SecretBox<Vec<u8>>>,
+) -> Option<String> {
+    match crate::crypto::decrypt_gcm(sp_bytes_vec, sp_nonce_vec, dek_arc) {
+        Ok(decrypted_secret_vec) => {
+            process_decrypted_bytes(persona_id, decrypted_secret_vec.expose_secret().clone())
+        }
+        Err(e) => {
+            error!(%persona_id, error = ?e, "Failed to DECRYPT persona system_prompt. Skipping.");
+            None
+        }
+    }
+}
+
+fn extract_plaintext_system_prompt(persona_id: Uuid, sp_bytes_vec: &[u8]) -> Option<String> {
+    match String::from_utf8(sp_bytes_vec.to_vec()) {
+        Ok(plaintext_sp_str) => {
+            if plaintext_sp_str.trim().is_empty() {
+                info!(%persona_id, "Persona system_prompt (plaintext, no nonce/DEK) is empty. Skipping.");
                 None
+            } else {
+                warn!(%persona_id, "Using persona system_prompt as PLAINTEXT (nonce and DEK were missing).");
+                Some(plaintext_sp_str.replace('\0', ""))
             }
         }
-    } else {
-        info!(%persona_id, nonce_present = persona.system_prompt_nonce.is_some(), dek_present = user_dek.is_some(), "Persona system_prompt could not be used (cannot decrypt or inconsistent state). Skipping.");
-        None
+        Err(e) => {
+            error!(%persona_id, error = ?e, "Persona system_prompt (plaintext, no nonce/DEK) is not valid UTF-8. Skipping.");
+            None
+        }
     }
 }
 
@@ -163,68 +210,254 @@ fn determine_system_prompt(
         .or_else(|| character.description.as_ref().and_then(|val| if val.is_empty() { None } else { Some(String::from_utf8_lossy(val).to_string().replace('\0', "")) }))
 }
 
-/// Helper function to validate and associate lorebooks
-#[allow(clippy::cognitive_complexity)]
-fn validate_and_associate_lorebooks(
-    session_id: Uuid,
+/// Validates character ownership and retrieves character data
+fn validate_and_get_character(
+    character_id: Uuid,
     user_id: Uuid,
-    lorebook_ids: &[Uuid],
-    conn: &mut PgConnection,
-) -> Result<(), AppError> {
-    if lorebook_ids.is_empty() {
-        return Ok(());
-    }
-
-    debug!(session_id = %session_id, user_id = %user_id, lorebook_ids = ?lorebook_ids, "Preparing to associate lorebooks. Provided IDs: {:?}", lorebook_ids);
-    
-    // Validate lorebook ownership
-    for lorebook_id_to_check in lorebook_ids {
-        use crate::schema::lorebooks::dsl as lorebooks_dsl;
-        match lorebooks_dsl::lorebooks
-            .filter(lorebooks_dsl::id.eq(lorebook_id_to_check))
-            .select((lorebooks_dsl::id, lorebooks_dsl::user_id))
-            .first::<(Uuid, Uuid)>(conn)
-            .optional()
-        {
-            Ok(Some((_, owner_id))) => {
-                if owner_id != user_id {
-                    error!(session_id = %session_id, lorebook_id = %lorebook_id_to_check, owner_id = %owner_id, "User does not own lorebook.");
-                    return Err(AppError::Forbidden);
-                }
-            }
-            Ok(None) => {
-                error!(session_id = %session_id, lorebook_id = %lorebook_id_to_check, "Lorebook not found.");
-                return Err(AppError::NotFound(format!("Lorebook with ID {lorebook_id_to_check} not found.")));
-            }
-            Err(e) => {
-                error!(session_id = %session_id, lorebook_id = %lorebook_id_to_check, error = ?e, "Error querying lorebook.");
-                return Err(AppError::DatabaseQueryError(e.to_string()));
-            }
-        }
-    }
-
-    // Create associations
-    info!(session_id = %session_id, lorebook_ids = ?lorebook_ids, "Associating lorebooks with chat session after validation");
-    let new_associations: Vec<_> = lorebook_ids.iter().map(|&lorebook_id| {
-        (
-            chat_session_lorebooks::dsl::chat_session_id.eq(session_id),
-            chat_session_lorebooks::dsl::lorebook_id.eq(lorebook_id),
-            chat_session_lorebooks::dsl::user_id.eq(user_id),
-        )
-    }).collect();
-    
-    diesel::insert_into(chat_session_lorebooks::table)
-        .values(new_associations)
-        .execute(conn)
-        .map_err(|e| {
-            error!(session_id = %session_id, error = ?e, "Failed to insert chat session lorebook associations");
-            AppError::DatabaseQueryError(format!("Failed to associate lorebooks: {e}"))
+    transaction_conn: &mut PgConnection,
+) -> Result<Character, AppError> {
+    info!(%character_id, %user_id, "Verifying character ownership and fetching character details");
+    let character: Character = characters::table
+        .filter(characters::id.eq(character_id))
+        .select(Character::as_select())
+        .first::<Character>(transaction_conn)
+        .map_err(|e| match e {
+            DieselError::NotFound => AppError::NotFound("Character not found".into()),
+            _ => AppError::DatabaseQueryError(e.to_string()),
         })?;
+
+    if character.user_id != user_id {
+        error!(%character_id, %user_id, owner_id=%character.user_id, "User does not own character");
+        return Err(AppError::Forbidden);
+    }
+
+    Ok(character)
+}
+
+/// Sanitizes character name and validates it's not empty
+fn sanitize_character_name(character: &Character) -> Result<String, AppError> {
+    let sanitized_character_name = character.name.replace('\0', "");
+    if sanitized_character_name.is_empty() {
+        error!(character_id = %character.id, "Character name is empty or consists only of invalid characters after sanitization.");
+        return Err(AppError::BadRequest("Character name cannot be empty or consist only of invalid characters.".to_string()));
+    }
+    Ok(sanitized_character_name)
+}
+
+/// Encrypts session title and system prompt
+fn encrypt_session_data(
+    sanitized_character_name: &str,
+    character: &Character,
+    effective_active_persona_id: Option<Uuid>,
+    user_id: Uuid,
+    user_dek_secret_box: Option<&Arc<SecretBox<Vec<u8>>>>,
+    transaction_conn: &mut PgConnection,
+) -> Result<EncryptedSessionData, AppError> {
+    // Create and encrypt session title
+    let session_title_for_encryption = format!("Chat with {sanitized_character_name}");
+    let (encrypted_title_bytes, title_nonce_bytes) = crate::crypto::encrypt_gcm(
+        session_title_for_encryption.as_bytes(),
+        user_dek_secret_box.ok_or_else(|| AppError::BadRequest("User DEK is required to create sessions".to_string()))?
+    ).map_err(|e| AppError::EncryptionError(format!("Failed to encrypt session title: {e}")))?;
+
+    // Determine and encrypt system prompt
+    let system_prompt_for_session = determine_system_prompt(
+        character,
+        effective_active_persona_id,
+        user_id,
+        user_dek_secret_box,
+        transaction_conn,
+    );
+
+    let (encrypted_system_prompt_bytes, sp_nonce_bytes) = if let Some(system_prompt_str) = system_prompt_for_session {
+        let (enc_bytes, nonce_bytes) = crate::crypto::encrypt_gcm(
+            system_prompt_str.as_bytes(),
+            user_dek_secret_box.unwrap()
+        ).map_err(|e| AppError::EncryptionError(format!("Failed to encrypt system prompt: {e}")))?;
+        (Some(enc_bytes), Some(nonce_bytes))
+    } else {
+        (None, None)
+    };
+
+    Ok(((encrypted_title_bytes, title_nonce_bytes), (encrypted_system_prompt_bytes, sp_nonce_bytes)))
+}
+
+/// Parameters for inserting a chat session
+struct ChatSessionInsertParams {
+    new_session_id: Uuid,
+    user_id: Uuid,
+    character_id: Uuid,
+    encrypted_title_bytes: Vec<u8>,
+    title_nonce_bytes: Vec<u8>,
+    encrypted_system_prompt_bytes: Option<Vec<u8>>,
+    sp_nonce_bytes: Option<Vec<u8>>,
+    effective_active_persona_id: Option<Uuid>,
+}
+
+/// Inserts the chat session into the database
+fn insert_chat_session(
+    params: ChatSessionInsertParams,
+    transaction_conn: &mut PgConnection,
+) -> Result<(), AppError> {
+    diesel::insert_into(chat_sessions::table)
+        .values((
+            chat_sessions::id.eq(params.new_session_id),
+            chat_sessions::user_id.eq(params.user_id),
+            chat_sessions::character_id.eq(params.character_id),
+            chat_sessions::title_ciphertext.eq(params.encrypted_title_bytes),
+            chat_sessions::title_nonce.eq(params.title_nonce_bytes),
+            chat_sessions::system_prompt_ciphertext.eq(params.encrypted_system_prompt_bytes),
+            chat_sessions::system_prompt_nonce.eq(params.sp_nonce_bytes),
+            chat_sessions::active_custom_persona_id.eq(params.effective_active_persona_id),
+            chat_sessions::model_name.eq("gemini-2.0-flash-exp"),
+            chat_sessions::history_management_strategy.eq("message_window"),
+            chat_sessions::history_management_limit.eq(20),
+        ))
+        .returning(Chat::as_returning())
+        .get_result(transaction_conn)
+        .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
 
     Ok(())
 }
+
+/// Associates lorebooks with the chat session
+fn associate_lorebooks(
+    new_session_id: Uuid,
+    lorebook_ids: Option<Vec<Uuid>>,
+    transaction_conn: &mut PgConnection,
+) -> Result<(), AppError> {
+    if let Some(lorebook_ids_vec) = lorebook_ids {
+        for lorebook_id in lorebook_ids_vec {
+            use crate::schema::chat_session_lorebooks;
+            diesel::insert_into(chat_session_lorebooks::table)
+                .values((
+                    chat_session_lorebooks::chat_session_id.eq(new_session_id),
+                    chat_session_lorebooks::lorebook_id.eq(lorebook_id),
+                ))
+                .execute(transaction_conn)
+                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+        }
+    }
+    Ok(())
+}
+
+/// Fetches the fully created session from the database
+fn fetch_created_session(
+    new_session_id: Uuid,
+    transaction_conn: &mut PgConnection,
+) -> Result<Chat, AppError> {
+    chat_sessions::table
+        .filter(chat_sessions::id.eq(new_session_id))
+        .select(Chat::as_select())
+        .first(transaction_conn)
+        .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
+}
+
+/// Creates a new chat session in the database
+fn create_session_in_transaction(
+    transaction_conn: &mut PgConnection,
+    user_id: Uuid,
+    character_id: Uuid,
+    active_custom_persona_id: Option<Uuid>,
+    lorebook_ids: Option<Vec<Uuid>>,
+    user_dek_secret_box: Option<&Arc<SecretBox<Vec<u8>>>>,
+) -> SessionCreationResult {
+    let effective_active_persona_id = determine_effective_persona_id(
+        user_id,
+        active_custom_persona_id,
+        transaction_conn,
+    );
+
+    let character = validate_and_get_character(character_id, user_id, transaction_conn)?;
+    let sanitized_character_name = sanitize_character_name(&character)?;
+
+    info!(%character_id, %user_id, "Inserting new chat session");
+    let new_session_id = Uuid::new_v4();
+
+    let ((encrypted_title_bytes, title_nonce_bytes), (encrypted_system_prompt_bytes, sp_nonce_bytes)) = 
+        encrypt_session_data(
+            &sanitized_character_name,
+            &character,
+            effective_active_persona_id,
+            user_id,
+            user_dek_secret_box,
+            transaction_conn,
+        )?;
+
+    insert_chat_session(
+        ChatSessionInsertParams {
+            new_session_id,
+            user_id,
+            character_id,
+            encrypted_title_bytes,
+            title_nonce_bytes,
+            encrypted_system_prompt_bytes,
+            sp_nonce_bytes,
+            effective_active_persona_id,
+        },
+        transaction_conn,
+    )?;
+
+    associate_lorebooks(new_session_id, lorebook_ids, transaction_conn)?;
+
+    let fully_created_session = fetch_created_session(new_session_id, transaction_conn)?;
+
+    Ok((fully_created_session, character.first_mes, character.first_mes_nonce))
+}
+
+/// Processes the first message for a newly created session
+async fn process_first_message(
+    state: Arc<AppState>,
+    created_session: &Chat,
+    first_mes_ciphertext_opt: Option<Vec<u8>>,
+    first_mes_nonce_opt: Option<Vec<u8>>,
+    user_dek_secret_box: Option<Arc<SecretBox<Vec<u8>>>>,
+) -> Result<(), AppError> {
+    if let (Some(first_message_ciphertext), Some(first_message_nonce)) =
+        (first_mes_ciphertext_opt, first_mes_nonce_opt)
+    {
+        if !first_message_ciphertext.is_empty() && !first_message_nonce.is_empty() {
+            if let Some(user_dek_arc) = &user_dek_secret_box {
+                match crate::crypto::decrypt_gcm(&first_message_ciphertext, &first_message_nonce, user_dek_arc) {
+                    Ok(decrypted_first_mes_secret_vec) => {
+                        match String::from_utf8(decrypted_first_mes_secret_vec.expose_secret().clone()) {
+                            Ok(decrypted_first_mes_str) => {
+                                if !decrypted_first_mes_str.trim().is_empty() {
+                                    save_message(SaveMessageParams {
+                                        state,
+                                        session_id: created_session.id,
+                                        user_id: created_session.user_id,
+                                        message_type_enum: MessageRole::Assistant,
+                                        content: &decrypted_first_mes_str,
+                                        role_str: Some("assistant".to_string()),
+                                        parts: None,
+                                        attachments: None,
+                                        user_dek_secret_box: user_dek_secret_box.clone(),
+                                        model_name: created_session.model_name.clone(),
+                                    }).await?;
+                                    info!(session_id = %created_session.id, "Successfully called save_message for first_mes");
+                                }
+                            }
+                            Err(e) => {
+                                error!(session_id = %created_session.id, error = ?e, "Failed to convert decrypted first_mes to UTF-8");
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        error!(session_id = %created_session.id, error = ?e, "Failed to decrypt character first_mes for new session");
+                    }
+                }
+            } else {
+                warn!(session_id = %created_session.id, "Character has encrypted first_mes but no user DEK provided. Skipping first_mes.");
+            }
+        } else {
+            info!(session_id = %created_session.id, "Character first_mes ciphertext or nonce is empty, skipping save.");
+        }
+    }
+    Ok(())
+}
+
 /// Creates a new chat session, verifies character ownership, and adds the character's first message if available.
-#[allow(clippy::cognitive_complexity)]
 #[instrument(skip(state, user_dek_secret_box), err)]
 pub async fn create_session_and_maybe_first_message(
     state: Arc<AppState>,
@@ -241,191 +474,26 @@ pub async fn create_session_and_maybe_first_message(
     let lorebook_ids_for_closure = lorebook_ids.clone();
     let (created_session, first_mes_ciphertext_opt, first_mes_nonce_opt) = conn.interact(move |conn| {
         conn.transaction(|transaction_conn| {
-            let effective_active_persona_id = determine_effective_persona_id(
-                user_id,
-                active_custom_persona_id,
+            create_session_in_transaction(
                 transaction_conn,
-            );
-
-            info!(%character_id, %user_id, ?effective_active_persona_id, "Verifying character ownership and fetching character details, potentially persona details");
-            let character: Character = characters::table
-                .filter(characters::id.eq(character_id))
-                .select(Character::as_select())
-                .first::<Character>(transaction_conn)
-                .map_err(|e| match e {
-                    DieselError::NotFound => AppError::NotFound("Character not found".into()),
-                    _ => AppError::DatabaseQueryError(e.to_string()),
-                })?;
-
-            if character.user_id != user_id {
-                error!(%character_id, %user_id, owner_id=%character.user_id, "User does not own character");
-                return Err(AppError::Forbidden);
-            }
-
-            // Sanitize character.name by removing NULL bytes
-            let sanitized_character_name = character.name.replace('\0', "");
-            if sanitized_character_name.is_empty() {
-                error!(%character_id, "Character name is empty or consists only of invalid characters after sanitization.");
-                return Err(AppError::BadRequest("Character name cannot be empty or consist only of invalid characters.".to_string()));
-            }
-
-            info!(%character_id, %user_id, "Inserting new chat session");
-            let new_session_id = Uuid::new_v4();
-            // Encrypt the title
-            let (title_ciphertext, title_nonce) = if let Some(ref dek_arc) = user_dek_for_closure {
-                match crate::crypto::encrypt_gcm(sanitized_character_name.as_bytes(), dek_arc) {
-                    Ok((ciphertext, nonce)) => (Some(ciphertext), Some(nonce)),
-                    Err(e) => {
-                        error!(error = ?e, "Failed to encrypt chat title");
-                        return Err(AppError::EncryptionError("Failed to encrypt title".to_string()));
-                    }
-                }
-            } else {
-                error!("No DEK available for title encryption");
-                return Err(AppError::EncryptionError("No encryption key available".to_string()));
-            };
-            let new_chat_for_insert = NewChat { // Changed to NewChat
-                id: new_session_id,
                 user_id,
                 character_id,
-                // Use encrypted title
-                title_ciphertext,
-                title_nonce,
-                created_at: chrono::Utc::now(),
-                updated_at: chrono::Utc::now(),
-                history_management_strategy: "message_window".to_string(),
-                history_management_limit: 20,
-                model_name: "gemini-2.5-pro-preview-03-25".to_string(),
-                visibility: Some("private".to_string()),
-                active_custom_persona_id: effective_active_persona_id,
-                active_impersonated_character_id: None,
-                // Additional optional fields
-                temperature: None,
-                max_output_tokens: None,
-                frequency_penalty: None,
-                presence_penalty: None,
-                top_k: None,
-                top_p: None,
-                seed: None,
-                stop_sequences: None,
-                gemini_thinking_budget: None,
-                gemini_enable_code_execution: None,
-                system_prompt_ciphertext: None,
-                system_prompt_nonce: None,
-            };
-
-            diesel::insert_into(chat_sessions::table)
-                .values(&new_chat_for_insert)
-                .execute(transaction_conn)
-                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
-
-            // Determine the system prompt to use
-            let final_system_prompt_str = determine_system_prompt(
-                &character,
-                effective_active_persona_id,
-                user_id,
+                active_custom_persona_id,
+                lorebook_ids_for_closure,
                 user_dek_for_closure.as_ref(),
-                transaction_conn,
-            );
-
-            // Set the system prompt on the chat session if one was determined
-            if let Some(prompt_to_set) = &final_system_prompt_str {
-                if !prompt_to_set.trim().is_empty() {
-                    // Encrypt the system prompt
-                    if let Some(ref dek_arc) = user_dek_for_closure {
-                        match crate::crypto::encrypt_gcm(prompt_to_set.as_bytes(), dek_arc) {
-                            Ok((ciphertext, nonce)) => {
-                                diesel::update(chat_sessions::table.filter(chat_sessions::id.eq(new_session_id)))
-                                    .set((
-                                        chat_sessions::system_prompt_ciphertext.eq(Some(ciphertext)),
-                                        chat_sessions::system_prompt_nonce.eq(Some(nonce)),
-                                    ))
-                                    .execute(transaction_conn)
-                                    .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
-                            },
-                            Err(e) => {
-                                error!(error = ?e, "Failed to encrypt system prompt");
-                                return Err(AppError::EncryptionError("Failed to encrypt system prompt".to_string()));
-                            }
-                        }
-                    } else {
-                        error!("No DEK available for system prompt encryption");
-                        return Err(AppError::EncryptionError("No encryption key available".to_string()));
-                    }
-                }
-            }
-            // Insert lorebook associations if provided
-            if let Some(ref ids) = lorebook_ids_for_closure {
-                validate_and_associate_lorebooks(new_session_id, user_id, ids, transaction_conn)?;
-            }
-
-            let fully_created_session: Chat = chat_sessions::table
-                .filter(chat_sessions::id.eq(new_session_id))
-                .select(Chat::as_select())
-                .first(transaction_conn)
-                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
-
-            // Note: system_prompt is now stored encrypted in the database
-            // and will be decrypted when needed via service methods
-            Ok((fully_created_session, character.first_mes, character.first_mes_nonce))
+            )
         })
     })
     .await??;
 
-    if let (Some(first_message_ciphertext), Some(first_message_nonce)) =
-        (first_mes_ciphertext_opt, first_mes_nonce_opt)
-    {
-        if !first_message_ciphertext.is_empty() && !first_message_nonce.is_empty() {
-            match &user_dek_secret_box {
-                Some(dek_sb_arc) => {
-                    match crate::crypto::decrypt_gcm(
-                        &first_message_ciphertext,
-                        &first_message_nonce,
-                        dek_sb_arc,
-                    ) {
-                        Ok(plaintext_secret_vec) => {
-                            match String::from_utf8(plaintext_secret_vec.expose_secret().clone()) {
-                                Ok(content_str) => {
-                                    if content_str.trim().is_empty() {
-                                        info!(session_id = %created_session.id, "Character first_mes (decrypted) is empty, skipping save.");
-                                    } else {
-                                        info!(session_id = %created_session.id, "Character has non-empty decrypted first_mes, saving via save_message");
-                                        let _ = save_message(SaveMessageParams {
-                                            state: state.clone(),
-                                            session_id: created_session.id,
-                                            user_id, // user_id of the session creator
-                                            message_type_enum: MessageRole::Assistant,
-                                            content: &content_str,
-                                            role_str: Some("assistant".to_string()),
-                                            parts: Some(json!([{"text": content_str}])),
-                                            attachments: None,
-                                            user_dek_secret_box: user_dek_secret_box.clone(),
-                                            model_name: created_session.model_name.clone(),
-                                        })
-                                        .await?;
-                                        info!(session_id = %created_session.id, "Successfully called save_message for first_mes");
-                                    }
-                                }
-                                Err(e) => {
-                                    error!(session_id = %created_session.id, error = ?e, "Failed to convert decrypted first_mes to UTF-8");
-                                }
-                            }
-                        }
-                        Err(e) => {
-                            error!(session_id = %created_session.id, error = ?e, "Failed to decrypt character first_mes for new session");
-                        }
-                    }
-                }
-                None => {
-                    warn!(session_id = %created_session.id, "Character has encrypted first_mes but no user DEK provided. Skipping first_mes.");
-                }
-            }
-        } else {
-            info!(session_id = %created_session.id, "Character first_mes ciphertext or nonce is empty, skipping save.");
-        }
-    } else {
-        info!(session_id = %created_session.id, "Character first_mes or nonce is None, skipping save.");
-    }
+    // Process first message if available
+    process_first_message(
+        state,
+        &created_session,
+        first_mes_ciphertext_opt,
+        first_mes_nonce_opt,
+        user_dek_secret_box,
+    ).await?;
 
     Ok(created_session)
 }

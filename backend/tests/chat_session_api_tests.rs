@@ -892,7 +892,7 @@ async fn test_create_chat_session_with_empty_first_mes() -> Result<(), AnyhowErr
         spec_version: "1.0".to_string(),
         created_at: Utc::now(),
         updated_at: Utc::now(),
-        first_mes: Some("   ".as_bytes().to_vec()), // Set empty first_mes
+        first_mes: Some(b"   ".to_vec()), // Set empty first_mes
         description: None,
         personality: None,
         scenario: None,

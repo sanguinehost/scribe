@@ -162,7 +162,6 @@ async fn manage_specific_lorebook_entrypoint<C: HttpClient, H: IoHandler>(
     Ok(())
 }
 
-#[allow(dead_code, unused_variables)]
 async fn handle_specific_lorebook_menu<C: HttpClient, H: IoHandler>(
     client: &C,
     io_handler: &mut H,
@@ -306,7 +305,7 @@ async fn delete_lorebook<C: HttpClient, H: IoHandler>(
     }
 }
 
-// Removed #[allow(dead_code, unused_variables)]
+
 async fn handle_lorebook_entry_menu<C: HttpClient, H: IoHandler>(
     client: &C,
     io_handler: &mut H,
@@ -356,7 +355,7 @@ async fn handle_lorebook_entry_menu<C: HttpClient, H: IoHandler>(
     Ok(())
 }
 
-// Removed #[allow(dead_code, unused_variables)]
+
 async fn list_lorebook_entries<C: HttpClient, H: IoHandler>(
     client: &C,
     io_handler: &mut H,
@@ -392,7 +391,7 @@ async fn list_lorebook_entries<C: HttpClient, H: IoHandler>(
     Ok(())
 }
 
-// Removed #[allow(dead_code, unused_variables)]
+
 async fn create_new_lorebook_entry<C: HttpClient, H: IoHandler>(
     client: &C,
     io_handler: &mut H,
@@ -470,7 +469,7 @@ async fn create_new_lorebook_entry<C: HttpClient, H: IoHandler>(
     Ok(())
 }
 
-// Removed #[allow(dead_code, unused_variables)]
+
 async fn manage_specific_entry_entrypoint<C: HttpClient, H: IoHandler>(
     client: &C,
     io_handler: &mut H,
@@ -513,7 +512,7 @@ async fn manage_specific_entry_entrypoint<C: HttpClient, H: IoHandler>(
     Ok(())
 }
 
-// Removed #[allow(dead_code, unused_variables)]
+
 async fn handle_specific_entry_menu<C: HttpClient, H: IoHandler>(
     client: &C,
     io_handler: &mut H,
@@ -575,7 +574,7 @@ async fn handle_specific_entry_menu<C: HttpClient, H: IoHandler>(
     Ok(())
 }
 
-// Removed #[allow(dead_code, unused_variables)]
+
 async fn view_lorebook_entry_details<C: HttpClient, H: IoHandler>(
     client: &C,
     io_handler: &mut H,
@@ -618,7 +617,7 @@ async fn view_lorebook_entry_details<C: HttpClient, H: IoHandler>(
     Ok(())
 }
 
-// Removed #[allow(dead_code, unused_variables)]
+
 async fn update_lorebook_entry<C: HttpClient, H: IoHandler>(
     client: &C,
     io_handler: &mut H,
@@ -718,7 +717,7 @@ async fn update_lorebook_entry<C: HttpClient, H: IoHandler>(
     Ok(())
 }
 
-// Removed #[allow(dead_code, unused_variables)]
+
 async fn delete_lorebook_entry<C: HttpClient, H: IoHandler>(
     client: &C,
     io_handler: &mut H,
@@ -752,7 +751,7 @@ async fn delete_lorebook_entry<C: HttpClient, H: IoHandler>(
     }
 }
 
-// Removed #[allow(dead_code, unused_variables)]
+
 async fn handle_lorebook_chat_association_menu<C: HttpClient, H: IoHandler>(
     client: &C,
     io_handler: &mut H,
@@ -806,7 +805,6 @@ async fn handle_lorebook_chat_association_menu<C: HttpClient, H: IoHandler>(
     Ok(())
 }
 
-// Removed #[allow(dead_code, unused_variables)]
 async fn list_associated_chat_sessions<C: HttpClient, H: IoHandler>(
     client: &C,
     io_handler: &mut H,
