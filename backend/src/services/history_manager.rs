@@ -118,9 +118,8 @@ fn process_messages_within_limit(history: Vec<ChatMessage>, limit: usize) -> Vec
         } else {
             let remaining_limit = limit - current_tokens;
             if remaining_limit > 0 {
-                if let Some(truncated_message) = try_truncate_message(message, remaining_limit, limit) {
-                    result.push(truncated_message);
-                }
+                let truncated_message = truncate_message(message, remaining_limit, limit);
+                result.push(truncated_message);
             } else {
                 debug!(
                     "No remaining limit ({} tokens used >= limit {}), stopping.",
@@ -136,8 +135,8 @@ fn process_messages_within_limit(history: Vec<ChatMessage>, limit: usize) -> Vec
     result
 }
 
-/// Attempt to truncate a message to fit within the remaining token limit
-fn try_truncate_message(message: ChatMessage, remaining_limit: usize, total_limit: usize) -> Option<ChatMessage> {
+/// Truncate a message to fit within the remaining token limit
+fn truncate_message(message: ChatMessage, remaining_limit: usize, total_limit: usize) -> ChatMessage {
     let mut truncated_message = message;
     let content_str = String::from_utf8_lossy(&truncated_message.content);
     let content_len = content_str.chars().count();
@@ -161,7 +160,7 @@ fn try_truncate_message(message: ChatMessage, remaining_limit: usize, total_limi
             remaining_limit
         );
     }
-    Some(truncated_message)
+    truncated_message
 }
 
 /// Log when a message is accepted within the token limit
@@ -231,29 +230,33 @@ mod tests {
     fn test_manage_history_none() {
         let msg1 = create_test_message(Uuid::new_v4(), MessageRole::User, "Hello");
         let msg2 = create_test_message(Uuid::new_v4(), MessageRole::Assistant, "Hi");
-        let history = vec![msg1.clone(), msg2.clone()];
-        let managed = manage_history(history.clone(), "none", 10);
+        let msg1_id = msg1.id;
+        let msg2_id = msg2.id;
+        let history = vec![msg1, msg2];
+        let managed = manage_history(history, "none", 10);
         assert_eq!(managed.len(), 2);
-        assert_eq!(managed[0].id, msg1.id);
-        assert_eq!(managed[1].id, msg2.id);
+        assert_eq!(managed[0].id, msg1_id);
+        assert_eq!(managed[1].id, msg2_id);
     }
 
     #[test]
     fn test_manage_history_unknown_strategy() {
         let msg1 = create_test_message(Uuid::new_v4(), MessageRole::User, "Hello");
-        let history = vec![msg1.clone()];
-        let managed = manage_history(history.clone(), "unknown_strategy", 10);
+        let msg1_id = msg1.id;
+        let history = vec![msg1];
+        let managed = manage_history(history, "unknown_strategy", 10);
         assert_eq!(managed.len(), 1); // Should default to 'none'
-        assert_eq!(managed[0].id, msg1.id);
+        assert_eq!(managed[0].id, msg1_id);
     }
 
     #[test]
     fn test_manage_history_zero_limit() {
         let msg1 = create_test_message(Uuid::new_v4(), MessageRole::User, "Hello");
-        let history = vec![msg1.clone()];
-        let managed = manage_history(history.clone(), "sliding_window_messages", 0);
+        let msg1_id = msg1.id;
+        let history = vec![msg1];
+        let managed = manage_history(history, "sliding_window_messages", 0);
         assert_eq!(managed.len(), 1); // Should return full history
-        assert_eq!(managed[0].id, msg1.id);
+        assert_eq!(managed[0].id, msg1_id);
     }
 
     // --- Sliding Window Messages ---
@@ -262,22 +265,26 @@ mod tests {
     fn test_sliding_window_messages_under_limit() {
         let msg1 = create_test_message(Uuid::new_v4(), MessageRole::User, "1");
         let msg2 = create_test_message(Uuid::new_v4(), MessageRole::Assistant, "2");
-        let history = vec![msg1.clone(), msg2.clone()];
-        let managed = manage_history(history.clone(), "sliding_window_messages", 3);
+        let msg1_id = msg1.id;
+        let msg2_id = msg2.id;
+        let history = vec![msg1, msg2];
+        let managed = manage_history(history, "sliding_window_messages", 3);
         assert_eq!(managed.len(), 2);
-        assert_eq!(managed[0].id, msg1.id);
-        assert_eq!(managed[1].id, msg2.id);
+        assert_eq!(managed[0].id, msg1_id);
+        assert_eq!(managed[1].id, msg2_id);
     }
 
     #[test]
     fn test_sliding_window_messages_at_limit() {
         let msg1 = create_test_message(Uuid::new_v4(), MessageRole::User, "1");
         let msg2 = create_test_message(Uuid::new_v4(), MessageRole::Assistant, "2");
-        let history = vec![msg1.clone(), msg2.clone()];
-        let managed = manage_history(history.clone(), "sliding_window_messages", 2);
+        let msg1_id = msg1.id;
+        let msg2_id = msg2.id;
+        let history = vec![msg1, msg2];
+        let managed = manage_history(history, "sliding_window_messages", 2);
         assert_eq!(managed.len(), 2);
-        assert_eq!(managed[0].id, msg1.id);
-        assert_eq!(managed[1].id, msg2.id);
+        assert_eq!(managed[0].id, msg1_id);
+        assert_eq!(managed[1].id, msg2_id);
     }
 
     #[test]
@@ -285,21 +292,24 @@ mod tests {
         let msg1 = create_test_message(Uuid::new_v4(), MessageRole::User, "1");
         let msg2 = create_test_message(Uuid::new_v4(), MessageRole::Assistant, "2");
         let msg3 = create_test_message(Uuid::new_v4(), MessageRole::User, "3");
-        let history = vec![msg1.clone(), msg2.clone(), msg3.clone()];
-        let managed = manage_history(history.clone(), "sliding_window_messages", 2);
+        let msg2_id = msg2.id;
+        let msg3_id = msg3.id;
+        let history = vec![msg1, msg2, msg3];
+        let managed = manage_history(history, "sliding_window_messages", 2);
         assert_eq!(managed.len(), 2);
-        assert_eq!(managed[0].id, msg2.id); // msg1 should be dropped
-        assert_eq!(managed[1].id, msg3.id);
+        assert_eq!(managed[0].id, msg2_id); // msg1 should be dropped
+        assert_eq!(managed[1].id, msg3_id);
     }
 
     #[test]
     fn test_sliding_window_messages_limit_one() {
         let msg1 = create_test_message(Uuid::new_v4(), MessageRole::User, "1");
         let msg2 = create_test_message(Uuid::new_v4(), MessageRole::Assistant, "2");
-        let history = vec![msg1.clone(), msg2.clone()];
-        let managed = manage_history(history.clone(), "sliding_window_messages", 1);
+        let msg2_id = msg2.id;
+        let history = vec![msg1, msg2];
+        let managed = manage_history(history, "sliding_window_messages", 1);
         assert_eq!(managed.len(), 1);
-        assert_eq!(managed[0].id, msg2.id); // Only the last message
+        assert_eq!(managed[0].id, msg2_id); // Only the last message
     }
 
     // --- Sliding Window Tokens (Character Count Approximation) ---
@@ -308,22 +318,26 @@ mod tests {
     fn test_sliding_window_tokens_under_limit() {
         let msg1 = create_test_message(Uuid::new_v4(), MessageRole::User, "Hello"); // 5 chars
         let msg2 = create_test_message(Uuid::new_v4(), MessageRole::Assistant, "World"); // 5 chars
-        let history = vec![msg1.clone(), msg2.clone()];
-        let managed = manage_history(history.clone(), "sliding_window_tokens", 15);
+        let msg1_id = msg1.id;
+        let msg2_id = msg2.id;
+        let history = vec![msg1, msg2];
+        let managed = manage_history(history, "sliding_window_tokens", 15);
         assert_eq!(managed.len(), 2);
-        assert_eq!(managed[0].id, msg1.id);
-        assert_eq!(managed[1].id, msg2.id);
+        assert_eq!(managed[0].id, msg1_id);
+        assert_eq!(managed[1].id, msg2_id);
     }
 
     #[test]
     fn test_sliding_window_tokens_at_limit() {
         let msg1 = create_test_message(Uuid::new_v4(), MessageRole::User, "Hello"); // 5 chars
         let msg2 = create_test_message(Uuid::new_v4(), MessageRole::Assistant, "World"); // 5 chars
-        let history = vec![msg1.clone(), msg2.clone()];
-        let managed = manage_history(history.clone(), "sliding_window_tokens", 10);
+        let msg1_id = msg1.id;
+        let msg2_id = msg2.id;
+        let history = vec![msg1, msg2];
+        let managed = manage_history(history, "sliding_window_tokens", 10);
         assert_eq!(managed.len(), 2);
-        assert_eq!(managed[0].id, msg1.id);
-        assert_eq!(managed[1].id, msg2.id);
+        assert_eq!(managed[0].id, msg1_id);
+        assert_eq!(managed[1].id, msg2_id);
     }
 
     #[test]
@@ -331,11 +345,13 @@ mod tests {
         let msg1 = create_test_message(Uuid::new_v4(), MessageRole::User, "This is long"); // 12 chars
         let msg2 = create_test_message(Uuid::new_v4(), MessageRole::Assistant, "Short"); // 5 chars
         let msg3 = create_test_message(Uuid::new_v4(), MessageRole::User, "Medium"); // 6 chars
-        let history = vec![msg1.clone(), msg2.clone(), msg3.clone()]; // Total 23 chars
-        let managed = manage_history(history.clone(), "sliding_window_tokens", 15); // Limit 15
+        let msg2_id = msg2.id;
+        let msg3_id = msg3.id;
+        let history = vec![msg1, msg2, msg3]; // Total 23 chars
+        let managed = manage_history(history, "sliding_window_tokens", 15); // Limit 15
         assert_eq!(managed.len(), 2); // msg2 (5) + msg3 (6) = 11 <= 15
-        assert_eq!(managed[0].id, msg2.id);
-        assert_eq!(managed[1].id, msg3.id);
+        assert_eq!(managed[0].id, msg2_id);
+        assert_eq!(managed[1].id, msg3_id);
     }
 
     #[test]
@@ -346,10 +362,11 @@ mod tests {
             MessageRole::Assistant,
             "This message is very long indeed",
         ); // 30 chars
-        let history = vec![msg1.clone(), msg2.clone()];
-        let managed = manage_history(history.clone(), "sliding_window_tokens", 10); // Limit 10
+        let msg2_id = msg2.id;
+        let history = vec![msg1, msg2];
+        let managed = manage_history(history, "sliding_window_tokens", 10); // Limit 10
         assert_eq!(managed.len(), 1); // Only keeps the last message
-        assert_eq!(managed[0].id, msg2.id);
+        assert_eq!(managed[0].id, msg2_id);
     }
 
     // --- Truncate Tokens (Character Count Approximation) ---
@@ -358,8 +375,8 @@ mod tests {
     fn test_truncate_tokens_under_limit() {
         let msg1 = create_test_message(Uuid::new_v4(), MessageRole::User, "Hello");
         let msg2 = create_test_message(Uuid::new_v4(), MessageRole::Assistant, "World");
-        let history = vec![msg1.clone(), msg2.clone()];
-        let managed = manage_history(history.clone(), "truncate_tokens", 20);
+        let history = vec![msg1, msg2];
+        let managed = manage_history(history, "truncate_tokens", 20);
         assert_eq!(managed.len(), 2);
         assert_eq!(String::from_utf8_lossy(&managed[0].content), "Hello");
         assert_eq!(String::from_utf8_lossy(&managed[1].content), "World");
@@ -369,8 +386,8 @@ mod tests {
     fn test_truncate_tokens_at_limit() {
         let msg1 = create_test_message(Uuid::new_v4(), MessageRole::User, "Hello");
         let msg2 = create_test_message(Uuid::new_v4(), MessageRole::Assistant, "World");
-        let history = vec![msg1.clone(), msg2.clone()];
-        let managed = manage_history(history.clone(), "truncate_tokens", 10);
+        let history = vec![msg1, msg2];
+        let managed = manage_history(history, "truncate_tokens", 10);
         assert_eq!(managed.len(), 2);
         assert_eq!(String::from_utf8_lossy(&managed[0].content), "Hello");
         assert_eq!(String::from_utf8_lossy(&managed[1].content), "World");
@@ -384,8 +401,8 @@ mod tests {
             MessageRole::Assistant,
             "This is message two",
         );
-        let history = vec![msg1.clone(), msg2.clone()];
-        let managed = manage_history(history.clone(), "truncate_tokens", 30);
+        let history = vec![msg1, msg2];
+        let managed = manage_history(history, "truncate_tokens", 30);
 
         assert_eq!(managed.len(), 2, "Should keep two messages, one truncated");
         assert_eq!(

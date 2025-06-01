@@ -484,8 +484,8 @@ mod user_store_tests {
         assert!(
             matches!(
                 verify_notfound_result,
-                Err(scribe_backend::auth::AuthError::UserNotFound)
-                    | Err(scribe_backend::auth::AuthError::WrongCredentials)
+                Err(scribe_backend::auth::AuthError::UserNotFound |
+                scribe_backend::auth::AuthError::WrongCredentials)
             ),
             "Test failed: verify_credentials with non-existent user did not return UserNotFound or WrongCredentials. Actual: {:?}",
             verify_notfound_result.err()

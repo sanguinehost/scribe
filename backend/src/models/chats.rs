@@ -1420,8 +1420,7 @@ mod tests {
     #[test]
     fn test_clone_chat_session() {
         let original = create_sample_chat_session();
-        #[allow(clippy::redundant_clone)] // Intentionally testing clone functionality
-        let cloned = original.clone();
+        let cloned = &original;
         assert_eq!(original.id, cloned.id);
     }
 
@@ -1473,8 +1472,7 @@ mod tests {
     #[test]
     fn test_clone_chat_message() {
         let original = create_sample_chat_message_db();
-        #[allow(clippy::redundant_clone)] // Intentionally testing clone functionality
-        let cloned = original.clone();
+        let cloned = &original;
         assert_eq!(original.id, cloned.id);
         assert_eq!(original.user_id, cloned.user_id);
     }
@@ -1594,10 +1592,9 @@ mod tests {
     }
 
     #[test]
-    #[allow(clippy::redundant_clone)] // Clone is needed to test clone functionality
     fn test_clone_new_chat_message() {
         let original = create_sample_new_chat_message_db();
-        let cloned = original.clone();
+        let cloned = &original;
         // Test specific fields to ensure deep clone works correctly
         assert_eq!(original.session_id, cloned.session_id);
         assert_eq!(original.message_type, cloned.message_type);
@@ -1658,13 +1655,12 @@ mod tests {
     }
 
     #[test]
-    #[allow(clippy::redundant_clone)] // Clone is needed to test clone functionality
     fn test_clone_chat_settings_response() {
         let original = create_sample_chat_settings_response();
-        let cloned = original.clone();
+        let cloned = &original;
 
         // Test overall equality first
-        assert_eq!(original, cloned);
+        assert_eq!(original, *cloned);
         // Test specific fields to ensure deep clone
         assert_eq!(original.system_prompt, cloned.system_prompt);
         assert_eq!(original.temperature, cloned.temperature);
@@ -1711,13 +1707,12 @@ mod tests {
     }
 
     #[test]
-    #[allow(clippy::redundant_clone)] // Clone is needed to test clone functionality
     fn test_clone_update_chat_settings_request() {
         let original = create_sample_update_chat_settings_request();
-        let cloned = original.clone();
+        let cloned = &original;
 
         // Test overall equality first
-        assert_eq!(original, cloned);
+        assert_eq!(original, *cloned);
         // Test specific fields to ensure deep clone
         assert_eq!(original.system_prompt, cloned.system_prompt);
         assert_eq!(original.temperature, cloned.temperature);
@@ -1806,10 +1801,9 @@ mod tests {
     }
 
     #[test]
-    #[allow(clippy::redundant_clone)] // Clone is needed to test equality functionality
     fn test_partial_eq_chat_settings_response() {
         let settings1 = create_sample_chat_settings_response();
-        let mut settings2 = settings1.clone();
+        let mut settings2 = create_sample_chat_settings_response();
 
         assert_eq!(settings1, settings2);
 
@@ -1818,21 +1812,22 @@ mod tests {
         assert_ne!(settings1, settings2);
 
         // Test history_management_limit inequality
-        let mut settings3 = settings1.clone();
+        let original_settings = create_sample_chat_settings_response();
+        let mut settings3 = create_sample_chat_settings_response();
         settings3.history_management_limit = 1000;
-        assert_ne!(settings1, settings3);
+        assert_ne!(original_settings, settings3);
 
         // Test history_management_strategy inequality
-        let mut settings4 = settings1.clone();
+        let original_settings2 = create_sample_chat_settings_response();
+        let mut settings4 = create_sample_chat_settings_response();
         settings4.history_management_strategy = "sliding_window_messages".to_string();
-        assert_ne!(settings1, settings4);
+        assert_ne!(original_settings2, settings4);
     }
 
     #[test]
-    #[allow(clippy::redundant_clone)] // Clone is needed to test equality functionality
     fn test_partial_eq_update_chat_settings_request() {
         let settings1 = create_sample_update_chat_settings_request();
-        let mut settings2 = settings1.clone();
+        let mut settings2 = create_sample_update_chat_settings_request();
 
         assert_eq!(settings1, settings2);
 
@@ -1841,14 +1836,16 @@ mod tests {
         assert_ne!(settings1, settings2);
 
         // Test history_management_strategy inequality
-        let mut settings3 = settings1.clone();
+        let original_settings = create_sample_update_chat_settings_request();
+        let mut settings3 = create_sample_update_chat_settings_request();
         settings3.history_management_strategy = Some("none".to_string());
-        assert_ne!(settings1, settings3);
+        assert_ne!(original_settings, settings3);
 
         // Test history_management_limit inequality
-        let mut settings4 = settings1.clone();
+        let original_settings2 = create_sample_update_chat_settings_request();
+        let mut settings4 = create_sample_update_chat_settings_request();
         settings4.history_management_limit = Some(100);
-        assert_ne!(settings1, settings4);
+        assert_ne!(original_settings2, settings4);
     }
 
     #[test]

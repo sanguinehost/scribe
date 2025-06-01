@@ -48,9 +48,7 @@ use tracing::{debug, error, info, warn}; // Added debug
 #[derive(Debug, serde::Deserialize)]
 
 struct ChatCompletionResponse {
-    #[allow(dead_code)]
     content: String,
-    #[allow(dead_code)]
     message_id: String, // Expecting flat structure { "content": "...", "message_id": "..." }
 }
 
@@ -392,10 +390,10 @@ async fn generate_chat_response_uses_session_settings() -> Result<(), anyhow::Er
     let test_seed: Option<i32> = Some(12345);
 
     // Clone non-Copy values needed inside and after the closure
-    let tt_clone = test_temp.clone();
-    let tfp_clone = test_freq_penalty.clone();
-    let tpp_clone = test_pres_penalty.clone();
-    let ttop_clone = test_top_p.clone();
+    let temp_clone = test_temp.clone();
+    let freq_penalty_clone = test_freq_penalty.clone();
+    let pres_penalty_clone = test_pres_penalty.clone();
+    let top_p_clone = test_top_p.clone();
 
     let user_dek_secret_box = user.dek.as_ref().map(|user_dek_struct| {
         std::sync::Arc::new(secrecy::SecretBox::new(Box::new(
@@ -415,12 +413,12 @@ async fn generate_chat_response_uses_session_settings() -> Result<(), anyhow::Er
                     .set((
                         chat_sessions::system_prompt_ciphertext.eq(Some(sp_ciphertext)),
                         chat_sessions::system_prompt_nonce.eq(Some(sp_nonce)),
-                        chat_sessions::temperature.eq(Some(tt_clone)),
+                        chat_sessions::temperature.eq(Some(temp_clone)),
                         chat_sessions::max_output_tokens.eq(Some(test_tokens)),
-                        chat_sessions::frequency_penalty.eq(Some(tfp_clone)),
-                        chat_sessions::presence_penalty.eq(Some(tpp_clone)),
+                        chat_sessions::frequency_penalty.eq(Some(freq_penalty_clone)),
+                        chat_sessions::presence_penalty.eq(Some(pres_penalty_clone)),
                         chat_sessions::top_k.eq(Some(test_top_k)),
-                        chat_sessions::top_p.eq(Some(ttop_clone)),
+                        chat_sessions::top_p.eq(Some(top_p_clone)),
                         chat_sessions::seed.eq(test_seed),
                     ))
                     .execute(conn_actual)
@@ -950,9 +948,9 @@ async fn generate_chat_response_json_stream_initiation_error() -> Result<(), any
 
     // Clone non-Copy values needed inside and after the closure
     let tt_clone_err = test_temp.clone();
-    let tfp_clone_err = test_freq_penalty.clone();
-    let tpp_clone_err = test_pres_penalty.clone();
-    let ttop_clone_err = test_top_p.clone();
+    let freq_penalty_clone_err = test_freq_penalty.clone();
+    let pres_penalty_clone_err = test_pres_penalty.clone();
+    let top_p_clone_err = test_top_p.clone();
 
     let user_dek_secret_box_err_test = user.dek.as_ref().map(|user_dek_struct| {
         std::sync::Arc::new(secrecy::SecretBox::new(Box::new(
@@ -974,10 +972,10 @@ async fn generate_chat_response_json_stream_initiation_error() -> Result<(), any
                         chat_sessions::system_prompt_nonce.eq(Some(sp_err_nonce)),
                         chat_sessions::temperature.eq(Some(tt_clone_err)),
                         chat_sessions::max_output_tokens.eq(Some(test_tokens)),
-                        chat_sessions::frequency_penalty.eq(Some(tfp_clone_err)),
-                        chat_sessions::presence_penalty.eq(Some(tpp_clone_err)),
+                        chat_sessions::frequency_penalty.eq(Some(freq_penalty_clone_err)),
+                        chat_sessions::presence_penalty.eq(Some(pres_penalty_clone_err)),
                         chat_sessions::top_k.eq(Some(test_top_k)),
-                        chat_sessions::top_p.eq(Some(ttop_clone_err)),
+                        chat_sessions::top_p.eq(Some(top_p_clone_err)),
                         chat_sessions::seed.eq(test_seed),
                     ))
                     .execute(conn_actual)

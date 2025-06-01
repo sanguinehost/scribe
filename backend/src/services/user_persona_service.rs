@@ -11,6 +11,9 @@ use crate::schema::{user_personas::dsl as user_personas_dsl, users::dsl as users
 use crate::services::encryption_service::EncryptionService;
 use crate::state::DbPool;
 
+// Type alias for encrypted field result
+type EncryptedFieldResult = Result<(Option<Vec<u8>>, Option<Vec<u8>>), AppError>;
+
 #[derive(Clone)]
 pub struct UserPersonaService {
     db_pool: DbPool,
@@ -30,7 +33,7 @@ impl UserPersonaService {
         &self,
         plaintext_opt: Option<String>,
         dek: &SecretBox<Vec<u8>>,
-    ) -> Result<(Option<Vec<u8>>, Option<Vec<u8>>), AppError> {
+    ) -> EncryptedFieldResult {
         match plaintext_opt {
             Some(plaintext) if !plaintext.is_empty() => {
                 let (ciphertext, nonce) = self
@@ -261,13 +264,10 @@ impl UserPersonaService {
                 ))
             })??;
 
-        let mut persona = match persona_to_update_db {
-            Some(p) => p,
-            None => {
-                return Err(AppError::NotFound(format!(
-                    "User persona with ID {persona_id} not found for update"
-                )));
-            }
+        let Some(mut persona) = persona_to_update_db else {
+            return Err(AppError::NotFound(format!(
+                "User persona with ID {persona_id} not found for update"
+            )));
         };
 
         if persona.user_id != current_user.id {

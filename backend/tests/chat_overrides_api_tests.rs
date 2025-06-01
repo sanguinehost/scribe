@@ -92,7 +92,7 @@ mod chat_overrides_api_tests {
     #[tokio::test]
     async fn test_create_new_override_success() {
         let test_app = test_helpers::spawn_app(true, true, true).await;
-        let (_guard, _user, _character, chat_session, session_cookie_str) =
+        let (_guard, _user, character, chat_session, session_cookie_str) =
             setup_test_environment(&test_app).await;
 
         let override_dto = CharacterOverrideDto {
@@ -136,7 +136,7 @@ mod chat_overrides_api_tests {
         );
         assert_eq!(
             override_response["original_character_id"].as_str().unwrap(),
-            _character.id.to_string()
+            character.id.to_string()
         );
 
         // TODO: Verify in DB that the override was created and encrypted correctly.
@@ -300,18 +300,18 @@ mod chat_overrides_api_tests {
         let mut guard = TestDataGuard::new(test_app.db_pool.clone());
 
         // User A: Owner of the chat session
-        let user_a_username = "user_a_owner";
-        let user_a_password = "password123A";
+        let owner_username = "user_a_owner";
+        let owner_password = "password123A";
         let user_a = test_helpers::db::create_test_user(
             &test_app.db_pool,
-            user_a_username.to_string(),
-            user_a_password.to_string(),
+            owner_username.to_string(),
+            owner_password.to_string(),
         )
         .await
         .unwrap();
         guard.add_user(user_a.id);
-        let (_client_a, user_a_cookie_str) =
-            test_helpers::login_user_via_api(&test_app, user_a_username, user_a_password).await;
+        let (_client_a, owner_cookie_str) =
+            test_helpers::login_user_via_api(&test_app, owner_username, owner_password).await;
         let character_a = test_helpers::db::create_test_character(
             &test_app.db_pool,
             user_a.id,
@@ -321,23 +321,23 @@ mod chat_overrides_api_tests {
         .unwrap();
         guard.add_character(character_a.id);
         let chat_session_a =
-            create_chat_session_via_api(&test_app, user_a.id, character_a.id, &user_a_cookie_str)
+            create_chat_session_via_api(&test_app, user_a.id, character_a.id, &owner_cookie_str)
                 .await;
         guard.add_chat(chat_session_a.id);
 
         // User B: The one trying to make an unauthorized edit
-        let user_b_username = "user_b_other";
-        let user_b_password = "password123B";
+        let other_username = "user_b_other";
+        let other_password = "password123B";
         let user_b = test_helpers::db::create_test_user(
             &test_app.db_pool,
-            user_b_username.to_string(),
-            user_b_password.to_string(),
+            other_username.to_string(),
+            other_password.to_string(),
         )
         .await
         .unwrap();
         guard.add_user(user_b.id);
-        let (_client_b, user_b_cookie_str) =
-            test_helpers::login_user_via_api(&test_app, user_b_username, user_b_password).await;
+        let (_client_b, other_cookie_str) =
+            test_helpers::login_user_via_api(&test_app, other_username, other_password).await;
 
         let client = reqwest::Client::builder()
             .cookie_store(true)
@@ -357,7 +357,7 @@ mod chat_overrides_api_tests {
 
         let response = client
             .post(&request_url)
-            .header("Cookie", &user_b_cookie_str) // Authenticated as User B
+            .header("Cookie", &other_cookie_str) // Authenticated as User B
             .json(&override_dto)
             .send()
             .await
@@ -379,7 +379,7 @@ mod chat_overrides_api_tests {
 
         let override_dto = CharacterOverrideDto {
             field_name: "description".to_string(),
-            value: "".to_string(), // Empty value
+            value: String::new(), // Empty value
         };
 
         let request_url = format!(
@@ -425,7 +425,7 @@ mod chat_overrides_api_tests {
             .unwrap();
 
         let override_dto = CharacterOverrideDto {
-            field_name: "".to_string(), // Empty field_name
+            field_name: String::new(), // Empty field_name
             value: "Some value".to_string(),
         };
 

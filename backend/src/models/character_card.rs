@@ -502,12 +502,7 @@ use crate::services::character_parser::ParsedCharacterCard;
 
 impl NewCharacter {
     // Add user_id parameter
-    #[allow(clippy::too_many_lines)]
-    #[allow(clippy::too_many_lines)]
-    #[allow(clippy::too_many_lines)]
-    pub fn from_parsed_card(parsed: &ParsedCharacterCard, user_id: Uuid) -> Self {
-        match parsed {
-            ParsedCharacterCard::V3(data_v3_card) => {
+    fn from_v3_card(data_v3_card: &CharacterCardV3, user_id: Uuid) -> Self {
                 // --- Handling V3 Card ---
                 // Extract spec and version
                 let spec = data_v3_card.spec.clone();
@@ -618,8 +613,9 @@ impl NewCharacter {
                     created_at: None,
                     updated_at: None,
                 }
-            }
-            ParsedCharacterCard::V2Fallback(data) => {
+    }
+
+    fn from_v2_fallback(data: &CharacterCardDataV3, user_id: Uuid) -> Self {
                 let description = if data.description.is_empty() { None } else { Some(data.description.clone().into_bytes()) };
                 let personality = if data.personality.is_empty() { None } else { Some(data.personality.clone().into_bytes()) };
                 let scenario = if data.scenario.is_empty() { None } else { Some(data.scenario.clone().into_bytes()) };
@@ -702,7 +698,13 @@ impl NewCharacter {
                     created_at: None,
                     updated_at: None,
                 }
-            }
+    }
+
+    #[must_use]
+    pub fn from_parsed_card(parsed: &ParsedCharacterCard, user_id: Uuid) -> Self {
+        match parsed {
+            ParsedCharacterCard::V3(data_v3_card) => Self::from_v3_card(data_v3_card, user_id),
+            ParsedCharacterCard::V2Fallback(data) => Self::from_v2_fallback(data, user_id),
         }
     }
 }

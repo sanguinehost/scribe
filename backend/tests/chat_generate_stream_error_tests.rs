@@ -7,7 +7,6 @@ use axum::{
 use chrono::Utc;
 use diesel::prelude::*;
 use genai::chat::{ChatStreamEvent, StreamChunk};
-use mime;
 use secrecy::ExposeSecret;
 use std::time::Duration;
 use tower::ServiceExt;

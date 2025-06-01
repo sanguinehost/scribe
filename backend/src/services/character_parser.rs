@@ -11,7 +11,7 @@ use zip::ZipArchive;
 use zip::result::ZipError; // Added for CHARX parsing // Added for CHARX parsing
 
 /// Safely convert usize to u32 for PNG chunk lengths
-/// PNG chunk lengths are limited to u32::MAX, so this is appropriate
+/// PNG chunk lengths are limited to `u32::MAX`, so this is appropriate
 
 // Define potential errors for the parser
 #[derive(Debug, Error, Clone)] // Use the imported derive macro, Add Clone
@@ -316,16 +316,16 @@ mod tests {
     use std::io::{Cursor, Write}; // Added Write for zip helper
     use zip::{ZipWriter, write::FileOptions}; // Added for CHARX test helper
 
-    #[allow(clippy::cast_possible_truncation)]
     fn safe_len_to_u32(len: usize) -> u32 {
-        len as u32
+        u32::try_from(len).unwrap_or_else(|_| {
+            panic!("Length {len} is too large to fit in u32")
+        })
     }
 
     // --- Test Helpers ---
 
     // Helper to create a minimal valid PNG with a specific tEXt chunk (Base64 encoded JSON)
     // (Restored original function)
-    #[allow(clippy::cast_possible_truncation)]
     fn create_test_png_with_text_chunk(keyword: &[u8], json_payload: &str) -> Vec<u8> {
         let base64_payload = base64_standard.encode(json_payload);
         let chunk_data = base64_payload.as_bytes();
@@ -562,7 +562,6 @@ mod tests {
     }
 
     #[test]
-    #[allow(clippy::cast_possible_truncation)]
     fn test_parse_png_no_chara_chunk() {
         // Create PNG data without the 'chara' tEXt chunk (e.g., only IHDR, IDAT, and IEND)
         let mut png_data = Vec::new();
@@ -794,7 +793,6 @@ mod tests {
     }
 
     #[test]
-    #[allow(clippy::cast_possible_truncation)]
     fn test_fallback_to_chara_if_ccv3_invalid_base64() {
         let invalid_base64_ccv3 = "!@#$%^"; // Invalid base64 string
         let valid_v2_json = r#"{"name": "Fallback V2 From Bad Base64"}"#;
@@ -1398,7 +1396,10 @@ mod tests {
                 let remaining_in_data = self.data.get_ref().len() as u64 - self.data.position();
                 let remaining_before_fail = self.fail_after.saturating_sub(self.read_count);
                 let max_readable = std::cmp::min(remaining_in_data, remaining_before_fail);
-                let bytes_to_read = std::cmp::min(buf.len() as u64, max_readable) as usize;
+                let bytes_to_read = usize::try_from(std::cmp::min(buf.len() as u64, max_readable))
+                    .unwrap_or_else(|_| {
+                        panic!("bytes_to_read is too large to fit in usize")
+                    });
 
                 if bytes_to_read == 0 && remaining_before_fail > 0 {
                     // If we can still read more before failing, but the underlying reader is EOF, return Ok(0)

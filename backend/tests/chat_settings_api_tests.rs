@@ -8,8 +8,6 @@ use axum::{
 use bigdecimal::BigDecimal;
 use chrono::Utc;
 use http_body_util::BodyExt;
-use mime;
-use serde_json; // Added for to_vec in set_history_settings
 // Removed unused: use serde_json::{Value, json};
 use secrecy::SecretBox;
 use std::str::FromStr;
@@ -159,7 +157,7 @@ async fn get_chat_settings_success() {
         id: Uuid::new_v4(),
         user_id: user.id,
         character_id: character.id,
-        title_ciphertext: Some("Chat for get_chat_settings_success".as_bytes().to_vec()),
+        title_ciphertext: Some(b"Chat for get_chat_settings_success".to_vec()),
         title_nonce: Some(vec![0u8; 12]), // Dummy nonce
         created_at: Utc::now(),
         updated_at: Utc::now(),
@@ -405,7 +403,7 @@ async fn get_chat_settings_defaults() {
         id: Uuid::new_v4(),
         user_id: user.id,
         character_id: character.id,
-        title_ciphertext: Some("Chat for get_chat_settings_defaults".as_bytes().to_vec()),
+        title_ciphertext: Some(b"Chat for get_chat_settings_defaults".to_vec()),
         title_nonce: Some(vec![0u8; 12]), // Dummy nonce
         created_at: Utc::now(),
         updated_at: Utc::now(),

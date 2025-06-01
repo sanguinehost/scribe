@@ -224,14 +224,14 @@ async fn test_recovery_key_decrypts_dek() -> AnyhowResult<()> {
 
     // Derive recovery key
     let recovery_secret = SecretString::new(recovery_key.into_boxed_str());
-    let recovery_kek = crypto::derive_kek(&recovery_secret, &recovery_kek_salt)
+    let derived_kek = crypto::derive_kek(&recovery_secret, &recovery_kek_salt)
         .map_err(|e| anyhow::anyhow!("Failed to derive recovery KEK: {}", e))?;
 
     // Decrypt DEK
     let decrypted_dek = crypto::decrypt_gcm(
         &encrypted_dek_by_recovery,
         &recovery_dek_nonce,
-        &recovery_kek,
+        &derived_kek,
     )
     .map_err(|e| anyhow::anyhow!("Failed to decrypt DEK with recovery key: {}", e))?;
 

@@ -807,15 +807,11 @@ pub struct StreamAiParams {
     pub system_prompt: Option<String>,
     pub temperature: Option<BigDecimal>,
     pub max_output_tokens: Option<i32>,
-    #[allow(dead_code)]
     pub frequency_penalty: Option<BigDecimal>, // Mark as unused for now
-    #[allow(dead_code)]
     pub presence_penalty: Option<BigDecimal>,  // Mark as unused for now
-    #[allow(dead_code)]
     pub top_k: Option<i32>,                    // Mark as unused for now
     pub top_p: Option<BigDecimal>,
     pub stop_sequences: Option<Vec<String>>, // New parameter
-    #[allow(dead_code)]
     pub seed: Option<i32>,                  // Mark as unused for now
     pub model_name: String,
     pub gemini_thinking_budget: Option<i32>,

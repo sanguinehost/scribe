@@ -6,6 +6,18 @@ use std::path::PathBuf;
 
 #[tokio::test]
 async fn test_hybrid_token_counter_local() {
+    // Helper function to convert duration to token count safely
+    fn duration_to_tokens(duration: f64, tokens_per_second: f64) -> usize {
+        let total_tokens = duration * tokens_per_second;
+        if total_tokens >= 0.0 {
+            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+            let tokens_u64 = total_tokens.round() as u64;
+            usize::try_from(tokens_u64).unwrap_or(0)
+        } else {
+            0
+        }
+    }
+
     // Initialize the tokenizer service
     let model_path = PathBuf::from(
         "/home/socol/Workspace/sanguine-scribe/backend/resources/tokenizers/gemma.model",
@@ -75,13 +87,13 @@ async fn test_hybrid_token_counter_local() {
     // Verify video token count (263 tokens per second)
     assert_eq!(
         multimodal_token_count.video,
-        (video_duration * 263.0) as usize
+        duration_to_tokens(video_duration, 263.0)
     );
 
     // Verify audio token count (32 tokens per second)
     assert_eq!(
         multimodal_token_count.audio,
-        (audio_duration * 32.0) as usize
+        duration_to_tokens(audio_duration, 32.0)
     );
 
     // Verify total = text + video + audio
@@ -100,12 +112,9 @@ async fn test_hybrid_token_counter_api() {
     dotenv().ok();
 
     // Get API key from environment
-    let api_key = match std::env::var("GEMINI_API_KEY") {
-        Ok(key) => key,
-        Err(_) => {
-            println!("Skipping API test: GEMINI_API_KEY environment variable not set");
-            return;
-        }
+    let Ok(api_key) = std::env::var("GEMINI_API_KEY") else {
+        println!("Skipping API test: GEMINI_API_KEY environment variable not set");
+        return;
     };
 
     // Initialize the tokenizer service
@@ -162,8 +171,8 @@ async fn test_hybrid_token_counter_api() {
             .expect("Failed to count tokens with hybrid approach");
 
         // Print the difference percentage
-        let difference_percent = ((api_count.total as f64 - local_count.total as f64).abs()
-            / local_count.total as f64)
+        let difference_percent = ((f64::from(u32::try_from(api_count.total).unwrap_or(u32::MAX)) - f64::from(u32::try_from(local_count.total).unwrap_or(u32::MAX))).abs()
+            / f64::from(u32::try_from(local_count.total).unwrap_or(u32::MAX)))
             * 100.0;
 
         println!("Text: '{}' (length: {} chars)", text, text.len());
@@ -173,11 +182,11 @@ async fn test_hybrid_token_counter_api() {
         println!("- Difference: {difference_percent:.2}%");
         println!(
             "- Tokens per character (API): {:.2}",
-            api_count.total as f64 / text.len() as f64
+            f64::from(u32::try_from(api_count.total).unwrap_or(u32::MAX)) / f64::from(u32::try_from(text.len()).unwrap_or(u32::MAX))
         );
         println!(
             "- Tokens per character (Local): {:.2}",
-            local_count.total as f64 / text.len() as f64
+            f64::from(u32::try_from(local_count.total).unwrap_or(u32::MAX)) / f64::from(u32::try_from(text.len()).unwrap_or(u32::MAX))
         );
 
         // All methods should return non-zero counts

@@ -199,7 +199,7 @@ pub async fn generate_chat_response(
             "The last message in the payload's history must be from the 'user'.".to_string(),
         ));
     }
-    let current_user_content = current_user_api_message.content.clone();
+    let current_user_content = current_user_api_message.content;
     trace!(%session_id, "Extracted current user message content for generation.");
 
     // Get comprehensive data for generation from chat_service
@@ -315,10 +315,13 @@ pub async fn generate_chat_response(
         });
     }
 
+    // Extract text for later use in saving to DB
+    let current_user_content_text = current_user_content.clone();
+    
     // Prepare current user message as GenAiChatMessage
     let current_user_genai_message = GenAiChatMessage {
         role: ChatRole::User,
-        content: MessageContent::from_text(current_user_content.clone()),
+        content: MessageContent::from_text(current_user_content),
         options: None,
     };
 
@@ -376,7 +379,7 @@ pub async fn generate_chat_response(
                     session_id,
                     user_id: user_id_value,
                     message_type_enum: MessageRole::User,
-                    content: &current_user_content,
+                    content: &current_user_content_text,
                     role_str: user_message_struct_to_save.role.clone(),
                     parts: user_message_struct_to_save.parts.clone(),
                     attachments: user_message_struct_to_save.attachments.clone(),
@@ -496,9 +499,9 @@ pub async fn generate_chat_response(
                     session_id,
                     user_id: user_id_value,
                     message_type_enum: MessageRole::User,
-                    content: &current_user_content,
+                    content: &current_user_content_text,
                     role_str: Some("user".to_string()),
-                    parts: Some(json!([{"text": current_user_content}])),
+                    parts: Some(json!([{"text": current_user_content_text}])),
                     attachments: None,
                     user_dek_secret_box: Some(dek_for_user_save_json),
                     model_name: model_to_use.clone(),

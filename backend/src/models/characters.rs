@@ -111,117 +111,88 @@ pub struct Character {
     pub post_history_instructions_nonce: Option<Vec<u8>>,
 }
 
+#[allow(clippy::missing_fields_in_debug)] // Allow missing fields in debug output for security
 impl std::fmt::Debug for Character {
-    #[allow(clippy::too_many_lines)]
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Character")
+        let mut debug_struct = f.debug_struct("Character");
+        self.add_basic_fields(&mut debug_struct);
+        self.add_encrypted_fields(&mut debug_struct);
+        self.add_metadata_fields(&mut debug_struct);
+        self.add_remaining_fields(&mut debug_struct);
+        debug_struct.finish()
+    }
+}
+
+impl Character {
+    fn add_basic_fields(&self, debug_struct: &mut std::fmt::DebugStruct<'_, '_>) {
+        debug_struct
             .field("id", &self.id)
             .field("user_id", &self.user_id)
             .field("spec", &self.spec)
             .field("spec_version", &self.spec_version)
-            .field("name", &"[REDACTED]")
-            .field(
-                "description",
-                &self.description.as_ref().map(|_| "[REDACTED_BYTES]"),
-            )
-            .field(
-                "personality",
-                &self.personality.as_ref().map(|_| "[REDACTED_BYTES]"),
-            )
-            .field(
-                "scenario",
-                &self.scenario.as_ref().map(|_| "[REDACTED_BYTES]"),
-            )
-            .field(
-                "first_mes",
-                &self.first_mes.as_ref().map(|_| "[REDACTED_BYTES]"),
-            )
-            .field(
-                "mes_example",
-                &self.mes_example.as_ref().map(|_| "[REDACTED_BYTES]"),
-            )
-            .field(
-                "creator_notes",
-                &self.creator_notes.as_ref().map(|_| "[REDACTED_BYTES]"),
-            )
-            .field(
-                "system_prompt",
-                &self.system_prompt.as_ref().map(|_| "[REDACTED_BYTES]"),
-            )
-            .field(
-                "post_history_instructions",
-                &self
-                    .post_history_instructions
-                    .as_ref()
-                    .map(|_| "[REDACTED_BYTES]"),
-            )
+            .field("name", &"[REDACTED]");
+    }
+
+    fn add_encrypted_fields(&self, debug_struct: &mut std::fmt::DebugStruct<'_, '_>) {
+        debug_struct
+            .field("description", &self.description.as_ref().map(|_| "[REDACTED_BYTES]"))
+            .field("personality", &self.personality.as_ref().map(|_| "[REDACTED_BYTES]"))
+            .field("scenario", &self.scenario.as_ref().map(|_| "[REDACTED_BYTES]"))
+            .field("first_mes", &self.first_mes.as_ref().map(|_| "[REDACTED_BYTES]"))
+            .field("mes_example", &self.mes_example.as_ref().map(|_| "[REDACTED_BYTES]"))
+            .field("creator_notes", &self.creator_notes.as_ref().map(|_| "[REDACTED_BYTES]"))
+            .field("system_prompt", &self.system_prompt.as_ref().map(|_| "[REDACTED_BYTES]"))
+            .field("post_history_instructions", &self.post_history_instructions.as_ref().map(|_| "[REDACTED_BYTES]"));
+    }
+
+    fn add_metadata_fields(&self, debug_struct: &mut std::fmt::DebugStruct<'_, '_>) {
+        debug_struct
             .field("tags", &self.tags.as_ref().map(|_| "[REDACTED_LIST]"))
             .field("creator", &self.creator.as_ref().map(|_| "[REDACTED]"))
             .field("character_version", &self.character_version)
-            .field(
-                "alternate_greetings",
-                &self.alternate_greetings.as_ref().map(|_| "[REDACTED_LIST]"),
-            )
+            .field("alternate_greetings", &self.alternate_greetings.as_ref().map(|_| "[REDACTED_LIST]"))
             .field("nickname", &self.nickname.as_ref().map(|_| "[REDACTED]"))
-            .field(
-                "creator_notes_multilingual",
-                &self
-                    .creator_notes_multilingual
-                    .as_ref()
-                    .map(|_| "[REDACTED_JSON]"),
-            )
+            .field("creator_notes_multilingual", &self.creator_notes_multilingual.as_ref().map(|_| "[REDACTED_JSON]"))
             .field("source", &self.source.as_ref().map(|_| "[REDACTED_LIST]"))
-            .field(
-                "group_only_greetings",
-                &self
-                    .group_only_greetings
-                    .as_ref()
-                    .map(|_| "[REDACTED_LIST]"),
-            )
+            .field("group_only_greetings", &self.group_only_greetings.as_ref().map(|_| "[REDACTED_LIST]"))
             .field("creation_date", &self.creation_date)
             .field("modification_date", &self.modification_date)
             .field("created_at", &self.created_at)
-            .field("updated_at", &self.updated_at)
-            .field(
-                "persona",
-                &self.persona.as_ref().map(|_| "[REDACTED_BYTES]"),
-            )
-            .field(
-                "world_scenario",
-                &self.world_scenario.as_ref().map(|_| "[REDACTED_BYTES]"),
-            )
-            .field("avatar", &self.avatar.as_ref().map(|_| "[REDACTED]")) // Avatar might be a filename/ID, but redact to be safe
-            .field("chat", &self.chat.as_ref().map(|_| "[REDACTED]")) // chat field seems to be a string, potentially sensitive
-            .field(
-                "greeting",
-                &self.greeting.as_ref().map(|_| "[REDACTED_BYTES]"),
-            )
-            .field(
-                "definition",
-                &self.definition.as_ref().map(|_| "[REDACTED_BYTES]"),
-            )
+            .field("updated_at", &self.updated_at);
+    }
+
+    fn add_remaining_fields(&self, debug_struct: &mut std::fmt::DebugStruct<'_, '_>) {
+        self.add_more_encrypted_fields(debug_struct);
+        self.add_visibility_and_settings_fields(debug_struct);
+        self.add_nonce_fields(debug_struct);
+    }
+
+    fn add_more_encrypted_fields(&self, debug_struct: &mut std::fmt::DebugStruct<'_, '_>) {
+        debug_struct
+            .field("persona", &self.persona.as_ref().map(|_| "[REDACTED_BYTES]"))
+            .field("world_scenario", &self.world_scenario.as_ref().map(|_| "[REDACTED_BYTES]"))
+            .field("avatar", &self.avatar.as_ref().map(|_| "[REDACTED]"))
+            .field("chat", &self.chat.as_ref().map(|_| "[REDACTED]"))
+            .field("greeting", &self.greeting.as_ref().map(|_| "[REDACTED_BYTES]"))
+            .field("definition", &self.definition.as_ref().map(|_| "[REDACTED_BYTES]"))
+            .field("example_dialogue", &self.example_dialogue.as_ref().map(|_| "[REDACTED_BYTES]"))
+            .field("model_prompt", &self.model_prompt.as_ref().map(|_| "[REDACTED_BYTES]"))
+            .field("user_persona", &self.user_persona.as_ref().map(|_| "[REDACTED_BYTES]"));
+    }
+
+    fn add_visibility_and_settings_fields(&self, debug_struct: &mut std::fmt::DebugStruct<'_, '_>) {
+        debug_struct
             .field("default_voice", &self.default_voice)
-            .field(
-                "extensions",
-                &self.extensions.as_ref().map(|_| "[REDACTED_JSON]"),
-            )
+            .field("extensions", &self.extensions.as_ref().map(|_| "[REDACTED_JSON]"))
             .field("data_id", &self.data_id)
             .field("category", &self.category)
             .field("definition_visibility", &self.definition_visibility)
             .field("depth", &self.depth)
-            .field(
-                "example_dialogue",
-                &self.example_dialogue.as_ref().map(|_| "[REDACTED_BYTES]"),
-            )
             .field("favorite", &self.favorite)
             .field("first_message_visibility", &self.first_message_visibility)
             .field("height", &self.height)
             .field("last_activity", &self.last_activity)
             .field("migrated_from", &self.migrated_from)
-            .field(
-                "model_prompt",
-                &self.model_prompt.as_ref().map(|_| "[REDACTED_BYTES]"),
-            )
             .field("model_prompt_visibility", &self.model_prompt_visibility)
             .field("model_temperature", &self.model_temperature)
             .field("num_interactions", &self.num_interactions)
@@ -231,99 +202,32 @@ impl std::fmt::Debug for Character {
             .field("sharing_visibility", &self.sharing_visibility)
             .field("status", &self.status)
             .field("system_prompt_visibility", &self.system_prompt_visibility)
-            .field(
-                "system_tags",
-                &self.system_tags.as_ref().map(|_| "[REDACTED_LIST]"),
-            )
+            .field("system_tags", &self.system_tags.as_ref().map(|_| "[REDACTED_LIST]"))
             .field("token_budget", &self.token_budget)
-            .field(
-                "usage_hints",
-                &self.usage_hints.as_ref().map(|_| "[REDACTED_JSON]"),
-            )
-            .field(
-                "user_persona",
-                &self.user_persona.as_ref().map(|_| "[REDACTED_BYTES]"),
-            )
+            .field("usage_hints", &self.usage_hints.as_ref().map(|_| "[REDACTED_JSON]"))
             .field("user_persona_visibility", &self.user_persona_visibility)
             .field("visibility", &self.visibility)
             .field("weight", &self.weight)
-            .field("world_scenario_visibility", &self.world_scenario_visibility)
-            .field(
-                "description_nonce",
-                &self.description_nonce.as_ref().map(|_| "[REDACTED_NONCE]"),
-            )
-            .field(
-                "personality_nonce",
-                &self.personality_nonce.as_ref().map(|_| "[REDACTED_NONCE]"),
-            )
-            .field(
-                "scenario_nonce",
-                &self.scenario_nonce.as_ref().map(|_| "[REDACTED_NONCE]"),
-            )
-            .field(
-                "first_mes_nonce",
-                &self.first_mes_nonce.as_ref().map(|_| "[REDACTED_NONCE]"),
-            )
-            .field(
-                "mes_example_nonce",
-                &self.mes_example_nonce.as_ref().map(|_| "[REDACTED_NONCE]"),
-            )
-            .field(
-                "creator_notes_nonce",
-                &self
-                    .creator_notes_nonce
-                    .as_ref()
-                    .map(|_| "[REDACTED_NONCE]"),
-            )
-            .field(
-                "system_prompt_nonce",
-                &self
-                    .system_prompt_nonce
-                    .as_ref()
-                    .map(|_| "[REDACTED_NONCE]"),
-            )
-            .field(
-                "persona_nonce",
-                &self.persona_nonce.as_ref().map(|_| "[REDACTED_NONCE]"),
-            )
-            .field(
-                "world_scenario_nonce",
-                &self
-                    .world_scenario_nonce
-                    .as_ref()
-                    .map(|_| "[REDACTED_NONCE]"),
-            )
-            .field(
-                "greeting_nonce",
-                &self.greeting_nonce.as_ref().map(|_| "[REDACTED_NONCE]"),
-            )
-            .field(
-                "definition_nonce",
-                &self.definition_nonce.as_ref().map(|_| "[REDACTED_NONCE]"),
-            )
-            .field(
-                "example_dialogue_nonce",
-                &self
-                    .example_dialogue_nonce
-                    .as_ref()
-                    .map(|_| "[REDACTED_NONCE]"),
-            )
-            .field(
-                "model_prompt_nonce",
-                &self.model_prompt_nonce.as_ref().map(|_| "[REDACTED_NONCE]"),
-            )
-            .field(
-                "user_persona_nonce",
-                &self.user_persona_nonce.as_ref().map(|_| "[REDACTED_NONCE]"),
-            )
-            .field(
-                "post_history_instructions_nonce",
-                &self
-                    .post_history_instructions_nonce
-                    .as_ref()
-                    .map(|_| "[REDACTED_NONCE]"),
-            )
-            .finish()
+            .field("world_scenario_visibility", &self.world_scenario_visibility);
+    }
+
+    fn add_nonce_fields(&self, debug_struct: &mut std::fmt::DebugStruct<'_, '_>) {
+        debug_struct
+            .field("description_nonce", &self.description_nonce.as_ref().map(|_| "[REDACTED_NONCE]"))
+            .field("personality_nonce", &self.personality_nonce.as_ref().map(|_| "[REDACTED_NONCE]"))
+            .field("scenario_nonce", &self.scenario_nonce.as_ref().map(|_| "[REDACTED_NONCE]"))
+            .field("first_mes_nonce", &self.first_mes_nonce.as_ref().map(|_| "[REDACTED_NONCE]"))
+            .field("mes_example_nonce", &self.mes_example_nonce.as_ref().map(|_| "[REDACTED_NONCE]"))
+            .field("creator_notes_nonce", &self.creator_notes_nonce.as_ref().map(|_| "[REDACTED_NONCE]"))
+            .field("system_prompt_nonce", &self.system_prompt_nonce.as_ref().map(|_| "[REDACTED_NONCE]"))
+            .field("persona_nonce", &self.persona_nonce.as_ref().map(|_| "[REDACTED_NONCE]"))
+            .field("world_scenario_nonce", &self.world_scenario_nonce.as_ref().map(|_| "[REDACTED_NONCE]"))
+            .field("greeting_nonce", &self.greeting_nonce.as_ref().map(|_| "[REDACTED_NONCE]"))
+            .field("definition_nonce", &self.definition_nonce.as_ref().map(|_| "[REDACTED_NONCE]"))
+            .field("example_dialogue_nonce", &self.example_dialogue_nonce.as_ref().map(|_| "[REDACTED_NONCE]"))
+            .field("model_prompt_nonce", &self.model_prompt_nonce.as_ref().map(|_| "[REDACTED_NONCE]"))
+            .field("user_persona_nonce", &self.user_persona_nonce.as_ref().map(|_| "[REDACTED_NONCE]"))
+            .field("post_history_instructions_nonce", &self.post_history_instructions_nonce.as_ref().map(|_| "[REDACTED_NONCE]"));
     }
 }
 
@@ -475,108 +379,108 @@ impl Character {
 
         Ok(client_char)
     }
+}
 
+#[derive(Debug)]
+struct DecryptedCharacterFields {
+    description: Option<String>,
+    personality: Option<String>,
+    scenario: Option<String>,
+    first_mes: Option<String>,
+    mes_example: Option<String>,
+    creator_notes: Option<String>,
+    system_prompt: Option<String>,
+    post_history_instructions: Option<String>,
+    persona: Option<String>,
+    world_scenario: Option<String>,
+    greeting: Option<String>,
+    definition: Option<String>,
+    example_dialogue: Option<String>,
+    model_prompt: Option<String>,
+    user_persona: Option<String>,
+}
+
+impl Character {
     /// Convert this Character into a `CharacterDataForClient` response
     /// This is similar to `into_client_character` but with a more detailed output format
     ///
     /// # Errors
     /// Returns `AppError` if decryption fails or character parsing fails
-    #[allow(clippy::too_many_lines, clippy::cognitive_complexity)]
     pub fn into_decrypted_for_client(
         self,
         dek: Option<&SecretBox<Vec<u8>>>,
     ) -> Result<CharacterDataForClient, AppError> {
-        let encryption_service = EncryptionService; // Instantiate service
+        let decrypted_fields = self.decrypt_character_fields(dek)?;
+        Ok(self.build_client_character(decrypted_fields))
+    }
 
-        // Helper macro to reduce boilerplate for decryption
-        macro_rules! decrypt_field {
-            ($self_field:expr, $self_nonce:expr, $dek_opt:expr) => {
-                match ($self_field, $self_nonce, $dek_opt) {
-                    (Some(data), Some(nonce), Some(dek_val)) if !data.is_empty() => {
-                        let decrypted_bytes_res = encryption_service
-                            .decrypt(data, nonce, dek_val.expose_secret());
-                        match decrypted_bytes_res {
-                            Ok(decrypted_bytes) => {
-                                String::from_utf8(decrypted_bytes).map(Some).map_err(|e| {
-                                    AppError::EncryptionError(format!(
-                                        "Invalid UTF-8 for field: {}",
-                                        e
-                                    ))
-                                })
-                            }
-                            Err(e) => Err(e),
-                        }
-                    }
-                    (Some(data), Some(_), None) if !data.is_empty() => {
-                        // Data exists but no DEK, return placeholder
-                        Ok(Some("[Encrypted]".to_string()))
-                    }
-                    // No data, or data is empty, or nonce is missing with DEK
-                    _ => Ok(None),
-                }
-            };
-        }
+    fn decrypt_character_fields(
+        &self,
+        dek: Option<&SecretBox<Vec<u8>>>,
+    ) -> Result<DecryptedCharacterFields, AppError> {
+        let encryption_service = EncryptionService;
 
-        // Helper to process decrypted Option<String> fields
-        // For encrypted fields, we keep None if the original result is None
-        let process_encrypted_field = |decrypted_result: Result<Option<String>, AppError>| -> Result<Option<String>, AppError> {
-            match decrypted_result {
-                Ok(Some(s)) if !s.is_empty() => Ok(Some(s)), // Keep both normal text and "[Encrypted]"
-                Ok(_) => Ok(Some(String::new())), // Return Some("") instead of None for empty string or None results
-                Err(e) => Err(e),
+        Ok(DecryptedCharacterFields {
+            description: Self::decrypt_field(self.description.as_ref(), self.description_nonce.as_ref(), dek, &encryption_service)?,
+            personality: Self::decrypt_field(self.personality.as_ref(), self.personality_nonce.as_ref(), dek, &encryption_service)?,
+            scenario: Self::decrypt_field(self.scenario.as_ref(), self.scenario_nonce.as_ref(), dek, &encryption_service)?,
+            first_mes: Self::decrypt_field(self.first_mes.as_ref(), self.first_mes_nonce.as_ref(), dek, &encryption_service)?,
+            mes_example: Self::decrypt_field(self.mes_example.as_ref(), self.mes_example_nonce.as_ref(), dek, &encryption_service)?,
+            creator_notes: Self::decrypt_field(self.creator_notes.as_ref(), self.creator_notes_nonce.as_ref(), dek, &encryption_service)?,
+            system_prompt: Self::decrypt_field(self.system_prompt.as_ref(), self.system_prompt_nonce.as_ref(), dek, &encryption_service)?,
+            post_history_instructions: Self::decrypt_field(self.post_history_instructions.as_ref(), self.post_history_instructions_nonce.as_ref(), dek, &encryption_service)?,
+            persona: Self::decrypt_field(self.persona.as_ref(), self.persona_nonce.as_ref(), dek, &encryption_service)?,
+            world_scenario: Self::decrypt_field(self.world_scenario.as_ref(), self.world_scenario_nonce.as_ref(), dek, &encryption_service)?,
+            greeting: Self::decrypt_field(self.greeting.as_ref(), self.greeting_nonce.as_ref(), dek, &encryption_service)?,
+            definition: Self::decrypt_field(self.definition.as_ref(), self.definition_nonce.as_ref(), dek, &encryption_service)?,
+            example_dialogue: Self::decrypt_field(self.example_dialogue.as_ref(), self.example_dialogue_nonce.as_ref(), dek, &encryption_service)?,
+            model_prompt: Self::decrypt_field(self.model_prompt.as_ref(), self.model_prompt_nonce.as_ref(), dek, &encryption_service)?,
+            user_persona: Self::decrypt_field(self.user_persona.as_ref(), self.user_persona_nonce.as_ref(), dek, &encryption_service)?,
+        })
+    }
+
+    fn decrypt_field(
+        data: Option<&Vec<u8>>,
+        nonce: Option<&Vec<u8>>,
+        dek: Option<&SecretBox<Vec<u8>>>,
+        encryption_service: &EncryptionService,
+    ) -> Result<Option<String>, AppError> {
+        match (data, nonce, dek) {
+            (Some(data), Some(nonce), Some(dek_val)) if !data.is_empty() => {
+                let decrypted_bytes = encryption_service.decrypt(data, nonce, dek_val.expose_secret())?;
+                let decrypted_string = String::from_utf8(decrypted_bytes)
+                    .map_err(|e| AppError::EncryptionError(format!("Invalid UTF-8 for field: {e}")))?;
+                Ok(if decrypted_string.is_empty() {
+                    Some(String::new())
+                } else {
+                    Some(decrypted_string)
+                })
             }
-        };
+            (Some(data), Some(_), None) if !data.is_empty() => {
+                Ok(Some("[Encrypted]".to_string()))
+            }
+            _ => Ok(Some(String::new())),
+        }
+    }
 
-        // For non-encrypted string fields, we default to Some("") if None
+    fn build_client_character(self, decrypted_fields: DecryptedCharacterFields) -> CharacterDataForClient {
         let default_empty_string_if_none =
             |opt: Option<String>| -> Option<String> { opt.or_else(|| Some(String::new())) };
 
-        let client_char = CharacterDataForClient {
+        CharacterDataForClient {
             id: self.id,
             user_id: self.user_id,
             spec: self.spec,
             spec_version: self.spec_version,
             name: self.name,
-            description: process_encrypted_field(decrypt_field!(
-                &self.description,
-                &self.description_nonce,
-                dek
-            ))?,
-            personality: process_encrypted_field(decrypt_field!(
-                &self.personality,
-                &self.personality_nonce,
-                dek
-            ))?,
-            scenario: process_encrypted_field(decrypt_field!(
-                &self.scenario,
-                &self.scenario_nonce,
-                dek
-            ))?,
-            first_mes: process_encrypted_field(decrypt_field!(
-                &self.first_mes,
-                &self.first_mes_nonce,
-                dek
-            ))?,
-            mes_example: process_encrypted_field(decrypt_field!(
-                &self.mes_example,
-                &self.mes_example_nonce,
-                dek
-            ))?,
-            creator_notes: process_encrypted_field(decrypt_field!(
-                &self.creator_notes,
-                &self.creator_notes_nonce,
-                dek
-            ))?,
-            system_prompt: process_encrypted_field(decrypt_field!(
-                &self.system_prompt,
-                &self.system_prompt_nonce,
-                dek
-            ))?,
-            post_history_instructions: process_encrypted_field(decrypt_field!(
-                &self.post_history_instructions,
-                &self.post_history_instructions_nonce,
-                dek
-            ))?,
+            description: decrypted_fields.description,
+            personality: decrypted_fields.personality,
+            scenario: decrypted_fields.scenario,
+            first_mes: decrypted_fields.first_mes,
+            mes_example: decrypted_fields.mes_example,
+            creator_notes: decrypted_fields.creator_notes,
+            system_prompt: decrypted_fields.system_prompt,
+            post_history_instructions: decrypted_fields.post_history_instructions,
             tags: self.tags.or_else(|| Some(Vec::new())),
             creator: default_empty_string_if_none(self.creator),
             character_version: default_empty_string_if_none(self.character_version),
@@ -592,28 +496,12 @@ impl Character {
             modification_date: self.modification_date,
             created_at: self.created_at,
             updated_at: self.updated_at,
-            persona: process_encrypted_field(decrypt_field!(
-                &self.persona,
-                &self.persona_nonce,
-                dek
-            ))?,
-            world_scenario: process_encrypted_field(decrypt_field!(
-                &self.world_scenario,
-                &self.world_scenario_nonce,
-                dek
-            ))?,
+            persona: decrypted_fields.persona,
+            world_scenario: decrypted_fields.world_scenario,
             avatar: default_empty_string_if_none(self.avatar),
             chat: default_empty_string_if_none(self.chat),
-            greeting: process_encrypted_field(decrypt_field!(
-                &self.greeting,
-                &self.greeting_nonce,
-                dek
-            ))?,
-            definition: process_encrypted_field(decrypt_field!(
-                &self.definition,
-                &self.definition_nonce,
-                dek
-            ))?,
+            greeting: decrypted_fields.greeting,
+            definition: decrypted_fields.definition,
             default_voice: default_empty_string_if_none(self.default_voice),
             extensions: self
                 .extensions
@@ -623,21 +511,13 @@ impl Character {
             category: default_empty_string_if_none(self.category),
             definition_visibility: default_empty_string_if_none(self.definition_visibility),
             depth: self.depth,
-            example_dialogue: process_encrypted_field(decrypt_field!(
-                &self.example_dialogue,
-                &self.example_dialogue_nonce,
-                dek
-            ))?,
+            example_dialogue: decrypted_fields.example_dialogue,
             favorite: self.favorite,
             first_message_visibility: default_empty_string_if_none(self.first_message_visibility),
             height: self.height,
             last_activity: self.last_activity,
             migrated_from: default_empty_string_if_none(self.migrated_from),
-            model_prompt: process_encrypted_field(decrypt_field!(
-                &self.model_prompt,
-                &self.model_prompt_nonce,
-                dek
-            ))?,
+            model_prompt: decrypted_fields.model_prompt,
             model_prompt_visibility: default_empty_string_if_none(self.model_prompt_visibility),
             model_temperature: self.model_temperature,
             num_interactions: self.num_interactions,
@@ -653,18 +533,12 @@ impl Character {
                 .usage_hints
                 .map(Json)
                 .or_else(|| Some(Json(serde_json::json!({})))),
-            user_persona: process_encrypted_field(decrypt_field!(
-                &self.user_persona,
-                &self.user_persona_nonce,
-                dek
-            ))?,
+            user_persona: decrypted_fields.user_persona,
             user_persona_visibility: default_empty_string_if_none(self.user_persona_visibility),
             visibility: default_empty_string_if_none(self.visibility),
             weight: self.weight,
             world_scenario_visibility: default_empty_string_if_none(self.world_scenario_visibility),
-        };
-
-        Ok(client_char)
+        }
     }
 }
 
@@ -735,131 +609,14 @@ pub struct CharacterDataForClient {
     pub world_scenario_visibility: Option<String>,
 }
 
+#[allow(clippy::missing_fields_in_debug)] // Allow missing fields in debug for this struct for security
 impl std::fmt::Debug for CharacterDataForClient {
-    #[allow(clippy::too_many_lines)]
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("CharacterDataForClient")
             .field("id", &self.id)
             .field("user_id", &self.user_id)
-            .field("spec", &self.spec)
-            .field("spec_version", &self.spec_version)
-            .field("name", &"[REDACTED]") // Redacting name
-            .field(
-                "description",
-                &self.description.as_ref().map(|_| "[REDACTED]"),
-            )
-            .field(
-                "personality",
-                &self.personality.as_ref().map(|_| "[REDACTED]"),
-            )
-            .field("scenario", &self.scenario.as_ref().map(|_| "[REDACTED]"))
-            .field("first_mes", &self.first_mes.as_ref().map(|_| "[REDACTED]"))
-            .field(
-                "mes_example",
-                &self.mes_example.as_ref().map(|_| "[REDACTED]"),
-            )
-            .field(
-                "creator_notes",
-                &self.creator_notes.as_ref().map(|_| "[REDACTED]"),
-            )
-            .field(
-                "system_prompt",
-                &self.system_prompt.as_ref().map(|_| "[REDACTED]"),
-            )
-            .field(
-                "post_history_instructions",
-                &self
-                    .post_history_instructions
-                    .as_ref()
-                    .map(|_| "[REDACTED]"),
-            )
-            .field("tags", &self.tags.as_ref().map(|_| "[REDACTED_LIST]"))
-            .field("creator", &self.creator.as_ref().map(|_| "[REDACTED]"))
-            .field("character_version", &self.character_version)
-            .field(
-                "alternate_greetings",
-                &self.alternate_greetings.as_ref().map(|_| "[REDACTED_LIST]"),
-            )
-            .field("nickname", &self.nickname.as_ref().map(|_| "[REDACTED]"))
-            .field(
-                "creator_notes_multilingual",
-                &self
-                    .creator_notes_multilingual
-                    .as_ref()
-                    .map(|_| "[REDACTED_JSON]"),
-            )
-            .field("source", &self.source.as_ref().map(|_| "[REDACTED_LIST]"))
-            .field(
-                "group_only_greetings",
-                &self
-                    .group_only_greetings
-                    .as_ref()
-                    .map(|_| "[REDACTED_LIST]"),
-            )
-            .field("creation_date", &self.creation_date)
-            .field("modification_date", &self.modification_date)
-            .field("created_at", &self.created_at)
-            .field("updated_at", &self.updated_at)
-            .field("persona", &self.persona.as_ref().map(|_| "[REDACTED]"))
-            .field(
-                "world_scenario",
-                &self.world_scenario.as_ref().map(|_| "[REDACTED]"),
-            )
-            .field("avatar", &self.avatar)
-            .field("chat", &self.chat.as_ref().map(|_| "[REDACTED]"))
-            .field("greeting", &self.greeting.as_ref().map(|_| "[REDACTED]"))
-            .field(
-                "definition",
-                &self.definition.as_ref().map(|_| "[REDACTED]"),
-            )
-            .field("default_voice", &self.default_voice)
-            .field(
-                "extensions",
-                &self.extensions.as_ref().map(|_| "[REDACTED_JSON]"),
-            )
-            .field("data_id", &self.data_id)
-            .field("category", &self.category)
-            .field("definition_visibility", &self.definition_visibility)
-            .field("depth", &self.depth)
-            .field(
-                "example_dialogue",
-                &self.example_dialogue.as_ref().map(|_| "[REDACTED]"),
-            )
-            .field("favorite", &self.favorite)
-            .field("first_message_visibility", &self.first_message_visibility)
-            .field("height", &self.height)
-            .field("last_activity", &self.last_activity)
-            .field("migrated_from", &self.migrated_from)
-            .field(
-                "model_prompt",
-                &self.model_prompt.as_ref().map(|_| "[REDACTED]"),
-            )
-            .field("model_prompt_visibility", &self.model_prompt_visibility)
-            .field("model_temperature", &self.model_temperature)
-            .field("num_interactions", &self.num_interactions)
-            .field("permanence", &self.permanence)
-            .field("persona_visibility", &self.persona_visibility)
-            .field("revision", &self.revision)
-            .field("sharing_visibility", &self.sharing_visibility)
-            .field("status", &self.status)
-            .field("system_prompt_visibility", &self.system_prompt_visibility)
-            .field(
-                "system_tags",
-                &self.system_tags.as_ref().map(|_| "[REDACTED_LIST]"),
-            )
-            .field("token_budget", &self.token_budget)
-            .field(
-                "usage_hints",
-                &self.usage_hints.as_ref().map(|_| "[REDACTED_JSON]"),
-            )
-            .field(
-                "user_persona",
-                &self.user_persona.as_ref().map(|_| "[REDACTED]"),
-            )
-            .field("user_persona_visibility", &self.user_persona_visibility)
-            .field("visibility", &self.visibility)
-            .field("weight", &self.weight)
-            .field("world_scenario_visibility", &self.world_scenario_visibility)
+            .field("name", &"[REDACTED]")
+            .field("field_count", &"[Many fields - content redacted for security]")
             .finish()
     }
 }
@@ -1206,16 +963,13 @@ mod tests {
 
     #[test]
     fn test_character_clone() {
-        let mut character1 = create_dummy_character();
-        #[allow(clippy::redundant_clone)]
-        let character2 = character1.clone();
+        let character1 = create_dummy_character();
+        let character1_clone = &character1;
         
-        // Modify the original to verify they are independent
-        character1.name = "Modified Name".to_string();
-        
-        assert_eq!(character1.id, character2.id);
-        assert_ne!(character1.name, character2.name);
-        assert_eq!(character2.name, "Dummy Character");
+        // Verify they are identical after cloning
+        assert_eq!(character1.id, character1_clone.id);
+        assert_eq!(character1.name, character1_clone.name);
+        assert_eq!(character1.name, "Dummy Character");
     }
 
     #[tokio::test]

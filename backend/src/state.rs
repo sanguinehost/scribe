@@ -30,7 +30,7 @@ use uuid::Uuid; // For embedding_call_tracker // For manual Debug impl
 pub type DbPool = DeadpoolPool;
 // Note: deadpool::Pool is already Cloneable.
 
-/// Configuration for AppState services to reduce constructor arguments
+/// Configuration for `AppState` services to reduce constructor arguments
 pub struct AppStateServices {
     pub ai_client: Arc<dyn AiClient + Send + Sync>,
     pub embedding_client: Arc<dyn EmbeddingClient + Send + Sync>,
@@ -95,7 +95,8 @@ impl fmt::Debug for AppState {
 }
 
 impl AppState {
-    /// Create new AppState with reduced constructor arguments
+    /// Create new `AppState` with reduced constructor arguments
+    #[must_use]
     pub fn new(
         pool: DeadpoolPool,
         config: Arc<Config>,

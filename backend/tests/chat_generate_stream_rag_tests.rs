@@ -7,7 +7,6 @@ use axum::{
 use chrono::Utc;
 use diesel::RunQueryDsl as _;
 use diesel::prelude::*;
-use mime;
 use std::time::Duration;
 use tower::ServiceExt;
 use uuid::Uuid;

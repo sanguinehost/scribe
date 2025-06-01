@@ -169,7 +169,7 @@ fn insert_test_character(
         // spec: "test_spec".to_string(),   // Removed - Likely changed/removed in model
         // spec_version: "1.0".to_string(), // Removed - Likely changed/removed in model
         name: name.to_string(),
-        post_history_instructions: Some("".as_bytes().to_vec()), // Fix E0308: Convert to Vec<u8>
+        post_history_instructions: Some(b"".to_vec()), // Fix E0308: Convert to Vec<u8>
         creator_notes_multilingual: None,                        // Add missing field
         ..Default::default() // Use default for other optional fields
     };
@@ -416,7 +416,7 @@ fn test_user_character_insert_and_query() {
             group_only_greetings: None,
             creation_date: None,
             modification_date: None,
-            post_history_instructions: Some("".as_bytes().to_vec()), // Fix E0308: Convert to Vec<u8>
+            post_history_instructions: Some(b"".to_vec()), // Fix E0308: Convert to Vec<u8>
             creator_notes_multilingual: None,
             extensions: None,
             ..Default::default() // Fix E0063: Add default for all other fields
@@ -688,7 +688,7 @@ async fn test_list_characters_handler_with_auth() -> Result<(), AnyhowError> {
 
         // Handle the Result manually instead of using the ?? operator
         let characters = match characters_result {
-            Ok(Ok(chars)) => chars,
+            Ok(Ok(character_list)) => character_list,
             Ok(Err(e)) => {
                 guard.cleanup().await?;
                 return Err(anyhow::anyhow!("DB error loading characters: {}", e));
@@ -1007,7 +1007,7 @@ async fn test_chat_message_insert_and_query() -> Result<(), AnyhowError> {
                     session_id_clone,
                     user_id_clone,
                     MessageRole::User,
-                    "Hello, character!".as_bytes().to_vec(),
+                    b"Hello, character!".to_vec(),
                     None,
                 )
                 .with_role("user".to_string())
@@ -1020,7 +1020,7 @@ async fn test_chat_message_insert_and_query() -> Result<(), AnyhowError> {
                     session_id_clone,
                     user_id_clone,
                     MessageRole::Assistant,
-                    "Hello, user!".as_bytes().to_vec(),
+                    b"Hello, user!".to_vec(),
                     None,
                 )
                 .with_role("assistant".to_string())
@@ -1187,7 +1187,7 @@ async fn test_data_guard_cleanup_logic() -> anyhow::Result<()> {
         session_id,
         user_id: user.id, // Fix: NewChatMessage expects Uuid directly, not Option<Uuid>
         message_type: MessageRole::User,
-        content: "Guard message content".as_bytes().to_vec(),
+        content: b"Guard message content".to_vec(),
         content_nonce: None,
         created_at: Utc::now(),
         updated_at: Utc::now(),

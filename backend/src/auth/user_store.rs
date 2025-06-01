@@ -21,6 +21,15 @@ use crate::schema;
 use anyhow::Context;
 use secrecy::{ExposeSecret, SecretBox, SecretString};
 
+pub struct UserCryptoFields {
+    pub password_hash: Option<String>,
+    pub dek_ciphertext: Option<Vec<u8>>,
+    pub dek_nonce: Option<Vec<u8>>,
+    pub kek_salt: Option<String>,
+    pub recovery_dek_ciphertext: Option<Vec<u8>>,
+    pub recovery_dek_nonce: Option<Vec<u8>>,
+}
+
 // Manually implement Debug because DbPool doesn't implement it.
 pub struct Backend {
     pool: DbPool,
@@ -171,28 +180,11 @@ impl AuthnBackend for Backend {
 }
 
 impl Backend {
-    #[instrument(
-        skip(
-            self,
-            new_password_hash,
-            new_dek_ciphertext,
-            new_dek_nonce,
-            new_kek_salt,
-            new_recovery_dek_ciphertext,
-            new_recovery_dek_nonce,
-        ),
-        err
-    )]
-    #[allow(clippy::too_many_arguments)] // This is a necessary evil for this specific update function
+    #[instrument(skip(self, crypto_fields), err)]
     pub async fn update_user_crypto_fields(
         &self,
         user_id: uuid::Uuid,
-        new_password_hash: Option<String>,
-        new_dek_ciphertext: Option<Vec<u8>>,
-        new_dek_nonce: Option<Vec<u8>>,
-        new_kek_salt: Option<String>, // KEK salt is stored as string
-        new_recovery_dek_ciphertext: Option<Vec<u8>>, // Added
-        new_recovery_dek_nonce: Option<Vec<u8>>,        // Added
+        crypto_fields: UserCryptoFields,
     ) -> Result<(), AuthError> {
         use crate::schema::users::dsl::{encrypted_dek, encrypted_dek_by_recovery, kek_salt, password_hash, updated_at, users};
         use diesel::prelude::*;
@@ -207,16 +199,16 @@ impl Backend {
             .map_err(AuthError::PoolError)?
             .interact(move |conn| {
                 // Validate required fields (non-nullable in DB)
-                let pwd_hash = new_password_hash.ok_or_else(|| {
+                let pwd_hash = crypto_fields.password_hash.ok_or_else(|| {
                     diesel::result::Error::QueryBuilderError("password_hash must be provided".into())
                 })?;
-                let kek_salt_value = new_kek_salt.ok_or_else(|| {
+                let kek_salt_value = crypto_fields.kek_salt.ok_or_else(|| {
                     diesel::result::Error::QueryBuilderError("kek_salt must be provided".into())
                 })?;
-                let dek_ciphertext = new_dek_ciphertext.ok_or_else(|| {
+                let dek_ciphertext = crypto_fields.dek_ciphertext.ok_or_else(|| {
                     diesel::result::Error::QueryBuilderError("encrypted_dek must be provided".into())
                 })?;
-                let dek_nonce_value = new_dek_nonce.ok_or_else(|| {
+                let dek_nonce_value = crypto_fields.dek_nonce.ok_or_else(|| {
                     diesel::result::Error::QueryBuilderError("dek_nonce must be provided".into())
                 })?;
                 
@@ -226,8 +218,8 @@ impl Backend {
                         kek_salt.eq(kek_salt_value),
                         encrypted_dek.eq(dek_ciphertext),
                         crate::schema::users::dsl::dek_nonce.eq(dek_nonce_value),
-                        encrypted_dek_by_recovery.eq(new_recovery_dek_ciphertext), // This is nullable
-                        crate::schema::users::dsl::recovery_dek_nonce.eq(new_recovery_dek_nonce), // This is nullable
+                        encrypted_dek_by_recovery.eq(crypto_fields.recovery_dek_ciphertext), // This is nullable
+                        crate::schema::users::dsl::recovery_dek_nonce.eq(crypto_fields.recovery_dek_nonce), // This is nullable
                         updated_at.eq(diesel::dsl::now),
                     ))
                     .execute(conn)
