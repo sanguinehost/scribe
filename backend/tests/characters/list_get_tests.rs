@@ -18,7 +18,7 @@ async fn test_list_characters_unauthorized() -> Result<(), anyhow::Error> {
     let server_addr = spawn_app(app_router).await;
     let client = Client::new();
 
-    let list_url = format!("http://{}/api/characters", server_addr);
+    let list_url = format!("http://{server_addr}/api/characters");
 
     let response = client.get(&list_url).send().await?;
 
@@ -144,8 +144,7 @@ async fn test_get_unauthorized() -> Result<(), anyhow::Error> {
 
     let character_id = Uuid::new_v4();
     let get_url = format!(
-        "http://{}/api/characters/fetch/{}",
-        server_addr, character_id
+        "http://{server_addr}/api/characters/fetch/{character_id}"
     ); // Adjusted path
     tracing::info!(target: "auth_debug", "test_get_unauthorized: Sending GET to {}", get_url);
 

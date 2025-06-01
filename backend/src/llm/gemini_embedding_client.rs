@@ -390,6 +390,12 @@ impl EmbeddingClient for RestGeminiEmbeddingClient {
 }
 
 // --- Builder Function ---
+/// Builds a REST-based Gemini embedding client with the provided configuration.
+///
+/// # Errors
+///
+/// Returns `AppError::InternalServerErrorGeneric` if the reqwest HTTP client fails to build
+/// due to invalid configuration or system constraints.
 pub fn build_gemini_embedding_client(
     config: Arc<Config>,
 ) -> Result<RestGeminiEmbeddingClient, AppError> {

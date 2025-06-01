@@ -29,6 +29,16 @@ impl std::fmt::Debug for RegisterPayload {
 
 // Implement manual validation for RegisterPayload
 impl RegisterPayload {
+    /// Validates the registration payload fields
+    ///
+    /// # Errors
+    /// Returns `ValidationErrors` if:
+    /// - Username is less than 3 characters
+    /// - Email format is invalid
+    /// - Password is less than 8 characters
+    ///
+    /// # Panics
+    /// Panics if the email regex pattern fails to compile
     pub fn validate(&self) -> Result<(), ValidationErrors> {
         let mut errors = ValidationErrors::new();
 
@@ -115,6 +125,10 @@ pub struct ChangePasswordPayload {
 }
 
 impl ChangePasswordPayload {
+    /// Validates the change password payload fields
+    ///
+    /// # Errors
+    /// Returns `ValidationErrors` if the new password is less than 8 characters
     pub fn validate(&self) -> Result<(), ValidationErrors> {
         let mut errors = ValidationErrors::new();
 
@@ -144,6 +158,13 @@ pub struct RecoverPasswordPayload {
 }
 
 impl RecoverPasswordPayload {
+    /// Validates the password recovery payload fields
+    ///
+    /// # Errors
+    /// Returns `ValidationErrors` if:
+    /// - Identifier is empty or whitespace only
+    /// - Recovery phrase is empty or whitespace only
+    /// - New password is less than 8 characters
     pub fn validate(&self) -> Result<(), ValidationErrors> {
         let mut errors = ValidationErrors::new();
 

@@ -82,8 +82,7 @@ async fn test_create_character_minimal_fields() -> Result<(), anyhow::Error> {
     assert_eq!(
         status,
         StatusCode::CREATED,
-        "Character creation with minimal fields failed. Body: {}",
-        body_text
+        "Character creation with minimal fields failed. Body: {body_text}"
     );
 
     let created_char: CharacterDataForClient = serde_json::from_str(&body_text)
@@ -286,8 +285,7 @@ async fn test_create_character_all_fields() -> Result<(), anyhow::Error> {
     assert_eq!(
         status,
         StatusCode::CREATED,
-        "Character creation with all fields failed. Body: {}",
-        body_text
+        "Character creation with all fields failed. Body: {body_text}"
     );
 
     let created_char: CharacterDataForClient = serde_json::from_str(&body_text)
@@ -486,9 +484,7 @@ async fn test_create_character_missing_required_fields() -> Result<(), anyhow::E
         assert_eq!(
             status,
             StatusCode::BAD_REQUEST,
-            "Character creation with missing/empty required fields (case {}) should fail with 400 Bad Request. Body: {}",
-            i,
-            body_text
+            "Character creation with missing/empty required fields (case {i}) should fail with 400 Bad Request. Body: {body_text}"
         );
 
         // Check that the error message contains the specific validation error
@@ -496,10 +492,7 @@ async fn test_create_character_missing_required_fields() -> Result<(), anyhow::E
         // or multiple errors joined by ", "
         assert!(
             body_text.contains(expected_error_substring),
-            "Error message for case {} did not contain expected substring '{}'. Full error: {}",
-            i,
-            expected_error_substring,
-            body_text
+            "Error message for case {i} did not contain expected substring '{expected_error_substring}'. Full error: {body_text}"
         );
     }
 

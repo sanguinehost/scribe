@@ -2,7 +2,7 @@ use crate::models::chats::Chat;
 use crate::models::users::User;
 use crate::schema::{chat_session_lorebooks, lorebook_entries, lorebooks};
 use chrono::{DateTime, Utc};
-use diesel::prelude::*;
+use diesel::{Queryable, Insertable, Identifiable, AsChangeset, Selectable, Associations, PgConnection, QueryResult, QueryDsl, ExpressionMethods, RunQueryDsl};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -162,6 +162,9 @@ impl ChatSessionLorebook {
     /// Returns `Ok(Some(Vec<Uuid>))` if lorebooks are found.
     /// Returns `Ok(None)` if no lorebooks are found for the session.
     /// Returns `Err` if there's a database query error.
+    ///
+    /// # Errors
+    /// Returns `QueryResult` error if the database query fails
     pub fn get_active_lorebook_ids_for_session(
         conn: &mut PgConnection,
         session_id_param: Uuid,
@@ -171,10 +174,9 @@ impl ChatSessionLorebook {
         let ids = chat_session_lorebooks
             .filter(chat_session_id.eq(session_id_param))
             .select(lorebook_id)
-            .load::<Uuid>(conn)
-            .optional()?;
+            .load::<Uuid>(conn)?;
 
-        Ok(ids)
+        Ok(if ids.is_empty() { None } else { Some(ids) })
     }
 }
 

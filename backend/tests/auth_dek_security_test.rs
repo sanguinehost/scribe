@@ -143,9 +143,7 @@ async fn test_dek_not_stored_in_session() -> AnyhowResult<()> {
     for key in &dek_keys {
         assert!(
             !session_json.as_object().unwrap().contains_key(key as &str),
-            "Session should NOT contain DEK with key '{}'. Session data: {}",
-            key,
-            session_data
+            "Session should NOT contain DEK with key '{key}'. Session data: {session_data}"
         );
     }
 
@@ -166,16 +164,15 @@ async fn test_dek_not_stored_in_session() -> AnyhowResult<()> {
     fn check_no_dek_values(value: &Value) -> bool {
         match value {
             Value::String(_) => !looks_like_base64_dek(value),
-            Value::Object(map) => map.values().all(|v| check_no_dek_values(v)),
-            Value::Array(arr) => arr.iter().all(|v| check_no_dek_values(v)),
+            Value::Object(map) => map.values().all(check_no_dek_values),
+            Value::Array(arr) => arr.iter().all(check_no_dek_values),
             _ => true,
         }
     }
 
     assert!(
         check_no_dek_values(&session_json),
-        "Session contains what looks like a base64-encoded DEK value. Session data: {}",
-        session_data
+        "Session contains what looks like a base64-encoded DEK value. Session data: {session_data}"
     );
 
     info!("✓ Verified: DEK is NOT stored in the session");
@@ -184,7 +181,7 @@ async fn test_dek_not_stored_in_session() -> AnyhowResult<()> {
     let me_request = Request::builder()
         .method(Method::GET)
         .uri("/api/auth/me")
-        .header(header::COOKIE, format!("id={}", session_id))
+        .header(header::COOKIE, format!("id={session_id}"))
         .body(Body::empty())?;
 
     let me_response = test_app.router.clone().oneshot(me_request).await?;
@@ -259,7 +256,7 @@ async fn test_dek_removed_from_cache_on_logout() -> AnyhowResult<()> {
     let me_request = Request::builder()
         .method(Method::GET)
         .uri("/api/auth/me")
-        .header(header::COOKIE, format!("id={}", session_id))
+        .header(header::COOKIE, format!("id={session_id}"))
         .body(Body::empty())?;
 
     let me_response = test_app.router.clone().oneshot(me_request).await?;
@@ -273,7 +270,7 @@ async fn test_dek_removed_from_cache_on_logout() -> AnyhowResult<()> {
     let logout_request = Request::builder()
         .method(Method::POST)
         .uri("/api/auth/logout")
-        .header(header::COOKIE, format!("id={}", session_id))
+        .header(header::COOKIE, format!("id={session_id}"))
         .body(Body::empty())?;
 
     let logout_response = test_app.router.clone().oneshot(logout_request).await?;
@@ -288,7 +285,7 @@ async fn test_dek_removed_from_cache_on_logout() -> AnyhowResult<()> {
     let protected_request = Request::builder()
         .method(Method::GET)
         .uri("/api/auth/me")
-        .header(header::COOKIE, format!("id={}", session_id))
+        .header(header::COOKIE, format!("id={session_id}"))
         .body(Body::empty())?;
 
     let protected_response = test_app.router.clone().oneshot(protected_request).await?;

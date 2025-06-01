@@ -289,9 +289,7 @@ impl MockHttpClient {
         let function_names: Vec<String> = expected_patterns.keys().cloned().collect();
 
         for function_name in function_names {
-            if let Err(e) = self.verify_endpoint_call(&function_name) {
-                return Err(e);
-            }
+            self.verify_endpoint_call(&function_name)?
         }
 
         Ok(())
@@ -412,7 +410,7 @@ impl HttpClient for MockHttpClient {
         &self,
         _session_id: Uuid,
     ) -> Result<Vec<ClientChatMessageResponse>, CliError> {
-        self.record_endpoint_call(&format!("get_chat_messages/{}", _session_id));
+        self.record_endpoint_call(&format!("get_chat_messages/{_session_id}"));
         match &self.get_chat_messages_result {
             Some(res) => res.as_ref().clone().map_err(CliError::from),
             None => Err(CliError::Internal(
@@ -561,7 +559,7 @@ impl HttpClient for MockHttpClient {
 
     async fn delete_chat(&self, chat_id: Uuid) -> Result<(), CliError> {
         // Record the endpoint call with the expected format
-        self.record_endpoint_call(&format!("/api/chats/remove/{}", chat_id));
+        self.record_endpoint_call(&format!("/api/chats/remove/{chat_id}"));
 
         let mock_result =
             Arc::unwrap_or_clone(self.delete_chat_result.clone().unwrap_or_else(|| {

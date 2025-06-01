@@ -7,7 +7,6 @@ use axum::{
 use chrono::Utc;
 use diesel::prelude::*;
 use genai::chat::{ChatStreamEvent, StreamChunk, StreamEnd};
-use mime;
 use secrecy::ExposeSecret;
 use std::env;
 use std::time::Duration;
@@ -220,15 +219,12 @@ async fn generate_chat_response_streaming_empty_response() {
     assert_eq!(
         actual_events.len(),
         expected_events.len(),
-        "Number of SSE events mismatch. Actual: {:?}, Expected: {:?}",
-        actual_events,
-        expected_events
+        "Number of SSE events mismatch. Actual: {actual_events:?}, Expected: {expected_events:?}"
     );
     for (i, (actual, expected)) in actual_events.iter().zip(expected_events.iter()).enumerate() {
         assert_eq!(
             actual.event, expected.event,
-            "Event name mismatch at index {}",
-            i
+            "Event name mismatch at index {i}"
         );
         assert_eq!(
             actual.data, expected.data,
@@ -267,8 +263,7 @@ async fn generate_chat_response_streaming_empty_response() {
         // If we have messages, ensure they're valid
         assert!(
             messages.len() <= 1,
-            "Should have at most one user message saved after empty stream response. Actual: {:?}",
-            messages
+            "Should have at most one user message saved after empty stream response. Actual: {messages:?}"
         );
 
         if let Some(user_msg_db) = messages.first() {
@@ -533,15 +528,12 @@ async fn generate_chat_response_streaming_reasoning_chunk() {
     assert_eq!(
         actual_events.len(),
         expected_events.len(),
-        "Number of SSE events mismatch. Actual: {:?}, Expected: {:?}",
-        actual_events,
-        expected_events
+        "Number of SSE events mismatch. Actual: {actual_events:?}, Expected: {expected_events:?}"
     );
     for (i, (actual, expected)) in actual_events.iter().zip(expected_events.iter()).enumerate() {
         assert_eq!(
             actual.event, expected.event,
-            "Event name mismatch at index {}. Actual: {:?}, Expected: {:?}",
-            i, actual, expected
+            "Event name mismatch at index {i}. Actual: {actual:?}, Expected: {expected:?}"
         );
         if expected.data == "[DONE]"
             || (expected.event.is_some() && expected.event.as_deref() == Some("reasoning_chunk"))
@@ -553,25 +545,19 @@ async fn generate_chat_response_streaming_reasoning_chunk() {
             );
         } else if expected.data.starts_with('{') || expected.data.starts_with('[') {
             let actual_json: serde_json::Value =
-                serde_json::from_str(&actual.data).expect(&format!(
-                    "Actual data at index {} is not valid JSON: {}",
-                    i, actual.data
-                ));
+                serde_json::from_str(&actual.data).unwrap_or_else(|_| panic!("Actual data at index {} is not valid JSON: {}",
+                    i, actual.data));
             let expected_json: serde_json::Value =
-                serde_json::from_str(&expected.data).expect(&format!(
-                    "Expected data at index {} is not valid JSON: {}",
-                    i, expected.data
-                ));
+                serde_json::from_str(&expected.data).unwrap_or_else(|_| panic!("Expected data at index {} is not valid JSON: {}",
+                    i, expected.data));
             assert_eq!(
                 actual_json, expected_json,
-                "Event data JSON mismatch at index {}",
-                i
+                "Event data JSON mismatch at index {i}"
             );
         } else {
             assert_eq!(
                 actual.data, expected.data,
-                "Event data string mismatch at index {}",
-                i
+                "Event data string mismatch at index {i}"
             );
         }
     }
@@ -608,9 +594,8 @@ async fn generate_chat_response_streaming_reasoning_chunk() {
     if all_session_messages.len() < 2 {
         debug!("Not enough messages saved yet: {:?}", all_session_messages);
         assert!(
-            all_session_messages.len() >= 1,
-            "Should have at least one message saved. Actual: {:?}",
-            all_session_messages
+            !all_session_messages.is_empty(),
+            "Should have at least one message saved. Actual: {all_session_messages:?}"
         );
     } else {
         debug!("Session messages: {:?}", all_session_messages);
@@ -889,7 +874,7 @@ async fn generate_chat_response_streaming_real_client_failure_repro() {
     let body = response.into_body();
     let actual_events = collect_full_sse_events(body).await;
 
-    println!("Received events: {:?}", actual_events);
+    println!("Received events: {actual_events:?}");
 
     let has_done_marker = actual_events.iter().any(|e| e.data == "[DONE]");
     let has_error_event = actual_events
@@ -898,15 +883,13 @@ async fn generate_chat_response_streaming_real_client_failure_repro() {
 
     assert!(
         has_done_marker || has_error_event,
-        "Stream should either complete successfully (has [DONE]) or have an error event. Actual events: {:?}",
-        actual_events
+        "Stream should either complete successfully (has [DONE]) or have an error event. Actual events: {actual_events:?}"
     );
 
     if has_error_event {
         assert!(
             !has_done_marker,
-            "Should not have [DONE] marker if there was an error. Actual events: {:?}",
-            actual_events
+            "Should not have [DONE] marker if there was an error. Actual events: {actual_events:?}"
         );
     }
 
@@ -930,7 +913,7 @@ async fn generate_chat_response_streaming_real_client_failure_repro() {
         .expect("Failed to load chat messages");
 
     assert!(
-        messages.len() >= 1,
+        !messages.is_empty(),
         "At least the user message should be saved."
     );
     assert_eq!(messages[0].message_type, MessageRole::User);

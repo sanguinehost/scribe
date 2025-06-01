@@ -3,7 +3,7 @@
 use crate::errors::AppError;
 use bigdecimal::BigDecimal;
 use chrono::{DateTime, Utc};
-use diesel::prelude::*;
+use diesel::{Queryable, Insertable, Identifiable, AsChangeset, Selectable, Associations};
 use diesel_json::Json;
 use secrecy::{ExposeSecret, SecretBox}; // Corrected: SecretVec -> SecretBox
 use serde::{Deserialize, Serialize};
@@ -330,6 +330,9 @@ impl std::fmt::Debug for Character {
 impl Character {
     /// Encrypts the description field if plaintext is provided and a DEK is available.
     /// Updates `self.description` and `self.description_nonce`.
+    ///
+    /// # Errors
+    /// Returns `AppError` if encryption fails
     pub fn encrypt_description_field(
         &mut self,
         dek: &SecretBox<Vec<u8>>,
@@ -355,7 +358,10 @@ impl Character {
 
     /// Convert this Character into a json-friendly `ClientCharacter` response
     /// If DEK is available, decrypt encrypted fields
-    pub async fn into_client_character(
+    ///
+    /// # Errors
+    /// Returns `AppError` if decryption fails or character parsing fails
+    pub fn into_client_character(
         self,
         dek: Option<&SecretBox<Vec<u8>>>,
     ) -> Result<ClientCharacter, AppError> {
@@ -396,7 +402,6 @@ impl Character {
                         system_prompt_nonce_val,
                         dek_val.expose_secret(),
                     )
-                    .await
                     .map_err(|e| {
                         AppError::EncryptionError(format!("Failed to decrypt system_prompt: {e}"))
                     })?;
@@ -419,7 +424,6 @@ impl Character {
             if !voice_data.is_empty() {
                 let decrypted_bytes = encryption_service
                     .decrypt(voice_data, voice_nonce, dek_val.expose_secret())
-                    .await
                     .map_err(|e| {
                         AppError::EncryptionError(format!("Failed to decrypt voice data: {e}"))
                     })?;
@@ -447,7 +451,6 @@ impl Character {
                 // Decrypt the description field
                 let decrypted_bytes = encryption_service
                     .decrypt(description_data, nonce_val, dek_val.expose_secret())
-                    .await
                     .map_err(|e| {
                         AppError::EncryptionError(format!("Failed to decrypt description: {e}"))
                     })?;
@@ -475,8 +478,11 @@ impl Character {
 
     /// Convert this Character into a `CharacterDataForClient` response
     /// This is similar to `into_client_character` but with a more detailed output format
-    #[allow(clippy::too_many_lines)]
-    pub async fn into_decrypted_for_client(
+    ///
+    /// # Errors
+    /// Returns `AppError` if decryption fails or character parsing fails
+    #[allow(clippy::too_many_lines, clippy::cognitive_complexity)]
+    pub fn into_decrypted_for_client(
         self,
         dek: Option<&SecretBox<Vec<u8>>>,
     ) -> Result<CharacterDataForClient, AppError> {
@@ -488,8 +494,7 @@ impl Character {
                 match ($self_field, $self_nonce, $dek_opt) {
                     (Some(data), Some(nonce), Some(dek_val)) if !data.is_empty() => {
                         let decrypted_bytes_res = encryption_service
-                            .decrypt(data, nonce, dek_val.expose_secret())
-                            .await;
+                            .decrypt(data, nonce, dek_val.expose_secret());
                         match decrypted_bytes_res {
                             Ok(decrypted_bytes) => {
                                 String::from_utf8(decrypted_bytes).map(Some).map_err(|e| {
@@ -1179,6 +1184,7 @@ mod tests {
     use crate::services::character_parser::ParsedCharacterCard;
     use ring::rand::{SecureRandom, SystemRandom};
     use secrecy::SecretBox; // For testing encryption/decryption - Corrected import // For generating a dummy DEK
+    use std::collections::HashMap;
 
     // Helper function to generate a dummy DEK for testing
     fn generate_dummy_dek() -> SecretBox<Vec<u8>> {
@@ -1192,17 +1198,24 @@ mod tests {
     #[test]
     fn test_character_debug() {
         let character = create_dummy_character();
-        let debug_output = format!("{:?}", character);
+        let debug_output = format!("{character:?}");
         assert!(debug_output.contains("name: \"[REDACTED]\""));
         assert!(debug_output.starts_with("Character {"));
-        assert!(debug_output.ends_with("}"));
+        assert!(debug_output.ends_with('}'));
     }
 
     #[test]
     fn test_character_clone() {
-        let character1 = create_dummy_character();
+        let mut character1 = create_dummy_character();
+        #[allow(clippy::redundant_clone)]
         let character2 = character1.clone();
-        assert_eq!(character1, character2);
+        
+        // Modify the original to verify they are independent
+        character1.name = "Modified Name".to_string();
+        
+        assert_eq!(character1.id, character2.id);
+        assert_ne!(character1.name, character2.name);
+        assert_eq!(character2.name, "Dummy Character");
     }
 
     #[tokio::test]
@@ -1224,20 +1237,18 @@ mod tests {
         let client_char = character
             .clone()
             .into_client_character(Some(&dek))
-            .await
             .unwrap();
         assert_eq!(client_char.description, original_description);
 
         // Test with empty description
         let mut char_empty_desc = create_dummy_character();
         char_empty_desc
-            .encrypt_description_field(&dek, Some("".to_string()))
+            .encrypt_description_field(&dek, Some(String::new()))
             .unwrap();
         assert!(char_empty_desc.description.is_none()); // Empty string leads to None
         assert!(char_empty_desc.description_nonce.is_none());
         let client_empty_desc = char_empty_desc
             .into_client_character(Some(&dek))
-            .await
             .unwrap();
         assert_eq!(client_empty_desc.description, "");
 
@@ -1250,7 +1261,6 @@ mod tests {
         let client_inconsistent_nonce = char_inconsistent_nonce
             .clone()
             .into_client_character(Some(&dek))
-            .await
             .unwrap();
         // Expect placeholder because decryption should fail or be skipped due to missing nonce
         assert_eq!(client_inconsistent_nonce.description, "[Encrypted]");
@@ -1258,20 +1268,19 @@ mod tests {
         // Test with None description (after encryption was for Some(""))
         let mut char_none_desc = create_dummy_character();
         char_none_desc
-            .encrypt_description_field(&dek, Some("".to_string()))
+            .encrypt_description_field(&dek, Some(String::new()))
             .unwrap(); // Clears fields
         let client_none_desc = char_none_desc
             .into_client_character(Some(&dek))
-            .await
             .unwrap();
         assert_eq!(client_none_desc.description, ""); // Should be empty string
 
         // Convert to ClientCharacter without DEK
         let mut char_no_dek = create_dummy_character();
         char_no_dek
-            .encrypt_description_field(&dek, Some(original_description.clone()))
+            .encrypt_description_field(&dek, Some(original_description))
             .unwrap();
-        let client_no_dek = char_no_dek.into_client_character(None).await.unwrap();
+        let client_no_dek = char_no_dek.into_client_character(None).unwrap();
         assert_eq!(client_no_dek.description, "[Encrypted]");
 
         // Test with no description data at all
@@ -1279,17 +1288,14 @@ mod tests {
         let client_data_no_desc = char_no_desc
             .clone()
             .into_decrypted_for_client(Some(&dek))
-            .await
             .unwrap();
         // Print out the actual value for debugging
         println!("Description value: {:?}", client_data_no_desc.description);
-        assert_eq!(client_data_no_desc.description, Some("".to_string())); // Expect Some("") instead of None
+        assert_eq!(client_data_no_desc.description, Some(String::new())); // Expect Some("") instead of None
         let client_data_no_desc_no_dek = char_no_desc
-            .clone()
             .into_decrypted_for_client(None)
-            .await
             .unwrap();
-        assert_eq!(client_data_no_desc_no_dek.description, Some("".to_string())); // Expect Some("") instead of None
+        assert_eq!(client_data_no_desc_no_dek.description, Some(String::new())); // Expect Some("") instead of None
     }
 
     #[tokio::test]
@@ -1314,7 +1320,6 @@ mod tests {
         let client_data_with_dek = character
             .clone()
             .into_decrypted_for_client(Some(&dek))
-            .await
             .unwrap();
         assert_eq!(
             client_data_with_dek.description.as_deref(),
@@ -1327,9 +1332,7 @@ mod tests {
 
         // Without DEK
         let client_data_without_dek = character
-            .clone()
             .into_decrypted_for_client(None)
-            .await
             .unwrap();
         assert_eq!(
             client_data_without_dek.description.as_deref(),
@@ -1345,17 +1348,14 @@ mod tests {
         let client_data_no_desc = char_no_desc
             .clone()
             .into_decrypted_for_client(Some(&dek))
-            .await
             .unwrap();
         // Print out the actual value for debugging
         println!("Description value: {:?}", client_data_no_desc.description);
-        assert_eq!(client_data_no_desc.description, Some("".to_string())); // Expect Some("") instead of None
+        assert_eq!(client_data_no_desc.description, Some(String::new())); // Expect Some("") instead of None
         let client_data_no_desc_no_dek = char_no_desc
-            .clone()
             .into_decrypted_for_client(None)
-            .await
             .unwrap();
-        assert_eq!(client_data_no_desc_no_dek.description, Some("".to_string())); // Expect Some("") instead of None
+        assert_eq!(client_data_no_desc_no_dek.description, Some(String::new())); // Expect Some("") instead of None
     }
 
     // Helper function to create a dummy V3 card
@@ -1366,27 +1366,27 @@ mod tests {
             data: CharacterCardDataV3 {
                 name: Some("Test V3 Name".to_string()),
                 description: "V3 Description".to_string(),
-                personality: "".to_string(), // Empty string
+                personality: String::new(), // Empty string
                 first_mes: "V3 First Message".to_string(),
                 mes_example: "V3 Example".to_string(),
-                scenario: "".to_string(),
+                scenario: String::new(),
                 system_prompt: "V3 System".to_string(),
                 creator_notes: "V3 Creator Notes".to_string(),
-                tags: vec!["tag1".to_string(), "".to_string(), "tag3".to_string()], // Include empty tag
+                tags: vec!["tag1".to_string(), String::new(), "tag3".to_string()], // Include empty tag
                 creator: "V3 Creator".to_string(),
                 character_version: "v1.2".to_string(),
                 alternate_greetings: vec!["Hi".to_string(), "Hello".to_string()],
                 // Explicitly add missing fields with default values
-                post_history_instructions: Default::default(),
+                post_history_instructions: String::default(),
                 character_book: None,
                 assets: None,
                 nickname: None,
                 creator_notes_multilingual: None,
                 source: None,
-                group_only_greetings: Default::default(),
+                group_only_greetings: Vec::default(),
                 creation_date: None,
                 modification_date: None,
-                extensions: Default::default(), // Keep extensions
+                extensions: HashMap::default(), // Keep extensions
             },
         })
     }
@@ -1398,10 +1398,10 @@ mod tests {
             name: Some("Test V2 Name".to_string()),
             description: "V2 Description".to_string(),
             personality: "V2 Personality".to_string(),
-            first_mes: "".to_string(), // Empty string
+            first_mes: String::new(), // Empty string
             mes_example: "V2 Example".to_string(),
             scenario: "V2 Scenario".to_string(),
-            system_prompt: "".to_string(),
+            system_prompt: String::new(),
             creator_notes: "V2 Creator Notes".to_string(),
             tags: vec!["v2tag1".to_string()],
             creator: "V2 Creator".to_string(),
@@ -1425,10 +1425,10 @@ mod tests {
         assert_eq!(updatable.spec, Some("chara_card_v3_spec"));
         assert_eq!(updatable.spec_version, Some("1.0.0"));
         assert_eq!(updatable.name, Some("Test V3 Name"));
-        assert_eq!(updatable.description, Some("V3 Description".as_bytes()));
+        assert_eq!(updatable.description, Some(b"V3 Description" as &[u8]));
         assert_eq!(updatable.personality, None); // Empty string maps to None
-        assert_eq!(updatable.first_mes, Some("V3 First Message".as_bytes()));
-        assert_eq!(updatable.mes_example, Some("V3 Example".as_bytes()));
+        assert_eq!(updatable.first_mes, Some(b"V3 First Message" as &[u8]));
+        assert_eq!(updatable.mes_example, Some(b"V3 Example" as &[u8]));
         assert_eq!(updatable.scenario, None); // Empty string maps to None
         assert_eq!(updatable.system_prompt, Some("V3 System"));
         assert_eq!(updatable.creator_notes, Some("V3 Creator Notes"));
@@ -1446,11 +1446,11 @@ mod tests {
         assert_eq!(updatable.spec, None); // No spec in V2
         assert_eq!(updatable.spec_version, None); // No spec_version in V2
         assert_eq!(updatable.name, Some("Test V2 Name"));
-        assert_eq!(updatable.description, Some("V2 Description".as_bytes()));
-        assert_eq!(updatable.personality, Some("V2 Personality".as_bytes()));
+        assert_eq!(updatable.description, Some(b"V2 Description" as &[u8]));
+        assert_eq!(updatable.personality, Some(b"V2 Personality" as &[u8]));
         assert_eq!(updatable.first_mes, None); // Empty string maps to None
-        assert_eq!(updatable.mes_example, Some("V2 Example".as_bytes()));
-        assert_eq!(updatable.scenario, Some("V2 Scenario".as_bytes()));
+        assert_eq!(updatable.mes_example, Some(b"V2 Example" as &[u8]));
+        assert_eq!(updatable.scenario, Some(b"V2 Scenario" as &[u8]));
         assert_eq!(updatable.system_prompt, None); // Empty string maps to None
         assert_eq!(updatable.creator_notes, Some("V2 Creator Notes"));
         assert_eq!(updatable.tags, Some(vec!["v2tag1"]));
@@ -1469,7 +1469,7 @@ mod tests {
             id: uuid,
             user_id: user_uuid,
             name: "Test Character".to_string(),
-            description: Some("A test description".as_bytes().to_vec()),
+            description: Some(b"A test description".to_vec()),
             description_nonce: None, // Added missing field
             first_mes: None,
             created_at: dt,
@@ -1478,7 +1478,7 @@ mod tests {
 
         // Serialize
         let json_string = serde_json::to_string(&metadata).expect("Serialization failed");
-        println!("Serialized JSON: {}", json_string); // Optional: print for debugging
+        println!("Serialized JSON: {json_string}"); // Optional: print for debugging
 
         // Deserialize
         let deserialized_metadata: CharacterMetadata =

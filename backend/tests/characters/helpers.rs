@@ -67,7 +67,7 @@ pub fn insert_test_character(
 
     let new_character_for_insert = NewDbCharacter {
         user_id: user_uuid,
-        name: name,
+        name,
         description: Some(encrypted_description),
         personality: Some(encrypted_personality),
         spec: "chara_card_v3",
@@ -96,24 +96,23 @@ pub fn create_multipart_request(
     let mut body = Vec::new();
 
     // Add file part
-    body.extend_from_slice(format!("--{}\r\n", boundary).as_bytes());
+    body.extend_from_slice(format!("--{boundary}\r\n").as_bytes());
     body.extend_from_slice(
         format!(
-            "Content-Disposition: form-data; name=\"character_card\"; filename=\"{}\"\r\n",
-            filename
+            "Content-Disposition: form-data; name=\"character_card\"; filename=\"{filename}\"\r\n"
         )
         .as_bytes(),
     );
-    body.extend_from_slice(format!("Content-Type: {}\r\n\r\n", content_type).as_bytes());
+    body.extend_from_slice(format!("Content-Type: {content_type}\r\n\r\n").as_bytes());
     body.extend_from_slice(&body_bytes);
     body.extend_from_slice(b"\r\n");
 
     // Add extra fields if any
     if let Some(fields) = extra_fields {
         for (name, value) in fields {
-            body.extend_from_slice(format!("--{}\r\n", boundary).as_bytes());
+            body.extend_from_slice(format!("--{boundary}\r\n").as_bytes());
             body.extend_from_slice(
-                format!("Content-Disposition: form-data; name=\"{}\"\r\n\r\n", name).as_bytes(),
+                format!("Content-Disposition: form-data; name=\"{name}\"\r\n\r\n").as_bytes(),
             );
             body.extend_from_slice(value.as_bytes());
             body.extend_from_slice(b"\r\n");
@@ -121,11 +120,11 @@ pub fn create_multipart_request(
     }
 
     // Final boundary
-    body.extend_from_slice(format!("--{}--\r\n", boundary).as_bytes());
+    body.extend_from_slice(format!("--{boundary}--\r\n").as_bytes());
 
     let mut request_builder = Request::builder().method(Method::POST).uri(uri).header(
         header::CONTENT_TYPE,
-        format!("multipart/form-data; boundary={}", boundary),
+        format!("multipart/form-data; boundary={boundary}"),
     );
 
     // Add cookie header if provided
@@ -179,7 +178,7 @@ pub fn create_test_character_png(version: &str) -> Vec<u8> {
                     }
                 }"#,
         ),
-        _ => panic!("Unsupported version: {}", version),
+        _ => panic!("Unsupported version: {version}"),
     };
 
     // Create a minimal valid PNG with the character chunk
@@ -251,7 +250,7 @@ pub fn insert_test_user_with_password(
     password: &str,
 ) -> Result<(User, SessionDek), diesel::result::Error> {
     let hashed_password = hash_test_password(password);
-    let email = format!("{}@example.com", username);
+    let email = format!("{username}@example.com");
 
     let kek_salt = crypto::generate_salt().expect("Failed to generate KEK salt for test user");
     let dek = crypto::generate_dek().expect("Failed to generate DEK for test user");

@@ -3,7 +3,7 @@
 use crate::models::characters::Character;
 use crate::models::lorebooks::Lorebook; // Import the new Lorebook
 use chrono::{DateTime, Utc}; // Add DateTime and Utc
-use diesel::prelude::*;
+use diesel::{Queryable, Insertable, Identifiable, Selectable, Associations};
 use diesel_json::Json;
 use serde::{Deserialize, Serialize}; // Added Deserializer
 use serde_json::Value; // Using Value for flexibility in extensions and mixed types like id
@@ -183,8 +183,11 @@ impl std::fmt::Debug for Decorator {
 
 // --- End Lorebook Decorator Definitions ---
 
-// Helper function to parse decorators from content string
-// Making this private again as tests are now colocated
+/// Helper function to parse decorators from content string.
+/// Making this private again as tests are now colocated.
+/// 
+/// Parses decorator lines (starting with specific syntax) and regular content lines,
+/// returning both the parsed decorators and the cleaned content.
 fn parse_decorators_from_content(raw_content: &str) -> (Vec<Decorator>, String) {
     let mut decorators = Vec::new();
     let mut content_lines = Vec::new();

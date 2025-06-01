@@ -7,7 +7,6 @@ use axum::{
 };
 use chrono::Utc;
 use http_body_util::BodyExt;
-use mime;
 use rand::TryRngCore;
 use serde_json::json;
 use tower::ServiceExt;
@@ -36,7 +35,7 @@ use scribe_backend::models::{
 };
 use scribe_backend::schema::chat_messages;
 use scribe_backend::services::lorebook_service::LorebookService;
-use scribe_backend::state::AppState;
+use scribe_backend::state::{AppState, AppStateServices};
 // scribe_backend::test_helpers is already imported. TestDataGuard will be used as test_helpers::TestDataGuard.
 
 // --- Session Creation Tests ---
@@ -803,7 +802,7 @@ async fn test_get_chat_session_details_unauthorized() {
     // Make request without authentication
     let request = Request::builder()
         .method(Method::GET)
-        .uri(format!("/api/chats/{}", session_id_clone)) // Corrected URI
+        .uri(format!("/api/chats/{session_id_clone}")) // Corrected URI
         // No auth cookie
         .body(Body::empty())
         .unwrap();
@@ -854,7 +853,7 @@ async fn test_get_chat_session_details_invalid_uuid() {
 
     let request = Request::builder()
         .method(Method::GET)
-        .uri(format!("/api/chats/{}", invalid_session_id)) // Corrected URI, Invalid UUID in path
+        .uri(format!("/api/chats/{invalid_session_id}")) // Corrected URI, Invalid UUID in path
         .header(header::COOKIE, auth_cookie)
         .body(Body::empty())
         .unwrap();
@@ -972,7 +971,7 @@ async fn test_create_chat_session_with_empty_first_mes() -> Result<(), AnyhowErr
         })
         .await;
     if let Err(e) = result {
-        return Err(anyhow::anyhow!("Failed to insert character: {}", e).into());
+        return Err(anyhow::anyhow!("Failed to insert character: {}", e));
     }
     let insert_result = result.unwrap()?;
     debug!("Inserted character: {} rows affected", insert_result);
@@ -1005,7 +1004,7 @@ async fn test_create_chat_session_with_empty_first_mes() -> Result<(), AnyhowErr
         .await;
 
     if let Err(e) = messages_result {
-        return Err(anyhow::anyhow!("Failed to load messages: {}", e).into());
+        return Err(anyhow::anyhow!("Failed to load messages: {}", e));
     }
 
     let messages: Vec<DbChatMessage> = messages_result.unwrap()?;
@@ -1294,7 +1293,7 @@ async fn test_create_session_saves_first_mes() -> Result<(), AnyhowError> {
         })
         .await;
     if let Err(e) = result {
-        return Err(anyhow::anyhow!("Failed to insert character: {}", e).into());
+        return Err(anyhow::anyhow!("Failed to insert character: {}", e));
     }
     let insert_result = result.unwrap()?;
     debug!("Inserted character: {} rows affected", insert_result);
@@ -1333,19 +1332,23 @@ async fn test_create_session_saves_first_mes() -> Result<(), AnyhowError> {
         test_app.db_pool.clone(),
     ));
 
+    let services = AppStateServices {
+        ai_client: test_app.ai_client.clone(),
+        embedding_client: test_app.mock_embedding_client.clone(),
+        qdrant_service: test_app.qdrant_service.clone(), // Assuming qdrant_service is used, else provide mock_qdrant_service
+        embedding_pipeline_service: test_app.mock_embedding_pipeline_service.clone(),
+        chat_override_service: chat_override_service_for_test,
+        user_persona_service: user_persona_service_for_test,
+        token_counter: hybrid_token_counter_for_test,
+        encryption_service: encryption_service_for_test.clone(),
+        lorebook_service: lorebook_service_for_test,
+        auth_backend: auth_backend_for_test,
+    };
+
     let app_state_arc = Arc::new(AppState::new(
         test_app.db_pool.clone(),
         test_app.config.clone(),
-        test_app.ai_client.clone(),
-        test_app.mock_embedding_client.clone(),
-        test_app.qdrant_service.clone(), // Assuming qdrant_service is used, else provide mock_qdrant_service
-        test_app.mock_embedding_pipeline_service.clone(),
-        chat_override_service_for_test,      // 7th arg
-        user_persona_service_for_test,       // 8th arg
-        hybrid_token_counter_for_test,       // 9th arg
-        encryption_service_for_test.clone(), // 10th arg
-        lorebook_service_for_test,           // 11th arg
-        auth_backend_for_test,               // 12th arg
+        services,
     ));
 
     // The function create_session_and_maybe_first_message returns Result<scribe_backend::models::chats::Chat, ...>
@@ -1384,7 +1387,7 @@ async fn test_create_session_saves_first_mes() -> Result<(), AnyhowError> {
         .await;
 
     if let Err(e) = messages_result {
-        return Err(anyhow::anyhow!("Failed to load messages: {}", e).into());
+        return Err(anyhow::anyhow!("Failed to load messages: {}", e));
     }
 
     let messages: Vec<DbChatMessage> = messages_result.unwrap()?;
@@ -1467,8 +1470,8 @@ async fn create_test_lorebook(
                 .get_result::<DbLorebook>(conn)
         })
         .await
-        .map_err(|e| AnyhowError::msg(format!("DB interaction error: {}", e)))?
-        .map_err(|e| AnyhowError::msg(format!("Failed to insert lorebook: {}", e)))?;
+        .map_err(|e| AnyhowError::msg(format!("DB interaction error: {e}")))?
+        .map_err(|e| AnyhowError::msg(format!("Failed to insert lorebook: {e}")))?;
 
     test_data_guard.add_lorebook(lorebook.id); // Assumes TestDataGuard has this method
     Ok(lorebook)
@@ -1584,7 +1587,7 @@ async fn test_create_chat_session_no_lorebook_ids() -> Result<(), AnyhowError> {
                 .execute(conn_inner)
         })
         .await
-        .map_err(|e| AnyhowError::msg(format!("DB interaction error: {}", e)))?;
+        .map_err(|e| AnyhowError::msg(format!("DB interaction error: {e}")))?;
     test_data_guard.add_character(character_id);
 
     // Create chat session request without lorebook_ids
@@ -1617,8 +1620,8 @@ async fn test_create_chat_session_no_lorebook_ids() -> Result<(), AnyhowError> {
                 .load::<ChatSessionLorebook>(conn_inner)
         })
         .await
-        .map_err(|e| AnyhowError::msg(format!("DB interaction error: {}", e)))?
-        .map_err(|e| AnyhowError::msg(format!("Failed to query lorebooks: {}", e)))?;
+        .map_err(|e| AnyhowError::msg(format!("DB interaction error: {e}")))?
+        .map_err(|e| AnyhowError::msg(format!("Failed to query lorebooks: {e}")))?;
 
     assert!(
         linked_lorebooks.is_empty(),
@@ -1736,7 +1739,7 @@ async fn test_create_chat_session_one_valid_lorebook_id() -> Result<(), AnyhowEr
                 .execute(conn_inner)
         })
         .await
-        .map_err(|e| AnyhowError::msg(format!("DB interaction error: {}", e)))?;
+        .map_err(|e| AnyhowError::msg(format!("DB interaction error: {e}")))?;
     test_data_guard.add_character(character_id);
 
     // Create a Lorebook
@@ -1789,8 +1792,8 @@ async fn test_create_chat_session_one_valid_lorebook_id() -> Result<(), AnyhowEr
                 .load::<ChatSessionLorebook>(conn_inner)
         })
         .await
-        .map_err(|e| AnyhowError::msg(format!("DB interaction error: {}", e)))?
-        .map_err(|e| AnyhowError::msg(format!("Failed to query lorebooks: {}", e)))?;
+        .map_err(|e| AnyhowError::msg(format!("DB interaction error: {e}")))?
+        .map_err(|e| AnyhowError::msg(format!("Failed to query lorebooks: {e}")))?;
 
     assert_eq!(
         linked_lorebooks.len(),
@@ -1911,7 +1914,7 @@ async fn test_create_chat_session_multiple_valid_lorebook_ids() -> Result<(), An
                 .execute(conn_inner)
         })
         .await
-        .map_err(|e| AnyhowError::msg(format!("DB interaction error: {}", e)))?;
+        .map_err(|e| AnyhowError::msg(format!("DB interaction error: {e}")))?;
     test_data_guard.add_character(character_id);
 
     // Create Lorebooks
@@ -1974,8 +1977,8 @@ async fn test_create_chat_session_multiple_valid_lorebook_ids() -> Result<(), An
                 .load::<ChatSessionLorebook>(conn_inner)
         })
         .await
-        .map_err(|e| AnyhowError::msg(format!("DB interaction error: {}", e)))?
-        .map_err(|e| AnyhowError::msg(format!("Failed to query lorebooks: {}", e)))?;
+        .map_err(|e| AnyhowError::msg(format!("DB interaction error: {e}")))?
+        .map_err(|e| AnyhowError::msg(format!("Failed to query lorebooks: {e}")))?;
 
     assert_eq!(
         linked_lorebooks.len(),
@@ -2112,7 +2115,7 @@ async fn test_create_chat_session_empty_lorebook_ids_list() -> Result<(), Anyhow
                 .execute(conn_inner)
         })
         .await
-        .map_err(|e| AnyhowError::msg(format!("DB interaction error: {}", e)))?;
+        .map_err(|e| AnyhowError::msg(format!("DB interaction error: {e}")))?;
     test_data_guard.add_character(character_id);
 
     // Create chat session request with an empty lorebook_ids list
@@ -2145,8 +2148,8 @@ async fn test_create_chat_session_empty_lorebook_ids_list() -> Result<(), Anyhow
                 .load::<ChatSessionLorebook>(conn_inner)
         })
         .await
-        .map_err(|e| AnyhowError::msg(format!("DB interaction error: {}", e)))?
-        .map_err(|e| AnyhowError::msg(format!("Failed to query lorebooks: {}", e)))?;
+        .map_err(|e| AnyhowError::msg(format!("DB interaction error: {e}")))?
+        .map_err(|e| AnyhowError::msg(format!("Failed to query lorebooks: {e}")))?;
 
     assert!(
         linked_lorebooks.is_empty(),
@@ -2264,7 +2267,7 @@ async fn test_create_chat_session_non_existent_lorebook_id() -> Result<(), Anyho
                 .execute(conn_inner)
         })
         .await
-        .map_err(|e| AnyhowError::msg(format!("DB interaction error: {}", e)))?;
+        .map_err(|e| AnyhowError::msg(format!("DB interaction error: {e}")))?;
     test_data_guard.add_character(character_id);
 
     let non_existent_lorebook_id = Uuid::new_v4();
@@ -2424,7 +2427,7 @@ async fn test_create_chat_session_lorebook_owned_by_another_user() -> Result<(),
                 .execute(conn_inner)
         })
         .await
-        .map_err(|e| AnyhowError::msg(format!("DB interaction error: {}", e)))?;
+        .map_err(|e| AnyhowError::msg(format!("DB interaction error: {e}")))?;
     test_data_guard.add_character(character_id);
 
     // Create a Lorebook owned by owner_user

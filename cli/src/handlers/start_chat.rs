@@ -55,8 +55,7 @@ async fn select_persona_for_chat<H: IoHandler, C: HttpClient>(
         }
         Err(e) => {
             io_handler.write_line(&format!(
-                "Error fetching personas: {}. Continuing without persona selection.",
-                e
+                "Error fetching personas: {e}. Continuing without persona selection."
             ))?;
             Ok(None) // Proceed without persona if fetching fails
         }
@@ -120,7 +119,7 @@ async fn select_lorebooks_for_chat<H: IoHandler, C: HttpClient>(
                 }
 
                 if all_valid && !selected_ids.is_empty() {
-                    io_handler.write_line(&format!("Selected lorebook IDs: {:?}", selected_ids))?;
+                    io_handler.write_line(&format!("Selected lorebook IDs: {selected_ids:?}"))?;
                     return Ok(Some(selected_ids));
                 } else if all_valid && choice_str.trim().is_empty() {
                     // User just pressed enter
@@ -133,8 +132,7 @@ async fn select_lorebooks_for_chat<H: IoHandler, C: HttpClient>(
         }
         Err(e) => {
             io_handler.write_line(&format!(
-                "Error fetching lorebooks: {}. Continuing without lorebook selection.",
-                e
+                "Error fetching lorebooks: {e}. Continuing without lorebook selection."
             ))?;
             Ok(None) // Proceed without lorebooks if fetching fails
         }
@@ -187,8 +185,7 @@ pub async fn handle_start_chat_action<H: IoHandler, C: HttpClient>(
         Err(e) => {
             tracing::error!(error = ?e, %character_id, "Failed to fetch character details");
             io_handler.write_line(&format!(
-                "Warning: Could not fetch character details: {}. Proceeding with chat creation.",
-                e
+                "Warning: Could not fetch character details: {e}. Proceeding with chat creation."
             ))?;
             return Err(e); // Return error as we need character details
         }
@@ -206,7 +203,7 @@ pub async fn handle_start_chat_action<H: IoHandler, C: HttpClient>(
         Ok(session) => session,
         Err(e) => {
             tracing::error!(error = ?e, %character_id, ?selected_lorebook_ids, "Failed to create chat session");
-            io_handler.write_line(&format!("Error creating chat session: {}", e))?;
+            io_handler.write_line(&format!("Error creating chat session: {e}"))?;
             return Err(e);
         }
     };
@@ -216,8 +213,7 @@ pub async fn handle_start_chat_action<H: IoHandler, C: HttpClient>(
 
     // 3. Configure chat session with default settings
     io_handler.write_line(&format!(
-        "Starting streaming chat with model: {}",
-        current_model
+        "Starting streaming chat with model: {current_model}"
     ))?;
 
     // Apply default settings from configuration
@@ -230,8 +226,7 @@ pub async fn handle_start_chat_action<H: IoHandler, C: HttpClient>(
         }
         Err(e) => {
             io_handler.write_line(&format!(
-                "Warning: Failed to apply default settings: {}. Proceeding with system defaults.",
-                e
+                "Warning: Failed to apply default settings: {e}. Proceeding with system defaults."
             ))?;
 
             // Fallback to basic settings if default settings application fails
@@ -263,8 +258,7 @@ pub async fn handle_start_chat_action<H: IoHandler, C: HttpClient>(
                 }
                 Err(e) => {
                     io_handler.write_line(&format!(
-                        "Warning: Failed to update session settings: {}. Proceeding with defaults.",
-                        e
+                        "Warning: Failed to update session settings: {e}. Proceeding with defaults."
                     ))?;
                 }
             }
@@ -282,7 +276,7 @@ pub async fn handle_start_chat_action<H: IoHandler, C: HttpClient>(
     .await
     {
         tracing::error!(error = ?e, "Streaming chat loop failed");
-        io_handler.write_line(&format!("Chat encountered an error: {}", e))?;
+        io_handler.write_line(&format!("Chat encountered an error: {e}"))?;
     }
 
     io_handler.write_line("Chat session ended.")?;

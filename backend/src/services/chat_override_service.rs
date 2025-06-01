@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use chrono::Utc;
-use diesel::prelude::*;
+use diesel::{ExpressionMethods, RunQueryDsl, SelectableHelper};
 use uuid::Uuid;
 
 use crate::PgPool;
@@ -18,7 +18,8 @@ pub struct ChatOverrideService {
 }
 
 impl ChatOverrideService {
-    pub fn new(db_pool: PgPool, encryption_service: Arc<EncryptionService>) -> Self {
+    #[must_use]
+    pub const fn new(db_pool: PgPool, encryption_service: Arc<EncryptionService>) -> Self {
         Self {
             db_pool,
             encryption_service,
@@ -39,10 +40,9 @@ impl ChatOverrideService {
         let (encrypted_value, nonce) = self
             .encryption_service
             .encrypt(&value, session_dek.expose_bytes())
-            .await
             .map_err(|e| {
                 tracing::error!("Failed to encrypt override value: {}", e);
-                AppError::EncryptionError(format!("Failed to encrypt override value: {}", e))
+                AppError::EncryptionError(format!("Failed to encrypt override value: {e}"))
             })?;
 
         // 2. Prepare NewChatCharacterOverride
@@ -67,7 +67,7 @@ impl ChatOverrideService {
             .get()
             .await
             .map_err(|e| {
-                AppError::DbPoolError(format!("Failed to get DB connection from pool: {}", e))
+                AppError::DbPoolError(format!("Failed to get DB connection from pool: {e}"))
             })?
             .interact(move |conn| {
                 // Define what happens on conflict (update existing row)
@@ -93,8 +93,7 @@ impl ChatOverrideService {
             .await
             .map_err(|e| {
                 AppError::DbInteractError(format!(
-                    "Database interaction error during override upsert: {}",
-                    e
+                    "Database interaction error during override upsert: {e}"
                 ))
             })??; // Handle pool.interact error and then the Result from the closure
 

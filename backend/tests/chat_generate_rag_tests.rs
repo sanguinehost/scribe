@@ -291,7 +291,7 @@ async fn test_generate_chat_response_triggers_embeddings() -> anyhow::Result<()>
 
     // Get calls from mock service instead
     let pipeline_calls = test_app.mock_embedding_pipeline_service.get_calls();
-    println!("Pipeline calls: {:?}", pipeline_calls);
+    println!("Pipeline calls: {pipeline_calls:?}");
 
     // Check if there are any ProcessAndEmbedMessage calls
     let process_calls: Vec<_> = pipeline_calls
@@ -624,7 +624,7 @@ async fn test_generate_chat_response_triggers_embeddings_with_existing_session()
 
     // Get calls from mock service instead
     let pipeline_calls = test_app.mock_embedding_pipeline_service.get_calls();
-    println!("Pipeline calls: {:?}", pipeline_calls);
+    println!("Pipeline calls: {pipeline_calls:?}");
 
     // Check if there are any ProcessAndEmbedMessage calls
     let process_calls: Vec<_> = pipeline_calls
@@ -897,7 +897,7 @@ async fn test_rag_context_injection_in_prompt() -> anyhow::Result<()> {
     tokio::time::sleep(Duration::from_millis(500)).await;
 
     let pipeline_calls = test_app.mock_embedding_pipeline_service.get_calls();
-    println!("Pipeline calls: {:?}", pipeline_calls);
+    println!("Pipeline calls: {pipeline_calls:?}");
 
     // Check that retrieve_relevant_chunks was called by build_prompt_with_rag
     let retrieve_calls: Vec<_> = pipeline_calls
@@ -994,21 +994,17 @@ async fn test_rag_context_injection_in_prompt() -> anyhow::Result<()> {
     {
         assert!(
             user_content.contains(expected_rag_context_header),
-            "User message content should contain RAG context header. Got: '{}'",
-            user_content
+            "User message content should contain RAG context header. Got: '{user_content}'"
         );
         assert!(
             user_content.contains(&expected_rag_chunk_text),
-            "User message content should contain RAG chunk text. Expected: '{}'. Got: '{}'",
-            expected_rag_chunk_text,
-            user_content
+            "User message content should contain RAG chunk text. Expected: '{expected_rag_chunk_text}'. Got: '{user_content}'"
         );
         assert!(
             user_content.ends_with(query_text), // Original query should be at the end
-            "User message content should end with the original query. Got: '{}'",
-            user_content
+            "User message content should end with the original query. Got: '{user_content}'"
         );
-        println!("Verified RAG context in user message: {}", user_content);
+        println!("Verified RAG context in user message: {user_content}");
     } else {
         panic!("Expected user message to be text content");
     }
@@ -1322,8 +1318,7 @@ async fn generate_chat_response_rag_retrieval_error() -> anyhow::Result<()> {
     assert_eq!(
         messages.len(),
         2,
-        "Should have user and AI message saved even after RAG retrieval failure. Messages: {:?}",
-        messages
+        "Should have user and AI message saved even after RAG retrieval failure. Messages: {messages:?}"
     );
     // The DEK is now directly available on the `user` object from `create_test_user`
     let session_dek_secret_box = &user
@@ -1337,7 +1332,7 @@ async fn generate_chat_response_rag_retrieval_error() -> anyhow::Result<()> {
             match m.decrypt_content_field(session_dek_secret_box) {
                 Ok(decrypted_content) => decrypted_content == "User message for RAG error test",
                 Err(e) => {
-                    eprintln!("Failed to decrypt user message content in test generate_chat_response_rag_retrieval_error: {:?}", e);
+                    eprintln!("Failed to decrypt user message content in test generate_chat_response_rag_retrieval_error: {e:?}");
                     false
                 }
             }
@@ -1358,7 +1353,7 @@ async fn generate_chat_response_rag_retrieval_error() -> anyhow::Result<()> {
     // Decrypt the saved AI message content for assertion
 
     let decrypted_ai_content = saved_ai_msg
-        .decrypt_content_field(&session_dek_secret_box)
+        .decrypt_content_field(session_dek_secret_box)
         .expect(
             "Failed to decrypt AI message content in generate_chat_response_rag_retrieval_error",
         );
@@ -1609,7 +1604,7 @@ async fn setup_test_data(use_real_ai: bool) -> anyhow::Result<RagTestContext> {
 
     // Get calls from mock service instead
     let pipeline_calls = test_app.mock_embedding_pipeline_service.get_calls();
-    println!("Pipeline calls: {:?}", pipeline_calls);
+    println!("Pipeline calls: {pipeline_calls:?}");
 
     // Check if there are any ProcessAndEmbedMessage calls
     let process_calls: Vec<_> = pipeline_calls
@@ -1665,7 +1660,7 @@ async fn setup_test_data(use_real_ai: bool) -> anyhow::Result<RagTestContext> {
 
         // Skip the assertion since we're not actually embedding the specific message we're checking for
         // This test seems to be checking post-setup conditions, not the specific response generation
-        println!("Process call message IDs: {:?}", process_message_ids);
+        println!("Process call message IDs: {process_message_ids:?}");
         println!("User message ID: {}", user_msg.id);
     }
 
@@ -2117,7 +2112,7 @@ async fn generate_chat_response_rag_uses_session_settings() -> anyhow::Result<()
         .as_ref()
         .expect("Mock client required")
         .get_last_options();
-    println!("Last options: {:?}", last_options);
+    println!("Last options: {last_options:?}");
 
     // The tests are failing because the mock client is not capturing the ChatOptions correctly.
     // The option parameters are not being passed to the mock client.
@@ -2197,7 +2192,7 @@ async fn generate_chat_response_rag_uses_character_settings_if_no_session() -> a
         .as_ref()
         .expect("Mock client required")
         .get_last_options();
-    println!("Last options: {:?}", last_options);
+    println!("Last options: {last_options:?}");
 
     // The tests are failing because the mock client is not capturing the ChatOptions correctly.
     // The option parameters are not being passed to the mock client.

@@ -1,7 +1,7 @@
 use std::{cmp::min, pin::Pin, sync::Arc};
 
 use bigdecimal::{BigDecimal, ToPrimitive};
-use diesel::{prelude::*, result::Error as DieselError};
+use diesel::{QueryDsl, ExpressionMethods, RunQueryDsl, SelectableHelper, result::Error as DieselError};
 use futures_util::Stream; // Required for stream_ai_response_and_save_message
 use futures_util::StreamExt; // Required for .next() on streams
 use genai::chat::{
@@ -33,9 +33,36 @@ use crate::{
 };
 // Corrected QdrantClient import
 
+// Type aliases for complex types
+type GeminiStreamResult = Result<Pin<Box<dyn Stream<Item = Result<GeminiResponseChunkAlias, AppError>> + Send>>, AppError>;
+type ScribeEventStream = std::pin::Pin<Box<dyn Stream<Item = Result<ScribeSseEvent, AppError>> + Send>>;
+
+// Complex tuple type for session data
+type SessionDataTuple = (
+    String,                      // history_management_strategy
+    i32,                         // history_management_limit
+    Uuid,                        // session_character_id
+    Option<BigDecimal>,          // temperature
+    Option<i32>,                 // max_output_tokens
+    Option<BigDecimal>,          // frequency_penalty
+    Option<BigDecimal>,          // presence_penalty
+    Option<i32>,                 // top_k
+    Option<BigDecimal>,          // top_p
+    Option<i32>,                 // seed
+    Option<Vec<Option<String>>>, // stop_sequences
+    String,                      // model_name
+    Option<i32>,                 // gemini_thinking_budget
+    Option<bool>,                // gemini_enable_code_execution
+    Vec<DbChatMessage>,          // messages
+    Character,                   // character
+    Vec<ChatCharacterOverride>,  // overrides
+    Option<String>,              // effective_system_prompt
+    Option<String>,              // raw_character_system_prompt
+);
+
 // These functions/types will be in sibling modules
 use super::{
-    message_handling::save_message,
+    message_handling::{save_message, SaveMessageParams},
     types::{
         ChatMessage as DbChatMessage, // To avoid conflict if generation.rs also imports it directly
         GenerationDataWithUnsavedUserMessage,
@@ -44,7 +71,18 @@ use super::{
         // RetrievedChunk is also pub use'd by types.rs, but generation.rs imports it directly from embedding_pipeline
     },
 };
+
+
 /// Fetches session settings, history, applies history management, and prepares the user message struct.
+///
+/// # Errors
+///
+/// Returns `AppError::DbPoolError` if the database connection pool fails to provide a connection,
+/// `AppError::DbInteractError` if database interaction fails,
+/// `AppError::NotFound` if the chat session or character is not found,
+/// `AppError::DatabaseQueryError` if any database query fails,
+/// `AppError::DecryptionError` if message content decryption fails with valid DEK,
+/// `AppError::InternalServerErrorGeneric` if UTF-8 decoding fails or token counting encounters errors.
 #[instrument(skip_all, err)]
 pub async fn get_session_data_for_generation(
     state: Arc<AppState>,
@@ -91,13 +129,12 @@ pub async fn get_session_data_for_generation(
                     .await
                     .map_err(|e| {
                         AppError::InternalServerErrorGeneric(format!(
-                            "DB interact error fetching user_db_query: {}",
-                            e
+                            "DB interact error fetching user_db_query: {e}"
                         ))
                     })?;
 
                 let user_db_query = user_db_query_result.map_err(|e| {
-                    AppError::NotFound(format!("UserDbQuery for user {} not found: {}", user_id, e))
+                    AppError::NotFound(format!("UserDbQuery for user {user_id} not found: {e}"))
                 })?;
                 user_db_query.into()
             };
@@ -130,14 +167,16 @@ pub async fn get_session_data_for_generation(
                         constructed_parts.push(base_prompt_part);
                         if let Some(ref p) = client_persona_dto.personality {
                             if !p.trim().is_empty() {
+                                let personality = p.replace('\0', "");
                                 constructed_parts
-                                    .push(format!("Personality: {}", p.replace('\0', "")));
+                                    .push(format!("Personality: {personality}"));
                             }
                         }
                         if let Some(ref s) = client_persona_dto.scenario {
                             if !s.trim().is_empty() {
+                                let scenario = s.replace('\0', "");
                                 constructed_parts
-                                    .push(format!("Scenario: {}", s.replace('\0', "")));
+                                    .push(format!("Scenario: {scenario}"));
                             }
                         }
                         let constructed = constructed_parts.join("\n");
@@ -147,7 +186,7 @@ pub async fn get_session_data_for_generation(
                     }
                 }
                 Err(e) => {
-                    error!(target: "chat_service_trace_prompt", %session_id, %persona_id, error = %e, "Error fetching active persona via service.")
+                    error!(target: "chat_service_trace_prompt", %session_id, %persona_id, error = %e, "Error fetching active persona via service.");
                 }
             }
         } else {
@@ -201,27 +240,7 @@ pub async fn get_session_data_for_generation(
         character_overrides_for_first_mes, // Overrides for first_mes logic
         final_effective_system_prompt, // This is the system_prompt for the builder (persona/override only)
         raw_character_system_prompt,   // This is the raw system_prompt from the character itself
-    ): (
-        String,                      // history_management_strategy
-        i32,                         // history_management_limit
-        Uuid,                        // session_character_id
-        Option<BigDecimal>,          // temperature
-        Option<i32>,                 // max_output_tokens
-        Option<BigDecimal>,          // frequency_penalty
-        Option<BigDecimal>,          // presence_penalty
-        Option<i32>,                 // top_k
-        Option<BigDecimal>,          // top_p
-        Option<i32>,                 // seed
-        Option<Vec<Option<String>>>, // stop_sequences
-        String,                      // model_name
-        Option<i32>,                 // gemini_thinking_budget
-        Option<bool>,                // gemini_enable_code_execution
-        Vec<DbChatMessage>,          // messages
-        Character,                   // character
-        Vec<ChatCharacterOverride>,  // overrides
-        Option<String>,              // effective_system_prompt
-        Option<String>,              // raw_character_system_prompt
-    ) = {
+    ): SessionDataTuple = {
         let conn = state
             .pool
             .get()
@@ -289,11 +308,10 @@ pub async fn get_session_data_for_generation(
                 )>(conn_interaction)
                 .map_err(|e| match e {
                     DieselError::NotFound => {
-                        AppError::NotFound(format!("Chat session {} not found", session_id))
+                        AppError::NotFound(format!("Chat session {session_id} not found"))
                     }
                     _ => AppError::DatabaseQueryError(format!(
-                        "Failed to query chat session {}: {}",
-                        session_id, e
+                        "Failed to query chat session {session_id}: {e}"
                     )),
                 })?;
 
@@ -302,11 +320,10 @@ pub async fn get_session_data_for_generation(
                 .first::<Character>(conn_interaction)
                 .map_err(|e| match e {
                     DieselError::NotFound => {
-                        AppError::NotFound(format!("Character {} not found", sess_char_id))
+                        AppError::NotFound(format!("Character {sess_char_id} not found"))
                     }
                     _ => AppError::DatabaseQueryError(format!(
-                        "Failed to query character {}: {}",
-                        sess_char_id, e
+                        "Failed to query character {sess_char_id}: {e}"
                     )),
                 })?;
 
@@ -315,7 +332,7 @@ pub async fn get_session_data_for_generation(
                 .filter(chat_character_overrides::original_character_id.eq(sess_char_id))
                 .load::<ChatCharacterOverride>(conn_interaction)
                 .map_err(|e| {
-                    AppError::DatabaseQueryError(format!("Failed to query overrides: {}", e))
+                    AppError::DatabaseQueryError(format!("Failed to query overrides: {e}"))
                 })?;
 
             let messages_raw_db: Vec<DbChatMessage> = chat_messages::table
@@ -324,7 +341,7 @@ pub async fn get_session_data_for_generation(
                 .select(DbChatMessage::as_select())
                 .load::<DbChatMessage>(conn_interaction)
                 .map_err(|e| {
-                    AppError::DatabaseQueryError(format!("Failed to load messages: {}", e))
+                    AppError::DatabaseQueryError(format!("Failed to load messages: {e}"))
                 })?;
 
             let mut current_effective_system_prompt = initial_effective_system_prompt;
@@ -342,7 +359,7 @@ pub async fn get_session_data_for_generation(
                                 &override_data.overridden_value_nonce,
                                 dek.as_ref(),
                             ) {
-                                if let Ok(s) = String::from_utf8(dec_bytes.expose_secret().to_vec())
+                                if let Ok(s) = String::from_utf8(dec_bytes.expose_secret().clone())
                                 {
                                     if !s.trim().is_empty() {
                                         override_values_map
@@ -398,7 +415,7 @@ pub async fn get_session_data_for_generation(
             ))
         })
         .await
-        .map_err(|e| AppError::DbInteractError(format!("Interact dispatch error: {}", e)))??
+        .map_err(|e| AppError::DbInteractError(format!("Interact dispatch error: {e}")))??
     };
 
     // --- Calculate User Prompt Tokens (Now that model_name is available) ---
@@ -411,9 +428,9 @@ pub async fn get_session_data_for_generation(
         )
         .await
     {
-        Ok(estimate) => Some(estimate.total as i32),
+        Ok(estimate) => Some(i32::try_from(estimate.total).unwrap_or(i32::MAX)),
         Err(e) => {
-            warn!("Failed to count prompt tokens for new user message: {}", e);
+            warn!("Failed to count prompt tokens for new user message: {e}");
             None
         }
     };
@@ -436,21 +453,21 @@ pub async fn get_session_data_for_generation(
                     crate::crypto::decrypt_gcm(&db_msg_raw.content, nonce_vec, dek_arc.as_ref())
                         .map_err(|e| {
                             AppError::DecryptionError(format!(
-                                "Failed to decrypt message {}: {}",
-                                db_msg_raw.id, e
+                                "Failed to decrypt message {}: {e}",
+                                db_msg_raw.id
                             ))
                         })?;
-                String::from_utf8(decrypted_bytes_secret.expose_secret().to_vec()).map_err(|e| {
+                String::from_utf8(decrypted_bytes_secret.expose_secret().clone()).map_err(|e| {
                     AppError::InternalServerErrorGeneric(format!(
-                        "Invalid UTF-8 in decrypted message {}: {}",
-                        db_msg_raw.id, e
+                        "Invalid UTF-8 in decrypted message {}: {e}",
+                        db_msg_raw.id
                     ))
                 })?
             }
             _ => String::from_utf8(db_msg_raw.content.clone()).map_err(|e| {
                 AppError::InternalServerErrorGeneric(format!(
-                    "Invalid UTF-8 in plaintext message {}: {}",
-                    db_msg_raw.id, e
+                    "Invalid UTF-8 in plaintext message {}: {e}",
+                    db_msg_raw.id
                 ))
             })?,
         };
@@ -474,8 +491,8 @@ pub async fn get_session_data_for_generation(
             .await
             .map_err(|e| {
                 AppError::InternalServerErrorGeneric(format!(
-                    "Token counting failed for history message {}: {}",
-                    db_msg_raw.id, e
+                    "Token counting failed for history message {}: {e}",
+                    db_msg_raw.id
                 ))
             })?;
 
@@ -611,7 +628,9 @@ pub async fn get_session_data_for_generation(
 
         // Assemble and Budget RAG Context
         debug!(target: "test_debug", %session_id, num_combined_candidates = combined_rag_candidates.len(), "Combined RAG candidates before assembly loop.");
-        if !combined_rag_candidates.is_empty() {
+        if combined_rag_candidates.is_empty() {
+            debug!(target: "test_debug", %session_id, "No combined RAG candidates to process.");
+        } else {
             info!(%session_id, num_combined_candidates = combined_rag_candidates.len(), "Assembling and budgeting RAG context.");
             combined_rag_candidates.sort_by(|a, b| {
                 b.score
@@ -637,7 +656,7 @@ pub async fn get_session_data_for_generation(
                     .await
                 {
                     Ok(token_estimate) => {
-                        let chunk_tokens = token_estimate.total as usize;
+                        let chunk_tokens = token_estimate.total;
                         debug!(target: "test_debug", %session_id, %chunk_tokens, current_rag_tokens_before_add = %current_rag_tokens_used, %available_rag_tokens, "RAG chunk tokens calculated. Checking budget for chunk: {:?}", chunk.text.chars().take(50).collect::<String>());
                         if current_rag_tokens_used.saturating_add(chunk_tokens)
                             <= available_rag_tokens
@@ -658,8 +677,6 @@ pub async fn get_session_data_for_generation(
             }
             info!(target: "test_debug", %session_id, num_rag_items = rag_context_items.len(), %current_rag_tokens_used, "RAG context assembly loop finished.");
             info!(%session_id, num_rag_items = rag_context_items.len(), %current_rag_tokens_used, "RAG context assembly complete.");
-        } else {
-            debug!(target: "test_debug", %session_id, "No combined RAG candidates to process.");
         }
     } else {
         debug!(target: "test_debug", %session_id, %available_rag_tokens, "Skipping RAG context assembly as available_rag_tokens is not > 0.");
@@ -678,15 +695,14 @@ pub async fn get_session_data_for_generation(
                 if !d.is_empty() && !n.is_empty() {
                     let decrypted = crate::crypto::decrypt_gcm(d, n, dek.as_ref()).map_err(
                         |e: crate::crypto::CryptoError| {
-                            AppError::DecryptionError(format!("Failed to decrypt field: {}", e))
+                            AppError::DecryptionError(format!("Failed to decrypt field: {e}"))
                         },
                     )?;
                     return Ok(Some(
-                        String::from_utf8(decrypted.expose_secret().to_vec()).map_err(
+                        String::from_utf8(decrypted.expose_secret().clone()).map_err(
                             |e: std::string::FromUtf8Error| {
                                 AppError::InternalServerErrorGeneric(format!(
-                                    "Invalid UTF-8 in decrypted field: {}",
-                                    e
+                                    "Invalid UTF-8 in decrypted field: {e}"
                                 ))
                             },
                         )?,
@@ -742,18 +758,18 @@ pub async fn get_session_data_for_generation(
     }
 
     // --- Prepare User Message Struct ---
-    let user_db_message_to_save = DbInsertableChatMessage::new(
+    let mut user_db_message_to_save = DbInsertableChatMessage::new(
         session_id,
         user_id,
         MessageRole::User,
         user_message_content_for_closure.into_bytes(),
         None,
-        Some("user".to_string()),
-        Some(serde_json::json!([{"text": user_message_content}])),
-        None,
-        user_prompt_tokens_val,
-        None,
     );
+    
+    user_db_message_to_save = user_db_message_to_save
+        .with_role("user".to_string())
+        .with_parts(serde_json::json!([{"text": user_message_content}]))
+        .with_token_counts(user_prompt_tokens_val, None);
 
     // --- Construct Final Tuple ---
     Ok((
@@ -782,28 +798,65 @@ pub async fn get_session_data_for_generation(
         history_management_limit_db_val,    // 19: history_management_limit (i32) - MOVED
     ))
 }
-#[instrument(skip_all, err, fields(session_id = %session_id, user_id = %user_id, model_name = %model_name))]
+/// Parameters for streaming AI response and saving messages.
+pub struct StreamAiParams {
+    pub state: Arc<AppState>,
+    pub session_id: Uuid,
+    pub user_id: Uuid,
+    pub incoming_genai_messages: Vec<GenAiChatMessage>, // MODIFIED: Changed type and name
+    pub system_prompt: Option<String>,
+    pub temperature: Option<BigDecimal>,
+    pub max_output_tokens: Option<i32>,
+    #[allow(dead_code)]
+    pub frequency_penalty: Option<BigDecimal>, // Mark as unused for now
+    #[allow(dead_code)]
+    pub presence_penalty: Option<BigDecimal>,  // Mark as unused for now
+    #[allow(dead_code)]
+    pub top_k: Option<i32>,                    // Mark as unused for now
+    pub top_p: Option<BigDecimal>,
+    pub stop_sequences: Option<Vec<String>>, // New parameter
+    #[allow(dead_code)]
+    pub seed: Option<i32>,                  // Mark as unused for now
+    pub model_name: String,
+    pub gemini_thinking_budget: Option<i32>,
+    pub gemini_enable_code_execution: Option<bool>,
+    pub request_thinking: bool,                    // New parameter
+    pub user_dek: Option<Arc<SecretBox<Vec<u8>>>>, // Changed to Option<Arc<SecretBox>>
+}
+
+/// Streams AI response chunks and saves the final message to the database.
+///
+/// # Errors
+///
+/// Returns `AppError::from(genai::Error)` if the AI client fails to initiate or process the stream,
+/// or database-related errors from the save_message function if saving fails.
+/// The function handles errors gracefully by attempting to save partial responses.
+#[instrument(skip_all, err, fields(session_id = %params.session_id, user_id = %params.user_id, model_name = %params.model_name))]
 pub async fn stream_ai_response_and_save_message(
-    state: Arc<AppState>,
-    session_id: Uuid,
-    user_id: Uuid,
-    incoming_genai_messages: Vec<GenAiChatMessage>, // MODIFIED: Changed type and name
-    system_prompt: Option<String>,
-    temperature: Option<BigDecimal>,
-    max_output_tokens: Option<i32>,
-    _frequency_penalty: Option<BigDecimal>, // Mark as unused for now
-    _presence_penalty: Option<BigDecimal>,  // Mark as unused for now
-    _top_k: Option<i32>,                    // Mark as unused for now
-    top_p: Option<BigDecimal>,
-    stop_sequences: Option<Vec<String>>, // New parameter
-    _seed: Option<i32>,                  // Mark as unused for now
-    model_name: String,
-    gemini_thinking_budget: Option<i32>,
-    gemini_enable_code_execution: Option<bool>,
-    request_thinking: bool,                    // New parameter
-    user_dek: Option<Arc<SecretBox<Vec<u8>>>>, // Changed to Option<Arc<SecretBox>>
-) -> Result<std::pin::Pin<Box<dyn Stream<Item = Result<ScribeSseEvent, AppError>> + Send>>, AppError>
+    params: StreamAiParams,
+) -> Result<ScribeEventStream, AppError>
 {
+    let StreamAiParams {
+        state,
+        session_id,
+        user_id,
+        incoming_genai_messages,
+        system_prompt,
+        temperature,
+        max_output_tokens,
+        frequency_penalty: _,
+        presence_penalty: _,
+        top_k: _,
+        top_p,
+        stop_sequences,
+        seed: _,
+        model_name,
+        gemini_thinking_budget,
+        gemini_enable_code_execution,
+        request_thinking,
+        user_dek,
+    } = params;
+    
     let service_model_name = model_name.clone(); // Clone for use in this function scope, esp. for save_message calls
     trace!(
         ?system_prompt,
@@ -828,7 +881,7 @@ pub async fn stream_ai_response_and_save_message(
         }
     }
     if let Some(tokens) = max_output_tokens {
-        genai_chat_options = genai_chat_options.with_max_tokens(tokens as u32);
+        genai_chat_options = genai_chat_options.with_max_tokens(u32::try_from(tokens).unwrap_or(0));
     }
     if let Some(p_val) = top_p {
         if let Some(f_val) = p_val.to_f32() {
@@ -841,7 +894,7 @@ pub async fn stream_ai_response_and_save_message(
     if let Some(budget) = gemini_thinking_budget {
         if budget > 0 {
             genai_chat_options =
-                genai_chat_options.with_reasoning_effort(ReasoningEffort::Budget(budget as u32));
+                genai_chat_options.with_reasoning_effort(ReasoningEffort::Budget(u32::try_from(budget).unwrap_or(0)));
         }
     }
     // `with_gemini_enable_code_execution` removed as it's no longer a direct ChatOption.
@@ -895,10 +948,7 @@ pub async fn stream_ai_response_and_save_message(
         genai_chat_options
     );
 
-    let genai_stream_result: Result<
-        Pin<Box<dyn Stream<Item = Result<GeminiResponseChunkAlias, AppError>> + Send>>,
-        AppError,
-    > = state
+    let genai_stream_result: GeminiStreamResult = state
         .ai_client
         .stream_chat(&model_name, chat_request, Some(genai_chat_options))
         .await;
@@ -911,7 +961,7 @@ pub async fn stream_ai_response_and_save_message(
         Err(e) => {
             error!(error = ?e, "Failed to initiate AI stream from chat_service");
             let error_stream = async_stream::stream! {
-                let error_msg = format!("LLM API error (chat_service): Failed to initiate stream - {}", e);
+                let error_msg = format!("LLM API error (chat_service): Failed to initiate stream - {e}");
                 trace!(error_message = %error_msg, "Sending SSE 'error' event (initiation failed in service)");
                 yield Ok::<_, AppError>(ScribeSseEvent::Error(error_msg));
             };
@@ -941,11 +991,11 @@ pub async fn stream_ai_response_and_save_message(
                 }
                 Ok(GeminiResponseChunkAlias::Chunk(chunk)) => {
                     debug!(content_chunk_len = chunk.content.len(), "Received Content chunk from AI stream in chat_service");
-                    if !chunk.content.is_empty() {
+                    if chunk.content.is_empty() {
+                        trace!("Skipping empty content chunk from AI in chat_service");
+                    } else {
                         accumulated_content.push_str(&chunk.content);
                         yield Ok(ScribeSseEvent::Content(chunk.content.clone()));
-                    } else {
-                        trace!("Skipping empty content chunk from AI in chat_service");
                     }
                 }
                 Ok(GeminiResponseChunkAlias::ReasoningChunk(chunk)) => {
@@ -974,21 +1024,23 @@ pub async fn stream_ai_response_and_save_message(
                     let service_model_name_clone_partial = service_model_name.clone(); // Clone model name for this task
 
                     tokio::spawn(async move {
-                        if !partial_content_clone.is_empty() {
+                        if partial_content_clone.is_empty() {
+                            trace!(session_id = %error_session_id_clone, "No partial content to save after stream error (chat_service)");
+                        } else {
                             trace!(session_id = %error_session_id_clone, "Attempting to save partial AI response after stream error (chat_service)");
                             let dek_ref_partial = user_dek_arc_clone_partial.clone();
-                            match save_message(
-                                state_for_partial_save,
-                                error_session_id_clone,
-                                error_user_id_clone,
-                                MessageRole::Assistant, // message_type_enum
-                                &partial_content_clone, // content
-                                Some("assistant".to_string()), // role_str (or "model")
-                                Some(serde_json::json!([{"text": partial_content_clone}])), // parts
-                                None,                   // attachments
-                                dek_ref_partial,
-                                &service_model_name_clone_partial,
-                           ).await {
+                            match save_message(SaveMessageParams {
+                                state: state_for_partial_save,
+                                session_id: error_session_id_clone,
+                                user_id: error_user_id_clone,
+                                message_type_enum: MessageRole::Assistant,
+                                content: &partial_content_clone,
+                                role_str: Some("assistant".to_string()),
+                                parts: Some(serde_json::json!([{"text": partial_content_clone}])),
+                                attachments: None,
+                                user_dek_secret_box: dek_ref_partial,
+                                model_name: service_model_name_clone_partial,
+                           }).await {
                                 Ok(saved_message) => {
                                     debug!(session_id = %error_session_id_clone, message_id = %saved_message.id, "Successfully saved partial AI response via save_message after stream error (chat_service)");
                                 }
@@ -996,8 +1048,6 @@ pub async fn stream_ai_response_and_save_message(
                                     error!(error = ?save_err, session_id = %error_session_id_clone, "Error saving partial AI response via save_message after stream error (chat_service)");
                                 }
                             }
-                        } else {
-                            trace!(session_id = %error_session_id_clone, "No partial content to save after stream error (chat_service)");
                         }
                     });
 
@@ -1005,7 +1055,7 @@ pub async fn stream_ai_response_and_save_message(
                     let client_error_message = if detailed_error.contains("LLM API error:") {
                         detailed_error
                     } else {
-                        format!("LLM API error (chat_service loop): {}", detailed_error)
+                        format!("LLM API error (chat_service loop): {detailed_error}")
                     };
                     trace!(error_message = %client_error_message, "Sending SSE 'error' event from chat_service");
                     yield Ok(ScribeSseEvent::Error(client_error_message));
@@ -1028,18 +1078,18 @@ pub async fn stream_ai_response_and_save_message(
 
             tokio::spawn(async move {
                 let dek_ref_full = user_dek_arc_clone_full.clone();
-                match save_message(
-                    state_for_full_save,
-                    full_session_id_clone,
-                    full_user_id_clone,
-                    MessageRole::Assistant, // message_type_enum
-                    &accumulated_content,   // content
-                    Some("assistant".to_string()), // role_str (or "model")
-                    Some(serde_json::json!([{"text": accumulated_content}])), // parts
-                    None,                   // attachments
-                    dek_ref_full,
-                    &service_model_name_clone_full,
-                ).await {
+                match save_message(SaveMessageParams {
+                    state: state_for_full_save,
+                    session_id: full_session_id_clone,
+                    user_id: full_user_id_clone,
+                    message_type_enum: MessageRole::Assistant,
+                    content: &accumulated_content,
+                    role_str: Some("assistant".to_string()),
+                    parts: Some(serde_json::json!([{"text": accumulated_content}])),
+                    attachments: None,
+                    user_dek_secret_box: dek_ref_full,
+                    model_name: service_model_name_clone_full,
+                }).await {
                     Ok(saved_message) => {
                         debug!(session_id = %full_session_id_clone, message_id = %saved_message.id, "Successfully saved full AI response via save_message (chat_service)");
                     }

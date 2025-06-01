@@ -26,7 +26,8 @@ pub struct TokenEstimate {
 
 impl TokenEstimate {
     /// Creates a new token estimate with only text tokens
-    pub fn new_text_only(count: usize) -> Self {
+    #[must_use]
+    pub const fn new_text_only(count: usize) -> Self {
         Self {
             total: count,
             text: count,
@@ -38,7 +39,7 @@ impl TokenEstimate {
     }
 
     /// Add counts from another estimate
-    pub fn combine(&mut self, other: &TokenEstimate) {
+    pub fn combine(&mut self, other: &Self) {
         self.total += other.total;
         self.text += other.text;
         self.images += other.images;
@@ -82,7 +83,7 @@ impl TokenizerService {
 
         let processor = SentencePieceProcessor::open(path).map_err(|e| {
             error!("Failed to load SentencePiece model: {}", e);
-            AppError::ConfigError(format!("Failed to load tokenizer model: {}", e))
+            AppError::ConfigError(format!("Failed to load tokenizer model: {e}"))
         })?;
 
         info!("Loaded SentencePiece model: {}", model_name);
@@ -127,7 +128,7 @@ impl TokenizerService {
     pub fn encode(&self, text: &str) -> Result<Vec<u32>> {
         let pieces = self.processor.encode(text).map_err(|e| {
             error!("Failed to encode text: {}", e);
-            AppError::TextProcessingError(format!("Tokenizer encoding error: {}", e))
+            AppError::TextProcessingError(format!("Tokenizer encoding error: {e}"))
         })?;
 
         Ok(pieces.into_iter().map(|p| p.id).collect())
@@ -149,7 +150,7 @@ impl TokenizerService {
     pub fn decode(&self, token_ids: &[u32]) -> Result<String> {
         self.processor.decode_piece_ids(token_ids).map_err(|e| {
             error!("Failed to decode token IDs: {}", e);
-            AppError::TextProcessingError(format!("Tokenizer decoding error: {}", e))
+            AppError::TextProcessingError(format!("Tokenizer decoding error: {e}"))
         })
     }
 
@@ -157,7 +158,7 @@ impl TokenizerService {
     pub fn id_to_piece(&self, id: u32) -> Result<Option<String>> {
         // This is a helper method - SentencePiece doesn't provide a direct id_to_piece method,
         // so we need to decode a single token
-        if id >= self.processor.len() as u32 {
+        if id >= u32::try_from(self.processor.len()).unwrap_or(u32::MAX) {
             return Ok(None);
         }
 
@@ -169,7 +170,7 @@ impl TokenizerService {
     pub fn piece_to_id(&self, piece: &str) -> Result<Option<u32>> {
         self.processor.piece_to_id(piece).map_err(|e| {
             error!("Failed to get ID for piece '{}': {}", piece, e);
-            AppError::TextProcessingError(format!("Error in piece_to_id: {}", e))
+            AppError::TextProcessingError(format!("Error in piece_to_id: {e}"))
         })
     }
 
@@ -197,8 +198,7 @@ impl TokenizerService {
         let img = image::open(path).map_err(|e| {
             error!("Failed to open image at {}: {}", path.display(), e);
             AppError::TextProcessingError(format!(
-                "Failed to open image for token estimation: {}",
-                e
+                "Failed to open image for token estimation: {e}"
             ))
         })?;
 
@@ -217,8 +217,8 @@ impl TokenizerService {
 
         // Larger images are processed into 768x768 tiles
         // Calculate how many tiles would be needed (ceiling division)
-        let tiles_x = (width as f64 / 768.0).ceil() as usize;
-        let tiles_y = (height as f64 / 768.0).ceil() as usize;
+        let tiles_x = (f64::from(width) / 768.0).ceil() as usize;
+        let tiles_y = (f64::from(height) / 768.0).ceil() as usize;
         let total_tiles = tiles_x * tiles_y;
 
         // Each tile is 258 tokens
@@ -319,7 +319,7 @@ impl TokenizerService {
 // Update AppError with TextProcessingError
 impl From<sentencepiece::SentencePieceError> for AppError {
     fn from(err: sentencepiece::SentencePieceError) -> Self {
-        AppError::TextProcessingError(format!("SentencePiece error: {}", err))
+        Self::TextProcessingError(format!("SentencePiece error: {err}"))
     }
 }
 
@@ -542,7 +542,7 @@ mod tests {
             is_estimate: true,
         };
 
-        let mut combined = est1.clone();
+        let mut combined = est1;
         combined.combine(&est2);
 
         assert_eq!(combined.total, 358);

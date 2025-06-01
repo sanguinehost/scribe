@@ -141,7 +141,7 @@ async fn test_hybrid_token_counter_api() {
     println!("\n=== TOKEN COUNT COMPARISON (API vs LOCAL) ===\n");
 
     for (text, description) in &test_texts {
-        println!("\nTest case: {}", description);
+        println!("\nTest case: {description}");
 
         // Local counting
         let local_count = counter
@@ -170,7 +170,7 @@ async fn test_hybrid_token_counter_api() {
         println!("- API count: {} tokens", api_count.total);
         println!("- Local count: {} tokens", local_count.total);
         println!("- Hybrid count: {} tokens", hybrid_count.total);
-        println!("- Difference: {:.2}%", difference_percent);
+        println!("- Difference: {difference_percent:.2}%");
         println!(
             "- Tokens per character (API): {:.2}",
             api_count.total as f64 / text.len() as f64

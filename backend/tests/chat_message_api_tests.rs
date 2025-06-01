@@ -5,14 +5,14 @@ use axum::{
     body::Body,
     http::{Method, Request, StatusCode, header},
 };
-use serde_json; // For deserializing the response
+ // For deserializing the response
 use tower::ServiceExt;
 use uuid::Uuid;
 
 // Crate imports
 use anyhow::Context as _; // For .context() on Option/Result
 use diesel::prelude::*;
-use mime; // For mime::APPLICATION_JSON
+ // For mime::APPLICATION_JSON
 use scribe_backend::{
     models::{
         character_card::NewCharacter,
@@ -226,7 +226,7 @@ async fn test_get_chat_messages_session_not_found() -> anyhow::Result<()> {
 
     let request = Request::builder()
         .method(Method::GET)
-        .uri(format!("/api/chats/{}/messages", non_existent_session_id))
+        .uri(format!("/api/chats/{non_existent_session_id}/messages"))
         .header(header::COOKIE, &auth_cookie)
         .body(Body::empty())?;
 
@@ -296,7 +296,7 @@ mod delete_chat_message {
 
         let request = Request::builder()
             .method(Method::DELETE)
-            .uri(format!("/api/chats/{}/messages/{}", session_id, message_id))
+            .uri(format!("/api/chats/{session_id}/messages/{message_id}"))
             .header(header::COOKIE, &auth_cookie)
             .body(Body::empty())?;
 

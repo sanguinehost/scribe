@@ -67,7 +67,7 @@ async fn test_upload_valid_v3_card() -> Result<(), anyhow::Error> {
     let upload_request = create_multipart_request(
         "/api/characters/upload",
         "test_card.png",
-        &mime::IMAGE_PNG.to_string(),
+        mime::IMAGE_PNG.as_ref(),
         create_test_character_png("v3"), // Use our helper to create a valid V3 card
         Some(vec![("name", "Test Character")]),
         Some(&session_cookie),
@@ -135,7 +135,7 @@ async fn test_upload_valid_v2_card_fallback() -> Result<(), anyhow::Error> {
     let upload_request = create_multipart_request(
         "/api/characters/upload",
         "test_card_v2.png",
-        &mime::IMAGE_PNG.to_string(),
+        mime::IMAGE_PNG.as_ref(),
         create_test_character_png("v2"), // Use our helper to create a valid V2 card
         Some(vec![("name", "Test V2 Character")]),
         Some(&session_cookie),
@@ -209,7 +209,7 @@ async fn test_upload_real_card_file() -> Result<(), anyhow::Error> {
     let upload_request = create_multipart_request(
         "/api/characters/upload",
         "test_card.png",
-        &mime::IMAGE_PNG.to_string(),
+        mime::IMAGE_PNG.as_ref(),
         real_card_data,
         Some(vec![("name", "Real Test Character")]),
         Some(&session_cookie),
@@ -224,9 +224,7 @@ async fn test_upload_real_card_file() -> Result<(), anyhow::Error> {
     assert!(
         status == StatusCode::CREATED
             || (status == StatusCode::BAD_REQUEST && body_text.contains("Character data chunk")),
-        "Upload failed with unexpected status/error: {} - {}",
-        status,
-        body_text
+        "Upload failed with unexpected status/error: {status} - {body_text}"
     );
 
     // --- Cleanup ---
@@ -365,7 +363,7 @@ async fn test_upload_png_no_data_chunk() -> Result<(), anyhow::Error> {
     let upload_request = create_multipart_request(
         "/api/characters/upload",
         "no_chunk.png",
-        &mime::IMAGE_PNG.to_string(),
+        mime::IMAGE_PNG.as_ref(),
         png_bytes,
         Some(vec![("name", "No Chunk Character")]),
         Some(&session_cookie),
@@ -380,8 +378,7 @@ async fn test_upload_png_no_data_chunk() -> Result<(), anyhow::Error> {
     // assert!(body_text.contains("Character data chunk not found in PNG"));
     assert!(
         body_text.contains("{\"error\":\"Failed to parse character data\"}"),
-        "Actual error message: {}",
-        body_text
+        "Actual error message: {body_text}"
     );
 
     guard.cleanup().await?;
@@ -432,7 +429,7 @@ async fn test_upload_with_extra_field() -> Result<(), anyhow::Error> {
     let upload_request = create_multipart_request(
         "/api/characters/upload",
         "test_card_v3_extra.png",
-        &mime::IMAGE_PNG.to_string(),
+        mime::IMAGE_PNG.as_ref(),
         create_test_character_png("v3"),
         Some(vec![
             ("name", "Test Character With Extra"),
@@ -534,7 +531,7 @@ async fn test_upload_invalid_json_in_png() -> Result<(), anyhow::Error> {
     let upload_request = create_multipart_request(
         "/api/characters/upload",
         "invalid_json.png",
-        &mime::IMAGE_PNG.to_string(),
+        mime::IMAGE_PNG.as_ref(),
         png_bytes,
         Some(vec![("name", "Invalid JSON Character")]),
         Some(&session_cookie),
@@ -561,25 +558,25 @@ async fn test_upload_unauthorized() -> Result<(), anyhow::Error> {
     let server_addr = spawn_app(app_router).await; // spawn_app now takes the router
     let client = Client::new();
 
-    let upload_url = format!("http://{}/api/characters/upload", server_addr);
+    let upload_url = format!("http://{server_addr}/api/characters/upload");
 
     let body_bytes = create_test_character_png("v3");
     let boundary = "----WebKitFormBoundaryTest123";
     let mut body = Vec::new();
-    body.extend_from_slice(format!("--{}\r\n", boundary).as_bytes());
+    body.extend_from_slice(format!("--{boundary}\r\n").as_bytes());
     body.extend_from_slice(
         b"Content-Disposition: form-data; name=\"character_card\"; filename=\"test.png\"\r\n",
     );
     body.extend_from_slice(b"Content-Type: image/png\r\n\r\n");
     body.extend_from_slice(&body_bytes);
     body.extend_from_slice(b"\r\n");
-    body.extend_from_slice(format!("--{}--\r\n", boundary).as_bytes());
+    body.extend_from_slice(format!("--{boundary}--\r\n").as_bytes());
 
     let response = client
         .post(&upload_url)
         .header(
             header::CONTENT_TYPE,
-            format!("multipart/form-data; boundary={}", boundary),
+            format!("multipart/form-data; boundary={boundary}"),
         )
         .body(body)
         .send()
@@ -644,20 +641,20 @@ async fn test_upload_missing_file_field() -> Result<(), anyhow::Error> {
         .uri("/api/characters/upload")
         .header(
             header::CONTENT_TYPE,
-            format!("multipart/form-data; boundary={}", boundary),
+            format!("multipart/form-data; boundary={boundary}"),
         )
         .header(header::COOKIE, session_cookie) // Add authentication cookie
         .body(Body::from(
             // Re-create body as it might have been consumed
             {
                 let mut body_content_clone = Vec::new();
-                body_content_clone.extend_from_slice(format!("--{}\r\n", boundary).as_bytes());
+                body_content_clone.extend_from_slice(format!("--{boundary}\r\n").as_bytes());
                 body_content_clone.extend_from_slice(
                     b"Content-Disposition: form-data; name=\"other_field\"\r\n\r\n",
                 );
                 body_content_clone.extend_from_slice(b"some_value");
                 body_content_clone.extend_from_slice(b"\r\n");
-                body_content_clone.extend_from_slice(format!("--{}--\r\n", boundary).as_bytes());
+                body_content_clone.extend_from_slice(format!("--{boundary}--\r\n").as_bytes());
                 body_content_clone
             },
         ))?;

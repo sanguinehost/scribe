@@ -9,8 +9,6 @@ use bigdecimal::{BigDecimal, ToPrimitive};
 use chrono::Utc;
 use diesel::prelude::*;
 use genai::chat::{ChatRole, MessageContent};
-use mime;
-use reqwest;
 use serde_json::json;
 use std::str::FromStr;
 use tower::ServiceExt;
@@ -50,7 +48,9 @@ use tracing::{debug, error, info, warn}; // Added debug
 #[derive(Debug, serde::Deserialize)]
 
 struct ChatCompletionResponse {
+    #[allow(dead_code)]
     content: String,
+    #[allow(dead_code)]
     message_id: String, // Expecting flat structure { "content": "...", "message_id": "..." }
 }
 
@@ -766,7 +766,7 @@ async fn generate_chat_response_uses_session_settings() -> Result<(), anyhow::Er
     // But in test environment, especially with mocks, we might get different behaviors.
     // Test still passes if there's at least one embedding call, which is essential
     assert!(
-        embedding_calls.len() >= 1,
+        !embedding_calls.is_empty(),
         "Should have at least one embedding call"
     );
     Ok(())
@@ -1056,9 +1056,8 @@ async fn generate_chat_response_json_stream_initiation_error() -> Result<(), any
     };
     eprintln!(
         "--- DEBUG: Prompt Text Content ---
-{}
---- END DEBUG ---",
-        prompt_text
+{prompt_text}
+--- END DEBUG ---"
     );
     eprintln!("--- DEBUG: All Messages ---");
     for (i, msg) in last_request.messages.iter().enumerate() {
@@ -1533,7 +1532,7 @@ async fn generate_chat_response_history_sliding_window_messages() -> anyhow::Res
     // all 5 historical messages should be included.
     test_helpers::assert_ai_history(
         &test_app,
-        vec![
+        &[
             ("User", "Msg 1"),
             ("Assistant", "Reply 1"),
             ("User", "Msg 2"),
@@ -1847,7 +1846,7 @@ async fn generate_chat_response_history_sliding_window_tokens() -> anyhow::Resul
     // all 4 historical messages should be included.
     test_helpers::assert_ai_history(
         &test_app,
-        vec![
+        &[
             ("User", "This is message one"),
             ("Assistant", "Reply one"),
             ("User", "Message two"),
@@ -2160,7 +2159,7 @@ async fn test_generate_chat_response_history_truncate_tokens() -> anyhow::Result
     // all messages should be included untruncated.
     test_helpers::assert_ai_history(
         &test_app,
-        vec![
+        &[
             ("User", "This is message one"),
             ("Assistant", "Reply one"),
             ("User", "Message two"),
@@ -2218,7 +2217,7 @@ async fn test_generate_chat_response_history_truncate_tokens() -> anyhow::Result
     // The old assertion expected message content truncation based on session settings.
     test_helpers::assert_ai_history(
         &test_app,
-        vec![
+        &[
             ("User", "This is message one"),
             ("Assistant", "Reply one"),
             ("User", "Message two"),
@@ -2492,7 +2491,7 @@ async fn generate_chat_response_history_none() -> anyhow::Result<()> {
     assert_eq!(response.status(), reqwest::StatusCode::OK);
     let _ = response.bytes().await?; // Changed for reqwest::Response
 
-    test_helpers::assert_ai_history(&test_app, vec![("User", "Msg 1"), ("Assistant", "Reply 1")]);
+    test_helpers::assert_ai_history(&test_app, &[("User", "Msg 1"), ("Assistant", "Reply 1")]);
     test_data_guard.cleanup().await?;
     Ok(())
 }
@@ -2803,7 +2802,7 @@ async fn generate_chat_response_history_truncate_tokens_limit_30() -> anyhow::Re
     // all messages should be included untruncated.
     test_helpers::assert_ai_history(
         &test_app,
-        vec![
+        &[
             ("User", "This is message one"),
             ("Assistant", "Reply one"),
             ("User", "Message two"),
@@ -2862,7 +2861,7 @@ async fn generate_chat_response_history_truncate_tokens_limit_30() -> anyhow::Re
     // The old assertion expected message content truncation based on session settings.
     test_helpers::assert_ai_history(
         &test_app,
-        vec![
+        &[
             ("User", "This is message one"),
             ("Assistant", "Reply one"),
             ("User", "Message two"),

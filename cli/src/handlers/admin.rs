@@ -32,7 +32,7 @@ pub async fn handle_list_all_users_action<H: IoHandler, C: HttpClient>(
             }
         }
         Err(e) => {
-            io_handler.write_line(&format!("\nError listing users: {}", e))?;
+            io_handler.write_line(&format!("\nError listing users: {e}"))?;
         }
     }
 
@@ -56,12 +56,11 @@ pub async fn handle_view_user_details_action<H: IoHandler, C: HttpClient>(
 
     // Parse as UUID if possible, otherwise treat as username
     let user_detail_result = if let Ok(user_id) = Uuid::parse_str(&user_identifier) {
-        io_handler.write_line(&format!("\nViewing details for user ID: {}", user_id))?;
+        io_handler.write_line(&format!("\nViewing details for user ID: {user_id}"))?;
         client.admin_get_user(user_id).await
     } else {
         io_handler.write_line(&format!(
-            "\nViewing details for username: {}",
-            user_identifier
+            "\nViewing details for username: {user_identifier}"
         ))?;
         client.admin_get_user_by_username(&user_identifier).await
     };
@@ -79,7 +78,7 @@ pub async fn handle_view_user_details_action<H: IoHandler, C: HttpClient>(
             io_handler.write_line(&format!("Last Updated:   {}", user.updated_at))?;
         }
         Err(e) => {
-            io_handler.write_line(&format!("\nError retrieving user details: {}", e))?;
+            io_handler.write_line(&format!("\nError retrieving user details: {e}"))?;
         }
     }
 
@@ -109,7 +108,7 @@ pub async fn handle_change_user_role_action<H: IoHandler, C: HttpClient>(
             match client.admin_get_user_by_username(&user_identifier).await {
                 Ok(user) => user.id,
                 Err(e) => {
-                    io_handler.write_line(&format!("\nError finding user: {}", e))?;
+                    io_handler.write_line(&format!("\nError finding user: {e}"))?;
                     return Ok(());
                 }
             }
@@ -134,7 +133,7 @@ pub async fn handle_change_user_role_action<H: IoHandler, C: HttpClient>(
         }
     };
 
-    io_handler.write_line(&format!("\nChanging role to '{}'...", new_role))?;
+    io_handler.write_line(&format!("\nChanging role to '{new_role}'..."))?;
 
     match client.admin_update_user_role(user_id, new_role).await {
         Ok(updated_user) => {
@@ -144,7 +143,7 @@ pub async fn handle_change_user_role_action<H: IoHandler, C: HttpClient>(
             ))?;
         }
         Err(e) => {
-            io_handler.write_line(&format!("\nError changing user role: {}", e))?;
+            io_handler.write_line(&format!("\nError changing user role: {e}"))?;
         }
     }
 
@@ -174,7 +173,7 @@ pub async fn handle_lock_unlock_user_action<H: IoHandler, C: HttpClient>(
             match client.admin_get_user_by_username(&user_identifier).await {
                 Ok(user) => user.id,
                 Err(e) => {
-                    io_handler.write_line(&format!("\nError finding user: {}", e))?;
+                    io_handler.write_line(&format!("\nError finding user: {e}"))?;
                     return Ok(());
                 }
             }
@@ -222,10 +221,10 @@ pub async fn handle_lock_unlock_user_action<H: IoHandler, C: HttpClient>(
 
     match result {
         Ok(_) => {
-            io_handler.write_line(&format!("User account successfully {}ed.", action))?;
+            io_handler.write_line(&format!("User account successfully {action}ed."))?;
         }
         Err(e) => {
-            io_handler.write_line(&format!("\nError {}ing user account: {}", action, e))?;
+            io_handler.write_line(&format!("\nError {action}ing user account: {e}"))?;
         }
     }
 

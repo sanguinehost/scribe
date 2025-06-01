@@ -67,8 +67,7 @@ async fn test_delete_character_success() -> Result<(), anyhow::Error> {
 
     assert_eq!(
         rows_affected, 1,
-        "Expected 1 row to be affected by delete, found {}",
-        rows_affected
+        "Expected 1 row to be affected by delete, found {rows_affected}"
     );
     tracing::info!(character_id = %character_id_to_delete, %rows_affected, "Character directly deleted from DB");
 
@@ -155,7 +154,7 @@ async fn test_delete_character_not_found_when_authenticated() -> Result<(), anyh
     let non_existent_id = Uuid::new_v4();
     let delete_request = Request::builder()
         .method(Method::DELETE)
-        .uri(format!("/api/characters/remove/{}", non_existent_id)) // Relative path
+        .uri(format!("/api/characters/remove/{non_existent_id}")) // Relative path
         .header(header::COOKIE, session_cookie)
         .body(Body::empty())?;
 

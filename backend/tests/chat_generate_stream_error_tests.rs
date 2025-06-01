@@ -177,7 +177,7 @@ async fn generate_chat_response_streaming_ai_error() {
         },
         ParsedSseEvent {
             event: Some("error".to_string()),
-            data: format!("LLM API error: {}", mock_error_message),
+            data: format!("LLM API error: {mock_error_message}"),
         },
     ];
 
@@ -229,37 +229,28 @@ async fn generate_chat_response_streaming_ai_error() {
     assert_eq!(
         actual_events.len(),
         expected_events.len(),
-        "Number of SSE events mismatch. Actual: {:?}, Expected: {:?}",
-        actual_events,
-        expected_events
+        "Number of SSE events mismatch. Actual: {actual_events:?}, Expected: {expected_events:?}"
     );
     for (i, (actual, expected)) in actual_events.iter().zip(expected_events.iter()).enumerate() {
         assert_eq!(
             actual.event, expected.event,
-            "Event name mismatch at index {}. Actual: {:?}, Expected: {:?}",
-            i, actual, expected
+            "Event name mismatch at index {i}. Actual: {actual:?}, Expected: {expected:?}"
         );
         if expected.data.starts_with('{') || expected.data.starts_with('[') {
             let actual_json: serde_json::Value =
-                serde_json::from_str(&actual.data).expect(&format!(
-                    "Actual data at index {} is not valid JSON: {}",
-                    i, actual.data
-                ));
+                serde_json::from_str(&actual.data).unwrap_or_else(|_| panic!("Actual data at index {} is not valid JSON: {}",
+                    i, actual.data));
             let expected_json: serde_json::Value =
-                serde_json::from_str(&expected.data).expect(&format!(
-                    "Expected data at index {} is not valid JSON: {}",
-                    i, expected.data
-                ));
+                serde_json::from_str(&expected.data).unwrap_or_else(|_| panic!("Expected data at index {} is not valid JSON: {}",
+                    i, expected.data));
             assert_eq!(
                 actual_json, expected_json,
-                "Event data JSON mismatch at index {}",
-                i
+                "Event data JSON mismatch at index {i}"
             );
         } else {
             assert_eq!(
                 actual.data, expected.data,
-                "Event data string mismatch at index {}",
-                i
+                "Event data string mismatch at index {i}"
             );
         }
     }
@@ -293,11 +284,10 @@ async fn generate_chat_response_streaming_ai_error() {
     assert_eq!(
         messages.len(),
         2, // User message from payload + partial AI message
-        "Should have user message and partial AI message after stream error. Actual: {:?}",
-        messages
+        "Should have user message and partial AI message after stream error. Actual: {messages:?}"
     );
 
-    let user_msg_db = messages.get(0).expect("User message should exist");
+    let user_msg_db = messages.first().expect("User message should exist");
     assert_eq!(user_msg_db.message_type, MessageRole::User);
     let decrypted_user_content_bytes = scribe_backend::crypto::decrypt_gcm(
         &user_msg_db.content,
@@ -556,8 +546,7 @@ async fn generate_chat_response_streaming_initiation_error() {
     assert_eq!(
         messages_from_db.len(),
         1,
-        "Should have only the user's message saved after stream initiation error. Found: {:?}",
-        messages_from_db
+        "Should have only the user's message saved after stream initiation error. Found: {messages_from_db:?}"
     );
 
     let user_msg_db = messages_from_db.first().unwrap();
@@ -725,7 +714,7 @@ async fn generate_chat_response_streaming_error_before_content() {
         // No thinking event because X-Request-Thinking is false by default
         ParsedSseEvent {
             event: Some("error".to_string()),
-            data: format!("LLM API error: {}", error_message),
+            data: format!("LLM API error: {error_message}"),
         },
     ];
 
@@ -776,20 +765,16 @@ async fn generate_chat_response_streaming_error_before_content() {
     assert_eq!(
         actual_events.len(),
         expected_events.len(),
-        "Number of SSE events mismatch. Actual: {:?}, Expected: {:?}",
-        actual_events,
-        expected_events
+        "Number of SSE events mismatch. Actual: {actual_events:?}, Expected: {expected_events:?}"
     );
     for (i, (actual, expected)) in actual_events.iter().zip(expected_events.iter()).enumerate() {
         assert_eq!(
             actual.event, expected.event,
-            "Event name mismatch at index {}",
-            i
+            "Event name mismatch at index {i}"
         );
         assert_eq!(
             actual.data, expected.data,
-            "Event data string mismatch at index {}",
-            i
+            "Event data string mismatch at index {i}"
         );
     }
 
@@ -816,8 +801,7 @@ async fn generate_chat_response_streaming_error_before_content() {
     assert_eq!(
         messages.len(),
         1,
-        "Should have only the user's message saved after stream error before content. Actual: {:?}",
-        messages
+        "Should have only the user's message saved after stream error before content. Actual: {messages:?}"
     );
 
     let user_msg_db = messages.first().unwrap();
@@ -1016,8 +1000,7 @@ async fn generate_chat_response_streaming_genai_json_error() {
         ParsedSseEvent {
             event: Some("error".to_string()),
             data: format!(
-                "LLM API error (chat_service loop): LLM Generation Error: {}",
-                mock_error_message
+                "LLM API error (chat_service loop): LLM Generation Error: {mock_error_message}"
             ),
         },
     ];
@@ -1069,31 +1052,23 @@ async fn generate_chat_response_streaming_genai_json_error() {
     assert_eq!(
         actual_events.len(),
         expected_events.len(),
-        "Number of SSE events mismatch. Actual: {:?}, Expected: {:?}",
-        actual_events,
-        expected_events
+        "Number of SSE events mismatch. Actual: {actual_events:?}, Expected: {expected_events:?}"
     );
     for (i, (actual, expected)) in actual_events.iter().zip(expected_events.iter()).enumerate() {
         assert_eq!(
             actual.event, expected.event,
-            "Event name mismatch at index {}",
-            i
+            "Event name mismatch at index {i}"
         );
         if expected.data.starts_with('{') || expected.data.starts_with('[') {
             let actual_json: serde_json::Value =
-                serde_json::from_str(&actual.data).expect(&format!(
-                    "Actual data at index {} is not valid JSON: {}",
-                    i, actual.data
-                ));
+                serde_json::from_str(&actual.data).unwrap_or_else(|_| panic!("Actual data at index {} is not valid JSON: {}",
+                    i, actual.data));
             let expected_json: serde_json::Value =
-                serde_json::from_str(&expected.data).expect(&format!(
-                    "Expected data at index {} is not valid JSON: {}",
-                    i, expected.data
-                ));
+                serde_json::from_str(&expected.data).unwrap_or_else(|_| panic!("Expected data at index {} is not valid JSON: {}",
+                    i, expected.data));
             assert_eq!(
                 actual_json, expected_json,
-                "Event data JSON mismatch at index {}",
-                i
+                "Event data JSON mismatch at index {i}"
             );
         } else {
             assert_eq!(
@@ -1133,11 +1108,10 @@ async fn generate_chat_response_streaming_genai_json_error() {
     assert_eq!(
         messages.len(),
         3, // Initial User message (DB setup) + Payload User message + partial AI message
-        "Should have initial user message, payload user message, and partial AI message after JSON error. Actual: {:?}",
-        messages
+        "Should have initial user message, payload user message, and partial AI message after JSON error. Actual: {messages:?}"
     );
 
-    let initial_user_msg_db = messages.get(0).expect("Initial User message should exist");
+    let initial_user_msg_db = messages.first().expect("Initial User message should exist");
     assert_eq!(initial_user_msg_db.message_type, MessageRole::User);
     // Decrypt and assert content for initial_user_msg_db
     let initial_user_content_str = match initial_user_msg_db.content_nonce {

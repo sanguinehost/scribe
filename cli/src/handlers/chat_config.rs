@@ -78,8 +78,7 @@ pub async fn handle_chat_config_action<H: IoHandler, C: HttpClient>(
 
     // 4. Configure model
     let model_choice = io_handler.read_line(&format!(
-        "Set model (current: {}, press Enter to keep current):",
-        current_model
+        "Set model (current: {current_model}, press Enter to keep current):"
     ))?;
     if !model_choice.trim().is_empty() {
         settings_to_update.model_name = Some(model_choice.trim().to_string());
@@ -120,7 +119,7 @@ pub async fn handle_chat_config_action<H: IoHandler, C: HttpClient>(
         io_handler.read_line("Set temperature (optional, float 0.0-2.0, press Enter to skip):")?;
     if !temp_str.trim().is_empty() {
         match temp_str.trim().parse::<f32>() {
-            Ok(temp) if temp >= 0.0 && temp <= 2.0 => {
+            Ok(temp) if (0.0..=2.0).contains(&temp) => {
                 // Convert f32 to BigDecimal for the API
                 use bigdecimal::BigDecimal;
                 use std::str::FromStr;
@@ -147,7 +146,7 @@ pub async fn handle_chat_config_action<H: IoHandler, C: HttpClient>(
         }
         Err(e) => {
             tracing::error!(error = ?e, %chat_id, "Failed to update chat settings");
-            io_handler.write_line(&format!("Error updating settings: {}", e))?;
+            io_handler.write_line(&format!("Error updating settings: {e}"))?;
         }
     }
 
@@ -172,23 +171,23 @@ fn display_settings<H: IoHandler>(
     io_handler.write_line(&format!("Model: {}", settings.model_name))?;
 
     if let Some(budget) = settings.gemini_thinking_budget {
-        io_handler.write_line(&format!("Thinking Budget: {}", budget))?;
+        io_handler.write_line(&format!("Thinking Budget: {budget}"))?;
     }
 
     if let Some(exec) = settings.gemini_enable_code_execution {
-        io_handler.write_line(&format!("Code Execution Enabled: {}", exec))?;
+        io_handler.write_line(&format!("Code Execution Enabled: {exec}"))?;
     }
 
     if let Some(prompt) = &settings.system_prompt {
-        io_handler.write_line(&format!("System Prompt: {}", prompt))?;
+        io_handler.write_line(&format!("System Prompt: {prompt}"))?;
     }
 
     if let Some(ref temp) = settings.temperature {
-        io_handler.write_line(&format!("Temperature: {:.2}", temp))?;
+        io_handler.write_line(&format!("Temperature: {temp:.2}"))?;
     }
 
     if let Some(max_tokens) = settings.max_output_tokens {
-        io_handler.write_line(&format!("Max Output Tokens: {}", max_tokens))?;
+        io_handler.write_line(&format!("Max Output Tokens: {max_tokens}"))?;
     }
 
     io_handler.write_line("---")?;

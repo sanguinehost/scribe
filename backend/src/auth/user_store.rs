@@ -275,6 +275,15 @@ impl Backend {
 /// - Insertion of the new user record.
 ///
 /// It returns a `UserDbQuery` which is the representation of the user from the database schema.
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - Database connection cannot be obtained
+/// - Password hashing fails
+/// - Cryptographic operations (salt generation, DEK generation/encryption) fail
+/// - Database insertion fails
+/// - Any other database or system error occurs
 pub async fn create_user_in_db(
     pool: &crate::PgPool,
     username: &str,

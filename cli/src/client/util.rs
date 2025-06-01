@@ -234,7 +234,7 @@ pub(super) async fn handle_non_streaming_chat_response(
                 return Err(CliError::RateLimitExceeded);
             }
 
-            return Err(CliError::Backend(format!("Server error: {}", error_data)));
+            return Err(CliError::Backend(format!("Server error: {error_data}")));
         }
 
         // Extract content from a successful response

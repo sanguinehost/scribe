@@ -1,7 +1,7 @@
 use crate::schema::{chat_messages, chat_sessions};
 use bigdecimal::BigDecimal;
 use chrono::{DateTime, Utc};
-use diesel::prelude::*;
+use diesel::{Queryable, Insertable, Identifiable, Selectable, Associations};
 use serde::{Deserialize, Serialize};
 use tracing::error;
 use uuid::Uuid;
@@ -309,6 +309,9 @@ impl std::fmt::Debug for ChatMessage {
 impl ChatMessage {
     /// Encrypts the content field if plaintext is provided and a DEK is available.
     /// Updates `self.content` and `self.content_nonce`.
+    ///
+    /// # Errors
+    /// Returns `AppError` if encryption fails
     pub fn encrypt_content_field(
         &mut self,
         dek: &SecretBox<Vec<u8>>,
@@ -328,58 +331,58 @@ impl ChatMessage {
 
     /// Decrypts the content field if a DEK is available and content is encrypted.
     /// Returns the decrypted string.
-    #[allow(clippy::cognitive_complexity, clippy::collapsible_else_if, clippy::option_if_let_else)]
+    ///
+    /// # Errors
+    /// Returns `AppError::DecryptionError` if the nonce is empty, missing, or decryption fails
     pub fn decrypt_content_field(&self, dek: &SecretBox<Vec<u8>>) -> Result<String, AppError> {
         if self.content.is_empty() {
-            Ok(String::new())
-        } else {
-            if let Some(nonce) = &self.content_nonce {
-                if nonce.is_empty() {
-                    tracing::error!(
-                        "ChatMessage ID {} content is present but nonce is empty. Cannot decrypt.",
-                        self.id
-                    );
-                    Err(AppError::DecryptionError(
-                        "Nonce is empty for content decryption".to_string(),
-                    ))
-                } else {
-                    match decrypt_gcm(&self.content, nonce, dek) {
-                        Ok(plaintext_secret) => String::from_utf8(
-                            plaintext_secret.expose_secret().clone(),
-                        )
-                        .map_err(|e| {
-                            tracing::error!(
-                                "Failed to convert decrypted message content to UTF-8: {}",
-                                e
-                            );
-                            AppError::DecryptionError(
-                                "Failed to convert message content to UTF-8".to_string(),
-                            )
-                        }),
-                        Err(e) => {
-                            error!(
-                                "Failed to decrypt chat message content for ID {}: {}",
-                                self.id, e
-                            );
-                            Err(AppError::DecryptionError(format!(
-                                "Decryption failed for message content: {e}"
-                            )))
-                        }
-                    }
-                }
-            } else {
-                tracing::error!(
-                    "ChatMessage ID {} content is present but nonce is missing. Cannot decrypt.",
-                    self.id
-                );
-                Err(AppError::DecryptionError(
-                    "Missing nonce for content decryption".to_string(),
-                ))
-            }
+            return Ok(String::new());
         }
+
+        let nonce = self.content_nonce.as_ref().ok_or_else(|| {
+            tracing::error!(
+                "ChatMessage ID {} content is present but nonce is missing. Cannot decrypt.",
+                self.id
+            );
+            AppError::DecryptionError("Missing nonce for content decryption".to_string())
+        })?;
+
+        if nonce.is_empty() {
+            tracing::error!(
+                "ChatMessage ID {} content is present but nonce is empty. Cannot decrypt.",
+                self.id
+            );
+            return Err(AppError::DecryptionError(
+                "Nonce is empty for content decryption".to_string(),
+            ));
+        }
+
+        self.decrypt_with_nonce(nonce, dek)
+    }
+
+    /// Helper method to decrypt content with a validated nonce
+    fn decrypt_with_nonce(&self, nonce: &[u8], dek: &SecretBox<Vec<u8>>) -> Result<String, AppError> {
+        let plaintext_secret = decrypt_gcm(&self.content, nonce, dek).map_err(|e| {
+            error!(
+                "Failed to decrypt chat message content for ID {}: {}",
+                self.id, e
+            );
+            AppError::DecryptionError(format!("Decryption failed for message content: {e}"))
+        })?;
+
+        String::from_utf8(plaintext_secret.expose_secret().clone()).map_err(|e| {
+            tracing::error!(
+                "Failed to convert decrypted message content to UTF-8: {}",
+                e
+            );
+            AppError::DecryptionError("Failed to convert message content to UTF-8".to_string())
+        })
     }
 
     /// Convert this `ChatMessage` to a decrypted `ChatMessageForClient`
+    ///
+    /// # Errors
+    /// Returns `AppError::DecryptionError` if decryption fails or UTF-8 conversion errors occur
     pub fn into_decrypted_for_client(
         self,
         user_dek_secret_box: Option<&SecretBox<Vec<u8>>>,
@@ -387,21 +390,22 @@ impl ChatMessage {
         let decrypted_content_result: Result<String, AppError> =
             if let Some(nonce) = &self.content_nonce {
                 if let Some(dek_sb) = user_dek_secret_box {
-                    match decrypt_gcm(&self.content, nonce, dek_sb) {
-                        Ok(plaintext_secret_vec) => {
-                            String::from_utf8(plaintext_secret_vec.expose_secret().clone())
-                                .map_err(|e| {
-                                    error!("UTF-8 conversion error for msg {}: {:?}", self.id, e);
-                                    AppError::DecryptionError(format!("UTF-8 conversion: {e}"))
-                                })
-                        }
-                        Err(e) => {
-                            error!("Decryption error for msg {}: {:?}", self.id, e);
-                            Err(AppError::DecryptionError(format!(
-                                "Decryption error: {e}"
-                            )))
-                        }
-                    }
+                    decrypt_gcm(&self.content, nonce, dek_sb)
+                        .map_or_else(
+                            |e| {
+                                error!("Decryption error for msg {}: {:?}", self.id, e);
+                                Err(AppError::DecryptionError(format!(
+                                    "Decryption error: {e}"
+                                )))
+                            },
+                            |plaintext_secret_vec| {
+                                String::from_utf8(plaintext_secret_vec.expose_secret().clone())
+                                    .map_err(|e| {
+                                        error!("UTF-8 conversion error for msg {}: {:?}", self.id, e);
+                                        AppError::DecryptionError(format!("UTF-8 conversion: {e}"))
+                                    })
+                            }
+                        )
                 } else {
                     // No DEK provided but content appears encrypted
                     Ok("[Content encrypted, DEK not available]".to_string())
@@ -483,6 +487,9 @@ impl std::fmt::Debug for Message {
 impl Message {
     /// Encrypts the content field if plaintext is provided and a DEK is available.
     /// Updates `self.content` and `self.content_nonce`.
+    ///
+    /// # Errors
+    /// Returns `AppError::CryptoError` if encryption fails
     pub fn encrypt_content_field(
         &mut self,
         dek: &SecretBox<Vec<u8>>,
@@ -502,56 +509,57 @@ impl Message {
 
     /// Decrypts the content field if ciphertext and nonce are present and a DEK is available.
     /// Returns String representing the decrypted content.
-    #[allow(clippy::cognitive_complexity)]
+    ///
+    /// # Errors
+    /// Returns `AppError::DecryptionError` if the nonce is empty, missing, or decryption fails
     pub fn decrypt_content_field(&self, dek: &SecretBox<Vec<u8>>) -> Result<String, AppError> {
         if self.content.is_empty() {
             return Ok(String::new());
         }
 
-        if let Some(nonce_bytes) = &self.content_nonce {
-            if nonce_bytes.is_empty() {
-                tracing::error!(
-                    "ChatMessage ID {} content nonce is present but empty. Cannot decrypt.",
-                    self.id
-                );
-                return Err(AppError::DecryptionError(
-                    "Missing nonce for content decryption".to_string(),
-                ));
-            }
-            match decrypt_gcm(&self.content, nonce_bytes, dek) {
-                Ok(plaintext_secret_vec) => String::from_utf8(
-                    plaintext_secret_vec.expose_secret().clone(),
-                )
-                .map_err(|e| {
-                    error!(
-                        "Failed to convert decrypted message content to UTF-8: {e}"
-                    );
-                    AppError::DecryptionError(
-                        "Failed to convert message content to UTF-8".to_string(),
-                    )
-                }),
-                Err(e) => {
-                    error!(
-                        "Failed to decrypt chat message content for ID {}: {e}",
-                        self.id
-                    );
-                    Err(AppError::DecryptionError(format!(
-                        "Decryption failed for message content: {e}"
-                    )))
-                }
-            }
-        } else {
+        let nonce_bytes = self.content_nonce.as_ref().ok_or_else(|| {
             tracing::error!(
                 "ChatMessage ID {} content is present but nonce is missing. Cannot decrypt.",
                 self.id
             );
-            Err(AppError::DecryptionError(
+            AppError::DecryptionError("Missing nonce for content decryption".to_string())
+        })?;
+
+        if nonce_bytes.is_empty() {
+            tracing::error!(
+                "ChatMessage ID {} content nonce is present but empty. Cannot decrypt.",
+                self.id
+            );
+            return Err(AppError::DecryptionError(
                 "Missing nonce for content decryption".to_string(),
-            ))
+            ));
         }
+
+        self.decrypt_content_with_nonce(nonce_bytes, dek)
+    }
+
+    /// Helper method to decrypt content with a validated nonce
+    fn decrypt_content_with_nonce(&self, nonce_bytes: &[u8], dek: &SecretBox<Vec<u8>>) -> Result<String, AppError> {
+        let plaintext_secret_vec = decrypt_gcm(&self.content, nonce_bytes, dek).map_err(|e| {
+            error!(
+                "Failed to decrypt chat message content for ID {}: {e}",
+                self.id
+            );
+            AppError::DecryptionError(format!("Decryption failed for message content: {e}"))
+        })?;
+
+        String::from_utf8(plaintext_secret_vec.expose_secret().clone()).map_err(|e| {
+            error!(
+                "Failed to convert decrypted message content to UTF-8: {e}"
+            );
+            AppError::DecryptionError("Failed to convert message content to UTF-8".to_string())
+        })
     }
 
     /// Convert this `ChatMessage` to a decrypted `ClientChatMessage`
+    ///
+    /// # Errors
+    /// Returns `AppError::DecryptionError` if decryption fails, or `AppError::InternalServerErrorGeneric` for UTF-8 conversion errors
     pub fn into_decrypted_for_client(
         self,
         user_dek_secret_box: Option<&SecretBox<Vec<u8>>>,
@@ -559,21 +567,22 @@ impl Message {
         let decrypted_content_result: Result<String, AppError> =
             if let Some(nonce) = &self.content_nonce {
                 if let Some(dek_sb) = user_dek_secret_box {
-                    match decrypt_gcm(&self.content, nonce, dek_sb) {
-                        Ok(plaintext_secret_vec) => {
-                            String::from_utf8(plaintext_secret_vec.expose_secret().clone())
-                                .map_err(|e| {
-                                    error!("UTF-8 conversion error for msg {}: {:?}", self.id, e);
-                                    AppError::DecryptionError(format!("UTF-8 conversion: {e}"))
-                                })
-                        }
-                        Err(e) => {
-                            error!("Decryption failed for msg {}: {:?}", self.id, e);
-                            Err(AppError::DecryptionError(format!(
-                                "Decryption failed: {e}"
-                            )))
-                        }
-                    }
+                    decrypt_gcm(&self.content, nonce, dek_sb)
+                        .map_or_else(
+                            |e| {
+                                error!("Decryption failed for msg {}: {:?}", self.id, e);
+                                Err(AppError::DecryptionError(format!(
+                                    "Decryption failed: {e}"
+                                )))
+                            },
+                            |plaintext_secret_vec| {
+                                String::from_utf8(plaintext_secret_vec.expose_secret().clone())
+                                    .map_err(|e| {
+                                        error!("UTF-8 conversion error for msg {}: {:?}", self.id, e);
+                                        AppError::DecryptionError(format!("UTF-8 conversion: {e}"))
+                                    })
+                            }
+                        )
                 } else {
                     error!("Msg {} is encrypted but no DEK provided.", self.id);
                     Ok("[Content encrypted, DEK not available]".to_string())
@@ -741,32 +750,53 @@ impl std::fmt::Debug for DbInsertableChatMessage {
 }
 
 impl DbInsertableChatMessage {
-    #[allow(clippy::too_many_arguments)]
+    /// Create a new chat message with required fields only
     #[must_use]
     pub const fn new(
         chat_id: Uuid,
         user_id: Uuid,
-        msg_type_enum: MessageRole,
-        text: Vec<u8>,
-        nonce: Option<Vec<u8>>,
-        role_str: Option<String>,
-        parts_json: Option<serde_json::Value>,
-        attachments_json: Option<serde_json::Value>,
-        prompt_tokens: Option<i32>,
-        completion_tokens: Option<i32>,
+        msg_type: MessageRole,
+        content: Vec<u8>,
+        content_nonce: Option<Vec<u8>>,
     ) -> Self {
         Self {
             chat_id,
             user_id,
-            msg_type: msg_type_enum,
-            content: text,
-            content_nonce: nonce,
-            role: role_str,
-            parts: parts_json,
-            attachments: attachments_json,
-            prompt_tokens,
-            completion_tokens,
+            msg_type,
+            content,
+            content_nonce,
+            role: None,
+            parts: None,
+            attachments: None,
+            prompt_tokens: None,
+            completion_tokens: None,
         }
+    }
+
+    /// Builder methods for optional fields
+    #[must_use]
+    pub fn with_role(mut self, role: String) -> Self {
+        self.role = Some(role);
+        self
+    }
+
+    #[must_use]
+    pub fn with_parts(mut self, parts: serde_json::Value) -> Self {
+        self.parts = Some(parts);
+        self
+    }
+
+    #[must_use]
+    pub fn with_attachments(mut self, attachments: serde_json::Value) -> Self {
+        self.attachments = Some(attachments);
+        self
+    }
+
+    #[must_use]
+    pub const fn with_token_counts(mut self, prompt_tokens: Option<i32>, completion_tokens: Option<i32>) -> Self {
+        self.prompt_tokens = prompt_tokens;
+        self.completion_tokens = completion_tokens;
+        self
     }
 }
 
@@ -1073,7 +1103,10 @@ impl std::fmt::Debug for UpdateChatSettingsRequest {
     }
 }
 
-// Custom validation function for history_management_strategy (called only when Some)
+/// Custom validation function for `history_management_strategy` (called only when Some)
+///
+/// # Errors
+/// Returns `ValidationError` if the strategy is not one of the allowed values
 fn validate_optional_history_strategy(strategy: &String) -> Result<(), ValidationError> {
     // Check if the strategy is a known value
     match strategy.as_str() {
@@ -1091,7 +1124,10 @@ fn validate_optional_history_strategy(strategy: &String) -> Result<(), Validatio
     }
 }
 
-// Custom validation function for optional temperature (0.0 to 2.0)
+/// Custom validation function for optional temperature (0.0 to 2.0)
+///
+/// # Errors
+/// Returns `ValidationError` if temperature is not between 0.0 and 2.0
 fn validate_optional_temperature(temp: &BigDecimal) -> Result<(), ValidationError> {
     let zero = BigDecimal::from(0);
     let two = BigDecimal::from(2);
@@ -1104,7 +1140,10 @@ fn validate_optional_temperature(temp: &BigDecimal) -> Result<(), ValidationErro
     Ok(())
 }
 
-// Custom validation function for optional frequency penalty (-2.0 to 2.0)
+/// Custom validation function for optional frequency penalty (-2.0 to 2.0)
+///
+/// # Errors
+/// Returns `ValidationError` if frequency penalty is not between -2.0 and 2.0
 fn validate_optional_frequency_penalty(penalty: &BigDecimal) -> Result<(), ValidationError> {
     let neg_two = BigDecimal::from(-2);
     let two = BigDecimal::from(2);
@@ -1117,7 +1156,10 @@ fn validate_optional_frequency_penalty(penalty: &BigDecimal) -> Result<(), Valid
     Ok(())
 }
 
-// Custom validation function for optional presence penalty (-2.0 to 2.0)
+/// Custom validation function for optional presence penalty (-2.0 to 2.0)
+///
+/// # Errors
+/// Returns `ValidationError` if presence penalty is not between -2.0 and 2.0
 fn validate_optional_presence_penalty(penalty: &BigDecimal) -> Result<(), ValidationError> {
     let neg_two = BigDecimal::from(-2);
     let two = BigDecimal::from(2);
@@ -1130,7 +1172,10 @@ fn validate_optional_presence_penalty(penalty: &BigDecimal) -> Result<(), Valida
     Ok(())
 }
 
-// Custom validation function for optional top-p (0.0 to 1.0)
+/// Custom validation function for optional top-p (0.0 to 1.0)
+///
+/// # Errors
+/// Returns `ValidationError` if top-p value is not between 0.0 and 1.0
 fn validate_optional_top_p(value: &BigDecimal) -> Result<(), ValidationError> {
     let zero = BigDecimal::from(0);
     let one = BigDecimal::from(1);
@@ -1362,7 +1407,7 @@ mod tests {
     #[test]
     fn test_debug_chat_session() {
         let session = create_sample_chat_session();
-        let debug_str = format!("{:?}", session);
+        let debug_str = format!("{session:?}");
         assert!(debug_str.contains("Chat {"));
         assert!(debug_str.contains(&session.id.to_string()));
         assert!(debug_str.contains("title_ciphertext: None"));
@@ -1375,6 +1420,7 @@ mod tests {
     #[test]
     fn test_clone_chat_session() {
         let original = create_sample_chat_session();
+        #[allow(clippy::redundant_clone)] // Intentionally testing clone functionality
         let cloned = original.clone();
         assert_eq!(original.id, cloned.id);
     }
@@ -1389,7 +1435,7 @@ mod tests {
     #[test]
     fn test_clone_message_role() {
         let original = MessageRole::User;
-        let cloned = original.clone();
+        let cloned = original;
         assert_eq!(original, cloned);
     }
 
@@ -1406,7 +1452,7 @@ mod tests {
             id: Uuid::new_v4(),
             session_id: Uuid::new_v4(),
             message_type: MessageRole::User,
-            content: "Hello, how are you?".as_bytes().to_vec(),
+            content: b"Hello, how are you?".to_vec(),
             content_nonce: None,
             created_at: Utc::now(),
             user_id: Uuid::new_v4(),
@@ -1418,7 +1464,7 @@ mod tests {
     #[test]
     fn test_debug_chat_message() {
         let message = create_sample_chat_message_db();
-        let debug_str = format!("{:?}", message);
+        let debug_str = format!("{message:?}");
         assert!(debug_str.contains("ChatMessage"));
         assert!(debug_str.contains(&message.id.to_string()));
         assert!(debug_str.contains("content: \"[REDACTED_BYTES]\""));
@@ -1427,6 +1473,7 @@ mod tests {
     #[test]
     fn test_clone_chat_message() {
         let original = create_sample_chat_message_db();
+        #[allow(clippy::redundant_clone)] // Intentionally testing clone functionality
         let cloned = original.clone();
         assert_eq!(original.id, cloned.id);
         assert_eq!(original.user_id, cloned.user_id);
@@ -1513,7 +1560,6 @@ mod tests {
             .unwrap();
         assert_eq!(client_empty_with_dek.content, "");
         let client_empty_without_dek = empty_content_msg_db
-            .clone()
             .into_decrypted_for_client(None)
             .unwrap();
         assert_eq!(client_empty_without_dek.content, "");
@@ -1525,7 +1571,7 @@ mod tests {
             id: Uuid::new_v4(),
             session_id: Uuid::new_v4(),
             message_type: MessageRole::User,
-            content: "Hello!".as_bytes().to_vec(),
+            content: b"Hello!".to_vec(),
             content_nonce: None,
             user_id: Uuid::new_v4(),
             created_at: Utc::now(),
@@ -1541,19 +1587,23 @@ mod tests {
     #[test]
     fn test_debug_new_chat_message() {
         let message = create_sample_new_chat_message_db();
-        let debug_str = format!("{:?}", message);
+        let debug_str = format!("{message:?}");
         assert!(debug_str.contains("NewChatMessage"));
         assert!(debug_str.contains(&message.session_id.to_string()));
         assert!(debug_str.contains("content: \"[REDACTED_BYTES]\""));
     }
 
     #[test]
+    #[allow(clippy::redundant_clone)] // Clone is needed to test clone functionality
     fn test_clone_new_chat_message() {
         let original = create_sample_new_chat_message_db();
         let cloned = original.clone();
+        // Test specific fields to ensure deep clone works correctly
         assert_eq!(original.session_id, cloned.session_id);
         assert_eq!(original.message_type, cloned.message_type);
         assert_eq!(original.content, cloned.content);
+        assert_eq!(original.content_nonce, cloned.content_nonce);
+        assert_eq!(original.user_id, cloned.user_id);
     }
 
     #[test]
@@ -1569,11 +1619,6 @@ mod tests {
             user_id,
             role,
             content_vec.clone(),
-            None,
-            None,
-            None,
-            None,
-            None,
             None,
         );
         assert_eq!(message.chat_id, chat_id);
@@ -1605,7 +1650,7 @@ mod tests {
     #[test]
     fn test_debug_chat_settings_response() {
         let settings = create_sample_chat_settings_response();
-        let debug_str = format!("{:?}", settings);
+        let debug_str = format!("{settings:?}");
         assert!(debug_str.contains("ChatSettingsResponse"));
         assert!(debug_str.contains("system_prompt: Some(\"[REDACTED]\")"));
         assert!(debug_str.contains("temperature: Some"));
@@ -1613,10 +1658,14 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::redundant_clone)] // Clone is needed to test clone functionality
     fn test_clone_chat_settings_response() {
         let original = create_sample_chat_settings_response();
         let cloned = original.clone();
 
+        // Test overall equality first
+        assert_eq!(original, cloned);
+        // Test specific fields to ensure deep clone
         assert_eq!(original.system_prompt, cloned.system_prompt);
         assert_eq!(original.temperature, cloned.temperature);
         assert_eq!(original.max_output_tokens, cloned.max_output_tokens);
@@ -1654,7 +1703,7 @@ mod tests {
     #[test]
     fn test_debug_update_chat_settings_request() {
         let settings = create_sample_update_chat_settings_request();
-        let debug_str = format!("{:?}", settings);
+        let debug_str = format!("{settings:?}");
         assert!(debug_str.contains("UpdateChatSettingsRequest"));
         assert!(debug_str.contains("system_prompt: Some(\"[REDACTED]\")"));
         assert!(debug_str.contains("temperature: Some"));
@@ -1662,10 +1711,14 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::redundant_clone)] // Clone is needed to test clone functionality
     fn test_clone_update_chat_settings_request() {
         let original = create_sample_update_chat_settings_request();
         let cloned = original.clone();
 
+        // Test overall equality first
+        assert_eq!(original, cloned);
+        // Test specific fields to ensure deep clone
         assert_eq!(original.system_prompt, cloned.system_prompt);
         assert_eq!(original.temperature, cloned.temperature);
         assert_eq!(original.max_output_tokens, cloned.max_output_tokens);
@@ -1753,41 +1806,49 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::redundant_clone)] // Clone is needed to test equality functionality
     fn test_partial_eq_chat_settings_response() {
         let settings1 = create_sample_chat_settings_response();
         let mut settings2 = settings1.clone();
 
         assert_eq!(settings1, settings2);
 
+        // Test temperature inequality
         settings2.temperature = Some(bd("0.9"));
         assert_ne!(settings1, settings2);
 
-        settings2 = settings1.clone();
-        settings2.history_management_limit = 1000;
-        assert_ne!(settings1, settings2);
+        // Test history_management_limit inequality
+        let mut settings3 = settings1.clone();
+        settings3.history_management_limit = 1000;
+        assert_ne!(settings1, settings3);
 
-        settings2 = settings1.clone();
-        settings2.history_management_strategy = "sliding_window_messages".to_string();
-        assert_ne!(settings1, settings2);
+        // Test history_management_strategy inequality
+        let mut settings4 = settings1.clone();
+        settings4.history_management_strategy = "sliding_window_messages".to_string();
+        assert_ne!(settings1, settings4);
     }
 
     #[test]
+    #[allow(clippy::redundant_clone)] // Clone is needed to test equality functionality
     fn test_partial_eq_update_chat_settings_request() {
         let settings1 = create_sample_update_chat_settings_request();
         let mut settings2 = settings1.clone();
 
         assert_eq!(settings1, settings2);
 
+        // Test temperature inequality
         settings2.temperature = Some(bd("0.8"));
         assert_ne!(settings1, settings2);
 
-        settings2 = settings1.clone();
-        settings2.history_management_strategy = Some("none".to_string());
-        assert_ne!(settings1, settings2);
+        // Test history_management_strategy inequality
+        let mut settings3 = settings1.clone();
+        settings3.history_management_strategy = Some("none".to_string());
+        assert_ne!(settings1, settings3);
 
-        settings2 = settings1.clone();
-        settings2.history_management_limit = Some(100);
-        assert_ne!(settings1, settings2);
+        // Test history_management_limit inequality
+        let mut settings4 = settings1.clone();
+        settings4.history_management_limit = Some(100);
+        assert_ne!(settings1, settings4);
     }
 
     #[test]

@@ -370,7 +370,7 @@ mod tests {
             role: UserRole,
             default_persona_id: Option<Uuid>,
         ) -> Self {
-            User {
+            Self {
                 id,
                 username: username.to_string(),
                 password_hash: password_hash.to_string(),
@@ -436,6 +436,7 @@ mod tests {
         assert_eq!(user.role, UserRole::User);
         assert_eq!(user.default_persona_id, None);
 
+        #[allow(clippy::redundant_clone)] // Testing clone functionality
         let cloned_user = user.clone();
         assert!(
             cloned_user.dek.is_some(),

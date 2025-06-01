@@ -1,5 +1,4 @@
 use ctor::ctor;
-use dotenvy;
 use std::path::PathBuf;
 
 // This function will run once when the test executable is loaded.

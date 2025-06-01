@@ -8,12 +8,25 @@ const NONCE_LEN: usize = aead::NONCE_LEN;
 #[derive(Clone)]
 pub struct EncryptionService;
 
+impl Default for EncryptionService {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl EncryptionService {
-    pub fn new() -> Self {
+    #[must_use]
+    pub const fn new() -> Self {
         Self
     }
 
-    pub async fn encrypt(
+    /// Encrypts plaintext using AES-256-GCM with the provided key.
+    ///
+    /// # Errors
+    ///
+    /// Returns `AppError::EncryptionError` if the key length is invalid (not 32 bytes for AES-256-GCM)
+    /// or if the underlying encryption operation fails.
+    pub fn encrypt(
         &self,
         plaintext: &str,
         key: &[u8],
@@ -28,10 +41,18 @@ impl EncryptionService {
         let key_secret_box = SecretBox::new(Box::new(key.to_vec()));
 
         encrypt_gcm(plaintext.as_bytes(), &key_secret_box)
-            .map_err(|e| AppError::EncryptionError(format!("Encryption failed: {}", e)))
+            .map_err(|e| AppError::EncryptionError(format!("Encryption failed: {e}")))
     }
 
-    pub async fn decrypt(
+    /// Decrypts ciphertext using AES-256-GCM with the provided key and nonce.
+    ///
+    /// # Errors
+    ///
+    /// Returns `AppError::DecryptionError` if the key length is invalid (not 32 bytes),
+    /// the nonce length is invalid (not 12 bytes for GCM),
+    /// the ciphertext is too short to contain an authentication tag,
+    /// or if the underlying decryption operation fails (e.g., due to tampering).
+    pub fn decrypt(
         &self,
         ciphertext_and_tag: &[u8],
         nonce_bytes: &[u8],
@@ -62,17 +83,17 @@ impl EncryptionService {
 
         let key_secret_box = SecretBox::new(Box::new(key.to_vec()));
 
-        match crate::crypto::decrypt_gcm(ciphertext_and_tag, nonce_bytes, &key_secret_box) {
-            Ok(decrypted_secret_box_vec) => Ok(decrypted_secret_box_vec.expose_secret().to_vec()),
-            Err(e) => {
-                // Log the original error for debugging purposes if needed
-                // tracing::error!("Decryption failed: {:?}", e);
-                Err(AppError::DecryptionError(format!(
-                    "Decryption failed: {}",
-                    e
-                )))
-            }
-        }
+        crate::crypto::decrypt_gcm(ciphertext_and_tag, nonce_bytes, &key_secret_box)
+            .map_or_else(
+                |e| {
+                    // Log the original error for debugging purposes if needed
+                    // tracing::error!("Decryption failed: {:?}", e);
+                    Err(AppError::DecryptionError(format!(
+                        "Decryption failed: {e}"
+                    )))
+                },
+                |decrypted_secret_box_vec| Ok(decrypted_secret_box_vec.expose_secret().clone())
+            )
     }
 }
 
@@ -88,10 +109,9 @@ mod tests {
         let service = EncryptionService::new();
         let plaintext = "This is a secret message.";
 
-        let (encrypted_data, nonce) = service.encrypt(plaintext, TEST_KEY).await.unwrap();
+        let (encrypted_data, nonce) = service.encrypt(plaintext, TEST_KEY).unwrap();
         let decrypted_data_bytes = service
             .decrypt(&encrypted_data, &nonce, TEST_KEY)
-            .await
             .unwrap();
         let decrypted_data = String::from_utf8(decrypted_data_bytes).unwrap();
 
@@ -104,12 +124,12 @@ mod tests {
         let plaintext = "Another secret.";
         let wrong_key = b"abcdef0123456789abcdef0123456789";
 
-        let (encrypted_data, nonce) = service.encrypt(plaintext, TEST_KEY).await.unwrap();
+        let (encrypted_data, nonce) = service.encrypt(plaintext, TEST_KEY).unwrap();
 
-        match service.decrypt(&encrypted_data, &nonce, wrong_key).await {
+        match service.decrypt(&encrypted_data, &nonce, wrong_key) {
             Err(AppError::DecryptionError(_)) => { /* Expected */ }
             Ok(_) => panic!("Decryption should have failed with the wrong key."),
-            Err(e) => panic!("Unexpected error type: {:?}", e),
+            Err(e) => panic!("Unexpected error type: {e:?}"),
         }
     }
 
@@ -118,10 +138,9 @@ mod tests {
         let service = EncryptionService::new();
         let plaintext = "";
 
-        let (encrypted_data, nonce) = service.encrypt(plaintext, TEST_KEY).await.unwrap();
+        let (encrypted_data, nonce) = service.encrypt(plaintext, TEST_KEY).unwrap();
         let decrypted_data_bytes = service
             .decrypt(&encrypted_data, &nonce, TEST_KEY)
-            .await
             .unwrap();
         let decrypted_data = String::from_utf8(decrypted_data_bytes).unwrap();
 

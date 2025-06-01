@@ -1,0 +1,16 @@
+# Place this file in the 'backend' directory
+# Lints enabled as warnings
+warn = [
+    "clippy::pedantic",
+    "clippy::nursery",
+    "clippy::perf",
+    "clippy::complexity",
+    "clippy::style",
+]
+
+# Lints to explicitly allow, even if part of a 'deny' or 'warn' group
+allow = [ ]
+
+# Deny all warnings by default if not explicitly allowed above.
+# This makes Clippy super strict. Only use if you've allowed all expected warnings.
+#deny = ["warnings"]

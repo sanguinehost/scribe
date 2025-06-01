@@ -106,9 +106,9 @@ pub fn save_default_settings(settings: &DefaultSettings) -> Result<(), CliError>
     let settings_path = get_settings_path();
 
     let json = serde_json::to_string_pretty(settings)
-        .map_err(|e| CliError::Internal(format!("Failed to serialize settings: {}", e)))?;
+        .map_err(|e| CliError::Internal(format!("Failed to serialize settings: {e}")))?;
 
-    fs::write(&settings_path, json).map_err(|e| CliError::Io(e))
+    fs::write(&settings_path, json).map_err(CliError::Io)
 }
 
 /// Handler for configuring default chat settings
@@ -155,7 +155,7 @@ pub async fn handle_default_settings_action<H: IoHandler, C: HttpClient>(
         settings
             .stop_sequences
             .as_ref()
-            .map_or("None".to_string(), |v| format!("{:?}", v))
+            .map_or("None".to_string(), |v| format!("{v:?}"))
     ))?;
 
     // Let the user choose which setting to update
@@ -192,7 +192,7 @@ pub async fn handle_default_settings_action<H: IoHandler, C: HttpClient>(
                 .to_lowercase();
             let enable = input == "y" || input == "yes";
             settings.gemini_enable_code_execution = Some(enable);
-            io_handler.write_line(&format!("Code execution set to: {}", enable))?;
+            io_handler.write_line(&format!("Code execution set to: {enable}"))?;
         }
         "3" => {
             let input = io_handler.read_line("Enter system prompt (leave empty to clear): ")?;
@@ -209,9 +209,9 @@ pub async fn handle_default_settings_action<H: IoHandler, C: HttpClient>(
         "4" => {
             let input = io_handler.read_line("Enter temperature (0.0 to 1.0): ")?;
             if let Ok(temp) = input.trim().parse::<f32>() {
-                if temp >= 0.0 && temp <= 1.0 {
+                if (0.0..=1.0).contains(&temp) {
                     settings.temperature = Some(temp.to_string());
-                    io_handler.write_line(&format!("Temperature updated to: {}", temp))?;
+                    io_handler.write_line(&format!("Temperature updated to: {temp}"))?;
                 } else {
                     io_handler
                         .write_line("Temperature must be between 0.0 and 1.0. Not updated.")?;
@@ -255,7 +255,7 @@ pub async fn handle_default_settings_action<H: IoHandler, C: HttpClient>(
             match save_default_settings(&settings) {
                 Ok(_) => io_handler.write_line("Default settings saved successfully.")?,
                 Err(e) => {
-                    io_handler.write_line(&format!("Failed to save default settings: {}", e))?
+                    io_handler.write_line(&format!("Failed to save default settings: {e}"))?
                 }
             }
             return Ok(());
@@ -277,7 +277,7 @@ pub async fn handle_default_settings_action<H: IoHandler, C: HttpClient>(
     if save_choice == "y" || save_choice == "yes" {
         match save_default_settings(&settings) {
             Ok(_) => io_handler.write_line("Default settings saved successfully.")?,
-            Err(e) => io_handler.write_line(&format!("Failed to save default settings: {}", e))?,
+            Err(e) => io_handler.write_line(&format!("Failed to save default settings: {e}"))?,
         }
     } else {
         io_handler.write_line("Changes not saved.")?;

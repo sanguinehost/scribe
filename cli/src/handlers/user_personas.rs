@@ -51,8 +51,8 @@ pub async fn handle_persona_create_action<C: HttpClient, H: IoHandler>(
             Ok(())
         }
         Err(e) => {
-            io_handler.write_line(&format!("Error creating persona: {}", e))?;
-            Err(e.into()) // Propagate error
+            io_handler.write_line(&format!("Error creating persona: {e}"))?;
+            Err(e) // Propagate error
         }
     }
 }
@@ -78,8 +78,8 @@ pub async fn handle_persona_list_action<C: HttpClient, H: IoHandler>(
             Ok(())
         }
         Err(e) => {
-            io_handler.write_line(&format!("Error listing personas: {}", e))?;
-            Err(e.into()) // Propagate error
+            io_handler.write_line(&format!("Error listing personas: {e}"))?;
+            Err(e) // Propagate error
         }
     }
 }
@@ -96,8 +96,8 @@ pub async fn handle_persona_get_action<C: HttpClient, H: IoHandler>(
             Ok(())
         }
         Err(e) => {
-            io_handler.write_line(&format!("Error getting persona: {}", e))?;
-            Err(e.into()) // Propagate error
+            io_handler.write_line(&format!("Error getting persona: {e}"))?;
+            Err(e) // Propagate error
         }
     }
 }
@@ -134,8 +134,8 @@ pub async fn handle_persona_update_action<C: HttpClient, H: IoHandler>(
             Ok(())
         }
         Err(e) => {
-            io_handler.write_line(&format!("Error updating persona: {}", e))?;
-            Err(e.into()) // Propagate error
+            io_handler.write_line(&format!("Error updating persona: {e}"))?;
+            Err(e) // Propagate error
         }
     }
 }
@@ -155,8 +155,8 @@ pub async fn handle_persona_delete_action<C: HttpClient, H: IoHandler>(
             Ok(())
         }
         Err(e) => {
-            io_handler.write_line(&format!("Error deleting persona: {}", e))?;
-            Err(e.into()) // Propagate error
+            io_handler.write_line(&format!("Error deleting persona: {e}"))?;
+            Err(e) // Propagate error
         }
     }
 }
@@ -167,7 +167,7 @@ pub async fn get_user_personas<C: HttpClient>(
 ) -> Result<Vec<UserPersonaDataForClient>, CliError> {
     match http_client.list_user_personas().await {
         Ok(personas) => Ok(personas),
-        Err(e) => Err(e.into()), // Propagate error, converting if necessary
+        Err(e) => Err(e), // Propagate error, converting if necessary
     }
 }
 
@@ -181,28 +181,28 @@ fn print_persona_details<H: IoHandler>(
     io_handler.write_line(&format!("User ID: {}", persona.user_id))?;
     io_handler.write_line(&format!("Description: {}", persona.description))?;
     if let Some(spec) = &persona.spec {
-        io_handler.write_line(&format!("Spec: {}", spec))?;
+        io_handler.write_line(&format!("Spec: {spec}"))?;
     }
     if let Some(spec_version) = &persona.spec_version {
-        io_handler.write_line(&format!("Spec Version: {}", spec_version))?;
+        io_handler.write_line(&format!("Spec Version: {spec_version}"))?;
     }
     if let Some(personality) = &persona.personality {
-        io_handler.write_line(&format!("Personality: {}", personality))?;
+        io_handler.write_line(&format!("Personality: {personality}"))?;
     }
     if let Some(scenario) = &persona.scenario {
-        io_handler.write_line(&format!("Scenario: {}", scenario))?;
+        io_handler.write_line(&format!("Scenario: {scenario}"))?;
     }
     if let Some(first_mes) = &persona.first_mes {
-        io_handler.write_line(&format!("First Message: {}", first_mes))?;
+        io_handler.write_line(&format!("First Message: {first_mes}"))?;
     }
     if let Some(mes_example) = &persona.mes_example {
-        io_handler.write_line(&format!("Message Example: {}", mes_example))?;
+        io_handler.write_line(&format!("Message Example: {mes_example}"))?;
     }
     if let Some(system_prompt) = &persona.system_prompt {
-        io_handler.write_line(&format!("System Prompt: {}", system_prompt))?;
+        io_handler.write_line(&format!("System Prompt: {system_prompt}"))?;
     }
     if let Some(post_hist) = &persona.post_history_instructions {
-        io_handler.write_line(&format!("Post History Instructions: {}", post_hist))?;
+        io_handler.write_line(&format!("Post History Instructions: {post_hist}"))?;
     }
     if let Some(tags) = &persona.tags {
         let tag_str = tags
@@ -217,7 +217,7 @@ fn print_persona_details<H: IoHandler>(
         ))?;
     }
     if let Some(avatar) = &persona.avatar {
-        io_handler.write_line(&format!("Avatar: {}", avatar))?;
+        io_handler.write_line(&format!("Avatar: {avatar}"))?;
     }
     io_handler.write_line(&format!("Created At: {}", persona.created_at))?;
     io_handler.write_line(&format!("Updated At: {}", persona.updated_at))?;
@@ -234,8 +234,8 @@ pub async fn handle_persona_set_default_action<C: HttpClient, H: IoHandler>(
     let personas = match http_client.list_user_personas().await {
         Ok(p) => p,
         Err(e) => {
-            io_handler.write_line(&format!("Error fetching personas: {}", e))?;
-            return Err(e.into());
+            io_handler.write_line(&format!("Error fetching personas: {e}"))?;
+            return Err(e);
         }
     };
 
@@ -285,8 +285,7 @@ pub async fn handle_persona_set_default_action<C: HttpClient, H: IoHandler>(
     };
 
     io_handler.write_line(&format!(
-        "Setting persona {} as default...",
-        selected_persona_id
+        "Setting persona {selected_persona_id} as default..."
     ))?;
     match http_client.set_default_persona(selected_persona_id).await {
         Ok(user) => {
@@ -299,8 +298,8 @@ pub async fn handle_persona_set_default_action<C: HttpClient, H: IoHandler>(
             Ok(())
         }
         Err(e) => {
-            io_handler.write_line(&format!("Error setting default persona: {}", e))?;
-            Err(e.into())
+            io_handler.write_line(&format!("Error setting default persona: {e}"))?;
+            Err(e)
         }
     }
 }
@@ -317,8 +316,8 @@ pub async fn handle_persona_clear_default_action<C: HttpClient, H: IoHandler>(
             Ok(())
         }
         Err(e) => {
-            io_handler.write_line(&format!("Error clearing default persona: {}", e))?;
-            Err(e.into())
+            io_handler.write_line(&format!("Error clearing default persona: {e}"))?;
+            Err(e)
         }
     }
 }

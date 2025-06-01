@@ -290,8 +290,7 @@ async fn test_update_user_persona_not_found() -> AnyhowResult<()> {
         .await;
     assert!(
         matches!(result, Err(AppError::NotFound(_))),
-        "Expected NotFound, got {:?}",
-        result
+        "Expected NotFound, got {result:?}"
     );
 
     Ok(())
@@ -316,7 +315,7 @@ async fn test_update_user_persona_forbidden() -> AnyhowResult<()> {
         Some(user2_plaintext_dek.clone()),
     )
     .await?;
-    guard2.add_user(user2.id.clone());
+    guard2.add_user(user2.id);
     let dek2_bytes = user2_plaintext_dek.expose_secret().as_bytes().to_vec();
     let dek2 = SecretBox::new(Box::new(dek2_bytes));
 
@@ -340,8 +339,7 @@ async fn test_update_user_persona_forbidden() -> AnyhowResult<()> {
         .await;
     assert!(
         matches!(result, Err(AppError::Forbidden)),
-        "Expected Forbidden, got {:?}",
-        result
+        "Expected Forbidden, got {result:?}"
     );
 
     Ok(())
@@ -378,8 +376,7 @@ async fn test_delete_user_persona_success() -> AnyhowResult<()> {
         .await;
     assert!(
         matches!(get_result, Err(AppError::NotFound(_))),
-        "Expected NotFound after delete, got {:?}",
-        get_result
+        "Expected NotFound after delete, got {get_result:?}"
     );
 
     Ok(())
@@ -397,8 +394,7 @@ async fn test_delete_user_persona_not_found() -> AnyhowResult<()> {
     // The service first tries to fetch the persona. If not found, it returns NotFound.
     assert!(
         matches!(delete_result, Err(AppError::NotFound(_))),
-        "Expected NotFound when deleting non-existent persona, got {:?}",
-        delete_result
+        "Expected NotFound when deleting non-existent persona, got {delete_result:?}"
     );
 
     Ok(())
@@ -424,7 +420,7 @@ async fn test_delete_user_persona_forbidden() -> AnyhowResult<()> {
         Some(user2_plaintext_dek.clone()), // Pass DEK, though not strictly needed for delete forbidden check
     )
     .await?;
-    guard2.add_user(user2.id.clone());
+    guard2.add_user(user2.id);
     // let _dek2_bytes = user2_plaintext_dek.expose_secret().as_bytes().to_vec();
     // let _dek2 = SecretBox::new(Box::new(_dek2_bytes)); // _dek2 is not used in this test
 
@@ -444,8 +440,7 @@ async fn test_delete_user_persona_forbidden() -> AnyhowResult<()> {
         .await;
     assert!(
         matches!(delete_result, Err(AppError::Forbidden)),
-        "Expected Forbidden, got {:?}",
-        delete_result
+        "Expected Forbidden, got {delete_result:?}"
     );
 
     // Verify persona still exists for user1
@@ -480,7 +475,7 @@ async fn test_get_user_persona_forbidden() -> AnyhowResult<()> {
         Some(user2_plaintext_dek.clone()),
     )
     .await?;
-    guard2.add_user(user2.id.clone());
+    guard2.add_user(user2.id);
     let dek2_bytes = user2_plaintext_dek.expose_secret().as_bytes().to_vec();
     let dek2 = SecretBox::new(Box::new(dek2_bytes));
 
@@ -500,8 +495,7 @@ async fn test_get_user_persona_forbidden() -> AnyhowResult<()> {
         .await;
     assert!(
         matches!(result, Err(AppError::Forbidden)),
-        "Expected Forbidden, got {:?}",
-        result
+        "Expected Forbidden, got {result:?}"
     );
 
     Ok(())
@@ -549,7 +543,7 @@ async fn test_user_persona_service_set_default_persona() -> AnyhowResult<()> {
         })
         .await
         .map_err(|e| {
-            AppError::InternalServerErrorGeneric(format!("DB interact join error: {}", e))
+            AppError::InternalServerErrorGeneric(format!("DB interact join error: {e}"))
         })??;
     assert_eq!(
         user_from_db.default_persona_id,
@@ -582,7 +576,7 @@ async fn test_user_persona_service_set_default_persona() -> AnyhowResult<()> {
         })
         .await
         .map_err(|e| {
-            AppError::InternalServerErrorGeneric(format!("DB interact join error: {}", e))
+            AppError::InternalServerErrorGeneric(format!("DB interact join error: {e}"))
         })??;
     assert_eq!(
         user_from_db_after_clear.default_persona_id, None,
@@ -611,8 +605,7 @@ async fn test_user_persona_service_set_default_persona() -> AnyhowResult<()> {
             }
             _ => false,
         },
-        "Expected DatabaseQueryError indicating a ForeignKeyViolation when setting a non-existent persona as default, got {:?}",
-        user_with_non_existent_default
+        "Expected DatabaseQueryError indicating a ForeignKeyViolation when setting a non-existent persona as default, got {user_with_non_existent_default:?}"
     );
 
     Ok(())

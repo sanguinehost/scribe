@@ -504,17 +504,16 @@ mod get_session_data_for_generation_tests {
             let _created_at_val = current_time + chrono::Duration::seconds(*time_offset_secs);
 
             let insertable_msg = DbInsertableChatMessage::new(
-                setup.session_id,                                          // chat_id
-                setup.user_id,                                             // user_id
-                *role_enum,                                                // msg_type_enum
-                content_bytes_for_db,                                      // text
-                nonce_for_db,                                              // nonce
-                role_str_val,                                              // role_str
-                Some(json!({"type": "text", "text": *plain_content_str})), // parts_json
-                None,                                                      // attachments_json
-                prompt_tokens_val,                                         // prompt_tokens
-                completion_tokens_val,                                     // completion_tokens
-            );
+                setup.session_id,
+                setup.user_id,
+                *role_enum,
+                content_bytes_for_db,
+                nonce_for_db,
+            )
+            .with_role(role_str_val.expect("role_str_val should be Some"))
+            .with_parts(json!({"type": "text", "text": *plain_content_str}))
+            .with_attachments(serde_json::Value::Null)
+            .with_token_counts(prompt_tokens_val, completion_tokens_val);
 
             conn.interact(move |conn_i| {
                 diesel::insert_into(chat_messages_schema::table)
@@ -756,12 +755,11 @@ mod get_session_data_for_generation_tests {
                 MessageRole::User,
                 hist_content_bytes_for_db,
                 hist_nonce_for_db,
-                Some("user".to_string()),
-                Some(json!({"type": "text", "text": history_msg_content})), // Use original plaintext
-                None,
-                Some(4),
-                None, // prompt_tokens, completion_tokens
-            );
+            )
+            .with_role("user".to_string())
+            .with_parts(json!({"type": "text", "text": history_msg_content}))
+            .with_attachments(serde_json::Value::Null)
+            .with_token_counts(Some(4), None);
             diesel::insert_into(chat_messages_schema::table)
                 .values(&insertable_msg)
                 .execute(conn_i)
@@ -964,9 +962,7 @@ mod get_session_data_for_generation_tests {
         );
         assert!(
             total_rag_tokens_used as usize <= expected_available_rag_tokens,
-            "Total RAG tokens used ({}) should be within available budget ({})",
-            total_rag_tokens_used,
-            expected_available_rag_tokens
+            "Total RAG tokens used ({total_rag_tokens_used}) should be within available budget ({expected_available_rag_tokens})"
         );
     }
 
@@ -1133,12 +1129,11 @@ mod get_session_data_for_generation_tests {
                 *role_enum,
                 content_bytes_for_db,
                 nonce_for_db,
-                role_str_val,
-                Some(json!({"type": "text", "text": *plain_content_str})),
-                None,
-                prompt_tokens_val,
-                completion_tokens_val,
-            );
+            )
+            .with_role(role_str_val.expect("role_str_val should be Some"))
+            .with_parts(json!({"type": "text", "text": *plain_content_str}))
+            .with_attachments(serde_json::Value::Null)
+            .with_token_counts(prompt_tokens_val, completion_tokens_val);
 
             conn.interact(move |conn_i| {
                 diesel::insert_into(chat_messages_schema::table)
@@ -1398,9 +1393,7 @@ mod get_session_data_for_generation_tests {
         }
         let remaining_tokens_needed = target_history_tokens.saturating_sub(current_history_tokens);
         if remaining_tokens_needed > 0 {
-            let short_filler_content = std::iter::repeat("a ")
-                .take(remaining_tokens_needed)
-                .collect::<String>();
+            let short_filler_content = "a ".repeat(remaining_tokens_needed);
             let tokens_filler = setup
                 .app_state
                 .token_counter
@@ -1452,17 +1445,16 @@ mod get_session_data_for_generation_tests {
             });
 
             let insertable_msg = DbInsertableChatMessage::new(
-                setup.session_id,                                         // chat_id
-                setup.user_id,                                            // user_id
-                *role_enum,                                               // msg_type_enum
-                content_bytes_for_db,                                     // text
-                nonce_for_db,                                             // nonce
-                role_str_val,                                             // role_str
-                Some(json!({"type": "text", "text": plain_content_str})), // parts_json
-                None,                                                     // attachments_json
-                prompt_tokens_val,                                        // prompt_tokens
-                completion_tokens_val,                                    // completion_tokens
-            );
+                setup.session_id,
+                setup.user_id,
+                *role_enum,
+                content_bytes_for_db,
+                nonce_for_db,
+            )
+            .with_role(role_str_val.expect("role_str_val should be Some"))
+            .with_parts(json!({"type": "text", "text": plain_content_str}))
+            .with_attachments(serde_json::Value::Null)
+            .with_token_counts(prompt_tokens_val, completion_tokens_val);
 
             conn.interact(move |conn_i| {
                 diesel::insert_into(chat_messages_schema::table)
@@ -1530,9 +1522,7 @@ mod get_session_data_for_generation_tests {
             .total as usize;
         assert!(
             lore_chunk1_tokens > 20,
-            "Test setup error: lore_chunk1_content ('{}') is not > 20 tokens (actual: {})",
-            lore_chunk1_content,
-            lore_chunk1_tokens
+            "Test setup error: lore_chunk1_content ('{lore_chunk1_content}') is not > 20 tokens (actual: {lore_chunk1_tokens})"
         );
 
         let lore_chunk1 = RetrievedChunk {
@@ -1603,15 +1593,13 @@ mod get_session_data_for_generation_tests {
         // We are aiming for `current_history_tokens` to be the value.
         assert_eq!(
             actual_recent_tokens_from_result, current_history_tokens,
-            "Actual recent history tokens ({}) from result does not match expected ({}) from setup. Target was {}.",
-            actual_recent_tokens_from_result, current_history_tokens, target_history_tokens
+            "Actual recent history tokens ({actual_recent_tokens_from_result}) from result does not match expected ({current_history_tokens}) from setup. Target was {target_history_tokens}."
         );
 
         // Key assertion: RAG items should be empty because no lorebook chunk could fit
         assert!(
             rag_items.is_empty(),
-            "RAG items should be empty due to total budget constraint, but got: {:?}",
-            rag_items
+            "RAG items should be empty due to total budget constraint, but got: {rag_items:?}"
         );
 
         // Verify managed_recent_history contains the messages we inserted
@@ -1777,12 +1765,11 @@ mod get_session_data_for_generation_tests {
                 *role,
                 content_bytes,
                 nonce_bytes,
-                Some(role.to_string()),
-                Some(json!({"type": "text", "text": *content})),
-                None,
-                pt,
-                ct,
-            );
+            )
+            .with_role(role.to_string())
+            .with_parts(json!({"type": "text", "text": *content}))
+            .with_attachments(serde_json::Value::Null)
+            .with_token_counts(pt, ct);
             // created_at will be set by the database default `now()`.
             // Order of insertion will manage "older" vs "recent".
 
@@ -1924,17 +1911,16 @@ mod get_session_data_for_generation_tests {
             // created_at will be set by DB default. Order of insertion matters.
             // These "recent" messages are inserted *after* "older" messages.
             let insertable_recent_msg = DbInsertableChatMessage::new(
-                setup.session_id,                                // chat_id
-                setup.user_id,                                   // user_id
-                *role,                                           // msg_type_enum
-                content_bytes,                                   // text
-                nonce_bytes,                                     // nonce
-                Some(role.to_string()),                          // role_str
-                Some(json!({"type": "text", "text": *content})), // parts_json
-                None,                                            // attachments_json
-                pt,                                              // prompt_tokens
-                ct,                                              // completion_tokens
-            );
+                setup.session_id,
+                setup.user_id,
+                *role,
+                content_bytes,
+                nonce_bytes,
+            )
+            .with_role(role.to_string())
+            .with_parts(json!({"type": "text", "text": *content}))
+            .with_attachments(serde_json::Value::Null)
+            .with_token_counts(pt, ct);
 
             conn.interact({
                 let m_insert = insertable_recent_msg.clone();
@@ -2105,9 +2091,7 @@ mod get_session_data_for_generation_tests {
         );
         assert!(
             total_rag_tokens_used as usize <= expected_available_rag_tokens,
-            "Total RAG tokens used ({}) should be within available budget ({})",
-            total_rag_tokens_used,
-            expected_available_rag_tokens
+            "Total RAG tokens used ({total_rag_tokens_used}) should be within available budget ({expected_available_rag_tokens})"
         );
 
         // Ensure no overlap between recent history (actual IDs from DB) and RAG items (mocked IDs)

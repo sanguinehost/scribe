@@ -74,6 +74,16 @@ pub fn auth_routes() -> Router<AppState> {
         .route("/user/{id}/sessions", delete(delete_user_sessions_handler))
 }
 
+/// Handles user registration with username, email, and password.
+///
+/// # Errors
+///
+/// Returns `AppError::ValidationError` if payload validation fails,
+/// `AppError::UsernameTaken` if the username is already registered,
+/// `AppError::EmailTaken` if the email is already registered,
+/// `AppError::InternalServerErrorGeneric` if password hashing fails,
+/// `AppError::DatabaseQueryError` if database operations fail,
+/// `AppError::DbPoolError` if database connection cannot be obtained.
 #[instrument(skip(state, payload), err)]
 pub async fn register_handler(
     State(state): State<AppState>,
@@ -227,11 +237,11 @@ pub async fn login_handler(
 
             // Try to explicitly save the session (this might be redundant, but useful for debugging)
             match session.save().await {
-                Ok(_) => {
-                    debug!(session_id = ?session.id(), user_id = %user_id, "Explicitly called session.save() successfully")
+                Ok(()) => {
+                    debug!(session_id = ?session.id(), user_id = %user_id, "Explicitly called session.save() successfully");
                 }
                 Err(e) => {
-                    error!(session_id = ?session.id(), user_id = %user_id, error = ?e, "Explicit session.save() call failed: {:?}", e)
+                    error!(session_id = ?session.id(), user_id = %user_id, error = ?e, "Explicit session.save() call failed: {:?}", e);
                 }
             }
 
@@ -329,7 +339,7 @@ pub async fn login_handler(
                             Err(AppError::DbPoolError(pool_err.to_string()))
                         }
                         AuthError::InteractError(int_err) => {
-                            Err(AppError::InternalServerErrorGeneric(int_err.to_string()))
+                            Err(AppError::InternalServerErrorGeneric(int_err))
                         }
                         AuthError::UsernameTaken => {
                             warn!("Login failed: Username taken (shouldn't happen during login).");
@@ -361,15 +371,14 @@ pub async fn login_handler(
                         }
                         AuthError::SessionDeletionError(msg) => {
                             error!("Login failed: Session deletion error: {}", msg);
-                            Err(AppError::SessionError(format!("Session error: {}", msg)))
+                            Err(AppError::SessionError(format!("Session error: {msg}")))
                         }
                     }
                 }
                 axum_login::Error::Session(session_err) => {
                     error!("Session error during login: {:?}", session_err);
                     Err(AppError::SessionError(format!(
-                        "Session error: {}",
-                        session_err
+                        "Session error: {session_err}"
                     )))
                 }
             }
@@ -400,8 +409,7 @@ pub async fn logout_handler(
     if let Err(e) = auth_session.logout().await {
         error!(error = ?e, "Failed to destroy session during logout via auth_session.logout(): {:?}", e);
         return Err(AppError::InternalServerErrorGeneric(format!(
-            "Failed to clear session during logout: {}",
-            e
+            "Failed to clear session during logout: {e}"
         )));
     }
     info!("Logout process completed (session cleared if existed).");
@@ -412,28 +420,28 @@ pub async fn logout_handler(
 #[instrument(skip(auth_session), err)]
 pub async fn me_handler(auth_session: CurrentAuthSession) -> Result<Response, AppError> {
     info!("Me handler entered.");
-    match auth_session.user {
-        Some(user) => {
-            info!(user_id = %user.id, "Returning current user data for /me endpoint.");
-            // Use AuthResponse for consistency
-            let response = AuthResponse {
-                user_id: user.id,
-                username: user.username,
-                email: user.email,
-                role: format!("{:?}", user.role),
-                recovery_key: None, // /me endpoint doesn't return recovery key
-                default_persona_id: user.default_persona_id,
-            };
-            Ok(Json(response).into_response())
-        }
-        None => {
-            info!("No authenticated user found in session for /me endpoint.");
-            Err(AppError::Unauthorized("Not logged in".to_string()))
-        }
+    if let Some(user) = auth_session.user {
+        info!(user_id = %user.id, "Returning current user data for /me endpoint.");
+        // Use AuthResponse for consistency
+        let response = AuthResponse {
+            user_id: user.id,
+            username: user.username,
+            email: user.email,
+            role: format!("{:?}", user.role),
+            recovery_key: None, // /me endpoint doesn't return recovery key
+            default_persona_id: user.default_persona_id,
+        };
+        Ok(Json(response).into_response())
+    } else {
+        info!("No authenticated user found in session for /me endpoint.");
+        Err(AppError::Unauthorized("Not logged in".to_string()))
     }
 }
 
 /// Create a new session
+///
+/// # Errors
+/// Returns `AppError` if database operations fail or session creation fails
 pub async fn create_session_handler(
     State(state): State<AppState>,
     Json(payload): Json<SessionRequest>,
@@ -482,18 +490,15 @@ pub async fn get_session_handler(
         info!(%user_id, "Valid session found. Returning user and session details.");
 
         // The session ID from tower_sessions::Session is an i128, convert to string.
-        let session_actual_id_str = match session.id() {
-            Some(id) => id.0.to_string(),
-            None => {
-                // This case should ideally not happen if auth_session.user is Some,
-                // as it implies an active session object without an ID.
-                error!(
-                    "Critical: tower_sessions::Session present but session.id() is None in get_session_handler"
-                );
-                return Err(AppError::InternalServerErrorGeneric(
-                    "Failed to retrieve session ID from active session".to_string(),
-                ));
-            }
+        let session_actual_id_str = if let Some(id) = session.id() { id.0.to_string() } else {
+            // This case should ideally not happen if auth_session.user is Some,
+            // as it implies an active session object without an ID.
+            error!(
+                "Critical: tower_sessions::Session present but session.id() is None in get_session_handler"
+            );
+            return Err(AppError::InternalServerErrorGeneric(
+                "Failed to retrieve session ID from active session".to_string(),
+            ));
         };
 
         // The expiry date from tower_sessions::Session is time::OffsetDateTime.
@@ -536,6 +541,9 @@ pub async fn get_session_handler(
 }
 
 /// Extend session expiration
+///
+/// # Errors
+/// Returns `AppError` if database operations fail or session extension fails
 pub async fn extend_session_handler(
     State(state): State<AppState>,
     Path(session_id): Path<String>,
@@ -556,7 +564,7 @@ pub async fn extend_session_handler(
                 .returning((sessions::id, sessions::expires, sessions::session))
                 .get_result::<(String, Option<chrono::DateTime<chrono::Utc>>, String)>(conn)
                 .map_err(|e| {
-                    if let diesel::result::Error::NotFound = e {
+                    if e == diesel::result::Error::NotFound {
                         AppError::NotFound("Session not found".to_string())
                     } else {
                         AppError::DatabaseQueryError(e.to_string())
@@ -568,14 +576,14 @@ pub async fn extend_session_handler(
 
     // Extract user ID from session JSON
     let session_json: serde_json::Value = serde_json::from_str(&session.2)
-        .map_err(|e| AppError::BadRequest(format!("Invalid session data: {}", e)))?;
+        .map_err(|e| AppError::BadRequest(format!("Invalid session data: {e}")))?;
 
     let user_id = session_json["userId"]
         .as_str()
         .ok_or_else(|| AppError::BadRequest("Invalid session data: missing userId".to_string()))?;
 
     let user_id = Uuid::parse_str(user_id)
-        .map_err(|e| AppError::BadRequest(format!("Invalid user ID in session: {}", e)))?;
+        .map_err(|e| AppError::BadRequest(format!("Invalid user ID in session: {e}")))?;
 
     let session_response = SessionResponse {
         id: session.0,
@@ -587,6 +595,9 @@ pub async fn extend_session_handler(
 }
 
 /// Delete a session
+///
+/// # Errors
+/// Returns `AppError` if database operations fail or session deletion fails
 pub async fn delete_session_handler(
     State(state): State<AppState>,
     Path(session_id): Path<String>,
@@ -609,6 +620,9 @@ pub async fn delete_session_handler(
 }
 
 /// Delete all sessions for a user
+///
+/// # Errors
+/// Returns `AppError` if database operations fail or session deletion fails
 pub async fn delete_user_sessions_handler(
     State(state): State<AppState>,
     Path(user_id): Path<Uuid>,
@@ -702,12 +716,9 @@ pub async fn change_password_handler(
     info!("Change password handler entered");
 
     // 1. Ensure user is authenticated
-    let authenticated_user = match auth_session.user.clone() {
-        Some(u) => u,
-        None => {
-            warn!("Change password attempt by unauthenticated user.");
-            return Err(AppError::Unauthorized("Not logged in".to_string()));
-        }
+    let Some(authenticated_user) = auth_session.user.clone() else {
+        warn!("Change password attempt by unauthenticated user.");
+        return Err(AppError::Unauthorized("Not logged in".to_string()));
     };
     info!(user_id = %authenticated_user.id, "User is authenticated. Proceeding with password change.");
 
@@ -741,7 +752,7 @@ pub async fn change_password_handler(
     )
     .await
     {
-        Ok(_) => {
+        Ok(()) => {
             info!(user_id = %authenticated_user.id, "Password changed successfully in core logic.");
             // 5. Session Invalidation (Recommended - TODO)
             // For now, we will log out the current session as a minimal step.

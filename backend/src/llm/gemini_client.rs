@@ -152,12 +152,23 @@ impl AiClient for Arc<ScribeGeminiClient> {
 
 /// Builds the `ScribeGeminiClient` wrapper.
 /// Relies on `genai::ClientBuilder::default()` which typically checks `GOOGLE_API_KEY` env var.
+///
+/// # Errors
+///
+/// This function currently always succeeds and returns `Ok(Arc<ScribeGeminiClient>)`.
+/// Future versions may return errors if client configuration validation is added.
 pub fn build_gemini_client() -> Result<Arc<ScribeGeminiClient>, AppError> {
     let client = ClientBuilder::default().build();
     Ok(Arc::new(ScribeGeminiClient { inner: client }))
 }
 
 // Basic example function (used in tests)
+/// Generates a simple text response from an AI client given a user message.
+///
+/// # Errors
+///
+/// Returns `AppError::from(genai::Error)` if the underlying AI client fails to execute the chat request,
+/// `AppError::BadRequest` if the LLM response contains no text content.
 pub async fn generate_simple_response(
     client: &dyn AiClient,
     user_message: String,

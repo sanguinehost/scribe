@@ -10,6 +10,9 @@ use tracing::{info, warn}; // Import logging macros
 use zip::ZipArchive;
 use zip::result::ZipError; // Added for CHARX parsing // Added for CHARX parsing
 
+/// Safely convert usize to u32 for PNG chunk lengths
+/// PNG chunk lengths are limited to u32::MAX, so this is appropriate
+
 // Define potential errors for the parser
 #[derive(Debug, Error, Clone)] // Use the imported derive macro, Add Clone
 pub enum ParserError {
@@ -38,31 +41,31 @@ pub enum ParserError {
 // Manually implement From for non-Clone error types
 impl From<std::io::Error> for ParserError {
     fn from(err: std::io::Error) -> Self {
-        ParserError::IoError(err.to_string())
+        Self::IoError(err.to_string())
     }
 }
 
 impl From<png::DecodingError> for ParserError {
     fn from(err: png::DecodingError) -> Self {
-        ParserError::PngError(err.to_string())
+        Self::PngError(err.to_string())
     }
 }
 
 impl From<base64::DecodeError> for ParserError {
     fn from(err: base64::DecodeError) -> Self {
-        ParserError::Base64Error(err.to_string())
+        Self::Base64Error(err.to_string())
     }
 }
 
 impl From<serde_json::Error> for ParserError {
     fn from(err: serde_json::Error) -> Self {
-        ParserError::JsonError(err.to_string())
+        Self::JsonError(err.to_string())
     }
 }
 
 impl From<ZipError> for ParserError {
     fn from(err: ZipError) -> Self {
-        ParserError::ZipError(err.to_string())
+        Self::ZipError(err.to_string())
     }
 }
 
@@ -73,274 +76,227 @@ pub enum ParsedCharacterCard {
     V2Fallback(CharacterCardDataV3), // Represents data parsed from 'chara' (V2)
 }
 
-// --- Main Parsing Function ---
+// --- Helper Functions ---
 
-pub fn parse_character_card_png(png_data: &[u8]) -> Result<ParsedCharacterCard, ParserError> {
-    let cursor = Cursor::new(png_data);
-    let decoder = Decoder::new(cursor);
-    // Read info, but store the reader mutably
-    let mut reader = decoder.read_info()?;
+/// Validates V3 spec fields and logs warnings for version mismatches.
+fn validate_v3_spec(card: &CharacterCardV3, source: &str) {
+    validate_spec_field(&card.spec, source);
+    validate_spec_version(&card.spec_version, source);
+}
 
-    // *** Crucial step: Finish reading all chunks before accessing info ***
-    reader.finish()?;
+/// Validates the 'spec' field value.
+fn validate_spec_field(spec: &str, source: &str) {
+    if spec != "chara_card_v3" {
+        warn!(
+            "Invalid 'spec' field in {}: expected 'chara_card_v3', found '{}'. Proceeding with parsing.",
+            source, spec
+        );
+    }
+}
 
-    // Now access the info struct, which should contain all chunks
-    let info = reader.info();
+/// Validates the `spec_version` field value.
+fn validate_spec_version(spec_version: &str, source: &str) {
+    if spec_version != "3.0" {
+        match spec_version.parse::<f32>() {
+            Ok(version) => log_version_mismatch(version, spec_version, source),
+            Err(_) => log_unparseable_version(spec_version, source),
+        }
+    }
+}
 
+/// Logs appropriate warning for version mismatches.
+fn log_version_mismatch(version: f32, spec_version: &str, source: &str) {
+    const TARGET_VERSION: f32 = 3.0;
+    
+    if version > TARGET_VERSION {
+        warn!(
+            "{} spec_version ('{}') is newer than supported ('3.0'). Some features might not work.",
+            source, spec_version
+        );
+    } else if version < TARGET_VERSION {
+        warn!(
+            "{} spec_version ('{}') is older than current spec ('3.0'). Attempting to load.",
+            source, spec_version
+        );
+    }
+    // Version matches 3.0 exactly - no warning needed
+}
+
+/// Logs warning for unparseable version strings.
+fn log_unparseable_version(spec_version: &str, source: &str) {
+    warn!(
+        "Could not parse {} spec_version ('{}') as a number.",
+        source, spec_version
+    );
+}
+
+/// Extracts text chunks from PNG info.
+fn extract_text_chunks(info: &png::Info) -> (Option<String>, Option<String>) {
     let chara_keyword = "chara";
     let ccv3_keyword = "ccv3";
-    // Restore text_chara_keyword as V2 fallback keyword
     let text_chara_keyword = "tEXtchara";
 
     let mut ccv3_data_base64: Option<String> = None;
     let mut chara_data_base64: Option<String> = None;
 
-    // Iterate over the correct field for tEXt chunks
-    // The TEXtChunk struct conveniently provides keyword and text fields.
     for text_chunk in &info.uncompressed_latin1_text {
         if text_chunk.keyword == ccv3_keyword {
-            ccv3_data_base64 = Some(text_chunk.text.clone()); // Access the public field
+            ccv3_data_base64 = Some(text_chunk.text.clone());
             info!("Found 'ccv3' tEXt chunk.");
         } else if text_chunk.keyword == chara_keyword || text_chunk.keyword == text_chara_keyword {
-            chara_data_base64 = Some(text_chunk.text.clone()); // Access the public field
+            chara_data_base64 = Some(text_chunk.text.clone());
             info!(keyword = %text_chunk.keyword, "Found V2-style tEXt chunk.");
         }
-        // Ignore other keywords
     }
 
-    // Flag to track if V3 parsing was tried and failed
-    let mut ccv3_parse_attempted_and_failed = false;
+    (ccv3_data_base64, chara_data_base64)
+}
 
-    // --- Prioritize ccv3 ---
-    if let Some(base64_str) = ccv3_data_base64 {
-        match base64_standard.decode(&base64_str) {
-            Ok(decoded_bytes) => {
-                match serde_json::from_slice::<CharacterCardV3>(&decoded_bytes) {
-                    Ok(card) => {
-                        // --- V3 Spec Conformance Checks ---
-                        if card.spec != "chara_card_v3" {
-                            // Spec says SHOULD NOT consider it V3 if spec is wrong.
-                            // We'll log a strong warning but still attempt to use it,
-                            // as the data came from the 'ccv3' chunk.
-                            // Alternatively, could return Err(ParserError::InvalidSpecField(card.spec.clone()))
-                            warn!(
-                                "Invalid 'spec' field in 'ccv3' chunk: expected 'chara_card_v3', found '{}'. Proceeding with parsing.",
-                                card.spec
-                            );
-                            // Optionally normalize the spec field if proceeding:
-                            // card.spec = "chara_card_v3".to_string();
-                        }
+/// Attempts to parse V3 card from base64 data.
+fn try_parse_v3_from_base64(base64_str: &str, source: &str) -> Result<CharacterCardV3, ParserError> {
+    let decoded_bytes = base64_standard.decode(base64_str)
+        .map_err(|e| {
+            warn!("Failed to decode base64 from '{}': {}", source, e);
+            ParserError::Base64Error(e.to_string())
+        })?;
 
-                        // Check spec_version
-                        if card.spec_version != "3.0" {
-                            // Attempt to parse version as float for comparison
-                            let current_version: Result<f32, _> = card.spec_version.parse();
-                            let target_version: f32 = 3.0;
-                            match current_version {
-                                Ok(v) if v > target_version => {
-                                    warn!(
-                                        "Card spec_version ('{}') is newer than supported ('{}'). Some features might not work.",
-                                        card.spec_version, target_version
-                                    );
-                                }
-                                Ok(v) if v < target_version => {
-                                    warn!(
-                                        "Card spec_version ('{}') is older than current spec ('{}'). Attempting to load.",
-                                        card.spec_version, target_version
-                                    );
-                                    // Potentially fill missing fields with defaults here if needed for older versions
-                                }
-                                Ok(_) => {} // Version matches 3.0
-                                Err(_) => {
-                                    warn!(
-                                        "Could not parse card spec_version ('{}') as a number.",
-                                        card.spec_version
-                                    );
-                                }
-                            }
-                        }
-                        // --- End V3 Spec Conformance Checks ---
+    let card = serde_json::from_slice::<CharacterCardV3>(&decoded_bytes)
+        .map_err(|e| {
+            warn!("Failed to parse JSON from '{}' as CharacterCardV3: {}", source, e);
+            ParserError::JsonError(e.to_string())
+        })?;
 
-                        return Ok(ParsedCharacterCard::V3(card));
-                    }
-                    Err(e) => {
-                        warn!(
-                            "Failed to parse JSON from 'ccv3' chunk as CharacterCardV3: {}. Falling back to 'chara' if possible.",
-                            e
-                        );
-                        // Don't return error yet, try fallback
-                        ccv3_parse_attempted_and_failed = true; // Mark that V3 parsing failed
-                    }
-                }
-            }
+    validate_v3_spec(&card, source);
+    Ok(card)
+}
+
+/// Applies V2 fallback note to character data if needed.
+fn apply_v2_fallback_note(data_v2: &mut CharacterCardDataV3, ccv3_parse_failed: bool) {
+    if ccv3_parse_failed {
+        const V2_FALLBACK_NOTE: &str = "This character card is Character Card V3, but it is loaded as a Character Card V2. Please use a Character Card V3 compatible application to use this character card properly.\n";
+        if data_v2.creator_notes.is_empty() {
+            data_v2.creator_notes = V2_FALLBACK_NOTE.to_string();
+        } else {
+            data_v2.creator_notes = format!("{}{}", V2_FALLBACK_NOTE, data_v2.creator_notes);
+        }
+    }
+}
+
+/// Attempts to parse V2 fallback format from chara data.
+fn try_parse_chara_fallback(
+    chara_data_base64: Option<&String>, 
+    ccv3_parse_failed: bool
+) -> Result<Option<CharacterCardDataV3>, ParserError> {
+    chara_data_base64.map_or(Ok(None), |base64_str| {
+        let decoded_bytes = base64_standard.decode(base64_str)?;
+        let mut data_v2 = serde_json::from_slice::<CharacterCardDataV3>(&decoded_bytes)?;
+        
+        info!("Loaded character from V2 'chara' chunk. Applying V3 compatibility note.");
+        apply_v2_fallback_note(&mut data_v2, ccv3_parse_failed);
+        Ok(Some(data_v2))
+    })
+}
+
+// --- Main Parsing Function ---
+
+/// Parses a character card from PNG image data.
+/// 
+/// # Errors
+/// 
+/// Returns an error if:
+/// - PNG format is invalid
+/// - Required metadata is missing
+/// - JSON parsing fails
+pub fn parse_character_card_png(png_data: &[u8]) -> Result<ParsedCharacterCard, ParserError> {
+    let cursor = Cursor::new(png_data);
+    let decoder = Decoder::new(cursor);
+    let mut reader = decoder.read_info()?;
+    reader.finish()?;
+    let info = reader.info();
+
+    let (ccv3_data_base64, chara_data_base64) = extract_text_chunks(info);
+
+    let mut ccv3_parse_error: Option<ParserError> = None;
+
+    // 1. Try ccv3 first
+    if let Some(base64_str) = ccv3_data_base64.as_ref() {
+        match try_parse_v3_from_base64(base64_str, "ccv3 chunk") {
+            Ok(card) => return Ok(ParsedCharacterCard::V3(card)),
             Err(e) => {
-                warn!(
-                    "Failed to decode base64 from 'ccv3' chunk: {}. Falling back to 'chara' if possible.",
-                    e
-                );
-                // Don't return error yet, try fallback
-                ccv3_parse_attempted_and_failed = true; // Mark that V3 parsing failed
+                warn!("Failed to parse ccv3 chunk: {}. Falling back to 'chara' if possible.", e);
+                ccv3_parse_error = Some(e);
             }
         }
     }
 
-    // --- Fallback to chara ---
-    if let Some(base64_str) = chara_data_base64 {
-        match base64_standard.decode(&base64_str) {
-            Ok(decoded_bytes) => {
-                match serde_json::from_slice::<CharacterCardDataV3>(&decoded_bytes) {
-                    Ok(mut data_v2) => {
-                        // Make data_v2 mutable
-                        info!(
-                            "Loaded character from V2 'chara' chunk. Applying V3 compatibility note."
-                        );
-                        // Only prepend V2 fallback warning if we actually fell back from a failed V3 attempt
-                        if ccv3_parse_attempted_and_failed {
-                            const V2_FALLBACK_NOTE: &str = "This character card is Character Card V3, but it is loaded as a Character Card V2. Please use a Character Card V3 compatible application to use this character card properly.\n";
-                            if data_v2.creator_notes.is_empty() {
-                                data_v2.creator_notes = V2_FALLBACK_NOTE.to_string();
-                            } else {
-                                data_v2.creator_notes =
-                                    format!("{}{}", V2_FALLBACK_NOTE, data_v2.creator_notes);
-                            }
-                        }
-                        // Return the modified V2 data wrapped in the V2Fallback variant
-                        return Ok(ParsedCharacterCard::V2Fallback(data_v2));
-                    }
-                    Err(e) => {
-                        // If 'chara' JSON parsing fails, this is a hard error for the fallback
-                        return Err(ParserError::JsonError(e.to_string()));
-                    }
-                }
-            }
+    // 2. If ccv3 failed or was not present, try chara
+    if let Some(base64_str) = chara_data_base64.as_ref() {
+        match try_parse_chara_fallback(Some(base64_str), ccv3_parse_error.is_some()) {
+            Ok(Some(data_v2)) => return Ok(ParsedCharacterCard::V2Fallback(data_v2)),
             Err(e) => {
-                // If 'chara' base64 decoding fails, this is a hard error for the fallback
-                return Err(ParserError::Base64Error(e.to_string()));
+                // If chara parsing also failed, we should return this error
+                return Err(e);
             }
+            Ok(None) => { /* This case should not be reached if base64_str is Some */ }
         }
     }
 
-    // If neither 'ccv3' nor 'chara' yielded a valid result
+    // 3. If neither succeeded, return the ccv3 error if it occurred, otherwise ChunkNotFound
+    if let Some(err) = ccv3_parse_error {
+        return Err(err);
+    }
+
     Err(ParserError::ChunkNotFound)
 }
 
 // --- JSON Parsing Function ---
 
+/// Parses a character card from JSON data.
+/// 
+/// # Errors
+/// 
+/// Returns an error if:
+/// - JSON format is invalid
+/// - Required fields are missing
 pub fn parse_character_card_json(json_data: &[u8]) -> Result<ParsedCharacterCard, ParserError> {
-    match serde_json::from_slice::<CharacterCardV3>(json_data) {
-        Ok(card) => {
-            // --- V3 Spec Conformance Checks (similar to PNG parser) ---
-            if card.spec != "chara_card_v3" {
-                // Spec says SHOULD NOT consider it V3 if spec is wrong.
-                // Log a strong warning but proceed.
-                warn!(
-                    "Invalid 'spec' field in JSON card: expected 'chara_card_v3', found '{}'. Proceeding with parsing.",
-                    card.spec
-                );
-                // Optionally normalize: card.spec = "chara_card_v3".to_string();
-            }
-
-            // Check spec_version
-            if card.spec_version != "3.0" {
-                let current_version: Result<f32, _> = card.spec_version.parse();
-                let target_version: f32 = 3.0;
-                match current_version {
-                    Ok(v) if v > target_version => {
-                        warn!(
-                            "JSON Card spec_version ('{}') is newer than supported ('{}'). Some features might not work.",
-                            card.spec_version, target_version
-                        );
-                    }
-                    Ok(v) if v < target_version => {
-                        warn!(
-                            "JSON Card spec_version ('{}') is older than current spec ('{}'). Attempting to load.",
-                            card.spec_version, target_version
-                        );
-                        // Potentially fill missing fields with defaults here if needed
-                    }
-                    Ok(_) => {} // Version matches 3.0
-                    Err(_) => {
-                        warn!(
-                            "Could not parse JSON card spec_version ('{}') as a number.",
-                            card.spec_version
-                        );
-                    }
-                }
-            }
-            // --- End V3 Spec Conformance Checks ---
-
-            // JSON format directly maps to V3 structure
-            Ok(ParsedCharacterCard::V3(card))
-        }
-        Err(e) => {
-            // If it doesn't parse as V3, it's an error for JSON format
-            Err(ParserError::JsonError(e.to_string()))
-        }
-    }
+    let card = serde_json::from_slice::<CharacterCardV3>(json_data)
+        .map_err(|e| ParserError::JsonError(e.to_string()))?;
+    
+    validate_v3_spec(&card, "JSON card");
+    Ok(ParsedCharacterCard::V3(card))
 }
 
 // --- CHARX (Zip) Parsing Function ---
 
+/// Parses a character card from CHARX (ZIP) format.
+/// 
+/// # Errors
+/// 
+/// Returns an error if:
+/// - ZIP format is invalid
+/// - Required files are missing
+/// - JSON parsing fails
 pub fn parse_character_card_charx<R: Read + Seek>(
     charx_data: R,
 ) -> Result<ParsedCharacterCard, ParserError> {
     let mut archive = ZipArchive::new(charx_data)?;
-
-    // Find and read card.json
+    
     let mut card_file = archive.by_name("card.json").map_err(|e| {
-        // Log the specific error for debugging if needed
         warn!("Error finding 'card.json' in CHARX: {}", e);
-        // Return the specific error type
         match e {
             ZipError::FileNotFound => ParserError::CharxCardJsonNotFound,
             other_zip_error => ParserError::ZipError(other_zip_error.to_string()),
         }
     })?;
 
-    // Read the content of card.json into a buffer
     let mut buffer = Vec::new();
-    card_file.read_to_end(&mut buffer)?; // Use map_err for better context if needed
+    card_file.read_to_end(&mut buffer)?;
 
-    // Parse the JSON content from the buffer
-    match serde_json::from_slice::<CharacterCardV3>(&buffer) {
-        Ok(card) => {
-            // --- V3 Spec Conformance Checks (similar to PNG/JSON parsers) ---
-            if card.spec != "chara_card_v3" {
-                warn!(
-                    "Invalid 'spec' field in CHARX card.json: expected 'chara_card_v3', found '{}'. Proceeding.",
-                    card.spec
-                );
-                // Optionally normalize: card.spec = "chara_card_v3".to_string();
-            }
-            if card.spec_version != "3.0" {
-                let current_version: Result<f32, _> = card.spec_version.parse();
-                let target_version: f32 = 3.0;
-                match current_version {
-                    Ok(v) if v > target_version => warn!(
-                        "CHARX Card spec_version ('{}') is newer than supported ('{}').",
-                        card.spec_version, target_version
-                    ),
-                    Ok(v) if v < target_version => warn!(
-                        "CHARX Card spec_version ('{}') is older than current spec ('{}').",
-                        card.spec_version, target_version
-                    ),
-                    Ok(_) => {}
-                    Err(_) => warn!(
-                        "Could not parse CHARX card spec_version ('{}') as number.",
-                        card.spec_version
-                    ),
-                }
-            }
-            // --- End V3 Spec Conformance Checks ---
-
-            // CHARX format directly maps to V3 structure via card.json
-            Ok(ParsedCharacterCard::V3(card))
-        }
-        Err(e) => {
-            // If card.json doesn't parse as V3, it's an error
-            Err(ParserError::JsonError(e.to_string()))
-        }
-    }
+    let card = serde_json::from_slice::<CharacterCardV3>(&buffer)
+        .map_err(|e| ParserError::JsonError(e.to_string()))?;
+    
+    validate_v3_spec(&card, "CHARX card.json");
+    Ok(ParsedCharacterCard::V3(card))
 }
 
 // Declare the test module
@@ -360,44 +316,53 @@ mod tests {
     use std::io::{Cursor, Write}; // Added Write for zip helper
     use zip::{ZipWriter, write::FileOptions}; // Added for CHARX test helper
 
+    #[allow(clippy::cast_possible_truncation)]
+    fn safe_len_to_u32(len: usize) -> u32 {
+        len as u32
+    }
+
     // --- Test Helpers ---
 
     // Helper to create a minimal valid PNG with a specific tEXt chunk (Base64 encoded JSON)
     // (Restored original function)
+    #[allow(clippy::cast_possible_truncation)]
     fn create_test_png_with_text_chunk(keyword: &[u8], json_payload: &str) -> Vec<u8> {
         let base64_payload = base64_standard.encode(json_payload);
         let chunk_data = base64_payload.as_bytes();
 
         let mut png_bytes = Vec::new();
         png_bytes.extend_from_slice(&[137, 80, 78, 71, 13, 10, 26, 10]); // Signature
+        
         // Dummy IHDR
         let ihdr_data = &[0, 0, 0, 1, 0, 0, 0, 1, 8, 6, 0, 0, 0];
-        let ihdr_len = (ihdr_data.len() as u32).to_be_bytes();
+        let ihdr_len = safe_len_to_u32(ihdr_data.len()).to_be_bytes();
         png_bytes.extend_from_slice(&ihdr_len);
         let chunk_type_ihdr = b"IHDR";
         png_bytes.extend_from_slice(chunk_type_ihdr);
         png_bytes.extend_from_slice(ihdr_data);
         let crc_ihdr = crc32fast::hash(&[&chunk_type_ihdr[..], &ihdr_data[..]].concat());
         png_bytes.extend_from_slice(&crc_ihdr.to_be_bytes());
-        // --- tEXt chunk ---
-        let text_chunk_data_internal = [&keyword[..], &[0u8], &chunk_data[..]].concat();
-        let text_chunk_len = (text_chunk_data_internal.len() as u32).to_be_bytes();
+        
+        // tEXt chunk
+        let text_chunk_data_internal = [keyword, &[0u8], chunk_data].concat();
+        let text_chunk_len = safe_len_to_u32(text_chunk_data_internal.len()).to_be_bytes();
         png_bytes.extend_from_slice(&text_chunk_len);
         let chunk_type_text = b"tEXt";
         png_bytes.extend_from_slice(chunk_type_text);
         png_bytes.extend_from_slice(&text_chunk_data_internal);
-        let crc_text =
-            crc32fast::hash(&[&chunk_type_text[..], &text_chunk_data_internal[..]].concat());
+        let crc_text = crc32fast::hash(&[&chunk_type_text[..], &text_chunk_data_internal[..]].concat());
         png_bytes.extend_from_slice(&crc_text.to_be_bytes());
+        
         // Dummy IDAT
         let idat_data = &[8, 29, 99, 96, 0, 0, 0, 3, 0, 1];
-        let idat_len = (idat_data.len() as u32).to_be_bytes();
+        let idat_len = safe_len_to_u32(idat_data.len()).to_be_bytes();
         png_bytes.extend_from_slice(&idat_len);
         let chunk_type_idat = b"IDAT";
         png_bytes.extend_from_slice(chunk_type_idat);
         png_bytes.extend_from_slice(idat_data);
         let crc_idat = crc32fast::hash(&[&chunk_type_idat[..], &idat_data[..]].concat());
         png_bytes.extend_from_slice(&crc_idat.to_be_bytes());
+        
         // IEND
         png_bytes.extend_from_slice(&[0, 0, 0, 0]);
         png_bytes.extend_from_slice(b"IEND");
@@ -418,7 +383,7 @@ mod tests {
         png_bytes.extend_from_slice(&[137, 80, 78, 71, 13, 10, 26, 10]); // Signature
         // Dummy IHDR
         let ihdr_data = &[0, 0, 0, 1, 0, 0, 0, 1, 8, 6, 0, 0, 0];
-        let ihdr_len = (ihdr_data.len() as u32).to_be_bytes();
+        let ihdr_len = safe_len_to_u32(ihdr_data.len()).to_be_bytes();
         png_bytes.extend_from_slice(&ihdr_len);
         let chunk_type_ihdr = b"IHDR";
         png_bytes.extend_from_slice(chunk_type_ihdr);
@@ -426,8 +391,8 @@ mod tests {
         let crc_ihdr = crc32fast::hash(&[&chunk_type_ihdr[..], &ihdr_data[..]].concat());
         png_bytes.extend_from_slice(&crc_ihdr.to_be_bytes());
         // --- tEXt chunk ---
-        let text_chunk_data_internal = [&keyword[..], &[0u8], &chunk_data[..]].concat();
-        let text_chunk_len = (text_chunk_data_internal.len() as u32).to_be_bytes();
+        let text_chunk_data_internal = [keyword, &[0u8], chunk_data].concat();
+        let text_chunk_len = safe_len_to_u32(text_chunk_data_internal.len()).to_be_bytes();
         png_bytes.extend_from_slice(&text_chunk_len);
         let chunk_type_text = b"tEXt";
         png_bytes.extend_from_slice(chunk_type_text);
@@ -437,7 +402,7 @@ mod tests {
         png_bytes.extend_from_slice(&crc_text.to_be_bytes());
         // Dummy IDAT
         let idat_data = &[8, 29, 99, 96, 0, 0, 0, 3, 0, 1];
-        let idat_len = (idat_data.len() as u32).to_be_bytes();
+        let idat_len = safe_len_to_u32(idat_data.len()).to_be_bytes();
         png_bytes.extend_from_slice(&idat_len);
         let chunk_type_idat = b"IDAT";
         png_bytes.extend_from_slice(chunk_type_idat);
@@ -457,7 +422,7 @@ mod tests {
         png_bytes.extend_from_slice(&[137, 80, 78, 71, 13, 10, 26, 10]); // Signature
         // Dummy IHDR
         let ihdr_data = &[0, 0, 0, 1, 0, 0, 0, 1, 8, 6, 0, 0, 0];
-        let ihdr_len = (ihdr_data.len() as u32).to_be_bytes();
+        let ihdr_len = safe_len_to_u32(ihdr_data.len()).to_be_bytes();
         png_bytes.extend_from_slice(&ihdr_len);
         let chunk_type_ihdr = b"IHDR";
         png_bytes.extend_from_slice(chunk_type_ihdr);
@@ -469,8 +434,8 @@ mod tests {
         for (keyword, json_payload) in chunks {
             let base64_payload = base64_standard.encode(json_payload);
             let chunk_data = base64_payload.as_bytes();
-            let text_chunk_data_internal = [&keyword[..], &[0u8], &chunk_data[..]].concat();
-            let text_chunk_len = (text_chunk_data_internal.len() as u32).to_be_bytes();
+            let text_chunk_data_internal = [keyword, &[0u8], chunk_data].concat();
+            let text_chunk_len = safe_len_to_u32(text_chunk_data_internal.len()).to_be_bytes();
             png_bytes.extend_from_slice(&text_chunk_len);
             let chunk_type_text = b"tEXt";
             png_bytes.extend_from_slice(chunk_type_text);
@@ -482,7 +447,7 @@ mod tests {
 
         // Dummy IDAT
         let idat_data = &[8, 29, 99, 96, 0, 0, 0, 3, 0, 1];
-        let idat_len = (idat_data.len() as u32).to_be_bytes();
+        let idat_len = safe_len_to_u32(idat_data.len()).to_be_bytes();
         png_bytes.extend_from_slice(&idat_len);
         let chunk_type_idat = b"IDAT";
         png_bytes.extend_from_slice(chunk_type_idat);
@@ -592,18 +557,19 @@ mod tests {
             assert!(data_v2.creation_date.is_none());
             assert!(data_v2.modification_date.is_none());
         } else {
-            panic!("Expected V2Fallback variant, got {:?}", parsed_card);
+            panic!("Expected V2Fallback variant, got {parsed_card:?}");
         }
     }
 
     #[test]
+    #[allow(clippy::cast_possible_truncation)]
     fn test_parse_png_no_chara_chunk() {
         // Create PNG data without the 'chara' tEXt chunk (e.g., only IHDR, IDAT, and IEND)
         let mut png_data = Vec::new();
         png_data.extend_from_slice(&[137, 80, 78, 71, 13, 10, 26, 10]); // Signature
         // Dummy IHDR
         let ihdr_data = &[0, 0, 0, 1, 0, 0, 0, 1, 8, 6, 0, 0, 0];
-        let ihdr_len = (ihdr_data.len() as u32).to_be_bytes();
+        let ihdr_len = safe_len_to_u32(ihdr_data.len()).to_be_bytes();
         png_data.extend_from_slice(&ihdr_len);
         let chunk_type_ihdr = b"IHDR";
         png_data.extend_from_slice(chunk_type_ihdr);
@@ -612,7 +578,7 @@ mod tests {
         png_data.extend_from_slice(&crc_ihdr.to_be_bytes());
         // Dummy IDAT
         let idat_data = &[8, 29, 99, 96, 0, 0, 0, 3, 0, 1];
-        let idat_len = (idat_data.len() as u32).to_be_bytes();
+        let idat_len = safe_len_to_u32(idat_data.len()).to_be_bytes();
         png_data.extend_from_slice(&idat_len);
         let chunk_type_idat = b"IDAT";
         png_data.extend_from_slice(chunk_type_idat);
@@ -628,7 +594,7 @@ mod tests {
         assert!(result.is_err());
         match result.err().unwrap() {
             ParserError::ChunkNotFound => (),
-            e => panic!("Expected ChunkNotFound error, got {:?}", e),
+            e => panic!("Expected ChunkNotFound error, got {e:?}"),
         }
     }
 
@@ -641,7 +607,7 @@ mod tests {
         assert!(result.is_err());
         match result.err().unwrap() {
             ParserError::Base64Error(_) => (),
-            e => panic!("Expected Base64Error, got {:?}", e),
+            e => panic!("Expected Base64Error, got {e:?}"),
         }
 
         // Test with invalid base64 in ccv3, falling back to valid chara
@@ -668,7 +634,7 @@ mod tests {
         assert!(result.is_err());
         match result.err().unwrap() {
             ParserError::JsonError(_) => (),
-            e => panic!("Expected JsonError, got {:?}", e),
+            e => panic!("Expected JsonError, got {e:?}"),
         }
     }
 
@@ -679,7 +645,7 @@ mod tests {
         assert!(result.is_err());
         match result.err().unwrap() {
             ParserError::PngError(_) => (),
-            e => panic!("Expected PngError for invalid PNG data, got {:?}", e),
+            e => panic!("Expected PngError for invalid PNG data, got {e:?}"),
         }
     }
 
@@ -706,7 +672,7 @@ mod tests {
             assert_eq!(card_v3.data.name, Some("Test V3".to_string()));
             assert_eq!(card_v3.data.description, "A V3 character.");
         } else {
-            panic!("Expected V3 variant, got {:?}", parsed_card);
+            panic!("Expected V3 variant, got {parsed_card:?}");
         }
     }
 
@@ -728,8 +694,7 @@ mod tests {
             assert_eq!(card_v3.data.name, Some("Test V3".to_string()));
         } else {
             panic!(
-                "Expected V3 variant when both chunks present, got {:?}",
-                parsed_card
+                "Expected V3 variant when both chunks present, got {parsed_card:?}"
             );
         }
     }
@@ -752,8 +717,7 @@ mod tests {
             assert_eq!(card_v3.data.name, Some("Test V3".to_string()));
         } else {
             panic!(
-                "Expected V3 variant when both chunks present, got {:?}",
-                parsed_card
+                "Expected V3 variant when both chunks present, got {parsed_card:?}"
             );
         }
     }
@@ -782,8 +746,7 @@ mod tests {
             );
         } else {
             panic!(
-                "Expected V2Fallback variant after invalid ccv3, got {:?}",
-                parsed_card
+                "Expected V2Fallback variant after invalid ccv3, got {parsed_card:?}"
             );
         }
     }
@@ -809,8 +772,7 @@ mod tests {
             assert_eq!(card_v3.data.name, Some("Wrong Spec V3".to_string()));
         } else {
             panic!(
-                "Expected V3 variant even with wrong spec field, got {:?}",
-                parsed_card
+                "Expected V3 variant even with wrong spec field, got {parsed_card:?}"
             );
         }
 
@@ -832,6 +794,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::cast_possible_truncation)]
     fn test_fallback_to_chara_if_ccv3_invalid_base64() {
         let invalid_base64_ccv3 = "!@#$%^"; // Invalid base64 string
         let valid_v2_json = r#"{"name": "Fallback V2 From Bad Base64"}"#;
@@ -841,7 +804,7 @@ mod tests {
         png_bytes.extend_from_slice(&[137, 80, 78, 71, 13, 10, 26, 10]); // Signature
         // Dummy IHDR (as before)
         let ihdr_data = &[0, 0, 0, 1, 0, 0, 0, 1, 8, 6, 0, 0, 0];
-        let ihdr_len = (ihdr_data.len() as u32).to_be_bytes();
+        let ihdr_len = safe_len_to_u32(ihdr_data.len()).to_be_bytes();
         png_bytes.extend_from_slice(&ihdr_len);
         let chunk_type_ihdr = b"IHDR";
         png_bytes.extend_from_slice(chunk_type_ihdr);
@@ -853,7 +816,7 @@ mod tests {
         let ccv3_keyword = b"ccv3";
         let text_chunk_data_ccv3 =
             [&ccv3_keyword[..], &[0u8], invalid_base64_ccv3.as_bytes()].concat();
-        let text_chunk_len_ccv3 = (text_chunk_data_ccv3.len() as u32).to_be_bytes();
+        let text_chunk_len_ccv3 = safe_len_to_u32(text_chunk_data_ccv3.len()).to_be_bytes();
         png_bytes.extend_from_slice(&text_chunk_len_ccv3);
         let chunk_type_text_ccv3 = b"tEXt";
         png_bytes.extend_from_slice(chunk_type_text_ccv3);
@@ -867,7 +830,7 @@ mod tests {
         let base64_payload_chara = base64_standard.encode(valid_v2_json);
         let chunk_data_chara = base64_payload_chara.as_bytes();
         let text_chunk_data_chara = [&chara_keyword[..], &[0u8], chunk_data_chara].concat();
-        let text_chunk_len_chara = (text_chunk_data_chara.len() as u32).to_be_bytes();
+        let text_chunk_len_chara = safe_len_to_u32(text_chunk_data_chara.len()).to_be_bytes();
         png_bytes.extend_from_slice(&text_chunk_len_chara);
         let chunk_type_text_chara = b"tEXt";
         png_bytes.extend_from_slice(chunk_type_text_chara);
@@ -878,7 +841,7 @@ mod tests {
 
         // Dummy IDAT and IEND (as before)
         let idat_data = &[8, 29, 99, 96, 0, 0, 0, 3, 0, 1];
-        let idat_len = (idat_data.len() as u32).to_be_bytes();
+        let idat_len = safe_len_to_u32(idat_data.len()).to_be_bytes();
         png_bytes.extend_from_slice(&idat_len);
         let chunk_type_idat = b"IDAT";
         png_bytes.extend_from_slice(chunk_type_idat);
@@ -906,8 +869,7 @@ mod tests {
             );
         } else {
             panic!(
-                "Expected V2Fallback variant after invalid ccv3 base64, got {:?}",
-                parsed_card
+                "Expected V2Fallback variant after invalid ccv3 base64, got {parsed_card:?}"
             );
         }
     }
@@ -926,8 +888,7 @@ mod tests {
         match result.err().unwrap() {
             ParserError::JsonError(_) => (),
             e => panic!(
-                "Expected JsonError when both chunks are invalid, got {:?}",
-                e
+                "Expected JsonError when both chunks are invalid, got {e:?}"
             ),
         }
     }
@@ -941,7 +902,7 @@ mod tests {
         assert!(result.is_err());
         match result.err().unwrap() {
             ParserError::Base64Error(_) => (),
-            e => panic!("Expected Base64Error, got {:?}", e),
+            e => panic!("Expected Base64Error, got {e:?}"),
         }
     }
 
@@ -1136,7 +1097,7 @@ mod tests {
         assert!(result.is_err());
         match result.err().unwrap() {
             ParserError::JsonError(_) => (),
-            e => panic!("Expected JsonError, got {:?}", e),
+            e => panic!("Expected JsonError, got {e:?}"),
         }
     }
 
@@ -1204,7 +1165,7 @@ mod tests {
         assert!(result.is_err());
         match result.err().unwrap() {
             ParserError::CharxCardJsonNotFound => (),
-            e => panic!("Expected CharxCardJsonNotFound, got {:?}", e),
+            e => panic!("Expected CharxCardJsonNotFound, got {e:?}"),
         }
     }
 
@@ -1218,7 +1179,7 @@ mod tests {
         assert!(result.is_err());
         match result.err().unwrap() {
             ParserError::JsonError(_) => (),
-            e => panic!("Expected JsonError from invalid card.json, got {:?}", e),
+            e => panic!("Expected JsonError from invalid card.json, got {e:?}"),
         }
     }
 
@@ -1230,7 +1191,7 @@ mod tests {
         assert!(result.is_err());
         match result.err().unwrap() {
             ParserError::ZipError(_) => (),
-            e => panic!("Expected ZipError for non-zip data, got {:?}", e),
+            e => panic!("Expected ZipError for non-zip data, got {e:?}"),
         }
     }
 
@@ -1328,7 +1289,7 @@ mod tests {
                 assert_eq!(data.name, Some("tEXtchara Test".to_string()));
                 assert_eq!(data.description, "Testing the tEXtchara chunk.");
             }
-            other => panic!("Expected V2Fallback for tEXtchara chunk, got {:?}", other),
+            other @ ParsedCharacterCard::V3(_) => panic!("Expected V2Fallback for tEXtchara chunk, got {other:?}"),
         }
     }
     // Helper to create a minimally valid V3 JSON string
@@ -1337,9 +1298,9 @@ mod tests {
         format!(
             r#"{{
         "spec": "chara_card_v3",
-        "spec_version": "{}",
+        "spec_version": "{spec_version}",
         "data": {{
-            "name": "{}",
+            "name": "{name}",
             "description": "",
             "personality": "",
             "scenario": "",
@@ -1355,8 +1316,7 @@ mod tests {
             "extensions": {{}},
             "group_only_greetings": []
         }}
-    }}"#,
-            spec_version, name
+    }}"#
         )
     }
 
@@ -1415,7 +1375,7 @@ mod tests {
                     "Expected a generic ZipError, not FileNotFound"
                 );
             }
-            e => panic!("Expected ZipError for corrupted zip data, got {:?}", e),
+            e => panic!("Expected ZipError for corrupted zip data, got {e:?}"),
         }
     }
 
@@ -1542,8 +1502,7 @@ mod tests {
             // Check for the specific lowercase "i/o error" string representation
             ParserError::ZipError(s) => assert!(
                 s.contains("i/o error"),
-                "Expected ZipError string to contain 'i/o error', got: {}",
-                s
+                "Expected ZipError string to contain 'i/o error', got: {s}"
             ),
             _ => panic!("Expected ZipError from conversion"),
         }

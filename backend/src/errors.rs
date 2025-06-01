@@ -315,64 +315,64 @@ impl IntoResponse for AppError {
                         (StatusCode::BAD_REQUEST, format!("Invalid input: {msg}"))
                     }
                     Self::FileUploadError(e) => {
-                        error!("File upload error: {}", e);
+                        error!("File upload error: {e}");
                         (StatusCode::BAD_REQUEST, "File upload failed".to_string())
                     }
                     Self::CharacterParseError(e) => {
-                        error!("Character parsing error: {}", e);
+                        error!("Character parsing error: {e}");
                         (
                             StatusCode::BAD_REQUEST,
                             "Failed to parse character data".to_string(),
                         )
                     }
                     Self::ParseIntError(e) => {
-                        error!("Integer parsing error: {}", e);
+                        error!("Integer parsing error: {e}");
                         (
                             StatusCode::BAD_REQUEST,
                             "Invalid numeric value provided".to_string(),
                         )
                     }
                     Self::UuidError(e) => {
-                        error!("UUID error: {}", e);
+                        error!("UUID error: {e}");
                         (
                             StatusCode::BAD_REQUEST,
                             "Invalid identifier format".to_string(),
                         )
                     }
                     Self::AuthError(e) => {
-                        error!("Authentication framework error: {}", e);
+                        error!("Authentication framework error: {e}");
                         (StatusCode::UNAUTHORIZED, "Authentication error".to_string())
                     }
                     Self::SessionStoreError(e) => {
-                        error!("Session store error: {}", e);
+                        error!("Session store error: {e}");
                         (
                             StatusCode::INTERNAL_SERVER_ERROR,
                             "Session management error".to_string(),
                         )
                     }
                     Self::CryptoError(e) => {
-                        error!("Cryptography error: {}", e);
+                        error!("Cryptography error: {e}");
                         (
                             StatusCode::INTERNAL_SERVER_ERROR,
                             "A cryptographic operation failed.".to_string(),
                         )
                     }
                     Self::EncryptionError(e) => {
-                        error!("Encryption error: {}", e);
+                        error!("Encryption error: {e}");
                         (
                             StatusCode::INTERNAL_SERVER_ERROR,
                             "Encryption operation failed.".to_string(),
                         )
                     }
                     Self::DecryptionError(e) => {
-                        error!("Decryption error: {}", e);
+                        error!("Decryption error: {e}");
                         (
                             StatusCode::INTERNAL_SERVER_ERROR,
                             "Data decryption failed.".to_string(),
                         )
                     }
                     Self::SessionError(e) => {
-                        error!("Session operation error: {}", e);
+                        error!("Session operation error: {e}");
                         (
                             StatusCode::INTERNAL_SERVER_ERROR,
                             "A session operation failed.".to_string(),
@@ -383,133 +383,133 @@ impl IntoResponse for AppError {
                         "API rate limit exceeded. Please try again later.".to_string(),
                     ),
                     Self::DatabaseQueryError(e) => {
-                        error!("Database query error: {}", e);
+                        error!("Database query error: {e}");
                         (
                             StatusCode::INTERNAL_SERVER_ERROR,
                             "Database error".to_string(),
                         )
                     }
                     Self::DbPoolError(e) => {
-                        error!("Database pool error: {}", e);
+                        error!("Database pool error: {e}");
                         (
                             StatusCode::INTERNAL_SERVER_ERROR,
                             "Database connection error".to_string(),
                         )
                     }
                     Self::DbManagedPoolError(e) => {
-                        error!("Database managed pool error: {}", e);
+                        error!("Database managed pool error: {e}");
                         (
                             StatusCode::INTERNAL_SERVER_ERROR,
                             "Database connection error".to_string(),
                         )
                     }
                     Self::DbPoolBuildError(e) => {
-                        error!("Database pool build error: {}", e);
+                        error!("Database pool build error: {e}");
                         (
                             StatusCode::INTERNAL_SERVER_ERROR,
                             "Database configuration error".to_string(),
                         )
                     }
                     Self::DbInteractError(e) => {
-                        error!("Database interaction error: {}", e);
+                        error!("Database interaction error: {e}");
                         (
                             StatusCode::INTERNAL_SERVER_ERROR,
                             "Database task execution error".to_string(),
                         )
                     }
                     Self::DbMigrationError(e) => {
-                        error!("Database migration error: {}", e);
+                        error!("Database migration error: {e}");
                         (
                             StatusCode::INTERNAL_SERVER_ERROR,
                             "Database schema error".to_string(),
                         )
                     }
                     Self::PasswordHashingFailed(e) => {
-                        error!("Password hashing failed: {}", e);
+                        error!("Password hashing failed: {e}");
                         (
                             StatusCode::INTERNAL_SERVER_ERROR,
                             "Internal security error".to_string(),
                         )
                     }
                     Self::ConfigError(e) => {
-                        error!("Configuration error: {}", e);
+                        error!("Configuration error: {e}");
                         (
                             StatusCode::INTERNAL_SERVER_ERROR,
                             "Server configuration error".to_string(),
                         )
                     }
                     Self::IoError(e) => {
-                        error!("IO error: {}", e);
+                        error!("IO error: {e}");
                         (
                             StatusCode::INTERNAL_SERVER_ERROR,
                             "File system or network error".to_string(),
                         )
                     }
                     Self::SerializationError(e) => {
-                        error!("Serialization error: {}", e);
+                        error!("Serialization error: {e}");
                         (
                             StatusCode::INTERNAL_SERVER_ERROR,
                             "Data formatting error".to_string(),
                         )
                     }
                     Self::GeminiError(e) => {
-                        error!("LLM API error: {}", e);
+                        error!("LLM API error: {e}");
                         (
                             StatusCode::INTERNAL_SERVER_ERROR,
                             "AI service error".to_string(),
                         )
                     }
                     Self::ImageProcessingError(e) => {
-                        error!("Image processing error: {}", e);
+                        error!("Image processing error: {e}");
                         (
                             StatusCode::INTERNAL_SERVER_ERROR,
                             "Failed to process image".to_string(),
                         )
                     }
                     Self::HttpRequestError(e) => {
-                        error!("HTTP request error: {}", e);
+                        error!("HTTP request error: {e}");
                         (
                             StatusCode::INTERNAL_SERVER_ERROR,
                             "Failed to communicate with external service".to_string(),
                         )
                     }
                     Self::HttpMiddlewareError(e) => {
-                        error!("HTTP middleware error: {}", e);
+                        error!("HTTP middleware error: {e}");
                         (
                             StatusCode::INTERNAL_SERVER_ERROR,
                             "Failed during external service communication".to_string(),
                         )
                     }
                     Self::LlmClientError(e) => {
-                        error!("LLM client error: {}", e);
+                        error!("LLM client error: {e}");
                         (
                             StatusCode::INTERNAL_SERVER_ERROR,
                             "AI service client error".to_string(),
                         )
                     }
                     Self::GenerationError(e) => {
-                        error!("LLM generation error: {}", e);
+                        error!("LLM generation error: {e}");
                         (
                             StatusCode::BAD_GATEWAY,
                             "AI service request failed".to_string(),
                         )
                     }
                     Self::EmbeddingError(e) => {
-                        error!("LLM embedding error: {}", e);
+                        error!("LLM embedding error: {e}");
                         (
                             StatusCode::BAD_GATEWAY,
                             "AI embedding service request failed".to_string(),
                         )
                     }
                     Self::VectorDbError(e) => {
-                        error!("Vector DB error: {}", e);
+                        error!("Vector DB error: {e}");
                         (
                             StatusCode::BAD_GATEWAY,
                             "Failed to process embeddings".to_string(),
                         )
                     }
                     Self::AiServiceError(e) => {
-                        error!("AI Service Error: {}", e);
+                        error!("AI Service Error: {e}");
                         (StatusCode::INTERNAL_SERVER_ERROR, e)
                     }
                     Self::PasswordProcessingError => (
@@ -517,53 +517,53 @@ impl IntoResponse for AppError {
                         "Internal Server Error: Password processing error.".to_string(),
                     ),
                     Self::InternalServerErrorGeneric(e) => {
-                        error!("Internal server error: {}", e);
+                        error!("Internal server error: {e}");
                         (
                             StatusCode::INTERNAL_SERVER_ERROR,
                             "An unexpected error occurred".to_string(),
                         )
                     }
                     Self::Session(e) => {
-                        error!("Session error: {}", e);
+                        error!("Session error: {e}");
                         (
                             StatusCode::INTERNAL_SERVER_ERROR,
                             "Session management error".to_string(),
                         )
                     }
                     Self::NotImplemented(msg) => {
-                        error!("Not Implemented: {}", msg);
+                        error!("Not Implemented: {msg}");
                         (StatusCode::NOT_IMPLEMENTED, msg)
                     }
                     Self::WebSocketSendError(e) => {
-                        error!("WebSocket send error: {}", e);
+                        error!("WebSocket send error: {e}");
                         (
                             StatusCode::INTERNAL_SERVER_ERROR,
                             "WebSocket send error".to_string(),
                         )
                     }
                     Self::WebSocketReceiveError(e) => {
-                        error!("WebSocket receive error: {}", e);
+                        error!("WebSocket receive error: {e}");
                         (
                             StatusCode::BAD_REQUEST, // Or INTERNAL_SERVER_ERROR depending on context
                             "WebSocket receive error".to_string(),
                         )
                     }
                     Self::ChunkingError(e) => {
-                        error!("Text chunking error: {}", e);
+                        error!("Text chunking error: {e}");
                         (
                             StatusCode::INTERNAL_SERVER_ERROR,
                             "Text chunking error".to_string(),
                         )
                     }
                     Self::CharacterParsingError(e) => {
-                        error!("Character parsing error: {}", e);
+                        error!("Character parsing error: {e}");
                         (
                             StatusCode::BAD_REQUEST,
                             "Failed to parse character data".to_string(),
                         )
                     }
                     Self::TextProcessingError(e) => {
-                        error!("Text processing error: {}", e);
+                        error!("Text processing error: {e}");
                         (
                             StatusCode::INTERNAL_SERVER_ERROR,
                             "Failed to process text".to_string(),
@@ -574,7 +574,7 @@ impl IntoResponse for AppError {
                         unreachable!("ValidationError should be handled by the outer match arm")
                     }
                     Self::BadGateway(msg) => {
-                        error!("Bad Gateway error: {}", msg);
+                        error!("Bad Gateway error: {msg}");
                         (StatusCode::BAD_GATEWAY, msg)
                     }
                 };
@@ -602,7 +602,7 @@ impl From<axum_login::Error<AuthBackend>> for AppError {
         // Restore original (potentially incorrect) match logic
         match err {
             axum_login::Error::Session(session_err) => {
-                tracing::error!("Session component of axum_login::Error: {:?}", session_err);
+                tracing::error!("Session component of axum_login::Error: {session_err:?}");
                 if session_err.to_string().contains("decode error") {
                     // Heuristic check
                     Self::Unauthorized(format!("Invalid session data: {session_err}"))
@@ -631,7 +631,7 @@ impl From<axum_login::Error<AuthBackend>> for AppError {
             */
             // Add a temporary catch-all that maps to Unauthorized until we know the correct variants
             axum_login::Error::Backend(_) => { // Changed _ to axum_login::Error::Backend(_)
-                tracing::error!("Unhandled axum_login::Error variant: {:?}", err);
+                tracing::error!("Unhandled axum_login::Error variant: {err:?}");
                 Self::Unauthorized(format!("Unhandled authentication error: {err}"))
             }
         }

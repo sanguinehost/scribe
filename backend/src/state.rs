@@ -30,6 +30,20 @@ use uuid::Uuid; // For embedding_call_tracker // For manual Debug impl
 pub type DbPool = DeadpoolPool;
 // Note: deadpool::Pool is already Cloneable.
 
+/// Configuration for AppState services to reduce constructor arguments
+pub struct AppStateServices {
+    pub ai_client: Arc<dyn AiClient + Send + Sync>,
+    pub embedding_client: Arc<dyn EmbeddingClient + Send + Sync>,
+    pub qdrant_service: Arc<dyn QdrantClientServiceTrait + Send + Sync>,
+    pub embedding_pipeline_service: Arc<dyn EmbeddingPipelineServiceTrait + Send + Sync>,
+    pub chat_override_service: Arc<ChatOverrideService>,
+    pub user_persona_service: Arc<UserPersonaService>,
+    pub token_counter: Arc<HybridTokenCounter>,
+    pub encryption_service: Arc<EncryptionService>,
+    pub lorebook_service: Arc<LorebookService>,
+    pub auth_backend: Arc<AuthBackend>,
+}
+
 // --- Shared application state ---
 #[derive(Clone)]
 pub struct AppState {
@@ -81,39 +95,26 @@ impl fmt::Debug for AppState {
 }
 
 impl AppState {
-    // Update constructor signature to accept the trait object Arc
+    /// Create new AppState with reduced constructor arguments
     pub fn new(
         pool: DeadpoolPool,
         config: Arc<Config>,
-        ai_client: Arc<dyn AiClient + Send + Sync>, // Use trait object Arc here
-        embedding_client: Arc<dyn EmbeddingClient + Send + Sync>, // Add Send + Sync
-        // Accept the trait object Arc for Qdrant service
-        qdrant_service: Arc<dyn QdrantClientServiceTrait + Send + Sync>,
-        embedding_pipeline_service: Arc<dyn EmbeddingPipelineServiceTrait + Send + Sync>, // Add Send + Sync
-        chat_override_service: Arc<ChatOverrideService>, // <<< ADDED THIS PARAMETER
-        user_persona_service: Arc<UserPersonaService>,   // <<< ADDED THIS PARAMETER
-        token_counter: Arc<HybridTokenCounter>,          // Added
-        encryption_service: Arc<EncryptionService>,      // Added
-        lorebook_service: Arc<LorebookService>,          // Added for LorebookService
-        auth_backend: Arc<AuthBackend>,                  // Added for shared AuthBackend
+        services: AppStateServices,
     ) -> Self {
         Self {
             pool,
             config,
-            // #[cfg(test)] // Remove cfg(test)
-            // mock_llm_response: std::sync::Arc::new(tokio::sync::Mutex::new(None)),
-            ai_client,                  // Assign the passed-in client Arc
-            embedding_client,           // Add this assignment
-            qdrant_service,             // Assign the trait object
-            embedding_pipeline_service, // Add this assignment
-            chat_override_service,      // <<< ADDED THIS ASSIGNMENT
-            user_persona_service,       // <<< ADDED THIS ASSIGNMENT
-            // Remove #[cfg(test)]
-            embedding_call_tracker: Arc::new(TokioMutex::new(Vec::new())), // Initialize tracker for tests
-            token_counter,                                                 // Added
-            encryption_service,                                            // Added
-            lorebook_service, // Added for LorebookService
-            auth_backend,     // Added for shared AuthBackend
+            ai_client: services.ai_client,
+            embedding_client: services.embedding_client,
+            qdrant_service: services.qdrant_service,
+            embedding_pipeline_service: services.embedding_pipeline_service,
+            chat_override_service: services.chat_override_service,
+            user_persona_service: services.user_persona_service,
+            embedding_call_tracker: Arc::new(TokioMutex::new(Vec::new())),
+            token_counter: services.token_counter,
+            encryption_service: services.encryption_service,
+            lorebook_service: services.lorebook_service,
+            auth_backend: services.auth_backend,
         }
     }
 }

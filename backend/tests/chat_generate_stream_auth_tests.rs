@@ -7,7 +7,6 @@ use axum::{
 use chrono::Utc;
 use diesel::RunQueryDsl as _;
 use diesel::prelude::*;
-use mime;
 use tower::ServiceExt;
 use uuid::Uuid;
 
@@ -38,7 +37,7 @@ async fn generate_chat_response_streaming_unauthorized() {
     };
     let request = Request::builder()
         .method(Method::POST)
-        .uri(format!("/api/chat/{}/generate", session_id))
+        .uri(format!("/api/chat/{session_id}/generate"))
         .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
         .body(Body::from(serde_json::to_vec(&payload).unwrap()))
         .unwrap();
@@ -119,7 +118,7 @@ async fn generate_chat_response_streaming_not_found() {
     };
     let request = Request::builder()
         .method(Method::POST)
-        .uri(format!("/api/chat/{}/generate", non_existent_session_id))
+        .uri(format!("/api/chat/{non_existent_session_id}/generate"))
         .header(header::COOKIE, &auth_cookie)
         .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
         .body(Body::from(serde_json::to_vec(&payload).unwrap()))

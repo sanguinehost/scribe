@@ -1,21 +1,15 @@
 use argon2::{Algorithm, Argon2, Params, Version};
 use rand::TryRngCore;
-use rand::rngs::OsRng; // Corrected import for TryRngCore
-// Removed unused rand::RngCore
+use rand::rngs::OsRng;
 use anyhow::Result;
 use base64::Engine as _;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use ring::aead::{self, AES_256_GCM, Aad, LessSafeKey, Nonce, UnboundKey};
 use ring::error::Unspecified as RingUnspecifiedError;
-use secrecy::{ExposeSecret, SecretBox, SecretString}; // Removed SecretVec
+use secrecy::{ExposeSecret, SecretBox, SecretString};
 use thiserror::Error;
-// Removed unused argon2 imports: Config as Argon2Config, Variant, ThreadMode
-// The necessary Argon2 items (Algorithm, Argon2, Params, Version) are imported on line 1.
 use std::string::FromUtf8Error;
-use tracing::error; // Import FromUtf8Error
-// Removed duplicate/unused secrecy imports and rand::RngCore from lines 16-17
-// Secrecy items like ExposeSecret, SecretBox are already imported on line 5.
-// SecretVec is not used; Secret<Vec<u8>> is achieved via SecretBox::new(Box::new(vec_u8)).
+use tracing::error;
 
 const SALT_LEN: usize = 16; // 16 bytes for salt
 const DEK_LEN: usize = 32; // 32 bytes for AES-256 DEK
@@ -44,6 +38,10 @@ pub enum CryptoError {
 }
 
 /// Generates a cryptographically secure random salt.
+///
+/// # Errors
+///
+/// Returns `CryptoError::RandError` if the random number generator fails to generate sufficient entropy.
 pub fn generate_salt() -> Result<String, CryptoError> {
     let mut salt = vec![0u8; SALT_LEN];
     OsRng
@@ -62,18 +60,32 @@ fn generate_dek_bytes() -> Result<Vec<u8>, CryptoError> {
 }
 
 /// Generates a cryptographically secure random Data Encryption Key (DEK) wrapped in `SecretBox`.
+///
+/// # Errors
+///
+/// Returns `CryptoError::RandError` if the random number generator fails to generate sufficient entropy.
 pub fn generate_dek() -> Result<SecretBox<Vec<u8>>, CryptoError> {
     let dek_bytes = generate_dek_bytes()?;
     Ok(SecretBox::new(Box::new(dek_bytes)))
 }
 
 /// Public version of `generate_dek` for use in other modules.
+///
+/// # Errors
+///
+/// Returns `CryptoError::RandError` if the random number generator fails to generate sufficient entropy.
 pub fn crypto_generate_dek() -> Result<SecretBox<Vec<u8>>, CryptoError> {
     generate_dek()
 }
 
 /// Derives a Key Encryption Key (KEK) from a password and salt using Argon2id.
 /// The output key length will be `DEK_LEN` (32 bytes for AES-256).
+///
+/// # Errors
+///
+/// Returns `CryptoError::Argon2ParamError` if the Argon2 parameters are invalid,
+/// `CryptoError::Base64DecodeError` if the salt string is not valid base64,
+/// or `CryptoError::Argon2HashError` if the Argon2 hashing operation fails.
 pub fn derive_kek(
     password: &SecretString,
     salt_str: &str,
@@ -106,6 +118,12 @@ pub fn derive_kek(
 /// Encrypts plaintext using AES-256-GCM with the given key.
 /// Returns the ciphertext and the generated nonce separately.
 /// Key material must be 32 bytes.
+///
+/// # Errors
+///
+/// Returns `CryptoError::InvalidKeyLength` if the key material is not 32 bytes,
+/// `CryptoError::RingAeadError` if the AES-GCM encryption operation fails,
+/// or `CryptoError::RandError` if random nonce generation fails.
 pub fn encrypt_gcm(
     plaintext: &[u8],
     key_material: &SecretBox<Vec<u8>>, // Reverted key_material type
@@ -138,12 +156,18 @@ pub fn encrypt_gcm(
 
 /// Decrypts ciphertext using AES-256-GCM with the given key and nonce.
 /// Key material must be 32 bytes. Nonce must be 12 bytes.
+///
+/// # Errors
+///
+/// Returns `CryptoError::RandError` if the nonce length is invalid,
+/// `CryptoError::CiphertextTooShort` if the ciphertext is too short to contain a valid tag,
+/// `CryptoError::InvalidKeyLength` if the key material is not 32 bytes,
+/// or `CryptoError::RingAeadError` if the AES-GCM decryption operation fails.
 pub fn decrypt_gcm(
     ciphertext: &[u8],                 // Ciphertext + tag
     nonce_bytes: &[u8],                // Separate nonce
-    key_material: &SecretBox<Vec<u8>>, // Reverted key_material type
+    key_material: &SecretBox<Vec<u8>>,
 ) -> Result<SecretBox<Vec<u8>>, CryptoError> {
-    // Reverted return type
     if nonce_bytes.len() != NONCE_LEN {
         return Err(CryptoError::RandError("Invalid nonce length".into()));
     }

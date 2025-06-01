@@ -1,8 +1,10 @@
-pub mod auth; // Added auth module
-pub mod config; // Add config module
-pub mod crypto; // Added crypto module
-pub mod errors; // Corrected from 'error'
-pub mod llm; // Added llm module
+#![allow(clippy::literal_string_with_formatting_args)]
+
+pub mod auth;
+pub mod config;
+pub mod crypto;
+pub mod errors;
+pub mod llm;
 pub mod logging;
 pub mod models;
 pub mod prompt_builder;

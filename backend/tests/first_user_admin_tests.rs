@@ -40,7 +40,7 @@ async fn test_first_user_is_admin() -> AnyhowResult<()> {
         .await
         .context("Failed to get DB connection")?;
     let any_users = conn
-        .interact(move |conn_actual| auth::are_there_any_users(conn_actual))
+        .interact(auth::are_there_any_users)
         .await
         .map_err(|e| anyhow::anyhow!("DB interaction failed: {}", e))?
         .map_err(|e| anyhow::anyhow!("Auth error: {}", e))?;
@@ -53,7 +53,7 @@ async fn test_first_user_is_admin() -> AnyhowResult<()> {
 
     // Register the first user
     let first_username = format!("first_admin_user_{}", Uuid::new_v4());
-    let first_email = format!("{}@test.com", first_username);
+    let first_email = format!("{first_username}@test.com");
     let password = "password123";
 
     let first_user_payload = json!({
@@ -91,7 +91,7 @@ async fn test_first_user_is_admin() -> AnyhowResult<()> {
 
     // Now register a second user
     let second_username = format!("second_user_{}", Uuid::new_v4());
-    let second_email = format!("{}@test.com", second_username);
+    let second_email = format!("{second_username}@test.com");
 
     let second_user_payload = json!({
         "username": second_username,
@@ -159,7 +159,7 @@ async fn test_are_there_any_users_function() -> AnyhowResult<()> {
         .await
         .context("Failed to get DB connection")?;
     let empty_result = conn
-        .interact(move |conn_actual| auth::are_there_any_users(conn_actual))
+        .interact(auth::are_there_any_users)
         .await
         .map_err(|e| anyhow::anyhow!("DB interaction failed: {}", e))?
         .map_err(|e| anyhow::anyhow!("Auth error: {}", e))?;
@@ -187,7 +187,7 @@ async fn test_are_there_any_users_function() -> AnyhowResult<()> {
         .await
         .context("Failed to get DB connection")?;
     let non_empty_result = conn
-        .interact(move |conn_actual| auth::are_there_any_users(conn_actual))
+        .interact(auth::are_there_any_users)
         .await
         .map_err(|e| anyhow::anyhow!("DB interaction failed: {}", e))?
         .map_err(|e| anyhow::anyhow!("Auth error: {}", e))?;

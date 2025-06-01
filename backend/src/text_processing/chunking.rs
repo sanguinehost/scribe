@@ -54,7 +54,7 @@ impl From<&Config> for ChunkConfig {
             }
         };
 
-        ChunkConfig {
+        Self {
             metric,
             max_size: config.chunking_max_size,
             overlap: config.chunking_overlap,
@@ -145,7 +145,7 @@ fn chunk_recursive(
         // Only \n\n and \n
         if let Some(split_index) = find_best_split_point(
             segment,
-            *separator,
+            separator,
             config.max_size,
             config.metric,
             word_segmenter,
@@ -382,155 +382,192 @@ fn split_fallback(
 ) -> Result<(), AppError> {
     trace!("Executing fallback split.");
     if config.metric == ChunkingMetric::Word {
-        // --- FIX: Rewritten Word Fallback Logic ---
-        let word_byte_indices: Vec<usize> = word_segmenter.segment_str(segment).collect();
-        let num_words_in_segment = word_byte_indices.len();
+        split_fallback_by_words(segment, config, source_id, current_offset, word_segmenter, chunks)
+    } else {
+        split_fallback_by_characters(segment, config, source_id, current_offset, chunks)
+    }
+}
+
+/// Split segment by words when word-based chunking is needed
+fn split_fallback_by_words(
+    segment: &str,
+    config: &ChunkConfig,
+    source_id: &Option<String>,
+    current_offset: usize,
+    word_segmenter: &WordSegmenter,
+    chunks: &mut Vec<TextChunk>,
+) -> Result<(), AppError> {
+    let word_byte_indices: Vec<usize> = word_segmenter.segment_str(segment).collect();
+    let num_words_in_segment = word_byte_indices.len();
+    trace!(
+        "Fallback Word Split: Total words in segment = {}",
+        num_words_in_segment
+    );
+
+    if num_words_in_segment > 1 {
+        return process_word_chunks(segment, config, source_id, current_offset, &word_byte_indices, num_words_in_segment, word_segmenter, chunks);
+    }
+    
+    trace!("Fallback: Word splitting failed (segment has 0 or 1 words).");
+    Ok(())
+}
+
+/// Process word chunks from a segment
+fn process_word_chunks(
+    segment: &str,
+    config: &ChunkConfig,
+    source_id: &Option<String>,
+    current_offset: usize,
+    word_byte_indices: &[usize],
+    num_words_in_segment: usize,
+    word_segmenter: &WordSegmenter,
+    chunks: &mut Vec<TextChunk>,
+) -> Result<(), AppError> {
+    trace!(
+        num_words = num_words_in_segment,
+        "Fallback: Splitting by words."
+    );
+    let mut current_chunk_start_word_index = 0; // Index within word_byte_indices
+    let _current_chunk_start_offset = current_offset; // Char offset in original text
+
+    while current_chunk_start_word_index < num_words_in_segment {
+        trace!("-- Fallback Word Loop Iteration --");
+        trace!("  Start Word Index: {}", current_chunk_start_word_index);
+
+        // Determine the end word index for this chunk
+        let current_chunk_end_word_index = min(
+            current_chunk_start_word_index + config.max_size, // Ideal end based on max_size
+            num_words_in_segment, // Cannot go beyond the last word
+        );
         trace!(
-            "Fallback Word Split: Total words in segment = {}",
-            num_words_in_segment
+            "  End Word Index (Calculated): {}",
+            current_chunk_end_word_index
         );
 
-        if num_words_in_segment > 1 {
-            trace!(
-                num_words = num_words_in_segment,
-                "Fallback: Splitting by words."
+        // Ensure we don't create a chunk smaller than overlap if possible (unless it's the last chunk)
+        // This logic might be overly complex, let's keep it simple first: chunk up to max_size words.
+        // Revisit if overlap causes issues with very small trailing chunks.
+
+        // Get the start byte of the first word in this chunk
+        let chunk_start_byte = if current_chunk_start_word_index == 0 {
+            0
+        } else {
+            // Potential issue: word_byte_indices contains END bytes.
+            // word_byte_indices[idx] is the end byte of word at index `idx`.
+            // The start byte of word `idx` should be word_byte_indices[idx - 1] (or 0 if idx is 0).
+            // So, the start byte for current_chunk_start_word_index should be word_byte_indices[current_chunk_start_word_index - 1]
+            word_byte_indices[current_chunk_start_word_index - 1]
+        };
+        trace!("  Chunk Start Byte (Calculated): {}", chunk_start_byte);
+
+        // Get the end byte of the last word in this chunk
+        // Ensure index is valid before accessing. end_word_index can be == num_words_in_segment
+        let chunk_end_byte_index = current_chunk_end_word_index.saturating_sub(1);
+        let chunk_end_byte; // Declare chunk_end_byte outside the if/else
+        if chunk_end_byte_index >= word_byte_indices.len() {
+            warn!(
+                "Calculated chunk_end_byte_index {} is out of bounds for word_byte_indices (len {}). Clamping.",
+                chunk_end_byte_index,
+                word_byte_indices.len()
             );
-            let mut current_chunk_start_word_index = 0; // Index within word_byte_indices
-            let _current_chunk_start_offset = current_offset; // Char offset in original text
-
-            while current_chunk_start_word_index < num_words_in_segment {
-                trace!("-- Fallback Word Loop Iteration --");
-                trace!("  Start Word Index: {}", current_chunk_start_word_index);
-
-                // Determine the end word index for this chunk
-                let current_chunk_end_word_index = min(
-                    current_chunk_start_word_index + config.max_size, // Ideal end based on max_size
-                    num_words_in_segment, // Cannot go beyond the last word
-                );
-                trace!(
-                    "  End Word Index (Calculated): {}",
-                    current_chunk_end_word_index
-                );
-
-                // Ensure we don't create a chunk smaller than overlap if possible (unless it's the last chunk)
-                // This logic might be overly complex, let's keep it simple first: chunk up to max_size words.
-                // Revisit if overlap causes issues with very small trailing chunks.
-
-                // Get the start byte of the first word in this chunk
-                let chunk_start_byte = if current_chunk_start_word_index == 0 {
-                    0
-                } else {
-                    // Potential issue: word_byte_indices contains END bytes.
-                    // word_byte_indices[idx] is the end byte of word at index `idx`.
-                    // The start byte of word `idx` should be word_byte_indices[idx - 1] (or 0 if idx is 0).
-                    // So, the start byte for current_chunk_start_word_index should be word_byte_indices[current_chunk_start_word_index - 1]
-                    word_byte_indices[current_chunk_start_word_index - 1]
-                };
-                trace!("  Chunk Start Byte (Calculated): {}", chunk_start_byte);
-
-                // Get the end byte of the last word in this chunk
-                // Ensure index is valid before accessing. end_word_index can be == num_words_in_segment
-                let chunk_end_byte_index = current_chunk_end_word_index.saturating_sub(1);
-                let chunk_end_byte; // Declare chunk_end_byte outside the if/else
-                if chunk_end_byte_index >= word_byte_indices.len() {
-                    warn!(
-                        "Calculated chunk_end_byte_index {} is out of bounds for word_byte_indices (len {}). Clamping.",
-                        chunk_end_byte_index,
-                        word_byte_indices.len()
-                    );
-                    // This case shouldn't happen if current_chunk_end_word_index logic is correct, but safety first.
-                    // If it does happen, it likely means current_chunk_end_word_index was 0, implying num_words_in_segment was 0,
-                    // but we checked for num_words_in_segment > 1 earlier.
-                    // Let's just use the last available index if this weird state occurs.
-                    if word_byte_indices.is_empty() {
-                        trace!("  WARN: word_byte_indices is empty, cannot determine end byte.");
-                        // Cannot proceed if there are no word boundaries
-                        break;
-                    }
-                    chunk_end_byte = word_byte_indices[word_byte_indices.len() - 1];
-                } else {
-                    chunk_end_byte = word_byte_indices[chunk_end_byte_index]; // -1 because indices are end bytes
-                }
-                trace!("  Chunk End Byte (Calculated): {}", chunk_end_byte);
-
-                // Extract, trim, and add the chunk
-                if chunk_start_byte < chunk_end_byte {
-                    // Ensure valid slice
-                    let chunk_content_original = &segment[chunk_start_byte..chunk_end_byte];
-                    let chunk_content_trimmed = chunk_content_original.trim();
-                    let original_word_count =
-                        count_icu_words(chunk_content_original, word_segmenter);
-                    let trimmed_word_count = count_icu_words(chunk_content_trimmed, word_segmenter);
-
-                    trace!(
-                        "  Original Content Slice (Word Count: {})",
-                        original_word_count
-                    );
-                    trace!(
-                        "  Trimmed Content Slice (Word Count: {})",
-                        trimmed_word_count
-                    );
-
-                    if !chunk_content_trimmed.is_empty() {
-                        let chunk_start_index_char_offset =
-                            segment[0..chunk_start_byte].chars().count();
-                        let final_chunk_start_offset =
-                            current_offset + chunk_start_index_char_offset;
-                        trace!(
-                            "  Adding chunk (Word Count: {}, Char Count: {}), Range: {}..{}",
-                            trimmed_word_count,
-                            chunk_content_trimmed.chars().count(),
-                            final_chunk_start_offset,
-                            final_chunk_start_offset + chunk_content_trimmed.chars().count()
-                        );
-                        chunks.push(TextChunk {
-                            content: chunk_content_trimmed.to_string(),
-                            source_id: source_id.clone(),
-                            start_index: final_chunk_start_offset,
-                            end_index: final_chunk_start_offset
-                                + chunk_content_trimmed.chars().count(),
-                        });
-                    }
-                } else {
-                    trace!(
-                        "  Skipping chunk creation: chunk_start_byte ({}) >= chunk_end_byte ({})",
-                        chunk_start_byte, chunk_end_byte
-                    );
-                    // Need to ensure we still advance if start >= end to avoid infinite loop
-                    let mut effective_end_word_index = current_chunk_end_word_index; // Use a mutable variable
-                    if current_chunk_start_word_index == effective_end_word_index {
-                        // This should only happen if max_size is 0 or less, or if segment has only 1 word left.
-                        // Force advancement by at least one word index if possible.
-                        trace!(
-                            "  WARN: Start and End word indices are the same ({}). Forcing advance.",
-                            current_chunk_start_word_index
-                        );
-                        effective_end_word_index =
-                            min(current_chunk_start_word_index + 1, num_words_in_segment);
-                    }
-                    // Move to the next chunk start using the potentially adjusted end index
-                    trace!(
-                        "  Advancing start word index from {} to {}",
-                        current_chunk_start_word_index, effective_end_word_index
-                    );
-                    current_chunk_start_word_index = effective_end_word_index;
-                    continue; // Skip the normal advancement at the end of the loop
-                }
-
-                // Move to the next chunk start
-                trace!(
-                    "  Advancing start word index from {} to {}",
-                    current_chunk_start_word_index, current_chunk_end_word_index
-                );
-                current_chunk_start_word_index = current_chunk_end_word_index;
-                trace!("-- End Fallback Word Loop Iteration --");
+            // This case shouldn't happen if current_chunk_end_word_index logic is correct, but safety first.
+            // If it does happen, it likely means current_chunk_end_word_index was 0, implying num_words_in_segment was 0,
+            // but we checked for num_words_in_segment > 1 earlier.
+            // Let's just use the last available index if this weird state occurs.
+            if word_byte_indices.is_empty() {
+                trace!("  WARN: word_byte_indices is empty, cannot determine end byte.");
+                // Cannot proceed if there are no word boundaries
+                break;
             }
-            return Ok(());
+            chunk_end_byte = word_byte_indices[word_byte_indices.len() - 1];
+        } else {
+            chunk_end_byte = word_byte_indices[chunk_end_byte_index]; // -1 because indices are end bytes
         }
-        trace!("Fallback: Word splitting failed (segment has 0 or 1 words).");
-        // --- End FIX ---
-    }
+        trace!("  Chunk End Byte (Calculated): {}", chunk_end_byte);
 
+        // Extract, trim, and add the chunk
+        if chunk_start_byte < chunk_end_byte {
+            // Ensure valid slice
+            let chunk_content_original = &segment[chunk_start_byte..chunk_end_byte];
+            let chunk_content_trimmed = chunk_content_original.trim();
+            let original_word_count =
+                count_icu_words(chunk_content_original, word_segmenter);
+            let trimmed_word_count = count_icu_words(chunk_content_trimmed, word_segmenter);
+
+            trace!(
+                "  Original Content Slice (Word Count: {})",
+                original_word_count
+            );
+            trace!(
+                "  Trimmed Content Slice (Word Count: {})",
+                trimmed_word_count
+            );
+
+            if !chunk_content_trimmed.is_empty() {
+                let chunk_start_index_char_offset =
+                    segment[0..chunk_start_byte].chars().count();
+                let final_chunk_start_offset =
+                    current_offset + chunk_start_index_char_offset;
+                trace!(
+                    "  Adding chunk (Word Count: {}, Char Count: {}), Range: {}..{}",
+                    trimmed_word_count,
+                    chunk_content_trimmed.chars().count(),
+                    final_chunk_start_offset,
+                    final_chunk_start_offset + chunk_content_trimmed.chars().count()
+                );
+                chunks.push(TextChunk {
+                    content: chunk_content_trimmed.to_string(),
+                    source_id: source_id.clone(),
+                    start_index: final_chunk_start_offset,
+                    end_index: final_chunk_start_offset
+                        + chunk_content_trimmed.chars().count(),
+                });
+            }
+        } else {
+            trace!(
+                "  Skipping chunk creation: chunk_start_byte ({}) >= chunk_end_byte ({})",
+                chunk_start_byte, chunk_end_byte
+            );
+            // Need to ensure we still advance if start >= end to avoid infinite loop
+            let mut effective_end_word_index = current_chunk_end_word_index; // Use a mutable variable
+            if current_chunk_start_word_index == effective_end_word_index {
+                // This should only happen if max_size is 0 or less, or if segment has only 1 word left.
+                // Force advancement by at least one word index if possible.
+                trace!(
+                    "  WARN: Start and End word indices are the same ({}). Forcing advance.",
+                    current_chunk_start_word_index
+                );
+                effective_end_word_index =
+                    min(current_chunk_start_word_index + 1, num_words_in_segment);
+            }
+            // Move to the next chunk start using the potentially adjusted end index
+            trace!(
+                "  Advancing start word index from {} to {}",
+                current_chunk_start_word_index, effective_end_word_index
+            );
+            current_chunk_start_word_index = effective_end_word_index;
+            continue; // Skip the normal advancement at the end of the loop
+        }
+
+        // Move to the next chunk start
+        trace!(
+            "  Advancing start word index from {} to {}",
+            current_chunk_start_word_index, current_chunk_end_word_index
+        );
+        current_chunk_start_word_index = current_chunk_end_word_index;
+        trace!("-- End Fallback Word Loop Iteration --");
+    }
+    Ok(())
+}
+
+/// Split segment by characters when character-based chunking is needed
+fn split_fallback_by_characters(
+    segment: &str,
+    config: &ChunkConfig,
+    source_id: &Option<String>,
+    current_offset: usize,
+    chunks: &mut Vec<TextChunk>,
+) -> Result<(), AppError> {
     // Final fallback: Hard character split
     trace!("Fallback: Splitting by characters.");
     let mut current_char_offset = 0;
@@ -860,7 +897,6 @@ mod tests {
         let text = "First paragraph.\n\nSecond paragraph, also short.";
         let config = TEST_CONFIG_CHARS;
         let para1 = "First paragraph.";
-        let _para2 = "Second paragraph, also short.";
         let _expected = [
             // NOTE: Current placeholder logic will likely fail this test.
             // This test needs adjustment once real splitting is done.
@@ -1072,7 +1108,7 @@ mod tests {
             .skip(overlap0_start_char)
             .collect::<String>();
         // Since overlap (50) > chunk0 len (14), overlap0_text is the whole chunk0_content
-        let expected_chunk1_content = format!("{} {}", overlap0_text, chunk1_initial_content); // Assuming space added
+        let expected_chunk1_content = format!("{overlap0_text} {chunk1_initial_content}"); // Assuming space added
 
         // Calculate expected overlap text from chunk 1 (original content) to chunk 2
         let overlap1_start_char = chunk1_initial_content
@@ -1084,7 +1120,7 @@ mod tests {
             .skip(overlap1_start_char)
             .collect::<String>();
         // Since overlap (50) > chunk1 len (26), overlap1_text is the whole chunk1_initial_content
-        let expected_chunk2_content = format!("{} {}", overlap1_text, chunk2_initial_content); // Assuming space added
+        let expected_chunk2_content = format!("{overlap1_text} {chunk2_initial_content}"); // Assuming space added
 
         assert_eq!(
             result[0].content, chunk0_content,
@@ -1192,7 +1228,7 @@ mod tests {
 
         // Test case where first paragraph is too long
         let long_para1 = "長い文。".repeat(100); // Make it > 500 chars
-        let text_long = format!("{}。\n\nこれは新しい段落です。", long_para1);
+        let text_long = format!("{long_para1}。\n\nこれは新しい段落です。");
         let result_long = chunk_text(&text_long, &config, None, 0).unwrap();
         assert!(
             result_long.len() > 1,

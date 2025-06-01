@@ -130,6 +130,7 @@ where
 
 // Helper struct for login response
 #[derive(serde::Deserialize)]
+#[allow(dead_code)] // Allow dead code for test struct fields
 struct TestLoginSuccessResponse {
     user: scribe_backend::models::auth::AuthResponse,
     session_id: String,
@@ -148,7 +149,7 @@ async fn test_register_success() -> AnyhowResult<()> {
     // --- BEGIN PRIMER USER ---
     // Register a dummy user first to ensure the main test user is not the *first* user.
     let primer_username = format!("primer_user_{}", Uuid::new_v4());
-    let _primer_email = format!("{}@test.com", primer_username);
+    let _primer_email = format!("{primer_username}@test.com");
     let _primer_response = test_helpers::db::create_test_user(
         &test_app.db_pool,
         primer_username.to_string(),
@@ -160,7 +161,7 @@ async fn test_register_success() -> AnyhowResult<()> {
     // --- END PRIMER USER ---
 
     let username = format!("register_success_{}", Uuid::new_v4());
-    let email = format!("{}@test.com", username); // Use unique email
+    let email = format!("{username}@test.com"); // Use unique email
     let password = "password123";
 
     // Use RegisterPayload
@@ -212,7 +213,7 @@ async fn test_register_duplicate_username() -> AnyhowResult<()> {
     ensure_encryption_columns_exist(&test_app.db_pool).await?;
 
     let username = format!("register_duplicate_{}", Uuid::new_v4());
-    let email = format!("{}@test.com", username);
+    let email = format!("{username}@test.com");
     let password = "password123";
 
     // Create first user with this username
@@ -346,7 +347,7 @@ async fn test_login_success() -> AnyhowResult<()> {
     // Ensure encryption columns exist
     ensure_encryption_columns_exist(&test_app.db_pool).await?;
 
-    let username = format!("test_login_{}", Uuid::new_v4().to_string()[..8].to_string());
+    let username = format!("test_login_{}", &Uuid::new_v4().to_string()[..8]);
     let password = "testPassword123";
 
     let user = test_helpers::db::create_test_user(
@@ -414,7 +415,7 @@ async fn test_login_success_with_email() -> AnyhowResult<()> {
 
     let username = format!(
         "test_login_email_{}",
-        Uuid::new_v4().to_string()[..8].to_string()
+        &Uuid::new_v4().to_string()[..8]
     );
     let password = "testPassword123";
     let user = test_helpers::db::create_test_user(
@@ -640,8 +641,7 @@ async fn test_verify_credentials_invalid_hash_in_db() -> AnyhowResult<()> {
         Ok((user, _dek)) => {
             // If we get here, it means verify_credentials unexpectedly succeeded
             panic!(
-                "Expected HashingError from verify_credentials, but got Ok with user: {:?}. This implies the invalid hash was not detected.",
-                user
+                "Expected HashingError from verify_credentials, but got Ok with user: {user:?}. This implies the invalid hash was not detected."
             );
         }
         Err(AuthError::HashingError) => {
@@ -651,8 +651,7 @@ async fn test_verify_credentials_invalid_hash_in_db() -> AnyhowResult<()> {
         Err(e) => {
             // Some other AuthError occurred
             panic!(
-                "Expected AuthError::HashingError, but got a different AuthError: {:?}. This might indicate an issue in error mapping or a different failure mode.",
-                e
+                "Expected AuthError::HashingError, but got a different AuthError: {e:?}. This might indicate an issue in error mapping or a different failure mode."
             );
         }
     }
@@ -1028,7 +1027,7 @@ async fn test_session_store_save_load_delete() -> AnyhowResult<()> {
         serde_json::to_value(Uuid::new_v4().to_string())?,
     );
     let record = Record {
-        id: session_id.clone(), // Clone Id here
+        id: session_id, // Clone Id here
         data,
         expiry_date,
     };
@@ -1128,7 +1127,7 @@ async fn test_session_store_load_invalid_json() -> AnyhowResult<()> {
             info!(error=%e, "Successfully caught expected Decode error");
             // Removed specific error message check: assert!(e.contains("expected `,` or `}` at line 1 column 21"));
         }
-        Err(e) => panic!("Expected Decode error, but got different error: {:?}", e),
+        Err(e) => panic!("Expected Decode error, but got different error: {e:?}"),
         Ok(_) => panic!("Expected an error when loading invalid JSON, but got Ok"),
     }
 
@@ -1163,7 +1162,7 @@ async fn test_session_store_load_expired_session() -> AnyhowResult<()> {
     );
     let record_to_save = Record {
         // Renamed to avoid conflict
-        id: session_id.clone(),
+        id: session_id,
         data,
         expiry_date,
     };
@@ -1356,7 +1355,7 @@ async fn test_register_and_verify_dek_decryption() -> AnyhowResult<()> {
     ensure_encryption_columns_exist(&test_app.db_pool).await?;
 
     let username = format!("register_dek_test_{}", Uuid::new_v4());
-    let email = format!("{}@test.com", username);
+    let email = format!("{username}@test.com");
     let password = "password123";
 
     info!(

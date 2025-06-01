@@ -86,7 +86,7 @@ impl HttpClient for ReqwestClientWrapper {
         // Get auth response and convert to User
         let auth_response = handle_response::<AuthUserResponse>(response)
             .await
-            .map_err(|e| CliError::AuthFailed(format!("{}", e)))?;
+            .map_err(|e| CliError::AuthFailed(format!("{e}")))?;
 
         // Check if account is locked
         let user = User::from(auth_response);
@@ -114,7 +114,7 @@ impl HttpClient for ReqwestClientWrapper {
         // Get auth response and convert to User, just like in the login method
         let auth_response = handle_response::<AuthUserResponse>(response)
             .await
-            .map_err(|e| CliError::RegistrationFailed(format!("{}", e)))?;
+            .map_err(|e| CliError::RegistrationFailed(format!("{e}")))?;
 
         // Store the recovery key in the client for later retrieval
         if let Some(recovery_key) = &auth_response.recovery_key {
@@ -183,7 +183,7 @@ impl HttpClient for ReqwestClientWrapper {
         let file_name = Path::new(file_path)
             .file_name()
             .and_then(|os_str| os_str.to_str())
-            .ok_or_else(|| CliError::InputError(format!("Invalid file path: {}", file_path)))?;
+            .ok_or_else(|| CliError::InputError(format!("Invalid file path: {file_path}")))?;
 
         let mime_type = if file_name.to_lowercase().ends_with(".png") {
             "image/png"
@@ -196,7 +196,7 @@ impl HttpClient for ReqwestClientWrapper {
             .file_name(file_name.to_string())
             .mime_str(mime_type)
             .map_err(|e| {
-                CliError::Internal(format!("Failed to create multipart file part: {}", e))
+                CliError::Internal(format!("Failed to create multipart file part: {e}"))
             })?;
 
         let form = multipart::Form::new()
@@ -277,7 +277,7 @@ impl HttpClient for ReqwestClientWrapper {
     ) -> Result<ClientCharacterDataForClient, CliError> {
         let url = build_url(
             &self.base_url,
-            &format!("/api/characters/fetch/{}", character_id),
+            &format!("/api/characters/fetch/{character_id}"),
         )?;
         tracing::info!(target: "scribe_cli::client::implementation", %url, %character_id, "Fetching character details via HttpClient");
         let response = self
@@ -307,7 +307,7 @@ impl HttpClient for ReqwestClientWrapper {
     ) -> Result<Vec<ClientChatMessageResponse>, CliError> {
         let url = build_url(
             &self.base_url,
-            &format!("/api/chats/{}/messages", session_id),
+            &format!("/api/chats/{session_id}/messages"),
         )?;
         tracing::info!(target: "scribe_cli::client::implementation", %url, %session_id, "Fetching chat messages via HttpClient");
         let response = self
@@ -323,7 +323,7 @@ impl HttpClient for ReqwestClientWrapper {
         // Following the same pattern as characters for GET and DELETE:
         //   /characters/fetch/:id and /characters/remove/:id
         // Note: The route in the backend uses :id notation, but we need to use actual values here
-        let url = build_url(&self.base_url, &format!("/api/chats/remove/{}", chat_id))?;
+        let url = build_url(&self.base_url, &format!("/api/chats/remove/{chat_id}"))?;
         tracing::info!(target: "scribe_cli::client::implementation", %url, %chat_id, "Deleting chat session via HttpClient");
         let response = self
             .client
@@ -356,7 +356,7 @@ impl HttpClient for ReqwestClientWrapper {
         model_name: Option<&str>,
     ) -> Result<ChatMessage, CliError> {
         // Build URL with query parameter for non-streaming
-        let mut url = build_url(&self.base_url, &format!("/api/chat/{}/generate", chat_id))?;
+        let mut url = build_url(&self.base_url, &format!("/api/chat/{chat_id}/generate"))?;
         url.query_pairs_mut()
             .append_pair("request_thinking", "false");
 
@@ -411,7 +411,7 @@ impl HttpClient for ReqwestClientWrapper {
         model_name: Option<&str>, // Add model_name parameter
     ) -> Result<Pin<Box<dyn Stream<Item = Result<StreamEvent, CliError>> + Send>>, CliError> {
         // Build URL with query parameter for streaming
-        let mut url = build_url(&self.base_url, &format!("/api/chat/{}/generate", chat_id))?;
+        let mut url = build_url(&self.base_url, &format!("/api/chat/{chat_id}/generate"))?;
         url.query_pairs_mut()
             .append_pair("request_thinking", &request_thinking.to_string());
 
@@ -433,7 +433,7 @@ impl HttpClient for ReqwestClientWrapper {
 
         // Create the EventSource from the RequestBuilder
         let mut es = EventSource::new(request_builder)
-            .map_err(|e| CliError::Internal(format!("Failed to create EventSource: {}", e)))?;
+            .map_err(|e| CliError::Internal(format!("Failed to create EventSource: {e}")))?;
 
         // Use async_stream to create a Stream
         let stream = async_stream::stream! {
@@ -537,14 +537,14 @@ impl HttpClient for ReqwestClientWrapper {
                             _ => {
                                 tracing::error!(target: "scribe_cli::client::implementation", error = ?e, "SSE stream error");
                                 // Check if the error message contains any indication of rate limiting
-                                let error_str = format!("{}", e);
+                                let error_str = format!("{e}");
                                 if error_str.contains("429") || error_str.contains("Too Many Requests") || error_str.contains("rate limit") {
                                     tracing::warn!(target: "scribe_cli::client::implementation", "SSE error appears to be a rate limit: {}", error_str);
                                     yield Err(CliError::RateLimitExceeded);
                                     es.close();
                                     break;
                                 }
-                                yield Err(CliError::Network(format!("SSE stream error: {}", e)));
+                                yield Err(CliError::Network(format!("SSE stream error: {e}")));
                                 es.close();
                                 break;
                             }
@@ -566,7 +566,7 @@ impl HttpClient for ReqwestClientWrapper {
     ) -> Result<ChatSettingsResponse, CliError> {
         let url = build_url(
             &self.base_url,
-            &format!("/api/chat/{}/settings", session_id),
+            &format!("/api/chat/{session_id}/settings"),
         )?;
         tracing::info!(
             target: "scribe_cli::client::implementation",
@@ -599,7 +599,7 @@ impl HttpClient for ReqwestClientWrapper {
     }
 
     async fn admin_get_user(&self, user_id: Uuid) -> Result<AdminUserDetailResponse, CliError> {
-        let url = build_url(&self.base_url, &format!("/api/admin/users/{}", user_id))?;
+        let url = build_url(&self.base_url, &format!("/api/admin/users/{user_id}"))?;
         tracing::info!(target: "scribe_cli::client::implementation", %url, %user_id, "Admin: Getting user details via HttpClient");
         let response = self
             .client
@@ -628,8 +628,7 @@ impl HttpClient for ReqwestClientWrapper {
         }
 
         Err(CliError::InputError(format!(
-            "User with username '{}' not found",
-            username
+            "User with username '{username}' not found"
         )))
     }
 
@@ -640,7 +639,7 @@ impl HttpClient for ReqwestClientWrapper {
     ) -> Result<AdminUserDetailResponse, CliError> {
         let url = build_url(
             &self.base_url,
-            &format!("/api/admin/users/{}/role", user_id),
+            &format!("/api/admin/users/{user_id}/role"),
         )?;
         tracing::info!(target: "scribe_cli::client::implementation", %url, %user_id, %role, "Admin: Updating user role via HttpClient");
         let payload = UpdateUserRoleRequest {
@@ -659,7 +658,7 @@ impl HttpClient for ReqwestClientWrapper {
     async fn admin_lock_user(&self, user_id: Uuid) -> Result<(), CliError> {
         let url = build_url(
             &self.base_url,
-            &format!("/api/admin/users/{}/lock", user_id),
+            &format!("/api/admin/users/{user_id}/lock"),
         )?;
         tracing::info!(target: "scribe_cli::client::implementation", %url, %user_id, "Admin: Locking user via HttpClient");
         let response = self
@@ -683,7 +682,7 @@ impl HttpClient for ReqwestClientWrapper {
     async fn admin_unlock_user(&self, user_id: Uuid) -> Result<(), CliError> {
         let url = build_url(
             &self.base_url,
-            &format!("/api/admin/users/{}/unlock", user_id),
+            &format!("/api/admin/users/{user_id}/unlock"),
         )?;
         tracing::info!(target: "scribe_cli::client::implementation", %url, %user_id, "Admin: Unlocking user via HttpClient");
         let response = self
@@ -738,7 +737,7 @@ impl HttpClient for ReqwestClientWrapper {
         id: Uuid,
         character_update_data: CharacterUpdateDto,
     ) -> Result<ClientCharacterDataForClient, CliError> {
-        let url = build_url(&self.base_url, &format!("/api/characters/{}", id))?;
+        let url = build_url(&self.base_url, &format!("/api/characters/{id}"))?;
         tracing::info!(target: "scribe_cli::client::implementation", %url, %id, "Updating character via HttpClient");
         let response = self
             .client
@@ -751,7 +750,7 @@ impl HttpClient for ReqwestClientWrapper {
     }
 
     async fn get_chat_session(&self, session_id: Uuid) -> Result<ChatSessionDetails, CliError> {
-        let url = build_url(&self.base_url, &format!("/api/chats/fetch/{}", session_id))?;
+        let url = build_url(&self.base_url, &format!("/api/chats/fetch/{session_id}"))?;
         tracing::info!(target: "scribe_cli::client::implementation", %url, %session_id, "Fetching chat session details via HttpClient");
         let response = self
             .client
@@ -770,7 +769,7 @@ impl HttpClient for ReqwestClientWrapper {
     ) -> Result<OverrideSuccessResponse, CliError> {
         let url = build_url(
             &self.base_url,
-            &format!("/api/chats/{}/character/overrides", session_id),
+            &format!("/api/chats/{session_id}/character/overrides"),
         )?;
         tracing::info!(target: "scribe_cli::client::implementation", %url, %session_id, %field_name, "Setting chat character override via HttpClient");
         let payload = CharacterOverrideRequest { field_name, value };
@@ -793,7 +792,7 @@ impl HttpClient for ReqwestClientWrapper {
         // This implies the character_id passed here is the original_character_id.
         let mut url = build_url(
             &self.base_url,
-            &format!("/api/characters/fetch/{}", character_id),
+            &format!("/api/characters/fetch/{character_id}"),
         )?;
         url.query_pairs_mut()
             .append_pair("session_id", &session_id.to_string());
@@ -841,7 +840,7 @@ impl HttpClient for ReqwestClientWrapper {
         &self,
         persona_id: Uuid,
     ) -> Result<UserPersonaDataForClient, CliError> {
-        let url = build_url(&self.base_url, &format!("/api/personas/{}", persona_id))?;
+        let url = build_url(&self.base_url, &format!("/api/personas/{persona_id}"))?;
         tracing::info!(target: "scribe_cli::client::implementation", %url, %persona_id, "Fetching user persona via HttpClient");
         let response = self
             .client
@@ -857,7 +856,7 @@ impl HttpClient for ReqwestClientWrapper {
         persona_id: Uuid,
         persona_data: UpdateUserPersonaDto,
     ) -> Result<UserPersonaDataForClient, CliError> {
-        let url = build_url(&self.base_url, &format!("/api/personas/{}", persona_id))?;
+        let url = build_url(&self.base_url, &format!("/api/personas/{persona_id}"))?;
         tracing::info!(target: "scribe_cli::client::implementation", %url, %persona_id, "Updating user persona via HttpClient");
         let response = self
             .client
@@ -870,7 +869,7 @@ impl HttpClient for ReqwestClientWrapper {
     }
 
     async fn delete_user_persona(&self, persona_id: Uuid) -> Result<(), CliError> {
-        let url = build_url(&self.base_url, &format!("/api/personas/{}", persona_id))?;
+        let url = build_url(&self.base_url, &format!("/api/personas/{persona_id}"))?;
         tracing::info!(target: "scribe_cli::client::implementation", %url, %persona_id, "Deleting user persona via HttpClient");
         let response = self
             .client
@@ -898,7 +897,7 @@ impl HttpClient for ReqwestClientWrapper {
     async fn set_default_persona(&self, persona_id: Uuid) -> Result<User, CliError> {
         let url = build_url(
             &self.base_url,
-            &format!("/api/user-settings/set_default_persona/{}", persona_id),
+            &format!("/api/user-settings/set_default_persona/{persona_id}"),
         )?;
         tracing::info!(target: "scribe_cli::client::implementation", %url, %persona_id, "Setting default persona via HttpClient");
         let response = self
@@ -914,7 +913,7 @@ impl HttpClient for ReqwestClientWrapper {
         // For now, assuming AuthUserResponse can be used or adapted.
         let auth_response = handle_response::<AuthUserResponse>(response)
             .await
-            .map_err(|e| CliError::OperationFailed(format!("Set default persona failed: {}", e)))?;
+            .map_err(|e| CliError::OperationFailed(format!("Set default persona failed: {e}")))?;
 
         Ok(User::from(auth_response))
     }
@@ -975,7 +974,7 @@ impl HttpClient for ReqwestClientWrapper {
     }
 
     async fn get_lorebook(&self, lorebook_id: Uuid) -> Result<LorebookResponse, CliError> {
-        let url = build_url(&self.base_url, &format!("/api/lorebooks/{}", lorebook_id))?;
+        let url = build_url(&self.base_url, &format!("/api/lorebooks/{lorebook_id}"))?;
         tracing::info!(target: "scribe_cli::client::implementation", %url, %lorebook_id, "Fetching lorebook via HttpClient");
         let response = self
             .client
@@ -991,7 +990,7 @@ impl HttpClient for ReqwestClientWrapper {
         lorebook_id: Uuid,
         payload: &UpdateLorebookPayload,
     ) -> Result<LorebookResponse, CliError> {
-        let url = build_url(&self.base_url, &format!("/api/lorebooks/{}", lorebook_id))?;
+        let url = build_url(&self.base_url, &format!("/api/lorebooks/{lorebook_id}"))?;
         tracing::info!(target: "scribe_cli::client::implementation", %url, %lorebook_id, "Updating lorebook via HttpClient");
         let response = self
             .client
@@ -1004,7 +1003,7 @@ impl HttpClient for ReqwestClientWrapper {
     }
 
     async fn delete_lorebook(&self, lorebook_id: Uuid) -> Result<(), CliError> {
-        let url = build_url(&self.base_url, &format!("/api/lorebooks/{}", lorebook_id))?;
+        let url = build_url(&self.base_url, &format!("/api/lorebooks/{lorebook_id}"))?;
         tracing::info!(target: "scribe_cli::client::implementation", %url, %lorebook_id, "Deleting lorebook via HttpClient");
         let response = self
             .client
@@ -1035,7 +1034,7 @@ impl HttpClient for ReqwestClientWrapper {
     ) -> Result<LorebookEntryResponse, CliError> {
         let url = build_url(
             &self.base_url,
-            &format!("/api/lorebooks/{}/entries", lorebook_id),
+            &format!("/api/lorebooks/{lorebook_id}/entries"),
         )?;
         tracing::info!(target: "scribe_cli::client::implementation", %url, %lorebook_id, "Creating lorebook entry via HttpClient");
         let response = self
@@ -1054,7 +1053,7 @@ impl HttpClient for ReqwestClientWrapper {
     ) -> Result<Vec<LorebookEntrySummaryResponse>, CliError> {
         let url = build_url(
             &self.base_url,
-            &format!("/api/lorebooks/{}/entries", lorebook_id),
+            &format!("/api/lorebooks/{lorebook_id}/entries"),
         )?;
         tracing::info!(target: "scribe_cli::client::implementation", %url, %lorebook_id, "Listing lorebook entries via HttpClient");
         let response = self
@@ -1073,7 +1072,7 @@ impl HttpClient for ReqwestClientWrapper {
     ) -> Result<LorebookEntryResponse, CliError> {
         let url = build_url(
             &self.base_url,
-            &format!("/api/lorebooks/{}/entries/{}", lorebook_id, entry_id),
+            &format!("/api/lorebooks/{lorebook_id}/entries/{entry_id}"),
         )?;
         tracing::info!(target: "scribe_cli::client::implementation", %url, %lorebook_id, %entry_id, "Fetching lorebook entry via HttpClient");
         let response = self
@@ -1093,7 +1092,7 @@ impl HttpClient for ReqwestClientWrapper {
     ) -> Result<LorebookEntryResponse, CliError> {
         let url = build_url(
             &self.base_url,
-            &format!("/api/lorebooks/{}/entries/{}", lorebook_id, entry_id),
+            &format!("/api/lorebooks/{lorebook_id}/entries/{entry_id}"),
         )?;
         tracing::info!(target: "scribe_cli::client::implementation", %url, %lorebook_id, %entry_id, "Updating lorebook entry via HttpClient");
         let response = self
@@ -1113,7 +1112,7 @@ impl HttpClient for ReqwestClientWrapper {
     ) -> Result<(), CliError> {
         let url = build_url(
             &self.base_url,
-            &format!("/api/lorebooks/{}/entries/{}", lorebook_id, entry_id),
+            &format!("/api/lorebooks/{lorebook_id}/entries/{entry_id}"),
         )?;
         tracing::info!(target: "scribe_cli::client::implementation", %url, %lorebook_id, %entry_id, "Deleting lorebook entry via HttpClient");
         let response = self
@@ -1145,7 +1144,7 @@ impl HttpClient for ReqwestClientWrapper {
     ) -> Result<ChatSessionLorebookAssociationResponse, CliError> {
         let url = build_url(
             &self.base_url,
-            &format!("/api/chats/{}/lorebooks", chat_session_id),
+            &format!("/api/chats/{chat_session_id}/lorebooks"),
         )?;
         tracing::info!(target: "scribe_cli::client::implementation", %url, %chat_session_id, lorebook_id = %payload.lorebook_id, "Associating lorebook to chat session via HttpClient");
         let response = self
@@ -1164,7 +1163,7 @@ impl HttpClient for ReqwestClientWrapper {
     ) -> Result<Vec<ChatSessionLorebookAssociationResponse>, CliError> {
         let url = build_url(
             &self.base_url,
-            &format!("/api/chats/{}/lorebooks", chat_session_id),
+            &format!("/api/chats/{chat_session_id}/lorebooks"),
         )?;
         tracing::info!(target: "scribe_cli::client::implementation", %url, %chat_session_id, "Listing chat lorebook associations via HttpClient");
         let response = self
@@ -1183,7 +1182,7 @@ impl HttpClient for ReqwestClientWrapper {
     ) -> Result<(), CliError> {
         let url = build_url(
             &self.base_url,
-            &format!("/api/chats/{}/lorebooks/{}", chat_session_id, lorebook_id),
+            &format!("/api/chats/{chat_session_id}/lorebooks/{lorebook_id}"),
         )?;
         tracing::info!(target: "scribe_cli::client::implementation", %url, %chat_session_id, %lorebook_id, "Disassociating lorebook from chat session via HttpClient");
         let response = self
@@ -1213,7 +1212,7 @@ impl HttpClient for ReqwestClientWrapper {
     ) -> Result<Vec<ChatSessionBasicInfo>, CliError> {
         let url = build_url(
             &self.base_url,
-            &format!("/api/lorebooks/{}/fetch/associated_chats", lorebook_id),
+            &format!("/api/lorebooks/{lorebook_id}/fetch/associated_chats"),
         )?; // Updated path
         tracing::info!(target: "scribe_cli::client::implementation", %url, %lorebook_id, "Listing associated chat sessions for lorebook via HttpClient");
         let response = self

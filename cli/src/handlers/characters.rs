@@ -32,8 +32,7 @@ pub async fn handle_upload_character_action<H: IoHandler, C: HttpClient>(
     // Check if file exists before attempting upload
     if !Path::new(&file_path).exists() {
         return Err(CliError::InputError(format!(
-            "File not found at path: {}",
-            file_path
+            "File not found at path: {file_path}"
         )));
     }
 
@@ -55,7 +54,7 @@ pub async fn handle_view_character_details_action<H: IoHandler, C: HttpClient>(
             io_handler.write_line(&format!("  Name: {}", character.name))?;
             // CharacterDataForClient has description as Option<String>
             let desc_str = character.description.as_deref().unwrap_or("N/A");
-            io_handler.write_line(&format!("  Description: {}", desc_str))?;
+            io_handler.write_line(&format!("  Description: {desc_str}"))?;
             io_handler.write_line("------------------------------------")?;
             Ok(())
         }
@@ -201,7 +200,7 @@ pub async fn handle_character_create_oneliner<H: IoHandler, C: HttpClient>(
             ))?;
         }
         Err(e) => {
-            io_handler.write_line(&format!("Error creating character: {}", e))?;
+            io_handler.write_line(&format!("Error creating character: {e}"))?;
             return Err(e);
         }
     }
@@ -277,7 +276,7 @@ pub async fn handle_character_create_wizard<H: IoHandler, C: HttpClient>(
                 ))?;
             }
             Err(e) => {
-                io_handler.write_line(&format!("Error creating character: {}", e))?;
+                io_handler.write_line(&format!("Error creating character: {e}"))?;
                 return Err(e);
             }
         }
@@ -376,7 +375,7 @@ pub async fn handle_character_edit_oneliner<H: IoHandler, C: HttpClient>(
             // Optionally show changed fields by comparing with a fresh get_character call or by echoing provided args
         }
         Err(e) => {
-            io_handler.write_line(&format!("Error updating character: {}", e))?;
+            io_handler.write_line(&format!("Error updating character: {e}"))?;
             return Err(e);
         }
     }
@@ -392,14 +391,13 @@ pub async fn handle_character_edit_wizard<H: IoHandler, C: HttpClient>(
 
     let character_id_str = io_handler.read_line("Enter Character ID (UUID) to edit:")?;
     let character_id = Uuid::parse_str(&character_id_str)
-        .map_err(|_| CliError::InputError(format!("Invalid UUID format: {}", character_id_str)))?;
+        .map_err(|_| CliError::InputError(format!("Invalid UUID format: {character_id_str}")))?;
 
     io_handler.write_line("Fetching current character data...")?;
     let mut current_char = client.get_character(character_id).await.map_err(|e| {
         io_handler
             .write_line(&format!(
-                "Failed to fetch character {}: {}",
-                character_id, e
+                "Failed to fetch character {character_id}: {e}"
             ))
             .ok();
         e
@@ -508,12 +506,12 @@ pub async fn handle_character_edit_wizard<H: IoHandler, C: HttpClient>(
         .unwrap_or_else(|| "N/A".to_string());
     if prompt_yes_no(
         io_handler,
-        &format!("Edit Tags ('{}')? (y/N)", current_tags_display),
+        &format!("Edit Tags ('{current_tags_display}')? (y/N)"),
     )? {
         let new_tags_str = io_handler.read_line("New Tags (comma-separated, 'none' to clear):")?;
         if new_tags_str.trim().to_lowercase() == "none" {
             update_dto.tags = Some(vec![]);
-            changed_fields_summary.push(format!("Tags: '{}' -> (cleared)", current_tags_display));
+            changed_fields_summary.push(format!("Tags: '{current_tags_display}' -> (cleared)"));
         } else if !new_tags_str.is_empty() {
             let new_tags_vec = new_tags_str
                 .split(',')
@@ -536,7 +534,7 @@ pub async fn handle_character_edit_wizard<H: IoHandler, C: HttpClient>(
 
     io_handler.write_line("\n--- Review Changes ---")?;
     for change in changed_fields_summary {
-        io_handler.write_line(&format!("  - {}", change))?;
+        io_handler.write_line(&format!("  - {change}"))?;
     }
 
     if prompt_yes_no(io_handler, "\nSubmit these changes? (Y/n)")? {
@@ -548,7 +546,7 @@ pub async fn handle_character_edit_wizard<H: IoHandler, C: HttpClient>(
                 ))?;
             }
             Err(e) => {
-                io_handler.write_line(&format!("Error updating character: {}", e))?;
+                io_handler.write_line(&format!("Error updating character: {e}"))?;
                 return Err(e);
             }
         }
@@ -601,7 +599,7 @@ fn display_character_details<H: IoHandler>(
         })
         .filter(|s| !s.is_empty())
         .unwrap_or_else(|| "N/A".to_string());
-    io_handler.write_line(&format!("  Tags: {}", tags_display))?;
+    io_handler.write_line(&format!("  Tags: {tags_display}"))?;
     let alt_greetings_display = character
         .alternate_greetings
         .as_ref()
@@ -613,7 +611,7 @@ fn display_character_details<H: IoHandler>(
         })
         .filter(|s| !s.is_empty())
         .unwrap_or_else(|| "N/A".to_string());
-    io_handler.write_line(&format!("  Alternate Greetings: {}", alt_greetings_display))?;
+    io_handler.write_line(&format!("  Alternate Greetings: {alt_greetings_display}"))?;
     // TODO: Display other relevant fields from ClientCharacterDataForClient
     Ok(())
 }

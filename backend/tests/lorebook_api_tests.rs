@@ -28,12 +28,12 @@ async fn create_dummy_lorebook(
 ) -> Uuid {
     let payload = CreateLorebookDto {
         // Use DTO
-        name: format!("Dummy Lorebook for User {}", user_id),
+        name: format!("Dummy Lorebook for User {user_id}"),
         description: Some("A dummy lorebook created via helper function".to_string()),
     };
 
     let response = auth_client // Use the passed authenticated client
-        .post(&format!("{}/api/lorebooks", test_app.address))
+        .post(format!("{}/api/lorebooks", test_app.address))
         .json(&payload)
         .send()
         .await
@@ -46,8 +46,7 @@ async fn create_dummy_lorebook(
             .await
             .unwrap_or_else(|_| "Could not get error body".to_string());
         panic!(
-            "create_dummy_lorebook failed with status: {:?}, body: {}",
-            status, error_body
+            "create_dummy_lorebook failed with status: {status:?}, body: {error_body}"
         );
     }
     let lorebook: LorebookResponseDto = response
@@ -66,7 +65,7 @@ async fn create_dummy_lorebook_entry(
 ) -> Uuid {
     let payload = CreateLorebookEntryDto {
         // Use DTO
-        entry_title: format!("Dummy Title for user {}", user_id),
+        entry_title: format!("Dummy Title for user {user_id}"),
         keys_text: Some("dummy, keys, for, test".to_string()),
         content: "This is some dummy content for the lorebook entry.".to_string(),
         comment: None,
@@ -77,7 +76,7 @@ async fn create_dummy_lorebook_entry(
     };
 
     let response = auth_client
-        .post(&format!(
+        .post(format!(
             "{}/api/lorebooks/{}/entries",
             test_app.address, lorebook_id
         ))
@@ -93,8 +92,7 @@ async fn create_dummy_lorebook_entry(
             .await
             .unwrap_or_else(|_| "Could not get error body".to_string());
         panic!(
-            "create_dummy_lorebook_entry failed with status: {:?}, body: {}",
-            status, error_body
+            "create_dummy_lorebook_entry failed with status: {status:?}, body: {error_body}"
         );
     }
     let entry: LorebookEntryResponseDto = response
@@ -136,7 +134,7 @@ mod lorebook_tests {
         };
 
         let response = auth_client // Use authenticated client
-            .post(&format!("{}/api/lorebooks", test_app.address))
+            .post(format!("{}/api/lorebooks", test_app.address))
             .json(&payload)
             .send()
             .await
@@ -162,7 +160,7 @@ mod lorebook_tests {
         };
 
         let response = http_client
-            .post(&format!("{}/api/lorebooks", test_app.address))
+            .post(format!("{}/api/lorebooks", test_app.address))
             .json(&payload)
             .send()
             .await
@@ -198,7 +196,7 @@ mod lorebook_tests {
         }); // Or a struct with name missing if using typed payload
 
         let response = auth_client // Use authenticated client
-            .post(&format!("{}/api/lorebooks", test_app.address))
+            .post(format!("{}/api/lorebooks", test_app.address))
             // .bearer_auth(&user_token) // Not needed
             .json(&payload)
             .send()
@@ -237,7 +235,7 @@ mod lorebook_tests {
         let _dummy_lorebook_id = create_dummy_lorebook(&test_app, user_data.id, &auth_client).await;
 
         let response = auth_client // Use authenticated client
-            .get(&format!("{}/api/lorebooks", test_app.address))
+            .get(format!("{}/api/lorebooks", test_app.address))
             // .bearer_auth(&user_token) // Not needed
             .send()
             .await
@@ -258,7 +256,7 @@ mod lorebook_tests {
         let http_client = reqwest::Client::new();
 
         let response = http_client
-            .get(&format!("{}/api/lorebooks", test_app.address))
+            .get(format!("{}/api/lorebooks", test_app.address))
             // No token
             .send()
             .await
@@ -291,7 +289,7 @@ mod lorebook_tests {
         let lorebook_id = create_dummy_lorebook(&test_app, user_data.id, &auth_client).await; // Pass auth_client
 
         let response = auth_client // Use the authenticated client
-            .get(&format!(
+            .get(format!(
                 "{}/api/lorebooks/{}",
                 test_app.address, lorebook_id
             ))
@@ -335,7 +333,7 @@ mod lorebook_tests {
             create_dummy_lorebook(&test_app, user_data.id, &auth_client_for_setup).await;
 
         let response = unauth_http_client // Use unauthenticated client for the actual test
-            .get(&format!(
+            .get(format!(
                 "{}/api/lorebooks/{}",
                 test_app.address, lorebook_id
             ))
@@ -390,7 +388,7 @@ mod lorebook_tests {
 
         // User2 tries to access user1's lorebook
         let response = auth_client_user2 // Use user2's authenticated client
-            .get(&format!(
+            .get(format!(
                 "{}/api/lorebooks/{}",
                 test_app.address, lorebook_id_user1
             ))
@@ -430,7 +428,7 @@ mod lorebook_tests {
         let non_existent_id = Uuid::new_v4();
 
         let response = auth_client // Use authenticated client
-            .get(&format!(
+            .get(format!(
                 "{}/api/lorebooks/{}",
                 test_app.address, non_existent_id
             ))
@@ -471,7 +469,7 @@ mod lorebook_tests {
         };
 
         let response = auth_client // Use authenticated client
-            .put(&format!(
+            .put(format!(
                 "{}/api/lorebooks/{}",
                 test_app.address, lorebook_id
             ))
@@ -518,7 +516,7 @@ mod lorebook_tests {
         }; // Use DTO
 
         let response = unauth_http_client // Use unauthenticated client
-            .put(&format!(
+            .put(format!(
                 "{}/api/lorebooks/{}",
                 test_app.address, lorebook_id
             ))
@@ -577,7 +575,7 @@ mod lorebook_tests {
         }; // Use DTO
 
         let response = auth_client_user2 // Use user2's authenticated client
-            .put(&format!(
+            .put(format!(
                 "{}/api/lorebooks/{}",
                 test_app.address, lorebook_id_user1
             ))
@@ -621,7 +619,7 @@ mod lorebook_tests {
         });
 
         let response = auth_client // Use authenticated client
-            .put(&format!(
+            .put(format!(
                 "{}/api/lorebooks/{}",
                 test_app.address, lorebook_id
             ))
@@ -664,7 +662,7 @@ mod lorebook_tests {
         }; // Use DTO
 
         let response = auth_client // Use authenticated client
-            .put(&format!(
+            .put(format!(
                 "{}/api/lorebooks/{}",
                 test_app.address, non_existent_id
             ))
@@ -700,7 +698,7 @@ mod lorebook_tests {
         let lorebook_id = create_dummy_lorebook(&test_app, user_data.id, &auth_client).await;
 
         let response = auth_client // Use authenticated client
-            .delete(&format!(
+            .delete(format!(
                 "{}/api/lorebooks/{}",
                 test_app.address, lorebook_id
             ))
@@ -737,7 +735,7 @@ mod lorebook_tests {
             create_dummy_lorebook(&test_app, user_data.id, &auth_client_for_setup).await;
 
         let response = unauth_http_client // Use unauthenticated client
-            .delete(&format!(
+            .delete(format!(
                 "{}/api/lorebooks/{}",
                 test_app.address, lorebook_id
             ))
@@ -790,7 +788,7 @@ mod lorebook_tests {
             create_dummy_lorebook(&test_app, user1_data.id, &auth_client_user1).await;
 
         let response = auth_client_user2 // Use user2's authenticated client
-            .delete(&format!(
+            .delete(format!(
                 "{}/api/lorebooks/{}",
                 test_app.address, lorebook_id_user1
             ))
@@ -828,7 +826,7 @@ mod lorebook_tests {
         let non_existent_id = Uuid::new_v4();
 
         let response = auth_client // Use authenticated client
-            .delete(&format!(
+            .delete(format!(
                 "{}/api/lorebooks/{}",
                 test_app.address, non_existent_id
             ))
@@ -879,7 +877,7 @@ mod lorebook_tests {
             active_custom_persona_id: None,
         };
         let chat_response = auth_client
-            .post(&format!("{}/api/chats/create_session", test_app.address)) // Updated path
+            .post(format!("{}/api/chats/create_session", test_app.address)) // Updated path
             .json(&chat_payload)
             .send()
             .await
@@ -894,7 +892,7 @@ mod lorebook_tests {
         // 4. Associate the lorebook with the chat session
         let assoc_payload = AssociateLorebookDto { lorebook_id };
         let assoc_response = auth_client
-            .post(&format!(
+            .post(format!(
                 "{}/api/chats/{}/lorebooks",
                 test_app.address, chat_session_id
             ))
@@ -906,7 +904,7 @@ mod lorebook_tests {
 
         // 5. Call the new endpoint
         let response = auth_client
-            .get(&format!(
+            .get(format!(
                 "{}/api/lorebooks/{}/fetch/associated_chats",
                 test_app.address, lorebook_id
             ))
@@ -968,7 +966,7 @@ mod lorebook_entry_tests {
         };
 
         let response = auth_client // Use authenticated client
-            .post(&format!(
+            .post(format!(
                 "{}/api/lorebooks/{}/entries",
                 test_app.address, lorebook_id
             ))
@@ -1067,7 +1065,7 @@ mod lorebook_entry_tests {
         }; // Use DTO
 
         let response = unauth_http_client // Use unauthenticated client
-            .post(&format!(
+            .post(format!(
                 "{}/api/lorebooks/{}/entries",
                 test_app.address, lorebook_id
             ))
@@ -1133,7 +1131,7 @@ mod lorebook_entry_tests {
 
         // User2 tries to create an entry in user1's lorebook
         let response = auth_client_user2 // Use user2's authenticated client
-            .post(&format!(
+            .post(format!(
                 "{}/api/lorebooks/{}/entries",
                 test_app.address, lorebook_id_user1
             ))
@@ -1177,7 +1175,7 @@ mod lorebook_entry_tests {
         });
 
         let response = auth_client // Use authenticated client
-            .post(&format!(
+            .post(format!(
                 "{}/api/lorebooks/{}/entries",
                 test_app.address, lorebook_id
             ))
@@ -1227,7 +1225,7 @@ mod lorebook_entry_tests {
         }; // Use DTO
 
         let response = auth_client // Use authenticated client
-            .post(&format!(
+            .post(format!(
                 "{}/api/lorebooks/{}/entries",
                 test_app.address, non_existent_lorebook_id
             ))
@@ -1265,7 +1263,7 @@ mod lorebook_entry_tests {
             create_dummy_lorebook_entry(&test_app, user_data.id, &auth_client, lorebook_id).await;
 
         let response = auth_client // Use authenticated client
-            .get(&format!(
+            .get(format!(
                 "{}/api/lorebooks/{}/entries",
                 test_app.address, lorebook_id
             ))
@@ -1308,7 +1306,7 @@ mod lorebook_entry_tests {
             create_dummy_lorebook(&test_app, user_data.id, &auth_client_for_setup).await;
 
         let response = unauth_http_client // Use unauthenticated client
-            .get(&format!(
+            .get(format!(
                 "{}/api/lorebooks/{}/entries",
                 test_app.address, lorebook_id
             ))
@@ -1361,7 +1359,7 @@ mod lorebook_entry_tests {
             create_dummy_lorebook(&test_app, user1_data.id, &auth_client_user1).await;
 
         let response = auth_client_user2 // Use user2's authenticated client
-            .get(&format!(
+            .get(format!(
                 "{}/api/lorebooks/{}/entries",
                 test_app.address, lorebook_id_user1
             ))
@@ -1399,7 +1397,7 @@ mod lorebook_entry_tests {
         let non_existent_lorebook_id = Uuid::new_v4();
 
         let response = auth_client // Use authenticated client
-            .get(&format!(
+            .get(format!(
                 "{}/api/lorebooks/{}/entries",
                 test_app.address, non_existent_lorebook_id
             ))
@@ -1436,7 +1434,7 @@ mod lorebook_entry_tests {
             create_dummy_lorebook_entry(&test_app, user_data.id, &auth_client, lorebook_id).await;
 
         let response = auth_client // Use authenticated client
-            .get(&format!(
+            .get(format!(
                 "{}/api/lorebooks/{}/entries/{}",
                 test_app.address, lorebook_id, entry_id
             ))
@@ -1483,7 +1481,7 @@ mod lorebook_entry_tests {
         .await;
 
         let response = unauth_http_client // Use unauthenticated client
-            .get(&format!(
+            .get(format!(
                 "{}/api/lorebooks/{}/entries/{}",
                 test_app.address, lorebook_id, entry_id
             ))
@@ -1543,7 +1541,7 @@ mod lorebook_entry_tests {
         .await;
 
         let response = auth_client_user2 // Use user2's authenticated client
-            .get(&format!(
+            .get(format!(
                 "{}/api/lorebooks/{}/entries/{}",
                 test_app.address, lorebook_id_user1, entry_id_user1
             ))
@@ -1582,7 +1580,7 @@ mod lorebook_entry_tests {
         let entry_id = Uuid::new_v4(); // Doesn't matter if entry exists if lorebook doesn't
 
         let response = auth_client // Use authenticated client
-            .get(&format!(
+            .get(format!(
                 "{}/api/lorebooks/{}/entries/{}",
                 test_app.address, non_existent_lorebook_id, entry_id
             ))
@@ -1618,7 +1616,7 @@ mod lorebook_entry_tests {
         let non_existent_entry_id = Uuid::new_v4();
 
         let response = auth_client // Use authenticated client
-            .get(&format!(
+            .get(format!(
                 "{}/api/lorebooks/{}/entries/{}",
                 test_app.address, lorebook_id, non_existent_entry_id
             ))
@@ -1662,7 +1660,7 @@ mod lorebook_entry_tests {
         };
 
         let response = auth_client // Use authenticated client
-            .put(&format!(
+            .put(format!(
                 "{}/api/lorebooks/{}/entries/{}",
                 test_app.address, lorebook_id, entry_id
             ))
@@ -1673,7 +1671,7 @@ mod lorebook_entry_tests {
         assert_eq!(response.status(), StatusCode::OK);
         let updated_entry: LorebookEntryResponseDto =
             response.json().await.expect("Failed to parse response"); // Use DTO
-        assert_eq!(updated_entry.is_enabled, false);
+        assert!(!updated_entry.is_enabled);
     }
 
     #[tokio::test]
@@ -1715,7 +1713,7 @@ mod lorebook_entry_tests {
         };
 
         let response = unauth_http_client // Use unauthenticated client
-            .put(&format!(
+            .put(format!(
                 "{}/api/lorebooks/{}/entries/{}",
                 test_app.address, lorebook_id, entry_id
             ))
@@ -1758,7 +1756,7 @@ mod lorebook_entry_tests {
             create_dummy_lorebook_entry(&test_app, user_data.id, &auth_client, lorebook_id).await;
 
         let response = auth_client // Use authenticated client
-            .delete(&format!(
+            .delete(format!(
                 "{}/api/lorebooks/{}/entries/{}",
                 test_app.address, lorebook_id, entry_id
             ))

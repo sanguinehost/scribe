@@ -35,7 +35,7 @@ async fn create_test_qdrant_service() -> Result<QdrantClientService, AppError> {
 
     // Load config from environment
     let base_config = Config::load().map_err(|e| {
-        AppError::ConfigError(format!("Failed to load configuration for test: {}", e))
+        AppError::ConfigError(format!("Failed to load configuration for test: {e}"))
     })?;
 
     // Ensure qdrant_url is present, otherwise this test setup is invalid.

@@ -14,8 +14,7 @@ use axum::{
 };
 use axum_login::AuthSession; // Removed AuthUser
 use chrono::Utc;
-use diesel::prelude::*;
-use diesel::{ExpressionMethods, RunQueryDsl}; // Added missing trait imports
+use diesel::{QueryDsl, ExpressionMethods, RunQueryDsl, SelectableHelper, OptionalExtension}; // Specific diesel imports
 use uuid::Uuid;
 
 // Shorthand for auth session
@@ -45,7 +44,7 @@ async fn create_document_handler(
 ) -> Result<impl IntoResponse, AppError> {
     let user = auth_session
         .user
-        .ok_or(AppError::Unauthorized("Not logged in".to_string()))?;
+        .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
     let pool = state.pool.clone();
 
     let new_document = NewDocument {
@@ -91,7 +90,7 @@ async fn get_documents_by_id_handler(
 ) -> Result<impl IntoResponse, AppError> {
     let user = auth_session
         .user
-        .ok_or(AppError::Unauthorized("Not logged in".to_string()))?;
+        .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
     let pool = state.pool.clone();
 
     let documents = pool
@@ -140,7 +139,7 @@ async fn get_document_by_id_handler(
 ) -> Result<impl IntoResponse, AppError> {
     let user = auth_session
         .user
-        .ok_or(AppError::Unauthorized("Not logged in".to_string()))?;
+        .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
     let pool = state.pool.clone();
 
     let document = pool
@@ -184,7 +183,7 @@ async fn delete_documents_by_id_after_timestamp_handler(
 ) -> Result<impl IntoResponse, AppError> {
     let user = auth_session
         .user
-        .ok_or(AppError::Unauthorized("Not logged in".to_string()))?;
+        .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
     let pool = state.pool.clone();
 
     // Parse the timestamp
@@ -253,7 +252,7 @@ async fn create_suggestion_handler(
 ) -> Result<impl IntoResponse, AppError> {
     let user = auth_session
         .user
-        .ok_or(AppError::Unauthorized("Not logged in".to_string()))?;
+        .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
     let pool = state.pool.clone();
 
     // Verify document exists and user has access to it
@@ -321,7 +320,7 @@ async fn get_suggestions_by_document_id_handler(
 ) -> Result<impl IntoResponse, AppError> {
     let user = auth_session
         .user
-        .ok_or(AppError::Unauthorized("Not logged in".to_string()))?;
+        .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
     let pool = state.pool.clone();
 
     // Verify document exists and user has access to it

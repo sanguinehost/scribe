@@ -22,7 +22,7 @@ async fn test_recovery_key_generation_during_registration() -> AnyhowResult<()> 
 
     // Register a user without providing a recovery key
     let username = format!("recovery_test_{}", Uuid::new_v4());
-    let email = format!("{}@test.com", username);
+    let email = format!("{username}@test.com");
     let password = "password123";
 
     let payload = json!({
@@ -110,7 +110,7 @@ async fn test_provided_recovery_key_is_used() -> AnyhowResult<()> {
 
     // Register a user with the custom recovery key
     let username = format!("recovery_custom_{}", Uuid::new_v4());
-    let email = format!("{}@test.com", username);
+    let email = format!("{username}@test.com");
     let password = "password123";
 
     let payload = json!({
@@ -163,7 +163,7 @@ async fn test_recovery_key_decrypts_dek() -> AnyhowResult<()> {
 
     // Register a user
     let username = format!("recovery_decrypt_{}", Uuid::new_v4());
-    let email = format!("{}@test.com", username);
+    let email = format!("{username}@test.com");
     let password = "password123";
 
     let payload = json!({

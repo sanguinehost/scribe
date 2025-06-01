@@ -42,7 +42,7 @@ pub async fn set_character_override(
                 .first::<(Uuid, Uuid)>(transaction_conn)
                 .map_err(|e| match e {
                     DieselError::NotFound => {
-                        AppError::NotFound(format!("Chat session {} not found.", session_id))
+                        AppError::NotFound(format!("Chat session {session_id} not found."))
                     }
                     _ => AppError::DatabaseQueryError(e.to_string()),
                 })?;

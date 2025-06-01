@@ -8,7 +8,6 @@ use chrono::Utc;
 use diesel::RunQueryDsl as _;
 use diesel::prelude::*;
 use genai::chat::{ChatStreamEvent, StreamChunk, StreamEnd};
-use mime;
 use secrecy::{ExposeSecret, SecretBox};
 use std::sync::Arc;
 use std::time::Duration;
@@ -33,7 +32,7 @@ use scribe_backend::{
         lorebook_service::LorebookService,
         tokenizer_service::TokenizerService,
     },
-    state::AppState,
+    state::{AppState, AppStateServices},
     test_helpers::{self, ParsedSseEvent, collect_full_sse_events},
 };
 
@@ -314,44 +313,34 @@ async fn generate_chat_response_streaming_success() {
     assert_eq!(
         actual_events.len(),
         expected_events.len(),
-        "Number of SSE events mismatch. Actual: {:?}, Expected: {:?}",
-        actual_events,
-        expected_events
+        "Number of SSE events mismatch. Actual: {actual_events:?}, Expected: {expected_events:?}"
     );
     for (i, (actual, expected)) in actual_events.iter().zip(expected_events.iter()).enumerate() {
         assert_eq!(
             actual.event, expected.event,
-            "Event name mismatch at index {}",
-            i
+            "Event name mismatch at index {i}"
         );
         // For data, if it's JSON, compare parsed JSON to avoid string formatting issues
         if expected.data == "[DONE]" {
             assert_eq!(
                 actual.data, "[DONE]",
-                "Event data for [DONE] mismatch at index {}",
-                i
+                "Event data for [DONE] mismatch at index {i}"
             );
         } else if expected.data.starts_with('{') || expected.data.starts_with('[') {
             let actual_json: serde_json::Value =
-                serde_json::from_str(&actual.data).expect(&format!(
-                    "Actual data at index {} is not valid JSON: {}",
-                    i, actual.data
-                ));
+                serde_json::from_str(&actual.data).unwrap_or_else(|_| panic!("Actual data at index {} is not valid JSON: {}",
+                    i, actual.data));
             let expected_json: serde_json::Value =
-                serde_json::from_str(&expected.data).expect(&format!(
-                    "Expected data at index {} is not valid JSON: {}",
-                    i, expected.data
-                ));
+                serde_json::from_str(&expected.data).unwrap_or_else(|_| panic!("Expected data at index {} is not valid JSON: {}",
+                    i, expected.data));
             assert_eq!(
                 actual_json, expected_json,
-                "Event data JSON mismatch at index {}",
-                i
+                "Event data JSON mismatch at index {i}"
             );
         } else {
             assert_eq!(
                 actual.data, expected.data,
-                "Event data string mismatch at index {}",
-                i
+                "Event data string mismatch at index {i}"
             );
         }
     }
@@ -656,19 +645,23 @@ async fn test_first_mes_included_in_history() {
         test_app.db_pool.clone(),
     ));
 
+    let services = AppStateServices {
+        ai_client: test_app.ai_client.clone(),
+        embedding_client: test_app.mock_embedding_client.clone(),
+        qdrant_service: test_app.qdrant_service.clone(),
+        embedding_pipeline_service: test_app.mock_embedding_pipeline_service.clone(),
+        chat_override_service,
+        user_persona_service,
+        token_counter: token_counter_service,
+        encryption_service: encryption_service.clone(),
+        lorebook_service,
+        auth_backend,
+    };
+
     let state_for_service = AppState::new(
         test_app.db_pool.clone(),
         test_app.config.clone(),
-        test_app.ai_client.clone(),
-        test_app.mock_embedding_client.clone(),
-        test_app.qdrant_service.clone(),
-        test_app.mock_embedding_pipeline_service.clone(),
-        chat_override_service, // Use the created service
-        user_persona_service,  // Use the created service
-        token_counter_service, // Use the created service
-        encryption_service.clone(),
-        lorebook_service, // Add LorebookService
-        auth_backend,     // Add auth_backend
+        services,
     );
     let state_arc = std::sync::Arc::new(state_for_service);
 

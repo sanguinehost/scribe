@@ -1,6 +1,6 @@
 // backend/tests/user_persona_api_tests.rs
 
-use reqwest; // For making HTTP calls
+ // For making HTTP calls
 use scribe_backend::models::user_personas::{
     CreateUserPersonaDto, UpdateUserPersonaDto, UserPersonaDataForClient,
 };
@@ -43,7 +43,7 @@ async fn create_user_persona_success() {
     let create_dto = default_create_dto();
 
     let response = client
-        .post(&format!("{}/api/personas", &app.address))
+        .post(format!("{}/api/personas", &app.address))
         .header("Cookie", auth_cookie) // Use cookie for auth
         .json(&create_dto)
         .send()
@@ -70,7 +70,7 @@ async fn create_user_persona_unauthorized() {
     let create_dto = default_create_dto();
 
     let response = client
-        .post(&format!("{}/api/personas", &app.address))
+        .post(format!("{}/api/personas", &app.address))
         // No auth token
         .json(&create_dto)
         .send()
@@ -94,7 +94,7 @@ async fn list_user_personas_success() {
     // Create a persona first
     let create_dto = default_create_dto();
     client
-        .post(&format!("{}/api/personas", &app.address))
+        .post(format!("{}/api/personas", &app.address))
         .header("Cookie", auth_cookie.clone())
         .json(&create_dto)
         .send()
@@ -102,7 +102,7 @@ async fn list_user_personas_success() {
         .expect("Failed to create persona for listing test.");
 
     let response = client
-        .get(&format!("{}/api/personas", &app.address))
+        .get(format!("{}/api/personas", &app.address))
         .header("Cookie", auth_cookie)
         .send()
         .await
@@ -132,7 +132,7 @@ async fn get_user_persona_success() {
 
     let create_dto = default_create_dto();
     let create_response = client
-        .post(&format!("{}/api/personas", &app.address))
+        .post(format!("{}/api/personas", &app.address))
         .header("Cookie", auth_cookie.clone())
         .json(&create_dto)
         .send()
@@ -145,7 +145,7 @@ async fn get_user_persona_success() {
     let persona_id = created_persona.id;
 
     let response = client
-        .get(&format!("{}/api/personas/{}", &app.address, persona_id))
+        .get(format!("{}/api/personas/{}", &app.address, persona_id))
         .header("Cookie", auth_cookie)
         .send()
         .await
@@ -173,7 +173,7 @@ async fn get_user_persona_not_found() {
     let non_existent_id = Uuid::new_v4();
 
     let response = client
-        .get(&format!(
+        .get(format!(
             "{}/api/personas/{}",
             &app.address, non_existent_id
         ))
@@ -205,7 +205,7 @@ async fn get_user_persona_forbidden() {
     // User1 creates a persona
     let create_dto = default_create_dto();
     let create_response = client1 // Use client1
-        .post(&format!("{}/api/personas", &app.address))
+        .post(format!("{}/api/personas", &app.address))
         .header("Cookie", auth_cookie1.clone())
         .json(&create_dto)
         .send()
@@ -219,7 +219,7 @@ async fn get_user_persona_forbidden() {
 
     // User2 tries to get User1's persona
     let response = client2 // Use client2
-        .get(&format!(
+        .get(format!(
             "{}/api/personas/{}",
             &app.address, persona_id_user1
         ))
@@ -244,7 +244,7 @@ async fn update_user_persona_success() {
 
     let create_dto = default_create_dto();
     let create_response = client
-        .post(&format!("{}/api/personas", &app.address))
+        .post(format!("{}/api/personas", &app.address))
         .header("Cookie", auth_cookie.clone())
         .json(&create_dto)
         .send()
@@ -272,7 +272,7 @@ async fn update_user_persona_success() {
     };
 
     let response = client
-        .put(&format!("{}/api/personas/{}", &app.address, persona_id))
+        .put(format!("{}/api/personas/{}", &app.address, persona_id))
         .header("Cookie", auth_cookie)
         .json(&update_dto)
         .send()
@@ -308,7 +308,7 @@ async fn delete_user_persona_success() {
 
     let create_dto = default_create_dto();
     let create_response = client
-        .post(&format!("{}/api/personas", &app.address))
+        .post(format!("{}/api/personas", &app.address))
         .header("Cookie", auth_cookie.clone())
         .json(&create_dto)
         .send()
@@ -321,7 +321,7 @@ async fn delete_user_persona_success() {
     let persona_id = created_persona.id;
 
     let response = client
-        .delete(&format!("{}/api/personas/{}", &app.address, persona_id))
+        .delete(format!("{}/api/personas/{}", &app.address, persona_id))
         .header("Cookie", auth_cookie.clone())
         .send()
         .await
@@ -331,7 +331,7 @@ async fn delete_user_persona_success() {
 
     // Verify it's actually deleted
     let get_response = client
-        .get(&format!("{}/api/personas/{}", &app.address, persona_id))
+        .get(format!("{}/api/personas/{}", &app.address, persona_id))
         .header("Cookie", auth_cookie)
         .send()
         .await
@@ -363,7 +363,7 @@ async fn delete_user_persona_forbidden() {
     // User1 creates a persona
     let create_dto = default_create_dto();
     let create_response = client1 // Use client1
-        .post(&format!("{}/api/personas", &app.address))
+        .post(format!("{}/api/personas", &app.address))
         .header("Cookie", auth_cookie1.clone())
         .json(&create_dto)
         .send()
@@ -377,7 +377,7 @@ async fn delete_user_persona_forbidden() {
 
     // User2 tries to delete User1's persona
     let response = client2 // Use client2
-        .delete(&format!(
+        .delete(format!(
             "{}/api/personas/{}",
             &app.address, persona_id_user1
         ))
