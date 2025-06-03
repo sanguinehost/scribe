@@ -68,7 +68,7 @@ async fn test_upload_valid_v3_card() -> Result<(), anyhow::Error> {
         "/api/characters/upload",
         "test_card.png",
         mime::IMAGE_PNG.as_ref(),
-        create_test_character_png("v3"), // Use our helper to create a valid V3 card
+        &create_test_character_png("v3"), // Use our helper to create a valid V3 card
         Some(vec![("name", "Test Character")]),
         Some(&session_cookie),
     );
@@ -136,7 +136,7 @@ async fn test_upload_valid_v2_card_fallback() -> Result<(), anyhow::Error> {
         "/api/characters/upload",
         "test_card_v2.png",
         mime::IMAGE_PNG.as_ref(),
-        create_test_character_png("v2"), // Use our helper to create a valid V2 card
+        &create_test_character_png("v2"), // Use our helper to create a valid V2 card
         Some(vec![("name", "Test V2 Character")]),
         Some(&session_cookie),
     );
@@ -210,7 +210,7 @@ async fn test_upload_real_card_file() -> Result<(), anyhow::Error> {
         "/api/characters/upload",
         "test_card.png",
         mime::IMAGE_PNG.as_ref(),
-        real_card_data,
+        &real_card_data,
         Some(vec![("name", "Real Test Character")]),
         Some(&session_cookie),
     );
@@ -277,7 +277,7 @@ async fn test_upload_not_png() -> Result<(), anyhow::Error> {
         "/api/characters/upload",
         "test_card.txt", // Incorrect extension
         "text/plain",    // Incorrect mime type
-        b"This is not a PNG".to_vec(),
+        b"This is not a PNG",
         Some(vec![("name", "Not PNG Character")]),
         Some(&session_cookie),
     );
@@ -364,7 +364,7 @@ async fn test_upload_png_no_data_chunk() -> Result<(), anyhow::Error> {
         "/api/characters/upload",
         "no_chunk.png",
         mime::IMAGE_PNG.as_ref(),
-        png_bytes,
+        &png_bytes,
         Some(vec![("name", "No Chunk Character")]),
         Some(&session_cookie),
     );
@@ -430,7 +430,7 @@ async fn test_upload_with_extra_field() -> Result<(), anyhow::Error> {
         "/api/characters/upload",
         "test_card_v3_extra.png",
         mime::IMAGE_PNG.as_ref(),
-        create_test_character_png("v3"),
+        &create_test_character_png("v3"),
         Some(vec![
             ("name", "Test Character With Extra"),
             ("extra_field", "extra_value"), // The extra field
@@ -532,7 +532,7 @@ async fn test_upload_invalid_json_in_png() -> Result<(), anyhow::Error> {
         "/api/characters/upload",
         "invalid_json.png",
         mime::IMAGE_PNG.as_ref(),
-        png_bytes,
+        &png_bytes,
         Some(vec![("name", "Invalid JSON Character")]),
         Some(&session_cookie),
     );

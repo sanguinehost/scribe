@@ -1,4 +1,3 @@
-#![allow(clippy::unwrap_used)]
 use axum::http::StatusCode;
 use uuid::Uuid;
 

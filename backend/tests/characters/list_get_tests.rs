@@ -206,50 +206,50 @@ async fn test_get_character_forbidden() -> Result<(), anyhow::Error> {
     let pool = test_app.db_pool.clone();
     let mut guard = TestDataGuard::new(pool.clone());
 
-    let username_a = format!("get_forbidden_user_a_{}", Uuid::new_v4());
-    let password_a = "passwordA";
-    let username_a_closure = username_a.clone();
-    let (user_a, dek_a) = run_db_op(&pool, move |conn| {
-        insert_test_user_with_password(conn, &username_a_closure, password_a)
+    let owner_username = format!("get_forbidden_user_a_{}", Uuid::new_v4());
+    let owner_password = "passwordA";
+    let owner_username_for_closure = owner_username.clone();
+    let (character_owner, owner_dek) = run_db_op(&pool, move |conn| {
+        insert_test_user_with_password(conn, &owner_username_for_closure, owner_password)
     })
     .await?;
-    guard.add_user(user_a.id);
+    guard.add_user(character_owner.id);
 
-    let username_b = format!("get_forbidden_user_b_{}", Uuid::new_v4());
-    let password_b = "passwordB";
-    let username_b_closure = username_b.clone();
-    let (user_b, _dek_b) = run_db_op(&pool, move |conn| {
-        insert_test_user_with_password(conn, &username_b_closure, password_b)
+    let unauthorized_username = format!("get_forbidden_user_b_{}", Uuid::new_v4());
+    let unauthorized_password = "passwordB";
+    let unauthorized_username_for_closure = unauthorized_username.clone();
+    let (unauthorized_user, _unauthorized_dek) = run_db_op(&pool, move |conn| {
+        insert_test_user_with_password(conn, &unauthorized_username_for_closure, unauthorized_password)
     })
     .await?;
-    guard.add_user(user_b.id);
+    guard.add_user(unauthorized_user.id);
 
-    let user_a_id_for_insert = user_a.id;
-    let dek_a_clone = dek_a.clone();
-    let character_a = run_db_op(&pool, move |conn| {
+    let owner_id_for_insert = character_owner.id;
+    let owner_dek_clone = owner_dek.clone();
+    let owned_character = run_db_op(&pool, move |conn| {
         insert_test_character(
             conn,
-            user_a_id_for_insert,
+            owner_id_for_insert,
             "Character A For Get",
-            &dek_a_clone,
+            &owner_dek_clone,
         )
     })
     .await?;
-    guard.add_character(character_a.id);
+    guard.add_character(owned_character.id);
 
     // User B tries to get User A's character
     let conn_b = pool
         .get()
         .await
         .context("Failed to get DB conn for User B query")?;
-    let char_id_for_b_query = character_a.id;
-    let user_b_id_for_query = user_b.id;
+    let character_id_for_forbidden_access = owned_character.id;
+    let unauthorized_user_id = unauthorized_user.id;
     let character_result_b: Option<DbCharacter> = conn_b
         .interact(move |conn_block| {
             use scribe_backend::schema::characters::dsl::*;
             characters
-                .filter(id.eq(char_id_for_b_query))
-                .filter(user_id.eq(user_b_id_for_query)) // User B's ID
+                .filter(id.eq(character_id_for_forbidden_access))
+                .filter(user_id.eq(unauthorized_user_id)) // Unauthorized user's ID
                 .first::<DbCharacter>(conn_block)
                 .optional()
         })
@@ -265,14 +265,14 @@ async fn test_get_character_forbidden() -> Result<(), anyhow::Error> {
         .get()
         .await
         .context("Failed to get DB conn for User A query")?;
-    let char_id_for_a_query = character_a.id;
-    let user_a_id_for_query = user_a.id;
+    let character_id_for_owner_access = owned_character.id;
+    let owner_id_for_query = character_owner.id;
     let character_result_a: Option<DbCharacter> = conn_a
         .interact(move |conn_block| {
             use scribe_backend::schema::characters::dsl::*;
             characters
-                .filter(id.eq(char_id_for_a_query))
-                .filter(user_id.eq(user_a_id_for_query)) // User A's ID
+                .filter(id.eq(character_id_for_owner_access))
+                .filter(user_id.eq(owner_id_for_query)) // Owner's ID
                 .first::<DbCharacter>(conn_block)
                 .optional()
         })
@@ -282,7 +282,7 @@ async fn test_get_character_forbidden() -> Result<(), anyhow::Error> {
         character_result_a.is_some(),
         "User A should be able to access their character"
     );
-    assert_eq!(character_result_a.unwrap().id, character_a.id);
+    assert_eq!(character_result_a.unwrap().id, owned_character.id);
     Ok(())
 }
 

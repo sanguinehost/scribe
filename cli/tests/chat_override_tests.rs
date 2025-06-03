@@ -1,3 +1,6 @@
+
+#![allow(clippy::uninlined_format_args)]
+
 #[cfg(test)]
 mod chat_override_tests {
     use chrono::Utc;

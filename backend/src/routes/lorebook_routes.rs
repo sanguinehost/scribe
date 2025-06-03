@@ -1,3 +1,4 @@
+#![allow(clippy::items_after_statements)]
 use crate::{
     AppState,
     auth::session_dek::SessionDek,            // Import SessionDek

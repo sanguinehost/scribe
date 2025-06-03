@@ -38,10 +38,36 @@ impl<T> From<DatabaseUpdate<T>> for Option<Option<T>> {
     }
 }
 
+/// Custom wrapper for nullable encrypted fields that handles the Option<Option<T>> pattern
+#[derive(Debug)]
+pub struct NullableEncryptedField<T> {
+    value: DatabaseUpdate<T>,
+}
+
+impl<T> Default for NullableEncryptedField<T> {
+    fn default() -> Self {
+        Self {
+            value: DatabaseUpdate::NoChange,
+        }
+    }
+}
+
+impl<T> From<DatabaseUpdate<T>> for NullableEncryptedField<T> {
+    fn from(update: DatabaseUpdate<T>) -> Self {
+        Self { value: update }
+    }
+}
+
+impl<T> From<NullableEncryptedField<T>> for Option<Option<T>> {
+    fn from(field: NullableEncryptedField<T>) -> Self {
+        field.value.into()
+    }
+}
+
 #[derive(Debug, Default)]
 struct ChatSessionUpdateBuilder {
-    system_prompt_ciphertext: DatabaseUpdate<Vec<u8>>,
-    system_prompt_nonce: DatabaseUpdate<Vec<u8>>,
+    system_prompt_ciphertext: NullableEncryptedField<Vec<u8>>,
+    system_prompt_nonce: NullableEncryptedField<Vec<u8>>,
     temperature: DatabaseUpdate<BigDecimal>,
     max_output_tokens: DatabaseUpdate<i32>,
     frequency_penalty: DatabaseUpdate<BigDecimal>,
@@ -123,8 +149,8 @@ impl ChatSessionUpdateBuilder {
     }
     
     const fn has_changes(&self) -> bool {
-        !matches!(self.system_prompt_ciphertext, DatabaseUpdate::NoChange) ||
-        !matches!(self.system_prompt_nonce, DatabaseUpdate::NoChange) ||
+        !matches!(self.system_prompt_ciphertext.value, DatabaseUpdate::NoChange) ||
+        !matches!(self.system_prompt_nonce.value, DatabaseUpdate::NoChange) ||
         !matches!(self.temperature, DatabaseUpdate::NoChange) ||
         !matches!(self.max_output_tokens, DatabaseUpdate::NoChange) ||
         !matches!(self.frequency_penalty, DatabaseUpdate::NoChange) ||
@@ -141,11 +167,16 @@ impl ChatSessionUpdateBuilder {
     }
 }
 
+#[allow(clippy::option_option)] // Diesel
 #[derive(AsChangeset, Debug)]
 #[diesel(table_name = chat_sessions)]
-#[allow(clippy::option_option)] // Needed to distinguish: not updating vs setting to NULL vs setting to value
 struct ChatSessionUpdateChangeset {
+    /// Encrypted system prompt ciphertext - uses Option<Option<T>> pattern for nullable fields
+    /// - None: Don't update the field
+    /// - Some(None): Set field to NULL
+    /// - Some(Some(value)): Set field to specific value
     system_prompt_ciphertext: Option<Option<Vec<u8>>>,
+    /// Encrypted system prompt nonce - uses Option<Option<T>> pattern for nullable fields
     system_prompt_nonce: Option<Option<Vec<u8>>>,
     temperature: Option<BigDecimal>,
     max_output_tokens: Option<i32>,
@@ -312,16 +343,16 @@ fn handle_system_prompt_update(
 ) -> Result<(), AppError> {
     let trimmed_prompt = new_prompt_str.trim();
     if trimmed_prompt.is_empty() {
-        update_builder.system_prompt_ciphertext = DatabaseUpdate::SetNull;
-        update_builder.system_prompt_nonce = DatabaseUpdate::SetNull;
+        update_builder.system_prompt_ciphertext = DatabaseUpdate::SetNull.into();
+        update_builder.system_prompt_nonce = DatabaseUpdate::SetNull.into();
     } else if let Some(dek) = user_dek {
         let (ciphertext, nonce) = encrypt_gcm(trimmed_prompt.as_bytes(), dek)
             .map_err(|e| {
                 error!("Failed to encrypt system prompt: {}", e);
                 AppError::EncryptionError("Failed to encrypt system prompt".to_string())
             })?;
-        update_builder.system_prompt_ciphertext = DatabaseUpdate::SetValue(ciphertext);
-        update_builder.system_prompt_nonce = DatabaseUpdate::SetValue(nonce);
+        update_builder.system_prompt_ciphertext = DatabaseUpdate::SetValue(ciphertext).into();
+        update_builder.system_prompt_nonce = DatabaseUpdate::SetValue(nonce).into();
     } else {
         error!("User DEK not provided, cannot encrypt system prompt for update.");
         return Err(AppError::BadRequest(

@@ -1,4 +1,6 @@
 #[cfg(test)]
+#[allow(clippy::items_after_statements)]
+#[allow(clippy::module_inception)]
 mod user_store_tests {
     // Import create_test_pool from the db_integration_tests module
     // Note: Tests need to be structured correctly for cross-file imports, or helpers moved to lib/test_utils.
@@ -20,6 +22,118 @@ mod user_store_tests {
     use scribe_backend::test_helpers::{self, TestDataGuard}; // Removed TestApp
 
     use uuid::Uuid; // Added import for Uuid
+    
+    // Helper functions for basic verification
+    async fn test_basic_credential_verification(
+        pool: &scribe_backend::state::DbPool,
+        guard: &mut TestDataGuard,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let (username, email, password_secret) = generate_test_user_data();
+
+        let created_user = create_test_user_for_verification(
+            pool,
+            username.clone(),
+            email.clone(),
+            password_secret.clone(),
+        )
+        .await?;
+        guard.add_user(created_user.id);
+
+        // Test basic scenarios
+        verify_and_assert(pool, &username, password_secret.clone(), Ok(created_user.id), "username").await?;
+        verify_and_assert(pool, &email, password_secret.clone(), Ok(created_user.id), "email").await?;
+        
+        let wrong_password = SecretString::new("wrong".to_string().into());
+        verify_and_assert(pool, &username, wrong_password, Err(scribe_backend::auth::AuthError::WrongCredentials), "wrong password").await?;
+        
+        Ok(())
+    }
+
+    fn generate_test_user_data() -> (String, String, SecretString) {
+        let username = format!("testuser_{}", Uuid::new_v4().to_string().split('-').next().unwrap());
+        let email = format!("test_{}@example.com", Uuid::new_v4().to_string().split('-').next().unwrap());
+        let password = SecretString::new("password123".to_string().into());
+        (username, email, password)
+    }
+
+    async fn create_test_user_for_verification(
+        pool: &scribe_backend::state::DbPool,
+        username: String,
+        email: String,
+        password: SecretString,
+    ) -> Result<scribe_backend::models::users::User, Box<dyn std::error::Error>> {
+        let obj = pool.get().await?;
+        let payload = scribe_backend::models::auth::RegisterPayload {
+            recovery_phrase: None,
+            username,
+            email,
+            password,
+        };
+        obj.interact(move |conn| {
+            let rt = tokio::runtime::Runtime::new().expect("Failed to create runtime");
+            rt.block_on(scribe_backend::auth::create_user(conn, payload))
+        })
+        .await?
+        .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)
+    }
+
+    async fn verify_and_assert(
+        pool: &scribe_backend::state::DbPool,
+        identifier: &str,
+        password: SecretString,
+        expected: Result<Uuid, scribe_backend::auth::AuthError>,
+        test_name: &str,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let obj = pool.get().await?;
+        let id = identifier.to_string();
+        let result = obj.interact(move |conn| {
+            scribe_backend::auth::verify_credentials(conn, &id, password)
+        }).await?;
+
+        match expected {
+            Ok(expected_id) => {
+                let (user, dek) = result.map_err(|e| format!("Test {test_name} failed: {e:?}"))?;
+                assert_eq!(user.id, expected_id, "Test {test_name}: ID mismatch");
+                assert!(dek.is_some(), "Test {test_name}: DEK missing");
+            }
+            Err(expected_err) => {
+                assert!(matches!(result, Err(ref e) if e == &expected_err), 
+                    "Test {test_name}: Expected {expected_err:?}, got {result:?}");
+            }
+        }
+        Ok(())
+    }
+
+    async fn test_crypto_failure_scenarios(
+        pool: &scribe_backend::state::DbPool,
+        user_id: Uuid,
+        username: &str,
+        password: SecretString,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let obj = pool.get().await?;
+        let invalid_salt = "!!!invalid_base64_salt!!!".to_string();
+        obj.interact({
+            let user_id_c = user_id;
+            let salt_c = invalid_salt;
+            move |conn| {
+                diesel::update(scribe_backend::schema::users::table.find(user_id_c))
+                    .set(scribe_backend::schema::users::kek_salt.eq(salt_c))
+                    .execute(conn)
+            }
+        }).await??;
+
+        let obj2 = pool.get().await?;
+        let result = {
+            let username_c = username.to_string();
+            obj2.interact(move |conn| {
+                scribe_backend::auth::verify_credentials(conn, &username_c, password)
+            }).await?
+        };
+
+        assert!(matches!(result, Err(scribe_backend::auth::AuthError::CryptoOperationFailed(_))),
+            "Expected crypto failure, got: {result:?}");
+        Ok(())
+    }
 
     // Add imports from scribe-backend packages
     // Just import the crypto module
@@ -363,187 +477,35 @@ mod user_store_tests {
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
     #[ignore] // Added ignore for CI (interacts with DB)
-    async fn test_verify_credentials() -> Result<(), Box<dyn std::error::Error>> {
+    async fn test_verify_credentials_basic() -> Result<(), Box<dyn std::error::Error>> {
         let test_app = self::test_helpers::spawn_app(false, false, false).await;
         let pool = &test_app.db_pool;
         let mut guard = TestDataGuard::new(pool.clone());
 
-        let username = format!(
-            "testverifyuser_{}",
-            uuid::Uuid::new_v4().to_string().split('-').next().unwrap()
-        );
-        let email = format!(
-            "verify_{}@example.com",
-            uuid::Uuid::new_v4().to_string().split('-').next().unwrap()
-        );
-        let password_str = "password_verify123".to_string();
-        let password_secret = SecretString::new(password_str.clone().into());
+        test_basic_credential_verification(pool, &mut guard).await?;
 
-        // Create a user first
-        // REMOVED: let hashed_password = scribe_backend::auth::hash_password(password_secret.clone()).await?;
+        guard.cleanup().await?;
+        Ok(())
+    }
 
-        let obj_create = pool.get().await?;
-        let created_user = {
-            // Limit scope of clones
-            let username_c = username.clone();
-            let email_c = email.clone();
-            let password_secret_c = password_secret.clone();
-            // REMOVED: let hashed_password_c = hashed_password.clone();
-            let register_payload = scribe_backend::models::auth::RegisterPayload {
-                recovery_phrase: None,
-                username: username_c,
-                email: email_c,
-                password: password_secret_c,
-            };
-            obj_create
-                .interact(move |conn| {
-                    // Create a runtime to handle async in a sync context
-                    let rt =
-                        tokio::runtime::Runtime::new().expect("Failed to create runtime in test");
-                    rt.block_on(scribe_backend::auth::create_user(conn, register_payload))
-                })
-                .await??
-        };
+    #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+    #[ignore] // Added ignore for CI (interacts with DB)
+    async fn test_verify_credentials_crypto_failure() -> Result<(), Box<dyn std::error::Error>> {
+        let test_app = self::test_helpers::spawn_app(false, false, false).await;
+        let pool = &test_app.db_pool;
+        let mut guard = TestDataGuard::new(pool.clone());
+
+        let (username, email, password_secret) = generate_test_user_data();
+        let created_user = create_test_user_for_verification(
+            pool,
+            username.clone(),
+            email.clone(),
+            password_secret.clone(),
+        )
+        .await?;
         guard.add_user(created_user.id);
-
-        let user_id = created_user.id;
-
-        // Test verify_credentials with correct username and password
-        let obj_verify_ok_user = pool.get().await?;
-        let verify_ok_user_result = {
-            let username_c = username.clone();
-            let password_secret_c = password_secret.clone();
-            obj_verify_ok_user
-                .interact(move |conn| {
-                    scribe_backend::auth::verify_credentials(conn, &username_c, password_secret_c)
-                })
-                .await?? // Propagates InteractError, then AuthError
-        };
-        assert_eq!(verify_ok_user_result.0.id, user_id);
-        assert!(
-            verify_ok_user_result.1.is_some(),
-            "DEK should be present after successful verification"
-        );
-
-        // Test verify_credentials with correct email and password
-        let obj_verify_ok_email = pool.get().await?;
-        let verify_ok_email_result = {
-            let email_c = email.clone(); // Use the email from the created user
-            let password_secret_c = password_secret.clone();
-            obj_verify_ok_email
-                .interact(move |conn| {
-                    scribe_backend::auth::verify_credentials(conn, &email_c, password_secret_c)
-                })
-                .await??
-        };
-        assert_eq!(verify_ok_email_result.0.id, user_id);
-        assert!(
-            verify_ok_email_result.1.is_some(),
-            "DEK should be present after successful verification with email"
-        );
-
-        // Test verify_credentials with wrong password
-        let wrong_password_secret = SecretString::new("wrongpassword".to_string().into());
-        let obj_verify_fail_pw = pool.get().await?;
-        let verify_fail_pw_result = {
-            let username_c = username.clone();
-            let wrong_password_secret_c = wrong_password_secret.clone();
-            obj_verify_fail_pw
-                .interact(move |conn| {
-                    scribe_backend::auth::verify_credentials(
-                        conn,
-                        &username_c,
-                        wrong_password_secret_c,
-                    )
-                })
-                .await? // InteractError mapped to Box<dyn Error>
-        };
-        assert!(
-            matches!(
-                verify_fail_pw_result,
-                Err(scribe_backend::auth::AuthError::WrongCredentials)
-            ),
-            "Test failed: verify_credentials with wrong password did not return AuthError::WrongCredentials. Actual: {:?}",
-            verify_fail_pw_result.err() // Only show error part if available
-        );
-
-        // Test verify_credentials with non-existent username
-        let obj_verify_notfound = pool.get().await?;
-        let verify_notfound_result = {
-            let password_secret_c = password_secret.clone();
-            obj_verify_notfound
-                .interact(move |conn| {
-                    scribe_backend::auth::verify_credentials(
-                        conn,
-                        "nonexistentuser",
-                        password_secret_c,
-                    )
-                })
-                .await?
-        };
-        assert!(
-            matches!(
-                verify_notfound_result,
-                Err(scribe_backend::auth::AuthError::UserNotFound |
-                scribe_backend::auth::AuthError::WrongCredentials)
-            ),
-            "Test failed: verify_credentials with non-existent user did not return UserNotFound or WrongCredentials. Actual: {:?}",
-            verify_notfound_result.err()
-        );
-        // Note: The current verify_credentials first finds the user, then verifies password.
-        // If user is not found by identifier, it returns UserNotFound from the first db query.
-        // So, UserNotFound is the correct expectation here.
-
-        // Test HashingError (difficult to trigger reliably in unit test, usually for bcrypt internal issues)
-        // This would ideally be tested by somehow making bcrypt::verify fail with something other than invalid password.
-
-        // Test CryptoOperationFailed for KEK derivation
-        // To test this, we'd need create_user to succeed, but then provide a salt for KEK derivation
-        // that is somehow invalid for crypto::derive_kek AFTER it was successfully stored by create_user,
-        // or the password itself causes derive_kek to fail.
-        // The KEK salt is generated by create_user, so it should always be valid.
-        // This error is more likely if `derive_kek` itself has an issue or if the password somehow
-        // causes an unexpected error in argon2.
-        // Let's simulate by temporarily altering the stored KEK salt to be invalid base64 for a specific user.
-
-        let obj_crypto_err = pool.get().await?;
-        // Manually update the user's KEK salt to something invalid for base64 decoding
-        let invalid_kek_salt = "!!!invalid_base64_salt!!!".to_string();
-        obj_crypto_err
-            .interact({
-                let user_id_c = user_id;
-                let invalid_kek_salt_c = invalid_kek_salt.clone();
-                move |conn| {
-                    diesel::update(scribe_backend::schema::users::table.find(user_id_c))
-                        .set(scribe_backend::schema::users::kek_salt.eq(invalid_kek_salt_c))
-                        .execute(conn)
-                }
-            })
-            .await??;
-
-        let obj_verify_crypto_fail = pool.get().await?;
-        let verify_crypto_fail_result = {
-            let username_c = username.clone();
-            let password_secret_c = password_secret.clone();
-            obj_verify_crypto_fail
-                .interact(move |conn| {
-                    scribe_backend::auth::verify_credentials(conn, &username_c, password_secret_c)
-                })
-                .await?
-        };
-
-        if !matches!(
-            verify_crypto_fail_result,
-            Err(scribe_backend::auth::AuthError::CryptoOperationFailed(_))
-        ) {
-            panic!(
-                "Expected CryptoOperationFailed due to invalid KEK salt. Actual: {}",
-                match verify_crypto_fail_result {
-                    Ok((u, _)) => format!("Ok(User: {}, DEK: <secret>)", u.id),
-                    Err(e) => format!("Err({e:?})"),
-                }
-            );
-        }
+        
+        test_crypto_failure_scenarios(pool, created_user.id, &username, password_secret).await?;
 
         guard.cleanup().await?;
         Ok(())
@@ -552,8 +514,7 @@ mod user_store_tests {
     #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
     #[ignore] // Added ignore for CI (interacts with DB)
     async fn test_user_from_session_token_success() {
-        let test_app = self::test_helpers::spawn_app(false, false, false).await; // Use spawn_app
-        let _pool = &test_app.db_pool; // Get pool from TestApp
+        let _test_app = self::test_helpers::spawn_app(false, false, false).await; // Use spawn_app
         // let _user_store = AuthBackend::new(pool.clone()); // AuthBackend can be used if needed
         // let _auth_backend = AuthBackend::new(pool.clone()); // Redundant with above
 

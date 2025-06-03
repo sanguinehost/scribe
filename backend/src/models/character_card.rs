@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use crate::models::characters::Character;
 use crate::models::lorebooks::Lorebook; // Import the new Lorebook
 use chrono::{DateTime, Utc}; // Add DateTime and Utc
@@ -188,6 +186,7 @@ impl std::fmt::Debug for Decorator {
 /// 
 /// Parses decorator lines (starting with specific syntax) and regular content lines,
 /// returning both the parsed decorators and the cleaned content.
+#[cfg(test)]
 fn parse_decorators_from_content(raw_content: &str) -> (Vec<Decorator>, String) {
     let mut decorators = Vec::new();
     let mut content_lines = Vec::new();

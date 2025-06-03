@@ -1,4 +1,4 @@
-export const DEFAULT_CHAT_MODEL: string = 'gemini-2.5-flash-preview-04-17'; // Changed as per previous conversation summary
+export const DEFAULT_CHAT_MODEL: string = 'gemini-2.5-flash-preview-05-20'; // Changed as per previous conversation summary
 
 // Default Context Allocation
 export const DEFAULT_CONTEXT_TOTAL_TOKEN_LIMIT = 200000;
@@ -18,7 +18,7 @@ export const chatModels: Array<ChatModel> = [
 		description: 'Stable preview of the Pro model'
 	},
     {
-		id: 'gemini-2.5-flash-preview-04-17',
+		id: 'gemini-2.5-flash-preview-05-20',
 		name: 'Gemini 2.5 Flash Preview',
 		description: 'Fast and efficient preview model'
 	}

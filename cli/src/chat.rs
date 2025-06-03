@@ -1,3 +1,4 @@
+
 // cli/src/chat.rs
 
 use crate::client::{HttpClient, StreamEvent}; // Added StreamEvent
@@ -11,7 +12,6 @@ use uuid::Uuid; // Needed for stream processing
 /// Handles the interactive chat session with the AI.
 /// Prompts the user for input, sends it to the backend, displays the response,
 /// and repeats until the user types 'quit' or 'exit'.
-
 pub async fn run_chat_loop<IO: IoHandler, Http: HttpClient>(
     http_client: &Http,
     chat_id: Uuid,

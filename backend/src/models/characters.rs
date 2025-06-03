@@ -1,5 +1,4 @@
 // backend/src/models/characters.rs
-#![allow(dead_code)] // Allow dead code for fields not yet actively used
 use crate::errors::AppError;
 use bigdecimal::BigDecimal;
 use chrono::{DateTime, Utc};
@@ -111,7 +110,6 @@ pub struct Character {
     pub post_history_instructions_nonce: Option<Vec<u8>>,
 }
 
-#[allow(clippy::missing_fields_in_debug)] // Allow missing fields in debug output for security
 impl std::fmt::Debug for Character {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut debug_struct = f.debug_struct("Character");
@@ -609,14 +607,70 @@ pub struct CharacterDataForClient {
     pub world_scenario_visibility: Option<String>,
 }
 
-#[allow(clippy::missing_fields_in_debug)] // Allow missing fields in debug for this struct for security
 impl std::fmt::Debug for CharacterDataForClient {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("CharacterDataForClient")
             .field("id", &self.id)
             .field("user_id", &self.user_id)
+            .field("spec", &"[REDACTED]")
+            .field("spec_version", &"[REDACTED]")
             .field("name", &"[REDACTED]")
-            .field("field_count", &"[Many fields - content redacted for security]")
+            .field("description", &"[REDACTED]")
+            .field("personality", &"[REDACTED]")
+            .field("scenario", &"[REDACTED]")
+            .field("first_mes", &"[REDACTED]")
+            .field("mes_example", &"[REDACTED]")
+            .field("creator_notes", &"[REDACTED]")
+            .field("system_prompt", &"[REDACTED]")
+            .field("post_history_instructions", &"[REDACTED]")
+            .field("tags", &"[REDACTED]")
+            .field("creator", &"[REDACTED]")
+            .field("character_version", &"[REDACTED]")
+            .field("alternate_greetings", &"[REDACTED]")
+            .field("nickname", &"[REDACTED]")
+            .field("creator_notes_multilingual", &"[REDACTED]")
+            .field("source", &"[REDACTED]")
+            .field("group_only_greetings", &"[REDACTED]")
+            .field("creation_date", &self.creation_date)
+            .field("modification_date", &self.modification_date)
+            .field("created_at", &self.created_at)
+            .field("updated_at", &self.updated_at)
+            .field("persona", &"[REDACTED]")
+            .field("world_scenario", &"[REDACTED]")
+            .field("avatar", &"[REDACTED]")
+            .field("chat", &"[REDACTED]")
+            .field("greeting", &"[REDACTED]")
+            .field("definition", &"[REDACTED]")
+            .field("default_voice", &"[REDACTED]")
+            .field("extensions", &"[REDACTED]")
+            .field("data_id", &self.data_id)
+            .field("category", &"[REDACTED]")
+            .field("definition_visibility", &"[REDACTED]")
+            .field("depth", &self.depth)
+            .field("example_dialogue", &"[REDACTED]")
+            .field("favorite", &self.favorite)
+            .field("first_message_visibility", &"[REDACTED]")
+            .field("height", &self.height)
+            .field("last_activity", &self.last_activity)
+            .field("migrated_from", &"[REDACTED]")
+            .field("model_prompt", &"[REDACTED]")
+            .field("model_prompt_visibility", &"[REDACTED]")
+            .field("model_temperature", &self.model_temperature)
+            .field("num_interactions", &self.num_interactions)
+            .field("permanence", &self.permanence)
+            .field("persona_visibility", &"[REDACTED]")
+            .field("revision", &self.revision)
+            .field("sharing_visibility", &"[REDACTED]")
+            .field("status", &"[REDACTED]")
+            .field("system_prompt_visibility", &"[REDACTED]")
+            .field("system_tags", &"[REDACTED]")
+            .field("token_budget", &self.token_budget)
+            .field("usage_hints", &"[REDACTED]")
+            .field("user_persona", &"[REDACTED]")
+            .field("user_persona_visibility", &"[REDACTED]")
+            .field("visibility", &"[REDACTED]")
+            .field("weight", &self.weight)
+            .field("world_scenario_visibility", &"[REDACTED]")
             .finish()
     }
 }

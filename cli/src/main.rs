@@ -1,3 +1,11 @@
+
+#![allow(clippy::too_many_lines)]
+#![allow(clippy::uninlined_format_args)]
+#![allow(clippy::unused_async)]
+#![allow(clippy::semicolon_if_nothing_returned)]
+#![allow(clippy::ptr_arg)]
+#![allow(clippy::items_after_statements)]
+
 // cli/src/main.rs
 
 use anyhow::{Context, Result};
@@ -79,7 +87,7 @@ async fn main() -> Result<()> {
         .init();
 
     let cli_args = CliArgs::parse();
-    let mut io_handler = StdIoHandler::default();
+    let mut io_handler = StdIoHandler;
 
     info!(base_url = %cli_args.base_url, "Starting Scribe CLI client");
 
@@ -114,19 +122,17 @@ async fn main() -> Result<()> {
                                 || create_args.first_mes.is_none()
                             {
                                 io_handler.write_line("Error: --name, --description, and --first-mes are required for non-interactive character creation.")?;
-                            } else {
-                                if let Err(e) = handle_character_create_oneliner(
-                                    &http_client,
-                                    &mut io_handler,
-                                    create_args,
-                                )
-                                .await
-                                {
-                                    io_handler.write_line(&format!(
-                                        "Error during character creation: {}",
-                                        e
-                                    ))?;
-                                }
+                            } else if let Err(e) = handle_character_create_oneliner(
+                                &http_client,
+                                &mut io_handler,
+                                create_args,
+                            )
+                            .await
+                            {
+                                io_handler.write_line(&format!(
+                                    "Error during character creation: {}",
+                                    e
+                                ))?;
                             }
                         }
                     }
@@ -140,23 +146,19 @@ async fn main() -> Result<()> {
                                     e
                                 ))?;
                             }
-                        } else {
-                            if edit_args.id.is_none() {
-                                io_handler.write_line("Error: --id is required for non-interactive character editing.")?;
-                            } else {
-                                if let Err(e) = handle_character_edit_oneliner(
-                                    &http_client,
-                                    &mut io_handler,
-                                    edit_args,
-                                )
-                                .await
-                                {
-                                    io_handler.write_line(&format!(
-                                        "Error during character editing: {}",
-                                        e
-                                    ))?;
-                                }
-                            }
+                        } else if edit_args.id.is_none() {
+                            io_handler.write_line("Error: --id is required for non-interactive character editing.")?;
+                        } else if let Err(e) = handle_character_edit_oneliner(
+                            &http_client,
+                            &mut io_handler,
+                            edit_args,
+                        )
+                        .await
+                        {
+                            io_handler.write_line(&format!(
+                                "Error during character editing: {}",
+                                e
+                            ))?;
                         }
                     }
                 }
@@ -172,26 +174,22 @@ async fn main() -> Result<()> {
                                 e
                             ))?;
                         }
-                    } else {
-                        if edit_char_args.session_id.is_none()
-                            || edit_char_args.field.is_none()
-                            || edit_char_args.value.is_none()
-                        {
-                            io_handler.write_line("Error: --session-id, --field, and --value are required for non-interactive chat character override.")?;
-                        } else {
-                            if let Err(e) = handle_chat_edit_character_oneliner(
-                                &http_client,
-                                &mut io_handler,
-                                edit_char_args,
-                            )
-                            .await
-                            {
-                                io_handler.write_line(&format!(
-                                    "Error during chat character override: {}",
-                                    e
-                                ))?;
-                            }
-                        }
+                    } else if edit_char_args.session_id.is_none()
+                        || edit_char_args.field.is_none()
+                        || edit_char_args.value.is_none()
+                    {
+                        io_handler.write_line("Error: --session-id, --field, and --value are required for non-interactive chat character override.")?;
+                    } else if let Err(e) = handle_chat_edit_character_oneliner(
+                        &http_client,
+                        &mut io_handler,
+                        edit_char_args,
+                    )
+                    .await
+                    {
+                        io_handler.write_line(&format!(
+                            "Error during chat character override: {}",
+                            e
+                        ))?;
                     }
                 }
             },
@@ -262,7 +260,7 @@ async fn main() -> Result<()> {
         io_handler.write_line("Welcome to Scribe CLI! (Interactive Mode)")?;
         io_handler.write_line(&format!("Connecting to: {}", cli_args.base_url))?;
 
-        let mut current_model = "gemini-2.5-flash-preview-04-17".to_string();
+        let mut current_model = "gemini-2.5-flash-preview-05-20".to_string();
 
         // Main application loop
         loop {
@@ -614,7 +612,7 @@ async fn handle_character_management_menu<C: HttpClient, H: IoHandler>(
                 let test_card_path_str = test_card_path_buf.to_str().ok_or_else(|| {
                     CliError::Internal(format!(
                         "Constructed test card path is not valid UTF-8: {:?}",
-                        test_card_path_buf
+                        test_card_path_buf.display()
                     ))
                 })?;
                 match http_client

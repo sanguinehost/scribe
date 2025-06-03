@@ -2296,7 +2296,8 @@ mod tests {
         opt_list.map_or_else(
             || Value {
                 kind: Some(qdrant_client::qdrant::value::Kind::NullValue(
-                    qdrant_client::qdrant::NullValue::default() as i32,
+                    // Use the enum variant directly without casting - it should auto-convert
+                    qdrant_client::qdrant::NullValue::default().into(),
                 )),
             },
             |list| Value {
@@ -2314,7 +2315,8 @@ mod tests {
         opt_s.map_or_else(
             || Value {
                 kind: Some(qdrant_client::qdrant::value::Kind::NullValue(
-                    qdrant_client::qdrant::NullValue::default() as i32,
+                    // Use the enum variant directly without casting - it should auto-convert
+                    qdrant_client::qdrant::NullValue::default().into(),
                 )),
             },
             |s| string_value(&s),

@@ -1,6 +1,3 @@
-#![allow(unused_imports)] // Allow unused imports for now, will be used as tests are filled in
-#![allow(dead_code)] // Allow dead code for placeholder structs/functions
-
 use axum::http::StatusCode;
 use scribe_backend::models::chats::CreateChatRequest;
 use scribe_backend::models::lorebook_dtos::{
@@ -15,9 +12,7 @@ use scribe_backend::models::lorebook_dtos::{
     UpdateLorebookEntryPayload as UpdateLorebookEntryDto,
     UpdateLorebookPayload as UpdateLorebookDto,
 };
-use scribe_backend::models::users::User;
 use scribe_backend::test_helpers::{TestApp, TestDataGuard, spawn_app};
-use serde::{Deserialize, Serialize};
 use uuid::Uuid; // Added for creating chat sessions
 
 // Helper function to create a dummy lorebook for tests that need one to exist

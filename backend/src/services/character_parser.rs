@@ -1387,8 +1387,7 @@ mod tests {
     impl Read for FailingReader {
         fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
             if self.read_count >= self.fail_after {
-                Err(std::io::Error::new(
-                    std::io::ErrorKind::Other,
+                Err(std::io::Error::other(
                     "Simulated I/O error",
                 ))
             } else {
@@ -1406,8 +1405,7 @@ mod tests {
                     return Ok(0);
                 } else if bytes_to_read == 0 && remaining_before_fail == 0 {
                     // If we are exactly at the fail point and can't read more, return the error
-                    return Err(std::io::Error::new(
-                        std::io::ErrorKind::Other,
+                    return Err(std::io::Error::other(
                         "Simulated I/O error",
                     ));
                 }
@@ -1497,7 +1495,7 @@ mod tests {
         }
 
         let zip_error_other =
-            ZipError::Io(std::io::Error::new(std::io::ErrorKind::Other, "zip io"));
+            ZipError::Io(std::io::Error::other("zip io"));
         let parser_error_other: ParserError = zip_error_other.into(); // Line 64-65
         match parser_error_other {
             // Check for the specific lowercase "i/o error" string representation

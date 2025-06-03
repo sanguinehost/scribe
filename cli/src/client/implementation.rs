@@ -1,3 +1,4 @@
+
 // cli/src/client/implementation.rs
 
 use async_trait::async_trait;
@@ -478,12 +479,11 @@ impl HttpClient for ReqwestClientWrapper {
                                     yield Err(CliError::RateLimitExceeded);
                                     es.close(); // Close the source on error
                                     break;
-                                } else {
-                                    // Propagate as a general backend error for other types of errors
-                                    yield Err(CliError::Backend(format!("Stream error from server: {}", message.data)));
-                                    es.close(); // Close the source on error
-                                    break;
                                 }
+                                // Propagate as a general backend error for other types of errors
+                                yield Err(CliError::Backend(format!("Stream error from server: {}", message.data)));
+                                es.close(); // Close the source on error
+                                break;
                             }
                             unknown_event => {
                                 tracing::warn!(target: "scribe_cli::client::implementation", %unknown_event, data = %message.data, "Received unknown SSE event type");

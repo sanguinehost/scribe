@@ -15,7 +15,7 @@ const SALT_LEN: usize = 16; // 16 bytes for salt
 const DEK_LEN: usize = 32; // 32 bytes for AES-256 DEK
 const NONCE_LEN: usize = aead::NONCE_LEN; // Standard 12 bytes for AES-GCM from ring::aead
 
-#[derive(Error, Debug)]
+#[derive(Error, Debug, PartialEq)]
 pub enum CryptoError {
     #[error("Argon2 hashing error: {0}")]
     Argon2Error(#[from] argon2::Error),

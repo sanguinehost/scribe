@@ -125,9 +125,8 @@ async fn select_lorebooks_for_chat<H: IoHandler, C: HttpClient>(
                     // User just pressed enter
                     io_handler.write_line("No lorebooks selected.")?;
                     return Ok(None);
-                } else {
-                    io_handler.write_line("Invalid selection. Please enter comma-separated numbers from the list, or N to skip.")?;
                 }
+                io_handler.write_line("Invalid selection. Please enter comma-separated numbers from the list, or N to skip.")?;
             }
         }
         Err(e) => {

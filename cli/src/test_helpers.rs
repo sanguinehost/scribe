@@ -1,3 +1,4 @@
+
 use crate::client::HttpClient;
 use crate::client::types::{
     AdminUserDetailResponse,
@@ -250,20 +251,19 @@ impl MockHttpClient {
 
     // Verify that a function was called with the expected endpoint pattern
     pub fn verify_endpoint_call(&self, function_name: &str) -> Result<(), String> {
-        let expected_patterns = match self.expected_endpoints.lock() {
-            Ok(guard) => guard,
+        let expected_pattern = match self.expected_endpoints.lock() {
+            Ok(guard) => guard.get(function_name).cloned(),
             Err(_) => return Err("Failed to acquire lock on expected_endpoints".to_string()),
         };
 
-        let called_endpoints = match self.called_endpoints.lock() {
-            Ok(guard) => guard,
-            Err(_) => return Err("Failed to acquire lock on called_endpoints".to_string()),
-        };
-
-        if let Some(expected_pattern) = expected_patterns.get(function_name) {
+        if let Some(expected_pattern) = expected_pattern {
+            let called_endpoints = match self.called_endpoints.lock() {
+                Ok(guard) => guard,
+                Err(_) => return Err("Failed to acquire lock on called_endpoints".to_string()),
+            };
             // Find if any called endpoint matches the expected pattern
             for endpoint in called_endpoints.iter() {
-                if endpoint.contains(expected_pattern) {
+                if endpoint.contains(&expected_pattern) {
                     return Ok(());
                 }
             }
@@ -281,12 +281,10 @@ impl MockHttpClient {
 
     // Verify all endpoint expectations
     pub fn verify_all_endpoints(&self) -> Result<(), String> {
-        let expected_patterns = match self.expected_endpoints.lock() {
-            Ok(guard) => guard,
+        let function_names: Vec<String> = match self.expected_endpoints.lock() {
+            Ok(guard) => guard.keys().cloned().collect(),
             Err(_) => return Err("Failed to acquire lock on expected_endpoints".to_string()),
         };
-
-        let function_names: Vec<String> = expected_patterns.keys().cloned().collect();
 
         for function_name in function_names {
             self.verify_endpoint_call(&function_name)?
@@ -945,7 +943,6 @@ impl HttpClient for MockHttpClient {
 // --- Helper Functions for Creating Mocks ---
 
 /// Creates a mock user for testing
-
 pub fn mock_user(username: &str) -> User {
     User {
         id: Uuid::new_v4(),
@@ -969,7 +966,6 @@ pub fn mock_user(username: &str) -> User {
 }
 
 /// Creates a mock character for testing
-
 pub fn mock_character_data_for_client(
     id: Uuid,
     name: &str,
@@ -1041,7 +1037,6 @@ pub fn mock_character_data_for_client(
 }
 
 /// Creates a mock chat session for testing
-
 pub fn mock_chat_session(id: Uuid, character_id: Uuid) -> Chat {
     // This function now returns the raw Chat struct with encrypted fields
     Chat {
@@ -1074,7 +1069,6 @@ pub fn mock_chat_session(id: Uuid, character_id: Uuid) -> Chat {
 }
 
 /// Creates a mock chat session for client responses (with decrypted fields)
-
 pub fn mock_chat_session_for_client(id: Uuid, character_id: Uuid) -> ChatForClient {
     ChatForClient {
         id,
@@ -1104,7 +1098,6 @@ pub fn mock_chat_session_for_client(id: Uuid, character_id: Uuid) -> ChatForClie
 }
 
 /// Creates a mock chat message for testing
-
 pub fn mock_chat_message(
     id: Uuid,
     session_id: Uuid,

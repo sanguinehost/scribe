@@ -49,7 +49,7 @@ async fn generate_chat_response_streaming_unauthorized() {
         response
             .headers()
             .get(header::CONTENT_TYPE)
-            .map(|h| h.as_bytes()),
+            .map(axum::http::HeaderValue::as_bytes),
         Some(mime::TEXT_EVENT_STREAM.as_ref().as_bytes()),
         "Content-Type should not be text/event-stream"
     );
@@ -130,7 +130,7 @@ async fn generate_chat_response_streaming_not_found() {
         response
             .headers()
             .get(header::CONTENT_TYPE)
-            .map(|h| h.as_bytes()),
+            .map(axum::http::HeaderValue::as_bytes),
         Some(mime::TEXT_EVENT_STREAM.as_ref().as_bytes()),
         "Content-Type should not be text/event-stream"
     );
@@ -138,6 +138,7 @@ async fn generate_chat_response_streaming_not_found() {
 
 #[tokio::test]
 #[ignore] // Added ignore for CI
+#[allow(clippy::too_many_lines)]
 async fn generate_chat_response_streaming_forbidden() {
     let test_app = test_helpers::spawn_app(false, false, false).await;
 
@@ -165,11 +166,11 @@ async fn generate_chat_response_streaming_forbidden() {
                 name: character_name,
                 spec: "test_spec_v1.0".to_string(),
                 spec_version: "1.0".to_string(),
-                description: Some("Test description".to_string().into_bytes()),
-                greeting: Some("Hello".to_string().into_bytes()),
+                description: Some(b"Test description".to_vec()),
+                greeting: Some(b"Hello".to_vec()),
                 visibility: Some("private".to_string()),
                 creator: Some("test_creator".to_string()),
-                persona: Some("Test persona".to_string().into_bytes()),
+                persona: Some(b"Test persona".to_vec()),
                 created_at: Some(Utc::now()), // Add created_at
                 updated_at: Some(Utc::now()), // Add updated_at
                 ..Default::default()
@@ -297,7 +298,7 @@ async fn generate_chat_response_streaming_forbidden() {
         response
             .headers()
             .get(header::CONTENT_TYPE)
-            .map(|h| h.as_bytes()),
+            .map(axum::http::HeaderValue::as_bytes),
         Some(mime::TEXT_EVENT_STREAM.as_ref().as_bytes()),
         "Content-Type should not be text/event-stream"
     );

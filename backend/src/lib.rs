@@ -1,9 +1,8 @@
 #![allow(clippy::literal_string_with_formatting_args)]
-
 pub mod auth;
-pub mod config;
 pub mod crypto;
 pub mod errors;
+pub mod config;
 pub mod llm;
 pub mod logging;
 pub mod models;
@@ -13,7 +12,7 @@ pub mod schema;
 pub mod services;
 pub mod state;
 pub mod text_processing;
-pub mod vector_db; // Added vector_db module // Added text processing module
+pub mod vector_db;
 
 use deadpool_diesel::postgres::Pool as DeadpoolPool;
 

@@ -42,6 +42,7 @@ use scribe_backend::state::{AppState, AppStateServices};
 
 #[tokio::test]
 #[ignore] // Added ignore for CI
+#[allow(clippy::too_many_lines)]
 async fn test_create_chat_session_success() {
     let test_app = test_helpers::spawn_app(true, false, false).await;
     let user = test_helpers::db::create_test_user(
@@ -77,7 +78,6 @@ async fn test_create_chat_session_success() {
         .unwrap()
         .to_string();
 
-    let _character_name = "Test Character for Chat";
     let pool = test_app.db_pool.clone();
     let user_id_clone = user.id;
     let character_conn_obj = pool
@@ -255,6 +255,7 @@ async fn test_create_chat_session_character_not_found() {
 
 #[tokio::test]
 #[ignore] // Added ignore for CI
+#[allow(clippy::too_many_lines)]
 async fn test_create_chat_session_character_other_user() -> anyhow::Result<()> {
     let test_app = test_helpers::spawn_app(true, false, false).await;
 
@@ -484,6 +485,7 @@ async fn create_chat_session_character_not_found_integration() -> anyhow::Result
 
 #[tokio::test]
 #[ignore] // Added ignore for CI
+#[allow(clippy::too_many_lines)]
 async fn create_chat_session_character_not_owned_integration() -> anyhow::Result<()> {
     let test_app = test_helpers::spawn_app(true, true, false).await; // Use real DB
 
@@ -656,6 +658,7 @@ async fn create_chat_session_character_not_owned_integration() -> anyhow::Result
 
 #[tokio::test]
 #[ignore] // Added ignore for CI
+#[allow(clippy::too_many_lines)]
 async fn test_get_chat_session_details_unauthorized() {
     let test_app = test_helpers::spawn_app(true, false, false).await;
 
@@ -864,6 +867,7 @@ async fn test_get_chat_session_details_invalid_uuid() {
 }
 
 #[tokio::test]
+#[allow(clippy::too_many_lines)]
 async fn test_create_chat_session_with_empty_first_mes() -> Result<(), AnyhowError> {
     let test_app = test_helpers::spawn_app(false, false, false).await;
     let mut test_data_guard = test_helpers::TestDataGuard::new(test_app.db_pool.clone());
@@ -1019,6 +1023,7 @@ async fn test_create_chat_session_with_empty_first_mes() -> Result<(), AnyhowErr
 }
 
 #[tokio::test]
+#[allow(clippy::too_many_lines)]
 async fn test_create_chat_session_with_null_first_mes() -> anyhow::Result<()> {
     let test_app = test_helpers::spawn_app(false, false, false).await;
     let mut test_data_guard = test_helpers::TestDataGuard::new(test_app.db_pool.clone());
@@ -1174,6 +1179,7 @@ async fn test_create_chat_session_with_null_first_mes() -> anyhow::Result<()> {
 
 #[tokio::test]
 #[ignore] // Ignore for CI unless DB is guaranteed
+#[allow(clippy::too_many_lines)]
 async fn test_create_session_saves_first_mes() -> Result<(), AnyhowError> {
     let test_app = test_helpers::spawn_app(false, false, false).await;
     let mut test_data_guard = test_helpers::TestDataGuard::new(test_app.db_pool.clone());
@@ -1403,7 +1409,7 @@ async fn test_create_session_saves_first_mes() -> Result<(), AnyhowError> {
         crypto::decrypt_gcm(&initial_message.content, nonce, user_dek.as_ref())
             .expect("Failed to decrypt initial message content in test");
     let decrypted_content_bytes = decrypted_content_secret.expose_secret();
-    let decrypted_content_string = String::from_utf8(decrypted_content_bytes.to_vec())
+    let decrypted_content_string = String::from_utf8(decrypted_content_bytes.clone())
         .expect("Decrypted content is not valid UTF-8");
 
     assert_eq!(decrypted_content_string, "Hello from the character!");
@@ -1481,6 +1487,7 @@ async fn create_test_lorebook(
 
 #[tokio::test]
 #[ignore] // Following existing pattern for CI
+#[allow(clippy::too_many_lines)]
 async fn test_create_chat_session_no_lorebook_ids() -> Result<(), AnyhowError> {
     let test_app = test_helpers::spawn_app(false, false, false).await;
     let mut test_data_guard = test_helpers::TestDataGuard::new(test_app.db_pool.clone());
@@ -1633,6 +1640,7 @@ async fn test_create_chat_session_no_lorebook_ids() -> Result<(), AnyhowError> {
 }
 
 #[tokio::test]
+#[allow(clippy::too_many_lines)]
 async fn test_create_chat_session_one_valid_lorebook_id() -> Result<(), AnyhowError> {
     let test_app = test_helpers::spawn_app(false, false, false).await;
     let mut test_data_guard = test_helpers::TestDataGuard::new(test_app.db_pool.clone());
@@ -1808,6 +1816,7 @@ async fn test_create_chat_session_one_valid_lorebook_id() -> Result<(), AnyhowEr
 }
 
 #[tokio::test]
+#[allow(clippy::too_many_lines)]
 async fn test_create_chat_session_multiple_valid_lorebook_ids() -> Result<(), AnyhowError> {
     let test_app = test_helpers::spawn_app(false, false, false).await;
     let mut test_data_guard = test_helpers::TestDataGuard::new(test_app.db_pool.clone());
@@ -2009,6 +2018,7 @@ async fn test_create_chat_session_multiple_valid_lorebook_ids() -> Result<(), An
 
 #[tokio::test]
 #[ignore] // Following existing pattern for CI
+#[allow(clippy::too_many_lines)]
 async fn test_create_chat_session_empty_lorebook_ids_list() -> Result<(), AnyhowError> {
     let test_app = test_helpers::spawn_app(false, false, false).await;
     let mut test_data_guard = test_helpers::TestDataGuard::new(test_app.db_pool.clone());
@@ -2161,6 +2171,7 @@ async fn test_create_chat_session_empty_lorebook_ids_list() -> Result<(), Anyhow
 }
 
 #[tokio::test]
+#[allow(clippy::too_many_lines)]
 async fn test_create_chat_session_non_existent_lorebook_id() -> Result<(), AnyhowError> {
     let test_app = test_helpers::spawn_app(false, false, false).await;
     let mut test_data_guard = test_helpers::TestDataGuard::new(test_app.db_pool.clone());
@@ -2305,6 +2316,7 @@ async fn test_create_chat_session_non_existent_lorebook_id() -> Result<(), Anyho
 }
 
 #[tokio::test]
+#[allow(clippy::too_many_lines)]
 async fn test_create_chat_session_lorebook_owned_by_another_user() -> Result<(), AnyhowError> {
     let test_app = test_helpers::spawn_app(false, false, false).await;
     let mut test_data_guard = test_helpers::TestDataGuard::new(test_app.db_pool.clone());

@@ -21,7 +21,7 @@ pub struct DefaultSettings {
 impl Default for DefaultSettings {
     fn default() -> Self {
         Self {
-            model_name: "gemini-2.5-flash-preview-04-17".to_string(),
+            model_name: "gemini-2.5-flash-preview-05-20".to_string(),
             gemini_thinking_budget: Some(1024),
             gemini_enable_code_execution: Some(false),
             system_prompt: None,

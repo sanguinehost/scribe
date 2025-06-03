@@ -24,7 +24,7 @@ use crate::state::DbPool; // Added for delete_all_sessions_for_user
 type VerifyCredentialsResult = Result<(User, Option<SecretBox<Vec<u8>>>), AuthError>;
 
 // Make AuthError enum public
-#[derive(Error, Debug)] // Removed Clone
+#[derive(Error, Debug)]
 pub enum AuthError {
     #[error("Wrong credentials")]
     WrongCredentials,
@@ -52,6 +52,28 @@ pub enum AuthError {
     InvalidRecoveryPhrase,
     #[error("Session deletion error: {0}")]
     SessionDeletionError(String),
+}
+
+// Manual PartialEq implementation for test comparisons
+impl PartialEq for AuthError {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::WrongCredentials, Self::WrongCredentials)
+            | (Self::UsernameTaken, Self::UsernameTaken)
+            | (Self::EmailTaken, Self::EmailTaken)
+            | (Self::HashingError, Self::HashingError)
+            | (Self::UserNotFound, Self::UserNotFound)
+            | (Self::AccountLocked, Self::AccountLocked)
+            | (Self::RecoveryNotSetup, Self::RecoveryNotSetup)
+            | (Self::InvalidRecoveryPhrase, Self::InvalidRecoveryPhrase) => true,
+            (Self::DatabaseError(a), Self::DatabaseError(b))
+            | (Self::InteractError(a), Self::InteractError(b))
+            | (Self::SessionDeletionError(a), Self::SessionDeletionError(b)) => a == b,
+            (Self::CryptoOperationFailed(a), Self::CryptoOperationFailed(b)) => a == b,
+            // PoolError cannot be compared, so we always return false for it
+            _ => false,
+        }
+    }
 }
 
 // Manual From implementation for InteractError

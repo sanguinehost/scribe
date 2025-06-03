@@ -1,3 +1,4 @@
+#![allow(clippy::items_after_statements)]
 use axum::{
     Json,
     Router,

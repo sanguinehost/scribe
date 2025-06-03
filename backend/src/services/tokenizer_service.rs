@@ -39,6 +39,7 @@ impl TokenEstimate {
     }
 
     /// Add counts from another estimate
+    #[allow(clippy::missing_const_for_fn)]
     pub fn combine(&mut self, other: &Self) {
         self.total += other.total;
         self.text += other.text;
@@ -265,8 +266,8 @@ impl TokenizerService {
 
         // Larger images are processed into 768x768 tiles
         // Calculate how many tiles would be needed (ceiling division)
-        let tiles_x = ((width + 767) / 768) as usize; // Integer ceiling division
-        let tiles_y = ((height + 767) / 768) as usize; // Integer ceiling division
+        let tiles_x = width.div_ceil(768) as usize; // Integer ceiling division (u32 to usize is safe)
+        let tiles_y = height.div_ceil(768) as usize; // Integer ceiling division (u32 to usize is safe)
         let total_tiles = tiles_x * tiles_y;
 
         // Each tile is 258 tokens
@@ -290,23 +291,25 @@ impl TokenizerService {
     /// For Gemini, video is counted at a fixed rate of 263 tokens per second
     #[must_use]
     pub fn estimate_video_tokens(&self, duration_seconds: f64) -> TokenEstimate {
-        // Calculate token count with safe conversion
         let token_count = if duration_seconds <= 0.0 {
             0
         } else {
-            let tokens = duration_seconds * 263.0;
-            let tokens_ceiled = tokens.ceil();
+            // Use reasonable bounds for video duration (24 hours max = 86400 seconds)
+            let clamped_duration = duration_seconds.clamp(0.0, 86_400.0);
+            
+            // Simple calculation: tokens = duration * 263
+            let tokens_exact = clamped_duration * 263.0;
+            
             // Use safe conversion with bounds checking
-            match tokens_ceiled {
-                x if x >= 1_000_000_000.0 => 1_000_000_000,
-                x if x <= 0.0 => 0,
-                x => {
-                    // Safe conversion: we've bounds-checked that x is positive and within usize range
-                    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-                    {
-                        x.trunc() as usize
-                    }
-                }
+            if tokens_exact.is_finite() && tokens_exact >= 0.0 {
+                let rounded = tokens_exact.round();
+                // Clamp to reasonable bounds to prevent overflow
+                let clamped = rounded.clamp(0.0, 1_000_000_000.0);
+                // Safe cast: clamped is non-negative and within bounds
+                #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+                { clamped as usize }
+            } else {
+                0
             }
         };
 
@@ -323,23 +326,25 @@ impl TokenizerService {
     /// For Gemini, audio is counted at a fixed rate of 32 tokens per second
     #[must_use]
     pub fn estimate_audio_tokens(&self, duration_seconds: f64) -> TokenEstimate {
-        // Calculate token count with safe conversion
         let token_count = if duration_seconds <= 0.0 {
             0
         } else {
-            let tokens = duration_seconds * 32.0;
-            let tokens_ceiled = tokens.ceil();
+            // Use reasonable bounds for audio duration (24 hours max = 86400 seconds)
+            let clamped_duration = duration_seconds.clamp(0.0, 86_400.0);
+            
+            // Simple calculation: tokens = duration * 32
+            let tokens_exact = clamped_duration * 32.0;
+            
             // Use safe conversion with bounds checking
-            match tokens_ceiled {
-                x if x >= 1_000_000_000.0 => 1_000_000_000,
-                x if x <= 0.0 => 0,
-                x => {
-                    // Safe conversion: we've bounds-checked that x is positive and within usize range
-                    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-                    {
-                        x.trunc() as usize
-                    }
-                }
+            if tokens_exact.is_finite() && tokens_exact >= 0.0 {
+                let rounded = tokens_exact.round();
+                // Clamp to reasonable bounds to prevent overflow
+                let clamped = rounded.clamp(0.0, 1_000_000_000.0);
+                // Safe cast: clamped is non-negative and within bounds
+                #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+                { clamped as usize }
+            } else {
+                0
             }
         };
 
@@ -543,7 +548,7 @@ mod tests {
         assert_eq!(estimate.total, estimate.video);
         assert!(estimate.is_estimate);
 
-        // 10.5 seconds * 263 tokens/second = 2761.5, ceiling = 2762
+        // 10.5 seconds * 263 tokens/second = 2761.5, rounded to 2762
         assert_eq!(estimate.video, 2762);
     }
 

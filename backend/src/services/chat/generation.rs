@@ -496,7 +496,7 @@ pub async fn get_session_data_for_generation(
                 ))
             })?;
 
-        let message_tokens = token_estimate.total as usize; // Cast to usize
+        let message_tokens = token_estimate.total;
         debug!(target: "test_debug", %session_id, message_id = %db_msg_raw.id, %message_tokens, current_actual_tokens = %actual_recent_history_tokens, %recent_history_token_budget, "Message tokens calculated. Checking budget.");
 
         if actual_recent_history_tokens.saturating_add(message_tokens)
@@ -983,7 +983,6 @@ pub async fn stream_ai_response_and_save_message(
             match event_result {
                 Ok(GeminiResponseChunkAlias::Start) => {
                     debug!("Received Start event from AI stream in chat_service");
-                    continue;
                 }
                 Ok(GeminiResponseChunkAlias::Chunk(chunk)) => {
                     debug!(content_chunk_len = chunk.content.len(), "Received Content chunk from AI stream in chat_service");

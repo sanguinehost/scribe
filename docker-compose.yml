@@ -32,6 +32,10 @@ services:
       - qdrant_data:/qdrant/storage # Persistent volume for data
       - ./.certs:/qdrant_certs:ro # Mount host .certs dir for TLS
     restart: unless-stopped
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
 
 volumes:
   postgres_data:

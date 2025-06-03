@@ -30,6 +30,7 @@ use tower_cookies::Cookie; // Added for parsing cookie
 
 #[tokio::test]
 #[ignore] // Added ignore for CI
+#[allow(clippy::too_many_lines)]
 async fn get_chat_messages_success_integration() -> anyhow::Result<()> {
     unsafe {
         std::env::set_var("RUST_LOG", "debug");

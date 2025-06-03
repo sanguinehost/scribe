@@ -2,10 +2,11 @@ use crate::auth::session_dek::SessionDek; // Added SessionDek
 use crate::auth::user_store::Backend as AuthBackend;
 use crate::crypto; // Added crypto for encryption/decryption
 use crate::errors::AppError;
+use crate::models::users::User; // Added User import
+use crate::PgPool; // Added PgPool import
 use crate::models::chat_override::CharacterOverrideDto; // Added for override handler
 use crate::models::chats::{
     Chat,
-    ChatForClient, // Added for client responses
     // ChatSettingsResponse, // Not used directly in this file anymore
     CreateChatRequest,    // Now available
     CreateMessageRequest, // Now available
@@ -31,7 +32,7 @@ use secrecy::SecretBox; // Ensure SecretBox is imported
 // Removed incorrect ValidatedJson import
 use crate::services::chat;
 use crate::state::AppState;
-use diesel::{ExpressionMethods, QueryDsl, RunQueryDsl, SelectableHelper};
+use diesel::{ExpressionMethods, PgConnection, QueryDsl, RunQueryDsl, SelectableHelper};
 use serde_json::json;
 use std::sync::Arc;
 use tracing::{error, info};
@@ -190,24 +191,7 @@ pub async fn get_chats_by_character_handler(
     // Decrypt the titles for client display
     let mut decrypted_chats = Vec::new();
     for chat in chats {
-        let mut client_chat = ChatForClient::from(chat.clone());
-
-        // Decrypt title if available
-        client_chat.title = match (chat.title_ciphertext.as_ref(), chat.title_nonce.as_ref()) {
-            (Some(ciphertext), Some(nonce)) if !ciphertext.is_empty() && !nonce.is_empty() => {
-                crypto::decrypt_gcm(ciphertext, nonce, &dek.0).map_or_else(
-                    |_| Some("[Decryption Failed]".to_string()),
-                    |plaintext_secret| {
-                        String::from_utf8(plaintext_secret.expose_secret().clone()).map_or_else(
-                            |_| Some("[Invalid UTF-8]".to_string()),
-                            Some
-                        )
-                    }
-                )
-            }
-            _ => None,
-        };
-
+        let client_chat = chat.into_decrypted_for_client(Some(&dek.0))?;
         decrypted_chats.push(client_chat);
     }
 
@@ -251,24 +235,7 @@ pub async fn get_chats_handler(
     // Decrypt the titles for client display
     let mut decrypted_chats = Vec::new();
     for chat in chats {
-        let mut client_chat = ChatForClient::from(chat.clone());
-
-        // Decrypt title if available
-        client_chat.title = match (chat.title_ciphertext.as_ref(), chat.title_nonce.as_ref()) {
-            (Some(ciphertext), Some(nonce)) if !ciphertext.is_empty() && !nonce.is_empty() => {
-                crypto::decrypt_gcm(ciphertext, nonce, &dek.0).map_or_else(
-                    |_| Some("[Decryption Failed]".to_string()),
-                    |plaintext_secret| {
-                        String::from_utf8(plaintext_secret.expose_secret().clone()).map_or_else(
-                            |_| Some("[Invalid UTF-8]".to_string()),
-                            Some
-                        )
-                    }
-                )
-            }
-            _ => None,
-        };
-
+        let client_chat = chat.into_decrypted_for_client(Some(&dek.0))?;
         decrypted_chats.push(client_chat);
     }
 
@@ -469,138 +436,115 @@ pub async fn delete_chat_handler(
 /// - Chat not found or access denied
 /// - Database operation fails
 /// - Decryption fails
-#[allow(clippy::too_many_lines, clippy::cognitive_complexity)]
-pub async fn get_messages_by_chat_id_handler(
-    auth_session: CurrentAuthSession,
-    State(state): State<AppState>,
-    dek: SessionDek, // ADDED SessionDek extractor
-    Path(id): Path<String>,
-) -> Result<impl IntoResponse, AppError> {
-    tracing::debug!("get_messages_by_chat_id_handler: id (as String) = {}", id);
-    // Attempt to parse the string id to Uuid manually for now
-    let uuid_id = Uuid::parse_str(&id)
-        .map_err(|_| AppError::BadRequest("Invalid UUID format in path".to_string()))?;
-    tracing::debug!(
-        "get_messages_by_chat_id_handler: id (parsed as Uuid) = {}",
-        uuid_id
-    );
+///
+/// Helper function to validate and parse the chat ID
+///
+/// # Errors
+///
+/// Returns `AppError::BadRequest` if the provided string is not a valid UUID format
+fn parse_chat_id(id: &str) -> Result<Uuid, AppError> {
+    Uuid::parse_str(id)
+        .map_err(|_| AppError::BadRequest("Invalid UUID format in path".to_string()))
+}
 
-    let user = auth_session
+/// Helper function to get authenticated user
+fn get_authenticated_user(auth_session: CurrentAuthSession) -> Result<User, AppError> {
+    auth_session
         .user
-        .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
-    tracing::debug!(
-        "get_messages_by_chat_id_handler: Authenticated user.id = {}",
-        user.id
-    );
-    let pool = state.pool.clone();
+        .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))
+}
 
-    tracing::debug!(
-        "get_messages_by_chat_id_handler: Attempting to fetch chat with uuid_id = {}",
-        uuid_id
-    );
-
-    // Fetch the chat session, ensuring NotFound is handled correctly
-    let chat: Chat = pool.get().await
+/// Helper function to fetch chat session and verify ownership
+async fn fetch_and_verify_chat_ownership(
+    pool: PgPool,
+    chat_id: Uuid,
+    user_id: Uuid,
+) -> Result<Chat, AppError> {
+    pool.get().await
         .map_err(|e| {
-            tracing::error!("get_messages_by_chat_id_handler: Failed to get connection from pool: {}", e);
+            tracing::error!("Failed to get connection from pool: {}", e);
             AppError::DbPoolError(e.to_string())
         })?
-        .interact(move |conn| {
-            tracing::debug!("get_messages_by_chat_id_handler: Inside interact closure, fetching chat for uuid_id = {}", uuid_id);
-            let result = chat_sessions::table
-                .filter(chat_sessions::id.eq(uuid_id))
-                .select(Chat::as_select())
-                .first::<Chat>(conn);
-            match &result {
-                Ok(chat) => tracing::debug!("get_messages_by_chat_id_handler: Successfully found chat with id={}, user_id={}", uuid_id, chat.user_id),
-                Err(e) => {
-                    tracing::error!("get_messages_by_chat_id_handler: Error fetching chat: {}", e);
-                    // Debug output for diesel errors and their type
-                    match e {
-                        diesel::result::Error::NotFound => {
-                            tracing::error!("get_messages_by_chat_id_handler: This is a diesel::NotFound error!");
-                        },
-                        _ => {
-                            tracing::error!("get_messages_by_chat_id_handler: This is another type of diesel error: {:?}", e);
-                        }
-                    }
-                }
-            }
-            // Change direct mapping to explicit handling of NotFound
-            match result {
-                Ok(chat) => Ok(chat),
-                Err(diesel::result::Error::NotFound) => {
-                    tracing::error!("get_messages_by_chat_id_handler: Converting diesel::NotFound to AppError::NotFound explicitly");
-                    Err(AppError::NotFound(format!("Chat with id {uuid_id} not found")))
-                },
-                Err(e) => {
-                    tracing::error!("get_messages_by_chat_id_handler: Converting other diesel error to DatabaseQueryError: {}", e);
-                    Err(AppError::DatabaseQueryError(e.to_string()))
-                }
-            }
-        })
-        .await // Evaluates the BlockingTask, returning Result<OutputOfClosure, JoinError>
-        .map_err(|join_error| { // Handle potential JoinError from the .await
-            tracing::error!("Interact task failed while fetching chat {}: {}", uuid_id, join_error);
-            AppError::InternalServerErrorGeneric(format!("Error processing chat request for {uuid_id}: {join_error}"))
-        })? // Unwraps Result<_, JoinError> or returns AppError (if JoinError). Leaves Result<Chat, AppError>
-        ?; // Unwraps Result<Chat, AppError> or returns AppError (e.g. AppError::NotFound from closure)
+        .interact(move |conn| fetch_chat_with_ownership_check(conn, chat_id, user_id))
+        .await
+        .map_err(|e| AppError::DbInteractError(e.to_string()))?
+}
 
-    tracing::debug!(
-        "get_messages_by_chat_id_handler: chat fetched for id {} = {:?}",
-        uuid_id,
-        chat
-    );
+/// Database operation to fetch chat and check ownership
+fn fetch_chat_with_ownership_check(
+    conn: &mut PgConnection,
+    chat_id: Uuid,
+    user_id: Uuid,
+) -> Result<Chat, AppError> {
+    tracing::debug!("Fetching chat for id={}", chat_id);
+    
+    let chat = chat_sessions::table
+        .filter(chat_sessions::id.eq(chat_id))
+        .select(Chat::as_select())
+        .first::<Chat>(conn)
+        .map_err(|e| if e == diesel::result::Error::NotFound {
+            tracing::warn!("Chat with id {} not found", chat_id);
+            AppError::NotFound(format!("Chat session with id {chat_id} not found"))
+        } else {
+            tracing::error!("Database error fetching chat: {}", e);
+            AppError::DatabaseQueryError(e.to_string())
+        })?;
 
-    if chat.user_id != user.id && chat.visibility != Some("public".to_string()) {
-        tracing::warn!(
-            "get_messages_by_chat_id_handler: Access forbidden. chat.user_id={}, user.id={}, chat.visibility={:?}",
-            chat.user_id,
-            user.id,
-            chat.visibility
-        );
+    // Verify ownership
+    if chat.user_id != user_id {
+        tracing::warn!("User {} attempted to access chat {} owned by {}", user_id, chat_id, chat.user_id);
         return Err(AppError::Forbidden);
     }
 
-    tracing::debug!(
-        "get_messages_by_chat_id_handler: Authorization passed, fetching messages for chat {}",
-        uuid_id
-    );
+    tracing::debug!("Successfully verified chat ownership for user {}", user_id);
+    Ok(chat)
+}
 
-    let messages_db: Vec<Message> = pool.get().await // Fetching Vec<Message> which includes 'parts'
+/// Helper function to fetch messages for a chat session
+async fn fetch_chat_messages(pool: PgPool, chat_id: Uuid) -> Result<Vec<Message>, AppError> {
+    pool.get().await
         .map_err(|e| {
-            tracing::error!("get_messages_by_chat_id_handler: Failed to get connection from pool for messages query: {}", e);
+            tracing::error!("Failed to get connection from pool for messages query: {}", e);
             AppError::DbPoolError(e.to_string())
         })?
         .interact(move |conn| {
-            tracing::debug!("get_messages_by_chat_id_handler: Inside interact closure for messages, fetching for session_id = {}", uuid_id);
+            tracing::debug!("Fetching messages for session_id = {}", chat_id);
             let result = chat_messages::table
-                .filter(chat_messages::session_id.eq(uuid_id))
+                .filter(chat_messages::session_id.eq(chat_id))
                 .order_by(chat_messages::created_at.asc())
                 .select(Message::as_select())
                 .load::<Message>(conn);
+            
             match &result {
-                Ok(messages) => tracing::debug!("get_messages_by_chat_id_handler: Found {} messages for chat {}", messages.len(), uuid_id),
-                Err(e) => tracing::error!("get_messages_by_chat_id_handler: Error fetching messages: {}", e),
+                Ok(messages) => tracing::debug!("Found {} messages for chat {}", messages.len(), chat_id),
+                Err(e) => tracing::error!("Error fetching messages: {}", e),
             }
+            
             result.map_err(|e| AppError::DatabaseQueryError(e.to_string()))
         })
         .await
         .map_err(|e| {
-            tracing::error!("get_messages_by_chat_id_handler: Join error in messages query: {}", e);
+            tracing::error!("Join error in messages query: {}", e);
             AppError::InternalServerErrorGeneric(e.to_string())
         })?
-        ?;
+}
 
+/// Helper function to decrypt and transform messages for client response
+fn process_messages_for_response(
+    messages_db: Vec<Message>,
+    dek: &crate::auth::session_dek::SessionDek,
+) -> Result<Vec<MessageResponse>, AppError> {
     let mut responses = Vec::new();
+    
     for msg_db in messages_db {
         let decrypted_client_message = msg_db.clone().into_decrypted_for_client(Some(&dek.0))?;
-
-        // Now construct MessageResponse using fields from original msg_db and decrypted_client_message
+        
+        // Construct response parts and attachments from original msg_db
         let response_parts = msg_db
             .parts
             .unwrap_or_else(|| json!([{"text": decrypted_client_message.content}]));
         let response_attachments = msg_db.attachments.unwrap_or_else(|| json!([]));
+
         let response_role = msg_db
             .role
             .unwrap_or_else(|| decrypted_client_message.message_type.to_string());
@@ -615,6 +559,41 @@ pub async fn get_messages_by_chat_id_handler(
             created_at: decrypted_client_message.created_at,
         });
     }
+    
+    Ok(responses)
+}
+
+/// Retrieves all messages for a specific chat session.
+/// 
+/// # Errors
+/// 
+/// Returns an error if:
+/// - Authentication fails
+/// - Chat not found or access denied
+/// - Database operation fails
+/// - Decryption fails
+pub async fn get_messages_by_chat_id_handler(
+    auth_session: CurrentAuthSession,
+    State(state): State<AppState>,
+    dek: SessionDek, // ADDED SessionDek extractor
+    Path(id): Path<String>,
+) -> Result<impl IntoResponse, AppError> {
+    tracing::debug!("get_messages_by_chat_id_handler: id (as String) = {}", id);
+    
+    // Parse and validate input
+    let chat_id = parse_chat_id(&id)?;
+    let user = get_authenticated_user(auth_session)?;
+    
+    tracing::debug!("Parsed chat_id = {}, user_id = {}", chat_id, user.id);
+
+    // Fetch chat session and verify ownership
+    let _chat = fetch_and_verify_chat_ownership(state.pool.clone(), chat_id, user.id).await?;
+
+    // Fetch messages for the chat
+    let messages_db = fetch_chat_messages(state.pool.clone(), chat_id).await?;
+    
+    // Decrypt and transform messages for response
+    let responses = process_messages_for_response(messages_db, &dek)?;
 
     Ok(Json(responses))
 }

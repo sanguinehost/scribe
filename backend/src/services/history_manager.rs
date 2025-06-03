@@ -201,8 +201,7 @@ fn log_final_truncation_state(result: &[ChatMessage], limit: usize) {
 fn estimate_message_tokens(message: &ChatMessage) -> usize {
     // Convert Vec<u8> to String before calling chars()
     let content_str = String::from_utf8_lossy(&message.content).to_string();
-    let message_tokens = content_str.chars().count(); // Approximation
-    message_tokens
+    content_str.chars().count() // Approximation
 }
 
 #[cfg(test)]
