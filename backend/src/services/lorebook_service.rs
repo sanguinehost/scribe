@@ -1,5 +1,6 @@
 use crate::PgPool;
 use crate::{
+    AppState,
     auth::user_store::Backend as AuthBackend,
     errors::AppError,
     models::{
@@ -18,7 +19,6 @@ use crate::{
     },
     schema::{lorebook_entries, lorebooks},
     services::{EncryptionService, embedding_pipeline::LorebookEntryParams},
-    state::AppState,
 };
 use axum_login::AuthSession;
 use chrono::Utc;
@@ -846,6 +846,201 @@ AppError::InternalServerErrorGeneric(format!(
                 is_enabled: entry.is_enabled,
                 is_constant: entry.is_constant,
                 insertion_order: entry.insertion_order,
+                updated_at: entry.updated_at,
+            });
+        }
+
+        Ok(entry_responses)
+    }
+
+    /// Lists all lorebook entries with full content (decrypted) for the given lorebook.
+    /// This is the method that should be used by the frontend to get complete entry data.
+    #[instrument(skip(self, auth_session, user_dek), fields(user_id = ?auth_session.user.as_ref().map(|u| u.id), lorebook_id = %lorebook_id))]
+    pub async fn list_lorebook_entries_with_content(
+        &self,
+        auth_session: &AuthSession<AuthBackend>,
+        lorebook_id: Uuid,
+        user_dek: Option<&SecretBox<Vec<u8>>>,
+    ) -> Result<Vec<LorebookEntryResponse>, AppError> {
+        debug!("Attempting to list lorebook entries with content");
+        let user = Self::get_user_from_session(auth_session)?;
+
+        let conn = self.pool.get().await.map_err(|e| {
+            AppError::InternalServerErrorGeneric(format!("Failed to get DB connection: {e}"))
+        })?;
+
+        // 1. Verify lorebook ownership
+        let lorebook_id_clone = lorebook_id;
+        let user_id_clone = user.id;
+        let _lorebook = conn
+            .interact(move |conn_sync| {
+                lorebooks::table
+                    .filter(lorebooks::id.eq(lorebook_id_clone))
+                    .filter(lorebooks::user_id.eq(user_id_clone))
+                    .select(Lorebook::as_select())
+                    .first::<Lorebook>(conn_sync)
+                    .optional()
+            })
+            .await
+            .map_err(|e| {
+                error!("Interaction error while fetching lorebook: {:?}", e);
+                AppError::InternalServerErrorGeneric(format!(
+                    "Database interaction failed while fetching lorebook: {e}"
+                ))
+            })?
+            .map_err(|e| {
+                error!("Failed to query lorebook: {:?}", e);
+                AppError::DatabaseQueryError(format!("Failed to query lorebook: {e}"))
+            })?
+            .ok_or_else(|| {
+                error!(
+                    "Lorebook with ID {} not found or user {} does not have access.",
+                    lorebook_id, user.id
+                );
+                AppError::NotFound(format!(
+                    "Lorebook with ID {lorebook_id} not found or access denied."
+                ))
+            })?;
+
+        // 2. Fetch all entries for the lorebook
+        let lorebook_id_for_entries = lorebook_id;
+        let entries = conn
+            .interact(move |conn_sync| {
+                lorebook_entries::table
+                    .filter(lorebook_entries::lorebook_id.eq(lorebook_id_for_entries))
+                    .order((
+                        lorebook_entries::insertion_order.asc(),
+                        lorebook_entries::created_at.asc(),
+                    ))
+                    .select(LorebookEntry::as_select())
+                    .load::<LorebookEntry>(conn_sync)
+            })
+            .await
+            .map_err(|e| {
+                error!("Interaction error while fetching lorebook entries: {:?}", e);
+                AppError::InternalServerErrorGeneric(format!(
+                    "Database interaction failed while fetching entries: {e}"
+                ))
+            })?
+            .map_err(|e| {
+                error!("Failed to query lorebook entries: {:?}", e);
+                AppError::DatabaseQueryError(format!("Failed to query lorebook entries: {e}"))
+            })?;
+
+        // 3. Decrypt all fields for each entry
+        let user_dek_secret_box = user_dek.ok_or_else(|| {
+            error!(
+                "User DEK not available for lorebook entry list decryption for user {}",
+                user.id
+            );
+            AppError::EncryptionError(
+                "User DEK not available for lorebook entry decryption.".to_string(),
+            )
+        })?;
+        let user_dek_bytes = user_dek_secret_box.expose_secret();
+
+        let mut entry_responses = Vec::new();
+        for entry in entries {
+            // Decrypt entry title
+            let decrypted_title_bytes = self
+                .encryption_service
+                .decrypt(
+                    &entry.entry_title_ciphertext,
+                    &entry.entry_title_nonce,
+                    user_dek_bytes,
+                )
+                .map_err(|e| {
+                    error!(
+                        "Failed to decrypt entry title for entry {}: {:?}",
+                        entry.id, e
+                    );
+                    AppError::DecryptionError(format!(
+                        "Failed to decrypt entry title for entry {}",
+                        entry.id
+                    ))
+                })?;
+            let decrypted_title = String::from_utf8_lossy(&decrypted_title_bytes).into_owned();
+
+            // Decrypt keys_text
+            let keys_text = if entry.keys_text_ciphertext.is_empty() {
+                None
+            } else {
+                let decrypted_keys_bytes = self
+                    .encryption_service
+                    .decrypt(
+                        &entry.keys_text_ciphertext,
+                        &entry.keys_text_nonce,
+                        user_dek_bytes,
+                    )
+                    .map_err(|e| {
+                        error!("Failed to decrypt keys_text for entry {}: {:?}", entry.id, e);
+                        AppError::DecryptionError(format!(
+                            "Failed to decrypt keys text for entry {}",
+                            entry.id
+                        ))
+                    })?;
+                let decrypted_keys = String::from_utf8_lossy(&decrypted_keys_bytes).into_owned();
+                if decrypted_keys.is_empty() {
+                    None
+                } else {
+                    Some(decrypted_keys)
+                }
+            };
+
+            // Decrypt content
+            let decrypted_content_bytes = self
+                .encryption_service
+                .decrypt(
+                    &entry.content_ciphertext,
+                    &entry.content_nonce,
+                    user_dek_bytes,
+                )
+                .map_err(|e| {
+                    error!("Failed to decrypt content for entry {}: {:?}", entry.id, e);
+                    AppError::DecryptionError(format!(
+                        "Failed to decrypt content for entry {}",
+                        entry.id
+                    ))
+                })?;
+            let decrypted_content = String::from_utf8_lossy(&decrypted_content_bytes).into_owned();
+
+            // Decrypt comment if present
+            let comment = match (&entry.comment_ciphertext, &entry.comment_nonce) {
+                (Some(cipher), Some(nonce)) => {
+                    let decrypted_comment_bytes = self
+                        .encryption_service
+                        .decrypt(cipher, nonce, user_dek_bytes)
+                        .map_err(|e| {
+                            error!("Failed to decrypt comment for entry {}: {:?}", entry.id, e);
+                            AppError::DecryptionError(format!(
+                                "Failed to decrypt comment for entry {}",
+                                entry.id
+                            ))
+                        })?;
+                    let decrypted_comment =
+                        String::from_utf8_lossy(&decrypted_comment_bytes).into_owned();
+                    if decrypted_comment.is_empty() {
+                        None
+                    } else {
+                        Some(decrypted_comment)
+                    }
+                }
+                _ => None,
+            };
+
+            entry_responses.push(LorebookEntryResponse {
+                id: entry.id,
+                lorebook_id: entry.lorebook_id,
+                user_id: entry.user_id,
+                entry_title: decrypted_title,
+                keys_text,
+                content: decrypted_content,
+                comment,
+                is_enabled: entry.is_enabled,
+                is_constant: entry.is_constant,
+                insertion_order: entry.insertion_order,
+                placement_hint: entry.placement_hint.unwrap_or_else(|| "after_prompt".to_string()),
+                created_at: entry.created_at,
                 updated_at: entry.updated_at,
             });
         }
@@ -1985,6 +2180,356 @@ AppError::InternalServerErrorGeneric(format!(
         }
 
         Ok(response_data)
+    }
+
+    /// Exports a lorebook in SillyTavern format
+    ///
+    /// # Errors
+    ///
+    /// Returns `AppError::Unauthorized` if the user is not authenticated,
+    /// `AppError::NotFound` if the lorebook doesn't exist or user doesn't have access,
+    /// `AppError::InternalServerErrorGeneric` if database connection fails or database interaction errors occur.
+    #[instrument(skip(self, auth_session, user_dek), fields(user_id = ?auth_session.user.as_ref().map(|u| u.id), lorebook_id = %lorebook_id))]
+    pub async fn export_lorebook(
+        &self,
+        auth_session: &AuthSession<AuthBackend>,
+        user_dek: Option<&SecretBox<Vec<u8>>>,
+        lorebook_id: Uuid,
+    ) -> Result<crate::models::lorebook_dtos::ExportedLorebook, AppError> {
+        let _user = Self::get_user_from_session(auth_session)?;
+        
+        // Fetch all entry summaries for this lorebook
+        let entry_summaries = self.list_lorebook_entries(auth_session, lorebook_id, user_dek).await?;
+        
+        // Convert to SillyTavern format
+        use std::collections::HashMap;
+        let mut exported_entries = HashMap::new();
+        
+        // Fetch full details for each entry
+        for (index, summary) in entry_summaries.into_iter().enumerate() {
+            // Get full entry details
+            match self.get_lorebook_entry(auth_session, lorebook_id, summary.id, user_dek).await {
+                Ok(full_entry) => {
+                    let keywords: Vec<String> = full_entry.keys_text
+                        .unwrap_or_default()
+                        .split(',')
+                        .map(|s| s.trim().to_string())
+                        .filter(|s| !s.is_empty())
+                        .collect();
+                        
+                    let exported_entry = crate::models::lorebook_dtos::ExportedLorebookEntry {
+                        key: keywords,
+                        content: full_entry.content,
+                        comment: full_entry.comment.unwrap_or_default(),
+                        disable: !full_entry.is_enabled,  // Invert the logic
+                        constant: full_entry.is_constant,
+                        order: full_entry.insertion_order,
+                        position: if full_entry.placement_hint == "before_prompt" { 0 } else { 1 },
+                    };
+                    
+                    exported_entries.insert(index.to_string(), exported_entry);
+                }
+                Err(e) => {
+                    error!("Failed to fetch entry details for {}: {:?}", summary.id, e);
+                }
+            }
+        }
+        
+        Ok(crate::models::lorebook_dtos::ExportedLorebook {
+            entries: exported_entries,
+        })
+    }
+
+    /// Imports a lorebook from SillyTavern format
+    ///
+    /// # Errors
+    ///
+    /// Returns `AppError::Unauthorized` if the user is not authenticated,
+    /// `AppError::ValidationError` if the payload is invalid,
+    /// `AppError::InternalServerErrorGeneric` if database connection fails or database interaction errors occur.
+    #[instrument(skip(self, auth_session, user_dek, payload), fields(user_id = ?auth_session.user.as_ref().map(|u| u.id)))]
+    pub async fn import_lorebook(
+        &self,
+        auth_session: &AuthSession<AuthBackend>,
+        user_dek: Option<&SecretBox<Vec<u8>>>,
+        payload: crate::models::lorebook_dtos::LorebookUploadPayload,
+    ) -> Result<LorebookResponse, AppError> {
+        let user = Self::get_user_from_session(auth_session)?;
+        
+        // Create the lorebook
+        let create_payload = CreateLorebookPayload {
+            name: payload.name,
+            description: payload.description,
+        };
+        
+        let lorebook = self.create_lorebook(auth_session, create_payload).await?;
+        
+        // Import all entries
+        for (uid, entry) in payload.entries {
+            let keys_text = if entry.key.is_empty() {
+                None
+            } else {
+                Some(entry.key.join(", "))
+            };
+            
+            let placement_hint = match entry.position {
+                Some(0) => "before_prompt".to_string(),
+                Some(1) => "after_prompt".to_string(),
+                _ => "after_prompt".to_string(),
+            };
+            
+            let entry_payload = CreateLorebookEntryPayload {
+                entry_title: entry.comment.clone().unwrap_or_else(|| format!("Entry {}", uid)),
+                keys_text,
+                content: entry.content.clone(),
+                comment: entry.comment.clone(),
+                is_enabled: Some(!entry.disable.unwrap_or(false)), // Invert the logic
+                is_constant: entry.constant,
+                insertion_order: entry.order,
+                placement_hint: Some(placement_hint),
+            };
+            
+            tracing::info!("Creating lorebook entry {}: title='{}', content_len={}, keys={:?}", 
+                uid, entry_payload.entry_title, entry_payload.content.len(), entry_payload.keys_text);
+            
+            // Create the entry directly without embedding generation
+            let new_entry_id = Uuid::new_v4();
+            let current_time = Utc::now();
+            
+            // Encrypt the fields if DEK is provided
+            let (entry_title_ciphertext, entry_title_nonce) = if let Some(dek) = user_dek {
+                match self.encryption_service.encrypt(&entry_payload.entry_title, dek.expose_secret()) {
+                    Ok((ciphertext, nonce)) => (ciphertext, nonce),
+                    Err(e) => {
+                        error!("Failed to encrypt entry title: {}", e);
+                        continue;
+                    }
+                }
+            } else {
+                return Err(AppError::EncryptionError("User DEK not provided".to_string()));
+            };
+            
+            let (keys_text_ciphertext, keys_text_nonce) = if let Some(keys) = &entry_payload.keys_text {
+                match self.encryption_service.encrypt(keys, user_dek.unwrap().expose_secret()) {
+                    Ok((ciphertext, nonce)) => (ciphertext, nonce),
+                    Err(e) => {
+                        error!("Failed to encrypt keys text: {}", e);
+                        continue;
+                    }
+                }
+            } else {
+                (vec![], vec![])
+            };
+            
+            let (content_ciphertext, content_nonce) = match self.encryption_service.encrypt(&entry_payload.content, user_dek.unwrap().expose_secret()) {
+                Ok((ciphertext, nonce)) => (ciphertext, nonce),
+                Err(e) => {
+                    error!("Failed to encrypt content: {}", e);
+                    continue;
+                }
+            };
+            
+            let (comment_ciphertext, comment_nonce) = if let Some(comment) = &entry_payload.comment {
+                match self.encryption_service.encrypt(comment, user_dek.unwrap().expose_secret()) {
+                    Ok((ciphertext, nonce)) => (Some(ciphertext), Some(nonce)),
+                    Err(e) => {
+                        error!("Failed to encrypt comment: {}", e);
+                        continue;
+                    }
+                }
+            } else {
+                (None, None)
+            };
+            
+            let new_entry_db = NewLorebookEntry {
+                id: new_entry_id,
+                lorebook_id: lorebook.id,
+                user_id: user.id,
+                entry_title_ciphertext,
+                entry_title_nonce,
+                keys_text_ciphertext,
+                keys_text_nonce,
+                content_ciphertext,
+                content_nonce,
+                comment_ciphertext,
+                comment_nonce,
+                is_enabled: entry_payload.is_enabled.unwrap_or(true),
+                is_constant: entry_payload.is_constant.unwrap_or(false),
+                insertion_order: entry_payload.insertion_order.unwrap_or(100),
+                name: None,
+                placement_hint: entry_payload.placement_hint,
+                original_sillytavern_uid: entry.uid,
+                sillytavern_metadata_ciphertext: None,
+                sillytavern_metadata_nonce: None,
+                created_at: Some(current_time),
+                updated_at: Some(current_time),
+            };
+            
+            let conn = self.pool.get().await.map_err(|e| {
+                AppError::InternalServerErrorGeneric(format!("Failed to get DB connection: {e}"))
+            })?;
+            
+            match conn.interact(move |conn_sync| {
+                diesel::insert_into(lorebook_entries::table)
+                    .values(&new_entry_db)
+                    .execute(conn_sync)
+            }).await {
+                Ok(_) => {},
+                Err(e) => {
+                    error!("Failed to import entry {}: {:?}", uid, e);
+                    // Continue importing other entries
+                }
+            }
+        }
+        
+        Ok(lorebook)
+    }
+
+    /// Associates a lorebook with a character
+    ///
+    /// # Errors
+    ///
+    /// Returns `AppError::Unauthorized` if the user is not authenticated,
+    /// `AppError::NotFound` if the character or lorebook doesn't exist,
+    /// `AppError::InternalServerErrorGeneric` if database connection fails or database interaction errors occur.
+    #[instrument(skip(self, auth_session), fields(user_id = ?auth_session.user.as_ref().map(|u| u.id)))]
+    pub async fn associate_lorebook_to_character(
+        &self,
+        auth_session: &AuthSession<AuthBackend>,
+        character_id: Uuid,
+        lorebook_id: Uuid,
+    ) -> Result<(), AppError> {
+        let user = Self::get_user_from_session(auth_session)?;
+        
+        // Verify both character and lorebook belong to the user
+        let conn = self.pool.get().await.map_err(|e| {
+            AppError::InternalServerErrorGeneric(format!("Failed to get DB connection: {e}"))
+        })?;
+
+        // Check character ownership
+        use crate::schema::characters;
+        let character_exists = conn
+            .interact(move |conn_sync| {
+                characters::table
+                    .filter(characters::id.eq(character_id))
+                    .filter(characters::user_id.eq(user.id))
+                    .count()
+                    .get_result::<i64>(conn_sync)
+                    .map(|count| count > 0)
+            })
+            .await
+            .map_err(|e| {
+                AppError::DbInteractError(format!("DB interaction failed: {e}"))
+            })?
+            .map_err(|e| {
+                AppError::DatabaseQueryError(e.to_string())
+            })?;
+
+        if !character_exists {
+            return Err(AppError::NotFound("Character not found or access denied".to_string()));
+        }
+
+        // Check lorebook ownership
+        let lorebook_exists = conn
+            .interact({
+                let user_id = user.id;
+                move |conn_sync| {
+                    lorebooks::table
+                        .filter(lorebooks::id.eq(lorebook_id))
+                        .filter(lorebooks::user_id.eq(user_id))
+                        .count()
+                        .get_result::<i64>(conn_sync)
+                        .map(|count| count > 0)
+                }
+            })
+            .await
+            .map_err(|e| {
+                AppError::DbInteractError(format!("DB interaction failed: {e}"))
+            })?
+            .map_err(|e| {
+                AppError::DatabaseQueryError(e.to_string())
+            })?;
+
+        if !lorebook_exists {
+            return Err(AppError::NotFound("Lorebook not found or access denied".to_string()));
+        }
+
+        // Create association
+        use crate::schema::character_lorebooks;
+        use crate::models::NewCharacterLorebook;
+        
+        let new_association = NewCharacterLorebook {
+            character_id,
+            lorebook_id,
+            user_id: user.id,
+            created_at: Some(Utc::now()),
+            updated_at: Some(Utc::now()),
+        };
+
+        conn.interact(move |conn_sync| {
+            diesel::insert_into(character_lorebooks::table)
+                .values(&new_association)
+                .execute(conn_sync)
+        })
+        .await
+        .map_err(|e| {
+            AppError::DbInteractError(format!("DB interaction failed: {e}"))
+        })?
+        .map_err(|e| {
+            AppError::DatabaseQueryError(e.to_string())
+        })?;
+
+        Ok(())
+    }
+
+    /// Lists all lorebooks associated with a character
+    ///
+    /// # Errors
+    ///
+    /// Returns `AppError::Unauthorized` if the user is not authenticated,
+    /// `AppError::NotFound` if the character doesn't exist,
+    /// `AppError::InternalServerErrorGeneric` if database connection fails or database interaction errors occur.
+    #[instrument(skip(self, auth_session), fields(user_id = ?auth_session.user.as_ref().map(|u| u.id)))]
+    pub async fn list_character_lorebooks(
+        &self,
+        auth_session: &AuthSession<AuthBackend>,
+        character_id: Uuid,
+    ) -> Result<Vec<LorebookResponse>, AppError> {
+        let user = Self::get_user_from_session(auth_session)?;
+        
+        let conn = self.pool.get().await.map_err(|e| {
+            AppError::InternalServerErrorGeneric(format!("Failed to get DB connection: {e}"))
+        })?;
+
+        let lorebooks = conn
+            .interact(move |conn_sync| {
+                use crate::schema::character_lorebooks;
+                
+                character_lorebooks::table
+                    .inner_join(lorebooks::table.on(lorebooks::id.eq(character_lorebooks::lorebook_id)))
+                    .filter(character_lorebooks::character_id.eq(character_id))
+                    .filter(character_lorebooks::user_id.eq(user.id))
+                    .select(Lorebook::as_select())
+                    .load::<Lorebook>(conn_sync)
+            })
+            .await
+            .map_err(|e| {
+                AppError::DbInteractError(format!("DB interaction failed: {e}"))
+            })?
+            .map_err(|e| {
+                AppError::DatabaseQueryError(e.to_string())
+            })?;
+
+        Ok(lorebooks.into_iter().map(|lb| LorebookResponse {
+            id: lb.id,
+            user_id: lb.user_id,
+            name: lb.name,
+            description: lb.description,
+            source_format: lb.source_format,
+            is_public: lb.is_public,
+            created_at: lb.created_at,
+            updated_at: lb.updated_at,
+        }).collect())
     }
 
     // Helper to get user or return error

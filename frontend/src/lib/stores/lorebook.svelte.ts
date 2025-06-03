@@ -179,6 +179,45 @@ function createLorebookStore() {
 
 		clearError() {
 			state.error = null;
+		},
+
+		async exportLorebook(lorebookId: string): Promise<any | null> {
+			state.isLoading = true;
+			state.error = null;
+			const result = await apiClient.exportLorebook(lorebookId);
+			if (result.isOk()) {
+				state.isLoading = false;
+				return result.value;
+			} else {
+				state.error = result.error.message;
+				state.isLoading = false;
+				return null;
+			}
+		},
+
+		async importLorebook(data: any): Promise<Lorebook | null> {
+			state.isLoading = true;
+			state.error = null;
+			
+			// Convert the SillyTavern format to our upload payload
+			const payload = {
+				name: data.name || 'Imported Lorebook',
+				description: data.description || null,
+				is_public: false,
+				entries: data.entries || {}
+			};
+			
+			const result = await apiClient.importLorebook(payload);
+			if (result.isOk()) {
+				const newLorebook = result.value;
+				state.lorebooks.push(newLorebook);
+				state.isLoading = false;
+				return newLorebook;
+			} else {
+				state.error = result.error.message;
+				state.isLoading = false;
+				return null;
+			}
 		}
 	};
 }

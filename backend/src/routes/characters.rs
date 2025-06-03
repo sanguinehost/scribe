@@ -23,7 +23,7 @@ use axum::{
 };
 use diesel::{BoolExpressionMethods, OptionalExtension, QueryDsl, ExpressionMethods, RunQueryDsl, SelectableHelper, result::Error as DieselError}; // Needed for .filter(), .load(), .first(), etc.
 use std::sync::Arc;
-use tracing::{error, info, instrument, trace}; // Use needed tracing macros
+use tracing::{error, info, instrument, trace, warn}; // Use needed tracing macros
 use uuid::Uuid;
 // use anyhow::anyhow; // Unused import
 use crate::auth::user_store::Backend as AuthBackend; // <-- Import the backend type
@@ -84,6 +84,7 @@ pub async fn upload_character_handler(
     // Get the user from the session
     let user = auth_session
         .user
+        .as_ref()
         .ok_or_else(|| AppError::Unauthorized("Authentication required".to_string()))?;
     let local_user_id = user.id;
 
@@ -248,6 +249,66 @@ pub async fn upload_character_handler(
         .map_err(|e| AppError::InternalServerErrorGeneric(format!("Fetch DB error: {e}")))?;
 
     info!(character_id = %inserted_character.id, "Character uploaded and saved (full data fetched)");
+
+    // Check if the parsed card has an embedded lorebook
+    let character_book = match &parsed_card {
+        crate::services::character_parser::ParsedCharacterCard::V3(card) => &card.data.character_book,
+        crate::services::character_parser::ParsedCharacterCard::V2Fallback(data) => &data.character_book,
+    };
+    
+    if let Some(lorebook_data) = character_book {
+        // Import the lorebook
+        let lorebook_service = crate::services::LorebookService::new(
+            state.pool.clone(), 
+            state.encryption_service.clone()
+        );
+
+        // Convert SillyTavern lorebook format to our upload payload
+        use std::collections::HashMap;
+        let mut entries_map = HashMap::new();
+        
+        // Assuming lorebook_data has entries as a field
+        if let Ok(lorebook_json) = serde_json::to_value(lorebook_data) {
+            if let Some(entries) = lorebook_json.get("entries").and_then(|e| e.as_object()) {
+                for (uid, entry_value) in entries {
+                    match serde_json::from_value::<crate::models::lorebook_dtos::UploadedLorebookEntry>(entry_value.clone()) {
+                        Ok(entry) => {
+                            tracing::info!("Successfully parsed entry {}: keys={:?}, content length={}, comment={:?}", 
+                                uid, entry.key, entry.content.len(), entry.comment);
+                            entries_map.insert(uid.clone(), entry);
+                        }
+                        Err(e) => {
+                            tracing::warn!("Failed to parse entry {}: {}. Raw value: {}", uid, e, entry_value);
+                        }
+                    }
+                }
+            }
+        }
+
+        let lorebook_payload = crate::models::lorebook_dtos::LorebookUploadPayload {
+            name: format!("{} Lorebook", inserted_character.name),
+            description: Some(format!("Lorebook for {}", inserted_character.name)),
+            is_public: false,
+            entries: entries_map,
+        };
+
+        // Import the lorebook
+        match lorebook_service.import_lorebook(&auth_session, Some(&dek.0), lorebook_payload).await {
+            Ok(lorebook) => {
+                // Associate the lorebook with the character
+                if let Err(e) = lorebook_service.associate_lorebook_to_character(
+                    &auth_session,
+                    inserted_character.id,
+                    lorebook.id
+                ).await {
+                    warn!("Failed to associate lorebook with character: {}", e);
+                }
+            }
+            Err(e) => {
+                warn!("Failed to import embedded lorebook: {}", e);
+            }
+        }
+    }
 
     let client_character_data = inserted_character
         .into_decrypted_for_client(Some(&dek.0))?;

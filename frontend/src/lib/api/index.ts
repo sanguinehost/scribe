@@ -571,41 +571,16 @@ class ApiClient {
 		});
 	}
 
-	// Import/Export methods (for future implementation)
-	async uploadLorebook(data: LorebookUploadPayload): Promise<Result<{ lorebook: Lorebook; entries: LorebookEntry[] }, ApiError>> {
-		return this.fetch<{ lorebook: Lorebook; entries: LorebookEntry[] }>('/api/lorebooks/upload', {
+	// Import/Export methods
+	async importLorebook(data: LorebookUploadPayload): Promise<Result<Lorebook, ApiError>> {
+		return this.fetch<Lorebook>('/api/lorebooks/import', {
 			method: 'POST',
 			body: JSON.stringify(data)
 		});
 	}
 
-	async exportLorebook(lorebookId: string): Promise<Result<Blob, ApiError>> {
-		const result = await this.fetch<Blob>(`/api/lorebooks/${lorebookId}/export`, {
-			method: 'GET',
-			headers: {
-				'Accept': 'application/json'
-			}
-		});
-
-		if (result.isErr()) {
-			return result;
-		}
-
-		// Convert response to blob for download
-		try {
-			const response = await globalThis.fetch(`${this.baseUrl}/api/lorebooks/${lorebookId}/export`, {
-				credentials: 'include'
-			});
-			
-			if (!response.ok) {
-				return err(new ApiResponseError(response.status, 'Failed to export lorebook'));
-			}
-
-			const blob = await response.blob();
-			return ok(blob);
-		} catch (error) {
-			return err(new ApiNetworkError('Network error during export', error as Error));
-		}
+	async exportLorebook(lorebookId: string): Promise<Result<any, ApiError>> {
+		return this.fetch<any>(`/api/lorebooks/${lorebookId}/export`);
 	}
 }
 

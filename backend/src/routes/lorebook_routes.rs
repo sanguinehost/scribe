@@ -27,6 +27,7 @@ pub fn lorebook_routes() -> Router<AppState> {
     Router::new()
         .route("/lorebooks", post(create_lorebook_handler))
         .route("/lorebooks", get(list_lorebooks_handler))
+        .route("/lorebooks/import", post(import_lorebook_handler))
         .route("/lorebooks/:lorebook_id", get(get_lorebook_handler))
         .route("/lorebooks/:lorebook_id", put(update_lorebook_handler))
         .route("/lorebooks/:lorebook_id", delete(delete_lorebook_handler))
@@ -65,6 +66,10 @@ pub fn lorebook_routes() -> Router<AppState> {
         .route(
             "/lorebooks/:lorebook_id/fetch/associated_chats", // Made path more distinct
             get(list_associated_chat_sessions_for_lorebook_handler),
+        )
+        .route(
+            "/lorebooks/:lorebook_id/export",
+            get(export_lorebook_handler),
         )
 }
 
@@ -180,7 +185,7 @@ async fn list_lorebook_entries_handler(
     let lorebook_service =
         LorebookService::new(state.pool.clone(), state.encryption_service.clone());
     let entries = lorebook_service
-        .list_lorebook_entries(&auth_session, lorebook_id, Some(&dek.0))
+        .list_lorebook_entries_with_content(&auth_session, lorebook_id, Some(&dek.0))
         .await?;
     Ok((StatusCode::OK, Json(entries)))
 }
@@ -310,5 +315,38 @@ async fn list_associated_chat_sessions_for_lorebook_handler(
         .list_associated_chat_sessions_for_lorebook(&auth_session, lorebook_id, Some(&dek.0))
         .await?;
     Ok((StatusCode::OK, Json(chat_sessions)))
+}
+
+#[debug_handler]
+#[instrument(skip(state, auth_session, dek))]
+async fn export_lorebook_handler(
+    State(state): State<AppState>,
+    auth_session: AuthSession<AuthBackend>,
+    dek: SessionDek,
+    Path(lorebook_id): Path<Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    let lorebook_service =
+        LorebookService::new(state.pool.clone(), state.encryption_service.clone());
+    let exported = lorebook_service
+        .export_lorebook(&auth_session, Some(&dek.0), lorebook_id)
+        .await?;
+    Ok((StatusCode::OK, Json(exported)))
+}
+
+#[debug_handler]
+#[instrument(skip(state, auth_session, dek, payload))]
+async fn import_lorebook_handler(
+    State(state): State<AppState>,
+    auth_session: AuthSession<AuthBackend>,
+    dek: SessionDek,
+    Json(payload): Json<crate::models::lorebook_dtos::LorebookUploadPayload>,
+) -> Result<impl IntoResponse, AppError> {
+    payload.validate()?;
+    let lorebook_service =
+        LorebookService::new(state.pool.clone(), state.encryption_service.clone());
+    let lorebook = lorebook_service
+        .import_lorebook(&auth_session, Some(&dek.0), payload)
+        .await?;
+    Ok((StatusCode::CREATED, Json(lorebook)))
 }
 
