@@ -1,7 +1,7 @@
 import { Result, err, ok } from 'neverthrow';
 import type { ApiError } from '$lib/errors/api';
 import { ApiResponseError, ApiNetworkError } from '$lib/errors/api';
-import type { User, Message, Vote, Suggestion, Session, AuthUser, ScribeChatSession, LoginSuccessData, VisibilityType } from '$lib/types'; // Added LoginSuccessData, VisibilityType
+import type { User, Message, Vote, Suggestion, Session, AuthUser, ScribeChatSession, LoginSuccessData, VisibilityType, Lorebook, LorebookEntry, CreateLorebookPayload, UpdateLorebookPayload, CreateLorebookEntryPayload, UpdateLorebookEntryPayload, LorebookUploadPayload, ChatSessionLorebookAssociation } from '$lib/types'; // Added LoginSuccessData, VisibilityType, Lorebook types
 
 // Placeholder for Character type - Define based on expected fields from GET /api/characters/{id}
 // Assuming these fields based on the task description and common patterns
@@ -493,6 +493,119 @@ class ApiClient {
 		return this.fetch<void>(`/api/user-settings/set_default_persona/${personaId}`, {
 			method: 'PUT'
 		});
+	}
+
+	// Lorebook methods
+	async getLorebooks(): Promise<Result<Lorebook[], ApiError>> {
+		return this.fetch<Lorebook[]>('/api/lorebooks');
+	}
+
+	async getLorebook(id: string): Promise<Result<Lorebook, ApiError>> {
+		return this.fetch<Lorebook>(`/api/lorebooks/${id}`);
+	}
+
+	async createLorebook(data: CreateLorebookPayload): Promise<Result<Lorebook, ApiError>> {
+		return this.fetch<Lorebook>('/api/lorebooks', {
+			method: 'POST',
+			body: JSON.stringify(data)
+		});
+	}
+
+	async updateLorebook(id: string, data: UpdateLorebookPayload): Promise<Result<Lorebook, ApiError>> {
+		return this.fetch<Lorebook>(`/api/lorebooks/${id}`, {
+			method: 'PUT',
+			body: JSON.stringify(data)
+		});
+	}
+
+	async deleteLorebook(id: string): Promise<Result<void, ApiError>> {
+		return this.fetch<void>(`/api/lorebooks/${id}`, {
+			method: 'DELETE'
+		});
+	}
+
+	// Lorebook Entry methods
+	async getLorebookEntries(lorebookId: string): Promise<Result<LorebookEntry[], ApiError>> {
+		return this.fetch<LorebookEntry[]>(`/api/lorebooks/${lorebookId}/entries`);
+	}
+
+	async getLorebookEntry(lorebookId: string, entryId: string): Promise<Result<LorebookEntry, ApiError>> {
+		return this.fetch<LorebookEntry>(`/api/lorebooks/${lorebookId}/entries/${entryId}`);
+	}
+
+	async createLorebookEntry(lorebookId: string, data: CreateLorebookEntryPayload): Promise<Result<LorebookEntry, ApiError>> {
+		return this.fetch<LorebookEntry>(`/api/lorebooks/${lorebookId}/entries`, {
+			method: 'POST',
+			body: JSON.stringify(data)
+		});
+	}
+
+	async updateLorebookEntry(lorebookId: string, entryId: string, data: UpdateLorebookEntryPayload): Promise<Result<LorebookEntry, ApiError>> {
+		return this.fetch<LorebookEntry>(`/api/lorebooks/${lorebookId}/entries/${entryId}`, {
+			method: 'PUT',
+			body: JSON.stringify(data)
+		});
+	}
+
+	async deleteLorebookEntry(lorebookId: string, entryId: string): Promise<Result<void, ApiError>> {
+		return this.fetch<void>(`/api/lorebooks/${lorebookId}/entries/${entryId}`, {
+			method: 'DELETE'
+		});
+	}
+
+	// Chat-Lorebook association methods
+	async associateLorebookToChat(chatId: string, lorebookId: string): Promise<Result<ChatSessionLorebookAssociation, ApiError>> {
+		return this.fetch<ChatSessionLorebookAssociation>(`/api/chats/${chatId}/lorebooks`, {
+			method: 'POST',
+			body: JSON.stringify({ lorebook_id: lorebookId })
+		});
+	}
+
+	async getChatLorebookAssociations(chatId: string): Promise<Result<ChatSessionLorebookAssociation[], ApiError>> {
+		return this.fetch<ChatSessionLorebookAssociation[]>(`/api/chats/${chatId}/lorebooks`);
+	}
+
+	async disassociateLorebookFromChat(chatId: string, lorebookId: string): Promise<Result<void, ApiError>> {
+		return this.fetch<void>(`/api/chats/${chatId}/lorebooks/${lorebookId}`, {
+			method: 'DELETE'
+		});
+	}
+
+	// Import/Export methods (for future implementation)
+	async uploadLorebook(data: LorebookUploadPayload): Promise<Result<{ lorebook: Lorebook; entries: LorebookEntry[] }, ApiError>> {
+		return this.fetch<{ lorebook: Lorebook; entries: LorebookEntry[] }>('/api/lorebooks/upload', {
+			method: 'POST',
+			body: JSON.stringify(data)
+		});
+	}
+
+	async exportLorebook(lorebookId: string): Promise<Result<Blob, ApiError>> {
+		const result = await this.fetch<Blob>(`/api/lorebooks/${lorebookId}/export`, {
+			method: 'GET',
+			headers: {
+				'Accept': 'application/json'
+			}
+		});
+
+		if (result.isErr()) {
+			return result;
+		}
+
+		// Convert response to blob for download
+		try {
+			const response = await globalThis.fetch(`${this.baseUrl}/api/lorebooks/${lorebookId}/export`, {
+				credentials: 'include'
+			});
+			
+			if (!response.ok) {
+				return err(new ApiResponseError(response.status, 'Failed to export lorebook'));
+			}
+
+			const blob = await response.blob();
+			return ok(blob);
+		} catch (error) {
+			return err(new ApiNetworkError('Network error during export', error as Error));
+		}
 	}
 }
 

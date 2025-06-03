@@ -2,7 +2,6 @@
 	import { browser } from '$app/environment';
 	import { cn } from '$lib/utils/shadcn.js';
 	import type { HTMLAttributes } from 'svelte/elements';
-	import { Tooltip as TooltipPrimitive } from 'bits-ui';
 	import {
 		SIDEBAR_COOKIE_MAX_AGE,
 		SIDEBAR_COOKIE_NAME,
@@ -39,16 +38,14 @@
 
 <svelte:window onkeydown={sidebar.handleShortcutKeydown} />
 
-<TooltipPrimitive.Provider>
-	<div
-		style="--sidebar-width: {SIDEBAR_WIDTH}; --sidebar-width-icon: {SIDEBAR_WIDTH_ICON}; {style}"
-		class={cn(
-			'group/sidebar-wrapper flex min-h-svh w-full has-[[data-variant=inset]]:bg-sidebar',
-			className
-		)}
-		bind:this={ref}
-		{...restProps}
-	>
-		{@render children?.()}
-	</div>
-</TooltipPrimitive.Provider>
+<div
+	style="--sidebar-width: {SIDEBAR_WIDTH}; --sidebar-width-icon: {SIDEBAR_WIDTH_ICON}; {style}"
+	class={cn(
+		'group/sidebar-wrapper flex min-h-svh w-full has-[[data-variant=inset]]:bg-sidebar',
+		className
+	)}
+	bind:this={ref}
+	{...restProps}
+>
+	{@render children?.()}
+</div>

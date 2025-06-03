@@ -8,7 +8,7 @@
 		SidebarHeader,
 		SidebarMenu
 	} from './ui/sidebar';
-	import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip';
+	import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from './ui/tooltip';
 	import { goto } from '$app/navigation';
 	import PlusIcon from './icons/plus.svelte';
 	import type { User } from '$lib/types'; // Assuming User type is defined elsewhere or remove if not used directly here
@@ -17,6 +17,7 @@
 	import CharacterList from './CharacterList.svelte'; // Import the new CharacterList component
 	import CharacterUploader from './CharacterUploader.svelte'; // Import the uploader component
 	import PersonaList from './PersonaList.svelte'; // Import the PersonaList component
+	import LorebooksSidebarList from './LorebooksSidebarList.svelte'; // Import the LorebooksSidebarList component
 	import SettingsIcon from './icons/settings.svelte'; // Import the new SettingsIcon
 	import { SettingsStore } from '$lib/stores/settings.svelte'; // Import SettingsStore
 	import { SelectedCharacterStore } from '$lib/stores/selected-character.svelte';
@@ -29,7 +30,7 @@
 	const selectedCharacterStore = SelectedCharacterStore.fromContext();
 	const selectedPersonaStore = SelectedPersonaStore.fromContext();
 	let isUploaderOpen = $state(false); // State for dialog visibility (Changed to $state)
-	let activeTab = $state<'characters' | 'personas'>('characters'); // Track active tab
+	let activeTab = $state<'characters' | 'personas' | 'lorebooks'>('characters'); // Track active tab
 	let characterListComp = $state<CharacterList | undefined>(undefined); // Reference to CharacterList component instance
 	let personaListComp = $state<PersonaList | undefined>(undefined); // Reference to PersonaList component instance
 
@@ -107,6 +108,21 @@
 		settingsStore.show();
 		context.setOpenMobile(false); // Close mobile sidebar if open
 	}
+
+	// Lorebook handlers
+	async function handleSelectLorebook(event: CustomEvent<{ lorebookId: string }>) {
+		const lorebookId = event.detail.lorebookId;
+		console.log('Lorebook selected:', lorebookId);
+		
+		// Navigate to the specific lorebook
+		goto(`/lorebooks/${lorebookId}`);
+		context.setOpenMobile(false); // Close mobile sidebar on selection
+	}
+
+	function handleViewAllLorebooks() {
+		goto('/lorebooks');
+		context.setOpenMobile(false); // Close mobile sidebar
+	}
 </script>
 
 <Sidebar class="group-data-[side=left]:border-r-0">
@@ -126,20 +142,22 @@
 						Scribe
 					</span>
 				</a>
-				<Tooltip>
-					<TooltipTrigger
-						class="ring-offset-background focus-visible:ring-ring inline-flex h-fit items-center justify-center whitespace-nowrap rounded-md p-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 hover:bg-accent hover:text-accent-foreground [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0"
-						onclick={() => {
-							context.setOpenMobile(false);
-							selectedCharacterStore.clear(); // Clear any selected character
-							selectedPersonaStore.clear(); // Clear any selected persona
-							goto('/', { invalidateAll: true });
-						}}
-					>
-						<PlusIcon />
-					</TooltipTrigger>
-					<TooltipContent align="end">New Chat</TooltipContent>
-				</Tooltip>
+				<TooltipProvider>
+					<Tooltip>
+						<TooltipTrigger
+							class="ring-offset-background focus-visible:ring-ring inline-flex h-fit items-center justify-center whitespace-nowrap rounded-md p-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 hover:bg-accent hover:text-accent-foreground [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0"
+							onclick={() => {
+								context.setOpenMobile(false);
+								selectedCharacterStore.clear(); // Clear any selected character
+								selectedPersonaStore.clear(); // Clear any selected persona
+								goto('/', { invalidateAll: true });
+							}}
+						>
+							<PlusIcon />
+						</TooltipTrigger>
+						<TooltipContent align="end">New Chat</TooltipContent>
+					</Tooltip>
+				</TooltipProvider>
 			</div>
 		</SidebarMenu>
 	</SidebarHeader>
@@ -147,7 +165,7 @@
 		<!-- Tab Navigation -->
 		<div class="flex border-b">
 			<button
-				class="flex-1 px-4 py-2 text-sm font-medium transition-colors {activeTab === 'characters'
+				class="flex-1 px-3 py-2 text-xs font-medium transition-colors {activeTab === 'characters'
 					? 'bg-background text-foreground border-b-2 border-primary'
 					: 'text-muted-foreground hover:text-foreground'}"
 				onclick={() => switchTab('characters')}
@@ -155,12 +173,20 @@
 				Characters
 			</button>
 			<button
-				class="flex-1 px-4 py-2 text-sm font-medium transition-colors {activeTab === 'personas'
+				class="flex-1 px-3 py-2 text-xs font-medium transition-colors {activeTab === 'personas'
 					? 'bg-background text-foreground border-b-2 border-primary'
 					: 'text-muted-foreground hover:text-foreground'}"
 				onclick={() => switchTab('personas')}
 			>
 				Personas
+			</button>
+			<button
+				class="flex-1 px-3 py-2 text-xs font-medium transition-colors {activeTab === 'lorebooks'
+					? 'bg-background text-foreground border-b-2 border-primary'
+					: 'text-muted-foreground hover:text-foreground'}"
+				onclick={() => switchTab('lorebooks')}
+			>
+				Lorebooks
 			</button>
 		</div>
 
@@ -171,11 +197,16 @@
 				on:selectCharacter={handleSelectCharacter}
 				on:uploadCharacter={handleUploadCharacter}
 			/>
-		{:else}
+		{:else if activeTab === 'personas'}
 			<PersonaList
 				bind:this={personaListComp}
 				on:selectPersona={handleSelectPersona}
 				on:createPersona={handleCreatePersona}
+			/>
+		{:else if activeTab === 'lorebooks'}
+			<LorebooksSidebarList
+				on:selectLorebook={handleSelectLorebook}
+				on:viewAllLorebooks={handleViewAllLorebooks}
 			/>
 		{/if}
 	</SidebarContent>

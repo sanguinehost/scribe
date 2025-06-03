@@ -1,5 +1,6 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use uuid::Uuid;
 use validator::Validate;
 
@@ -119,4 +120,50 @@ pub struct LorebookEntrySummaryResponse {
     pub is_constant: bool,
     pub insertion_order: i32,
     pub updated_at: DateTime<Utc>,
+}
+
+// --- Import/Export DTOs ---
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct UploadedLorebookEntry {
+    pub key: Vec<String>,         // Keywords/triggers
+    pub content: String,          // Entry content
+    pub comment: Option<String>,  // Optional comment
+    pub disable: Option<bool>,    // true means disabled (will invert to is_enabled)
+    pub constant: Option<bool>,   // Maps to is_constant
+    pub order: Option<i32>,       // Maps to insertion_order
+    pub position: Option<i32>,    // 0=before prompt, 1=after prompt
+    pub uid: Option<i32>,         // Original SillyTavern UID
+}
+
+#[derive(Debug, Serialize, Deserialize, Validate, Clone)]
+pub struct LorebookUploadPayload {
+    #[validate(length(min = 1, max = 255))]
+    pub name: String,
+    #[validate(length(max = 10000))]
+    pub description: Option<String>,
+    pub is_public: bool,
+    pub entries: HashMap<String, UploadedLorebookEntry>, // Keyed by original uid
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct LorebookWithEntriesResponse {
+    pub lorebook: LorebookResponse,
+    pub entries: Vec<LorebookEntryResponse>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ExportedLorebookEntry {
+    pub key: Vec<String>,
+    pub content: String,
+    pub comment: String,
+    pub disable: bool,
+    pub constant: bool,
+    pub order: i32,
+    pub position: i32,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ExportedLorebook {
+    pub entries: HashMap<String, ExportedLorebookEntry>,
 }

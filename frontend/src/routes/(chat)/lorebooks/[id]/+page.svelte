@@ -1,0 +1,162 @@
+<script lang="ts">
+	import { onMount } from 'svelte';
+	import { goto } from '$app/navigation';
+	import { page } from '$app/stores';
+	import { lorebookStore } from '$lib/stores/lorebook.svelte';
+	import { LorebookDetailView } from '$lib/components/lorebooks';
+	import { toast } from 'svelte-sonner';
+	import type { 
+		Lorebook, 
+		LorebookEntry, 
+		UpdateLorebookPayload, 
+		CreateLorebookEntryPayload, 
+		UpdateLorebookEntryPayload 
+	} from '$lib/types';
+
+	// Get the lorebook ID from the URL
+	const lorebookId = $page.params.id;
+
+	let lorebook = $state<Lorebook | null>(null);
+	let isLoading = $state(true);
+	let error = $state<string | null>(null);
+
+	// Load lorebook and entries on mount
+	onMount(async () => {
+		await loadLorebookData();
+	});
+
+	async function loadLorebookData() {
+		isLoading = true;
+		error = null;
+
+		try {
+			// Load all lorebooks first to get the current one
+			await lorebookStore.loadLorebooks();
+			
+			// Find the current lorebook
+			const currentLorebook = lorebookStore.lorebooks.find(l => l.id === lorebookId);
+			if (!currentLorebook) {
+				error = 'Lorebook not found';
+				return;
+			}
+
+			lorebook = currentLorebook;
+			
+			// Select the lorebook to load its entries
+			await lorebookStore.selectLorebook(currentLorebook);
+		} catch (err) {
+			error = err instanceof Error ? err.message : 'Failed to load lorebook';
+		} finally {
+			isLoading = false;
+		}
+	}
+
+	function handleBack() {
+		goto('/lorebooks');
+	}
+
+	async function handleUpdateLorebook(id: string, data: UpdateLorebookPayload): Promise<boolean> {
+		const success = await lorebookStore.updateLorebook(id, data);
+		if (success) {
+			toast.success('Lorebook updated successfully!');
+			// Update local lorebook reference
+			if (lorebook) {
+				lorebook = { ...lorebook, ...data, updated_at: new Date().toISOString() };
+			}
+		} else if (lorebookStore.error) {
+			toast.error(`Failed to update lorebook: ${lorebookStore.error}`);
+		}
+		return success;
+	}
+
+	async function handleDeleteLorebook(id: string): Promise<boolean> {
+		const success = await lorebookStore.deleteLorebook(id);
+		if (success) {
+			toast.success('Lorebook deleted successfully!');
+			goto('/lorebooks');
+		} else if (lorebookStore.error) {
+			toast.error(`Failed to delete lorebook: ${lorebookStore.error}`);
+		}
+		return success;
+	}
+
+	function handleExportLorebook(lorebook: Lorebook) {
+		// TODO: Implement export functionality
+		toast.info('Export functionality coming soon!');
+	}
+
+	async function handleCreateEntry(lorebookId: string, data: CreateLorebookEntryPayload): Promise<LorebookEntry | null> {
+		const entry = await lorebookStore.createEntry(lorebookId, data);
+		if (entry) {
+			toast.success('Entry created successfully!');
+		} else if (lorebookStore.error) {
+			toast.error(`Failed to create entry: ${lorebookStore.error}`);
+		}
+		return entry;
+	}
+
+	async function handleUpdateEntry(lorebookId: string, entryId: string, data: UpdateLorebookEntryPayload): Promise<boolean> {
+		const success = await lorebookStore.updateEntry(lorebookId, entryId, data);
+		if (success) {
+			toast.success('Entry updated successfully!');
+		} else if (lorebookStore.error) {
+			toast.error(`Failed to update entry: ${lorebookStore.error}`);
+		}
+		return success;
+	}
+
+	async function handleDeleteEntry(lorebookId: string, entryId: string): Promise<boolean> {
+		const success = await lorebookStore.deleteEntry(lorebookId, entryId);
+		if (success) {
+			toast.success('Entry deleted successfully!');
+		} else if (lorebookStore.error) {
+			toast.error(`Failed to delete entry: ${lorebookStore.error}`);
+		}
+		return success;
+	}
+
+	function handleToggleEntry(entry: LorebookEntry) {
+		handleUpdateEntry(entry.lorebook_id, entry.id, { is_enabled: !entry.is_enabled });
+	}
+</script>
+
+<svelte:head>
+	<title>{lorebook?.name || 'Lorebook'} - Sanguine Scribe</title>
+</svelte:head>
+
+<div class="container mx-auto py-6">
+	{#if isLoading}
+		<div class="flex items-center justify-center py-12">
+			<div class="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent"></div>
+		</div>
+	{:else if error}
+		<div class="text-center py-12">
+			<h2 class="text-2xl font-bold text-destructive mb-4">Error</h2>
+			<p class="text-muted-foreground mb-4">{error}</p>
+			<button onclick={handleBack} class="text-primary hover:underline">
+				← Back to Lorebooks
+			</button>
+		</div>
+	{:else if lorebook}
+		<LorebookDetailView 
+			{lorebook}
+			entries={lorebookStore.entries}
+			isLoading={lorebookStore.isLoading}
+			onBack={handleBack}
+			onUpdateLorebook={handleUpdateLorebook}
+			onDeleteLorebook={handleDeleteLorebook}
+			onExportLorebook={handleExportLorebook}
+			onCreateEntry={handleCreateEntry}
+			onUpdateEntry={handleUpdateEntry}
+			onDeleteEntry={handleDeleteEntry}
+			onToggleEntry={handleToggleEntry}
+		/>
+	{:else}
+		<div class="text-center py-12">
+			<h2 class="text-2xl font-bold text-muted-foreground mb-4">Lorebook Not Found</h2>
+			<button onclick={handleBack} class="text-primary hover:underline">
+				← Back to Lorebooks
+			</button>
+		</div>
+	{/if}
+</div>

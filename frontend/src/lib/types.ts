@@ -157,3 +157,89 @@ export type LoginSuccessData = {
 	session_id: string;
 	expires_at: string | Date; // Match backend (chrono::DateTime&lt;Utc&gt; serializes to ISO string)
 };
+
+// Lorebook-related types
+export interface Lorebook {
+	id: string;
+	user_id: string;
+	name: string;
+	description: string | null;
+	source_format: string;
+	is_public: boolean;
+	created_at: string;
+	updated_at: string;
+}
+
+export interface LorebookEntry {
+	id: string;
+	lorebook_id: string;
+	user_id: string;
+	entry_title: string;
+	keys_text: string | null;
+	content: string | null;
+	comment: string | null;
+	is_enabled: boolean;
+	is_constant: boolean;
+	insertion_order: number;
+	placement_hint: string;
+	created_at: string;
+	updated_at: string;
+}
+
+export interface CreateLorebookPayload {
+	name: string;
+	description?: string;
+}
+
+export interface UpdateLorebookPayload {
+	name?: string;
+	description?: string;
+}
+
+export interface CreateLorebookEntryPayload {
+	entry_title: string;
+	keys_text?: string;
+	content: string;
+	comment?: string;
+	is_enabled?: boolean;
+	is_constant?: boolean;
+	insertion_order?: number;
+	placement_hint?: string;
+}
+
+export interface UpdateLorebookEntryPayload {
+	entry_title?: string;
+	keys_text?: string;
+	content?: string;
+	comment?: string;
+	is_enabled?: boolean;
+	is_constant?: boolean;
+	insertion_order?: number;
+	placement_hint?: string;
+}
+
+export interface LorebookUploadPayload {
+	name: string;
+	description?: string;
+	is_public: boolean;
+	entries: Record<string, UploadedLorebookEntry>;
+}
+
+export interface UploadedLorebookEntry {
+	key: string[];
+	content: string;
+	comment?: string;
+	disable?: boolean;
+	constant?: boolean;
+	order?: number;
+	position?: number;
+	uid?: number;
+}
+
+export interface ChatSessionLorebookAssociation {
+	chat_session_id: string;
+	lorebook_id: string;
+	user_id: string;
+	lorebook_name: string;
+	created_at: string;
+}

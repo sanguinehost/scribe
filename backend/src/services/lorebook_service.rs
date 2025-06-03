@@ -92,13 +92,13 @@ impl LorebookService {
             .await
             .map_err(|e| {
                 error!("Interaction error while inserting lorebook: {:?}", e);
-                AppError::InternalServerErrorGeneric(format!(
+AppError::InternalServerErrorGeneric(format!(
                     "Database interaction failed while creating lorebook: {e}"
                 ))
             })?
             .map_err(|e| {
                 error!("Failed to insert lorebook into DB: {:?}", e);
-                AppError::InternalServerErrorGeneric(format!(
+AppError::InternalServerErrorGeneric(format!(
                     "Failed to create lorebook in DB: {e}"
                 ))
             })?;
@@ -138,13 +138,13 @@ impl LorebookService {
             .await
             .map_err(|e| {
                 error!("Interaction error while listing lorebooks: {:?}", e);
-                AppError::InternalServerErrorGeneric(format!(
+AppError::InternalServerErrorGeneric(format!(
                     "Database interaction failed while listing lorebooks: {e}"
                 ))
             })?
             .map_err(|e| {
                 error!("Failed to list lorebooks from DB: {:?}", e);
-                AppError::InternalServerErrorGeneric(format!(
+AppError::InternalServerErrorGeneric(format!(
                     "Failed to list lorebooks from DB: {e}"
                 ))
             })?;
@@ -190,7 +190,7 @@ impl LorebookService {
             .await
             .map_err(|e| {
                 error!("Interaction error while getting lorebook: {:?}", e);
-                AppError::InternalServerErrorGeneric(format!(
+AppError::InternalServerErrorGeneric(format!(
                     "Database interaction failed while getting lorebook: {e}"
                 ))
             })?
@@ -432,7 +432,7 @@ impl LorebookService {
             .await
             .map_err(|e| {
                 error!("Interaction error while fetching lorebook: {:?}", e);
-                AppError::InternalServerErrorGeneric(format!(
+AppError::InternalServerErrorGeneric(format!(
                     "Database interaction failed while fetching lorebook: {e}"
                 ))
             })?
@@ -526,13 +526,13 @@ impl LorebookService {
             .await
             .map_err(|e| {
                 error!("Interaction error while inserting lorebook entry: {:?}", e);
-                AppError::InternalServerErrorGeneric(format!(
+AppError::InternalServerErrorGeneric(format!(
                     "Database interaction failed while creating lorebook entry: {e}"
                 ))
             })?
             .map_err(|e| {
                 error!("Failed to insert lorebook entry into DB: {:?}", e);
-                AppError::InternalServerErrorGeneric(format!(
+AppError::InternalServerErrorGeneric(format!(
                     "Failed to create lorebook entry in DB: {e}"
                 ))
             })?;
@@ -762,7 +762,7 @@ impl LorebookService {
             .await
             .map_err(|e| {
                 error!("Interaction error while fetching lorebook: {:?}", e);
-                AppError::InternalServerErrorGeneric(format!(
+AppError::InternalServerErrorGeneric(format!(
                     "Database interaction failed while fetching lorebook: {e}"
                 ))
             })?
@@ -796,7 +796,7 @@ impl LorebookService {
             .await
             .map_err(|e| {
                 error!("Interaction error while fetching lorebook entries: {:?}", e);
-                AppError::InternalServerErrorGeneric(format!(
+AppError::InternalServerErrorGeneric(format!(
                     "Database interaction failed while fetching entries: {e}"
                 ))
             })?
@@ -885,7 +885,7 @@ impl LorebookService {
             .await
             .map_err(|e| {
                 error!("Interaction error while fetching lorebook entry: {:?}", e);
-                AppError::InternalServerErrorGeneric(format!(
+AppError::InternalServerErrorGeneric(format!(
                     "Database interaction failed while fetching entry: {e}"
                 ))
             })?
@@ -1039,7 +1039,7 @@ impl LorebookService {
             })
             .await
             .map_err(|e| {
-                AppError::InternalServerErrorGeneric(format!(
+AppError::InternalServerErrorGeneric(format!(
                     "DB interaction failed while fetching entry: {e}"
                 ))
             })?
@@ -1137,7 +1137,7 @@ impl LorebookService {
             })
             .await
             .map_err(|e| {
-                AppError::InternalServerErrorGeneric(format!(
+AppError::InternalServerErrorGeneric(format!(
                     "DB interaction failed while updating entry: {e}"
                 ))
             })?
@@ -1998,4 +1998,5 @@ impl LorebookService {
             AppError::Unauthorized("User not authenticated".to_string())
         })
     }
+
 }
