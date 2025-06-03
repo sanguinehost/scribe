@@ -1,5 +1,4 @@
 // cli/src/client/client_tests.rs
-#![cfg(test)]
 use super::util::*;
 use super::*; // Brings in items re-exported by cli/src/client/mod.rs // For build_url and handle_response
 
@@ -261,8 +260,8 @@ async fn test_list_characters_success() {
         "name": "Character One",
         "spec": "chara_card_v3",
         "spec_version": "1.0",
-        "description": "Description One".to_string().into_bytes(), // Simulating backend byte array
-        "first_mes": "Hello from Character One!".to_string().into_bytes(), // Simulating backend byte array
+        "description": b"Description One".to_vec(), // Simulating backend byte array
+        "first_mes": b"Hello from Character One!".to_vec(), // Simulating backend byte array
         "created_at": now,
         "updated_at": now
     });
@@ -374,8 +373,8 @@ async fn test_upload_character_success() {
         "name": character_name,
         "spec": "chara_card_v3",
         "spec_version": "1.0",
-        "description": "Uploaded via test".to_string().into_bytes(),
-        "first_mes": "Hello from upload!".to_string().into_bytes(),
+        "description": b"Uploaded via test".to_vec(),
+        "first_mes": b"Hello from upload!".to_vec(),
         "created_at": now,
         "updated_at": now
     });
@@ -591,8 +590,8 @@ async fn test_get_character_success() {
         "name": "Specific Character",
         "spec": "chara_card_v3",
         "spec_version": "1.0",
-        "description": "Details here".to_string().into_bytes(),
-        "first_mes": "Specific greeting".to_string().into_bytes(),
+        "description": b"Details here".to_vec(),
+        "first_mes": b"Specific greeting".to_vec(),
         "created_at": now,
         "updated_at": now
     });
@@ -922,7 +921,7 @@ async fn test_create_chat_session_success() {
         user_id: user_id_mock,
         character_id,
         // title: Some("New Chat".to_string()), // This was the old field
-        title_ciphertext: Some("New Chat".as_bytes().to_vec()), // Mocking as if "New Chat" was encrypted
+        title_ciphertext: Some(b"New Chat".to_vec()), // Mocking as if "New Chat" was encrypted
         title_nonce: Some(vec![0u8; 12]),                       // Mock nonce
         created_at: now,
         updated_at: now,
@@ -1069,7 +1068,7 @@ async fn test_send_message_success() {
         result.err()
     );
     let response_message = result.unwrap();
-    assert_eq!(response_message.content, "Hello, user from SSE!".as_bytes());
+    assert_eq!(response_message.content, b"Hello, user from SSE!");
     assert_eq!(response_message.message_type, MessageRole::Assistant);
     assert_eq!(response_message.session_id, Uuid::nil());
 
@@ -1148,7 +1147,7 @@ fn test_generate_chat_request_serde() {
             role: "user".to_string(),
             content: "Hello AI".to_string(),
         }],
-        model: Some("gemini-2.5-flash-preview-04-17".to_string()),
+        model: Some("gemini-2.5-flash-preview-05-20".to_string()),
         query_text_for_rag: None,
     };
 

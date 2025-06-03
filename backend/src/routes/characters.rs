@@ -1,4 +1,7 @@
 // backend/src/routes/characters.rs
+#![allow(clippy::items_after_statements)]
+#![allow(clippy::cognitive_complexity)]
+#![allow(clippy::unused_async)]
 
 use crate::auth::session_dek::SessionDek; // Added SessionDek
 use crate::crypto;

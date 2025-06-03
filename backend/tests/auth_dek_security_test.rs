@@ -15,13 +15,31 @@ use tower_cookies::Cookie;
 use tracing::info;
 use uuid::Uuid;
 
-#[tokio::test(flavor = "multi_thread")]
-async fn test_dek_not_stored_in_session() -> AnyhowResult<()> {
-    // Test that DEK is NOT stored in the session after login
-    let test_app = test_helpers::spawn_app(true, false, false).await;
-    let mut guard = test_helpers::TestDataGuard::new(test_app.db_pool.clone());
+// Helper functions for DEK detection
+fn looks_like_base64_dek(value: &Value) -> bool {
+    value.as_str().is_some_and(|s| {
+        // Check if it's a base64 string of appropriate length for a DEK
+        s.len() >= 40
+            && s.len() <= 50
+            && s.chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '+' || c == '/' || c == '=')
+    })
+}
 
-    // Create a test user
+fn check_no_dek_values(value: &Value) -> bool {
+    match value {
+        Value::String(_) => !looks_like_base64_dek(value),
+        Value::Object(map) => map.values().all(check_no_dek_values),
+        Value::Array(arr) => arr.iter().all(check_no_dek_values),
+        _ => true,
+    }
+}
+
+// Helper function to create a test user
+async fn create_test_user_for_dek_test(
+    test_app: &test_helpers::TestApp,
+    guard: &mut test_helpers::TestDataGuard,
+) -> AnyhowResult<scribe_backend::models::users::User> {
     let username = format!("test_no_dek_session_{}", Uuid::new_v4());
     let password = "password123";
     let user = test_helpers::db::create_test_user(
@@ -31,10 +49,17 @@ async fn test_dek_not_stored_in_session() -> AnyhowResult<()> {
     )
     .await?;
     guard.add_user(user.id);
+    Ok(user)
+}
 
-    // Login the user
+// Helper function to perform login and extract session ID
+async fn login_and_extract_session_id(
+    test_app: &test_helpers::TestApp,
+    username: &str,
+    password: &str,
+) -> AnyhowResult<String> {
     let login_payload = json!({
-        "identifier": &username,
+        "identifier": username,
         "password": password
     });
 
@@ -68,7 +93,28 @@ async fn test_dek_not_stored_in_session() -> AnyhowResult<()> {
     if session_id.is_empty() {
         return Err(anyhow::anyhow!("No session cookie found after login"));
     }
+    
     info!("Session ID from cookie: {}", session_id);
+    Ok(session_id)
+}
+
+
+#[tokio::test(flavor = "multi_thread")]
+
+async fn test_dek_not_stored_in_session() -> AnyhowResult<()> {
+    // Test that DEK is NOT stored in the session after login
+    let test_app = test_helpers::spawn_app(true, false, false).await;
+    let mut guard = test_helpers::TestDataGuard::new(test_app.db_pool.clone());
+
+    // Create a test user
+    let user = create_test_user_for_dek_test(&test_app, &mut guard).await?;
+    
+    // Extract username and password (note: password is hardcoded in helper)
+    let username = user.username.clone();
+    let password = "password123";
+
+    // Login and extract session ID
+    let session_id = login_and_extract_session_id(&test_app, &username, password).await?;
 
     // Small delay to ensure session is persisted
     tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
@@ -89,38 +135,37 @@ async fn test_dek_not_stored_in_session() -> AnyhowResult<()> {
         .map_err(|e| anyhow::anyhow!("Interaction error: {}", e))?
         .map_err(|e| anyhow::anyhow!("Database error: {}", e))?;
 
-    let session_data = match session_data_result {
-        Some(data) => data,
-        None => {
-            // If session not found, try with alternate session ID format
-            // Sometimes the session ID might be stored differently
-            info!(
-                "Session not found with ID: {}, trying to list all sessions",
-                session_id
-            );
-            let conn2 = test_app.db_pool.get().await?;
-            let all_sessions = conn2
-                .interact(move |conn| {
-                    use scribe_backend::schema::sessions;
-                    sessions::table
-                        .select((sessions::id, sessions::session))
-                        .load::<(String, String)>(conn)
-                })
-                .await
-                .map_err(|e| anyhow::anyhow!("Interaction error: {}", e))?
-                .map_err(|e| anyhow::anyhow!("Database error: {}", e))?;
+    let session_data = if let Some(data) = session_data_result {
+        data
+    } else {
+        // If session not found, try with alternate session ID format
+        // Sometimes the session ID might be stored differently
+        info!(
+            "Session not found with ID: {}, trying to list all sessions",
+            session_id
+        );
+        let conn2 = test_app.db_pool.get().await?;
+        let all_sessions = conn2
+            .interact(move |conn| {
+                use scribe_backend::schema::sessions;
+                sessions::table
+                    .select((sessions::id, sessions::session))
+                    .load::<(String, String)>(conn)
+            })
+            .await
+            .map_err(|e| anyhow::anyhow!("Interaction error: {}", e))?
+            .map_err(|e| anyhow::anyhow!("Database error: {}", e))?;
 
-            info!(
-                "All sessions in DB: {:?}",
-                all_sessions.iter().map(|(id, _)| id).collect::<Vec<_>>()
-            );
+        info!(
+            "All sessions in DB: {:?}",
+            all_sessions.iter().map(|(id, _)| id).collect::<Vec<_>>()
+        );
 
-            // Since we just logged in, there should be only one session (or we take the most recent)
-            // The session ID format mismatch is due to how tower-sessions stores IDs
-            match all_sessions.into_iter().last() {
-                Some((_, data)) => data,
-                None => return Err(anyhow::anyhow!("No sessions found in database")),
-            }
+        // Since we just logged in, there should be only one session (or we take the most recent)
+        // The session ID format mismatch is due to how tower-sessions stores IDs
+        match all_sessions.into_iter().next_back() {
+            Some((_, data)) => data,
+            None => return Err(anyhow::anyhow!("No sessions found in database")),
         }
     };
 
@@ -149,26 +194,6 @@ async fn test_dek_not_stored_in_session() -> AnyhowResult<()> {
 
     // Additionally, check that no value in the session looks like base64-encoded DEK
     // DEKs are typically 32 bytes (256 bits) which becomes 44 chars in base64
-    fn looks_like_base64_dek(value: &Value) -> bool {
-        if let Some(s) = value.as_str() {
-            // Check if it's a base64 string of appropriate length for a DEK
-            s.len() >= 40
-                && s.len() <= 50
-                && s.chars()
-                    .all(|c| c.is_ascii_alphanumeric() || c == '+' || c == '/' || c == '=')
-        } else {
-            false
-        }
-    }
-
-    fn check_no_dek_values(value: &Value) -> bool {
-        match value {
-            Value::String(_) => !looks_like_base64_dek(value),
-            Value::Object(map) => map.values().all(check_no_dek_values),
-            Value::Array(arr) => arr.iter().all(check_no_dek_values),
-            _ => true,
-        }
-    }
 
     assert!(
         check_no_dek_values(&session_json),

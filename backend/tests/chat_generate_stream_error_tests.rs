@@ -30,7 +30,8 @@ use scribe_backend::{
 
 #[tokio::test]
 #[ignore] // Added ignore for CI
-async fn generate_chat_response_streaming_ai_error() {
+#[allow(clippy::too_many_lines)]
+    async fn generate_chat_response_streaming_ai_error() {
     let test_app = test_helpers::spawn_app(false, false, false).await;
 
     // Skip if running as integration test with real client
@@ -95,11 +96,11 @@ async fn generate_chat_response_streaming_ai_error() {
                 name: character_name,
                 spec: "test_spec_v1.0".to_string(),
                 spec_version: "1.0".to_string(),
-                description: Some("Test description".to_string().into_bytes()),
-                greeting: Some("Hello".to_string().into_bytes()),
+                description: Some(b"Test description".to_vec()),
+                greeting: Some(b"Hello".to_vec()),
                 visibility: Some("private".to_string()),
                 creator: Some("test_creator".to_string()),
-                persona: Some("Test persona".to_string().into_bytes()),
+                persona: Some(b"Test persona".to_vec()),
                 created_at: Some(Utc::now()), // Add created_at
                 updated_at: Some(Utc::now()), // Add updated_at
                 ..Default::default()
@@ -327,7 +328,8 @@ async fn generate_chat_response_streaming_ai_error() {
 
 #[tokio::test]
 #[ignore] // Ignore for CI unless DB and real AI are guaranteed
-async fn generate_chat_response_streaming_initiation_error() {
+#[allow(clippy::too_many_lines)]
+    async fn generate_chat_response_streaming_initiation_error() {
     let test_app = test_helpers::spawn_app(false, false, false).await;
 
     if std::env::var("RUN_INTEGRATION_TESTS").is_ok() {
@@ -397,11 +399,11 @@ async fn generate_chat_response_streaming_initiation_error() {
                 name: char_name_init_err,
                 spec: "test_spec_v1.0".to_string(),
                 spec_version: "1.0".to_string(),
-                description: Some("Test description".to_string().into_bytes()),
-                greeting: Some("Hello".to_string().into_bytes()),
+                description: Some(b"Test description".to_vec()),
+                greeting: Some(b"Hello".to_vec()),
                 visibility: Some("private".to_string()),
                 creator: Some("test_creator".to_string()),
-                persona: Some("Test persona".to_string().into_bytes()),
+                persona: Some(b"Test persona".to_vec()),
                 created_at: Some(Utc::now()),
                 updated_at: Some(Utc::now()),
                 ..Default::default()
@@ -567,7 +569,8 @@ async fn generate_chat_response_streaming_initiation_error() {
 
 #[tokio::test]
 #[ignore] // Ignore for CI unless DB is guaranteed
-async fn generate_chat_response_streaming_error_before_content() {
+#[allow(clippy::too_many_lines)]
+    async fn generate_chat_response_streaming_error_before_content() {
     let test_app = test_helpers::spawn_app(false, false, false).await; // Corrected: Added third arg
 
     if std::env::var("RUN_INTEGRATION_TESTS").is_ok() {
@@ -637,11 +640,11 @@ async fn generate_chat_response_streaming_error_before_content() {
                 name: char_name,
                 spec: "test_spec_v1.0".to_string(),
                 spec_version: "1.0".to_string(),
-                description: Some("Test description".to_string().into_bytes()),
-                greeting: Some("Hello".to_string().into_bytes()),
+                description: Some(b"Test description".to_vec()),
+                greeting: Some(b"Hello".to_vec()),
                 visibility: Some("private".to_string()),
                 creator: Some("test_creator".to_string()),
-                persona: Some("Test persona".to_string().into_bytes()),
+                persona: Some(b"Test persona".to_vec()),
                 created_at: Some(Utc::now()),
                 updated_at: Some(Utc::now()),
                 ..Default::default()
@@ -822,7 +825,8 @@ async fn generate_chat_response_streaming_error_before_content() {
 
 #[tokio::test]
 #[ignore] // Added ignore for CI
-async fn generate_chat_response_streaming_genai_json_error() {
+#[allow(clippy::too_many_lines)]
+    async fn generate_chat_response_streaming_genai_json_error() {
     let test_app = test_helpers::spawn_app(false, false, false).await; // Corrected: Added third arg
 
     if std::env::var("RUN_INTEGRATION_TESTS").is_ok() {
@@ -886,11 +890,11 @@ async fn generate_chat_response_streaming_genai_json_error() {
                 name: char_name_json_err,
                 spec: "test_spec_v1.0".to_string(),
                 spec_version: "1.0".to_string(),
-                description: Some("Test description".to_string().into_bytes()),
-                greeting: Some("Hello".to_string().into_bytes()),
+                description: Some(b"Test description".to_vec()),
+                greeting: Some(b"Hello".to_vec()),
                 visibility: Some("private".to_string()),
                 creator: Some("test_creator".to_string()),
-                persona: Some("Test persona".to_string().into_bytes()),
+                persona: Some(b"Test persona".to_vec()),
                 created_at: Some(Utc::now()),
                 updated_at: Some(Utc::now()),
                 ..Default::default()
@@ -1113,8 +1117,10 @@ async fn generate_chat_response_streaming_genai_json_error() {
     let initial_user_msg_db = messages.first().expect("Initial User message should exist");
     assert_eq!(initial_user_msg_db.message_type, MessageRole::User);
     // Decrypt and assert content for initial_user_msg_db
-    let initial_user_content_str = match initial_user_msg_db.content_nonce {
-        Some(ref nonce) => {
+    let initial_user_content_str = initial_user_msg_db.content_nonce.as_ref().map_or_else(
+        || String::from_utf8(initial_user_msg_db.content.clone())
+            .expect("Failed to convert initial user message content to string (unencrypted)"),
+        |nonce| {
             let decrypted_bytes = scribe_backend::crypto::decrypt_gcm(
                 &initial_user_msg_db.content,
                 nonce,
@@ -1123,18 +1129,21 @@ async fn generate_chat_response_streaming_genai_json_error() {
             .expect("Failed to decrypt initial user message content for genai_json_error test");
             String::from_utf8(decrypted_bytes.expose_secret().clone())
                 .expect("Failed to convert decrypted initial user message to string")
-        }
-        None => String::from_utf8(initial_user_msg_db.content.clone())
-            .expect("Failed to convert initial user message content to string (unencrypted)"),
-    };
+        },
+    );
     assert_eq!(initial_user_content_str, initial_user_message_content);
 
     // Assert the second message: User message from payload
     let payload_user_msg_db = messages.get(1).expect("Payload User message should exist");
     assert_eq!(payload_user_msg_db.message_type, MessageRole::User);
     // Decrypt and assert content for payload_user_msg_db
-    let payload_user_content_str = match payload_user_msg_db.content_nonce {
-        Some(ref nonce) => {
+    let payload_user_content_str = payload_user_msg_db.content_nonce.as_ref().map_or_else(
+        || {
+            // This case is more likely for user messages saved by the handler before encryption of AI response
+            String::from_utf8(payload_user_msg_db.content.clone())
+                .expect("Failed to convert payload user message content to string (unencrypted)")
+        },
+        |nonce| {
             let decrypted_bytes = scribe_backend::crypto::decrypt_gcm(
                 &payload_user_msg_db.content,
                 nonce,
@@ -1143,13 +1152,8 @@ async fn generate_chat_response_streaming_genai_json_error() {
             .expect("Failed to decrypt payload user message content for genai_json_error test");
             String::from_utf8(decrypted_bytes.expose_secret().clone())
                 .expect("Failed to convert decrypted payload user message to string")
-        }
-        None => {
-            // This case is more likely for user messages saved by the handler before encryption of AI response
-            String::from_utf8(payload_user_msg_db.content.clone())
-                .expect("Failed to convert payload user message content to string (unencrypted)")
-        }
-    };
+        },
+    );
     assert_eq!(payload_user_content_str, payload_user_message_content);
 
     // Assert the third message: Partial AI message

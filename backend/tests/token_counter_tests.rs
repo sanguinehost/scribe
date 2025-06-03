@@ -10,7 +10,7 @@ async fn test_hybrid_token_counter_local() {
     fn duration_to_tokens(duration: f64, tokens_per_second: f64) -> usize {
         let total_tokens = duration * tokens_per_second;
         if total_tokens >= 0.0 {
-            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // Sign loss handled by `if >= 0.0`, truncation unlikely for token counts.
             let tokens_u64 = total_tokens.round() as u64;
             usize::try_from(tokens_u64).unwrap_or(0)
         } else {
@@ -130,7 +130,7 @@ async fn test_hybrid_token_counter_api() {
     let counter = HybridTokenCounter::new(
         tokenizer,
         Some(api_client),
-        "gemini-2.5-flash-preview-04-17".to_string(),
+        "gemini-2.5-flash-preview-05-20".to_string(),
     );
 
     // Test different text samples with API vs local counting

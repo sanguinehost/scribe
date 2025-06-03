@@ -305,10 +305,96 @@ impl AppError {
         (status, body).into_response()
     }
 
-    #[allow(clippy::cognitive_complexity)] // Error mapping requires handling many different error types
     fn get_status_and_message(app_error: Self) -> (StatusCode, String) {
         match app_error {
-            // Client errors (4xx)
+            // Handle client errors (4xx)
+            err if Self::is_client_error(&err) => Self::handle_client_error(err),
+            
+            // Handle gateway errors (5xx external services)
+            err if Self::is_gateway_error(&err) => Self::handle_gateway_error(err),
+            
+            // Handle not implemented
+            Self::NotImplemented(msg) => {
+                error!("Not Implemented: {msg}");
+                (StatusCode::NOT_IMPLEMENTED, msg)
+            }
+
+            // Handle all server errors (5xx internal)
+            _ => Self::handle_internal_server_error(app_error)
+        }
+    }
+
+    const fn is_client_error(error: &Self) -> bool {
+        matches!(error,
+            Self::BadRequest(_) |
+            Self::InvalidInput(_) |
+            Self::InvalidCredentials |
+            Self::Unauthorized(_) |
+            Self::Forbidden |
+            Self::NotFound(_) |
+            Self::UserNotFound |
+            Self::SessionNotFound |
+            Self::Conflict(_) |
+            Self::UsernameTaken |
+            Self::EmailTaken |
+            Self::RateLimited |
+            Self::FileUploadError(_) |
+            Self::CharacterParseError(_) |
+            Self::CharacterParsingError(_) |
+            Self::ParseIntError(_) |
+            Self::UuidError(_) |
+            Self::AuthError(_) |
+            Self::WebSocketReceiveError(_)
+        )
+    }
+
+    const fn is_gateway_error(error: &Self) -> bool {
+        matches!(error,
+            Self::BadGateway(_) |
+            Self::GenerationError(_) |
+            Self::EmbeddingError(_) |
+            Self::VectorDbError(_)
+        )
+    }
+
+    fn handle_client_error(app_error: Self) -> (StatusCode, String) {
+        match app_error {
+            // Simple client errors without logging
+            err if Self::is_simple_client_error(&err) => Self::handle_simple_client_error(err),
+            
+            // Client errors that require logging
+            err if Self::is_logged_client_error(&err) => Self::handle_logged_client_error(err),
+            
+            _ => unreachable!("Non-client error passed to handle_client_error")
+        }
+    }
+
+    const fn is_simple_client_error(error: &Self) -> bool {
+        matches!(error,
+            Self::BadRequest(_) |
+            Self::InvalidInput(_) |
+            Self::InvalidCredentials |
+            Self::Unauthorized(_) |
+            Self::Forbidden |
+            Self::NotFound(_) |
+            Self::UserNotFound |
+            Self::SessionNotFound |
+            Self::Conflict(_) |
+            Self::UsernameTaken |
+            Self::EmailTaken |
+            Self::RateLimited
+        )
+    }
+
+    const fn is_logged_client_error(error: &Self) -> bool {
+        matches!(error,
+            Self::AuthError(_) |
+            Self::WebSocketReceiveError(_)
+        ) || Self::is_file_parsing_error(error)
+    }
+
+    fn handle_simple_client_error(app_error: Self) -> (StatusCode, String) {
+        match app_error {
             Self::BadRequest(msg) => (StatusCode::BAD_REQUEST, msg),
             Self::InvalidInput(msg) => (StatusCode::BAD_REQUEST, format!("Invalid input: {msg}")),
             Self::InvalidCredentials => (StatusCode::UNAUTHORIZED, "Invalid credentials".to_string()),
@@ -321,175 +407,288 @@ impl AppError {
             Self::UsernameTaken => (StatusCode::CONFLICT, "Username is already taken".to_string()),
             Self::EmailTaken => (StatusCode::CONFLICT, "Email is already taken".to_string()),
             Self::RateLimited => (StatusCode::TOO_MANY_REQUESTS, "API rate limit exceeded. Please try again later.".to_string()),
+            _ => unreachable!("Non-simple client error passed to handle_simple_client_error")
+        }
+    }
+
+    fn handle_logged_client_error(app_error: Self) -> (StatusCode, String) {
+        match app_error {
+            // File and parsing errors
+            err if Self::is_file_parsing_error(&err) => Self::handle_file_parsing_error(err),
             
-            // Client errors with logging
-            Self::FileUploadError(e) => {
-                error!("File upload error: {e}");
-                (StatusCode::BAD_REQUEST, "File upload failed".to_string())
-            }
-            Self::CharacterParseError(e) => {
-                error!("Character parsing error: {e}");
-                (StatusCode::BAD_REQUEST, "Failed to parse character data".to_string())
-            }
-            Self::CharacterParsingError(e) => {
-                error!("Character parsing error: {e}");
-                (StatusCode::BAD_REQUEST, "Failed to parse character data".to_string())
-            }
-            Self::ParseIntError(e) => {
-                error!("Integer parsing error: {e}");
-                (StatusCode::BAD_REQUEST, "Invalid numeric value provided".to_string())
-            }
-            Self::UuidError(e) => {
-                error!("UUID error: {e}");
-                (StatusCode::BAD_REQUEST, "Invalid identifier format".to_string())
-            }
+            // Authentication errors  
             Self::AuthError(e) => {
                 error!("Authentication framework error: {e}");
                 (StatusCode::UNAUTHORIZED, "Authentication error".to_string())
             }
+            
+            // WebSocket errors
             Self::WebSocketReceiveError(e) => {
                 error!("WebSocket receive error: {e}");
                 (StatusCode::BAD_REQUEST, "WebSocket receive error".to_string())
             }
-
-            // Gateway errors (5xx external)
-            Self::BadGateway(msg) => {
-                error!("Bad Gateway error: {msg}");
-                (StatusCode::BAD_GATEWAY, msg)
-            }
-            Self::GenerationError(e) => {
-                error!("LLM generation error: {e}");
-                (StatusCode::BAD_GATEWAY, "AI service request failed".to_string())
-            }
-            Self::EmbeddingError(e) => {
-                error!("LLM embedding error: {e}");
-                (StatusCode::BAD_GATEWAY, "AI embedding service request failed".to_string())
-            }
-            Self::VectorDbError(e) => {
-                error!("Vector DB error: {e}");
-                (StatusCode::BAD_GATEWAY, "Failed to process embeddings".to_string())
-            }
-
-            // Not implemented
-            Self::NotImplemented(msg) => {
-                error!("Not Implemented: {msg}");
-                (StatusCode::NOT_IMPLEMENTED, msg)
-            }
-
-            // Server errors (5xx internal) - all others
-            _ => Self::handle_internal_server_error(app_error)
+            
+            _ => unreachable!("Non-logged client error passed to handle_logged_client_error")
         }
     }
 
-    #[allow(clippy::cognitive_complexity, clippy::too_many_lines)] // Internal error mapping requires many specific cases
+    const fn is_file_parsing_error(error: &Self) -> bool {
+        matches!(error,
+            Self::FileUploadError(_) |
+            Self::CharacterParseError(_) |
+            Self::CharacterParsingError(_) |
+            Self::ParseIntError(_) |
+            Self::UuidError(_)
+        )
+    }
+
+    fn handle_file_parsing_error(app_error: Self) -> (StatusCode, String) {
+        let (log_msg, user_msg) = match app_error {
+            Self::FileUploadError(e) => (format!("File upload error: {e}"), "File upload failed"),
+            Self::CharacterParseError(e) => (format!("Character parsing error: {e}"), "Failed to parse character data"),
+            Self::CharacterParsingError(e) => (format!("Character parsing error: {e}"), "Failed to parse character data"),
+            Self::ParseIntError(e) => (format!("Integer parsing error: {e}"), "Invalid numeric value provided"),
+            Self::UuidError(e) => (format!("UUID error: {e}"), "Invalid identifier format"),
+            _ => unreachable!("Non-file parsing error passed to handle_file_parsing_error")
+        };
+        
+        error!("{}", log_msg);
+        (StatusCode::BAD_REQUEST, user_msg.to_string())
+    }
+
+    fn handle_gateway_error(app_error: Self) -> (StatusCode, String) {
+        let (log_msg, user_msg) = match app_error {
+            Self::BadGateway(msg) => (format!("Bad Gateway error: {msg}"), msg),
+            Self::GenerationError(e) => (format!("LLM generation error: {e}"), "AI service request failed".to_string()),
+            Self::EmbeddingError(e) => (format!("LLM embedding error: {e}"), "AI embedding service request failed".to_string()),
+            Self::VectorDbError(e) => (format!("Vector DB error: {e}"), "Failed to process embeddings".to_string()),
+            _ => unreachable!("Non-gateway error passed to handle_gateway_error")
+        };
+        
+        error!("{}", log_msg);
+        (StatusCode::BAD_GATEWAY, user_msg)
+    }
+
     fn handle_internal_server_error(app_error: Self) -> (StatusCode, String) {
+        // Use category-based dispatch to reduce cognitive complexity
+        if let Some(result) = Self::try_handle_categorized_error(&app_error) {
+            return result;
+        }
+        
+        // Handle remaining generic server errors
+        Self::handle_generic_server_error(app_error)
+    }
+
+    fn try_handle_categorized_error(app_error: &Self) -> Option<(StatusCode, String)> {
+        // Session and authentication errors
+        if Self::is_session_error(app_error) {
+            return Some(Self::handle_session_error(app_error.clone()));
+        }
+        
+        // Database errors
+        if Self::is_database_error(app_error) {
+            return Some(Self::handle_database_error(app_error.clone()));
+        }
+        
+        // Cryptographic errors
+        if Self::is_crypto_error(app_error) {
+            return Some(Self::handle_crypto_error(app_error.clone()));
+        }
+        
+        // AI service errors
+        if Self::is_ai_service_error(app_error) {
+            return Some(Self::handle_ai_service_error(app_error.clone()));
+        }
+        
+        // HTTP and communication errors
+        if Self::is_communication_error(app_error) {
+            return Some(Self::handle_communication_error(app_error.clone()));
+        }
+        
+        // Text processing errors
+        if Self::is_text_processing_error(app_error) {
+            return Some(Self::handle_text_processing_error(app_error.clone()));
+        }
+        
+        None
+    }
+
+    fn handle_generic_server_error(app_error: Self) -> (StatusCode, String) {
+        match app_error {
+            // System/Configuration errors
+            err if Self::is_system_config_error(&err) => Self::handle_system_config_error(err),
+            
+            // Password/Security errors
+            Self::PasswordProcessingError => Self::handle_password_processing_error(),
+            
+            // Generic/Fallback errors
+            err => Self::handle_fallback_error(err),
+        }
+    }
+
+    const fn is_session_error(error: &Self) -> bool {
+        matches!(error,
+            Self::SessionStoreError(_) |
+            Self::SessionError(_) |
+            Self::Session(_)
+        )
+    }
+
+    const fn is_database_error(error: &Self) -> bool {
+        matches!(error,
+            Self::DatabaseQueryError(_) |
+            Self::DbPoolError(_) |
+            Self::DbManagedPoolError(_) |
+            Self::DbPoolBuildError(_) |
+            Self::DbInteractError(_) |
+            Self::DbMigrationError(_)
+        )
+    }
+
+    const fn is_crypto_error(error: &Self) -> bool {
+        matches!(error,
+            Self::CryptoError(_) |
+            Self::EncryptionError(_) |
+            Self::DecryptionError(_) |
+            Self::PasswordHashingFailed(_)
+        )
+    }
+
+    const fn is_ai_service_error(error: &Self) -> bool {
+        matches!(error,
+            Self::GeminiError(_) |
+            Self::LlmClientError(_) |
+            Self::AiServiceError(_)
+        )
+    }
+
+    const fn is_communication_error(error: &Self) -> bool {
+        matches!(error,
+            Self::HttpRequestError(_) |
+            Self::HttpMiddlewareError(_) |
+            Self::WebSocketSendError(_) |
+            Self::ImageProcessingError(_)
+        )
+    }
+
+    const fn is_text_processing_error(error: &Self) -> bool {
+        matches!(error,
+            Self::ChunkingError(_) |
+            Self::TextProcessingError(_)
+        )
+    }
+
+    const fn is_system_config_error(error: &Self) -> bool {
+        matches!(error,
+            Self::ConfigError(_) |
+            Self::IoError(_) |
+            Self::SerializationError(_)
+        )
+    }
+
+    fn handle_session_error(app_error: Self) -> (StatusCode, String) {
         match app_error {
             Self::SessionStoreError(e) => {
                 error!("Session store error: {e}");
                 (StatusCode::INTERNAL_SERVER_ERROR, "Session management error".to_string())
             }
-            Self::CryptoError(e) => {
-                error!("Cryptography error: {e}");
-                (StatusCode::INTERNAL_SERVER_ERROR, "A cryptographic operation failed.".to_string())
-            }
-            Self::EncryptionError(e) => {
-                error!("Encryption error: {e}");
-                (StatusCode::INTERNAL_SERVER_ERROR, "Encryption operation failed.".to_string())
-            }
-            Self::DecryptionError(e) => {
-                error!("Decryption error: {e}");
-                (StatusCode::INTERNAL_SERVER_ERROR, "Data decryption failed.".to_string())
-            }
             Self::SessionError(e) => {
                 error!("Session operation error: {e}");
                 (StatusCode::INTERNAL_SERVER_ERROR, "A session operation failed.".to_string())
-            }
-            Self::DatabaseQueryError(e) => {
-                error!("Database query error: {e}");
-                (StatusCode::INTERNAL_SERVER_ERROR, "Database error".to_string())
-            }
-            Self::DbPoolError(e) => {
-                error!("Database pool error: {e}");
-                (StatusCode::INTERNAL_SERVER_ERROR, "Database connection error".to_string())
-            }
-            Self::DbManagedPoolError(e) => {
-                error!("Database managed pool error: {e}");
-                (StatusCode::INTERNAL_SERVER_ERROR, "Database connection error".to_string())
-            }
-            Self::DbPoolBuildError(e) => {
-                error!("Database pool build error: {e}");
-                (StatusCode::INTERNAL_SERVER_ERROR, "Database configuration error".to_string())
-            }
-            Self::DbInteractError(e) => {
-                error!("Database interaction error: {e}");
-                (StatusCode::INTERNAL_SERVER_ERROR, "Database task execution error".to_string())
-            }
-            Self::DbMigrationError(e) => {
-                error!("Database migration error: {e}");
-                (StatusCode::INTERNAL_SERVER_ERROR, "Database schema error".to_string())
-            }
-            Self::PasswordHashingFailed(e) => {
-                error!("Password hashing failed: {e}");
-                (StatusCode::INTERNAL_SERVER_ERROR, "Internal security error".to_string())
-            }
-            Self::ConfigError(e) => {
-                error!("Configuration error: {e}");
-                (StatusCode::INTERNAL_SERVER_ERROR, "Server configuration error".to_string())
-            }
-            Self::IoError(e) => {
-                error!("IO error: {e}");
-                (StatusCode::INTERNAL_SERVER_ERROR, "File system or network error".to_string())
-            }
-            Self::SerializationError(e) => {
-                error!("Serialization error: {e}");
-                (StatusCode::INTERNAL_SERVER_ERROR, "Data formatting error".to_string())
-            }
-            Self::GeminiError(e) => {
-                error!("LLM API error: {e}");
-                (StatusCode::INTERNAL_SERVER_ERROR, "AI service error".to_string())
-            }
-            Self::ImageProcessingError(e) => {
-                error!("Image processing error: {e}");
-                (StatusCode::INTERNAL_SERVER_ERROR, "Failed to process image".to_string())
-            }
-            Self::HttpRequestError(e) => {
-                error!("HTTP request error: {e}");
-                (StatusCode::INTERNAL_SERVER_ERROR, "Failed to communicate with external service".to_string())
-            }
-            Self::HttpMiddlewareError(e) => {
-                error!("HTTP middleware error: {e}");
-                (StatusCode::INTERNAL_SERVER_ERROR, "Failed during external service communication".to_string())
-            }
-            Self::LlmClientError(e) => {
-                error!("LLM client error: {e}");
-                (StatusCode::INTERNAL_SERVER_ERROR, "AI service client error".to_string())
-            }
-            Self::AiServiceError(e) => {
-                error!("AI Service Error: {e}");
-                (StatusCode::INTERNAL_SERVER_ERROR, e)
-            }
-            Self::PasswordProcessingError => {
-                (StatusCode::INTERNAL_SERVER_ERROR, "Internal Server Error: Password processing error.".to_string())
-            }
-            Self::InternalServerErrorGeneric(e) => {
-                error!("Internal server error: {e}");
-                (StatusCode::INTERNAL_SERVER_ERROR, "An unexpected error occurred".to_string())
             }
             Self::Session(e) => {
                 error!("Session error: {e}");
                 (StatusCode::INTERNAL_SERVER_ERROR, "Session management error".to_string())
             }
-            Self::WebSocketSendError(e) => {
-                error!("WebSocket send error: {e}");
-                (StatusCode::INTERNAL_SERVER_ERROR, "WebSocket send error".to_string())
-            }
-            Self::ChunkingError(e) => {
-                error!("Text chunking error: {e}");
-                (StatusCode::INTERNAL_SERVER_ERROR, "Text chunking error".to_string())
-            }
-            Self::TextProcessingError(e) => {
-                error!("Text processing error: {e}");
-                (StatusCode::INTERNAL_SERVER_ERROR, "Failed to process text".to_string())
+            _ => unreachable!("Non-session error passed to handle_session_error")
+        }
+    }
+
+    fn handle_database_error(app_error: Self) -> (StatusCode, String) {
+        let (log_msg, user_msg) = match app_error {
+            Self::DatabaseQueryError(e) => (format!("Database query error: {e}"), "Database error"),
+            Self::DbPoolError(e) => (format!("Database pool error: {e}"), "Database connection error"),
+            Self::DbManagedPoolError(e) => (format!("Database managed pool error: {e}"), "Database connection error"),
+            Self::DbPoolBuildError(e) => (format!("Database pool build error: {e}"), "Database configuration error"),
+            Self::DbInteractError(e) => (format!("Database interaction error: {e}"), "Database task execution error"),
+            Self::DbMigrationError(e) => (format!("Database migration error: {e}"), "Database schema error"),
+            _ => unreachable!("Non-database error passed to handle_database_error")
+        };
+        
+        error!("{}", log_msg);
+        (StatusCode::INTERNAL_SERVER_ERROR, user_msg.to_string())
+    }
+
+    fn handle_crypto_error(app_error: Self) -> (StatusCode, String) {
+        let (log_msg, user_msg) = match app_error {
+            Self::CryptoError(e) => (format!("Cryptography error: {e}"), "A cryptographic operation failed."),
+            Self::EncryptionError(e) => (format!("Encryption error: {e}"), "Encryption operation failed."),
+            Self::DecryptionError(e) => (format!("Decryption error: {e}"), "Data decryption failed."),
+            Self::PasswordHashingFailed(e) => (format!("Password hashing failed: {e}"), "Internal security error"),
+            _ => unreachable!("Non-crypto error passed to handle_crypto_error")
+        };
+        
+        error!("{}", log_msg);
+        (StatusCode::INTERNAL_SERVER_ERROR, user_msg.to_string())
+    }
+
+    fn handle_ai_service_error(app_error: Self) -> (StatusCode, String) {
+        let (log_msg, user_msg) = match app_error {
+            Self::GeminiError(e) => (format!("LLM API error: {e}"), "AI service error".to_string()),
+            Self::LlmClientError(e) => (format!("LLM client error: {e}"), "AI service client error".to_string()),
+            Self::AiServiceError(e) => (format!("AI Service Error: {e}"), e),
+            _ => unreachable!("Non-AI service error passed to handle_ai_service_error")
+        };
+        
+        error!("{}", log_msg);
+        (StatusCode::INTERNAL_SERVER_ERROR, user_msg)
+    }
+
+    fn handle_communication_error(app_error: Self) -> (StatusCode, String) {
+        let (log_msg, user_msg) = match app_error {
+            Self::HttpRequestError(e) => (format!("HTTP request error: {e}"), "Failed to communicate with external service"),
+            Self::HttpMiddlewareError(e) => (format!("HTTP middleware error: {e}"), "Failed during external service communication"),
+            Self::WebSocketSendError(e) => (format!("WebSocket send error: {e}"), "WebSocket send error"),
+            Self::ImageProcessingError(e) => (format!("Image processing error: {e}"), "Failed to process image"),
+            _ => unreachable!("Non-communication error passed to handle_communication_error")
+        };
+        
+        error!("{}", log_msg);
+        (StatusCode::INTERNAL_SERVER_ERROR, user_msg.to_string())
+    }
+
+    fn handle_text_processing_error(app_error: Self) -> (StatusCode, String) {
+        let (log_msg, user_msg) = match app_error {
+            Self::ChunkingError(e) => (format!("Text chunking error: {e}"), "Text chunking error"),
+            Self::TextProcessingError(e) => (format!("Text processing error: {e}"), "Failed to process text"),
+            _ => unreachable!("Non-text processing error passed to handle_text_processing_error")
+        };
+        
+        error!("{}", log_msg);
+        (StatusCode::INTERNAL_SERVER_ERROR, user_msg.to_string())
+    }
+
+    fn handle_system_config_error(app_error: Self) -> (StatusCode, String) {
+        let (log_msg, user_msg) = match app_error {
+            Self::ConfigError(e) => (format!("Configuration error: {e}"), "Server configuration error"),
+            Self::IoError(e) => (format!("IO error: {e}"), "File system or network error"),
+            Self::SerializationError(e) => (format!("Serialization error: {e}"), "Data formatting error"),
+            _ => unreachable!("Non-system config error passed to handle_system_config_error")
+        };
+        
+        error!("{}", log_msg);
+        (StatusCode::INTERNAL_SERVER_ERROR, user_msg.to_string())
+    }
+
+    fn handle_password_processing_error() -> (StatusCode, String) {
+        (StatusCode::INTERNAL_SERVER_ERROR, "Internal Server Error: Password processing error.".to_string())
+    }
+
+    fn handle_fallback_error(app_error: Self) -> (StatusCode, String) {
+        match app_error {
+            Self::InternalServerErrorGeneric(e) => {
+                error!("Internal server error: {e}");
+                (StatusCode::INTERNAL_SERVER_ERROR, "An unexpected error occurred".to_string())
             }
             Self::ValidationError(_) => {
                 unreachable!("ValidationError should be handled by the outer match arm")
@@ -712,7 +911,7 @@ mod tests {
 
     // Helper function to create an io::Error for testing
     fn create_io_error() -> std::io::Error {
-        std::io::Error::new(std::io::ErrorKind::Other, "Test IO error")
+        std::io::Error::other("Test IO error")
     }
 
     // Helper function to create a serde_json::Error for testing

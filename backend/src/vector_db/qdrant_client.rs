@@ -64,10 +64,16 @@ impl QdrantClientService {
 
         info!("Connecting to Qdrant at URL: {}", qdrant_url);
 
-        // Build the Qdrant client
+        // Build the Qdrant client with timeout configuration
         // Note: Add API key handling if required for Qdrant Cloud or secured instances
         // Use the new Qdrant struct and its builder pattern
-        let qdrant_client = Qdrant::from_url(qdrant_url).build().map_err(|e| {
+        let mut builder = Qdrant::from_url(qdrant_url);
+        
+        // Set timeout for operations (30 seconds for better reliability in tests)
+        builder = builder.timeout(std::time::Duration::from_secs(30));
+        
+        // Build the client
+        let qdrant_client = builder.build().map_err(|e| {
             error!(error = %e, "Failed to build Qdrant client");
             AppError::VectorDbError(format!("Failed to build Qdrant client: {e}"))
         })?;
@@ -195,24 +201,38 @@ impl QdrantClientService {
                 payload_m: Some(16), // Enable per-group HNSW
                 ..Default::default()
             };
-            let create_result = self
-                .client
-                .create_collection(CreateCollection {
-                    collection_name: self.collection_name.clone(),
-                    vectors_config: Some(VectorsConfig {
-                        config: Some(QdrantVectorsConfig::Params(VectorParams {
-                            size: self.embedding_dimension,
-                            distance: self.distance_metric.into(), // Use configured distance
-                            hnsw_config: Some(target_hnsw_config),
-                            quantization_config: None,
-                            on_disk: self.on_disk, // Use configured on_disk setting
-                            datatype: None,
-                            multivector_config: None,
-                        })),
-                    }),
-                    ..Default::default()
-                })
-                .await;
+            // Retry logic for collection creation to handle transient failures
+            let mut create_result = Err(anyhow::anyhow!("Not attempted"));
+            for attempt in 1..=3 {
+                if attempt > 1 {
+                    info!("Retrying collection creation, attempt {}/3", attempt);
+                    tokio::time::sleep(tokio::time::Duration::from_millis(500 * attempt)).await;
+                }
+                
+                create_result = self
+                    .client
+                    .create_collection(CreateCollection {
+                        collection_name: self.collection_name.clone(),
+                        vectors_config: Some(VectorsConfig {
+                            config: Some(QdrantVectorsConfig::Params(VectorParams {
+                                size: self.embedding_dimension,
+                                distance: self.distance_metric.into(), // Use configured distance
+                                hnsw_config: Some(target_hnsw_config.clone()),
+                                quantization_config: None,
+                                on_disk: self.on_disk, // Use configured on_disk setting
+                                datatype: None,
+                                multivector_config: None,
+                            })),
+                        }),
+                        ..Default::default()
+                    })
+                    .await
+                    .map_err(|e| anyhow::anyhow!(e));
+                    
+                if create_result.is_ok() {
+                    break;
+                }
+            }
 
             match create_result {
                 Ok(_) => {
@@ -259,9 +279,9 @@ impl QdrantClientService {
                         // Treat as success in the context of ensure_collection_exists
                     } else {
                         // This is a different, unexpected error
-                        error!(error = %e, collection = %self.collection_name, "Failed to create Qdrant collection");
+                        error!(error = %e, collection = %self.collection_name, "Failed to create Qdrant collection after {} attempts", 3);
                         return Err(AppError::VectorDbError(format!(
-                            "Failed to create Qdrant collection '{}': {}",
+                            "Failed to create Qdrant collection '{}' after 3 attempts: {}",
                             self.collection_name, e
                         )));
                     }

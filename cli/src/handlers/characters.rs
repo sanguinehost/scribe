@@ -129,10 +129,10 @@ pub async fn handle_character_create_oneliner<H: IoHandler, C: HttpClient>(
         first_mes: Some(first_mes),
         personality: args.personality.unwrap_or_default(),
         scenario: args.scenario.unwrap_or_default(),
-        mes_example: "".to_string(), // Not in one-liner args, default to empty
+        mes_example: String::new(), // Not in one-liner args, default to empty
         creator_notes: args.creator_notes.unwrap_or_default(),
         system_prompt: args.system_prompt.unwrap_or_default(),
-        post_history_instructions: "".to_string(), // Not in one-liner args
+        post_history_instructions: String::new(), // Not in one-liner args
         tags: args.tags.unwrap_or_default(),
         creator: args.creator.unwrap_or_default(),
         character_version: args.character_version.unwrap_or_default(),
@@ -146,24 +146,24 @@ pub async fn handle_character_create_oneliner<H: IoHandler, C: HttpClient>(
         modification_date: None,
         extensions: None,
         // V2 fields - default them for now
-        persona: "".to_string(),
-        world_scenario: "".to_string(),
+        persona: String::new(),
+        world_scenario: String::new(),
         avatar: "none".to_string(),
-        chat: "".to_string(),
-        greeting: "".to_string(), // first_mes is primary
-        definition: "".to_string(),
-        default_voice: "".to_string(),
+        chat: String::new(),
+        greeting: String::new(), // first_mes is primary
+        definition: String::new(),
+        default_voice: String::new(),
         data_id: None,
-        category: "".to_string(),
+        category: String::new(),
         definition_visibility: "private".to_string(),
         depth: None,
-        example_dialogue: "".to_string(),
+        example_dialogue: String::new(),
         favorite: None,
         first_message_visibility: "private".to_string(),
         height: None,
         last_activity: None,
-        migrated_from: "".to_string(),
-        model_prompt: "".to_string(),
+        migrated_from: String::new(),
+        model_prompt: String::new(),
         model_prompt_visibility: "private".to_string(),
         model_temperature: None,
         num_interactions: None,
@@ -176,7 +176,7 @@ pub async fn handle_character_create_oneliner<H: IoHandler, C: HttpClient>(
         system_tags: vec![],
         token_budget: None,
         usage_hints: None,
-        user_persona: "".to_string(),
+        user_persona: String::new(),
         user_persona_visibility: "private".to_string(),
         visibility: "private".to_string(),
         weight: None,
@@ -416,9 +416,9 @@ pub async fn handle_character_edit_wizard<H: IoHandler, C: HttpClient>(
                 let new_value = prompt_optional_field_string(io_handler, &format!("New {} (leave blank to keep current, type 'none' to clear):", $prompt_text))?;
                 if let Some(val_str) = new_value {
                     if val_str.trim().to_lowercase() == "none" {
-                        update_dto.$field_name = Some("".to_string()); // Or however backend expects clearing, might need specific handling for Option<String> vs String
+                        update_dto.$field_name = Some(String::new()); // Or however backend expects clearing, might need specific handling for Option<String> vs String
                         changed_fields_summary.push(format!("{}: '{}' -> (cleared)", $prompt_text, $current_value_display));
-                        current_char.$field_name = Some("".to_string()); // Update local copy
+                        current_char.$field_name = Some(String::new()); // Update local copy
                     } else {
                         update_dto.$field_name = Some(val_str.clone());
                         changed_fields_summary.push(format!("{}: '{}' -> '{}'", $prompt_text, $current_value_display, val_str));

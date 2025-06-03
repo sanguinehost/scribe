@@ -1,3 +1,7 @@
+
+#![allow(clippy::uninlined_format_args)]
+#![allow(clippy::manual_string_new)]
+
 #[cfg(test)]
 mod character_creation_tests {
     use scribe_cli::CharacterCreateArgs; // Ensure this is pub in lib.rs or main.rs if main.rs is a lib

@@ -28,7 +28,7 @@ use scribe_backend::routes::{
     documents::document_routes,
     lorebook_routes::lorebook_routes, // Added for lorebook routes
     user_persona_routes::user_personas_router, // Added for user persona routes
-    user_settings_routes::user_settings_routes, // Added for user settings routes
+    user_settings_routes::user_settings_routes,
 };
 use scribe_backend::state::{AppState, AppStateServices};
 use std::env; // Added for current_dir
@@ -78,94 +78,149 @@ async fn main_request_logging_middleware(req: AxumRequest, next: Next) -> AxumRe
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    // Install the default crypto provider (ring) for rustls FIRST.
-    // Get the default provider instance and then install it.
-    let _ = ring::default_provider().install_default(); // Handle unused Result
+    initialize_runtime();
+    let config = Arc::new(Config::load().context("Failed to load configuration")?);
+    let pool = setup_database_pool(&config);
+    run_migrations(&pool).await?;
 
+    let services = initialize_services(&config, &pool).await?;
+
+    let (app_state, auth_layer) = setup_app_state_and_auth(&config, &pool, services)?;
+
+    let app = build_router(app_state, auth_layer);
+
+    start_server(&config, app).await
+}
+
+// Initialize runtime and basic setup
+fn initialize_runtime() {
+    // Install the default crypto provider (ring) for rustls FIRST.
+    let _ = ring::default_provider().install_default();
     dotenvy::dotenv().ok();
     init_subscriber();
-
     tracing::info!("Starting Scribe backend server...");
+}
 
-    let config = Arc::new(Config::load().context("Failed to load configuration")?);
+// Setup database pool
+fn setup_database_pool(config: &Config) -> PgPool {
     let db_url = config
         .database_url
         .as_ref()
         .expect("DATABASE_URL not set in config");
     tracing::info!("Connecting to database...");
     let manager = DeadpoolManager::new(db_url, DeadpoolRuntime::Tokio1);
-    let pool_config = PoolConfig::default(); // Use default config for now
+    let pool_config = PoolConfig::default();
     let pool: PgPool = DeadpoolPool::builder(manager)
         .config(pool_config)
         .runtime(DeadpoolRuntime::Tokio1)
         .build()
         .expect("Failed to create DB pool.");
     tracing::info!("Database connection pool established.");
+    pool
+}
 
-    run_migrations(&pool).await?; // Extract migration logic to function
-
+// Initialize all services
+async fn initialize_services(config: &Arc<Config>, pool: &PgPool) -> Result<AppStateServices> {
     // --- Initialize GenAI Client Asynchronously ---
     let ai_client = build_gemini_client()?;
-    let ai_client_arc = Arc::new(ai_client); // Wrap in Arc for AppState
+    let ai_client_arc = Arc::new(ai_client);
 
     // --- Initialize Embedding Client ---
     let embedding_client = build_gemini_embedding_client(config.clone())?;
-    let embedding_client_arc = Arc::new(embedding_client); // Wrap in Arc
+    let embedding_client_arc = Arc::new(embedding_client);
+
+    // --- Initialize Tokenizer Service ---
+    let tokenizer_service = setup_tokenizer_service(config)?;
+
+    // --- Initialize Gemini Token Client (Optional) ---
+    let gemini_token_client = setup_gemini_token_client(config);
+
+    // --- Initialize Hybrid Token Counter ---
+    let hybrid_token_counter = setup_hybrid_token_counter(config, tokenizer_service, gemini_token_client);
+
+    // --- Initialize Services ---
+    let encryption_service = Arc::new(EncryptionService::new());
+    let chat_override_service = Arc::new(ChatOverrideService::new(pool.clone(), encryption_service.clone()));
+    let user_persona_service = Arc::new(UserPersonaService::new(pool.clone(), encryption_service.clone()));
+    let lorebook_service = Arc::new(LorebookService::new(pool.clone(), encryption_service.clone()));
+
+    // --- Create Chunking Config and Embedding Pipeline ---
+    let chunk_config = create_chunk_config(config);
+    let embedding_pipeline_service = Arc::new(EmbeddingPipelineService::new(chunk_config))
+        as Arc<dyn EmbeddingPipelineServiceTrait>;
 
     // --- Initialize Qdrant Client Service ---
     tracing::info!("Initializing Qdrant client service...");
-    let qdrant_service = QdrantClientService::new(config.clone()).await?;
-    let qdrant_service_arc = Arc::new(qdrant_service);
+    let qdrant_service = Arc::new(QdrantClientService::new(config.clone()).await?);
     tracing::info!("Qdrant client service initialized.");
 
-    // --- Initialize Tokenizer Service ---
+    let auth_backend = Arc::new(AuthBackend::new(pool.clone()));
+
+    Ok(AppStateServices {
+        ai_client: ai_client_arc,
+        embedding_client: embedding_client_arc,
+        qdrant_service,
+        embedding_pipeline_service,
+        chat_override_service,
+        user_persona_service,
+        token_counter: hybrid_token_counter,
+        encryption_service,
+        lorebook_service,
+        auth_backend,
+    })
+}
+
+// Setup tokenizer service
+fn setup_tokenizer_service(config: &Config) -> Result<TokenizerService> {
     tracing::info!("Initializing TokenizerService...");
-    let tokenizer_model_relative_path_str = config.tokenizer_model_path.clone();
-
-    // Determine the absolute path to the tokenizer model using CARGO_MANIFEST_DIR
-    let backend_crate_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let final_tokenizer_model_path = backend_crate_dir.join(&tokenizer_model_relative_path_str);
-
-    // Log current working directory and model path details
-    if let Ok(cwd) = env::current_dir() {
-        tracing::info!("Current working directory: {}", cwd.display());
-    } else {
-        tracing::warn!("Failed to get current working directory.");
-    }
-    tracing::info!(
-        "Tokenizer model relative path from config: {}",
-        tokenizer_model_relative_path_str
-    );
-    tracing::info!(
-        "Backend crate directory (CARGO_MANIFEST_DIR): {}",
-        backend_crate_dir.display()
-    );
-    tracing::info!(
-        "Resolved absolute tokenizer model path to be used: {}",
-        final_tokenizer_model_path.display()
-    );
+    let final_tokenizer_model_path = resolve_tokenizer_model_path(config);
 
     let tokenizer_service = TokenizerService::new(&final_tokenizer_model_path).context(format!(
         "Failed to load tokenizer model from {}",
         final_tokenizer_model_path.display()
     ))?;
-    tracing::info!(
-        "TokenizerService initialized with model: {}",
-        tokenizer_service.model_name()
-    );
+    
+    tracing::info!("TokenizerService initialized with model: {}", tokenizer_service.model_name());
+    Ok(tokenizer_service)
+}
 
-    // --- Initialize Gemini Token Client (Optional) ---
-    let gemini_token_client = if let Some(api_key) = config.gemini_api_key.as_ref() {
+// Helper function to resolve the tokenizer model path and log relevant information
+#[allow(clippy::cognitive_complexity)]
+fn resolve_tokenizer_model_path(config: &Config) -> PathBuf {
+    let tokenizer_model_relative_path_str = config.tokenizer_model_path.clone();
+    let backend_crate_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let final_tokenizer_model_path = backend_crate_dir.join(&tokenizer_model_relative_path_str);
+
+    if let Ok(cwd) = env::current_dir() {
+        tracing::info!("Current working directory: {}", cwd.display());
+    } else {
+        tracing::warn!("Failed to get current working directory.");
+    }
+
+    tracing::info!("Tokenizer model relative path from config: {}", tokenizer_model_relative_path_str);
+    tracing::info!("Backend crate directory (CARGO_MANIFEST_DIR): {}", backend_crate_dir.display());
+    tracing::info!("Resolved absolute tokenizer model path to be used: {}", final_tokenizer_model_path.display());
+
+    final_tokenizer_model_path
+}
+
+// Setup Gemini token client
+fn setup_gemini_token_client(config: &Config) -> Option<GeminiTokenClient> {
+    config.gemini_api_key.as_ref().map_or_else(|| {
+        tracing::warn!("GEMINI_API_KEY not set, GeminiTokenClient for token counting will not be available.");
+        None
+    }, |api_key| {
         tracing::info!("Initializing GeminiTokenClient for token counting...");
         Some(GeminiTokenClient::new(api_key.clone()))
-    } else {
-        tracing::warn!(
-            "GEMINI_API_KEY not set, GeminiTokenClient for token counting will not be available."
-        );
-        None
-    };
+    })
+}
 
-    // --- Initialize Hybrid Token Counter ---
+// Setup hybrid token counter
+fn setup_hybrid_token_counter(
+    config: &Config,
+    tokenizer_service: TokenizerService,
+    gemini_token_client: Option<GeminiTokenClient>,
+) -> Arc<HybridTokenCounter> {
     tracing::info!("Initializing HybridTokenCounter...");
     let token_counter_default_model = config.token_counter_default_model.clone();
     let hybrid_token_counter = HybridTokenCounter::new(
@@ -173,72 +228,15 @@ async fn main() -> Result<()> {
         gemini_token_client,
         token_counter_default_model.clone(),
     );
-    let hybrid_token_counter_arc = Arc::new(hybrid_token_counter);
-    tracing::info!(
-        "HybridTokenCounter initialized with default model: {}",
-        token_counter_default_model
-    );
+    tracing::info!("HybridTokenCounter initialized with default model: {}", token_counter_default_model);
+    Arc::new(hybrid_token_counter)
+}
 
-    // --- Initialize Encryption Service (shared) ---
-    // Assuming EncryptionService is cheap to create and stateless for now, or managed internally if it needs more setup
-    let encryption_service = EncryptionService::new();
-    let encryption_service_arc = Arc::new(encryption_service);
-
-    // --- Initialize Chat Override Service ---
-    let encryption_service_arc_for_chat_override = encryption_service_arc.clone(); // Clone Arc for ChatOverrideService
-    let chat_override_service =
-        ChatOverrideService::new(pool.clone(), encryption_service_arc_for_chat_override);
-    let chat_override_service_arc = Arc::new(chat_override_service);
-    tracing::info!("ChatOverrideService initialized.");
-
-    // --- Create User Persona Service ---
-    let encryption_service_arc_for_persona = encryption_service_arc.clone(); // Clone Arc for UserPersonaService
-    let user_persona_service =
-        UserPersonaService::new(pool.clone(), encryption_service_arc_for_persona);
-    let user_persona_service_arc = Arc::new(user_persona_service);
-
-    // --- Initialize Lorebook Service ---
-    let encryption_service_arc_for_lorebook = encryption_service_arc.clone();
-    let lorebook_service = LorebookService::new(pool.clone(), encryption_service_arc_for_lorebook);
-    let lorebook_service_arc = Arc::new(lorebook_service);
-    tracing::info!("LorebookService initialized.");
-
-    // --- Session Store Setup ---
-    // Ideally load from config/env, generating is okay for dev
-    let session_store = DieselSessionStore::new(pool.clone());
-
-    // Use the signing key from the config
-    let secret_key = config
-        .cookie_signing_key
-        .as_ref()
-        .context("COOKIE_SIGNING_KEY must be set in config")?;
-    let key_bytes = decode(secret_key)
-        .context("Invalid COOKIE_SIGNING_KEY format in config (must be hex)")?;
-    let _signing_key = Key::from(&key_bytes); // Key is now tower_sessions::cookie::Key (unused in current config)
-
-    // Build the session manager layer (handles session data)
-    let session_manager_layer = SessionManagerLayer::new(session_store)
-        .with_secure(config.session_cookie_secure) // Use config value directly
-        .with_same_site(SameSite::Lax)
-        // .with_signed(signing_key.clone()) // CookieManagerLayer will handle signing
-        .with_expiry(Expiry::OnInactivity(Duration::hours(24)));
-
-    // Configure the auth backend
-    // IMPORTANT: Wrap in Arc first to ensure the same instance is shared
-    let auth_backend_arc = Arc::new(AuthBackend::new(pool.clone()));
-    let auth_backend = auth_backend_arc.clone();
-
-    // Build the auth layer, passing the SessionManagerLayer
-    // AuthManagerLayerBuilder needs the backend directly, it will handle cloning internally
-    let auth_layer =
-        AuthManagerLayerBuilder::new((*auth_backend).clone(), session_manager_layer.clone())
-            // .with_login_key(SignedLoginKey::new(signing_key.clone())) // Removed: No longer part of axum-login API here
-            .build();
-
-    // -- Create Chunking Config from main Config --
+// Create chunking configuration
+fn create_chunk_config(config: &Config) -> ChunkConfig {
     let chunk_metric = match config.chunking_metric.to_lowercase().as_str() {
         "word" => ChunkingMetric::Word,
-        "char" | _ => ChunkingMetric::Char, // Default to Char if invalid or not "word"
+        _ => ChunkingMetric::Char,
     };
     let chunk_config = ChunkConfig {
         metric: chunk_metric,
@@ -246,75 +244,72 @@ async fn main() -> Result<()> {
         overlap: config.chunking_overlap,
     };
     tracing::info!(?chunk_config, "Using chunking configuration");
+    chunk_config
+}
 
-    // -- Create Embedding Pipeline Service --
-    let embedding_pipeline_service = Arc::new(EmbeddingPipelineService::new(chunk_config))
-        as Arc<dyn EmbeddingPipelineServiceTrait>; // Instantiate with config
+// Setup app state and authentication
+fn setup_app_state_and_auth(
+    config: &Arc<Config>,
+    pool: &PgPool,
+    services: AppStateServices,
+) -> Result<(AppState, axum_login::AuthManagerLayer<AuthBackend, DieselSessionStore>)> {
+    // --- Session Store Setup ---
+    let session_store = DieselSessionStore::new(pool.clone());
 
-    // -- Create AppState --
-    let services = AppStateServices {
-        ai_client: ai_client_arc,
-        embedding_client: embedding_client_arc,
-        qdrant_service: qdrant_service_arc,
-        embedding_pipeline_service,
-        chat_override_service: chat_override_service_arc,
-        user_persona_service: user_persona_service_arc,
-        token_counter: hybrid_token_counter_arc,
-        encryption_service: encryption_service_arc.clone(),
-        lorebook_service: lorebook_service_arc,
-        auth_backend: auth_backend_arc,
-    };
-    
-    let app_state = AppState::new(
-        pool.clone(),
-        config.clone(),
-        services,
-    );
+    let secret_key = config
+        .cookie_signing_key
+        .as_ref()
+        .context("COOKIE_SIGNING_KEY must be set in config")?;
+    let key_bytes = decode(secret_key)
+        .context("Invalid COOKIE_SIGNING_KEY format in config (must be hex)")?;
+    let _signing_key = Key::from(&key_bytes);
 
-    // --- Define Protected Routes ---
+    let session_manager_layer = SessionManagerLayer::new(session_store)
+        .with_secure(config.session_cookie_secure)
+        .with_same_site(SameSite::Lax)
+        .with_expiry(Expiry::OnInactivity(Duration::hours(24)));
+
+    let auth_backend = services.auth_backend.clone();
+    let auth_layer = AuthManagerLayerBuilder::new((*auth_backend).clone(), session_manager_layer).build();
+
+    let app_state = AppState::new(pool.clone(), config.clone(), services);
+
+    Ok((app_state, auth_layer))
+}
+
+// Build the router with all routes and middleware
+fn build_router(
+    app_state: AppState,
+    auth_layer: axum_login::AuthManagerLayer<AuthBackend, DieselSessionStore>,
+) -> Router {
     let protected_api_routes = Router::new()
-        // Character routes (require login)
-        // Use the dedicated characters_router function
-        .nest("/characters", characters_router(app_state.clone())) // Use the router function
-        // Chat routes (require login)
-        .nest("/chat", chat_routes(app_state.clone())) // Static chat generation routes
-        .nest("/chats", chats::chat_routes()) // API routes for chat sessions - mounted at /api/chats
-        // Mount document API routes
-        .nest("/documents", document_routes()) // Corrected: /api/documents
-        // User Persona routes (require login)
+        .nest("/characters", characters_router(app_state.clone()))
+        .nest("/chat", chat_routes(app_state.clone()))
+        .nest("/chats", chats::chat_routes())
+        .nest("/documents", document_routes())
         .nest("/personas", user_personas_router(app_state.clone()))
-        // User Settings routes (require login)
-        .nest("/user-settings", user_settings_routes(app_state.clone())) // Path /api/user-settings
-        // Lorebook routes (require login)
-        .nest("/", lorebook_routes()) // Mounts /lorebooks and /chats/:id/lorebooks under /api
-        // Admin routes (require login + admin role check in handlers)
+        .nest("/user-settings", user_settings_routes(app_state.clone()))
+        .nest("/", lorebook_routes())
         .nest("/admin", admin_routes())
-        .route_layer(login_required!(AuthBackend)); // Simplify macro: remove user type (i64)
+        .route_layer(login_required!(AuthBackend));
 
-    // --- Define Public Routes ---
     let public_api_routes = Router::new()
-        .route("/health", get(health_check)) // Use imported health_check
-        .merge(Router::new().nest("/auth", auth_routes())); // Mount all auth routes
+        .route("/health", get(health_check))
+        .merge(Router::new().nest("/auth", auth_routes()));
 
-    // Combine routers and add layers
-    let app = Router::new()
-        // Mount API routes under /api
-        .nest("/api", public_api_routes) // public_api_routes should be defined to take AppState if its handlers need it.
-        .nest("/api", protected_api_routes) // protected_api_routes now internally handle their state.
-        // Apply layers: Order matters! Outside-in execution.
-        .layer(CookieManagerLayer::new()) // 1. Manages cookies.
-        .layer(auth_layer) // 2. Uses cookies (via CookieManagerLayer) to load session/user
-        .with_state(app_state.clone()) // Keeping this for now, as public_api_routes (e.g. auth_routes) might rely on it.
-        .layer(
-            TraceLayer::new_for_http()
-                .make_span_with(DefaultMakeSpan::default().include_headers(true)),
-        ) // 3. Tracing (often near the outside)
-        .layer(axum_middleware::from_fn(main_request_logging_middleware));
+    Router::new()
+        .nest("/api", public_api_routes)
+        .nest("/api", protected_api_routes)
+        .layer(CookieManagerLayer::new())
+        .layer(auth_layer)
+        .with_state(app_state)
+        .layer(TraceLayer::new_for_http().make_span_with(DefaultMakeSpan::default().include_headers(true)))
+        .layer(axum_middleware::from_fn(main_request_logging_middleware))
+}
 
-    // --- Configure TLS --- <-- Add TLS Config Block
-    // Get the directory containing backend's Cargo.toml at compile time
+// Start the server with TLS configuration
+async fn start_server(config: &Config, app: Router) -> Result<()> {
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    // Navigate to project root (parent of backend dir)
     let project_root = manifest_dir
         .parent()
         .context("Failed to get project root from manifest dir")?;
@@ -324,21 +319,16 @@ async fn main() -> Result<()> {
 
     tracing::info!(cert_path = %cert_path.display(), key_path = %key_path.display(), "Loading TLS certificates");
 
-    let tls_config = RustlsConfig::from_pem_file(
-        cert_path, // Use the constructed path
-        key_path,  // Use the constructed path
-    )
-    .await
-    .context("Failed to load TLS certificate/key for Axum server")?;
+    let tls_config = RustlsConfig::from_pem_file(cert_path, key_path)
+        .await
+        .context("Failed to load TLS certificate/key for Axum server")?;
 
-    // Use port from config, default to 8080 (adjust if needed)
     let port = config.port;
     let addr_str = format!("0.0.0.0:{port}");
     let addr: SocketAddr = addr_str.parse().expect("Invalid address format");
 
     tracing::info!("Starting HTTPS server on {}", addr);
 
-    // --- Start HTTPS Server --- <-- Change server binding/serving
     axum_server::bind_rustls(addr, tls_config)
         .serve(app.into_make_service())
         .await

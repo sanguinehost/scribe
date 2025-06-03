@@ -56,26 +56,22 @@ pub async fn set_character_override(
             }
 
             // 2. Encrypt the value
-            let (encrypted_value, nonce) = match &owned_user_dek_opt {
-                // Use the owned Option
-                Some(dek) => {
-                    // dek is &SecretBox<Vec<u8>>
-                    encrypt_gcm(value_clone.as_bytes(), dek).map_err(|e| {
-                        // Use direct call
-                        error!("Failed to encrypt override value: {}", e);
-                        AppError::EncryptionError("Failed to encrypt override value".to_string())
-                    })?
-                }
-                None => {
-                    // This case should ideally be prevented if overrides require encryption.
-                    // For now, let's assume if no DEK, we store plaintext (though this is not ideal for sensitive data)
-                    // Or, more correctly, return an error if DEK is expected but not provided.
-                    // For this implementation, we'll require DEK for overrides.
-                    error!("User DEK not provided, cannot encrypt override value.");
-                    return Err(AppError::BadRequest(
-                        "User DEK is required to set character overrides.".to_string(),
-                    ));
-                }
+            let (encrypted_value, nonce) = if let Some(dek) = &owned_user_dek_opt {
+                // dek is &SecretBox<Vec<u8>>
+                encrypt_gcm(value_clone.as_bytes(), dek).map_err(|e| {
+                    // Use direct call
+                    error!("Failed to encrypt override value: {}", e);
+                    AppError::EncryptionError("Failed to encrypt override value".to_string())
+                })?
+            } else {
+                // This case should ideally be prevented if overrides require encryption.
+                // For now, let's assume if no DEK, we store plaintext (though this is not ideal for sensitive data)
+                // Or, more correctly, return an error if DEK is expected but not provided.
+                // For this implementation, we'll require DEK for overrides.
+                error!("User DEK not provided, cannot encrypt override value.");
+                return Err(AppError::BadRequest(
+                    "User DEK is required to set character overrides.".to_string(),
+                ));
             };
 
             // 3. Perform an upsert (insert or update on conflict)

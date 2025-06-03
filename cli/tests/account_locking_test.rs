@@ -1,3 +1,5 @@
+#![allow(clippy::uninlined_format_args)]
+
 // account_locking_test.rs
 // This is an integration test for account locking functionality
 
@@ -42,5 +44,5 @@ async fn test_account_locking() {
     println!("4. Verify that an appropriate error message is displayed");
 
     // Test passes because we're just documenting the functionality
-    assert!(true);
+    // No assertion needed for documentation test
 }

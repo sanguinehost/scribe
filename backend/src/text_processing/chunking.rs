@@ -662,8 +662,100 @@ fn handle_valid_word_chunk_boundaries(
     current_chunk_end_word_index
 }
 
-/// Process a single iteration of the word chunking loop
+/// Log word chunk iteration details
+#[inline]
 #[allow(clippy::cognitive_complexity)]
+fn log_word_chunk_boundaries(
+    start_index: usize,
+    end_index: usize,
+    start_byte: usize,
+    end_byte: usize,
+) {
+    trace!("-- Fallback Word Loop Iteration --");
+    trace!("Start Word Index: {}", start_index);
+    trace!("End Word Index (Calculated): {}", end_index);
+    trace!("Chunk Start Byte: {}", start_byte);
+    trace!("Chunk End Byte: {}", end_byte);
+}
+
+/// Result of word chunk boundary calculation
+struct WordChunkBoundaries {
+    end_word_index: usize,
+    start_byte: usize,
+    end_byte: usize,
+}
+
+/// Parameters for chunk processing
+struct ChunkProcessingParams<'a> {
+    current_start_word_index: usize,
+    ctx: &'a WordChunkContext<'a>,
+    word_segmenter: &'a WordSegmenter,
+}
+
+/// Calculate boundaries for the current word chunk
+fn get_word_chunk_boundaries(
+    start_index: usize,
+    config: &ChunkConfig,
+    ctx: &WordChunkContext<'_>,
+) -> WordChunkBoundaries {
+    let (end_word_index, start_byte, end_byte) = 
+        calculate_word_chunk_boundaries(start_index, config, ctx);
+    
+    WordChunkBoundaries {
+        end_word_index,
+        start_byte,
+        end_byte,
+    }
+}
+
+/// Log the boundaries for debugging
+fn log_chunk_iteration_info(
+    start_index: usize,
+    boundaries: &WordChunkBoundaries,
+) {
+    log_word_chunk_boundaries(
+        start_index,
+        boundaries.end_word_index,
+        boundaries.start_byte,
+        boundaries.end_byte,
+    );
+}
+
+/// Process chunk when boundaries are valid
+fn process_valid_chunk(
+    params: &ChunkProcessingParams<'_>,
+    boundaries: &WordChunkBoundaries,
+    chunks: &mut Vec<TextChunk>,
+) -> usize {
+    handle_valid_word_chunk_boundaries(
+        params.current_start_word_index,
+        boundaries.end_word_index,
+        boundaries.start_byte,
+        boundaries.end_byte,
+        params.ctx,
+        params.word_segmenter,
+        chunks,
+    )
+}
+
+/// Process chunk when boundaries are invalid
+fn process_invalid_chunk(
+    params: &ChunkProcessingParams<'_>,
+    boundaries: &WordChunkBoundaries,
+) -> usize {
+    handle_invalid_chunk_boundaries(
+        params.current_start_word_index,
+        boundaries.end_word_index,
+        params.ctx.num_words_in_segment,
+    )
+}
+
+/// Determine if boundaries are valid for chunk creation
+const fn are_boundaries_valid(boundaries: &WordChunkBoundaries) -> bool {
+    boundaries.start_byte < boundaries.end_byte
+}
+
+/// Process a single iteration of the word chunking loop
 fn process_word_chunk_iteration(
     current_start_word_index: usize,
     config: &ChunkConfig,
@@ -671,34 +763,20 @@ fn process_word_chunk_iteration(
     word_segmenter: &WordSegmenter,
     chunks: &mut Vec<TextChunk>,
 ) -> usize {
-    trace!("-- Fallback Word Loop Iteration --");
-    trace!("Start Word Index: {}", current_start_word_index);
+    let boundaries = get_word_chunk_boundaries(current_start_word_index, config, ctx);
     
-    let (current_chunk_end_word_index, chunk_start_byte, chunk_end_byte) = 
-        calculate_word_chunk_boundaries(current_start_word_index, config, ctx);
+    log_chunk_iteration_info(current_start_word_index, &boundaries);
     
-    trace!("End Word Index (Calculated): {}", current_chunk_end_word_index);
-    trace!("Chunk Start Byte: {}", chunk_start_byte);
-    trace!("Chunk End Byte: {}", chunk_end_byte);
+    let params = ChunkProcessingParams {
+        current_start_word_index,
+        ctx,
+        word_segmenter,
+    };
     
-    // Process the chunk if boundaries are valid
-    if chunk_start_byte < chunk_end_byte {
-        handle_valid_word_chunk_boundaries(
-            current_start_word_index,
-            current_chunk_end_word_index,
-            chunk_start_byte,
-            chunk_end_byte,
-            ctx,
-            word_segmenter,
-            chunks,
-        )
+    if are_boundaries_valid(&boundaries) {
+        process_valid_chunk(&params, &boundaries, chunks)
     } else {
-        // Handle invalid boundaries and force advancement
-        handle_invalid_chunk_boundaries(
-            current_start_word_index,
-            current_chunk_end_word_index,
-            ctx.num_words_in_segment,
-        )
+        process_invalid_chunk(&params, &boundaries)
     }
 }
 

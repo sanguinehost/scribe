@@ -1,4 +1,6 @@
 #![cfg(test)]
+#![allow(clippy::too_many_lines)]
+
 use super::helpers::{get_text_body, insert_test_user_with_password, run_db_op};
 use axum::{
     body::Body,
@@ -22,11 +24,11 @@ async fn test_create_character_minimal_fields() -> Result<(), anyhow::Error> {
     let test_password = "testpassword123";
     let test_username = format!("create_char_user_{}", Uuid::new_v4());
     let username_for_insert = test_username.clone();
-    let _user = run_db_op(&pool, move |conn| {
+    let user_result = run_db_op(&pool, move |conn| {
         insert_test_user_with_password(conn, &username_for_insert, test_password)
     })
     .await?;
-    let (user, _) = _user; // Destructure the tuple, ignore dek
+    let (user, _) = user_result; // Destructure the tuple, ignore dek
     guard.add_user(user.id);
 
     // -- Simulate Login ---
@@ -217,11 +219,11 @@ async fn test_create_character_all_fields() -> Result<(), anyhow::Error> {
     let test_password = "testpassword123";
     let test_username = format!("create_char_all_fields_user_{}", Uuid::new_v4());
     let username_for_insert = test_username.clone();
-    let _user = run_db_op(&pool, move |conn| {
+    let user_result = run_db_op(&pool, move |conn| {
         insert_test_user_with_password(conn, &username_for_insert, test_password)
     })
     .await?;
-    let (user, _) = _user; // Destructure the tuple, ignore dek
+    let (user, _) = user_result; // Destructure the tuple, ignore dek
     guard.add_user(user.id);
 
     // -- Simulate Login ---
@@ -372,11 +374,11 @@ async fn test_create_character_missing_required_fields() -> Result<(), anyhow::E
     let test_password = "testpassword123";
     let test_username = format!("create_char_missing_fields_user_{}", Uuid::new_v4());
     let username_for_insert = test_username.clone();
-    let _user = run_db_op(&pool, move |conn| {
+    let user_result = run_db_op(&pool, move |conn| {
         insert_test_user_with_password(conn, &username_for_insert, test_password)
     })
     .await?;
-    let (user, _) = _user; // Destructure the tuple, ignore dek
+    let (user, _) = user_result; // Destructure the tuple, ignore dek
     guard.add_user(user.id);
 
     // -- Simulate Login ---

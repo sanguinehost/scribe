@@ -1,3 +1,8 @@
+#![allow(clippy::uninlined_format_args)]
+#![allow(clippy::redundant_clone)]
+#![allow(clippy::needless_borrows_for_generic_args)]
+#![allow(clippy::needless_borrow)]
+
 use assert_cmd::Command;
 use predicates::prelude::*;
 use regex::Regex;

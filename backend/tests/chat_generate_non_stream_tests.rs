@@ -8,15 +8,15 @@ use axum::{
 use bigdecimal::{BigDecimal, ToPrimitive};
 use chrono::Utc;
 use diesel::prelude::*;
-use genai::chat::{ChatRole, MessageContent};
+use genai::chat::{Usage, MessageContent, ChatRole};
 use serde_json::json;
 use std::str::FromStr;
 use tower::ServiceExt;
 use tower_cookies::Cookie;
 use uuid::Uuid;
 // Import for session DEK handling
-use scribe_backend::crypto::decrypt_gcm;
 use scribe_backend::errors::AppError;
+use scribe_backend::crypto::decrypt_gcm;
 use secrecy::ExposeSecret;
 use tokio::time::{Duration, sleep};
 
@@ -28,8 +28,8 @@ use scribe_backend::models::{
     chats::{
         ApiChatMessage,
         Chat as DbChat, // DbChat is used for session
+        ChatMessage,
         GenerateChatRequest,
-        Message as DbChatMessage, // DbChatMessage is used for message
         MessageRole,
         NewChat,
         NewChatMessage, // Added NewChatMessage
@@ -46,7 +46,7 @@ use tracing::{debug, error, info, warn}; // Added debug
 
 // Add a custom ChatCompletionResponse struct since there doesn't seem to be one in scribe_backend::models::chats
 #[derive(Debug, serde::Deserialize)]
-
+#[allow(dead_code)]
 struct ChatCompletionResponse {
     content: String,
     message_id: String, // Expecting flat structure { "content": "...", "message_id": "..." }
@@ -169,6 +169,7 @@ async fn debug_session_data(
 
 #[tokio::test]
 // Removed ignore flag to make sure this test runs in CI
+#[allow(clippy::too_many_lines)]
 async fn generate_chat_response_uses_session_settings() -> Result<(), anyhow::Error> {
     let test_app = test_helpers::spawn_app(false, false, false).await;
     let _guard = TestDataGuard::new(test_app.db_pool.clone());
@@ -249,9 +250,9 @@ async fn generate_chat_response_uses_session_settings() -> Result<(), anyhow::Er
     let new_db_character = NewCharacter {
         user_id: user.id,
         name: "Char for Resp Settings".to_string(),
-        description: Some("Test Description".to_string().into_bytes()),
-        greeting: Some("Test Greeting".to_string().into_bytes()),
-        example_dialogue: Some("Test Example Dialog".to_string().into_bytes()),
+        description: Some(b"Test Description".to_vec()),
+        greeting: Some(b"Test Greeting".to_vec()),
+        example_dialogue: Some(b"Test Example Dialog".to_vec()),
         visibility: Some("private".to_string()),
         character_version: Some("2.0".to_string()),
         spec: "test".to_string(),
@@ -339,7 +340,7 @@ async fn generate_chat_response_uses_session_settings() -> Result<(), anyhow::Er
         title_nonce: None,
         history_management_strategy: "truncate_summary".to_string(), // Default
         history_management_limit: 20,                                // Default
-        model_name: "gemini-2.5-flash-preview-04-17".to_string(),    // Default
+        model_name: "gemini-2.5-flash-preview-05-20".to_string(),    // Default
         created_at: Utc::now(),
         updated_at: Utc::now(),
         visibility: Some("private".to_string()),
@@ -400,11 +401,10 @@ async fn generate_chat_response_uses_session_settings() -> Result<(), anyhow::Er
             user_dek_struct.0.expose_secret().clone(),
         )))
     });
-    let (sp_ciphertext, sp_nonce) = if let Some(dek_arc) = &user_dek_secret_box {
-        scribe_backend::crypto::encrypt_gcm(test_prompt.as_bytes(), dek_arc.as_ref()).unwrap()
-    } else {
-        panic!("User DEK not available for system prompt encryption in test setup");
-    };
+    let (sp_ciphertext, sp_nonce) = user_dek_secret_box.as_ref().map_or_else(
+        || panic!("User DEK not available for system prompt encryption in test setup"),
+        |dek_arc| scribe_backend::crypto::encrypt_gcm(test_prompt.as_bytes(), dek_arc.as_ref()).unwrap(),
+    );
 
     {
         let interact_result = conn
@@ -480,7 +480,7 @@ async fn generate_chat_response_uses_session_settings() -> Result<(), anyhow::Er
             ),
             contents: vec![genai::chat::MessageContent::Text(ai_response_content)],
             reasoning_content: None,
-            usage: Default::default(),
+            usage: Usage::default(),
         };
         mock_client.set_response(Ok(successful_response));
     } else {
@@ -500,7 +500,7 @@ async fn generate_chat_response_uses_session_settings() -> Result<(), anyhow::Er
     // Check session one last time before making chat generate request
     info!("Checking session before chat generate request");
     match debug_session_data(&test_app.db_pool, session.id.to_string()).await {
-        Ok(_) => info!("Session verified before chat generate request"),
+        Ok(()) => info!("Session verified before chat generate request"),
         Err(e) => error!("Failed to verify session before chat generate: {}", e),
     }
 
@@ -552,9 +552,9 @@ async fn generate_chat_response_uses_session_settings() -> Result<(), anyhow::Er
     info!("Got last AI request from mock client");
 
     let last_message_content = last_request.messages.last().unwrap().content.clone();
-    let prompt_text = match last_message_content {
-        MessageContent::Text(text) => text,
-        _ => panic!("Expected last message content to be text"),
+
+    let MessageContent::Text(prompt_text) = last_message_content else {
+        panic!("Expected last message content to be text");
     };
     info!(
         "--- DEBUG: Prompt Text Content ---\n{}\n--- END DEBUG ---",
@@ -596,7 +596,7 @@ async fn generate_chat_response_uses_session_settings() -> Result<(), anyhow::Er
         panic!("Expected temperature to be set in options");
     }
     if let Some(tokens) = options.max_tokens {
-        assert_eq!(tokens, test_tokens as u32, "Max tokens value doesn't match");
+        assert_eq!(tokens, u32::try_from(test_tokens).expect("test_tokens should be positive"), "Max tokens value doesn't match");
     } else {
         panic!("Expected max_tokens to be set in options");
     }
@@ -635,7 +635,7 @@ async fn generate_chat_response_uses_session_settings() -> Result<(), anyhow::Er
                     .and_then(|nonce| {
                         scribe_backend::crypto::decrypt_gcm(ct, nonce, dek_arc.as_ref())
                             .ok()
-                            .and_then(|ps| String::from_utf8(ps.expose_secret().to_vec()).ok())
+                            .and_then(|ps| String::from_utf8(ps.expose_secret().clone()).ok())
                     })
             })
     });
@@ -657,20 +657,20 @@ async fn generate_chat_response_uses_session_settings() -> Result<(), anyhow::Er
     assert_eq!(db_chat_settings.history_management_limit, 20);
     assert_eq!(
         Some(db_chat_settings.model_name.as_str()),
-        Some("gemini-2.5-flash-preview-04-17")
+        Some("gemini-2.5-flash-preview-05-20")
     );
 
     // Add a short delay to ensure database operations have completed
     tokio::time::sleep(std::time::Duration::from_millis(500)).await;
 
-    let messages: Vec<DbChatMessage> = {
+    let messages: Vec<ChatMessage> = {
         let interact_result = conn
             .interact(move |conn_actual| {
                 chat_messages::table
                     .filter(chat_messages::session_id.eq(session.id))
                     .order(chat_messages::created_at.asc())
-                    .select(DbChatMessage::as_select())
-                    .load::<DbChatMessage>(conn_actual)
+                    .select(ChatMessage::as_select())
+                    .load::<ChatMessage>(conn_actual)
             })
             .await;
         let diesel_result =
@@ -693,7 +693,7 @@ async fn generate_chat_response_uses_session_settings() -> Result<(), anyhow::Er
     )
     .expect("Failed to decrypt user message content in test assertion");
     let user_decrypted_content_str =
-        String::from_utf8(user_plaintext_bytes.expose_secret().to_vec())
+        String::from_utf8(user_plaintext_bytes.expose_secret().clone())
             .expect("User decrypted content is not valid UTF-8");
     assert_eq!(
         user_decrypted_content_str,
@@ -713,7 +713,7 @@ async fn generate_chat_response_uses_session_settings() -> Result<(), anyhow::Er
         &dek_from_user_obj.0,
     )
     .expect("Failed to decrypt AI message content in test assertion");
-    let ai_decrypted_content_str = String::from_utf8(ai_plaintext_bytes.expose_secret().to_vec())
+    let ai_decrypted_content_str = String::from_utf8(ai_plaintext_bytes.expose_secret().clone())
         .expect("AI decrypted content is not valid UTF-8");
 
     // The expected AI content is what we set in mock_client.set_response()
@@ -771,8 +771,8 @@ async fn generate_chat_response_uses_session_settings() -> Result<(), anyhow::Er
 }
 
 #[tokio::test]
-#[ignore] // Ignore for CI unless DB is guaranteed
-async fn generate_chat_response_json_stream_initiation_error() -> Result<(), anyhow::Error> {
+#[allow(clippy::too_many_lines)]
+    async fn generate_chat_response_json_stream_initiation_error() -> Result<(), anyhow::Error> {
     let test_app = test_helpers::spawn_app(false, false, false).await;
     let _guard = TestDataGuard::new(test_app.db_pool.clone());
     let conn = test_app.db_pool.get().await?;
@@ -816,9 +816,9 @@ async fn generate_chat_response_json_stream_initiation_error() -> Result<(), any
     let new_db_character = NewCharacter {
         user_id: user.id,
         name: "Non-Stream Err Char".to_string(),
-        description: Some("Test Description".to_string().into_bytes()),
-        greeting: Some("Test Greeting".to_string().into_bytes()),
-        example_dialogue: Some("Test Example Dialog".to_string().into_bytes()),
+        description: Some(b"Test Description".to_vec()),
+        greeting: Some(b"Test Greeting".to_vec()),
+        example_dialogue: Some(b"Test Example Dialog".to_vec()),
         visibility: Some("private".to_string()),
         character_version: Some("2.0".to_string()),
         spec: "test".to_string(),
@@ -903,7 +903,7 @@ async fn generate_chat_response_json_stream_initiation_error() -> Result<(), any
         title_nonce: None,
         history_management_strategy: "truncate_summary".to_string(), // Default
         history_management_limit: 20,                                // Default
-        model_name: "gemini-2.5-flash-preview-04-17".to_string(),    // Default
+        model_name: "gemini-2.5-flash-preview-05-20".to_string(),    // Default
         created_at: Utc::now(),
         updated_at: Utc::now(),
         visibility: Some("private".to_string()),
@@ -957,11 +957,10 @@ async fn generate_chat_response_json_stream_initiation_error() -> Result<(), any
             user_dek_struct.0.expose_secret().clone(),
         )))
     });
-    let (sp_err_ciphertext, sp_err_nonce) = if let Some(dek_arc) = &user_dek_secret_box_err_test {
-        scribe_backend::crypto::encrypt_gcm(test_prompt.as_bytes(), dek_arc.as_ref()).unwrap()
-    } else {
-        panic!("User DEK not available for system prompt encryption in error test setup");
-    };
+    let (sp_err_ciphertext, sp_err_nonce) = user_dek_secret_box_err_test.as_ref().map_or_else(
+        || panic!("User DEK not available for system prompt encryption in error test setup"),
+        |dek_arc| scribe_backend::crypto::encrypt_gcm(test_prompt.as_bytes(), dek_arc.as_ref()).unwrap(),
+    );
 
     {
         let interact_result = conn
@@ -1048,9 +1047,9 @@ async fn generate_chat_response_json_stream_initiation_error() -> Result<(), any
         .expect("Mock AI client did not receive a request");
 
     let last_message_content = last_request.messages.last().unwrap().content.clone();
-    let prompt_text = match last_message_content {
-        MessageContent::Text(text) => text,
-        _ => panic!("Expected last message content to be text"),
+
+    let MessageContent::Text(prompt_text) = last_message_content else {
+        panic!("Expected last message content to be text");
     };
     eprintln!(
         "--- DEBUG: Prompt Text Content ---
@@ -1093,7 +1092,7 @@ async fn generate_chat_response_json_stream_initiation_error() -> Result<(), any
         panic!("Expected temperature to be set in options");
     }
     if let Some(tokens) = options.max_tokens {
-        assert_eq!(tokens, test_tokens as u32, "Max tokens value doesn't match");
+        assert_eq!(tokens, u32::try_from(test_tokens).expect("test_tokens should be positive"), "Max tokens value doesn't match");
     } else {
         panic!("Expected max_tokens to be set in options");
     }
@@ -1135,7 +1134,7 @@ async fn generate_chat_response_json_stream_initiation_error() -> Result<(), any
                         .and_then(|nonce| {
                             scribe_backend::crypto::decrypt_gcm(ct, nonce, dek_arc.as_ref())
                                 .ok()
-                                .and_then(|ps| String::from_utf8(ps.expose_secret().to_vec()).ok())
+                                .and_then(|ps| String::from_utf8(ps.expose_secret().clone()).ok())
                         })
                 })
         });
@@ -1157,17 +1156,17 @@ async fn generate_chat_response_json_stream_initiation_error() -> Result<(), any
     assert_eq!(db_chat_settings.history_management_limit, 20);
     assert_eq!(
         Some(db_chat_settings.model_name.as_str()),
-        Some("gemini-2.5-flash-preview-04-17")
+        Some("gemini-2.5-flash-preview-05-20")
     );
 
-    let messages: Vec<DbChatMessage> = {
+    let messages: Vec<ChatMessage> = {
         let interact_result = conn
             .interact(move |conn_actual| {
                 chat_messages::table
                     .filter(chat_messages::session_id.eq(session.id))
                     .order(chat_messages::created_at.asc())
-                    .select(DbChatMessage::as_select())
-                    .load::<DbChatMessage>(conn_actual)
+                    .select(ChatMessage::as_select())
+                    .load::<ChatMessage>(conn_actual)
             })
             .await;
         let diesel_result =
@@ -1197,7 +1196,7 @@ async fn generate_chat_response_json_stream_initiation_error() -> Result<(), any
     )
     .expect("Failed to decrypt user message content in test assertion");
 
-    let decrypted_content_str = String::from_utf8(plaintext_content_bytes.expose_secret().to_vec())
+    let decrypted_content_str = String::from_utf8(plaintext_content_bytes.expose_secret().clone())
         .expect("Decrypted content is not valid UTF-8");
 
     assert_eq!(
@@ -1214,7 +1213,7 @@ async fn generate_chat_response_json_stream_initiation_error() -> Result<(), any
 // Helper to assert the history sent to the mock AI client
 
 #[tokio::test]
-#[ignore] // Ignore for CI unless DB is guaranteed
+#[allow(clippy::too_many_lines)]
 async fn generate_chat_response_history_sliding_window_messages() -> anyhow::Result<()> {
     let test_app = test_helpers::spawn_app(false, false, false).await;
     let mut test_data_guard = TestDataGuard::new(test_app.db_pool.clone());
@@ -1498,7 +1497,7 @@ async fn generate_chat_response_history_sliding_window_messages() -> anyhow::Res
                 "Mock response".to_string(),
             )],
             reasoning_content: None,
-            usage: Default::default(),
+            usage: Usage::default(),
         }));
 
     let payload = GenerateChatRequest {
@@ -1543,7 +1542,7 @@ async fn generate_chat_response_history_sliding_window_messages() -> anyhow::Res
 }
 
 #[tokio::test]
-#[ignore] // Ignore for CI unless DB is guaranteed
+#[allow(clippy::too_many_lines)]
 async fn generate_chat_response_history_sliding_window_tokens() -> anyhow::Result<()> {
     let test_app = test_helpers::spawn_app(false, false, false).await;
     let mut test_data_guard = TestDataGuard::new(test_app.db_pool.clone());
@@ -1812,7 +1811,7 @@ async fn generate_chat_response_history_sliding_window_tokens() -> anyhow::Resul
                 "Mock response".to_string(),
             )],
             reasoning_content: None,
-            usage: Default::default(),
+            usage: Usage::default(),
         }));
 
     let payload = GenerateChatRequest {
@@ -1856,6 +1855,7 @@ async fn generate_chat_response_history_sliding_window_tokens() -> anyhow::Resul
 }
 
 #[tokio::test]
+#[allow(clippy::too_many_lines)]
 async fn test_generate_chat_response_history_truncate_tokens() -> anyhow::Result<()> {
     let test_app = test_helpers::spawn_app(false, false, false).await;
     let mut test_data_guard = TestDataGuard::new(test_app.db_pool.clone());
@@ -2125,7 +2125,7 @@ async fn test_generate_chat_response_history_truncate_tokens() -> anyhow::Result
                 "Mock response".to_string(),
             )],
             reasoning_content: None,
-            usage: Default::default(),
+            usage: Usage::default(),
         }));
 
     let payload = GenerateChatRequest {
@@ -2191,7 +2191,7 @@ async fn test_generate_chat_response_history_truncate_tokens() -> anyhow::Result
                 "Mock response 2".to_string(),
             )],
             reasoning_content: None,
-            usage: Default::default(),
+            usage: Usage::default(),
         }));
     // Client is reused from above
     let response_2 = client
@@ -2228,6 +2228,7 @@ async fn test_generate_chat_response_history_truncate_tokens() -> anyhow::Result
 
 #[tokio::test]
 #[ignore] // Ignore for CI unless DB is guaranteed
+#[allow(clippy::too_many_lines)]
 async fn generate_chat_response_history_none() -> anyhow::Result<()> {
     let test_app = test_helpers::spawn_app(false, false, false).await;
     let mut test_data_guard = TestDataGuard::new(test_app.db_pool.clone());
@@ -2461,7 +2462,7 @@ async fn generate_chat_response_history_none() -> anyhow::Result<()> {
                 "Mock response".to_string(),
             )],
             reasoning_content: None,
-            usage: Default::default(),
+            usage: Usage::default(),
         }));
 
     let payload = GenerateChatRequest {
@@ -2499,6 +2500,8 @@ async fn generate_chat_response_history_none() -> anyhow::Result<()> {
 // Keeping them as they were in the original file, but they test similar logic.
 
 #[tokio::test]
+
+#[allow(clippy::too_many_lines)]
 async fn generate_chat_response_history_truncate_tokens_limit_30() -> anyhow::Result<()> {
     let test_app = test_helpers::spawn_app(false, false, false).await;
     let mut test_data_guard = TestDataGuard::new(test_app.db_pool.clone());
@@ -2768,7 +2771,7 @@ async fn generate_chat_response_history_truncate_tokens_limit_30() -> anyhow::Re
                 "Mock response".to_string(),
             )],
             reasoning_content: None,
-            usage: Default::default(),
+            usage: Usage::default(),
         }));
 
     let payload = GenerateChatRequest {
@@ -2834,7 +2837,7 @@ async fn generate_chat_response_history_truncate_tokens_limit_30() -> anyhow::Re
                 "Mock response 2".to_string(),
             )],
             reasoning_content: None,
-            usage: Default::default(),
+            usage: Usage::default(),
         }));
     // Client is reused from above
     let response_2 = client
@@ -2875,6 +2878,7 @@ async fn generate_chat_response_history_truncate_tokens_limit_30() -> anyhow::Re
 
 // Test: Get messages for a valid session owned by the user
 #[tokio::test]
+#[allow(clippy::too_many_lines)]
 async fn test_get_chat_messages_success() -> anyhow::Result<()> {
     let test_app = test_helpers::spawn_app(false, false, false).await;
     let mut test_data_guard = TestDataGuard::new(test_app.db_pool.clone());
@@ -2963,7 +2967,7 @@ async fn test_get_chat_messages_success() -> anyhow::Result<()> {
         session_id,
         user_id: user.id,
         message_type: MessageRole::User,
-        content: "Test message content".to_string().into_bytes(),
+        content: b"Test message content".to_vec(),
         content_nonce: None,
         created_at: Utc::now(),
         updated_at: Utc::now(),
@@ -3013,7 +3017,7 @@ async fn test_get_chat_messages_success() -> anyhow::Result<()> {
             ),
             contents: vec![genai::chat::MessageContent::Text(ai_response_content)],
             reasoning_content: None,
-            usage: Default::default(),
+            usage: Usage::default(),
         };
         mock_client.set_response(Ok(successful_response));
     } else {
@@ -3049,6 +3053,8 @@ async fn test_get_chat_messages_success() -> anyhow::Result<()> {
 
 // Test: Get messages for a session owned by another user
 #[tokio::test]
+
+#[allow(clippy::too_many_lines)]
 async fn test_get_chat_messages_forbidden() -> anyhow::Result<()> {
     let test_app = test_helpers::spawn_app(false, false, false).await;
     let mut test_data_guard = TestDataGuard::new(test_app.db_pool.clone());

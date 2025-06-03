@@ -22,10 +22,12 @@ use scribe_backend::{
     },
     schema::{characters, chat_sessions},
     test_helpers::{self, TestDataGuard},
+    PgPool,
 };
 use secrecy::SecretString;
 
 #[tokio::test]
+#[allow(clippy::too_many_lines)]
 async fn test_suggested_actions_success() -> anyhow::Result<()> {
     let test_app = test_helpers::spawn_app(true, false, false).await;
     let conn_pool_obj = test_app
@@ -67,12 +69,8 @@ async fn test_suggested_actions_success() -> anyhow::Result<()> {
         spec: "scribe.character.v3".to_string(),
         spec_version: "0.1.0".to_string(),
         name: "Suggested Actions Character".to_string(),
-        description: Some(
-            "A test character for suggested actions."
-                .to_string()
-                .into_bytes(),
-        ),
-        system_prompt: Some("You are a helpful character.".to_string().into_bytes()),
+        description: Some(b"A test character for suggested actions.".to_vec()),
+        system_prompt: Some(b"You are a helpful character.".to_vec()),
         avatar: Some("http://example.com/avatar.png".to_string()),
         token_budget: Some(2048),
         visibility: Some("private".to_string()),
@@ -174,17 +172,17 @@ async fn test_suggested_actions_success() -> anyhow::Result<()> {
         .set_response(Ok(genai::chat::ChatResponse {
             model_iden: genai::ModelIden::new(
                 genai::adapter::AdapterKind::Gemini,
-                "gemini-2.5-flash-preview-04-17",
+                "gemini-2.5-flash-preview-05-20",
             ),
             provider_model_iden: genai::ModelIden::new(
                 genai::adapter::AdapterKind::Gemini,
-                "gemini-2.5-flash-preview-04-17",
+                "gemini-2.5-flash-preview-05-20",
             ),
             contents: vec![genai::chat::MessageContent::Text(
                 mock_suggestions.to_string(),
             )],
             reasoning_content: None,
-            usage: Default::default(),
+            usage: genai::chat::Usage::default(),
         }));
 
     let payload = SuggestedActionsRequest {};
@@ -263,64 +261,76 @@ async fn test_suggested_actions_unauthorized() -> anyhow::Result<()> {
     Ok(())
 }
 
-#[tokio::test]
-async fn test_suggested_actions_forbidden() -> anyhow::Result<()> {
-    let test_app = test_helpers::spawn_app(true, false, false).await;
-    let conn_pool_obj = test_app
-        .db_pool
-        .get()
-        .await
-        .expect("Failed to get DB connection");
+struct TestCharacterOptions<'a> {
+    description: Option<&'a [u8]>,
+    system_prompt: Option<&'a [u8]>,
+    avatar: Option<&'a str>,
+    token_budget: Option<i32>,
+    visibility: Option<&'a str>,
+}
 
-    // User A creates a session
-    let user_a = test_helpers::db::create_test_user(
-        &test_app.db_pool,
-        "suggested_actions_user_a".to_string(),
-        "password".to_string(),
-    )
-    .await?;
-    let mut guard = TestDataGuard::new(test_app.db_pool.clone());
-    guard.add_user(user_a.id);
+impl Default for TestCharacterOptions<'_> {
+    fn default() -> Self {
+        Self {
+            description: None,
+            system_prompt: None,
+            avatar: None,
+            token_budget: None,
+            visibility: Some("private"),
+        }
+    }
+}
 
-    let new_character_a = NewCharacter {
-        user_id: user_a.id,
+async fn create_test_character_for_suggested_actions(
+    pool: &PgPool,
+    user_id: Uuid,
+    char_name: &str,
+    options: TestCharacterOptions<'_>,
+) -> anyhow::Result<DbCharacter> {
+    let new_character = NewCharacter {
+        user_id,
         spec: "scribe.character.v3".to_string(),
         spec_version: "0.1.0".to_string(),
-        name: "Test Character A".to_string(),
-        description: Some("Test character for user A".to_string().into_bytes()),
-        system_prompt: Some("You are a helpful assistant".to_string().into_bytes()),
-        avatar: Some("http://example.com/avatar-a.png".to_string()),
-        token_budget: Some(2048),
-        visibility: Some("private".to_string()),
+        name: char_name.to_string(),
+        description: options.description.map(<[u8]>::to_vec),
+        system_prompt: options.system_prompt.map(<[u8]>::to_vec),
+        avatar: options.avatar.map(ToString::to_string),
+        token_budget: options.token_budget,
+        visibility: options.visibility.map(ToString::to_string),
         ..Default::default()
     };
 
-    let character_a = conn_pool_obj
-        .interact({
-            let char_to_insert = new_character_a.clone();
-            move |conn_inner| {
-                diesel::insert_into(characters::table)
-                    .values(&char_to_insert)
-                    .returning(DbCharacter::as_returning())
-                    .get_result::<DbCharacter>(conn_inner)
-            }
+    pool.get()
+        .await
+        .expect("Failed to get DB connection for character creation")
+        .interact(move |conn_inner| {
+            diesel::insert_into(characters::table)
+                .values(&new_character)
+                .returning(DbCharacter::as_returning())
+                .get_result::<DbCharacter>(conn_inner)
         })
         .await
         .map_err(|pool_err| anyhow::anyhow!("Deadpool interact (pool) error: {:?}", pool_err))?
-        .map_err(anyhow::Error::from)?;
-    guard.add_character(character_a.id);
+        .map_err(anyhow::Error::from)
+}
 
-    let new_chat_session_a = NewChat {
+async fn create_test_chat_session_for_suggested_actions(
+    pool: &PgPool,
+    user_id: Uuid,
+    character_id: Uuid,
+    session_model_name: &str,
+) -> anyhow::Result<Chat> {
+    let new_chat_session = NewChat {
         id: Uuid::new_v4(),
-        user_id: user_a.id,
-        character_id: character_a.id,
+        user_id,
+        character_id,
         title_ciphertext: None,
         title_nonce: None,
         created_at: chrono::Utc::now(),
         updated_at: chrono::Utc::now(),
         history_management_strategy: "message_window".to_string(),
         history_management_limit: 20,
-        model_name: "test-model-forbidden".to_string(),
+        model_name: session_model_name.to_string(),
         visibility: Some("private".to_string()),
         active_custom_persona_id: None,
         active_impersonated_character_id: None,
@@ -338,31 +348,191 @@ async fn test_suggested_actions_forbidden() -> anyhow::Result<()> {
         system_prompt_nonce: None,
     };
 
-    let session_a = conn_pool_obj
-        .interact({
-            let chat_to_insert = new_chat_session_a.clone();
-            move |conn_inner| {
-                diesel::insert_into(chat_sessions::table)
-                    .values(&chat_to_insert)
-                    .returning(Chat::as_returning())
-                    .get_result::<Chat>(conn_inner)
-            }
+    pool.get()
+        .await
+        .expect("Failed to get DB connection for session creation")
+        .interact(move |conn_inner| {
+            diesel::insert_into(chat_sessions::table)
+                .values(&new_chat_session)
+                .returning(Chat::as_returning())
+                .get_result::<Chat>(conn_inner)
         })
         .await
         .map_err(|pool_err| anyhow::anyhow!("Deadpool interact (pool) error: {:?}", pool_err))?
-        .map_err(anyhow::Error::from)?;
-    guard.add_chat(session_a.id);
+        .map_err(anyhow::Error::from)
+}
 
-    // Create User B
+async fn setup_suggested_actions_test_env(
+    test_app: &test_helpers::TestApp,
+    username: &str,
+    char_name: &str,
+    session_model_name: &str,
+    character_options: TestCharacterOptions<'_>,
+) -> anyhow::Result<(
+    test_helpers::TestDataGuard,
+    scribe_backend::models::users::User,
+    scribe_backend::models::chats::Chat,
+    String, // auth_cookie
+)> {
+    let user = test_helpers::db::create_test_user(
+        &test_app.db_pool,
+        username.to_string(),
+        "password".to_string(),
+    )
+    .await?;
+    let mut guard = TestDataGuard::new(test_app.db_pool.clone());
+    guard.add_user(user.id);
+
+    let (_client, auth_cookie) =
+        test_helpers::login_user_via_api(test_app, username, "password").await;
+
+    let character = create_test_character_for_suggested_actions(
+        &test_app.db_pool,
+        user.id,
+        char_name,
+        character_options,
+    )
+    .await?;
+    guard.add_character(character.id);
+
+    let session = create_test_chat_session_for_suggested_actions(
+        &test_app.db_pool,
+        user.id,
+        character.id,
+        session_model_name,
+    )
+    .await?;
+    guard.add_chat(session.id);
+
+    Ok((guard, user, session, auth_cookie))
+}
+
+async fn run_suggested_actions_logic(
+    test_app: &test_helpers::TestApp,
+    username_for_setup: &str,
+    char_name_for_setup: &str,
+    session_model_name_for_setup: &str,
+    character_options_for_setup: TestCharacterOptions<'_>,
+) -> anyhow::Result<()> {
+    let (guard, _user, session, auth_cookie) = setup_suggested_actions_test_env(
+        test_app,
+        username_for_setup,
+        char_name_for_setup,
+        session_model_name_for_setup,
+        character_options_for_setup,
+    )
+    .await?;
+
+    // Diagnostic fetch to confirm session creation by helper
+    let conn_pool_obj = test_app
+        .db_pool
+        .get()
+        .await
+        .context("Failed to get DB connection for diagnostic check")?;
+    let fetched_session_check = conn_pool_obj
+        .interact({
+            let session_id_to_check = session.id;
+            move |conn_inner_check| {
+                chat_sessions::table
+                    .filter(chat_sessions::id.eq(session_id_to_check))
+                    .select(Chat::as_select())
+                    .first::<Chat>(conn_inner_check)
+            }
+        })
+        .await
+        .map_err(|pool_err| {
+            anyhow::anyhow!(
+                "Deadpool interact (pool) error for diagnostic check: {:?}",
+                pool_err
+            )
+        })?
+        .map_err(|diesel_err| {
+            anyhow::anyhow!("Diesel error for diagnostic check: {:?}", diesel_err)
+        })?;
+    assert_eq!(
+        fetched_session_check.id, session.id,
+        "Failed to fetch session immediately after creation by helper"
+    );
+
+    // Mock embedding pipeline response
+    test_app
+        .mock_embedding_pipeline_service
+        .set_retrieve_responses_sequence(vec![Ok(vec![]), Ok(vec![])]); // Empty RAG for suggested actions
+
+    // Mock AI response
+    let mock_suggestions = json!([{"action": "Action 1"}, {"action": "Action 2"}]);
+    test_app
+        .mock_ai_client
+        .as_ref()
+        .expect("Mock client should be present")
+        .set_response(Ok(genai::chat::ChatResponse {
+            model_iden: genai::ModelIden::new(
+                genai::adapter::AdapterKind::Gemini,
+                "gemini-2.5-flash-preview-05-20", // Consistent model
+            ),
+            provider_model_iden: genai::ModelIden::new(
+                genai::adapter::AdapterKind::Gemini,
+                "gemini-2.5-flash-preview-05-20",
+            ),
+            contents: vec![genai::chat::MessageContent::Text(
+                mock_suggestions.to_string(),
+            )],
+            reasoning_content: None,
+            usage: genai::chat::Usage::default(),
+        }));
+
+    let payload = SuggestedActionsRequest {};
+
+    let request = Request::builder()
+        .method(Method::POST)
+        .uri(format!("/api/chat/{}/suggested-actions", session.id))
+        .header(header::COOKIE, &auth_cookie)
+        .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
+        .body(Body::from(serde_json::to_vec(&payload)?))?;
+
+    let response = test_app.router.clone().oneshot(request).await?;
+    assert_eq!(response.status(), StatusCode::OK, "API call failed");
+
+    let body_bytes = response.into_body().collect().await?.to_bytes();
+    let suggested_actions: SuggestedActionsResponse =
+        serde_json::from_slice(&body_bytes).context("Failed to parse response body")?;
+
+    assert!(!suggested_actions.suggestions.is_empty(), "Suggestions should not be empty");
+    assert_eq!(suggested_actions.suggestions.len(), 2, "Expected 2 suggestions");
+    assert_eq!(suggested_actions.suggestions[0].action, "Action 1");
+
+    guard.cleanup().await?;
+    Ok(())
+}
+#[tokio::test]
+async fn test_suggested_actions_forbidden() -> anyhow::Result<()> {
+    let test_app = test_helpers::spawn_app(true, false, false).await;
+
+    // User A creates a session
+    let (mut guard_a, _user_a, session_a, _auth_cookie_a) = setup_suggested_actions_test_env(
+        &test_app,
+        "suggested_actions_user_a",
+        "Test Character A",
+        "test-model-forbidden",
+        TestCharacterOptions {
+            description: Some(b"Test character for user A"),
+            system_prompt: Some(b"You are a helpful assistant"),
+            avatar: Some("http://example.com/avatar-a.png"),
+            token_budget: Some(2048),
+            visibility: Some("private"),
+        },
+    )
+    .await?;
+
+    // Create User B and login
     let user_b = test_helpers::db::create_test_user(
         &test_app.db_pool,
         "suggested_actions_user_b".to_string(),
         "password".to_string(),
     )
     .await?;
-    guard.add_user(user_b.id);
+    guard_a.add_user(user_b.id); // Add user_b to user_a's guard for cleanup
 
-    // Login as User B
     let login_payload_b = json!({ "identifier": user_b.username, "password": "password" });
     let login_request_b = Request::builder()
         .method(Method::POST)
@@ -394,7 +564,7 @@ async fn test_suggested_actions_forbidden() -> anyhow::Result<()> {
     let response = test_app.router.clone().oneshot(request).await?;
     assert_eq!(response.status(), StatusCode::FORBIDDEN);
 
-    guard.cleanup().await?;
+    guard_a.cleanup().await?;
     Ok(())
 }
 
@@ -452,132 +622,21 @@ async fn test_suggested_actions_session_not_found() -> anyhow::Result<()> {
 #[tokio::test]
 async fn test_suggested_actions_ai_error() -> anyhow::Result<()> {
     let test_app = test_helpers::spawn_app(true, false, false).await;
-    let conn_pool_obj = test_app
-        .db_pool
-        .get()
-        .await
-        .expect("Failed to get DB connection");
 
-    let user = test_helpers::db::create_test_user(
-        &test_app.db_pool,
-        "suggested_actions_error_user".to_string(),
-        "password".to_string(),
+    let (guard, _user, session, auth_cookie) = setup_suggested_actions_test_env(
+        &test_app,
+        "suggested_actions_error_user",
+        "AI Error Character",
+        "test-model-ai-error",
+        TestCharacterOptions {
+            description: Some(b"Test character for AI errors."),
+            system_prompt: Some(b"You are a helpful character that sometimes errors."),
+            avatar: None,
+            token_budget: None,
+            visibility: Some("private"),
+        },
     )
     .await?;
-    let mut guard = TestDataGuard::new(test_app.db_pool.clone());
-    guard.add_user(user.id);
-
-    // API Login
-    let login_payload = json!({ "identifier": user.username, "password": "password" });
-    let login_request = Request::builder()
-        .method(Method::POST)
-        .uri("/api/auth/login")
-        .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
-        .body(Body::from(serde_json::to_string(&login_payload)?))?;
-    let login_response = test_app.router.clone().oneshot(login_request).await?;
-    assert_eq!(login_response.status(), StatusCode::OK, "Login failed");
-    let raw_cookie_header = login_response
-        .headers()
-        .get(header::SET_COOKIE)
-        .context("Set-Cookie header missing")?
-        .to_str()?;
-    let parsed_cookie = Cookie::parse(raw_cookie_header.to_string())?;
-    let auth_cookie = format!("{}={}", parsed_cookie.name(), parsed_cookie.value());
-
-    let new_character = NewCharacter {
-        user_id: user.id,
-        spec: "scribe.character.v3".to_string(),
-        spec_version: "0.1.0".to_string(),
-        name: "AI Error Character".to_string(),
-        description: Some("Test character for AI errors.".to_string().into_bytes()),
-        system_prompt: Some(
-            "You are a helpful character that sometimes errors."
-                .to_string()
-                .into_bytes(),
-        ),
-        avatar: None,
-        visibility: Some("private".to_string()),
-        ..Default::default()
-    };
-
-    let character = conn_pool_obj
-        .interact({
-            let char_to_insert = new_character.clone();
-            move |conn_inner| {
-                diesel::insert_into(characters::table)
-                    .values(&char_to_insert)
-                    .returning(DbCharacter::as_returning())
-                    .get_result::<DbCharacter>(conn_inner)
-            }
-        })
-        .await
-        .map_err(|pool_err| anyhow::anyhow!("Deadpool interact (pool) error: {:?}", pool_err))?
-        .map_err(anyhow::Error::from)?;
-    guard.add_character(character.id);
-
-    let new_chat_session = NewChat {
-        id: Uuid::new_v4(),
-        user_id: user.id,
-        character_id: character.id,
-        title_ciphertext: None,
-        title_nonce: None,
-        created_at: chrono::Utc::now(),
-        updated_at: chrono::Utc::now(),
-        history_management_strategy: "message_window".to_string(),
-        history_management_limit: 20,
-        model_name: "test-model-ai-error".to_string(),
-        visibility: Some("private".to_string()),
-        active_custom_persona_id: None,
-        active_impersonated_character_id: None,
-        temperature: None,
-        max_output_tokens: None,
-        frequency_penalty: None,
-        presence_penalty: None,
-        top_k: None,
-        top_p: None,
-        seed: None,
-        stop_sequences: None,
-        gemini_thinking_budget: None,
-        gemini_enable_code_execution: None,
-        system_prompt_ciphertext: None,
-        system_prompt_nonce: None,
-    };
-
-    let session = conn_pool_obj
-        .interact({
-            let chat_to_insert = new_chat_session.clone();
-            move |conn_inner| {
-                diesel::insert_into(chat_sessions::table)
-                    .values(&chat_to_insert)
-                    .returning(Chat::as_returning())
-                    .get_result::<Chat>(conn_inner)
-            }
-        })
-        .await
-        .map_err(|pool_err| anyhow::anyhow!("Deadpool interact (pool) error: {:?}", pool_err))?
-        .map_err(anyhow::Error::from)?;
-    guard.add_chat(session.id);
-
-    // Try to fetch the session immediately after creation to verify it's in the DB
-    let fetched_session_check = conn_pool_obj
-        .interact({
-            let session_id_to_check = session.id;
-            move |conn_inner_check| {
-                chat_sessions::table
-                    .filter(chat_sessions::id.eq(session_id_to_check))
-                    .select(Chat::as_select())
-                    .first::<Chat>(conn_inner_check)
-            }
-        })
-        .await
-        .map_err(|pool_err| {
-            anyhow::anyhow!("Deadpool interact (pool) error for check: {:?}", pool_err)
-        })?
-        .map_err(|diesel_err| anyhow::anyhow!("Diesel error for check: {:?}", diesel_err))?;
-    assert_eq!(
-        fetched_session_check.id, session.id,
-        "Failed to fetch session immediately after creation"
-    );
 
     // Mock embedding pipeline response (required for get_session_data_for_generation)
     test_app
@@ -614,115 +673,21 @@ async fn test_suggested_actions_ai_error() -> anyhow::Result<()> {
 #[tokio::test]
 async fn test_suggested_actions_invalid_json_response() -> anyhow::Result<()> {
     let test_app = test_helpers::spawn_app(true, false, false).await;
-    let conn_pool_obj = test_app
-        .db_pool
-        .get()
-        .await
-        .expect("Failed to get DB connection");
 
-    let user = test_helpers::db::create_test_user(
-        &test_app.db_pool,
-        "suggested_actions_invalid_json_user".to_string(),
-        "password".to_string(),
+    let (guard, _user, session, auth_cookie) = setup_suggested_actions_test_env(
+        &test_app,
+        "suggested_actions_invalid_json_user",
+        "Invalid JSON Character",
+        "test-model-invalid-json",
+        TestCharacterOptions {
+            description: Some(b"Test character for invalid JSON response."),
+            system_prompt: Some(b"You are a helpful character that returns malformed JSON."),
+            avatar: None,
+            token_budget: None,
+            visibility: Some("private"),
+        },
     )
     .await?;
-    let mut guard = TestDataGuard::new(test_app.db_pool.clone());
-    guard.add_user(user.id);
-
-    // API Login
-    let login_payload = json!({ "identifier": user.username, "password": "password" });
-    let login_request = Request::builder()
-        .method(Method::POST)
-        .uri("/api/auth/login")
-        .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
-        .body(Body::from(serde_json::to_string(&login_payload)?))?;
-    let login_response = test_app.router.clone().oneshot(login_request).await?;
-    assert_eq!(login_response.status(), StatusCode::OK, "Login failed");
-    let raw_cookie_header = login_response
-        .headers()
-        .get(header::SET_COOKIE)
-        .context("Set-Cookie header missing")?
-        .to_str()?;
-    let parsed_cookie = Cookie::parse(raw_cookie_header.to_string())?;
-    let auth_cookie = format!("{}={}", parsed_cookie.name(), parsed_cookie.value());
-
-    let new_character = NewCharacter {
-        user_id: user.id,
-        spec: "scribe.character.v3".to_string(),
-        spec_version: "0.1.0".to_string(),
-        name: "Invalid JSON Character".to_string(),
-        description: Some(
-            "Test character for invalid JSON response."
-                .to_string()
-                .into_bytes(),
-        ),
-        system_prompt: Some(
-            "You are a helpful character that returns malformed JSON."
-                .to_string()
-                .into_bytes(),
-        ),
-        avatar: None,
-        visibility: Some("private".to_string()),
-        ..Default::default()
-    };
-
-    let character = conn_pool_obj
-        .interact({
-            let char_to_insert = new_character.clone();
-            move |conn_inner| {
-                diesel::insert_into(characters::table)
-                    .values(&char_to_insert)
-                    .returning(DbCharacter::as_returning())
-                    .get_result::<DbCharacter>(conn_inner)
-            }
-        })
-        .await
-        .map_err(|pool_err| anyhow::anyhow!("Deadpool interact (pool) error: {:?}", pool_err))?
-        .map_err(anyhow::Error::from)?;
-    guard.add_character(character.id);
-
-    let new_chat_session = NewChat {
-        id: Uuid::new_v4(),
-        user_id: user.id,
-        character_id: character.id,
-        title_ciphertext: None,
-        title_nonce: None,
-        created_at: chrono::Utc::now(),
-        updated_at: chrono::Utc::now(),
-        history_management_strategy: "message_window".to_string(),
-        history_management_limit: 20,
-        model_name: "test-model-invalid-json".to_string(),
-        visibility: Some("private".to_string()),
-        active_custom_persona_id: None,
-        active_impersonated_character_id: None,
-        temperature: None,
-        max_output_tokens: None,
-        frequency_penalty: None,
-        presence_penalty: None,
-        top_k: None,
-        top_p: None,
-        seed: None,
-        stop_sequences: None,
-        gemini_thinking_budget: None,
-        gemini_enable_code_execution: None,
-        system_prompt_ciphertext: None,
-        system_prompt_nonce: None,
-    };
-
-    let session = conn_pool_obj
-        .interact({
-            let chat_to_insert = new_chat_session.clone();
-            move |conn_inner| {
-                diesel::insert_into(chat_sessions::table)
-                    .values(&chat_to_insert)
-                    .returning(Chat::as_returning())
-                    .get_result::<Chat>(conn_inner)
-            }
-        })
-        .await
-        .map_err(|pool_err| anyhow::anyhow!("Deadpool interact (pool) error: {:?}", pool_err))?
-        .map_err(anyhow::Error::from)?;
-    guard.add_chat(session.id);
 
     // Mock embedding pipeline response (required for get_session_data_for_generation)
     test_app
@@ -739,17 +704,17 @@ async fn test_suggested_actions_invalid_json_response() -> anyhow::Result<()> {
         .set_response(Ok(genai::chat::ChatResponse {
             model_iden: genai::ModelIden::new(
                 genai::adapter::AdapterKind::Gemini,
-                "gemini-2.5-flash-preview-04-17",
+                "gemini-2.5-flash-preview-05-20",
             ),
             provider_model_iden: genai::ModelIden::new(
                 genai::adapter::AdapterKind::Gemini,
-                "gemini-2.5-flash-preview-04-17",
+                "gemini-2.5-flash-preview-05-20",
             ),
             contents: vec![genai::chat::MessageContent::Text(
                 malformed_json_string.to_string(),
             )],
             reasoning_content: None,
-            usage: Default::default(),
+            usage: genai::chat::Usage::default(),
         }));
 
     let payload = SuggestedActionsRequest {};
@@ -772,357 +737,41 @@ async fn test_suggested_actions_invalid_json_response() -> anyhow::Result<()> {
 #[tokio::test]
 async fn test_suggested_actions_success_optional_fields_none() -> anyhow::Result<()> {
     let test_app = test_helpers::spawn_app(true, false, false).await;
-    let conn_pool_obj = test_app
-        .db_pool
-        .get()
-        .await
-        .expect("Failed to get DB connection");
 
-    let user = test_helpers::db::create_test_user(
-        &test_app.db_pool,
-        "suggested_actions_optional_user".to_string(),
-        "password".to_string(),
+    run_suggested_actions_logic(
+        &test_app,
+        "suggested_actions_optional_user_none", // Unique username for this test
+        "Optional Fields None Character",
+        "test-model-optional-fields-none", // Unique model name
+        TestCharacterOptions {
+            description: None,
+            system_prompt: None,
+            avatar: None,
+            token_budget: None,
+            visibility: None, // Explicitly None, though default() in NewCharacter handles it
+        },
     )
-    .await?;
-    let mut guard = TestDataGuard::new(test_app.db_pool.clone());
-    guard.add_user(user.id);
-
-    // API Login
-    let login_payload = json!({ "identifier": user.username, "password": "password" });
-    let login_request = Request::builder()
-        .method(Method::POST)
-        .uri("/api/auth/login")
-        .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
-        .body(Body::from(serde_json::to_string(&login_payload)?))?;
-    let login_response = test_app.router.clone().oneshot(login_request).await?;
-    assert_eq!(login_response.status(), StatusCode::OK, "Login failed");
-    let raw_cookie_header = login_response
-        .headers()
-        .get(header::SET_COOKIE)
-        .context("Set-Cookie header missing")?
-        .to_str()?;
-    let parsed_cookie = Cookie::parse(raw_cookie_header.to_string())?;
-    let auth_cookie = format!("{}={}", parsed_cookie.name(), parsed_cookie.value());
-
-    let new_character = NewCharacter {
-        user_id: user.id,
-        spec: "scribe.character.v3".to_string(),
-        spec_version: "0.1.0".to_string(),
-        name: "Optional Fields None Character".to_string(),
-        description: None,
-        system_prompt: None,
-        avatar: None,
-        token_budget: None,
-        visibility: None,
-        ..Default::default()
-    };
-
-    let character = conn_pool_obj
-        .interact({
-            let char_to_insert = new_character.clone();
-            move |conn_inner| {
-                diesel::insert_into(characters::table)
-                    .values(&char_to_insert)
-                    .returning(DbCharacter::as_returning())
-                    .get_result::<DbCharacter>(conn_inner)
-            }
-        })
-        .await
-        .map_err(|pool_err| anyhow::anyhow!("Deadpool interact (pool) error: {:?}", pool_err))?
-        .map_err(anyhow::Error::from)?;
-    guard.add_character(character.id);
-
-    let new_chat_session = NewChat {
-        id: Uuid::new_v4(),
-        user_id: user.id,
-        character_id: character.id,
-        title_ciphertext: None,
-        title_nonce: None,
-        created_at: chrono::Utc::now(),
-        updated_at: chrono::Utc::now(),
-        history_management_strategy: "message_window".to_string(),
-        history_management_limit: 20,
-        model_name: "test-model-optional-fields".to_string(),
-        visibility: Some("private".to_string()),
-        active_custom_persona_id: None,
-        active_impersonated_character_id: None,
-        temperature: None,
-        max_output_tokens: None,
-        frequency_penalty: None,
-        presence_penalty: None,
-        top_k: None,
-        top_p: None,
-        seed: None,
-        stop_sequences: None,
-        gemini_thinking_budget: None,
-        gemini_enable_code_execution: None,
-        system_prompt_ciphertext: None,
-        system_prompt_nonce: None,
-    };
-
-    let session = conn_pool_obj
-        .interact({
-            let chat_to_insert = new_chat_session.clone();
-            move |conn_inner| {
-                diesel::insert_into(chat_sessions::table)
-                    .values(&chat_to_insert)
-                    .returning(Chat::as_returning())
-                    .get_result::<Chat>(conn_inner)
-            }
-        })
-        .await
-        .map_err(|pool_err| anyhow::anyhow!("Deadpool interact (pool) error: {:?}", pool_err))?
-        .map_err(anyhow::Error::from)?;
-    guard.add_chat(session.id);
-
-    // Try to fetch the session immediately after creation to verify it's in the DB
-    let fetched_session_check = conn_pool_obj
-        .interact({
-            let session_id_to_check = session.id;
-            move |conn_inner_check| {
-                chat_sessions::table
-                    .filter(chat_sessions::id.eq(session_id_to_check))
-                    .select(Chat::as_select())
-                    .first::<Chat>(conn_inner_check)
-            }
-        })
-        .await
-        .map_err(|pool_err| {
-            anyhow::anyhow!("Deadpool interact (pool) error for check: {:?}", pool_err)
-        })?
-        .map_err(|diesel_err| anyhow::anyhow!("Diesel error for check: {:?}", diesel_err))?;
-    assert_eq!(
-        fetched_session_check.id, session.id,
-        "Failed to fetch session immediately after creation"
-    );
-
-    // Mock embedding pipeline response (required for get_session_data_for_generation)
-    test_app
-        .mock_embedding_pipeline_service
-        .set_retrieve_responses_sequence(vec![Ok(vec![]), Ok(vec![])]); // Empty RAG responses
-
-    // Mock AI response
-    let mock_suggestions = json!([{"action": "Action 1"}, {"action": "Action 2"}]);
-    test_app
-        .mock_ai_client
-        .as_ref()
-        .expect("Mock client should be present")
-        .set_response(Ok(genai::chat::ChatResponse {
-            model_iden: genai::ModelIden::new(
-                genai::adapter::AdapterKind::Gemini,
-                "gemini-2.5-flash-preview-04-17",
-            ),
-            provider_model_iden: genai::ModelIden::new(
-                genai::adapter::AdapterKind::Gemini,
-                "gemini-2.5-flash-preview-04-17",
-            ),
-            contents: vec![genai::chat::MessageContent::Text(
-                mock_suggestions.to_string(),
-            )],
-            reasoning_content: None,
-            usage: Default::default(),
-        }));
-
-    // Request with optional fields set to None
-    let payload = SuggestedActionsRequest {};
-
-    let request = Request::builder()
-        .method(Method::POST)
-        .uri(format!("/api/chat/{}/suggested-actions", session.id))
-        .header(header::COOKIE, &auth_cookie)
-        .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
-        .body(Body::from(serde_json::to_vec(&payload)?))?;
-
-    let response = test_app.router.clone().oneshot(request).await?;
-    assert_eq!(response.status(), StatusCode::OK);
-
-    let body = response.into_body().collect().await?.to_bytes();
-    let suggested_actions: SuggestedActionsResponse = serde_json::from_slice(&body)?;
-
-    assert!(!suggested_actions.suggestions.is_empty());
-    assert_eq!(suggested_actions.suggestions.len(), 2);
-    assert_eq!(suggested_actions.suggestions[0].action, "Action 1");
-
-    guard.cleanup().await?;
-    Ok(())
+    .await
 }
 
 #[tokio::test]
 async fn test_suggested_actions_success_optional_fields_some() -> anyhow::Result<()> {
     let test_app = test_helpers::spawn_app(true, false, false).await;
-    let conn_pool_obj = test_app
-        .db_pool
-        .get()
-        .await
-        .expect("Failed to get DB connection");
 
-    let user = test_helpers::db::create_test_user(
-        &test_app.db_pool,
-        "suggested_actions_optional_user".to_string(),
-        "password".to_string(),
+    run_suggested_actions_logic(
+        &test_app,
+        "suggested_actions_optional_user_some", // Unique username
+        "Optional Fields Some Character",
+        "test-model-optional-fields-some", // Unique model name
+        TestCharacterOptions {
+            description: Some(b"Optional description."),
+            system_prompt: Some(b"Optional system prompt."),
+            avatar: Some("Optional avatar."),
+            token_budget: Some(1024),
+            visibility: Some("private"),
+        },
     )
-    .await?;
-    let mut guard = TestDataGuard::new(test_app.db_pool.clone());
-    guard.add_user(user.id);
-
-    // API Login
-    let login_payload = json!({ "identifier": user.username, "password": "password" });
-    let login_request = Request::builder()
-        .method(Method::POST)
-        .uri("/api/auth/login")
-        .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
-        .body(Body::from(serde_json::to_string(&login_payload)?))?;
-    let login_response = test_app.router.clone().oneshot(login_request).await?;
-    assert_eq!(login_response.status(), StatusCode::OK, "Login failed");
-    let raw_cookie_header = login_response
-        .headers()
-        .get(header::SET_COOKIE)
-        .context("Set-Cookie header missing")?
-        .to_str()?;
-    let parsed_cookie = Cookie::parse(raw_cookie_header.to_string())?;
-    let auth_cookie = format!("{}={}", parsed_cookie.name(), parsed_cookie.value());
-
-    let new_character = NewCharacter {
-        user_id: user.id,
-        spec: "scribe.character.v3".to_string(),
-        spec_version: "0.1.0".to_string(),
-        name: "Optional Fields Some Character".to_string(),
-        description: Some("Optional description.".to_string().into_bytes()),
-        system_prompt: Some("Optional system prompt.".to_string().into_bytes()),
-        avatar: Some("Optional avatar.".to_string()),
-        token_budget: Some(1024),
-        visibility: Some("private".to_string()),
-        ..Default::default()
-    };
-
-    let character = conn_pool_obj
-        .interact({
-            let char_to_insert = new_character.clone();
-            move |conn_inner| {
-                diesel::insert_into(characters::table)
-                    .values(&char_to_insert)
-                    .returning(DbCharacter::as_returning())
-                    .get_result::<DbCharacter>(conn_inner)
-            }
-        })
-        .await
-        .map_err(|pool_err| anyhow::anyhow!("Deadpool interact (pool) error: {:?}", pool_err))?
-        .map_err(anyhow::Error::from)?;
-    guard.add_character(character.id);
-
-    let new_chat_session = NewChat {
-        id: Uuid::new_v4(),
-        user_id: user.id,
-        character_id: character.id,
-        title_ciphertext: None,
-        title_nonce: None,
-        created_at: chrono::Utc::now(),
-        updated_at: chrono::Utc::now(),
-        history_management_strategy: "message_window".to_string(),
-        history_management_limit: 20,
-        model_name: "test-model-optional-fields".to_string(),
-        visibility: Some("private".to_string()),
-        active_custom_persona_id: None,
-        active_impersonated_character_id: None,
-        temperature: None,
-        max_output_tokens: None,
-        frequency_penalty: None,
-        presence_penalty: None,
-        top_k: None,
-        top_p: None,
-        seed: None,
-        stop_sequences: None,
-        gemini_thinking_budget: None,
-        gemini_enable_code_execution: None,
-        system_prompt_ciphertext: None,
-        system_prompt_nonce: None,
-    };
-
-    let session = conn_pool_obj
-        .interact({
-            let chat_to_insert = new_chat_session.clone();
-            move |conn_inner| {
-                diesel::insert_into(chat_sessions::table)
-                    .values(&chat_to_insert)
-                    .returning(Chat::as_returning())
-                    .get_result::<Chat>(conn_inner)
-            }
-        })
-        .await
-        .map_err(|pool_err| anyhow::anyhow!("Deadpool interact (pool) error: {:?}", pool_err))?
-        .map_err(anyhow::Error::from)?;
-    guard.add_chat(session.id);
-
-    // Try to fetch the session immediately after creation to verify it's in the DB
-    let fetched_session_check = conn_pool_obj
-        .interact({
-            let session_id_to_check = session.id;
-            move |conn_inner_check| {
-                chat_sessions::table
-                    .filter(chat_sessions::id.eq(session_id_to_check))
-                    .select(Chat::as_select())
-                    .first::<Chat>(conn_inner_check)
-            }
-        })
-        .await
-        .map_err(|pool_err| {
-            anyhow::anyhow!("Deadpool interact (pool) error for check: {:?}", pool_err)
-        })?
-        .map_err(|diesel_err| anyhow::anyhow!("Diesel error for check: {:?}", diesel_err))?;
-    assert_eq!(
-        fetched_session_check.id, session.id,
-        "Failed to fetch session immediately after creation"
-    );
-
-    // Mock embedding pipeline response (required for get_session_data_for_generation)
-    test_app
-        .mock_embedding_pipeline_service
-        .set_retrieve_responses_sequence(vec![Ok(vec![]), Ok(vec![])]); // Empty RAG responses
-
-    // Mock AI response
-    let mock_suggestions = json!([{"action": "Action 1"}, {"action": "Action 2"}]);
-    test_app
-        .mock_ai_client
-        .as_ref()
-        .expect("Mock client should be present")
-        .set_response(Ok(genai::chat::ChatResponse {
-            model_iden: genai::ModelIden::new(
-                genai::adapter::AdapterKind::Gemini,
-                "gemini-2.5-flash-preview-04-17",
-            ),
-            provider_model_iden: genai::ModelIden::new(
-                genai::adapter::AdapterKind::Gemini,
-                "gemini-2.5-flash-preview-04-17",
-            ),
-            contents: vec![genai::chat::MessageContent::Text(
-                mock_suggestions.to_string(),
-            )],
-            reasoning_content: None,
-            usage: Default::default(),
-        }));
-
-    // Request with optional fields set to Some
-    let payload = SuggestedActionsRequest {};
-
-    let request = Request::builder()
-        .method(Method::POST)
-        .uri(format!("/api/chat/{}/suggested-actions", session.id))
-        .header(header::COOKIE, &auth_cookie)
-        .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
-        .body(Body::from(serde_json::to_vec(&payload)?))?;
-
-    let response = test_app.router.clone().oneshot(request).await?;
-    assert_eq!(response.status(), StatusCode::OK);
-
-    let body = response.into_body().collect().await?.to_bytes();
-    let suggested_actions: SuggestedActionsResponse = serde_json::from_slice(&body)?;
-
-    assert!(!suggested_actions.suggestions.is_empty());
-    assert_eq!(suggested_actions.suggestions.len(), 2);
-    assert_eq!(suggested_actions.suggestions[0].action, "Action 1");
-
-    guard.cleanup().await?;
-    Ok(())
+    .await
 }
 
 #[tokio::test]

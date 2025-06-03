@@ -764,66 +764,6 @@ impl MockQdrantClientService {
         response.unwrap_or(Ok(()))
     }
 
-    #[allow(dead_code, clippy::unused_async)] // Used in tests as mock, must be async to match trait
-    async fn search_points(
-        &self,
-        vector: Vec<f32>,
-        limit: u64,
-        filter: Option<Filter>,
-    ) -> Result<Vec<ScoredPoint>, AppError> {
-        // Track call
-        {
-            *self.search_call_count.lock().unwrap() += 1;
-
-            let mut last_params = self.last_search_params.lock().unwrap();
-            *last_params = Some((vector, limit, filter));
-        }
-
-        // Return response
-        let mut queue = self.search_response.lock().unwrap();
-        queue.pop_front().map_or_else(|| {
-            panic!(
-                "MockQdrantClientService::search_points called but no more responses were queued. Ensure your test sets up enough responses."
-            );
-        }, |response| {
-            tracing::info!(
-                target: "mock_qdrant_search",
-                "MockQdrantClientService::search_points (standalone): Popped response: {:?}", // Corrected comment
-                match response.as_ref() { // Match directly on the Result
-                    Ok(v) => format!("Ok(len={})", v.len()),
-                    Err(e) => format!("Err({e})"), // AppError needs .to_string() for proper formatting
-                }
-            );
-            response // This is Result<Vec<ScoredPoint>, AppError>
-        })
-    }
-
-    
-    #[allow(dead_code, clippy::unused_async)] // Used in tests as mock, must be async to match trait
-    async fn retrieve_points(
-        &self,
-        _filter: Option<Filter>,
-        _limit: u64,
-    ) -> Result<Vec<ScoredPoint>, AppError> {
-        // Use the search response for retrieve as well
-        let mut queue = self.search_response.lock().unwrap();
-        queue.pop_front().map_or_else(|| {
-            warn!(
-                "MockQdrantClientService::retrieve_points (standalone) called but no response was queued. Returning Ok(vec![])."
-            );
-            Ok(vec![])
-        }, |response| response)
-    }
-
-    #[allow(dead_code, clippy::unused_async)] // Used in tests as mock, must be async to match trait
-    async fn delete_points(&self, _point_ids: Vec<PointId>) -> Result<(), AppError> {
-        Ok(()) // Just return success for the mock
-    }
-
-    #[allow(dead_code, clippy::unused_async)] // Used in tests as mock, must be async to match trait
-    async fn update_collection_settings(&self) -> Result<(), AppError> {
-        Ok(()) // Just return success for the mock
-    }
 }
 
 // Implement the QdrantClientServiceTrait for MockQdrantClientService
@@ -845,7 +785,6 @@ impl QdrantClientServiceTrait for MockQdrantClientService {
         response.unwrap_or(Ok(()))
     }
 
-    #[allow(dead_code, clippy::unused_async)] // Used in tests as mock, must be async to match trait
     async fn search_points(
         &self,
         vector: Vec<f32>,
@@ -900,12 +839,10 @@ impl QdrantClientServiceTrait for MockQdrantClientService {
         }, |response| response)
     }
 
-    #[allow(dead_code, clippy::unused_async)] // Used in tests as mock, must be async to match trait
     async fn delete_points(&self, _point_ids: Vec<PointId>) -> Result<(), AppError> {
         Ok(()) // Just return success for the mock
     }
 
-    #[allow(dead_code, clippy::unused_async)] // Used in tests as mock, must be async to match trait
     async fn update_collection_settings(&self) -> Result<(), AppError> {
         Ok(()) // Just return success for the mock
     }

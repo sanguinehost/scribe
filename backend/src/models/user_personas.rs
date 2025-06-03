@@ -224,7 +224,7 @@ impl UserPersona {
         if let Some(dek) = dek_opt {
             self.decrypt_and_build_client_data(dek)
         } else {
-            self.build_plaintext_client_data()
+            Ok(self.build_plaintext_client_data())
         }
     }
 
@@ -267,20 +267,59 @@ impl UserPersona {
         })
     }
 
-    fn build_plaintext_client_data(mut self) -> Result<UserPersonaDataForClient, AppError> {
-        let description = std::mem::take(&mut self.description);
+    fn build_plaintext_client_data(mut self) -> UserPersonaDataForClient {
+        // When no DEK is provided, encrypted fields should show as "[Encrypted]" rather than
+        // trying to interpret encrypted bytes as UTF-8
         let decrypted_fields = DecryptedPersonaFields {
-            description: String::from_utf8(description).map_err(|e| {
-                AppError::DecryptionError(format!("Invalid UTF-8 for description: {e}"))
-            })?,
-            personality: self.personality.take().map(|p| String::from_utf8_lossy(&p).to_string()),
-            scenario: self.scenario.take().map(|s| String::from_utf8_lossy(&s).to_string()),
-            first_mes: self.first_mes.take().map(|f| String::from_utf8_lossy(&f).to_string()),
-            mes_example: self.mes_example.take().map(|m| String::from_utf8_lossy(&m).to_string()),
-            system_prompt: self.system_prompt.take().map(|s| String::from_utf8_lossy(&s).to_string()),
-            post_history_instructions: self.post_history_instructions.take().map(|p| String::from_utf8_lossy(&p).to_string()),
+            description: if self.description.is_empty() {
+                String::new()
+            } else {
+                "[Encrypted]".to_string()
+            },
+            personality: self.personality.take().map(|p| {
+                if p.is_empty() {
+                    String::new()
+                } else {
+                    "[Encrypted]".to_string()
+                }
+            }),
+            scenario: self.scenario.take().map(|s| {
+                if s.is_empty() {
+                    String::new()
+                } else {
+                    "[Encrypted]".to_string()
+                }
+            }),
+            first_mes: self.first_mes.take().map(|f| {
+                if f.is_empty() {
+                    String::new()
+                } else {
+                    "[Encrypted]".to_string()
+                }
+            }),
+            mes_example: self.mes_example.take().map(|m| {
+                if m.is_empty() {
+                    String::new()
+                } else {
+                    "[Encrypted]".to_string()
+                }
+            }),
+            system_prompt: self.system_prompt.take().map(|s| {
+                if s.is_empty() {
+                    String::new()
+                } else {
+                    "[Encrypted]".to_string()
+                }
+            }),
+            post_history_instructions: self.post_history_instructions.take().map(|p| {
+                if p.is_empty() {
+                    String::new()
+                } else {
+                    "[Encrypted]".to_string()
+                }
+            }),
         };
-        Ok(self.build_client_data_with_fields(decrypted_fields))
+        self.build_client_data_with_fields(decrypted_fields)
     }
 
     fn build_client_data_with_fields(self, fields: DecryptedPersonaFields) -> UserPersonaDataForClient {

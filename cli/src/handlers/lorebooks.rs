@@ -1,5 +1,4 @@
 // cli/src/handlers/lorebooks.rs
-// #![allow(unused_variables, dead_code)] // TODO: Remove this once implemented
 
 use crate::client::types::lorebook_import::SillyTavernLorebookFile; // Added for parsing
 use scribe_backend::models::lorebook_dtos::{

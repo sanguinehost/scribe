@@ -9,23 +9,6 @@ use std::sync::Arc;
 use super::{AiClient, ChatStream};
 use crate::errors::AppError;
 
-#[derive(Debug)]
-#[allow(dead_code)] // Used for debugging/logging purposes
-struct ChatRequestLogSummary {
-    has_system_prompt: bool,
-    num_messages: usize,
-    has_tools: bool,
-}
-
-impl<'a> From<&'a genai::chat::ChatRequest> for ChatRequestLogSummary {
-    fn from(req: &'a genai::chat::ChatRequest) -> Self {
-        Self {
-            has_system_prompt: req.system.is_some(),
-            num_messages: req.messages.len(),
-            has_tools: req.tools.is_some(),
-        }
-    }
-}
 
 fn log_stream_event_error(model_iden: &ModelIden, body: &serde_json::Value, gen_err: &genai::Error) {
     tracing::error!(
@@ -100,7 +83,9 @@ impl AiClient for ScribeGeminiClient {
         tracing::trace!(
             target: "gemini_client",
             model_name = %model_name,
-            request_summary = ?ChatRequestLogSummary::from(&request),
+            has_system_prompt = request.system.is_some(),
+            num_messages = request.messages.len(),
+            has_tools = request.tools.is_some(),
             config_override = ?config_override,
             "ScribeGeminiClient::exec_chat - Calling genai_client.exec_chat with model_name");
         self.inner
@@ -119,7 +104,9 @@ impl AiClient for ScribeGeminiClient {
         tracing::error!(
             target: "gemini_client",
             model_name = %model_name,
-            request_summary = ?ChatRequestLogSummary::from(&request),
+            has_system_prompt = request.system.is_some(),
+            num_messages = request.messages.len(),
+            has_tools = request.tools.is_some(),
             chat_options_override = ?config_override,
             "ScribeGeminiClient::stream_chat - Attempting to call genai_client.exec_chat_stream"
         );
@@ -220,7 +207,7 @@ mod tests {
         let client_wrapper = build_gemini_client()
             .expect("Failed to build Gemini client wrapper");
         let user_message = "Test Wrapper: Say hello!".to_string();
-        let model_name_for_test = "gemini-2.5-flash-preview-04-17";
+        let model_name_for_test = "gemini-2.5-flash-preview-05-20";
         let result =
             generate_simple_response(&*client_wrapper, user_message, model_name_for_test).await;
         match result {
@@ -235,7 +222,7 @@ mod tests {
         let client_wrapper = build_gemini_client()
             .expect("Failed to build Gemini client wrapper");
         let user_message = "Test Stream Wrapper: Say hello stream!".to_string();
-        let model_name_for_test = "gemini-2.5-flash-preview-04-17";
+        let model_name_for_test = "gemini-2.5-flash-preview-05-20";
         let chat_request = ChatRequest::from_user(user_message);
         let stream_result = client_wrapper
             .stream_chat(model_name_for_test, chat_request, None)
@@ -274,7 +261,7 @@ mod tests {
             .expect("Failed to build Gemini client wrapper");
         let models_to_test = vec![
             "gemini-2.5-pro-preview-05-06",
-            "gemini-2.5-flash-preview-04-17",
+            "gemini-2.5-flash-preview-05-20",
         ];
         for model_name in models_to_test {
             let user_message = format!("Test Model [{model_name}]: Say hello!");

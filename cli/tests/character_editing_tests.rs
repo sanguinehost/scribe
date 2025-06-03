@@ -1,3 +1,6 @@
+
+#![allow(clippy::uninlined_format_args)]
+
 #[cfg(test)]
 mod character_editing_tests {
     use scribe_cli::CharacterEditArgs; // Ensure this is pub

@@ -118,6 +118,18 @@ fn establish_connection() -> PgConnection {
 // --- Test Helper Functions ---
 
 // Updated helper to create a deadpool pool for tests - made public
+/// Creates a new `DbPool` for testing purposes.
+///
+/// This function loads environment variables from a `.env` file (if present)
+/// and expects `DATABASE_URL` to be set. It then builds a `DeadpoolPool`
+/// for `PostgreSQL` connections.
+///
+/// # Panics
+///
+/// Panics if:
+/// - The `DATABASE_URL` environment variable is not set.
+/// - The `DeadpoolPool` fails to build.
+#[must_use]
 pub fn create_test_pool() -> DbPool {
     dotenv().ok();
     let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set for test pool");
@@ -188,7 +200,7 @@ struct TestDataGuard {
 
 impl TestDataGuard {
     fn new(pool: DbPool) -> Self {
-        TestDataGuard {
+        Self {
             pool,
             user_ids: Vec::new(),
             character_ids: Vec::new(),
@@ -209,6 +221,7 @@ impl TestDataGuard {
     }
 
     // Add an explicit async cleanup method to avoid using block_on in Drop
+    #[allow(clippy::too_many_lines)]
     async fn cleanup(self) -> Result<(), anyhow::Error> {
         if self.user_ids.is_empty() && self.character_ids.is_empty() && self.session_ids.is_empty()
         {
@@ -359,7 +372,6 @@ impl TestDataGuard {
 // --- Tests ---
 
 #[test]
-#[ignore] // Added ignore for CI
 fn test_user_character_insert_and_query() {
     let mut conn = establish_connection();
 
@@ -492,7 +504,7 @@ fn insert_test_user_with_password(
 
 // Refactored test using manual cleanup and full router test
 #[tokio::test]
-#[ignore] // Added ignore for CI
+#[allow(clippy::too_many_lines)]
 async fn test_list_characters_handler_with_auth() -> Result<(), AnyhowError> {
     // Use spawn_app helper
     let app = test_helpers::spawn_app(false, false, false).await;
@@ -513,7 +525,7 @@ async fn test_list_characters_handler_with_auth() -> Result<(), AnyhowError> {
                 e
             ));
         }
-    };
+    }
     let conn_clean_users = app.db_pool.get().await?;
     let delete_users_result = conn_clean_users
         .interact(|conn_interaction| diesel::delete(users::table).execute(conn_interaction))
@@ -522,7 +534,7 @@ async fn test_list_characters_handler_with_auth() -> Result<(), AnyhowError> {
         Ok(Ok(_)) => (), // Success
         Ok(Err(e)) => return Err(AnyhowError::new(e).context("DB error cleaning up users")),
         Err(e) => return Err(anyhow::anyhow!("Interact error cleaning up users: {:?}", e)),
-    };
+    }
 
     // --- Setup Test User and Data (using app.db_pool) ---
     let test_username = format!("list_user_{}", Uuid::new_v4());
@@ -831,7 +843,7 @@ fn test_chat_session_insert_and_query() {
             history_management_strategy: "message_window".to_string(),
             history_management_limit: 20,
             visibility: Some("private".to_string()),
-            model_name: "gemini-2.5-flash-preview-04-17".to_string(), // Added model_name field
+            model_name: "gemini-2.5-flash-preview-05-20".to_string(), // Added model_name field
             active_custom_persona_id: None,
             active_impersonated_character_id: None,
             // Additional optional fields
@@ -882,6 +894,7 @@ fn test_chat_session_insert_and_query() {
 
 // Test chat message insertion and querying - Updated to async
 #[tokio::test]
+#[allow(clippy::too_many_lines)]
 async fn test_chat_message_insert_and_query() -> Result<(), AnyhowError> {
     let pool = create_test_pool();
     let _obj = pool.get().await?; // Prefix with underscore
@@ -957,7 +970,7 @@ async fn test_chat_message_insert_and_query() -> Result<(), AnyhowError> {
                     history_management_strategy: "message_window".to_string(),
                     history_management_limit: 20,
                     visibility: Some("private".to_string()),
-                    model_name: "gemini-2.5-flash-preview-04-17".to_string(), // Added model_name field
+                    model_name: "gemini-2.5-flash-preview-05-20".to_string(), // Added model_name field
                     active_custom_persona_id: None,
                     active_impersonated_character_id: None,
                     // Additional optional fields
@@ -1040,7 +1053,7 @@ async fn test_chat_message_insert_and_query() -> Result<(), AnyhowError> {
             .await;
         // Manual handling of InteractError
         match interact_result {
-            Ok(Ok(_)) => Ok(()),
+            Ok(Ok(())) => Ok(()),
             Ok(Err(e)) => Err(AnyhowError::new(e).context("DB error inserting chat messages")), // Map Diesel error
             Err(deadpool_diesel::InteractError::Panic(_)) => {
                 Err(anyhow!("Interact panicked inserting chat messages"))
@@ -1048,7 +1061,7 @@ async fn test_chat_message_insert_and_query() -> Result<(), AnyhowError> {
             Err(deadpool_diesel::InteractError::Aborted) => {
                 Err(anyhow!("Interact aborted inserting chat messages"))
             } // Map abort
-        }?
+        }?;
     }
 
     // --- Query Messages ---
@@ -1101,7 +1114,7 @@ async fn test_chat_message_insert_and_query() -> Result<(), AnyhowError> {
 }
 
 #[tokio::test]
-#[ignore] // Ignore for CI unless DB is guaranteed
+#[allow(clippy::too_many_lines)]
 async fn test_data_guard_cleanup_logic() -> anyhow::Result<()> {
     let pool = create_test_pool(); // Use local helper
     let mut guard = TestDataGuard::new(pool.clone()); // Use local TestDataGuard

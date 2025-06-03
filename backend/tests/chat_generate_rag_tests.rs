@@ -48,169 +48,164 @@ pub struct RagTestContext {
     pub session: DbChat,        // Updated to DbChat
 }
 
-#[tokio::test]
-// #[ignore] // Added ignore for CI
-async fn test_generate_chat_response_triggers_embeddings() -> anyhow::Result<()> {
-    // Pass false to use mock AI, mock embedding pipeline, and mock Qdrant
-    let test_app = test_helpers::spawn_app(false, false, false).await;
-    let user = test_helpers::db::create_test_user(
-        // This helper is assumed to still exist
-        &test_app.db_pool,
-        "gen_resp_embed_trigger_user".to_string(),
-        "password".to_string(),
-    )
-    .await?;
-
-    // API Login using reqwest
-    let client = reqwest::Client::builder().cookie_store(true).build()?;
-    let login_payload = json!({
-        "identifier": user.username,
-        "password": "password",
-    });
-
-    let login_response = client
-        .post(format!("{}/api/auth/login", &test_app.address))
-        .header(
-            reqwest::header::CONTENT_TYPE,
-            mime::APPLICATION_JSON.as_ref(),
-        )
-        .json(&login_payload)
-        .send()
-        .await?;
-
-    assert_eq!(
-        login_response.status(),
-        reqwest::StatusCode::OK,
-        "Login failed"
-    );
-
-    // Extract cookie for subsequent non-reqwest client requests or for verification
-    let auth_cookie = login_response
-        .cookies()
-        .find(|c| c.name() == "id") // Standard axum_login session cookie name
-        .map(|c| format!("{}={}", c.name(), c.value()))
-        .context("Session cookie 'id' not found in login response")?;
-
-    let character_name = "Char for Embed Trigger".to_string();
-    let user_id_for_char = user.id;
-    let character = test_app
-        .db_pool
+#[allow(clippy::too_many_lines)]
+async fn create_test_character(
+    db_pool: &deadpool_diesel::Pool<deadpool_diesel::Manager<diesel::PgConnection>>,
+    user_id: Uuid,
+    name: String,
+) -> anyhow::Result<DbCharacter> {
+    let conn = db_pool
         .get()
         .await
-        .map_err(|e| anyhow::anyhow!("Failed to get DB connection: {}", e))?
-        .interact(move |conn| {
-            let now = Utc::now();
-            // Match fields from DbCharacter definition in models/characters.rs
-            let new_character = DbCharacter {
-                id: Uuid::new_v4(),
-                user_id: user_id_for_char,
-                spec: "chara_card_v3_spec".to_string(), // Added default
-                spec_version: "1.0.0".to_string(),      // Added default
-                name: character_name,
-                description: None,
-                personality: None,
-                scenario: None,
-                first_mes: None,
-                mes_example: None,
-                creator_notes: None,
-                system_prompt: None,
-                post_history_instructions: None,
-                tags: None,
-                creator: None,
-                character_version: None,
-                alternate_greetings: None,
-                nickname: None,
-                creator_notes_multilingual: None,
-                source: None,
-                group_only_greetings: None,
-                creation_date: None,
-                modification_date: None,
-                created_at: now,
-                updated_at: now,
-                persona: None,
-                world_scenario: None,
-                avatar: None, // Changed from avatar_uri
-                chat: None,
-                greeting: None,
-                definition: None,
-                default_voice: None,
-                extensions: None,
-                data_id: None,
-                category: None,
-                definition_visibility: None,
-                depth: None,
-                example_dialogue: None,
-                favorite: None,
-                first_message_visibility: None,
-                height: None,
-                last_activity: None,
-                migrated_from: None,
-                model_prompt: None,
-                model_prompt_visibility: None,
-                model_temperature: None,
-                num_interactions: None,
-                permanence: None,
-                persona_visibility: None,
-                revision: None,
-                sharing_visibility: None,
-                status: None,
-                system_prompt_visibility: None,
-                system_tags: None,
-                token_budget: None,
-                usage_hints: None,
-                user_persona: None,
-                user_persona_visibility: None,
-                visibility: Some("private".to_string()),
-                weight: None,
-                world_scenario_visibility: None,
-                description_nonce: None,
-                personality_nonce: None,
-                scenario_nonce: None,
-                first_mes_nonce: None,
-                mes_example_nonce: None,
-                creator_notes_nonce: None,
-                system_prompt_nonce: None,
-                persona_nonce: None,
-                world_scenario_nonce: None,
-                greeting_nonce: None,
-                definition_nonce: None,
-                example_dialogue_nonce: None,
-                model_prompt_nonce: None,
-                user_persona_nonce: None,
-                post_history_instructions_nonce: None,
-            };
+        .context("Failed to get DB connection from pool")?;
+    
+    let character_id = Uuid::new_v4();
+    let character = conn
+        .interact(move |conn| {            
             diesel::insert_into(schema::characters::table)
-                .values(&new_character)
+                .values(&DbCharacter {
+                    id: character_id,
+                    user_id,
+                    spec: "chara_card_v3_spec".to_string(),
+                    spec_version: "1.0.0".to_string(),
+                    name,
+                    description: Some(
+                        br"{{char}} is an AI assistant designed to help with unit tests. {{char}} understands RAG (Retrieval-Augmented Generation) and can discuss technical topics in detail.
+
+When asked about RAG or embeddings, {{char}} will provide relevant information based on the context provided.".to_vec()
+                    ),
+                    first_mes: Some(
+                        b"*{{char}} initializes, ready to help with your RAG-related questions.*\n\nHello {{user}}! I'm here to help you understand and test our RAG implementation. Feel free to ask me anything about embeddings, retrieval, or how our system works.".to_vec()
+                    ),
+                    system_prompt: Some(
+                        b"You are {{char}}, a helpful AI assistant specialized in RAG (Retrieval-Augmented Generation) systems. You should incorporate any relevant context provided to you when answering questions. Always be helpful, accurate, and thorough in your responses.".to_vec()
+                    ),
+                    avatar: None,
+                    token_budget: Some(2048),
+                    example_dialogue: Some(
+                        br"<START>
+{{user}}: What is RAG?
+{{char}}: RAG stands for Retrieval-Augmented Generation. It's a technique that enhances language models by retrieving relevant information from a knowledge base before generating responses. This allows the model to access up-to-date information and provide more accurate, contextual answers.
+<START>
+{{user}}: How do embeddings work?
+{{char}}: Embeddings are dense vector representations of text that capture semantic meaning. They allow us to find similar content by comparing vectors in high-dimensional space. When you ask a question, we convert it to an embedding and search for similar embeddings in our database to find relevant context.".to_vec()
+                    ),
+                    visibility: Some("private".to_string()),
+                    created_at: Utc::now(),
+                    updated_at: Utc::now(),
+                    creator_notes: Some(
+                        b"This character is designed for testing RAG functionality. It should be knowledgeable about technical topics and incorporate retrieved context naturally.".to_vec()
+                    ),
+                    character_version: Some("v1.0".to_string()),
+                    scenario: Some(
+                        b"{{user}} is testing the RAG system by asking {{char}} various questions. {{char}} has access to retrieved context and should use it to provide informed responses.".to_vec()
+                    ),
+                    personality: Some(
+                        b"Helpful, knowledgeable, technical, precise, friendly".to_vec()
+                    ),
+                    mes_example: Some(
+                        br"<START>
+{{user}}: Can you explain how our chunking strategy works?
+{{char}}: Based on the retrieved context, I can see that our system uses a sophisticated chunking strategy. We break down documents into manageable pieces while preserving semantic coherence. Each chunk is typically around 512 tokens, with some overlap between chunks to maintain context. This ensures that when we retrieve information, we get complete, meaningful segments rather than fragments.
+
+The chunking process also preserves metadata about the source document, position, and relationships between chunks. This helps maintain context when multiple chunks from the same document are retrieved.
+<START>".to_vec()
+                    ),
+                    extensions: Some(json!({})),
+                    // All other fields set to None
+                    chat: None,
+                    greeting: None,
+                    definition: None,
+                    default_voice: None,
+                    data_id: None,
+                    category: None,
+                    definition_visibility: None,
+                    depth: None,
+                    favorite: None,
+                    first_message_visibility: None,
+                    height: None,
+                    last_activity: None,
+                    migrated_from: None,
+                    model_prompt: None,
+                    model_prompt_visibility: None,
+                    model_temperature: None,
+                    num_interactions: None,
+                    permanence: None,
+                    persona_visibility: None,
+                    revision: None,
+                    sharing_visibility: None,
+                    status: None,
+                    system_prompt_visibility: None,
+                    system_tags: None,
+                    usage_hints: None,
+                    user_persona: None,
+                    user_persona_visibility: None,
+                    weight: None,
+                    world_scenario_visibility: None,
+                    description_nonce: None,
+                    personality_nonce: None,
+                    scenario_nonce: None,
+                    first_mes_nonce: None,
+                    mes_example_nonce: None,
+                    creator_notes_nonce: None,
+                    system_prompt_nonce: None,
+                    persona_nonce: None,
+                    world_scenario_nonce: None,
+                    greeting_nonce: None,
+                    definition_nonce: None,
+                    example_dialogue_nonce: None,
+                    model_prompt_nonce: None,
+                    user_persona_nonce: None,
+                    post_history_instructions: None,
+                    post_history_instructions_nonce: None,
+                    tags: None,
+                    creator: None,
+                    alternate_greetings: None,
+                    nickname: None,
+                    creator_notes_multilingual: None,
+                    source: None,
+                    group_only_greetings: None,
+                    creation_date: None,
+                    modification_date: None,
+                    persona: None,
+                    world_scenario: None,
+                })
+                .returning(DbCharacter::as_select())
                 .get_result::<DbCharacter>(conn)
         })
         .await
-        .map_err(|e| anyhow::anyhow!("Database interaction failed (outer InteractError): {}", e))? // Handles InteractError
-        .map_err(|e| {
-            anyhow::anyhow!("Database query failed (inner diesel::result::Error): {}", e)
-        })?; // Handles diesel::result::Error
+        .map_err(|e| anyhow::anyhow!("Database interaction failed: {}", e))?
+        .context("Failed to insert character into database")?;
+    
+    Ok(character)
+}
 
-    let user_id_for_session = user.id;
-    let character_id_for_session = character.id;
-    let session = test_app
-        .db_pool
+// Helper function to create a test chat session
+async fn create_test_chat_session(
+    db_pool: &deadpool_diesel::Pool<deadpool_diesel::Manager<diesel::PgConnection>>,
+    user_id: Uuid,
+    character_id: Uuid,
+) -> anyhow::Result<DbChat> {
+    let conn = db_pool
         .get()
         .await
-        .map_err(|e| anyhow::anyhow!("Failed to get DB connection: {}", e))?
-        .interact(move |conn| {
-            // Match fields from NewChat definition in models/chat.rs
-            let now = Utc::now();
-            let new_chat = NewChat {
-                id: Uuid::new_v4(),
-                user_id: user_id_for_session,
-                character_id: character_id_for_session,
+        .context("Failed to get DB connection from pool")?;
+    
+    let session_id = Uuid::new_v4();
+    let session = conn
+        .interact(move |conn| {            
+            let new_session = NewChat {
+                id: session_id,
+                user_id,
+                character_id,
                 title_ciphertext: None,
                 title_nonce: None,
-                created_at: now, // Added required field
-                updated_at: now, // Added required field
-                history_management_strategy: "none".to_string(), // Added required field
-                history_management_limit: 0, // Added required field
-                model_name: "default-test-model".to_string(),
-                visibility: Some("private".to_string()), // Added required field
+                created_at: Utc::now(),
+                updated_at: Utc::now(),
+                history_management_strategy: "message_window".to_string(),
+                history_management_limit: 100,
+                model_name: "test-model-embedding-trigger".to_string(),
+                visibility: Some("private".to_string()),
                 active_custom_persona_id: None,
                 active_impersonated_character_id: None,
                 temperature: None,
@@ -226,22 +221,131 @@ async fn test_generate_chat_response_triggers_embeddings() -> anyhow::Result<()>
                 system_prompt_ciphertext: None,
                 system_prompt_nonce: None,
             };
+            
             diesel::insert_into(schema::chat_sessions::table)
-                .values(&new_chat)
+                .values(&new_session)
                 .returning(DbChat::as_select())
-                .get_result(conn)
+                .get_result::<DbChat>(conn)
         })
         .await
-        .map_err(|e| anyhow::anyhow!("Database interaction failed (outer InteractError): {}", e))? // Handles InteractError
-        .map_err(|e| {
-            anyhow::anyhow!("Database query failed (inner diesel::result::Error): {}", e)
-        })?; // Handles diesel::result::Error
+        .map_err(|e| anyhow::anyhow!("Database interaction failed: {}", e))?
+        .context("Failed to insert chat session into database")?;
+    
+    Ok(session)
+}
+
+// Helper function to perform login and get auth cookie
+async fn login_and_get_cookie(
+    test_app: &test_helpers::TestApp,
+    username: &str,
+    password: &str,
+) -> anyhow::Result<String> {
+    let client = reqwest::Client::builder().cookie_store(true).build()?;
+    let login_payload = json!({
+        "identifier": username,
+        "password": password,
+    });
+
+    let login_response = client
+        .post(format!("{}/api/auth/login", &test_app.address))
+        .header(
+            reqwest::header::CONTENT_TYPE,
+            mime::APPLICATION_JSON.as_ref(),
+        )
+        .json(&login_payload)
+        .send()
+        .await?;
+
+    if login_response.status() != StatusCode::OK {
+        anyhow::bail!(
+            "Login failed with status: {} for user: {}",
+            login_response.status(),
+            username
+        );
+    }
+
+    // Extract the auth cookie from response headers
+    let auth_cookie = login_response
+        .headers()
+        .get_all(header::SET_COOKIE)
+        .iter()
+        .find_map(|value| {
+            value.to_str().ok().and_then(|s| {
+                if s.starts_with("id=") {
+                    Some(s.split(';').next().unwrap().to_string())
+                } else {
+                    None
+                }
+            })
+        })
+        .context("Auth cookie not found in login response")?;
+
+    Ok(auth_cookie)
+}
+
+// Helper to fetch and verify messages from database
+async fn fetch_chat_messages(
+    db_pool: &deadpool_diesel::Pool<deadpool_diesel::Manager<diesel::PgConnection>>,
+    _session_id: Uuid,
+) -> anyhow::Result<Vec<DbChatMessage>> {
+    let conn = db_pool
+        .get()
+        .await
+        .context("Failed to get DB connection from pool")?;
+    
+    let messages = conn
+        .interact(move |conn| {
+            use schema::chat_messages::dsl::*;
+            
+            chat_messages
+                .filter(schema::chat_messages::session_id.eq(session_id))
+                .order(created_at.asc())
+                .select(DbChatMessage::as_select())
+                .load::<DbChatMessage>(conn)
+        })
+        .await
+        .map_err(|e| anyhow::anyhow!("Database interaction failed: {}", e))?
+        .context("Failed to fetch chat messages from database")?;
+    
+    Ok(messages)
+}
+
+
+#[tokio::test]
+// #[ignore] // Added ignore for CI
+async fn test_generate_chat_response_triggers_embeddings() -> anyhow::Result<()> {
+    // Pass false to use mock AI, mock embedding pipeline, and mock Qdrant
+    let test_app = test_helpers::spawn_app(false, false, false).await;
+    let user = test_helpers::db::create_test_user(
+        &test_app.db_pool,
+        "gen_resp_embed_trigger_user".to_string(),
+        "password".to_string(),
+    )
+    .await?;
+
+    // Use helper for login
+    let auth_cookie = login_and_get_cookie(&test_app, &user.username, "password").await?;
+
+    // Use helper functions
+    let character = create_test_character(
+        &test_app.db_pool,
+        user.id,
+        "Char for Embed Trigger".to_string(),
+    )
+    .await?;
+    
+    let session = create_test_chat_session(
+        &test_app.db_pool,
+        user.id,
+        character.id,
+    )
+    .await?;
 
     // Mock the AI response
     let mock_ai_content = "Response to trigger embedding.";
     let mock_response = ChatResponse {
-        model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash-preview-04-17"),
-        provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash-preview-04-17"),
+        model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash-preview-05-20"),
+        provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash-preview-05-20"),
         contents: vec![MessageContent::Text(mock_ai_content.to_string())],
         reasoning_content: None,
         usage: Usage::default(),
@@ -305,24 +409,8 @@ async fn test_generate_chat_response_triggers_embeddings() -> anyhow::Result<()>
         "Expected at least one ProcessAndEmbedMessage call"
     );
 
-    let session_id_for_fetch = session.id;
-    let messages = test_app
-        .db_pool
-        .get()
-        .await
-        .map_err(|e| anyhow::anyhow!("Failed to get DB connection: {}", e))?
-        .interact(move |conn| {
-            schema::chat_messages::table
-                .filter(schema::chat_messages::session_id.eq(session_id_for_fetch))
-                .order(schema::chat_messages::created_at.asc())
-                .select(DbChatMessage::as_select()) // Select specific columns
-                .load::<DbChatMessage>(conn)
-        })
-        .await
-        .map_err(|e| anyhow::anyhow!("Database interaction failed (outer InteractError): {}", e))? // Handles InteractError
-        .map_err(|e| {
-            anyhow::anyhow!("Database query failed (inner diesel::result::Error): {}", e)
-        })?; // Handles diesel::result::Error
+    // Use helper to fetch messages
+    let messages = fetch_chat_messages(&test_app.db_pool, session.id).await?;
     assert_eq!(messages.len(), 2, "Should have user and AI message saved");
 
     let user_msg = messages
@@ -332,19 +420,17 @@ async fn test_generate_chat_response_triggers_embeddings() -> anyhow::Result<()>
 
     // Check if any process call contains the user message ID
     if !process_calls.is_empty() {
-        let process_message_ids: Vec<_> = process_calls
-            .iter()
-            .filter_map(|call| {
-                if let PipelineCall::ProcessAndEmbedMessage { message_id, .. } = call {
-                    Some(*message_id)
-                } else {
-                    None
-                }
-            })
-            .collect();
-
         assert!(
-            process_message_ids.contains(&user_msg.id),
+            process_calls
+                .iter()
+                .filter_map(|call| {
+                    if let PipelineCall::ProcessAndEmbedMessage { message_id, .. } = call {
+                        Some(*message_id)
+                    } else {
+                        None
+                    }
+                })
+                .any(|id| id == user_msg.id),
             "No ProcessAndEmbedMessage call found for the user message ID: {}",
             user_msg.id
         );
@@ -372,219 +458,53 @@ async fn test_generate_chat_response_triggers_embeddings_with_existing_session()
     )
     .await?;
 
-    // API Login using reqwest
-    let client = reqwest::Client::builder().cookie_store(true).build()?;
-    let login_payload = json!({
-        "identifier": user.username,
-        "password": "password",
-    });
+    // Use helper for login
+    let auth_cookie = login_and_get_cookie(&test_app, &user.username, "password").await?;
 
-    let login_response = client
-        .post(format!("{}/api/auth/login", &test_app.address))
-        .header(
-            reqwest::header::CONTENT_TYPE,
-            mime::APPLICATION_JSON.as_ref(),
-        )
-        .json(&login_payload)
-        .send()
-        .await?;
-
-    assert_eq!(
-        login_response.status(),
-        reqwest::StatusCode::OK,
-        "Login failed"
-    );
-
-    // Extract cookie for subsequent non-reqwest client requests or for verification
-    let auth_cookie = login_response
-        .cookies()
-        .find(|c| c.name() == "id") // Standard axum_login session cookie name
-        .map(|c| format!("{}={}", c.name(), c.value()))
-        .context("Session cookie 'id' not found in login response")?;
-
-    let char_name = "Embed Test Char".to_string();
-    let user_id_for_char = user.id;
-    let character = test_app
-        .db_pool
-        .get()
-        .await
-        .map_err(|e| anyhow::anyhow!("Failed to get DB connection: {}", e))?
-        .interact(move |conn| {
-            let now = Utc::now();
-            // Match fields from DbCharacter definition in models/characters.rs
-            let new_character = DbCharacter {
-                id: Uuid::new_v4(),
-                user_id: user_id_for_char,
-                spec: "chara_card_v3_spec".to_string(), // Added default
-                spec_version: "1.0.0".to_string(),      // Added default
-                name: char_name,
-                description: None,
-                personality: None,
-                scenario: None,
-                first_mes: None,
-                mes_example: None,
-                creator_notes: None,
-                system_prompt: None,
-                post_history_instructions: None,
-                tags: None,
-                creator: None,
-                character_version: None,
-                alternate_greetings: None,
-                nickname: None,
-                creator_notes_multilingual: None,
-                source: None,
-                group_only_greetings: None,
-                creation_date: None,
-                modification_date: None,
-                created_at: now,
-                updated_at: now,
-                persona: None,
-                world_scenario: None,
-                avatar: None, // Changed from avatar_uri
-                chat: None,
-                greeting: None,
-                definition: None,
-                default_voice: None,
-                extensions: None,
-                data_id: None,
-                category: None,
-                definition_visibility: None,
-                depth: None,
-                example_dialogue: None,
-                favorite: None,
-                first_message_visibility: None,
-                height: None,
-                last_activity: None,
-                migrated_from: None,
-                model_prompt: None,
-                model_prompt_visibility: None,
-                model_temperature: None,
-                num_interactions: None,
-                permanence: None,
-                persona_visibility: None,
-                revision: None,
-                sharing_visibility: None,
-                status: None,
-                system_prompt_visibility: None,
-                system_tags: None,
-                token_budget: None,
-                usage_hints: None,
-                user_persona: None,
-                user_persona_visibility: None,
-                visibility: Some("private".to_string()),
-                weight: None,
-                world_scenario_visibility: None,
-                description_nonce: None,
-                personality_nonce: None,
-                scenario_nonce: None,
-                first_mes_nonce: None,
-                mes_example_nonce: None,
-                creator_notes_nonce: None,
-                system_prompt_nonce: None,
-                persona_nonce: None,
-                world_scenario_nonce: None,
-                greeting_nonce: None,
-                definition_nonce: None,
-                example_dialogue_nonce: None,
-                model_prompt_nonce: None,
-                user_persona_nonce: None,
-                post_history_instructions_nonce: None,
-            };
-            diesel::insert_into(schema::characters::table)
-                .values(&new_character)
-                .get_result::<DbCharacter>(conn)
-        })
-        .await
-        .map_err(|e| anyhow::anyhow!("Database interaction failed (outer InteractError): {}", e))? // Handles InteractError
-        .map_err(|e| {
-            anyhow::anyhow!("Database query failed (inner diesel::result::Error): {}", e)
-        })?; // Handles diesel::result::Error
-
-    let user_id_for_session = user.id;
-    let char_id_for_session = character.id;
-    let session = test_app
-        .db_pool
-        .get()
-        .await
-        .map_err(|e| anyhow::anyhow!("Failed to get DB connection: {}", e))?
-        .interact(move |conn| {
-            // Match fields from NewChat definition in models/chat.rs
-            let now = Utc::now();
-            let new_chat = NewChat {
-                id: Uuid::new_v4(),
-                user_id: user_id_for_session,
-                character_id: char_id_for_session,
-                title_ciphertext: None,
-                title_nonce: None,
-                created_at: now, // Added required field
-                updated_at: now, // Added required field
-                history_management_strategy: "none".to_string(), // Added required field
-                history_management_limit: 0, // Added required field
-                model_name: "default-test-model".to_string(),
-                visibility: Some("private".to_string()), // Added required field
-                active_custom_persona_id: None,
-                active_impersonated_character_id: None,
-                temperature: None,
-                max_output_tokens: None,
-                frequency_penalty: None,
-                presence_penalty: None,
-                top_k: None,
-                top_p: None,
-                seed: None,
-                stop_sequences: None,
-                gemini_thinking_budget: None,
-                gemini_enable_code_execution: None,
-                system_prompt_ciphertext: None,
-                system_prompt_nonce: None,
-            };
-            diesel::insert_into(schema::chat_sessions::table)
-                .values(&new_chat)
-                .returning(DbChat::as_select())
-                .get_result(conn)
-        })
-        .await
-        .map_err(|e| anyhow::anyhow!("Database interaction failed (outer InteractError): {}", e))? // Handles InteractError
-        .map_err(|e| {
-            anyhow::anyhow!("Database query failed (inner diesel::result::Error): {}", e)
-        })?; // Handles diesel::result::Error
-
-    let session_id_for_msg = session.id;
-    let user_id_for_msg = user.id;
-    let msg_content = "First message".to_string();
-    // Corrected block: Use let _ = ..., get_result, no select, double map_err
+    // Use helper functions
+    let character = create_test_character(
+        &test_app.db_pool,
+        user.id,
+        "Embed Test Char".to_string(),
+    )
+    .await?;
+    
+    let session = create_test_chat_session(
+        &test_app.db_pool,
+        user.id,
+        character.id,
+    )
+    .await?;
+    
+    // Create an existing message in the session
     let _ = test_app
         .db_pool
         .get()
-        .await
-        .map_err(|e| anyhow::anyhow!("Failed to get DB connection: {}", e))?
+        .await?
         .interact(move |conn| {
-            // Match fields from NewChatMessage definition in models/chat.rs
+            use schema::chat_messages;
             let now = Utc::now();
             let new_message = NewChatMessage {
                 id: Uuid::new_v4(),
-                session_id: session_id_for_msg, // Changed from chat_session_id
-                user_id: user_id_for_msg,
+                session_id: session.id,
+                user_id: user.id,
                 message_type: MessageRole::User,
-                content: msg_content.as_bytes().to_vec(),
+                content: b"First message".to_vec(),
                 content_nonce: None,
-                created_at: now,   // Added required field
-                updated_at: now,   // Added required field
-                role: None,        // Added optional field
-                parts: None,       // Added optional field
-                attachments: None, // Added optional field
+                created_at: now,
+                updated_at: now,
+                role: None,
+                parts: None,
+                attachments: None,
                 prompt_tokens: None,
                 completion_tokens: None,
             };
-            diesel::insert_into(schema::chat_messages::table)
+            diesel::insert_into(chat_messages::table)
                 .values(&new_message)
-                .returning(DbChatMessage::as_select()) // Added returning clause
-                .get_result::<DbChatMessage>(conn) // Use get_result
+                .execute(conn)
         })
         .await
-        .map_err(|e| anyhow::anyhow!("Database interaction failed (outer InteractError): {}", e))? // Handles InteractError
-        .map_err(|e| {
-            anyhow::anyhow!("Database query failed (inner diesel::result::Error): {}", e)
-        })?; // Handles diesel::result::Error
+        .map_err(|e| anyhow::anyhow!("Database interaction failed: {}", e))??;
 
     // Ensure responses are queued for the retrieve_relevant_chunks calls (system prompt + user message)
     test_app
@@ -642,6 +562,7 @@ async fn test_generate_chat_response_triggers_embeddings_with_existing_session()
 
 #[tokio::test]
 // Removed ignore: #[ignore] // Integration test, relies on external services
+#[allow(clippy::too_many_lines)]
 async fn test_rag_context_injection_in_prompt() -> anyhow::Result<()> {
     let test_app = test_helpers::spawn_app(false, false, false).await;
     let user = test_helpers::db::create_test_user(
@@ -860,7 +781,7 @@ async fn test_rag_context_injection_in_prompt() -> anyhow::Result<()> {
             "Mock AI response to RAG query".to_string(),
         )],
         reasoning_content: None,
-        usage: Default::default(),
+        usage: genai::chat::Usage::default(),
     };
     test_app
         .mock_ai_client
@@ -942,7 +863,7 @@ async fn test_rag_context_injection_in_prompt() -> anyhow::Result<()> {
         last_ai_request.system
     );
 
-    // System prompt should now match the default RAG prompt.
+    // System prompt should now match the default RAG prompt without RAG context.
     let expected_system_prompt = format!(
         "You are the Narrator and supporting characters in a collaborative storytelling experience with a Human player. The Human controls a character (referred to as 'the User'). Your primary role is to describe the world, events, and the actions and dialogue of all characters *except* the User.\n\n\
         You will be provided with the following structured information to guide your responses:\n\
@@ -978,7 +899,7 @@ async fn test_rag_context_injection_in_prompt() -> anyhow::Result<()> {
 
     let speaker_from_meta = match &mock_retrieved_chunk.metadata {
         RetrievedMetadata::Chat(chat_meta) => chat_meta.speaker.as_str(),
-        _ => "Unknown", // Should not happen in this test based on mock_retrieved_chunk setup
+        RetrievedMetadata::Lorebook(_) => "Unknown", // Should not happen in this test based on mock_retrieved_chunk setup
     };
     let expected_rag_chunk_text = format!(
         "- Chat (Speaker: {}): {}", // Removed score as it's not in the new format
@@ -1012,6 +933,7 @@ async fn test_rag_context_injection_in_prompt() -> anyhow::Result<()> {
 
 #[tokio::test]
 // #[ignore] // Re-enable test
+#[allow(clippy::too_many_lines)]
 async fn generate_chat_response_rag_retrieval_error() -> anyhow::Result<()> {
     let test_app = test_helpers::spawn_app(false, false, false).await;
     let user = test_helpers::db::create_test_user(
@@ -1210,8 +1132,8 @@ async fn generate_chat_response_rag_retrieval_error() -> anyhow::Result<()> {
     let mock_ai_content = "Response without RAG context.";
     let mock_response = ChatResponse {
         /* ... */ contents: vec![MessageContent::Text(mock_ai_content.to_string())],
-        model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash-preview-04-17"),
-        provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash-preview-04-17"),
+        model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash-preview-05-20"),
+        provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash-preview-05-20"),
         reasoning_content: None,
         usage: Usage::default(),
     };
@@ -1363,6 +1285,7 @@ async fn generate_chat_response_rag_retrieval_error() -> anyhow::Result<()> {
     Ok(())
 }
 
+#[allow(clippy::too_many_lines)]
 async fn setup_test_data(use_real_ai: bool) -> anyhow::Result<RagTestContext> {
     // Pass false for use_real_embedding_pipeline and use_real_qdrant by default for this helper
     let test_app = test_helpers::spawn_app(use_real_ai, false, false).await;
@@ -1553,8 +1476,8 @@ async fn setup_test_data(use_real_ai: bool) -> anyhow::Result<RagTestContext> {
     let mock_ai_content = "Response to trigger embedding.";
     let mock_response = ChatResponse {
         /* ... */ contents: vec![MessageContent::Text(mock_ai_content.to_string())],
-        model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash-preview-04-17"),
-        provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash-preview-04-17"),
+        model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash-preview-05-20"),
+        provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash-preview-05-20"),
         reasoning_content: None,
         usage: Usage::default(),
     };
@@ -1618,24 +1541,8 @@ async fn setup_test_data(use_real_ai: bool) -> anyhow::Result<RagTestContext> {
         "Expected at least one ProcessAndEmbedMessage call"
     );
 
-    let session_id_for_fetch = session.id;
-    let messages = test_app
-        .db_pool
-        .get()
-        .await
-        .map_err(|e| anyhow::anyhow!("Failed to get DB connection: {}", e))?
-        .interact(move |conn| {
-            schema::chat_messages::table
-                .filter(schema::chat_messages::session_id.eq(session_id_for_fetch))
-                .order(schema::chat_messages::created_at.asc())
-                .select(DbChatMessage::as_select()) // Select specific columns
-                .load::<DbChatMessage>(conn)
-        })
-        .await
-        .map_err(|e| anyhow::anyhow!("Database interaction failed (outer InteractError): {}", e))? // Handles InteractError
-        .map_err(|e| {
-            anyhow::anyhow!("Database query failed (inner diesel::result::Error): {}", e)
-        })?; // Handles diesel::result::Error
+    // Use helper to fetch messages
+    let messages = fetch_chat_messages(&test_app.db_pool, session.id).await?;
     assert_eq!(messages.len(), 2, "Should have 2 messages saved in setup");
 
     let user_msg = messages
@@ -1680,6 +1587,7 @@ async fn setup_test_data(use_real_ai: bool) -> anyhow::Result<RagTestContext> {
 }
 
 #[tokio::test]
+#[allow(clippy::too_many_lines)]
 async fn generate_chat_response_rag_success() -> anyhow::Result<()> {
     let context = setup_test_data(false).await?; // Use mock AI
 
@@ -1688,10 +1596,10 @@ async fn generate_chat_response_rag_success() -> anyhow::Result<()> {
         contents: vec![MessageContent::Text(
             "Mock AI response to RAG query".to_string(),
         )],
-        model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash-preview-04-17"),
-        provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash-preview-04-17"),
+        model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash-preview-05-20"),
+        provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash-preview-05-20"),
         reasoning_content: None,
-        usage: Default::default(),
+        usage: genai::chat::Usage::default(),
     };
     context
         .app
@@ -1715,7 +1623,7 @@ async fn generate_chat_response_rag_success() -> anyhow::Result<()> {
             role: "user".to_string(),
             content: user_query.clone(),
         }],
-        model: Some("gemini-2.5-flash-preview-04-17".to_string()),
+        model: Some("gemini-2.5-flash-preview-05-20".to_string()),
         query_text_for_rag: None,
     };
 
@@ -1806,7 +1714,7 @@ async fn generate_chat_response_rag_success() -> anyhow::Result<()> {
         .messages
         .iter()
         .filter(|m| matches!(m.role, genai::chat::ChatRole::User))
-        .last()
+        .next_back()
         .expect("No user message found in AI request");
 
     if let genai::chat::MessageContent::Text(text_content) =
@@ -1820,6 +1728,7 @@ async fn generate_chat_response_rag_success() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
+#[allow(clippy::too_many_lines)]
 async fn generate_chat_response_rag_empty_history_success() -> anyhow::Result<()> {
     let context = setup_test_data(false).await?;
 
@@ -1828,10 +1737,10 @@ async fn generate_chat_response_rag_empty_history_success() -> anyhow::Result<()
         contents: vec![MessageContent::Text(
             "Mock AI response to RAG query".to_string(),
         )],
-        model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash-preview-04-17"),
-        provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash-preview-04-17"),
+        model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash-preview-05-20"),
+        provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash-preview-05-20"),
         reasoning_content: None,
-        usage: Default::default(),
+        usage: genai::chat::Usage::default(),
     };
     context
         .app
@@ -1855,7 +1764,7 @@ async fn generate_chat_response_rag_empty_history_success() -> anyhow::Result<()
             role: "user".to_string(),
             content: user_query_empty_hist.clone(),
         }],
-        model: Some("gemini-2.5-flash-preview-04-17".to_string()),
+        model: Some("gemini-2.5-flash-preview-05-20".to_string()),
         query_text_for_rag: None,
     };
 
@@ -1938,7 +1847,7 @@ async fn generate_chat_response_rag_empty_history_success() -> anyhow::Result<()
         .messages
         .iter()
         .filter(|m| matches!(m.role, genai::chat::ChatRole::User))
-        .last()
+        .next_back()
         .expect("No user message found in AI request");
 
     if let genai::chat::MessageContent::Text(text_content) =
@@ -1952,6 +1861,7 @@ async fn generate_chat_response_rag_empty_history_success() -> anyhow::Result<()
 }
 
 #[tokio::test]
+#[allow(clippy::too_many_lines)]
 async fn generate_chat_response_rag_no_relevant_chunks_found() -> anyhow::Result<()> {
     let context = setup_test_data(false).await?;
 
@@ -1960,10 +1870,10 @@ async fn generate_chat_response_rag_no_relevant_chunks_found() -> anyhow::Result
         contents: vec![MessageContent::Text(
             "Mock AI response to RAG query".to_string(),
         )],
-        model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash-preview-04-17"),
-        provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash-preview-04-17"),
+        model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash-preview-05-20"),
+        provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash-preview-05-20"),
         reasoning_content: None,
-        usage: Default::default(),
+        usage: genai::chat::Usage::default(),
     };
     context
         .app
@@ -1984,7 +1894,7 @@ async fn generate_chat_response_rag_no_relevant_chunks_found() -> anyhow::Result
             role: "user".to_string(),
             content: user_query_no_chunks.clone(),
         }],
-        model: Some("gemini-2.5-flash-preview-04-17".to_string()),
+        model: Some("gemini-2.5-flash-preview-05-20".to_string()),
         query_text_for_rag: None,
     };
 
@@ -2067,7 +1977,7 @@ async fn generate_chat_response_rag_no_relevant_chunks_found() -> anyhow::Result
         .messages
         .iter()
         .filter(|m| matches!(m.role, genai::chat::ChatRole::User))
-        .last()
+        .next_back()
         .expect("No user message found in AI request");
 
     if let genai::chat::MessageContent::Text(text_content) =
@@ -2089,10 +1999,10 @@ async fn generate_chat_response_rag_uses_session_settings() -> anyhow::Result<()
         contents: vec![MessageContent::Text(
             "Mock AI response to RAG query".to_string(),
         )],
-        model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash-preview-04-17"),
-        provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash-preview-04-17"),
+        model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash-preview-05-20"),
+        provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash-preview-05-20"),
         reasoning_content: None,
-        usage: Default::default(),
+        usage: genai::chat::Usage::default(),
     };
     context
         .app
@@ -2131,10 +2041,10 @@ async fn generate_chat_response_rag_uses_character_settings_if_no_session() -> a
         contents: vec![MessageContent::Text(
             "Mock AI response to RAG query".to_string(),
         )],
-        model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash-preview-04-17"),
-        provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash-preview-04-17"),
+        model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash-preview-05-20"),
+        provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash-preview-05-20"),
         reasoning_content: None,
-        usage: Default::default(),
+        usage: genai::chat::Usage::default(),
     };
     context
         .app
@@ -2156,7 +2066,7 @@ async fn generate_chat_response_rag_uses_character_settings_if_no_session() -> a
             role: "user".to_string(),
             content: "Another query".to_string(),
         }],
-        model: Some("gemini-2.5-flash-preview-04-17".to_string()),
+        model: Some("gemini-2.5-flash-preview-05-20".to_string()),
         query_text_for_rag: None,
     };
 

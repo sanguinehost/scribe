@@ -76,7 +76,7 @@ async fn cleanup_and_prepare_collection() -> Result<(), anyhow::Error> {
     tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
 
     // Create the collection
-    client
+    let create_result = client
         .create_collection(CreateCollection {
             collection_name: TEST_COLLECTION_NAME.to_string(),
             vectors_config: Some(VectorsConfig {
@@ -94,6 +94,10 @@ async fn cleanup_and_prepare_collection() -> Result<(), anyhow::Error> {
         })
         .await
         .map_err(|e| anyhow::anyhow!("Failed to create test collection: {}", e))?; // Convert error
+    
+    // Explicitly drop client to reduce resource contention
+    drop(client);
+    let _ = create_result; // Use the result to avoid warnings
 
     Ok(())
 }
@@ -105,7 +109,8 @@ fn generate_test_vectors(dimension: usize, count: usize) -> Vec<Vec<f32>> {
         let mut vector = Vec::with_capacity(dimension);
         for j in 0..dimension {
             // Create slightly different values for each vector
-            vector.push(((i + j) % 10) as f32 * 0.1);
+            let value = u8::try_from((i + j) % 10).unwrap_or(0);
+            vector.push(f32::from(value) * 0.1);
         }
         vectors.push(vector);
     }
@@ -127,8 +132,6 @@ async fn test_qdrant_service_creation() -> Result<(), AnyhowError> {
 #[ignore] // Added ignore for CI
 async fn test_qdrant_upsert_points() -> Result<(), AnyhowError> {
     cleanup_and_prepare_collection().await?; // Ensure clean state
-    // Create a new instance of the Qdrant service
-    let service = create_test_qdrant_service().await?;
 
     // Generate test vectors and points
     let test_vectors = generate_test_vectors(768, 3); // 768 is the dimension used in the service
@@ -150,7 +153,7 @@ async fn test_qdrant_upsert_points() -> Result<(), AnyhowError> {
     }
 
     // Upsert the points
-    service.upsert_points(points).await?;
+    create_test_qdrant_service().await?.upsert_points(points).await?;
 
     // Success is implied by no error being returned
     Ok(())
@@ -235,6 +238,7 @@ async fn test_qdrant_search_points() -> Result<(), AnyhowError> {
     let results = service
         .search_points(query_vector, limit, Some(filter))
         .await?;
+    drop(service);
 
     // Verify that we got results
     assert!(
@@ -242,13 +246,13 @@ async fn test_qdrant_search_points() -> Result<(), AnyhowError> {
         "Search should return at least one result"
     );
     assert!(
-        results.len() <= limit as usize,
+        results.len() <= usize::try_from(limit).unwrap_or(usize::MAX),
         "Search should respect the limit"
     );
 
     // Verify the payload content for the first result
     let first_result = &results[0];
-    assert!(first_result.score > 0.0, "Score should be positive");
+    assert!(first_result.score > f32::EPSILON, "Score should be positive");
 
     // Verify that we can extract the payload
     let text_value = first_result
@@ -272,8 +276,6 @@ async fn test_qdrant_search_points() -> Result<(), AnyhowError> {
 #[ignore] // Added ignore for CI
 async fn test_qdrant_empty_results() -> Result<(), AnyhowError> {
     cleanup_and_prepare_collection().await?; // Ensure clean state
-    // Create a new instance of the Qdrant service
-    let service = create_test_qdrant_service().await?;
 
     // Search with a random vector that shouldn't match anything
     let query_vector = generate_test_vectors(768, 1)[0].clone();
@@ -304,7 +306,7 @@ async fn test_qdrant_empty_results() -> Result<(), AnyhowError> {
 
     // Search for points
     let limit = 10;
-    let results = service
+    let results = create_test_qdrant_service().await?
         .search_points(query_vector, limit, Some(filter))
         .await?;
 
@@ -413,6 +415,7 @@ async fn test_qdrant_update_existing_point() -> Result<(), AnyhowError> {
     let updated_results = service
         .search_points(vector.clone(), 1, Some(updated_filter))
         .await?;
+    drop(service);
     assert_eq!(
         updated_results.len(),
         1,
@@ -443,11 +446,9 @@ async fn test_qdrant_update_existing_point() -> Result<(), AnyhowError> {
 #[ignore] // Added ignore for CI
 async fn test_qdrant_upsert_empty_points() -> Result<(), AnyhowError> {
     cleanup_and_prepare_collection().await?; // Ensure clean state
-    // Create a new instance of the Qdrant service
-    let service = create_test_qdrant_service().await?;
 
     // Try to upsert an empty vector of points
-    let result = service.upsert_points(vec![]).await;
+    let result = create_test_qdrant_service().await?.upsert_points(vec![]).await;
 
     // This should succeed silently
     assert!(
@@ -479,6 +480,8 @@ async fn test_qdrant_ensure_collection_already_exists() -> Result<(), AnyhowErro
     })?;
     let client = Qdrant::from_url(&qdrant_url).build()?;
     let exists = client.collection_exists(TEST_COLLECTION_NAME).await?;
+    // Explicitly drop client to reduce resource contention
+    drop(client);
     assert!(
         exists,
         "Collection should still exist after second service creation"
@@ -520,6 +523,7 @@ async fn test_qdrant_retrieve_points() -> Result<(), AnyhowError> {
 
     // Retrieve points (covers lines 269, 300 in qdrant_client.rs)
     let retrieved_points = service.retrieve_points(Some(filter), 5).await?;
+    drop(service);
 
     assert_eq!(retrieved_points.len(), 1, "Expected to retrieve 1 point");
     let retrieved_point = &retrieved_points[0];
@@ -556,9 +560,8 @@ async fn test_qdrant_retrieve_points() -> Result<(), AnyhowError> {
 #[ignore]
 async fn test_qdrant_trait_methods() -> Result<(), AnyhowError> {
     cleanup_and_prepare_collection().await?; // Ensure clean state
-    let service = create_test_qdrant_service().await?;
     // Get a trait object
-    let trait_service: Arc<dyn QdrantClientServiceTrait> = Arc::new(service);
+    let trait_service: Arc<dyn QdrantClientServiceTrait> = Arc::new(create_test_qdrant_service().await?);
 
     // --- Test store_points (covers lines 746, 748) ---
     let test_vectors = generate_test_vectors(768, 1);
@@ -605,7 +608,7 @@ async fn test_qdrant_trait_methods() -> Result<(), AnyhowError> {
     // Verify payload
     assert!(retrieved_trait_point.payload.contains_key("trait_key"));
     // Verify score (should be default 1.0 from conversion)
-    assert_eq!(retrieved_trait_point.score, 1.0);
+    assert!((retrieved_trait_point.score - 1.0).abs() < f32::EPSILON);
 
     // --- Test delete_points (covers lines 787, 790) ---
     // Note: The current implementation is a no-op, so this just tests it doesn't error.

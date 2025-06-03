@@ -937,33 +937,117 @@ pub struct ChatForClient {
     pub active_impersonated_character_id: Option<Uuid>,
 }
 
-impl From<Chat> for ChatForClient {
-    fn from(chat: Chat) -> Self {
-        Self {
-            id: chat.id,
-            user_id: chat.user_id,
-            character_id: chat.character_id,
-            title: None,
-            system_prompt: None,
-            temperature: chat.temperature,
-            max_output_tokens: chat.max_output_tokens,
-            created_at: chat.created_at,
-            updated_at: chat.updated_at,
-            frequency_penalty: chat.frequency_penalty,
-            presence_penalty: chat.presence_penalty,
-            top_k: chat.top_k,
-            top_p: chat.top_p,
-            seed: chat.seed,
-            stop_sequences: chat.stop_sequences,
-            history_management_strategy: chat.history_management_strategy,
-            history_management_limit: chat.history_management_limit,
-            model_name: chat.model_name,
-            gemini_thinking_budget: chat.gemini_thinking_budget,
-            gemini_enable_code_execution: chat.gemini_enable_code_execution,
-            visibility: chat.visibility,
-            active_custom_persona_id: chat.active_custom_persona_id,
-            active_impersonated_character_id: chat.active_impersonated_character_id,
-        }
+impl Chat {
+    /// Converts a `Chat` database model into a `ChatForClient` DTO,
+    /// decrypting sensitive fields like `title` and `system_prompt` if a DEK is provided.
+    ///
+    /// If no DEK is provided, encrypted fields will be represented by a placeholder string.
+    ///
+    /// # Errors
+    ///
+    /// Returns `AppError::DecryptionError` if decryption fails due to invalid ciphertext, nonce,
+    /// or key, or if UTF-8 conversion fails.
+    pub fn into_decrypted_for_client(
+        self,
+        dek_opt: Option<&SecretBox<Vec<u8>>>,
+    ) -> Result<ChatForClient, AppError> {
+        let encryption_service = crate::services::encryption_service::EncryptionService::new();
+
+        let decrypted_title = match (self.title_ciphertext, self.title_nonce) {
+            (Some(ciphertext), Some(nonce)) => {
+                if let Some(dek) = dek_opt {
+                    if ciphertext.is_empty() && nonce.is_empty() {
+                        // Convention for empty encrypted field
+                        Ok(Some(String::new()))
+                    } else if ciphertext.is_empty() || nonce.is_empty() {
+                        // Mismatched state
+                        Err(AppError::DecryptionError(
+                            "Mismatched ciphertext/nonce for chat title: one is empty, the other is not."
+                                .to_string(),
+                        ))
+                    } else {
+                        let decrypted_bytes = encryption_service
+                            .decrypt(&ciphertext, &nonce, dek.expose_secret().as_slice())?;
+                        String::from_utf8(decrypted_bytes).map(Some).map_err(|e| {
+                            AppError::DecryptionError(format!(
+                                "Invalid UTF-8 for decrypted chat title: {e}"
+                            ))
+                        })
+                    }
+                } else {
+                    // Encrypted but no DEK
+                    Ok(Some("[Encrypted]".to_string()))
+                }
+            }
+            (None, None) => Ok(None), // No title was set
+            (Some(_), None) => Err(AppError::DecryptionError(
+                "Chat title ciphertext present but nonce missing.".to_string(),
+            )),
+            (None, Some(_)) => Err(AppError::DecryptionError(
+                "Chat title nonce present but ciphertext missing.".to_string(),
+            )),
+        }?;
+
+        let decrypted_system_prompt = match (self.system_prompt_ciphertext, self.system_prompt_nonce) {
+            (Some(ciphertext), Some(nonce)) => {
+                if let Some(dek) = dek_opt {
+                    if ciphertext.is_empty() && nonce.is_empty() {
+                        // Convention for empty encrypted field
+                        Ok(Some(String::new()))
+                    } else if ciphertext.is_empty() || nonce.is_empty() {
+                        // Mismatched state
+                        Err(AppError::DecryptionError(
+                            "Mismatched ciphertext/nonce for system prompt: one is empty, the other is not."
+                                .to_string(),
+                        ))
+                    } else {
+                        let decrypted_bytes = encryption_service
+                            .decrypt(&ciphertext, &nonce, dek.expose_secret().as_slice())?;
+                        String::from_utf8(decrypted_bytes).map(Some).map_err(|e| {
+                            AppError::DecryptionError(format!(
+                                "Invalid UTF-8 for decrypted system prompt: {e}"
+                            ))
+                        })
+                    }
+                } else {
+                    // Encrypted but no DEK
+                    Ok(Some("[Encrypted]".to_string()))
+                }
+            }
+            (None, None) => Ok(None), // No system prompt was set
+            (Some(_), None) => Err(AppError::DecryptionError(
+                "System prompt ciphertext present but nonce missing.".to_string(),
+            )),
+            (None, Some(_)) => Err(AppError::DecryptionError(
+                "System prompt nonce present but ciphertext missing.".to_string(),
+            )),
+        }?;
+
+        Ok(ChatForClient {
+            id: self.id,
+            user_id: self.user_id,
+            character_id: self.character_id,
+            title: decrypted_title,
+            system_prompt: decrypted_system_prompt,
+            temperature: self.temperature,
+            max_output_tokens: self.max_output_tokens,
+            created_at: self.created_at,
+            updated_at: self.updated_at,
+            frequency_penalty: self.frequency_penalty,
+            presence_penalty: self.presence_penalty,
+            top_k: self.top_k,
+            top_p: self.top_p,
+            seed: self.seed,
+            stop_sequences: self.stop_sequences,
+            history_management_strategy: self.history_management_strategy,
+            history_management_limit: self.history_management_limit,
+            model_name: self.model_name,
+            gemini_thinking_budget: self.gemini_thinking_budget,
+            gemini_enable_code_execution: self.gemini_enable_code_execution,
+            visibility: self.visibility,
+            active_custom_persona_id: self.active_custom_persona_id,
+            active_impersonated_character_id: self.active_impersonated_character_id,
+        })
     }
 }
 
@@ -1395,7 +1479,7 @@ mod tests {
             stop_sequences: Some(vec![Some("\n\n".to_string()), Some("##".to_string())]),
             history_management_strategy: "none".to_string(),
             history_management_limit: 4096,
-            model_name: "gemini-2.5-flash-preview-04-17".to_string(),
+            model_name: "gemini-2.5-flash-preview-05-20".to_string(),
             gemini_thinking_budget: None,
             gemini_enable_code_execution: None,
             visibility: Some("private".to_string()),
@@ -1638,7 +1722,7 @@ mod tests {
             stop_sequences: Some(vec![Some("\n\n".to_string()), Some("##".to_string())]),
             history_management_strategy: "none".to_string(),
             history_management_limit: 4096,
-            model_name: "gemini-2.5-flash-preview-04-17".to_string(),
+            model_name: "gemini-2.5-flash-preview-05-20".to_string(),
             gemini_thinking_budget: None,
             gemini_enable_code_execution: None,
         }
@@ -1774,7 +1858,7 @@ mod tests {
     fn test_new_chat_message_request_serde() {
         let original = NewChatMessageRequest {
             content: "Hello AI".to_string(),
-            model: Some("gemini-2.5-flash-preview-04-17".to_string()),
+            model: Some("gemini-2.5-flash-preview-05-20".to_string()),
         };
 
         let serialized = serde_json::to_string(&original).expect("Serialization failed");
@@ -1789,7 +1873,7 @@ mod tests {
     fn test_generate_response_payload_serde() {
         let original = GenerateResponsePayload {
             content: "Hello human".to_string(),
-            model: Some("gemini-2.5-flash-preview-04-17".to_string()),
+            model: Some("gemini-2.5-flash-preview-05-20".to_string()),
         };
 
         let serialized = serde_json::to_string(&original).expect("Serialization failed");

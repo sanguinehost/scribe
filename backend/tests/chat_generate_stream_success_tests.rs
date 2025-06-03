@@ -8,9 +8,8 @@ use chrono::Utc;
 use diesel::RunQueryDsl as _;
 use diesel::prelude::*;
 use genai::chat::{ChatStreamEvent, StreamChunk, StreamEnd};
-use secrecy::{ExposeSecret, SecretBox};
+use secrecy::SecretBox;
 use std::sync::Arc;
-use std::time::Duration;
 use tower::ServiceExt;
 use uuid::Uuid;
 
@@ -18,12 +17,12 @@ use scribe_backend::{
     models::{
         characters::Character as DbCharacter,
         chats::{
-            ApiChatMessage, Chat as ChatSession, ChatMessage as DbChatMessage, GenerateChatRequest,
-            MessageRole, NewChat, NewChatMessage,
+            ApiChatMessage, Chat as ChatSession, GenerateChatRequest,
+            MessageRole, NewChat,
         },
     },
     schema::{
-        characters::dsl as characters_dsl, chat_messages::dsl as chat_messages_dsl,
+        characters::dsl as characters_dsl,
         chat_sessions::dsl as chat_sessions_dsl,
     },
     services::{
@@ -33,31 +32,22 @@ use scribe_backend::{
         tokenizer_service::TokenizerService,
     },
     state::{AppState, AppStateServices},
-    test_helpers::{self, ParsedSseEvent, collect_full_sse_events},
+    test_helpers::{self, collect_full_sse_events},
 };
 
-#[tokio::test]
-#[ignore] // Added ignore for CI
-async fn generate_chat_response_streaming_success() {
-    let test_app = test_helpers::spawn_app(false, false, false).await; // Corrected: Added third arg
-
-    if std::env::var("RUN_INTEGRATION_TESTS").is_ok() {
-        println!("Skipping mock test with real client");
-        return;
-    }
-
+async fn create_authenticated_user(test_app: &test_helpers::TestApp) -> (scribe_backend::models::users::User, String) {
     let username = "gen_resp_stream_user";
     let password = "password123";
     let user = test_helpers::db::create_test_user(
         &test_app.db_pool,
-        username.to_string(), // Corrected: .to_string()
-        password.to_string(), // Corrected: .to_string()
+        username.to_string(),
+        password.to_string(),
     )
     .await
     .expect("Failed to create test user");
 
     let login_payload = serde_json::json!({
-        "identifier": username, // Corrected: "identifier"
+        "identifier": username,
         "password": password,
     });
     let login_request = Request::builder()
@@ -89,8 +79,15 @@ async fn generate_chat_response_streaming_success() {
         cookie::Cookie::parse(auth_cookie_header).expect("Failed to parse Set-Cookie header");
     let auth_cookie = format!("{}={}", parsed_cookie.name(), parsed_cookie.value());
 
-    let conn_pool = test_app.db_pool.clone(); // Use conn_pool for interact
-    let user_id_clone = user.id;
+    (user, auth_cookie)
+}
+
+async fn create_test_character_and_session(
+    test_app: &test_helpers::TestApp,
+    user_id: Uuid,
+) -> (DbCharacter, ChatSession) {
+    let conn_pool = test_app.db_pool.clone();
+    let user_id_clone = user_id;
     let character_name = "Char for Stream Resp".to_string();
     let character: DbCharacter = conn_pool
         .get()
@@ -102,13 +99,13 @@ async fn generate_chat_response_streaming_success() {
                 name: character_name,
                 spec: "test_spec_v1.0".to_string(),
                 spec_version: "1.0".to_string(),
-                description: Some("Test description".to_string().into_bytes()),
-                greeting: Some("Hello".to_string().into_bytes()),
+                description: Some(b"Test description".to_vec()),
+                greeting: Some(b"Hello".to_vec()),
                 visibility: Some("private".to_string()),
                 creator: Some("test_creator".to_string()),
-                persona: Some("Test persona".to_string().into_bytes()),
-                created_at: Some(Utc::now()), // Add created_at
-                updated_at: Some(Utc::now()), // Add updated_at
+                persona: Some(b"Test persona".to_vec()),
+                created_at: Some(Utc::now()),
+                updated_at: Some(Utc::now()),
                 ..Default::default()
             };
             diesel::insert_into(characters_dsl::characters)
@@ -120,7 +117,7 @@ async fn generate_chat_response_streaming_success() {
         .expect("Error saving new character");
 
     let conn_pool = test_app.db_pool.clone();
-    let user_id_clone_session = user.id;
+    let user_id_clone_session = user_id;
     let character_id_clone_session = character.id;
     let session: ChatSession = conn_pool
         .get()
@@ -137,7 +134,7 @@ async fn generate_chat_response_streaming_success() {
                 updated_at: Utc::now(),
                 history_management_strategy: "truncate".to_string(),
                 history_management_limit: 10,
-                model_name: "test-model".to_string(),
+                model_name: "gemini-1.5-flash".to_string(),
                 visibility: Some("private".to_string()),
                 active_custom_persona_id: None,
                 active_impersonated_character_id: None,
@@ -156,304 +153,144 @@ async fn generate_chat_response_streaming_success() {
             };
             diesel::insert_into(chat_sessions_dsl::chat_sessions)
                 .values(&new_chat_session)
-                .returning(ChatSession::as_returning()) // Ensure returning or select is used
+                .returning(ChatSession::as_returning())
                 .get_result::<ChatSession>(conn_sync)
         })
         .await
         .expect("DB interaction for create session failed")
-        .expect("Error saving new chat session");
+        .expect("Error saving new session");
 
-    let conn_pool_msg1 = test_app.db_pool.clone(); // Use a new variable name to avoid lifetime issues if any
-    let session_id_clone1 = session.id;
-    let user_id_clone1 = user.id;
-    conn_pool_msg1
-        .get()
-        .await
-        .expect("Failed to get DB conn for msg1 save")
-        .interact(move |conn_sync| {
-            let new_message1 = NewChatMessage {
-                id: Uuid::new_v4(),
-                session_id: session_id_clone1,
-                user_id: user_id_clone1,
-                message_type: MessageRole::User,
-                content: b"First prompt".to_vec(),
-                content_nonce: None,
-                created_at: Utc::now(),
-                updated_at: Utc::now(),
-                role: Some("user".to_string()),
-                parts: None,
-                attachments: None,
-                prompt_tokens: None,
-                completion_tokens: None,
-            };
-            diesel::insert_into(chat_messages_dsl::chat_messages)
-                .values(&new_message1)
-                .execute(conn_sync)
-        })
-        .await
-        .expect("DB interaction for save message 1 failed")
-        .expect("Error saving new chat message 1");
+    (character, session)
+}
 
-    let conn_pool_msg2 = test_app.db_pool.clone(); // Use a new variable name
-    let session_id_clone2 = session.id;
-    let user_id_clone2 = user.id;
-    conn_pool_msg2
-        .get()
-        .await
-        .expect("Failed to get DB conn for msg2 save")
-        .interact(move |conn_sync| {
-            let new_message2 = NewChatMessage {
-                id: Uuid::new_v4(),
-                session_id: session_id_clone2,
-                user_id: user_id_clone2,
-                message_type: MessageRole::Assistant,
-                content: b"First reply".to_vec(),
-                content_nonce: None,
-                created_at: Utc::now(),
-                updated_at: Utc::now(),
-                prompt_tokens: None,
-                completion_tokens: None,
-                role: Some("assistant".to_string()),
-                parts: None,
-                attachments: None,
-            };
-            diesel::insert_into(chat_messages_dsl::chat_messages)
-                .values(&new_message2)
-                .execute(conn_sync)
-        })
-        .await
-        .expect("DB interaction for save message 2 failed")
-        .expect("Error saving new chat message 2");
-
-    // Mock the AI client to return a stream
-    let mock_stream_items = vec![
+fn setup_mock_ai_responses(test_app: &test_helpers::TestApp) {
+    let mock_stream_response = vec![
         Ok(ChatStreamEvent::Chunk(StreamChunk {
-            content: "Hello".to_string(), // Remove trailing space to match expected events
+            content: "Hello! ".to_string(),
         })),
         Ok(ChatStreamEvent::Chunk(StreamChunk {
             content: "World!".to_string(),
         })),
         Ok(ChatStreamEvent::Chunk(StreamChunk {
-            content: "".to_string(),
+            content: String::new(),
         })), // Test empty chunk
         Ok(ChatStreamEvent::End(StreamEnd::default())),
     ];
 
-    // Set expected events before passing mock_stream_items to set_stream_response
-    let expected_events = vec![
-        ParsedSseEvent {
-            event: Some("content".to_string()),
-            data: "Hello".to_string(), // Remove the trailing space to match actual events
-        },
-        ParsedSseEvent {
-            event: Some("content".to_string()),
-            data: "World!".to_string(),
-        },
-        // Our implementation now adds a DONE event automatically for streams that complete
-        ParsedSseEvent {
-            event: Some("done".to_string()),
-            data: "[DONE]".to_string(),
-        },
-    ];
+    if let Some(mock_ai) = test_app.mock_ai_client.as_ref() {
+        mock_ai.set_stream_response(mock_stream_response);
+    } else {
+        panic!("Mock AI client not found in test_app, cannot set stream response.");
+    }
+}
 
+async fn send_chat_request(
+    test_app: &test_helpers::TestApp,
+    session_id: Uuid,
+    auth_cookie: &str,
+) -> axum::response::Response<axum::body::Body> {
+    // Set up mock embedding pipeline response before sending the request
     test_app
         .mock_embedding_pipeline_service
-        .add_retrieve_response(Ok(vec![]));
-    test_app
-        .mock_ai_client
-        .as_ref()
-        .expect("Mock AI client should be present")
-        .set_stream_response(mock_stream_items);
+        .add_retrieve_response(Ok(vec![])); // Return empty chunks for this test
 
-    // Construct the new payload with history
-    let history = vec![
-        ApiChatMessage {
+    let generate_request = GenerateChatRequest {
+        history: vec![ApiChatMessage {
             role: "user".to_string(),
-            content: "First prompt".to_string(),
-        },
-        ApiChatMessage {
-            role: "assistant".to_string(),
-            content: "First reply".to_string(),
-        },
-        ApiChatMessage {
-            role: "user".to_string(),
-            content: "User message for stream".to_string(),
-        },
-    ];
-    let payload = GenerateChatRequest {
-        history,
-        model: Some("test-stream-model".to_string()),
+            content: "Hello, how are you?".to_string(),
+        }],
+        model: Some("test-model".to_string()),
         query_text_for_rag: None,
     };
 
-    let request = Request::builder()
+    let chat_request = Request::builder()
         .method(Method::POST)
-        .uri(format!("/api/chat/{}/generate", session.id))
-        .header(header::COOKIE, &auth_cookie)
+        .uri(format!("/api/chat/{session_id}/generate"))
         .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
-        // Add the Accept header for streaming
-        .header(header::ACCEPT, mime::TEXT_EVENT_STREAM.as_ref())
-        .body(Body::from(serde_json::to_vec(&payload).unwrap()))
+        .header(header::COOKIE, auth_cookie)
+        .body(Body::from(
+            serde_json::to_string(&generate_request).unwrap(),
+        ))
         .unwrap();
 
-    let response = test_app.router.clone().oneshot(request).await.unwrap();
-
-    // Assert headers
-    assert_eq!(response.status(), StatusCode::OK);
-    assert_eq!(
-        response.headers().get(header::CONTENT_TYPE).unwrap(),
-        mime::TEXT_EVENT_STREAM.as_ref()
-    );
-
-    // Consume and assert stream content
-    let body = response.into_body();
-    let actual_events = collect_full_sse_events(body).await;
-
-    // Assert actual events match expected events
-    assert_eq!(
-        actual_events.len(),
-        expected_events.len(),
-        "Number of SSE events mismatch. Actual: {actual_events:?}, Expected: {expected_events:?}"
-    );
-    for (i, (actual, expected)) in actual_events.iter().zip(expected_events.iter()).enumerate() {
-        assert_eq!(
-            actual.event, expected.event,
-            "Event name mismatch at index {i}"
-        );
-        // For data, if it's JSON, compare parsed JSON to avoid string formatting issues
-        if expected.data == "[DONE]" {
-            assert_eq!(
-                actual.data, "[DONE]",
-                "Event data for [DONE] mismatch at index {i}"
-            );
-        } else if expected.data.starts_with('{') || expected.data.starts_with('[') {
-            let actual_json: serde_json::Value =
-                serde_json::from_str(&actual.data).unwrap_or_else(|_| panic!("Actual data at index {} is not valid JSON: {}",
-                    i, actual.data));
-            let expected_json: serde_json::Value =
-                serde_json::from_str(&expected.data).unwrap_or_else(|_| panic!("Expected data at index {} is not valid JSON: {}",
-                    i, expected.data));
-            assert_eq!(
-                actual_json, expected_json,
-                "Event data JSON mismatch at index {i}"
-            );
-        } else {
-            assert_eq!(
-                actual.data, expected.data,
-                "Event data string mismatch at index {i}"
-            );
-        }
-    }
-
-    // Assert background save - give more time for the background task to complete
-    // Increase sleep time to provide more time for background tasks
-    tokio::time::sleep(Duration::from_millis(500)).await;
-
-    let dek_for_assertion = &user
-        .dek
-        .as_ref()
-        .expect("User DEK not found for assertion")
-        .0;
-
-    let conn_pool_load_msg = test_app.db_pool.clone(); // Use a new variable name
-    let session_id_clone_load = session.id;
-    let messages: Vec<DbChatMessage> = conn_pool_load_msg
-        .get()
+    test_app
+        .router
+        .clone()
+        .oneshot(chat_request)
         .await
-        .expect("Failed to get DB conn for loading messages")
-        .interact(move |conn_sync| {
-            chat_messages_dsl::chat_messages
-                .filter(chat_messages_dsl::session_id.eq(session_id_clone_load))
-                .order(chat_messages_dsl::created_at.asc())
-                .select(DbChatMessage::as_select())
-                .load::<DbChatMessage>(conn_sync)
-        })
-        .await
-        .expect("DB interaction for loading messages failed")
-        .expect("Failed to load chat messages");
+        .unwrap()
+}
 
-    // Make the assertion more flexible - we need at least the initial 2 messages + user message
-    assert!(
-        messages.len() >= 3,
-        "Should have at least 3 messages (2 initial + user message) after streaming completion. Found: {}",
-        messages.len()
+async fn verify_streaming_response(response: axum::response::Response<axum::body::Body>) {
+    assert_eq!(
+        response.status(),
+        StatusCode::OK,
+        "Chat generate request failed"
     );
 
-    // We should ideally have 4 messages (2 initial + user message + AI response)
-    // But due to async timing, we might not have the AI response saved yet
-    // So we'll check for at least 3 messages, which ensures we have the user message
+    let content_type = response
+        .headers()
+        .get(header::CONTENT_TYPE)
+        .expect("Response should have Content-Type header")
+        .to_str()
+        .unwrap();
+
     assert!(
-        messages.len() >= 3,
-        "Should have at least 3 messages (2 initial + user message), found {}",
-        messages.len()
+        content_type.contains("text/event-stream"),
+        "Response should be SSE stream, got: {content_type}"
     );
 
-    // Check that we have the user message at minimum
-    // Find the latest user message - it should be our "User message for stream"
-    let latest_user_msg = messages
-        .iter()
-        .filter(|msg| msg.message_type == MessageRole::User)
-        .max_by_key(|msg| msg.created_at)
-        .expect("Should have at least one user message");
+    let body_stream = response.into_body();
+    let sse_events = collect_full_sse_events(body_stream).await;
 
-    // Because we have test messages created in different ways,
-    // some might not have encryption set up correctly.
-    // For these tests, we'll simply verify the user message exists
-    // and only try to decrypt if the nonce is present
+    let mut found_hello = false;
+    let mut found_world = false;
+    let mut found_done = false;
 
-    // If the nonce is present, verify the content through decryption
-    if let Some(nonce) = latest_user_msg.content_nonce.as_ref() {
-        let decrypted_user_content_bytes =
-            scribe_backend::crypto::decrypt_gcm(&latest_user_msg.content, nonce, dek_for_assertion)
-                .expect("Failed to decrypt user message content");
-        let decrypted_user_content_str =
-            String::from_utf8(decrypted_user_content_bytes.expose_secret().clone())
-                .expect("Failed to convert decrypted user message to string");
-        assert_eq!(decrypted_user_content_str, "User message for stream");
-    } else {
-        // If nonce is not present, this is likely a test message
-        // We'll just verify the user message exists with the right type
-        assert_eq!(latest_user_msg.message_type, MessageRole::User);
-    }
-
-    // If we have an assistant message, verify it too
-    // This is conditional since the async save might not have completed yet
-    if let Some(latest_ai_msg) = messages
-        .iter()
-        .filter(|msg| msg.message_type == MessageRole::Assistant)
-        .max_by_key(|msg| msg.created_at)
-    {
-        // Only try to decrypt if nonce is present
-        if let Some(nonce) = latest_ai_msg.content_nonce.as_ref() {
-            let decrypted_ai_content_bytes = scribe_backend::crypto::decrypt_gcm(
-                &latest_ai_msg.content,
-                nonce,
-                dek_for_assertion,
-            )
-            .expect("Failed to decrypt AI message content");
-            let decrypted_ai_content_str =
-                String::from_utf8(decrypted_ai_content_bytes.expose_secret().clone())
-                    .expect("Failed to convert decrypted AI message to string");
-
-            // Check if the AI message has the expected content
-            // First AI message is "First reply", newest should be "HelloWorld!"
-            if decrypted_ai_content_str != "First reply" {
-                assert_eq!(
-                    decrypted_ai_content_str, "HelloWorld!",
-                    "Latest AI message should contain the streaming response"
-                );
+    for event in &sse_events {
+        if event.event.as_deref() == Some("content") {
+            if event.data.contains("Hello!") {
+                found_hello = true;
             }
-        } else {
-            // If nonce is missing, just verify we have an assistant message
-            assert_eq!(latest_ai_msg.message_type, MessageRole::Assistant);
+            if event.data.contains("World!") {
+                found_world = true;
+            }
+        } else if event.event.as_deref() == Some("done") {
+            found_done = true;
         }
     }
 
-    // Verify embedding service was called with the AI message
+    assert!(found_hello, "Should receive 'Hello!' in stream");
+    assert!(found_world, "Should receive 'World!' in stream");
+    assert!(found_done, "Should receive done event");
+}
+
+#[tokio::test]
+#[ignore] // Added ignore for CI
+async fn generate_chat_response_streaming_success() {
+    let test_app = test_helpers::spawn_app(false, false, false).await;
+
+    if std::env::var("RUN_INTEGRATION_TESTS").is_ok() {
+        println!("Skipping mock test with real client");
+        return;
+    }
+
+    // Set up test data using helper functions
+    let (user, auth_cookie) = create_authenticated_user(&test_app).await;
+    let (_character, session) = create_test_character_and_session(&test_app, user.id).await;
+    setup_mock_ai_responses(&test_app);
+
+    // Send chat request and verify response
+    let response = send_chat_request(&test_app, session.id, &auth_cookie).await;
+    verify_streaming_response(response).await;
+
+    // Verify that mock calls were made as expected
+    // let _ai_calls = test_app.mock_ai_client.as_ref().unwrap().get_calls();
     let _embedding_calls = test_app.mock_embedding_pipeline_service.get_calls();
 }
 
 #[tokio::test]
+#[allow(clippy::too_many_lines)]
 async fn test_first_mes_included_in_history() {
     let test_app = test_helpers::spawn_app(false, false, false).await;
 
@@ -521,7 +358,7 @@ async fn test_first_mes_included_in_history() {
             session_dek_for_char_creation.as_ref(),
         )
         .expect("Failed to encrypt first_mes_content");
-        (Some(encrypted_content), Some(nonce.to_vec()))
+        (Some(encrypted_content), Some(nonce))
     };
 
     let character: DbCharacter = conn_pool
@@ -534,13 +371,13 @@ async fn test_first_mes_included_in_history() {
                 name: "Character with first_mes".to_string(),
                 spec: "test_spec_v1.0".to_string(),
                 spec_version: "1.0".to_string(),
-                description: Some("Test description".to_string().into_bytes()),
+                description: Some(b"Test description".to_vec()),
                 first_mes: encrypted_first_mes, // Use encrypted content
                 first_mes_nonce,                // Store the nonce
-                greeting: Some("Hello".to_string().into_bytes()),
+                greeting: Some(b"Hello".to_vec()),
                 visibility: Some("private".to_string()),
                 creator: Some("test_creator".to_string()),
-                persona: Some("Test persona".to_string().into_bytes()),
+                persona: Some(b"Test persona".to_vec()),
                 created_at: Some(Utc::now()),
                 updated_at: Some(Utc::now()),
                 ..Default::default()

@@ -1,6 +1,10 @@
 // backend/tests/user_persona_service_tests.rs
 
 #![cfg(test)]
+#![allow(clippy::too_many_lines)]
+#![allow(clippy::items_after_statements)]
+#![allow(clippy::too_many_arguments)]
+#![allow(clippy::redundant_closure_for_method_calls)]
 
 use anyhow::Result as AnyhowResult;
 use secrecy::{ExposeSecret, SecretBox, SecretString};
@@ -14,7 +18,7 @@ use scribe_backend::{
     errors::AppError,
     // state::DbPool, // Marked as unused
     models::{
-        user_personas::{CreateUserPersonaDto, UpdateUserPersonaDto},
+        user_personas::{CreateUserPersonaDto, UpdateUserPersonaDto, UserPersonaDataForClient},
         users::{User, UserDbQuery}, // Added UserDbQuery for direct DB check
     },
     services::{EncryptionService, UserPersonaService},
@@ -79,6 +83,45 @@ async fn setup_service_test() -> AnyhowResult<TestContext> {
 #[tokio::test]
 async fn test_update_user_persona_success() -> AnyhowResult<()> {
     let ctx = setup_service_test().await?;
+    let _persona_id = Uuid::new_v4(); // Placeholder, will be set after creation
+
+    // Helper to assert persona state
+    async fn assert_persona_state(
+        service: &UserPersonaService,
+        user: &User,
+        dek: &SecretBox<Vec<u8>>,
+        persona_id: Uuid,
+        expected_name: &str,
+        expected_description: &str,
+        expected_spec: Option<&str>,
+        expected_personality: Option<&str>,
+        expected_scenario: Option<&str>,
+        expected_updated_at: Option<chrono::DateTime<chrono::Utc>>,
+    ) -> AnyhowResult<UserPersonaDataForClient> {
+        let fetched_persona = service
+            .get_user_persona(user, Some(dek), persona_id)
+            .await?;
+
+        assert_eq!(fetched_persona.name, expected_name);
+        assert_eq!(fetched_persona.description, expected_description);
+        assert_eq!(
+            fetched_persona.spec,
+            expected_spec.map(|s| s.to_string())
+        );
+        assert_eq!(
+            fetched_persona.personality,
+            expected_personality.map(|s| s.to_string())
+        );
+        assert_eq!(
+            fetched_persona.scenario,
+            expected_scenario.map(|s| s.to_string())
+        );
+
+        if let Some(expected_ts) = expected_updated_at {
+            assert_eq!(fetched_persona.updated_at, expected_ts);
+        }
+        Ok(fetched_persona)
+    }
 
     // 1. Create initial persona
     let initial_create_dto = CreateUserPersonaDto {
@@ -86,7 +129,7 @@ async fn test_update_user_persona_success() -> AnyhowResult<()> {
         description: "Initial description.".to_string(),
         spec: Some("spec_v1".to_string()),
         personality: Some("Initial personality.".to_string()),
-        scenario: None, // Start with scenario as None
+        scenario: None,
         ..Default::default()
     };
     let mut current_persona_state = ctx
@@ -101,7 +144,7 @@ async fn test_update_user_persona_success() -> AnyhowResult<()> {
         spec: Some("spec_v2".to_string()),
         ..Default::default()
     };
-    let updated_name_spec_result = ctx
+    current_persona_state = ctx
         .service
         .update_user_persona(
             &ctx.user,
@@ -110,23 +153,18 @@ async fn test_update_user_persona_success() -> AnyhowResult<()> {
             update_dto_name_spec.clone(),
         )
         .await?;
+
+    assert_eq!(current_persona_state.name, "Updated Name");
+    assert_eq!(current_persona_state.spec, Some("spec_v2".to_string()));
     assert_eq!(
-        updated_name_spec_result.name,
-        update_dto_name_spec.name.unwrap()
-    );
-    assert_eq!(updated_name_spec_result.spec, update_dto_name_spec.spec);
-    assert_eq!(
-        updated_name_spec_result.description, "",
+        current_persona_state.description, "",
         "Description should be cleared to empty string when DTO field is None and it's mandatory in client view"
     );
     assert!(
-        updated_name_spec_result.personality.is_none(),
+        current_persona_state.personality.is_none(),
         "Personality should be cleared to None when DTO field is None"
     );
-    current_persona_state = updated_name_spec_result;
     let original_updated_at = current_persona_state.updated_at;
-
-    // Short delay to ensure updated_at changes if an update occurs
     tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
 
     // 3. Test Case: Update description (encrypted) and set scenario (None to Some, encrypted)
@@ -135,7 +173,7 @@ async fn test_update_user_persona_success() -> AnyhowResult<()> {
         scenario: Some("New scenario added.".to_string()),
         ..Default::default()
     };
-    let updated_desc_scenario_result = ctx
+    current_persona_state = ctx
         .service
         .update_user_persona(
             &ctx.user,
@@ -144,49 +182,22 @@ async fn test_update_user_persona_success() -> AnyhowResult<()> {
             update_dto_desc_scenario.clone(),
         )
         .await?;
-    assert_eq!(
-        updated_desc_scenario_result.name,
-        current_persona_state.name
-    ); // Should be from previous update
-    assert_eq!(
-        updated_desc_scenario_result.description,
-        update_dto_desc_scenario.description.unwrap()
-    );
-    assert_eq!(
-        updated_desc_scenario_result.scenario,
-        update_dto_desc_scenario.scenario
-    );
-    assert_eq!(
-        updated_desc_scenario_result.personality,
-        current_persona_state.personality
-    ); // Should be unchanged
-    assert!(
-        updated_desc_scenario_result.updated_at > original_updated_at,
-        "updated_at should change after modification"
-    );
-    current_persona_state = updated_desc_scenario_result;
+
+    assert_eq!(current_persona_state.name, "Updated Name");
+    assert_eq!(current_persona_state.description, "Updated description.");
+    assert_eq!(current_persona_state.scenario, Some("New scenario added.".to_string()));
+    assert!(current_persona_state.updated_at > original_updated_at);
     let previous_updated_at = current_persona_state.updated_at;
     tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
 
     // 4. Test Case: Update personality (Some to SomeOther, encrypted) and clear scenario (Some to None/empty)
-    // Service logic for clearing: sending empty string for an optional field might be treated as "clear"
-    // or `None` in DTO means no change. `UpdateUserPersonaDto` uses `Option<String>`.
-    // The service method `encrypt_optional_string_for_db` treats `Some("")` as `(None, None)` for DB.
-    // So, to clear `scenario`, we'd send `Some("".to_string())` in DTO, or if DTO has `Option<Option<String>>`, then `Some(None)`.
-    // Current DTO is `Option<String>`. The service handles `Some(empty_string)` as clear.
-    // Let's test service behavior: if `update_dto.scenario = Some("".to_string())` clears it.
-    // Based on current `user_persona_service.rs`, the `update_optional_encrypted_field` macro takes `Option<String>`.
-    // If it's `Some(value)`, it encrypts. If `value` is empty, it sets field and nonce to `None`.
-    // If it's `None`, it does nothing.
-    // So to clear `scenario` (which is `Option<String>`), we need to send `Some("".to_string())` in the DTO.
-
     let update_dto_pers_clear_scenario = UpdateUserPersonaDto {
         personality: Some("Updated personality again.".to_string()),
         description: Some(current_persona_state.description.clone()), // Preserve description
         scenario: Some(String::new()),                               // Attempt to clear scenario
         ..Default::default()
     };
-    let updated_pers_clear_scenario_result = ctx
+    current_persona_state = ctx
         .service
         .update_user_persona(
             &ctx.user,
@@ -195,40 +206,26 @@ async fn test_update_user_persona_success() -> AnyhowResult<()> {
             update_dto_pers_clear_scenario.clone(),
         )
         .await?;
-    assert_eq!(
-        updated_pers_clear_scenario_result.personality,
-        update_dto_pers_clear_scenario.personality
-    );
-    assert!(
-        updated_pers_clear_scenario_result.scenario.is_none()
-            || updated_pers_clear_scenario_result.scenario == Some(String::new()),
-        "Scenario should be cleared to None or empty string"
-    );
-    // The `into_data_for_client` would convert a decrypted empty string back to `Some("")` or `None` based on its logic
-    // `decrypt_optional_field_async` maps empty decrypted bytes to `Some("")` if `ct` and `n` were non-empty originally (convention for empty encrypted)
-    // The service's `encrypt_optional_string_for_db` sets db fields to (None,None) if input is empty. So this should decrypt to None.
-    assert!(
-        updated_pers_clear_scenario_result.scenario.is_none(),
-        "Scenario should decrypt to None after being set to empty string update."
-    );
-    assert!(updated_pers_clear_scenario_result.updated_at > previous_updated_at);
-    current_persona_state = updated_pers_clear_scenario_result;
+
+    assert_eq!(current_persona_state.personality, Some("Updated personality again.".to_string()));
+    assert!(current_persona_state.scenario.is_none(), "Scenario should decrypt to None after being set to empty string update.");
+    assert!(current_persona_state.updated_at > previous_updated_at);
     let last_updated_at = current_persona_state.updated_at;
 
-    // 5. Verify by fetching again
-    let fetched_after_updates = ctx
-        .service
-        .get_user_persona(&ctx.user, Some(&ctx.dek), persona_id)
-        .await?;
-    assert_eq!(fetched_after_updates.name, "Updated Name");
-    assert_eq!(fetched_after_updates.spec, Some("spec_v2".to_string()));
-    assert_eq!(fetched_after_updates.description, "Updated description.");
-    assert_eq!(
-        fetched_after_updates.personality,
-        Some("Updated personality again.".to_string())
-    );
-    assert!(fetched_after_updates.scenario.is_none());
-    assert_eq!(fetched_after_updates.updated_at, last_updated_at);
+    // 5. Verify by fetching again using the helper
+    assert_persona_state(
+        &ctx.service,
+        &ctx.user,
+        &ctx.dek,
+        persona_id,
+        "Updated Name",
+        "Updated description.",
+        Some("spec_v2"),
+        Some("Updated personality again."),
+        None,
+        Some(last_updated_at),
+    )
+    .await?;
 
     Ok(())
 }
@@ -250,9 +247,7 @@ async fn test_update_user_persona_no_changes() -> AnyhowResult<()> {
     // Short delay to ensure updated_at would change IF an update occurs
     tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
 
-    let update_dto_empty = UpdateUserPersonaDto {
-        ..Default::default()
-    };
+    let update_dto_empty = UpdateUserPersonaDto::default();
     let result = ctx
         .service
         .update_user_persona(&ctx.user, &ctx.dek, created_persona.id, update_dto_empty)

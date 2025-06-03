@@ -404,7 +404,7 @@ mod tests {
 
         let client = GeminiTokenClient::new(api_key);
         let text = "The quick brown fox jumps over the lazy dog.";
-        let model = "gemini-2.5-flash-preview-04-17";
+        let model = "gemini-2.5-flash-preview-05-20";
 
         let result = client
             .count_tokens(text, model)
@@ -435,7 +435,7 @@ mod tests {
                 "What is the meaning of life?".to_string(),
             ),
         ];
-        let model = "gemini-2.5-flash-preview-04-17";
+        let model = "gemini-2.5-flash-preview-05-20";
 
         let result = client
             .count_tokens_chat(&messages, model)

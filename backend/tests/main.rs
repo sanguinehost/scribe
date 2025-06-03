@@ -1,3 +1,14 @@
+#![allow(clippy::too_many_lines)]
+#![allow(clippy::items_after_statements)]
+#![allow(clippy::too_many_arguments)]
+#![allow(clippy::redundant_closure_for_method_calls)]
+#![allow(clippy::ignored_unit_patterns)]
+#![allow(clippy::module_inception)]
+#![allow(dead_code)]
+#![allow(clippy::unused_async)]
+#![allow(clippy::default_trait_access)]
+#![allow(clippy::option_if_let_else)]
+#![allow(clippy::implicit_clone)]
 use ctor::ctor;
 use std::path::PathBuf;
 
@@ -56,16 +67,23 @@ pub mod embedding_pipeline_tests;
 pub mod first_user_admin_tests;
 pub mod health_check;
 pub mod lorebook_api_tests;
+pub mod lorebook_rag_integration_tests;
 pub mod qdrant_integration_tests;
 pub mod qdrant_pipeline_tests;
 pub mod recovery_key_tests;
 pub mod token_counter_tests;
 pub mod tokenizer_tests;
 pub mod user_persona_api_tests;
-pub mod user_store_tests; // Added for User Persona API tests
+pub mod user_settings_api_tests;
+pub mod user_store_tests;
+pub mod auth_dek_security_test;
+pub mod chat_module_tests;
+pub mod chat_service_default_persona_tests;
 
 // New characters test module (directory)
 pub mod characters;
 
 // Service level or other specific tests
 pub mod user_persona_service_tests;
+
+// Test helper modules (removed - using inline helpers instead)

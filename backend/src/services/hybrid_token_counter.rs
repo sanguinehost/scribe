@@ -55,7 +55,7 @@ impl HybridTokenCounter {
         Self {
             tokenizer,
             api_client: None,
-            default_model: "gemini-2.5-flash-preview-04-17".to_string(), // Default model
+            default_model: "gemini-2.5-flash-preview-05-20".to_string(), // Default model
         }
     }
 
@@ -147,16 +147,16 @@ impl HybridTokenCounter {
                 if let Some(client) = &self.api_client {
                     match client.count_tokens(text, model_name).await {
                         Ok(api_estimate) => {
-                            // Log any significant discrepancies
-                            #[allow(clippy::cast_precision_loss)] // Acceptable for logging/comparison purposes
-                            let difference = if api_estimate.total > local_estimate.total {
-                                api_estimate.total as f64 / local_estimate.total as f64
+                            // Log any significant discrepancies using integer arithmetic to avoid precision loss
+                            let difference_ratio = if api_estimate.total > local_estimate.total {
+                                // Calculate ratio as (larger * 1000) / smaller to maintain precision
+                                (api_estimate.total * 1000) / local_estimate.total.max(1)
                             } else {
-                                local_estimate.total as f64 / api_estimate.total as f64
+                                (local_estimate.total * 1000) / api_estimate.total.max(1)
                             };
 
-                            if difference > 1.1 {
-                                // More than 10% difference
+                            if difference_ratio > 1100 {
+                                // More than 10% difference (1100/1000 = 1.1)
                                 warn!(
                                     "Token count discrepancy - Local: {}, API: {}",
                                     local_estimate.total, api_estimate.total
@@ -413,7 +413,7 @@ mod tests {
         let counter = HybridTokenCounter::new_local_only(tokenizer);
 
         assert!(counter.api_client.is_none());
-        assert_eq!(counter.default_model, "gemini-2.5-flash-preview-04-17");
+        assert_eq!(counter.default_model, "gemini-2.5-flash-preview-05-20");
     }
 
     #[tokio::test]
@@ -524,7 +524,7 @@ mod tests {
         }
         let api_key = api_key_result.unwrap();
 
-        let model_name = "gemini-2.5-flash-preview-04-17";
+        let model_name = "gemini-2.5-flash-preview-05-20";
         let client = GeminiTokenClient::new(api_key.clone());
         let model_path = get_test_model_path();
         let tokenizer = TokenizerService::new(model_path).expect("Failed to create tokenizer");

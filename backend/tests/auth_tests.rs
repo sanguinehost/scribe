@@ -130,6 +130,7 @@ where
 
 // Helper struct for login response
 #[derive(serde::Deserialize)]
+#[allow(dead_code)] // Clippy bug: this simple struct incorrectly reports dead code
 struct TestLoginSuccessResponse {
     user: scribe_backend::models::auth::AuthResponse,
     session_id: String,
@@ -1007,7 +1008,7 @@ fn test_auth_error_from_interact_error() {
 // --- Tests for DieselSessionStore ---
 
 // Helper to create a session store instance for tests
-fn create_test_session_store(pool: DeadpoolPool<DeadpoolManager>) -> DieselSessionStore {
+const fn create_test_session_store(pool: DeadpoolPool<DeadpoolManager>) -> DieselSessionStore {
     DieselSessionStore::new(pool)
 }
 
@@ -1327,8 +1328,7 @@ async fn test_auth_backend_authenticate_hashing_error() -> AnyhowResult<()> {
     }?;
 
     // 3. Test backend.authenticate directly to ensure error handling is correct
-    use scribe_backend::models::auth::LoginPayload;
-    let credentials = LoginPayload {
+    let credentials = scribe_backend::models::auth::LoginPayload {
         identifier: username.clone(),
         password: password.to_string().into(),
     };

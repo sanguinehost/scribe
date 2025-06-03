@@ -8,6 +8,7 @@ use crate::{
     },
 };
 use genai::chat::ChatMessage as GenAiChatMessage;
+use std::fmt::Write;
 use genai::chat::ContentPart as Part; // This is the Part type from the genai crate
 use genai::chat::MessageContent; // This is an enum from the genai crate
 use std::sync::Arc;
@@ -32,11 +33,8 @@ pub fn build_prompt_with_rag(
                 // No description, return empty string (no character persona to instruct on)
                 return Ok(String::new());
             }
-            prompt.push_str(&format!("Character Name: {}\n", char_data.name));
-            prompt.push_str(&format!(
-                "Description: {}\n",
-                String::from_utf8_lossy(description_vec)
-            ));
+            writeln!(prompt, "Character Name: {}", char_data.name).unwrap();
+            writeln!(prompt, "Description: {}", String::from_utf8_lossy(description_vec)).unwrap();
             prompt.push('\n');
             // Only add static instruction if there's a character description
             prompt.push_str("---\nInstruction:\nContinue the chat based on the conversation history. Stay in character.\n---\n\n");
@@ -58,11 +56,8 @@ fn build_character_info_string(character_metadata: Option<&CharacterMetadata>) -
         if let Some(description_vec) = &char_data.description {
             if !description_vec.is_empty() {
                 let mut char_prompt_part = String::new();
-                char_prompt_part.push_str(&format!("Character Name: {}\n", char_data.name));
-                char_prompt_part.push_str(&format!(
-                    "Description: {}\n",
-                    String::from_utf8_lossy(description_vec)
-                ));
+                writeln!(char_prompt_part, "Character Name: {}", char_data.name).unwrap();
+                writeln!(char_prompt_part, "Description: {}", String::from_utf8_lossy(description_vec)).unwrap();
                 // Static instruction for character-based interaction
                 char_prompt_part.push_str("\n---\nInstruction:\nContinue the chat based on the conversation history. Stay in character.\n---\n\n");
                 return char_prompt_part;
@@ -418,6 +413,7 @@ fn apply_token_limits(mut calculation: TokenCalculation, config: &Arc<Config>) -
 
 fn build_final_prompt_strings(
     calculation: &TokenCalculation,
+    current_user_message: &GenAiChatMessage,
 ) -> (String, Vec<GenAiChatMessage>) {
     // Assemble the final system prompt
     let mut final_system_prompt = calculation.meta_system_prompt_template.clone();
@@ -434,16 +430,6 @@ fn build_final_prompt_strings(
         final_system_prompt.push_str(&calculation.character_details_str);
     }
 
-    // Add RAG context to system prompt
-    if !calculation.rag_items_with_tokens.is_empty() {
-        final_system_prompt.push_str("\n\n--- Context Information ---\n");
-        for (rag_item, _) in &calculation.rag_items_with_tokens {
-            final_system_prompt.push_str(&rag_item.text);
-            final_system_prompt.push('\n');
-        }
-        final_system_prompt.push_str("--- End Context Information ---\n");
-    }
-
     // Assemble the final message list
     let mut final_message_list = Vec::new();
 
@@ -451,6 +437,59 @@ fn build_final_prompt_strings(
     for (history_msg, _) in &calculation.recent_history_with_tokens {
         final_message_list.push(history_msg.clone());
     }
+
+    // Add the current user message with RAG context prepended if available
+    let final_user_message = if calculation.rag_items_with_tokens.is_empty() {
+        current_user_message.clone()
+    } else {
+        // Build RAG context string
+        let mut rag_context = String::from("---\nRelevant Context:\n");
+        for (rag_item, _) in &calculation.rag_items_with_tokens {
+            // Add each RAG item with appropriate formatting
+            match &rag_item.metadata {
+                crate::services::embedding_pipeline::RetrievedMetadata::Chat(chat_meta) => {
+                    writeln!(rag_context, "- Chat (Speaker: {}): {}", chat_meta.speaker, rag_item.text.trim()).unwrap();
+                },
+                crate::services::embedding_pipeline::RetrievedMetadata::Lorebook(lorebook_meta) => {
+                    // Try to use title and keywords if available
+                    if let Some(title) = &lorebook_meta.entry_title {
+                        let keywords_str = lorebook_meta.keywords.as_ref().map_or_else(|| "No keywords".to_string(), |kw| kw.join(", "));
+                        writeln!(rag_context, "- Lorebook ({title} - {keywords_str}): {}", rag_item.text.trim()).unwrap();
+                    } else {
+                        // Fall back to the original format for backwards compatibility
+                        writeln!(rag_context, "- Lorebook ({}): {}", lorebook_meta.lorebook_id, rag_item.text.trim()).unwrap();
+                    }
+                }
+            }
+        }
+        rag_context.push_str("---\n\n");
+        
+        // Create new user message with RAG context prepended
+        let original_content = match &current_user_message.content {
+            MessageContent::Text(text) => text.clone(),
+            MessageContent::Parts(parts) => {
+                // For parts, extract text parts and concatenate
+                parts.iter()
+                    .filter_map(|part| match part {
+                        Part::Text(text) => Some(text.as_str()),
+                        _ => None,
+                    })
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            }
+            _ => String::new(),
+        };
+        
+        let enhanced_content = format!("{rag_context}{original_content}");
+        
+        GenAiChatMessage {
+            role: current_user_message.role.clone(),
+            content: MessageContent::Text(enhanced_content),
+            options: None,
+        }
+    };
+    
+    final_message_list.push(final_user_message);
 
     (final_system_prompt, final_message_list)
 }
@@ -469,7 +508,7 @@ pub async fn build_final_llm_prompt(
     calculation = apply_token_limits(calculation, &params.config);
 
     // Build final prompt strings
-    let (final_system_prompt, final_message_list) = build_final_prompt_strings(&calculation);
+    let (final_system_prompt, final_message_list) = build_final_prompt_strings(&calculation, &params.current_user_message);
 
     let final_total_tokens = calculation.meta_system_prompt_tokens
         + calculation.persona_override_prompt_tokens

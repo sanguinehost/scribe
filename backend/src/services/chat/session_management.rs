@@ -17,7 +17,7 @@ use crate::{
             // HistoryManagementStrategy, // Removed, strategy is a field in Chat struct
         },
     },
-    schema::{characters, chat_sessions, users::dsl as users_dsl},
+    schema::{characters, chat_sessions, chat_session_lorebooks, users::dsl as users_dsl},
     state::DbPool,
 };
 
@@ -29,19 +29,42 @@ type SessionCreationResult = Result<(Chat, Option<Vec<u8>>, Option<Vec<u8>>), Ap
 /// Type alias for encrypted session data result
 type EncryptedSessionData = ((Vec<u8>, Vec<u8>), (Option<Vec<u8>>, Option<Vec<u8>>));
 
+/// Represents the result of querying for a user's default persona
+#[derive(Debug, Clone, Copy)]
+enum DefaultPersonaQuery {
+    /// User exists and has a default persona
+    HasDefault(Uuid),
+    /// User exists but has no default persona
+    NoDefault,
+    /// User was not found
+    UserNotFound,
+}
+
+// Conversion implementations for DefaultPersonaQuery
+impl DefaultPersonaQuery {
+    /// Creates a `DefaultPersonaQuery` from a database query result
+    /// where Some(uuid) means user has default persona, None means no default persona
+    fn from_nullable_uuid(user_exists: bool, persona_id: Option<Uuid>) -> Self {
+        if user_exists {
+            persona_id.map_or(Self::NoDefault, Self::HasDefault)
+        } else {
+            Self::UserNotFound
+        }
+    }
+}
+
 /// Handles successful query result cases for default persona ID
-#[allow(clippy::option_option)]
-fn handle_successful_persona_query(user_id: Uuid, persona_result: Option<Option<Uuid>>) -> Option<Uuid> {
+fn handle_successful_persona_query(user_id: Uuid, persona_result: DefaultPersonaQuery) -> Option<Uuid> {
     match persona_result {
-        Some(Some(default_id)) => {
+        DefaultPersonaQuery::HasDefault(default_id) => {
             info!(%user_id, default_persona_id = %default_id, "Found user's default persona. Using it for this session.");
             Some(default_id)
         }
-        Some(None) => {
+        DefaultPersonaQuery::NoDefault => {
             info!(%user_id, "User has no default persona set.");
             None
         }
-        None => {
+        DefaultPersonaQuery::UserNotFound => {
             warn!(%user_id, "User not found when trying to fetch default persona. This should not happen.");
             None
         }
@@ -49,10 +72,9 @@ fn handle_successful_persona_query(user_id: Uuid, persona_result: Option<Option<
 }
 
 /// Handles database query result for default persona ID
-#[allow(clippy::option_option)]
 fn handle_persona_query_result(
     user_id: Uuid,
-    result: Result<Option<Option<Uuid>>, diesel::result::Error>,
+    result: Result<DefaultPersonaQuery, diesel::result::Error>,
 ) -> Option<Uuid> {
     match result {
         Ok(persona_result) => handle_successful_persona_query(user_id, persona_result),
@@ -65,13 +87,20 @@ fn handle_persona_query_result(
 
 /// Fetches the user's default persona ID from the database
 fn get_user_default_persona_id(user_id: Uuid, conn: &mut PgConnection) -> Option<Uuid> {
-    let result = crate::schema::users::table
+    let db_result = crate::schema::users::table
         .filter(users_dsl::id.eq(user_id))
         .select(users_dsl::default_persona_id)
         .first::<Option<Uuid>>(conn)
         .optional();
 
-    handle_persona_query_result(user_id, result)
+    // Convert the database result to our custom enum
+    let enum_result = match db_result {
+        Ok(Some(persona_opt)) => Ok(DefaultPersonaQuery::from_nullable_uuid(true, persona_opt)),
+        Ok(None) => Ok(DefaultPersonaQuery::UserNotFound),
+        Err(e) => Err(e),
+    };
+
+    handle_persona_query_result(user_id, enum_result)
 }
 
 /// Helper function to determine the effective active persona ID
@@ -309,7 +338,7 @@ fn insert_chat_session(
             chat_sessions::system_prompt_ciphertext.eq(params.encrypted_system_prompt_bytes),
             chat_sessions::system_prompt_nonce.eq(params.sp_nonce_bytes),
             chat_sessions::active_custom_persona_id.eq(params.effective_active_persona_id),
-            chat_sessions::model_name.eq("gemini-2.0-flash-exp"),
+            chat_sessions::model_name.eq("gemini-2.5-flash-preview-05-20"),
             chat_sessions::history_management_strategy.eq("message_window"),
             chat_sessions::history_management_limit.eq(20),
         ))
@@ -320,19 +349,45 @@ fn insert_chat_session(
     Ok(())
 }
 
+/// Validates that a lorebook exists and is owned by the specified user
+fn validate_lorebook_ownership(
+    lorebook_id: Uuid,
+    user_id: Uuid,
+    transaction_conn: &mut PgConnection,
+) -> Result<(), AppError> {
+    use crate::schema::lorebooks;
+    
+    let lorebook_user_id = lorebooks::table
+        .filter(lorebooks::id.eq(lorebook_id))
+        .select(lorebooks::user_id)
+        .first::<Uuid>(transaction_conn)
+        .optional()
+        .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+
+    lorebook_user_id.map_or_else(|| Err(AppError::NotFound("Lorebook not found".to_string())), |owner_id| if owner_id == user_id {
+                Ok(())
+            } else {
+                Err(AppError::Forbidden)
+            })
+}
+
 /// Associates lorebooks with the chat session
 fn associate_lorebooks(
     new_session_id: Uuid,
+    user_id: Uuid,
     lorebook_ids: Option<Vec<Uuid>>,
     transaction_conn: &mut PgConnection,
 ) -> Result<(), AppError> {
     if let Some(lorebook_ids_vec) = lorebook_ids {
         for lorebook_id in lorebook_ids_vec {
-            use crate::schema::chat_session_lorebooks;
+            // Validate that the lorebook exists and is owned by the user
+            validate_lorebook_ownership(lorebook_id, user_id, transaction_conn)?;
+            
             diesel::insert_into(chat_session_lorebooks::table)
                 .values((
                     chat_session_lorebooks::chat_session_id.eq(new_session_id),
                     chat_session_lorebooks::lorebook_id.eq(lorebook_id),
+                    chat_session_lorebooks::user_id.eq(user_id),
                 ))
                 .execute(transaction_conn)
                 .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
@@ -398,7 +453,7 @@ fn create_session_in_transaction(
         transaction_conn,
     )?;
 
-    associate_lorebooks(new_session_id, lorebook_ids, transaction_conn)?;
+    associate_lorebooks(new_session_id, user_id, lorebook_ids, transaction_conn)?;
 
     let fully_created_session = fetch_created_session(new_session_id, transaction_conn)?;
 
