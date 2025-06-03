@@ -134,6 +134,66 @@ pub struct UploadedLorebookEntry {
     pub order: Option<i32>,       // Maps to insertion_order
     pub position: Option<i32>,    // 0=before prompt, 1=after prompt
     pub uid: Option<i32>,         // Original SillyTavern UID
+    
+    // Additional SillyTavern fields that we'll ignore but need for deserialization
+    #[serde(default)]
+    pub keysecondary: Option<Vec<String>>,
+    #[serde(default)]
+    pub selective: Option<bool>,
+    #[serde(default, rename = "displayIndex")]
+    pub display_index: Option<i32>,
+    #[serde(default, rename = "addMemo")]
+    pub add_memo: Option<bool>,
+    #[serde(default)]
+    pub group: Option<String>,
+    #[serde(default, rename = "groupOverride")]
+    pub group_override: Option<bool>,
+    #[serde(default, rename = "groupWeight")]
+    pub group_weight: Option<i32>,
+    #[serde(default)]
+    pub sticky: Option<i32>,
+    #[serde(default)]
+    pub cooldown: Option<i32>,
+    #[serde(default)]
+    pub delay: Option<i32>,
+    #[serde(default)]
+    pub probability: Option<i32>,
+    #[serde(default)]
+    pub depth: Option<i32>,
+    #[serde(default, rename = "useProbability")]
+    pub use_probability: Option<bool>,
+    #[serde(default)]
+    pub role: Option<String>,
+    #[serde(default)]
+    pub vectorized: Option<bool>,
+    #[serde(default, rename = "excludeRecursion")]
+    pub exclude_recursion: Option<bool>,
+    #[serde(default, rename = "preventRecursion")]
+    pub prevent_recursion: Option<bool>,
+    #[serde(default, rename = "delayUntilRecursion")]
+    pub delay_until_recursion: Option<bool>,
+    #[serde(default, rename = "scanDepth")]
+    pub scan_depth: Option<i32>,
+    #[serde(default, rename = "caseSensitive")]
+    pub case_sensitive: Option<bool>,
+    #[serde(default, rename = "matchWholeWords")]
+    pub match_whole_words: Option<bool>,
+    #[serde(default, rename = "useGroupScoring")]
+    pub use_group_scoring: Option<bool>,
+    #[serde(default, rename = "automationId")]
+    pub automation_id: Option<String>,
+    #[serde(default, rename = "matchPersonaDescription")]
+    pub match_persona_description: Option<bool>,
+    #[serde(default, rename = "matchCharacterDescription")]
+    pub match_character_description: Option<bool>,
+    #[serde(default, rename = "matchCharacterPersonality")]
+    pub match_character_personality: Option<bool>,
+    #[serde(default, rename = "matchCharacterDepthPrompt")]
+    pub match_character_depth_prompt: Option<bool>,
+    #[serde(default, rename = "matchScenario")]
+    pub match_scenario: Option<bool>,
+    #[serde(default, rename = "matchCreatorNotes")]
+    pub match_creator_notes: Option<bool>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Validate, Clone)]

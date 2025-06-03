@@ -23,8 +23,29 @@
 	}
 
 	function handleUpload() {
-		// TODO: Implement upload functionality
-		toast.info('Upload functionality coming soon!');
+		const input = document.createElement('input');
+		input.type = 'file';
+		input.accept = '.json';
+		input.onchange = async (event) => {
+			const file = (event.target as HTMLInputElement).files?.[0];
+			if (file) {
+				try {
+					const text = await file.text();
+					const data = JSON.parse(text);
+					
+					const result = await lorebookStore.importLorebook(data);
+					if (result) {
+						toast.success('Lorebook imported successfully!');
+						goto(`/lorebooks/${result.id}`);
+					} else if (lorebookStore.error) {
+						toast.error(`Failed to import lorebook: ${lorebookStore.error}`);
+					}
+				} catch (error) {
+					toast.error('Failed to parse lorebook file');
+				}
+			}
+		};
+		input.click();
 	}
 
 	function handleSelectLorebook(lorebook: Lorebook) {
@@ -43,9 +64,20 @@
 		console.log('Set showDeleteDialog to true, deletingLorebook:', deletingLorebook);
 	}
 
-	function handleExportLorebook(lorebook: Lorebook) {
-		// TODO: Implement export functionality
-		toast.info('Export functionality coming soon!');
+	async function handleExportLorebook(lorebook: Lorebook) {
+		const exported = await lorebookStore.exportLorebook(lorebook.id);
+		if (exported) {
+			const blob = new Blob([JSON.stringify(exported, null, 2)], { type: 'application/json' });
+			const url = URL.createObjectURL(blob);
+			const a = document.createElement('a');
+			a.href = url;
+			a.download = `${lorebook.name.replace(/[^a-z0-9]/gi, '_').toLowerCase()}_lorebook.json`;
+			a.click();
+			URL.revokeObjectURL(url);
+			toast.success('Lorebook exported successfully!');
+		} else if (lorebookStore.error) {
+			toast.error(`Failed to export lorebook: ${lorebookStore.error}`);
+		}
 	}
 
 	async function handleCreateSubmit(data: CreateLorebookPayload) {
