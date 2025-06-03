@@ -28,7 +28,7 @@
 <script lang="ts">
 	import * as Tooltip from '$lib/components/ui/tooltip/index.js';
 	import { cn } from '$lib/utils/shadcn.js';
-	import { mergeProps, type WithElementRef, type WithoutChildrenOrChild } from 'bits-ui';
+	import { type WithElementRef, type WithoutChildrenOrChild } from 'bits-ui';
 	import type { ComponentProps, Snippet } from 'svelte';
 	import type { HTMLAttributes } from 'svelte/elements';
 	import { useSidebar } from './context.svelte.js';
@@ -65,11 +65,10 @@
 </script>
 
 {#snippet Button({ props }: { props?: Record<string, unknown> })}
-	{@const mergedProps = mergeProps(buttonProps, props)}
 	{#if child}
-		{@render child({ props: mergedProps })}
+		{@render child({ props: { ...buttonProps, ...props } })}
 	{:else}
-		<button bind:this={ref} {...mergedProps}>
+		<button bind:this={ref} {...buttonProps} {...props}>
 			{@render children?.()}
 		</button>
 	{/if}
@@ -79,7 +78,7 @@
 	{@render Button({})}
 {:else}
 	<Tooltip.Root>
-		<Tooltip.Trigger>
+		<Tooltip.Trigger asChild>
 			{#snippet child({ props })}
 				{@render Button({ props })}
 			{/snippet}
@@ -88,8 +87,9 @@
 			side="right"
 			align="center"
 			hidden={sidebar.state !== 'collapsed' || sidebar.isMobile}
-			children={tooltipContent}
 			{...tooltipContentProps}
-		/>
+		>
+			{@render tooltipContent?.()}
+		</Tooltip.Content>
 	</Tooltip.Root>
 {/if}

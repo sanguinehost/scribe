@@ -37,6 +37,19 @@ diesel::table! {
     use diesel::sql_types::*;
     use diesel_derive_enum::DbEnum;
 
+    character_lorebooks (character_id, lorebook_id) {
+        character_id -> Uuid,
+        lorebook_id -> Uuid,
+        user_id -> Uuid,
+        created_at -> Timestamptz,
+        updated_at -> Timestamptz,
+    }
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    use diesel_derive_enum::DbEnum;
+
     characters (id) {
         id -> Uuid,
         user_id -> Uuid,
@@ -389,6 +402,9 @@ diesel::table! {
 }
 
 diesel::joinable!(character_assets -> characters (character_id));
+diesel::joinable!(character_lorebooks -> characters (character_id));
+diesel::joinable!(character_lorebooks -> lorebooks (lorebook_id));
+diesel::joinable!(character_lorebooks -> users (user_id));
 diesel::joinable!(characters -> users (user_id));
 diesel::joinable!(chat_character_overrides -> characters (original_character_id));
 diesel::joinable!(chat_character_overrides -> chat_sessions (chat_session_id));
@@ -409,6 +425,7 @@ diesel::joinable!(old_votes -> chat_sessions (chat_id));
 
 diesel::allow_tables_to_appear_in_same_query!(
     character_assets,
+    character_lorebooks,
     characters,
     chat_character_overrides,
     chat_messages,

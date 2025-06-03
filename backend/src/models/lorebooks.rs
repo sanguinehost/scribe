@@ -1,6 +1,7 @@
+use crate::models::characters::Character;
 use crate::models::chats::Chat;
 use crate::models::users::User;
-use crate::schema::{chat_session_lorebooks, lorebook_entries, lorebooks};
+use crate::schema::{character_lorebooks, chat_session_lorebooks, lorebook_entries, lorebooks};
 use chrono::{DateTime, Utc};
 use diesel::{Queryable, Insertable, Identifiable, AsChangeset, Selectable, Associations, PgConnection, QueryResult, QueryDsl, ExpressionMethods, RunQueryDsl};
 use serde::{Deserialize, Serialize};
@@ -184,6 +185,46 @@ impl ChatSessionLorebook {
 #[diesel(table_name = chat_session_lorebooks)]
 pub struct NewChatSessionLorebook {
     pub chat_session_id: Uuid,
+    pub lorebook_id: Uuid,
+    pub user_id: Uuid,
+    // Timestamps are typically optional for New structs, allowing DB defaults
+    pub created_at: Option<DateTime<Utc>>,
+    pub updated_at: Option<DateTime<Utc>>,
+}
+
+// --------------------------------
+// --- CharacterLorebook Model ---
+// --------------------------------
+
+#[derive(
+    Queryable,
+    Selectable,
+    Identifiable,
+    Associations,
+    Serialize,
+    Deserialize,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+)]
+#[diesel(table_name = character_lorebooks)]
+#[diesel(primary_key(character_id, lorebook_id))]
+#[diesel(belongs_to(Character, foreign_key = character_id))]
+#[diesel(belongs_to(Lorebook, foreign_key = lorebook_id))]
+#[diesel(belongs_to(User, foreign_key = user_id))]
+pub struct CharacterLorebook {
+    pub character_id: Uuid,
+    pub lorebook_id: Uuid,
+    pub user_id: Uuid,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Insertable, Debug, Clone)]
+#[diesel(table_name = character_lorebooks)]
+pub struct NewCharacterLorebook {
+    pub character_id: Uuid,
     pub lorebook_id: Uuid,
     pub user_id: Uuid,
     // Timestamps are typically optional for New structs, allowing DB defaults

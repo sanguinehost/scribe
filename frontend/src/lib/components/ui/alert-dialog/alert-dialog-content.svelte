@@ -7,9 +7,11 @@
 		ref = $bindable(null),
 		class: className,
 		portalProps,
+		children,
 		...restProps
 	}: WithoutChild<AlertDialogPrimitive.ContentProps> & {
 		portalProps?: AlertDialogPrimitive.PortalProps;
+		children?: any;
 	} = $props();
 </script>
 
@@ -22,5 +24,7 @@
 			className
 		)}
 		{...restProps}
-	/>
+	>
+		{@render children?.()}
+	</AlertDialogPrimitive.Content>
 </AlertDialogPrimitive.Portal>

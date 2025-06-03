@@ -23,7 +23,9 @@
         </pre>
 	</div>
 {:else}
-	<code class={cn(`rounded-md bg-zinc-100 px-1 py-0.5 text-sm dark:bg-zinc-800`, c)} {...rest}>
-		{@render children?.()}
-	</code>
+	<div class="rounded-md bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 p-2 shadow-sm w-full mt-4">
+		<code class={cn('text-sm whitespace-pre-wrap break-words', c)} {...rest}>
+			{@render children?.()}
+		</code>
+	</div>
 {/if}

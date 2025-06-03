@@ -5,6 +5,7 @@
 	let {
 		ref = $bindable(null),
 		class: className,
+		children,
 		...restProps
 	}: AlertDialogPrimitive.DescriptionProps = $props();
 </script>
@@ -13,4 +14,6 @@
 	bind:ref
 	class={cn('text-sm text-muted-foreground', className)}
 	{...restProps}
-/>
+>
+	{@render children?.()}
+</AlertDialogPrimitive.Description>
