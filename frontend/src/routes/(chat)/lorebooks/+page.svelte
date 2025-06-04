@@ -1,16 +1,18 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
-	import { page } from '$app/stores';
 	import { lorebookStore } from '$lib/stores/lorebook.svelte';
-	import { LorebookList, LorebookForm } from '$lib/components/lorebooks';
+	import { LorebookList, LorebookForm, ExportDialog, ImportLorebookDialog } from '$lib/components/lorebooks';
 	import { Dialog, DialogContent, DialogHeader, DialogTitle } from '$lib/components/ui/dialog';
 	import { Button } from '$lib/components/ui/button';
 	import { toast } from 'svelte-sonner';
-	import type { Lorebook, CreateLorebookPayload } from '$lib/types';
+	import type { Lorebook, CreateLorebookPayload, UpdateLorebookPayload } from '$lib/types';
 
 	let showCreateDialog = $state(false);
 	let showDeleteDialog = $state(false);
+	let showExportDialog = $state(false);
+	let showImportDialog = $state(false); // New state for import dialog
+	let exportingLorebook = $state<Lorebook | null>(null);
 	let deletingLorebook = $state<Lorebook | null>(null);
 
 	// Load lorebooks on mount
@@ -22,31 +24,6 @@
 		showCreateDialog = true;
 	}
 
-	function handleUpload() {
-		const input = document.createElement('input');
-		input.type = 'file';
-		input.accept = '.json';
-		input.onchange = async (event) => {
-			const file = (event.target as HTMLInputElement).files?.[0];
-			if (file) {
-				try {
-					const text = await file.text();
-					const data = JSON.parse(text);
-					
-					const result = await lorebookStore.importLorebook(data);
-					if (result) {
-						toast.success('Lorebook imported successfully!');
-						goto(`/lorebooks/${result.id}`);
-					} else if (lorebookStore.error) {
-						toast.error(`Failed to import lorebook: ${lorebookStore.error}`);
-					}
-				} catch (error) {
-					toast.error('Failed to parse lorebook file');
-				}
-			}
-		};
-		input.click();
-	}
 
 	function handleSelectLorebook(lorebook: Lorebook) {
 		goto(`/lorebooks/${lorebook.id}`);
@@ -64,24 +41,36 @@
 		console.log('Set showDeleteDialog to true, deletingLorebook:', deletingLorebook);
 	}
 
-	async function handleExportLorebook(lorebook: Lorebook) {
-		const exported = await lorebookStore.exportLorebook(lorebook.id);
+	function handleExportLorebook(lorebook: Lorebook) {
+		exportingLorebook = lorebook;
+		showExportDialog = true;
+	}
+
+	async function handleExportFormat(format: 'scribe_minimal' | 'silly_tavern_full') {
+		if (!exportingLorebook) return;
+		
+		const exported = await lorebookStore.exportLorebook(exportingLorebook.id, format);
 		if (exported) {
 			const blob = new Blob([JSON.stringify(exported, null, 2)], { type: 'application/json' });
 			const url = URL.createObjectURL(blob);
 			const a = document.createElement('a');
 			a.href = url;
-			a.download = `${lorebook.name.replace(/[^a-z0-9]/gi, '_').toLowerCase()}_lorebook.json`;
+			const formatSuffix = format === 'scribe_minimal' ? '_scribe' : '_sillytavern';
+			a.download = `${exportingLorebook.name.replace(/[^a-z0-9]/gi, '_').toLowerCase()}${formatSuffix}_lorebook.json`;
 			a.click();
 			URL.revokeObjectURL(url);
 			toast.success('Lorebook exported successfully!');
 		} else if (lorebookStore.error) {
 			toast.error(`Failed to export lorebook: ${lorebookStore.error}`);
 		}
+		
+		showExportDialog = false;
+		exportingLorebook = null;
 	}
 
-	async function handleCreateSubmit(data: CreateLorebookPayload) {
-		const result = await lorebookStore.createLorebook(data);
+	async function handleCreateSubmit(data: CreateLorebookPayload | UpdateLorebookPayload) {
+		// Since this is for creation, we know it's CreateLorebookPayload
+		const result = await lorebookStore.createLorebook(data as CreateLorebookPayload);
 		if (result) {
 			showCreateDialog = false;
 			toast.success('Lorebook created successfully!');
@@ -121,11 +110,11 @@
 </svelte:head>
 
 <div class="container mx-auto py-6">
-	<LorebookList 
+	<LorebookList
 		lorebooks={lorebookStore.lorebooks}
 		isLoading={lorebookStore.isLoading}
 		onCreateNew={handleCreateNew}
-		onUpload={handleUpload}
+		onUpload={() => (showImportDialog = true)}
 		onSelectLorebook={handleSelectLorebook}
 		onEditLorebook={handleEditLorebook}
 		onDeleteLorebook={handleDeleteLorebook}
@@ -160,6 +149,7 @@
 				<p class="text-sm font-semibold mt-2">"{deletingLorebook.name}"</p>
 			{/if}
 		</div>
+		
 		<div class="flex flex-col-reverse sm:flex-row sm:justify-end sm:space-x-2">
 			<Button variant="outline" onclick={cancelDelete}>Cancel</Button>
 			<Button 
@@ -171,4 +161,20 @@
 		</div>
 	</DialogContent>
 </Dialog>
+
+	<!-- Export Format Dialog -->
+	<ExportDialog
+		bind:open={showExportDialog}
+		onClose={() => {
+			showExportDialog = false;
+			exportingLorebook = null;
+		}}
+		onExport={handleExportFormat}
+	/>
 </div>
+
+<ImportLorebookDialog
+    open={showImportDialog}
+    on:close={() => (showImportDialog = false)}
+    on:importSuccess={() => lorebookStore.loadLorebooks()}
+/>

@@ -476,6 +476,7 @@ async fn test_first_mes_included_in_history() {
     let lorebook_service = Arc::new(LorebookService::new(
         test_app.db_pool.clone(),
         encryption_service.clone(),
+        test_app.qdrant_service.clone(),
     ));
 
     let auth_backend = Arc::new(scribe_backend::auth::user_store::Backend::new(

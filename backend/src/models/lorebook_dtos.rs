@@ -126,7 +126,7 @@ pub struct LorebookEntrySummaryResponse {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct UploadedLorebookEntry {
-    pub key: Vec<String>,         // Keywords/triggers
+    pub key: Option<Vec<String>>, // Keywords/triggers, can be null in some ST exports
     pub content: String,          // Entry content
     pub comment: Option<String>,  // Optional comment
     pub disable: Option<bool>,    // true means disabled (will invert to is_enabled)
@@ -134,6 +134,8 @@ pub struct UploadedLorebookEntry {
     pub order: Option<i32>,       // Maps to insertion_order
     pub position: Option<i32>,    // 0=before prompt, 1=after prompt
     pub uid: Option<i32>,         // Original SillyTavern UID
+    #[serde(default, alias = "displayName")] // Added alias for compatibility
+    pub display_name: Option<String>, // Field for SillyTavern entry title
     
     // Additional SillyTavern fields that we'll ignore but need for deserialization
     #[serde(default)]
@@ -206,6 +208,19 @@ pub struct LorebookUploadPayload {
     pub entries: HashMap<String, UploadedLorebookEntry>, // Keyed by original uid
 }
 
+// New DTO for SillyTavern import, which often lacks top-level metadata
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct SillyTavernImportPayload {
+    pub entries: HashMap<String, UploadedLorebookEntry>,
+    // Optional metadata that might be present in some full exports, but not always
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub is_public: Option<bool>,
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct LorebookWithEntriesResponse {
     pub lorebook: LorebookResponse,
@@ -214,16 +229,102 @@ pub struct LorebookWithEntriesResponse {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ExportedLorebookEntry {
+    pub uid: i32,
     pub key: Vec<String>,
-    pub content: String,
+    #[serde(default)]
+    pub keysecondary: Vec<String>, // Not used by Scribe but included for compatibility
     pub comment: String,
+    pub content: String,
     pub disable: bool,
     pub constant: bool,
     pub order: i32,
     pub position: i32,
+    #[serde(default)]
+    pub selective: bool, // Not used by Scribe but included for compatibility  
+    #[serde(default, rename = "displayIndex")]
+    pub display_index: i32,
+    #[serde(default, rename = "addMemo")]
+    pub add_memo: bool,
+    #[serde(default)]
+    pub group: String,
+    #[serde(default, rename = "groupOverride")]
+    pub group_override: bool,
+    #[serde(default, rename = "groupWeight")]
+    pub group_weight: i32,
+    #[serde(default)]
+    pub sticky: i32,
+    #[serde(default)]
+    pub cooldown: i32,
+    #[serde(default)]
+    pub delay: i32,
+    #[serde(default)]
+    pub probability: i32,
+    #[serde(default)]
+    pub depth: i32,
+    #[serde(default, rename = "useProbability")]
+    pub use_probability: bool,
+    #[serde(default)]
+    pub role: Option<String>,
+    #[serde(default)]
+    pub vectorized: bool,
+    #[serde(default, rename = "excludeRecursion")]
+    pub exclude_recursion: bool,
+    #[serde(default, rename = "preventRecursion")]
+    pub prevent_recursion: bool,
+    #[serde(default, rename = "delayUntilRecursion")]
+    pub delay_until_recursion: bool,
+    #[serde(default, rename = "scanDepth")]
+    pub scan_depth: Option<i32>,
+    #[serde(default, rename = "caseSensitive")]
+    pub case_sensitive: Option<bool>,
+    #[serde(default, rename = "matchWholeWords")]
+    pub match_whole_words: Option<bool>,
+    #[serde(default, rename = "useGroupScoring")]
+    pub use_group_scoring: Option<bool>,
+    #[serde(default, rename = "automationId")]
+    pub automation_id: String,
+    #[serde(default, rename = "matchPersonaDescription")]
+    pub match_persona_description: bool,
+    #[serde(default, rename = "matchCharacterDescription")]
+    pub match_character_description: bool,
+    #[serde(default, rename = "matchCharacterPersonality")]
+    pub match_character_personality: bool,
+    #[serde(default, rename = "matchCharacterDepthPrompt")]
+    pub match_character_depth_prompt: bool,
+    #[serde(default, rename = "matchScenario")]
+    pub match_scenario: bool,
+    #[serde(default, rename = "matchCreatorNotes")]
+    pub match_creator_notes: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ExportedLorebook {
     pub entries: HashMap<String, ExportedLorebookEntry>,
+    // Optional metadata that can be added for full SillyTavern compatibility
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+}
+
+// Minimal Scribe format for RAG-based systems
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ScribeMinimalLorebookEntry {
+    pub title: String,
+    pub keywords: Vec<String>,
+    pub content: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ScribeMinimalLorebook {
+    pub name: String,
+    pub description: Option<String>,
+    pub entries: Vec<ScribeMinimalLorebookEntry>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum ExportFormat {
+    ScribeMinimal,
+    SillyTavernFull,
 }

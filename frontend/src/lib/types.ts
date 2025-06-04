@@ -1,245 +1,347 @@
 // frontend/src/lib/types.ts
 
-/**
- * Represents the role of a chat message sender, mirroring the backend enum.
- */
-export type MessageRole = 'User' | 'Assistant' | 'System';
-
-/**
- * Represents a chat message structure based on the Scribe backend API.
- */
-export interface ScribeChatMessage {
-	id: string; // UUID
-	session_id: string; // UUID
-	message_type: MessageRole;
-	content: string;
-	created_at: string; // ISO 8601 DateTime string
-	user_id: string; // UUID
-	// Add any other relevant fields if needed for the UI, e.g., loading state
-	loading?: boolean;
+// Placeholder for User type - Define based on expected fields from backend
+export interface User {
+    id: string;
+    username: string;
+    email: string;
+    // Add other user-related fields as needed
 }
 
-/**
- * Defines the possible visibility states for a chat session.
- */
-export type VisibilityType = 'private' | 'public';
+// Placeholder for Message type - Define based on expected fields from backend
+export interface Message {
+    id: string;
+    chat_id: string;
+    role: string;
+    parts: MessagePart[];
+    attachments: MessageAttachment[];
+    created_at: Date;
+}
 
-/**
- * Represents a chat session structure based on the Scribe backend API.
- * (Adding this as it's likely needed soon)
- */
+// Placeholder for Vote type - Define based on expected fields from backend
+export interface Vote {
+    id: string;
+    message_id: string;
+    user_id: string;
+    type_: 'up' | 'down';
+    created_at: Date;
+}
+
+// Placeholder for Suggestion type - Define based on expected fields from backend
+export interface Suggestion {
+    id: string;
+    document_id: string;
+    document_created_at: string;
+    original_text: string;
+    suggested_text: string;
+    description?: string;
+    created_at: Date;
+    updated_at: Date;
+}
+
+// Placeholder for Session type - Define based on expected fields from backend
+export interface Session {
+    id: string;
+    user_id: string;
+    expires_at: string;
+}
+
+// Placeholder for AuthUser type - Define based on expected fields from backend
+export interface AuthUser {
+    id: string;
+    username: string;
+    email: string;
+    // Add other auth-related fields as needed
+}
+
+// Placeholder for ScribeChatSession type - Define based on expected fields from backend
 export interface ScribeChatSession {
-	id: string; // UUID
-	user_id: string; // UUID
-	character_id: string; // UUID
-	title: string | null;
-	system_prompt: string | null;
-	temperature: number | null; // Assuming conversion from BigDecimal
-	max_output_tokens: number | null;
-	created_at: string; // ISO 8601 DateTime string
-	updated_at: string; // ISO 8601 DateTime string
-	// Add other settings fields if needed
-	frequency_penalty: number | null;
-	presence_penalty: number | null;
-	top_k: number | null;
-	top_p: number | null;
-	seed: number | null;
-	history_management_strategy: string | null; // Can be null
-	history_management_limit: number | null; // Can be null
-	visibility: VisibilityType;
-
-	// Added from chat-config-sidebar.svelte
-	active_custom_persona_id?: string | null;
-	model_name?: string | null;
-	gemini_thinking_budget?: number | null;
-	gemini_enable_code_execution?: boolean | null;
-
-	// Context budget fields (ensure these match backend names if they exist there)
-	context_total_token_limit?: number | null;
-	context_recent_history_budget?: number | null;
-	context_rag_budget?: number | null;
+    id: string;
+    title: string;
+    character_id: string;
+    user_id: string;
+    created_at: string;
+    updated_at: string;
+    system_prompt?: string | null;
+    personality?: string | null;
+    scenario?: string | null;
+    visibility?: VisibilityType | null;
+    active_custom_persona_id?: string | null;
+    model_name?: string | null;
+    gemini_thinking_budget?: number | null;
+    gemini_enable_code_execution?: boolean | null;
+    context_total_token_limit?: number | null;
+    context_recent_history_budget?: number | null;
+    context_rag_budget?: number | null;
 }
 
-/**
- * Represents a character structure based on the Scribe backend API.
- * (Minimal definition for now, add fields as needed)
- */
-export interface ScribeCharacter {
-	id: string; // UUID
-	name: string;
-	first_mes: string | null | undefined;
-	system_prompt?: string | null; // Optional system prompt
-	personality?: string | null; // Optional personality description
-	scenario?: string | null; // Optional scenario description
-	// Add other relevant character fields here, e.g., description, avatar_url
+// Placeholder for LoginSuccessData type - Define based on expected fields from backend
+export interface LoginSuccessData {
+    user: User;
+    session: Session;
 }
-// Add other shared types as needed...
 
-// Types for our application, previously defined in db/schema.ts
+export type VisibilityType = 'public' | 'private';
 
-export type User = {
-	user_id: string;
-	email: string;
-	username: string;
-};
-
-export type AuthUser = User & {
-	password: string;
-};
-
-export type Session = {
-	id: string;
-	user_id: string;
-	expires_at: Date;
-};
-
-export type Chat = {
-	id: string;
-	createdAt: Date;
-	title: string;
-	userId: string;
-	visibility: 'public' | 'private';
-};
-
-export type MessagePart = {
-	text?: string;
-	imageUrl?: string;
-	type?: string;
-	[key: string]: unknown;
-};
-
-export type MessageAttachment = {
-	type: string;
-	url?: string;
-	name?: string;
-	size?: number;
-	[key: string]: unknown;
-};
-
-export type Message = {
-	id: string;
-	chatId: string;
-	role: string;
-	parts: MessagePart[];
-	attachments: MessageAttachment[];
-	createdAt: Date;
-};
-
-export type Vote = {
-	chatId: string;
-	messageId: string;
-	isUpvoted: boolean;
-};
-
-export type Document = {
-	id: string;
-	createdAt: Date;
-	title: string;
-	content: string;
-	kind: 'text' | 'code' | 'image' | 'sheet';
-	userId: string;
-};
-
-export type Suggestion = {
-	id: string;
-	documentId: string;
-	documentCreatedAt: Date;
-	originalText: string;
-	suggestedText: string;
-	description: string | null;
-	isResolved: boolean;
-	userId: string;
-	createdAt: Date;
-};
-// Added for the new login response structure
-export type LoginSuccessData = {
-	user: User; // Existing User type
-	session_id: string;
-	expires_at: string | Date; // Match backend (chrono::DateTime&lt;Utc&gt; serializes to ISO string)
-};
-
-// Lorebook-related types
+// Placeholder for Lorebook type - Define based on expected fields from backend
 export interface Lorebook {
-	id: string;
-	user_id: string;
-	name: string;
-	description: string | null;
-	source_format: string;
-	is_public: boolean;
-	created_at: string;
-	updated_at: string;
+    id: string;
+    user_id: string;
+    name: string;
+    description?: string | null;
+    created_at: string;
+    updated_at: string;
 }
 
+// Placeholder for LorebookEntry type - Define based on expected fields from backend
 export interface LorebookEntry {
-	id: string;
-	lorebook_id: string;
-	user_id: string;
-	entry_title: string;
-	keys_text: string | null;
-	content: string | null;
-	comment: string | null;
-	is_enabled: boolean;
-	is_constant: boolean;
-	insertion_order: number;
-	placement_hint: string;
-	created_at: string;
-	updated_at: string;
+    id: string;
+    lorebook_id: string;
+    user_id: string;
+    name: string;
+    content: string;
+    keywords: string[];
+    created_at: string;
+    updated_at: string;
 }
 
+// Placeholder for CreateLorebookPayload type - Define based on expected fields for creating a lorebook
 export interface CreateLorebookPayload {
-	name: string;
-	description?: string;
+    name: string;
+    description?: string | null;
 }
 
+// Placeholder for UpdateLorebookPayload type - Define based on expected fields for updating a lorebook
 export interface UpdateLorebookPayload {
-	name?: string;
-	description?: string;
+    name?: string;
+    description?: string | null;
 }
 
+// Placeholder for CreateLorebookEntryPayload type - Define based on expected fields for creating a lorebook entry
 export interface CreateLorebookEntryPayload {
-	entry_title: string;
-	keys_text?: string;
-	content: string;
-	comment?: string;
-	is_enabled?: boolean;
-	is_constant?: boolean;
-	insertion_order?: number;
-	placement_hint?: string;
+    name: string;
+    content: string;
+    keywords: string[];
 }
 
+// Placeholder for UpdateLorebookEntryPayload type - Define based on expected fields for updating a lorebook entry
 export interface UpdateLorebookEntryPayload {
-	entry_title?: string;
-	keys_text?: string;
-	content?: string;
-	comment?: string;
-	is_enabled?: boolean;
-	is_constant?: boolean;
-	insertion_order?: number;
-	placement_hint?: string;
+    name?: string;
+    content?: string;
+    keywords?: string[];
 }
 
+// Placeholder for LorebookUploadPayload type - Define based on expected fields for lorebook upload
 export interface LorebookUploadPayload {
-	name: string;
-	description?: string;
-	is_public: boolean;
-	entries: Record<string, UploadedLorebookEntry>;
+    name: string;
+    description?: string;
+    entries: {
+        name: string;
+        content: string;
+        keywords: string[];
+    }[];
 }
 
-export interface UploadedLorebookEntry {
-	key: string[];
-	content: string;
-	comment?: string;
-	disable?: boolean;
-	constant?: boolean;
-	order?: number;
-	position?: number;
-	uid?: number;
+// Definition for ScribeMinimalLorebook
+export interface ScribeMinimalLorebook {
+    name: string;
+    description?: string;
+    entries: {
+        title: string;
+        content: string;
+        keywords: string[];
+    }[];
 }
 
+// Placeholder for ChatSessionLorebookAssociation type
 export interface ChatSessionLorebookAssociation {
-	chat_session_id: string;
-	lorebook_id: string;
-	user_id: string;
-	lorebook_name: string;
-	created_at: string;
+    chat_id: string;
+    lorebook_id: string;
+    created_at: string;
+}
+
+// Placeholder for Character type - Define based on expected fields from GET /api/characters/{id}
+export interface Character {
+    id: string;
+    name: string;
+    description?: string;
+    system_prompt?: string | null;
+    personality?: string | null;
+    scenario?: string | null;
+    avatar_url?: string | null;
+    greeting?: string | null;
+}
+
+// User Persona types
+export interface UserPersona {
+    id: string;
+    user_id: string;
+    name: string;
+    description: string;
+    spec?: string | null;
+    spec_version?: string | null;
+    personality?: string | null;
+    scenario?: string | null;
+    first_mes?: string | null;
+    mes_example?: string | null;
+    system_prompt?: string | null;
+    post_history_instructions?: string | null;
+    tags?: string[] | null;
+    avatar?: string | null;
+    created_at: string;
+    updated_at: string;
+}
+
+export interface CreateUserPersonaRequest {
+    name: string;
+    description: string;
+    spec?: string | null;
+    spec_version?: string | null;
+    personality?: string | null;
+    scenario?: string | null;
+    first_mes?: string | null;
+    mes_example?: string | null;
+    system_prompt?: string | null;
+    post_history_instructions?: string | null;
+    tags?: string[] | null;
+    avatar?: string | null;
+}
+
+export interface UpdateUserPersonaRequest {
+    name?: string;
+    description?: string;
+    spec?: string | null;
+    spec_version?: string | null;
+    personality?: string | null;
+    scenario?: string | null;
+    first_mes?: string | null;
+    mes_example?: string | null;
+    system_prompt?: string | null;
+    post_history_instructions?: string | null;
+    tags?: string[] | null;
+    avatar?: string | null;
+}
+
+
+// Type definitions for message parts
+export interface TextPart {
+    text: string;
+}
+
+export interface ImagePart {
+    image_url: string;
+    alt?: string;
+}
+
+export type MessagePart = TextPart | ImagePart;
+
+export interface MessageAttachment {
+    type: string;
+    data: unknown;
+}
+
+// Type definitions for API requests
+export type CreateChatRequest = {
+    title: string;
+    character_id: string;
+    system_prompt?: string | null;
+    personality?: string | null;
+    scenario?: string | null;
+};
+
+export type CreateMessageRequest = {
+    role: string;
+    content: string;
+    parts?: MessagePart[];
+    attachments?: MessageAttachment[];
+};
+
+export type VoteRequest = {
+    type_: 'up' | 'down';
+};
+
+export type UpdateChatVisibilityRequest = {
+    visibility: 'public' | 'private';
+};
+
+export type CreateDocumentRequest = {
+    title: string;
+    content?: string;
+    kind: string;
+};
+
+export type CreateSuggestionRequest = {
+    document_id: string;
+    document_created_at: string;
+    original_text: string;
+    suggested_text: string;
+    description?: string;
+};
+
+// Type definitions for API responses
+export type ChatResponse = {
+    id: string;
+    title: string;
+    created_at: Date;
+    user_id: string;
+    visibility?: string;
+};
+
+export type MessageResponse = {
+    id: string;
+    chat_id: string;
+    role: string;
+    parts: MessagePart[];
+    attachments: MessageAttachment[];
+    created_at: Date;
+};
+
+export type DocumentResponse = {
+    id: string;
+    created_at: Date;
+    title: string;
+    content?: string;
+    kind: string;
+    user_id: string;
+};
+
+export type SessionResponse = {
+    session: {
+        id: string;
+        user_id: string;
+        expires_at: string | Date;
+    };
+    user: User;
+};
+
+export interface SuggestedActionItem {
+    action: string;
+}
+
+export type SuggestedActionsResponse = {
+    suggestions: SuggestedActionItem[];
+};
+
+
+// Types for Chat Session Settings
+export interface UpdateChatSessionSettingsRequest {
+    title?: string | null;
+    system_prompt?: string | null;
+    temperature?: number | null;
+    max_output_tokens?: number | null;
+    frequency_penalty?: number | null;
+    presence_penalty?: number | null;
+    top_k?: number | null;
+    top_p?: number | null;
+    seed?: number | null;
+    history_management_strategy?: string | null;
+    history_management_limit?: number | null;
+    visibility?: VisibilityType | null;
+    active_custom_persona_id?: string | null;
+    model_name?: string | null;
+    gemini_thinking_budget?: number | null;
+    gemini_enable_code_execution?: boolean | null;
+    context_total_token_limit?: number | null;
+    context_recent_history_budget?: number | null;
+    context_rag_budget?: number | null;
 }

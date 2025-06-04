@@ -181,10 +181,10 @@ function createLorebookStore() {
 			state.error = null;
 		},
 
-		async exportLorebook(lorebookId: string): Promise<any | null> {
+		async exportLorebook(lorebookId: string, format: 'scribe_minimal' | 'silly_tavern_full' = 'silly_tavern_full'): Promise<any | null> {
 			state.isLoading = true;
 			state.error = null;
-			const result = await apiClient.exportLorebook(lorebookId);
+			const result = await apiClient.exportLorebook(lorebookId, format);
 			if (result.isOk()) {
 				state.isLoading = false;
 				return result.value;

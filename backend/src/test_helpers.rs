@@ -633,6 +633,7 @@ pub struct MockQdrantClientService {
     search_call_count: Arc<Mutex<usize>>,
     last_upsert_points: Arc<Mutex<Option<Vec<qdrant_client::qdrant::PointStruct>>>>,
     last_search_params: SearchParams,
+    calls_delete_points_by_filter: Arc<Mutex<Vec<Filter>>>, // New field to track delete_points_by_filter calls
 }
 
 impl Default for MockQdrantClientService {
@@ -651,7 +652,18 @@ impl MockQdrantClientService {
             search_call_count: Arc::new(Mutex::new(0)),
             last_upsert_points: Arc::new(Mutex::new(None)),
             last_search_params: Arc::new(Mutex::new(None)),
+            calls_delete_points_by_filter: Arc::new(Mutex::new(Vec::new())), // Initialize
         }
+    }
+
+    /// Gets all delete_points_by_filter calls made to the mock client
+    ///
+    /// # Panics
+    ///
+    /// Panics if the mutex is poisoned
+    #[must_use]
+    pub fn get_delete_points_by_filter_calls(&self) -> Vec<Filter> {
+        self.calls_delete_points_by_filter.lock().unwrap().clone()
     }
 
     /// Sets the response for the next upsert operation
@@ -848,14 +860,8 @@ impl QdrantClientServiceTrait for MockQdrantClientService {
     }
 
     async fn delete_points_by_filter(&self, filter: Filter) -> Result<(), AppError> {
-        tracing::info!(
-            target: "mock_qdrant_client",
-            "MockQdrantClientService::delete_points_by_filter called with filter: {:?}",
-            filter
-        );
-        // In a real scenario, this would interact with the Qdrant client.
-        // For the mock, we just log and return Ok.
-        // Tests could verify this call by checking logs or by adding tracking to the mock if needed.
+        // Record the call
+        self.calls_delete_points_by_filter.lock().unwrap().push(filter);
         Ok(())
     }
 
@@ -1011,6 +1017,7 @@ impl TestAppStateBuilder {
                 // Fully qualify
                 self.db_pool.clone(),
                 encryption_service.clone(),
+                self.qdrant_service.clone(),
             ))
         });
 
@@ -1321,7 +1328,7 @@ pub async fn spawn_app_with_options(
             "/user-settings",
             user_settings_routes::user_settings_routes(app_state_inner.clone()),
         ) // Add user settings routes
-        .nest("/", lorebook_routes::lorebook_routes()) // Add lorebook routes
+        .nest("/", lorebook_routes::lorebook_routes()) // Align with main.rs: Nest lorebook routes under /
         .route_layer(middleware::from_fn_with_state(
             app_state_inner.clone(),
             auth_log_wrapper,

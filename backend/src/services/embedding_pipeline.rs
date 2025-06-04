@@ -683,11 +683,11 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
         }
 
         // Search lorebooks if active_lorebook_ids are provided and not empty
-        if let Some(lorebook_ids) = active_lorebook_ids_for_search {
+        if let Some(ref lorebook_ids) = active_lorebook_ids_for_search {
             if !lorebook_ids.is_empty() {
                 debug!(%user_id, ?lorebook_ids, "Constructing lorebook filter for RAG");
                 let mut lorebook_id_conditions = Vec::new();
-                for lorebook_id_val in &lorebook_ids {
+                for lorebook_id_val in lorebook_ids {
                     // Iterate over a reference
                     lorebook_id_conditions.push(Condition {
                         condition_one_of: Some(ConditionOneOf::Field(FieldCondition {
@@ -782,6 +782,115 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
                         error!(error = %e, filter = ?lorebook_filter, ?lorebook_ids, "Failed to search lorebooks in Qdrant (RAG)");
                         // Decide whether to return error or continue. For now, log and continue.
                         // return Err(e);
+                    }
+                }
+            }
+        }
+
+        // Retrieve constant lorebook entries if lorebook_ids are provided
+        // These should always be included regardless of semantic similarity
+        if let Some(lorebook_ids) = &active_lorebook_ids_for_search {
+            if !lorebook_ids.is_empty() {
+                debug!(%user_id, ?lorebook_ids, "Retrieving constant lorebook entries for RAG");
+                let mut constant_lorebook_id_conditions = Vec::new();
+                for lorebook_id_val in lorebook_ids {
+                    constant_lorebook_id_conditions.push(Condition {
+                        condition_one_of: Some(ConditionOneOf::Field(FieldCondition {
+                            key: "lorebook_id".to_string(),
+                            r#match: Some(Match {
+                                match_value: Some(MatchValue::Keyword(lorebook_id_val.to_string())),
+                            }),
+                            ..Default::default()
+                        })),
+                    });
+                }
+
+                let constant_filter = Filter {
+                    must: vec![
+                        Condition {
+                            condition_one_of: Some(ConditionOneOf::Field(FieldCondition {
+                                key: "user_id".to_string(),
+                                r#match: Some(Match {
+                                    match_value: Some(MatchValue::Keyword(user_id.to_string())),
+                                }),
+                                ..Default::default()
+                            })),
+                        },
+                        Condition {
+                            condition_one_of: Some(ConditionOneOf::Field(FieldCondition {
+                                key: "source_type".to_string(),
+                                r#match: Some(Match {
+                                    match_value: Some(MatchValue::Keyword(
+                                        "lorebook_entry".to_string(),
+                                    )),
+                                }),
+                                ..Default::default()
+                            })),
+                        },
+                        Condition {
+                            condition_one_of: Some(ConditionOneOf::Field(FieldCondition {
+                                key: "is_enabled".to_string(),
+                                r#match: Some(Match {
+                                    match_value: Some(MatchValue::Boolean(true)),
+                                }),
+                                ..Default::default()
+                            })),
+                        },
+                        Condition {
+                            condition_one_of: Some(ConditionOneOf::Field(FieldCondition {
+                                key: "is_constant".to_string(),
+                                r#match: Some(Match {
+                                    match_value: Some(MatchValue::Boolean(true)),
+                                }),
+                                ..Default::default()
+                            })),
+                        },
+                    ],
+                    should: constant_lorebook_id_conditions,
+                    ..Default::default()
+                };
+                debug!(?constant_filter, "Constant lorebook filter for RAG");
+
+                // For constant entries, we use retrieve_points to get ALL matches
+                // rather than just the top-k by similarity
+                match qdrant_service.retrieve_points(Some(constant_filter.clone()), 1000).await {
+                    Ok(retrieve_results) => {
+                        debug!(
+                            num_constant_results = retrieve_results.len(),
+                            ?lorebook_ids,
+                            "Raw Qdrant retrieve results for constant lorebook entries (RAG)"
+                        );
+                        for point in retrieve_results {
+                            debug!(point_id = ?point.id, ?lorebook_ids, "Processing constant lorebook point (RAG)");
+                            match LorebookChunkMetadata::try_from(point.payload.clone()) {
+                                Ok(lorebook_meta) => {
+                                    debug!(
+                                        ?lorebook_meta,
+                                        ?lorebook_ids,
+                                        "Successfully parsed constant lorebook metadata (RAG)"
+                                    );
+                                    // Give constant entries a high score to ensure they appear at the top
+                                    combined_results.push(RetrievedChunk {
+                                        score: 1.0, // Maximum score for constant entries
+                                        text: lorebook_meta.chunk_text.clone(),
+                                        metadata: RetrievedMetadata::Lorebook(lorebook_meta),
+                                    });
+                                }
+                                Err(e) => {
+                                    warn!(
+                                        point_id = %point.id.as_ref().map(|id| format!("{id:?}")).unwrap_or_default(),
+                                        error = %e,
+                                        payload = ?point.payload,
+                                        ?lorebook_ids,
+                                        "Failed to parse constant lorebook entry payload during RAG search"
+                                    );
+                                }
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        error!(error = %e, filter = ?constant_filter, ?lorebook_ids, "Failed to retrieve constant lorebooks in Qdrant (RAG)");
+                        // Continue with other results even if constant entry retrieval fails
                     }
                 }
             }
@@ -1113,6 +1222,7 @@ mod tests {
         let lorebook_service = Arc::new(LorebookService::new(
             pool.clone(),
             encryption_service.clone(),
+            mock_qdrant.clone(),
         ));
         let auth_backend = Arc::new(crate::auth::user_store::Backend::new(pool.clone()));
 

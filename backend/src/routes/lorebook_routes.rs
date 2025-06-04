@@ -6,17 +6,18 @@ use crate::{
     errors::AppError,
     models::lorebook_dtos::{
         AssociateLorebookToChatPayload, CreateLorebookEntryPayload, CreateLorebookPayload,
-        UpdateLorebookEntryPayload, UpdateLorebookPayload,
+        UpdateLorebookEntryPayload, UpdateLorebookPayload, ExportFormat,
     },
     services::LorebookService,
 };
 use axum::{
     Json, Router,
-    extract::{Path, State},
+    extract::{Path, State, Query},
     http::StatusCode,
     response::IntoResponse,
     routing::{delete, get, post, put},
 };
+use serde::Deserialize;
 use axum_login::AuthSession;
 use axum_macros::debug_handler;
 use tracing::instrument; // Keep instrument
@@ -83,7 +84,7 @@ async fn create_lorebook_handler(
 ) -> Result<impl IntoResponse, AppError> {
     payload.validate()?;
     let lorebook_service =
-        LorebookService::new(state.pool.clone(), state.encryption_service.clone()); // Already passing Arc
+        LorebookService::new(state.pool.clone(), state.encryption_service.clone(), state.qdrant_service.clone()); // Added qdrant service
     let lorebook = lorebook_service
         .create_lorebook(&auth_session, payload)
         .await?;
@@ -97,7 +98,7 @@ async fn list_lorebooks_handler(
     auth_session: AuthSession<AuthBackend>, // Changed to AuthBackend
 ) -> Result<impl IntoResponse, AppError> {
     let lorebook_service =
-        LorebookService::new(state.pool.clone(), state.encryption_service.clone());
+        LorebookService::new(state.pool.clone(), state.encryption_service.clone(), state.qdrant_service.clone());
     let lorebooks = lorebook_service.list_lorebooks(&auth_session).await?;
     Ok((StatusCode::OK, Json(lorebooks)))
 }
@@ -110,7 +111,7 @@ async fn get_lorebook_handler(
     Path(lorebook_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
     let lorebook_service =
-        LorebookService::new(state.pool.clone(), state.encryption_service.clone());
+        LorebookService::new(state.pool.clone(), state.encryption_service.clone(), state.qdrant_service.clone());
     let lorebook = lorebook_service
         .get_lorebook(&auth_session, lorebook_id)
         .await?;
@@ -127,7 +128,7 @@ async fn update_lorebook_handler(
 ) -> Result<impl IntoResponse, AppError> {
     payload.validate()?;
     let lorebook_service =
-        LorebookService::new(state.pool.clone(), state.encryption_service.clone());
+        LorebookService::new(state.pool.clone(), state.encryption_service.clone(), state.qdrant_service.clone());
     let lorebook = lorebook_service
         .update_lorebook(&auth_session, lorebook_id, payload)
         .await?;
@@ -142,7 +143,7 @@ async fn delete_lorebook_handler(
     Path(lorebook_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
     let lorebook_service =
-        LorebookService::new(state.pool.clone(), state.encryption_service.clone());
+        LorebookService::new(state.pool.clone(), state.encryption_service.clone(), state.qdrant_service.clone());
     lorebook_service
         .delete_lorebook(&auth_session, lorebook_id)
         .await?;
@@ -159,9 +160,14 @@ async fn create_lorebook_entry_handler(
     Path(lorebook_id): Path<Uuid>,
     Json(payload): Json<CreateLorebookEntryPayload>,
 ) -> Result<impl IntoResponse, AppError> {
+    tracing::debug!(
+        "create_lorebook_entry_handler called for lorebook_id: {}, payload: {:?}",
+        lorebook_id,
+        payload
+    );
     payload.validate()?;
     let lorebook_service =
-        LorebookService::new(state.pool.clone(), state.encryption_service.clone());
+        LorebookService::new(state.pool.clone(), state.encryption_service.clone(), state.qdrant_service.clone());
     let entry = lorebook_service
         .create_lorebook_entry(
             &auth_session,
@@ -183,7 +189,7 @@ async fn list_lorebook_entries_handler(
     Path(lorebook_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
     let lorebook_service =
-        LorebookService::new(state.pool.clone(), state.encryption_service.clone());
+        LorebookService::new(state.pool.clone(), state.encryption_service.clone(), state.qdrant_service.clone());
     let entries = lorebook_service
         .list_lorebook_entries_with_content(&auth_session, lorebook_id, Some(&dek.0))
         .await?;
@@ -199,7 +205,7 @@ async fn get_lorebook_entry_handler(
     Path((lorebook_id, entry_id)): Path<(Uuid, Uuid)>,
 ) -> Result<impl IntoResponse, AppError> {
     let lorebook_service =
-        LorebookService::new(state.pool.clone(), state.encryption_service.clone());
+        LorebookService::new(state.pool.clone(), state.encryption_service.clone(), state.qdrant_service.clone());
     let entry = lorebook_service
         .get_lorebook_entry(&auth_session, lorebook_id, entry_id, Some(&dek.0))
         .await?;
@@ -217,7 +223,7 @@ async fn update_lorebook_entry_handler(
 ) -> Result<impl IntoResponse, AppError> {
     payload.validate()?;
     let lorebook_service =
-        LorebookService::new(state.pool.clone(), state.encryption_service.clone());
+        LorebookService::new(state.pool.clone(), state.encryption_service.clone(), state.qdrant_service.clone());
     let entry = lorebook_service
         .update_lorebook_entry(
             &auth_session,
@@ -239,7 +245,7 @@ async fn delete_lorebook_entry_handler(
     Path((lorebook_id, entry_id)): Path<(Uuid, Uuid)>,
 ) -> Result<impl IntoResponse, AppError> {
     let lorebook_service =
-        LorebookService::new(state.pool.clone(), state.encryption_service.clone());
+        LorebookService::new(state.pool.clone(), state.encryption_service.clone(), state.qdrant_service.clone());
     lorebook_service
         .delete_lorebook_entry(&auth_session, lorebook_id, entry_id)
         .await?;
@@ -258,7 +264,7 @@ async fn associate_lorebook_to_chat_handler(
 ) -> Result<impl IntoResponse, AppError> {
     // payload.validate()?; // Validation removed from DTO for this field
     let lorebook_service =
-        LorebookService::new(state.pool.clone(), state.encryption_service.clone());
+        LorebookService::new(state.pool.clone(), state.encryption_service.clone(), state.qdrant_service.clone());
     let association = lorebook_service
         .associate_lorebook_to_chat(
             &auth_session,
@@ -279,7 +285,7 @@ async fn list_chat_lorebook_associations_handler(
     Path(chat_session_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
     let lorebook_service =
-        LorebookService::new(state.pool.clone(), state.encryption_service.clone());
+        LorebookService::new(state.pool.clone(), state.encryption_service.clone(), state.qdrant_service.clone());
     let associations = lorebook_service
         .list_chat_lorebook_associations(&auth_session, chat_session_id)
         .await?;
@@ -294,7 +300,7 @@ async fn disassociate_lorebook_from_chat_handler(
     Path((chat_session_id, lorebook_id)): Path<(Uuid, Uuid)>,
 ) -> Result<impl IntoResponse, AppError> {
     let lorebook_service =
-        LorebookService::new(state.pool.clone(), state.encryption_service.clone());
+        LorebookService::new(state.pool.clone(), state.encryption_service.clone(), state.qdrant_service.clone());
     lorebook_service
         .disassociate_lorebook_from_chat(&auth_session, chat_session_id, lorebook_id)
         .await?;
@@ -310,11 +316,21 @@ async fn list_associated_chat_sessions_for_lorebook_handler(
     Path(lorebook_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
     let lorebook_service =
-        LorebookService::new(state.pool.clone(), state.encryption_service.clone());
+        LorebookService::new(state.pool.clone(), state.encryption_service.clone(), state.qdrant_service.clone());
     let chat_sessions = lorebook_service
         .list_associated_chat_sessions_for_lorebook(&auth_session, lorebook_id, Some(&dek.0))
         .await?;
     Ok((StatusCode::OK, Json(chat_sessions)))
+}
+
+#[derive(Debug, Deserialize)]
+struct ExportQuery {
+    #[serde(default = "default_export_format")]
+    format: ExportFormat,
+}
+
+fn default_export_format() -> ExportFormat {
+    ExportFormat::SillyTavernFull
 }
 
 #[debug_handler]
@@ -324,29 +340,117 @@ async fn export_lorebook_handler(
     auth_session: AuthSession<AuthBackend>,
     dek: SessionDek,
     Path(lorebook_id): Path<Uuid>,
+    Query(params): Query<ExportQuery>,
 ) -> Result<impl IntoResponse, AppError> {
     let lorebook_service =
-        LorebookService::new(state.pool.clone(), state.encryption_service.clone());
-    let exported = lorebook_service
-        .export_lorebook(&auth_session, Some(&dek.0), lorebook_id)
-        .await?;
-    Ok((StatusCode::OK, Json(exported)))
+        LorebookService::new(state.pool.clone(), state.encryption_service.clone(), state.qdrant_service.clone());
+    
+    let response: Result<axum::response::Response, AppError> = match params.format {
+        ExportFormat::ScribeMinimal => {
+            let exported = lorebook_service
+                .export_lorebook_minimal(&auth_session, Some(&dek.0), lorebook_id)
+                .await?;
+            Ok((StatusCode::OK, Json(exported)).into_response())
+        }
+        ExportFormat::SillyTavernFull => {
+            let exported = lorebook_service
+                .export_lorebook(&auth_session, Some(&dek.0), lorebook_id)
+                .await?;
+            Ok((StatusCode::OK, Json(exported)).into_response())
+        }
+    };
+    response
+}
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum ImportFormat {
+    ScribeMinimal,
+    SillyTavernFull,
+}
+
+#[derive(Debug, Deserialize)]
+struct ImportQuery {
+    #[serde(default = "default_import_format")]
+    format: ImportFormat,
+}
+
+fn default_import_format() -> ImportFormat {
+    ImportFormat::SillyTavernFull
 }
 
 #[debug_handler]
-#[instrument(skip(state, auth_session, dek, payload))]
+#[instrument(skip(state, auth_session, dek, payload, params))]
 async fn import_lorebook_handler(
     State(state): State<AppState>,
     auth_session: AuthSession<AuthBackend>,
     dek: SessionDek,
-    Json(payload): Json<crate::models::lorebook_dtos::LorebookUploadPayload>,
+    Query(params): Query<ImportQuery>,
+    Json(payload): Json<serde_json::Value>, // Accept generic JSON for dynamic deserialization
 ) -> Result<impl IntoResponse, AppError> {
-    payload.validate()?;
     let lorebook_service =
-        LorebookService::new(state.pool.clone(), state.encryption_service.clone());
-    let lorebook = lorebook_service
-        .import_lorebook(&auth_session, Some(&dek.0), payload)
-        .await?;
-    Ok((StatusCode::CREATED, Json(lorebook)))
+        LorebookService::new(state.pool.clone(), state.encryption_service.clone(), state.qdrant_service.clone());
+
+    let response: Result<axum::response::Response, AppError> = match params.format {
+        ImportFormat::ScribeMinimal => {
+            let scribe_payload: crate::models::lorebook_dtos::ScribeMinimalLorebook =
+                serde_json::from_value(payload)
+                    .map_err(|e| AppError::BadRequest(format!("Invalid Scribe Minimal payload: {}", e)))?;
+            
+            // No validation needed for ScribeMinimalLorebook as it's a simple DTO
+            
+            let imported_lorebook = lorebook_service
+                .import_lorebook_from_scribe_minimal(&auth_session, Some(&dek.0), scribe_payload, state.clone().into())
+                .await?;
+            Ok((StatusCode::CREATED, Json(imported_lorebook)).into_response())
+        }
+        ImportFormat::SillyTavernFull => {
+            // Try to detect the format dynamically
+            // If "entries" is an array, it's actually a Scribe format
+            // If "entries" is an object with string keys, it's SillyTavern format
+            
+            if let Some(entries) = payload.get("entries") {
+                if entries.is_array() {
+                    // This is actually a Scribe format, not SillyTavern
+                    let scribe_payload: crate::models::lorebook_dtos::ScribeMinimalLorebook =
+                        serde_json::from_value(payload)
+                            .map_err(|e| AppError::BadRequest(format!("Invalid lorebook format: {}", e)))?;
+                    
+                    let imported_lorebook = lorebook_service
+                        .import_lorebook_from_scribe_minimal(&auth_session, Some(&dek.0), scribe_payload, state.clone().into())
+                        .await?;
+                    Ok((StatusCode::CREATED, Json(imported_lorebook)).into_response())
+                } else if entries.is_object() {
+                    // This is SillyTavern format
+                    let sillytavern_import_payload: crate::models::lorebook_dtos::SillyTavernImportPayload =
+                        serde_json::from_value(payload)
+                            .map_err(|e| AppError::BadRequest(format!("Invalid SillyTavern Full payload: {}", e)))?;
+
+                    // Construct LorebookUploadPayload from SillyTavernImportPayload
+                    let lorebook_name = sillytavern_import_payload.name.unwrap_or_else(|| "Imported Lorebook".to_string());
+                    let lorebook_description = sillytavern_import_payload.description;
+                    let lorebook_is_public = sillytavern_import_payload.is_public.unwrap_or(false); // Default to false
+
+                    let lorebook_upload_payload = crate::models::lorebook_dtos::LorebookUploadPayload {
+                        name: lorebook_name,
+                        description: lorebook_description,
+                        is_public: lorebook_is_public,
+                        entries: sillytavern_import_payload.entries,
+                    };
+                    
+                    lorebook_upload_payload.validate()?; // Validate the constructed payload
+                    
+                    let imported_lorebook = lorebook_service
+                        .import_lorebook(&auth_session, Some(&dek.0), lorebook_upload_payload)
+                        .await?;
+                    Ok((StatusCode::CREATED, Json(imported_lorebook)).into_response())
+                } else {
+                    Err(AppError::BadRequest("Invalid entries field: must be either an array or object".to_string()))
+                }
+            } else {
+                Err(AppError::BadRequest("Missing entries field in lorebook data".to_string()))
+            }
+        }
+    };
+    response
 }
 

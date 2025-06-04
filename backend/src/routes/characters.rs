@@ -260,7 +260,8 @@ pub async fn upload_character_handler(
         // Import the lorebook
         let lorebook_service = crate::services::LorebookService::new(
             state.pool.clone(), 
-            state.encryption_service.clone()
+            state.encryption_service.clone(),
+            state.qdrant_service.clone()
         );
 
         // Convert SillyTavern lorebook format to our upload payload

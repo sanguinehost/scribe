@@ -451,10 +451,18 @@ fn build_final_prompt_strings(
                     writeln!(rag_context, "- Chat (Speaker: {}): {}", chat_meta.speaker, rag_item.text.trim()).unwrap();
                 },
                 crate::services::embedding_pipeline::RetrievedMetadata::Lorebook(lorebook_meta) => {
-                    // Try to use title and keywords if available
+                    // Format with both keywords and content for better context
                     if let Some(title) = &lorebook_meta.entry_title {
-                        let keywords_str = lorebook_meta.keywords.as_ref().map_or_else(|| "No keywords".to_string(), |kw| kw.join(", "));
-                        writeln!(rag_context, "- Lorebook ({title} - {keywords_str}): {}", rag_item.text.trim()).unwrap();
+                        if let Some(keywords) = &lorebook_meta.keywords {
+                            if !keywords.is_empty() {
+                                let keywords_str = keywords.join(", ");
+                                writeln!(rag_context, "- Lorebook Entry \"{title}\" (Keywords: {keywords_str}): {}", rag_item.text.trim()).unwrap();
+                            } else {
+                                writeln!(rag_context, "- Lorebook Entry \"{title}\": {}", rag_item.text.trim()).unwrap();
+                            }
+                        } else {
+                            writeln!(rag_context, "- Lorebook Entry \"{title}\": {}", rag_item.text.trim()).unwrap();
+                        }
                     } else {
                         // Fall back to the original format for backwards compatibility
                         writeln!(rag_context, "- Lorebook ({}): {}", lorebook_meta.lorebook_id, rag_item.text.trim()).unwrap();

@@ -14,7 +14,7 @@ pub use qdrant_client::qdrant::{
 };
 use std::collections::HashMap;
 use std::sync::Arc;
-use tracing::{error, info, instrument, warn};
+use tracing::{debug, error, info, instrument, warn};
 use uuid::Uuid;
 
 // Constants
@@ -605,9 +605,9 @@ impl QdrantClientServiceTrait for QdrantClientService {
 
     #[instrument(skip(self, filter), name = "qdrant_delete_points_by_filter")]
     async fn delete_points_by_filter(&self, filter: Filter) -> Result<(), AppError> {
-        info!(
+        debug!(
             collection = %self.collection_name,
-            ?filter,
+            filter = "[REDACTED_FILTER]",
             "Deleting points from Qdrant by filter"
         );
 
@@ -643,10 +643,9 @@ impl QdrantClientServiceTrait for QdrantClientService {
         &self,
         point_id: PointId,
     ) -> Result<Option<qdrant_client::qdrant::RetrievedPoint>, AppError> {
-        let point_id_for_log = format!("{:?}", point_id.point_id_options);
         info!(
             collection = %self.collection_name,
-            point_id = %point_id_for_log,
+            point_id = "[REDACTED_UUID]",
             "Trait: Getting point by ID from Qdrant"
         );
 
@@ -665,8 +664,8 @@ impl QdrantClientServiceTrait for QdrantClientService {
             .get_points(get_points_request) // Use get_points
             .await
             .map_err(|e| {
-                error!(error = %e, collection = %self.collection_name, point_id = %point_id_for_log, "Failed to get point by ID from Qdrant using get_points");
-                AppError::VectorDbError(format!("Failed to get point by ID {point_id_for_log:?} using get_points: {e}"))
+                error!(error = %e, collection = %self.collection_name, point_id = "[REDACTED_UUID]", "Failed to get point by ID from Qdrant using get_points");
+                AppError::VectorDbError(format!("Failed to get point by ID [REDACTED_UUID] using get_points: {e}"))
             })?;
 
         // get_points returns a GetResponse which has a Vec<RetrievedPoint>

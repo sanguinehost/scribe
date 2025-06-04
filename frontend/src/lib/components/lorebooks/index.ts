@@ -5,3 +5,5 @@ export { default as LorebookEntryCard } from './LorebookEntryCard.svelte';
 export { default as LorebookEntryList } from './LorebookEntryList.svelte';
 export { default as LorebookEntryForm } from './LorebookEntryForm.svelte';
 export { default as LorebookDetailView } from './LorebookDetailView.svelte';
+export { default as ExportDialog } from './ExportDialog.svelte';
+export { default as ImportLorebookDialog } from './ImportLorebookDialog.svelte';
