@@ -1,6 +1,8 @@
 use bigdecimal::BigDecimal;
 // use chrono::Utc; // Likely unused after removing updated_at from changeset directly
-use diesel::{Connection, QueryDsl, ExpressionMethods, RunQueryDsl, OptionalExtension, AsChangeset};
+use diesel::{
+    AsChangeset, Connection, ExpressionMethods, OptionalExtension, QueryDsl, RunQueryDsl,
+};
 use secrecy::{ExposeSecret, SecretBox};
 use tracing::{error, info, instrument, warn};
 use uuid::Uuid;
@@ -147,23 +149,25 @@ impl ChatSessionUpdateBuilder {
             },
         }
     }
-    
+
     const fn has_changes(&self) -> bool {
-        !matches!(self.system_prompt_ciphertext.value, DatabaseUpdate::NoChange) ||
-        !matches!(self.system_prompt_nonce.value, DatabaseUpdate::NoChange) ||
-        !matches!(self.temperature, DatabaseUpdate::NoChange) ||
-        !matches!(self.max_output_tokens, DatabaseUpdate::NoChange) ||
-        !matches!(self.frequency_penalty, DatabaseUpdate::NoChange) ||
-        !matches!(self.presence_penalty, DatabaseUpdate::NoChange) ||
-        !matches!(self.top_k, DatabaseUpdate::NoChange) ||
-        !matches!(self.top_p, DatabaseUpdate::NoChange) ||
-        !matches!(self.seed, DatabaseUpdate::NoChange) ||
-        !matches!(self.stop_sequences, DatabaseUpdate::NoChange) ||
-        !matches!(self.history_management_strategy, DatabaseUpdate::NoChange) ||
-        !matches!(self.history_management_limit, DatabaseUpdate::NoChange) ||
-        !matches!(self.model_name, DatabaseUpdate::NoChange) ||
-        !matches!(self.gemini_thinking_budget, DatabaseUpdate::NoChange) ||
-        !matches!(self.gemini_enable_code_execution, DatabaseUpdate::NoChange)
+        !matches!(
+            self.system_prompt_ciphertext.value,
+            DatabaseUpdate::NoChange
+        ) || !matches!(self.system_prompt_nonce.value, DatabaseUpdate::NoChange)
+            || !matches!(self.temperature, DatabaseUpdate::NoChange)
+            || !matches!(self.max_output_tokens, DatabaseUpdate::NoChange)
+            || !matches!(self.frequency_penalty, DatabaseUpdate::NoChange)
+            || !matches!(self.presence_penalty, DatabaseUpdate::NoChange)
+            || !matches!(self.top_k, DatabaseUpdate::NoChange)
+            || !matches!(self.top_p, DatabaseUpdate::NoChange)
+            || !matches!(self.seed, DatabaseUpdate::NoChange)
+            || !matches!(self.stop_sequences, DatabaseUpdate::NoChange)
+            || !matches!(self.history_management_strategy, DatabaseUpdate::NoChange)
+            || !matches!(self.history_management_limit, DatabaseUpdate::NoChange)
+            || !matches!(self.model_name, DatabaseUpdate::NoChange)
+            || !matches!(self.gemini_thinking_budget, DatabaseUpdate::NoChange)
+            || !matches!(self.gemini_enable_code_execution, DatabaseUpdate::NoChange)
     }
 }
 
@@ -228,24 +232,27 @@ fn decrypt_system_prompt(
     user_id: Uuid,
 ) -> Result<Option<String>, AppError> {
     match (ciphertext, nonce, user_dek) {
-        (Some(ciphertext), Some(nonce), Some(dek)) if !ciphertext.is_empty() && !nonce.is_empty() => {
-            let plaintext_secret = decrypt_gcm(ciphertext, nonce, dek)
-                .map_err(|e| {
-                    error!(%session_id, %user_id, error = ?e, "Failed to decrypt system_prompt");
-                    AppError::DecryptionError("Failed to decrypt system_prompt".to_string())
-                })?;
-            
+        (Some(ciphertext), Some(nonce), Some(dek))
+            if !ciphertext.is_empty() && !nonce.is_empty() =>
+        {
+            let plaintext_secret = decrypt_gcm(ciphertext, nonce, dek).map_err(|e| {
+                error!(%session_id, %user_id, error = ?e, "Failed to decrypt system_prompt");
+                AppError::DecryptionError("Failed to decrypt system_prompt".to_string())
+            })?;
+
             String::from_utf8(plaintext_secret.expose_secret().clone())
                 .map(Some)
                 .map_err(|e| {
                     error!(%session_id, %user_id, error = ?e, "Failed to convert decrypted system_prompt to UTF-8");
                     AppError::DecryptionError("Failed to convert system_prompt to UTF-8".to_string())
                 })
-        },
+        }
         (Some(_), Some(_), None) => {
             error!(%session_id, %user_id, "System prompt is encrypted but no DEK provided");
-            Err(AppError::DecryptionError("No DEK available for decryption".to_string()))
-        },
+            Err(AppError::DecryptionError(
+                "No DEK available for decryption".to_string(),
+            ))
+        }
         _ => Ok(None), // No system prompt or empty fields
     }
 }
@@ -260,10 +267,9 @@ pub async fn get_session_settings(
 ) -> Result<ChatSettingsResponse, AppError> {
     let conn = pool.get().await?;
     let user_dek_cloned = user_dek.map(|dek| SecretBox::new(Box::new(dek.expose_secret().clone())));
-    
+
     conn.interact(move |conn| {
         verify_session_ownership(conn, session_id, user_id)?;
-        
         info!(%session_id, %user_id, "Fetching settings for owned session");
         let settings_tuple = chat_sessions::table
             .filter(chat_sessions::id.eq(session_id))
@@ -346,11 +352,10 @@ fn handle_system_prompt_update(
         update_builder.system_prompt_ciphertext = DatabaseUpdate::SetNull.into();
         update_builder.system_prompt_nonce = DatabaseUpdate::SetNull.into();
     } else if let Some(dek) = user_dek {
-        let (ciphertext, nonce) = encrypt_gcm(trimmed_prompt.as_bytes(), dek)
-            .map_err(|e| {
-                error!("Failed to encrypt system prompt: {}", e);
-                AppError::EncryptionError("Failed to encrypt system prompt".to_string())
-            })?;
+        let (ciphertext, nonce) = encrypt_gcm(trimmed_prompt.as_bytes(), dek).map_err(|e| {
+            error!("Failed to encrypt system prompt: {}", e);
+            AppError::EncryptionError("Failed to encrypt system prompt".to_string())
+        })?;
         update_builder.system_prompt_ciphertext = DatabaseUpdate::SetValue(ciphertext).into();
         update_builder.system_prompt_nonce = DatabaseUpdate::SetValue(nonce).into();
     } else {
@@ -395,7 +400,8 @@ fn apply_payload_to_builder(
         update_builder.seed = DatabaseUpdate::SetValue(s);
     }
     if let Some(ss_option_vec) = payload.stop_sequences {
-        update_builder.stop_sequences = DatabaseUpdate::SetValue(ss_option_vec.into_iter().flatten().collect());
+        update_builder.stop_sequences =
+            DatabaseUpdate::SetValue(ss_option_vec.into_iter().flatten().collect());
     }
     if let Some(hist_strat) = payload.history_management_strategy {
         update_builder.history_management_strategy = DatabaseUpdate::SetValue(hist_strat);
@@ -456,10 +462,10 @@ pub async fn update_session_settings(
     conn.interact(move |conn_interaction| {
         conn_interaction.transaction::<_, AppError, _>(|transaction_conn| {
             verify_session_ownership(transaction_conn, session_id, user_id)?;
-            
+
             let update_builder = apply_payload_to_builder(payload, user_dek_owned_opt.as_ref())?;
             execute_update(update_builder, session_id, transaction_conn)?;
-            
+
             Ok(())
         })
     })

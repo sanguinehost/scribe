@@ -7,11 +7,25 @@
 	import PreviewAttachment from '../preview-attachment.svelte';
 	import { Markdown } from '../markdown';
 	import MessageReasoning from '../message-reasoning.svelte';
+	import RawPromptDebug from './raw-prompt-debug.svelte';
 	import { fly } from 'svelte/transition';
 	import type { ScribeChatMessage } from '$lib/types';
 
 	let { message, readonly, loading }: { message: ScribeChatMessage; readonly: boolean; loading: boolean } =
 		$props();
+
+	// Debug logging to see what's in the message
+	$effect(() => {
+		if (message.message_type === 'Assistant') {
+			console.log('Assistant message:', {
+				id: message.id,
+				message_type: message.message_type,
+				has_raw_prompt: !!message.raw_prompt,
+				raw_prompt_length: message.raw_prompt?.length,
+				loading: message.loading
+			});
+		}
+	});
 
 	// NOTE: Edit mode was removed as it depended on the Vercel SDK's message.parts structure.
 	// let mode = $state<'view' | 'edit'>('view');
@@ -60,6 +74,20 @@
 					<span class="ml-1 inline-block h-4 w-0.5 animate-pulse bg-foreground"></span>
 				{/if}
 			</div>
+
+			<!-- Raw Prompt Debug for Assistant messages -->
+			{#if message.message_type === 'Assistant' && !message.loading}
+				{#if message.raw_prompt}
+					<RawPromptDebug rawPrompt={message.raw_prompt} />
+				{:else}
+					<!-- Debug: Show when raw_prompt is missing -->
+					<div class="w-full">
+						<div class="text-xs text-muted-foreground p-2 border rounded bg-yellow-50 dark:bg-yellow-900/20">
+							Debug: No raw_prompt data available for this message
+						</div>
+					</div>
+				{/if}
+			{/if}
 
 			<!-- TODO: Re-implement message actions if needed -->
 			<!-- {#if message.message_type === 'Assistant' && !readonly}

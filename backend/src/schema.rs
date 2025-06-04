@@ -186,6 +186,8 @@ diesel::table! {
         attachments -> Nullable<Jsonb>,
         prompt_tokens -> Nullable<Int4>,
         completion_tokens -> Nullable<Int4>,
+        raw_prompt_ciphertext -> Nullable<Bytea>,
+        raw_prompt_nonce -> Nullable<Bytea>,
     }
 }
 

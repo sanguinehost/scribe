@@ -5,14 +5,14 @@ use axum::{
     body::Body,
     http::{Method, Request, StatusCode, header},
 };
- // For deserializing the response
+// For deserializing the response
 use tower::ServiceExt;
 use uuid::Uuid;
 
 // Crate imports
 use anyhow::Context as _; // For .context() on Option/Result
 use diesel::prelude::*;
- // For mime::APPLICATION_JSON
+// For mime::APPLICATION_JSON
 use scribe_backend::{
     models::{
         character_card::NewCharacter,
@@ -132,6 +132,8 @@ async fn get_chat_messages_success_integration() -> anyhow::Result<()> {
         updated_at: chrono::Utc::now(),
         prompt_tokens: None,
         completion_tokens: None,
+        raw_prompt_ciphertext: None,
+        raw_prompt_nonce: None,
     };
 
     test_app

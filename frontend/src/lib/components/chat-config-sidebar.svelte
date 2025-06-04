@@ -8,12 +8,14 @@
 	import { Separator } from './ui/separator';
 	import { Skeleton } from './ui/skeleton';
 	import { toast } from 'svelte-sonner';
-	import type { ScribeChatSession } from '$lib/types';
+	import type { ScribeChatSession, ChatSessionLorebookAssociation } from '$lib/types';
 	import { apiClient, type UserPersona, type UpdateChatSessionSettingsRequest } from '$lib/api';
 	import { chatModels, DEFAULT_CHAT_MODEL, DEFAULT_CONTEXT_TOTAL_TOKEN_LIMIT, DEFAULT_CONTEXT_RECENT_HISTORY_BUDGET, DEFAULT_CONTEXT_RAG_BUDGET } from '$lib/ai/models';
 	import ChevronLeft from './icons/chevron-down.svelte';
 	import ChevronRight from './icons/chevron-up.svelte';
 	import ContextConfigurator from '$lib/components/shared/ContextConfigurator.svelte';
+	import LorebookSelectionDialog from '$lib/components/shared/LorebookSelectionDialog.svelte';
+	import { Badge } from './ui/badge';
 	// import { debounce } from 'lodash-es'; // Removed as debounced auto-save is not used
 
 	let {
@@ -47,10 +49,17 @@
 		context_rag_budget: DEFAULT_CONTEXT_RAG_BUDGET
 	});
 
+	// Lorebook association state
+	let chatLorebookAssociations = $state<ChatSessionLorebookAssociation[]>([]);
+	let isLorebookDialogOpen = $state(false);
+	let isLoadingLorebooks = $state(false);
+	let lorebookNames = $state<Record<string, string>>({});
+
 	// Load current chat settings when chat changes
 	$effect(() => {
 		if (chat) {
 			loadChatSettings();
+			loadLorebookAssociations();
 		}
 	});
 
@@ -147,6 +156,80 @@
 		// saveChatSettings(); // Or debouncedSaveChatSettings();
 	}
 
+	async function loadLorebookAssociations() {
+		if (!chat?.id) return;
+
+		isLoadingLorebooks = true;
+		try {
+			const result = await apiClient.getChatLorebookAssociations(chat.id);
+			if (result.isOk()) {
+				chatLorebookAssociations = result.value;
+				
+				// Fetch lorebook names for display
+				const namesPromises = chatLorebookAssociations.map(async (assoc) => {
+					try {
+						const lorebookResult = await apiClient.getLorebook(assoc.lorebook_id);
+						if (lorebookResult.isOk()) {
+							return { id: assoc.lorebook_id, name: lorebookResult.value.name };
+						}
+					} catch (error) {
+						console.error(`Failed to load lorebook ${assoc.lorebook_id}:`, error);
+					}
+					return { id: assoc.lorebook_id, name: `Lorebook ${assoc.lorebook_id.substring(0, 8)}...` };
+				});
+
+				const names = await Promise.all(namesPromises);
+				const nameMap: Record<string, string> = {};
+				names.forEach(item => {
+					nameMap[item.id] = item.name;
+				});
+				lorebookNames = nameMap;
+			} else {
+				console.error('Failed to load lorebook associations:', result.error);
+				// Don't show toast error for this as it's not critical
+				chatLorebookAssociations = [];
+			}
+		} catch (error) {
+			console.error('Error loading lorebook associations:', error);
+			chatLorebookAssociations = [];
+		} finally {
+			isLoadingLorebooks = false;
+		}
+	}
+
+	function openLorebookDialog() {
+		isLorebookDialogOpen = true;
+	}
+
+	function handleLorebookAssociationsUpdated(event: CustomEvent<{ associations: ChatSessionLorebookAssociation[] }>) {
+		chatLorebookAssociations = event.detail.associations;
+		// Reload associations to fetch updated lorebook names
+		loadLorebookAssociations();
+	}
+
+	async function removeLorebookAssociation(lorebookId: string) {
+		if (!chat?.id) return;
+
+		try {
+			const result = await apiClient.disassociateLorebookFromChat(chat.id, lorebookId);
+			if (result.isOk()) {
+				// Remove from local state
+				chatLorebookAssociations = chatLorebookAssociations.filter(
+					assoc => assoc.lorebook_id !== lorebookId
+				);
+				// Clean up the name mapping
+				const { [lorebookId]: _, ...remainingNames } = lorebookNames;
+				lorebookNames = remainingNames;
+				toast.success('Lorebook removed from chat');
+			} else {
+				toast.error(`Failed to remove lorebook: ${result.error.message}`);
+			}
+		} catch (error) {
+			console.error('Error removing lorebook association:', error);
+			toast.error('An error occurred while removing the lorebook');
+		}
+	}
+
 	function toggleSidebar() {
 		isOpen = !isOpen;
 	}
@@ -232,6 +315,59 @@
 									{/each}
 								</select>
 							</div>
+						</CardContent>
+					</Card>
+
+					<!-- Lorebook Associations -->
+					<Card>
+						<CardHeader>
+							<CardTitle class="text-base">Lorebooks</CardTitle>
+						</CardHeader>
+						<CardContent class="space-y-3">
+							{#if isLoadingLorebooks}
+								<div class="space-y-2">
+									<Skeleton class="h-4 w-full" />
+									<Skeleton class="h-4 w-3/4" />
+								</div>
+							{:else if chatLorebookAssociations.length === 0}
+								<div class="text-sm text-muted-foreground">
+									No lorebooks associated with this chat.
+								</div>
+							{:else}
+								<div class="space-y-2">
+									{#each chatLorebookAssociations as association (association.lorebook_id)}
+										<div class="flex items-center justify-between p-2 rounded-md border">
+											<div class="flex-1 min-w-0">
+												<div class="text-sm font-medium truncate">
+													{lorebookNames[association.lorebook_id] || 'Loading...'}
+												</div>
+												<div class="text-xs text-muted-foreground">
+													Associated: {new Date(association.created_at).toLocaleDateString()}
+												</div>
+											</div>
+											<Button
+												variant="ghost"
+												size="sm"
+												onclick={() => removeLorebookAssociation(association.lorebook_id)}
+												class="ml-2 h-8 w-8 p-0"
+											>
+												<span class="sr-only">Remove lorebook</span>
+												×
+											</Button>
+										</div>
+									{/each}
+								</div>
+							{/if}
+							
+							<Button
+								variant="outline"
+								size="sm"
+								onclick={openLorebookDialog}
+								class="w-full"
+								disabled={!chat?.id}
+							>
+								Manage Lorebooks
+							</Button>
 						</CardContent>
 					</Card>
 
@@ -443,3 +579,12 @@
 		aria-label="Close sidebar"
 	></div>
 {/if}
+
+<!-- Lorebook Selection Dialog -->
+<LorebookSelectionDialog
+	bind:open={isLorebookDialogOpen}
+	chatId={chat?.id}
+	currentAssociations={chatLorebookAssociations}
+	on:updated={handleLorebookAssociationsUpdated}
+	on:close={() => isLorebookDialogOpen = false}
+/>

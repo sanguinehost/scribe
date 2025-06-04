@@ -730,5 +730,7 @@ pub fn mock_chat_message(
         created_at: Utc::now(),
         prompt_tokens: None,
         completion_tokens: None,
+        raw_prompt_ciphertext: None,
+        raw_prompt_nonce: None,
     }
 }

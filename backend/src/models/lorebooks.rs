@@ -3,7 +3,10 @@ use crate::models::chats::Chat;
 use crate::models::users::User;
 use crate::schema::{character_lorebooks, chat_session_lorebooks, lorebook_entries, lorebooks};
 use chrono::{DateTime, Utc};
-use diesel::{Queryable, Insertable, Identifiable, AsChangeset, Selectable, Associations, PgConnection, QueryResult, QueryDsl, ExpressionMethods, RunQueryDsl, JoinOnDsl};
+use diesel::{
+    AsChangeset, Associations, ExpressionMethods, Identifiable, Insertable, JoinOnDsl,
+    PgConnection, QueryDsl, QueryResult, Queryable, RunQueryDsl, Selectable,
+};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -170,7 +173,9 @@ impl ChatSessionLorebook {
         conn: &mut PgConnection,
         session_id_param: Uuid,
     ) -> QueryResult<Option<Vec<Uuid>>> {
-        use crate::schema::chat_session_lorebooks::dsl::{chat_session_id, chat_session_lorebooks, lorebook_id};
+        use crate::schema::chat_session_lorebooks::dsl::{
+            chat_session_id, chat_session_lorebooks, lorebook_id,
+        };
 
         let ids = chat_session_lorebooks
             .filter(chat_session_id.eq(session_id_param))
@@ -212,21 +217,13 @@ impl ChatSessionLorebook {
         user_id_param: Uuid,
     ) -> QueryResult<Option<Vec<Uuid>>> {
         use crate::schema::{
-            chat_session_lorebooks::dsl::{
-                chat_session_id, 
-                chat_session_lorebooks, 
-                lorebook_id as session_lorebook_id
-            },
             character_lorebooks::dsl::{
-                character_id, 
-                character_lorebooks, 
-                lorebook_id as character_lorebook_id
+                character_id, character_lorebooks, lorebook_id as character_lorebook_id,
             },
-            lorebooks::dsl::{
-                lorebooks,
-                id as lorebook_table_id,
-                user_id as lorebook_user_id
+            chat_session_lorebooks::dsl::{
+                chat_session_id, chat_session_lorebooks, lorebook_id as session_lorebook_id,
             },
+            lorebooks::dsl::{id as lorebook_table_id, lorebooks, user_id as lorebook_user_id},
         };
 
         // Get session-linked lorebook IDs that belong to the user
@@ -257,7 +254,11 @@ impl ChatSessionLorebook {
         // This will require adding an `is_always_active` or `is_global` field to the lorebooks table
         // For now, we only support character-linked and session-linked lorebooks that belong to the user
 
-        Ok(if combined_ids.is_empty() { None } else { Some(combined_ids) })
+        Ok(if combined_ids.is_empty() {
+            None
+        } else {
+            Some(combined_ids)
+        })
     }
 }
 

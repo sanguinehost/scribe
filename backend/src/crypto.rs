@@ -1,14 +1,14 @@
-use argon2::{Algorithm, Argon2, Params, Version};
-use rand::TryRngCore;
-use rand::rngs::OsRng;
 use anyhow::Result;
+use argon2::{Algorithm, Argon2, Params, Version};
 use base64::Engine as _;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+use rand::TryRngCore;
+use rand::rngs::OsRng;
 use ring::aead::{self, AES_256_GCM, Aad, LessSafeKey, Nonce, UnboundKey};
 use ring::error::Unspecified as RingUnspecifiedError;
 use secrecy::{ExposeSecret, SecretBox, SecretString};
-use thiserror::Error;
 use std::string::FromUtf8Error;
+use thiserror::Error;
 use tracing::error;
 
 const SALT_LEN: usize = 16; // 16 bytes for salt
@@ -164,8 +164,8 @@ pub fn encrypt_gcm(
 /// `CryptoError::InvalidKeyLength` if the key material is not 32 bytes,
 /// or `CryptoError::RingAeadError` if the AES-GCM decryption operation fails.
 pub fn decrypt_gcm(
-    ciphertext: &[u8],                 // Ciphertext + tag
-    nonce_bytes: &[u8],                // Separate nonce
+    ciphertext: &[u8],  // Ciphertext + tag
+    nonce_bytes: &[u8], // Separate nonce
     key_material: &SecretBox<Vec<u8>>,
 ) -> Result<SecretBox<Vec<u8>>, CryptoError> {
     if nonce_bytes.len() != NONCE_LEN {
@@ -259,7 +259,9 @@ mod tests {
                 "Expected CryptoError::Base64DecodeError for invalid salt, got Ok({:?})",
                 secret_val.expose_secret() // Expose for test display if absolutely needed, or just indicate Ok type
             ),
-            Err(e) => panic!("Expected CryptoError::Base64DecodeError for invalid salt, got Err({e:?})"),
+            Err(e) => {
+                panic!("Expected CryptoError::Base64DecodeError for invalid salt, got Err({e:?})")
+            }
         }
     }
 

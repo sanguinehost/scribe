@@ -93,11 +93,10 @@ async fn login_and_extract_session_id(
     if session_id.is_empty() {
         return Err(anyhow::anyhow!("No session cookie found after login"));
     }
-    
+
     info!("Session ID from cookie: {}", session_id);
     Ok(session_id)
 }
-
 
 #[tokio::test(flavor = "multi_thread")]
 
@@ -108,7 +107,7 @@ async fn test_dek_not_stored_in_session() -> AnyhowResult<()> {
 
     // Create a test user
     let user = create_test_user_for_dek_test(&test_app, &mut guard).await?;
-    
+
     // Extract username and password (note: password is hardcoded in helper)
     let username = user.username.clone();
     let password = "password123";

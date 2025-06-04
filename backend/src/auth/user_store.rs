@@ -186,7 +186,9 @@ impl Backend {
         user_id: uuid::Uuid,
         crypto_fields: UserCryptoFields,
     ) -> Result<(), AuthError> {
-        use crate::schema::users::dsl::{encrypted_dek, encrypted_dek_by_recovery, kek_salt, password_hash, updated_at, users};
+        use crate::schema::users::dsl::{
+            encrypted_dek, encrypted_dek_by_recovery, kek_salt, password_hash, updated_at, users,
+        };
         use diesel::prelude::*;
 
         let pool = self.pool.clone();
@@ -200,18 +202,22 @@ impl Backend {
             .interact(move |conn| {
                 // Validate required fields (non-nullable in DB)
                 let pwd_hash = crypto_fields.password_hash.ok_or_else(|| {
-                    diesel::result::Error::QueryBuilderError("password_hash must be provided".into())
+                    diesel::result::Error::QueryBuilderError(
+                        "password_hash must be provided".into(),
+                    )
                 })?;
                 let kek_salt_value = crypto_fields.kek_salt.ok_or_else(|| {
                     diesel::result::Error::QueryBuilderError("kek_salt must be provided".into())
                 })?;
                 let dek_ciphertext = crypto_fields.dek_ciphertext.ok_or_else(|| {
-                    diesel::result::Error::QueryBuilderError("encrypted_dek must be provided".into())
+                    diesel::result::Error::QueryBuilderError(
+                        "encrypted_dek must be provided".into(),
+                    )
                 })?;
                 let dek_nonce_value = crypto_fields.dek_nonce.ok_or_else(|| {
                     diesel::result::Error::QueryBuilderError("dek_nonce must be provided".into())
                 })?;
-                
+
                 diesel::update(users.find(user_id))
                     .set((
                         password_hash.eq(pwd_hash),
@@ -219,7 +225,8 @@ impl Backend {
                         encrypted_dek.eq(dek_ciphertext),
                         crate::schema::users::dsl::dek_nonce.eq(dek_nonce_value),
                         encrypted_dek_by_recovery.eq(crypto_fields.recovery_dek_ciphertext), // This is nullable
-                        crate::schema::users::dsl::recovery_dek_nonce.eq(crypto_fields.recovery_dek_nonce), // This is nullable
+                        crate::schema::users::dsl::recovery_dek_nonce
+                            .eq(crypto_fields.recovery_dek_nonce), // This is nullable
                         updated_at.eq(diesel::dsl::now),
                     ))
                     .execute(conn)

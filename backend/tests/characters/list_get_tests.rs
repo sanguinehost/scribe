@@ -143,9 +143,7 @@ async fn test_get_unauthorized() -> Result<(), anyhow::Error> {
     let client = Client::new();
 
     let character_id = Uuid::new_v4();
-    let get_url = format!(
-        "http://{server_addr}/api/characters/fetch/{character_id}"
-    ); // Adjusted path
+    let get_url = format!("http://{server_addr}/api/characters/fetch/{character_id}"); // Adjusted path
     tracing::info!(target: "auth_debug", "test_get_unauthorized: Sending GET to {}", get_url);
 
     let response = client.get(&get_url).send().await?;
@@ -219,7 +217,11 @@ async fn test_get_character_forbidden() -> Result<(), anyhow::Error> {
     let unauthorized_password = "passwordB";
     let unauthorized_username_for_closure = unauthorized_username.clone();
     let (unauthorized_user, _unauthorized_dek) = run_db_op(&pool, move |conn| {
-        insert_test_user_with_password(conn, &unauthorized_username_for_closure, unauthorized_password)
+        insert_test_user_with_password(
+            conn,
+            &unauthorized_username_for_closure,
+            unauthorized_password,
+        )
     })
     .await?;
     guard.add_user(unauthorized_user.id);

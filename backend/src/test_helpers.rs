@@ -3,12 +3,12 @@
 
 // Make sure all necessary imports from the main crate and external crates are included.
 use crate::errors::AppError;
-use genai::chat::Usage;
 use crate::llm::{AiClient, BatchEmbeddingContentRequest, ChatStream, EmbeddingClient}; // Add EmbeddingClient and BatchEmbeddingContentRequest
 use crate::services::embedding_pipeline::{
     EmbeddingPipelineService, EmbeddingPipelineServiceTrait, LorebookEntryParams, RetrievedChunk,
 }; // Added EmbeddingPipelineService
-use crate::text_processing::chunking::ChunkConfig; // Added ChunkConfig
+use crate::text_processing::chunking::ChunkConfig;
+use genai::chat::Usage; // Added ChunkConfig
 // Unused ChunkConfig, ChunkingMetric were previously noted as removed.
 use crate::models::users::User as DbUser;
 use crate::models::users::{SerializableSecretDek, User}; // Added SerializableSecretDek
@@ -94,7 +94,8 @@ type EmbeddingCalls = Arc<Mutex<Vec<(String, String, Option<String>)>>>;
 type BatchEmbeddingCalls = Arc<Mutex<Vec<Vec<(String, String, Option<String>)>>>>;
 type SearchParams = Arc<Mutex<Option<(Vec<f32>, u64, Option<Filter>)>>>;
 type SearchResponseQueue = Arc<Mutex<VecDeque<Result<Vec<ScoredPoint>, AppError>>>>;
-type ChatEventStream = std::sync::Arc<std::sync::Mutex<Option<Vec<Result<ChatStreamEvent, AppError>>>>>;
+type ChatEventStream =
+    std::sync::Arc<std::sync::Mutex<Option<Vec<Result<ChatStreamEvent, AppError>>>>>;
 type RetrievalResponseQueue = Arc<Mutex<VecDeque<Result<Vec<RetrievedChunk>, AppError>>>>;
 
 #[derive(Clone)]
@@ -228,45 +229,45 @@ impl AiClient for MockAiClient {
         let items = {
             let guard = self.stream_to_return.lock().unwrap();
             (*guard).as_ref().map_or_else(Vec::new, |item_results| {
-                    let mut new_items = Vec::with_capacity(item_results.len());
-                    for item_result in item_results {
-                        match item_result {
-                            Ok(event) => {
-                                // Rebuild the event based on its type
-                                let new_event = match event {
-                                    ChatStreamEvent::Chunk(chunk) => {
-                                        ChatStreamEvent::Chunk(genai::chat::StreamChunk {
-                                            content: chunk.content.clone(),
-                                        })
-                                    }
-                                    ChatStreamEvent::Start => ChatStreamEvent::Start,
-                                    ChatStreamEvent::ReasoningChunk(chunk) => {
-                                        ChatStreamEvent::ReasoningChunk(genai::chat::StreamChunk {
-                                            content: chunk.content.clone(),
-                                        })
-                                    }
-                                    // ChatStreamEvent::ToolCall(tool_call) => { // Commented out as ToolCall is not expected from Gemini Streamer
-                                    //     // Assuming genai::chat::ToolCall is effectively cloneable by its fields
-                                    //     ChatStreamEvent::ToolCall(genai::chat::ToolCall {
-                                    //         call_id: tool_call.call_id.clone(),
-                                    //         fn_name: tool_call.fn_name.clone(),
-                                    //         fn_arguments: tool_call.fn_arguments.clone(),
-                                    //     })
-                                    // }
-                                    ChatStreamEvent::End(_end_event) => {
-                                        ChatStreamEvent::End(StreamEnd::default())
-                                    } // StreamEnd is not Clone, use Default
-                                };
-                                new_items.push(Ok(new_event));
-                            }
-                            Err(err) => {
-                                // Clone the error (assuming AppError is Clone)
-                                new_items.push(Err(err.clone()));
-                            }
+                let mut new_items = Vec::with_capacity(item_results.len());
+                for item_result in item_results {
+                    match item_result {
+                        Ok(event) => {
+                            // Rebuild the event based on its type
+                            let new_event = match event {
+                                ChatStreamEvent::Chunk(chunk) => {
+                                    ChatStreamEvent::Chunk(genai::chat::StreamChunk {
+                                        content: chunk.content.clone(),
+                                    })
+                                }
+                                ChatStreamEvent::Start => ChatStreamEvent::Start,
+                                ChatStreamEvent::ReasoningChunk(chunk) => {
+                                    ChatStreamEvent::ReasoningChunk(genai::chat::StreamChunk {
+                                        content: chunk.content.clone(),
+                                    })
+                                }
+                                // ChatStreamEvent::ToolCall(tool_call) => { // Commented out as ToolCall is not expected from Gemini Streamer
+                                //     // Assuming genai::chat::ToolCall is effectively cloneable by its fields
+                                //     ChatStreamEvent::ToolCall(genai::chat::ToolCall {
+                                //         call_id: tool_call.call_id.clone(),
+                                //         fn_name: tool_call.fn_name.clone(),
+                                //         fn_arguments: tool_call.fn_arguments.clone(),
+                                //     })
+                                // }
+                                ChatStreamEvent::End(_end_event) => {
+                                    ChatStreamEvent::End(StreamEnd::default())
+                                } // StreamEnd is not Clone, use Default
+                            };
+                            new_items.push(Ok(new_event));
+                        }
+                        Err(err) => {
+                            // Clone the error (assuming AppError is Clone)
+                            new_items.push(Err(err.clone()));
                         }
                     }
-                    new_items
-                })
+                }
+                new_items
+            })
         }; // Mutex guard is dropped here
 
         let stream = futures::stream::iter(items);
@@ -278,8 +279,8 @@ impl AiClient for MockAiClient {
 pub struct MockEmbeddingClient {
     response: EmbeddingResponse,
     response_sequence: EmbeddingResponseSequence, // For sequential responses
-    batch_response: BatchEmbeddingResponse, // For batch_embed_contents
-    calls: EmbeddingCalls, // Added Option<String> for title
+    batch_response: BatchEmbeddingResponse,       // For batch_embed_contents
+    calls: EmbeddingCalls,                        // Added Option<String> for title
     batch_calls: BatchEmbeddingCalls, // For batch_embed_contents calls, storing Vec of batches, each batch is Vec of (text, task_type, title)
 }
 
@@ -667,9 +668,9 @@ impl MockQdrantClientService {
     }
 
     /// Sets the response for the next upsert operation
-    /// 
+    ///
     /// # Panics
-    /// 
+    ///
     /// Panics if the mutex lock is poisoned
     pub fn set_upsert_response(&self, response: Result<(), AppError>) {
         let mut lock = self.upsert_response.lock().unwrap();
@@ -677,9 +678,9 @@ impl MockQdrantClientService {
     }
 
     /// Gets the number of upsert calls made
-    /// 
+    ///
     /// # Panics
-    /// 
+    ///
     /// Panics if the mutex lock is poisoned
     #[must_use]
     pub fn get_upsert_call_count(&self) -> usize {
@@ -687,9 +688,9 @@ impl MockQdrantClientService {
     }
 
     /// Gets the points from the last upsert operation
-    /// 
+    ///
     /// # Panics
-    /// 
+    ///
     /// Panics if the mutex lock is poisoned
     #[must_use]
     pub fn get_last_upsert_points(&self) -> Option<Vec<qdrant_client::qdrant::PointStruct>> {
@@ -697,9 +698,9 @@ impl MockQdrantClientService {
     }
 
     /// Sets a single search response
-    /// 
+    ///
     /// # Panics
-    /// 
+    ///
     /// Panics if the mutex lock is poisoned
     pub fn set_search_response(&self, response: Result<Vec<ScoredPoint>, AppError>) {
         let mut queue = self.search_response.lock().unwrap();
@@ -708,18 +709,18 @@ impl MockQdrantClientService {
     }
 
     /// Adds a search response to the queue
-    /// 
+    ///
     /// # Panics
-    /// 
+    ///
     /// Panics if the mutex lock is poisoned
     pub fn add_search_response(&self, response: Result<Vec<ScoredPoint>, AppError>) {
         self.search_response.lock().unwrap().push_back(response);
     }
 
     /// Sets a sequence of search responses
-    /// 
+    ///
     /// # Panics
-    /// 
+    ///
     /// Panics if the mutex lock is poisoned
     pub fn set_search_responses_sequence(
         &self,
@@ -743,9 +744,9 @@ impl MockQdrantClientService {
     }
 
     /// Gets the parameters from the last search operation
-    /// 
+    ///
     /// # Panics
-    /// 
+    ///
     /// Panics if the mutex lock is poisoned
     #[must_use]
     pub fn get_last_search_params(&self) -> Option<(Vec<f32>, u64, Option<Filter>)> {
@@ -757,9 +758,9 @@ impl MockQdrantClientService {
     /// # Errors
     ///
     /// Returns any error configured via `set_upsert_response`, or `Ok(())` if no error is configured
-    /// 
+    ///
     /// # Panics
-    /// 
+    ///
     /// Panics if the mutex lock is poisoned
     pub fn upsert_points(
         &self,
@@ -775,7 +776,6 @@ impl MockQdrantClientService {
         let response = self.upsert_response.lock().unwrap().take();
         response.unwrap_or(Ok(()))
     }
-
 }
 
 // Implement the QdrantClientServiceTrait for MockQdrantClientService
@@ -861,7 +861,10 @@ impl QdrantClientServiceTrait for MockQdrantClientService {
 
     async fn delete_points_by_filter(&self, filter: Filter) -> Result<(), AppError> {
         // Record the call
-        self.calls_delete_points_by_filter.lock().unwrap().push(filter);
+        self.calls_delete_points_by_filter
+            .lock()
+            .unwrap()
+            .push(filter);
         Ok(())
     }
 
@@ -963,9 +966,9 @@ impl TestAppStateBuilder {
     }
 
     /// Build the `AppState` instance
-    /// 
+    ///
     /// # Panics
-    /// 
+    ///
     /// Panics if the tokenizer model cannot be loaded from the expected path
     #[must_use]
     pub fn build(self) -> AppState {
@@ -1034,11 +1037,7 @@ impl TestAppStateBuilder {
             auth_backend: self.auth_backend,
         };
 
-        AppState::new(
-            self.db_pool,
-            self.config,
-            services,
-        )
+        AppState::new(self.db_pool, self.config, services)
     }
 }
 
@@ -1391,7 +1390,10 @@ pub mod db {
     use dotenvy::dotenv; // For .env file loading
     use std::env; // For DATABASE_URL reading in setup_test_database // Corrected: Added hash_password, auth for module items
     // Ensure RegisterPayload is imported
-    use super::{AccountStatus, Context, DbUser, ExposeSecret, SecretBox, SecretString, SerializableSecretDek};
+    use super::{
+        AccountStatus, Context, DbUser, ExposeSecret, SecretBox, SecretString,
+        SerializableSecretDek,
+    };
     // Keep if CryptoError is used directly, else it comes via crate::crypto
     use crate::models::users::NewUser; // Removed User as DbUser from here, already aliased DbUser at top
     // and UserDbQuery is imported above
@@ -1842,7 +1844,7 @@ impl Drop for TestDataGuard {
                 || !self.character_ids.is_empty()
                 || !self.chat_ids.is_empty()
                 || !self.user_persona_ids.is_empty();
-            
+
             let _user_ids_clone = self.user_ids.drain(..).collect::<Vec<_>>();
             let _character_ids_clone = self.character_ids.drain(..).collect::<Vec<_>>();
             let _chat_ids_clone = self.chat_ids.drain(..).collect::<Vec<_>>();
@@ -2085,9 +2087,7 @@ pub async fn login_user_via_router(router: &Router, username: &str, password: &s
             .expect("Failed to read response body")
             .to_bytes();
         let body_text = String::from_utf8_lossy(&body);
-        panic!(
-            "Router login failed for user '{username}'. Status: {status}. Body: {body_text}"
-        );
+        panic!("Router login failed for user '{username}'. Status: {status}. Body: {body_text}");
     }
 
     // Extract the session cookie from headers
@@ -2095,17 +2095,16 @@ pub async fn login_user_via_router(router: &Router, username: &str, password: &s
         .headers()
         .get("set-cookie")
         .and_then(|value| value.to_str().ok())
-        .map_or_else(|| {
-            panic!(
-                "Session cookie not found in login response for user {username}"
-            )
-        }, str::to_string)
+        .map_or_else(
+            || panic!("Session cookie not found in login response for user {username}"),
+            str::to_string,
+        )
 }
 
 /// Helper function for API-based login.
-/// 
+///
 /// # Panics
-/// 
+///
 /// Panics if the reqwest client cannot be built or login fails.
 pub async fn login_user_via_api(
     test_app: &TestApp,
@@ -2165,9 +2164,9 @@ pub struct ParsedSseEvent {
 }
 
 /// Collects and parses SSE events from an HTTP response body.
-/// 
+///
 /// # Panics
-/// 
+///
 /// Panics if the SSE stream cannot be read or contains invalid UTF-8.
 pub async fn collect_full_sse_events(body: axum::body::Body) -> Vec<ParsedSseEvent> {
     let mut events = Vec::new();
@@ -2235,9 +2234,9 @@ pub async fn collect_full_sse_events(body: axum::body::Body) -> Vec<ParsedSseEve
 }
 
 /// Helper to assert the history sent to the mock AI client
-/// 
+///
 /// # Panics
-/// 
+///
 /// Panics if:
 /// - Mock AI client is not present in the test app
 /// - Mock AI client did not receive a request
@@ -2313,7 +2312,9 @@ pub fn assert_ai_history(
             genai::chat::ChatRole::User => "User",
             genai::chat::ChatRole::Assistant => "Assistant",
             genai::chat::ChatRole::System => "System",
-            genai::chat::ChatRole::Tool => panic!("Unexpected role in AI history: {:?}", actual.role),
+            genai::chat::ChatRole::Tool => {
+                panic!("Unexpected role in AI history: {:?}", actual.role)
+            }
         };
         let actual_content = match &actual.content {
             genai::chat::MessageContent::Text(text) => text.as_str(),
@@ -2340,16 +2341,16 @@ pub fn assert_ai_history(
 
 // Helper to set history management settings via API
 /// Sets history settings for a chat session via API
-/// 
+///
 /// # Errors
-/// 
+///
 /// Returns an error if:
 /// - HTTP request fails
 /// - Server returns a non-OK status
 /// - Response parsing fails
-/// 
+///
 /// # Panics
-/// 
+///
 /// Panics if the API response status is not OK
 pub async fn set_history_settings(
     test_app: &TestApp,

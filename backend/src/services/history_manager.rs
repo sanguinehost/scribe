@@ -136,7 +136,11 @@ fn process_messages_within_limit(history: Vec<ChatMessage>, limit: usize) -> Vec
 }
 
 /// Truncate a message to fit within the remaining token limit
-fn truncate_message(message: ChatMessage, remaining_limit: usize, total_limit: usize) -> ChatMessage {
+fn truncate_message(
+    message: ChatMessage,
+    remaining_limit: usize,
+    total_limit: usize,
+) -> ChatMessage {
     let mut truncated_message = message;
     let content_str = String::from_utf8_lossy(&truncated_message.content);
     let content_len = content_str.chars().count();
@@ -156,8 +160,7 @@ fn truncate_message(message: ChatMessage, remaining_limit: usize, total_limit: u
     } else {
         debug!(
             "Message ({}) already fits remaining limit ({}), adding as is.",
-            content_len,
-            remaining_limit
+            content_len, remaining_limit
         );
     }
     truncated_message
@@ -222,6 +225,8 @@ mod tests {
             user_id: Uuid::new_v4(),
             prompt_tokens: None,
             completion_tokens: None,
+            raw_prompt_ciphertext: None,
+            raw_prompt_nonce: None,
         }
     }
 

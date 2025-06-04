@@ -63,10 +63,7 @@ impl std::fmt::Debug for Config {
                 "gemini_api_key",
                 &self.gemini_api_key.as_ref().map(|_| "[REDACTED]"),
             )
-            .field(
-                "gemini_api_base_url",
-                &"[REDACTED]",
-            )
+            .field("gemini_api_base_url", &"[REDACTED]")
             .field("port", &self.port)
             .field(
                 "cookie_signing_key",

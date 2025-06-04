@@ -97,11 +97,7 @@ impl fmt::Debug for AppState {
 impl AppState {
     /// Create new `AppState` with reduced constructor arguments
     #[must_use]
-    pub fn new(
-        pool: DeadpoolPool,
-        config: Arc<Config>,
-        services: AppStateServices,
-    ) -> Self {
+    pub fn new(pool: DeadpoolPool, config: Arc<Config>, services: AppStateServices) -> Self {
         Self {
             pool,
             config,

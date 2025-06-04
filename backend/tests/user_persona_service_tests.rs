@@ -30,7 +30,7 @@ struct TestContext {
     service: UserPersonaService,
     user: User,
     dek: SecretBox<Vec<u8>>,
-    db_pool: DbPool,       // Added DbPool
+    db_pool: DbPool,      // Added DbPool
     guard: TestDataGuard, // To clean up DB entries
 }
 
@@ -104,10 +104,7 @@ async fn test_update_user_persona_success() -> AnyhowResult<()> {
 
         assert_eq!(fetched_persona.name, expected_name);
         assert_eq!(fetched_persona.description, expected_description);
-        assert_eq!(
-            fetched_persona.spec,
-            expected_spec.map(|s| s.to_string())
-        );
+        assert_eq!(fetched_persona.spec, expected_spec.map(|s| s.to_string()));
         assert_eq!(
             fetched_persona.personality,
             expected_personality.map(|s| s.to_string())
@@ -185,7 +182,10 @@ async fn test_update_user_persona_success() -> AnyhowResult<()> {
 
     assert_eq!(current_persona_state.name, "Updated Name");
     assert_eq!(current_persona_state.description, "Updated description.");
-    assert_eq!(current_persona_state.scenario, Some("New scenario added.".to_string()));
+    assert_eq!(
+        current_persona_state.scenario,
+        Some("New scenario added.".to_string())
+    );
     assert!(current_persona_state.updated_at > original_updated_at);
     let previous_updated_at = current_persona_state.updated_at;
     tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
@@ -194,7 +194,7 @@ async fn test_update_user_persona_success() -> AnyhowResult<()> {
     let update_dto_pers_clear_scenario = UpdateUserPersonaDto {
         personality: Some("Updated personality again.".to_string()),
         description: Some(current_persona_state.description.clone()), // Preserve description
-        scenario: Some(String::new()),                               // Attempt to clear scenario
+        scenario: Some(String::new()),                                // Attempt to clear scenario
         ..Default::default()
     };
     current_persona_state = ctx
@@ -207,8 +207,14 @@ async fn test_update_user_persona_success() -> AnyhowResult<()> {
         )
         .await?;
 
-    assert_eq!(current_persona_state.personality, Some("Updated personality again.".to_string()));
-    assert!(current_persona_state.scenario.is_none(), "Scenario should decrypt to None after being set to empty string update.");
+    assert_eq!(
+        current_persona_state.personality,
+        Some("Updated personality again.".to_string())
+    );
+    assert!(
+        current_persona_state.scenario.is_none(),
+        "Scenario should decrypt to None after being set to empty string update."
+    );
     assert!(current_persona_state.updated_at > previous_updated_at);
     let last_updated_at = current_persona_state.updated_at;
 

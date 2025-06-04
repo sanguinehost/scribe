@@ -48,6 +48,7 @@ fn initialize_tests() {
 // This file acts as the root of the integration test crate.
 
 // Individual test files
+pub mod auth_dek_security_test;
 pub mod auth_tests;
 pub mod character_card_tests;
 pub mod chat_generate_non_stream_tests;
@@ -58,7 +59,9 @@ pub mod chat_generate_stream_misc_tests;
 pub mod chat_generate_stream_rag_tests;
 pub mod chat_generate_stream_success_tests;
 pub mod chat_message_api_tests;
+pub mod chat_module_tests;
 pub mod chat_overrides_api_tests;
+pub mod chat_service_default_persona_tests;
 pub mod chat_session_api_tests;
 pub mod chat_settings_api_tests;
 pub mod chat_suggested_actions_tests;
@@ -76,9 +79,6 @@ pub mod tokenizer_tests;
 pub mod user_persona_api_tests;
 pub mod user_settings_api_tests;
 pub mod user_store_tests;
-pub mod auth_dek_security_test;
-pub mod chat_module_tests;
-pub mod chat_service_default_persona_tests;
 
 // New characters test module (directory)
 pub mod characters;

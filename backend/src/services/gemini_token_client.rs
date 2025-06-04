@@ -129,9 +129,9 @@ impl GeminiTokenClient {
     }
 
     /// Create a new `GeminiTokenClient` with custom base URL
-    /// 
+    ///
     /// # Panics
-    /// 
+    ///
     /// Panics if the HTTP client cannot be created.
     #[must_use]
     pub fn new_with_base_url(api_key: String, api_base_url: String) -> Self {
@@ -288,28 +288,31 @@ impl GeminiTokenClient {
         })?;
 
         // Extract usage metadata (if available)
-        content_response.usage_metadata.map_or_else(|| {
-            error!("Gemini API response did not include usage metadata");
-            Err(AppError::GeminiError(
-                "Gemini API response did not include usage metadata".to_string(),
-            ))
-        }, |usage| {
-            debug!(
-                "Received token counts - Prompt: {}, Output: {}, Total: {}",
-                usage.prompt, usage.candidates, usage.total
-            );
+        content_response.usage_metadata.map_or_else(
+            || {
+                error!("Gemini API response did not include usage metadata");
+                Err(AppError::GeminiError(
+                    "Gemini API response did not include usage metadata".to_string(),
+                ))
+            },
+            |usage| {
+                debug!(
+                    "Received token counts - Prompt: {}, Output: {}, Total: {}",
+                    usage.prompt, usage.candidates, usage.total
+                );
 
-            // Since we can't differentiate between text and image tokens from the API directly,
-            // we report the prompt tokens as the total with an unknown breakdown
-            Ok(TokenEstimate {
-                total: usage.prompt.max(0).try_into().unwrap_or(0),
-                text: usage.prompt.max(0).try_into().unwrap_or(0), // Approximation - all counted as text
-                images: 0,                               // No breakdown available from API
-                video: 0,
-                audio: 0,
-                is_estimate: true, // This is an estimate of the breakdown
-            })
-        })
+                // Since we can't differentiate between text and image tokens from the API directly,
+                // we report the prompt tokens as the total with an unknown breakdown
+                Ok(TokenEstimate {
+                    total: usage.prompt.max(0).try_into().unwrap_or(0),
+                    text: usage.prompt.max(0).try_into().unwrap_or(0), // Approximation - all counted as text
+                    images: 0, // No breakdown available from API
+                    video: 0,
+                    audio: 0,
+                    is_estimate: true, // This is an estimate of the breakdown
+                })
+            },
+        )
     }
 
     /// Count tokens for chat history

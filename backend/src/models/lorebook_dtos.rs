@@ -136,7 +136,7 @@ pub struct UploadedLorebookEntry {
     pub uid: Option<i32>,         // Original SillyTavern UID
     #[serde(default, alias = "displayName")] // Added alias for compatibility
     pub display_name: Option<String>, // Field for SillyTavern entry title
-    
+
     // Additional SillyTavern fields that we'll ignore but need for deserialization
     #[serde(default)]
     pub keysecondary: Option<Vec<String>>,
@@ -240,7 +240,7 @@ pub struct ExportedLorebookEntry {
     pub order: i32,
     pub position: i32,
     #[serde(default)]
-    pub selective: bool, // Not used by Scribe but included for compatibility  
+    pub selective: bool, // Not used by Scribe but included for compatibility
     #[serde(default, rename = "displayIndex")]
     pub display_index: i32,
     #[serde(default, rename = "addMemo")]

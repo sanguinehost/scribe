@@ -94,7 +94,7 @@ async fn cleanup_and_prepare_collection() -> Result<(), anyhow::Error> {
         })
         .await
         .map_err(|e| anyhow::anyhow!("Failed to create test collection: {}", e))?; // Convert error
-    
+
     // Explicitly drop client to reduce resource contention
     drop(client);
     let _ = create_result; // Use the result to avoid warnings
@@ -153,7 +153,10 @@ async fn test_qdrant_upsert_points() -> Result<(), AnyhowError> {
     }
 
     // Upsert the points
-    create_test_qdrant_service().await?.upsert_points(points).await?;
+    create_test_qdrant_service()
+        .await?
+        .upsert_points(points)
+        .await?;
 
     // Success is implied by no error being returned
     Ok(())
@@ -252,7 +255,10 @@ async fn test_qdrant_search_points() -> Result<(), AnyhowError> {
 
     // Verify the payload content for the first result
     let first_result = &results[0];
-    assert!(first_result.score > f32::EPSILON, "Score should be positive");
+    assert!(
+        first_result.score > f32::EPSILON,
+        "Score should be positive"
+    );
 
     // Verify that we can extract the payload
     let text_value = first_result
@@ -305,7 +311,8 @@ async fn test_qdrant_empty_results() -> Result<(), AnyhowError> {
 
     // Search for points
     let limit = 10;
-    let results = create_test_qdrant_service().await?
+    let results = create_test_qdrant_service()
+        .await?
         .search_points(query_vector, limit, Some(filter))
         .await?;
 
@@ -446,7 +453,10 @@ async fn test_qdrant_update_existing_point() -> Result<(), AnyhowError> {
 async fn test_qdrant_upsert_empty_points() -> Result<(), AnyhowError> {
     cleanup_and_prepare_collection().await?; // Ensure clean state
     // Try to upsert an empty vector of points
-    let result = create_test_qdrant_service().await?.upsert_points(vec![]).await;
+    let result = create_test_qdrant_service()
+        .await?
+        .upsert_points(vec![])
+        .await;
 
     // This should succeed silently
     assert!(
@@ -559,7 +569,8 @@ async fn test_qdrant_retrieve_points() -> Result<(), AnyhowError> {
 async fn test_qdrant_trait_methods() -> Result<(), AnyhowError> {
     cleanup_and_prepare_collection().await?; // Ensure clean state
     // Get a trait object
-    let trait_service: Arc<dyn QdrantClientServiceTrait> = Arc::new(create_test_qdrant_service().await?);
+    let trait_service: Arc<dyn QdrantClientServiceTrait> =
+        Arc::new(create_test_qdrant_service().await?);
 
     // --- Test store_points (covers lines 746, 748) ---
     let test_vectors = generate_test_vectors(768, 1);

@@ -27,8 +27,7 @@ pub async fn handle_model_settings_action<H: IoHandler, C: HttpClient>(
         match choice.as_str() {
             "1" => {
                 // Explicitly confirm the current full model name
-                io_handler
-                    .write_line(&format!("The current model is set to: {current_model}"))?;
+                io_handler.write_line(&format!("The current model is set to: {current_model}"))?;
             }
             "2" => {
                 // Offer specific model options

@@ -1,6 +1,6 @@
 // backend/tests/user_persona_api_tests.rs
 
- // For making HTTP calls
+// For making HTTP calls
 use scribe_backend::models::user_personas::{
     CreateUserPersonaDto, UpdateUserPersonaDto, UserPersonaDataForClient,
 };
@@ -173,10 +173,7 @@ async fn get_user_persona_not_found() {
     let non_existent_id = Uuid::new_v4();
 
     let response = client
-        .get(format!(
-            "{}/api/personas/{}",
-            &app.address, non_existent_id
-        ))
+        .get(format!("{}/api/personas/{}", &app.address, non_existent_id))
         .header("Cookie", auth_cookie)
         .send()
         .await

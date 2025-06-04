@@ -1,4 +1,3 @@
-
 #![allow(clippy::too_many_lines)]
 #![allow(clippy::uninlined_format_args)]
 #![allow(clippy::unused_async)]
@@ -147,18 +146,15 @@ async fn main() -> Result<()> {
                                 ))?;
                             }
                         } else if edit_args.id.is_none() {
-                            io_handler.write_line("Error: --id is required for non-interactive character editing.")?;
-                        } else if let Err(e) = handle_character_edit_oneliner(
-                            &http_client,
-                            &mut io_handler,
-                            edit_args,
-                        )
-                        .await
+                            io_handler.write_line(
+                                "Error: --id is required for non-interactive character editing.",
+                            )?;
+                        } else if let Err(e) =
+                            handle_character_edit_oneliner(&http_client, &mut io_handler, edit_args)
+                                .await
                         {
-                            io_handler.write_line(&format!(
-                                "Error during character editing: {}",
-                                e
-                            ))?;
+                            io_handler
+                                .write_line(&format!("Error during character editing: {}", e))?;
                         }
                     }
                 }
@@ -186,10 +182,8 @@ async fn main() -> Result<()> {
                     )
                     .await
                     {
-                        io_handler.write_line(&format!(
-                            "Error during chat character override: {}",
-                            e
-                        ))?;
+                        io_handler
+                            .write_line(&format!("Error during chat character override: {}", e))?;
                     }
                 }
             },

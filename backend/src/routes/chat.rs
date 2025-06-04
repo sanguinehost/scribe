@@ -267,16 +267,18 @@ pub async fn generate_chat_response(
                 "Interact dispatch error fetching character {session_character_id}: {e}"
             ))
         })?
-        .map_err(|e_db| if e_db == diesel::result::Error::NotFound {
-            error!(%session_character_id, %user_id_value, "Character not found for user");
-            AppError::NotFound(format!(
-                "Character {session_character_id} not found for user {user_id_value}"
-            ))
-        } else {
-            error!(error = %e_db, %session_character_id, "Failed to query character");
-            AppError::DatabaseQueryError(format!(
-                "Failed to query character {session_character_id}: {e_db}"
-            ))
+        .map_err(|e_db| {
+            if e_db == diesel::result::Error::NotFound {
+                error!(%session_character_id, %user_id_value, "Character not found for user");
+                AppError::NotFound(format!(
+                    "Character {session_character_id} not found for user {user_id_value}"
+                ))
+            } else {
+                error!(error = %e_db, %session_character_id, "Failed to query character");
+                AppError::DatabaseQueryError(format!(
+                    "Failed to query character {session_character_id}: {e_db}"
+                ))
+            }
         })?;
 
     let character_metadata_for_prompt_builder = CharacterMetadata {
@@ -317,7 +319,7 @@ pub async fn generate_chat_response(
 
     // Extract text for later use in saving to DB
     let current_user_content_text = current_user_content.clone();
-    
+
     // Prepare current user message as GenAiChatMessage
     let current_user_genai_message = GenAiChatMessage {
         role: ChatRole::User,
@@ -337,6 +339,7 @@ pub async fn generate_chat_response(
             character_metadata: Some(&character_metadata_for_prompt_builder),
             current_user_message: current_user_genai_message,
             model_name: model_to_use.clone(),
+            user_dek: Some(&*session_dek_arc), // Add DEK for character description decryption
         })
         .await
         {
@@ -373,20 +376,19 @@ pub async fn generate_chat_response(
             // DbInsertableChatMessage has role, parts, attachments as Option<String>, Option<Value>, Option<Value>
             // However, user_message_struct_to_save.content is Vec<u8> (potentially encrypted or raw bytes of current_user_content)
 
-            match chat::message_handling::save_message(
-                chat::message_handling::SaveMessageParams {
-                    state: state_arc.clone(),
-                    session_id,
-                    user_id: user_id_value,
-                    message_type_enum: MessageRole::User,
-                    content: &current_user_content_text,
-                    role_str: user_message_struct_to_save.role.clone(),
-                    parts: user_message_struct_to_save.parts.clone(),
-                    attachments: user_message_struct_to_save.attachments.clone(),
-                    user_dek_secret_box: Some(session_dek_arc.clone()),
-                    model_name: model_to_use.clone(),
-                }
-            )
+            match chat::message_handling::save_message(chat::message_handling::SaveMessageParams {
+                state: state_arc.clone(),
+                session_id,
+                user_id: user_id_value,
+                message_type_enum: MessageRole::User,
+                content: &current_user_content_text,
+                role_str: user_message_struct_to_save.role.clone(),
+                parts: user_message_struct_to_save.parts.clone(),
+                attachments: user_message_struct_to_save.attachments.clone(),
+                user_dek_secret_box: Some(session_dek_arc.clone()),
+                model_name: model_to_use.clone(),
+                raw_prompt_debug: None, // User messages don't need raw prompt debug
+            })
             .await
             {
                 Ok(saved_user_msg) => {
@@ -423,7 +425,7 @@ pub async fn generate_chat_response(
                     gemini_enable_code_execution: gen_gemini_enable_code_execution,
                     request_thinking,
                     user_dek: Some(dek_for_stream_service),
-                }
+                },
             )
             .await
             {
@@ -505,7 +507,8 @@ pub async fn generate_chat_response(
                     attachments: None,
                     user_dek_secret_box: Some(dek_for_user_save_json),
                     model_name: model_to_use.clone(),
-                }
+                    raw_prompt_debug: None, // User messages don't need raw prompt debug
+                },
             )
             .await
             {
@@ -550,13 +553,16 @@ pub async fn generate_chat_response(
                 // budget_i32 is Option<i32>
                 if budget_i32 > 0 {
                     if let Ok(budget_u32) = u32::try_from(budget_i32) {
-                        chat_options = chat_options
-                            .with_reasoning_effort(ReasoningEffort::Budget(budget_u32));
+                        chat_options =
+                            chat_options.with_reasoning_effort(ReasoningEffort::Budget(budget_u32));
                     } else {
                         warn!("gemini_thinking_budget overflow ({}), ignoring", budget_i32);
                     }
                 } else {
-                    warn!("gemini_thinking_budget is not positive ({}), ignoring", budget_i32);
+                    warn!(
+                        "gemini_thinking_budget is not positive ({}), ignoring",
+                        budget_i32
+                    );
                 }
             }
             // `with_gemini_enable_code_execution` removed as it's no longer a direct ChatOption.
@@ -605,7 +611,8 @@ pub async fn generate_chat_response(
                                     attachments: None,
                                     user_dek_secret_box: Some(dek_for_ai_save_json),
                                     model_name: model_to_use.clone(),
-                                }
+                                    raw_prompt_debug: None, // Non-stream AI responses don't include raw prompt debug
+                                },
                             )
                             .await
                             {
@@ -659,7 +666,7 @@ pub async fn generate_chat_response(
                     gemini_enable_code_execution: gen_gemini_enable_code_execution,
                     request_thinking,
                     user_dek: Some(dek_for_fallback_stream_service),
-                }
+                },
             )
             .await
             {
@@ -882,7 +889,8 @@ pub async fn generate_suggested_actions(
                     error!("Failed to decrypt first_mes: {}. Using empty string.", e);
                     String::new()
                 },
-                |decrypted_secret_vec| String::from_utf8(
+                |decrypted_secret_vec| {
+                    String::from_utf8(
                     decrypted_secret_vec.expose_secret().clone(),
                 )
                 .unwrap_or_else(|e| {
@@ -892,6 +900,7 @@ pub async fn generate_suggested_actions(
                     );
                     String::new()
                 })
+                },
             )
         }
         (Some(fm_bytes), None) if !fm_bytes.is_empty() => {
@@ -954,19 +963,20 @@ pub async fn generate_suggested_actions(
     }
 
     // Model for suggestions - can be from settings or fixed. Using fixed for now.
-    let model_for_suggestions = "gemini-1.5-flash-latest".to_string(); // Or use gen_model_name_from_service if desired
+    let model_for_suggestions = "gemini-2.5-flash-preview-05-20".to_string(); // Or use gen_model_name_from_service if desired
 
     let (final_system_prompt_for_suggestions, final_messages_for_suggestions_llm) =
         match prompt_builder::build_final_llm_prompt(prompt_builder::PromptBuildParams {
             config: state_arc.config.clone(),
             token_counter: state_arc.token_counter.clone(),
             recent_history: gen_ai_processed_history, // The actual chat history
-            rag_items: Vec::new(),               // No RAG for suggestions
+            rag_items: Vec::new(),                    // No RAG for suggestions
             system_prompt_base: system_prompt_from_service,
             raw_character_system_prompt,
             character_metadata: Some(&character_metadata_for_prompt_builder),
             current_user_message: suggestion_request_genai_message, // Our special message asking for suggestions
             model_name: model_for_suggestions.clone(),
+            user_dek: Some(&*session_dek_arc), // Add DEK for character description decryption
         })
         .await
         {
@@ -1022,8 +1032,8 @@ pub async fn generate_suggested_actions(
     debug!(%session_id, "Received response from Gemini for suggested actions");
     trace!(%session_id, ?gemini_response, "Full Gemini response object for suggested actions");
 
-    let response_text = if let Some(text) = gemini_response.first_content_text_as_str() { 
-        text.to_string() 
+    let response_text = if let Some(text) = gemini_response.first_content_text_as_str() {
+        text.to_string()
     } else {
         error!(%session_id, "Gemini response for suggested actions did not contain text content or was empty.");
         return Err(AppError::InternalServerErrorGeneric(
@@ -1086,13 +1096,11 @@ pub async fn get_chat_session_with_dek(
                 if !ciphertext.is_empty() && !nonce.is_empty() =>
             {
                 crate::crypto::decrypt_gcm(ciphertext, nonce, &dek_wrapped.0).map_or_else(
-                    |_| Some("[Decryption Failed]".to_string()), 
+                    |_| Some("[Decryption Failed]".to_string()),
                     |plaintext_secret| {
-                        String::from_utf8(plaintext_secret.expose_secret().clone()).map_or_else(
-                            |_| Some("[Invalid UTF-8]".to_string()), 
-                            Some
-                        )
-                    }
+                        String::from_utf8(plaintext_secret.expose_secret().clone())
+                            .map_or_else(|_| Some("[Invalid UTF-8]".to_string()), Some)
+                    },
                 )
             }
             _ => None,

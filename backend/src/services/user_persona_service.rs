@@ -1,11 +1,13 @@
-use diesel::{QueryDsl, ExpressionMethods, RunQueryDsl, OptionalExtension};
+use diesel::{ExpressionMethods, OptionalExtension, QueryDsl, RunQueryDsl};
 use secrecy::{ExposeSecret, SecretBox};
 use std::sync::Arc;
 use tracing::debug;
 use uuid::Uuid; // Added for logging
 
 use crate::errors::AppError;
-use crate::models::user_personas::{CreateUserPersonaDto, UpdateUserPersonaDto, UserPersona, UserPersonaDataForClient};
+use crate::models::user_personas::{
+    CreateUserPersonaDto, UpdateUserPersonaDto, UserPersona, UserPersonaDataForClient,
+};
 use crate::models::users::{User, UserDbQuery};
 use crate::schema::{user_personas::dsl as user_personas_dsl, users::dsl as users_dsl};
 use crate::services::encryption_service::EncryptionService;
@@ -82,18 +84,18 @@ impl UserPersonaService {
             .encryption_service
             .encrypt(&create_dto.description, dek.expose_secret().as_slice())?;
 
-        let (personality_ct, personality_n) = self
-            .encrypt_optional_string_for_db(create_dto.personality, dek)?;
-        let (scenario_ct, scenario_n) = self
-            .encrypt_optional_string_for_db(create_dto.scenario, dek)?;
-        let (first_mes_ct, first_mes_n) = self
-            .encrypt_optional_string_for_db(create_dto.first_mes, dek)?;
-        let (mes_example_ct, mes_example_n) = self
-            .encrypt_optional_string_for_db(create_dto.mes_example, dek)?;
-        let (system_prompt_ct, system_prompt_n) = self
-            .encrypt_optional_string_for_db(create_dto.system_prompt, dek)?;
-        let (post_history_instructions_ct, post_history_instructions_n) = self
-            .encrypt_optional_string_for_db(create_dto.post_history_instructions, dek)?;
+        let (personality_ct, personality_n) =
+            self.encrypt_optional_string_for_db(create_dto.personality, dek)?;
+        let (scenario_ct, scenario_n) =
+            self.encrypt_optional_string_for_db(create_dto.scenario, dek)?;
+        let (first_mes_ct, first_mes_n) =
+            self.encrypt_optional_string_for_db(create_dto.first_mes, dek)?;
+        let (mes_example_ct, mes_example_n) =
+            self.encrypt_optional_string_for_db(create_dto.mes_example, dek)?;
+        let (system_prompt_ct, system_prompt_n) =
+            self.encrypt_optional_string_for_db(create_dto.system_prompt, dek)?;
+        let (post_history_instructions_ct, post_history_instructions_n) =
+            self.encrypt_optional_string_for_db(create_dto.post_history_instructions, dek)?;
 
         let new_persona_db = UserPersona {
             id: Uuid::new_v4(),
@@ -342,12 +344,10 @@ impl UserPersonaService {
         // Apply for description. If update_dto.description is None or an empty string, encrypt an empty string.
         // Otherwise, encrypt the provided string.
         let string_to_encrypt_for_description = update_dto.description.as_deref().unwrap_or("");
-        let (new_description_ct, new_description_n) = self
-            .encryption_service
-            .encrypt(
-                string_to_encrypt_for_description,
-                dek.expose_secret().as_slice(),
-            )?;
+        let (new_description_ct, new_description_n) = self.encryption_service.encrypt(
+            string_to_encrypt_for_description,
+            dek.expose_secret().as_slice(),
+        )?;
 
         if persona.description != new_description_ct
             || persona.description_nonce != Some(new_description_n.clone())

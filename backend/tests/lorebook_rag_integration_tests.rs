@@ -8,7 +8,7 @@ async fn test_lorebook_import_basic() {
     // Actual implementation would go here
 }
 
-#[tokio::test] 
+#[tokio::test]
 async fn test_lorebook_chat_session_association() {
     // Test associating lorebooks with chat sessions
     // This replaces another part of the original large function

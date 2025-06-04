@@ -40,8 +40,11 @@ fn assert_retrieved_chunks_content(
     );
 
     // Verify content of the first chunk
-    assert!((retrieved_chunks[0].score - 0.95).abs() < f32::EPSILON, 
-            "Expected score ~0.95, got {}", retrieved_chunks[0].score);
+    assert!(
+        (retrieved_chunks[0].score - 0.95).abs() < f32::EPSILON,
+        "Expected score ~0.95, got {}",
+        retrieved_chunks[0].score
+    );
     assert_eq!(retrieved_chunks[0].text, "Chunk 1 text");
     if let RetrievedMetadata::Chat(meta) = &retrieved_chunks[0].metadata {
         assert_eq!(meta.session_id, test_session_id);
@@ -55,8 +58,11 @@ fn assert_retrieved_chunks_content(
     }
 
     // Verify content of the second chunk
-    assert!((retrieved_chunks[1].score - 0.88).abs() < f32::EPSILON,
-            "Expected score ~0.88, got {}", retrieved_chunks[1].score);
+    assert!(
+        (retrieved_chunks[1].score - 0.88).abs() < f32::EPSILON,
+        "Expected score ~0.88, got {}",
+        retrieved_chunks[1].score
+    );
     assert_eq!(retrieved_chunks[1].text, "Chunk 2 text");
     if let RetrievedMetadata::Chat(meta) = &retrieved_chunks[1].metadata {
         assert_eq!(meta.session_id, test_session_id);
@@ -123,10 +129,11 @@ fn create_test_app_state(test_app: test_helpers::TestApp) -> Arc<AppState> {
 // Helper to check Qdrant URL and skip integration tests if not set
 fn check_qdrant_url_and_skip(config: &scribe_backend::config::Config, test_name: &str) -> bool {
     if config.qdrant_url.is_none() || config.qdrant_url.as_deref().unwrap_or("").is_empty() {
-        log::warn!(
-            "Skipping Qdrant integration test '{test_name}': QDRANT_URL not set in config."
+        log::warn!("Skipping Qdrant integration test '{test_name}': QDRANT_URL not set in config.");
+        assert!(
+            option_env!("CI").is_some(),
+            "QDRANT_URL is not set in config for an un-ignored integration test."
         );
-        assert!(option_env!("CI").is_some(), "QDRANT_URL is not set in config for an un-ignored integration test.");
         true
     } else {
         log::info!(
@@ -185,10 +192,22 @@ async fn verify_qdrant_points(
         let metadata = ChatMessageChunkMetadata::try_from(payload_map)
             .expect("Failed to parse ChatMessageChunkMetadata from Qdrant payload");
 
-        assert_eq!(metadata.source_type, "chat_message", "Metadata source_type mismatch");
-        assert_eq!(metadata.message_id, test_message_id, "Metadata message_id mismatch");
-        assert_eq!(metadata.session_id, test_session_id, "Metadata session_id mismatch");
-        assert_eq!(metadata.user_id, test_message_user_id, "Metadata user_id mismatch");
+        assert_eq!(
+            metadata.source_type, "chat_message",
+            "Metadata source_type mismatch"
+        );
+        assert_eq!(
+            metadata.message_id, test_message_id,
+            "Metadata message_id mismatch"
+        );
+        assert_eq!(
+            metadata.session_id, test_session_id,
+            "Metadata session_id mismatch"
+        );
+        assert_eq!(
+            metadata.user_id, test_message_user_id,
+            "Metadata user_id mismatch"
+        );
         assert_eq!(
             metadata.speaker,
             format!("{test_message_type:?}"),
@@ -197,7 +216,9 @@ async fn verify_qdrant_points(
         // Note: timestamp verification requires the actual message object, skipping for now
 
         assert!(
-            expected_chunks.iter().any(|chunk| chunk.content == metadata.text),
+            expected_chunks
+                .iter()
+                .any(|chunk| chunk.content == metadata.text),
             "Stored text '{}' did not match any expected chunk",
             metadata.text
         );
@@ -222,7 +243,10 @@ async fn verify_qdrant_points(
 #[tokio::test]
 async fn test_process_and_embed_message_integration() {
     let test_app = test_helpers::spawn_app(false, false, true).await;
-    if check_qdrant_url_and_skip(&test_app.config, "test_process_and_embed_message_integration") {
+    if check_qdrant_url_and_skip(
+        &test_app.config,
+        "test_process_and_embed_message_integration",
+    ) {
         return;
     }
 
@@ -244,6 +268,8 @@ async fn test_process_and_embed_message_integration() {
         user_id: test_user_id,
         prompt_tokens: None,
         completion_tokens: None,
+        raw_prompt_ciphertext: None,
+        raw_prompt_nonce: None,
     };
 
     let embedding_dimension = 768;
@@ -300,6 +326,8 @@ async fn test_process_and_embed_message_all_chunks_fail_embedding() {
         user_id: Uuid::new_v4(), // Add dummy user_id for test data
         prompt_tokens: None,
         completion_tokens: None,
+        raw_prompt_ciphertext: None,
+        raw_prompt_nonce: None,
     };
 
     // Configure mock embedding client to always return an error
@@ -393,7 +421,10 @@ fn create_mock_scored_point_simple(params: &MockScoredPointParams) -> ScoredPoin
         Value::from(params.user_id.to_string()),
     );
     payload.insert("speaker".to_string(), Value::from(params.speaker.clone()));
-    payload.insert("timestamp".to_string(), Value::from(params.timestamp.to_rfc3339()));
+    payload.insert(
+        "timestamp".to_string(),
+        Value::from(params.timestamp.to_rfc3339()),
+    );
     payload.insert("text".to_string(), Value::from(params.text.clone()));
     payload.insert(
         "source_type".to_string(),
@@ -673,8 +704,6 @@ async fn test_retrieve_relevant_chunks_qdrant_error() {
 
 #[tokio::test]
 
-
-
 async fn test_retrieve_relevant_chunks_metadata_invalid_uuid() {
     let test_app = test_helpers::spawn_app(false, false, false).await;
     let mock_qdrant_service_concrete = test_app
@@ -856,9 +885,6 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_uuid() {
 
 #[tokio::test]
 
-
-
-
 async fn test_retrieve_relevant_chunks_metadata_invalid_timestamp() {
     let test_app = test_helpers::spawn_app(false, false, false).await;
     let mock_qdrant_service_concrete = test_app
@@ -933,17 +959,18 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_timestamp() {
         }),
         // This point will have an invalid timestamp
         {
-            let mut point_with_invalid_ts = create_mock_scored_point_simple(&MockScoredPointParams {
-                id_uuid: Uuid::new_v4(),
-                score: 0.85,
-                session_id,
-                message_id: Uuid::new_v4(),
-                user_id: Uuid::new_v4(),
-                speaker: "Assistant".to_string(),
-                timestamp: Utc::now(),
-                text: "Text for invalid TS".to_string(),
-                source_type: "chat_message".to_string(),
-            });
+            let mut point_with_invalid_ts =
+                create_mock_scored_point_simple(&MockScoredPointParams {
+                    id_uuid: Uuid::new_v4(),
+                    score: 0.85,
+                    session_id,
+                    message_id: Uuid::new_v4(),
+                    user_id: Uuid::new_v4(),
+                    speaker: "Assistant".to_string(),
+                    timestamp: Utc::now(),
+                    text: "Text for invalid TS".to_string(),
+                    source_type: "chat_message".to_string(),
+                });
             point_with_invalid_ts
                 .payload
                 .insert("timestamp".to_string(), Value::from("not-a-timestamp"));
@@ -1003,9 +1030,6 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_timestamp() {
 }
 
 #[tokio::test]
-
-
-
 
 async fn test_retrieve_relevant_chunks_metadata_missing_field() {
     let test_app = test_helpers::spawn_app(false, false, false).await;
@@ -1075,17 +1099,18 @@ async fn test_retrieve_relevant_chunks_metadata_missing_field() {
         }),
         // This point will have a missing field (e.g., speaker)
         {
-            let mut point_with_missing_field = create_mock_scored_point_simple(&MockScoredPointParams {
-                id_uuid: Uuid::new_v4(),
-                score: 0.8,
-                session_id,
-                message_id: Uuid::new_v4(),
-                user_id: Uuid::new_v4(),
-                speaker: "User".to_string(),
-                timestamp: Utc::now(),
-                text: "Text for missing field".to_string(),
-                source_type: "chat_message".to_string(),
-            });
+            let mut point_with_missing_field =
+                create_mock_scored_point_simple(&MockScoredPointParams {
+                    id_uuid: Uuid::new_v4(),
+                    score: 0.8,
+                    session_id,
+                    message_id: Uuid::new_v4(),
+                    user_id: Uuid::new_v4(),
+                    speaker: "User".to_string(),
+                    timestamp: Utc::now(),
+                    text: "Text for missing field".to_string(),
+                    source_type: "chat_message".to_string(),
+                });
             point_with_missing_field.payload.remove("speaker");
             point_with_missing_field
         },
@@ -1143,9 +1168,6 @@ async fn test_retrieve_relevant_chunks_metadata_missing_field() {
 }
 
 #[tokio::test]
-
-
-
 
 async fn test_retrieve_relevant_chunks_metadata_wrong_type() {
     let test_app = test_helpers::spawn_app(false, false, false).await;
@@ -1216,17 +1238,18 @@ async fn test_retrieve_relevant_chunks_metadata_wrong_type() {
         }),
         // This point will have a field of the wrong type (e.g., speaker as integer)
         {
-            let mut point_with_wrong_type = create_mock_scored_point_simple(&MockScoredPointParams {
-                id_uuid: Uuid::new_v4(),
-                score: 0.75,
-                session_id,
-                message_id: Uuid::new_v4(),
-                user_id: Uuid::new_v4(),
-                speaker: "User".to_string(),
-                timestamp: Utc::now(),
-                text: "Text for wrong type".to_string(),
-                source_type: "chat_message".to_string(),
-            });
+            let mut point_with_wrong_type =
+                create_mock_scored_point_simple(&MockScoredPointParams {
+                    id_uuid: Uuid::new_v4(),
+                    score: 0.75,
+                    session_id,
+                    message_id: Uuid::new_v4(),
+                    user_id: Uuid::new_v4(),
+                    speaker: "User".to_string(),
+                    timestamp: Utc::now(),
+                    text: "Text for wrong type".to_string(),
+                    source_type: "chat_message".to_string(),
+                });
             point_with_wrong_type
                 .payload
                 .insert("speaker".to_string(), Value::from(123i64)); // speaker is integer
@@ -1310,7 +1333,10 @@ async fn test_rag_context_injection_with_qdrant() {
             .is_empty()
     {
         log::warn!("Skipping Qdrant integration test: QDRANT_URL not set in config for RAG test.");
-        assert!(option_env!("CI").is_some(), "QDRANT_URL is not set in config for an un-ignored RAG integration test.");
+        assert!(
+            option_env!("CI").is_some(),
+            "QDRANT_URL is not set in config for an un-ignored RAG integration test."
+        );
         return;
     }
 
@@ -1340,6 +1366,8 @@ async fn test_rag_context_injection_with_qdrant() {
         user_id, // Use consistent user_id
         prompt_tokens: None,
         completion_tokens: None,
+        raw_prompt_ciphertext: None,
+        raw_prompt_nonce: None,
     };
 
     // Configure mock embedding client for a sequence of calls
@@ -1420,9 +1448,9 @@ async fn test_rag_context_injection_with_qdrant() {
         user_id, // Use consistent user_id
         decrypted_content: lore_entry_content.to_string(),
         decrypted_title: lore_entry_title.clone(),
-        decrypted_keywords: None,  // No keywords for this test
-        is_enabled: true,  // is_enabled
-        is_constant: false, // is_constant
+        decrypted_keywords: None, // No keywords for this test
+        is_enabled: true,         // is_enabled
+        is_constant: false,       // is_constant
     };
 
     let process_lore_result = app_state_for_rag
@@ -1688,7 +1716,10 @@ async fn test_rag_chat_history_isolation_by_user_and_session() {
         log::warn!(
             "Skipping Qdrant integration test: QDRANT_URL not set in config for RAG isolation test."
         );
-        assert!(option_env!("CI").is_some(), "QDRANT_URL is not set in config for an un-ignored RAG isolation test.");
+        assert!(
+            option_env!("CI").is_some(),
+            "QDRANT_URL is not set in config for an un-ignored RAG isolation test."
+        );
         return;
     }
 
@@ -1760,6 +1791,8 @@ async fn test_rag_chat_history_isolation_by_user_and_session() {
         user_id: user_a_id,
         prompt_tokens: None,
         completion_tokens: None,
+        raw_prompt_ciphertext: None,
+        raw_prompt_nonce: None,
     };
 
     let content_a2 = "User A Session 2 confidential cat strategies";
@@ -1774,6 +1807,8 @@ async fn test_rag_chat_history_isolation_by_user_and_session() {
         user_id: user_a_id,
         prompt_tokens: None,
         completion_tokens: None,
+        raw_prompt_ciphertext: None,
+        raw_prompt_nonce: None,
     };
 
     let content_b1 = "User B Session 1 private alien agenda";
@@ -1788,6 +1823,8 @@ async fn test_rag_chat_history_isolation_by_user_and_session() {
         user_id: user_b_id,
         prompt_tokens: None,
         completion_tokens: None,
+        raw_prompt_ciphertext: None,
+        raw_prompt_nonce: None,
     };
 
     // 4. Configure Mock Embeddings (one for each message chunk, one for each query)
@@ -1988,7 +2025,10 @@ async fn test_rag_lorebook_isolation_by_user_and_id() {
         log::warn!(
             "Skipping Qdrant integration test: QDRANT_URL not set in config for RAG lorebook isolation test."
         );
-        assert!(option_env!("CI").is_some(), "QDRANT_URL is not set in config for an un-ignored RAG lorebook isolation test.");
+        assert!(
+            option_env!("CI").is_some(),
+            "QDRANT_URL is not set in config for an un-ignored RAG lorebook isolation test."
+        );
         return;
     }
 

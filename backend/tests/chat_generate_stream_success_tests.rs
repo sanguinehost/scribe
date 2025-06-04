@@ -16,15 +16,9 @@ use uuid::Uuid;
 use scribe_backend::{
     models::{
         characters::Character as DbCharacter,
-        chats::{
-            ApiChatMessage, Chat as ChatSession, GenerateChatRequest,
-            MessageRole, NewChat,
-        },
+        chats::{ApiChatMessage, Chat as ChatSession, GenerateChatRequest, MessageRole, NewChat},
     },
-    schema::{
-        characters::dsl as characters_dsl,
-        chat_sessions::dsl as chat_sessions_dsl,
-    },
+    schema::{characters::dsl as characters_dsl, chat_sessions::dsl as chat_sessions_dsl},
     services::{
         chat::generation::get_session_data_for_generation, // Updated to new path
         hybrid_token_counter::HybridTokenCounter,
@@ -35,7 +29,9 @@ use scribe_backend::{
     test_helpers::{self, collect_full_sse_events},
 };
 
-async fn create_authenticated_user(test_app: &test_helpers::TestApp) -> (scribe_backend::models::users::User, String) {
+async fn create_authenticated_user(
+    test_app: &test_helpers::TestApp,
+) -> (scribe_backend::models::users::User, String) {
     let username = "gen_resp_stream_user";
     let password = "password123";
     let user = test_helpers::db::create_test_user(
@@ -134,7 +130,7 @@ async fn create_test_character_and_session(
                 updated_at: Utc::now(),
                 history_management_strategy: "truncate".to_string(),
                 history_management_limit: 10,
-                model_name: "gemini-1.5-flash".to_string(),
+                model_name: "gemini-2.5-flash-preview-05-20".to_string(),
                 visibility: Some("private".to_string()),
                 active_custom_persona_id: None,
                 active_impersonated_character_id: None,
@@ -213,12 +209,7 @@ async fn send_chat_request(
         ))
         .unwrap();
 
-    test_app
-        .router
-        .clone()
-        .oneshot(chat_request)
-        .await
-        .unwrap()
+    test_app.router.clone().oneshot(chat_request).await.unwrap()
 }
 
 async fn verify_streaming_response(response: axum::response::Response<axum::body::Body>) {
@@ -466,12 +457,8 @@ async fn test_first_mes_included_in_history() {
         ),
     );
     let token_counter_service = Arc::new(HybridTokenCounter::new_local_only(
-        TokenizerService::new(
-            &test_app
-                .config
-                .tokenizer_model_path,
-        )
-        .expect("Failed to create tokenizer for test"),
+        TokenizerService::new(&test_app.config.tokenizer_model_path)
+            .expect("Failed to create tokenizer for test"),
     ));
     let lorebook_service = Arc::new(LorebookService::new(
         test_app.db_pool.clone(),
@@ -496,11 +483,8 @@ async fn test_first_mes_included_in_history() {
         auth_backend,
     };
 
-    let state_for_service = AppState::new(
-        test_app.db_pool.clone(),
-        test_app.config.clone(),
-        services,
-    );
+    let state_for_service =
+        AppState::new(test_app.db_pool.clone(), test_app.config.clone(), services);
     let state_arc = std::sync::Arc::new(state_for_service);
 
     // Use get_session_data_for_generation to get the session data

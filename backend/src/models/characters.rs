@@ -2,7 +2,7 @@
 use crate::errors::AppError;
 use bigdecimal::BigDecimal;
 use chrono::{DateTime, Utc};
-use diesel::{Queryable, Insertable, Identifiable, AsChangeset, Selectable, Associations};
+use diesel::{AsChangeset, Associations, Identifiable, Insertable, Queryable, Selectable};
 use diesel_json::Json;
 use secrecy::{ExposeSecret, SecretBox}; // Corrected: SecretVec -> SecretBox
 use serde::{Deserialize, Serialize};
@@ -25,7 +25,8 @@ use crate::services::encryption_service::EncryptionService; // Added
     Serialize,
     Deserialize,
     Clone,
-    PartialEq, Eq,
+    PartialEq,
+    Eq,
     AsChangeset,
 )] // Removed Debug for custom impl
 #[diesel(belongs_to(User, foreign_key = user_id))]
@@ -133,14 +134,41 @@ impl Character {
 
     fn add_encrypted_fields(&self, debug_struct: &mut std::fmt::DebugStruct<'_, '_>) {
         debug_struct
-            .field("description", &self.description.as_ref().map(|_| "[REDACTED_BYTES]"))
-            .field("personality", &self.personality.as_ref().map(|_| "[REDACTED_BYTES]"))
-            .field("scenario", &self.scenario.as_ref().map(|_| "[REDACTED_BYTES]"))
-            .field("first_mes", &self.first_mes.as_ref().map(|_| "[REDACTED_BYTES]"))
-            .field("mes_example", &self.mes_example.as_ref().map(|_| "[REDACTED_BYTES]"))
-            .field("creator_notes", &self.creator_notes.as_ref().map(|_| "[REDACTED_BYTES]"))
-            .field("system_prompt", &self.system_prompt.as_ref().map(|_| "[REDACTED_BYTES]"))
-            .field("post_history_instructions", &self.post_history_instructions.as_ref().map(|_| "[REDACTED_BYTES]"));
+            .field(
+                "description",
+                &self.description.as_ref().map(|_| "[REDACTED_BYTES]"),
+            )
+            .field(
+                "personality",
+                &self.personality.as_ref().map(|_| "[REDACTED_BYTES]"),
+            )
+            .field(
+                "scenario",
+                &self.scenario.as_ref().map(|_| "[REDACTED_BYTES]"),
+            )
+            .field(
+                "first_mes",
+                &self.first_mes.as_ref().map(|_| "[REDACTED_BYTES]"),
+            )
+            .field(
+                "mes_example",
+                &self.mes_example.as_ref().map(|_| "[REDACTED_BYTES]"),
+            )
+            .field(
+                "creator_notes",
+                &self.creator_notes.as_ref().map(|_| "[REDACTED_BYTES]"),
+            )
+            .field(
+                "system_prompt",
+                &self.system_prompt.as_ref().map(|_| "[REDACTED_BYTES]"),
+            )
+            .field(
+                "post_history_instructions",
+                &self
+                    .post_history_instructions
+                    .as_ref()
+                    .map(|_| "[REDACTED_BYTES]"),
+            );
     }
 
     fn add_metadata_fields(&self, debug_struct: &mut std::fmt::DebugStruct<'_, '_>) {
@@ -148,11 +176,26 @@ impl Character {
             .field("tags", &self.tags.as_ref().map(|_| "[REDACTED_LIST]"))
             .field("creator", &self.creator.as_ref().map(|_| "[REDACTED]"))
             .field("character_version", &self.character_version)
-            .field("alternate_greetings", &self.alternate_greetings.as_ref().map(|_| "[REDACTED_LIST]"))
+            .field(
+                "alternate_greetings",
+                &self.alternate_greetings.as_ref().map(|_| "[REDACTED_LIST]"),
+            )
             .field("nickname", &self.nickname.as_ref().map(|_| "[REDACTED]"))
-            .field("creator_notes_multilingual", &self.creator_notes_multilingual.as_ref().map(|_| "[REDACTED_JSON]"))
+            .field(
+                "creator_notes_multilingual",
+                &self
+                    .creator_notes_multilingual
+                    .as_ref()
+                    .map(|_| "[REDACTED_JSON]"),
+            )
             .field("source", &self.source.as_ref().map(|_| "[REDACTED_LIST]"))
-            .field("group_only_greetings", &self.group_only_greetings.as_ref().map(|_| "[REDACTED_LIST]"))
+            .field(
+                "group_only_greetings",
+                &self
+                    .group_only_greetings
+                    .as_ref()
+                    .map(|_| "[REDACTED_LIST]"),
+            )
             .field("creation_date", &self.creation_date)
             .field("modification_date", &self.modification_date)
             .field("created_at", &self.created_at)
@@ -167,21 +210,45 @@ impl Character {
 
     fn add_more_encrypted_fields(&self, debug_struct: &mut std::fmt::DebugStruct<'_, '_>) {
         debug_struct
-            .field("persona", &self.persona.as_ref().map(|_| "[REDACTED_BYTES]"))
-            .field("world_scenario", &self.world_scenario.as_ref().map(|_| "[REDACTED_BYTES]"))
+            .field(
+                "persona",
+                &self.persona.as_ref().map(|_| "[REDACTED_BYTES]"),
+            )
+            .field(
+                "world_scenario",
+                &self.world_scenario.as_ref().map(|_| "[REDACTED_BYTES]"),
+            )
             .field("avatar", &self.avatar.as_ref().map(|_| "[REDACTED]"))
             .field("chat", &self.chat.as_ref().map(|_| "[REDACTED]"))
-            .field("greeting", &self.greeting.as_ref().map(|_| "[REDACTED_BYTES]"))
-            .field("definition", &self.definition.as_ref().map(|_| "[REDACTED_BYTES]"))
-            .field("example_dialogue", &self.example_dialogue.as_ref().map(|_| "[REDACTED_BYTES]"))
-            .field("model_prompt", &self.model_prompt.as_ref().map(|_| "[REDACTED_BYTES]"))
-            .field("user_persona", &self.user_persona.as_ref().map(|_| "[REDACTED_BYTES]"));
+            .field(
+                "greeting",
+                &self.greeting.as_ref().map(|_| "[REDACTED_BYTES]"),
+            )
+            .field(
+                "definition",
+                &self.definition.as_ref().map(|_| "[REDACTED_BYTES]"),
+            )
+            .field(
+                "example_dialogue",
+                &self.example_dialogue.as_ref().map(|_| "[REDACTED_BYTES]"),
+            )
+            .field(
+                "model_prompt",
+                &self.model_prompt.as_ref().map(|_| "[REDACTED_BYTES]"),
+            )
+            .field(
+                "user_persona",
+                &self.user_persona.as_ref().map(|_| "[REDACTED_BYTES]"),
+            );
     }
 
     fn add_visibility_and_settings_fields(&self, debug_struct: &mut std::fmt::DebugStruct<'_, '_>) {
         debug_struct
             .field("default_voice", &self.default_voice)
-            .field("extensions", &self.extensions.as_ref().map(|_| "[REDACTED_JSON]"))
+            .field(
+                "extensions",
+                &self.extensions.as_ref().map(|_| "[REDACTED_JSON]"),
+            )
             .field("data_id", &self.data_id)
             .field("category", &self.category)
             .field("definition_visibility", &self.definition_visibility)
@@ -200,9 +267,15 @@ impl Character {
             .field("sharing_visibility", &self.sharing_visibility)
             .field("status", &self.status)
             .field("system_prompt_visibility", &self.system_prompt_visibility)
-            .field("system_tags", &self.system_tags.as_ref().map(|_| "[REDACTED_LIST]"))
+            .field(
+                "system_tags",
+                &self.system_tags.as_ref().map(|_| "[REDACTED_LIST]"),
+            )
             .field("token_budget", &self.token_budget)
-            .field("usage_hints", &self.usage_hints.as_ref().map(|_| "[REDACTED_JSON]"))
+            .field(
+                "usage_hints",
+                &self.usage_hints.as_ref().map(|_| "[REDACTED_JSON]"),
+            )
             .field("user_persona_visibility", &self.user_persona_visibility)
             .field("visibility", &self.visibility)
             .field("weight", &self.weight)
@@ -211,21 +284,81 @@ impl Character {
 
     fn add_nonce_fields(&self, debug_struct: &mut std::fmt::DebugStruct<'_, '_>) {
         debug_struct
-            .field("description_nonce", &self.description_nonce.as_ref().map(|_| "[REDACTED_NONCE]"))
-            .field("personality_nonce", &self.personality_nonce.as_ref().map(|_| "[REDACTED_NONCE]"))
-            .field("scenario_nonce", &self.scenario_nonce.as_ref().map(|_| "[REDACTED_NONCE]"))
-            .field("first_mes_nonce", &self.first_mes_nonce.as_ref().map(|_| "[REDACTED_NONCE]"))
-            .field("mes_example_nonce", &self.mes_example_nonce.as_ref().map(|_| "[REDACTED_NONCE]"))
-            .field("creator_notes_nonce", &self.creator_notes_nonce.as_ref().map(|_| "[REDACTED_NONCE]"))
-            .field("system_prompt_nonce", &self.system_prompt_nonce.as_ref().map(|_| "[REDACTED_NONCE]"))
-            .field("persona_nonce", &self.persona_nonce.as_ref().map(|_| "[REDACTED_NONCE]"))
-            .field("world_scenario_nonce", &self.world_scenario_nonce.as_ref().map(|_| "[REDACTED_NONCE]"))
-            .field("greeting_nonce", &self.greeting_nonce.as_ref().map(|_| "[REDACTED_NONCE]"))
-            .field("definition_nonce", &self.definition_nonce.as_ref().map(|_| "[REDACTED_NONCE]"))
-            .field("example_dialogue_nonce", &self.example_dialogue_nonce.as_ref().map(|_| "[REDACTED_NONCE]"))
-            .field("model_prompt_nonce", &self.model_prompt_nonce.as_ref().map(|_| "[REDACTED_NONCE]"))
-            .field("user_persona_nonce", &self.user_persona_nonce.as_ref().map(|_| "[REDACTED_NONCE]"))
-            .field("post_history_instructions_nonce", &self.post_history_instructions_nonce.as_ref().map(|_| "[REDACTED_NONCE]"));
+            .field(
+                "description_nonce",
+                &self.description_nonce.as_ref().map(|_| "[REDACTED_NONCE]"),
+            )
+            .field(
+                "personality_nonce",
+                &self.personality_nonce.as_ref().map(|_| "[REDACTED_NONCE]"),
+            )
+            .field(
+                "scenario_nonce",
+                &self.scenario_nonce.as_ref().map(|_| "[REDACTED_NONCE]"),
+            )
+            .field(
+                "first_mes_nonce",
+                &self.first_mes_nonce.as_ref().map(|_| "[REDACTED_NONCE]"),
+            )
+            .field(
+                "mes_example_nonce",
+                &self.mes_example_nonce.as_ref().map(|_| "[REDACTED_NONCE]"),
+            )
+            .field(
+                "creator_notes_nonce",
+                &self
+                    .creator_notes_nonce
+                    .as_ref()
+                    .map(|_| "[REDACTED_NONCE]"),
+            )
+            .field(
+                "system_prompt_nonce",
+                &self
+                    .system_prompt_nonce
+                    .as_ref()
+                    .map(|_| "[REDACTED_NONCE]"),
+            )
+            .field(
+                "persona_nonce",
+                &self.persona_nonce.as_ref().map(|_| "[REDACTED_NONCE]"),
+            )
+            .field(
+                "world_scenario_nonce",
+                &self
+                    .world_scenario_nonce
+                    .as_ref()
+                    .map(|_| "[REDACTED_NONCE]"),
+            )
+            .field(
+                "greeting_nonce",
+                &self.greeting_nonce.as_ref().map(|_| "[REDACTED_NONCE]"),
+            )
+            .field(
+                "definition_nonce",
+                &self.definition_nonce.as_ref().map(|_| "[REDACTED_NONCE]"),
+            )
+            .field(
+                "example_dialogue_nonce",
+                &self
+                    .example_dialogue_nonce
+                    .as_ref()
+                    .map(|_| "[REDACTED_NONCE]"),
+            )
+            .field(
+                "model_prompt_nonce",
+                &self.model_prompt_nonce.as_ref().map(|_| "[REDACTED_NONCE]"),
+            )
+            .field(
+                "user_persona_nonce",
+                &self.user_persona_nonce.as_ref().map(|_| "[REDACTED_NONCE]"),
+            )
+            .field(
+                "post_history_instructions_nonce",
+                &self
+                    .post_history_instructions_nonce
+                    .as_ref()
+                    .map(|_| "[REDACTED_NONCE]"),
+            );
     }
 }
 
@@ -419,21 +552,96 @@ impl Character {
         let encryption_service = EncryptionService;
 
         Ok(DecryptedCharacterFields {
-            description: Self::decrypt_field(self.description.as_ref(), self.description_nonce.as_ref(), dek, &encryption_service)?,
-            personality: Self::decrypt_field(self.personality.as_ref(), self.personality_nonce.as_ref(), dek, &encryption_service)?,
-            scenario: Self::decrypt_field(self.scenario.as_ref(), self.scenario_nonce.as_ref(), dek, &encryption_service)?,
-            first_mes: Self::decrypt_field(self.first_mes.as_ref(), self.first_mes_nonce.as_ref(), dek, &encryption_service)?,
-            mes_example: Self::decrypt_field(self.mes_example.as_ref(), self.mes_example_nonce.as_ref(), dek, &encryption_service)?,
-            creator_notes: Self::decrypt_field(self.creator_notes.as_ref(), self.creator_notes_nonce.as_ref(), dek, &encryption_service)?,
-            system_prompt: Self::decrypt_field(self.system_prompt.as_ref(), self.system_prompt_nonce.as_ref(), dek, &encryption_service)?,
-            post_history_instructions: Self::decrypt_field(self.post_history_instructions.as_ref(), self.post_history_instructions_nonce.as_ref(), dek, &encryption_service)?,
-            persona: Self::decrypt_field(self.persona.as_ref(), self.persona_nonce.as_ref(), dek, &encryption_service)?,
-            world_scenario: Self::decrypt_field(self.world_scenario.as_ref(), self.world_scenario_nonce.as_ref(), dek, &encryption_service)?,
-            greeting: Self::decrypt_field(self.greeting.as_ref(), self.greeting_nonce.as_ref(), dek, &encryption_service)?,
-            definition: Self::decrypt_field(self.definition.as_ref(), self.definition_nonce.as_ref(), dek, &encryption_service)?,
-            example_dialogue: Self::decrypt_field(self.example_dialogue.as_ref(), self.example_dialogue_nonce.as_ref(), dek, &encryption_service)?,
-            model_prompt: Self::decrypt_field(self.model_prompt.as_ref(), self.model_prompt_nonce.as_ref(), dek, &encryption_service)?,
-            user_persona: Self::decrypt_field(self.user_persona.as_ref(), self.user_persona_nonce.as_ref(), dek, &encryption_service)?,
+            description: Self::decrypt_field(
+                self.description.as_ref(),
+                self.description_nonce.as_ref(),
+                dek,
+                &encryption_service,
+            )?,
+            personality: Self::decrypt_field(
+                self.personality.as_ref(),
+                self.personality_nonce.as_ref(),
+                dek,
+                &encryption_service,
+            )?,
+            scenario: Self::decrypt_field(
+                self.scenario.as_ref(),
+                self.scenario_nonce.as_ref(),
+                dek,
+                &encryption_service,
+            )?,
+            first_mes: Self::decrypt_field(
+                self.first_mes.as_ref(),
+                self.first_mes_nonce.as_ref(),
+                dek,
+                &encryption_service,
+            )?,
+            mes_example: Self::decrypt_field(
+                self.mes_example.as_ref(),
+                self.mes_example_nonce.as_ref(),
+                dek,
+                &encryption_service,
+            )?,
+            creator_notes: Self::decrypt_field(
+                self.creator_notes.as_ref(),
+                self.creator_notes_nonce.as_ref(),
+                dek,
+                &encryption_service,
+            )?,
+            system_prompt: Self::decrypt_field(
+                self.system_prompt.as_ref(),
+                self.system_prompt_nonce.as_ref(),
+                dek,
+                &encryption_service,
+            )?,
+            post_history_instructions: Self::decrypt_field(
+                self.post_history_instructions.as_ref(),
+                self.post_history_instructions_nonce.as_ref(),
+                dek,
+                &encryption_service,
+            )?,
+            persona: Self::decrypt_field(
+                self.persona.as_ref(),
+                self.persona_nonce.as_ref(),
+                dek,
+                &encryption_service,
+            )?,
+            world_scenario: Self::decrypt_field(
+                self.world_scenario.as_ref(),
+                self.world_scenario_nonce.as_ref(),
+                dek,
+                &encryption_service,
+            )?,
+            greeting: Self::decrypt_field(
+                self.greeting.as_ref(),
+                self.greeting_nonce.as_ref(),
+                dek,
+                &encryption_service,
+            )?,
+            definition: Self::decrypt_field(
+                self.definition.as_ref(),
+                self.definition_nonce.as_ref(),
+                dek,
+                &encryption_service,
+            )?,
+            example_dialogue: Self::decrypt_field(
+                self.example_dialogue.as_ref(),
+                self.example_dialogue_nonce.as_ref(),
+                dek,
+                &encryption_service,
+            )?,
+            model_prompt: Self::decrypt_field(
+                self.model_prompt.as_ref(),
+                self.model_prompt_nonce.as_ref(),
+                dek,
+                &encryption_service,
+            )?,
+            user_persona: Self::decrypt_field(
+                self.user_persona.as_ref(),
+                self.user_persona_nonce.as_ref(),
+                dek,
+                &encryption_service,
+            )?,
         })
     }
 
@@ -445,23 +653,26 @@ impl Character {
     ) -> Result<Option<String>, AppError> {
         match (data, nonce, dek) {
             (Some(data), Some(nonce), Some(dek_val)) if !data.is_empty() => {
-                let decrypted_bytes = encryption_service.decrypt(data, nonce, dek_val.expose_secret())?;
-                let decrypted_string = String::from_utf8(decrypted_bytes)
-                    .map_err(|e| AppError::EncryptionError(format!("Invalid UTF-8 for field: {e}")))?;
+                let decrypted_bytes =
+                    encryption_service.decrypt(data, nonce, dek_val.expose_secret())?;
+                let decrypted_string = String::from_utf8(decrypted_bytes).map_err(|e| {
+                    AppError::EncryptionError(format!("Invalid UTF-8 for field: {e}"))
+                })?;
                 Ok(if decrypted_string.is_empty() {
                     Some(String::new())
                 } else {
                     Some(decrypted_string)
                 })
             }
-            (Some(data), Some(_), None) if !data.is_empty() => {
-                Ok(Some("[Encrypted]".to_string()))
-            }
+            (Some(data), Some(_), None) if !data.is_empty() => Ok(Some("[Encrypted]".to_string())),
             _ => Ok(Some(String::new())),
         }
     }
 
-    fn build_client_character(self, decrypted_fields: DecryptedCharacterFields) -> CharacterDataForClient {
+    fn build_client_character(
+        self,
+        decrypted_fields: DecryptedCharacterFields,
+    ) -> CharacterDataForClient {
         let default_empty_string_if_none =
             |opt: Option<String>| -> Option<String> { opt.or_else(|| Some(String::new())) };
 
@@ -864,8 +1075,52 @@ impl std::fmt::Debug for CharacterMetadata {
     }
 }
 
+impl CharacterMetadata {
+    /// Decrypt the description field if available
+    ///
+    /// # Errors
+    /// Returns `AppError` if decryption fails
+    pub fn decrypt_description(
+        &self,
+        dek: Option<&SecretBox<Vec<u8>>>,
+    ) -> Result<Option<String>, AppError> {
+        match (dek, &self.description, &self.description_nonce) {
+            (Some(dek_val), Some(description_data), Some(nonce_val)) => {
+                if description_data.is_empty() {
+                    return Ok(Some(String::new()));
+                }
+
+                let encryption_service = EncryptionService;
+                let decrypted_bytes = encryption_service
+                    .decrypt(description_data, nonce_val, dek_val.expose_secret())
+                    .map_err(|e| {
+                        AppError::EncryptionError(format!(
+                            "Failed to decrypt character description: {e}"
+                        ))
+                    })?;
+
+                let decrypted_text = String::from_utf8(decrypted_bytes).map_err(|e| {
+                    AppError::EncryptionError(format!(
+                        "Invalid UTF-8 in decrypted character description: {e}"
+                    ))
+                })?;
+
+                Ok(Some(decrypted_text))
+            }
+            (None, Some(_), Some(_)) => {
+                // Encrypted data exists but no DEK provided
+                Ok(Some("[Encrypted - DEK not available]".to_string()))
+            }
+            _ => {
+                // No description data or missing components
+                Ok(None)
+            }
+        }
+    }
+}
+
 // Helper function to create a dummy Character instance
-#[must_use] 
+#[must_use]
 pub fn create_dummy_character() -> Character {
     // Made pub for potential use in other tests
     let now = Utc::now();
@@ -1019,7 +1274,7 @@ mod tests {
     fn test_character_clone() {
         let character1 = create_dummy_character();
         let character1_clone = &character1;
-        
+
         // Verify they are identical after cloning
         assert_eq!(character1.id, character1_clone.id);
         assert_eq!(character1.name, character1_clone.name);
@@ -1042,10 +1297,7 @@ mod tests {
         assert!(character.description_nonce.is_some());
 
         // Convert to ClientCharacter with DEK
-        let client_char = character
-            .clone()
-            .into_client_character(Some(&dek))
-            .unwrap();
+        let client_char = character.clone().into_client_character(Some(&dek)).unwrap();
         assert_eq!(client_char.description, original_description);
 
         // Test with empty description
@@ -1055,9 +1307,7 @@ mod tests {
             .unwrap();
         assert!(char_empty_desc.description.is_none()); // Empty string leads to None
         assert!(char_empty_desc.description_nonce.is_none());
-        let client_empty_desc = char_empty_desc
-            .into_client_character(Some(&dek))
-            .unwrap();
+        let client_empty_desc = char_empty_desc.into_client_character(Some(&dek)).unwrap();
         assert_eq!(client_empty_desc.description, "");
 
         // Test with inconsistent nonce (simulated by no nonce)
@@ -1078,9 +1328,7 @@ mod tests {
         char_none_desc
             .encrypt_description_field(&dek, Some(String::new()))
             .unwrap(); // Clears fields
-        let client_none_desc = char_none_desc
-            .into_client_character(Some(&dek))
-            .unwrap();
+        let client_none_desc = char_none_desc.into_client_character(Some(&dek)).unwrap();
         assert_eq!(client_none_desc.description, ""); // Should be empty string
 
         // Convert to ClientCharacter without DEK
@@ -1100,9 +1348,7 @@ mod tests {
         // Print out the actual value for debugging
         println!("Description value: {:?}", client_data_no_desc.description);
         assert_eq!(client_data_no_desc.description, Some(String::new())); // Expect Some("") instead of None
-        let client_data_no_desc_no_dek = char_no_desc
-            .into_decrypted_for_client(None)
-            .unwrap();
+        let client_data_no_desc_no_dek = char_no_desc.into_decrypted_for_client(None).unwrap();
         assert_eq!(client_data_no_desc_no_dek.description, Some(String::new())); // Expect Some("") instead of None
     }
 
@@ -1139,9 +1385,7 @@ mod tests {
         );
 
         // Without DEK
-        let client_data_without_dek = character
-            .into_decrypted_for_client(None)
-            .unwrap();
+        let client_data_without_dek = character.into_decrypted_for_client(None).unwrap();
         assert_eq!(
             client_data_without_dek.description.as_deref(),
             Some("[Encrypted]")
@@ -1160,9 +1404,7 @@ mod tests {
         // Print out the actual value for debugging
         println!("Description value: {:?}", client_data_no_desc.description);
         assert_eq!(client_data_no_desc.description, Some(String::new())); // Expect Some("") instead of None
-        let client_data_no_desc_no_dek = char_no_desc
-            .into_decrypted_for_client(None)
-            .unwrap();
+        let client_data_no_desc_no_dek = char_no_desc.into_decrypted_for_client(None).unwrap();
         assert_eq!(client_data_no_desc_no_dek.description, Some(String::new())); // Expect Some("") instead of None
     }
 

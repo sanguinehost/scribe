@@ -12,7 +12,9 @@ use tracing;
 use uuid::Uuid;
 
 // User role enum
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, diesel_derive_enum::DbEnum, Default)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, diesel_derive_enum::DbEnum, Default,
+)]
 #[ExistingTypePath = "crate::schema::sql_types::UserRole"]
 pub enum UserRole {
     #[default]
@@ -34,7 +36,9 @@ impl std::fmt::Display for UserRole {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, diesel_derive_enum::DbEnum, Default)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, diesel_derive_enum::DbEnum, Default,
+)]
 #[ExistingTypePath = "crate::schema::sql_types::AccountStatus"]
 pub enum AccountStatus {
     #[default]
@@ -43,8 +47,6 @@ pub enum AccountStatus {
     #[db_rename = "locked"]
     Locked,
 }
-
-
 
 // --- Newtype wrapper for DEK serialization ---
 #[derive(Debug)] // Manual Debug to redact SecretBox

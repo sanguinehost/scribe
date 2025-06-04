@@ -176,8 +176,7 @@ impl DieselSessionStore {
 #[must_use]
 pub fn offset_to_utc(offset_dt: Option<OffsetDateTime>) -> Option<DateTime<Utc>> {
     // Made pub
-    offset_dt
-        .and_then(|dt| DateTime::from_timestamp(dt.unix_timestamp(), 0))
+    offset_dt.and_then(|dt| DateTime::from_timestamp(dt.unix_timestamp(), 0))
 }
 
 // Helper function to convert chrono::DateTime<Utc> to time::OffsetDateTime

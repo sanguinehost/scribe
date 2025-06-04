@@ -40,9 +40,7 @@ async fn create_dummy_lorebook(
             .text()
             .await
             .unwrap_or_else(|_| "Could not get error body".to_string());
-        panic!(
-            "create_dummy_lorebook failed with status: {status:?}, body: {error_body}"
-        );
+        panic!("create_dummy_lorebook failed with status: {status:?}, body: {error_body}");
     }
     let lorebook: LorebookResponseDto = response
         .json()
@@ -86,9 +84,7 @@ async fn create_dummy_lorebook_entry(
             .text()
             .await
             .unwrap_or_else(|_| "Could not get error body".to_string());
-        panic!(
-            "create_dummy_lorebook_entry failed with status: {status:?}, body: {error_body}"
-        );
+        panic!("create_dummy_lorebook_entry failed with status: {status:?}, body: {error_body}");
     }
     let entry: LorebookEntryResponseDto = response
         .json()
@@ -2038,7 +2034,7 @@ async fn test_export_lorebook_success() {
 
     // Create a lorebook with an entry
     let lorebook_id = create_dummy_lorebook(&test_app, user_data.id, &auth_client).await;
-    
+
     let entry_payload = CreateLorebookEntryDto {
         entry_title: "Test Entry".to_string(),
         keys_text: Some("test, example".to_string()),
@@ -2051,7 +2047,10 @@ async fn test_export_lorebook_success() {
     };
 
     let entry_response = auth_client
-        .post(format!("{}/api/lorebooks/{}/entries", test_app.address, lorebook_id))
+        .post(format!(
+            "{}/api/lorebooks/{}/entries",
+            test_app.address, lorebook_id
+        ))
         .json(&entry_payload)
         .send()
         .await
@@ -2060,7 +2059,10 @@ async fn test_export_lorebook_success() {
 
     // Export the lorebook
     let export_response = auth_client
-        .get(format!("{}/api/lorebooks/{}/export", test_app.address, lorebook_id))
+        .get(format!(
+            "{}/api/lorebooks/{}/export",
+            test_app.address, lorebook_id
+        ))
         .send()
         .await
         .expect("Request failed");
@@ -2074,10 +2076,10 @@ async fn test_export_lorebook_success() {
     // Verify the export structure matches SillyTavern format
     assert!(exported_data.get("entries").is_some());
     assert!(exported_data.get("name").is_some());
-    
+
     let entries = exported_data["entries"].as_object().unwrap();
     assert!(entries.len() > 0);
-    
+
     // Check the first entry has the required SillyTavern fields
     let first_entry = entries.values().next().unwrap();
     assert!(first_entry.get("uid").is_some());
@@ -2088,7 +2090,7 @@ async fn test_export_lorebook_success() {
     assert!(first_entry.get("constant").is_some());
     assert!(first_entry.get("order").is_some());
     assert!(first_entry.get("position").is_some());
-    
+
     // Verify data integrity
     assert_eq!(first_entry["content"], "This is test content");
     assert_eq!(first_entry["comment"], "Test comment");
@@ -2096,258 +2098,312 @@ async fn test_export_lorebook_success() {
     assert_eq!(first_entry["constant"], false);
     assert_eq!(first_entry["order"], 100);
     assert_eq!(first_entry["position"], 1); // "after_prompt" should map to 1
-    
+
     let keywords = first_entry["key"].as_array().unwrap();
     assert_eq!(keywords.len(), 2);
     assert!(keywords.contains(&serde_json::Value::String("test".to_string())));
     assert!(keywords.contains(&serde_json::Value::String("example".to_string())));
 }
 #[tokio::test]
-    async fn test_import_lorebook_scribe_minimal_success() {
-        let test_app = spawn_app(false, false, false).await;
-        let _test_data_guard = TestDataGuard::new(test_app.db_pool.clone());
+async fn test_import_lorebook_scribe_minimal_success() {
+    let test_app = spawn_app(false, false, false).await;
+    let _test_data_guard = TestDataGuard::new(test_app.db_pool.clone());
 
-        let user_credentials = ("user_import_scribe@example.com", "password123");
-        let _user_data = scribe_backend::test_helpers::db::create_test_user(
-            &test_app.db_pool,
-            user_credentials.0.to_string(),
-            user_credentials.1.to_string(),
-        )
-        .await
-        .expect("Failed to create user");
-        let (auth_client, _user_token_str) = scribe_backend::test_helpers::login_user_via_api(
-            &test_app,
-            user_credentials.0,
-            user_credentials.1,
-        )
-        .await;
+    let user_credentials = ("user_import_scribe@example.com", "password123");
+    let _user_data = scribe_backend::test_helpers::db::create_test_user(
+        &test_app.db_pool,
+        user_credentials.0.to_string(),
+        user_credentials.1.to_string(),
+    )
+    .await
+    .expect("Failed to create user");
+    let (auth_client, _user_token_str) = scribe_backend::test_helpers::login_user_via_api(
+        &test_app,
+        user_credentials.0,
+        user_credentials.1,
+    )
+    .await;
 
-        let payload = serde_json::json!({
-            "name": "Imported Scribe Lorebook",
-            "description": "A lorebook imported from Scribe Minimal format.",
-            "entries": [
-                {
-                    "title": "Scribe Entry 1",
-                    "keywords": ["scribe", "test"],
-                    "content": "Content of scribe entry one."
-                },
-                {
-                    "title": "Scribe Entry 2",
-                    "keywords": ["another", "entry"],
-                    "content": "Content of scribe entry two."
-                }
-            ]
-        });
-
-        let response = auth_client
-            .post(format!("{}/api/lorebooks/import?format=scribe_minimal", test_app.address))
-            .json(&payload)
-            .send()
-            .await
-            .expect("Request failed");
-
-        assert_eq!(response.status(), StatusCode::CREATED);
-        let imported_lorebook: LorebookResponseDto = response.json().await.expect("Failed to parse response");
-
-        assert_eq!(imported_lorebook.name, "Imported Scribe Lorebook");
-        assert_eq!(imported_lorebook.description, Some("A lorebook imported from Scribe Minimal format.".to_string()));
-        assert_eq!(imported_lorebook.source_format, "scribe_v1");
-
-        // Verify entries were created
-        let entries_response = auth_client
-            .get(format!("{}/api/lorebooks/{}/entries", test_app.address, imported_lorebook.id))
-            .send()
-            .await
-            .expect("Failed to fetch entries");
-        assert_eq!(entries_response.status(), StatusCode::OK);
-        let entries: Vec<LorebookEntryResponseDto> = entries_response.json().await.expect("Failed to parse entries");
-
-        assert_eq!(entries.len(), 2);
-        assert!(entries.iter().any(|e| e.entry_title == "Scribe Entry 1" && e.content == "Content of scribe entry one."));
-        assert!(entries.iter().any(|e| e.entry_title == "Scribe Entry 2" && e.content == "Content of scribe entry two."));
-    }
-
-    #[tokio::test]
-    async fn test_import_lorebook_scribe_minimal_unauthorized() {
-        let test_app = spawn_app(false, false, false).await;
-        let _test_data_guard = TestDataGuard::new(test_app.db_pool.clone());
-        let unauth_http_client = reqwest::Client::new();
-
-        let payload = serde_json::json!({
-            "name": "Unauthorized Scribe Lorebook",
-            "entries": []
-        });
-
-        let response = unauth_http_client
-            .post(format!("{}/api/lorebooks/import?format=scribe_minimal", test_app.address))
-            .json(&payload)
-            .send()
-            .await
-            .expect("Request failed");
-
-        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
-    }
-
-    #[tokio::test]
-    async fn test_import_lorebook_scribe_minimal_validation_error() {
-        let test_app = spawn_app(false, false, false).await;
-        let _test_data_guard = TestDataGuard::new(test_app.db_pool.clone());
-
-        let user_credentials = ("user_import_scribe_val@example.com", "password123");
-        let _user_data = scribe_backend::test_helpers::db::create_test_user(
-            &test_app.db_pool,
-            user_credentials.0.to_string(),
-            user_credentials.1.to_string(),
-        )
-        .await
-        .expect("Failed to create user");
-        let (auth_client, _user_token_str) = scribe_backend::test_helpers::login_user_via_api(
-            &test_app,
-            user_credentials.0,
-            user_credentials.1,
-        )
-        .await;
-
-        // Invalid payload: missing required 'name' field for the lorebook
-        let payload = serde_json::json!({
-            "description": "This should fail",
-            "entries": []
-        });
-
-        let response = auth_client
-            .post(format!("{}/api/lorebooks/import?format=scribe_minimal", test_app.address))
-            .json(&payload)
-            .send()
-            .await
-            .expect("Request failed");
-
-        assert!(
-            response.status() == StatusCode::BAD_REQUEST || response.status() == StatusCode::UNPROCESSABLE_ENTITY
-        );
-
-        // Invalid payload: missing required 'title' for an entry
-        let payload_invalid_entry = serde_json::json!({
-            "name": "Valid Lorebook Name",
-            "entries": [
-                {
-                    "keywords": ["invalid"],
-                    "content": "Missing title"
-                }
-            ]
-        });
-
-        let response_invalid_entry = auth_client
-            .post(format!("{}/api/lorebooks/import?format=scribe_minimal", test_app.address))
-            .json(&payload_invalid_entry)
-            .send()
-            .await
-            .expect("Request failed");
-
-        assert!(
-            response_invalid_entry.status() == StatusCode::BAD_REQUEST || response_invalid_entry.status() == StatusCode::UNPROCESSABLE_ENTITY
-        );
-    }
-#[tokio::test]
-    async fn test_import_lorebook_silly_tavern_full_success() {
-        let test_app = spawn_app(false, false, false).await;
-        let _test_data_guard = TestDataGuard::new(test_app.db_pool.clone());
-
-        let user_credentials = ("user_import_st@example.com", "password123");
-        let user_data = scribe_backend::test_helpers::db::create_test_user(
-            &test_app.db_pool,
-            user_credentials.0.to_string(),
-            user_credentials.1.to_string(),
-        )
-        .await
-        .expect("Failed to create user");
-        let (auth_client, _user_token_str) = scribe_backend::test_helpers::login_user_via_api(
-            &test_app,
-            user_credentials.0,
-            user_credentials.1,
-        )
-        .await;
-
-        let payload = serde_json::json!({
-            "entries": {
-                "entry1_key_in_map": { // This key in the map is not the SillyTavern UID
-                    "uid": 1001, // This is the SillyTavern UID
-                    "key": ["silly", "tavern", "test"],
-                    "content": "Content for SillyTavern entry one.",
-                    "comment": "A comment for entry one.",
-                    "disable": false, // is_enabled = true
-                    "constant": true,
-                    "order": 50,
-                    "position": 1, // "after_prompt"
-                    "display_name": "Silly Entry One"
-                },
-                "entry2_key_in_map": {
-                    "uid": 1002,
-                    "key": ["another", "silly"],
-                    "content": "Content for SillyTavern entry two.",
-                    // no comment
-                    "disable": true, // is_enabled = false
-                    "constant": false,
-                    "order": 20,
-                    "position": 0, // "before_prompt"
-                    "display_name": "Silly Entry Two"
-                }
+    let payload = serde_json::json!({
+        "name": "Imported Scribe Lorebook",
+        "description": "A lorebook imported from Scribe Minimal format.",
+        "entries": [
+            {
+                "title": "Scribe Entry 1",
+                "keywords": ["scribe", "test"],
+                "content": "Content of scribe entry one."
+            },
+            {
+                "title": "Scribe Entry 2",
+                "keywords": ["another", "entry"],
+                "content": "Content of scribe entry two."
             }
-            // No top-level name, description, is_public to test defaults
-        });
+        ]
+    });
 
-        let response = auth_client
-            .post(format!("{}/api/lorebooks/import?format=silly_tavern_full", test_app.address))
-            .json(&payload)
-            .send()
-            .await
-            .expect("Request failed");
+    let response = auth_client
+        .post(format!(
+            "{}/api/lorebooks/import?format=scribe_minimal",
+            test_app.address
+        ))
+        .json(&payload)
+        .send()
+        .await
+        .expect("Request failed");
 
-        assert_eq!(response.status(), StatusCode::CREATED, "Response: {:?}", response.text().await.unwrap_or_default());
-        let imported_lorebook: LorebookResponseDto = response.json().await.expect("Failed to parse response");
+    assert_eq!(response.status(), StatusCode::CREATED);
+    let imported_lorebook: LorebookResponseDto =
+        response.json().await.expect("Failed to parse response");
 
-        assert_eq!(imported_lorebook.name, "Imported Lorebook"); // Default name
-        assert_eq!(imported_lorebook.description, None); // Default description
-        assert_eq!(imported_lorebook.source_format, "silly_tavern_full_v1");
-        assert_eq!(imported_lorebook.user_id, user_data.id);
+    assert_eq!(imported_lorebook.name, "Imported Scribe Lorebook");
+    assert_eq!(
+        imported_lorebook.description,
+        Some("A lorebook imported from Scribe Minimal format.".to_string())
+    );
+    assert_eq!(imported_lorebook.source_format, "scribe_v1");
 
-        // Verify entries were created and mapped correctly
-        let entries_response = auth_client
-            .get(format!("{}/api/lorebooks/{}/entries", test_app.address, imported_lorebook.id))
-            .send()
-            .await
-            .expect("Failed to fetch entries");
-        assert_eq!(entries_response.status(), StatusCode::OK);
-        let entries: Vec<LorebookEntryResponseDto> = entries_response.json().await.expect("Failed to parse entries");
+    // Verify entries were created
+    let entries_response = auth_client
+        .get(format!(
+            "{}/api/lorebooks/{}/entries",
+            test_app.address, imported_lorebook.id
+        ))
+        .send()
+        .await
+        .expect("Failed to fetch entries");
+    assert_eq!(entries_response.status(), StatusCode::OK);
+    let entries: Vec<LorebookEntryResponseDto> = entries_response
+        .json()
+        .await
+        .expect("Failed to parse entries");
 
-        assert_eq!(entries.len(), 2);
+    assert_eq!(entries.len(), 2);
+    assert!(
+        entries
+            .iter()
+            .any(|e| e.entry_title == "Scribe Entry 1"
+                && e.content == "Content of scribe entry one.")
+    );
+    assert!(
+        entries
+            .iter()
+            .any(|e| e.entry_title == "Scribe Entry 2"
+                && e.content == "Content of scribe entry two.")
+    );
+}
 
-        // Sort entries by title to ensure consistent order for assertions if needed,
-        // though finding by title is more robust if order isn't guaranteed.
-        // For this test, finding by title is sufficient.
+#[tokio::test]
+async fn test_import_lorebook_scribe_minimal_unauthorized() {
+    let test_app = spawn_app(false, false, false).await;
+    let _test_data_guard = TestDataGuard::new(test_app.db_pool.clone());
+    let unauth_http_client = reqwest::Client::new();
 
-        let entry1 = entries.iter().find(|e| e.entry_title == "Silly Entry One").expect("Entry 1 not found");
-        assert_eq!(entry1.content, "Content for SillyTavern entry one.");
-        assert_eq!(entry1.keys_text, Some("silly, tavern, test".to_string()));
-        assert_eq!(entry1.comment, Some("A comment for entry one.".to_string()));
-        assert_eq!(entry1.is_enabled, true); // from disable: false
-        assert_eq!(entry1.is_constant, true);
-        assert_eq!(entry1.insertion_order, 50);
-        assert_eq!(entry1.placement_hint, "after_prompt".to_string()); // from position: 1
-        assert_eq!(entry1.user_id, user_data.id);
-        assert_eq!(entry1.lorebook_id, imported_lorebook.id);
+    let payload = serde_json::json!({
+        "name": "Unauthorized Scribe Lorebook",
+        "entries": []
+    });
 
+    let response = unauth_http_client
+        .post(format!(
+            "{}/api/lorebooks/import?format=scribe_minimal",
+            test_app.address
+        ))
+        .json(&payload)
+        .send()
+        .await
+        .expect("Request failed");
 
-        let entry2 = entries.iter().find(|e| e.entry_title == "Silly Entry Two").expect("Entry 2 not found");
-        assert_eq!(entry2.content, "Content for SillyTavern entry two.");
-        assert_eq!(entry2.keys_text, Some("another, silly".to_string()));
-        assert_eq!(entry2.comment, None);
-        assert_eq!(entry2.is_enabled, false); // from disable: true
-        assert_eq!(entry2.is_constant, false);
-        assert_eq!(entry2.insertion_order, 20);
-        assert_eq!(entry2.placement_hint, "before_prompt".to_string()); // from position: 0
-        assert_eq!(entry2.user_id, user_data.id);
-        assert_eq!(entry2.lorebook_id, imported_lorebook.id);
-    }
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn test_import_lorebook_scribe_minimal_validation_error() {
+    let test_app = spawn_app(false, false, false).await;
+    let _test_data_guard = TestDataGuard::new(test_app.db_pool.clone());
+
+    let user_credentials = ("user_import_scribe_val@example.com", "password123");
+    let _user_data = scribe_backend::test_helpers::db::create_test_user(
+        &test_app.db_pool,
+        user_credentials.0.to_string(),
+        user_credentials.1.to_string(),
+    )
+    .await
+    .expect("Failed to create user");
+    let (auth_client, _user_token_str) = scribe_backend::test_helpers::login_user_via_api(
+        &test_app,
+        user_credentials.0,
+        user_credentials.1,
+    )
+    .await;
+
+    // Invalid payload: missing required 'name' field for the lorebook
+    let payload = serde_json::json!({
+        "description": "This should fail",
+        "entries": []
+    });
+
+    let response = auth_client
+        .post(format!(
+            "{}/api/lorebooks/import?format=scribe_minimal",
+            test_app.address
+        ))
+        .json(&payload)
+        .send()
+        .await
+        .expect("Request failed");
+
+    assert!(
+        response.status() == StatusCode::BAD_REQUEST
+            || response.status() == StatusCode::UNPROCESSABLE_ENTITY
+    );
+
+    // Invalid payload: missing required 'title' for an entry
+    let payload_invalid_entry = serde_json::json!({
+        "name": "Valid Lorebook Name",
+        "entries": [
+            {
+                "keywords": ["invalid"],
+                "content": "Missing title"
+            }
+        ]
+    });
+
+    let response_invalid_entry = auth_client
+        .post(format!(
+            "{}/api/lorebooks/import?format=scribe_minimal",
+            test_app.address
+        ))
+        .json(&payload_invalid_entry)
+        .send()
+        .await
+        .expect("Request failed");
+
+    assert!(
+        response_invalid_entry.status() == StatusCode::BAD_REQUEST
+            || response_invalid_entry.status() == StatusCode::UNPROCESSABLE_ENTITY
+    );
+}
+#[tokio::test]
+async fn test_import_lorebook_silly_tavern_full_success() {
+    let test_app = spawn_app(false, false, false).await;
+    let _test_data_guard = TestDataGuard::new(test_app.db_pool.clone());
+
+    let user_credentials = ("user_import_st@example.com", "password123");
+    let user_data = scribe_backend::test_helpers::db::create_test_user(
+        &test_app.db_pool,
+        user_credentials.0.to_string(),
+        user_credentials.1.to_string(),
+    )
+    .await
+    .expect("Failed to create user");
+    let (auth_client, _user_token_str) = scribe_backend::test_helpers::login_user_via_api(
+        &test_app,
+        user_credentials.0,
+        user_credentials.1,
+    )
+    .await;
+
+    let payload = serde_json::json!({
+        "entries": {
+            "entry1_key_in_map": { // This key in the map is not the SillyTavern UID
+                "uid": 1001, // This is the SillyTavern UID
+                "key": ["silly", "tavern", "test"],
+                "content": "Content for SillyTavern entry one.",
+                "comment": "A comment for entry one.",
+                "disable": false, // is_enabled = true
+                "constant": true,
+                "order": 50,
+                "position": 1, // "after_prompt"
+                "display_name": "Silly Entry One"
+            },
+            "entry2_key_in_map": {
+                "uid": 1002,
+                "key": ["another", "silly"],
+                "content": "Content for SillyTavern entry two.",
+                // no comment
+                "disable": true, // is_enabled = false
+                "constant": false,
+                "order": 20,
+                "position": 0, // "before_prompt"
+                "display_name": "Silly Entry Two"
+            }
+        }
+        // No top-level name, description, is_public to test defaults
+    });
+
+    let response = auth_client
+        .post(format!(
+            "{}/api/lorebooks/import?format=silly_tavern_full",
+            test_app.address
+        ))
+        .json(&payload)
+        .send()
+        .await
+        .expect("Request failed");
+
+    assert_eq!(
+        response.status(),
+        StatusCode::CREATED,
+        "Response: {:?}",
+        response.text().await.unwrap_or_default()
+    );
+    let imported_lorebook: LorebookResponseDto =
+        response.json().await.expect("Failed to parse response");
+
+    assert_eq!(imported_lorebook.name, "Imported Lorebook"); // Default name
+    assert_eq!(imported_lorebook.description, None); // Default description
+    assert_eq!(imported_lorebook.source_format, "silly_tavern_full_v1");
+    assert_eq!(imported_lorebook.user_id, user_data.id);
+
+    // Verify entries were created and mapped correctly
+    let entries_response = auth_client
+        .get(format!(
+            "{}/api/lorebooks/{}/entries",
+            test_app.address, imported_lorebook.id
+        ))
+        .send()
+        .await
+        .expect("Failed to fetch entries");
+    assert_eq!(entries_response.status(), StatusCode::OK);
+    let entries: Vec<LorebookEntryResponseDto> = entries_response
+        .json()
+        .await
+        .expect("Failed to parse entries");
+
+    assert_eq!(entries.len(), 2);
+
+    // Sort entries by title to ensure consistent order for assertions if needed,
+    // though finding by title is more robust if order isn't guaranteed.
+    // For this test, finding by title is sufficient.
+
+    let entry1 = entries
+        .iter()
+        .find(|e| e.entry_title == "Silly Entry One")
+        .expect("Entry 1 not found");
+    assert_eq!(entry1.content, "Content for SillyTavern entry one.");
+    assert_eq!(entry1.keys_text, Some("silly, tavern, test".to_string()));
+    assert_eq!(entry1.comment, Some("A comment for entry one.".to_string()));
+    assert_eq!(entry1.is_enabled, true); // from disable: false
+    assert_eq!(entry1.is_constant, true);
+    assert_eq!(entry1.insertion_order, 50);
+    assert_eq!(entry1.placement_hint, "after_prompt".to_string()); // from position: 1
+    assert_eq!(entry1.user_id, user_data.id);
+    assert_eq!(entry1.lorebook_id, imported_lorebook.id);
+
+    let entry2 = entries
+        .iter()
+        .find(|e| e.entry_title == "Silly Entry Two")
+        .expect("Entry 2 not found");
+    assert_eq!(entry2.content, "Content for SillyTavern entry two.");
+    assert_eq!(entry2.keys_text, Some("another, silly".to_string()));
+    assert_eq!(entry2.comment, None);
+    assert_eq!(entry2.is_enabled, false); // from disable: true
+    assert_eq!(entry2.is_constant, false);
+    assert_eq!(entry2.insertion_order, 20);
+    assert_eq!(entry2.placement_hint, "before_prompt".to_string()); // from position: 0
+    assert_eq!(entry2.user_id, user_data.id);
+    assert_eq!(entry2.lorebook_id, imported_lorebook.id);
+}
 
 // Default implementation for UpdateLorebookEntryDto to make tests cleaner
 // when only a few fields are being updated.

@@ -274,6 +274,8 @@ pub(super) async fn handle_non_streaming_chat_response(
                     created_at: chrono::Utc::now(),
                     prompt_tokens: None,
                     completion_tokens: None,
+                    raw_prompt_ciphertext: None,
+                    raw_prompt_nonce: None,
                 });
             }
 
@@ -295,6 +297,8 @@ pub(super) async fn handle_non_streaming_chat_response(
             created_at: chrono::Utc::now(),
             prompt_tokens: None,
             completion_tokens: None,
+            raw_prompt_ciphertext: None,
+            raw_prompt_nonce: None,
         });
     }
 
@@ -314,6 +318,8 @@ pub(super) async fn handle_non_streaming_chat_response(
                 created_at: chrono::Utc::now(),     // Use current time
                 prompt_tokens: None,
                 completion_tokens: None,
+                raw_prompt_ciphertext: None,
+                raw_prompt_nonce: None,
             })
         }
         Err(e) => {

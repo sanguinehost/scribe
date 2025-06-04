@@ -68,10 +68,10 @@ impl QdrantClientService {
         // Note: Add API key handling if required for Qdrant Cloud or secured instances
         // Use the new Qdrant struct and its builder pattern
         let mut builder = Qdrant::from_url(qdrant_url);
-        
+
         // Set timeout for operations (30 seconds for better reliability in tests)
         builder = builder.timeout(std::time::Duration::from_secs(30));
-        
+
         // Build the client
         let qdrant_client = builder.build().map_err(|e| {
             error!(error = %e, "Failed to build Qdrant client");
@@ -208,7 +208,7 @@ impl QdrantClientService {
                     info!("Retrying collection creation, attempt {}/3", attempt);
                     tokio::time::sleep(tokio::time::Duration::from_millis(500 * attempt)).await;
                 }
-                
+
                 create_result = self
                     .client
                     .create_collection(CreateCollection {
@@ -228,7 +228,7 @@ impl QdrantClientService {
                     })
                     .await
                     .map_err(|e| anyhow::anyhow!(e));
-                    
+
                 if create_result.is_ok() {
                     break;
                 }
@@ -240,7 +240,8 @@ impl QdrantClientService {
                     info!("Successfully created collection '{}'", self.collection_name);
 
                     // Wait for collection to be fully ready with increased timeout
-                    for i in 0..20 { // Increased retries
+                    for i in 0..20 {
+                        // Increased retries
                         tokio::time::sleep(tokio::time::Duration::from_millis(200)).await; // Increased sleep duration
                         match self.client.collection_exists(&self.collection_name).await {
                             Ok(true) => {
@@ -252,7 +253,8 @@ impl QdrantClientService {
                                 break;
                             }
                             Ok(false) => {
-                                if i == 19 { // Adjusted for new retry count
+                                if i == 19 {
+                                    // Adjusted for new retry count
                                     return Err(AppError::VectorDbError(format!(
                                         "Collection '{}' was created but is not accessible after {} seconds",
                                         self.collection_name,
@@ -261,7 +263,8 @@ impl QdrantClientService {
                                 }
                             }
                             Err(e) => {
-                                if i == 19 { // Adjusted for new retry count
+                                if i == 19 {
+                                    // Adjusted for new retry count
                                     return Err(AppError::VectorDbError(format!(
                                         "Failed to verify collection '{}' exists after creation: {}",
                                         self.collection_name, e
@@ -395,7 +398,7 @@ impl QdrantClientService {
             vector: query_vector,
             limit,
             with_payload: Some(true.into()), // Request payload
-            filter,                  // Use the passed-in filter directly
+            filter,                          // Use the passed-in filter directly
             // Initialize other fields as needed, using defaults or None
             offset: None,
             score_threshold: None,
@@ -571,8 +574,9 @@ impl QdrantClientServiceTrait for QdrantClientService {
         limit: u64,
     ) -> Result<Vec<ScoredPoint>, AppError> {
         // Call the implementation method which returns RetrievedPoint
-        let retrieved_points =
-            self.retrieve_points(filter, usize::try_from(limit).unwrap_or(usize::MAX)).await?;
+        let retrieved_points = self
+            .retrieve_points(filter, usize::try_from(limit).unwrap_or(usize::MAX))
+            .await?;
 
         // Convert RetrievedPoint to ScoredPoint
         let scored_points = retrieved_points
@@ -705,7 +709,7 @@ mod tests {
         collection_name: Option<String>,
     ) -> Result<QdrantClientService, AppError> {
         use rand::random;
-        
+
         crate::test_helpers::ensure_rustls_provider_installed(); // Call public helper
 
         dotenv().ok(); // Load .env file for QDRANT_URL
@@ -920,7 +924,8 @@ mod tests {
             .await
             .expect("Failed to setup Qdrant client");
         let _collection_name = service.collection_name.clone(); // Prefix unused variable
-        let embedding_dim = usize::try_from(service.embedding_dimension).expect("embedding dimension should fit in usize");
+        let embedding_dim = usize::try_from(service.embedding_dimension)
+            .expect("embedding dimension should fit in usize");
 
         let point_id_1 = Uuid::new_v4();
         // Use slightly more distinct vectors for testing
@@ -1007,7 +1012,8 @@ mod tests {
             .await
             .expect("Failed to setup Qdrant client");
         let _collection_name = service.collection_name.clone(); // Prefix unused variable
-        let embedding_dim = usize::try_from(service.embedding_dimension).expect("embedding dimension should fit in usize");
+        let embedding_dim = usize::try_from(service.embedding_dimension)
+            .expect("embedding dimension should fit in usize");
 
         let point_id_filter = Uuid::new_v4();
         let mut rng3 = StdRng::seed_from_u64(123);
@@ -1043,7 +1049,10 @@ mod tests {
                 Ok(()) => break, // Success
                 Err(e) => {
                     if let AppError::VectorDbError(msg) = &e {
-                        if msg.contains("Collection") && (msg.contains("doesn't exist") || msg.contains("not found")) && attempt < MAX_RETRIES {
+                        if msg.contains("Collection")
+                            && (msg.contains("doesn't exist") || msg.contains("not found"))
+                            && attempt < MAX_RETRIES
+                        {
                             warn!(
                                 "Upsert failed because collection was not found (attempt {}). Ensuring and retrying...",
                                 attempt
@@ -1060,9 +1069,7 @@ mod tests {
                         }
                     }
                     // For other errors or max retries reached, panic with the original assertion message
-                    panic!(
-                        "Failed to upsert points for filter test: {e:?} (attempt {attempt})"
-                    );
+                    panic!("Failed to upsert points for filter test: {e:?} (attempt {attempt})");
                 }
             }
         }

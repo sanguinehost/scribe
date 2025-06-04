@@ -337,7 +337,9 @@ async fn test_upload_png_no_data_chunk() -> Result<(), anyhow::Error> {
     let mut png_bytes = Vec::new();
     png_bytes.extend_from_slice(&[137, 80, 78, 71, 13, 10, 26, 10]); // PNG signature
     let ihdr_data = &[0, 0, 0, 1, 0, 0, 0, 1, 8, 6, 0, 0, 0];
-    let ihdr_len = u32::try_from(ihdr_data.len()).expect("IHDR data too large").to_be_bytes();
+    let ihdr_len = u32::try_from(ihdr_data.len())
+        .expect("IHDR data too large")
+        .to_be_bytes();
     png_bytes.extend_from_slice(&ihdr_len);
     png_bytes.extend_from_slice(b"IHDR");
     png_bytes.extend_from_slice(ihdr_data);
@@ -347,7 +349,9 @@ async fn test_upload_png_no_data_chunk() -> Result<(), anyhow::Error> {
     let crc_ihdr = crc32fast::hash(&crc_data);
     png_bytes.extend_from_slice(&crc_ihdr.to_be_bytes());
     let idat_data = &[8, 29, 99, 96, 0, 0, 0, 3, 0, 1]; // Minimal IDAT
-    let idat_len = u32::try_from(idat_data.len()).expect("IDAT data too large").to_be_bytes();
+    let idat_len = u32::try_from(idat_data.len())
+        .expect("IDAT data too large")
+        .to_be_bytes();
     png_bytes.extend_from_slice(&idat_len);
     png_bytes.extend_from_slice(b"IDAT");
     png_bytes.extend_from_slice(idat_data);
@@ -491,7 +495,9 @@ async fn test_upload_invalid_json_in_png() -> Result<(), anyhow::Error> {
     let mut png_bytes = Vec::new();
     png_bytes.extend_from_slice(&[137, 80, 78, 71, 13, 10, 26, 10]);
     let ihdr_data = &[0, 0, 0, 1, 0, 0, 0, 1, 8, 6, 0, 0, 0];
-    let ihdr_len = u32::try_from(ihdr_data.len()).expect("IHDR data too large").to_be_bytes();
+    let ihdr_len = u32::try_from(ihdr_data.len())
+        .expect("IHDR data too large")
+        .to_be_bytes();
     png_bytes.extend_from_slice(&ihdr_len);
     png_bytes.extend_from_slice(b"IHDR");
     png_bytes.extend_from_slice(ihdr_data);
@@ -504,7 +510,9 @@ async fn test_upload_invalid_json_in_png() -> Result<(), anyhow::Error> {
     let invalid_json_payload = "this is not valid json";
     let base64_payload = base64::engine::general_purpose::STANDARD.encode(invalid_json_payload);
     let text_chunk_data = [b"ccv3".as_ref(), &[0u8], base64_payload.as_bytes()].concat();
-    let text_chunk_len = u32::try_from(text_chunk_data.len()).expect("Text chunk data too large").to_be_bytes();
+    let text_chunk_len = u32::try_from(text_chunk_data.len())
+        .expect("Text chunk data too large")
+        .to_be_bytes();
     png_bytes.extend_from_slice(&text_chunk_len);
     png_bytes.extend_from_slice(b"tEXt");
     png_bytes.extend_from_slice(&text_chunk_data);
@@ -515,7 +523,9 @@ async fn test_upload_invalid_json_in_png() -> Result<(), anyhow::Error> {
     png_bytes.extend_from_slice(&crc_text.to_be_bytes());
 
     let idat_data = &[8, 29, 99, 96, 0, 0, 0, 3, 0, 1];
-    let idat_len = u32::try_from(idat_data.len()).expect("IDAT data too large").to_be_bytes();
+    let idat_len = u32::try_from(idat_data.len())
+        .expect("IDAT data too large")
+        .to_be_bytes();
     png_bytes.extend_from_slice(&idat_len);
     png_bytes.extend_from_slice(b"IDAT");
     png_bytes.extend_from_slice(idat_data);

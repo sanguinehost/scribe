@@ -1,4 +1,3 @@
-
 #![allow(clippy::uninlined_format_args)]
 #![allow(clippy::manual_string_new)]
 

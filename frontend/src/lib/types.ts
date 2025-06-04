@@ -8,14 +8,16 @@ export interface User {
     // Add other user-related fields as needed
 }
 
-// Placeholder for Message type - Define based on expected fields from backend
+// Message type based on backend MessageResponse
 export interface Message {
     id: string;
-    chat_id: string;
+    session_id: string;
+    message_type: MessageRole;
     role: string;
-    parts: MessagePart[];
-    attachments: MessageAttachment[];
+    parts: any; // serde_json::Value from backend
+    attachments: any; // serde_json::Value from backend
     created_at: Date;
+    raw_prompt?: string | null; // Debug field containing the full prompt sent to AI
 }
 
 // Placeholder for Vote type - Define based on expected fields from backend
@@ -82,6 +84,9 @@ export interface LoginSuccessData {
 }
 
 export type VisibilityType = 'public' | 'private';
+
+// Message role type for Scribe messages
+export type MessageRole = 'User' | 'Assistant' | 'System';
 
 // Placeholder for Lorebook type - Define based on expected fields from backend
 export interface Lorebook {
@@ -171,6 +176,9 @@ export interface Character {
     avatar_url?: string | null;
     greeting?: string | null;
 }
+
+// Scribe-specific character type alias for consistency
+export type ScribeCharacter = Character;
 
 // User Persona types
 export interface UserPersona {
@@ -294,7 +302,20 @@ export type MessageResponse = {
     parts: MessagePart[];
     attachments: MessageAttachment[];
     created_at: Date;
+    raw_prompt?: string | null; // Debug field containing the full prompt sent to AI
 };
+
+// Scribe-specific chat message interface for frontend components
+export interface ScribeChatMessage {
+    id: string;
+    content: string;
+    message_type: MessageRole;
+    session_id?: string; // Chat session ID
+    created_at?: string; // Creation timestamp
+    user_id?: string; // User ID who created the message
+    loading?: boolean;
+    raw_prompt?: string | null; // Debug field containing the full prompt sent to AI
+}
 
 export type DocumentResponse = {
     id: string;

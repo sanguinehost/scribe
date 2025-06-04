@@ -1,7 +1,7 @@
 use crate::models::characters::Character;
 use crate::models::lorebooks::Lorebook; // Import the new Lorebook
 use chrono::{DateTime, Utc}; // Add DateTime and Utc
-use diesel::{Queryable, Insertable, Identifiable, Selectable, Associations};
+use diesel::{Associations, Identifiable, Insertable, Queryable, Selectable};
 use diesel_json::Json;
 use serde::{Deserialize, Serialize}; // Added Deserializer
 use serde_json::Value; // Using Value for flexibility in extensions and mixed types like id
@@ -183,7 +183,7 @@ impl std::fmt::Debug for Decorator {
 
 /// Helper function to parse decorators from content string.
 /// Making this private again as tests are now colocated.
-/// 
+///
 /// Parses decorator lines (starting with specific syntax) and regular content lines,
 /// returning both the parsed decorators and the cleaned content.
 #[cfg(test)]
@@ -248,7 +248,8 @@ fn parse_decorators_from_content(raw_content: &str) -> (Vec<Decorator>, String) 
                         .splitn(2, |c: char| c.is_whitespace())
                         .collect();
                     // Trim potential trailing whitespace from name
-                    let fallback_name = fallback_parts.first().unwrap_or(&"").trim_end().to_string();
+                    let fallback_name =
+                        fallback_parts.first().unwrap_or(&"").trim_end().to_string();
 
                     if fallback_name.is_empty() {
                         // Invalid fallback line, treat as content
@@ -502,201 +503,293 @@ use crate::services::character_parser::ParsedCharacterCard;
 impl NewCharacter {
     // Add user_id parameter
     fn from_v3_card(data_v3_card: &CharacterCardV3, user_id: Uuid) -> Self {
-                // --- Handling V3 Card ---
-                // Extract spec and version
-                let spec = data_v3_card.spec.clone();
-                let spec_version = data_v3_card.spec_version.clone();
-                let data = data_v3_card.data.clone(); // Clone the inner data
+        // --- Handling V3 Card ---
+        // Extract spec and version
+        let spec = data_v3_card.spec.clone();
+        let spec_version = data_v3_card.spec_version.clone();
+        let data = data_v3_card.data.clone(); // Clone the inner data
 
-                // Convert V3 Vec<String> to DB Option<Vec<Option<String>>>
-                let tags = if data.tags.is_empty() { None } else { Some(data.tags.into_iter().map(Some).collect()) };
-                let alternate_greetings = if data.alternate_greetings.is_empty() { None } else { Some(data.alternate_greetings.into_iter().map(Some).collect()) };
-                let source = data.source.map(|v| v.into_iter().map(Some).collect());
-                let group_only_greetings = if data.group_only_greetings.is_empty() { None } else { Some(data.group_only_greetings.into_iter().map(Some).collect()) };
+        // Convert V3 Vec<String> to DB Option<Vec<Option<String>>>
+        let tags = if data.tags.is_empty() {
+            None
+        } else {
+            Some(data.tags.into_iter().map(Some).collect())
+        };
+        let alternate_greetings = if data.alternate_greetings.is_empty() {
+            None
+        } else {
+            Some(data.alternate_greetings.into_iter().map(Some).collect())
+        };
+        let source = data.source.map(|v| v.into_iter().map(Some).collect());
+        let group_only_greetings = if data.group_only_greetings.is_empty() {
+            None
+        } else {
+            Some(data.group_only_greetings.into_iter().map(Some).collect())
+        };
 
-                // Convert timestamps
-                let creation_date_ts = data
-                    .creation_date
-                    .and_then(|ts| DateTime::from_timestamp(ts, 0));
-                let modification_date_ts = data
-                    .modification_date
-                    .and_then(|ts| DateTime::from_timestamp(ts, 0));
+        // Convert timestamps
+        let creation_date_ts = data
+            .creation_date
+            .and_then(|ts| DateTime::from_timestamp(ts, 0));
+        let modification_date_ts = data
+            .modification_date
+            .and_then(|ts| DateTime::from_timestamp(ts, 0));
 
-                // Convert HashMaps to JsonValue for JSONB fields
-                let creator_notes_multilingual_json = data
-                    .creator_notes_multilingual
-                    .as_ref()
-                    .and_then(|m| serde_json::to_value(m).ok()) // Convert HashMap to JsonValue
-                    .filter(|v| !v.is_null())
-                    .map(Json); // Wrap Option<Value> in Json for Option<Json<Value>> type
+        // Convert HashMaps to JsonValue for JSONB fields
+        let creator_notes_multilingual_json = data
+            .creator_notes_multilingual
+            .as_ref()
+            .and_then(|m| serde_json::to_value(m).ok()) // Convert HashMap to JsonValue
+            .filter(|v| !v.is_null())
+            .map(Json); // Wrap Option<Value> in Json for Option<Json<Value>> type
 
-                let extensions_json = data
-                    .extensions // data.extensions is HashMap<String, Value>
-                    .into_iter()
-                    .collect::<serde_json::Map<String, serde_json::Value>>();
-                let extensions_option_json = if extensions_json.is_empty() {
-                    None
-                } else {
-                    Some(Json(serde_json::Value::Object(extensions_json))) // Wrap Value in Json for Option<Json<Value>>
-                };
+        let extensions_json = data
+            .extensions // data.extensions is HashMap<String, Value>
+            .into_iter()
+            .collect::<serde_json::Map<String, serde_json::Value>>();
+        let extensions_option_json = if extensions_json.is_empty() {
+            None
+        } else {
+            Some(Json(serde_json::Value::Object(extensions_json))) // Wrap Value in Json for Option<Json<Value>>
+        };
 
-                Self { // Changed from NewCharacter
-                    user_id,                                     // Use passed user_id
-                    name: data.name.clone().unwrap_or_default(), // V3 name is Option<String>, DB needs String
-                    // Wrap non-optional V3 strings in Some() for DB Option<String>, filter empty
-                    description: if data.description.is_empty() { None } else { Some(data.description.into_bytes()) },
-                    description_nonce: None,
-                    personality: if data.personality.is_empty() { None } else { Some(data.personality.into_bytes()) },
-                    personality_nonce: None,
-                    scenario: if data.scenario.is_empty() { None } else { Some(data.scenario.into_bytes()) },
-                    scenario_nonce: None,
-                    first_mes: if data.first_mes.is_empty() { None } else { Some(data.first_mes.into_bytes()) },
-                    first_mes_nonce: None,
-                    mes_example: if data.mes_example.is_empty() { None } else { Some(data.mes_example.into_bytes()) },
-                    mes_example_nonce: None,
-                    creator_notes: if data.creator_notes.is_empty() { None } else { Some(data.creator_notes.into_bytes()) },
-                    creator_notes_nonce: None,
-                    system_prompt: if data.system_prompt.is_empty() { None } else { Some(data.system_prompt.into_bytes()) },
-                    system_prompt_nonce: None,
-                    post_history_instructions: if data.post_history_instructions.is_empty() { None } else { Some(data.post_history_instructions.into_bytes()) },
-                    post_history_instructions_nonce: None,
-                    creator: Some(data.creator.clone()).filter(|s| !s.is_empty()),
-                    character_version: Some(data.character_version.clone())
-                        .filter(|s| !s.is_empty()),
-                    // Use converted vecs
-                    alternate_greetings,
-                    tags,
-                    spec,         // Use extracted spec
-                    spec_version, // Use extracted spec_version
-                    // character_book: data.character_book.clone(), // DB has separate table, handle later if needed
-                    nickname: data.nickname, // Changed from .clone()
-                    creator_notes_multilingual: creator_notes_multilingual_json, // Assign the wrapped value
-                    source, // Already converted to Option<Vec<Option<String>>>>
-                    group_only_greetings,            // Already Option<Vec<Option<String>>>
-                    creation_date: creation_date_ts, // Already Option<DateTime<Utc>>
-                    modification_date: modification_date_ts, // Already Option<DateTime<Utc>>
-                    extensions: extensions_option_json, // Assign the calculated extensions
-                    persona: None,
-                    persona_nonce: None,
-                    world_scenario: None,
-                    world_scenario_nonce: None,
-                    avatar: None,
-                    chat: None,
-                    greeting: None,
-                    greeting_nonce: None,
-                    definition: None,
-                    definition_nonce: None,
-                    default_voice: None,
-                    category: None,
-                    definition_visibility: None,
-                    example_dialogue: None,
-                    example_dialogue_nonce: None,
-                    favorite: None,
-                    first_message_visibility: None,
-                    migrated_from: None,
-                    model_prompt: None,
-                    model_prompt_nonce: None,
-                    model_prompt_visibility: None,
-                    persona_visibility: None,
-                    sharing_visibility: None,
-                    status: None,
-                    system_prompt_visibility: None,
-                    system_tags: None,
-                    token_budget: None,
-                    usage_hints: None,
-                    user_persona: None,
-                    user_persona_nonce: None,
-                    user_persona_visibility: None,
-                    visibility: None,
-                    world_scenario_visibility: None,
-                    created_at: None,
-                    updated_at: None,
-                }
+        Self {
+            // Changed from NewCharacter
+            user_id,                                     // Use passed user_id
+            name: data.name.clone().unwrap_or_default(), // V3 name is Option<String>, DB needs String
+            // Wrap non-optional V3 strings in Some() for DB Option<String>, filter empty
+            description: if data.description.is_empty() {
+                None
+            } else {
+                Some(data.description.into_bytes())
+            },
+            description_nonce: None,
+            personality: if data.personality.is_empty() {
+                None
+            } else {
+                Some(data.personality.into_bytes())
+            },
+            personality_nonce: None,
+            scenario: if data.scenario.is_empty() {
+                None
+            } else {
+                Some(data.scenario.into_bytes())
+            },
+            scenario_nonce: None,
+            first_mes: if data.first_mes.is_empty() {
+                None
+            } else {
+                Some(data.first_mes.into_bytes())
+            },
+            first_mes_nonce: None,
+            mes_example: if data.mes_example.is_empty() {
+                None
+            } else {
+                Some(data.mes_example.into_bytes())
+            },
+            mes_example_nonce: None,
+            creator_notes: if data.creator_notes.is_empty() {
+                None
+            } else {
+                Some(data.creator_notes.into_bytes())
+            },
+            creator_notes_nonce: None,
+            system_prompt: if data.system_prompt.is_empty() {
+                None
+            } else {
+                Some(data.system_prompt.into_bytes())
+            },
+            system_prompt_nonce: None,
+            post_history_instructions: if data.post_history_instructions.is_empty() {
+                None
+            } else {
+                Some(data.post_history_instructions.into_bytes())
+            },
+            post_history_instructions_nonce: None,
+            creator: Some(data.creator.clone()).filter(|s| !s.is_empty()),
+            character_version: Some(data.character_version.clone()).filter(|s| !s.is_empty()),
+            // Use converted vecs
+            alternate_greetings,
+            tags,
+            spec,         // Use extracted spec
+            spec_version, // Use extracted spec_version
+            // character_book: data.character_book.clone(), // DB has separate table, handle later if needed
+            nickname: data.nickname, // Changed from .clone()
+            creator_notes_multilingual: creator_notes_multilingual_json, // Assign the wrapped value
+            source,                  // Already converted to Option<Vec<Option<String>>>>
+            group_only_greetings,    // Already Option<Vec<Option<String>>>
+            creation_date: creation_date_ts, // Already Option<DateTime<Utc>>
+            modification_date: modification_date_ts, // Already Option<DateTime<Utc>>
+            extensions: extensions_option_json, // Assign the calculated extensions
+            persona: None,
+            persona_nonce: None,
+            world_scenario: None,
+            world_scenario_nonce: None,
+            avatar: None,
+            chat: None,
+            greeting: None,
+            greeting_nonce: None,
+            definition: None,
+            definition_nonce: None,
+            default_voice: None,
+            category: None,
+            definition_visibility: None,
+            example_dialogue: None,
+            example_dialogue_nonce: None,
+            favorite: None,
+            first_message_visibility: None,
+            migrated_from: None,
+            model_prompt: None,
+            model_prompt_nonce: None,
+            model_prompt_visibility: None,
+            persona_visibility: None,
+            sharing_visibility: None,
+            status: None,
+            system_prompt_visibility: None,
+            system_tags: None,
+            token_budget: None,
+            usage_hints: None,
+            user_persona: None,
+            user_persona_nonce: None,
+            user_persona_visibility: None,
+            visibility: None,
+            world_scenario_visibility: None,
+            created_at: None,
+            updated_at: None,
+        }
     }
 
     fn from_v2_fallback(data: &CharacterCardDataV3, user_id: Uuid) -> Self {
-                let description = if data.description.is_empty() { None } else { Some(data.description.clone().into_bytes()) };
-                let personality = if data.personality.is_empty() { None } else { Some(data.personality.clone().into_bytes()) };
-                let scenario = if data.scenario.is_empty() { None } else { Some(data.scenario.clone().into_bytes()) };
-                let first_mes = if data.first_mes.is_empty() { None } else { Some(data.first_mes.clone().into_bytes()) };
-                let mes_example = if data.mes_example.is_empty() { None } else { Some(data.mes_example.clone().into_bytes()) };
-                let creator_notes = if data.creator_notes.is_empty() { None } else { Some(data.creator_notes.clone().into_bytes()) };
-                let system_prompt = if data.system_prompt.is_empty() { None } else { Some(data.system_prompt.clone().into_bytes()) };
-                let post_history_instructions = if data.post_history_instructions.is_empty() { None } else { Some(data.post_history_instructions.clone().into_bytes()) };
+        let description = if data.description.is_empty() {
+            None
+        } else {
+            Some(data.description.clone().into_bytes())
+        };
+        let personality = if data.personality.is_empty() {
+            None
+        } else {
+            Some(data.personality.clone().into_bytes())
+        };
+        let scenario = if data.scenario.is_empty() {
+            None
+        } else {
+            Some(data.scenario.clone().into_bytes())
+        };
+        let first_mes = if data.first_mes.is_empty() {
+            None
+        } else {
+            Some(data.first_mes.clone().into_bytes())
+        };
+        let mes_example = if data.mes_example.is_empty() {
+            None
+        } else {
+            Some(data.mes_example.clone().into_bytes())
+        };
+        let creator_notes = if data.creator_notes.is_empty() {
+            None
+        } else {
+            Some(data.creator_notes.clone().into_bytes())
+        };
+        let system_prompt = if data.system_prompt.is_empty() {
+            None
+        } else {
+            Some(data.system_prompt.clone().into_bytes())
+        };
+        let post_history_instructions = if data.post_history_instructions.is_empty() {
+            None
+        } else {
+            Some(data.post_history_instructions.clone().into_bytes())
+        };
 
-                Self {
-                    user_id,
-                    name: data.name.clone().unwrap_or_default(),
-                    description,
-                    personality,
-                    scenario,
-                    first_mes,
-                    mes_example,
-                    creator_notes,
-                    system_prompt,
-                    post_history_instructions,
-                    tags: if data.tags.is_empty() { None } else { Some(data.tags.clone().into_iter().map(Some).collect()) },
-                    alternate_greetings: if data.alternate_greetings.is_empty() { None } else { Some(data.alternate_greetings.clone().into_iter().map(Some).collect()) },
-                    extensions: if data.extensions.is_empty() { 
-                        None 
-                    } else { 
-                        Some(diesel_json::Json(serde_json::Value::Object(data.extensions.clone().into_iter().collect())))
-                    },
-                    spec: "chara_card_v2".to_string(), // V2 spec identifier
-                    spec_version: "2.0".to_string(), // V2 version
-                    description_nonce: None,
-                    personality_nonce: None,
-                    scenario_nonce: None,
-                    first_mes_nonce: None,
-                    mes_example_nonce: None,
-                    creator_notes_nonce: None,
-                    system_prompt_nonce: None,
-                    post_history_instructions_nonce: None,
-                    creator: Some(data.creator.clone()).filter(|s| !s.is_empty()),
-                    character_version: Some(data.character_version.clone()).filter(|s| !s.is_empty()),
-                    nickname: None, // V2 doesn't have nickname
-                    // V2 specific fields, map to V3 equivalents or default
-                    source: None, // V2 doesn't have a direct source field
-                    group_only_greetings: None, // V2 doesn't have this
-                    creation_date: None,              // V2 doesn't have this
-                    modification_date: None,          // V2 doesn't have this
-                    creator_notes_multilingual: None, // V2 doesn't have this
-                    persona: None,
-                    persona_nonce: None,
-                    world_scenario: None,
-                    world_scenario_nonce: None,
-                    avatar: None,
-                    chat: None,
-                    greeting: None,
-                    greeting_nonce: None,
-                    definition: None,
-                    definition_nonce: None,
-                    default_voice: None,
-                    category: None,
-                    definition_visibility: None,
-                    example_dialogue: None,
-                    example_dialogue_nonce: None,
-                    favorite: None,
-                    first_message_visibility: None,
-                    migrated_from: None,
-                    model_prompt: None,
-                    model_prompt_nonce: None,
-                    model_prompt_visibility: None,
-                    persona_visibility: None,
-                    sharing_visibility: None,
-                    status: None,
-                    system_prompt_visibility: None,
-                    system_tags: None,
-                    token_budget: None,
-                    usage_hints: None,
-                    user_persona: None,
-                    user_persona_nonce: None,
-                    user_persona_visibility: None,
-                    visibility: None,
-                    world_scenario_visibility: None,
-                    created_at: None,
-                    updated_at: None,
-                }
+        Self {
+            user_id,
+            name: data.name.clone().unwrap_or_default(),
+            description,
+            personality,
+            scenario,
+            first_mes,
+            mes_example,
+            creator_notes,
+            system_prompt,
+            post_history_instructions,
+            tags: if data.tags.is_empty() {
+                None
+            } else {
+                Some(data.tags.clone().into_iter().map(Some).collect())
+            },
+            alternate_greetings: if data.alternate_greetings.is_empty() {
+                None
+            } else {
+                Some(
+                    data.alternate_greetings
+                        .clone()
+                        .into_iter()
+                        .map(Some)
+                        .collect(),
+                )
+            },
+            extensions: if data.extensions.is_empty() {
+                None
+            } else {
+                Some(diesel_json::Json(serde_json::Value::Object(
+                    data.extensions.clone().into_iter().collect(),
+                )))
+            },
+            spec: "chara_card_v2".to_string(), // V2 spec identifier
+            spec_version: "2.0".to_string(),   // V2 version
+            description_nonce: None,
+            personality_nonce: None,
+            scenario_nonce: None,
+            first_mes_nonce: None,
+            mes_example_nonce: None,
+            creator_notes_nonce: None,
+            system_prompt_nonce: None,
+            post_history_instructions_nonce: None,
+            creator: Some(data.creator.clone()).filter(|s| !s.is_empty()),
+            character_version: Some(data.character_version.clone()).filter(|s| !s.is_empty()),
+            nickname: None, // V2 doesn't have nickname
+            // V2 specific fields, map to V3 equivalents or default
+            source: None,                     // V2 doesn't have a direct source field
+            group_only_greetings: None,       // V2 doesn't have this
+            creation_date: None,              // V2 doesn't have this
+            modification_date: None,          // V2 doesn't have this
+            creator_notes_multilingual: None, // V2 doesn't have this
+            persona: None,
+            persona_nonce: None,
+            world_scenario: None,
+            world_scenario_nonce: None,
+            avatar: None,
+            chat: None,
+            greeting: None,
+            greeting_nonce: None,
+            definition: None,
+            definition_nonce: None,
+            default_voice: None,
+            category: None,
+            definition_visibility: None,
+            example_dialogue: None,
+            example_dialogue_nonce: None,
+            favorite: None,
+            first_message_visibility: None,
+            migrated_from: None,
+            model_prompt: None,
+            model_prompt_nonce: None,
+            model_prompt_visibility: None,
+            persona_visibility: None,
+            sharing_visibility: None,
+            status: None,
+            system_prompt_visibility: None,
+            system_tags: None,
+            token_budget: None,
+            usage_hints: None,
+            user_persona: None,
+            user_persona_nonce: None,
+            user_persona_visibility: None,
+            visibility: None,
+            world_scenario_visibility: None,
+            created_at: None,
+            updated_at: None,
+        }
     }
 
     #[must_use]
@@ -1105,12 +1198,14 @@ mod tests {
             group_only_greetings: vec!["group_greet1".to_string()],
             creation_date: Some(1_678_886_400), // Example Unix timestamp
             modification_date: Some(1_678_887_400), // Example Unix timestamp
-            creator_notes_multilingual: Some(HashMap::from([
-                ("es".to_string(), "nota".to_string()),
-            ])),
-            extensions: HashMap::from([
-                ("ext_key".to_string(), serde_json::Value::String("ext_val".to_string())),
-            ]),
+            creator_notes_multilingual: Some(HashMap::from([(
+                "es".to_string(),
+                "nota".to_string(),
+            )])),
+            extensions: HashMap::from([(
+                "ext_key".to_string(),
+                serde_json::Value::String("ext_val".to_string()),
+            )]),
             ..Default::default()
         };
 
@@ -1145,7 +1240,10 @@ mod tests {
         assert!(new_char.creation_date.is_some());
         assert!(new_char.modification_date.is_some());
         assert_eq!(new_char.creation_date.unwrap().timestamp(), 1_678_886_400);
-        assert_eq!(new_char.modification_date.unwrap().timestamp(), 1_678_887_400);
+        assert_eq!(
+            new_char.modification_date.unwrap().timestamp(),
+            1_678_887_400
+        );
 
         // Test HashMap -> Json conversion (line 477-478 for multilingual, 481-489 for extensions)
         assert!(new_char.creator_notes_multilingual.is_some());

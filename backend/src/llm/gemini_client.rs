@@ -9,8 +9,11 @@ use std::sync::Arc;
 use super::{AiClient, ChatStream};
 use crate::errors::AppError;
 
-
-fn log_stream_event_error(model_iden: &ModelIden, body: &serde_json::Value, gen_err: &genai::Error) {
+fn log_stream_event_error(
+    model_iden: &ModelIden,
+    body: &serde_json::Value,
+    gen_err: &genai::Error,
+) {
     tracing::error!(
         target: "gemini_client",
         model_iden = ?model_iden,
@@ -20,7 +23,10 @@ fn log_stream_event_error(model_iden: &ModelIden, body: &serde_json::Value, gen_
     );
 }
 
-fn log_reqwest_event_source_error(event_source_error: &dyn std::error::Error, gen_err: &genai::Error) {
+fn log_reqwest_event_source_error(
+    event_source_error: &dyn std::error::Error,
+    gen_err: &genai::Error,
+) {
     tracing::error!(
         target: "gemini_client",
         "Gemini stream API request failed due to an EventSource error: {:?}. Full genai::Error: {:?}",
@@ -29,7 +35,11 @@ fn log_reqwest_event_source_error(event_source_error: &dyn std::error::Error, ge
     );
 }
 
-fn log_stream_parse_error(model_iden: &ModelIden, serde_error: &serde_json::Error, gen_err: &genai::Error) {
+fn log_stream_parse_error(
+    model_iden: &ModelIden,
+    serde_error: &serde_json::Error,
+    gen_err: &genai::Error,
+) {
     tracing::error!(
         target: "gemini_client",
         model_iden = ?model_iden,
@@ -56,7 +66,10 @@ fn log_and_convert_genai_error(gen_err: genai::Error) -> AppError {
         genai::Error::ReqwestEventSource(event_source_error) => {
             log_reqwest_event_source_error(event_source_error, &gen_err);
         }
-        genai::Error::StreamParse { model_iden, serde_error } => {
+        genai::Error::StreamParse {
+            model_iden,
+            serde_error,
+        } => {
             log_stream_parse_error(model_iden, serde_error, &gen_err);
         }
         _ => {
@@ -204,8 +217,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn test_generate_simple_response_integration_via_wrapper() {
-        let client_wrapper = build_gemini_client()
-            .expect("Failed to build Gemini client wrapper");
+        let client_wrapper = build_gemini_client().expect("Failed to build Gemini client wrapper");
         let user_message = "Test Wrapper: Say hello!".to_string();
         let model_name_for_test = "gemini-2.5-flash-preview-05-20";
         let result =
@@ -219,8 +231,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn test_stream_chat_integration_via_wrapper() {
-        let client_wrapper = build_gemini_client()
-            .expect("Failed to build Gemini client wrapper");
+        let client_wrapper = build_gemini_client().expect("Failed to build Gemini client wrapper");
         let user_message = "Test Stream Wrapper: Say hello stream!".to_string();
         let model_name_for_test = "gemini-2.5-flash-preview-05-20";
         let chat_request = ChatRequest::from_user(user_message);
@@ -257,8 +268,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn test_generate_simple_response_with_different_models() {
-        let client_wrapper = build_gemini_client()
-            .expect("Failed to build Gemini client wrapper");
+        let client_wrapper = build_gemini_client().expect("Failed to build Gemini client wrapper");
         let models_to_test = vec![
             "gemini-2.5-pro-preview-05-06",
             "gemini-2.5-flash-preview-05-20",
@@ -268,9 +278,9 @@ mod tests {
             let result = generate_simple_response(&*client_wrapper, user_message, model_name).await;
             match result {
                 Ok(response) => assert!(
-                  !response.is_empty(),
-                  "Gemini model {model_name} returned an empty response"
-              ),
+                    !response.is_empty(),
+                    "Gemini model {model_name} returned an empty response"
+                ),
                 Err(e) => panic!("Gemini API call for model {model_name} failed: {e:?}"),
             }
         }
@@ -341,11 +351,9 @@ mod tests {
             _config_override: Option<ChatOptions>,
         ) -> Result<ChatResponse, AppError> {
             self.exec_chat_called.store(true, Ordering::SeqCst);
-            self.exec_chat_response.clone().unwrap_or_else(|| {
-                Ok(Self::create_text_chat_response(
-                    "Default mock response",
-                ))
-            })
+            self.exec_chat_response
+                .clone()
+                .unwrap_or_else(|| Ok(Self::create_text_chat_response("Default mock response")))
         }
 
         // Simplified stream_chat: Always returns an empty stream

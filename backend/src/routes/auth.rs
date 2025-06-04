@@ -490,7 +490,9 @@ pub async fn get_session_handler(
         info!(%user_id, "Valid session found. Returning user and session details.");
 
         // The session ID from tower_sessions::Session is an i128, convert to string.
-        let session_actual_id_str = if let Some(id) = session.id() { id.0.to_string() } else {
+        let session_actual_id_str = if let Some(id) = session.id() {
+            id.0.to_string()
+        } else {
             // This case should ideally not happen if auth_session.user is Some,
             // as it implies an active session object without an ID.
             error!(

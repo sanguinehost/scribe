@@ -7,7 +7,7 @@ use url;
 
 /// Custom Error type for the CLI client
 #[derive(thiserror::Error, Debug)]
- // Allow unused variants for now
+// Allow unused variants for now
 pub enum CliError {
     // Made pub
     #[error("Request failed: {0}")]

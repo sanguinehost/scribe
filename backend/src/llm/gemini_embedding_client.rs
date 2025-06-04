@@ -104,17 +104,17 @@ const MAX_BACKOFF_MS: u64 = 5000; // 5 seconds
 fn calculate_jitter_ms(backoff_ms: u64) -> i64 {
     // Generate jitter using pure integer arithmetic
     // JITTER_FACTOR is 0.25, so max jitter is backoff_ms / 4
-    
+
     let backoff_i64 = i64::try_from(backoff_ms).unwrap_or(i64::MAX);
     let max_jitter = backoff_i64 / 4; // 25% of backoff
-    
+
     // Generate a random value between -max_jitter and +max_jitter
     // Using integer random generation to avoid floating point issues
     let random_range = max_jitter * 2; // Total range from -max_jitter to +max_jitter
     if random_range <= 0 {
         return 0;
     }
-    
+
     let random_offset = rand::rng().random_range(0..random_range);
     random_offset - max_jitter
 }
@@ -165,10 +165,7 @@ impl EmbeddingClient for RestGeminiEmbeddingClient {
             AppError::ConfigError("GEMINI_API_KEY not configured".to_string())
         })?;
 
-        let base_url = self
-            .config
-            .gemini_api_base_url
-            .as_str();
+        let base_url = self.config.gemini_api_base_url.as_str();
 
         // Construct URL (e.g., "https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-exp-03-07:embedContent?key=...")
         let url = format!(
@@ -232,7 +229,8 @@ impl EmbeddingClient for RestGeminiEmbeddingClient {
                             );
                             let parsed_error: Result<GeminiApiErrorResponse, _> =
                                 serde_json::from_str(&error_body_text);
-                            let error_message = parsed_error.map_or_else(|_| error_body_text, |b| b.error.message);
+                            let error_message =
+                                parsed_error.map_or_else(|_| error_body_text, |b| b.error.message);
                             return Err(AppError::GeminiError(format!(
                                 "Gemini API error ({}): {} after {} retries with model {}",
                                 status, error_message, MAX_RETRIES, self.model_name
@@ -241,7 +239,8 @@ impl EmbeddingClient for RestGeminiEmbeddingClient {
                         // Fallback logic removed
 
                         let jitter = calculate_jitter_ms(current_backoff_ms);
-                        let sleep_duration_ms = calculate_sleep_duration_ms(current_backoff_ms, jitter);
+                        let sleep_duration_ms =
+                            calculate_sleep_duration_ms(current_backoff_ms, jitter);
 
                         debug!(
                             "Sleeping for {}ms before next retry (backoff: {}ms, jitter: {}ms)",
@@ -256,10 +255,13 @@ impl EmbeddingClient for RestGeminiEmbeddingClient {
                         // For other non-429 client/server errors, fail immediately
                         let error_body = response.json::<GeminiApiErrorResponse>().await;
                         error!(status = %status, error_details = ?error_body, "Gemini Embedding API returned non-429 error status");
-                        let error_message = error_body.map_or_else(|e| format!("Failed to parse error body: {e}"), |b| b.error.message);
+                        let error_message = error_body.map_or_else(
+                            |e| format!("Failed to parse error body: {e}"),
+                            |b| b.error.message,
+                        );
                         return Err(AppError::GeminiError(format!(
-                          "Gemini API error ({status}): {error_message}"
-                      )));
+                            "Gemini API error ({status}): {error_message}"
+                        )));
                     }
                 }
                 Err(e) => {
@@ -291,10 +293,7 @@ impl EmbeddingClient for RestGeminiEmbeddingClient {
             AppError::ConfigError("GEMINI_API_KEY not configured".to_string())
         })?;
 
-        let base_url = self
-            .config
-            .gemini_api_base_url
-            .as_str();
+        let base_url = self.config.gemini_api_base_url.as_str();
 
         // Construct URL (e.g., "https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-exp-03-07:batchEmbedContents?key=...")
         let url = format!(
@@ -367,7 +366,8 @@ impl EmbeddingClient for RestGeminiEmbeddingClient {
                             );
                             let parsed_error: Result<GeminiApiErrorResponse, _> =
                                 serde_json::from_str(&error_body_text);
-                            let error_message = parsed_error.map_or_else(|_| error_body_text, |b| b.error.message);
+                            let error_message =
+                                parsed_error.map_or_else(|_| error_body_text, |b| b.error.message);
                             return Err(AppError::GeminiError(format!(
                                 "Gemini Batch API error ({}): {} after {} retries with model {}",
                                 status, error_message, MAX_RETRIES, self.model_name
@@ -376,7 +376,8 @@ impl EmbeddingClient for RestGeminiEmbeddingClient {
                         // Fallback logic removed
 
                         let jitter = calculate_jitter_ms(current_backoff_ms);
-                        let sleep_duration_ms = calculate_sleep_duration_ms(current_backoff_ms, jitter);
+                        let sleep_duration_ms =
+                            calculate_sleep_duration_ms(current_backoff_ms, jitter);
 
                         debug!(
                             "Sleeping for {}ms before next batch retry (backoff: {}ms, jitter: {}ms)",
@@ -391,10 +392,13 @@ impl EmbeddingClient for RestGeminiEmbeddingClient {
                         // For other non-429 client/server errors, fail immediately
                         let error_body = response.json::<GeminiApiErrorResponse>().await;
                         error!(status = %status, error_details = ?error_body, "Gemini Batch Embedding API returned non-429 error status");
-                        let error_message = error_body.map_or_else(|e| format!("Failed to parse error body: {e}"), |b| b.error.message);
+                        let error_message = error_body.map_or_else(
+                            |e| format!("Failed to parse error body: {e}"),
+                            |b| b.error.message,
+                        );
                         return Err(AppError::GeminiError(format!(
-                          "Gemini Batch API error ({status}): {error_message}"
-                      )));
+                            "Gemini Batch API error ({status}): {error_message}"
+                        )));
                     }
                 }
                 Err(e) => {
@@ -456,7 +460,8 @@ mod tests {
         Arc::new(Config {
             database_url: Some("test_db_url".to_string()),
             gemini_api_key: api_key,
-            gemini_api_base_url: base_url.unwrap_or_else(|| "https://generativelanguage.googleapis.com".to_string()),
+            gemini_api_base_url: base_url
+                .unwrap_or_else(|| "https://generativelanguage.googleapis.com".to_string()),
             ..Default::default()
         })
     }
@@ -876,7 +881,9 @@ mod tests {
                 );
             }
             Err(e) => {
-                panic!("Integration test failed: fallback model embed_content returned error: {e:?}");
+                panic!(
+                    "Integration test failed: fallback model embed_content returned error: {e:?}"
+                );
             }
         }
     }
@@ -1131,9 +1138,8 @@ mod tests {
         // For 2 retries, total sleep is INITIAL_BACKOFF_MS + min(INITIAL_BACKOFF_MS*2, MAX_BACKOFF_MS)
         // = 1000 + min(2000, 5000) = 1000 + 2000 = 3000ms.
         // Allow for jitter, e.g., 70% of non-jittered sum.
-        let min_expected_total_duration = Duration::from_millis(
-            calculate_min_expected_duration_ms(expected_total_delay_ms),
-        );
+        let min_expected_total_duration =
+            Duration::from_millis(calculate_min_expected_duration_ms(expected_total_delay_ms));
 
         assert!(
             duration >= min_expected_total_duration,
@@ -1207,9 +1213,8 @@ mod tests {
         // expected_total_delay_ms = 1000 (1st retry sleep) + 2000 (2nd retry sleep) = 3000ms
 
         // Allow for jitter, e.g., 70% of non-jittered sum.
-        let min_expected_total_duration = Duration::from_millis(
-            calculate_min_expected_duration_ms(expected_total_delay_ms),
-        );
+        let min_expected_total_duration =
+            Duration::from_millis(calculate_min_expected_duration_ms(expected_total_delay_ms));
         assert!(
             duration >= min_expected_total_duration,
             "Duration {duration:?} was less than minimum expected total delay {min_expected_total_duration:?} (calculated from {expected_total_delay_ms}ms base)"

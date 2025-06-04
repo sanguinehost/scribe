@@ -1,8 +1,8 @@
 #![allow(clippy::literal_string_with_formatting_args)]
 pub mod auth;
+pub mod config;
 pub mod crypto;
 pub mod errors;
-pub mod config;
 pub mod llm;
 pub mod logging;
 pub mod models;
