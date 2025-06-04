@@ -3,7 +3,7 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/stores';
 	import { lorebookStore } from '$lib/stores/lorebook.svelte';
-	import { LorebookDetailView } from '$lib/components/lorebooks';
+	import { LorebookDetailView, ExportDialog } from '$lib/components/lorebooks';
 	import { toast } from 'svelte-sonner';
 	import type { 
 		Lorebook, 
@@ -19,6 +19,7 @@
 	let lorebook = $state<Lorebook | null>(null);
 	let isLoading = $state(true);
 	let error = $state<string | null>(null);
+	let showExportDialog = $state(false);
 
 	// Load lorebook and entries on mount
 	onMount(async () => {
@@ -81,8 +82,28 @@
 	}
 
 	function handleExportLorebook(lorebook: Lorebook) {
-		// TODO: Implement export functionality
-		toast.info('Export functionality coming soon!');
+		showExportDialog = true;
+	}
+
+	async function handleExportFormat(format: 'scribe_minimal' | 'silly_tavern_full') {
+		if (!lorebook) return;
+		
+		const exported = await lorebookStore.exportLorebook(lorebook.id, format);
+		if (exported) {
+			const blob = new Blob([JSON.stringify(exported, null, 2)], { type: 'application/json' });
+			const url = URL.createObjectURL(blob);
+			const a = document.createElement('a');
+			a.href = url;
+			const formatSuffix = format === 'scribe_minimal' ? '_scribe' : '_sillytavern';
+			a.download = `${lorebook.name.replace(/[^a-z0-9]/gi, '_').toLowerCase()}${formatSuffix}_lorebook.json`;
+			a.click();
+			URL.revokeObjectURL(url);
+			toast.success('Lorebook exported successfully!');
+		} else if (lorebookStore.error) {
+			toast.error(`Failed to export lorebook: ${lorebookStore.error}`);
+		}
+		
+		showExportDialog = false;
 	}
 
 	async function handleCreateEntry(lorebookId: string, data: CreateLorebookEntryPayload): Promise<LorebookEntry | null> {
@@ -159,4 +180,11 @@
 			</button>
 		</div>
 	{/if}
+
+	<!-- Export Format Dialog -->
+	<ExportDialog
+		bind:open={showExportDialog}
+		onClose={() => showExportDialog = false}
+		onExport={handleExportFormat}
+	/>
 </div>

@@ -22,13 +22,10 @@
 		onToggleEntry 
 	}: Props = $props();
 
-	// Sort entries by insertion order, then by creation date
+	// Sort entries by creation date (most recent first)
 	const sortedEntries = $derived(
 		[...entries].sort((a, b) => {
-			if (a.insertion_order !== b.insertion_order) {
-				return a.insertion_order - b.insertion_order;
-			}
-			return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+			return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
 		})
 	);
 </script>

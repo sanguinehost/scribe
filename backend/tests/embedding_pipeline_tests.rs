@@ -91,6 +91,7 @@ fn create_test_app_state(test_app: test_helpers::TestApp) -> Arc<AppState> {
     let lorebook_service = Arc::new(LorebookService::new(
         test_app.db_pool.clone(),
         encryption_service.clone(),
+        test_app.qdrant_service.clone(),
     ));
     let auth_backend = Arc::new(scribe_backend::auth::user_store::Backend::new(
         test_app.db_pool.clone(),
@@ -611,6 +612,7 @@ async fn test_retrieve_relevant_chunks_qdrant_error() {
     let lorebook_service_for_test_5 = Arc::new(LorebookService::new(
         test_app.db_pool.clone(),
         encryption_service_for_test_5.clone(),
+        test_app.qdrant_service.clone(),
     ));
     let auth_backend_5 = Arc::new(scribe_backend::auth::user_store::Backend::new(
         test_app.db_pool.clone(),
@@ -700,6 +702,7 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_uuid() {
     let lorebook_service_for_test_6 = Arc::new(LorebookService::new(
         test_app.db_pool.clone(),
         encryption_service_for_test_6.clone(),
+        test_app.qdrant_service.clone(),
     ));
     let auth_backend_6 = Arc::new(scribe_backend::auth::user_store::Backend::new(
         test_app.db_pool.clone(),
@@ -883,6 +886,7 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_timestamp() {
     let lorebook_service_for_test_7 = Arc::new(LorebookService::new(
         test_app.db_pool.clone(),
         encryption_service_for_test_7.clone(),
+        test_app.qdrant_service.clone(),
     ));
     let auth_backend_7 = Arc::new(scribe_backend::auth::user_store::Backend::new(
         test_app.db_pool.clone(),
@@ -1030,6 +1034,7 @@ async fn test_retrieve_relevant_chunks_metadata_missing_field() {
     let lorebook_service_for_test_8 = Arc::new(LorebookService::new(
         test_app.db_pool.clone(),
         encryption_service_for_test_8.clone(),
+        test_app.qdrant_service.clone(),
     ));
     let auth_backend_8 = Arc::new(scribe_backend::auth::user_store::Backend::new(
         test_app.db_pool.clone(),
@@ -1170,6 +1175,7 @@ async fn test_retrieve_relevant_chunks_metadata_wrong_type() {
     let lorebook_service_for_test_9 = Arc::new(LorebookService::new(
         test_app.db_pool.clone(),
         encryption_service_for_test_9.clone(),
+        test_app.qdrant_service.clone(),
     ));
     let auth_backend_9 = Arc::new(scribe_backend::auth::user_store::Backend::new(
         test_app.db_pool.clone(),
@@ -1368,6 +1374,7 @@ async fn test_rag_context_injection_with_qdrant() {
     let lorebook_service_for_test_10 = Arc::new(LorebookService::new(
         test_app.db_pool.clone(),
         encryption_service_for_test_10.clone(),
+        test_app.qdrant_service.clone(),
     ));
     let auth_backend_10 = Arc::new(scribe_backend::auth::user_store::Backend::new(
         test_app.db_pool.clone(),
@@ -1708,6 +1715,7 @@ async fn test_rag_chat_history_isolation_by_user_and_session() {
     let lorebook_service = Arc::new(LorebookService::new(
         test_app.db_pool.clone(),
         encryption_service.clone(),
+        test_app.qdrant_service.clone(),
     ));
     let auth_backend = Arc::new(scribe_backend::auth::user_store::Backend::new(
         test_app.db_pool.clone(),
@@ -2007,6 +2015,7 @@ async fn test_rag_lorebook_isolation_by_user_and_id() {
     let lorebook_service = Arc::new(LorebookService::new(
         test_app.db_pool.clone(),
         encryption_service.clone(),
+        test_app.qdrant_service.clone(),
     ));
     let auth_backend = Arc::new(scribe_backend::auth::user_store::Backend::new(
         test_app.db_pool.clone(),

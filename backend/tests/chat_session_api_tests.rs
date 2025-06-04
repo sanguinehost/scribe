@@ -1333,6 +1333,7 @@ async fn test_create_session_saves_first_mes() -> Result<(), AnyhowError> {
     let lorebook_service_for_test = Arc::new(LorebookService::new(
         test_app.db_pool.clone(),
         encryption_service_for_test.clone(),
+        test_app.qdrant_service.clone(),
     ));
     let auth_backend_for_test = Arc::new(scribe_backend::auth::user_store::Backend::new(
         test_app.db_pool.clone(),

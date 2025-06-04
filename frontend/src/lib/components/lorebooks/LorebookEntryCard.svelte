@@ -135,18 +135,8 @@
 				</p>
 			</div>
 
-			{#if entry.comment}
-				<div class="text-xs text-muted-foreground bg-muted p-2 rounded">
-					<span class="font-medium">Comment:</span> {entry.comment}
-				</div>
-			{/if}
-
 			<!-- Metadata -->
-			<div class="flex justify-between text-xs text-muted-foreground pt-2 border-t">
-				<div class="flex gap-4">
-					<span>Order: {entry.insertion_order}</span>
-					<span>Position: {entry.placement_hint}</span>
-				</div>
+			<div class="flex justify-end text-xs text-muted-foreground pt-2 border-t">
 				<span>Updated: {formatDate(entry.updated_at)}</span>
 			</div>
 		</div>

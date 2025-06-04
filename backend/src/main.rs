@@ -142,7 +142,6 @@ async fn initialize_services(config: &Arc<Config>, pool: &PgPool) -> Result<AppS
     let encryption_service = Arc::new(EncryptionService::new());
     let chat_override_service = Arc::new(ChatOverrideService::new(pool.clone(), encryption_service.clone()));
     let user_persona_service = Arc::new(UserPersonaService::new(pool.clone(), encryption_service.clone()));
-    let lorebook_service = Arc::new(LorebookService::new(pool.clone(), encryption_service.clone()));
 
     // --- Create Chunking Config and Embedding Pipeline ---
     let chunk_config = create_chunk_config(config);
@@ -153,6 +152,9 @@ async fn initialize_services(config: &Arc<Config>, pool: &PgPool) -> Result<AppS
     tracing::info!("Initializing Qdrant client service...");
     let qdrant_service = Arc::new(QdrantClientService::new(config.clone()).await?);
     tracing::info!("Qdrant client service initialized.");
+
+    // --- Initialize Lorebook Service (needs qdrant_service) ---
+    let lorebook_service = Arc::new(LorebookService::new(pool.clone(), encryption_service.clone(), qdrant_service.clone()));
 
     let auth_backend = Arc::new(AuthBackend::new(pool.clone()));
 

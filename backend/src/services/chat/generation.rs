@@ -194,30 +194,7 @@ pub async fn get_session_data_for_generation(
         }
     }
 
-    let active_lorebook_ids_for_search: Option<Vec<Uuid>> = {
-        let pool_clone_lore = state.pool.clone();
-        match pool_clone_lore
-            .get()
-            .await
-            .map_err(AppError::from)?
-            .interact(move |conn_lore| {
-                ChatSessionLorebook::get_active_lorebook_ids_for_session(conn_lore, session_id)
-                    .map_err(AppError::from)
-            })
-            .await
-        {
-            Ok(Ok(ids)) => ids,
-            Ok(Err(e)) => {
-                warn!(%session_id, error = %e, "Failed to get active lorebook IDs (DB error).");
-                None
-            }
-            Err(e) => {
-                warn!(%session_id, error = %e, "Failed to get active lorebook IDs (InteractError).");
-                None
-            }
-        }
-    };
-    info!(%session_id, ?active_lorebook_ids_for_search, "Active lorebook IDs for search determined.");
+    // NOTE: Comprehensive lorebook ID retrieval moved after character_id is available
 
     // --- Main Interact Block for DB Data (Session Settings, Raw Messages, Character for FirstMes) ---
     let (
@@ -417,6 +394,40 @@ pub async fn get_session_data_for_generation(
         .await
         .map_err(|e| AppError::DbInteractError(format!("Interact dispatch error: {e}")))??
     };
+
+    // --- Retrieve Comprehensive Active Lorebook IDs (now that character_id is available) ---
+    let active_lorebook_ids_for_search: Option<Vec<Uuid>> = {
+        let pool_clone_lore = state.pool.clone();
+        let user_id_clone = user_id;
+        let session_id_clone = session_id;
+        let character_id_clone = session_character_id_db;
+        
+        match pool_clone_lore
+            .get()
+            .await
+            .map_err(AppError::from)?
+            .interact(move |conn_lore| {
+                ChatSessionLorebook::get_comprehensive_active_lorebook_ids(
+                    conn_lore, 
+                    session_id_clone, 
+                    character_id_clone, 
+                    user_id_clone
+                ).map_err(AppError::from)
+            })
+            .await
+        {
+            Ok(Ok(ids)) => ids,
+            Ok(Err(e)) => {
+                warn!(%session_id, error = %e, "Failed to get comprehensive active lorebook IDs (DB error).");
+                None
+            }
+            Err(e) => {
+                warn!(%session_id, error = %e, "Failed to get comprehensive active lorebook IDs (InteractError).");
+                None
+            }
+        }
+    };
+    info!(%session_id, character_id = %session_character_id_db, ?active_lorebook_ids_for_search, "Comprehensive active lorebook IDs determined (session + character linked).");
 
     // --- Calculate User Prompt Tokens (Now that model_name is available) ---
     let user_prompt_tokens_val: Option<i32> = match state

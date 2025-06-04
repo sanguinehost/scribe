@@ -3,7 +3,7 @@ use crate::models::chats::Chat;
 use crate::models::users::User;
 use crate::schema::{character_lorebooks, chat_session_lorebooks, lorebook_entries, lorebooks};
 use chrono::{DateTime, Utc};
-use diesel::{Queryable, Insertable, Identifiable, AsChangeset, Selectable, Associations, PgConnection, QueryResult, QueryDsl, ExpressionMethods, RunQueryDsl};
+use diesel::{Queryable, Insertable, Identifiable, AsChangeset, Selectable, Associations, PgConnection, QueryResult, QueryDsl, ExpressionMethods, RunQueryDsl, JoinOnDsl};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -178,6 +178,86 @@ impl ChatSessionLorebook {
             .load::<Uuid>(conn)?;
 
         Ok(if ids.is_empty() { None } else { Some(ids) })
+    }
+
+    /// Retrieves comprehensive list of active lorebook IDs for a given chat session.
+    /// This includes:
+    /// 1. Lorebooks explicitly linked to the chat session (owned by the user)
+    /// 2. Lorebooks linked to the character being used in this session (owned by the user)
+    /// 3. TODO: Global/public lorebooks (if applicable)
+    ///
+    /// SECURITY: Only returns lorebooks that belong to the specified user to prevent
+    /// cross-user access vulnerabilities.
+    ///
+    /// # Arguments
+    ///
+    /// * `conn` - A mutable reference to the database connection.
+    /// * `session_id_param` - The UUID of the chat session.
+    /// * `character_id_param` - The UUID of the character being used in this session.
+    /// * `user_id_param` - The UUID of the user (only lorebooks owned by this user will be returned).
+    ///
+    /// # Returns
+    ///
+    /// A `QueryResult` containing an `Option<Vec<Uuid>>`.
+    /// Returns `Ok(Some(Vec<Uuid>))` if lorebooks are found.
+    /// Returns `Ok(None)` if no lorebooks are found.
+    /// Returns `Err` if there's a database query error.
+    ///
+    /// # Errors
+    /// Returns `QueryResult` error if the database query fails
+    pub fn get_comprehensive_active_lorebook_ids(
+        conn: &mut PgConnection,
+        session_id_param: Uuid,
+        character_id_param: Uuid,
+        user_id_param: Uuid,
+    ) -> QueryResult<Option<Vec<Uuid>>> {
+        use crate::schema::{
+            chat_session_lorebooks::dsl::{
+                chat_session_id, 
+                chat_session_lorebooks, 
+                lorebook_id as session_lorebook_id
+            },
+            character_lorebooks::dsl::{
+                character_id, 
+                character_lorebooks, 
+                lorebook_id as character_lorebook_id
+            },
+            lorebooks::dsl::{
+                lorebooks,
+                id as lorebook_table_id,
+                user_id as lorebook_user_id
+            },
+        };
+
+        // Get session-linked lorebook IDs that belong to the user
+        let session_lorebook_ids = chat_session_lorebooks
+            .inner_join(lorebooks.on(session_lorebook_id.eq(lorebook_table_id)))
+            .filter(chat_session_id.eq(session_id_param))
+            .filter(lorebook_user_id.eq(user_id_param))
+            .select(session_lorebook_id)
+            .load::<Uuid>(conn)?;
+
+        // Get character-linked lorebook IDs that belong to the user
+        let character_lorebook_ids = character_lorebooks
+            .inner_join(lorebooks.on(character_lorebook_id.eq(lorebook_table_id)))
+            .filter(character_id.eq(character_id_param))
+            .filter(lorebook_user_id.eq(user_id_param))
+            .select(character_lorebook_id)
+            .load::<Uuid>(conn)?;
+
+        // Combine and deduplicate
+        let mut combined_ids = session_lorebook_ids;
+        for char_lorebook_id in character_lorebook_ids {
+            if !combined_ids.contains(&char_lorebook_id) {
+                combined_ids.push(char_lorebook_id);
+            }
+        }
+
+        // TODO: Add globally activated lorebooks when the schema is updated
+        // This will require adding an `is_always_active` or `is_global` field to the lorebooks table
+        // For now, we only support character-linked and session-linked lorebooks that belong to the user
+
+        Ok(if combined_ids.is_empty() { None } else { Some(combined_ids) })
     }
 }
 

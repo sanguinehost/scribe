@@ -1,201 +1,8 @@
 import { Result, err, ok } from 'neverthrow';
 import type { ApiError } from '$lib/errors/api';
 import { ApiResponseError, ApiNetworkError } from '$lib/errors/api';
-import type { User, Message, Vote, Suggestion, Session, AuthUser, ScribeChatSession, LoginSuccessData, VisibilityType, Lorebook, LorebookEntry, CreateLorebookPayload, UpdateLorebookPayload, CreateLorebookEntryPayload, UpdateLorebookEntryPayload, LorebookUploadPayload, ChatSessionLorebookAssociation } from '$lib/types'; // Added LoginSuccessData, VisibilityType, Lorebook types
+import type { User, Message, Vote, Suggestion, Session, AuthUser, ScribeChatSession, LoginSuccessData, Lorebook, LorebookEntry, CreateLorebookPayload, UpdateLorebookPayload, CreateLorebookEntryPayload, UpdateLorebookEntryPayload, LorebookUploadPayload, ScribeMinimalLorebook, ChatSessionLorebookAssociation, Character, UserPersona, CreateUserPersonaRequest, UpdateUserPersonaRequest, CreateChatRequest, CreateMessageRequest, CreateDocumentRequest, CreateSuggestionRequest, DocumentResponse, SessionResponse, SuggestedActionsResponse, UpdateChatSessionSettingsRequest } from '$lib/types';
 
-// Placeholder for Character type - Define based on expected fields from GET /api/characters/{id}
-// Assuming these fields based on the task description and common patterns
-export interface Character {
-	id: string;
-	name: string; // Assuming name exists
-	description?: string; // Assuming description might exist
-	system_prompt?: string | null;
-	personality?: string | null;
-	scenario?: string | null;
-	avatar_url?: string | null;
-	greeting?: string | null;
-}
-
-// User Persona types
-export interface UserPersona {
-	id: string;
-	user_id: string;
-	name: string;
-	description: string;
-	spec?: string | null;
-	spec_version?: string | null;
-	personality?: string | null;
-	scenario?: string | null;
-	first_mes?: string | null;
-	mes_example?: string | null;
-	system_prompt?: string | null;
-	post_history_instructions?: string | null;
-	tags?: string[] | null;
-	avatar?: string | null;
-	created_at: string;
-	updated_at: string;
-}
-
-export interface CreateUserPersonaRequest {
-	name: string;
-	description: string;
-	spec?: string | null;
-	spec_version?: string | null;
-	personality?: string | null;
-	scenario?: string | null;
-	first_mes?: string | null;
-	mes_example?: string | null;
-	system_prompt?: string | null;
-	post_history_instructions?: string | null;
-	tags?: string[] | null;
-	avatar?: string | null;
-}
-
-export interface UpdateUserPersonaRequest {
-	name?: string;
-	description?: string;
-	spec?: string | null;
-	spec_version?: string | null;
-	personality?: string | null;
-	scenario?: string | null;
-	first_mes?: string | null;
-	mes_example?: string | null;
-	system_prompt?: string | null;
-	post_history_instructions?: string | null;
-	tags?: string[] | null;
-	avatar?: string | null;
-}
-
-
-// Type definitions for message parts
-export interface TextPart {
-	text: string;
-}
-
-export interface ImagePart {
-	image_url: string;
-	alt?: string;
-}
-
-export type MessagePart = TextPart | ImagePart;
-
-export interface MessageAttachment {
-	type: string;
-	data: unknown;
-}
-
-// Type definitions for API requests
-export type CreateChatRequest = {
-	title: string;
-	character_id: string;
-	system_prompt?: string | null; // Added
-	personality?: string | null;   // Added
-	scenario?: string | null;      // Added
-};
-
-export type CreateMessageRequest = {
-	role: string;
-	content: string;
-	parts?: MessagePart[];
-	attachments?: MessageAttachment[];
-};
-
-export type VoteRequest = {
-	type_: 'up' | 'down';
-};
-
-export type UpdateChatVisibilityRequest = {
-	visibility: 'public' | 'private';
-};
-
-export type CreateDocumentRequest = {
-	title: string;
-	content?: string;
-	kind: string;
-};
-
-export type CreateSuggestionRequest = {
-	document_id: string;
-	document_created_at: string;
-	original_text: string;
-	suggested_text: string;
-	description?: string;
-};
-
-// Type definitions for API responses
-export type ChatResponse = {
-	id: string;
-	title: string;
-	created_at: Date;
-	user_id: string;
-	visibility?: string;
-};
-
-export type MessageResponse = {
-	id: string;
-	chat_id: string;
-	role: string;
-	parts: MessagePart[];
-	attachments: MessageAttachment[];
-	created_at: Date;
-};
-
-export type DocumentResponse = {
-	id: string;
-	created_at: Date;
-	title: string;
-	content?: string;
-	kind: string;
-	user_id: string;
-};
-
-export type SessionResponse = {
-	session: {
-		id: string;
-		user_id: string;
-		expires_at: string | Date; // Could be ISO string from backend
-	};
-	user: User;
-};
-
-export interface SuggestedActionItem {
-	action: string;
-}
-
-export type SuggestedActionsResponse = {
-	suggestions: SuggestedActionItem[];
-};
-
-
-// Types for Chat Session Settings
-// export interface ContextBudgetInput { // Removed as fields will be flat
-// 	total_token_limit?: number | null;
-// 	recent_history_budget?: number | null;
-// 	rag_budget?: number | null;
-// }
-
-export interface UpdateChatSessionSettingsRequest {
-	title?: string | null;
-	system_prompt?: string | null;
-	temperature?: number | null;
-	max_output_tokens?: number | null;
-	frequency_penalty?: number | null;
-	presence_penalty?: number | null;
-	top_k?: number | null;
-	top_p?: number | null;
-	seed?: number | null;
-	history_management_strategy?: string | null;
-	history_management_limit?: number | null;
-	visibility?: VisibilityType | null;
-	active_custom_persona_id?: string | null;
-	model_name?: string | null;
-	gemini_thinking_budget?: number | null;
-	gemini_enable_code_execution?: boolean | null;
-	// context_budget?: ContextBudgetInput | null; // Replaced with flat fields
-	context_total_token_limit?: number | null;
-	context_recent_history_budget?: number | null;
-	context_rag_budget?: number | null;
-}
 // Actual API client
 class ApiClient {
 	private baseUrl: string;
@@ -573,14 +380,21 @@ class ApiClient {
 
 	// Import/Export methods
 	async importLorebook(data: LorebookUploadPayload): Promise<Result<Lorebook, ApiError>> {
-		return this.fetch<Lorebook>('/api/lorebooks/import', {
+		return this.fetch<Lorebook>('/api/lorebooks/import?format=silly_tavern_full', {
 			method: 'POST',
 			body: JSON.stringify(data)
 		});
 	}
 
-	async exportLorebook(lorebookId: string): Promise<Result<any, ApiError>> {
-		return this.fetch<any>(`/api/lorebooks/${lorebookId}/export`);
+	async importLorebookScribeMinimal(data: ScribeMinimalLorebook): Promise<Result<Lorebook, ApiError>> {
+		return this.fetch<Lorebook>('/api/lorebooks/import?format=scribe_minimal', {
+			method: 'POST',
+			body: JSON.stringify(data)
+		});
+	}
+
+	async exportLorebook(lorebookId: string, format: 'scribe_minimal' | 'silly_tavern_full' = 'silly_tavern_full'): Promise<Result<ScribeMinimalLorebook | LorebookUploadPayload, ApiError>> {
+		return this.fetch<ScribeMinimalLorebook | LorebookUploadPayload>(`/api/lorebooks/${lorebookId}/export?format=${format}`);
 	}
 }
 
