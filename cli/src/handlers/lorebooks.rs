@@ -288,9 +288,8 @@ async fn delete_lorebook<C: HttpClient, H: IoHandler>(
         io_handler.write_line(&format!("Deleting lorebook '{lorebook_name}'..."))?;
         match client.delete_lorebook(lorebook_id).await {
             Ok(_) => {
-                io_handler.write_line(&format!(
-                    "Successfully deleted lorebook '{lorebook_name}'."
-                ))?;
+                io_handler
+                    .write_line(&format!("Successfully deleted lorebook '{lorebook_name}'."))?;
                 Ok(true) // Signal successful deletion
             }
             Err(e) => {
@@ -303,7 +302,6 @@ async fn delete_lorebook<C: HttpClient, H: IoHandler>(
         Ok(false) // Signal deletion cancelled
     }
 }
-
 
 async fn handle_lorebook_entry_menu<C: HttpClient, H: IoHandler>(
     client: &C,
@@ -354,15 +352,12 @@ async fn handle_lorebook_entry_menu<C: HttpClient, H: IoHandler>(
     Ok(())
 }
 
-
 async fn list_lorebook_entries<C: HttpClient, H: IoHandler>(
     client: &C,
     io_handler: &mut H,
     lorebook_id: Uuid,
 ) -> Result<(), CliError> {
-    io_handler.write_line(&format!(
-        "\nFetching entries for lorebook {lorebook_id}..."
-    ))?;
+    io_handler.write_line(&format!("\nFetching entries for lorebook {lorebook_id}..."))?;
     match client.list_lorebook_entries(lorebook_id).await {
         Ok(entries) => {
             if entries.is_empty() {
@@ -389,7 +384,6 @@ async fn list_lorebook_entries<C: HttpClient, H: IoHandler>(
     }
     Ok(())
 }
-
 
 async fn create_new_lorebook_entry<C: HttpClient, H: IoHandler>(
     client: &C,
@@ -468,7 +462,6 @@ async fn create_new_lorebook_entry<C: HttpClient, H: IoHandler>(
     Ok(())
 }
 
-
 async fn manage_specific_entry_entrypoint<C: HttpClient, H: IoHandler>(
     client: &C,
     io_handler: &mut H,
@@ -510,7 +503,6 @@ async fn manage_specific_entry_entrypoint<C: HttpClient, H: IoHandler>(
     }
     Ok(())
 }
-
 
 async fn handle_specific_entry_menu<C: HttpClient, H: IoHandler>(
     client: &C,
@@ -573,7 +565,6 @@ async fn handle_specific_entry_menu<C: HttpClient, H: IoHandler>(
     Ok(())
 }
 
-
 async fn view_lorebook_entry_details<C: HttpClient, H: IoHandler>(
     client: &C,
     io_handler: &mut H,
@@ -615,7 +606,6 @@ async fn view_lorebook_entry_details<C: HttpClient, H: IoHandler>(
     }
     Ok(())
 }
-
 
 async fn update_lorebook_entry<C: HttpClient, H: IoHandler>(
     client: &C,
@@ -716,7 +706,6 @@ async fn update_lorebook_entry<C: HttpClient, H: IoHandler>(
     Ok(())
 }
 
-
 async fn delete_lorebook_entry<C: HttpClient, H: IoHandler>(
     client: &C,
     io_handler: &mut H,
@@ -749,7 +738,6 @@ async fn delete_lorebook_entry<C: HttpClient, H: IoHandler>(
         Ok(false) // Signal deletion cancelled
     }
 }
-
 
 async fn handle_lorebook_chat_association_menu<C: HttpClient, H: IoHandler>(
     client: &C,

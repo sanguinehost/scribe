@@ -284,7 +284,9 @@ where
                             }
                         }
                     }
-                    Err(serde::de::Error::custom("Expected byte value 0-255".to_string()))
+                    Err(serde::de::Error::custom(
+                        "Expected byte value 0-255".to_string(),
+                    ))
                 })
                 .collect();
 
@@ -320,7 +322,9 @@ where
                             }
                         }
                     }
-                    Err(serde::de::Error::custom("Expected byte value 0-255".to_string()))
+                    Err(serde::de::Error::custom(
+                        "Expected byte value 0-255".to_string(),
+                    ))
                 })
                 .collect();
 

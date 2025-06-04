@@ -15,6 +15,7 @@ use uuid::Uuid;
 use anyhow::Context as _;
 use scribe_backend::models::auth::LoginPayload;
 use scribe_backend::{
+    PgPool,
     models::{
         character_card::NewCharacter,
         characters::Character as DbCharacter,
@@ -22,7 +23,6 @@ use scribe_backend::{
     },
     schema::{characters, chat_sessions},
     test_helpers::{self, TestDataGuard},
-    PgPool,
 };
 use secrecy::SecretString;
 
@@ -497,8 +497,15 @@ async fn run_suggested_actions_logic(
     let suggested_actions: SuggestedActionsResponse =
         serde_json::from_slice(&body_bytes).context("Failed to parse response body")?;
 
-    assert!(!suggested_actions.suggestions.is_empty(), "Suggestions should not be empty");
-    assert_eq!(suggested_actions.suggestions.len(), 2, "Expected 2 suggestions");
+    assert!(
+        !suggested_actions.suggestions.is_empty(),
+        "Suggestions should not be empty"
+    );
+    assert_eq!(
+        suggested_actions.suggestions.len(),
+        2,
+        "Expected 2 suggestions"
+    );
     assert_eq!(suggested_actions.suggestions[0].action, "Action 1");
 
     guard.cleanup().await?;
@@ -817,11 +824,7 @@ async fn test_suggested_actions_success_login_user_a() -> anyhow::Result<()> {
     let body = response.text().await.unwrap();
     println!("Ping Test: Status: {status}, Body: {body}");
 
-    assert_eq!(
-        status,
-        StatusCode::OK,
-        "Ping handler failed. Body: {body}"
-    );
+    assert_eq!(status, StatusCode::OK, "Ping handler failed. Body: {body}");
     assert_eq!(body, "pong_from_chat_routes");
 
     guard.cleanup().await.unwrap();

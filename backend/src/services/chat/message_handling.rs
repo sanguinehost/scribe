@@ -57,7 +57,7 @@ pub async fn get_messages_for_session(
                 } else {
                     Err(AppError::Forbidden) // Keep as unit variant
                 }
-            }
+            },
         )
     })
     .await?
@@ -97,19 +97,18 @@ pub struct SaveMessageParams<'a> {
     pub session_id: Uuid,
     pub user_id: Uuid,
     pub message_type_enum: MessageRole, // Renamed for clarity (this is the enum)
-    pub content: &'a str,                  // This is the primary textual content
+    pub content: &'a str,               // This is the primary textual content
     pub role_str: Option<String>,       // ADDED: The string role ("user", "model", "assistant")
     pub parts: Option<Value>,           // ADDED: The structured parts from the request/generation
     pub attachments: Option<Value>,     // ADDED: Attachments
     pub user_dek_secret_box: Option<Arc<SecretBox<Vec<u8>>>>,
-    pub model_name: String, // Added model_name parameter
+    pub model_name: String,                // Added model_name parameter
+    pub raw_prompt_debug: Option<&'a str>, // Raw prompt for debugging (only for AI responses)
 }
 
 /// Saves a single chat message (user or assistant) and triggers background embedding.
 #[instrument(skip(params), err)]
-pub async fn save_message(
-    params: SaveMessageParams<'_>,
-) -> Result<ChatMessage, AppError> {
+pub async fn save_message(params: SaveMessageParams<'_>) -> Result<ChatMessage, AppError> {
     let SaveMessageParams {
         state,
         session_id,
@@ -121,15 +120,16 @@ pub async fn save_message(
         attachments,
         user_dek_secret_box,
         model_name,
+        raw_prompt_debug,
     } = params;
-    
+
     // Changed DbChatMessage to ChatMessage
     trace!(%session_id, %user_id, %message_type_enum, ?role_str, content_len = content.len(), dek_present = user_dek_secret_box.is_some(), %model_name, "Attempting to save message");
 
     if content.trim().is_empty()
-        && parts.as_ref().is_none_or(|p| {
-            p.is_null() || (p.is_array() && p.as_array().unwrap().is_empty())
-        })
+        && parts
+            .as_ref()
+            .is_none_or(|p| p.is_null() || (p.is_array() && p.as_array().unwrap().is_empty()))
     {
         warn!(%session_id, %user_id, %message_type_enum, "Attempted to save an empty message (both content and parts). Skipping.");
         return Err(AppError::BadRequest(
@@ -213,7 +213,32 @@ pub async fn save_message(
     if let Some(attachments_val) = attachments {
         new_message_to_insert = new_message_to_insert.with_attachments(attachments_val);
     }
-    new_message_to_insert = new_message_to_insert.with_token_counts(prompt_tokens_val, completion_tokens_val);
+    new_message_to_insert =
+        new_message_to_insert.with_token_counts(prompt_tokens_val, completion_tokens_val);
+
+    // Encrypt and add raw prompt debug information if provided and user has DEK
+    if let Some(raw_prompt) = raw_prompt_debug {
+        info!(%session_id, raw_prompt_length = raw_prompt.len(), "Raw prompt debug provided for encryption");
+        if let Some(dek_arc) = &user_dek_secret_box {
+            trace!(%session_id, "Encrypting raw prompt debug information");
+            match crypto::encrypt_gcm(raw_prompt.as_bytes(), dek_arc) {
+                Ok((raw_prompt_ciphertext, raw_prompt_nonce)) => {
+                    info!(%session_id, ciphertext_length = raw_prompt_ciphertext.len(), nonce_length = raw_prompt_nonce.len(), "Successfully encrypted raw prompt debug");
+                    new_message_to_insert = new_message_to_insert
+                        .with_raw_prompt(Some(raw_prompt_ciphertext), Some(raw_prompt_nonce));
+                }
+                Err(e) => {
+                    error!(%session_id, "Failed to encrypt raw prompt debug: {}", e);
+                    // We don't fail the message save due to raw prompt encryption error
+                    // Raw prompt is debug information, not critical
+                }
+            }
+        } else {
+            warn!(%session_id, "Raw prompt debug provided but no DEK available, skipping encryption");
+        }
+    } else {
+        info!(%session_id, "No raw prompt debug provided for this message");
+    }
 
     let db_pool: DbPool = state.pool.clone(); // Ensure DbPool type
     let saved_message_db = db_pool

@@ -26,11 +26,7 @@ impl EncryptionService {
     ///
     /// Returns `AppError::EncryptionError` if the key length is invalid (not 32 bytes for AES-256-GCM)
     /// or if the underlying encryption operation fails.
-    pub fn encrypt(
-        &self,
-        plaintext: &str,
-        key: &[u8],
-    ) -> Result<(Vec<u8>, Vec<u8>), AppError> {
+    pub fn encrypt(&self, plaintext: &str, key: &[u8]) -> Result<(Vec<u8>, Vec<u8>), AppError> {
         if key.len() != aead::AES_256_GCM.key_len() {
             return Err(AppError::EncryptionError(format!(
                 "Invalid key length: expected {} bytes, got {}",
@@ -83,17 +79,14 @@ impl EncryptionService {
 
         let key_secret_box = SecretBox::new(Box::new(key.to_vec()));
 
-        crate::crypto::decrypt_gcm(ciphertext_and_tag, nonce_bytes, &key_secret_box)
-            .map_or_else(
-                |e| {
-                    // Log the original error for debugging purposes if needed
-                    // tracing::error!("Decryption failed: {:?}", e);
-                    Err(AppError::DecryptionError(format!(
-                        "Decryption failed: {e}"
-                    )))
-                },
-                |decrypted_secret_box_vec| Ok(decrypted_secret_box_vec.expose_secret().clone())
-            )
+        crate::crypto::decrypt_gcm(ciphertext_and_tag, nonce_bytes, &key_secret_box).map_or_else(
+            |e| {
+                // Log the original error for debugging purposes if needed
+                // tracing::error!("Decryption failed: {:?}", e);
+                Err(AppError::DecryptionError(format!("Decryption failed: {e}")))
+            },
+            |decrypted_secret_box_vec| Ok(decrypted_secret_box_vec.expose_secret().clone()),
+        )
     }
 }
 
@@ -110,9 +103,7 @@ mod tests {
         let plaintext = "This is a secret message.";
 
         let (encrypted_data, nonce) = service.encrypt(plaintext, TEST_KEY).unwrap();
-        let decrypted_data_bytes = service
-            .decrypt(&encrypted_data, &nonce, TEST_KEY)
-            .unwrap();
+        let decrypted_data_bytes = service.decrypt(&encrypted_data, &nonce, TEST_KEY).unwrap();
         let decrypted_data = String::from_utf8(decrypted_data_bytes).unwrap();
 
         assert_eq!(plaintext, decrypted_data);
@@ -139,9 +130,7 @@ mod tests {
         let plaintext = "";
 
         let (encrypted_data, nonce) = service.encrypt(plaintext, TEST_KEY).unwrap();
-        let decrypted_data_bytes = service
-            .decrypt(&encrypted_data, &nonce, TEST_KEY)
-            .unwrap();
+        let decrypted_data_bytes = service.decrypt(&encrypted_data, &nonce, TEST_KEY).unwrap();
         let decrypted_data = String::from_utf8(decrypted_data_bytes).unwrap();
 
         assert_eq!(plaintext, decrypted_data);

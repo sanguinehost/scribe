@@ -49,18 +49,18 @@ async fn create_user_and_login(
         .header(header::CONTENT_TYPE, "application/json")
         .body(Body::from(serde_json::to_string(&login_payload)?))
         .unwrap();
-    
+
     let login_response = test_app
         .router
         .clone()
         .oneshot(login_request)
         .await
         .unwrap();
-    
+
     if login_response.status() != StatusCode::OK {
         anyhow::bail!("Login failed for user {}", username);
     }
-    
+
     let auth_cookie = login_response
         .headers()
         .get(header::SET_COOKIE)
@@ -68,7 +68,7 @@ async fn create_user_and_login(
         .to_str()
         .unwrap()
         .to_string();
-        
+
     Ok(auth_cookie)
 }
 
@@ -146,7 +146,7 @@ async fn create_test_character(
         user_persona_visibility: None,
         world_scenario_visibility: None,
     };
-    
+
     let character = conn_pool
         .get()
         .await
@@ -159,7 +159,7 @@ async fn create_test_character(
         .await
         .map_err(|e| anyhow::anyhow!("Database interaction failed: {}", e))?
         .map_err(|e| anyhow::anyhow!("Database query failed: {}", e))?;
-        
+
     Ok(character)
 }
 
@@ -196,7 +196,7 @@ async fn create_test_chat_session(
         system_prompt_ciphertext: None,
         system_prompt_nonce: None,
     };
-    
+
     let chat_session = conn_pool
         .get()
         .await
@@ -210,7 +210,7 @@ async fn create_test_chat_session(
         .await
         .map_err(|e| anyhow::anyhow!("Database interaction failed: {}", e))?
         .map_err(|e| anyhow::anyhow!("Database query failed: {}", e))?;
-        
+
     Ok(chat_session)
 }
 
@@ -311,7 +311,7 @@ async fn setup_chat_settings_test_env(
             gemini_enable_code_execution: None,
             system_prompt_ciphertext: None,
             system_prompt_nonce: None,
-        }
+        },
     };
 
     let chat_data_clone = chat_data.clone();
@@ -697,8 +697,7 @@ async fn setup_update_test_env(
     .await
     .expect("Failed to create test user");
 
-    let login_payload =
-        serde_json::json!({ "identifier": username, "password": "password" });
+    let login_payload = serde_json::json!({ "identifier": username, "password": "password" });
     let login_request = Request::builder()
         .method(Method::POST)
         .uri("/api/auth/login")
@@ -931,7 +930,10 @@ async fn update_chat_settings_success_partial() {
     );
     assert_eq!(settings_resp.max_output_tokens, Some(200));
     assert_eq!(settings_resp.temperature, Some(initial_temp_val));
-    assert_eq!(settings_resp.model_name, "initial-partial-model".to_string());
+    assert_eq!(
+        settings_resp.model_name,
+        "initial-partial-model".to_string()
+    );
     assert_eq!(settings_resp.history_management_strategy, "none");
     assert_eq!(settings_resp.history_management_limit, 0);
 }
@@ -989,9 +991,10 @@ async fn update_chat_settings_forbidden() {
         .expect("Failed to create and login user2");
 
     // Create character for user1
-    let character_user1 = create_test_character(&conn_pool, user1.id, "Update Forbidden Settings Char")
-        .await
-        .expect("Failed to create character for user1");
+    let character_user1 =
+        create_test_character(&conn_pool, user1.id, "Update Forbidden Settings Char")
+            .await
+            .expect("Failed to create character for user1");
 
     // Create chat session for user1
     let session_user1 = create_test_chat_session(&conn_pool, user1.id, character_user1.id)

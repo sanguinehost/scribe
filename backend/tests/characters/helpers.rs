@@ -34,13 +34,13 @@ use uuid::Uuid;
 
 // Helper function to insert a test character (returns Result<(), ...>)
 /// Insert a test character into the database
-/// 
+///
 /// # Errors
-/// 
+///
 /// Returns a `diesel::result::Error` if the database operation fails
-/// 
+///
 /// # Panics
-/// 
+///
 /// Panics if encryption of character data fails
 pub fn insert_test_character(
     conn: &mut PgConnection,
@@ -94,9 +94,9 @@ pub fn insert_test_character(
 
 // Helper to create a multipart form request using write! macro for reliability
 /// Create a multipart HTTP request for testing file uploads
-/// 
+///
 /// # Panics
-/// 
+///
 /// Panics if building the HTTP request fails
 /// Updated to accept a session cookie header instead of a token
 pub fn create_multipart_request(
@@ -151,9 +151,9 @@ pub fn create_multipart_request(
 }
 
 /// Helper to create a test PNG with a valid character card chunk
-/// 
+///
 /// # Panics
-/// 
+///
 /// Panics if the version is not supported (must be "v1" or "v2")
 #[must_use]
 pub fn create_test_character_png(version: &str) -> Vec<u8> {
@@ -209,7 +209,9 @@ pub fn create_test_character_png(version: &str) -> Vec<u8> {
 
     // IHDR chunk (required)
     let ihdr_data = &[0, 0, 0, 1, 0, 0, 0, 1, 8, 6, 0, 0, 0];
-    let ihdr_len = u32::try_from(ihdr_data.len()).expect("IHDR chunk too large").to_be_bytes();
+    let ihdr_len = u32::try_from(ihdr_data.len())
+        .expect("IHDR chunk too large")
+        .to_be_bytes();
     png_bytes.extend_from_slice(&ihdr_len);
     png_bytes.extend_from_slice(b"IHDR");
     png_bytes.extend_from_slice(ihdr_data);
@@ -224,7 +226,9 @@ pub fn create_test_character_png(version: &str) -> Vec<u8> {
     // tEXt chunk with character data
     let base64_payload = base64_standard.encode(json_payload);
     let text_chunk_data = [chunk_keyword.as_bytes(), &[0u8], base64_payload.as_bytes()].concat();
-    let text_chunk_len = u32::try_from(text_chunk_data.len()).expect("Text chunk too large").to_be_bytes();
+    let text_chunk_len = u32::try_from(text_chunk_data.len())
+        .expect("Text chunk too large")
+        .to_be_bytes();
     png_bytes.extend_from_slice(&text_chunk_len);
     png_bytes.extend_from_slice(b"tEXt");
     png_bytes.extend_from_slice(&text_chunk_data);
@@ -238,7 +242,9 @@ pub fn create_test_character_png(version: &str) -> Vec<u8> {
 
     // IDAT chunk (minimal required data)
     let idat_data = &[8, 29, 99, 96, 0, 0, 0, 3, 0, 1];
-    let idat_len = u32::try_from(idat_data.len()).expect("IDAT chunk too large").to_be_bytes();
+    let idat_len = u32::try_from(idat_data.len())
+        .expect("IDAT chunk too large")
+        .to_be_bytes();
     png_bytes.extend_from_slice(&idat_len);
     png_bytes.extend_from_slice(b"IDAT");
     png_bytes.extend_from_slice(idat_data);
@@ -259,9 +265,9 @@ pub fn create_test_character_png(version: &str) -> Vec<u8> {
 }
 
 /// Helper to hash a password for tests
-/// 
+///
 /// # Panics
-/// 
+///
 /// Panics if bcrypt hashing fails for the given password
 #[must_use]
 pub fn hash_test_password(password: &str) -> String {
@@ -269,13 +275,13 @@ pub fn hash_test_password(password: &str) -> String {
 }
 
 /// Helper to insert a unique test user with a known password hash
-/// 
+///
 /// # Errors
-/// 
+///
 /// Returns a `diesel::result::Error` if the database operation fails
-/// 
+///
 /// # Panics
-/// 
+///
 /// Panics if encryption key generation or password hashing fails
 pub fn insert_test_user_with_password(
     conn: &mut PgConnection,
@@ -355,9 +361,9 @@ pub async fn build_test_app_for_characters(_pool: Pool) -> Router {
 }
 
 /// Helper to spawn the app in the background
-/// 
+///
 /// # Panics
-/// 
+///
 /// Panics if failed to bind to a random port or get the local address
 pub async fn spawn_app(app: Router) -> SocketAddr {
     let listener = TcpListener::bind("127.0.0.1:0")
@@ -379,9 +385,9 @@ pub async fn spawn_app(app: Router) -> SocketAddr {
 }
 
 /// Helper function to run DB operations via pool interact
-/// 
+///
 /// # Errors
-/// 
+///
 /// Returns an error if the database connection fails or the operation fails
 pub async fn run_db_op<F, T>(pool: &Pool, op: F) -> Result<T, anyhow::Error>
 where
@@ -403,9 +409,9 @@ where
 }
 
 /// Helper to extract plain text body
-/// 
+///
 /// # Errors
-/// 
+///
 /// Returns an error if reading the response body fails or if the body is not valid UTF-8
 pub async fn get_text_body(
     response: AxumResponse<Body>,

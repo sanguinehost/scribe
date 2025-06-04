@@ -75,9 +75,7 @@ async fn test_get_character_image_unauthorized() -> Result<(), anyhow::Error> {
     // This path was `/api/characters/fetch/:id/image` in the original test,
     // which implies a different routing structure than the `not_implemented` test above.
     // We'll keep it as is from the original test.
-    let image_url = format!(
-        "http://{server_addr}/api/characters/fetch/{character_id}/image"
-    );
+    let image_url = format!("http://{server_addr}/api/characters/fetch/{character_id}/image");
 
     let response = client.get(&image_url).send().await?;
     tracing::info!("Test request to URL: {}", image_url);

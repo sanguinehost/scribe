@@ -22,7 +22,7 @@ mod user_store_tests {
     use scribe_backend::test_helpers::{self, TestDataGuard}; // Removed TestApp
 
     use uuid::Uuid; // Added import for Uuid
-    
+
     // Helper functions for basic verification
     async fn test_basic_credential_verification(
         pool: &scribe_backend::state::DbPool,
@@ -40,18 +40,45 @@ mod user_store_tests {
         guard.add_user(created_user.id);
 
         // Test basic scenarios
-        verify_and_assert(pool, &username, password_secret.clone(), Ok(created_user.id), "username").await?;
-        verify_and_assert(pool, &email, password_secret.clone(), Ok(created_user.id), "email").await?;
-        
+        verify_and_assert(
+            pool,
+            &username,
+            password_secret.clone(),
+            Ok(created_user.id),
+            "username",
+        )
+        .await?;
+        verify_and_assert(
+            pool,
+            &email,
+            password_secret.clone(),
+            Ok(created_user.id),
+            "email",
+        )
+        .await?;
+
         let wrong_password = SecretString::new("wrong".to_string().into());
-        verify_and_assert(pool, &username, wrong_password, Err(scribe_backend::auth::AuthError::WrongCredentials), "wrong password").await?;
-        
+        verify_and_assert(
+            pool,
+            &username,
+            wrong_password,
+            Err(scribe_backend::auth::AuthError::WrongCredentials),
+            "wrong password",
+        )
+        .await?;
+
         Ok(())
     }
 
     fn generate_test_user_data() -> (String, String, SecretString) {
-        let username = format!("testuser_{}", Uuid::new_v4().to_string().split('-').next().unwrap());
-        let email = format!("test_{}@example.com", Uuid::new_v4().to_string().split('-').next().unwrap());
+        let username = format!(
+            "testuser_{}",
+            Uuid::new_v4().to_string().split('-').next().unwrap()
+        );
+        let email = format!(
+            "test_{}@example.com",
+            Uuid::new_v4().to_string().split('-').next().unwrap()
+        );
         let password = SecretString::new("password123".to_string().into());
         (username, email, password)
     }
@@ -86,9 +113,9 @@ mod user_store_tests {
     ) -> Result<(), Box<dyn std::error::Error>> {
         let obj = pool.get().await?;
         let id = identifier.to_string();
-        let result = obj.interact(move |conn| {
-            scribe_backend::auth::verify_credentials(conn, &id, password)
-        }).await?;
+        let result = obj
+            .interact(move |conn| scribe_backend::auth::verify_credentials(conn, &id, password))
+            .await?;
 
         match expected {
             Ok(expected_id) => {
@@ -97,8 +124,10 @@ mod user_store_tests {
                 assert!(dek.is_some(), "Test {test_name}: DEK missing");
             }
             Err(expected_err) => {
-                assert!(matches!(result, Err(ref e) if e == &expected_err), 
-                    "Test {test_name}: Expected {expected_err:?}, got {result:?}");
+                assert!(
+                    matches!(result, Err(ref e) if e == &expected_err),
+                    "Test {test_name}: Expected {expected_err:?}, got {result:?}"
+                );
             }
         }
         Ok(())
@@ -120,18 +149,25 @@ mod user_store_tests {
                     .set(scribe_backend::schema::users::kek_salt.eq(salt_c))
                     .execute(conn)
             }
-        }).await??;
+        })
+        .await??;
 
         let obj2 = pool.get().await?;
         let result = {
             let username_c = username.to_string();
             obj2.interact(move |conn| {
                 scribe_backend::auth::verify_credentials(conn, &username_c, password)
-            }).await?
+            })
+            .await?
         };
 
-        assert!(matches!(result, Err(scribe_backend::auth::AuthError::CryptoOperationFailed(_))),
-            "Expected crypto failure, got: {result:?}");
+        assert!(
+            matches!(
+                result,
+                Err(scribe_backend::auth::AuthError::CryptoOperationFailed(_))
+            ),
+            "Expected crypto failure, got: {result:?}"
+        );
         Ok(())
     }
 
@@ -504,7 +540,7 @@ mod user_store_tests {
         )
         .await?;
         guard.add_user(created_user.id);
-        
+
         test_crypto_failure_scenarios(pool, created_user.id, &username, password_secret).await?;
 
         guard.cleanup().await?;

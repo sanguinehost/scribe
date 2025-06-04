@@ -8,15 +8,15 @@ use axum::{
 use bigdecimal::{BigDecimal, ToPrimitive};
 use chrono::Utc;
 use diesel::prelude::*;
-use genai::chat::{Usage, MessageContent, ChatRole};
+use genai::chat::{ChatRole, MessageContent, Usage};
 use serde_json::json;
 use std::str::FromStr;
 use tower::ServiceExt;
 use tower_cookies::Cookie;
 use uuid::Uuid;
 // Import for session DEK handling
-use scribe_backend::errors::AppError;
 use scribe_backend::crypto::decrypt_gcm;
+use scribe_backend::errors::AppError;
 use secrecy::ExposeSecret;
 use tokio::time::{Duration, sleep};
 
@@ -403,7 +403,9 @@ async fn generate_chat_response_uses_session_settings() -> Result<(), anyhow::Er
     });
     let (sp_ciphertext, sp_nonce) = user_dek_secret_box.as_ref().map_or_else(
         || panic!("User DEK not available for system prompt encryption in test setup"),
-        |dek_arc| scribe_backend::crypto::encrypt_gcm(test_prompt.as_bytes(), dek_arc.as_ref()).unwrap(),
+        |dek_arc| {
+            scribe_backend::crypto::encrypt_gcm(test_prompt.as_bytes(), dek_arc.as_ref()).unwrap()
+        },
     );
 
     {
@@ -596,7 +598,11 @@ async fn generate_chat_response_uses_session_settings() -> Result<(), anyhow::Er
         panic!("Expected temperature to be set in options");
     }
     if let Some(tokens) = options.max_tokens {
-        assert_eq!(tokens, u32::try_from(test_tokens).expect("test_tokens should be positive"), "Max tokens value doesn't match");
+        assert_eq!(
+            tokens,
+            u32::try_from(test_tokens).expect("test_tokens should be positive"),
+            "Max tokens value doesn't match"
+        );
     } else {
         panic!("Expected max_tokens to be set in options");
     }
@@ -772,7 +778,7 @@ async fn generate_chat_response_uses_session_settings() -> Result<(), anyhow::Er
 
 #[tokio::test]
 #[allow(clippy::too_many_lines)]
-    async fn generate_chat_response_json_stream_initiation_error() -> Result<(), anyhow::Error> {
+async fn generate_chat_response_json_stream_initiation_error() -> Result<(), anyhow::Error> {
     let test_app = test_helpers::spawn_app(false, false, false).await;
     let _guard = TestDataGuard::new(test_app.db_pool.clone());
     let conn = test_app.db_pool.get().await?;
@@ -959,7 +965,9 @@ async fn generate_chat_response_uses_session_settings() -> Result<(), anyhow::Er
     });
     let (sp_err_ciphertext, sp_err_nonce) = user_dek_secret_box_err_test.as_ref().map_or_else(
         || panic!("User DEK not available for system prompt encryption in error test setup"),
-        |dek_arc| scribe_backend::crypto::encrypt_gcm(test_prompt.as_bytes(), dek_arc.as_ref()).unwrap(),
+        |dek_arc| {
+            scribe_backend::crypto::encrypt_gcm(test_prompt.as_bytes(), dek_arc.as_ref()).unwrap()
+        },
     );
 
     {
@@ -1092,7 +1100,11 @@ async fn generate_chat_response_uses_session_settings() -> Result<(), anyhow::Er
         panic!("Expected temperature to be set in options");
     }
     if let Some(tokens) = options.max_tokens {
-        assert_eq!(tokens, u32::try_from(test_tokens).expect("test_tokens should be positive"), "Max tokens value doesn't match");
+        assert_eq!(
+            tokens,
+            u32::try_from(test_tokens).expect("test_tokens should be positive"),
+            "Max tokens value doesn't match"
+        );
     } else {
         panic!("Expected max_tokens to be set in options");
     }
@@ -1383,6 +1395,8 @@ async fn generate_chat_response_history_sliding_window_messages() -> anyhow::Res
         attachments: None,
         prompt_tokens: None,
         completion_tokens: None,
+        raw_prompt_ciphertext: None,
+        raw_prompt_nonce: None,
     };
 
     // Insert message 1 (User)
@@ -1712,6 +1726,8 @@ async fn generate_chat_response_history_sliding_window_tokens() -> anyhow::Resul
         attachments: None,
         prompt_tokens: None,
         completion_tokens: None,
+        raw_prompt_ciphertext: None,
+        raw_prompt_nonce: None,
     };
 
     // Insert message 1 (User)
@@ -2025,6 +2041,8 @@ async fn test_generate_chat_response_history_truncate_tokens() -> anyhow::Result
         attachments: None,
         prompt_tokens: None,
         completion_tokens: None,
+        raw_prompt_ciphertext: None,
+        raw_prompt_nonce: None,
     };
 
     // Insert message 1 (User)
@@ -2398,6 +2416,8 @@ async fn generate_chat_response_history_none() -> anyhow::Result<()> {
         attachments: None,
         prompt_tokens: None,
         completion_tokens: None,
+        raw_prompt_ciphertext: None,
+        raw_prompt_nonce: None,
     };
 
     // Insert message 1 (User)
@@ -2500,7 +2520,6 @@ async fn generate_chat_response_history_none() -> anyhow::Result<()> {
 // Keeping them as they were in the original file, but they test similar logic.
 
 #[tokio::test]
-
 #[allow(clippy::too_many_lines)]
 async fn generate_chat_response_history_truncate_tokens_limit_30() -> anyhow::Result<()> {
     let test_app = test_helpers::spawn_app(false, false, false).await;
@@ -2671,6 +2690,8 @@ async fn generate_chat_response_history_truncate_tokens_limit_30() -> anyhow::Re
         attachments: None,
         prompt_tokens: None,
         completion_tokens: None,
+        raw_prompt_ciphertext: None,
+        raw_prompt_nonce: None,
     };
 
     // Insert message 1 (User)
@@ -2976,6 +2997,8 @@ async fn test_get_chat_messages_success() -> anyhow::Result<()> {
         attachments: None,
         prompt_tokens: None,
         completion_tokens: None,
+        raw_prompt_ciphertext: None,
+        raw_prompt_nonce: None,
     };
 
     let create_message_result = conn
@@ -3053,7 +3076,6 @@ async fn test_get_chat_messages_success() -> anyhow::Result<()> {
 
 // Test: Get messages for a session owned by another user
 #[tokio::test]
-
 #[allow(clippy::too_many_lines)]
 async fn test_get_chat_messages_forbidden() -> anyhow::Result<()> {
     let test_app = test_helpers::spawn_app(false, false, false).await;

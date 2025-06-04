@@ -30,7 +30,11 @@ use scribe_backend::{
     test_helpers::{self, ParsedSseEvent, collect_full_sse_events},
 };
 
-async fn setup_test_user_and_auth(test_app: &test_helpers::TestApp, username: &str, password: &str) -> (DbUser, String) {
+async fn setup_test_user_and_auth(
+    test_app: &test_helpers::TestApp,
+    username: &str,
+    password: &str,
+) -> (DbUser, String) {
     let user = test_helpers::db::create_test_user(
         &test_app.db_pool,
         username.to_string(),
@@ -75,7 +79,11 @@ async fn setup_test_user_and_auth(test_app: &test_helpers::TestApp, username: &s
     (user, auth_cookie)
 }
 
-async fn create_test_character(test_app: &test_helpers::TestApp, user_id: Uuid, char_name: String) -> DbCharacter {
+async fn create_test_character(
+    test_app: &test_helpers::TestApp,
+    user_id: Uuid,
+    char_name: String,
+) -> DbCharacter {
     let conn_pool = test_app.db_pool.clone();
     conn_pool
         .get()
@@ -105,7 +113,11 @@ async fn create_test_character(test_app: &test_helpers::TestApp, user_id: Uuid, 
         .expect("Error saving new character")
 }
 
-async fn create_test_chat_session(test_app: &test_helpers::TestApp, user_id: Uuid, character_id: Uuid) -> ChatSession {
+async fn create_test_chat_session(
+    test_app: &test_helpers::TestApp,
+    user_id: Uuid,
+    character_id: Uuid,
+) -> ChatSession {
     let conn_pool = test_app.db_pool.clone();
     conn_pool
         .get()
@@ -149,7 +161,12 @@ async fn create_test_chat_session(test_app: &test_helpers::TestApp, user_id: Uui
         .expect("Error saving new session")
 }
 
-async fn perform_empty_response_stream_test(test_app: &test_helpers::TestApp, session_id: Uuid, auth_cookie: &str, user_dek: &scribe_backend::models::users::SerializableSecretDek) {
+async fn perform_empty_response_stream_test(
+    test_app: &test_helpers::TestApp,
+    session_id: Uuid,
+    auth_cookie: &str,
+    user_dek: &scribe_backend::models::users::SerializableSecretDek,
+) {
     // Mock the AI client stream: Start -> End
     let mock_stream_items = vec![
         Ok(ChatStreamEvent::Start),
@@ -208,7 +225,10 @@ async fn perform_empty_response_stream_test(test_app: &test_helpers::TestApp, se
     verify_empty_stream_messages(test_app, session_id, user_dek).await;
 }
 
-fn verify_empty_stream_events(actual_events: &[ParsedSseEvent], expected_events: &[ParsedSseEvent]) {
+fn verify_empty_stream_events(
+    actual_events: &[ParsedSseEvent],
+    expected_events: &[ParsedSseEvent],
+) {
     assert_eq!(
         actual_events.len(),
         expected_events.len(),
@@ -227,7 +247,11 @@ fn verify_empty_stream_events(actual_events: &[ParsedSseEvent], expected_events:
     }
 }
 
-async fn verify_empty_stream_messages(test_app: &test_helpers::TestApp, session_id: Uuid, user_dek: &scribe_backend::models::users::SerializableSecretDek) {
+async fn verify_empty_stream_messages(
+    test_app: &test_helpers::TestApp,
+    session_id: Uuid,
+    user_dek: &scribe_backend::models::users::SerializableSecretDek,
+) {
     // Assert background save (wait a bit)
     tokio::time::sleep(Duration::from_millis(100)).await;
 
@@ -263,12 +287,9 @@ async fn verify_empty_stream_messages(test_app: &test_helpers::TestApp, session_
 
             // Only try to decrypt if we have a nonce
             if let Some(nonce) = &user_msg_db.content_nonce {
-                let decrypted_user_content_bytes = scribe_backend::crypto::decrypt_gcm(
-                    &user_msg_db.content,
-                    nonce,
-                    &user_dek.0,
-                )
-                .expect("Failed to decrypt user message content for empty_response test");
+                let decrypted_user_content_bytes =
+                    scribe_backend::crypto::decrypt_gcm(&user_msg_db.content, nonce, &user_dek.0)
+                        .expect("Failed to decrypt user message content for empty_response test");
 
                 let decrypted_user_content_str = String::from_utf8(
                     decrypted_user_content_bytes.expose_secret().clone(),
@@ -300,18 +321,21 @@ async fn generate_chat_response_streaming_empty_response() {
     let password = "password123";
     let (user, auth_cookie) = setup_test_user_and_auth(&test_app, username, password).await;
 
-    let dek_for_assertion = user
-        .dek
-        .as_ref()
-        .expect("User DEK not found for assertion");
+    let dek_for_assertion = user.dek.as_ref().expect("User DEK not found for assertion");
 
-    let character = create_test_character(&test_app, user.id, "Stream Empty Resp Char".to_string()).await;
+    let character =
+        create_test_character(&test_app, user.id, "Stream Empty Resp Char".to_string()).await;
     let session = create_test_chat_session(&test_app, user.id, character.id).await;
 
-    perform_empty_response_stream_test(&test_app, session.id, &auth_cookie, dek_for_assertion).await;
+    perform_empty_response_stream_test(&test_app, session.id, &auth_cookie, dek_for_assertion)
+        .await;
 }
 
-async fn perform_reasoning_chunk_stream_test(test_app: &test_helpers::TestApp, session_id: Uuid, auth_cookie: &str) {
+async fn perform_reasoning_chunk_stream_test(
+    test_app: &test_helpers::TestApp,
+    session_id: Uuid,
+    auth_cookie: &str,
+) {
     // Mock the AI client stream: Start -> Reasoning -> Chunk -> End
     let mock_stream_items = vec![
         Ok(ChatStreamEvent::Start),
@@ -387,7 +411,10 @@ async fn perform_reasoning_chunk_stream_test(test_app: &test_helpers::TestApp, s
     verify_reasoning_stream_events(&actual_events, &expected_events);
 }
 
-fn verify_reasoning_stream_events(actual_events: &[ParsedSseEvent], expected_events: &[ParsedSseEvent]) {
+fn verify_reasoning_stream_events(
+    actual_events: &[ParsedSseEvent],
+    expected_events: &[ParsedSseEvent],
+) {
     assert_eq!(
         actual_events.len(),
         expected_events.len(),
@@ -408,11 +435,19 @@ fn verify_reasoning_stream_events(actual_events: &[ParsedSseEvent], expected_eve
             );
         } else if expected.data.starts_with('{') || expected.data.starts_with('[') {
             let actual_json: serde_json::Value =
-                serde_json::from_str(&actual.data).unwrap_or_else(|_| panic!("Actual data at index {} is not valid JSON: {}",
-                    i, actual.data));
-            let expected_json: serde_json::Value =
-                serde_json::from_str(&expected.data).unwrap_or_else(|_| panic!("Expected data at index {} is not valid JSON: {}",
-                    i, expected.data));
+                serde_json::from_str(&actual.data).unwrap_or_else(|_| {
+                    panic!(
+                        "Actual data at index {} is not valid JSON: {}",
+                        i, actual.data
+                    )
+                });
+            let expected_json: serde_json::Value = serde_json::from_str(&expected.data)
+                .unwrap_or_else(|_| {
+                    panic!(
+                        "Expected data at index {} is not valid JSON: {}",
+                        i, expected.data
+                    )
+                });
             assert_eq!(
                 actual_json, expected_json,
                 "Event data JSON mismatch at index {i}"
@@ -426,7 +461,11 @@ fn verify_reasoning_stream_events(actual_events: &[ParsedSseEvent], expected_eve
     }
 }
 
-async fn verify_reasoning_chunk_messages(test_app: &test_helpers::TestApp, session_id: Uuid, user_dek: &scribe_backend::models::users::SerializableSecretDek) {
+async fn verify_reasoning_chunk_messages(
+    test_app: &test_helpers::TestApp,
+    session_id: Uuid,
+    user_dek: &scribe_backend::models::users::SerializableSecretDek,
+) {
     // Assert background save (wait a bit for the background task)
     tokio::time::sleep(Duration::from_millis(100)).await; // Adjust timing if needed
 
@@ -549,20 +588,22 @@ async fn generate_chat_response_streaming_reasoning_chunk() {
     let password = "password123";
     let (user, auth_cookie) = setup_test_user_and_auth(&test_app, username, password).await;
 
-    let character = create_test_character(&test_app, user.id, "Stream Reasoning Char".to_string()).await;
+    let character =
+        create_test_character(&test_app, user.id, "Stream Reasoning Char".to_string()).await;
     let session = create_test_chat_session(&test_app, user.id, character.id).await;
 
     perform_reasoning_chunk_stream_test(&test_app, session.id, &auth_cookie).await;
 
-    let dek_for_assertion = user
-        .dek
-        .as_ref()
-        .expect("User DEK not found for assertion");
+    let dek_for_assertion = user.dek.as_ref().expect("User DEK not found for assertion");
 
     verify_reasoning_chunk_messages(&test_app, session.id, dek_for_assertion).await;
 }
 
-async fn setup_real_client_test_user_and_auth(test_app: &test_helpers::TestApp, username: &str, password: &str) -> (DbUser, String) {
+async fn setup_real_client_test_user_and_auth(
+    test_app: &test_helpers::TestApp,
+    username: &str,
+    password: &str,
+) -> (DbUser, String) {
     let user = test_helpers::db::create_test_user(
         &test_app.db_pool,
         username.to_string(),
@@ -607,7 +648,11 @@ async fn setup_real_client_test_user_and_auth(test_app: &test_helpers::TestApp, 
     (user, auth_cookie)
 }
 
-async fn create_real_client_test_character(test_app: &test_helpers::TestApp, user_id: Uuid, char_name: String) -> DbCharacter {
+async fn create_real_client_test_character(
+    test_app: &test_helpers::TestApp,
+    user_id: Uuid,
+    char_name: String,
+) -> DbCharacter {
     let conn_pool = test_app.db_pool.clone();
     conn_pool
         .get()
@@ -637,7 +682,11 @@ async fn create_real_client_test_character(test_app: &test_helpers::TestApp, use
         .expect("Error saving new character for real_client_failure_repro")
 }
 
-async fn create_real_client_test_session(test_app: &test_helpers::TestApp, user_id: Uuid, character_id: Uuid) -> ChatSession {
+async fn create_real_client_test_session(
+    test_app: &test_helpers::TestApp,
+    user_id: Uuid,
+    character_id: Uuid,
+) -> ChatSession {
     let conn_pool = test_app.db_pool.clone();
     conn_pool
         .get()
@@ -681,7 +730,12 @@ async fn create_real_client_test_session(test_app: &test_helpers::TestApp, user_
         .expect("Error saving new chat session for real_client_failure_repro")
 }
 
-async fn add_real_client_test_user_message(test_app: &test_helpers::TestApp, session_id: Uuid, user_id: Uuid, content: &str) {
+async fn add_real_client_test_user_message(
+    test_app: &test_helpers::TestApp,
+    session_id: Uuid,
+    user_id: Uuid,
+    content: &str,
+) {
     let conn_pool_msg = test_app.db_pool.clone();
     let content_owned = content.to_string();
     conn_pool_msg
@@ -703,6 +757,8 @@ async fn add_real_client_test_user_message(test_app: &test_helpers::TestApp, ses
                 attachments: None,
                 prompt_tokens: None,
                 completion_tokens: None,
+                raw_prompt_ciphertext: None,
+                raw_prompt_nonce: None,
             };
             diesel::insert_into(chat_messages_dsl::chat_messages)
                 .values(&new_message)
@@ -713,9 +769,14 @@ async fn add_real_client_test_user_message(test_app: &test_helpers::TestApp, ses
         .expect("Error saving user message");
 }
 
-async fn perform_real_client_stream_test_and_verify(test_app: &test_helpers::TestApp, session_id: Uuid, auth_cookie: &str) {
-    let user_message_content = "A simple prompt likely to succeed in non-streaming, but might fail in streaming.";
-    
+async fn perform_real_client_stream_test_and_verify(
+    test_app: &test_helpers::TestApp,
+    session_id: Uuid,
+    auth_cookie: &str,
+) {
+    let user_message_content =
+        "A simple prompt likely to succeed in non-streaming, but might fail in streaming.";
+
     let history = vec![ApiChatMessage {
         role: "user".to_string(),
         content: user_message_content.to_string(),
@@ -821,12 +882,16 @@ async fn generate_chat_response_streaming_real_client_failure_repro() {
 
     let username = "real_stream_fail_user";
     let password = "password123";
-    let (user, auth_cookie) = setup_real_client_test_user_and_auth(&test_app, username, password).await;
+    let (user, auth_cookie) =
+        setup_real_client_test_user_and_auth(&test_app, username, password).await;
 
-    let character = create_real_client_test_character(&test_app, user.id, "Real Stream Fail Char".to_string()).await;
+    let character =
+        create_real_client_test_character(&test_app, user.id, "Real Stream Fail Char".to_string())
+            .await;
     let session = create_real_client_test_session(&test_app, user.id, character.id).await;
 
-    let user_message_content = "A simple prompt likely to succeed in non-streaming, but might fail in streaming.";
+    let user_message_content =
+        "A simple prompt likely to succeed in non-streaming, but might fail in streaming.";
     add_real_client_test_user_message(&test_app, session.id, user.id, user_message_content).await;
 
     perform_real_client_stream_test_and_verify(&test_app, session.id, &auth_cookie).await;

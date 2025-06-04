@@ -3,7 +3,7 @@
 // Import items from the main library crate
 use scribe_backend::models::character_card::{CharacterCardDataV3, CharacterCardV3, NewCharacter};
 use scribe_backend::services::character_parser::ParsedCharacterCard;
- // Add this if not already implicitly imported by other uses
+// Add this if not already implicitly imported by other uses
 use uuid::Uuid; // Keep this specific import
 
 #[test]
@@ -208,10 +208,7 @@ fn test_from_parsed_card_v2_with_collections() {
         new_char.alternate_greetings,
         Some(vec![Some("hi".to_string())])
     );
-    assert_eq!(
-        new_char.description,
-        Some(b"A description".to_vec())
-    );
+    assert_eq!(new_char.description, Some(b"A description".to_vec()));
 }
 
 // Add a test for V3 conversion as well for completeness

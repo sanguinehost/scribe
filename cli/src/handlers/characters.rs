@@ -396,9 +396,7 @@ pub async fn handle_character_edit_wizard<H: IoHandler, C: HttpClient>(
     io_handler.write_line("Fetching current character data...")?;
     let mut current_char = client.get_character(character_id).await.map_err(|e| {
         io_handler
-            .write_line(&format!(
-                "Failed to fetch character {character_id}: {e}"
-            ))
+            .write_line(&format!("Failed to fetch character {character_id}: {e}"))
             .ok();
         e
     })?;

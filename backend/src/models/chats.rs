@@ -1,9 +1,9 @@
 use crate::schema::{chat_messages, chat_sessions};
 use bigdecimal::BigDecimal;
 use chrono::{DateTime, Utc};
-use diesel::{Queryable, Insertable, Identifiable, Selectable, Associations};
+use diesel::{Associations, Identifiable, Insertable, Queryable, Selectable};
 use serde::{Deserialize, Serialize};
-use tracing::error;
+use tracing::{error, info, warn};
 use uuid::Uuid;
 use validator::{Validate, ValidationError};
 
@@ -285,6 +285,8 @@ pub struct ChatMessage {
     pub user_id: Uuid,
     pub prompt_tokens: Option<i32>,
     pub completion_tokens: Option<i32>,
+    pub raw_prompt_ciphertext: Option<Vec<u8>>,
+    pub raw_prompt_nonce: Option<Vec<u8>>,
 }
 
 impl std::fmt::Debug for ChatMessage {
@@ -302,6 +304,17 @@ impl std::fmt::Debug for ChatMessage {
             .field("user_id", &self.user_id)
             .field("prompt_tokens", &self.prompt_tokens)
             .field("completion_tokens", &self.completion_tokens)
+            .field(
+                "raw_prompt_ciphertext",
+                &self
+                    .raw_prompt_ciphertext
+                    .as_ref()
+                    .map(|_| "[REDACTED_BYTES]"),
+            )
+            .field(
+                "raw_prompt_nonce",
+                &self.raw_prompt_nonce.as_ref().map(|_| "[REDACTED_NONCE]"),
+            )
             .finish()
     }
 }
@@ -361,7 +374,11 @@ impl ChatMessage {
     }
 
     /// Helper method to decrypt content with a validated nonce
-    fn decrypt_with_nonce(&self, nonce: &[u8], dek: &SecretBox<Vec<u8>>) -> Result<String, AppError> {
+    fn decrypt_with_nonce(
+        &self,
+        nonce: &[u8],
+        dek: &SecretBox<Vec<u8>>,
+    ) -> Result<String, AppError> {
         let plaintext_secret = decrypt_gcm(&self.content, nonce, dek).map_err(|e| {
             error!(
                 "Failed to decrypt chat message content for ID {}: {}",
@@ -379,6 +396,83 @@ impl ChatMessage {
         })
     }
 
+    /// Encrypts the raw_prompt field if plaintext is provided and a DEK is available.
+    /// Updates `self.raw_prompt_ciphertext` and `self.raw_prompt_nonce`.
+    ///
+    /// # Errors
+    /// Returns `AppError` if encryption fails
+    pub fn encrypt_raw_prompt_field(
+        &mut self,
+        dek: &SecretBox<Vec<u8>>,
+        plaintext_raw_prompt: &str,
+    ) -> Result<(), AppError> {
+        if plaintext_raw_prompt.is_empty() {
+            self.raw_prompt_ciphertext = None;
+            self.raw_prompt_nonce = None;
+        } else {
+            let (ciphertext, nonce) = encrypt_gcm(plaintext_raw_prompt.as_bytes(), dek)
+                .map_err(|e| AppError::CryptoError(e.to_string()))?;
+            self.raw_prompt_ciphertext = Some(ciphertext);
+            self.raw_prompt_nonce = Some(nonce);
+        }
+        Ok(())
+    }
+
+    /// Decrypts the raw_prompt field if a DEK is available and content is encrypted.
+    /// Returns the decrypted string.
+    ///
+    /// # Errors
+    /// Returns `AppError::DecryptionError` if the nonce is empty, missing, or decryption fails
+    pub fn decrypt_raw_prompt_field(
+        &self,
+        dek: &SecretBox<Vec<u8>>,
+    ) -> Result<Option<String>, AppError> {
+        match (&self.raw_prompt_ciphertext, &self.raw_prompt_nonce) {
+            (None, None) => Ok(None), // No raw prompt was stored
+            (Some(ciphertext), Some(nonce)) => {
+                if ciphertext.is_empty() {
+                    return Ok(Some(String::new()));
+                }
+
+                if nonce.is_empty() {
+                    tracing::error!(
+                        "ChatMessage ID {} raw_prompt is present but nonce is empty. Cannot decrypt.",
+                        self.id
+                    );
+                    return Err(AppError::DecryptionError(
+                        "Nonce is empty for raw prompt decryption".to_string(),
+                    ));
+                }
+
+                let plaintext_secret = decrypt_gcm(ciphertext, nonce, dek).map_err(|e| {
+                    error!(
+                        "Failed to decrypt chat message raw prompt for ID {}: {}",
+                        self.id, e
+                    );
+                    AppError::DecryptionError(format!(
+                        "Decryption failed for message raw prompt: {e}"
+                    ))
+                })?;
+
+                let decrypted_text = String::from_utf8(plaintext_secret.expose_secret().clone())
+                    .map_err(|e| {
+                        tracing::error!(
+                            "Failed to convert decrypted message raw prompt to UTF-8: {}",
+                            e
+                        );
+                        AppError::DecryptionError(
+                            "Failed to convert message raw prompt to UTF-8".to_string(),
+                        )
+                    })?;
+
+                Ok(Some(decrypted_text))
+            }
+            _ => Err(AppError::DecryptionError(
+                "Mismatched raw prompt ciphertext/nonce pair".to_string(),
+            )),
+        }
+    }
+
     /// Convert this `ChatMessage` to a decrypted `ChatMessageForClient`
     ///
     /// # Errors
@@ -390,22 +484,20 @@ impl ChatMessage {
         let decrypted_content_result: Result<String, AppError> =
             if let Some(nonce) = &self.content_nonce {
                 if let Some(dek_sb) = user_dek_secret_box {
-                    decrypt_gcm(&self.content, nonce, dek_sb)
-                        .map_or_else(
-                            |e| {
-                                error!("Decryption error for msg {}: {:?}", self.id, e);
-                                Err(AppError::DecryptionError(format!(
-                                    "Decryption error: {e}"
-                                )))
-                            },
-                            |plaintext_secret_vec| {
-                                String::from_utf8(plaintext_secret_vec.expose_secret().clone())
-                                    .map_err(|e| {
-                                        error!("UTF-8 conversion error for msg {}: {:?}", self.id, e);
-                                        AppError::DecryptionError(format!("UTF-8 conversion: {e}"))
-                                    })
-                            }
-                        )
+                    decrypt_gcm(&self.content, nonce, dek_sb).map_or_else(
+                        |e| {
+                            error!("Decryption error for msg {}: {:?}", self.id, e);
+                            Err(AppError::DecryptionError(format!("Decryption error: {e}")))
+                        },
+                        |plaintext_secret_vec| {
+                            String::from_utf8(plaintext_secret_vec.expose_secret().clone()).map_err(
+                                |e| {
+                                    error!("UTF-8 conversion error for msg {}: {:?}", self.id, e);
+                                    AppError::DecryptionError(format!("UTF-8 conversion: {e}"))
+                                },
+                            )
+                        },
+                    )
                 } else {
                     // No DEK provided but content appears encrypted
                     Ok("[Content encrypted, DEK not available]".to_string())
@@ -423,6 +515,42 @@ impl ChatMessage {
             "[Decryption failed]".to_string()
         });
 
+        // Decrypt raw prompt if available
+        let raw_prompt = if let Some(dek) = user_dek_secret_box {
+            match self.decrypt_raw_prompt_field(dek) {
+                Ok(decrypted_raw_prompt) => {
+                    if let Some(ref raw_prompt_text) = decrypted_raw_prompt {
+                        info!(
+                            "Successfully decrypted raw prompt for message {} (length: {})",
+                            self.id,
+                            raw_prompt_text.len()
+                        );
+                    } else {
+                        info!("No raw prompt stored for message {}", self.id);
+                    }
+                    decrypted_raw_prompt
+                }
+                Err(e) => {
+                    error!(
+                        "Failed to decrypt raw prompt for message {}: {}",
+                        self.id, e
+                    );
+                    None
+                }
+            }
+        } else {
+            // If raw prompt exists but no DEK provided, indicate it's encrypted
+            if self.raw_prompt_ciphertext.is_some() {
+                warn!(
+                    "Raw prompt exists for message {} but no DEK provided",
+                    self.id
+                );
+                Some("[Raw prompt encrypted, DEK not available]".to_string())
+            } else {
+                None
+            }
+        };
+
         Ok(ChatMessageForClient {
             id: self.id,
             session_id: self.session_id,
@@ -432,6 +560,7 @@ impl ChatMessage {
             user_id: self.user_id,
             prompt_tokens: self.prompt_tokens,
             completion_tokens: self.completion_tokens,
+            raw_prompt,
         })
     }
 }
@@ -455,6 +584,8 @@ pub struct Message {
     pub attachments: Option<serde_json::Value>,
     pub prompt_tokens: Option<i32>,
     pub completion_tokens: Option<i32>,
+    pub raw_prompt_ciphertext: Option<Vec<u8>>,
+    pub raw_prompt_nonce: Option<Vec<u8>>,
 }
 
 impl std::fmt::Debug for Message {
@@ -480,6 +611,17 @@ impl std::fmt::Debug for Message {
             )
             .field("prompt_tokens", &self.prompt_tokens)
             .field("completion_tokens", &self.completion_tokens)
+            .field(
+                "raw_prompt_ciphertext",
+                &self
+                    .raw_prompt_ciphertext
+                    .as_ref()
+                    .map(|_| "[REDACTED_BYTES]"),
+            )
+            .field(
+                "raw_prompt_nonce",
+                &self.raw_prompt_nonce.as_ref().map(|_| "[REDACTED_NONCE]"),
+            )
             .finish()
     }
 }
@@ -539,7 +681,11 @@ impl Message {
     }
 
     /// Helper method to decrypt content with a validated nonce
-    fn decrypt_content_with_nonce(&self, nonce_bytes: &[u8], dek: &SecretBox<Vec<u8>>) -> Result<String, AppError> {
+    fn decrypt_content_with_nonce(
+        &self,
+        nonce_bytes: &[u8],
+        dek: &SecretBox<Vec<u8>>,
+    ) -> Result<String, AppError> {
         let plaintext_secret_vec = decrypt_gcm(&self.content, nonce_bytes, dek).map_err(|e| {
             error!(
                 "Failed to decrypt chat message content for ID {}: {e}",
@@ -549,11 +695,86 @@ impl Message {
         })?;
 
         String::from_utf8(plaintext_secret_vec.expose_secret().clone()).map_err(|e| {
-            error!(
-                "Failed to convert decrypted message content to UTF-8: {e}"
-            );
+            error!("Failed to convert decrypted message content to UTF-8: {e}");
             AppError::DecryptionError("Failed to convert message content to UTF-8".to_string())
         })
+    }
+
+    /// Encrypts the raw_prompt field if plaintext is provided and a DEK is available.
+    /// Updates `self.raw_prompt_ciphertext` and `self.raw_prompt_nonce`.
+    ///
+    /// # Errors
+    /// Returns `AppError` if encryption fails
+    pub fn encrypt_raw_prompt_field(
+        &mut self,
+        dek: &SecretBox<Vec<u8>>,
+        plaintext_raw_prompt: &str,
+    ) -> Result<(), AppError> {
+        if plaintext_raw_prompt.is_empty() {
+            self.raw_prompt_ciphertext = None;
+            self.raw_prompt_nonce = None;
+        } else {
+            let (ciphertext, nonce) = encrypt_gcm(plaintext_raw_prompt.as_bytes(), dek)
+                .map_err(|e| AppError::CryptoError(e.to_string()))?;
+            self.raw_prompt_ciphertext = Some(ciphertext);
+            self.raw_prompt_nonce = Some(nonce);
+        }
+        Ok(())
+    }
+
+    /// Decrypts the raw_prompt field if a DEK is available and content is encrypted.
+    /// Returns the decrypted string.
+    ///
+    /// # Errors
+    /// Returns `AppError::DecryptionError` if the nonce is empty, missing, or decryption fails
+    pub fn decrypt_raw_prompt_field(
+        &self,
+        dek: &SecretBox<Vec<u8>>,
+    ) -> Result<Option<String>, AppError> {
+        match (&self.raw_prompt_ciphertext, &self.raw_prompt_nonce) {
+            (None, None) => Ok(None), // No raw prompt was stored
+            (Some(ciphertext), Some(nonce)) => {
+                if ciphertext.is_empty() {
+                    return Ok(Some(String::new()));
+                }
+
+                if nonce.is_empty() {
+                    tracing::error!(
+                        "Message ID {} raw_prompt is present but nonce is empty. Cannot decrypt.",
+                        self.id
+                    );
+                    return Err(AppError::DecryptionError(
+                        "Nonce is empty for raw prompt decryption".to_string(),
+                    ));
+                }
+
+                let plaintext_secret = decrypt_gcm(ciphertext, nonce, dek).map_err(|e| {
+                    error!(
+                        "Failed to decrypt message raw prompt for ID {}: {}",
+                        self.id, e
+                    );
+                    AppError::DecryptionError(format!(
+                        "Decryption failed for message raw prompt: {e}"
+                    ))
+                })?;
+
+                let decrypted_text = String::from_utf8(plaintext_secret.expose_secret().clone())
+                    .map_err(|e| {
+                        tracing::error!(
+                            "Failed to convert decrypted message raw prompt to UTF-8: {}",
+                            e
+                        );
+                        AppError::DecryptionError(
+                            "Failed to convert message raw prompt to UTF-8".to_string(),
+                        )
+                    })?;
+
+                Ok(Some(decrypted_text))
+            }
+            _ => Err(AppError::DecryptionError(
+                "Mismatched raw prompt ciphertext/nonce pair".to_string(),
+            )),
+        }
     }
 
     /// Convert this `ChatMessage` to a decrypted `ClientChatMessage`
@@ -567,22 +788,20 @@ impl Message {
         let decrypted_content_result: Result<String, AppError> =
             if let Some(nonce) = &self.content_nonce {
                 if let Some(dek_sb) = user_dek_secret_box {
-                    decrypt_gcm(&self.content, nonce, dek_sb)
-                        .map_or_else(
-                            |e| {
-                                error!("Decryption failed for msg {}: {:?}", self.id, e);
-                                Err(AppError::DecryptionError(format!(
-                                    "Decryption failed: {e}"
-                                )))
-                            },
-                            |plaintext_secret_vec| {
-                                String::from_utf8(plaintext_secret_vec.expose_secret().clone())
-                                    .map_err(|e| {
-                                        error!("UTF-8 conversion error for msg {}: {:?}", self.id, e);
-                                        AppError::DecryptionError(format!("UTF-8 conversion: {e}"))
-                                    })
-                            }
-                        )
+                    decrypt_gcm(&self.content, nonce, dek_sb).map_or_else(
+                        |e| {
+                            error!("Decryption failed for msg {}: {:?}", self.id, e);
+                            Err(AppError::DecryptionError(format!("Decryption failed: {e}")))
+                        },
+                        |plaintext_secret_vec| {
+                            String::from_utf8(plaintext_secret_vec.expose_secret().clone()).map_err(
+                                |e| {
+                                    error!("UTF-8 conversion error for msg {}: {:?}", self.id, e);
+                                    AppError::DecryptionError(format!("UTF-8 conversion: {e}"))
+                                },
+                            )
+                        },
+                    )
                 } else {
                     error!("Msg {} is encrypted but no DEK provided.", self.id);
                     Ok("[Content encrypted, DEK not available]".to_string())
@@ -596,6 +815,24 @@ impl Message {
 
         let final_decrypted_content = decrypted_content_result?;
 
+        // Decrypt raw prompt if available (Message struct needs the same raw prompt methods as ChatMessage)
+        let raw_prompt = if let Some(dek) = user_dek_secret_box {
+            self.decrypt_raw_prompt_field(dek).unwrap_or_else(|e| {
+                error!(
+                    "Failed to decrypt raw prompt for message {}: {}",
+                    self.id, e
+                );
+                None
+            })
+        } else {
+            // If raw prompt exists but no DEK provided, indicate it's encrypted
+            if self.raw_prompt_ciphertext.is_some() {
+                Some("[Raw prompt encrypted, DEK not available]".to_string())
+            } else {
+                None
+            }
+        };
+
         Ok(ChatMessageForClient {
             id: self.id,
             session_id: self.session_id,
@@ -605,6 +842,7 @@ impl Message {
             user_id: self.user_id,
             prompt_tokens: self.prompt_tokens,
             completion_tokens: self.completion_tokens,
+            raw_prompt,
         })
     }
 }
@@ -646,6 +884,7 @@ pub struct ChatMessageForClient {
     pub user_id: Uuid,
     pub prompt_tokens: Option<i32>,
     pub completion_tokens: Option<i32>,
+    pub raw_prompt: Option<String>,
 }
 
 impl std::fmt::Debug for ChatMessageForClient {
@@ -659,6 +898,10 @@ impl std::fmt::Debug for ChatMessageForClient {
             .field("user_id", &self.user_id)
             .field("prompt_tokens", &self.prompt_tokens)
             .field("completion_tokens", &self.completion_tokens)
+            .field(
+                "raw_prompt",
+                &self.raw_prompt.as_ref().map(|_| "[REDACTED]"),
+            )
             .finish()
     }
 }
@@ -680,6 +923,8 @@ pub struct NewChatMessage {
     pub attachments: Option<serde_json::Value>,
     pub prompt_tokens: Option<i32>,
     pub completion_tokens: Option<i32>,
+    pub raw_prompt_ciphertext: Option<Vec<u8>>,
+    pub raw_prompt_nonce: Option<Vec<u8>>,
 }
 
 impl std::fmt::Debug for NewChatMessage {
@@ -704,6 +949,17 @@ impl std::fmt::Debug for NewChatMessage {
             )
             .field("prompt_tokens", &self.prompt_tokens)
             .field("completion_tokens", &self.completion_tokens)
+            .field(
+                "raw_prompt_ciphertext",
+                &self
+                    .raw_prompt_ciphertext
+                    .as_ref()
+                    .map(|_| "[REDACTED_BYTES]"),
+            )
+            .field(
+                "raw_prompt_nonce",
+                &self.raw_prompt_nonce.as_ref().map(|_| "[REDACTED_NONCE]"),
+            )
             .finish()
     }
 }
@@ -724,6 +980,8 @@ pub struct DbInsertableChatMessage {
     pub attachments: Option<serde_json::Value>,
     pub prompt_tokens: Option<i32>,
     pub completion_tokens: Option<i32>,
+    pub raw_prompt_ciphertext: Option<Vec<u8>>,
+    pub raw_prompt_nonce: Option<Vec<u8>>,
 }
 
 impl std::fmt::Debug for DbInsertableChatMessage {
@@ -745,6 +1003,17 @@ impl std::fmt::Debug for DbInsertableChatMessage {
             )
             .field("prompt_tokens", &self.prompt_tokens)
             .field("completion_tokens", &self.completion_tokens)
+            .field(
+                "raw_prompt_ciphertext",
+                &self
+                    .raw_prompt_ciphertext
+                    .as_ref()
+                    .map(|_| "[REDACTED_BYTES]"),
+            )
+            .field(
+                "raw_prompt_nonce",
+                &self.raw_prompt_nonce.as_ref().map(|_| "[REDACTED_NONCE]"),
+            )
             .finish()
     }
 }
@@ -770,6 +1039,8 @@ impl DbInsertableChatMessage {
             attachments: None,
             prompt_tokens: None,
             completion_tokens: None,
+            raw_prompt_ciphertext: None,
+            raw_prompt_nonce: None,
         }
     }
 
@@ -793,9 +1064,24 @@ impl DbInsertableChatMessage {
     }
 
     #[must_use]
-    pub const fn with_token_counts(mut self, prompt_tokens: Option<i32>, completion_tokens: Option<i32>) -> Self {
+    pub const fn with_token_counts(
+        mut self,
+        prompt_tokens: Option<i32>,
+        completion_tokens: Option<i32>,
+    ) -> Self {
         self.prompt_tokens = prompt_tokens;
         self.completion_tokens = completion_tokens;
+        self
+    }
+
+    #[must_use]
+    pub fn with_raw_prompt(
+        mut self,
+        raw_prompt_ciphertext: Option<Vec<u8>>,
+        raw_prompt_nonce: Option<Vec<u8>>,
+    ) -> Self {
+        self.raw_prompt_ciphertext = raw_prompt_ciphertext;
+        self.raw_prompt_nonce = raw_prompt_nonce;
         self
     }
 }
@@ -903,7 +1189,10 @@ impl std::fmt::Debug for GenerateChatRequest {
                     .collect::<Vec<_>>(),
             )
             .field("model", &self.model)
-            .field("query_text_for_rag", &self.query_text_for_rag.as_ref().map(|_| "[REDACTED]"))
+            .field(
+                "query_text_for_rag",
+                &self.query_text_for_rag.as_ref().map(|_| "[REDACTED]"),
+            )
             .finish()
     }
 }
@@ -966,8 +1255,11 @@ impl Chat {
                                 .to_string(),
                         ))
                     } else {
-                        let decrypted_bytes = encryption_service
-                            .decrypt(&ciphertext, &nonce, dek.expose_secret().as_slice())?;
+                        let decrypted_bytes = encryption_service.decrypt(
+                            &ciphertext,
+                            &nonce,
+                            dek.expose_secret().as_slice(),
+                        )?;
                         String::from_utf8(decrypted_bytes).map(Some).map_err(|e| {
                             AppError::DecryptionError(format!(
                                 "Invalid UTF-8 for decrypted chat title: {e}"
@@ -988,7 +1280,10 @@ impl Chat {
             )),
         }?;
 
-        let decrypted_system_prompt = match (self.system_prompt_ciphertext, self.system_prompt_nonce) {
+        let decrypted_system_prompt = match (
+            self.system_prompt_ciphertext,
+            self.system_prompt_nonce,
+        ) {
             (Some(ciphertext), Some(nonce)) => {
                 if let Some(dek) = dek_opt {
                     if ciphertext.is_empty() && nonce.is_empty() {
@@ -1001,8 +1296,11 @@ impl Chat {
                                 .to_string(),
                         ))
                     } else {
-                        let decrypted_bytes = encryption_service
-                            .decrypt(&ciphertext, &nonce, dek.expose_secret().as_slice())?;
+                        let decrypted_bytes = encryption_service.decrypt(
+                            &ciphertext,
+                            &nonce,
+                            dek.expose_secret().as_slice(),
+                        )?;
                         String::from_utf8(decrypted_bytes).map(Some).map_err(|e| {
                             AppError::DecryptionError(format!(
                                 "Invalid UTF-8 for decrypted system prompt: {e}"
@@ -1326,6 +1624,7 @@ pub struct MessageResponse {
     pub parts: serde_json::Value,
     pub attachments: serde_json::Value,
     pub created_at: DateTime<Utc>,
+    pub raw_prompt: Option<String>, // Debug field containing the full prompt sent to AI
 }
 
 impl std::fmt::Debug for MessageResponse {
@@ -1338,6 +1637,10 @@ impl std::fmt::Debug for MessageResponse {
             .field("parts", &"[REDACTED_JSON]")
             .field("attachments", &"[REDACTED_JSON]")
             .field("created_at", &self.created_at)
+            .field(
+                "raw_prompt",
+                &self.raw_prompt.as_ref().map(|_| "[REDACTED_RAW_PROMPT]"),
+            )
             .finish()
     }
 }
@@ -1541,6 +1844,8 @@ mod tests {
             user_id: Uuid::new_v4(),
             prompt_tokens: None,
             completion_tokens: None,
+            raw_prompt_ciphertext: None,
+            raw_prompt_nonce: None,
         }
     }
 
@@ -1663,6 +1968,8 @@ mod tests {
             attachments: None,
             prompt_tokens: None,
             completion_tokens: None,
+            raw_prompt_ciphertext: None,
+            raw_prompt_nonce: None,
         }
     }
 
@@ -1695,13 +2002,8 @@ mod tests {
         let content_str = "Test message";
         let content_vec = content_str.as_bytes().to_vec();
 
-        let message = DbInsertableChatMessage::new(
-            chat_id,
-            user_id,
-            role,
-            content_vec.clone(),
-            None,
-        );
+        let message =
+            DbInsertableChatMessage::new(chat_id, user_id, role, content_vec.clone(), None);
         assert_eq!(message.chat_id, chat_id);
         assert_eq!(message.user_id, user_id);
         assert_eq!(message.msg_type, role);

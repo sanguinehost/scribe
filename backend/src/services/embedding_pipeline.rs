@@ -47,9 +47,9 @@ fn extract_string_from_payload(
             _ => None,
         })
         .ok_or_else(|| {
-            AppError::SerializationError(
-                format!("Missing or invalid '{field_name}' in {context} payload")
-            )
+            AppError::SerializationError(format!(
+                "Missing or invalid '{field_name}' in {context} payload"
+            ))
         })
 }
 
@@ -66,7 +66,6 @@ fn extract_uuid_from_payload(
         ))
     })
 }
-
 
 /// Extracts an optional string from Qdrant payload
 fn extract_optional_string_from_payload(
@@ -95,12 +94,14 @@ fn extract_string_list_from_payload(
             qdrant_client::qdrant::value::Kind::ListValue(list_val) => {
                 let mut strings = Vec::new();
                 for item_val in &list_val.values {
-                    if let Some(qdrant_client::qdrant::value::Kind::StringValue(s)) = item_val.kind.as_ref() {
+                    if let Some(qdrant_client::qdrant::value::Kind::StringValue(s)) =
+                        item_val.kind.as_ref()
+                    {
                         strings.push(s.clone());
                     } else {
-                        return Err(AppError::SerializationError(
-                            format!("Non-string value found in '{field_name}' list in {context} payload")
-                        ));
+                        return Err(AppError::SerializationError(format!(
+                            "Non-string value found in '{field_name}' list in {context} payload"
+                        )));
                     }
                 }
                 Ok(strings)
@@ -130,9 +131,9 @@ fn extract_bool_from_payload(
             _ => None,
         })
         .ok_or_else(|| {
-            AppError::SerializationError(
-                format!("Missing or invalid '{field_name}' in {context} payload")
-            )
+            AppError::SerializationError(format!(
+                "Missing or invalid '{field_name}' in {context} payload"
+            ))
         })
 }
 
@@ -141,12 +142,15 @@ impl TryFrom<HashMap<String, QdrantValue>> for ChatMessageChunkMetadata {
     type Error = AppError;
 
     fn try_from(payload: HashMap<String, QdrantValue>) -> Result<Self, Self::Error> {
-        let message_id = extract_uuid_from_payload(&payload, "message_id", "ChatMessageChunkMetadata")?;
-        let session_id = extract_uuid_from_payload(&payload, "session_id", "ChatMessageChunkMetadata")?;
+        let message_id =
+            extract_uuid_from_payload(&payload, "message_id", "ChatMessageChunkMetadata")?;
+        let session_id =
+            extract_uuid_from_payload(&payload, "session_id", "ChatMessageChunkMetadata")?;
         let user_id = extract_uuid_from_payload(&payload, "user_id", "ChatMessageChunkMetadata")?;
 
         let speaker = extract_string_from_payload(&payload, "speaker", "ChatMessageChunkMetadata")?;
-        let timestamp_str = extract_string_from_payload(&payload, "timestamp", "ChatMessageChunkMetadata")?;
+        let timestamp_str =
+            extract_string_from_payload(&payload, "timestamp", "ChatMessageChunkMetadata")?;
         let timestamp = chrono::DateTime::parse_from_rfc3339(&timestamp_str)
             .map_err(|e| {
                 AppError::SerializationError(format!(
@@ -156,7 +160,8 @@ impl TryFrom<HashMap<String, QdrantValue>> for ChatMessageChunkMetadata {
             .map(|dt| dt.with_timezone(&chrono::Utc))?;
 
         let text = extract_string_from_payload(&payload, "text", "ChatMessageChunkMetadata")?;
-        let source_type = extract_string_from_payload(&payload, "source_type", "ChatMessageChunkMetadata")?;
+        let source_type =
+            extract_string_from_payload(&payload, "source_type", "ChatMessageChunkMetadata")?;
 
         Ok(Self {
             message_id,
@@ -188,17 +193,27 @@ impl TryFrom<HashMap<String, QdrantValue>> for LorebookChunkMetadata {
     type Error = AppError;
 
     fn try_from(payload: HashMap<String, QdrantValue>) -> Result<Self, Self::Error> {
-        let original_lorebook_entry_id = extract_uuid_from_payload(&payload, "original_lorebook_entry_id", "LorebookChunkMetadata")?;
-        let lorebook_id = extract_uuid_from_payload(&payload, "lorebook_id", "LorebookChunkMetadata")?;
+        let original_lorebook_entry_id = extract_uuid_from_payload(
+            &payload,
+            "original_lorebook_entry_id",
+            "LorebookChunkMetadata",
+        )?;
+        let lorebook_id =
+            extract_uuid_from_payload(&payload, "lorebook_id", "LorebookChunkMetadata")?;
         let user_id = extract_uuid_from_payload(&payload, "user_id", "LorebookChunkMetadata")?;
-        
-        let chunk_text = extract_string_from_payload(&payload, "chunk_text", "LorebookChunkMetadata")?;
+
+        let chunk_text =
+            extract_string_from_payload(&payload, "chunk_text", "LorebookChunkMetadata")?;
         let entry_title = extract_optional_string_from_payload(&payload, "entry_title");
-        let keywords = extract_string_list_from_payload(&payload, "keywords", "LorebookChunkMetadata")?;
-        
-        let is_enabled = extract_bool_from_payload(&payload, "is_enabled", "LorebookChunkMetadata")?;
-        let is_constant = extract_bool_from_payload(&payload, "is_constant", "LorebookChunkMetadata")?;
-        let source_type = extract_string_from_payload(&payload, "source_type", "LorebookChunkMetadata")?;
+        let keywords =
+            extract_string_list_from_payload(&payload, "keywords", "LorebookChunkMetadata")?;
+
+        let is_enabled =
+            extract_bool_from_payload(&payload, "is_enabled", "LorebookChunkMetadata")?;
+        let is_constant =
+            extract_bool_from_payload(&payload, "is_constant", "LorebookChunkMetadata")?;
+        let source_type =
+            extract_string_from_payload(&payload, "source_type", "LorebookChunkMetadata")?;
 
         Ok(Self {
             original_lorebook_entry_id,
@@ -853,7 +868,10 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
 
                 // For constant entries, we use retrieve_points to get ALL matches
                 // rather than just the top-k by similarity
-                match qdrant_service.retrieve_points(Some(constant_filter.clone()), 1000).await {
+                match qdrant_service
+                    .retrieve_points(Some(constant_filter.clone()), 1000)
+                    .await
+                {
                     Ok(retrieve_results) => {
                         debug!(
                             num_constant_results = retrieve_results.len(),
@@ -1214,7 +1232,7 @@ mod tests {
         let token_counter_service = Arc::new(
             crate::services::hybrid_token_counter::HybridTokenCounter::new_local_only(
                 crate::services::tokenizer_service::TokenizerService::new(
-                    &config.tokenizer_model_path
+                    &config.tokenizer_model_path,
                 )
                 .expect("Failed to create tokenizer for test"),
             ),
@@ -1239,11 +1257,7 @@ mod tests {
             auth_backend,
         };
 
-        let app_state = Arc::new(AppState::new(
-            pool,
-            config,
-            services,
-        ));
+        let app_state = Arc::new(AppState::new(pool, config, services));
         (app_state, mock_qdrant, mock_embed_client)
     }
 
@@ -1264,6 +1278,8 @@ mod tests {
             user_id: Uuid::new_v4(),
             prompt_tokens: None,
             completion_tokens: None,
+            raw_prompt_ciphertext: None,
+            raw_prompt_nonce: None,
         };
 
         // Mock Embedding Client to return a dummy vector
@@ -1300,6 +1316,8 @@ mod tests {
             user_id: Uuid::new_v4(),
             prompt_tokens: None,
             completion_tokens: None,
+            raw_prompt_ciphertext: None,
+            raw_prompt_nonce: None,
         };
 
         mock_embed_client.set_response(Ok(vec![0.1, 0.2])); // Needs to be called for each chunk
@@ -1337,6 +1355,8 @@ mod tests {
             user_id: Uuid::new_v4(),
             prompt_tokens: None,
             completion_tokens: None,
+            raw_prompt_ciphertext: None,
+            raw_prompt_nonce: None,
         };
 
         let result = state
@@ -1369,6 +1389,8 @@ mod tests {
             user_id: Uuid::new_v4(),
             prompt_tokens: None,
             completion_tokens: None,
+            raw_prompt_ciphertext: None,
+            raw_prompt_nonce: None,
         };
 
         mock_embed_client.set_response(Err(AppError::AiServiceError(
@@ -1409,6 +1431,8 @@ mod tests {
             user_id: Uuid::new_v4(),
             prompt_tokens: None,
             completion_tokens: None,
+            raw_prompt_ciphertext: None,
+            raw_prompt_nonce: None,
         };
 
         mock_embed_client.set_response(Ok(vec![0.3, 0.4]));
@@ -1577,6 +1601,8 @@ mod tests {
             user_id: Uuid::new_v4(),
             prompt_tokens: None,
             completion_tokens: None,
+            raw_prompt_ciphertext: None,
+            raw_prompt_nonce: None,
         };
 
         mock_qdrant.set_search_response(Ok(vec![]));
@@ -1608,6 +1634,8 @@ mod tests {
             user_id: Uuid::new_v4(),
             prompt_tokens: None,
             completion_tokens: None,
+            raw_prompt_ciphertext: None,
+            raw_prompt_nonce: None,
         };
         mock_qdrant.set_search_response(Ok(vec![]));
         let result = state
@@ -1635,6 +1663,8 @@ mod tests {
             user_id: Uuid::new_v4(),
             prompt_tokens: None,
             completion_tokens: None,
+            raw_prompt_ciphertext: None,
+            raw_prompt_nonce: None,
         };
         mock_qdrant.set_search_response(Ok(vec![]));
         let result = state
@@ -1664,6 +1694,8 @@ mod tests {
             user_id: Uuid::new_v4(),
             prompt_tokens: None,
             completion_tokens: None,
+            raw_prompt_ciphertext: None,
+            raw_prompt_nonce: None,
         };
         mock_qdrant.set_search_response(Ok(vec![]));
         mock_embed_client.set_response(Err(AppError::AiServiceError(
@@ -1697,6 +1729,8 @@ mod tests {
             user_id: Uuid::new_v4(),
             prompt_tokens: None,
             completion_tokens: None,
+            raw_prompt_ciphertext: None,
+            raw_prompt_nonce: None,
         };
         mock_qdrant.set_search_response(Ok(vec![]));
         mock_qdrant.set_upsert_response(Err(AppError::VectorDbError(
@@ -1738,6 +1772,8 @@ mod tests {
             user_id: Uuid::new_v4(),
             prompt_tokens: None,
             completion_tokens: None,
+            raw_prompt_ciphertext: None,
+            raw_prompt_nonce: None,
         };
 
         mock_embed_client.set_response(Ok(vec![0.1, 0.2]));
@@ -1786,6 +1822,8 @@ mod tests {
             user_id: Uuid::new_v4(),
             prompt_tokens: None,
             completion_tokens: None,
+            raw_prompt_ciphertext: None,
+            raw_prompt_nonce: None,
         };
 
         mock_embed_client.set_response(Ok(vec![0.1, 0.2]));
@@ -1842,6 +1880,8 @@ mod tests {
             user_id: Uuid::new_v4(),
             prompt_tokens: None,
             completion_tokens: None,
+            raw_prompt_ciphertext: None,
+            raw_prompt_nonce: None,
         };
 
         mock_embed_client.set_response(Ok(vec![0.1, 0.2]));
@@ -1892,6 +1932,8 @@ mod tests {
             user_id: Uuid::new_v4(),
             prompt_tokens: None,
             completion_tokens: None,
+            raw_prompt_ciphertext: None,
+            raw_prompt_nonce: None,
         };
 
         mock_embed_client.set_response(Ok(vec![0.1, 0.2]));
@@ -1938,6 +1980,8 @@ mod tests {
             user_id: Uuid::new_v4(),
             prompt_tokens: None,
             completion_tokens: None,
+            raw_prompt_ciphertext: None,
+            raw_prompt_nonce: None,
         };
 
         mock_embed_client.set_response(Ok(vec![0.1, 0.2]));
@@ -1973,14 +2017,15 @@ mod tests {
         user_id: Uuid,
         content: String,
     }
-    
+
     // Helper function to create test lorebook entry parameters
     fn create_test_lorebook_params() -> TestLorebookParams {
         let original_lorebook_entry_id = Uuid::new_v4();
         let lorebook_id = Uuid::new_v4();
         let user_id = Uuid::new_v4();
-        let decrypted_content = "This is a lorebook entry about dragons. They breathe fire.".to_string();
-        
+        let decrypted_content =
+            "This is a lorebook entry about dragons. They breathe fire.".to_string();
+
         let params = LorebookEntryParams {
             original_lorebook_entry_id,
             lorebook_id,
@@ -1991,7 +2036,7 @@ mod tests {
             is_enabled: true,
             is_constant: false,
         };
-        
+
         TestLorebookParams {
             params,
             original_id: original_lorebook_entry_id,
@@ -2000,9 +2045,13 @@ mod tests {
             content: decrypted_content,
         }
     }
-    
+
     // Helper function to verify payload string value
-    fn assert_payload_string(point: &qdrant_client::qdrant::PointStruct, key: &str, expected: &str) {
+    fn assert_payload_string(
+        point: &qdrant_client::qdrant::PointStruct,
+        key: &str,
+        expected: &str,
+    ) {
         let payload_value = point.payload.get(key).unwrap().kind.as_ref().unwrap();
         if let qdrant_client::qdrant::value::Kind::StringValue(s) = payload_value {
             assert_eq!(s, expected);
@@ -2010,7 +2059,7 @@ mod tests {
             panic!("Wrong type for {key}");
         }
     }
-    
+
     // Helper function to verify payload bool value
     fn assert_payload_bool(point: &qdrant_client::qdrant::PointStruct, key: &str, expected: bool) {
         let payload_value = point.payload.get(key).unwrap().kind.as_ref().unwrap();
@@ -2025,33 +2074,37 @@ mod tests {
     async fn test_process_lorebook_entry_succeeds() {
         let (state, mock_qdrant, mock_embed_client) = setup_pipeline_test_env().await;
         let test_params = create_test_lorebook_params();
-        
+
         // Setup mocks
         mock_embed_client.set_response(Ok(vec![0.1, 0.2, 0.3, 0.4]));
         mock_qdrant.set_upsert_response(Ok(()));
-        
+
         let result = state
             .embedding_pipeline_service
             .process_and_embed_lorebook_entry(state.clone(), test_params.params)
             .await;
-            
-        assert!(result.is_ok(), "process_and_embed_lorebook_entry failed: {:?}", result.err());
+
+        assert!(
+            result.is_ok(),
+            "process_and_embed_lorebook_entry failed: {:?}",
+            result.err()
+        );
     }
 
     #[tokio::test]
     async fn test_lorebook_entry_embedding_client_calls() {
         let (state, mock_qdrant, mock_embed_client) = setup_pipeline_test_env().await;
         let test_params = create_test_lorebook_params();
-        
+
         // Setup mocks
         mock_embed_client.set_response(Ok(vec![0.1, 0.2, 0.3, 0.4]));
         mock_qdrant.set_upsert_response(Ok(()));
-        
+
         let _ = state
             .embedding_pipeline_service
             .process_and_embed_lorebook_entry(state.clone(), test_params.params.clone())
             .await;
-        
+
         // Verify embedding client calls
         let embed_calls = mock_embed_client.get_calls();
         assert_eq!(embed_calls.len(), 1, "Expected 1 call to embedding client");
@@ -2064,24 +2117,34 @@ mod tests {
     async fn test_lorebook_entry_qdrant_upsert() {
         let (state, mock_qdrant, mock_embed_client) = setup_pipeline_test_env().await;
         let test_params = create_test_lorebook_params();
-        
+
         // Setup mocks
         mock_embed_client.set_response(Ok(vec![0.1, 0.2, 0.3, 0.4]));
         mock_qdrant.set_upsert_response(Ok(()));
-        
+
         let _ = state
             .embedding_pipeline_service
             .process_and_embed_lorebook_entry(state.clone(), test_params.params)
             .await;
-        
+
         // Verify Qdrant upsert
         let qdrant_upsert_points = mock_qdrant.get_last_upsert_points().unwrap_or_default();
-        assert_eq!(qdrant_upsert_points.len(), 1, "Expected 1 point in the batch upsert");
-        
+        assert_eq!(
+            qdrant_upsert_points.len(),
+            1,
+            "Expected 1 point in the batch upsert"
+        );
+
         let point = &qdrant_upsert_points[0];
         assert!(
             matches!(
-                point.vectors.as_ref().unwrap().vectors_options.as_ref().unwrap(),
+                point
+                    .vectors
+                    .as_ref()
+                    .unwrap()
+                    .vectors_options
+                    .as_ref()
+                    .unwrap(),
                 qdrant_client::qdrant::vectors::VectorsOptions::Vector(_)
             ),
             "Expected a single unnamed vector"
@@ -2110,7 +2173,13 @@ mod tests {
         let point = &points[0];
         assert!(
             matches!(
-                point.vectors.as_ref().unwrap().vectors_options.as_ref().unwrap(),
+                point
+                    .vectors
+                    .as_ref()
+                    .unwrap()
+                    .vectors_options
+                    .as_ref()
+                    .unwrap(),
                 qdrant_client::qdrant::vectors::VectorsOptions::Vector(_)
             ),
             "Expected a single unnamed vector"
@@ -2118,7 +2187,10 @@ mod tests {
     }
 
     // Helper function to verify detailed payload fields (complementing assert_payload_* helpers)
-    fn verify_detailed_payload_fields(point: &qdrant_client::qdrant::PointStruct, test_params: &TestLorebookParams) {
+    fn verify_detailed_payload_fields(
+        point: &qdrant_client::qdrant::PointStruct,
+        test_params: &TestLorebookParams,
+    ) {
         // These detailed checks verify the same data as the helper functions but with raw access
         let payload_value = point
             .payload
@@ -2174,7 +2246,10 @@ mod tests {
             .as_ref()
             .unwrap();
         if let qdrant_client::qdrant::value::Kind::StringValue(s) = payload_value {
-            assert_eq!(*s, test_params.params.decrypted_title.as_ref().unwrap().clone());
+            assert_eq!(
+                *s,
+                test_params.params.decrypted_title.as_ref().unwrap().clone()
+            );
         } else {
             panic!("Wrong type for entry_title");
         }
@@ -2197,30 +2272,42 @@ mod tests {
     async fn test_lorebook_entry_payload_fields() {
         let (state, mock_qdrant, mock_embed_client) = setup_pipeline_test_env().await;
         let test_params = create_test_lorebook_params();
-        
+
         // Setup mocks and process entry
         mock_embed_client.set_response(Ok(vec![0.1, 0.2, 0.3, 0.4]));
         mock_qdrant.set_upsert_response(Ok(()));
-        
+
         let _ = state
             .embedding_pipeline_service
             .process_and_embed_lorebook_entry(state.clone(), test_params.params.clone())
             .await;
-        
+
         // Verify payload fields using helper functions
         let points = mock_qdrant.get_last_upsert_points().unwrap_or_default();
         let point = &points[0];
-        
-        assert_payload_string(point, "original_lorebook_entry_id", &test_params.original_id.to_string());
+
+        assert_payload_string(
+            point,
+            "original_lorebook_entry_id",
+            &test_params.original_id.to_string(),
+        );
         assert_payload_string(point, "lorebook_id", &test_params.lorebook_id.to_string());
         assert_payload_string(point, "user_id", &test_params.user_id.to_string());
         assert_payload_string(point, "chunk_text", &test_params.content);
-        assert_payload_string(point, "entry_title", test_params.params.decrypted_title.as_ref().unwrap());
+        assert_payload_string(
+            point,
+            "entry_title",
+            test_params.params.decrypted_title.as_ref().unwrap(),
+        );
         assert_payload_bool(point, "is_enabled", test_params.params.is_enabled);
 
         // Verify embedding client calls
         let embed_calls = mock_embed_client.get_calls();
-        verify_embedding_calls(&embed_calls, &test_params.content, test_params.params.decrypted_title.as_ref());
+        verify_embedding_calls(
+            &embed_calls,
+            &test_params.content,
+            test_params.params.decrypted_title.as_ref(),
+        );
 
         // Verify Qdrant upsert structure
         let qdrant_upsert_points = mock_qdrant.get_last_upsert_points().unwrap_or_default();
@@ -2459,13 +2546,19 @@ mod tests {
             "lorebook_id".to_string(),
             string_value(&params.lorebook_id.to_string()),
         );
-        payload.insert("user_id".to_string(), string_value(&params.user_id.to_string()));
+        payload.insert(
+            "user_id".to_string(),
+            string_value(&params.user_id.to_string()),
+        );
         payload.insert("chunk_text".to_string(), string_value(params.chunk_text));
         payload.insert(
             "entry_title".to_string(),
             optional_string_value(params.entry_title),
         );
-        payload.insert("keywords".to_string(), optional_list_string_value(params.keywords));
+        payload.insert(
+            "keywords".to_string(),
+            optional_list_string_value(params.keywords),
+        );
         payload.insert("is_enabled".to_string(), bool_value(params.is_enabled));
         payload.insert("is_constant".to_string(), bool_value(params.is_constant));
         payload.insert("source_type".to_string(), string_value(params.source_type));
@@ -2668,19 +2761,21 @@ mod tests {
         mock_embed_client.set_response(Ok(vec![0.4, 0.5, 0.6]));
 
         let lore_point_id = Uuid::new_v4();
-        let mock_lore_results = vec![create_mock_lorebook_scored_point(MockLorebookScoredPointParams {
-            point_uuid: lore_point_id,
-            score: 0.85,
-            original_lorebook_entry_id: Uuid::new_v4(),
-            lorebook_id: lorebook_id1,
-            user_id,
-            chunk_text: "Test lorebook entry content",
-            entry_title: Some("Lore Title".to_string()),
-            keywords: None,
-            is_enabled: true,
-            is_constant: false,
-            source_type: "lorebook_entry",
-        })];
+        let mock_lore_results = vec![create_mock_lorebook_scored_point(
+            MockLorebookScoredPointParams {
+                point_uuid: lore_point_id,
+                score: 0.85,
+                original_lorebook_entry_id: Uuid::new_v4(),
+                lorebook_id: lorebook_id1,
+                user_id,
+                chunk_text: "Test lorebook entry content",
+                entry_title: Some("Lore Title".to_string()),
+                keywords: None,
+                is_enabled: true,
+                is_constant: false,
+                source_type: "lorebook_entry",
+            },
+        )];
         mock_qdrant.set_search_response(Ok(mock_lore_results.clone()));
 
         let result = state
@@ -2750,19 +2845,21 @@ mod tests {
             text: "Chat content about topic",
             source_type: "chat_message",
         })];
-        let mock_lore_results = vec![create_mock_lorebook_scored_point(MockLorebookScoredPointParams {
-            point_uuid: lore_point_id,
-            score: 0.90,
-            original_lorebook_entry_id: Uuid::new_v4(),
-            lorebook_id,
-            user_id,
-            chunk_text: "Lore content about topic",
-            entry_title: None,
-            keywords: None,
-            is_enabled: true,
-            is_constant: false,
-            source_type: "lorebook_entry",
-        })];
+        let mock_lore_results = vec![create_mock_lorebook_scored_point(
+            MockLorebookScoredPointParams {
+                point_uuid: lore_point_id,
+                score: 0.90,
+                original_lorebook_entry_id: Uuid::new_v4(),
+                lorebook_id,
+                user_id,
+                chunk_text: "Lore content about topic",
+                entry_title: None,
+                keywords: None,
+                is_enabled: true,
+                is_constant: false,
+                source_type: "lorebook_entry",
+            },
+        )];
 
         // Mock Qdrant to return chat results first, then lore results using a sequence
         mock_qdrant.set_search_responses_sequence(vec![
@@ -2970,7 +3067,7 @@ mod tests {
     ) -> Vec<ScoredPoint> {
         let chat_point1 = Uuid::new_v4();
         let chat_point2 = Uuid::new_v4();
-        
+
         vec![
             create_mock_scored_point(&MockScoredPointParams {
                 id_uuid: chat_point1,
@@ -3003,7 +3100,7 @@ mod tests {
     ) -> Vec<ScoredPoint> {
         let lore_point1 = Uuid::new_v4();
         let lore_point2 = Uuid::new_v4();
-        
+
         vec![
             create_mock_lorebook_scored_point(MockLorebookScoredPointParams {
                 point_uuid: lore_point1,
@@ -3119,19 +3216,21 @@ mod tests {
         mock_embed_client.set_response(Ok(vec![0.6, 0.6, 0.6]));
 
         let lore_point_id = Uuid::new_v4();
-        let mock_lore_results = vec![create_mock_lorebook_scored_point(MockLorebookScoredPointParams {
-            point_uuid: lore_point_id,
-            score: 0.8,
-            original_lorebook_entry_id: Uuid::new_v4(),
-            lorebook_id,
-            user_id,
-            chunk_text: "Successful lore content",
-            entry_title: None,
-            keywords: None,
-            is_enabled: true,
-            is_constant: false,
-            source_type: "lorebook_entry",
-        })];
+        let mock_lore_results = vec![create_mock_lorebook_scored_point(
+            MockLorebookScoredPointParams {
+                point_uuid: lore_point_id,
+                score: 0.8,
+                original_lorebook_entry_id: Uuid::new_v4(),
+                lorebook_id,
+                user_id,
+                chunk_text: "Successful lore content",
+                entry_title: None,
+                keywords: None,
+                is_enabled: true,
+                is_constant: false,
+                source_type: "lorebook_entry",
+            },
+        )];
 
         // Chat search fails, Lorebook search succeeds using a sequence
         mock_qdrant.set_search_responses_sequence(vec![

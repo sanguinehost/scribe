@@ -413,10 +413,7 @@ async fn test_login_success_with_email() -> AnyhowResult<()> {
     // Ensure encryption columns exist
     ensure_encryption_columns_exist(&test_app.db_pool).await?;
 
-    let username = format!(
-        "test_login_email_{}",
-        &Uuid::new_v4().to_string()[..8]
-    );
+    let username = format!("test_login_email_{}", &Uuid::new_v4().to_string()[..8]);
     let password = "testPassword123";
     let user = test_helpers::db::create_test_user(
         &test_app.db_pool,

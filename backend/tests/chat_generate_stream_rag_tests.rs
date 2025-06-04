@@ -38,7 +38,6 @@ struct TestContext {
     document_content: String,
 }
 
-
 #[allow(clippy::too_many_lines)]
 async fn setup_rag_test_context() -> TestContext {
     let test_app = test_helpers::spawn_app(false, true, true).await;
@@ -53,7 +52,8 @@ async fn setup_rag_test_context() -> TestContext {
     .await
     .expect("Failed to create test user");
 
-    let auth_cookie = test_helpers::login_user_via_router(&test_app.router, username, password).await;
+    let auth_cookie =
+        test_helpers::login_user_via_router(&test_app.router, username, password).await;
 
     let conn_pool = test_app.db_pool.clone();
     let user_id_clone = user.id;
@@ -154,6 +154,8 @@ async fn setup_rag_test_context() -> TestContext {
                 completion_tokens: None,
                 parts: None,
                 attachments: None,
+                raw_prompt_ciphertext: None,
+                raw_prompt_nonce: None,
             };
             diesel::insert_into(chat_messages_dsl::chat_messages)
                 .values(&new_message)
@@ -205,7 +207,13 @@ async fn assert_rag_response(
         .body(Body::from(serde_json::to_vec(&payload).unwrap()))
         .unwrap();
 
-    let response = test_context.test_app.router.clone().oneshot(request).await.unwrap();
+    let response = test_context
+        .test_app
+        .router
+        .clone()
+        .oneshot(request)
+        .await
+        .unwrap();
 
     assert_eq!(response.status(), StatusCode::OK);
 
@@ -227,7 +235,9 @@ async fn assert_rag_response(
         "\n--- REAL AI Response Received ---\n{combined_response}\n---------------------------------\n"
     );
     assert!(
-        combined_response.to_lowercase().contains(expected_content_substring),
+        combined_response
+            .to_lowercase()
+            .contains(expected_content_substring),
         "Real AI response should mention '{expected_content_substring}', but got: {combined_response}"
     );
 }

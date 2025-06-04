@@ -3,6 +3,7 @@ mod get_session_data_for_generation_tests {
     use bigdecimal::BigDecimal;
     use diesel::{ExpressionMethods, QueryDsl, RunQueryDsl, SelectableHelper}; // Added for specific Diesel traits
     use mockall::predicate::*;
+    use scribe_backend::PgPool;
     use scribe_backend::config::Config as AppConfig;
     use scribe_backend::crypto;
     use scribe_backend::models::characters::Character;
@@ -28,7 +29,6 @@ mod get_session_data_for_generation_tests {
     use scribe_backend::services::hybrid_token_counter::HybridTokenCounter;
     use scribe_backend::services::tokenizer_service::TokenizerService; // TokenEstimate removed
     use scribe_backend::services::user_persona_service::UserPersonaService;
-    use scribe_backend::PgPool;
     use scribe_backend::state::AppState;
     use scribe_backend::test_helpers::db::setup_test_database;
     use scribe_backend::test_helpers::{
@@ -87,7 +87,8 @@ mod get_session_data_for_generation_tests {
     fn create_token_counter_service(config: &AppConfig) -> Arc<HybridTokenCounter> {
         let tokenizer_service = TokenizerService::new(&config.tokenizer_model_path)
             .expect("Failed to load tokenizer model for test setup");
-        let gemini_token_client = config.gemini_api_key
+        let gemini_token_client = config
+            .gemini_api_key
             .as_ref()
             .map(|api_key| GeminiTokenClient::new(api_key.clone()));
         let default_model = config.token_counter_default_model.clone();
@@ -191,8 +192,13 @@ mod get_session_data_for_generation_tests {
         let mock_embedding_client = Arc::new(MockEmbeddingClient::new());
         let mock_qdrant_service = Arc::new(MockQdrantClientService::new());
         let mock_embedding_pipeline = MockEmbeddingPipelineService::new();
-        
-        (mock_ai_client, mock_embedding_client, mock_qdrant_service, mock_embedding_pipeline)
+
+        (
+            mock_ai_client,
+            mock_embedding_client,
+            mock_qdrant_service,
+            mock_embedding_pipeline,
+        )
     }
 
     /// Helper to build the `AppState` with all mock services
@@ -205,8 +211,12 @@ mod get_session_data_for_generation_tests {
         mock_embedding_pipeline: MockEmbeddingPipelineService,
     ) -> AppState {
         let token_counter_service = create_token_counter_service(&config);
-        let shared_encryption_service = Arc::new(scribe_backend::services::encryption_service::EncryptionService::new());
-        let user_persona_service = Arc::new(UserPersonaService::new(pool.clone(), shared_encryption_service));
+        let shared_encryption_service =
+            Arc::new(scribe_backend::services::encryption_service::EncryptionService::new());
+        let user_persona_service = Arc::new(UserPersonaService::new(
+            pool.clone(),
+            shared_encryption_service,
+        ));
         let auth_backend = Arc::new(scribe_backend::auth::user_store::Backend::new(pool.clone()));
 
         TestAppStateBuilder::new(
@@ -218,7 +228,12 @@ mod get_session_data_for_generation_tests {
             auth_backend,
         )
         .with_token_counter(token_counter_service)
-        .with_embedding_pipeline_service(Arc::new(mock_embedding_pipeline) as Arc<dyn scribe_backend::services::embedding_pipeline::EmbeddingPipelineServiceTrait + Send + Sync>)
+        .with_embedding_pipeline_service(Arc::new(mock_embedding_pipeline)
+            as Arc<
+                dyn scribe_backend::services::embedding_pipeline::EmbeddingPipelineServiceTrait
+                    + Send
+                    + Sync,
+            >)
         .with_user_persona_service(user_persona_service)
         .build()
     }
@@ -227,9 +242,13 @@ mod get_session_data_for_generation_tests {
         let user_id = Uuid::new_v4();
         let session_id = Uuid::new_v4();
         let default_character_id = Uuid::new_v4();
-        let character_id = params.session_character_id_override.unwrap_or(default_character_id);
+        let character_id = params
+            .session_character_id_override
+            .unwrap_or(default_character_id);
 
-        let config = params.config_override.unwrap_or_else(create_default_test_config);
+        let config = params
+            .config_override
+            .unwrap_or_else(create_default_test_config);
         let config_arc = Arc::new(config);
 
         let user_dek_secret_vec = vec![0u8; 32];
@@ -238,12 +257,15 @@ mod get_session_data_for_generation_tests {
         let pool = setup_test_database(None).await;
 
         // Create default character for DB if needed
-        let _default_character_for_db = params.character_db_details.clone()
+        let _default_character_for_db = params
+            .character_db_details
+            .clone()
             .unwrap_or_else(|| create_default_test_character(character_id, user_id));
 
         // Create all mock services
-        let (mock_ai_client, mock_embedding_client, mock_qdrant_service, mock_embedding_pipeline) = create_mock_services();
-        
+        let (mock_ai_client, mock_embedding_client, mock_qdrant_service, mock_embedding_pipeline) =
+            create_mock_services();
+
         // Store a reference to the embedding pipeline for the test setup
         let mock_embedding_pipeline_for_test = Arc::new(mock_embedding_pipeline.clone());
 
@@ -283,7 +305,11 @@ mod get_session_data_for_generation_tests {
     }
 
     /// Helper to insert a test user into the database
-    async fn insert_test_user(conn: &deadpool_diesel::postgres::Object, username: &str, email: &str) -> Uuid {
+    async fn insert_test_user(
+        conn: &deadpool_diesel::postgres::Object,
+        username: &str,
+        email: &str,
+    ) -> Uuid {
         let new_user = NewUser {
             username: username.to_string(),
             password_hash: "hash".to_string(),
@@ -297,7 +323,7 @@ mod get_session_data_for_generation_tests {
             recovery_kek_salt: None,
             recovery_dek_nonce: None,
         };
-        
+
         conn.interact(move |conn_insert| {
             diesel::insert_into(users::table)
                 .values(&new_user)
@@ -344,7 +370,15 @@ mod get_session_data_for_generation_tests {
         character_id: Uuid,
         model_name: &str,
     ) {
-        insert_test_chat_session_with_limit(conn, session_id, user_id, character_id, model_name, 20).await;
+        insert_test_chat_session_with_limit(
+            conn,
+            session_id,
+            user_id,
+            character_id,
+            model_name,
+            20,
+        )
+        .await;
     }
 
     /// Helper to insert a test chat session with custom history management limit
@@ -383,7 +417,7 @@ mod get_session_data_for_generation_tests {
             system_prompt_ciphertext: None,
             system_prompt_nonce: None,
         };
-        
+
         conn.interact(move |conn_insert| {
             diesel::insert_into(chat_sessions_schema::table)
                 .values(&test_session)
@@ -465,7 +499,7 @@ mod get_session_data_for_generation_tests {
     fn create_test_rag_chunks(lorebook_id: Uuid, user_id: Uuid) -> Vec<RetrievedChunk> {
         let lore_chunk1_content = "The Orb of Zog is powerful.";
         let lore_chunk2_content = "It glows with an eerie light.";
-        
+
         vec![
             RetrievedChunk {
                 text: lore_chunk1_content.to_string(),
@@ -589,17 +623,38 @@ mod get_session_data_for_generation_tests {
             .expect("Failed to get DB connection for basic_fits_budget");
 
         // Set up test data in database
-        let inserted_user_id = insert_test_user(&conn, "testuser_basic_fits", "basicfits@example.com").await;
+        let inserted_user_id =
+            insert_test_user(&conn, "testuser_basic_fits", "basicfits@example.com").await;
         setup.user_id = inserted_user_id;
 
-        insert_test_character(&conn, setup.character_id, setup.user_id, "Test Character Basic Fits").await;
-        insert_test_chat_session(&conn, setup.session_id, setup.user_id, setup.character_id, &test_config.token_counter_default_model).await;
+        insert_test_character(
+            &conn,
+            setup.character_id,
+            setup.user_id,
+            "Test Character Basic Fits",
+        )
+        .await;
+        insert_test_chat_session(
+            &conn,
+            setup.session_id,
+            setup.user_id,
+            setup.character_id,
+            &test_config.token_counter_default_model,
+        )
+        .await;
 
         let message_definitions = [
             (msg1_content, MessageRole::User, Some(3i32), -20i64),
             (msg2_content, MessageRole::Assistant, Some(5i32), -10i64),
         ];
-        insert_test_messages(&conn, setup.session_id, setup.user_id, &message_definitions, setup.user_dek.as_ref()).await;
+        insert_test_messages(
+            &conn,
+            setup.session_id,
+            setup.user_id,
+            &message_definitions,
+            setup.user_dek.as_ref(),
+        )
+        .await;
 
         // Configure mock expectations for embedding pipeline service
         // retrieve_relevant_chunks is called twice: once for lorebooks, once for older chat history.
@@ -653,8 +708,7 @@ mod get_session_data_for_generation_tests {
         );
 
         // Calculate expected tokens dynamically using the same token counter and model
-        let model_name_for_assertion = &test_config
-            .token_counter_default_model;
+        let model_name_for_assertion = &test_config.token_counter_default_model;
         let tokens_msg1 = setup
             .app_state
             .token_counter
@@ -732,17 +786,39 @@ mod get_session_data_for_generation_tests {
             .expect("Failed to get DB connection for RAG lorebook test");
 
         // Set up test data in database
-        let inserted_user_id = insert_test_user(&conn, "testuser_rag_lore", "raglore@example.com").await;
+        let inserted_user_id =
+            insert_test_user(&conn, "testuser_rag_lore", "raglore@example.com").await;
         setup.user_id = inserted_user_id;
 
-        insert_test_character(&conn, setup.character_id, setup.user_id, "Test Character RAG Lore").await;
-        
+        insert_test_character(
+            &conn,
+            setup.character_id,
+            setup.user_id,
+            "Test Character RAG Lore",
+        )
+        .await;
+
         // Insert chat session with custom history management limit for RAG test
-        insert_test_chat_session_with_limit(&conn, setup.session_id, setup.user_id, setup.character_id, &model_name_for_test, 5).await;
+        insert_test_chat_session_with_limit(
+            &conn,
+            setup.session_id,
+            setup.user_id,
+            setup.character_id,
+            &model_name_for_test,
+            5,
+        )
+        .await;
 
         // Insert history message
         let history_messages = [(history_msg_content, MessageRole::User, Some(4i32), -10i64)];
-        insert_test_messages(&conn, setup.session_id, setup.user_id, &history_messages, setup.user_dek.as_ref()).await;
+        insert_test_messages(
+            &conn,
+            setup.session_id,
+            setup.user_id,
+            &history_messages,
+            setup.user_dek.as_ref(),
+        )
+        .await;
 
         // Set up lorebook and RAG chunks
         let lorebook_id = insert_test_lorebook_and_link(
@@ -751,7 +827,8 @@ mod get_session_data_for_generation_tests {
             setup.user_id,
             "Ancient Artifacts",
             "Lore about ancient artifacts.",
-        ).await;
+        )
+        .await;
 
         let expected_lore_chunks = create_test_rag_chunks(lorebook_id, setup.user_id);
 
@@ -876,7 +953,7 @@ mod get_session_data_for_generation_tests {
         let model_name_for_test = "gemini-test-model-trunc".to_string();
         let test_config = AppConfig {
             context_recent_history_token_budget: 8, // Budget for 2 smaller messages
-            context_rag_token_budget: 0, // No RAG for this test
+            context_rag_token_budget: 0,            // No RAG for this test
             context_total_token_limit: 50,
             tokenizer_model_path: "./resources/tokenizers/gemma.model".to_string(),
             gemini_api_key: Some("dummy_api_key_for_trunc_test".to_string()),
@@ -1147,8 +1224,8 @@ mod get_session_data_for_generation_tests {
         let model_name_for_test = "gemini-test-model-rag-total-limit".to_string();
         let test_config = AppConfig {
             context_recent_history_token_budget: 150, // Allows significant history
-            context_rag_token_budget: 50, // RAG budget itself is positive
-            context_total_token_limit: 160, // Total limit is tight
+            context_rag_token_budget: 50,             // RAG budget itself is positive
+            context_total_token_limit: 160,           // Total limit is tight
             tokenizer_model_path: "./resources/tokenizers/gemma.model".to_string(),
             gemini_api_key: Some("dummy_api_key_rag_total_limit".to_string()),
             token_counter_default_model: model_name_for_test.clone(),
@@ -1291,7 +1368,10 @@ mod get_session_data_for_generation_tests {
                 constructed_message_data_for_insertion.push((
                     long_hist_msg_content.to_string(),
                     MessageRole::User,
-                    Some(i32::try_from(tokens_per_long_hist_msg).expect("Token count should fit in i32")),
+                    Some(
+                        i32::try_from(tokens_per_long_hist_msg)
+                            .expect("Token count should fit in i32"),
+                    ),
                     created_at,
                 ));
                 current_history_tokens += tokens_per_long_hist_msg;
@@ -1633,7 +1713,6 @@ mod get_session_data_for_generation_tests {
         .unwrap()
         .unwrap();
 
-
         // Insert "older" history messages (timestamps further in the past)
         let older_msg1_content = "This is an old message from the user."; // ~8 tokens
         let older_msg2_content = "And an old reply from the assistant."; // ~8 tokens
@@ -1647,13 +1726,15 @@ mod get_session_data_for_generation_tests {
         let mut expected_older_chat_chunks = Vec::new();
         for (idx, (content, role, time_offset)) in older_messages_data.iter().enumerate() {
             let msg_id = Uuid::new_v4();
-            let (content_bytes, nonce_bytes): (Vec<u8>, Option<Vec<u8>>) = setup.user_dek.as_ref().map_or_else(
-                || (content.as_bytes().to_vec(), None),
-                |dek| {
-                    let (cb, n) = crypto::encrypt_gcm(content.as_bytes(), dek.as_ref()).unwrap();
-                    (cb, Some(n))
-                },
-            );
+            let (content_bytes, nonce_bytes): (Vec<u8>, Option<Vec<u8>>) =
+                setup.user_dek.as_ref().map_or_else(
+                    || (content.as_bytes().to_vec(), None),
+                    |dek| {
+                        let (cb, n) =
+                            crypto::encrypt_gcm(content.as_bytes(), dek.as_ref()).unwrap();
+                        (cb, Some(n))
+                    },
+                );
             let token_count = setup
                 .app_state
                 .token_counter
@@ -1779,7 +1860,7 @@ mod get_session_data_for_generation_tests {
                         // token_count: tokens as usize, // Removed, not in struct
                         source_type: "chat_message".to_string(),
                         text: (*content).to_string(), // Changed from chunk_text
-                                                   // original_message_id: msg_id, // Removed, covered by message_id
+                                                      // original_message_id: msg_id, // Removed, covered by message_id
                     },
                 ),
             });
@@ -1795,13 +1876,15 @@ mod get_session_data_for_generation_tests {
         for (content, role, _time_offset) in &recent_messages_data {
             let _msg_id = Uuid::new_v4();
 
-            let (content_bytes, nonce_bytes): (Vec<u8>, Option<Vec<u8>>) = setup.user_dek.as_ref().map_or_else(
-                || (content.as_bytes().to_vec(), None),
-                |dek| {
-                    let (cb, n) = crypto::encrypt_gcm(content.as_bytes(), dek.as_ref()).unwrap();
-                    (cb, Some(n))
-                },
-            );
+            let (content_bytes, nonce_bytes): (Vec<u8>, Option<Vec<u8>>) =
+                setup.user_dek.as_ref().map_or_else(
+                    || (content.as_bytes().to_vec(), None),
+                    |dek| {
+                        let (cb, n) =
+                            crypto::encrypt_gcm(content.as_bytes(), dek.as_ref()).unwrap();
+                        (cb, Some(n))
+                    },
+                );
 
             let token_count = setup
                 .app_state

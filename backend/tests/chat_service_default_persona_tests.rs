@@ -30,9 +30,13 @@ async fn setup_common_test_env(username: &str) -> TestSetup {
     let app = spawn_app(false, false, false).await;
     let tdg = TestDataGuard::new(app.db_pool.clone());
 
-    let user_db = db::create_test_user(&app.db_pool, username.to_string(), "password123".to_string())
-        .await
-        .unwrap();
+    let user_db = db::create_test_user(
+        &app.db_pool,
+        username.to_string(),
+        "password123".to_string(),
+    )
+    .await
+    .unwrap();
 
     let user_dek_secret_box: Option<Arc<SecretBox<Vec<u8>>>> =
         user_db.dek.as_ref().map(|user_dek_struct| {
@@ -124,8 +128,12 @@ async fn create_session_uses_default_persona_when_active_persona_is_none() {
     let mut setup = setup_common_test_env("user_with_default_persona").await;
     setup.tdg.add_user(setup.user_db.id);
 
-    let auth_cookie =
-        login_user_via_router(&setup.app.router, "user_with_default_persona", "password123").await;
+    let auth_cookie = login_user_via_router(
+        &setup.app.router,
+        "user_with_default_persona",
+        "password123",
+    )
+    .await;
 
     let client = reqwest::Client::new();
 
@@ -341,9 +349,12 @@ async fn create_and_set_default_persona(
 async fn create_session_default_persona_deleted_falls_back_to_character_prompt() {
     let mut setup = setup_common_test_env("user_deleted_default_persona").await;
     setup.tdg.add_user(setup.user_db.id);
-    let auth_cookie =
-        login_user_via_router(&setup.app.router, "user_deleted_default_persona", "password123")
-            .await;
+    let auth_cookie = login_user_via_router(
+        &setup.app.router,
+        "user_deleted_default_persona",
+        "password123",
+    )
+    .await;
 
     let character_system_prompt_val = "Character prompt for deleted persona test.".to_string();
     let mut character = db::create_test_character(

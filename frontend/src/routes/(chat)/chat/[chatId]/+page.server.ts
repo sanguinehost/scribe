@@ -11,6 +11,7 @@ interface RawApiMessage {
 	created_at: string;
 	user_id: string;
 	loading?: boolean;
+	raw_prompt?: string | null; // Debug field containing the full prompt sent to AI
 }
 
 export async function load({ params: { chatId }, fetch, cookies }) {
@@ -52,7 +53,8 @@ export async function load({ params: { chatId }, fetch, cookies }) {
 					 : (typeof rawMsg.content === 'string' ? rawMsg.content : ''),
 			created_at: rawMsg.created_at,
 			user_id: rawMsg.user_id,
-			loading: rawMsg.loading || false
+			loading: rawMsg.loading || false,
+			raw_prompt: rawMsg.raw_prompt
 		}));
 
 		// Fetch character details using the character_id from the chat session

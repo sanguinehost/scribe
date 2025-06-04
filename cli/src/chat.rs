@@ -1,4 +1,3 @@
-
 // cli/src/chat.rs
 
 use crate::client::{HttpClient, StreamEvent}; // Added StreamEvent

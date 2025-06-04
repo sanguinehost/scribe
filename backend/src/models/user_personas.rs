@@ -1,5 +1,5 @@
 use chrono::{DateTime, Utc};
-use diesel::{Queryable, Insertable, Identifiable, AsChangeset, Selectable, Associations};
+use diesel::{AsChangeset, Associations, Identifiable, Insertable, Queryable, Selectable};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -244,12 +244,48 @@ impl UserPersona {
     ) -> Result<DecryptedPersonaFields, AppError> {
         Ok(DecryptedPersonaFields {
             description: self.decrypt_required_description_field(encryption_service, dek)?,
-            personality: Self::decrypt_optional_field(encryption_service, dek, self.personality.clone(), self.personality_nonce.clone(), "personality")?,
-            scenario: Self::decrypt_optional_field(encryption_service, dek, self.scenario.clone(), self.scenario_nonce.clone(), "scenario")?,
-            first_mes: Self::decrypt_optional_field(encryption_service, dek, self.first_mes.clone(), self.first_mes_nonce.clone(), "first_mes")?,
-            mes_example: Self::decrypt_optional_field(encryption_service, dek, self.mes_example.clone(), self.mes_example_nonce.clone(), "mes_example")?,
-            system_prompt: Self::decrypt_optional_field(encryption_service, dek, self.system_prompt.clone(), self.system_prompt_nonce.clone(), "system_prompt")?,
-            post_history_instructions: Self::decrypt_optional_field(encryption_service, dek, self.post_history_instructions.clone(), self.post_history_instructions_nonce.clone(), "post_history_instructions")?,
+            personality: Self::decrypt_optional_field(
+                encryption_service,
+                dek,
+                self.personality.clone(),
+                self.personality_nonce.clone(),
+                "personality",
+            )?,
+            scenario: Self::decrypt_optional_field(
+                encryption_service,
+                dek,
+                self.scenario.clone(),
+                self.scenario_nonce.clone(),
+                "scenario",
+            )?,
+            first_mes: Self::decrypt_optional_field(
+                encryption_service,
+                dek,
+                self.first_mes.clone(),
+                self.first_mes_nonce.clone(),
+                "first_mes",
+            )?,
+            mes_example: Self::decrypt_optional_field(
+                encryption_service,
+                dek,
+                self.mes_example.clone(),
+                self.mes_example_nonce.clone(),
+                "mes_example",
+            )?,
+            system_prompt: Self::decrypt_optional_field(
+                encryption_service,
+                dek,
+                self.system_prompt.clone(),
+                self.system_prompt_nonce.clone(),
+                "system_prompt",
+            )?,
+            post_history_instructions: Self::decrypt_optional_field(
+                encryption_service,
+                dek,
+                self.post_history_instructions.clone(),
+                self.post_history_instructions_nonce.clone(),
+                "post_history_instructions",
+            )?,
         })
     }
 
@@ -259,12 +295,17 @@ impl UserPersona {
         dek: &SecretBox<Vec<u8>>,
     ) -> Result<String, AppError> {
         let desc_nonce = self.description_nonce.as_ref().ok_or_else(|| {
-            AppError::DecryptionError("Description nonce is missing for non-optional field".to_string())
+            AppError::DecryptionError(
+                "Description nonce is missing for non-optional field".to_string(),
+            )
         })?;
-        let description_val = encryption_service.decrypt(&self.description, desc_nonce, dek.expose_secret().as_slice())?;
-        String::from_utf8(description_val).map_err(|e| {
-            AppError::DecryptionError(format!("Invalid UTF-8 for description: {e}"))
-        })
+        let description_val = encryption_service.decrypt(
+            &self.description,
+            desc_nonce,
+            dek.expose_secret().as_slice(),
+        )?;
+        String::from_utf8(description_val)
+            .map_err(|e| AppError::DecryptionError(format!("Invalid UTF-8 for description: {e}")))
     }
 
     fn build_plaintext_client_data(mut self) -> UserPersonaDataForClient {
@@ -322,7 +363,10 @@ impl UserPersona {
         self.build_client_data_with_fields(decrypted_fields)
     }
 
-    fn build_client_data_with_fields(self, fields: DecryptedPersonaFields) -> UserPersonaDataForClient {
+    fn build_client_data_with_fields(
+        self,
+        fields: DecryptedPersonaFields,
+    ) -> UserPersonaDataForClient {
         UserPersonaDataForClient {
             id: self.id,
             user_id: self.user_id,
@@ -505,10 +549,9 @@ mod tests {
         let dek = generate_dummy_dek_for_persona_tests();
 
         // Test with DEK - fresh instance
-        let (persona_with_dek, original_description, original_personality) = create_test_persona(&dek);
-        let client_data_with_dek = persona_with_dek
-            .into_data_for_client(Some(&dek))
-            .unwrap();
+        let (persona_with_dek, original_description, original_personality) =
+            create_test_persona(&dek);
+        let client_data_with_dek = persona_with_dek.into_data_for_client(Some(&dek)).unwrap();
         assert_eq!(client_data_with_dek.description, original_description);
         assert_eq!(client_data_with_dek.personality, Some(original_personality));
         assert_eq!(client_data_with_dek.scenario, None);
@@ -516,9 +559,7 @@ mod tests {
 
         // Test without DEK - fresh instance, no cloning needed
         let (persona_without_dek, _, _) = create_test_persona(&dek);
-        let client_data_without_dek = persona_without_dek
-            .into_data_for_client(None)
-            .unwrap();
+        let client_data_without_dek = persona_without_dek.into_data_for_client(None).unwrap();
         assert_eq!(
             client_data_without_dek.description,
             "[Encrypted]".to_string()

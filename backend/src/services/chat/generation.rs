@@ -1,7 +1,9 @@
 use std::{cmp::min, pin::Pin, sync::Arc};
 
 use bigdecimal::{BigDecimal, ToPrimitive};
-use diesel::{QueryDsl, ExpressionMethods, RunQueryDsl, SelectableHelper, result::Error as DieselError};
+use diesel::{
+    ExpressionMethods, QueryDsl, RunQueryDsl, SelectableHelper, result::Error as DieselError,
+};
 use futures_util::Stream; // Required for stream_ai_response_and_save_message
 use futures_util::StreamExt; // Required for .next() on streams
 use genai::chat::{
@@ -34,8 +36,12 @@ use crate::{
 // Corrected QdrantClient import
 
 // Type aliases for complex types
-type GeminiStreamResult = Result<Pin<Box<dyn Stream<Item = Result<GeminiResponseChunkAlias, AppError>> + Send>>, AppError>;
-type ScribeEventStream = std::pin::Pin<Box<dyn Stream<Item = Result<ScribeSseEvent, AppError>> + Send>>;
+type GeminiStreamResult = Result<
+    Pin<Box<dyn Stream<Item = Result<GeminiResponseChunkAlias, AppError>> + Send>>,
+    AppError,
+>;
+type ScribeEventStream =
+    std::pin::Pin<Box<dyn Stream<Item = Result<ScribeSseEvent, AppError>> + Send>>;
 
 // Complex tuple type for session data
 type SessionDataTuple = (
@@ -62,7 +68,7 @@ type SessionDataTuple = (
 
 // These functions/types will be in sibling modules
 use super::{
-    message_handling::{save_message, SaveMessageParams},
+    message_handling::{SaveMessageParams, save_message},
     types::{
         ChatMessage as DbChatMessage, // To avoid conflict if generation.rs also imports it directly
         GenerationDataWithUnsavedUserMessage,
@@ -71,7 +77,6 @@ use super::{
         // RetrievedChunk is also pub use'd by types.rs, but generation.rs imports it directly from embedding_pipeline
     },
 };
-
 
 /// Fetches session settings, history, applies history management, and prepares the user message struct.
 ///
@@ -168,15 +173,13 @@ pub async fn get_session_data_for_generation(
                         if let Some(ref p) = client_persona_dto.personality {
                             if !p.trim().is_empty() {
                                 let personality = p.replace('\0', "");
-                                constructed_parts
-                                    .push(format!("Personality: {personality}"));
+                                constructed_parts.push(format!("Personality: {personality}"));
                             }
                         }
                         if let Some(ref s) = client_persona_dto.scenario {
                             if !s.trim().is_empty() {
                                 let scenario = s.replace('\0', "");
-                                constructed_parts
-                                    .push(format!("Scenario: {scenario}"));
+                                constructed_parts.push(format!("Scenario: {scenario}"));
                             }
                         }
                         let constructed = constructed_parts.join("\n");
@@ -401,18 +404,19 @@ pub async fn get_session_data_for_generation(
         let user_id_clone = user_id;
         let session_id_clone = session_id;
         let character_id_clone = session_character_id_db;
-        
+
         match pool_clone_lore
             .get()
             .await
             .map_err(AppError::from)?
             .interact(move |conn_lore| {
                 ChatSessionLorebook::get_comprehensive_active_lorebook_ids(
-                    conn_lore, 
-                    session_id_clone, 
-                    character_id_clone, 
-                    user_id_clone
-                ).map_err(AppError::from)
+                    conn_lore,
+                    session_id_clone,
+                    character_id_clone,
+                    user_id_clone,
+                )
+                .map_err(AppError::from)
             })
             .await
         {
@@ -762,6 +766,8 @@ pub async fn get_session_data_for_generation(
                 created_at: chrono::Utc::now(),
                 prompt_tokens: None,
                 completion_tokens: None,
+                raw_prompt_ciphertext: None,
+                raw_prompt_nonce: None,
             };
             managed_recent_history.insert(0, first_mes_db_chat_message);
             info!(%session_id, "Prepended character's first_mes to managed_recent_history.");
@@ -776,7 +782,7 @@ pub async fn get_session_data_for_generation(
         user_message_content_for_closure.into_bytes(),
         None,
     );
-    
+
     user_db_message_to_save = user_db_message_to_save
         .with_role("user".to_string())
         .with_parts(serde_json::json!([{"text": user_message_content}]))
@@ -823,7 +829,7 @@ pub struct StreamAiParams {
     pub top_k: Option<i32>,                    // Mark as unused for now
     pub top_p: Option<BigDecimal>,
     pub stop_sequences: Option<Vec<String>>, // New parameter
-    pub seed: Option<i32>,                  // Mark as unused for now
+    pub seed: Option<i32>,                   // Mark as unused for now
     pub model_name: String,
     pub gemini_thinking_budget: Option<i32>,
     pub gemini_enable_code_execution: Option<bool>,
@@ -841,8 +847,7 @@ pub struct StreamAiParams {
 #[instrument(skip_all, err, fields(session_id = %params.session_id, user_id = %params.user_id, model_name = %params.model_name))]
 pub async fn stream_ai_response_and_save_message(
     params: StreamAiParams,
-) -> Result<ScribeEventStream, AppError>
-{
+) -> Result<ScribeEventStream, AppError> {
     let StreamAiParams {
         state,
         session_id,
@@ -863,7 +868,7 @@ pub async fn stream_ai_response_and_save_message(
         request_thinking,
         user_dek,
     } = params;
-    
+
     let service_model_name = model_name.clone(); // Clone for use in this function scope, esp. for save_message calls
     trace!(
         ?system_prompt,
@@ -900,8 +905,8 @@ pub async fn stream_ai_response_and_save_message(
     }
     if let Some(budget) = gemini_thinking_budget {
         if budget > 0 {
-            genai_chat_options =
-                genai_chat_options.with_reasoning_effort(ReasoningEffort::Budget(u32::try_from(budget).unwrap_or(0)));
+            genai_chat_options = genai_chat_options
+                .with_reasoning_effort(ReasoningEffort::Budget(u32::try_from(budget).unwrap_or(0)));
         }
     }
     // `with_gemini_enable_code_execution` removed as it's no longer a direct ChatOption.
@@ -954,6 +959,13 @@ pub async fn stream_ai_response_and_save_message(
         "Final GenAI ChatOptions before sending: {:#?}",
         genai_chat_options
     );
+
+    // Build raw prompt for debugging before sending to AI
+    let raw_prompt_debug =
+        build_raw_prompt_debug(&chat_request, &genai_chat_options, &tools_to_declare);
+
+    // Temporary debug: log the raw prompt length to see if it's being built correctly
+    tracing::debug!("Raw prompt debug built, length: {}", raw_prompt_debug.len());
 
     let genai_stream_result: GeminiStreamResult = state
         .ai_client
@@ -1046,6 +1058,7 @@ pub async fn stream_ai_response_and_save_message(
                                 attachments: None,
                                 user_dek_secret_box: dek_ref_partial,
                                 model_name: service_model_name_clone_partial,
+                                raw_prompt_debug: None, // No raw prompt for partial/error saves
                            }).await {
                                 Ok(saved_message) => {
                                     debug!(session_id = %error_session_id_clone, message_id = %saved_message.id, "Successfully saved partial AI response via save_message after stream error (chat_service)");
@@ -1095,6 +1108,7 @@ pub async fn stream_ai_response_and_save_message(
                     attachments: None,
                     user_dek_secret_box: dek_ref_full,
                     model_name: service_model_name_clone_full,
+                    raw_prompt_debug: Some(&raw_prompt_debug),
                 }).await {
                     Ok(saved_message) => {
                         debug!(session_id = %full_session_id_clone, message_id = %saved_message.id, "Successfully saved full AI response via save_message (chat_service)");
@@ -1117,4 +1131,57 @@ pub async fn stream_ai_response_and_save_message(
     };
 
     Ok(Box::pin(sse_stream))
+}
+
+/// Builds a debug representation of the raw prompt content sent to AI
+/// This shows only the actual prompt content, not API configuration parameters
+fn build_raw_prompt_debug(
+    chat_request: &GenAiChatRequest,
+    _chat_options: &GenAiChatOptions,
+    tools: &[genai::chat::Tool],
+) -> String {
+    use std::fmt::Write;
+
+    let mut debug_prompt = String::new();
+
+    // Header
+    writeln!(&mut debug_prompt, "=== RAW AI PROMPT DEBUG ===").unwrap();
+    writeln!(
+        &mut debug_prompt,
+        "Generated at: {}",
+        chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC")
+    )
+    .unwrap();
+    writeln!(&mut debug_prompt).unwrap();
+
+    // System prompt
+    if let Some(system) = &chat_request.system {
+        if !system.is_empty() {
+            writeln!(&mut debug_prompt, "--- SYSTEM PROMPT ---").unwrap();
+            writeln!(&mut debug_prompt, "{}", system).unwrap();
+            writeln!(&mut debug_prompt).unwrap();
+        }
+    }
+
+    // Tools configuration (only if tools are declared, as they affect the prompt)
+    if !tools.is_empty() {
+        writeln!(&mut debug_prompt, "--- TOOLS DECLARED ---").unwrap();
+        for (i, tool) in tools.iter().enumerate() {
+            writeln!(&mut debug_prompt, "Tool {}: {:#?}", i + 1, tool).unwrap();
+        }
+        writeln!(&mut debug_prompt).unwrap();
+    }
+
+    // Conversation history
+    writeln!(&mut debug_prompt, "--- CONVERSATION HISTORY ---").unwrap();
+    let messages = &chat_request.messages;
+    for (i, message) in messages.iter().enumerate() {
+        writeln!(&mut debug_prompt, "Message {} [{}]:", i + 1, message.role).unwrap();
+        writeln!(&mut debug_prompt, "{:#?}", message.content).unwrap();
+        writeln!(&mut debug_prompt, "---").unwrap();
+    }
+
+    writeln!(&mut debug_prompt, "=== END RAW PROMPT DEBUG ===").unwrap();
+
+    debug_prompt
 }

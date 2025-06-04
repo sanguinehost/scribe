@@ -166,9 +166,7 @@ async fn test_login_failure_rate_limit() {
                 "Error message \"{msg}\" did not contain \"{expected_substring}\""
             );
         }
-        e => panic!(
-            "Expected CliError::AuthFailed indicating rate limit, got {e:?}"
-        ),
+        e => panic!("Expected CliError::AuthFailed indicating rate limit, got {e:?}"),
     }
 
     server.verify_and_clear();
@@ -922,7 +920,7 @@ async fn test_create_chat_session_success() {
         character_id,
         // title: Some("New Chat".to_string()), // This was the old field
         title_ciphertext: Some(b"New Chat".to_vec()), // Mocking as if "New Chat" was encrypted
-        title_nonce: Some(vec![0u8; 12]),                       // Mock nonce
+        title_nonce: Some(vec![0u8; 12]),             // Mock nonce
         created_at: now,
         updated_at: now,
         // system_prompt: None, // This was the old field

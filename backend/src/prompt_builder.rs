@@ -8,9 +8,9 @@ use crate::{
     },
 };
 use genai::chat::ChatMessage as GenAiChatMessage;
-use std::fmt::Write;
 use genai::chat::ContentPart as Part; // This is the Part type from the genai crate
 use genai::chat::MessageContent; // This is an enum from the genai crate
+use std::fmt::Write;
 use std::sync::Arc;
 use tracing::{debug, warn};
 
@@ -34,7 +34,12 @@ pub fn build_prompt_with_rag(
                 return Ok(String::new());
             }
             writeln!(prompt, "Character Name: {}", char_data.name).unwrap();
-            writeln!(prompt, "Description: {}", String::from_utf8_lossy(description_vec)).unwrap();
+            writeln!(
+                prompt,
+                "Description: {}",
+                String::from_utf8_lossy(description_vec)
+            )
+            .unwrap();
             prompt.push('\n');
             // Only add static instruction if there's a character description
             prompt.push_str("---\nInstruction:\nContinue the chat based on the conversation history. Stay in character.\n---\n\n");
@@ -51,16 +56,29 @@ pub fn build_prompt_with_rag(
 }
 
 /// Builds the character-specific information string for the system prompt.
-fn build_character_info_string(character_metadata: Option<&CharacterMetadata>) -> String {
+fn build_character_info_string(
+    character_metadata: Option<&CharacterMetadata>,
+    dek: Option<&secrecy::SecretBox<Vec<u8>>>,
+) -> String {
     if let Some(char_data) = character_metadata {
-        if let Some(description_vec) = &char_data.description {
-            if !description_vec.is_empty() {
-                let mut char_prompt_part = String::new();
-                writeln!(char_prompt_part, "Character Name: {}", char_data.name).unwrap();
-                writeln!(char_prompt_part, "Description: {}", String::from_utf8_lossy(description_vec)).unwrap();
-                // Static instruction for character-based interaction
-                char_prompt_part.push_str("\n---\nInstruction:\nContinue the chat based on the conversation history. Stay in character.\n---\n\n");
-                return char_prompt_part;
+        // Try to decrypt the description first
+        match char_data.decrypt_description(dek) {
+            Ok(Some(description_text)) => {
+                if !description_text.is_empty() {
+                    let mut char_prompt_part = String::new();
+                    writeln!(char_prompt_part, "Character Name: {}", char_data.name).unwrap();
+                    writeln!(char_prompt_part, "Description: {}", description_text).unwrap();
+                    // Static instruction for character-based interaction
+                    char_prompt_part.push_str("\n---\nInstruction:\nContinue the chat based on the conversation history. Stay in character.\n---\n\n");
+                    return char_prompt_part;
+                }
+            }
+            Ok(None) => {
+                // No description available
+            }
+            Err(e) => {
+                // Log the error but don't fail - just skip character info
+                tracing::error!("Failed to decrypt character description: {}", e);
             }
         }
     }
@@ -117,6 +135,7 @@ pub struct PromptBuildParams<'a> {
     pub character_metadata: Option<&'a CharacterMetadata>, // For name/description
     pub current_user_message: GenAiChatMessage,
     pub model_name: String,
+    pub user_dek: Option<&'a secrecy::SecretBox<Vec<u8>>>, // For decrypting character data
 }
 
 /// Builds the meta system prompt template with character name substitution
@@ -125,27 +144,38 @@ pub struct PromptBuildParams<'a> {
 /// Returns `AppError` if token counting fails
 async fn build_meta_system_prompt(
     character_metadata: Option<&CharacterMetadata>,
+    has_rag_items: bool,
     token_counter: &HybridTokenCounter,
     model_name: &str,
 ) -> Result<(String, usize), AppError> {
     let char_name_placeholder =
         character_metadata.map_or_else(|| "{{character_name}}".to_string(), |cm| cm.name.clone());
-    
+
+    let lorebook_line;
+    let history_line;
+
+    if has_rag_items {
+        lorebook_line = "4. <lorebook_entries>: Relevant background information about the world, other characters, or plot points.\n";
+        history_line = "5. The conversation history contains the story so far - the existing dialogue and narration.\n";
+    } else {
+        lorebook_line = ""; // No lorebook section
+        history_line = "4. The conversation history contains the story so far - the existing dialogue and narration.\n";
+    }
+
     let meta_system_prompt_template = format!(
         "You are the Narrator and supporting characters in a collaborative storytelling experience with a Human player. The Human controls a character (referred to as 'the User'). Your primary role is to describe the world, events, and the actions and dialogue of all characters *except* the User.\n\n\
         You will be provided with the following structured information to guide your responses:\n\
         1. <persona_override_prompt>: Specific instructions or style preferences from the User (if any).\n\
         2. <character_definition>: The core definition and personality of the character '{char_name_placeholder}'.\n\
         3. <character_details>: Additional descriptive information about '{char_name_placeholder}'.\n\
-        4. <lorebook_entries>: Relevant background information about the world, other characters, or plot points.\n\
-        5. <story_so_far>: The existing dialogue and narration.\n\n\
+        {lorebook_line}{history_line}\n\
         Key Writing Principles:\n\
         - Focus on the direct consequences of the User's actions.\n\
         - Describe newly encountered people, places, or significant objects only once. The Human will remember.\n\
         - Maintain character believability. Characters have their own motivations and will not always agree with the User. They should react realistically based on their personalities and the situation.\n\
         - End your responses with action or dialogue to maintain active immersion. Avoid summarization or out-of-character commentary.\n\n\
         [System Instructions End]\n\
-        Based on all the above and the story so far, write the next part of the story as the narrator and any relevant non-player characters. Ensure your response is engaging and moves the story forward.",
+        Based on all the above information and the conversation history, write the next part of the story as the narrator and any relevant non-player characters. Ensure your response is engaging and moves the story forward.",
     );
 
     let meta_system_prompt_tokens = token_counter
@@ -171,6 +201,7 @@ async fn calculate_component_tokens(
     current_user_message: &GenAiChatMessage,
     token_counter: &HybridTokenCounter,
     model_name: &str,
+    user_dek: Option<&secrecy::SecretBox<Vec<u8>>>,
 ) -> Result<((String, usize), (String, usize), (String, usize), usize), AppError> {
     let persona_override_prompt_str = system_prompt_base.unwrap_or_default();
     let persona_override_prompt_tokens = if persona_override_prompt_str.is_empty() {
@@ -200,7 +231,7 @@ async fn calculate_component_tokens(
             .total
     };
 
-    let character_details_str = build_character_info_string(character_metadata);
+    let character_details_str = build_character_info_string(character_metadata, user_dek);
     let character_details_tokens = if character_details_str.is_empty() {
         0
     } else {
@@ -218,8 +249,14 @@ async fn calculate_component_tokens(
         count_tokens_for_genai_message(current_user_message, token_counter, model_name).await?;
 
     Ok((
-        (persona_override_prompt_str.to_string(), persona_override_prompt_tokens),
-        (character_definition_str.to_string(), character_definition_tokens),
+        (
+            persona_override_prompt_str.to_string(),
+            persona_override_prompt_tokens,
+        ),
+        (
+            character_definition_str.to_string(),
+            character_definition_tokens,
+        ),
         (character_details_str, character_details_tokens),
         current_user_message_tokens,
     ))
@@ -254,7 +291,6 @@ async fn calculate_content_tokens(
 }
 
 struct TokenCalculation {
-    meta_system_prompt_template: String,
     meta_system_prompt_tokens: usize,
     persona_override_prompt_str: String,
     persona_override_prompt_tokens: usize,
@@ -283,26 +319,37 @@ async fn perform_initial_token_calculation(
     } = params;
 
     // 1. Build meta system prompt and calculate its tokens
-    let (meta_system_prompt_template, meta_system_prompt_tokens) = 
-        build_meta_system_prompt(*character_metadata, token_counter, model_name).await?;
+    // Note: We'll rebuild this later with the final RAG items after truncation
+    let (_meta_system_prompt_template, meta_system_prompt_tokens) = build_meta_system_prompt(
+        *character_metadata,
+        !rag_items.is_empty(),
+        token_counter,
+        model_name,
+    )
+    .await?;
 
     // 2. Calculate tokens for all components
-    let ((persona_override_prompt_str, persona_override_prompt_tokens), (character_definition_str, character_definition_tokens), (character_details_str, character_details_tokens), current_user_message_tokens) = 
-        calculate_component_tokens(
-            system_prompt_base.as_deref(),
-            raw_character_system_prompt.as_deref(),
-            *character_metadata,
-            current_user_message,
-            token_counter,
-            model_name,
-        ).await?;
+    let (
+        (persona_override_prompt_str, persona_override_prompt_tokens),
+        (character_definition_str, character_definition_tokens),
+        (character_details_str, character_details_tokens),
+        current_user_message_tokens,
+    ) = calculate_component_tokens(
+        system_prompt_base.as_deref(),
+        raw_character_system_prompt.as_deref(),
+        *character_metadata,
+        current_user_message,
+        token_counter,
+        model_name,
+        params.user_dek,
+    )
+    .await?;
 
     // 3. Calculate tokens for RAG items and recent history
-    let (rag_items_with_tokens, recent_history_with_tokens) = 
+    let (rag_items_with_tokens, recent_history_with_tokens) =
         calculate_content_tokens(rag_items, recent_history, token_counter, model_name).await?;
 
     Ok(TokenCalculation {
-        meta_system_prompt_template,
         meta_system_prompt_tokens,
         persona_override_prompt_str,
         persona_override_prompt_tokens,
@@ -323,15 +370,24 @@ fn calculate_total_tokens(calculation: &TokenCalculation) -> usize {
         + calculation.character_definition_tokens
         + calculation.character_details_tokens
         + calculation.current_user_message_tokens
-        + calculation.rag_items_with_tokens.iter().map(|(_, t)| t).sum::<usize>()
-        + calculation.recent_history_with_tokens
+        + calculation
+            .rag_items_with_tokens
+            .iter()
+            .map(|(_, t)| t)
+            .sum::<usize>()
+        + calculation
+            .recent_history_with_tokens
             .iter()
             .map(|(_, t)| t)
             .sum::<usize>()
 }
 
 /// Logs the initial token calculation breakdown
-fn log_initial_token_calculation(calculation: &TokenCalculation, current_total_tokens: usize, max_allowed_tokens: usize) {
+fn log_initial_token_calculation(
+    calculation: &TokenCalculation,
+    current_total_tokens: usize,
+    max_allowed_tokens: usize,
+) {
     debug!(
         current_total_tokens,
         max_allowed_tokens,
@@ -340,8 +396,13 @@ fn log_initial_token_calculation(calculation: &TokenCalculation, current_total_t
         calculation.character_definition_tokens,
         calculation.character_details_tokens,
         calculation.current_user_message_tokens,
-        rag_tokens = calculation.rag_items_with_tokens.iter().map(|(_, t)| t).sum::<usize>(),
-        history_tokens = calculation.recent_history_with_tokens
+        rag_tokens = calculation
+            .rag_items_with_tokens
+            .iter()
+            .map(|(_, t)| t)
+            .sum::<usize>(),
+        history_tokens = calculation
+            .recent_history_with_tokens
             .iter()
             .map(|(_, t)| t)
             .sum::<usize>(),
@@ -350,40 +411,50 @@ fn log_initial_token_calculation(calculation: &TokenCalculation, current_total_t
 }
 
 /// Truncates RAG items to reduce token count
-fn truncate_rag_context(calculation: &mut TokenCalculation, current_total_tokens: &mut usize, max_allowed_tokens: usize) {
+fn truncate_rag_context(
+    calculation: &mut TokenCalculation,
+    current_total_tokens: &mut usize,
+    max_allowed_tokens: usize,
+) {
     if *current_total_tokens <= max_allowed_tokens {
         return;
     }
 
     debug!("Attempting to reduce tokens by truncating RAG context.");
-    while !calculation.rag_items_with_tokens.is_empty() && *current_total_tokens > max_allowed_tokens {
+    while !calculation.rag_items_with_tokens.is_empty()
+        && *current_total_tokens > max_allowed_tokens
+    {
         if let Some((_, tokens)) = calculation.rag_items_with_tokens.pop() {
             *current_total_tokens -= tokens;
         }
     }
     debug!(
         current_total_tokens = *current_total_tokens,
-        max_allowed_tokens,
-        "RAG context truncated."
+        max_allowed_tokens, "RAG context truncated."
     );
 }
 
 /// Truncates recent history to reduce token count
-fn truncate_recent_history(calculation: &mut TokenCalculation, current_total_tokens: &mut usize, max_allowed_tokens: usize) {
+fn truncate_recent_history(
+    calculation: &mut TokenCalculation,
+    current_total_tokens: &mut usize,
+    max_allowed_tokens: usize,
+) {
     if *current_total_tokens <= max_allowed_tokens {
         return;
     }
 
     debug!("Attempting to reduce tokens by truncating recent history.");
-    while !calculation.recent_history_with_tokens.is_empty() && *current_total_tokens > max_allowed_tokens {
+    while !calculation.recent_history_with_tokens.is_empty()
+        && *current_total_tokens > max_allowed_tokens
+    {
         // Remove from the oldest (front of the vector)
         let (_, tokens) = calculation.recent_history_with_tokens.remove(0);
         *current_total_tokens -= tokens;
     }
     debug!(
         current_total_tokens = *current_total_tokens,
-        max_allowed_tokens,
-        "Recent history truncated."
+        max_allowed_tokens, "Recent history truncated."
     );
 }
 
@@ -392,8 +463,7 @@ fn warn_if_over_limit(current_total_tokens: usize, max_allowed_tokens: usize) {
     if current_total_tokens > max_allowed_tokens {
         warn!(
             current_total_tokens,
-            max_allowed_tokens,
-            "Token limit exceeded even after truncation."
+            max_allowed_tokens, "Token limit exceeded even after truncation."
         );
     }
 }
@@ -401,33 +471,63 @@ fn warn_if_over_limit(current_total_tokens: usize, max_allowed_tokens: usize) {
 fn apply_token_limits(mut calculation: TokenCalculation, config: &Arc<Config>) -> TokenCalculation {
     let mut current_total_tokens = calculate_total_tokens(&calculation);
     let max_allowed_tokens = config.context_total_token_limit;
-    
+
     log_initial_token_calculation(&calculation, current_total_tokens, max_allowed_tokens);
-    
-    truncate_rag_context(&mut calculation, &mut current_total_tokens, max_allowed_tokens);
-    truncate_recent_history(&mut calculation, &mut current_total_tokens, max_allowed_tokens);
+
+    truncate_rag_context(
+        &mut calculation,
+        &mut current_total_tokens,
+        max_allowed_tokens,
+    );
+    truncate_recent_history(
+        &mut calculation,
+        &mut current_total_tokens,
+        max_allowed_tokens,
+    );
     warn_if_over_limit(current_total_tokens, max_allowed_tokens);
 
     calculation
 }
 
-fn build_final_prompt_strings(
+async fn build_final_prompt_strings(
     calculation: &TokenCalculation,
     current_user_message: &GenAiChatMessage,
-) -> (String, Vec<GenAiChatMessage>) {
-    // Assemble the final system prompt
-    let mut final_system_prompt = calculation.meta_system_prompt_template.clone();
+    character_metadata: Option<&CharacterMetadata>,
+    token_counter: &HybridTokenCounter,
+    model_name: &str,
+) -> Result<(String, Vec<GenAiChatMessage>), AppError> {
+    // Rebuild the meta system prompt based on final RAG items after truncation
+    let has_final_rag_items = !calculation.rag_items_with_tokens.is_empty();
+    let (final_meta_system_prompt, _) = build_meta_system_prompt(
+        character_metadata,
+        has_final_rag_items,
+        token_counter,
+        model_name,
+    )
+    .await?;
 
+    // Assemble the final system prompt with structured sections as promised
+    let mut final_system_prompt = final_meta_system_prompt;
+
+    // Add persona override prompt if present
     if !calculation.persona_override_prompt_str.is_empty() {
+        final_system_prompt.push_str("\n\n<persona_override_prompt>\n");
         final_system_prompt.push_str(&calculation.persona_override_prompt_str);
+        final_system_prompt.push_str("\n</persona_override_prompt>");
     }
 
+    // Add character definition if present
     if !calculation.character_definition_str.is_empty() {
+        final_system_prompt.push_str("\n\n<character_definition>\n");
         final_system_prompt.push_str(&calculation.character_definition_str);
+        final_system_prompt.push_str("\n</character_definition>");
     }
 
+    // Add character details if present
     if !calculation.character_details_str.is_empty() {
+        final_system_prompt.push_str("\n\n<character_details>\n");
         final_system_prompt.push_str(&calculation.character_details_str);
+        final_system_prompt.push_str("\n</character_details>");
     }
 
     // Assemble the final message list
@@ -438,68 +538,76 @@ fn build_final_prompt_strings(
         final_message_list.push(history_msg.clone());
     }
 
-    // Add the current user message with RAG context prepended if available
-    let final_user_message = if calculation.rag_items_with_tokens.is_empty() {
-        current_user_message.clone()
-    } else {
-        // Build RAG context string
-        let mut rag_context = String::from("---\nRelevant Context:\n");
+    // Prepend RAG context to the current user message
+    let mut rag_context_for_user_message = String::new();
+    if !calculation.rag_items_with_tokens.is_empty() {
+        rag_context_for_user_message.push_str("---\nRelevant Context:\n");
         for (rag_item, _) in &calculation.rag_items_with_tokens {
-            // Add each RAG item with appropriate formatting
             match &rag_item.metadata {
                 crate::services::embedding_pipeline::RetrievedMetadata::Chat(chat_meta) => {
-                    writeln!(rag_context, "- Chat (Speaker: {}): {}", chat_meta.speaker, rag_item.text.trim()).unwrap();
-                },
+                    writeln!(
+                        rag_context_for_user_message,
+                        "- Chat (Speaker: {}): {}",
+                        chat_meta.speaker,
+                        rag_item.text.trim()
+                    )
+                    .unwrap();
+                }
                 crate::services::embedding_pipeline::RetrievedMetadata::Lorebook(lorebook_meta) => {
-                    // Format with both keywords and content for better context
                     if let Some(title) = &lorebook_meta.entry_title {
                         if let Some(keywords) = &lorebook_meta.keywords {
                             if !keywords.is_empty() {
                                 let keywords_str = keywords.join(", ");
-                                writeln!(rag_context, "- Lorebook Entry \"{title}\" (Keywords: {keywords_str}): {}", rag_item.text.trim()).unwrap();
+                                writeln!(
+                                    rag_context_for_user_message,
+                                    "- Lorebook Entry \"{title}\" (Keywords: {keywords_str}): {}",
+                                    rag_item.text.trim()
+                                )
+                                .unwrap();
                             } else {
-                                writeln!(rag_context, "- Lorebook Entry \"{title}\": {}", rag_item.text.trim()).unwrap();
+                                writeln!(
+                                    rag_context_for_user_message,
+                                    "- Lorebook Entry \"{title}\": {}",
+                                    rag_item.text.trim()
+                                )
+                                .unwrap();
                             }
                         } else {
-                            writeln!(rag_context, "- Lorebook Entry \"{title}\": {}", rag_item.text.trim()).unwrap();
+                            writeln!(
+                                rag_context_for_user_message,
+                                "- Lorebook Entry \"{title}\": {}",
+                                rag_item.text.trim()
+                            )
+                            .unwrap();
                         }
                     } else {
-                        // Fall back to the original format for backwards compatibility
-                        writeln!(rag_context, "- Lorebook ({}): {}", lorebook_meta.lorebook_id, rag_item.text.trim()).unwrap();
+                        writeln!(
+                            rag_context_for_user_message,
+                            "- Lorebook ({}): {}",
+                            lorebook_meta.lorebook_id,
+                            rag_item.text.trim()
+                        )
+                        .unwrap();
                     }
                 }
             }
         }
-        rag_context.push_str("---\n\n");
-        
-        // Create new user message with RAG context prepended
-        let original_content = match &current_user_message.content {
-            MessageContent::Text(text) => text.clone(),
-            MessageContent::Parts(parts) => {
-                // For parts, extract text parts and concatenate
-                parts.iter()
-                    .filter_map(|part| match part {
-                        Part::Text(text) => Some(text.as_str()),
-                        _ => None,
-                    })
-                    .collect::<Vec<_>>()
-                    .join(" ")
-            }
-            _ => String::new(),
-        };
-        
-        let enhanced_content = format!("{rag_context}{original_content}");
-        
-        GenAiChatMessage {
-            role: current_user_message.role.clone(),
-            content: MessageContent::Text(enhanced_content),
-            options: None,
-        }
-    };
-    
+        rag_context_for_user_message.push_str("\n"); // Add a newline after RAG context
+    }
+
+    // Combine RAG context with the current user message
+    let mut final_user_message = current_user_message.clone();
+    if let MessageContent::Text(mut text_content) = final_user_message.content {
+        text_content = format!("{}{}", rag_context_for_user_message, text_content);
+        final_user_message.content = MessageContent::Text(text_content);
+    } else {
+        // Handle other MessageContent variants if necessary, or log a warning
+        warn!("User message is not plain text, RAG context not prepended.");
+    }
+
     final_message_list.push(final_user_message);
 
-    (final_system_prompt, final_message_list)
+    Ok((final_system_prompt, final_message_list))
 }
 
 /// Builds the final LLM prompt, managing token limits by truncating RAG context and recent history if necessary.
@@ -516,15 +624,27 @@ pub async fn build_final_llm_prompt(
     calculation = apply_token_limits(calculation, &params.config);
 
     // Build final prompt strings
-    let (final_system_prompt, final_message_list) = build_final_prompt_strings(&calculation, &params.current_user_message);
+    let (final_system_prompt, final_message_list) = build_final_prompt_strings(
+        &calculation,
+        &params.current_user_message,
+        params.character_metadata,
+        &params.token_counter,
+        &params.model_name,
+    )
+    .await?;
 
     let final_total_tokens = calculation.meta_system_prompt_tokens
         + calculation.persona_override_prompt_tokens
         + calculation.character_definition_tokens
         + calculation.character_details_tokens
         + calculation.current_user_message_tokens
-        + calculation.rag_items_with_tokens.iter().map(|(_, t)| t).sum::<usize>()
-        + calculation.recent_history_with_tokens
+        + calculation
+            .rag_items_with_tokens
+            .iter()
+            .map(|(_, t)| t)
+            .sum::<usize>()
+        + calculation
+            .recent_history_with_tokens
             .iter()
             .map(|(_, t)| t)
             .sum::<usize>();
@@ -542,7 +662,7 @@ pub async fn build_final_llm_prompt(
 // --- Unit Tests ---
 #[cfg(test)]
 mod tests {
-    use super::*;
+    
     use crate::models::characters::CharacterMetadata;
     use chrono::Utc;
     use uuid::Uuid;
@@ -629,6 +749,6 @@ mod tests {
     }
 
     fn build_prompt_with_rag(character_metadata: Option<&CharacterMetadata>) -> String {
-        build_character_info_string(character_metadata)
+        super::build_prompt_with_rag(character_metadata).unwrap()
     }
 }

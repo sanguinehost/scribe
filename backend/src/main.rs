@@ -36,6 +36,7 @@ use std::env; // Added for current_dir
 // Imports for axum-login and tower-sessions
 use axum_login::{AuthManagerLayerBuilder, login_required}; // Modified
 // Import SessionManagerLayer directly from tower_sessions
+use hex::decode;
 use scribe_backend::config::Config; // Import Config instead
 use scribe_backend::llm::gemini_client::build_gemini_client; // Import the async builder
 use scribe_backend::llm::gemini_embedding_client::build_gemini_embedding_client; // Add this
@@ -48,11 +49,10 @@ use scribe_backend::services::tokenizer_service::TokenizerService; // Added
 use scribe_backend::text_processing::chunking::{ChunkConfig, ChunkingMetric}; // Import chunking config structs
 use scribe_backend::vector_db::QdrantClientService;
 use std::sync::Arc;
+use time::Duration;
 use tower_cookies::CookieManagerLayer; // Re-add CookieManagerLayer
 use tower_sessions::cookie::Key; // Use Key from tower_sessions::cookie for with_signed
 use tower_sessions::{Expiry, SessionManagerLayer, cookie::SameSite}; // Add Arc for config // Add Qdrant service import // Add embedding pipeline service import
-use hex::decode;
-use time::Duration;
 // Removed unused: use tokio::net::TcpListener;
 use axum::extract::Request as AxumRequest;
 use axum::middleware::{self as axum_middleware, Next};
@@ -136,12 +136,19 @@ async fn initialize_services(config: &Arc<Config>, pool: &PgPool) -> Result<AppS
     let gemini_token_client = setup_gemini_token_client(config);
 
     // --- Initialize Hybrid Token Counter ---
-    let hybrid_token_counter = setup_hybrid_token_counter(config, tokenizer_service, gemini_token_client);
+    let hybrid_token_counter =
+        setup_hybrid_token_counter(config, tokenizer_service, gemini_token_client);
 
     // --- Initialize Services ---
     let encryption_service = Arc::new(EncryptionService::new());
-    let chat_override_service = Arc::new(ChatOverrideService::new(pool.clone(), encryption_service.clone()));
-    let user_persona_service = Arc::new(UserPersonaService::new(pool.clone(), encryption_service.clone()));
+    let chat_override_service = Arc::new(ChatOverrideService::new(
+        pool.clone(),
+        encryption_service.clone(),
+    ));
+    let user_persona_service = Arc::new(UserPersonaService::new(
+        pool.clone(),
+        encryption_service.clone(),
+    ));
 
     // --- Create Chunking Config and Embedding Pipeline ---
     let chunk_config = create_chunk_config(config);
@@ -154,7 +161,11 @@ async fn initialize_services(config: &Arc<Config>, pool: &PgPool) -> Result<AppS
     tracing::info!("Qdrant client service initialized.");
 
     // --- Initialize Lorebook Service (needs qdrant_service) ---
-    let lorebook_service = Arc::new(LorebookService::new(pool.clone(), encryption_service.clone(), qdrant_service.clone()));
+    let lorebook_service = Arc::new(LorebookService::new(
+        pool.clone(),
+        encryption_service.clone(),
+        qdrant_service.clone(),
+    ));
 
     let auth_backend = Arc::new(AuthBackend::new(pool.clone()));
 
@@ -181,8 +192,11 @@ fn setup_tokenizer_service(config: &Config) -> Result<TokenizerService> {
         "Failed to load tokenizer model from {}",
         final_tokenizer_model_path.display()
     ))?;
-    
-    tracing::info!("TokenizerService initialized with model: {}", tokenizer_service.model_name());
+
+    tracing::info!(
+        "TokenizerService initialized with model: {}",
+        tokenizer_service.model_name()
+    );
     Ok(tokenizer_service)
 }
 
@@ -199,9 +213,18 @@ fn resolve_tokenizer_model_path(config: &Config) -> PathBuf {
         tracing::warn!("Failed to get current working directory.");
     }
 
-    tracing::info!("Tokenizer model relative path from config: {}", tokenizer_model_relative_path_str);
-    tracing::info!("Backend crate directory (CARGO_MANIFEST_DIR): {}", backend_crate_dir.display());
-    tracing::info!("Resolved absolute tokenizer model path to be used: {}", final_tokenizer_model_path.display());
+    tracing::info!(
+        "Tokenizer model relative path from config: {}",
+        tokenizer_model_relative_path_str
+    );
+    tracing::info!(
+        "Backend crate directory (CARGO_MANIFEST_DIR): {}",
+        backend_crate_dir.display()
+    );
+    tracing::info!(
+        "Resolved absolute tokenizer model path to be used: {}",
+        final_tokenizer_model_path.display()
+    );
 
     final_tokenizer_model_path
 }
@@ -230,7 +253,10 @@ fn setup_hybrid_token_counter(
         gemini_token_client,
         token_counter_default_model.clone(),
     );
-    tracing::info!("HybridTokenCounter initialized with default model: {}", token_counter_default_model);
+    tracing::info!(
+        "HybridTokenCounter initialized with default model: {}",
+        token_counter_default_model
+    );
     Arc::new(hybrid_token_counter)
 }
 
@@ -254,7 +280,10 @@ fn setup_app_state_and_auth(
     config: &Arc<Config>,
     pool: &PgPool,
     services: AppStateServices,
-) -> Result<(AppState, axum_login::AuthManagerLayer<AuthBackend, DieselSessionStore>)> {
+) -> Result<(
+    AppState,
+    axum_login::AuthManagerLayer<AuthBackend, DieselSessionStore>,
+)> {
     // --- Session Store Setup ---
     let session_store = DieselSessionStore::new(pool.clone());
 
@@ -262,8 +291,8 @@ fn setup_app_state_and_auth(
         .cookie_signing_key
         .as_ref()
         .context("COOKIE_SIGNING_KEY must be set in config")?;
-    let key_bytes = decode(secret_key)
-        .context("Invalid COOKIE_SIGNING_KEY format in config (must be hex)")?;
+    let key_bytes =
+        decode(secret_key).context("Invalid COOKIE_SIGNING_KEY format in config (must be hex)")?;
     let _signing_key = Key::from(&key_bytes);
 
     let session_manager_layer = SessionManagerLayer::new(session_store)
@@ -272,7 +301,8 @@ fn setup_app_state_and_auth(
         .with_expiry(Expiry::OnInactivity(Duration::hours(24)));
 
     let auth_backend = services.auth_backend.clone();
-    let auth_layer = AuthManagerLayerBuilder::new((*auth_backend).clone(), session_manager_layer).build();
+    let auth_layer =
+        AuthManagerLayerBuilder::new((*auth_backend).clone(), session_manager_layer).build();
 
     let app_state = AppState::new(pool.clone(), config.clone(), services);
 
@@ -305,7 +335,10 @@ fn build_router(
         .layer(CookieManagerLayer::new())
         .layer(auth_layer)
         .with_state(app_state)
-        .layer(TraceLayer::new_for_http().make_span_with(DefaultMakeSpan::default().include_headers(true)))
+        .layer(
+            TraceLayer::new_for_http()
+                .make_span_with(DefaultMakeSpan::default().include_headers(true)),
+        )
         .layer(axum_middleware::from_fn(main_request_logging_middleware))
 }
 

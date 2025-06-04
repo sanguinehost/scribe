@@ -182,8 +182,8 @@ fn insert_test_character(
         // spec_version: "1.0".to_string(), // Removed - Likely changed/removed in model
         name: name.to_string(),
         post_history_instructions: Some(b"".to_vec()), // Fix E0308: Convert to Vec<u8>
-        creator_notes_multilingual: None,                        // Add missing field
-        ..Default::default() // Use default for other optional fields
+        creator_notes_multilingual: None,              // Add missing field
+        ..Default::default()                           // Use default for other optional fields
     };
     diesel::insert_into(characters::table)
         .values(&new_character) // Pass by reference
@@ -1209,6 +1209,8 @@ async fn test_data_guard_cleanup_logic() -> anyhow::Result<()> {
         attachments: None,
         prompt_tokens: None,
         completion_tokens: None,
+        raw_prompt_ciphertext: None,
+        raw_prompt_nonce: None,
     };
 
     conn_setup

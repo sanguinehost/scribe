@@ -58,10 +58,10 @@ async fn create_test_character(
         .get()
         .await
         .context("Failed to get DB connection from pool")?;
-    
+
     let character_id = Uuid::new_v4();
     let character = conn
-        .interact(move |conn| {            
+        .interact(move |conn| {
             diesel::insert_into(schema::characters::table)
                 .values(&DbCharacter {
                     id: character_id,
@@ -176,7 +176,7 @@ The chunking process also preserves metadata about the source document, position
         .await
         .map_err(|e| anyhow::anyhow!("Database interaction failed: {}", e))?
         .context("Failed to insert character into database")?;
-    
+
     Ok(character)
 }
 
@@ -190,10 +190,10 @@ async fn create_test_chat_session(
         .get()
         .await
         .context("Failed to get DB connection from pool")?;
-    
+
     let session_id = Uuid::new_v4();
     let session = conn
-        .interact(move |conn| {            
+        .interact(move |conn| {
             let new_session = NewChat {
                 id: session_id,
                 user_id,
@@ -221,7 +221,7 @@ async fn create_test_chat_session(
                 system_prompt_ciphertext: None,
                 system_prompt_nonce: None,
             };
-            
+
             diesel::insert_into(schema::chat_sessions::table)
                 .values(&new_session)
                 .returning(DbChat::as_select())
@@ -230,7 +230,7 @@ async fn create_test_chat_session(
         .await
         .map_err(|e| anyhow::anyhow!("Database interaction failed: {}", e))?
         .context("Failed to insert chat session into database")?;
-    
+
     Ok(session)
 }
 
@@ -292,11 +292,11 @@ async fn fetch_chat_messages(
         .get()
         .await
         .context("Failed to get DB connection from pool")?;
-    
+
     let messages = conn
         .interact(move |conn| {
             use schema::chat_messages::dsl::*;
-            
+
             chat_messages
                 .filter(schema::chat_messages::session_id.eq(session_id))
                 .order(created_at.asc())
@@ -306,10 +306,9 @@ async fn fetch_chat_messages(
         .await
         .map_err(|e| anyhow::anyhow!("Database interaction failed: {}", e))?
         .context("Failed to fetch chat messages from database")?;
-    
+
     Ok(messages)
 }
-
 
 #[tokio::test]
 // #[ignore] // Added ignore for CI
@@ -333,13 +332,8 @@ async fn test_generate_chat_response_triggers_embeddings() -> anyhow::Result<()>
         "Char for Embed Trigger".to_string(),
     )
     .await?;
-    
-    let session = create_test_chat_session(
-        &test_app.db_pool,
-        user.id,
-        character.id,
-    )
-    .await?;
+
+    let session = create_test_chat_session(&test_app.db_pool, user.id, character.id).await?;
 
     // Mock the AI response
     let mock_ai_content = "Response to trigger embedding.";
@@ -462,20 +456,11 @@ async fn test_generate_chat_response_triggers_embeddings_with_existing_session()
     let auth_cookie = login_and_get_cookie(&test_app, &user.username, "password").await?;
 
     // Use helper functions
-    let character = create_test_character(
-        &test_app.db_pool,
-        user.id,
-        "Embed Test Char".to_string(),
-    )
-    .await?;
-    
-    let session = create_test_chat_session(
-        &test_app.db_pool,
-        user.id,
-        character.id,
-    )
-    .await?;
-    
+    let character =
+        create_test_character(&test_app.db_pool, user.id, "Embed Test Char".to_string()).await?;
+
+    let session = create_test_chat_session(&test_app.db_pool, user.id, character.id).await?;
+
     // Create an existing message in the session
     let _ = test_app
         .db_pool
@@ -498,6 +483,8 @@ async fn test_generate_chat_response_triggers_embeddings_with_existing_session()
                 attachments: None,
                 prompt_tokens: None,
                 completion_tokens: None,
+                raw_prompt_ciphertext: None,
+                raw_prompt_nonce: None,
             };
             diesel::insert_into(chat_messages::table)
                 .values(&new_message)
@@ -871,16 +858,15 @@ async fn test_rag_context_injection_in_prompt() -> anyhow::Result<()> {
         2. <character_definition>: The core definition and personality of the character '{}'.\n\
         3. <character_details>: Additional descriptive information about '{}'.\n\
         4. <lorebook_entries>: Relevant background information about the world, other characters, or plot points.\n\
-        5. <story_so_far>: The existing dialogue and narration.\n\n\
+        5. The conversation history contains the story so far - the existing dialogue and narration.\n\n\
         Key Writing Principles:\n\
         - Focus on the direct consequences of the User's actions.\n\
         - Describe newly encountered people, places, or significant objects only once. The Human will remember.\n\
         - Maintain character believability. Characters have their own motivations and will not always agree with the User. They should react realistically based on their personalities and the situation.\n\
         - End your responses with action or dialogue to maintain active immersion. Avoid summarization or out-of-character commentary.\n\n\
         [System Instructions End]\n\
-        Based on all the above and the story so far, write the next part of the story as the narrator and any relevant non-player characters. Ensure your response is engaging and moves the story forward.",
-        character.name,
-        character.name // Use the character's name from the test context
+        Based on all the above information and the conversation history, write the next part of the story as the narrator and any relevant non-player characters. Ensure your response is engaging and moves the story forward.",
+        character.name, character.name
     );
     assert_eq!(
         last_ai_request.system.as_deref(),
@@ -902,11 +888,11 @@ async fn test_rag_context_injection_in_prompt() -> anyhow::Result<()> {
         RetrievedMetadata::Lorebook(_) => "Unknown", // Should not happen in this test based on mock_retrieved_chunk setup
     };
     let expected_rag_chunk_text = format!(
-        "- Chat (Speaker: {}): {}", // Removed score as it's not in the new format
+        "- Chat (Speaker: {}): {}",
         speaker_from_meta,
         mock_chunk_text.trim()
     );
-    let expected_rag_context_header = "---\nRelevant Context:\n"; // Updated to match actual generated header
+    let expected_rag_context_header = "---\nRelevant Context:\n";
 
     if let genai::chat::MessageContent::Text(user_content) =
         &last_user_message_in_ai_request.content
@@ -1185,17 +1171,15 @@ async fn generate_chat_response_rag_retrieval_error() -> anyhow::Result<()> {
         1. <persona_override_prompt>: Specific instructions or style preferences from the User (if any).\n\
         2. <character_definition>: The core definition and personality of the character '{}'.\n\
         3. <character_details>: Additional descriptive information about '{}'.\n\
-        4. <lorebook_entries>: Relevant background information about the world, other characters, or plot points.\n\
-        5. <story_so_far>: The existing dialogue and narration.\n\n\
+        4. The conversation history contains the story so far - the existing dialogue and narration.\n\n\
         Key Writing Principles:\n\
         - Focus on the direct consequences of the User's actions.\n\
         - Describe newly encountered people, places, or significant objects only once. The Human will remember.\n\
         - Maintain character believability. Characters have their own motivations and will not always agree with the User. They should react realistically based on their personalities and the situation.\n\
         - End your responses with action or dialogue to maintain active immersion. Avoid summarization or out-of-character commentary.\n\n\
         [System Instructions End]\n\
-        Based on all the above and the story so far, write the next part of the story as the narrator and any relevant non-player characters. Ensure your response is engaging and moves the story forward.",
-        character.name,
-        character.name // Use the character's name from the test context
+        Based on all the above information and the conversation history, write the next part of the story as the narrator and any relevant non-player characters. Ensure your response is engaging and moves the story forward.",
+        character.name, character.name
     );
     assert_eq!(
         last_ai_request.system.as_deref(),
@@ -1691,15 +1675,14 @@ async fn generate_chat_response_rag_success() -> anyhow::Result<()> {
         1. <persona_override_prompt>: Specific instructions or style preferences from the User (if any).\n\
         2. <character_definition>: The core definition and personality of the character '{}'.\n\
         3. <character_details>: Additional descriptive information about '{}'.\n\
-        4. <lorebook_entries>: Relevant background information about the world, other characters, or plot points.\n\
-        5. <story_so_far>: The existing dialogue and narration.\n\n\
+        4. The conversation history contains the story so far - the existing dialogue and narration.\n\n\
         Key Writing Principles:\n\
         - Focus on the direct consequences of the User's actions.\n\
         - Describe newly encountered people, places, or significant objects only once. The Human will remember.\n\
         - Maintain character believability. Characters have their own motivations and will not always agree with the User. They should react realistically based on their personalities and the situation.\n\
         - End your responses with action or dialogue to maintain active immersion. Avoid summarization or out-of-character commentary.\n\n\
         [System Instructions End]\n\
-        Based on all the above and the story so far, write the next part of the story as the narrator and any relevant non-player characters. Ensure your response is engaging and moves the story forward.",
+        Based on all the above information and the conversation history, write the next part of the story as the narrator and any relevant non-player characters. Ensure your response is engaging and moves the story forward.",
         context.character.name, context.character.name
     );
     assert_eq!(
@@ -1824,15 +1807,14 @@ async fn generate_chat_response_rag_empty_history_success() -> anyhow::Result<()
         1. <persona_override_prompt>: Specific instructions or style preferences from the User (if any).\n\
         2. <character_definition>: The core definition and personality of the character '{}'.\n\
         3. <character_details>: Additional descriptive information about '{}'.\n\
-        4. <lorebook_entries>: Relevant background information about the world, other characters, or plot points.\n\
-        5. <story_so_far>: The existing dialogue and narration.\n\n\
+        4. The conversation history contains the story so far - the existing dialogue and narration.\n\n\
         Key Writing Principles:\n\
         - Focus on the direct consequences of the User's actions.\n\
         - Describe newly encountered people, places, or significant objects only once. The Human will remember.\n\
         - Maintain character believability. Characters have their own motivations and will not always agree with the User. They should react realistically based on their personalities and the situation.\n\
         - End your responses with action or dialogue to maintain active immersion. Avoid summarization or out-of-character commentary.\n\n\
         [System Instructions End]\n\
-        Based on all the above and the story so far, write the next part of the story as the narrator and any relevant non-player characters. Ensure your response is engaging and moves the story forward.",
+        Based on all the above information and the conversation history, write the next part of the story as the narrator and any relevant non-player characters. Ensure your response is engaging and moves the story forward.",
         context.character.name, context.character.name
     );
     assert_eq!(
@@ -1954,15 +1936,14 @@ async fn generate_chat_response_rag_no_relevant_chunks_found() -> anyhow::Result
         1. <persona_override_prompt>: Specific instructions or style preferences from the User (if any).\n\
         2. <character_definition>: The core definition and personality of the character '{}'.\n\
         3. <character_details>: Additional descriptive information about '{}'.\n\
-        4. <lorebook_entries>: Relevant background information about the world, other characters, or plot points.\n\
-        5. <story_so_far>: The existing dialogue and narration.\n\n\
+        4. The conversation history contains the story so far - the existing dialogue and narration.\n\n\
         Key Writing Principles:\n\
         - Focus on the direct consequences of the User's actions.\n\
         - Describe newly encountered people, places, or significant objects only once. The Human will remember.\n\
         - Maintain character believability. Characters have their own motivations and will not always agree with the User. They should react realistically based on their personalities and the situation.\n\
         - End your responses with action or dialogue to maintain active immersion. Avoid summarization or out-of-character commentary.\n\n\
         [System Instructions End]\n\
-        Based on all the above and the story so far, write the next part of the story as the narrator and any relevant non-player characters. Ensure your response is engaging and moves the story forward.",
+        Based on all the above information and the conversation history, write the next part of the story as the narrator and any relevant non-player characters. Ensure your response is engaging and moves the story forward.",
         context.character.name, context.character.name
     );
     assert_eq!(

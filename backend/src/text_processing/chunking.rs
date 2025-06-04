@@ -157,17 +157,40 @@ fn chunk_recursive(
     trace!(segment_size, context.config.max_size, "Processing segment.");
 
     // Try splitting by major separators first
-    if try_split_by_major_separators(segment, segment_size, context, source_id, current_offset, separators, chunks)? {
+    if try_split_by_major_separators(
+        segment,
+        segment_size,
+        context,
+        source_id,
+        current_offset,
+        separators,
+        chunks,
+    )? {
         return Ok(());
     }
 
     // Check if segment fits (base case)
-    if handle_base_case(segment, segment_size, context, source_id, current_offset, chunks) {
+    if handle_base_case(
+        segment,
+        segment_size,
+        context,
+        source_id,
+        current_offset,
+        chunks,
+    ) {
         return Ok(());
     }
 
     // Try sentence splitting and fallback
-    handle_large_segment_splitting(segment, segment_size, context, source_id, current_offset, separators, chunks)?;
+    handle_large_segment_splitting(
+        segment,
+        segment_size,
+        context,
+        source_id,
+        current_offset,
+        separators,
+        chunks,
+    )?;
 
     trace!("chunk_recursive finished for offset {}", current_offset);
     Ok(())
@@ -190,8 +213,11 @@ fn try_split_by_major_separators(
             context.config.metric,
             context.word_segmenter,
         ) {
-            trace!(separator, split_index, "Found split point by major separator.");
-            
+            trace!(
+                separator,
+                split_index, "Found split point by major separator."
+            );
+
             if execute_major_separator_split(
                 SplitParams {
                     segment,
@@ -209,7 +235,10 @@ fn try_split_by_major_separators(
                 return Ok(true);
             }
         }
-        trace!(separator, "No suitable split point found by major separator.");
+        trace!(
+            separator,
+            "No suitable split point found by major separator."
+        );
     }
     Ok(false)
 }
@@ -238,16 +267,32 @@ fn execute_major_separator_split(
     let part1_trimmed = part1.trim_end();
     let part2_trimmed = part2.trim_start();
 
-    let part1_size = measure_size(part1_trimmed, processing_context.context.config.metric, processing_context.context.word_segmenter);
-    let part2_size = measure_size(part2_trimmed, processing_context.context.config.metric, processing_context.context.word_segmenter);
+    let part1_size = measure_size(
+        part1_trimmed,
+        processing_context.context.config.metric,
+        processing_context.context.word_segmenter,
+    );
+    let part2_size = measure_size(
+        part2_trimmed,
+        processing_context.context.config.metric,
+        processing_context.context.word_segmenter,
+    );
 
-    let is_productive = (part1_size < split_params.segment_size || part2_size < split_params.segment_size)
+    let is_productive = (part1_size < split_params.segment_size
+        || part2_size < split_params.segment_size)
         && part1_size <= split_params.segment_size
         && part2_size <= split_params.segment_size;
 
     if is_productive {
-        chunk_recursive(part1_trimmed, processing_context.context, processing_context.source_id, processing_context.current_offset, processing_context.separators, chunks)?;
-        
+        chunk_recursive(
+            part1_trimmed,
+            processing_context.context,
+            processing_context.source_id,
+            processing_context.current_offset,
+            processing_context.separators,
+            chunks,
+        )?;
+
         let offset_increase = part1.chars().count();
         chunk_recursive(
             part2_trimmed,
@@ -276,7 +321,10 @@ fn handle_base_case(
         if segment.trim().is_empty() {
             trace!("Segment is empty after trim, skipping.");
         } else {
-            trace!("Base case: Segment fits (size {} <= max {}). Adding chunk.", segment_size, context.config.max_size);
+            trace!(
+                "Base case: Segment fits (size {} <= max {}). Adding chunk.",
+                segment_size, context.config.max_size
+            );
             chunks.push(TextChunk {
                 content: segment.to_string(),
                 source_id: source_id.map(String::from),
@@ -284,7 +332,10 @@ fn handle_base_case(
                 end_index: current_offset + segment.chars().count(),
             });
         }
-        trace!("chunk_recursive finished for offset {} (Base Case)", current_offset);
+        trace!(
+            "chunk_recursive finished for offset {} (Base Case)",
+            current_offset
+        );
         return true;
     }
     false
@@ -299,14 +350,17 @@ fn handle_large_segment_splitting(
     separators: &[&str],
     chunks: &mut Vec<TextChunk>,
 ) -> Result<(), AppError> {
-    trace!("Segment too large ({} > {}), no major split. Trying sentence splitting.", segment_size, context.config.max_size);
-    
+    trace!(
+        "Segment too large ({} > {}), no major split. Trying sentence splitting.",
+        segment_size, context.config.max_size
+    );
+
     let sentence_context = SentenceSplitContext {
         separators,
         sentence_segmenter: context.sentence_segmenter,
         word_segmenter: context.word_segmenter,
     };
-    
+
     let sentence_split_succeeded = try_split_by_sentences(
         segment,
         segment_size,
@@ -318,9 +372,16 @@ fn handle_large_segment_splitting(
     )?;
 
     if !sentence_split_succeeded {
-        apply_fallback_splitting(segment, segment_size, context, source_id, current_offset, chunks);
+        apply_fallback_splitting(
+            segment,
+            segment_size,
+            context,
+            source_id,
+            current_offset,
+            chunks,
+        );
     }
-    
+
     Ok(())
 }
 
@@ -332,9 +393,16 @@ fn apply_fallback_splitting(
     current_offset: usize,
     chunks: &mut Vec<TextChunk>,
 ) {
-    warn!(segment_size, context.config.max_size, "Segment still too large after trying separators and sentences. Applying fallback split.");
-    trace!("Fallback: Segment too large (size {} > max {}). Calling split_fallback.", segment_size, context.config.max_size);
-    
+    warn!(
+        segment_size,
+        context.config.max_size,
+        "Segment still too large after trying separators and sentences. Applying fallback split."
+    );
+    trace!(
+        "Fallback: Segment too large (size {} > max {}). Calling split_fallback.",
+        segment_size, context.config.max_size
+    );
+
     split_fallback(
         segment,
         context.config,
@@ -427,7 +495,14 @@ fn split_fallback(
 ) {
     trace!("Executing fallback split.");
     if config.metric == ChunkingMetric::Word {
-        split_fallback_by_words(segment, config, source_id, current_offset, word_segmenter, chunks);
+        split_fallback_by_words(
+            segment,
+            config,
+            source_id,
+            current_offset,
+            word_segmenter,
+            chunks,
+        );
     } else {
         split_fallback_by_characters(segment, config, source_id, current_offset, chunks);
     }
@@ -463,7 +538,6 @@ fn split_fallback_by_words(
     }
 }
 
-
 /// Context for word chunk processing
 struct WordChunkContext<'a> {
     segment: &'a str,
@@ -474,10 +548,7 @@ struct WordChunkContext<'a> {
 }
 
 /// Calculate the start byte for a word chunk
-const fn calculate_chunk_start_byte(
-    word_index: usize,
-    word_byte_indices: &[usize],
-) -> usize {
+const fn calculate_chunk_start_byte(word_index: usize, word_byte_indices: &[usize]) -> usize {
     if word_index == 0 {
         0
     } else {
@@ -487,19 +558,16 @@ const fn calculate_chunk_start_byte(
 }
 
 /// Calculate the end byte for a word chunk, with bounds checking
-fn calculate_chunk_end_byte(
-    end_word_index: usize,
-    word_byte_indices: &[usize],
-) -> usize {
+fn calculate_chunk_end_byte(end_word_index: usize, word_byte_indices: &[usize]) -> usize {
     let chunk_end_byte_index = end_word_index.saturating_sub(1);
-    
+
     if chunk_end_byte_index >= word_byte_indices.len() {
         warn!(
             "Calculated chunk_end_byte_index {} is out of bounds for word_byte_indices (len {}). Clamping.",
             chunk_end_byte_index,
             word_byte_indices.len()
         );
-        
+
         if word_byte_indices.is_empty() {
             trace!("WARN: word_byte_indices is empty, cannot determine end byte.");
             return 0; // Return 0 to indicate error condition
@@ -519,26 +587,23 @@ fn create_text_chunk_from_slice(
 ) -> Option<TextChunk> {
     let chunk_content_original = &ctx.segment[chunk_start_byte..chunk_end_byte];
     let chunk_content_trimmed = chunk_content_original.trim();
-    
+
     if chunk_content_trimmed.is_empty() {
         return None;
     }
-    
+
     let original_word_count = count_icu_words(chunk_content_original, word_segmenter);
     let trimmed_word_count = count_icu_words(chunk_content_trimmed, word_segmenter);
-    
+
     trace!(
-        "Original Content Slice (Word Count: {})", 
+        "Original Content Slice (Word Count: {})",
         original_word_count
     );
-    trace!(
-        "Trimmed Content Slice (Word Count: {})", 
-        trimmed_word_count
-    );
-    
+    trace!("Trimmed Content Slice (Word Count: {})", trimmed_word_count);
+
     let chunk_start_index_char_offset = ctx.segment[0..chunk_start_byte].chars().count();
     let final_chunk_start_offset = ctx.current_offset + chunk_start_index_char_offset;
-    
+
     trace!(
         "Adding chunk (Word Count: {}, Char Count: {}), Range: {}..{}",
         trimmed_word_count,
@@ -546,7 +611,7 @@ fn create_text_chunk_from_slice(
         final_chunk_start_offset,
         final_chunk_start_offset + chunk_content_trimmed.chars().count()
     );
-    
+
     Some(TextChunk {
         content: chunk_content_trimmed.to_string(),
         source_id: ctx.source_id.map(String::from),
@@ -565,7 +630,7 @@ fn handle_invalid_chunk_boundaries(
         "Skipping chunk creation: chunk_start_byte ({}) >= chunk_end_byte ({})",
         current_start, current_end
     );
-    
+
     let effective_end = if current_start == current_end {
         trace!(
             "WARN: Start and End word indices are the same ({}). Forcing advance.",
@@ -575,12 +640,12 @@ fn handle_invalid_chunk_boundaries(
     } else {
         current_end
     };
-    
+
     trace!(
         "Advancing start word index from {} to {}",
         current_start, effective_end
     );
-    
+
     effective_end
 }
 
@@ -594,18 +659,18 @@ fn calculate_word_chunk_boundaries(
         current_start_word_index + config.max_size,
         ctx.num_words_in_segment,
     );
-    
-    let chunk_start_byte = calculate_chunk_start_byte(
-        current_start_word_index,
-        ctx.word_byte_indices,
-    );
-    
-    let chunk_end_byte = calculate_chunk_end_byte(
+
+    let chunk_start_byte =
+        calculate_chunk_start_byte(current_start_word_index, ctx.word_byte_indices);
+
+    let chunk_end_byte =
+        calculate_chunk_end_byte(current_chunk_end_word_index, ctx.word_byte_indices);
+
+    (
         current_chunk_end_word_index,
-        ctx.word_byte_indices,
-    );
-    
-    (current_chunk_end_word_index, chunk_start_byte, chunk_end_byte)
+        chunk_start_byte,
+        chunk_end_byte,
+    )
 }
 
 /// Process a single word chunk iteration
@@ -616,15 +681,12 @@ fn process_single_word_chunk_iteration(
     word_segmenter: &WordSegmenter,
     chunks: &mut Vec<TextChunk>,
 ) -> bool {
-    create_text_chunk_from_slice(
-        ctx,
-        chunk_start_byte,
-        chunk_end_byte,
-        word_segmenter,
-    ).is_some_and(|chunk| {
-        chunks.push(chunk);
-        true
-    })
+    create_text_chunk_from_slice(ctx, chunk_start_byte, chunk_end_byte, word_segmenter).is_some_and(
+        |chunk| {
+            chunks.push(chunk);
+            true
+        },
+    )
 }
 
 /// Check if word processing should terminate
@@ -653,7 +715,7 @@ fn handle_valid_word_chunk_boundaries(
         word_segmenter,
         chunks,
     );
-    
+
     // Move to the next chunk start
     trace!(
         "Advancing start word index from {} to {}",
@@ -698,9 +760,9 @@ fn get_word_chunk_boundaries(
     config: &ChunkConfig,
     ctx: &WordChunkContext<'_>,
 ) -> WordChunkBoundaries {
-    let (end_word_index, start_byte, end_byte) = 
+    let (end_word_index, start_byte, end_byte) =
         calculate_word_chunk_boundaries(start_index, config, ctx);
-    
+
     WordChunkBoundaries {
         end_word_index,
         start_byte,
@@ -709,10 +771,7 @@ fn get_word_chunk_boundaries(
 }
 
 /// Log the boundaries for debugging
-fn log_chunk_iteration_info(
-    start_index: usize,
-    boundaries: &WordChunkBoundaries,
-) {
+fn log_chunk_iteration_info(start_index: usize, boundaries: &WordChunkBoundaries) {
     log_word_chunk_boundaries(
         start_index,
         boundaries.end_word_index,
@@ -764,15 +823,15 @@ fn process_word_chunk_iteration(
     chunks: &mut Vec<TextChunk>,
 ) -> usize {
     let boundaries = get_word_chunk_boundaries(current_start_word_index, config, ctx);
-    
+
     log_chunk_iteration_info(current_start_word_index, &boundaries);
-    
+
     let params = ChunkProcessingParams {
         current_start_word_index,
         ctx,
         word_segmenter,
     };
-    
+
     if are_boundaries_valid(&boundaries) {
         process_valid_chunk(&params, &boundaries, chunks)
     } else {
@@ -791,9 +850,9 @@ fn process_word_chunks(
         num_words = ctx.num_words_in_segment,
         "Fallback: Splitting by words."
     );
-    
+
     let mut current_chunk_start_word_index = 0;
-    
+
     while current_chunk_start_word_index < ctx.num_words_in_segment {
         let next_start_index = process_word_chunk_iteration(
             current_chunk_start_word_index,
@@ -802,16 +861,12 @@ fn process_word_chunks(
             word_segmenter,
             chunks,
         );
-        
+
         // Check for termination condition
-        if should_terminate_word_processing(
-            current_chunk_start_word_index,
-            next_start_index,
-            ctx,
-        ) {
+        if should_terminate_word_processing(current_chunk_start_word_index, next_start_index, ctx) {
             break;
         }
-        
+
         current_chunk_start_word_index = next_start_index;
         trace!("-- End Fallback Word Loop Iteration --");
     }
@@ -903,7 +958,10 @@ fn find_best_split_point(
 /// Generate overlap text for character-based chunking
 fn generate_char_overlap(prev_content: &str, overlap_size: usize) -> String {
     let overlap_start_char = prev_content.chars().count().saturating_sub(overlap_size);
-    prev_content.chars().skip(overlap_start_char).collect::<String>()
+    prev_content
+        .chars()
+        .skip(overlap_start_char)
+        .collect::<String>()
 }
 
 /// Calculate word overlap start byte index
@@ -932,15 +990,17 @@ fn generate_word_overlap(
 ) -> String {
     let word_indices: Vec<usize> = word_segmenter.segment_str(prev_content).collect();
     let actual_overlap_word_count = min(overlap_size, word_indices.len());
-    
+
     if actual_overlap_word_count == 0 {
         return String::new();
     }
-    
+
     let overlap_start_word_idx = word_indices.len() - actual_overlap_word_count;
-    let overlap_start_byte = calculate_word_overlap_start_byte(&word_indices, overlap_start_word_idx);
-    
-    if overlap_start_byte < prev_content.len() && prev_content.is_char_boundary(overlap_start_byte) {
+    let overlap_start_byte =
+        calculate_word_overlap_start_byte(&word_indices, overlap_start_word_idx);
+
+    if overlap_start_byte < prev_content.len() && prev_content.is_char_boundary(overlap_start_byte)
+    {
         prev_content[overlap_start_byte..].to_string()
     } else {
         warn!(
@@ -960,7 +1020,9 @@ fn generate_overlap_text(
 ) -> String {
     match config.metric {
         ChunkingMetric::Char => generate_char_overlap(&prev_chunk.content, config.overlap),
-        ChunkingMetric::Word => generate_word_overlap(&prev_chunk.content, config.overlap, word_segmenter),
+        ChunkingMetric::Word => {
+            generate_word_overlap(&prev_chunk.content, config.overlap, word_segmenter)
+        }
     }
 }
 
@@ -971,7 +1033,7 @@ fn apply_overlap_to_chunk(current_chunk: &mut TextChunk, overlap_text: String, c
         overlap_len = overlap_text.len(),
         "Prepending overlap."
     );
-    
+
     let mut new_content = overlap_text;
     if !new_content.ends_with(char::is_whitespace)
         && !current_chunk.content.starts_with(char::is_whitespace)
@@ -983,33 +1045,29 @@ fn apply_overlap_to_chunk(current_chunk: &mut TextChunk, overlap_text: String, c
 }
 
 /// Applies overlap between consecutive chunks. Modifies the chunks in place.
-fn apply_overlap(
-    chunks: &mut [TextChunk],
-    config: &ChunkConfig,
-    word_segmenter: &WordSegmenter,
-) {
+fn apply_overlap(chunks: &mut [TextChunk], config: &ChunkConfig, word_segmenter: &WordSegmenter) {
     if config.overlap == 0 || chunks.len() < 2 {
         return;
     }
-    
+
     trace!(
         overlap = config.overlap,
         num_chunks = chunks.len(),
         "Applying overlap."
     );
-    
+
     for i in (1..chunks.len()).rev() {
         let (prev_chunk_slice, current_chunk_slice) = chunks.split_at_mut(i);
         let prev_chunk = &prev_chunk_slice[i - 1];
         let current_chunk = &mut current_chunk_slice[0];
-        
+
         let overlap_text = generate_overlap_text(prev_chunk, config, word_segmenter);
-        
+
         if !overlap_text.is_empty() {
             apply_overlap_to_chunk(current_chunk, overlap_text, i);
         }
     }
-    
+
     trace!("Overlap application finished.");
 }
 

@@ -1,4 +1,3 @@
-
 use crate::client::HttpClient;
 use crate::client::types::{
     AdminUserDetailResponse,
@@ -79,7 +78,6 @@ pub struct MockIoHandler {
     inputs: RefCell<VecDeque<String>>,
     outputs: RefCell<Vec<String>>,
 }
-
 
 impl MockIoHandler {
     pub fn new(inputs: Vec<String>) -> Self {
@@ -221,10 +219,8 @@ pub struct MockHttpClient {
     pub called_endpoints: Arc<std::sync::Mutex<Vec<String>>>,
 
     // Expected endpoint patterns for validation
-    
     pub expected_endpoints: Arc<std::sync::Mutex<std::collections::HashMap<String, String>>>,
 }
-
 
 impl MockHttpClient {
     pub fn new() -> Self {
@@ -1114,5 +1110,7 @@ pub fn mock_chat_message(
         created_at: Utc::now(),
         prompt_tokens: None,
         completion_tokens: None,
+        raw_prompt_ciphertext: None,
+        raw_prompt_nonce: None,
     }
 }

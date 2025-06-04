@@ -31,7 +31,7 @@ use scribe_backend::{
 #[tokio::test]
 #[ignore] // Added ignore for CI
 #[allow(clippy::too_many_lines)]
-    async fn generate_chat_response_streaming_ai_error() {
+async fn generate_chat_response_streaming_ai_error() {
     let test_app = test_helpers::spawn_app(false, false, false).await;
 
     // Skip if running as integration test with real client
@@ -238,11 +238,19 @@ use scribe_backend::{
         );
         if expected.data.starts_with('{') || expected.data.starts_with('[') {
             let actual_json: serde_json::Value =
-                serde_json::from_str(&actual.data).unwrap_or_else(|_| panic!("Actual data at index {} is not valid JSON: {}",
-                    i, actual.data));
-            let expected_json: serde_json::Value =
-                serde_json::from_str(&expected.data).unwrap_or_else(|_| panic!("Expected data at index {} is not valid JSON: {}",
-                    i, expected.data));
+                serde_json::from_str(&actual.data).unwrap_or_else(|_| {
+                    panic!(
+                        "Actual data at index {} is not valid JSON: {}",
+                        i, actual.data
+                    )
+                });
+            let expected_json: serde_json::Value = serde_json::from_str(&expected.data)
+                .unwrap_or_else(|_| {
+                    panic!(
+                        "Expected data at index {} is not valid JSON: {}",
+                        i, expected.data
+                    )
+                });
             assert_eq!(
                 actual_json, expected_json,
                 "Event data JSON mismatch at index {i}"
@@ -329,7 +337,7 @@ use scribe_backend::{
 #[tokio::test]
 #[ignore] // Ignore for CI unless DB and real AI are guaranteed
 #[allow(clippy::too_many_lines)]
-    async fn generate_chat_response_streaming_initiation_error() {
+async fn generate_chat_response_streaming_initiation_error() {
     let test_app = test_helpers::spawn_app(false, false, false).await;
 
     if std::env::var("RUN_INTEGRATION_TESTS").is_ok() {
@@ -570,7 +578,7 @@ use scribe_backend::{
 #[tokio::test]
 #[ignore] // Ignore for CI unless DB is guaranteed
 #[allow(clippy::too_many_lines)]
-    async fn generate_chat_response_streaming_error_before_content() {
+async fn generate_chat_response_streaming_error_before_content() {
     let test_app = test_helpers::spawn_app(false, false, false).await; // Corrected: Added third arg
 
     if std::env::var("RUN_INTEGRATION_TESTS").is_ok() {
@@ -826,7 +834,7 @@ use scribe_backend::{
 #[tokio::test]
 #[ignore] // Added ignore for CI
 #[allow(clippy::too_many_lines)]
-    async fn generate_chat_response_streaming_genai_json_error() {
+async fn generate_chat_response_streaming_genai_json_error() {
     let test_app = test_helpers::spawn_app(false, false, false).await; // Corrected: Added third arg
 
     if std::env::var("RUN_INTEGRATION_TESTS").is_ok() {
@@ -974,6 +982,8 @@ use scribe_backend::{
                 attachments: None,
                 prompt_tokens: None,
                 completion_tokens: None,
+                raw_prompt_ciphertext: None,
+                raw_prompt_nonce: None,
             };
             diesel::insert_into(chat_messages_dsl::chat_messages)
                 .values(&new_message)
@@ -1064,11 +1074,19 @@ use scribe_backend::{
         );
         if expected.data.starts_with('{') || expected.data.starts_with('[') {
             let actual_json: serde_json::Value =
-                serde_json::from_str(&actual.data).unwrap_or_else(|_| panic!("Actual data at index {} is not valid JSON: {}",
-                    i, actual.data));
-            let expected_json: serde_json::Value =
-                serde_json::from_str(&expected.data).unwrap_or_else(|_| panic!("Expected data at index {} is not valid JSON: {}",
-                    i, expected.data));
+                serde_json::from_str(&actual.data).unwrap_or_else(|_| {
+                    panic!(
+                        "Actual data at index {} is not valid JSON: {}",
+                        i, actual.data
+                    )
+                });
+            let expected_json: serde_json::Value = serde_json::from_str(&expected.data)
+                .unwrap_or_else(|_| {
+                    panic!(
+                        "Expected data at index {} is not valid JSON: {}",
+                        i, expected.data
+                    )
+                });
             assert_eq!(
                 actual_json, expected_json,
                 "Event data JSON mismatch at index {i}"
@@ -1118,8 +1136,10 @@ use scribe_backend::{
     assert_eq!(initial_user_msg_db.message_type, MessageRole::User);
     // Decrypt and assert content for initial_user_msg_db
     let initial_user_content_str = initial_user_msg_db.content_nonce.as_ref().map_or_else(
-        || String::from_utf8(initial_user_msg_db.content.clone())
-            .expect("Failed to convert initial user message content to string (unencrypted)"),
+        || {
+            String::from_utf8(initial_user_msg_db.content.clone())
+                .expect("Failed to convert initial user message content to string (unencrypted)")
+        },
         |nonce| {
             let decrypted_bytes = scribe_backend::crypto::decrypt_gcm(
                 &initial_user_msg_db.content,

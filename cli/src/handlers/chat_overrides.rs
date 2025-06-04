@@ -72,9 +72,7 @@ pub async fn handle_chat_edit_character_wizard<H: IoHandler, C: HttpClient>(
     io_handler.write_line("Fetching chat session details...")?;
     let chat_session = client.get_chat_session(session_id).await.map_err(|e| {
         io_handler
-            .write_line(&format!(
-                "Failed to fetch chat session {session_id}: {e}"
-            ))
+            .write_line(&format!("Failed to fetch chat session {session_id}: {e}"))
             .ok();
         e
     })?;
@@ -122,11 +120,13 @@ pub async fn handle_chat_edit_character_wizard<H: IoHandler, C: HttpClient>(
     io_handler.write_line("\n--- Select Field to Override ---")?;
     // Define overridable fields based on plan (description, personality, first_mes initially)
     // Extend this list as more fields become overridable.
-    let overridable_fields = ["description",
+    let overridable_fields = [
+        "description",
         "personality",
         "first_mes",
         "system_prompt",
-        "scenario"];
+        "scenario",
+    ];
     for (idx, field) in overridable_fields.iter().enumerate() {
         io_handler.write_line(&format!("[{}] {}", idx + 1, field))?;
     }
@@ -188,9 +188,7 @@ pub async fn handle_chat_edit_character_wizard<H: IoHandler, C: HttpClient>(
 
     if crate::handlers::characters::prompt_yes_no(
         io_handler,
-        &format!(
-            "\nApply override for '{field_to_override}' to '{new_value}'? (Y/n)"
-        ),
+        &format!("\nApply override for '{field_to_override}' to '{new_value}'? (Y/n)"),
     )? {
         match client
             .set_chat_character_override(session_id, field_to_override.clone(), new_value.clone())

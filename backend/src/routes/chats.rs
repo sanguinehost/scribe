@@ -1,9 +1,8 @@
+use crate::PgPool; // Added PgPool import
 use crate::auth::session_dek::SessionDek; // Added SessionDek
 use crate::auth::user_store::Backend as AuthBackend;
 use crate::crypto; // Added crypto for encryption/decryption
 use crate::errors::AppError;
-use crate::models::users::User; // Added User import
-use crate::PgPool; // Added PgPool import
 use crate::models::chat_override::CharacterOverrideDto; // Added for override handler
 use crate::models::chats::{
     Chat,
@@ -18,6 +17,7 @@ use crate::models::chats::{
     Vote,                        // Now available
     VoteRequest,                 // Now available
 };
+use crate::models::users::User; // Added User import
 use crate::schema::{chat_messages, chat_sessions};
 use axum::{
     Router,
@@ -80,9 +80,9 @@ pub fn chat_routes() -> Router<crate::state::AppState> {
 }
 
 /// Sets character overrides for a chat session.
-/// 
+///
 /// # Errors
-/// 
+///
 /// Returns an error if:
 /// - Authentication fails
 /// - Session does not exist or access is denied
@@ -154,9 +154,9 @@ pub async fn set_chat_character_override_handler(
 }
 
 /// Retrieves chat sessions for a specific character for the current user.
-/// 
+///
 /// # Errors
-/// 
+///
 /// Returns an error if:
 /// - Authentication fails
 /// - Character access is denied
@@ -200,9 +200,9 @@ pub async fn get_chats_by_character_handler(
 
 // Get all chats for current user
 /// Retrieves all chat sessions for the current user.
-/// 
+///
 /// # Errors
-/// 
+///
 /// Returns an error if:
 /// - Authentication fails
 /// - Database operation fails
@@ -244,9 +244,9 @@ pub async fn get_chats_handler(
 
 // Create a new chat
 /// Creates a new chat session.
-/// 
+///
 /// # Errors
-/// 
+///
 /// Returns an error if:
 /// - Authentication fails
 /// - Validation fails
@@ -333,9 +333,9 @@ pub async fn create_chat_handler(
 
 // Get a chat by ID
 /// Retrieves a specific chat session by ID.
-/// 
+///
 /// # Errors
-/// 
+///
 /// Returns an error if:
 /// - Authentication fails
 /// - Chat not found or access denied
@@ -375,9 +375,9 @@ pub async fn get_chat_by_id_handler(
 
 // Delete a chat
 /// Deletes a chat session by ID.
-/// 
+///
 /// # Errors
-/// 
+///
 /// Returns an error if:
 /// - Authentication fails
 /// - Chat not found or access denied
@@ -428,9 +428,9 @@ pub async fn delete_chat_handler(
 
 // Get messages for a chat
 /// Retrieves all messages for a specific chat session.
-/// 
+///
 /// # Errors
-/// 
+///
 /// Returns an error if:
 /// - Authentication fails
 /// - Chat not found or access denied
@@ -443,8 +443,7 @@ pub async fn delete_chat_handler(
 ///
 /// Returns `AppError::BadRequest` if the provided string is not a valid UUID format
 fn parse_chat_id(id: &str) -> Result<Uuid, AppError> {
-    Uuid::parse_str(id)
-        .map_err(|_| AppError::BadRequest("Invalid UUID format in path".to_string()))
+    Uuid::parse_str(id).map_err(|_| AppError::BadRequest("Invalid UUID format in path".to_string()))
 }
 
 /// Helper function to get authenticated user
@@ -460,7 +459,8 @@ async fn fetch_and_verify_chat_ownership(
     chat_id: Uuid,
     user_id: Uuid,
 ) -> Result<Chat, AppError> {
-    pool.get().await
+    pool.get()
+        .await
         .map_err(|e| {
             tracing::error!("Failed to get connection from pool: {}", e);
             AppError::DbPoolError(e.to_string())
@@ -477,22 +477,29 @@ fn fetch_chat_with_ownership_check(
     user_id: Uuid,
 ) -> Result<Chat, AppError> {
     tracing::debug!("Fetching chat for id={}", chat_id);
-    
+
     let chat = chat_sessions::table
         .filter(chat_sessions::id.eq(chat_id))
         .select(Chat::as_select())
         .first::<Chat>(conn)
-        .map_err(|e| if e == diesel::result::Error::NotFound {
-            tracing::warn!("Chat with id {} not found", chat_id);
-            AppError::NotFound(format!("Chat session with id {chat_id} not found"))
-        } else {
-            tracing::error!("Database error fetching chat: {}", e);
-            AppError::DatabaseQueryError(e.to_string())
+        .map_err(|e| {
+            if e == diesel::result::Error::NotFound {
+                tracing::warn!("Chat with id {} not found", chat_id);
+                AppError::NotFound(format!("Chat session with id {chat_id} not found"))
+            } else {
+                tracing::error!("Database error fetching chat: {}", e);
+                AppError::DatabaseQueryError(e.to_string())
+            }
         })?;
 
     // Verify ownership
     if chat.user_id != user_id {
-        tracing::warn!("User {} attempted to access chat {} owned by {}", user_id, chat_id, chat.user_id);
+        tracing::warn!(
+            "User {} attempted to access chat {} owned by {}",
+            user_id,
+            chat_id,
+            chat.user_id
+        );
         return Err(AppError::Forbidden);
     }
 
@@ -502,9 +509,13 @@ fn fetch_chat_with_ownership_check(
 
 /// Helper function to fetch messages for a chat session
 async fn fetch_chat_messages(pool: PgPool, chat_id: Uuid) -> Result<Vec<Message>, AppError> {
-    pool.get().await
+    pool.get()
+        .await
         .map_err(|e| {
-            tracing::error!("Failed to get connection from pool for messages query: {}", e);
+            tracing::error!(
+                "Failed to get connection from pool for messages query: {}",
+                e
+            );
             AppError::DbPoolError(e.to_string())
         })?
         .interact(move |conn| {
@@ -514,12 +525,14 @@ async fn fetch_chat_messages(pool: PgPool, chat_id: Uuid) -> Result<Vec<Message>
                 .order_by(chat_messages::created_at.asc())
                 .select(Message::as_select())
                 .load::<Message>(conn);
-            
+
             match &result {
-                Ok(messages) => tracing::debug!("Found {} messages for chat {}", messages.len(), chat_id),
+                Ok(messages) => {
+                    tracing::debug!("Found {} messages for chat {}", messages.len(), chat_id)
+                }
                 Err(e) => tracing::error!("Error fetching messages: {}", e),
             }
-            
+
             result.map_err(|e| AppError::DatabaseQueryError(e.to_string()))
         })
         .await
@@ -535,10 +548,10 @@ fn process_messages_for_response(
     dek: &crate::auth::session_dek::SessionDek,
 ) -> Result<Vec<MessageResponse>, AppError> {
     let mut responses = Vec::new();
-    
+
     for msg_db in messages_db {
         let decrypted_client_message = msg_db.clone().into_decrypted_for_client(Some(&dek.0))?;
-        
+
         // Construct response parts and attachments from original msg_db
         let response_parts = msg_db
             .parts
@@ -557,16 +570,17 @@ fn process_messages_for_response(
             parts: response_parts,
             attachments: response_attachments,
             created_at: decrypted_client_message.created_at,
+            raw_prompt: decrypted_client_message.raw_prompt,
         });
     }
-    
+
     Ok(responses)
 }
 
 /// Retrieves all messages for a specific chat session.
-/// 
+///
 /// # Errors
-/// 
+///
 /// Returns an error if:
 /// - Authentication fails
 /// - Chat not found or access denied
@@ -579,11 +593,11 @@ pub async fn get_messages_by_chat_id_handler(
     Path(id): Path<String>,
 ) -> Result<impl IntoResponse, AppError> {
     tracing::debug!("get_messages_by_chat_id_handler: id (as String) = {}", id);
-    
+
     // Parse and validate input
     let chat_id = parse_chat_id(&id)?;
     let user = get_authenticated_user(auth_session)?;
-    
+
     tracing::debug!("Parsed chat_id = {}, user_id = {}", chat_id, user.id);
 
     // Fetch chat session and verify ownership
@@ -591,7 +605,7 @@ pub async fn get_messages_by_chat_id_handler(
 
     // Fetch messages for the chat
     let messages_db = fetch_chat_messages(state.pool.clone(), chat_id).await?;
-    
+
     // Decrypt and transform messages for response
     let responses = process_messages_for_response(messages_db, &dek)?;
 
@@ -600,9 +614,9 @@ pub async fn get_messages_by_chat_id_handler(
 
 // Create a message
 /// Creates a new message in a chat session.
-/// 
+///
 /// # Errors
-/// 
+///
 /// Returns an error if:
 /// - Authentication fails
 /// - Chat not found or access denied
@@ -653,8 +667,8 @@ pub async fn create_message_handler(
     };
 
     // Save the message
-    let saved_db_message = chat::message_handling::save_message(
-        chat::message_handling::SaveMessageParams {
+    let saved_db_message =
+        chat::message_handling::save_message(chat::message_handling::SaveMessageParams {
             state: Arc::new(state.clone()),
             session_id: chat_id,
             user_id,
@@ -665,9 +679,9 @@ pub async fn create_message_handler(
             attachments: payload.attachments.clone(),
             user_dek_secret_box: user_dek_arc.clone(),
             model_name: chat.model_name.clone(),
-        }
-    )
-    .await?;
+            raw_prompt_debug: None, // Manual message creation doesn't need raw prompt debug
+        })
+        .await?;
 
     // Convert DbChatMessage to ChatMessageForClient to get decrypted content
     // saved_db_message is a ChatMessage. We need to construct a Message to call into_decrypted_for_client.
@@ -686,6 +700,8 @@ pub async fn create_message_handler(
         attachments: payload.attachments.clone(), // From the request payload
         prompt_tokens: saved_db_message.prompt_tokens,
         completion_tokens: saved_db_message.completion_tokens,
+        raw_prompt_ciphertext: saved_db_message.raw_prompt_ciphertext,
+        raw_prompt_nonce: saved_db_message.raw_prompt_nonce,
     };
     let client_message =
         message_for_decryption.into_decrypted_for_client(user_dek_arc.as_deref())?;
@@ -704,6 +720,7 @@ pub async fn create_message_handler(
         parts: response_parts,
         attachments: response_attachments,
         created_at: client_message.created_at,
+        raw_prompt: client_message.raw_prompt,
     };
 
     Ok((StatusCode::CREATED, Json(response)))
@@ -711,9 +728,9 @@ pub async fn create_message_handler(
 
 // Get a message by ID
 /// Retrieves a specific message by ID.
-/// 
+///
 /// # Errors
-/// 
+///
 /// Returns an error if:
 /// - Authentication fails
 /// - Message not found or access denied
@@ -813,6 +830,42 @@ pub async fn get_message_by_id_handler(
         .parts
         .unwrap_or_else(|| json!([{"text": decrypted_content_string}]));
 
+    // Decrypt raw prompt if available
+    let decrypted_raw_prompt = match (
+        &message_db.raw_prompt_ciphertext,
+        &message_db.raw_prompt_nonce,
+    ) {
+        (Some(ciphertext), Some(nonce)) if !ciphertext.is_empty() && !nonce.is_empty() => {
+            crypto::decrypt_gcm(ciphertext, nonce, &dek.0)
+                .map_err(|e| {
+                    tracing::error!(
+                        "Failed to decrypt raw prompt for message {}: {}",
+                        message_db.id,
+                        e
+                    );
+                    AppError::DecryptionError(format!(
+                        "Failed to decrypt raw prompt for message {}: {}",
+                        message_db.id, e
+                    ))
+                })
+                .and_then(|secret_bytes| {
+                    String::from_utf8(secret_bytes.expose_secret().clone()).map_err(|e| {
+                        tracing::error!(
+                            "UTF-8 conversion error for decrypted raw prompt {}: {}",
+                            message_db.id,
+                            e
+                        );
+                        AppError::DecryptionError(format!(
+                            "UTF-8 conversion error for raw prompt {}: {}",
+                            message_db.id, e
+                        ))
+                    })
+                })
+                .ok() // Convert Result to Option, ignoring errors for raw prompt
+        }
+        _ => None, // No raw prompt stored or empty/missing fields
+    };
+
     let response = MessageResponse {
         id: message_db.id,
         session_id: message_db.session_id,
@@ -823,6 +876,7 @@ pub async fn get_message_by_id_handler(
         parts: response_parts,
         attachments: message_db.attachments.unwrap_or_else(|| json!([])),
         created_at: message_db.created_at,
+        raw_prompt: decrypted_raw_prompt,
     };
 
     Ok(Json(response))
@@ -830,9 +884,9 @@ pub async fn get_message_by_id_handler(
 
 // Vote on a message
 /// Records a vote for a message.
-/// 
+///
 /// # Errors
-/// 
+///
 /// Returns an error if:
 /// - Authentication fails
 /// - Message not found or access denied
@@ -912,9 +966,9 @@ pub async fn vote_message_handler(
 
 // Get votes for a chat
 /// Retrieves all votes for messages in a chat session.
-/// 
+///
 /// # Errors
-/// 
+///
 /// Returns an error if:
 /// - Authentication fails
 /// - Chat not found or access denied
@@ -976,9 +1030,9 @@ pub async fn get_votes_by_chat_id_handler(
 
 // Delete messages after a certain point in a chat
 /// Deletes trailing messages from a chat session.
-/// 
+///
 /// # Errors
-/// 
+///
 /// Returns an error if:
 /// - Authentication fails
 /// - Chat not found or access denied
@@ -1090,9 +1144,9 @@ pub async fn delete_trailing_messages_handler(
 
 // Update chat visibility
 /// Updates the visibility of a chat session.
-/// 
+///
 /// # Errors
-/// 
+///
 /// Returns an error if:
 /// - Authentication fails
 /// - Chat not found or access denied
@@ -1150,9 +1204,9 @@ pub async fn update_chat_visibility_handler(
 }
 
 /// Retrieves chat settings for a specific session.
-/// 
+///
 /// # Errors
-/// 
+///
 /// Returns an error if:
 /// - Authentication fails
 /// - Chat not found or access denied
@@ -1182,9 +1236,9 @@ pub async fn get_chat_settings_handler(
 }
 
 /// Updates chat settings for a specific session.
-/// 
+///
 /// # Errors
-/// 
+///
 /// Returns an error if:
 /// - Authentication fails
 /// - Chat not found or access denied

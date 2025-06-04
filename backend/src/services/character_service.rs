@@ -14,7 +14,10 @@ use crate::models::characters::{Character, CharacterDataForClient};
 use crate::schema::characters; // For characters::table, characters::id
 use crate::schema::characters::dsl::{id as character_dsl_id, user_id as character_dsl_user_id}; // for explicit column access
 use crate::services::encryption_service::EncryptionService;
-use diesel::{BoolExpressionMethods, QueryDsl, ExpressionMethods, RunQueryDsl, SelectableHelper, result::Error as DieselError}; // For .values(), .returning(), .get_result(), etc.
+use diesel::{
+    BoolExpressionMethods, ExpressionMethods, QueryDsl, RunQueryDsl, SelectableHelper,
+    result::Error as DieselError,
+}; // For .values(), .returning(), .get_result(), etc.
 use diesel_json; // For Json<Value> type in Diesel models
 use serde_json; // For json!({}) macro
 
@@ -76,8 +79,8 @@ impl CharacterService {
                 *current_ciphertext = None;
                 *current_nonce = None;
             } else {
-                let (encrypted_data, nonce_data) = self
-                    .encrypt_string_field_with_nonce(plaintext_value, dek_key)?;
+                let (encrypted_data, nonce_data) =
+                    self.encrypt_string_field_with_nonce(plaintext_value, dek_key)?;
                 *current_ciphertext = encrypted_data;
                 *current_nonce = nonce_data;
             }
@@ -108,34 +111,35 @@ impl CharacterService {
         let dek_key_bytes = dek.0.expose_secret().as_slice();
 
         // Encrypt fields from DTO using the service's helper method
-        let (description_enc, description_nonce_enc) = self
-            .encrypt_string_field_with_nonce(
-                create_dto
-                    .description
-                    .as_deref()
-                    .expect("Description guaranteed by validation"),
-                dek_key_bytes,
-            )?;
-        let (personality_enc, personality_nonce_enc) = self
-            .encrypt_string_field_with_nonce(&create_dto.personality, dek_key_bytes)?;
-        let (scenario_enc, scenario_nonce_enc) = self
-            .encrypt_string_field_with_nonce(&create_dto.scenario, dek_key_bytes)?;
-        let (first_mes_enc, first_mes_nonce_enc) = self
-            .encrypt_string_field_with_nonce(
-                create_dto
-                    .first_mes
-                    .as_deref()
-                    .expect("First message guaranteed by validation"),
-                dek_key_bytes,
-            )?;
-        let (mes_example_enc, mes_example_nonce_enc) = self
-            .encrypt_string_field_with_nonce(&create_dto.mes_example, dek_key_bytes)?;
-        let (creator_notes_enc, creator_notes_nonce_enc) = self
-            .encrypt_string_field_with_nonce(&create_dto.creator_notes, dek_key_bytes)?;
-        let (system_prompt_enc, system_prompt_nonce_enc) = self
-            .encrypt_string_field_with_nonce(&create_dto.system_prompt, dek_key_bytes)?;
+        let (description_enc, description_nonce_enc) = self.encrypt_string_field_with_nonce(
+            create_dto
+                .description
+                .as_deref()
+                .expect("Description guaranteed by validation"),
+            dek_key_bytes,
+        )?;
+        let (personality_enc, personality_nonce_enc) =
+            self.encrypt_string_field_with_nonce(&create_dto.personality, dek_key_bytes)?;
+        let (scenario_enc, scenario_nonce_enc) =
+            self.encrypt_string_field_with_nonce(&create_dto.scenario, dek_key_bytes)?;
+        let (first_mes_enc, first_mes_nonce_enc) = self.encrypt_string_field_with_nonce(
+            create_dto
+                .first_mes
+                .as_deref()
+                .expect("First message guaranteed by validation"),
+            dek_key_bytes,
+        )?;
+        let (mes_example_enc, mes_example_nonce_enc) =
+            self.encrypt_string_field_with_nonce(&create_dto.mes_example, dek_key_bytes)?;
+        let (creator_notes_enc, creator_notes_nonce_enc) =
+            self.encrypt_string_field_with_nonce(&create_dto.creator_notes, dek_key_bytes)?;
+        let (system_prompt_enc, system_prompt_nonce_enc) =
+            self.encrypt_string_field_with_nonce(&create_dto.system_prompt, dek_key_bytes)?;
         let (post_history_instructions_enc, post_history_instructions_nonce_enc) = self
-            .encrypt_string_field_with_nonce(&create_dto.post_history_instructions, dek_key_bytes)?;
+            .encrypt_string_field_with_nonce(
+                &create_dto.post_history_instructions,
+                dek_key_bytes,
+            )?;
 
         // Create a NewCharacter from the DTO
         let new_character_for_db = NewCharacter {
@@ -215,11 +219,10 @@ impl CharacterService {
             modification_date: create_dto
                 .modification_date
                 .and_then(|ts| DateTime::from_timestamp(ts, 0)),
-            extensions: Some(
-                create_dto
-                    .extensions
-                    .map_or_else(|| diesel_json::Json(serde_json::json!({})), |j| diesel_json::Json(j.0)),
-            ),
+            extensions: Some(create_dto.extensions.map_or_else(
+                || diesel_json::Json(serde_json::json!({})),
+                |j| diesel_json::Json(j.0),
+            )),
             persona: None,
             persona_nonce: None,
             world_scenario: None,
@@ -301,8 +304,7 @@ impl CharacterService {
         info!(character_id = %inserted_character.id, "Character manually created and saved (full data fetched)");
 
         // Convert to client format with decryption
-        let client_character_data = inserted_character
-            .into_decrypted_for_client(Some(&dek.0))?;
+        let client_character_data = inserted_character.into_decrypted_for_client(Some(&dek.0))?;
 
         Ok(client_character_data)
     }
@@ -494,8 +496,7 @@ impl CharacterService {
         info!(character_id = %character_id_to_update, "Character updated successfully in CharacterService");
 
         // Convert to client format with decryption
-        let client_character_data = updated_character_db
-            .into_decrypted_for_client(Some(&dek.0))?;
+        let client_character_data = updated_character_db.into_decrypted_for_client(Some(&dek.0))?;
 
         Ok(client_character_data)
     }

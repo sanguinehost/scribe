@@ -246,9 +246,7 @@ impl TokenizerService {
         // Open the image to get dimensions
         let img = image::open(path).map_err(|e| {
             error!("Failed to open image at {}: {}", path.display(), e);
-            AppError::TextProcessingError(format!(
-                "Failed to open image for token estimation: {e}"
-            ))
+            AppError::TextProcessingError(format!("Failed to open image for token estimation: {e}"))
         })?;
 
         let (width, height) = img.dimensions();
@@ -296,10 +294,10 @@ impl TokenizerService {
         } else {
             // Use reasonable bounds for video duration (24 hours max = 86400 seconds)
             let clamped_duration = duration_seconds.clamp(0.0, 86_400.0);
-            
+
             // Simple calculation: tokens = duration * 263
             let tokens_exact = clamped_duration * 263.0;
-            
+
             // Use safe conversion with bounds checking
             if tokens_exact.is_finite() && tokens_exact >= 0.0 {
                 let rounded = tokens_exact.round();
@@ -307,7 +305,9 @@ impl TokenizerService {
                 let clamped = rounded.clamp(0.0, 1_000_000_000.0);
                 // Safe cast: clamped is non-negative and within bounds
                 #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-                { clamped as usize }
+                {
+                    clamped as usize
+                }
             } else {
                 0
             }
@@ -331,10 +331,10 @@ impl TokenizerService {
         } else {
             // Use reasonable bounds for audio duration (24 hours max = 86400 seconds)
             let clamped_duration = duration_seconds.clamp(0.0, 86_400.0);
-            
+
             // Simple calculation: tokens = duration * 32
             let tokens_exact = clamped_duration * 32.0;
-            
+
             // Use safe conversion with bounds checking
             if tokens_exact.is_finite() && tokens_exact >= 0.0 {
                 let rounded = tokens_exact.round();
@@ -342,7 +342,9 @@ impl TokenizerService {
                 let clamped = rounded.clamp(0.0, 1_000_000_000.0);
                 // Safe cast: clamped is non-negative and within bounds
                 #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-                { clamped as usize }
+                {
+                    clamped as usize
+                }
             } else {
                 0
             }

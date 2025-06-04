@@ -1,4 +1,3 @@
-
 // cli/src/client/implementation.rs
 
 use async_trait::async_trait;
@@ -306,10 +305,7 @@ impl HttpClient for ReqwestClientWrapper {
         &self,
         session_id: Uuid,
     ) -> Result<Vec<ClientChatMessageResponse>, CliError> {
-        let url = build_url(
-            &self.base_url,
-            &format!("/api/chats/{session_id}/messages"),
-        )?;
+        let url = build_url(&self.base_url, &format!("/api/chats/{session_id}/messages"))?;
         tracing::info!(target: "scribe_cli::client::implementation", %url, %session_id, "Fetching chat messages via HttpClient");
         let response = self
             .client
@@ -564,10 +560,7 @@ impl HttpClient for ReqwestClientWrapper {
         session_id: Uuid,
         payload: &UpdateChatSettingsRequest,
     ) -> Result<ChatSettingsResponse, CliError> {
-        let url = build_url(
-            &self.base_url,
-            &format!("/api/chat/{session_id}/settings"),
-        )?;
+        let url = build_url(&self.base_url, &format!("/api/chat/{session_id}/settings"))?;
         tracing::info!(
             target: "scribe_cli::client::implementation",
             %url,
@@ -637,10 +630,7 @@ impl HttpClient for ReqwestClientWrapper {
         user_id: Uuid,
         role: &str,
     ) -> Result<AdminUserDetailResponse, CliError> {
-        let url = build_url(
-            &self.base_url,
-            &format!("/api/admin/users/{user_id}/role"),
-        )?;
+        let url = build_url(&self.base_url, &format!("/api/admin/users/{user_id}/role"))?;
         tracing::info!(target: "scribe_cli::client::implementation", %url, %user_id, %role, "Admin: Updating user role via HttpClient");
         let payload = UpdateUserRoleRequest {
             role: role.to_string(),
@@ -656,10 +646,7 @@ impl HttpClient for ReqwestClientWrapper {
     }
 
     async fn admin_lock_user(&self, user_id: Uuid) -> Result<(), CliError> {
-        let url = build_url(
-            &self.base_url,
-            &format!("/api/admin/users/{user_id}/lock"),
-        )?;
+        let url = build_url(&self.base_url, &format!("/api/admin/users/{user_id}/lock"))?;
         tracing::info!(target: "scribe_cli::client::implementation", %url, %user_id, "Admin: Locking user via HttpClient");
         let response = self
             .client
@@ -704,7 +691,7 @@ impl HttpClient for ReqwestClientWrapper {
     }
 
     // Keep generate_response for mock compatibility if needed
-    
+
     async fn generate_response(
         &self,
         chat_id: Uuid,

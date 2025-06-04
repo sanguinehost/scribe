@@ -21,7 +21,10 @@ use axum::{
     response::{IntoResponse, Json, Response},
     routing::{delete, get, post, put}, // ADDED delete here
 };
-use diesel::{BoolExpressionMethods, OptionalExtension, QueryDsl, ExpressionMethods, RunQueryDsl, SelectableHelper, result::Error as DieselError}; // Needed for .filter(), .load(), .first(), etc.
+use diesel::{
+    BoolExpressionMethods, ExpressionMethods, OptionalExtension, QueryDsl, RunQueryDsl,
+    SelectableHelper, result::Error as DieselError,
+}; // Needed for .filter(), .load(), .first(), etc.
 use std::sync::Arc;
 use tracing::{error, info, instrument, trace, warn}; // Use needed tracing macros
 use uuid::Uuid;
@@ -118,9 +121,7 @@ pub async fn upload_character_handler(
                             if !string_version.is_empty() {
                                 // Use the higher-level EncryptionService for encryption
                                 let enc_service = EncryptionService::new();
-                                match enc_service
-                                    .encrypt(&string_version, $dek.expose_secret())
-                                {
+                                match enc_service.encrypt(&string_version, $dek.expose_secret()) {
                                     Ok((ciphertext, nonce)) => {
                                         $self.$field = Some(ciphertext);
                                         $self.$nonce_field = Some(nonce);
@@ -243,43 +244,58 @@ pub async fn upload_character_handler(
                 .get_result::<Character>(conn_select_block)
         })
         .await
-        .map_err(|e| {
-            AppError::InternalServerErrorGeneric(format!("Fetch interaction error: {e}"))
-        })?
+        .map_err(|e| AppError::InternalServerErrorGeneric(format!("Fetch interaction error: {e}")))?
         .map_err(|e| AppError::InternalServerErrorGeneric(format!("Fetch DB error: {e}")))?;
 
     info!(character_id = %inserted_character.id, "Character uploaded and saved (full data fetched)");
 
     // Check if the parsed card has an embedded lorebook
     let character_book = match &parsed_card {
-        crate::services::character_parser::ParsedCharacterCard::V3(card) => &card.data.character_book,
-        crate::services::character_parser::ParsedCharacterCard::V2Fallback(data) => &data.character_book,
+        crate::services::character_parser::ParsedCharacterCard::V3(card) => {
+            &card.data.character_book
+        }
+        crate::services::character_parser::ParsedCharacterCard::V2Fallback(data) => {
+            &data.character_book
+        }
     };
-    
+
     if let Some(lorebook_data) = character_book {
         // Import the lorebook
         let lorebook_service = crate::services::LorebookService::new(
-            state.pool.clone(), 
+            state.pool.clone(),
             state.encryption_service.clone(),
-            state.qdrant_service.clone()
+            state.qdrant_service.clone(),
         );
 
         // Convert SillyTavern lorebook format to our upload payload
         use std::collections::HashMap;
         let mut entries_map = HashMap::new();
-        
+
         // Assuming lorebook_data has entries as a field
         if let Ok(lorebook_json) = serde_json::to_value(lorebook_data) {
             if let Some(entries) = lorebook_json.get("entries").and_then(|e| e.as_object()) {
                 for (uid, entry_value) in entries {
-                    match serde_json::from_value::<crate::models::lorebook_dtos::UploadedLorebookEntry>(entry_value.clone()) {
+                    match serde_json::from_value::<
+                        crate::models::lorebook_dtos::UploadedLorebookEntry,
+                    >(entry_value.clone())
+                    {
                         Ok(entry) => {
-                            tracing::info!("Successfully parsed entry {}: keys={:?}, content length={}, comment={:?}", 
-                                uid, entry.key, entry.content.len(), entry.comment);
+                            tracing::info!(
+                                "Successfully parsed entry {}: keys={:?}, content length={}, comment={:?}",
+                                uid,
+                                entry.key,
+                                entry.content.len(),
+                                entry.comment
+                            );
                             entries_map.insert(uid.clone(), entry);
                         }
                         Err(e) => {
-                            tracing::warn!("Failed to parse entry {}: {}. Raw value: {}", uid, e, entry_value);
+                            tracing::warn!(
+                                "Failed to parse entry {}: {}. Raw value: {}",
+                                uid,
+                                e,
+                                entry_value
+                            );
                         }
                     }
                 }
@@ -294,14 +310,20 @@ pub async fn upload_character_handler(
         };
 
         // Import the lorebook
-        match lorebook_service.import_lorebook(&auth_session, Some(&dek.0), lorebook_payload).await {
+        match lorebook_service
+            .import_lorebook(&auth_session, Some(&dek.0), lorebook_payload)
+            .await
+        {
             Ok(lorebook) => {
                 // Associate the lorebook with the character
-                if let Err(e) = lorebook_service.associate_lorebook_to_character(
-                    &auth_session,
-                    inserted_character.id,
-                    lorebook.id
-                ).await {
+                if let Err(e) = lorebook_service
+                    .associate_lorebook_to_character(
+                        &auth_session,
+                        inserted_character.id,
+                        lorebook.id,
+                    )
+                    .await
+                {
                     warn!("Failed to associate lorebook with character: {}", e);
                 }
             }
@@ -311,8 +333,7 @@ pub async fn upload_character_handler(
         }
     }
 
-    let client_character_data = inserted_character
-        .into_decrypted_for_client(Some(&dek.0))?;
+    let client_character_data = inserted_character.into_decrypted_for_client(Some(&dek.0))?;
 
     Ok((StatusCode::CREATED, Json(client_character_data)))
 }
@@ -569,9 +590,7 @@ pub async fn get_character_handler(
                         error = %e,
                         "DB error fetching character by ID (after session auth)."
                     );
-                    AppError::DatabaseQueryError(format!(
-                        "DB error fetching character by ID: {e}"
-                    ))
+                    AppError::DatabaseQueryError(format!("DB error fetching character by ID: {e}"))
                 })
         })
         .await
@@ -748,8 +767,7 @@ pub async fn generate_character_handler(
     // In a real scenario, we would save dummy_char_for_db (as NewCharacter)
     // then fetch it, then convert to client data.
     // For this placeholder, we convert the in-memory (potentially encrypted) Character.
-    let client_data = dummy_char_for_db
-        .into_decrypted_for_client(Some(&dek.0))?;
+    let client_data = dummy_char_for_db.into_decrypted_for_client(Some(&dek.0))?;
 
     // --- TODO: Save the character to DB if this route is meant to persist. ---
 

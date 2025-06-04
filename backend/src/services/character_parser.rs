@@ -107,7 +107,7 @@ fn validate_spec_version(spec_version: &str, source: &str) {
 /// Logs appropriate warning for version mismatches.
 fn log_version_mismatch(version: f32, spec_version: &str, source: &str) {
     const TARGET_VERSION: f32 = 3.0;
-    
+
     if version > TARGET_VERSION {
         warn!(
             "{} spec_version ('{}') is newer than supported ('3.0'). Some features might not work.",
@@ -153,18 +153,22 @@ fn extract_text_chunks(info: &png::Info) -> (Option<String>, Option<String>) {
 }
 
 /// Attempts to parse V3 card from base64 data.
-fn try_parse_v3_from_base64(base64_str: &str, source: &str) -> Result<CharacterCardV3, ParserError> {
-    let decoded_bytes = base64_standard.decode(base64_str)
-        .map_err(|e| {
-            warn!("Failed to decode base64 from '{}': {}", source, e);
-            ParserError::Base64Error(e.to_string())
-        })?;
+fn try_parse_v3_from_base64(
+    base64_str: &str,
+    source: &str,
+) -> Result<CharacterCardV3, ParserError> {
+    let decoded_bytes = base64_standard.decode(base64_str).map_err(|e| {
+        warn!("Failed to decode base64 from '{}': {}", source, e);
+        ParserError::Base64Error(e.to_string())
+    })?;
 
-    let card = serde_json::from_slice::<CharacterCardV3>(&decoded_bytes)
-        .map_err(|e| {
-            warn!("Failed to parse JSON from '{}' as CharacterCardV3: {}", source, e);
-            ParserError::JsonError(e.to_string())
-        })?;
+    let card = serde_json::from_slice::<CharacterCardV3>(&decoded_bytes).map_err(|e| {
+        warn!(
+            "Failed to parse JSON from '{}' as CharacterCardV3: {}",
+            source, e
+        );
+        ParserError::JsonError(e.to_string())
+    })?;
 
     validate_v3_spec(&card, source);
     Ok(card)
@@ -184,13 +188,13 @@ fn apply_v2_fallback_note(data_v2: &mut CharacterCardDataV3, ccv3_parse_failed: 
 
 /// Attempts to parse V2 fallback format from chara data.
 fn try_parse_chara_fallback(
-    chara_data_base64: Option<&String>, 
-    ccv3_parse_failed: bool
+    chara_data_base64: Option<&String>,
+    ccv3_parse_failed: bool,
 ) -> Result<Option<CharacterCardDataV3>, ParserError> {
     chara_data_base64.map_or(Ok(None), |base64_str| {
         let decoded_bytes = base64_standard.decode(base64_str)?;
         let mut data_v2 = serde_json::from_slice::<CharacterCardDataV3>(&decoded_bytes)?;
-        
+
         info!("Loaded character from V2 'chara' chunk. Applying V3 compatibility note.");
         apply_v2_fallback_note(&mut data_v2, ccv3_parse_failed);
         Ok(Some(data_v2))
@@ -200,9 +204,9 @@ fn try_parse_chara_fallback(
 // --- Main Parsing Function ---
 
 /// Parses a character card from PNG image data.
-/// 
+///
 /// # Errors
-/// 
+///
 /// Returns an error if:
 /// - PNG format is invalid
 /// - Required metadata is missing
@@ -223,7 +227,10 @@ pub fn parse_character_card_png(png_data: &[u8]) -> Result<ParsedCharacterCard, 
         match try_parse_v3_from_base64(base64_str, "ccv3 chunk") {
             Ok(card) => return Ok(ParsedCharacterCard::V3(card)),
             Err(e) => {
-                warn!("Failed to parse ccv3 chunk: {}. Falling back to 'chara' if possible.", e);
+                warn!(
+                    "Failed to parse ccv3 chunk: {}. Falling back to 'chara' if possible.",
+                    e
+                );
                 ccv3_parse_error = Some(e);
             }
         }
@@ -252,16 +259,16 @@ pub fn parse_character_card_png(png_data: &[u8]) -> Result<ParsedCharacterCard, 
 // --- JSON Parsing Function ---
 
 /// Parses a character card from JSON data.
-/// 
+///
 /// # Errors
-/// 
+///
 /// Returns an error if:
 /// - JSON format is invalid
 /// - Required fields are missing
 pub fn parse_character_card_json(json_data: &[u8]) -> Result<ParsedCharacterCard, ParserError> {
     let card = serde_json::from_slice::<CharacterCardV3>(json_data)
         .map_err(|e| ParserError::JsonError(e.to_string()))?;
-    
+
     validate_v3_spec(&card, "JSON card");
     Ok(ParsedCharacterCard::V3(card))
 }
@@ -269,9 +276,9 @@ pub fn parse_character_card_json(json_data: &[u8]) -> Result<ParsedCharacterCard
 // --- CHARX (Zip) Parsing Function ---
 
 /// Parses a character card from CHARX (ZIP) format.
-/// 
+///
 /// # Errors
-/// 
+///
 /// Returns an error if:
 /// - ZIP format is invalid
 /// - Required files are missing
@@ -280,7 +287,7 @@ pub fn parse_character_card_charx<R: Read + Seek>(
     charx_data: R,
 ) -> Result<ParsedCharacterCard, ParserError> {
     let mut archive = ZipArchive::new(charx_data)?;
-    
+
     let mut card_file = archive.by_name("card.json").map_err(|e| {
         warn!("Error finding 'card.json' in CHARX: {}", e);
         match e {
@@ -294,7 +301,7 @@ pub fn parse_character_card_charx<R: Read + Seek>(
 
     let card = serde_json::from_slice::<CharacterCardV3>(&buffer)
         .map_err(|e| ParserError::JsonError(e.to_string()))?;
-    
+
     validate_v3_spec(&card, "CHARX card.json");
     Ok(ParsedCharacterCard::V3(card))
 }
@@ -317,9 +324,7 @@ mod tests {
     use zip::{ZipWriter, write::FileOptions}; // Added for CHARX test helper
 
     fn safe_len_to_u32(len: usize) -> u32 {
-        u32::try_from(len).unwrap_or_else(|_| {
-            panic!("Length {len} is too large to fit in u32")
-        })
+        u32::try_from(len).unwrap_or_else(|_| panic!("Length {len} is too large to fit in u32"))
     }
 
     // --- Test Helpers ---
@@ -332,7 +337,7 @@ mod tests {
 
         let mut png_bytes = Vec::new();
         png_bytes.extend_from_slice(&[137, 80, 78, 71, 13, 10, 26, 10]); // Signature
-        
+
         // Dummy IHDR
         let ihdr_data = &[0, 0, 0, 1, 0, 0, 0, 1, 8, 6, 0, 0, 0];
         let ihdr_len = safe_len_to_u32(ihdr_data.len()).to_be_bytes();
@@ -342,7 +347,7 @@ mod tests {
         png_bytes.extend_from_slice(ihdr_data);
         let crc_ihdr = crc32fast::hash(&[&chunk_type_ihdr[..], &ihdr_data[..]].concat());
         png_bytes.extend_from_slice(&crc_ihdr.to_be_bytes());
-        
+
         // tEXt chunk
         let text_chunk_data_internal = [keyword, &[0u8], chunk_data].concat();
         let text_chunk_len = safe_len_to_u32(text_chunk_data_internal.len()).to_be_bytes();
@@ -350,9 +355,10 @@ mod tests {
         let chunk_type_text = b"tEXt";
         png_bytes.extend_from_slice(chunk_type_text);
         png_bytes.extend_from_slice(&text_chunk_data_internal);
-        let crc_text = crc32fast::hash(&[&chunk_type_text[..], &text_chunk_data_internal[..]].concat());
+        let crc_text =
+            crc32fast::hash(&[&chunk_type_text[..], &text_chunk_data_internal[..]].concat());
         png_bytes.extend_from_slice(&crc_text.to_be_bytes());
-        
+
         // Dummy IDAT
         let idat_data = &[8, 29, 99, 96, 0, 0, 0, 3, 0, 1];
         let idat_len = safe_len_to_u32(idat_data.len()).to_be_bytes();
@@ -362,7 +368,7 @@ mod tests {
         png_bytes.extend_from_slice(idat_data);
         let crc_idat = crc32fast::hash(&[&chunk_type_idat[..], &idat_data[..]].concat());
         png_bytes.extend_from_slice(&crc_idat.to_be_bytes());
-        
+
         // IEND
         png_bytes.extend_from_slice(&[0, 0, 0, 0]);
         png_bytes.extend_from_slice(b"IEND");
@@ -692,9 +698,7 @@ mod tests {
         if let ParsedCharacterCard::V3(card_v3) = parsed_card {
             assert_eq!(card_v3.data.name, Some("Test V3".to_string()));
         } else {
-            panic!(
-                "Expected V3 variant when both chunks present, got {parsed_card:?}"
-            );
+            panic!("Expected V3 variant when both chunks present, got {parsed_card:?}");
         }
     }
 
@@ -715,9 +719,7 @@ mod tests {
         if let ParsedCharacterCard::V3(card_v3) = parsed_card {
             assert_eq!(card_v3.data.name, Some("Test V3".to_string()));
         } else {
-            panic!(
-                "Expected V3 variant when both chunks present, got {parsed_card:?}"
-            );
+            panic!("Expected V3 variant when both chunks present, got {parsed_card:?}");
         }
     }
 
@@ -744,9 +746,7 @@ mod tests {
                     .contains("loaded as a Character Card V2")
             );
         } else {
-            panic!(
-                "Expected V2Fallback variant after invalid ccv3, got {parsed_card:?}"
-            );
+            panic!("Expected V2Fallback variant after invalid ccv3, got {parsed_card:?}");
         }
     }
 
@@ -770,9 +770,7 @@ mod tests {
             assert_eq!(card_v3.spec, "chara_card_v2"); // Should retain original spec
             assert_eq!(card_v3.data.name, Some("Wrong Spec V3".to_string()));
         } else {
-            panic!(
-                "Expected V3 variant even with wrong spec field, got {parsed_card:?}"
-            );
+            panic!("Expected V3 variant even with wrong spec field, got {parsed_card:?}");
         }
 
         // Test fallback if ccv3 has wrong spec AND chara is present
@@ -866,9 +864,7 @@ mod tests {
                     .contains("loaded as a Character Card V2")
             );
         } else {
-            panic!(
-                "Expected V2Fallback variant after invalid ccv3 base64, got {parsed_card:?}"
-            );
+            panic!("Expected V2Fallback variant after invalid ccv3 base64, got {parsed_card:?}");
         }
     }
 
@@ -885,9 +881,7 @@ mod tests {
         // Expecting JsonError from the chara fallback attempt
         match result.err().unwrap() {
             ParserError::JsonError(_) => (),
-            e => panic!(
-                "Expected JsonError when both chunks are invalid, got {e:?}"
-            ),
+            e => panic!("Expected JsonError when both chunks are invalid, got {e:?}"),
         }
     }
 
@@ -1287,7 +1281,9 @@ mod tests {
                 assert_eq!(data.name, Some("tEXtchara Test".to_string()));
                 assert_eq!(data.description, "Testing the tEXtchara chunk.");
             }
-            other @ ParsedCharacterCard::V3(_) => panic!("Expected V2Fallback for tEXtchara chunk, got {other:?}"),
+            other @ ParsedCharacterCard::V3(_) => {
+                panic!("Expected V2Fallback for tEXtchara chunk, got {other:?}")
+            }
         }
     }
     // Helper to create a minimally valid V3 JSON string
@@ -1387,27 +1383,21 @@ mod tests {
     impl Read for FailingReader {
         fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
             if self.read_count >= self.fail_after {
-                Err(std::io::Error::other(
-                    "Simulated I/O error",
-                ))
+                Err(std::io::Error::other("Simulated I/O error"))
             } else {
                 // Calculate how many bytes we *can* read before hitting the limit or EOF
                 let remaining_in_data = self.data.get_ref().len() as u64 - self.data.position();
                 let remaining_before_fail = self.fail_after.saturating_sub(self.read_count);
                 let max_readable = std::cmp::min(remaining_in_data, remaining_before_fail);
                 let bytes_to_read = usize::try_from(std::cmp::min(buf.len() as u64, max_readable))
-                    .unwrap_or_else(|_| {
-                        panic!("bytes_to_read is too large to fit in usize")
-                    });
+                    .unwrap_or_else(|_| panic!("bytes_to_read is too large to fit in usize"));
 
                 if bytes_to_read == 0 && remaining_before_fail > 0 {
                     // If we can still read more before failing, but the underlying reader is EOF, return Ok(0)
                     return Ok(0);
                 } else if bytes_to_read == 0 && remaining_before_fail == 0 {
                     // If we are exactly at the fail point and can't read more, return the error
-                    return Err(std::io::Error::other(
-                        "Simulated I/O error",
-                    ));
+                    return Err(std::io::Error::other("Simulated I/O error"));
                 }
 
                 let bytes_read = self.data.read(&mut buf[..bytes_to_read])?;
@@ -1494,8 +1484,7 @@ mod tests {
             _ => panic!("Expected ZipError from conversion"),
         }
 
-        let zip_error_other =
-            ZipError::Io(std::io::Error::other("zip io"));
+        let zip_error_other = ZipError::Io(std::io::Error::other("zip io"));
         let parser_error_other: ParserError = zip_error_other.into(); // Line 64-65
         match parser_error_other {
             // Check for the specific lowercase "i/o error" string representation

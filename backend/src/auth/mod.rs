@@ -4,7 +4,9 @@ pub use crate::models::auth::RegisterPayload; // Added for RegisterPayload
 use crate::models::users::{AccountStatus, NewUser, User, UserDbQuery};
 use crate::schema::users;
 // Required imports for synchronous Diesel
-use diesel::{BoolExpressionMethods, PgConnection, QueryDsl, ExpressionMethods, RunQueryDsl, SelectableHelper};
+use diesel::{
+    BoolExpressionMethods, ExpressionMethods, PgConnection, QueryDsl, RunQueryDsl, SelectableHelper,
+};
 // Removed DbPool import as functions will now take PgConnection
 // use crate::state::DbPool;
 use bcrypt::BcryptError;
@@ -246,7 +248,8 @@ pub async fn create_user(
         Ok(user_db_query) => {
             let mut user = User::from(user_db_query); // Convert to User
             // Add the recovery phrase to the returned user
-            user.recovery_phrase.clone_from(&credentials.recovery_phrase);
+            user.recovery_phrase
+                .clone_from(&credentials.recovery_phrase);
             info!(user_id = %user.id, "User created successfully in DB.");
             Ok(user)
         }
@@ -495,8 +498,8 @@ pub async fn change_user_password(
             UserCryptoFields {
                 password_hash: Some(new_password_hash_str),
                 dek_ciphertext: Some(new_ciphertext_dek_bytes), // Pass ciphertext
-                dek_nonce: Some(new_nonce_dek_bytes),      // Pass nonce
-                kek_salt: Some(new_kek_salt_str), // KEK salt (already a string)
+                dek_nonce: Some(new_nonce_dek_bytes),           // Pass nonce
+                kek_salt: Some(new_kek_salt_str),               // KEK salt (already a string)
                 recovery_dek_ciphertext: updated_encrypted_dek_by_recovery,
                 recovery_dek_nonce: current_db_user.recovery_dek_nonce.clone(), // Pass existing recovery nonce
             },
@@ -611,11 +614,11 @@ pub async fn recover_user_password_with_phrase(
             user.id,
             UserCryptoFields {
                 password_hash: Some(new_password_hash_str),
-                dek_ciphertext: Some(new_ciphertext_dek_bytes),               // Pass ciphertext
-                dek_nonce: Some(new_nonce_dek_bytes),                    // Pass nonce
-                kek_salt: Some(new_kek_salt_str),                       // The new KEK salt (already a string)
+                dek_ciphertext: Some(new_ciphertext_dek_bytes), // Pass ciphertext
+                dek_nonce: Some(new_nonce_dek_bytes),           // Pass nonce
+                kek_salt: Some(new_kek_salt_str), // The new KEK salt (already a string)
                 recovery_dek_ciphertext: user.encrypted_dek_by_recovery.clone(), // This remains unchanged
-                recovery_dek_nonce: user.recovery_dek_nonce.clone(),        // Pass existing recovery nonce
+                recovery_dek_nonce: user.recovery_dek_nonce.clone(), // Pass existing recovery nonce
             },
         )
         .await?;
@@ -671,7 +674,10 @@ fn delete_sessions_from_db(
         return Ok(0);
     }
 
-    debug!(num_sessions = session_ids_to_delete.len(), "Deleting identified sessions for user.");
+    debug!(
+        num_sessions = session_ids_to_delete.len(),
+        "Deleting identified sessions for user."
+    );
     diesel::delete(sessions.filter(session_id_col.eq_any(session_ids_to_delete)))
         .execute(conn)
         .map_err(|e| {
@@ -693,7 +699,9 @@ pub async fn delete_all_sessions_for_user(
     info!("Attempting to delete all sessions for user.");
 
     let deleted_count = pool
-        .get().await.map_err(AuthError::PoolError)?
+        .get()
+        .await
+        .map_err(AuthError::PoolError)?
         .interact(move |conn| {
             // 1. Fetch all session IDs and their data
             let all_sessions_data = sessions
@@ -705,7 +713,8 @@ pub async fn delete_all_sessions_for_user(
                 })?;
 
             // 2. Filter to find session IDs belonging to the target user
-            let session_ids_to_delete = filter_sessions_for_user(all_sessions_data, user_id_to_invalidate);
+            let session_ids_to_delete =
+                filter_sessions_for_user(all_sessions_data, user_id_to_invalidate);
 
             // 3. Delete the identified sessions
             delete_sessions_from_db(conn, &session_ids_to_delete)
