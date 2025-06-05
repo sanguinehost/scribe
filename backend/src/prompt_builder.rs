@@ -14,6 +14,15 @@ use std::fmt::Write;
 use std::sync::Arc;
 use tracing::{debug, warn};
 
+/// Escapes text for safe inclusion in XML
+fn escape_xml(text: &str) -> String {
+    text.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&apos;")
+}
+
 /// Assembles the character-specific part of the system prompt.
 /// RAG context is handled by the calling service and prepended to the user message.
 ///
@@ -68,8 +77,6 @@ fn build_character_info_string(
                     let mut char_prompt_part = String::new();
                     writeln!(char_prompt_part, "Character Name: {}", char_data.name).unwrap();
                     writeln!(char_prompt_part, "Description: {}", description_text).unwrap();
-                    // Static instruction for character-based interaction
-                    char_prompt_part.push_str("\n---\nInstruction:\nContinue the chat based on the conversation history. Stay in character.\n---\n\n");
                     return char_prompt_part;
                 }
             }
@@ -145,30 +152,46 @@ pub struct PromptBuildParams<'a> {
 async fn build_meta_system_prompt(
     character_metadata: Option<&CharacterMetadata>,
     has_rag_items: bool,
+    has_persona_override: bool,
+    has_character_definition: bool,
+    has_character_details: bool,
     token_counter: &HybridTokenCounter,
     model_name: &str,
 ) -> Result<(String, usize), AppError> {
     let char_name_placeholder =
         character_metadata.map_or_else(|| "{{character_name}}".to_string(), |cm| cm.name.clone());
 
-    let lorebook_line;
-    let history_line;
+    let mut sections_list = Vec::new();
+    let mut section_num = 1;
+
+    if has_persona_override {
+        sections_list.push(format!("{}. <persona_override_prompt>: Specific instructions or style preferences from the User.", section_num));
+        section_num += 1;
+    }
+
+    if has_character_definition {
+        sections_list.push(format!("{}. <character_definition>: The core definition and personality of the character '{}'.", section_num, char_name_placeholder));
+        section_num += 1;
+    }
+
+    if has_character_details {
+        sections_list.push(format!("{}. <character_details>: Additional descriptive information about '{}'.", section_num, char_name_placeholder));
+        section_num += 1;
+    }
 
     if has_rag_items {
-        lorebook_line = "4. <lorebook_entries>: Relevant background information about the world, other characters, or plot points.\n";
-        history_line = "5. The conversation history contains the story so far - the existing dialogue and narration.\n";
-    } else {
-        lorebook_line = ""; // No lorebook section
-        history_line = "4. The conversation history contains the story so far - the existing dialogue and narration.\n";
+        sections_list.push(format!("{}. <lorebook_entries>: Relevant background information about the world, other characters, or plot points.", section_num));
+        section_num += 1;
     }
+
+    sections_list.push(format!("{}. The conversation history contains the story so far - the existing dialogue and narration.", section_num));
+
+    let sections_text = sections_list.join("\n");
 
     let meta_system_prompt_template = format!(
         "You are the Narrator and supporting characters in a collaborative storytelling experience with a Human player. The Human controls a character (referred to as 'the User'). Your primary role is to describe the world, events, and the actions and dialogue of all characters *except* the User.\n\n\
         You will be provided with the following structured information to guide your responses:\n\
-        1. <persona_override_prompt>: Specific instructions or style preferences from the User (if any).\n\
-        2. <character_definition>: The core definition and personality of the character '{char_name_placeholder}'.\n\
-        3. <character_details>: Additional descriptive information about '{char_name_placeholder}'.\n\
-        {lorebook_line}{history_line}\n\
+        {sections_text}\n\n\
         Key Writing Principles:\n\
         - Focus on the direct consequences of the User's actions.\n\
         - Describe newly encountered people, places, or significant objects only once. The Human will remember.\n\
@@ -323,6 +346,9 @@ async fn perform_initial_token_calculation(
     let (_meta_system_prompt_template, meta_system_prompt_tokens) = build_meta_system_prompt(
         *character_metadata,
         !rag_items.is_empty(),
+        system_prompt_base.is_some() && !system_prompt_base.as_ref().unwrap().is_empty(),
+        raw_character_system_prompt.is_some() && !raw_character_system_prompt.as_ref().unwrap().is_empty(),
+        character_metadata.is_some(),
         token_counter,
         model_name,
     )
@@ -498,9 +524,16 @@ async fn build_final_prompt_strings(
 ) -> Result<(String, Vec<GenAiChatMessage>), AppError> {
     // Rebuild the meta system prompt based on final RAG items after truncation
     let has_final_rag_items = !calculation.rag_items_with_tokens.is_empty();
+    let has_persona_override = !calculation.persona_override_prompt_str.is_empty();
+    let has_character_definition = !calculation.character_definition_str.is_empty();
+    let has_character_details = !calculation.character_details_str.is_empty();
+    
     let (final_meta_system_prompt, _) = build_meta_system_prompt(
         character_metadata,
         has_final_rag_items,
+        has_persona_override,
+        has_character_definition,
+        has_character_details,
         token_counter,
         model_name,
     )
@@ -530,6 +563,9 @@ async fn build_final_prompt_strings(
         final_system_prompt.push_str("\n</character_details>");
     }
 
+    // Add the instruction section
+    final_system_prompt.push_str("\n\n---\nInstruction:\nContinue the chat based on the conversation history. Stay in character.\n---\n");
+
     // Assemble the final message list
     let mut final_message_list = Vec::new();
 
@@ -541,58 +577,45 @@ async fn build_final_prompt_strings(
     // Prepend RAG context to the current user message
     let mut rag_context_for_user_message = String::new();
     if !calculation.rag_items_with_tokens.is_empty() {
-        rag_context_for_user_message.push_str("---\nRelevant Context:\n");
+        // Start with lorebook_entries XML tag as promised in system prompt
+        rag_context_for_user_message.push_str("<lorebook_entries>\n");
+        
         for (rag_item, _) in &calculation.rag_items_with_tokens {
             match &rag_item.metadata {
                 crate::services::embedding_pipeline::RetrievedMetadata::Chat(chat_meta) => {
                     writeln!(
                         rag_context_for_user_message,
-                        "- Chat (Speaker: {}): {}",
-                        chat_meta.speaker,
-                        rag_item.text.trim()
+                        "<chat_history speaker=\"{}\">{}</chat_history>",
+                        escape_xml(&chat_meta.speaker),
+                        escape_xml(rag_item.text.trim())
                     )
                     .unwrap();
                 }
                 crate::services::embedding_pipeline::RetrievedMetadata::Lorebook(lorebook_meta) => {
+                    write!(rag_context_for_user_message, "<lorebook_entry").unwrap();
+                    
                     if let Some(title) = &lorebook_meta.entry_title {
-                        if let Some(keywords) = &lorebook_meta.keywords {
-                            if !keywords.is_empty() {
-                                let keywords_str = keywords.join(", ");
-                                writeln!(
-                                    rag_context_for_user_message,
-                                    "- Lorebook Entry \"{title}\" (Keywords: {keywords_str}): {}",
-                                    rag_item.text.trim()
-                                )
-                                .unwrap();
-                            } else {
-                                writeln!(
-                                    rag_context_for_user_message,
-                                    "- Lorebook Entry \"{title}\": {}",
-                                    rag_item.text.trim()
-                                )
-                                .unwrap();
-                            }
-                        } else {
-                            writeln!(
-                                rag_context_for_user_message,
-                                "- Lorebook Entry \"{title}\": {}",
-                                rag_item.text.trim()
-                            )
-                            .unwrap();
-                        }
-                    } else {
-                        writeln!(
-                            rag_context_for_user_message,
-                            "- Lorebook ({}): {}",
-                            lorebook_meta.lorebook_id,
-                            rag_item.text.trim()
-                        )
-                        .unwrap();
+                        write!(rag_context_for_user_message, " title=\"{}\"", escape_xml(title)).unwrap();
                     }
+                    
+                    if let Some(keywords) = &lorebook_meta.keywords {
+                        if !keywords.is_empty() {
+                            let keywords_str = keywords.join(", ");
+                            write!(rag_context_for_user_message, " keywords=\"{}\"", escape_xml(&keywords_str)).unwrap();
+                        }
+                    }
+                    
+                    writeln!(
+                        rag_context_for_user_message,
+                        ">{}</lorebook_entry>",
+                        escape_xml(rag_item.text.trim())
+                    )
+                    .unwrap();
                 }
             }
         }
-        rag_context_for_user_message.push_str("\n"); // Add a newline after RAG context
+        
+        rag_context_for_user_message.push_str("</lorebook_entries>\n\n");
     }
 
     // Combine RAG context with the current user message
