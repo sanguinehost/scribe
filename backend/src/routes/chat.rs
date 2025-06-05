@@ -43,7 +43,7 @@ use diesel::{ExpressionMethods, QueryDsl, RunQueryDsl, SelectableHelper, prelude
 use futures_util::StreamExt;
 use genai::chat::{
     ChatMessage as GenAiChatMessage, ChatOptions, ChatRequest, ChatResponseFormat, ChatRole,
-    JsonSpec, MessageContent, ReasoningEffort,
+    JsonSchemaSpec, MessageContent, ReasoningEffort,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -1015,12 +1015,12 @@ pub async fn generate_suggested_actions(
         .with_system(final_system_prompt_for_suggestions);
 
     let suggested_actions_schema_value = json!({
-        "type": "ARRAY",
+        "type": "array",
         "items": {
-            "type": "OBJECT",
+            "type": "object",
             "properties": {
                 "action": {
-                    "type": "STRING",
+                    "type": "string",
                     "description": "A concise suggested action or question."
                 }
             },
@@ -1035,11 +1035,9 @@ pub async fn generate_suggested_actions(
                 .unwrap_or(0.7)
                 .into(),
         ) // Use session temp or default
-        .with_max_tokens(150) // Fixed max tokens for suggestions
-        .with_response_format(ChatResponseFormat::JsonSpec(JsonSpec {
-            name: "suggested_actions".to_string(),
-            description: Some("A list of suggested follow-up actions or questions.".to_string()),
-            schema: suggested_actions_schema_value,
+        .with_max_tokens(1000) // Increased max tokens for suggestions
+        .with_response_format(ChatResponseFormat::JsonSchemaSpec(JsonSchemaSpec {
+            schema: suggested_actions_schema_value.clone(),
         }));
 
     trace!(%session_id, model = %model_for_suggestions, ?chat_request, ?chat_options, "Sending request to Gemini for suggested actions");
@@ -1059,25 +1057,26 @@ pub async fn generate_suggested_actions(
     let response_text = if let Some(text) = gemini_response.first_content_text_as_str() {
         text.to_string()
     } else {
-        error!(%session_id, "Gemini response for suggested actions did not contain text content or was empty.");
+        error!(%session_id, "Gemini response for suggested actions (JsonSchemaSpec) did not contain text content or was empty. Full response: {:?}", gemini_response);
         return Err(AppError::InternalServerErrorGeneric(
-            "AI response was empty or not in the expected format".to_string(),
+            "AI response (JsonSchemaSpec) was empty or not in the expected text format".to_string(),
         ));
     };
-    trace!(%session_id, "Gemini response text for suggested actions: {}", response_text);
+    debug!(%session_id, "Gemini response text (JsonSchemaSpec) for suggested actions: {}", response_text);
 
+    // Parse the JSON response text as an array of suggested actions
     let suggestions: Vec<SuggestedActionItem> =
         serde_json::from_str(&response_text).map_err(|e| {
             error!(
                 %session_id,
-                "Failed to parse Gemini JSON response into expected structure for suggested actions: {:?}. Response text: {}",
+                "Failed to parse Gemini JSON response text (JsonSchemaSpec) into suggested actions: {:?}. Response text: {}",
                 e,
                 response_text
             );
-            AppError::InternalServerErrorGeneric("Failed to parse structured response from AI".to_string())
+            AppError::InternalServerErrorGeneric("Failed to parse structured response from AI (JsonSchemaSpec)".to_string())
         })?;
 
-    info!(%session_id, "Successfully generated {} suggested actions", suggestions.len());
+    info!(%session_id, "Successfully generated {} suggested actions via JsonSchemaSpec (parsed from text)", suggestions.len());
 
     Ok(Json(SuggestedActionsResponse { suggestions }))
 }

@@ -1,14 +1,22 @@
 <script lang="ts">
 	import Chat from '$lib/components/chat.svelte';
-	// import { convertToUIMessages } from '$lib/utils/chat'; // Removed unused import
+	import type { ScribeChatSession, ScribeChatMessage, ScribeCharacter, BackendAuthResponse, User } from '$lib/types.ts';
 
-	let { data } = $props();
+	// Define the type for the data prop received from the loader
+	interface PageData {
+		chat: ScribeChatSession;
+		messages: ScribeChatMessage[];
+		character: ScribeCharacter | null;
+		user?: BackendAuthResponse; // User is optional as it might not be logged in
+	}
+
+	let { data }: { data: PageData } = $props();
 </script>
 
 <Chat
 		chat={data.chat}
 		initialMessages={data.messages}
 		readonly={data.user?.user_id !== data.chat.user_id}
-		user={data.user}
+		user={data.user ? { ...data.user, id: data.user.user_id, username: data.user.username, email: data.user.email } : undefined}
 		character={data.character}
 />

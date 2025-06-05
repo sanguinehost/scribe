@@ -56,6 +56,16 @@ export interface AuthUser {
     // Add other auth-related fields as needed
 }
 
+// Backend AuthResponse type
+export interface BackendAuthResponse {
+    user_id: string;
+    username: string;
+    email: string;
+    role: string;
+    recovery_key: string | null;
+    default_persona_id: string | null;
+}
+
 // Placeholder for ScribeChatSession type - Define based on expected fields from backend
 export interface ScribeChatSession {
     id: string;
