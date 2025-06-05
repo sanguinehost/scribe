@@ -20,8 +20,8 @@
 		user,
 		chat,
 		readonly,
-		initialMessages: initialMessagesProp,
-		character: characterProp,
+		initialMessages,
+		character,
 		initialChatInputValue
 	}: {
 		user: User | undefined;
@@ -36,10 +36,8 @@
 	const selectedPersonaStore = SelectedPersonaStore.fromContext();
 	const settingsStore = SettingsStore.fromContext();
 
-	// State variables
-	const currentInitialMessages = initialMessagesProp;
-	const currentCharacter = characterProp;
-	const currentChat = chat; // chat prop is also used in logic
+	// State variables - use props directly for reactivity
+	// Note: In Svelte 5, props are already reactive, so we can use them directly
 
 	const chatHistory = ChatHistory.fromContext();
 
@@ -58,19 +56,19 @@
 	$effect(() => {
 		if (!initialMessagesSet) {
 			let newInitialMessages: ScribeChatMessage[];
-			if (initialMessagesProp.length === 0 && characterProp?.first_mes) {
+			if (initialMessages.length === 0 && character?.first_mes) {
 				const firstMessageId = `first-message-${chat?.id ?? 'initial'}`;
 				newInitialMessages = [{
 					id: firstMessageId,
 					session_id: chat?.id ?? 'unknown-session',
 					message_type: 'Assistant',
-					content: characterProp.first_mes,
+					content: character.first_mes,
 					created_at: chat?.created_at ?? new Date().toISOString(),
 					user_id: '',
 					loading: false
 				}];
 			} else {
-				newInitialMessages = initialMessagesProp;
+				newInitialMessages = initialMessages;
 			}
 			messages = newInitialMessages;
 			initialMessagesSet = true;
@@ -92,30 +90,48 @@
 	let isChatConfigOpen = $state(false);
 	let availablePersonas = $state<UserPersona[]>([]);
 
-	// --- Derived state for button disabled logic ---
-	// Button is enabled if there's a chat and the character has a first message.
-	// The actual context for suggestions will be determined by fetchSuggestedActions.
+	// --- State for chat interface visibility ---
+	// The entire chat interface (input box, suggestions) should only show when we have both chat AND character
+	let shouldShowChatInterface = $state(false);
+	
+	// Update visibility when props change
+	$effect(() => {
+		const hasChat = chat !== undefined && chat !== null;
+		const hasCharacter = character !== undefined && character !== null;
+		const shouldShow = hasChat && hasCharacter;
+		
+		// Debug logging for tests
+		if (process.env.NODE_ENV === 'test') {
+			console.log('shouldShowChatInterface effect update:', {
+				hasChat,
+				hasCharacter,
+				shouldShow,
+				chat_id: chat?.id || 'undefined',
+				character_id: character?.id || 'undefined'
+			});
+		}
+		
+		shouldShowChatInterface = shouldShow;
+	});
+
+	// Button is enabled when we can actually fetch suggestions (same as interface visibility)
 	let canFetchSuggestions = $derived(() => {
-	  return !!(currentChat && currentCharacter?.first_mes);
+		return shouldShowChatInterface;
 	});
 
 	$effect(() => {
 		// Only run in development, not in test environment
 		if (process.env.NODE_ENV !== 'test') {
-			console.log('Button disabled check:', {
+			console.log('Chat interface state:', {
+				shouldShowChatInterface: shouldShowChatInterface,
 				canFetchSuggestions: canFetchSuggestions,
 				isLoadingSuggestions: isLoadingSuggestions,
 				isLoading: isLoading,
-				not_canFetchSuggestions: !canFetchSuggestions,
-				// Individual parts of canFetchSuggestions for detailed debugging:
-				hasCurrentChat: !!currentChat,
-				hasCharacterFirstMes: !!currentCharacter?.first_mes,
-				hasUserMessage: !!messages.find(m => m.message_type === 'User'),
-				hasAiResponseAfterUser: !!messages.find(m =>
-					m.message_type === 'Assistant' &&
-					m.id !== `first-message-${currentChat?.id ?? 'initial'}` &&
-					(messages.find(um => um.message_type === 'User') ? new Date(m.created_at ?? '') > new Date(messages.find(um => um.message_type === 'User')!.created_at ?? '') : false)
-				)
+				// Individual parts for detailed debugging:
+				hasCurrentChat: !!chat,
+				hasCurrentCharacter: !!character,
+				totalMessages: messages.length,
+				messageTypes: messages.map(m => m.message_type)
 			});
 		}
 	});
@@ -134,7 +150,7 @@
 
 	// Load personas when component mounts
 	$effect(() => {
-		if (currentChat) {
+		if (chat) {
 			loadAvailablePersonas();
 		}
 	});
@@ -144,16 +160,16 @@
 	async function fetchSuggestedActions() {
 		console.log('fetchSuggestedActions: Entered function.');
 
-		if (!currentChat?.id) { // Check only for currentChat.id as per new endpoint
-			console.log('fetchSuggestedActions: Aborting, missing currentChat.id.');
+		if (!chat?.id) { // Check only for chat.id as per new endpoint
+			console.log('fetchSuggestedActions: Aborting, missing chat.id.');
 			return;
 		}
 
-		console.log('Fetching suggested actions for chat:', currentChat.id);
+		console.log('Fetching suggested actions for chat:', chat.id);
 
 		try {
 			isLoadingSuggestions = true;
-			const result = await apiClient.fetchSuggestedActions(currentChat.id);
+			const result = await apiClient.fetchSuggestedActions(chat.id);
 
 			if (result.isOk()) {
 				const responseData = result.value; // This is { suggestions: [...] }
@@ -183,7 +199,7 @@
 		dynamicSuggestedActions = []; // Clear suggestions when a message (including a suggestion) is sent
 
 		// Use user.user_id instead of user.id
-		if (!currentChat?.id || !user?.id) {
+		if (!chat?.id || !user?.id) {
 			error = 'Chat session or user information is missing.';
 			toast.error(error);
 			return;
@@ -195,7 +211,7 @@
 		// Add user message optimistically
 		const userMessage: ScribeChatMessage = {
 			id: crypto.randomUUID(),
-			session_id: currentChat.id,
+			session_id: chat.id,
 			message_type: 'User',
 			content: content,
 			created_at: new Date().toISOString(),
@@ -232,7 +248,7 @@
 		const assistantMessageId = crypto.randomUUID();
 		let assistantMessage: ScribeChatMessage = {
 			id: assistantMessageId,
-			session_id: currentChat.id,
+			session_id: chat.id,
 			message_type: 'Assistant',
 			content: '', // Start empty, fill with stream
 			created_at: new Date().toISOString(), // Placeholder, backend might send final
@@ -244,7 +260,7 @@
 		let fetchError: any = null; // Variable to store error from fetch/parsing
 
 		try {
-			const response = await fetch(`/api/chat/${currentChat.id}/generate`, {
+			const response = await fetch(`/api/chat/${chat.id}/generate`, {
 				method: 'POST',
 				headers: {
 					'Content-Type': 'application/json',
@@ -466,63 +482,68 @@
 		loading={isLoading}
 		messages={messages}
 		selectedCharacterId={selectedCharacterStore.characterId}
-		character={currentCharacter}
+		character={character}
 		on:personaCreated
 		on:greetingChanged={handleGreetingChanged}
 	/>
 
-	<!-- Add Button Here -->
-	<div class="mx-auto w-full px-4 pb-1 md:max-w-3xl text-center">
-		<button
-			type="button"
-			onclick={() => {
-				// Always log this message for the test to pass, regardless of environment
-				console.log('Get Suggestions button clicked!');
-				fetchSuggestedActions();
-			}}
-			disabled={!canFetchSuggestions || isLoadingSuggestions || isLoading}
-			class="ring-offset-background focus-visible:ring-ring inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0 border-input bg-background hover:bg-accent hover:text-accent-foreground border h-10 px-4 py-2 text-sm"
-		>
-			{#if isLoadingSuggestions}
-				<svg class="animate-spin -ml-1 mr-2 h-4 w-4 text-primary" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-					<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-					<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-				</svg>
-				Loading...
-			{:else}
-				Get Suggestions
-			{/if}
-		</button>
-	</div>
-
-	{#if dynamicSuggestedActions.length > 0 && !isLoading}
-		<div class="mx-auto w-full px-4 pb-2 md:max-w-3xl">
-			<SuggestedActions {user} {sendMessage} actions={dynamicSuggestedActions} />
+	<!-- Show Chat Interface (Get Suggestions + Input) Only When Inside Active Chat -->
+	{#if shouldShowChatInterface}
+		<!-- Get Suggestions Button -->
+		<div class="mx-auto w-full px-4 pb-1 md:max-w-3xl text-center">
+			<button
+				type="button"
+				onclick={() => {
+					// Always log this message for the test to pass, regardless of environment
+					console.log('Get Suggestions button clicked!');
+					fetchSuggestedActions();
+				}}
+				disabled={!canFetchSuggestions || isLoadingSuggestions || isLoading}
+				class="ring-offset-background focus-visible:ring-ring inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0 border-input bg-background hover:bg-accent hover:text-accent-foreground border h-10 px-4 py-2 text-sm"
+			>
+				{#if isLoadingSuggestions}
+					<svg class="animate-spin -ml-1 mr-2 h-4 w-4 text-primary" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+						<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+						<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+					</svg>
+					Loading...
+				{:else}
+					Get Suggestions
+				{/if}
+			</button>
 		</div>
-	{/if}
 
-	<form
-		class="mx-auto flex w-full gap-2 bg-background px-4 pb-4 md:max-w-3xl md:pb-6"
-		onsubmit={e => { e.preventDefault(); handleInputSubmit(e); }}
-	>
-		{#if !readonly}
-			<MultimodalInput
-				{user}
-				bind:value={chatInput}
-				{isLoading}
-				{sendMessage}
-				{stopGeneration}
-				class="flex-1"
-			/>
+		<!-- Suggested Actions -->
+		{#if dynamicSuggestedActions.length > 0 && !isLoading}
+			<div class="mx-auto w-full px-4 pb-2 md:max-w-3xl">
+				<SuggestedActions {user} {sendMessage} actions={dynamicSuggestedActions} />
+			</div>
 		{/if}
-	</form>
+
+		<!-- Message Input Form -->
+		<form
+			class="mx-auto flex w-full gap-2 bg-background px-4 pb-4 md:max-w-3xl md:pb-6"
+			onsubmit={e => { e.preventDefault(); handleInputSubmit(e); }}
+		>
+			{#if !readonly}
+				<MultimodalInput
+					{user}
+					bind:value={chatInput}
+					{isLoading}
+					{sendMessage}
+					{stopGeneration}
+					class="flex-1"
+				/>
+			{/if}
+		</form>
+	{/if}
 </div>
 
 <!-- Chat Configuration Sidebar -->
-{#if currentChat}
+{#if chat}
 	<ChatConfigSidebar
 		bind:isOpen={isChatConfigOpen}
-		chat={currentChat}
+		chat={chat}
 		{availablePersonas}
 		on:settingsUpdated={(event) => {
 			console.log('Chat settings updated:', event.detail);
