@@ -414,27 +414,66 @@ fn validate_lorebook_ownership(
     )
 }
 
+/// Fetches lorebooks associated with a character
+fn get_character_lorebooks(
+    character_id: Uuid,
+    user_id: Uuid,
+    transaction_conn: &mut PgConnection,
+) -> Result<Vec<Uuid>, AppError> {
+    use crate::schema::character_lorebooks;
+
+    character_lorebooks::table
+        .filter(character_lorebooks::character_id.eq(character_id))
+        .filter(character_lorebooks::user_id.eq(user_id))
+        .select(character_lorebooks::lorebook_id)
+        .load::<Uuid>(transaction_conn)
+        .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
+}
+
 /// Associates lorebooks with the chat session
 fn associate_lorebooks(
     new_session_id: Uuid,
     user_id: Uuid,
-    lorebook_ids: Option<Vec<Uuid>>,
+    character_id: Uuid,
+    explicit_lorebook_ids: Option<Vec<Uuid>>,
     transaction_conn: &mut PgConnection,
 ) -> Result<(), AppError> {
-    if let Some(lorebook_ids_vec) = lorebook_ids {
-        for lorebook_id in lorebook_ids_vec {
-            // Validate that the lorebook exists and is owned by the user
-            validate_lorebook_ownership(lorebook_id, user_id, transaction_conn)?;
-
-            diesel::insert_into(chat_session_lorebooks::table)
-                .values((
-                    chat_session_lorebooks::chat_session_id.eq(new_session_id),
-                    chat_session_lorebooks::lorebook_id.eq(lorebook_id),
-                    chat_session_lorebooks::user_id.eq(user_id),
-                ))
-                .execute(transaction_conn)
-                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+    // Get character-associated lorebooks
+    let character_lorebooks = get_character_lorebooks(character_id, user_id, transaction_conn)?;
+    
+    // Combine explicit and character lorebooks, removing duplicates
+    let mut all_lorebook_ids = character_lorebooks;
+    if let Some(explicit_ids) = explicit_lorebook_ids {
+        for id in explicit_ids {
+            if !all_lorebook_ids.contains(&id) {
+                all_lorebook_ids.push(id);
+            }
         }
+    }
+
+    // Log what lorebooks are being associated
+    if !all_lorebook_ids.is_empty() {
+        info!(
+            session_id = %new_session_id, 
+            character_id = %character_id,
+            lorebook_count = all_lorebook_ids.len(),
+            "Associating lorebooks with chat session (including character defaults)"
+        );
+    }
+
+    // Associate all lorebooks
+    for lorebook_id in all_lorebook_ids {
+        // Validate that the lorebook exists and is owned by the user
+        validate_lorebook_ownership(lorebook_id, user_id, transaction_conn)?;
+
+        diesel::insert_into(chat_session_lorebooks::table)
+            .values((
+                chat_session_lorebooks::chat_session_id.eq(new_session_id),
+                chat_session_lorebooks::lorebook_id.eq(lorebook_id),
+                chat_session_lorebooks::user_id.eq(user_id),
+            ))
+            .execute(transaction_conn)
+            .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
     }
     Ok(())
 }
@@ -495,7 +534,7 @@ fn create_session_in_transaction(
         transaction_conn,
     )?;
 
-    associate_lorebooks(new_session_id, user_id, lorebook_ids, transaction_conn)?;
+    associate_lorebooks(new_session_id, user_id, character_id, lorebook_ids, transaction_conn)?;
 
     let fully_created_session = fetch_created_session(new_session_id, transaction_conn)?;
 

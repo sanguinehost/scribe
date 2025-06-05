@@ -20,6 +20,7 @@ use axum::{
 use axum_login::AuthSession;
 use axum_macros::debug_handler;
 use serde::Deserialize;
+use std::sync::Arc;
 use tracing::instrument; // Keep instrument
 use uuid::Uuid;
 use validator::Validate; // For validating payloads
@@ -503,7 +504,7 @@ async fn import_lorebook_handler(
                     lorebook_upload_payload.validate()?; // Validate the constructed payload
 
                     let imported_lorebook = lorebook_service
-                        .import_lorebook(&auth_session, Some(&dek.0), lorebook_upload_payload)
+                        .import_lorebook(&auth_session, Some(&dek.0), lorebook_upload_payload, Arc::new(state.clone()))
                         .await?;
                     Ok((StatusCode::CREATED, Json(imported_lorebook)).into_response())
                 } else {

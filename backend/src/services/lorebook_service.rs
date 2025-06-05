@@ -2387,6 +2387,7 @@ AppError::InternalServerErrorGeneric(format!(
         auth_session: &AuthSession<AuthBackend>,
         user_dek: Option<&SecretBox<Vec<u8>>>,
         payload: crate::models::lorebook_dtos::LorebookUploadPayload,
+        state: Arc<AppState>,
     ) -> Result<LorebookResponse, AppError> {
         let user = Self::get_user_from_session(auth_session)?;
 
@@ -2561,11 +2562,95 @@ AppError::InternalServerErrorGeneric(format!(
                 .interact(move |conn_sync| {
                     diesel::insert_into(lorebook_entries::table)
                         .values(&new_entry_db)
-                        .execute(conn_sync)
+                        .returning(LorebookEntry::as_returning())
+                        .get_result::<LorebookEntry>(conn_sync)
                 })
                 .await
             {
-                Ok(_) => {}
+                Ok(Ok(inserted_entry)) => {
+                    // Generate embeddings for the newly created entry
+                    info!("Generating embeddings for imported lorebook entry [REDACTED_UUID]");
+                    
+                    let user_dek_bytes = user_dek.unwrap().expose_secret();
+                    
+                    // Decrypt the content for embedding
+                    let decrypted_title_result = self.encryption_service.decrypt(
+                        &inserted_entry.entry_title_ciphertext,
+                        &inserted_entry.entry_title_nonce,
+                        user_dek_bytes,
+                    );
+                    let decrypted_content_result = self.encryption_service.decrypt(
+                        &inserted_entry.content_ciphertext,
+                        &inserted_entry.content_nonce,
+                        user_dek_bytes,
+                    );
+                    let decrypted_keys_text_result = if inserted_entry.keys_text_nonce.is_empty() {
+                        Ok(None)
+                    } else {
+                        self.encryption_service
+                            .decrypt(
+                                &inserted_entry.keys_text_ciphertext,
+                                &inserted_entry.keys_text_nonce,
+                                user_dek_bytes,
+                            )
+                            .map(Some)
+                    };
+
+                    match (decrypted_title_result, decrypted_content_result, decrypted_keys_text_result) {
+                        (Ok(title_bytes), Ok(content_bytes), Ok(keys_bytes_opt)) => {
+                            let decrypted_title = String::from_utf8_lossy(&title_bytes).into_owned();
+                            let decrypted_content = String::from_utf8_lossy(&content_bytes).into_owned();
+                            let decrypted_keywords = keys_bytes_opt
+                                .map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
+                                .and_then(|keys_str| {
+                                    if keys_str.trim().is_empty() {
+                                        None
+                                    } else {
+                                        let keywords: Vec<String> = keys_str
+                                            .split(',')
+                                            .map(|s| s.trim().to_string())
+                                            .filter(|s| !s.is_empty())
+                                            .collect();
+                                        if keywords.is_empty() {
+                                            None
+                                        } else {
+                                            Some(keywords)
+                                        }
+                                    }
+                                });
+
+                            let params = crate::services::embedding_pipeline::LorebookEntryParams {
+                                original_lorebook_entry_id: inserted_entry.id,
+                                lorebook_id: inserted_entry.lorebook_id,
+                                user_id: inserted_entry.user_id,
+                                decrypted_content,
+                                decrypted_title: Some(decrypted_title),
+                                decrypted_keywords,
+                                is_enabled: inserted_entry.is_enabled,
+                                is_constant: inserted_entry.is_constant,
+                            };
+
+                            // Spawn embedding generation in background to avoid blocking import
+                            let state_clone = state.clone();
+                            tokio::spawn(async move {
+                                if let Err(e) = state_clone
+                                    .embedding_pipeline_service
+                                    .process_and_embed_lorebook_entry(state_clone.clone(), params)
+                                    .await
+                                {
+                                    error!("Failed to generate embeddings for imported lorebook entry: {:?}", e);
+                                }
+                            });
+                        }
+                        _ => {
+                            error!("Failed to decrypt lorebook entry fields for embedding generation. Skipping embeddings for this entry.");
+                        }
+                    }
+                }
+                Ok(Err(e)) => {
+                    error!("Failed to import entry [REDACTED_UUID]: {:?}", e);
+                    // Continue importing other entries
+                }
                 Err(e) => {
                     error!("Failed to import entry [REDACTED_UUID]: {:?}", e);
                     // Continue importing other entries
