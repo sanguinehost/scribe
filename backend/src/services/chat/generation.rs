@@ -9,6 +9,7 @@ use futures_util::StreamExt; // Required for .next() on streams
 use genai::chat::{
     ChatMessage as GenAiChatMessage, ChatOptions as GenAiChatOptions,
     ChatRequest as GenAiChatRequest, ChatStreamEvent as GeminiResponseChunkAlias, ReasoningEffort,
+    ChatRole,
 };
 use secrecy::{ExposeSecret, SecretBox};
 // Required for stream_ai_response_and_save_message
@@ -1141,10 +1142,13 @@ fn build_raw_prompt_debug(
     tools: &[genai::chat::Tool],
 ) -> String {
     use std::fmt::Write;
+    use genai::chat::{MessageContent, ContentPart};
 
     let mut debug_prompt = String::new();
 
     // Header
+    writeln!(&mut debug_prompt, "```").unwrap();
+    writeln!(&mut debug_prompt, "Raw Prompt Sent to AI:").unwrap();
     writeln!(&mut debug_prompt, "=== RAW AI PROMPT DEBUG ===").unwrap();
     writeln!(
         &mut debug_prompt,
@@ -1159,29 +1163,56 @@ fn build_raw_prompt_debug(
         if !system.is_empty() {
             writeln!(&mut debug_prompt, "--- SYSTEM PROMPT ---").unwrap();
             writeln!(&mut debug_prompt, "{}", system).unwrap();
-            writeln!(&mut debug_prompt).unwrap();
         }
     }
 
     // Tools configuration (only if tools are declared, as they affect the prompt)
     if !tools.is_empty() {
+        writeln!(&mut debug_prompt).unwrap();
         writeln!(&mut debug_prompt, "--- TOOLS DECLARED ---").unwrap();
         for (i, tool) in tools.iter().enumerate() {
             writeln!(&mut debug_prompt, "Tool {}: {:#?}", i + 1, tool).unwrap();
         }
-        writeln!(&mut debug_prompt).unwrap();
     }
 
     // Conversation history
+    writeln!(&mut debug_prompt).unwrap();
     writeln!(&mut debug_prompt, "--- CONVERSATION HISTORY ---").unwrap();
     let messages = &chat_request.messages;
     for (i, message) in messages.iter().enumerate() {
-        writeln!(&mut debug_prompt, "Message {} [{}]:", i + 1, message.role).unwrap();
-        writeln!(&mut debug_prompt, "{:#?}", message.content).unwrap();
+        let role_display = match message.role {
+            ChatRole::System => "System",
+            ChatRole::User => "User",
+            ChatRole::Assistant => "Assistant",
+            ChatRole::Tool => "Tool",
+        };
+        
+        writeln!(&mut debug_prompt, "Message {} [{}]:", i + 1, role_display).unwrap();
+        
+        // Extract and format the actual text content
+        match &message.content {
+            MessageContent::Text(text) => {
+                writeln!(&mut debug_prompt, "{}", text).unwrap();
+            }
+            MessageContent::Parts(parts) => {
+                for part in parts {
+                    if let ContentPart::Text(text) = part {
+                        writeln!(&mut debug_prompt, "{}", text).unwrap();
+                    } else {
+                        writeln!(&mut debug_prompt, "[Non-text content]").unwrap();
+                    }
+                }
+            }
+            MessageContent::ToolCalls(tool_calls) => {
+                writeln!(&mut debug_prompt, "[Tool Calls: {} calls]", tool_calls.len()).unwrap();
+            }
+            MessageContent::ToolResponses(tool_responses) => {
+                writeln!(&mut debug_prompt, "[Tool Responses: {} responses]", tool_responses.len()).unwrap();
+            }
+        }
         writeln!(&mut debug_prompt, "---").unwrap();
     }
-
-    writeln!(&mut debug_prompt, "=== END RAW PROMPT DEBUG ===").unwrap();
+    writeln!(&mut debug_prompt, "```").unwrap();
 
     debug_prompt
 }
