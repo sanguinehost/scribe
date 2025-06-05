@@ -2456,7 +2456,7 @@ AppError::InternalServerErrorGeneric(format!(
                 keys_text,
                 content: entry.content.clone(),
                 comment: entry.comment.clone(),
-                is_enabled: Some(!entry.disable.unwrap_or(false)), // Invert the logic
+                is_enabled: entry.enabled.or_else(|| entry.disable.map(|d| !d)).or(Some(true)), // Use enabled if present, otherwise invert disable, default to true
                 is_constant: entry.constant,
                 insertion_order: entry.order,
                 placement_hint: Some(placement_hint),

@@ -20,6 +20,7 @@ use crate::routes::chats::{get_chat_settings_handler, update_chat_settings_handl
 use crate::schema::{self as app_schema, chat_sessions}; // Added app_schema for characters table
 use crate::services::chat;
 use crate::services::chat::types::ScribeSseEvent;
+use crate::services::LorebookService;
 use secrecy::ExposeSecret; // Added for ExposeSecret
 // RetrievedMetadata is no longer directly used in this file for RAG string construction
 // use crate::services::embedding_pipeline::RetrievedMetadata;
@@ -87,7 +88,7 @@ pub async fn create_chat_session_handler(
 ) -> Result<(StatusCode, Json<Chat>), AppError> {
     info!("Attempting to create new chat session");
 
-    let user = auth_session.user.ok_or_else(|| {
+    let user = auth_session.user.as_ref().ok_or_else(|| {
         error!("User not found in session during chat creation");
         AppError::Unauthorized("User not found in session".to_string())
     })?;
@@ -106,13 +107,36 @@ pub async fn create_chat_session_handler(
 
     debug!(user_id = %user_id, character_id = %payload.character_id, active_custom_persona_id=?payload.active_custom_persona_id, "User, character, and persona ID extracted");
 
+    // Fetch character's associated lorebooks
+    let lorebook_service = LorebookService::new(
+        state.pool.clone(),
+        state.encryption_service.clone(),
+        state.qdrant_service.clone(),
+    );
+    
+    let character_lorebooks = lorebook_service
+        .list_character_lorebooks(&auth_session, payload.character_id)
+        .await
+        .unwrap_or_else(|e| {
+            tracing::warn!("Failed to fetch character lorebooks: {}. Proceeding without them.", e);
+            Vec::new()
+        });
+    
+    let lorebook_ids = if character_lorebooks.is_empty() {
+        None
+    } else {
+        let ids: Vec<Uuid> = character_lorebooks.iter().map(|lb| lb.id).collect();
+        tracing::info!("Automatically associating {} lorebooks with new chat session", ids.len());
+        Some(ids)
+    };
+
     // Call the service function to create the chat session
     let created_chat_session = chat::session_management::create_session_and_maybe_first_message(
         state.into(),
         user_id,
         payload.character_id,
         payload.active_custom_persona_id, // Pass the new field
-        None, // lorebook_ids (CreateChatSessionPayload doesn't have this)
+        lorebook_ids, // Pass the character's associated lorebooks
         Some(Arc::new(session_dek.0)), // Pass the DEK, wrapped in Arc for the service
     )
     .await?;
