@@ -271,31 +271,64 @@ pub async fn upload_character_handler(
         use std::collections::HashMap;
         let mut entries_map = HashMap::new();
 
-        // Assuming lorebook_data has entries as a field
+        // Handle both array and object formats for entries
         if let Ok(lorebook_json) = serde_json::to_value(lorebook_data) {
-            if let Some(entries) = lorebook_json.get("entries").and_then(|e| e.as_object()) {
-                for (uid, entry_value) in entries {
-                    match serde_json::from_value::<
-                        crate::models::lorebook_dtos::UploadedLorebookEntry,
-                    >(entry_value.clone())
-                    {
-                        Ok(entry) => {
-                            tracing::info!(
-                                "Successfully parsed entry {}: keys={:?}, content length={}, comment={:?}",
-                                uid,
-                                entry.key,
-                                entry.content.len(),
-                                entry.comment
-                            );
-                            entries_map.insert(uid.clone(), entry);
+            if let Some(entries_value) = lorebook_json.get("entries") {
+                if let Some(entries_array) = entries_value.as_array() {
+                    // Handle array format (common in character cards)
+                    for (idx, entry_value) in entries_array.iter().enumerate() {
+                        match serde_json::from_value::<
+                            crate::models::lorebook_dtos::UploadedLorebookEntry,
+                        >(entry_value.clone())
+                        {
+                            Ok(entry) => {
+                                let uid = entry.uid.map(|u| u.to_string())
+                                    .or_else(|| entry.id.map(|i| i.to_string()))
+                                    .unwrap_or_else(|| idx.to_string());
+                                tracing::info!(
+                                    "Successfully parsed array entry {}: keys={:?}, content length={}, comment={:?}",
+                                    uid,
+                                    entry.key,
+                                    entry.content.len(),
+                                    entry.comment
+                                );
+                                entries_map.insert(uid, entry);
+                            }
+                            Err(e) => {
+                                tracing::warn!(
+                                    "Failed to parse array entry {}: {}. Raw value: {}",
+                                    idx,
+                                    e,
+                                    entry_value
+                                );
+                            }
                         }
-                        Err(e) => {
-                            tracing::warn!(
-                                "Failed to parse entry {}: {}. Raw value: {}",
-                                uid,
-                                e,
-                                entry_value
-                            );
+                    }
+                } else if let Some(entries_object) = entries_value.as_object() {
+                    // Handle object format (SillyTavern format)
+                    for (uid, entry_value) in entries_object {
+                        match serde_json::from_value::<
+                            crate::models::lorebook_dtos::UploadedLorebookEntry,
+                        >(entry_value.clone())
+                        {
+                            Ok(entry) => {
+                                tracing::info!(
+                                    "Successfully parsed object entry {}: keys={:?}, content length={}, comment={:?}",
+                                    uid,
+                                    entry.key,
+                                    entry.content.len(),
+                                    entry.comment
+                                );
+                                entries_map.insert(uid.clone(), entry);
+                            }
+                            Err(e) => {
+                                tracing::warn!(
+                                    "Failed to parse object entry {}: {}. Raw value: {}",
+                                    uid,
+                                    e,
+                                    entry_value
+                                );
+                            }
                         }
                     }
                 }

@@ -126,12 +126,16 @@ pub struct LorebookEntrySummaryResponse {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct UploadedLorebookEntry {
+    #[serde(alias = "keys")]
     pub key: Option<Vec<String>>, // Keywords/triggers, can be null in some ST exports
     pub content: String,          // Entry content
     pub comment: Option<String>,  // Optional comment
     pub disable: Option<bool>,    // true means disabled (will invert to is_enabled)
+    pub enabled: Option<bool>,    // true means enabled (alternative to disable field)
     pub constant: Option<bool>,   // Maps to is_constant
+    #[serde(alias = "insertion_order")]
     pub order: Option<i32>,       // Maps to insertion_order
+    #[serde(deserialize_with = "deserialize_position")]
     pub position: Option<i32>,    // 0=before prompt, 1=after prompt
     pub uid: Option<i32>,         // Original SillyTavern UID
     #[serde(default, alias = "id")]
@@ -329,4 +333,39 @@ pub struct ScribeMinimalLorebook {
 pub enum ExportFormat {
     ScribeMinimal,
     SillyTavernFull,
+}
+
+// Custom deserializer for position field that handles both string and integer formats
+fn deserialize_position<'de, D>(deserializer: D) -> Result<Option<i32>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::de::{Error, Unexpected};
+    use serde_json::Value;
+    
+    let value = Value::deserialize(deserializer)?;
+    
+    match value {
+        Value::Null => Ok(None),
+        Value::Number(n) => {
+            if let Some(i) = n.as_i64() {
+                Ok(Some(i as i32))
+            } else {
+                Err(Error::invalid_type(Unexpected::Float(n.as_f64().unwrap_or(0.0)), &"integer"))
+            }
+        }
+        Value::String(s) => {
+            match s.as_str() {
+                "before_char" | "before_prompt" => Ok(Some(0)),
+                "after_char" | "after_prompt" => Ok(Some(1)),
+                _ => {
+                    // Try to parse as integer
+                    s.parse::<i32>().map(Some).map_err(|_| {
+                        Error::invalid_value(Unexpected::Str(&s), &"integer, 'before_char', 'after_char', 'before_prompt', or 'after_prompt'")
+                    })
+                }
+            }
+        }
+        _ => Err(Error::invalid_type(Unexpected::Other(&value.to_string()), &"integer or string"))
+    }
 }

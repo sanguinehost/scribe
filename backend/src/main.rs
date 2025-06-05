@@ -1,6 +1,7 @@
 use axum::{
     Router,
     routing::get, // Remove post
+    extract::DefaultBodyLimit,
 };
 use deadpool_diesel::postgres::{
     Manager as DeadpoolManager, PoolConfig, Runtime as DeadpoolRuntime,
@@ -315,7 +316,8 @@ fn build_router(
     auth_layer: axum_login::AuthManagerLayer<AuthBackend, DieselSessionStore>,
 ) -> Router {
     let protected_api_routes = Router::new()
-        .nest("/characters", characters_router(app_state.clone()))
+        .nest("/characters", characters_router(app_state.clone())
+            .layer(DefaultBodyLimit::max(10 * 1024 * 1024))) // 10MB limit for character uploads
         .nest("/chat", chat_routes(app_state.clone()))
         .nest("/chats", chats::chat_routes())
         .nest("/documents", document_routes())
