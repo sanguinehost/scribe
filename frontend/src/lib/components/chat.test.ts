@@ -73,6 +73,18 @@ vi.mock('$lib/stores/selected-persona.svelte', () => {
   };
 });
 
+vi.mock('$lib/stores/settings.svelte', () => {
+  class MockSettingsStore {
+    settings = {};
+    static fromContext() {
+      return new MockSettingsStore();
+    }
+  }
+  return {
+    SettingsStore: MockSettingsStore,
+  };
+});
+
 // --- Mock Browser & SvelteKit APIs ---
 vi.mock('svelte/reactivity/window', () => ({
   innerWidth: { current: 1024, subscribe: vi.fn(() => () => {}) }
@@ -502,7 +514,7 @@ describe('Chat.svelte Component', () => {
     global.fetch = originalFetch; // Restore original fetch
   });
 
-  it('should call fetchSuggestedActions with only character first_mes when no user messages exist', async () => {
+  it('should show the chat interface when in a chat with character (even with only first_mes)', async () => {
     // 1. Spy on console.log
     const consoleLogSpy = vi.spyOn(console, 'log');
 
@@ -514,11 +526,9 @@ describe('Chat.svelte Component', () => {
     const originalFetch = global.fetch;
     global.fetch = mockApiFetch;
 
-    // 3. Render Chat component with a character that has first_mes, but no initial user/assistant messages
-    // Ensure character has first_mes
+    // Render Chat component with a character that has first_mes, but no initial user/assistant messages
     const characterWithOnlyFirstMes: ScribeCharacter = {
       ...mockCharacter, // mockCharacter already has first_mes
-      // Ensure no other messages are implied by this character object if it had other fields
     };
 
     render(Chat, {
@@ -534,11 +544,15 @@ describe('Chat.svelte Component', () => {
     // Wait for Svelte's reactivity and component updates
     await tick(); // Initial render
     await tick(); // $effect for initialMessages (will add character.first_mes to internal messages state)
-    await tick(); // $derived canFetchSuggestions update
+    await tick(); // $effect shouldShowChatInterface update
 
-    // 4. Find the button
-    const getSuggestionsButton = screen.getByRole('button', { name: /Get Suggestions/i });
+    // The Get Suggestions button SHOULD be visible when we're in a chat with a character (even with just first_mes)
+    const getSuggestionsButton = await screen.findByRole('button', { name: /Get Suggestions/i });
     expect(getSuggestionsButton).toBeInTheDocument();
+    
+    // The input form should also be visible
+    const inputForm = await screen.findByRole('form');
+    expect(inputForm).toBeInTheDocument();
     
     // Verify the button is NOT disabled
     await waitFor(() => {
@@ -548,15 +562,15 @@ describe('Chat.svelte Component', () => {
     // Reset the spy to ensure we only capture calls after the click
     consoleLogSpy.mockReset();
 
-    // 5. Simulate a click
+    // Simulate a click
     fireEvent.click(getSuggestionsButton);
 
-    // 6. Assert console.log was called
+    // Assert console.log was called
     await waitFor(() => {
       expect(consoleLogSpy).toHaveBeenCalledWith('Get Suggestions button clicked!');
     });
 
-    // 7. Assert fetch was called for suggestions API with correct payload
+    // Assert fetch was called for suggestions API with correct payload
     await waitFor(() => {
       expect(mockApiFetch).toHaveBeenCalledWith(
         `/api/chat/actions/${mockChatSession.id}/suggest`,
@@ -571,6 +585,58 @@ describe('Chat.svelte Component', () => {
     // Cleanup
     consoleLogSpy.mockRestore();
     global.fetch = originalFetch;
+  });
+
+  it('should NOT show the chat interface when not in a chat (no chat session)', async () => {
+    // Render Chat component without a chat session (like on main page or character selection)
+    render(Chat, {
+      props: {
+        user: mockUser,
+        chat: undefined, // No chat session
+        initialMessages: [],
+        character: mockCharacter,
+        readonly: false,
+      },
+    });
+
+    // Wait for Svelte's reactivity and component updates
+    await tick();
+    await tick();
+    await tick();
+
+    // The Get Suggestions button should NOT be visible when there's no chat session
+    const getSuggestionsButton = screen.queryByRole('button', { name: /Get Suggestions/i });
+    expect(getSuggestionsButton).not.toBeInTheDocument();
+    
+    // The input form should also NOT be visible
+    const inputForm = screen.queryByRole('form');
+    expect(inputForm).not.toBeInTheDocument();
+  });
+
+  it('should NOT show the chat interface when in chat but no character', async () => {
+    // Render Chat component with chat session but no character
+    render(Chat, {
+      props: {
+        user: mockUser,
+        chat: mockChatSession,
+        initialMessages: [],
+        character: null, // No character
+        readonly: false,
+      },
+    });
+
+    // Wait for Svelte's reactivity and component updates
+    await tick();
+    await tick();
+    await tick();
+
+    // The Get Suggestions button should NOT be visible when there's no character
+    const getSuggestionsButton = screen.queryByRole('button', { name: /Get Suggestions/i });
+    expect(getSuggestionsButton).not.toBeInTheDocument();
+    
+    // The input form should also NOT be visible
+    const inputForm = screen.queryByRole('form');
+    expect(inputForm).not.toBeInTheDocument();
   });
 });
 
