@@ -602,7 +602,7 @@ async fn handle_character_management_menu<C: HttpClient, H: IoHandler>(
                         manifest_dir
                     ))
                 })?;
-                let test_card_path_buf = workspace_root.join("test_data/test_card.png");
+                let test_card_path_buf = workspace_root.join("test_data/The_Awakened.png");
                 let test_card_path_str = test_card_path_buf.to_str().ok_or_else(|| {
                     CliError::Internal(format!(
                         "Constructed test card path is not valid UTF-8: {:?}",

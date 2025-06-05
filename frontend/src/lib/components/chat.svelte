@@ -6,7 +6,7 @@
 	import ChatHeader from './chat-header.svelte';
 	import type { User, ScribeCharacter } from '$lib/types'; // Updated import path & Add ScribeCharacter
 	import type { ScribeChatSession, ScribeChatMessage } from '$lib/types'; // Import Scribe types
-	import type { UserPersona } from '$lib/api';
+	import type { UserPersona } from '$lib/types';
 	import Messages from './messages.svelte';
 	import MultimodalInput from './multimodal-input.svelte';
 	import SuggestedActions from './suggested-actions.svelte'; // Import SuggestedActions
@@ -111,10 +111,10 @@
 				hasCurrentChat: !!currentChat,
 				hasCharacterFirstMes: !!currentCharacter?.first_mes,
 				hasUserMessage: !!messages.find(m => m.message_type === 'User'),
-				hasAiResponseAfterUser: !!messages.find(m => 
-					m.message_type === 'Assistant' && 
-					m.id !== `first-message-${currentChat?.id ?? 'initial'}` && 
-					(messages.find(um => um.message_type === 'User') ? new Date(m.created_at) > new Date(messages.find(um => um.message_type === 'User')!.created_at) : false)
+				hasAiResponseAfterUser: !!messages.find(m =>
+					m.message_type === 'Assistant' &&
+					m.id !== `first-message-${currentChat?.id ?? 'initial'}` &&
+					(messages.find(um => um.message_type === 'User') ? new Date(m.created_at ?? '') > new Date(messages.find(um => um.message_type === 'User')!.created_at ?? '') : false)
 				)
 			});
 		}
@@ -183,7 +183,7 @@
 		dynamicSuggestedActions = []; // Clear suggestions when a message (including a suggestion) is sent
 
 		// Use user.user_id instead of user.id
-		if (!currentChat?.id || !user?.user_id) {
+		if (!currentChat?.id || !user?.id) {
 			error = 'Chat session or user information is missing.';
 			toast.error(error);
 			return;
@@ -199,7 +199,7 @@
 			message_type: 'User',
 			content: content,
 			created_at: new Date().toISOString(),
-			user_id: user.user_id, // Use user.user_id
+			user_id: user.id, // Use user.id
 			loading: false,
 		};
 		messages = [...messages, userMessage];
@@ -443,6 +443,19 @@
 			// TODO: Reset textarea height in MultimodalInput (might need refactor there)
 		}
 	}
+
+	// Handle greeting changes from alternate greetings
+	function handleGreetingChanged(event: CustomEvent) {
+		const { index, content } = event.detail;
+		
+		// Update the first message content in the messages array
+		const firstMessageId = `first-message-${chat?.id ?? 'initial'}`;
+		messages = messages.map(msg => 
+			msg.id === firstMessageId 
+				? { ...msg, content }
+				: msg
+		);
+	}
 </script>
 
 <div class="flex h-dvh min-w-0 flex-col bg-background">
@@ -453,7 +466,9 @@
 		loading={isLoading}
 		messages={messages}
 		selectedCharacterId={selectedCharacterStore.characterId}
+		character={currentCharacter}
 		on:personaCreated
+		on:greetingChanged={handleGreetingChanged}
 	/>
 
 	<!-- Add Button Here -->

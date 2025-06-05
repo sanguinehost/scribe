@@ -2,6 +2,8 @@
 	import { onMount, createEventDispatcher } from 'svelte';
 	import { goto } from '$app/navigation'; // Import goto for redirection
 	import CharacterCard from './CharacterCard.svelte';
+	import CharacterEditor from './CharacterEditor.svelte';
+	import CharacterCreator from './CharacterCreator.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import PlusIcon from './icons/plus.svelte';
 	import { Skeleton } from '$lib/components/ui/skeleton';
@@ -20,6 +22,9 @@
 	let isLoading = true;
 	let error: string | null = null;
 	let selectedCharacterId: string | null = null; // To track selection state for cards
+	let editingCharacterId: string | null = null; // To track which character is being edited
+	let showEditor = false;
+	let showCreator = false;
 
 	const dispatch = createEventDispatcher();
 
@@ -82,14 +87,47 @@
 	function handleUploadClick() {
 		dispatch('uploadCharacter');
 	}
+
+	function handleEdit(event: CustomEvent<{ characterId: string }>) {
+		editingCharacterId = event.detail.characterId;
+		showEditor = true;
+	}
+
+	function handleDelete(event: CustomEvent<{ characterId: string }>) {
+		// Refresh the character list after successful deletion
+		fetchCharacters();
+	}
+
+	// Handle when editor closes to refresh the character list
+	$: if (!showEditor && editingCharacterId) {
+		// Refresh character list after editing
+		fetchCharacters();
+		editingCharacterId = null;
+	}
+
+	function handleCreateClick() {
+		showCreator = true;
+	}
+
+	function handleCharacterCreated() {
+		// Refresh the character list
+		fetchCharacters();
+	}
 </script>
 
 <div class="flex flex-col h-full">
 	<div class="p-2 flex justify-between items-center border-b">
 		<h2 class="text-lg font-semibold px-2">Characters</h2>
-		<Button variant="ghost" size="icon" onclick={handleUploadClick} aria-label="Upload Character">
-			<PlusIcon class="h-5 w-5" />
-		</Button>
+		<div class="flex gap-1">
+			<Button variant="ghost" size="icon" onclick={handleCreateClick} aria-label="Create Character" title="Create Character">
+				<PlusIcon class="h-5 w-5" />
+			</Button>
+			<Button variant="ghost" size="icon" onclick={handleUploadClick} aria-label="Upload Character" title="Upload Character Card">
+				<svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+				</svg>
+			</Button>
+		</div>
 	</div>
 
 	<div class="flex-1 overflow-y-auto p-2 space-y-2">
@@ -114,8 +152,20 @@
 					{character}
 					isSelected={selectedCharacterId === character.id}
 					on:select={handleSelect}
+					on:edit={handleEdit}
+					on:delete={handleDelete}
 				/>
 			{/each}
 		{/if}
 	</div>
 </div>
+
+<CharacterEditor
+	characterId={editingCharacterId}
+	bind:open={showEditor}
+/>
+
+<CharacterCreator
+	bind:open={showCreator}
+	on:created={handleCharacterCreated}
+/>

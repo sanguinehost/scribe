@@ -340,8 +340,8 @@ async fn test_create_character_all_fields() -> Result<(), anyhow::Error> {
     assert_eq!(
         created_char.alternate_greetings,
         Some(vec![
-            Some("Hey there!".to_string()),
-            Some("Greetings, tester!".to_string())
+            "Hey there!".to_string(),
+            "Greetings, tester!".to_string()
         ])
     );
 

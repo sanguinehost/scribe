@@ -14,15 +14,27 @@
 	let { message, readonly, loading }: { message: ScribeChatMessage; readonly: boolean; loading: boolean } =
 		$props();
 
+	// Function to detect if a message is the first message from a character
+	function isFirstMessage(message: ScribeChatMessage): boolean {
+		// Check if it's an Assistant message and has the expected first-message ID pattern
+		// Note: We're being more conservative here and only checking the ID pattern
+		// since this component doesn't have access to message position context
+		return message.message_type === 'Assistant' && 
+			   message.id.startsWith('first-message-');
+	}
+
 	// Debug logging to see what's in the message
 	$effect(() => {
 		if (message.message_type === 'Assistant') {
-			console.log('Assistant message:', {
+			console.log('Assistant message debug:', {
 				id: message.id,
 				message_type: message.message_type,
 				has_raw_prompt: !!message.raw_prompt,
 				raw_prompt_length: message.raw_prompt?.length,
-				loading: message.loading
+				loading: message.loading,
+				is_first_message: isFirstMessage(message),
+				id_starts_with_first: message.id.startsWith('first-message-'),
+				content_preview: message.content.substring(0, 50) + '...'
 			});
 		}
 	});
@@ -75,12 +87,12 @@
 				{/if}
 			</div>
 
-			<!-- Raw Prompt Debug for Assistant messages -->
-			{#if message.message_type === 'Assistant' && !message.loading}
+			<!-- Raw Prompt Debug for Assistant messages (excluding first messages) -->
+			{#if message.message_type === 'Assistant' && !message.loading && !isFirstMessage(message)}
 				{#if message.raw_prompt}
 					<RawPromptDebug rawPrompt={message.raw_prompt} />
 				{:else}
-					<!-- Debug: Show when raw_prompt is missing -->
+					<!-- Debug: Show when raw_prompt is missing (but not for first messages) -->
 					<div class="w-full">
 						<div class="text-xs text-muted-foreground p-2 border rounded bg-yellow-50 dark:bg-yellow-900/20">
 							Debug: No raw_prompt data available for this message

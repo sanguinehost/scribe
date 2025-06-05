@@ -1,0 +1,3165 @@
+{
+  "name": "Malkuth",
+  "description": null,
+  "entries": [
+    {
+      "title": "Ada's Sunstone",
+      "keywords": [
+        "Adas Sunstone",
+        "Jinhuangshi",
+        "金煌石"
+      ],
+      "content": "Sunstone gems associated with Ada, likely resonating with her Abyssal Heart energies. Used in crafting Runic Amulets or other magical items."
+    },
+    {
+      "title": "Crag-Hoppers",
+      "keywords": [
+        "Crag Hoppers",
+        "Qiaobi Ling",
+        "峭壁羚"
+      ],
+      "content": "Sure-footed mountain ungulates with thick coats and spiraled horns, found in the Dragon's Crown Peaks."
+    },
+    {
+      "title": "Great Library of Whispering Stones",
+      "keywords": [
+        "Great Library of Whispering Stones",
+        "Cangshu Shiku",
+        "藏書石窟",
+        "Hidden Book Grotto"
+      ],
+      "content": "Mathenemes' domain, a colossal cavern deep within Malkuth's crust, near Imira's sanctums. Holds knowledge in glowing crystal codices, memory-laden geodes, and captured event echoes. Accessible by a specific resonance to those who truly seek knowledge."
+    },
+    {
+      "title": "Temara",
+      "keywords": [
+        "Temara",
+        "Taimala",
+        "泰瑪拉",
+        "Peaceful Distant Land"
+      ],
+      "content": "A significant south-eastern continental mass on Malkuth, known to be wilder and less charted. Homeland of the Longzi."
+    },
+    {
+      "title": "Great Schism (Kinneret-Shen)",
+      "keywords": [
+        "Great Schism Kinneret Shen",
+        "Kinneret Shen Civil War"
+      ],
+      "content": "A devastating civil war within Kinneret-Shen society, instigated by Lassenia's rebellion against the Queen's rule, fueled by hatred for slavery and personal trauma. It nearly destroyed their civilization and led to the death of the Queen's daughter and thousands of slaves."
+    },
+    {
+      "title": "Sun-Stalk Grasses",
+      "keywords": [
+        "Sun Stalk Grasses",
+        "Xiangyang Cao",
+        "向陽草"
+      ],
+      "content": "Incredibly tall grasses on Huna's plains with seed heads that track the sun."
+    },
+    {
+      "title": "Fae Enclaves",
+      "keywords": [
+        "Fae Enclaves",
+        "Jingling Mijing",
+        "精靈秘境"
+      ],
+      "content": "Hidden, self-contained communities of Huajing (Fae) in regions where Ada's influence is strong. Suffused with potent Fae magic, and interactions with mortals are governed by whimsical and perilous rules."
+    },
+    {
+      "title": "Trade (Malkuth)",
+      "keywords": [
+        "Malkuth Trade",
+        "Trade Routes Malkuth"
+      ],
+      "content": "In the Age of Scattered Embers, trade is perilous and infrequent due to vast distances, dangerous wilderness, and isolated communities. Early trade routes are being forged, carrying goods like Linghou monkey wine, Ren pottery, Banished Kin hides, and rare herbs. The Kinneret-Shen and Tianling likely have more established (though perhaps localized) trade networks for their specialized goods."
+    },
+    {
+      "title": "Earthen Resonance (Qi)",
+      "keywords": [
+        "Earthen Resonance",
+        "Kūn Yuán Qì",
+        "坤元氣",
+        "Earth Qi Resonance"
+      ],
+      "content": "One of the Five Primal Resonances of Qi in Malkuth, linked to Imira. It embodies stability, structure, gravity, the formation of crystals, and the deep, unyielding power of the earth. Strong in the Dragon's Crown Peaks."
+    },
+    {
+      "title": "Abyssal Spire District (Kinneret-Shen Deeps)",
+      "keywords": [
+        "Abyssal Spire District",
+        "Mkhoz Tzariach Tomi",
+        "מחוז צריח תהומי",
+        "Kinneret Shen Abyssal Spire District"
+      ],
+      "content": "A district in a vast Kinneret-Shen underwater city, featuring towering spires of magically shaped coral and rock. Home to artisans, scholars of abyssal phenomena, and an introspective, sometimes dissident populace. Threats include Abyssal Leviathans, political purges, and decaying infrastructure. Extreme pressure, no natural light, strange energy fluctuations from Earth-Fire Fonts, and unsettling visions near deep trenches. Power players include Master Artisan Coralia (legendary sculptor, cultural resistance figure) and Scholar Theron (studies forbidden texts on the Great Schism). Beliefs include state religion (Queen, First Mover) but with fascination for darker Dao aspects, Void Essence, and Abyssal Leviathans; some question the Queen's authority."
+    },
+    {
+      "title": "Fae-Whisper Root",
+      "keywords": [
+        "Fae Whisper Root",
+        "Jingling Ganying Gen",
+        "精靈感應根"
+      ],
+      "content": "A type of Wild Heart Spirit Root granting innate talent for illusions, intuitive understanding of Fae, and easier pact-making with Huajing."
+    },
+    {
+      "title": "Geyserfoot Village (Dragon's Crown)",
+      "keywords": [
+        "Geyserfoot Village",
+        "Yongquan Zu Cun",
+        "湧泉足村",
+        "Dragons Crown Geyserfoot Village"
+      ],
+      "content": "A small, fortified Ren enclave in a geothermal basin in the lower Dragon's Crown Peaks, cultivating hardy crops. Inhabited by the pragmatic Geyserfoot Ren. Threats include 'tribute' demands from the Stonefang Shanyuan Clan, Linghou raids, geothermal instability, and their subjugated status by Shanyuan 'creators'. Geothermal activity and strong Earthen Resonance Qi characterize the area. Power players include Old Man Hemlock (elder with survival wisdom), Anya Swift-Trap (resourceful trap-maker), and Borin Stone-Shaper (Qi Condensation cultivator). Beliefs are pragmatic, involving tributes to earth/geyser spirits, ancestor worship, and fearful respect for their Shanyuan creators, with some younger Ren questioning all deities."
+    },
+    {
+      "title": "Mathenemes",
+      "keywords": [
+        "Mathenemes",
+        "מתימטיקוס",
+        "Jishi Tianguan",
+        "記識天官",
+        "Keeper of Records Heavenly Official",
+        "Eternal Scribe",
+        "Keeper of the Worlds Soul",
+        "Silent Witness"
+      ],
+      "content": "Elevated to godhood by the First Mover for his dedication to knowledge. The Eternal Scribe and Keeper of the World's Soul, appearing as ancient, multifaceted, sometimes crystalline or stone-like. Resides within the Great Library of Whispering Stones. Neutral, dedicated to preserving all knowledge."
+    },
+    {
+      "title": "Shadow Weavers (Tianling)",
+      "keywords": [
+        "Shadow Weavers Tianling",
+        "Yingzhi Zhe",
+        "影織者",
+        "Orgei Tzel",
+        "אוֹרְגֵי צֵל"
+      ],
+      "content": "An enigmatic faction of Tianling on the North-Western Spearhead who master arts of illusion and stealth, often dwelling in labyrinthine sea caves."
+    },
+    {
+      "title": "Primal Vents",
+      "keywords": [
+        "Primal Vents",
+        "Taigu Qixue",
+        "太古氣穴"
+      ],
+      "content": "Legendary geothermal 'Earth-Fire Fonts' on Malkuth, places of immense natural power. Examples include the Kelosian Scar and the Verdant Heart."
+    },
+    {
+      "title": "Celestial Light-Serpents",
+      "keywords": [
+        "Celestial Light Serpents",
+        "Tianguang Lingshe",
+        "天光靈蛇"
+      ],
+      "content": "Ethereal, glowing serpentine beings that dance in Malkuth's upper atmosphere, processing gases and minerals, producing methane and other complex compounds. They are beloved by Ada."
+    },
+    {
+      "title": "Cove Sanctuaries (Tianling)",
+      "keywords": [
+        "Cove Sanctuaries Tianling",
+        "Yinwan Misuo",
+        "隱灣秘所",
+        "Mikletei HaChof",
+        "מִקְלְטֵי הַחוֹף",
+        "Shelters of the Coast"
+      ],
+      "content": "Tianling settlements hidden within deep, narrow coves on the North-Western Spearhead, protected by natural formations and Runic wards."
+    },
+    {
+      "title": "Dao Grade Technique",
+      "keywords": [
+        "Dao Grade Technique",
+        "Dao Pin Gongfa",
+        "道品功法"
+      ],
+      "content": "The ultimate cultivation techniques (Gōngfǎ) that directly touch upon, or allow manipulation of, the fundamental principles of the Resonant Dao itself. Exceedingly rare, perhaps only comprehensible or usable by cultivators at the highest echelons."
+    },
+    {
+      "title": "Lingfeng Shi",
+      "keywords": [
+        "Lingfeng Shi",
+        "靈風使",
+        "Spirit Wind Messengers"
+      ],
+      "content": "Ethereal celestial attendants of Jeru, appearing as swift currents of wind carrying whispers of prophecy or divine decree, sometimes in bird-like or cloud-like forms. Jeru's eyes and ears."
+    },
+    {
+      "title": "Celestial Bones",
+      "keywords": [
+        "Celestial Bones",
+        "Tiangu",
+        "天骨",
+        "Yang Filaments"
+      ],
+      "content": "The Yang-Filaments that form the structural threads of the Cosmic Web, representing pure actuality, law, and structure."
+    },
+    {
+      "title": "Primal Strength (Shanyuan)",
+      "keywords": [
+        "Primal Strength Shanyuan",
+        "Shanyuan Yuanli",
+        "山猿原力"
+      ],
+      "content": "The rudimentary cultivation practice of the Shanyuan, focusing on enhancing innate physical prowess by drawing upon the earth's energy to harden their bodies and imbue strikes with crushing force."
+    },
+    {
+      "title": "Dao-Resonance Array (Formation Tier 7)",
+      "keywords": [
+        "Dao Resonance Array",
+        "Daoming Zhen",
+        "道鳴陣",
+        "Tier 7 Formation",
+        "Formation Tier 7"
+      ],
+      "content": "The pinnacle of cultivator formation mastery. These arrays directly manipulate or resonate profoundly with the Resonant Dao itself, capable of altering fundamental principles within their scope. Only Immortal Lords or similar beings could conceive them."
+    },
+    {
+      "title": "Foundation Building",
+      "keywords": [
+        "Foundation Building",
+        "Zhu Ji",
+        "築基"
+      ],
+      "content": "The second major realm of Cultivation. Cultivators solidify Qi reserves, purify meridians, and establish a stable 'foundation' for higher cultivation, significantly increasing physical prowess. Substages: Initial, Middle, Upper, Peak."
+    },
+    {
+      "title": "Profound Pills (Grade 3)",
+      "keywords": [
+        "Profound Pills",
+        "Xuan Dan",
+        "玄丹",
+        "Grade 3 Pill",
+        "Pill Grade 3"
+      ],
+      "content": "Alchemical pills that can assist with breaking minor bottlenecks in Foundation Building or Golden Core, heal serious injuries, or provide significant temporary power boosts. Require rarer ingredients and skilled alchemists."
+    },
+    {
+      "title": "Linghou",
+      "keywords": [
+        "Linghou",
+        "靈猴",
+        "Spirit Monkeys"
+      ],
+      "content": "Generally smaller, more agile, quick-witted, and cunning primates than the Shanyuan. Believed to have sprung from ancient Spirit-Cap Forests, possibly by Ada's energies. Form complex social structures in forests (Huna, Dragon's Crown Peaks) or coastal regions (North-Western Spearhead). Known for brewing potent wines (e.g., Hundred Fruit Monkey Wine) and some tribes show aptitude for illusion or Agile Flow Cultivation."
+    },
+    {
+      "title": "Agile Flow Cultivation (Linghou)",
+      "keywords": [
+        "Agile Flow Cultivation Linghou",
+        "Linghou Minliu",
+        "靈猴敏流"
+      ],
+      "content": "A cultivation path some Linghou tribes might develop, enhancing their natural speed, senses, and agility, possibly drawing on Ada's wilder energies."
+    },
+    {
+      "title": "Heavenly Spirit Root",
+      "keywords": [
+        "Heavenly Spirit Root",
+        "Tian Linggen",
+        "天靈根"
+      ],
+      "content": "Legendary quality Spirit Root, resonating with celestial energies or possessing unique, powerful mutations. Cultivators with such roots are often considered heaven-blessed geniuses."
+    },
+    {
+      "title": "Silent Arbiter",
+      "keywords": [
+        "Silent Arbiter",
+        "Jingmo Zhongcaizhe",
+        "靜默仲裁者",
+        "The Dao Primal Aspect"
+      ],
+      "content": "One of the three Primal Aspects reflecting the First Mover's nature, embodied by Imira. Represents the mediating principle, balance, profound understanding, and the contemplative, ordering aspect of the First Mover."
+    },
+    {
+      "title": "Spirit Root Elemental Balance",
+      "keywords": [
+        "Spirit Root Elemental Balance",
+        "Linggen Wuxing Pingheng",
+        "靈根五行平衡"
+      ],
+      "content": "For multi-elemental Spirit Roots, this describes the relative strength and harmony of each elemental affinity. Balanced roots are preferred for holistic paths; imbalanced roots may lead to specialization or instability."
+    },
+    {
+      "title": "Celestial Resonance",
+      "keywords": [
+        "Celestial Resonance",
+        "Tiangu Qi",
+        "天骨氣"
+      ],
+      "content": "A Primal Resonance of Qi, derived from Celestial Bones. Represents actuality, law, structure, starlight, and ordering consciousness. Corresponds to aspects of Order, Light, and Cosmic Energy."
+    },
+    {
+      "title": "Submerged Realms",
+      "keywords": [
+        "Submerged Realms",
+        "Shuixia Dalu",
+        "水下大陸",
+        "Underwater Continents"
+      ],
+      "content": "Immense underwater continents beneath Malkuth's vast oceans, shaped by unique pressures and forces, holding their own secrets."
+    },
+    {
+      "title": "World-Carrying Kun",
+      "keywords": [
+        "World Carrying Kun",
+        "Fujie Zhi Kun",
+        "負界之鯤"
+      ],
+      "content": "City-sized, ancient aquatic beings of immense wisdom found in Malkuth's oceans. Their vast backs form living islands with their own thriving ecosystems."
+    },
+    {
+      "title": "Jeru's Empyrean Will Root",
+      "keywords": [
+        "Jerus Empyrean Will Root",
+        "Suyue Tian Gen",
+        "素月天根",
+        "Plain White Heavenly Root"
+      ],
+      "content": "A rare Divine Aspect Spirit Root providing exceptional affinity for Empyrean and Celestial Resonances, linking to Jeru's Primal Aspect."
+    },
+    {
+      "title": "Age of Scattered Embers",
+      "keywords": [
+        "Age of Scattered Embers"
+      ],
+      "content": "The current primal epoch on Malkuth. Characterized by isolated communities, basic technology, untamed wilderness, and the nascent flickering of civilizations and organized power structures."
+    },
+    {
+      "title": "Arcane & Runic Magic",
+      "keywords": [
+        "Arcane Magic",
+        "Runic Magic",
+        "Weave of Jeru",
+        "Zhelu de Aomi Fuwen Zhi Dao",
+        "哲魯的奧秘符文之道",
+        "Aoshu Fuwen Zhi Dao",
+        "奥术符文之道",
+        "Torat HaReshamim",
+        "תּוֹרַת הָרְשָׁמִים",
+        "Chokhmat HaOtiot",
+        "חָכְמַת הָאוֹתִיוֹת",
+        "Wisdom of the Letters"
+      ],
+      "content": "A system of magic envisioned by Jeru, involving the intellectual understanding and manipulation of external Aethel/Mana through a complex system of Runes (symbols representing the fundamental syntax of reality). Practiced primarily by the Tianling."
+    },
+    {
+      "title": "Shaman (Wild Magics)",
+      "keywords": [
+        "Shaman Wild Magics",
+        "Wild Shaman"
+      ],
+      "content": "Practitioners of Ada's Wild Magics, often deeply connected to nature spirits and the Living Current. Capable of ecstatic trances, coaxing elemental forces, and driven by fierce protective instincts for their lands and people. May follow the Verdant Coil."
+    },
+    {
+      "title": "Imira",
+      "keywords": [
+        "Imira",
+        "Zixuan Yue",
+        "紫玄月",
+        "Purple Mysterious Moon"
+      ],
+      "content": "The largest of Malkuth's three conscious moons, deep purple and crystalline. Embodies The Silent Arbiter / The Dao. Represents balance, deep earth, profound knowledge. Resides in Malkuth's crust and, guided by the First Mover, codified the Cultivation system. Her primary servant is Mathenemes."
+    },
+    {
+      "title": "Primal Self (Wild Magics)",
+      "keywords": [
+        "Primal Self Wild Magics",
+        "Yuanshi Ziwo",
+        "原始自我"
+      ],
+      "content": "An expression of Ada's Wild Magics focused on emotion-fueled power surges, instinctual abilities, advanced/unstable shapeshifting, manifestation of primal urges, and chaotic elemental outbursts."
+    },
+    {
+      "title": "Abyssal Leviathans",
+      "keywords": [
+        "Abyssal Leviathans",
+        "Yuanhai Juling",
+        "淵海巨靈"
+      ],
+      "content": "Colossal, often terrifyingly alien entities dwelling in Malkuth's deepest oceanic trenches near Earth-Fire Fonts. Some are ancient beyond reckoning and possess a primal awareness of the Dao."
+    },
+    {
+      "title": "Natal Treasure",
+      "keywords": [
+        "Natal Treasure",
+        "Benming Fabao",
+        "本命法寶",
+        "Lifebound Artifact"
+      ],
+      "content": "A specific artifact intrinsically linked to a cultivator's cultivation and soul, often acquired or forged early and nurtured alongside their advancement. Its growth mirrors the cultivator's, and damage to it can injure the owner."
+    },
+    {
+      "title": "Living Current",
+      "keywords": [
+        "Living Current",
+        "Huo Liu",
+        "活流"
+      ],
+      "content": "The direct, raw, and often willful life force of Malkuth itself, encompassing Abyssal Resonance Qi, Lifeblood Qi, and the anima/spirits of flora and fauna. The primary source for Ada's Wild Magics, requiring communion and negotiation."
+    },
+    {
+      "title": "Beast-Soul Root",
+      "keywords": [
+        "Beast Soul Root",
+        "Shouhun Gen",
+        "獸魂根"
+      ],
+      "content": "A type of Wild Heart Spirit Root granting deep empathy with Malkuth's beasts, a predisposition for shapeshifting, and heightened primal instincts."
+    },
+    {
+      "title": "Xueyuan Guizu",
+      "keywords": [
+        "Xueyuan Guizu",
+        "血裔鬼卒",
+        "Blood Descendant Ghost Soldiers"
+      ],
+      "content": "A type of Mozu serving Lassenia. Brutal warriors clad in dark, jagged armor, their forms often bestial or grotesquely powerful, driven by bloodlust and a desire to dominate."
+    },
+    {
+      "title": "Imira's Resonant Root",
+      "keywords": [
+        "Imiras Resonant Root",
+        "Zixuan Dao Gen",
+        "紫玄道根",
+        "Purple Mysterious Dao Root"
+      ],
+      "content": "A rare Divine Aspect Spirit Root granting exceptional affinity for Earthen and Celestial Resonances, linking to Imira's Primal Aspect."
+    },
+    {
+      "title": "Spreading Corruption (Wild Magics)",
+      "keywords": [
+        "Corrupted Wild Magics",
+        "Sanbo Fuhua",
+        "散播腐化",
+        "Spreading Corruption Wild Magics"
+      ],
+      "content": "An Unmaking Touch ability of the Crimson Bloom, where practitioners become conduits for Sitra Achra's influence, twisting creatures, tainting lands, or fostering negative emotions."
+    },
+    {
+      "title": "Mountain-Forging Upheaval",
+      "keywords": [
+        "Mountain Forging Upheaval",
+        "Zaoshan Zhi Bian",
+        "造山之變"
+      ],
+      "content": "The cataclysmic geological event where continents clashed in Malkuth’s tumultuous youth, creating the Dragon's Crown Peaks."
+    },
+    {
+      "title": "Sky-Terror Roc",
+      "keywords": [
+        "Sky Terror Roc",
+        "Lietian Dapeng",
+        "裂天大鵬"
+      ],
+      "content": "A legendary, colossal bird of prey rumored to inhabit the highest, most sacred peaks of the Dragon's Crown Mountains, an embodiment of the mountain's untamed spirit."
+    },
+    {
+      "title": "Earth-Resonant Talisman (Grade 3)",
+      "keywords": [
+        "Earth Resonant Talisman",
+        "Di Ying Fu",
+        "地應符",
+        "Grade 3 Talisman",
+        "Talisman Grade 3"
+      ],
+      "content": "A grade of cultivator talismans with significant power, capable of affecting the local environment or providing substantial protection/offense (e.g., small tremors, walls of fire). Often require rare earth-aspected ingredients and Golden Core (Early Stage) cultivation skill."
+    },
+    {
+      "title": "Fae-Blooded Trickster",
+      "keywords": [
+        "Fae Blooded Trickster",
+        "Jingling Xuemai Guishushi",
+        "精靈血脈詭術師"
+      ],
+      "content": "An archetype of Wild Magic user, possibly with Fae ancestry or a Fae-Whisper Root. Possesses innate illusory powers and a whimsical, unpredictable nature, navigating the world through charm, cunning, and bargains."
+    },
+    {
+      "title": "Common Spirit Root",
+      "keywords": [
+        "Common Spirit Root",
+        "Fan Linggen",
+        "凡靈根"
+      ],
+      "content": "Basic quality Spirit Root, often single or dual elemental with moderate purity. Allows for steady but slow cultivation. Common among average cultivators."
+    },
+    {
+      "title": "Mist-Lynxes",
+      "keywords": [
+        "Mist Lynxes",
+        "Wu Shanmao",
+        "霧山貓"
+      ],
+      "content": "Reclusive felines found in the inland, mist-shrouded areas of the North-Western Spearhead."
+    },
+    {
+      "title": "Technology Level (Malkuth)",
+      "keywords": [
+        "Technology",
+        "Malkuth Technology",
+        "Malkuth Artifice"
+      ],
+      "content": "Generally low in the Age of Scattered Embers. Most societies use tools of stone, wood, and bone. Bronze is rare; iron is legendary. Potable water is a concern, leading to fermented drinks. Advanced artifice is scarce, with power primarily derived from cultivation or magic. Exceptions include Kinneret-Shen's ancient tech and Tianling Runic crafts."
+    },
+    {
+      "title": "Void Resonance",
+      "keywords": [
+        "Void Resonance",
+        "Xuanming Qi",
+        "玄冥氣"
+      ],
+      "content": "A Primal Resonance of Qi, drawing from Void Essence. Embodies potentiality, shadow, cold, and the unmanifest. Corresponds to aspects of Darkness and Void."
+    },
+    {
+      "title": "Arcane Constructs",
+      "keywords": [
+        "Arcane Constructs",
+        "Aoshu Zaowu",
+        "奥术造物",
+        "Golems Arcane"
+      ],
+      "content": "Golems, Sentinels, and other automata animated and controlled by intricate Runic cores, serving Arcanists as guardians or laborers."
+    },
+    {
+      "title": "Frozen Tears of Heaven",
+      "keywords": [
+        "Frozen Tears of Heaven"
+      ],
+      "content": "A type of celestial debris that fell during Malkuth's early bombardments, likely composed of exotic ices or solidified gases, potentially with unique magical properties."
+    },
+    {
+      "title": "Religion & Beliefs (Malkuth)",
+      "keywords": [
+        "Malkuth Religion",
+        "Malkuth Beliefs"
+      ],
+      "content": "In the Age of Scattered Embers, organized religion is rare. Most common folk hold a blend of beliefs: awe for the First Mover, respect or fear for the Moon Deities' influence (tides, seasons, magic), ancestor worship (especially among Ren and Shanyuan), and animistic reverence for local nature spirits (rivers, mountains, forests, specific creatures). Some, like the Kinneret-Shen, have a more structured state religion centered on their Queen and the First Mover. Others, particularly pragmatic individuals or certain Tianling factions, may be skeptical or secular, focusing on tangible power or survival."
+    },
+    {
+      "title": "Frozen Tear of Heaven",
+      "keywords": [
+        "Frozen Tear of Heaven",
+        "Tianlei Bingjing",
+        "天淚冰晶"
+      ],
+      "content": "A type of celestial debris that fell during Malkuth's early bombardments, possibly composed of exotic ices or solidified gases. Used as a crystal focus for ice-based Runic magic."
+    },
+    {
+      "title": "Ren",
+      "keywords": [
+        "Ren",
+        "人",
+        "People",
+        "Humans"
+      ],
+      "content": "A relatively recent sentient race on Malkuth, shorter and stockier than Earth counterparts due to high gravity. Originally created as servants or an offshoot by powerful Shanyuan and/or Linghou cultivators. Possess notable intelligence, remarkable adaptability, and a surprising capacity for various paths of the Resonant Dao. Found in agrarian communities on Huna and oppressed enclaves in the Dragon's Crown Peaks."
+    },
+    {
+      "title": "Cliff-Spires (Tianling)",
+      "keywords": [
+        "Cliff Spires Tianling",
+        "Yajian Cheng",
+        "崖尖城",
+        "Tzukei HaChokmah",
+        "צוּקֵי הַחָכְמָה",
+        "Cliffs of Wisdom"
+      ],
+      "content": "Tianling settlements carved directly into the living rock of towering sea cliffs on the North-Western Spearhead, featuring graceful architecture and Runic defenses."
+    },
+    {
+      "title": "Alchemy (Cultivation)",
+      "keywords": [
+        "Alchemy Cultivation",
+        "Dandao",
+        "丹道",
+        "Cultivator Alchemy"
+      ],
+      "content": "The art of refining pills and elixirs from spiritual herbs, minerals, and beast essences to aid in cultivation, healing, or combat."
+    },
+    {
+      "title": "Aetheric Weave",
+      "keywords": [
+        "Aetheric Weave",
+        "Yitai zhi Wang",
+        "以太之网"
+      ],
+      "content": "The subtle energetic stratum of the First Mover's dream that Arcanists tap into, carrying the 'vibrations' or 'syntax' of the Resonant Dao for Runic magic."
+    },
+    {
+      "title": "Earthen Resonance Qi",
+      "keywords": [
+        "Earthen Resonance Qi",
+        "Kun Yuan Qi",
+        "坤元氣"
+      ],
+      "content": "Qi manifestation linked to Imira, embodying stability, structure, gravity, crystals, and the deep power of earth. Reflects Imira's domain. Corresponds to aspects of classical Earth and Metal."
+    },
+    {
+      "title": "Huajing",
+      "keywords": [
+        "Huajing",
+        "花精",
+        "Flower Essences",
+        "Flower Spirits"
+      ],
+      "content": "Ada's direct creations and attendants, also known as Fae. They embody the wild, untamed life force of Malkuth's unique ecosystems. Incredibly diverse, passionate, and unpredictable."
+    },
+    {
+      "title": "Mistdew Wine",
+      "keywords": [
+        "Mistdew Wine",
+        "Wùlù Jiǔ",
+        "霧露酒"
+      ],
+      "content": "A potent, subtly psychoactive wine brewed by the Whisperwood Troop of Linghou in the Dragon's Crown Peaks. Its recipe is a closely guarded secret held by Elder Hua."
+    },
+    {
+      "title": "Glowcap Brew",
+      "keywords": [
+        "Glowcap Brew",
+        "Guānggū Niàng",
+        "光菇釀"
+      ],
+      "content": "A phosphorescent, mildly hallucinogenic brew made by the Glimmercap Clan of Linghou in Huna's Spirit-Cap Forests. Offered to spirits and Fae."
+    },
+    {
+      "title": "Primordial Runes",
+      "keywords": [
+        "Primordial Runes",
+        "Yuanshi Fuwen",
+        "元始符文"
+      ],
+      "content": "The 'Capital Letters' of creation in Runic Magic, direct symbolic representations of the First Mover's core concepts (e.g., Existence, Void, Order, Chaos). Immensely powerful and complex."
+    },
+    {
+      "title": "Artifacts (Cultivation)",
+      "keywords": [
+        "Artifacts Cultivation",
+        "Baoqi",
+        "寶器",
+        "Treasure Tools",
+        "Cultivator Artifacts"
+      ],
+      "content": "Rare and powerful cultivator items, often possessing unique innate abilities, a significant history, or a sentient artifact spirit. Require high cultivation to wield effectively."
+    },
+    {
+      "title": "Corrupted/Demonic Qi",
+      "keywords": [
+        "Corrupted Qi",
+        "Demonic Qi",
+        "Moqi",
+        "魔氣"
+      ],
+      "content": "Energies twisted by intense negative emotions, forbidden rituals, or the influence of malevolent entities like Lassenia or the Sitra Achra. Used by Mozu."
+    },
+    {
+      "title": "Malkuth",
+      "keywords": [
+        "Malkuth",
+        "מלכות",
+        "Dajie",
+        "大界",
+        "Great World",
+        "The Kingdom",
+        "World of Whispering Tides"
+      ],
+      "content": "The primary planet setting of the lore. A sphere of immense scale (approx. 10x Earth's mass) with profound gravity, predominantly an ocean world, shaped by celestial bombardments and titanic tidal forces from its three conscious moons."
+    },
+    {
+      "title": "Tide-Carved Haven (North-Western Spearhead)",
+      "keywords": [
+        "Tide Carved Haven",
+        "Mifratz Miflat Geut",
+        "מפרץ מפלט גאות",
+        "North Western Spearhead Tide Carved Haven"
+      ],
+      "content": "A rugged, pragmatic Tianling settlement in a defensible fjord, with structures of driftwood and whalebone. Houses Tianling focused on survival, maritime skills, and practical Runic applications (weather-warding, ship enchanting), trading cautiously with local Ren salvagers. Threats include Kinneret-Shen corsairs, Kraken Spawn, internal tensions, and the sea's fury. Treacherous currents, rich marine life, and ancient submerged Runic markers characterize the area. Power players include Wave-Caller Elara (Adept Elementalist) and Old Finn (Ren salvager leader). Beliefs involve honoring Jeru as master of sky/sea, practical reverence for the ocean; Ren hold animistic beliefs, some Tianling are more secular."
+    },
+    {
+      "title": "Void Kelp",
+      "keywords": [
+        "Void Kelp"
+      ],
+      "content": "A strange type of kelp found in some Kinneret-Shen deep-sea regions and the Shadow-Kelp Grotto, which seems to absorb light and sound, creating areas of unnatural silence and darkness."
+    },
+    {
+      "title": "Talismans (Cultivation)",
+      "keywords": [
+        "Talismans Cultivation",
+        "Fulu",
+        "符籙",
+        "Cultivator Talismans"
+      ],
+      "content": "Inscribed paper or other materials imbued with Qi to create specific, often temporary, magical effects (wards, offensive blasts, flight, illusion). Used by cultivators."
+    },
+    {
+      "title": "Ren Technology",
+      "keywords": [
+        "Ren Technology",
+        "Ren Artifice"
+      ],
+      "content": "The Ren possess fragmented echoes of their creators' (Shanyuan/Linghou) understanding, manifesting in cleverly designed tools for farming poor soil, efficient traps, surprisingly durable shelters, or intuitive grasp of simple mechanics or basic alchemy."
+    },
+    {
+      "title": "Demonic Berserker",
+      "keywords": [
+        "Demonic Berserker",
+        "Mohua Kuangzhanshi",
+        "魔化狂戰士"
+      ],
+      "content": "An archetype of Wild Magic user who has succumbed to the Crimson Bloom, transforming into a monstrous warrior fueled by rage and bloodlust, a terrifying force of destruction."
+    },
+    {
+      "title": "Storm-Twisted Pines",
+      "keywords": [
+        "Storm Twisted Pines",
+        "Fengbao Niusong",
+        "風暴扭松"
+      ],
+      "content": "Gnarled, resilient trees dominant in the North-Western Spearhead, their wood incredibly dense and weather-resistant."
+    },
+    {
+      "title": "Gale-Riders",
+      "keywords": [
+        "Gale Riders",
+        "Liefeng Niao",
+        "烈風鳥"
+      ],
+      "content": "Large seabirds with incredible stamina found in the skies of the North-Western Spearhead, adapted to its strong winds."
+    },
+    {
+      "title": "Dao Integration",
+      "keywords": [
+        "Dao Integration",
+        "Hédào",
+        "合道",
+        "Merging with the Dao Cultivation Realm"
+      ],
+      "content": "A transcendent cultivation realm where the cultivator's body, soul, and core begin a profound merger with their chosen Dao aspect, embodying it. Substages: Early (Dao Union), Middle (Dao Evolvement), Late (Dao Transformation), Peak (Dao Truth)."
+    },
+    {
+      "title": "Feudalism (Malkuth)",
+      "keywords": [
+        "Malkuth Feudalism",
+        "Feudal Society Malkuth"
+      ],
+      "content": "True feudal societal structures are exceptionally rare in Malkuth's Age of Scattered Embers. The Kinneret-Shen are noted as possessing the only significant feudal society, with a Queen, nobles, and a hierarchical structure. Most other races live in tribal, nomadic, or small, nascent agrarian communities."
+    },
+    {
+      "title": "Yare'ach Bahir",
+      "keywords": [
+        "Yareach Bahir",
+        "יָרֵחַ בָּהִיר",
+        "Bright Clear Moon"
+      ],
+      "content": "A name the Tianling (Am HaSod) may use for Jeru's celestial form (Suyue)."
+    },
+    {
+      "title": "Moon-Petals",
+      "keywords": [
+        "Moon Petals",
+        "Yuehua Huaban",
+        "月華花瓣"
+      ],
+      "content": "Flowers from Malkuth that bloom only under Ada's Jinhuang Yue, believed to hold a fragment of her essence. Used as Organic Foci by Wild Magic practitioners."
+    },
+    {
+      "title": "First Will",
+      "keywords": [
+        "First Will",
+        "Yuanshi Shengyi",
+        "元始聖意",
+        "Primordial Holy Intent"
+      ],
+      "content": "The act of will exerted by the First Mover that 'collapsed' or 'shattered the balance' of the Primordial Ocean's quiescent state, initiating the Great Emergence and the formation of manifested reality."
+    },
+    {
+      "title": "Roc-Eagles",
+      "keywords": [
+        "Roc Eagles",
+        "Dapeng Diao",
+        "大鵬雕"
+      ],
+      "content": "Colossal eagles that ride thermal updrafts in the Dragon's Crown Peaks, their wingspans capable of casting villages into shadow."
+    },
+    {
+      "title": "Stone-Moss",
+      "keywords": [
+        "Stone Moss",
+        "Shi Tai",
+        "石苔"
+      ],
+      "content": "Hardy moss that clings to bare rock in the Dragon's Crown Peaks."
+    },
+    {
+      "title": "Great Glowcap",
+      "keywords": [
+        "Great Glowcap",
+        "Jùguāng Gū",
+        "巨光菇"
+      ],
+      "content": "A particularly large and revered bioluminescent fungus in Whisperwood Nook, believed by the local Linghou to house the valley's guardian spirit."
+    },
+    {
+      "title": "Fae",
+      "keywords": [
+        "Fae"
+      ],
+      "content": "Another name for the Huajing, Ada's nature spirits. See Huajing."
+    },
+    {
+      "title": "Spirit-Cap Forests",
+      "keywords": [
+        "Spirit Cap Forests",
+        "Linggu Zhi Sen",
+        "靈菇之森"
+      ],
+      "content": "Vast expanses on Malkuth dominated by colossal, often bioluminescent fungi. Formed primary 'plant life' for much of Malkuth's history, crucial for early oxygenation. Found on Huna and in the Dragon's Crown Peaks."
+    },
+    {
+      "title": "Hundred Fruit Monkey Wine",
+      "keywords": [
+        "Hundred Fruit Monkey Wine",
+        "Baiguo Hou Jiu",
+        "百果猴酒"
+      ],
+      "content": "A potent and highly sought-after alcoholic beverage brewed by Linghou tribes, especially those in the Dragon's Crown Peaks, from a secret blend of fermented mountain fruits, rare herbs, and fungal spores."
+    },
+    {
+      "title": "Kraken Spawn",
+      "keywords": [
+        "Kraken Spawn",
+        "Haiguai Houyi",
+        "海怪後裔"
+      ],
+      "content": "Immense, tentacled horrors that occasionally rise from the deepest trenches to threaten the North-Western Spearhead."
+    },
+    {
+      "title": "Salt-Spray Briars",
+      "keywords": [
+        "Salt Spray Briars",
+        "Yanwu Jicong",
+        "鹽霧棘叢"
+      ],
+      "content": "Thorny thickets found in the coastal areas of the North-Western Spearhead, adapted to the harsh, salt-laden environment."
+    },
+    {
+      "title": "Tianjiang",
+      "keywords": [
+        "Tianjiang",
+        "天將",
+        "Heavenly Generals"
+      ],
+      "content": "Celestial attendants of Jeru. Beings of radiant light and ordered power, often appearing as noble warriors in shining armor, wielding weapons of condensed starlight or sky-ice. They enforce Jeru's will."
+    },
+    {
+      "title": "Spiritwood",
+      "keywords": [
+        "Spiritwood",
+        "Lingmu",
+        "靈木"
+      ],
+      "content": "Wood from ancient or magically potent trees, such as those in Spirit-Cap Forests. Used for crafting Runic Wands, Staves, or Grimoire bindings."
+    },
+    {
+      "title": "Mystic Spirit Root",
+      "keywords": [
+        "Mystic Spirit Root",
+        "Xuan Linggen",
+        "玄靈根"
+      ],
+      "content": "Excellent quality Spirit Root, often rare single elemental roots of exceptional purity, or multi-elemental roots with harmonious balance and high individual affinities. Cultivation speed is notably faster."
+    },
+    {
+      "title": "Wildwood Kin (Tianling)",
+      "keywords": [
+        "Wildwood Kin Tianling",
+        "Linyin Zu",
+        "林隱族",
+        "Mishpachat Yaar HaSod",
+        "מִשְׁפַּחַת יַעַר הַסוֹד"
+      ],
+      "content": "A reclusive faction of Tianling on the North-Western Spearhead who find sanctuary in the mist-shrouded inland forests, likely specializing in nature-resonant Runic magic."
+    },
+    {
+      "title": "Moon-Petal Flower",
+      "keywords": [
+        "Moon Petal Flower",
+        "Yuehua Hua",
+        "月華花"
+      ],
+      "content": "A legendary flower said to bloom only under the light of a specific moon (likely Ada's Jinhuang Yue) and possess potent healing or Qi-enhancing qualities. Found in the Dragon's Crown Peaks."
+    },
+    {
+      "title": "Crimson Bloom",
+      "keywords": [
+        "Crimson Bloom",
+        "Xinghong zhi Hua",
+        "腥紅之華"
+      ],
+      "content": "A darker, demonic/chthonic expression of Ada's Wild Magics, often associated with Lassenia and the Sitra Achra. Involves blood magic (often sacrificial), demonic pacts, soul manipulation, corruption, accelerated decay, and monstrous transformation."
+    },
+    {
+      "title": "Sword Cultivation",
+      "keywords": [
+        "Sword Cultivation",
+        "Jianxiu",
+        "劍修"
+      ],
+      "content": "A specialized cultivation path focusing on channeling Qi through a sword, developing Sword Intent, Sword Light, flying swords, and achieving unity with the blade."
+    },
+    {
+      "title": "Blood Constructs (Crimson Bloom)",
+      "keywords": [
+        "Blood Constructs Crimson Bloom",
+        "Xuerou Zaowu",
+        "血肉造物"
+      ],
+      "content": "A Sanguine Rite of the Crimson Bloom, animating or shaping spilled blood into temporary weapons, tendrils, or crude servitors."
+    },
+    {
+      "title": "Riverbend Camp (Huna)",
+      "keywords": [
+        "Riverbend Camp",
+        "Hewan Yingdi",
+        "河灣營地",
+        "Huna Riverbend Camp"
+      ],
+      "content": "A semi-permanent Banished Kin encampment on bluffs overlooking a bend in the Great Serpent River on Huna. Inhabited by the River Wyrm Tribe, skilled fishers and boat-builders. Threats include rival Banished Kin, Dust Stalkers, River Wyrms, and encroaching Ren settlements. Influenced by river currents, seasonal floods, and Ada's lunar aspect. Power players include Elder Finnian (Memory Keeper, ritual guide) and Mara Swift-Spear (lead huntress, nascent primal cultivator). Beliefs center on the River Wyrm spirit, Ada as a moon-mother, and fragmented Kinneret songs of a lost past."
+    },
+    {
+      "title": "Shapeshifting (Wild Magics)",
+      "keywords": [
+        "Shapeshifting Wild Magics",
+        "Bianxing zhi Shu",
+        "變形之術",
+        "Metamorphosis Wild Magics"
+      ],
+      "content": "An iconic expression of Wild Magics, involving the transformation into beast forms native to Malkuth. Requires embodying the beast's inner essence and can be influenced by emotion, with risks of losing oneself to primal instincts."
+    },
+    {
+      "title": "Major Array (Formation Tier 3)",
+      "keywords": [
+        "Major Array",
+        "Da Zhen",
+        "大陣",
+        "Tier 3 Formation",
+        "Formation Tier 3"
+      ],
+      "content": "Complex cultivator formations (e.g., 36-108 nodes) requiring significant resources and skilled Nascent Soul cultivators or dedicated formation masters. Capable of defending a small city or generating powerful offensive effects."
+    },
+    {
+      "title": "Spiritual Forge",
+      "keywords": [
+        "Spiritual Forge",
+        "Lianlu",
+        "煉爐"
+      ],
+      "content": "A specialized forge, often an artifact itself, used by artificers (Liànqì masters) to craft cultivator artifacts, requiring control over Spiritual Fire."
+    },
+    {
+      "title": "Dao-Forged Artifacts (Artifact Tier 7)",
+      "keywords": [
+        "Dao Forged Artifacts",
+        "Daolian Zhibao",
+        "道煉至寶",
+        "Tier 7 Artifact Cultivation"
+      ],
+      "content": "The rarest and most powerful class of cultivator artifacts, forged from the Dao itself by supreme cultivators. Embody a profound Dao principle and can warp reality. Typically unique and world-altering."
+    },
+    {
+      "title": "Jeruan Alchemical Path",
+      "keywords": [
+        "Jeruan Alchemical Path",
+        "Jeru Alchemy"
+      ],
+      "content": "A specialized alchemical path potentially influenced by Jeru, focusing on elixirs that bestow mental clarity, enhance sensory perception, aid comprehension of complex laws (even Runic principles), or create substances resonating with celestial energies."
+    },
+    {
+      "title": "Titanic Tidal Forces",
+      "keywords": [
+        "Titanic Tidal Forces",
+        "Juchao Zhi Li",
+        "巨潮之力"
+      ],
+      "content": "The constant push and pull from Malkuth's three great, conscious moons, leading to colossal tides that have sculpted the planet's geology and continue to shape its environments."
+    },
+    {
+      "title": "Spirit Treasures (Artifact Tier 2)",
+      "keywords": [
+        "Spirit Treasures",
+        "Lingqi",
+        "靈器",
+        "Spirit Weapons Cultivation",
+        "Tier 2 Artifact Cultivation"
+      ],
+      "content": "Cultivator artifacts crafted with rarer, spiritually conductive materials. Can store some Qi, allowing more potent effects. May develop nascent awareness or a simple artifact spirit. Can be refined and upgraded."
+    },
+    {
+      "title": "Profound Array (Formation Tier 4)",
+      "keywords": [
+        "Profound Array",
+        "Xuan Zhen",
+        "玄陣",
+        "Tier 4 Formation",
+        "Formation Tier 4"
+      ],
+      "content": "Cultivator formations incorporating deeper Dao principles, possibly with multiple linked sub-arrays (e.g., 108+ nodes). Versatile and powerful, often unique to powerful sects or ancient sites. May require Soul Formation experts."
+    },
+    {
+      "title": "Star-Touched (Tianling)",
+      "keywords": [
+        "Star Touched Tianling",
+        "Xingchu Zhe",
+        "星觸者",
+        "Neguei Kokhavim",
+        "נְגועֵי כּוֹכָבִים"
+      ],
+      "content": "A faction of Tianling on the North-Western Spearhead, known for dwelling on high, storm-lashed cliffs to better observe the celestial sphere and study astromancy."
+    },
+    {
+      "title": "Divine Vestige Artifacts (Artifact Tier 6)",
+      "keywords": [
+        "Divine Vestige Artifacts",
+        "Shenyi Shengwu",
+        "神遺聖物",
+        "Tier 6 Artifact Cultivation"
+      ],
+      "content": "Cultivator artifacts of extraordinary power created by, blessed by, or fragments of items once wielded by divine beings of Malkuth (Moon Deities, Mathenemes, etc.). Abilities align with their divine source."
+    },
+    {
+      "title": "Lifeblood Qi",
+      "keywords": [
+        "Lifeblood Qi",
+        "Xueqi",
+        "血氣"
+      ],
+      "content": "Qi derived from the vital essence of living beings. Exceptionally potent for body tempering and enhancing vitality. Central to Ada's themes of life, death, and sacrifice in Wild Magics."
+    },
+    {
+      "title": "Ada",
+      "keywords": [
+        "Ada",
+        "Jinhuang Yue",
+        "金煌月",
+        "Golden Brilliant Moon"
+      ],
+      "content": "A vibrant yellow-gold conscious moon of Malkuth. Embodies The Abyssal Heart / The Primal Passion. Connected to wild forests, untamed life force, passion, love, and transformative chaos. Her influence gives rise to the Fae and is the source of Wild Magics. Can also empower darker urges (e.g., Lassenia)."
+    },
+    {
+      "title": "Balanced Harmony Root",
+      "keywords": [
+        "Balanced Harmony Root",
+        "Taiji He Gen",
+        "太極和根",
+        "Supreme Ultimate Harmony Root"
+      ],
+      "content": "A rare Variant Spirit Root with near-perfect balance of multiple Primal Resonances, good for holistic cultivation but requires vast resources."
+    },
+    {
+      "title": "Hidden Spring Conclave",
+      "keywords": [
+        "Hidden Spring Conclave",
+        "Yinquan Hui",
+        "隱泉會"
+      ],
+      "content": "A small, secretive group of Linghou elders and brewers in the Dragon's Crown Peaks who safeguard alchemical recipes (like for Hundred Fruit Monkey Wine) and potent cultivation arts."
+    },
+    {
+      "title": "Mana (Arcane)",
+      "keywords": [
+        "Mana Arcane",
+        "Moneng",
+        "魔能",
+        "Magical Energy Power",
+        "Koach HaShefa",
+        "כֹּחַ הַשֶׁפַע",
+        "Power of the Abundance"
+      ],
+      "content": "Aethel that has been drawn from the Aetheric Weave and is actively being channeled or held by an Arcanist for spellcasting. The working energy of the Arcane practitioner."
+    },
+    {
+      "title": "Sunstone Village (Huna)",
+      "keywords": [
+        "Sunstone Village",
+        "Rishi Cun",
+        "日石村",
+        "Huna Sunstone Village"
+      ],
+      "content": "A relatively prosperous Ren agrarian settlement on Huna's plains, built around warm, sun-reflecting standing stones. Inhabited by the Sunstone Ren, known for resilience and irrigation techniques. Threats include migrating Plains Striders, droughts, Banished Kin/Dust Stalker raids, and nascent Ren petty kingdoms. The Sunstones promote crop growth and cause vivid dreams. Power players include Council Head Elara (pragmatic leader) and Torvin Stonehand (Earth-aspected Qi Condensation cultivator, village defender). Beliefs focus on the sacred Sunstones, ancestor worship, and agricultural observation of the Moons (Jeru for order, Ada for fertility)."
+    },
+    {
+      "title": "Dao Heart",
+      "keywords": [
+        "Dao Heart",
+        "Daoxin",
+        "道心"
+      ],
+      "content": "A cultivator's spiritual core, representing their resolve, understanding of their path, and mental fortitude. Flaws in the Dao Heart can give rise to Heart Demons."
+    },
+    {
+      "title": "Wild Magics",
+      "keywords": [
+        "Wild Magics",
+        "Yexing Daofa",
+        "野性道法",
+        "Adas Abyssal Hearts Resonance"
+      ],
+      "content": "An instinctual, emotionally catalyzed magic system flowing from Ada and the Abyssal Heart. Rooted in symbiotic relationships with nature, Fae, beasts, and raw life/death/passion/chaos energies. Practitioners tap into the 'Living Current'."
+    },
+    {
+      "title": "Five Primal Resonances (Qi)",
+      "keywords": [
+        "Five Primal Resonances",
+        "Wuxing Ying",
+        "五行應"
+      ],
+      "content": "The elemental Qi manifestations in Malkuth, uniquely tied to its Primal Aspects and cosmic dichotomies: Earthen Resonance (Imira), Abyssal Resonance (Ada), Empyrean Resonance (Jeru), Void Resonance (Unmanifest), and Celestial Resonance (Manifest)."
+    },
+    {
+      "title": "Luminaries",
+      "keywords": [
+        "Luminaries",
+        "Guangqi Zhe",
+        "光啟者",
+        "Light Revealers",
+        "Light Initiators",
+        "Meirei HaSodot",
+        "מְאִירֵי הַסּוֹדוֹת",
+        "Illuminators of the Secrets"
+      ],
+      "content": "The eldest among the Tianjiang, Jeru's first disciples in the arcane arts. They were instrumental in teaching the Tianling the principles of Runic Magic."
+    },
+    {
+      "title": "Deep Glyphs",
+      "keywords": [
+        "Deep Glyphs",
+        "Shenyuan Fuyin",
+        "深淵符印",
+        "Reshamei Tehom",
+        "רְשָׁמֵי תְהוֹם",
+        "Inscriptions of the Abyss"
+      ],
+      "content": "Another term for Elder Runes, ancient and powerful Runic symbols sought by Tianling scholars."
+    },
+    {
+      "title": "School of Oneiric Shaping",
+      "keywords": [
+        "School of Oneiric Shaping",
+        "Sumeng Xueyuan",
+        "塑梦学院"
+      ],
+      "content": "A school of Arcane Magic exploring illusion, dreams, and the subjective nature of reality. Practitioners are skilled in dreamwalking, phantasms, and mental influence."
+    },
+    {
+      "title": "Spiritual Herbs",
+      "keywords": [
+        "Spiritual Herbs",
+        "Lingyao",
+        "靈藥"
+      ],
+      "content": "Flora that absorbs ambient Qi or possesses unique energetic properties, used as ingredients in alchemy on Malkuth."
+    },
+    {
+      "title": "School of Symbolic Thaumaturgy",
+      "keywords": [
+        "School of Symbolic Thaumaturgy",
+        "Fuhao Qishu Xueyuan",
+        "符号奇术学院"
+      ],
+      "content": "A purist school of Arcane Magic emphasizing exhaustive study of Runic etymology, grammar, and syntax. Practitioners are enchanters, ward-creators, and librarians of magical knowledge."
+    },
+    {
+      "title": "Divine Grade Technique",
+      "keywords": [
+        "Divine Grade Technique",
+        "Shen Pin Gongfa",
+        "神品功法"
+      ],
+      "content": "Legendary cultivation techniques (Gōngfǎ), perhaps originating from ancient times, divine beings, or moments of profound cosmic enlightenment. Possess immense power and may have unique requirements or risks."
+    },
+    {
+      "title": "Ecstatic Trance (Wild Magics)",
+      "keywords": [
+        "Ecstatic Trance Wild Magics",
+        "Kuangxi Ruding",
+        "狂喜入定"
+      ],
+      "content": "A shamanic practice in Wild Magics using rhythmic sound, dance, or ritual psychoactive substances (e.g., from Spirit-Cap Fungi) to achieve altered states for deeper connection to the Living Current or spirit communion."
+    },
+    {
+      "title": "Plains Striders",
+      "keywords": [
+        "Plains Striders",
+        "Pingyuan Xingshou",
+        "平原行獸"
+      ],
+      "content": "Large, six-legged herbivores that roam Huna's plains in massive herds."
+    },
+    {
+      "title": "Grand Ascension",
+      "keywords": [
+        "Grand Ascension",
+        "Dàchéng",
+        "大乘",
+        "Mahayana Cultivation Realm",
+        "Great Vehicle Cultivation Realm"
+      ],
+      "content": "A transcendent cultivation realm signifying perfection of one's individual Dao and preparation for true transcendence. Capable of influencing celestial phenomena and creating Grotto-Heavens. Substages: Early (Ascending Vehicle), Middle (Piloting Vehicle), Late (Commanding Vehicle), Peak (Perfected Vehicle)."
+    },
+    {
+      "title": "Banished Kin",
+      "keywords": [
+        "Banished Kin",
+        "Fangzhu Zhi Yi",
+        "放逐之裔"
+      ],
+      "content": "Exiled descendants of the Kinneret-Shen, altered by the Creator (guided by Sanguine and Ada) to walk the land of Huna. Retain echoes of aquatic ancestry (scales, fin-like crests) but possess furred legs. Live in nomadic or semi-nomadic tribal societies, hardened by exile. Much of their ancestral knowledge is lost."
+    },
+    {
+      "title": "Immortal Lord",
+      "keywords": [
+        "Immortal Lord",
+        "Xiānjūn",
+        "仙君",
+        "Resonant Lord",
+        "Gòngmíng Shèngzhǔ",
+        "共鳴聖主"
+      ],
+      "content": "The highest depicted cultivation realm, effectively divine within Malkuth. Embodies a significant Dao principle, capable of world-shaping feats and possessing profound cosmic awareness. Substages: Early (Initial Lordship), Middle (Sovereign Lordship), Late (Dao Lordship), Peak (Celestial Lordship)."
+    },
+    {
+      "title": "Earth-Fire Fonts",
+      "keywords": [
+        "Earth Fire Fonts",
+        "Dihuo Lingquan",
+        "地火靈泉",
+        "Earth Fire Spirit Spring"
+      ],
+      "content": "Another term for Primal Vents, geothermal locations of immense power and significance in Malkuth's genesis."
+    },
+    {
+      "title": "Jeru's Moonstone",
+      "keywords": [
+        "Jerus Moonstone",
+        "Yuechangshi",
+        "月長石"
+      ],
+      "content": "Moonstone gems associated with Jeru, possibly resonating with his Empyrean energies. Used in crafting Runic Implements."
+    },
+    {
+      "title": "Resonant Dao",
+      "keywords": [
+        "Resonant Dao",
+        "Dao Zhi Gongming",
+        "道之共鳴"
+      ],
+      "content": "The fundamental underlying principle of the Malkuth universe. An interactive, almost sentient field of potential and actuality, imbued with the echo of the First Mover's intent. Life and consciousness can 'resonate' with aspects of the Dao to influence reality."
+    },
+    {
+      "title": "Alchemical Cauldron",
+      "keywords": [
+        "Alchemical Cauldron",
+        "Danlu",
+        "丹爐"
+      ],
+      "content": "Essential tools for alchemists, ranging from simple clay vessels to complex artifacts capable of precise temperature and energy control for refining pills and elixirs."
+    },
+    {
+      "title": "Great Emergence",
+      "keywords": [
+        "Great Emergence",
+        "Taichu",
+        "太初",
+        "The Great Beginning"
+      ],
+      "content": "The continuous interaction of Yin and Yang, the ongoing 'awakening' or unfolding of manifested reality, triggered by the First Will of the First Mover."
+    },
+    {
+      "title": "Iron (Malkuth)",
+      "keywords": [
+        "Iron"
+      ],
+      "content": "In the Age of Scattered Embers, iron and stronger metals are the stuff of legend, materials only whispered to be wielded by god-like Cultivators, skilled Tianling Rune Weavers, or found in ancient armories."
+    },
+    {
+      "title": "Spirit Implements (Artifact Tier 1)",
+      "keywords": [
+        "Spirit Implements",
+        "Faqi",
+        "法器",
+        "Tier 1 Artifact Cultivation"
+      ],
+      "content": "The most common tier of cultivator magical items. Everyday tools or simple weapons enhanced with a basic infusion of Qi, possessing a single, straightforward function and requiring active Qi input. Low durability, no inherent awareness."
+    },
+    {
+      "title": "Celestial Bombardments",
+      "keywords": [
+        "Celestial Bombardments",
+        "Tianjiang Suixing",
+        "天降碎星",
+        "Heaven Sent Shattered Stars"
+      ],
+      "content": "A relentless rain of Sky-Shards and Frozen Tears of Heaven that marked Malkuth's nascent eons, contributing to its dense atmosphere and shaping its geology."
+    },
+    {
+      "title": "Organic Foci (Wild Magics)",
+      "keywords": [
+        "Organic Foci Wild Magics",
+        "Shengji Faqi",
+        "生機法器"
+      ],
+      "content": "Tools favored by Wild Magic practitioners, drawn from the living world (gnarled branches, beast bones/fangs, living vines, Moon-Petals). Extensions of their connection to the Living Current."
+    },
+    {
+      "title": "School of Abyssal Studies",
+      "keywords": [
+        "School of Abyssal Studies",
+        "Shenyuan Xueyan",
+        "深渊学研"
+      ],
+      "content": "A often forbidden or secretive school of Arcane Magic focused on the Void Essence, the Unmanifest, and entities from the 'Bulk'. Extremely dangerous, risking sanity and soul."
+    },
+    {
+      "title": "Sky-Pines",
+      "keywords": [
+        "Sky Pines",
+        "Cantian Song",
+        "參天松"
+      ],
+      "content": "Ancient, gnarled species of pine tree found in the higher altitude valleys of the Dragon's Crown Peaks, whose resin is a potent sealant and incense."
+    },
+    {
+      "title": "Celestial Runes",
+      "keywords": [
+        "Celestial Runes",
+        "Xingchen Fuwen",
+        "星辰符文"
+      ],
+      "content": "Runes in Arcane Magic tied to the movements, influences, and essences of Malkuth's three moons, stars, and other cosmic bodies. Crucial for astromancy."
+    },
+    {
+      "title": "Spirit Stones",
+      "keywords": [
+        "Spirit Stones",
+        "Lingshi",
+        "靈石"
+      ],
+      "content": "Crystalline stones of various grades containing concentrated Qi. Commonly used as power sources or nodes in Cultivator Formations, for crafting artifacts, or directly to aid in cultivation practice. Their purity and elemental alignment can vary."
+    },
+    {
+      "title": "Life-Draining Attacks (Crimson Bloom)",
+      "keywords": [
+        "Life Draining Attacks Crimson Bloom",
+        "Xiling Gongji",
+        "吸靈攻擊"
+      ],
+      "content": "A Sanguine Rite of the Crimson Bloom, directly siphoning vitality from victims to replenish the practitioner or empower spells."
+    },
+    {
+      "title": "Grotto-Heavens",
+      "keywords": [
+        "Grotto Heavens",
+        "Dongtian",
+        "洞天"
+      ],
+      "content": "Personal demi-planes or minor worlds created by Grand Ascension (or higher) cultivators, often housing followers and possessing unique environmental laws dictated by the creator's Dao. Similar to Hidden Realms of deities."
+    },
+    {
+      "title": "Mozu",
+      "keywords": [
+        "Mozu",
+        "魔族",
+        "Demon Clan"
+      ],
+      "content": "Lassenia's primary followers and demonic servitors, also known as Shedim. They embody various aspects of corrupted power and primal desire, drawing energy from negative emotions and chaotic energies. Created by Lassenia in Asipatra."
+    },
+    {
+      "title": "Runic Scripts",
+      "keywords": [
+        "Runic Scripts",
+        "Fuwen Xulie",
+        "符文序列"
+      ],
+      "content": "Sequences of Runes combined to create spells or invocations in Arcane & Runic Magic. Their complexity dictates power and Mana cost."
+    },
+    {
+      "title": "Spiritual Imprint / Soul Mark",
+      "keywords": [
+        "Spiritual Imprint",
+        "Shenhun Laoyin",
+        "神魂烙印",
+        "Soul Mark"
+      ],
+      "content": "A profound and secure method of bonding with cultivator artifacts. The cultivator embeds their spiritual sense (Shenshi) or soul essence into the artifact's core, creating a strong, personal link."
+    },
+    {
+      "title": "Arcane Foci",
+      "keywords": [
+        "Arcane Foci",
+        "Aoshu Jiaodian",
+        "奥术焦点",
+        "Orbs Arcane",
+        "Crystals Arcane",
+        "Mirrors Arcane"
+      ],
+      "content": "Tools like orbs, crystals, and mirrors used by Arcanists for scrying, storing Mana, as matrices for enchantments, or for illusion-based magic."
+    },
+    {
+      "title": "Spiritual Sense (Cultivation)",
+      "keywords": [
+        "Spiritual Sense Cultivation",
+        "Shenshi",
+        "神識"
+      ],
+      "content": "A cultivator's heightened perception beyond physical senses, expanding with cultivation level. Allows detection of Qi, spiritual entities, and distant events. Nascent Soul cultivators have significantly expanded Shenshi."
+    },
+    {
+      "title": "Imiran Alchemical Path",
+      "keywords": [
+        "Imiran Alchemical Path",
+        "Imira Alchemy"
+      ],
+      "content": "A specialized alchemical path potentially influenced by Imira, focusing on pills that enhance stability, fortify body/soul using rare minerals and crystalline essences, or grant mental resilience."
+    },
+    {
+      "title": "The Pearl Archives (Kinneret-Shen Deeps)",
+      "keywords": [
+        "The Pearl Archives",
+        "Arkhion HaPninim",
+        "ארכיון הפנינים",
+        "Kinneret Shen Pearl Archives"
+      ],
+      "content": "A heavily guarded, sacred Kinneret-Shen repository of knowledge in the Queen's central palace-city, built from luminous mother-of-pearl. Staffed by elite, loyal scholars, scribes, and Royal Archivists. Threats include internal espionage, Lassenia's infiltration attempts, record degradation, and Royal displeasure. Warded by ancient enchantments, with an aura of immense age and knowledge; oldest artifacts may whisper truths. Power players include High Archivist Lyra (stern, learned head) and the Keeper of the First Scroll (ancient, blind sage guarding the oldest historical fragment). Beliefs center on absolute devotion to the Queen, history as sacred (but only sanctioned versions), and suspicion of challenging knowledge."
+    },
+    {
+      "title": "Communion with Nature (Wild Magics)",
+      "keywords": [
+        "Communion with Nature Wild Magics",
+        "Ziran Jiaogan",
+        "自然交感"
+      ],
+      "content": "A core practice in the Verdant Coil of Wild Magics, involving empathic, instinctual understanding and communication with the spirits or collective consciousness of Malkuth's ecosystems."
+    },
+    {
+      "title": "Ley Lines",
+      "keywords": [
+        "Ley Lines",
+        "Longmai",
+        "龍脈",
+        "Dragon Meridians"
+      ],
+      "content": "Major conduits of terrestrial Qi flowing within Malkuth's crust, often tapped by powerful formations as a power source."
+    },
+    {
+      "title": "Sitra Achra",
+      "keywords": [
+        "Sitra Achra",
+        "סטרא אחרא",
+        "The Other Side"
+      ],
+      "content": "A Kabbalistic concept referring to the realm of evil or impure spiritual forces. In Malkuth, it represents the darker, chaotic potentials within the Resonant Dao, or a shadowed resonance from which Lassenia and her Mozu draw power. Linked to extreme, unbalanced passion and corruption."
+    },
+    {
+      "title": "Spirit-Infused Talisman (Grade 2)",
+      "keywords": [
+        "Spirit Infused Talisman",
+        "Ling Fu",
+        "靈符",
+        "Grade 2 Talisman",
+        "Talisman Grade 2"
+      ],
+      "content": "A grade of cultivator talismans with more potent effects than Common Talismans, such as basic elemental attacks, stronger personal shields, or short bursts of speed. Requires better quality materials and more refined Qi, typically craftable by Foundation Building (Middle Stage) cultivators."
+    },
+    {
+      "title": "Verdant Mycelial Weavings",
+      "keywords": [
+        "Verdant Mycelial Weavings",
+        "Qingjun Gongsheng",
+        "青菌共生"
+      ],
+      "content": "Unique flora on Malkuth resulting from the profound intermingling of native fungi and Creator-introduced true plant life, creating ecosystems of unparalleled strangeness and beauty."
+    },
+    {
+      "title": "Whispering Leaf Sect",
+      "keywords": [
+        "Whispering Leaf Sect",
+        "Xiyu Ye Zong",
+        "細語葉宗"
+      ],
+      "content": "A small, renowned Linghou cultivator 'sect' or school in the Dragon's Crown Peaks, known for its illusionary arts and potent monkey wine."
+    },
+    {
+      "title": "Glimmercap Grove (Huna)",
+      "keywords": [
+        "Glimmercap Grove",
+        "Shangu Lin",
+        "閃菇林",
+        "Huna Glimmercap Grove"
+      ],
+      "content": "A large, hidden Linghou enclave deep within one of Huna's ancient Spirit-Cap Forests, built into colossal bioluminescent fungi. Inhabited by the Glimmercap Clan, expert foragers and brewers of 'Glowcap Brew'. Threats include deep forest predators, getting lost, encroaching hunters, and forest blight. The grove has constant bioluminescence, potent magical energies (Ada's influence), strange spores, and common illusions. Power players include Matriarch Laila (forest lore keeper, Wild Magic conduit) and Flicker (agile scout, Fae-communer, possible Fae-Whisper Root). Beliefs see the forest as a living entity, with colossal fungi as spirits, offerings made to spirits and Fae."
+    },
+    {
+      "title": "Soul Nurturing Scriptures",
+      "keywords": [
+        "Soul Nurturing Scriptures",
+        "Yangshen Xinjing",
+        "養神心經"
+      ],
+      "content": "Cultivation techniques focused on strengthening the spiritual aspect (Shen), including spiritual senses (Shenshi), Nascent Soul power, and mental defenses against Heart Demons."
+    },
+    {
+      "title": "Cosmic Web",
+      "keywords": [
+        "Cosmic Web",
+        "Tianluo Diwang",
+        "天羅地網",
+        "Heavenly Net and Earthly Web"
+      ],
+      "content": "Manifesting from the Dao, this web of energy and influence connects all celestial bodies. Composed of Celestial Bones (Yang-Filaments) and the Void Essence (Yin Sea)."
+    },
+    {
+      "title": "Earth-Shaking Array (Formation Tier 5)",
+      "keywords": [
+        "Earth Shaking Array",
+        "Dongdi Zhen",
+        "動地陣",
+        "Tier 5 Formation",
+        "Formation Tier 5"
+      ],
+      "content": "Cultivator formations of immense scale and power, capable of large-scale environmental manipulation or formidable defenses against Void Comprehending experts."
+    },
+    {
+      "title": "Aetheric Steel",
+      "keywords": [
+        "Aetheric Steel",
+        "Yitai Gang",
+        "以太鋼"
+      ],
+      "content": "A magical alloy forged by Aetheric Transmuters, transmuting common iron into a lighter, stronger, magic-receptive metal using Runes and Aetheric currents."
+    },
+    {
+      "title": "Earthen Resonance",
+      "keywords": [
+        "Earthen Resonance",
+        "Kun Yuan Qi",
+        "坤元氣"
+      ],
+      "content": "A Primal Resonance of Qi, linked to Imira. Embodies stability, structure, gravity, crystals, and earth power. Corresponds to aspects of classical Earth and Metal."
+    },
+    {
+      "title": "Jeru",
+      "keywords": [
+        "Jeru",
+        "Suyue",
+        "素月",
+        "Plain White Moon",
+        "Tianjie Yue",
+        "天階月",
+        "Heavenly Ladder Moon",
+        "Moreh Razim",
+        "מוֹרֵה רָזִים",
+        "Teacher of Mysteries"
+      ],
+      "content": "The smallest of Malkuth's three conscious moons, bright white. Embodies The Empyrean Dreamer / The Aspiring Will. Represents aspiration, ideals, order, and transformation. Commands skies and upper seas. His vision is the origin of Arcane and Runic Magic (The Weave of Jeru)."
+    },
+    {
+      "title": "Lifebound Artifact",
+      "keywords": [
+        "Lifebound Artifact",
+        "Benming Fabao",
+        "本命法寶"
+      ],
+      "content": "A specific artifact intrinsically linked to a cultivator's cultivation and soul, often acquired or forged early and nurtured alongside their advancement. Its growth mirrors the cultivator's, and damage to it can injure the owner. Also known as Natal Treasure."
+    },
+    {
+      "title": "Lassenian Cults",
+      "keywords": [
+        "Lassenian Cults",
+        "Lanxiniya Jiaopai",
+        "蘭辛妮婭教派"
+      ],
+      "content": "Secretive and malevolent groups dedicated to Lassenia and the powers of the Crimson Bloom. Engage in blood sacrifice, soul manipulation, and summoning Mozu, spreading corruption and fear."
+    },
+    {
+      "title": "Adan Alchemical Path",
+      "keywords": [
+        "Adan Alchemical Path",
+        "Ada Alchemy"
+      ],
+      "content": "A specialized alchemical path potentially influenced by Ada, focusing on potent vitality-enhancing elixirs, transformative concoctions (growth/mutation), and powerful healing draughts from untamed life force."
+    },
+    {
+      "title": "Qi Condensation",
+      "keywords": [
+        "Qi Condensation",
+        "Ning Qi",
+        "凝氣"
+      ],
+      "content": "The initial major realm of Cultivation. Practitioners learn to sense, gather, and circulate Qi, enhancing vitality and senses. Substages: Initial, Middle, Upper, Peak."
+    },
+    {
+      "title": "Abyssal Resonance Qi",
+      "keywords": [
+        "Abyssal Resonance Qi",
+        "Yuan Huo Qi",
+        "淵火氣"
+      ],
+      "content": "A specific manifestation of Qi linked to Ada and the Abyssal Heart. Embodies untamed life force, passionate growth, transformative chaos, primal fire, and blood essence. Core energy for Wild Magics."
+    },
+    {
+      "title": "Spirit Bark Paper",
+      "keywords": [
+        "Spirit Bark Paper",
+        "Lingmu Zhi",
+        "靈木紙"
+      ],
+      "content": "A type of paper derived from spiritual flora, possibly from Spirit-Cap Forests or other magically potent trees. Used as a base material for crafting Talismans or for writing Grimoires."
+    },
+    {
+      "title": "Spirit Roots",
+      "keywords": [
+        "Spirit Roots",
+        "Linggen",
+        "靈根"
+      ],
+      "content": "An individual's innate conduit to the energies of Malkuth, determining their capacity to sense, absorb, and process Qi for Cultivation or Wild Magics. Types include Standard Elemental, Divine Aspect (Imira's, Ada's, Jeru's), Variant/Mutated, and specialized 'Wild Heart' roots."
+    },
+    {
+      "title": "Aethel-Warded Enclaves (Tianling)",
+      "keywords": [
+        "Aethel Warded Enclaves Tianling",
+        "Yitai Hujing",
+        "以太護境",
+        "Megunei Shefa",
+        "מְגוּנֵי שֶׁפַע",
+        "Shielded by Abundance"
+      ],
+      "content": "Advanced Tianling communities, often housing Runic academies, shielded by powerful, permanent Runic Arrays that draw on ambient Aethel."
+    },
+    {
+      "title": "Common Pills (Grade 1)",
+      "keywords": [
+        "Common Pills",
+        "Fan Dan",
+        "凡丹",
+        "Grade 1 Pill",
+        "Pill Grade 1"
+      ],
+      "content": "Alchemical pills with minor effects, such as alleviating fatigue or healing superficial wounds. Relatively easy to refine with common ingredients by low-level alchemists."
+    },
+    {
+      "title": "Tormented Shapeshifter",
+      "keywords": [
+        "Tormented Shapeshifter",
+        "Kunao Bianxingzhe",
+        "苦惱變形者"
+      ],
+      "content": "An archetype of Wild Magic user who constantly battles the primal instincts of their beast forms, struggling to maintain their humanity while wielding immense physical power derived from metamorphosis."
+    },
+    {
+      "title": "Tidal Waves (North-Western Spearhead)",
+      "keywords": [
+        "Tidal Waves North Western Spearhead",
+        "Mieshi Julang",
+        "滅世巨浪"
+      ],
+      "content": "Sudden, cataclysmic tidal waves that are a recurring threat in the North-Western Spearhead, capable of scouring islands and reshaping coastlines."
+    },
+    {
+      "title": "Wild Tribes",
+      "keywords": [
+        "Wild Tribes",
+        "Yexing Buluo",
+        "野性部落"
+      ],
+      "content": "Communities that might exist in Malkuth living in close harmony with nature, their culture revolving around the principles of the Verdant Coil of Wild Magics. Leaders are often shamans or skilled shapeshifters."
+    },
+    {
+      "title": "Chaos-Seed Root",
+      "keywords": [
+        "Chaos Seed Root",
+        "Hundun zhi Zhong Gen",
+        "混沌之種根"
+      ],
+      "content": "A type of Wild Heart Spirit Root causing unpredictable surges of wild magic, difficulty with fine control, and potential for spontaneous minor mutations or chaotic effects."
+    },
+    {
+      "title": "Sky-Iron",
+      "keywords": [
+        "Sky Iron",
+        "Tiantie",
+        "天鐵"
+      ],
+      "content": "Metal derived from meteorites (Sky-Shards) that have fallen on Malkuth. Possesses unique properties and is used in crafting high-quality Runic Implements or other magical items."
+    },
+    {
+      "title": "Tribulations (Cultivation)",
+      "keywords": [
+        "Tribulations Cultivation",
+        "Tiānjé",
+        "天劫",
+        "Heavenly Tribulation"
+      ],
+      "content": "Cosmic tests from the Dao itself or the First Mover's dream as cultivators reach higher realms. Manifest as devastating elemental storms, phantom attacks, or illusions. Failure often means obliteration."
+    },
+    {
+      "title": "Koralis Outpost (Kinneret-Shen Deeps)",
+      "keywords": [
+        "Koralis Outpost",
+        "Almog Mutzav",
+        "אלמוג מוצב",
+        "Kinneret Shen Koralis Outpost"
+      ],
+      "content": "A fortified Kinneret-Shen outpost in a massive coral reef system near a continental shelf, illuminated by bioluminescent flora. Houses warriors, artisans, and merchants trading cautiously with surface dwellers. Threats include rival Kinneret-Shen factions, deep-sea predators, unpredictable tides/currents, and Lassenia's agents. Characterized by deep-sea pressure, geothermal activity, and 'Void Kelp'. Power players include Commander Valerius (veteran warrior, water-shaping artist) and Lady Nerissa (noble overseeing trade, rumored Queen's confidante). Beliefs center on unwavering loyalty to the Queen, reverence for the First Mover, and Kinneret superiority."
+    },
+    {
+      "title": "Artifact Spirit",
+      "keywords": [
+        "Artifact Spirit",
+        "Qiling",
+        "器靈"
+      ],
+      "content": "A nascent or developed awareness or sentience within a magical artifact (Lingqi and above). Can emerge from potent materials, refinement processes, or long-term Qi absorption. Intelligence and ability to grow vary."
+    },
+    {
+      "title": "Mud-Brick Longhouses",
+      "keywords": [
+        "Mud Brick Longhouses",
+        "Nizhuan Changwu",
+        "泥磚長屋"
+      ],
+      "content": "Sturdy dwellings built by the Ren of Huna, often part of palisaded villages."
+    },
+    {
+      "title": "Talismanic Arts (Cultivation)",
+      "keywords": [
+        "Talismanic Arts Cultivation",
+        "Fuxiu",
+        "符修"
+      ],
+      "content": "Cultivation focused on the creation and potentiation of talismans, involving unique ways to imbue Qi and spiritual intent into drawn symbols."
+    },
+    {
+      "title": "Aethel",
+      "keywords": [
+        "Aethel",
+        "Aomi Yuanzhi",
+        "奧秘原質",
+        "Arcane Primordial Substance",
+        "Astral Light",
+        "Xingguang",
+        "星光",
+        "Shefa Shamayim",
+        "שֶׁפַע שָׁמַיִם",
+        "Heavenly Abundance",
+        "Heavenly Flow"
+      ],
+      "content": "The ambient magical energy field of Malkuth, distinct from Qi. The external sea of potentiality that Runes shape and direct. The raw, undifferentiated magical potential for Runic magic."
+    },
+    {
+      "title": "Kelos",
+      "keywords": [
+        "Kelos",
+        "Geothermal Dragon Kelos"
+      ],
+      "content": "A geothermal titan, a dragon born from the Primal Vent known as the Kelosian Scar. The Longzi race are his descendants."
+    },
+    {
+      "title": "Longzi",
+      "keywords": [
+        "Longzi",
+        "龍子",
+        "Children of the Dragon",
+        "Dragon Kin"
+      ],
+      "content": "Humanoid dragons inhabiting the continent of Temara, descended from the geothermal titan Kelos. Possess fine metallic-sheened scales, horns, clawed hands, and powerful tails. They are powerful cultivators, with many mastering shapeshifting abilities."
+    },
+    {
+      "title": "Accelerated Decay (Wild Magics)",
+      "keywords": [
+        "Accelerated Decay Wild Magics",
+        "Jiasu Diaoling",
+        "加速凋零"
+      ],
+      "content": "An Unmaking Touch ability of the Crimson Bloom, focusing on the destructive aspect of Ada's chaos to rapidly decompose living matter or objects."
+    },
+    {
+      "title": "Spider Silk of the Shadow Weavers",
+      "keywords": [
+        "Spider Silk of the Shadow Weavers",
+        "Yingzhi Zhusi",
+        "影織蛛絲"
+      ],
+      "content": "Special silk, possibly from giant spiders or magically cultivated, used by the Shadow Weaver Tianling to create enchanted vestments."
+    },
+    {
+      "title": "Alchemy (General)",
+      "keywords": [
+        "Alchemy"
+      ],
+      "content": "The art of refining pills, elixirs, and other potent substances from spiritual herbs, minerals, beast essences, and other unique ingredients found on Malkuth. Aids in cultivation, healing, combat, and other effects. Both Cultivators (Dandao) and Arcanists (Aetheric Transmutation) practice forms of it, with Wild Magic users potentially having their own naturalistic approaches."
+    },
+    {
+      "title": "Imiran Amethyst",
+      "keywords": [
+        "Imiran Amethyst",
+        "Zijing",
+        "紫晶"
+      ],
+      "content": "Amethyst crystals associated with Imira, likely found deep within her domain or in areas strong with Earthen Resonance. Used in crafting Runic Implements or as potent foci."
+    },
+    {
+      "title": "Sea-Drakes",
+      "keywords": [
+        "Sea Drakes",
+        "Hailong Shou",
+        "海龍獸"
+      ],
+      "content": "Predatory marine reptiles with sleek bodies and sharp teeth, hunting in the coastal waters of the North-Western Spearhead."
+    },
+    {
+      "title": "Arcanist Progression Tiers",
+      "keywords": [
+        "Arcanist Tiers",
+        "Awakened Arcanist",
+        "Apprentice Arcanist",
+        "Journeyman Arcanist",
+        "Adept Arcanist",
+        "Magister Arcanist",
+        "Archon Arcanist",
+        "Unseen Scribe"
+      ],
+      "content": "The stages of advancement for practitioners of Arcane & Runic Magic, marked by deepening understanding of Aethel and Runes, increased Mana, and ability to wield complex formulae. Tiers: Awakened (觉醒者), Apprentice (学徒), Journeyman (行者), Adept (专家), Magister (大师), Archon (执政官), and the mythical Unseen Scribe (隐秘书吏)."
+    },
+    {
+      "title": "Sky-Iron",
+      "keywords": [
+        "Sky Iron",
+        "Tiantie",
+        "天鐵"
+      ],
+      "content": "Metal derived from meteorites (Sky-Shards), often possessing unique properties and used in crafting high-quality Runic Implements or other magical items."
+    },
+    {
+      "title": "Peak Lichen",
+      "keywords": [
+        "Peak Lichen",
+        "Feng Yi",
+        "峰衣"
+      ],
+      "content": "Lichen found on the high peaks of the Dragon's Crown Mountains."
+    },
+    {
+      "title": "Stone Golem",
+      "keywords": [
+        "Stone Golem",
+        "Shi Moxiang",
+        "石魔像"
+      ],
+      "content": "An Arcane Construct made of stone, animated and controlled by a Runic Core. Often used as guardians or heavy laborers."
+    },
+    {
+      "title": "Earth-Attunement (Yanshi)",
+      "keywords": [
+        "Earth Attunement Yanshi",
+        "Yanmin Dihe",
+        "岩民地合"
+      ],
+      "content": "The innate ability and cultivation focus of the Yanshi, allowing them to shape stone, sense earth vibrations, and draw sustenance from Earthen Resonance Qi."
+    },
+    {
+      "title": "Earthly Spirit Root",
+      "keywords": [
+        "Earthly Spirit Root",
+        "Di Linggen",
+        "地靈根"
+      ],
+      "content": "Superior quality Spirit Root, possessing a deep connection to specific terrestrial energies of Malkuth. May grant minor innate boons related to their element."
+    },
+    {
+      "title": "First Mover",
+      "keywords": [
+        "First Mover",
+        "Yuanshi Tianzun",
+        "元始天尊",
+        "Unseen Architect",
+        "Primordial Heavenly Lord",
+        "Cosmic Dreamer"
+      ],
+      "content": "The singular, immeasurable consciousness whose dream initiated the universe containing Malkuth. This initial outpouring of primordial potentiality rapidly expanded and differentiated. Its will triggered the 'Great Emergence,' the continuous formation of reality. It is the ultimate source, perceived by the Moon Deities in various forms, including as ethereal golden energy, a nascent human form, and the godlike Sanguine. It guided Imira in establishing Cultivation and charged the moons with shepherding Malkuth."
+    },
+    {
+      "title": "Verdant Heart",
+      "keywords": [
+        "Verdant Heart"
+      ],
+      "content": "A Primal Vent on Malkuth, a geothermal oasis from which true plant life (distinct from ancient fungi) first bloomed."
+    },
+    {
+      "title": "Shadow-Kelp Grotto (North-Western Spearhead)",
+      "keywords": [
+        "Shadow Kelp Grotto",
+        "Marat Atzot Tzel",
+        "מערת אצות צל",
+        "North Western Spearhead Shadow Kelp Grotto"
+      ],
+      "content": "A secretive Tianling enclave of the Shadow Weaver faction, hidden in labyrinthine sea caves and underwater tunnels, concealed by illusions and dark kelp. Inhabited by enigmatic Tianling mastering illusion, stealth, and shadow-manipulation. Threats include accidental discovery, Void Essence seepage, and internal power struggles. Perpetual twilight/darkness, strange acoustics, 'Void Kelp', and a thin Aetheric Weave resonating with shadow/illusion. Power players include Mistress Nyx (Magister illusionist leader) and Silent Shadow (chief guardian/assassin). Beliefs see Jeru as a god of mysteries; true understanding lies in perceiving the unseen and manipulating perception; some may dabble in Abyssal Studies."
+    },
+    {
+      "title": "Verdant Coil",
+      "keywords": [
+        "Verdant Coil",
+        "Shengji Huandao",
+        "生機環道"
+      ],
+      "content": "A life-affirming, druidic/Fae expression of Ada's Wild Magics. Involves nature communion, Fae pacts and magic (illusions, nature shaping), beast empathy, naturalistic shapeshifting, gentle elemental persuasion, and healing through life force."
+    },
+    {
+      "title": "Shedim",
+      "keywords": [
+        "Shedim",
+        "שֵׁדִים"
+      ],
+      "content": "Another name for the Mozu, Lassenia's demonic followers."
+    },
+    {
+      "title": "Kelosian Scar",
+      "keywords": [
+        "Kelosian Scar"
+      ],
+      "content": "A Primal Vent on Malkuth, a wound from a world-shattering Sky-Shard that cracked the deep-sea ice mantle. Became a fuming cradle for early life and the birthplace of the Geothermal Dragon Kelos."
+    },
+    {
+      "title": "Empyrean Dreamer",
+      "keywords": [
+        "Empyrean Dreamer",
+        "Jiutian Mengxiangjia",
+        "九天夢想家",
+        "The Aspiring Will"
+      ],
+      "content": "One of the three Primal Aspects reflecting the First Mover's nature, embodied by Jeru. Represents the font of ideals, ordered creation, focused intent, and the drive towards potential, reflecting the First Mover's creative aspect."
+    },
+    {
+      "title": "Iron-Thistle",
+      "keywords": [
+        "Iron Thistle",
+        "Tie Ji",
+        "鐵薊"
+      ],
+      "content": "A resilient, low-growing plant found in the harsh environment of the Dragon's Crown Peaks."
+    },
+    {
+      "title": "Heaven Grade Technique",
+      "keywords": [
+        "Heaven Grade Technique",
+        "Tian Pin Gongfa",
+        "天品功法"
+      ],
+      "content": "Rare and profound cultivation techniques (Gōngfǎ), often with unique abilities or deep insights into the Dao. Highly sought after and usually guarded secrets."
+    },
+    {
+      "title": "Cultivation",
+      "keywords": [
+        "Cultivation",
+        "Xiulian",
+        "修煉",
+        "Resonant Dao Path",
+        "Xiu Dao Zhi Lu",
+        "修道之路"
+      ],
+      "content": "The primary means of achieving significant power on Malkuth, formalized by Imira with guidance from the First Mover. An arduous journey of internal alchemy, spiritual refinement, and harmonizing one's Qi with the Resonant Dao."
+    },
+    {
+      "title": "Sky-Shards",
+      "keywords": [
+        "Sky Shards",
+        "Tianjiang Suixing Remnants"
+      ],
+      "content": "Remnants of the ancient celestial bombardments on Malkuth. These fragments can be sources of immense power, strange energies, or unique materials unknown to the surface world, used in crafting potent artifacts or as Runic tools."
+    },
+    {
+      "title": "Taming/Contracting Artifact Spirit",
+      "keywords": [
+        "Taming Artifact Spirit",
+        "Xiangfu Qiling",
+        "降服器靈",
+        "Contracting Artifact Spirit",
+        "Qiyue Qiling",
+        "契約器靈"
+      ],
+      "content": "A method of bonding with cultivator artifacts that possess sentient spirits. Requires overpowering, persuading, or forming a mutual contract with the spirit, often leading to a symbiotic relationship."
+    },
+    {
+      "title": "Heavenly Elixirs (Grade 5)",
+      "keywords": [
+        "Heavenly Elixirs",
+        "Tian Ling Dan",
+        "天靈丹",
+        "Grade 5 Elixir",
+        "Elixir Grade 5"
+      ],
+      "content": "Legendary alchemical concoctions capable of miraculous feats such as significantly extending lifespan, aiding breakthroughs into Soul Formation or Void Comprehending realms, or granting permanent beneficial mutations. Recipes are often lost secrets."
+    },
+    {
+      "title": "Primordial Ocean",
+      "keywords": [
+        "Primordial Ocean",
+        "Taichu Zhi Hai",
+        "太初之海",
+        "Sea of the Great Beginning"
+      ],
+      "content": "Before Malkuth's dawn, this was a boundless expanse of pure potentiality, an inner world or mindscape of the First Mover. Its dark depths (Primordial Yin) hold the Void Essence, while its luminous surface (Primordial Yang) is the source of law, structure, and ordering consciousness."
+    },
+    {
+      "title": "Void Resonance Qi",
+      "keywords": [
+        "Void Resonance Qi",
+        "Xuanming Qi",
+        "玄冥氣"
+      ],
+      "content": "Qi manifestation drawing from Void Essence, embodying potentiality, shadow, cold, and the unmanifest. Corresponds to aspects of Darkness and Void. A secondary influence in Ada's Wild Magics."
+    },
+    {
+      "title": "Divine Aspect Spirit Root",
+      "keywords": [
+        "Divine Aspect Spirit Root",
+        "Shenxiang Linggen",
+        "神相靈根"
+      ],
+      "content": "The rarest and most powerful grade of Spirit Root, exclusive to those resonating directly with a Primal Aspect of a Moon Deity (Imira's, Ada's, Jeru's). Grants immense potential and unique advantages."
+    },
+    {
+      "title": "Mortal Grade Technique",
+      "keywords": [
+        "Mortal Grade Technique",
+        "Fan Pin Gongfa",
+        "凡品功法"
+      ],
+      "content": "The most basic grade of cultivation techniques (Gōngfǎ). Often widely available or developed through simple observation. Limited potential and may have flaws."
+    },
+    {
+      "title": "Spirit Root Purity",
+      "keywords": [
+        "Spirit Root Purity",
+        "Linggen Chundu",
+        "靈根純度"
+      ],
+      "content": "Refers to the clarity and lack of interference between different elemental affinities within a multi-elemental Spirit Root. Higher purity means faster Qi refinement and fewer impurities."
+    },
+    {
+      "title": "Conceptual Runes",
+      "keywords": [
+        "Conceptual Runes",
+        "Gainian Fuwen",
+        "概念符文"
+      ],
+      "content": "Runes in Arcane Magic representing abstract principles, actions, qualities, and states of being (e.g., Connectio/Connection, Custodia/Warding, Mutatio/Transformation)."
+    },
+    {
+      "title": "Empyrean Resonance",
+      "keywords": [
+        "Empyrean Resonance",
+        "Tian Feng Qi",
+        "天風氣"
+      ],
+      "content": "A Primal Resonance of Qi, linked to Jeru. Manifests as aspiration, order, sky, storms, celestial light, tides, and air. Corresponds to aspects of classical Water, Wind, and Light."
+    },
+    {
+      "title": "Runes",
+      "keywords": [
+        "Runes",
+        "Fuwen",
+        "符文",
+        "Glyphs",
+        "Fuyin",
+        "符印",
+        "Otiot Raz",
+        "אוֹתִיוֹת רָז",
+        "Letters of Mystery"
+      ],
+      "content": "Symbols representing fundamental aspects of reality, used in Arcane & Runic Magic to structure and direct Aethel. Believed to be characters in the language of the First Mover's dream. Categories include Primordial, Elemental, Conceptual, and Celestial."
+    },
+    {
+      "title": "Obsidian-Scaled Earth-Wyrm",
+      "keywords": [
+        "Obsidian Scaled Earth Wyrm",
+        "Molin Dilong",
+        "墨鱗地龍"
+      ],
+      "content": "A legendary, powerful draconic beast with obsidian scales, rumored to dwell deep within the Dragon's Crown Mountains."
+    },
+    {
+      "title": "Runic Corruption",
+      "keywords": [
+        "Runic Corruption",
+        "Fuwen Fushi",
+        "符文腐蚀"
+      ],
+      "content": "A peril of Arcane Magic where incorrectly inscribed or understood Runes cause spells to warp, objects to become unstable, or the caster to suffer magical/mental contamination."
+    },
+    {
+      "title": "Hidden Nests (Linghou)",
+      "keywords": [
+        "Hidden Nests Linghou",
+        "Yin Chao",
+        "隱巢"
+      ],
+      "content": "Linghou settlements, often extensive networks of interconnected treehouses high in Sky-Pines or elaborate burrow systems dug into cliff faces, cleverly concealed."
+    },
+    {
+      "title": "Ironpelt Clan",
+      "keywords": [
+        "Ironpelt Clan",
+        "Tiemao Bu",
+        "鐵毛部"
+      ],
+      "content": "A large and influential Shanyuan clan in the Dragon's Crown Peaks, known for its formidable warriors and significant territorial control under Peak Lord Korga."
+    },
+    {
+      "title": "Spirit Tools",
+      "keywords": [
+        "Spirit Tools",
+        "Faqi",
+        "法器",
+        "Spirit Implements"
+      ],
+      "content": "The most common tier of magical items for cultivators. Everyday tools or simple weapons enhanced with a basic infusion of Qi, usually with a single function. Also known as Spirit Implements."
+    },
+    {
+      "title": "Storm-Fish",
+      "keywords": [
+        "Storm Fish",
+        "Fengbao Yu",
+        "風暴魚"
+      ],
+      "content": "Iridescent fish found in the seas around the North-Western Spearhead, adapted to its turbulent waters."
+    },
+    {
+      "title": "Standard Array (Formation Tier 2)",
+      "keywords": [
+        "Standard Array",
+        "Chang Zhen",
+        "常陣",
+        "Tier 2 Formation",
+        "Formation Tier 2"
+      ],
+      "content": "Cultivator formations of moderate complexity (e.g., 9-36 nodes). Commonly used for protecting residences, small sect compounds, or enhancing local cultivation environments. Typically requires Golden Core level skill."
+    },
+    {
+      "title": "Grimoires & Codices (Arcane)",
+      "keywords": [
+        "Grimoires",
+        "Codices Arcane",
+        "Mofashu",
+        "魔法书",
+        "Fadian Arcane",
+        "法典"
+      ],
+      "content": "Bound collections of Runic knowledge, spell formulae, theoretical treatises, and research notes used by Arcanists. Some legendary ones may be sentient."
+    },
+    {
+      "title": "Shanyuan",
+      "keywords": [
+        "Shanyuan",
+        "山猿",
+        "Mountain Apes",
+        "Children of Stone",
+        "石之子民"
+      ],
+      "content": "Powerful, physically imposing primates shaped from the rock and ancient soil of the Dragon's Crown Peaks. Possess a deep, instinctual connection to primal earth energies. Live in tribal societies with hierarchies based on power (Peak Lords). Their rudimentary cultivation (Primal Strength) focuses on physical enhancement."
+    },
+    {
+      "title": "Lassenia",
+      "keywords": [
+        "Lassenia",
+        "לילית שני",
+        "Lilith Sheni",
+        "Tianmo Nühuang",
+        "天魔女皇",
+        "Heavenly Demon Empress",
+        "Demon Goddess of Malkuth",
+        "Mother of Mozu",
+        "She of a Thousand Faces",
+        "The Unmaker",
+        "Queen of Ruin"
+      ],
+      "content": "Once a Kinneret-Shen slave and rebel leader who delved into dark Wild Magics. Driven mad by loss, she triggered a great war. Believed slain, she was saved and transformed by Ada's volatile power, then further empowered by the First Mover (as Sanguine) with domains reflecting ambition and rebellion. Rules the pocket dimension Asipatra. Embodies ambition, forbidden passion, hunger for power/blood, and hatred for the Dao. Seeks to corrupt and destroy the universe. Can take many forms, prefers seductive females or a great black dragon. Her power is akin to the Sitra Achra."
+    },
+    {
+      "title": "Spiritual Fire",
+      "keywords": [
+        "Spiritual Fire",
+        "Linghuo",
+        "靈火"
+      ],
+      "content": "A specialized flame, often cultivated for this purpose, used in artifact forging (Liànqì) and alchemy (Liàndān) to refine materials and catalyze reactions."
+    },
+    {
+      "title": "Tide-Crabs",
+      "keywords": [
+        "Tide Crabs",
+        "Juchao Xie",
+        "巨潮蟹"
+      ],
+      "content": "Colossal, armored crabs that scavenge the shorelines of the North-Western Spearhead, adapted to the powerful tides."
+    },
+    {
+      "title": "Earth-Bound Artifacts (Artifact Tier 4)",
+      "keywords": [
+        "Earth Bound Artifacts",
+        "Dizhen Fabao",
+        "地鎮法寶",
+        "Tier 4 Artifact Cultivation"
+      ],
+      "content": "A specialized category of cultivator artifacts deeply connected to Malkuth's terrestrial energies, ley lines, or unique geological formations. Often possess powerful defensive, geomantic, or stabilizing properties."
+    },
+    {
+      "title": "Island Boars",
+      "keywords": [
+        "Island Boars",
+        "Daoyu Yezhu",
+        "島嶼野豬"
+      ],
+      "content": "Hardy wild boars found on the islands of the North-Western Spearhead."
+    },
+    {
+      "title": "Whispers of the Void",
+      "keywords": [
+        "Whispers of the Void",
+        "Xukong Diyu",
+        "虚空低语"
+      ],
+      "content": "A danger for Arcanists (especially of Abyssal Studies) meddling with Void Essence, leading to hallucinations, madness, mutation, or becoming a conduit for Void entities."
+    },
+    {
+      "title": "Memory Keepers (Banished Kin)",
+      "keywords": [
+        "Memory Keepers Banished Kin",
+        "Yishui Yu",
+        "憶水嫗"
+      ],
+      "content": "Female elders among the Banished Kin who guard and pass down fragmented Kinneret ancestral knowledge, often related to water-finding or weather patterns."
+    },
+    {
+      "title": "Abyssal Resonance",
+      "keywords": [
+        "Abyssal Resonance",
+        "Yuan Huo Qi",
+        "淵火氣"
+      ],
+      "content": "A Primal Resonance of Qi, linked to Ada. Represents untamed life force, passionate growth, chaos, primal fire, blood, and deep sea pressures. Corresponds to aspects of classical Wood and Fire."
+    },
+    {
+      "title": "Formation Mastery Techniques",
+      "keywords": [
+        "Formation Mastery Techniques",
+        "Zhenxiu",
+        "陣修"
+      ],
+      "content": "Cultivation methods specifically designed to enhance one's ability to perceive Qi flows, understand formation principles, and control array energies. Advanced practitioners might internalize formation principles."
+    },
+    {
+      "title": "Iron Golem",
+      "keywords": [
+        "Iron Golem"
+      ],
+      "content": "An Arcane Construct made of iron or Aetheric Steel, animated and controlled by a Runic Core. Likely more durable and formidable than stone golems."
+    },
+    {
+      "title": "Golden Core",
+      "keywords": [
+        "Golden Core",
+        "Jin Dan",
+        "金丹"
+      ],
+      "content": "The third major realm of Cultivation. A pivotal transformation where refined Qi and spiritual essence coalesce into a 'Golden Core'. Grants unassisted flight and potent elemental command. Substages: Early, Middle, Late, Peak."
+    },
+    {
+      "title": "Gōngfǎ",
+      "keywords": [
+        "Gongfa",
+        "功法",
+        "Cultivation Techniques"
+      ],
+      "content": "Specific methodologies and practices cultivators use to absorb/refine Qi, temper body/spirit/soul, and comprehend Dao laws. Graded from Mortal to Dao Grade."
+    },
+    {
+      "title": "Magma Salamanders",
+      "keywords": [
+        "Magma Salamanders",
+        "Rongyan Yuan",
+        "熔岩螈"
+      ],
+      "content": "Blind, pale salamanders that thrive in geothermal caves within the Dragon's Crown Peaks."
+    },
+    {
+      "title": "Slavery (Malkuth)",
+      "keywords": [
+        "Malkuth Slavery",
+        "Slavery Malkuth"
+      ],
+      "content": "Slavery exists in Malkuth, though its prevalence varies. The Kinneret-Shen historically had slaves, which was a catalyst for Lassenia's rebellion. Some Ren communities in the Dragon's Crown Peaks are effectively enslaved or pay forced tribute to Shanyuan or Linghou. The Mozu under Lassenia likely practice forms of enslavement."
+    },
+    {
+      "title": "Moon-Moss",
+      "keywords": [
+        "Moon Moss",
+        "Yueguang Tai",
+        "月光苔"
+      ],
+      "content": "Bioluminescent moss that might grow in sheltered coves of the North-Western Spearhead, casting an ethereal glow."
+    },
+    {
+      "title": "Sacred Groves",
+      "keywords": [
+        "Sacred Groves",
+        "Shenglin",
+        "聖林"
+      ],
+      "content": "Ritual sites for Wild Magic, secluded clearings in ancient Spirit-Cap Forests, often centered around potent fungal trees or Mycelial Weavings, where the Living Current is strong."
+    },
+    {
+      "title": "Silver Spire Academies",
+      "keywords": [
+        "Silver Spire Academies",
+        "Yinjian Xueyuan",
+        "銀尖學院",
+        "Migdalei HaChokmah",
+        "מִגְדְּלֵי הַחָכְמָה",
+        "Towers of Wisdom"
+      ],
+      "content": "Legendary, hidden centers of Runic learning among the Tianling, where masters instruct apprentices in the Weave of Jeru. The largest might gather around a hundred scholars."
+    },
+    {
+      "title": "Common Talisman (Grade 1)",
+      "keywords": [
+        "Common Talisman",
+        "Fan Fu",
+        "凡符",
+        "Grade 1 Talisman",
+        "Talisman Grade 1"
+      ],
+      "content": "The most basic grade of cultivator talismans. Used for simple effects like minor wards, brief light, or slight pushes. Short duration, easily crafted with common materials by Qi Condensation (Upper Stage) cultivators."
+    },
+    {
+      "title": "Runic Core",
+      "keywords": [
+        "Runic Core",
+        "Fuwen Hexin",
+        "符文核心"
+      ],
+      "content": "A complex crystal matrix or metallic sphere densely inscribed with Runes of Animatus, Imperium, Motus, and task-specific Runes. Serves as the 'heart' for Arcane Constructs like Golems."
+    },
+    {
+      "title": "Tianling",
+      "keywords": [
+        "Tianling",
+        "天靈",
+        "Heavenly Spirits",
+        "Heavenly Souls",
+        "Elves",
+        "Am HaSod",
+        "עַם הַסוֹד",
+        "People of the Secret"
+      ],
+      "content": "Descendants of Jeru's divine influence and early creations, often called Elves due to grace and longevity. Native to the North-Western Spearhead. Masters of Runic Magic (The Weave of Jeru). Fractured into diverse groups like the Star-Touched, Wildwood Kin, and Shadow Weavers."
+    },
+    {
+      "title": "Huna",
+      "keywords": [
+        "Huna",
+        "Guna",
+        "古納",
+        "Ancient Bestowal",
+        "Ancient South",
+        "Guna Dalu",
+        "古納大陸",
+        "The Ancient Shelf"
+      ],
+      "content": "A sprawling, relatively flatter central continent on Malkuth, its ancient foundations shaped by tidal erosion. Characterized by vast plains, mighty rivers, and Spirit-Cap Forests. Homeland of the Banished Kin and many Ren."
+    },
+    {
+      "title": "Celestial Resonance Qi",
+      "keywords": [
+        "Celestial Resonance Qi",
+        "Tiangu Qi",
+        "天骨氣"
+      ],
+      "content": "Qi manifestation derived from Celestial Bones, representing actuality, law, structure, starlight, and ordering consciousness. Corresponds to aspects of Order, Light, and Cosmic Energy."
+    },
+    {
+      "title": "Mycelial Sheets",
+      "keywords": [
+        "Mycelial Sheets"
+      ],
+      "content": "Thin sheets derived from the unique fungi of Malkuth, such as those in Spirit-Cap Forests. Used as a base material for crafting Talismans or for pages in Grimoires."
+    },
+    {
+      "title": "Wild Heart Spirit Roots",
+      "keywords": [
+        "Wild Heart Spirit Roots",
+        "Yexing zhi Xin Linggen",
+        "野性之心靈根"
+      ],
+      "content": "Specialized Spirit Roots aligned with Ada's Wild Magics, attuning individuals to the Living Current, amplifying emotions, and facilitating connection to Abyssal Resonance Qi and Lifeblood Qi. Examples: Ada's Abyssal Heart Root, Fae-Whisper Root, Beast-Soul Root, Chaos-Seed Root, Devouring Root."
+    },
+    {
+      "title": "Dust Stalkers",
+      "keywords": [
+        "Dust Stalkers",
+        "Chenai Liequan",
+        "塵埃獵犬"
+      ],
+      "content": "Swift, cunning canine predators of Huna adapted to long chases on the plains."
+    },
+    {
+      "title": "Earthly Elixirs (Grade 4)",
+      "keywords": [
+        "Earthly Elixirs",
+        "Di Ling Dan",
+        "地靈丹",
+        "Grade 4 Elixir",
+        "Elixir Grade 4"
+      ],
+      "content": "Rare and potent alchemical elixirs, often requiring precious and location-specific ingredients. Can aid in Golden Core breakthroughs or heal near-fatal wounds for Nascent Soul cultivators."
+    },
+    {
+      "title": "Heaven-Sealing Array (Formation Tier 6)",
+      "keywords": [
+        "Heaven Sealing Array",
+        "Fengtian Zhen",
+        "封天陣",
+        "Tier 6 Formation",
+        "Formation Tier 6"
+      ],
+      "content": "Legendary cultivator formations, often ancient remnants or products of multiple high-level masters. Capable of sealing powerful entities, isolating vast regions, or tapping cosmic energies. May require Dao Integration or Grand Ascension masters."
+    },
+    {
+      "title": "Malkuth Pantheon (General)",
+      "keywords": [
+        "Pantheon Malkuth",
+        "Malkuth Pantheon",
+        "Malkuth Gods"
+      ],
+      "content": "Malkuth does not have a traditional, organized pantheon in the way many fantasy settings do. The First Mover is the ultimate creator. The three Moons (Imira, Ada, Jeru) are conscious divine beings embodying Primal Aspects. Mathenemes was elevated to godhood. Lassenia is a self-made Demon Goddess. Beliefs among mortals are varied, often a mix of reverence for the First Mover, the Moons (or their aspects), ancestor worship, and animistic veneration of nature spirits. Organized religion is largely absent in the Age of Scattered Embers."
+    },
+    {
+      "title": "Resonance Crystals",
+      "keywords": [
+        "Resonance Crystals",
+        "Gongming Jingshi",
+        "共鳴晶石"
+      ],
+      "content": "Vast crystals found in caverns within the Dragon's Crown Peaks, humming with stored energy. Likely valuable for cultivation or crafting."
+    },
+    {
+      "title": "Stone-Holds",
+      "keywords": [
+        "Stone Holds",
+        "Shizhai",
+        "石寨"
+      ],
+      "content": "Shanyuan settlements, typically series of interconnected caves, expanded by force, or fortified valley floors/overhangs chosen for defensibility and resources like geothermal springs."
+    },
+    {
+      "title": "Divine-Will Talisman (Grade 5)",
+      "keywords": [
+        "Divine Will Talisman",
+        "Shenyi Fu",
+        "神意符",
+        "Grade 5 Talisman",
+        "Talisman Grade 5"
+      ],
+      "content": "Exceedingly rare, often unique cultivator talismans that may embody a fragment of a Primal Aspect's power or a deep principle of the Resonant Dao. Creation might involve sacred materials, rituals, and profound enlightenment by Soul Formation (Late Stage) or higher cultivators."
+    },
+    {
+      "title": "Formations (Cultivation)",
+      "keywords": [
+        "Formations Cultivation",
+        "Zhenfa",
+        "陣法",
+        "Arrays Cultivation",
+        "Cultivator Formations",
+        "Cultivator Arrays"
+      ],
+      "content": "Complex arrays laid out using natural terrain, spirit stones, or artifacts to channel and amplify Qi for defense, attack, Qi-gathering, or other grand purposes."
+    },
+    {
+      "title": "Cultivation Deviation",
+      "keywords": [
+        "Cultivation Deviation",
+        "Zouhuo Rumo",
+        "走火入魔"
+      ],
+      "content": "A dangerous state in cultivation where Qi flow becomes chaotic or corrupted, often triggered by Heart Demons, flawed techniques, or forceful breakthroughs. Can lead to madness, crippling injury, or death."
+    },
+    {
+      "title": "Pills & Elixirs (Alchemy)",
+      "keywords": [
+        "Pills Alchemy",
+        "Elixirs Alchemy",
+        "Danyao",
+        "丹藥",
+        "Alchemical Pills",
+        "Alchemical Elixirs"
+      ],
+      "content": "Concoctions created through alchemy, used for aiding cultivation breakthroughs, healing, body tempering, soul strengthening, temporary boosts, detoxification, or lifespan extension."
+    },
+    {
+      "title": "Precious Artifacts (Artifact Tier 3)",
+      "keywords": [
+        "Precious Artifacts",
+        "Baoqi",
+        "寶器",
+        "Treasure Tools Cultivation",
+        "Tier 3 Artifact Cultivation"
+      ],
+      "content": "Rare and powerful cultivator artifacts, often with unique innate abilities, significant history, or a distinct, sentient artifact spirit. Difficult to craft and require higher cultivation to wield effectively."
+    },
+    {
+      "title": "Stonefang Hold (Dragon's Crown)",
+      "keywords": [
+        "Stonefang Hold",
+        "Shiya Zhai",
+        "石牙寨",
+        "Dragons Crown Stonefang Hold"
+      ],
+      "content": "A defensible Shanyuan cave network high in the Dragon's Crown Peaks, warmed by a minor geothermal vent. Inhabited by the Stonefang Clan, known for resilience but often overshadowed by larger clans. Threats include raids from the Ironpelt Clan, harsh winters, avalanches, and Snow-Stalkers. Strong Earthen Resonance Qi is present. Power players include Chieftain Grok Stonefist (Primal Strength cultivator) and Elder Yarra (rumored spirit-speaker). Beliefs center on the spirit of Mount Stonefang, ancestor worship, and appeasing nature spirits, with skepticism towards distant gods but respect for the First Mover."
+    },
+    {
+      "title": "Bronze (Malkuth)",
+      "keywords": [
+        "Bronze"
+      ],
+      "content": "In the Age of Scattered Embers, bronze is considered a rare treasure, a mark of a chieftain's wealth or a powerful tribe's prowess. Not commonly available to average villagers."
+    },
+    {
+      "title": "Minor Array (Formation Tier 1)",
+      "keywords": [
+        "Minor Array",
+        "Xiao Zhen",
+        "小陣",
+        "Tier 1 Formation",
+        "Formation Tier 1"
+      ],
+      "content": "The simplest tier of cultivator formations, with few nodes (e.g., 3-9). Used for localized effects like basic warning arrays or small Qi-focusing circles. Easily set up by Foundation Building cultivators."
+    },
+    {
+      "title": "Refined Spirit Root",
+      "keywords": [
+        "Refined Spirit Root",
+        "Chun Linggen",
+        "純靈根"
+      ],
+      "content": "Good quality Spirit Root, typically single elemental with high purity or well-balanced dual/triple elemental. Allows for efficient Qi absorption and smoother progression."
+    },
+    {
+      "title": "School of Elemental Weaving",
+      "keywords": [
+        "School of Elemental Weaving",
+        "Yuansu Bianzhi Xueyuan",
+        "元素编织学院"
+      ],
+      "content": "A school of Arcane Magic focused on the direct manipulation of elemental forces through Elemental Runes. Practitioners are often combat mages or environmental regulators."
+    },
+    {
+      "title": "Monstrous Transformation (Wild Magics)",
+      "keywords": [
+        "Monstrous Transformation Wild Magics",
+        "Mohua Bianyi",
+        "魔化變異"
+      ],
+      "content": "An Unmaking Touch ability of the Crimson Bloom, involving horrific, painful transformations into demonic or bestial monstrosities, reflecting corrupted power and inner torment."
+    },
+    {
+      "title": "Soul Formation",
+      "keywords": [
+        "Soul Formation",
+        "Huàshén",
+        "化神",
+        "Spirit Transformation Cultivation Realm"
+      ],
+      "content": "A transcendent cultivation realm beyond Nascent Soul. The Nascent Soul matures and integrates deeply with a specific aspect of the Resonant Dao, potentially manifesting a 'Domain'. Substages: Early (Spirit Fusion), Middle (Spirit Illumination), Late (Spirit Metamorphosis), Peak (Spirit Perfection)."
+    },
+    {
+      "title": "Heaven-Echoing Talisman (Grade 4)",
+      "keywords": [
+        "Heaven Echoing Talisman",
+        "Tian Xiang Fu",
+        "天響符",
+        "Grade 4 Talisman",
+        "Talisman Grade 4"
+      ],
+      "content": "Rare and powerful cultivator talismans capable of complex effects like area-of-effect spells, potent sealing, or short-range teleportation. Require precious materials, high cultivation skill (Nascent Soul - Early Stage), and significant Qi."
+    },
+    {
+      "title": "Beast Cores",
+      "keywords": [
+        "Beast Cores",
+        "Yaodan",
+        "妖丹",
+        "Mohe",
+        "魔核"
+      ],
+      "content": "Crystallized essences harvested from powerful beasts or monsters on Malkuth, containing potent Qi or unique properties, used in alchemy and artifact refinement."
+    },
+    {
+      "title": "Dao Comprehension Methods",
+      "keywords": [
+        "Dao Comprehension Methods",
+        "Wudao Xuangong",
+        "悟道玄功"
+      ],
+      "content": "Meditative, philosophical, and insightful cultivation practices designed to deepen understanding of and resonance with the Resonant Dao, facilitating breakthroughs and unlocking deeper meanings."
+    },
+    {
+      "title": "Elemental Runes",
+      "keywords": [
+        "Elemental Runes",
+        "Yuansu Fuwen",
+        "元素符文"
+      ],
+      "content": "Runes in Arcane Magic that govern the manifest forces and substances of Malkuth (e.g., Ignis/Fire, Aqua/Water, Terra/Earth). Common in practical spellcasting."
+    },
+    {
+      "title": "Bulk of Realities",
+      "keywords": [
+        "Bulk of Realities",
+        "The Bulk"
+      ],
+      "content": "A concept referring to the spaces or dimensions connecting to or existing alongside Malkuth's reality, where physics itself may bend to alien wills. The Void Essence connects to this."
+    },
+    {
+      "title": "Leviathan-Whales",
+      "keywords": [
+        "Leviathan Whales",
+        "Jujing Shou",
+        "巨鯨獸"
+      ],
+      "content": "Truly colossal whale-like creatures in Malkuth's oceans whose passage can alter local tides, a major oceanic threat in regions like the North-Western Spearhead."
+    },
+    {
+      "title": "Mana Pool",
+      "keywords": [
+        "Mana Pool",
+        "Moneng Zhi Chi",
+        "魔能之池"
+      ],
+      "content": "An Arcanist's internal capacity to draw, temporarily store, and control Mana (channeled Aethel) for spellcasting."
+    },
+    {
+      "title": "Korga",
+      "keywords": [
+        "Korga"
+      ],
+      "content": "The formidable Peak Lord of the Ironpelt Clan, a significant Shanyuan power in the Dragon's Crown Peaks, rumored to command allegiance from nearly one hundred and twenty Shanyuan."
+    },
+    {
+      "title": "Peak Lord",
+      "keywords": [
+        "Peak Lord",
+        "Feng Zhu",
+        "峰主"
+      ],
+      "content": "Title for chieftains of Shanyuan tribes in the Dragon's Crown Peaks, whose authority is typically based on physical prowess, resilience, or a deep connection to the mountain's spirit."
+    },
+    {
+      "title": "Devouring Root",
+      "keywords": [
+        "Devouring Root",
+        "Tunshi zhi Gen",
+        "吞噬之根"
+      ],
+      "content": "A rare and dangerous Wild Heart Spirit Root capable of absorbing diverse energies, including hostile or corrupted Qi, offering rapid but unstable power with high risk of corruption."
+    },
+    {
+      "title": "Dreamer's Scrutiny",
+      "keywords": [
+        "Dreamers Scrutiny",
+        "Mengzhe Shenshi",
+        "梦者审视"
+      ],
+      "content": "A theorized consequence for Arcanists whose powerful magic significantly alters the First Mover's dream, potentially attracting corrective action from reality or cosmic entities."
+    },
+    {
+      "title": "Elder Runes",
+      "keywords": [
+        "Elder Runes",
+        "Gulao Fuwen",
+        "古老符文",
+        "Otiot Kedumim",
+        "אוֹתִיוֹת קְדוּמִים",
+        "Ancient Letters"
+      ],
+      "content": "More fundamental and potent Runic symbols than those commonly used by the Tianling, their knowledge largely lost or guarded by reclusive masters. A subject of quests for Arcanists."
+    },
+    {
+      "title": "Kinneret-Shen",
+      "keywords": [
+        "Kinneret Shen",
+        "כנרת神",
+        "Shuijing Ling",
+        "水精靈",
+        "Harp Sea Spirits",
+        "Water Essence Spirits"
+      ],
+      "content": "The first divinely-guided civilization on Malkuth. Aquatic beings, elegant but distinctly alien, with scaled upper bodies and fish-like lower halves. Ruled by an immortal Queen with a 'Third Eye'. Their ancient society is advanced, feudal, but now fractured. Reside in deep-sea strongholds."
+    },
+    {
+      "title": "Primordial Qi",
+      "keywords": [
+        "Primordial Qi",
+        "Yuan Qi",
+        "元氣"
+      ],
+      "content": "The ambient vital energy permeating Malkuth, an echo of Void Essence and Celestial Bones. The foundational energy absorbed and refined by cultivators."
+    },
+    {
+      "title": "Blood Essence Binding",
+      "keywords": [
+        "Blood Essence Binding",
+        "Jingxue Renzhu",
+        "精血認主"
+      ],
+      "content": "A common method for bonding with cultivator artifacts, especially lower to mid-tier ones. The cultivator uses their vital blood essence to create an energetic link, allowing control."
+    },
+    {
+      "title": "Kinneret Queen",
+      "keywords": [
+        "Kinneret Queen",
+        "Queen of the Kinneret Shen"
+      ],
+      "content": "The immortal ruler of the Kinneret-Shen, graced with a 'Third Eye' by the Creator. She is the central figure of their feudal society and state religion. Her authority is absolute, though challenged during the Great Schism led by Lassenia. She personally struck down Lassenia in their final battle."
+    },
+    {
+      "title": "Heart Demons",
+      "keywords": [
+        "Heart Demons",
+        "Xīnmó",
+        "心魔"
+      ],
+      "content": "Internal, psychological, or spiritual manifestations of a cultivator's unresolved flaws, fears, or desires, typically arising during breakthroughs or secluded cultivation. Can cause cultivation deviation."
+    },
+    {
+      "title": "River-Bank Burrows",
+      "keywords": [
+        "River Bank Burrows",
+        "Hean Xueju",
+        "河岸穴居"
+      ],
+      "content": "More permanent dwellings of some Banished Kin tribes on Huna, excavated into clay riverbanks, reminiscent of ancestral underwater grottos."
+    },
+    {
+      "title": "Kinneret-Shen Technology",
+      "keywords": [
+        "Kinneret Shen Technology",
+        "Kinneret Shen Artifice"
+      ],
+      "content": "The Kinneret-Shen possess the most advanced civilization, with an ancient, feudal society. Their technology includes sophisticated deep-sea strongholds and potentially crystal-based or bio-luminescent crafts, though much may be fractured or lost."
+    },
+    {
+      "title": "Acupoints",
+      "keywords": [
+        "Acupoints",
+        "Xuewei",
+        "穴位"
+      ],
+      "content": "Specific nexus points along meridians, acting as gates, reservoirs, or nodes for Qi manipulation in cultivation. Opening and refining them is part of meridian cultivation."
+    },
+    {
+      "title": "River Wyrms",
+      "keywords": [
+        "River Wyrms",
+        "Jiang Long",
+        "江龍"
+      ],
+      "content": "Colossal serpentine creatures inhabiting the great rivers of Huna."
+    },
+    {
+      "title": "Abyssal Heart",
+      "keywords": [
+        "Abyssal Heart",
+        "Shenyuan Zhi Xin",
+        "深淵之心",
+        "The Primal Passion"
+      ],
+      "content": "One of the three Primal Aspects reflecting the First Mover's nature, embodied by Ada. Represents the wellspring of raw power, untamed passion, intense experience, transformative chaos, and assimilated primal forces."
+    },
+    {
+      "title": "Glyphic Arrays",
+      "keywords": [
+        "Glyphic Arrays",
+        "Fuyin Zhenlie",
+        "符印陣列"
+      ],
+      "content": "Complex patterns of Runes or Glyphs inscribed over an area or object to create persistent magical effects in Arcane & Runic Magic. Similar to Cultivator Formations but built on Runic logic."
+    },
+    {
+      "title": "Impure Spirit Root",
+      "keywords": [
+        "Impure Spirit Root",
+        "Za Linggen",
+        "雜靈根"
+      ],
+      "content": "The lowest quality grade of Spirit Root. Often multiple conflicting elements with very low purity. Qi absorption is extremely slow and difficult. Cultivation beyond early Qi Condensation is rare."
+    },
+    {
+      "title": "Runic Implements",
+      "keywords": [
+        "Runic Implements",
+        "Fuwen Qixie",
+        "符文器械",
+        "Wands Arcane",
+        "Staves Arcane",
+        "Amulets Arcane",
+        "Rings Arcane"
+      ],
+      "content": "Tools like wands, staves, amulets, and rings used by Arcanists to focus will, direct Mana, and bear Runic enchantments for various effects."
+    },
+    {
+      "title": "Sky-Altar Aerie (North-Western Spearhead)",
+      "keywords": [
+        "Sky Altar Aerie",
+        "Mizbeach Shamayim Ken Nesharim",
+        "מזבח שמיים קן נשרים",
+        "North Western Spearhead Sky Altar Aerie"
+      ],
+      "content": "A Tianling (Am HaSod) settlement of the Star-Touched faction, atop a high, storm-lashed sea stack, with slender, rune-etched stone towers. Inhabited by introspective scholars, astromancers, and Runic artisans specializing in Celestial Runes. Threats include cataclysmic tidal waves, Sea-Drakes, rival Tianling factions, and unsettling cosmic influences. Constant gales, strong Empyrean Resonance Qi and Aetheric currents. Power players include Stargazer Lyraella (Archon-level Celestial Cartographer) and Rune-Warden Theron (master of defensive Runic Arrays). Beliefs involve deep reverence for Jeru (Moreh Razim), stars/moons as living entities, and destiny read in celestial events."
+    },
+    {
+      "title": "Spirit Grade Technique",
+      "keywords": [
+        "Spirit Grade Technique",
+        "Ling Pin Gongfa",
+        "靈品功法"
+      ],
+      "content": "Cultivation techniques (Gōngfǎ) of decent quality, suitable for early to mid-stage cultivators. More refined than Mortal Grade, offering better efficiency."
+    },
+    {
+      "title": "Spirit Pills (Grade 2)",
+      "keywords": [
+        "Spirit Pills",
+        "Ling Dan",
+        "靈丹",
+        "Grade 2 Pill",
+        "Pill Grade 2"
+      ],
+      "content": "Alchemical pills providing noticeable aid in early cultivation stages (e.g., minor Qi boosts for Qi Condensation), healing moderate injuries, or offering slight temporary enhancements."
+    },
+    {
+      "title": "Spirit Weapons",
+      "keywords": [
+        "Spirit Weapons",
+        "Lingqi",
+        "靈器",
+        "Spirit Treasures"
+      ],
+      "content": "A significant step up from Faqi. Crafted with rarer materials, can store some Qi, and may develop nascent awareness. Cultivators at Golden Core can refine and wield these."
+    },
+    {
+      "title": "Spiritual Qi of Flora and Fauna",
+      "keywords": [
+        "Spiritual Qi of Flora and Fauna",
+        "Jingqi",
+        "精氣"
+      ],
+      "content": "Refined essence drawn from powerful spirit beasts, ancient fungi, or unique plants of Malkuth. Used in alchemy and sometimes directly absorbed by cultivators."
+    },
+    {
+      "title": "Stoneheart Brotherhood",
+      "keywords": [
+        "Stoneheart Brotherhood",
+        "Shixin Yihui",
+        "石心義會"
+      ],
+      "content": "A loose confederation of Shanyuan elders from various allied clans in the Dragon's Crown Peaks, meeting to share wisdom and discuss threats. More a council than a formal sect."
+    },
+    {
+      "title": "North-Western Spearhead",
+      "keywords": [
+        "North Western Spearhead",
+        "Xibei Qiangfeng",
+        "西北槍鋒",
+        "Xibei Qiangfeng zhi Yu",
+        "西北槍鋒之域"
+      ],
+      "content": "A jagged continent or archipelago of fractured coastlines and ephemeral island chains in Malkuth's northwest, perpetually besieged by storm-tossed oceans. Ancestral homeland of the Tianling."
+    },
+    {
+      "title": "Tide-Kelp",
+      "keywords": [
+        "Tide Kelp",
+        "Chaoxi Haizao",
+        "潮汐海藻"
+      ],
+      "content": "A type of seaweed found in the North-Western Spearhead that can survive both submersion and exposure to air due to the extreme tides."
+    },
+    {
+      "title": "Dragon's Crown Peaks",
+      "keywords": [
+        "Dragon's Crown Peaks",
+        "Long Guan Shanmai",
+        "龍冠山脈",
+        "Dragons Crown Mountains"
+      ],
+      "content": "A colossal mountain range on Malkuth, its peaks piercing the highest clouds. Born from a Mountain-Forging Upheaval, its high-altitude valleys can cradle entire kingdoms. Homeland to the Shanyuan and Linghou."
+    },
+    {
+      "title": "Elixir of Manaflow",
+      "keywords": [
+        "Elixir of Manaflow",
+        "Moneng Benliu Yaoji",
+        "魔能奔流藥劑"
+      ],
+      "content": "An alchemical concoction created by Aetheric Transmuters using Runes and spiritual herbs to temporarily boost an Arcanist's Mana regeneration."
+    },
+    {
+      "title": "Whisperwood Nook (Dragon's Crown)",
+      "keywords": [
+        "Whisperwood Nook",
+        "Xiyu Lin Ao",
+        "細語林坳",
+        "Dragons Crown Whisperwood Nook"
+      ],
+      "content": "A hidden, multi-tiered Linghou settlement in a mist-filled valley of the Dragon's Crown, built amongst Sky-Pines and glowing Spirit-Caps. Inhabited by the Whisperwood Troop, known for 'Mistdew Wine' and elusiveness. Threats include Shanyuan patrols (Ironpelts), rival Linghou, and Roc-Eagles. Ambient psychoactive spores and Ada's wild energies permeate the grove, with mischievous Fae-like spirits. Power players include Elder Hua (matriarch, wine recipe keeper) and Quickpaw (cunning scout, nascent Agile Flow cultivator). Beliefs involve animistic reverence for ancient trees, the 'Great Glowcap', and forest spirits, with some tales of Ada as a nature deity."
+    },
+    {
+      "title": "Broken Spear Tribe",
+      "keywords": [
+        "Broken Spear Tribe",
+        "Duanmao Bu",
+        "斷矛部"
+      ],
+      "content": "A Banished Kin tribe on Huna known for a rare lineage of individuals with primal cultivation abilities focused on survival and hunting."
+    },
+    {
+      "title": "Yingmo",
+      "keywords": [
+        "Yingmo",
+        "影魔",
+        "Shadow Demons"
+      ],
+      "content": "A type of Mozu serving Lassenia. Lithe and deceptive, capable of manipulating emotions and weaving illusions. May originate from corrupted Fae or shadowed Kinneret-Shen."
+    },
+    {
+      "title": "Yurts of Scale and Hide",
+      "keywords": [
+        "Yurts of Scale and Hide",
+        "Linpi Qionglu",
+        "鱗皮穹廬"
+      ],
+      "content": "Typical dwellings of the nomadic Banished Kin on Huna, sturdy hide tents reinforced with bone and driftwood, arranged in circular patterns."
+    },
+    {
+      "title": "School of Aetheric Transmutation",
+      "keywords": [
+        "School of Aetheric Transmutation",
+        "Yitai Liancheng Xueyuan",
+        "以太炼成学院"
+      ],
+      "content": "A school of Arcane Magic combining Runic theory with practical experimentation to reshape matter and energy. Practitioners are artificers and creators of magical materials/devices."
+    },
+    {
+      "title": "Asipatra",
+      "keywords": [
+        "Asipatra",
+        "Jianye Lin",
+        "劍葉林",
+        "Sword Leaf Forest"
+      ],
+      "content": "Lassenia's hidden, shadow-wrought pocket dimension, granted by the First Mover. A realm of eternal twilight where she rules as a goddess and created her demonic followers."
+    },
+    {
+      "title": "River Reed School",
+      "keywords": [
+        "River Reed School",
+        "He Lu Pai",
+        "河蘆派"
+      ],
+      "content": "A nascent Ren cultivator sect on Huna, found along the Great Serpent River, known for water navigation and healing herbs. Rarely exceeds 30-40 members."
+    },
+    {
+      "title": "Heaven-Sent Artifacts (Artifact Tier 5)",
+      "keywords": [
+        "Heaven Sent Artifacts",
+        "Tianjiang Shenbing",
+        "天降神兵",
+        "Tier 5 Artifact Cultivation"
+      ],
+      "content": "Cultivator artifacts whose origins lie in celestial events or materials from beyond Malkuth, such as Sky-Shards or meteorites. Their properties can be unusual and tied to cosmic forces."
+    },
+    {
+      "title": "Tianling Technology",
+      "keywords": [
+        "Tianling Technology",
+        "Tianling Artifice"
+      ],
+      "content": "The Tianling of the North-Western Spearhead have developed unique crafts out of necessity, including advanced stone-shaping, resonant dampeners for their structures, and weather-warding Runic Arrays."
+    },
+    {
+      "title": "Void Comprehending",
+      "keywords": [
+        "Void Comprehending",
+        "Wùxū",
+        "悟虛",
+        "Understanding the Void Cultivation Realm"
+      ],
+      "content": "A transcendent cultivation realm where practitioners perceive and interact with deeper layers of reality like Void Essence and the Cosmic Web, developing spatial manipulation abilities. Substages: Early (Void Glimpsing), Middle (Void Merging), Late (Void Shattering), Peak (Void Mastering)."
+    },
+    {
+      "title": "Twofold Essence of Vitality",
+      "keywords": [
+        "Twofold Essence of Vitality",
+        "Shuangyuan Shengji",
+        "雙元生機",
+        "Twin Origin Life Force",
+        "Twin Origin Vitality"
+      ],
+      "content": "A foundational pattern, a spiraling echo of Taiji, imbued by the Creator into Malkuth's nascent oceans. This catalyzed the evolution of more complex life forms."
+    },
+    {
+      "title": "Dao Pills (Grade 6)",
+      "keywords": [
+        "Dao Pills",
+        "Dao Dan",
+        "道丹",
+        "Grade 6 Pill",
+        "Pill Grade 6"
+      ],
+      "content": "Mythical alchemical pills that are more like solidified Dao principles. Consuming one might grant direct enlightenment, permanently transform a Spirit Root (extremely rare), or allow a glimpse into the First Mover's dream. Creation is beyond typical alchemy."
+    },
+    {
+      "title": "Void Essence",
+      "keywords": [
+        "Void Essence",
+        "Xuanming Zhi Qi",
+        "玄冥之氣",
+        "Profound Dark Qi",
+        "Primordial Yin"
+      ],
+      "content": "The unmanifested Profound Dark Qi, the Primordial Yin of the cosmos, found in the depths of the Primordial Ocean. It represents pure potentiality and connects to the 'Bulk' of realities. Direct cultivation is perilous."
+    },
+    {
+      "title": "Geothermal Dragon Hide",
+      "keywords": [
+        "Geothermal Dragon Hide"
+      ],
+      "content": "The hide of Geothermal Dragons like Kelos, or their kin. Likely possesses fire-resistant and durable properties, used for enchanted vestments by Arcanists."
+    },
+    {
+      "title": "Sanguine",
+      "keywords": [
+        "Sanguine",
+        "Xueyuan Shengzhu",
+        "血源聖主",
+        "Blood Origin Holy Lord"
+      ],
+      "content": "An awe-inspiring, godlike being wreathed in concentric rings and cosmic spirals, one of the forms in which the Moon Deities witnessed the First Mover. Associated with blood, life, and primal power. Guided the Banished Kin to Huna and empowered Lassenia."
+    },
+    {
+      "title": "Void-Touched Root",
+      "keywords": [
+        "Void Touched Root",
+        "Xuanming Yi Gen",
+        "玄冥異根",
+        "Profound Dark Unique Root"
+      ],
+      "content": "A Variant Spirit Root with a direct and dangerous affinity for Void Essence, offering esoteric power but high risk of corruption."
+    },
+    {
+      "title": "Yanshi",
+      "keywords": [
+        "Yanshi",
+        "岩石民",
+        "Rock People"
+      ],
+      "content": "Imira's direct creations, beings appearing crafted from living stone and earth, often with veins of amethyst and other crystals. They live deep within Malkuth (e.g., roots of Dragon's Crown Peaks), are serene, wise, and powerful cultivators deeply attuned to the earth and Imira's Dao (Earth-Attunement)."
+    },
+    {
+      "title": "Wuji",
+      "keywords": [
+        "Wuji",
+        "無極",
+        "Formless Void",
+        "Unmanifest"
+      ],
+      "content": "The Daoist concept of the formless Void or the Unmanifest, representing the primordial, undifferentiated state from which the universe and Taiji arose, as part of the First Mover's dream."
+    },
+    {
+      "title": "Taiji",
+      "keywords": [
+        "Taiji",
+        "太極",
+        "Supreme Ultimate"
+      ],
+      "content": "The Daoist concept of the Supreme Ultimate, representing the dynamic interplay and dance of Yin and Yang, into which Wuji unfolded during the First Mover's act of creation."
+    },
+    {
+      "title": "Snow-Stalkers",
+      "keywords": [
+        "Snow Stalkers",
+        "Xueqian Shou",
+        "雪潛獸"
+      ],
+      "content": "Massive, shaggy, white-furred apex predators resembling giant bears with saber-like teeth, inhabiting the Dragon's Crown Peaks."
+    },
+    {
+      "title": "Domain (Cultivation)",
+      "keywords": [
+        "Domain Cultivation",
+        "Lingyu",
+        "領域"
+      ],
+      "content": "An area around a Soul Formation (or higher) cultivator where their understanding of their specific Dao grants them significant influence over ambient energies and local reality laws pertaining to their specialization."
+    },
+    {
+      "title": "School of Celestial Cartography",
+      "keywords": [
+        "School of Celestial Cartography",
+        "Xingtu Xueyuan",
+        "星图學院"
+      ],
+      "content": "A school of Arcane Magic focused on astromancy, divination via celestial alignments, and understanding cosmic destiny. Practitioners are often advisors, navigators, and prophets."
+    },
+    {
+      "title": "Body Tempering Disciplines",
+      "keywords": [
+        "Body Tempering Disciplines",
+        "Duanti Famen",
+        "鍛體法門"
+      ],
+      "content": "Cultivation methods dedicated to strengthening and transforming the physical form to superhuman levels, often involving rigorous, painful, and resource-intensive processes. Includes Primal Strength Methods, Alchemical Body Tempering, and Dao-Resonant Physique Arts."
+    },
+    {
+      "title": "Hidden Realms",
+      "keywords": [
+        "Hidden Realms",
+        "Yinmi Dongtian",
+        "隱秘洞天",
+        "Hidden Grotto Heavens"
+      ],
+      "content": "Personal domains or pocket dimensions maintained by the Moon Deities (Imira, Ada, Jeru) and potentially other powerful entities like Grand Ascension cultivators."
+    },
+    {
+      "title": "Earth Grade Technique",
+      "keywords": [
+        "Earth Grade Technique",
+        "Di Pin Gongfa",
+        "地品功法"
+      ],
+      "content": "Powerful and often complex cultivation techniques (Gōngfǎ), usually held by established sects or clans. Can lead to significant power within a realm."
+    },
+    {
+      "title": "Nascent Soul",
+      "keywords": [
+        "Nascent Soul",
+        "Yuan Ying",
+        "元嬰"
+      ],
+      "content": "The fourth major realm of Cultivation. The Golden Core 'hatches', giving birth to a miniature spiritual replica (Nascent Soul) capable of leaving the body and wielding immense spiritual power. Substages: Early, Middle, Late, Peak."
+    }
+  ]
+}

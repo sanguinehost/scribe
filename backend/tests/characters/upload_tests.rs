@@ -200,7 +200,7 @@ async fn test_upload_real_card_file() -> Result<(), anyhow::Error> {
         .to_string();
 
     // --- Process the real test file instead of a generated one ---
-    let real_card_data = include_bytes!("../../../test_data/test_card.png").to_vec();
+    let real_card_data = include_bytes!("../../../test_data/The_Awakened.json").to_vec();
 
     // Log some info about the file
     tracing::info!("Real test_card.png size: {} bytes", real_card_data.len());

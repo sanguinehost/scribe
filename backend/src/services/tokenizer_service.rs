@@ -435,7 +435,7 @@ mod tests {
     }
 
     fn get_test_image_path() -> PathBuf {
-        PathBuf::from("/home/socol/Workspace/sanguine-scribe/test_data/test_card.png")
+        PathBuf::from("/home/socol/Workspace/sanguine-scribe/test_data/The_Awakened.png")
     }
 
     #[test]
