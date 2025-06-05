@@ -165,16 +165,70 @@ export interface ChatSessionLorebookAssociation {
     created_at: string;
 }
 
-// Placeholder for Character type - Define based on expected fields from GET /api/characters/{id}
+// Character type based on backend CharacterDataForClient
 export interface Character {
     id: string;
+    user_id: string;
+    spec: string;
+    spec_version: string;
     name: string;
-    description?: string;
-    system_prompt?: string | null;
+    description?: string | null;
     personality?: string | null;
     scenario?: string | null;
-    avatar_url?: string | null;
+    first_mes?: string | null;
+    mes_example?: string | null;
+    creator_notes?: string | null;
+    system_prompt?: string | null;
+    post_history_instructions?: string | null;
+    tags?: (string | null)[] | null;
+    creator?: string | null;
+    character_version?: string | null;
+    alternate_greetings?: string[] | null;
+    nickname?: string | null;
+    creator_notes_multilingual?: any | null;
+    source?: (string | null)[] | null;
+    group_only_greetings?: (string | null)[] | null;
+    creation_date?: string | null;
+    modification_date?: string | null;
+    created_at: string;
+    updated_at: string;
+    persona?: string | null;
+    world_scenario?: string | null;
+    avatar?: string | null;
+    avatar_url?: string | null; // For backward compatibility
+    chat?: string | null;
     greeting?: string | null;
+    definition?: string | null;
+    default_voice?: string | null;
+    extensions?: any | null;
+    data_id?: number | null;
+    category?: string | null;
+    definition_visibility?: string | null;
+    depth?: number | null;
+    example_dialogue?: string | null;
+    favorite?: boolean | null;
+    first_message_visibility?: string | null;
+    height?: string | null;
+    last_activity?: string | null;
+    migrated_from?: string | null;
+    model_prompt?: string | null;
+    model_prompt_visibility?: string | null;
+    model_temperature?: string | null;
+    num_interactions?: number | null;
+    permanence?: string | null;
+    persona_visibility?: string | null;
+    revision?: number | null;
+    sharing_visibility?: string | null;
+    status?: string | null;
+    system_prompt_visibility?: string | null;
+    system_tags?: (string | null)[] | null;
+    token_budget?: number | null;
+    usage_hints?: any | null;
+    user_persona?: string | null;
+    user_persona_visibility?: string | null;
+    visibility?: string | null;
+    weight?: string | null;
+    world_scenario_visibility?: string | null;
 }
 
 // Scribe-specific character type alias for consistency

@@ -153,6 +153,29 @@ class ApiClient {
 		console.log(`[${new Date().toISOString()}] ApiClient.getCharacter: Fetching character ${id}`);
 		return this.fetch<Character>(`/api/characters/fetch/${id}`);
 	}
+
+	async updateCharacter(id: string, data: Partial<Character>): Promise<Result<Character, ApiError>> {
+		console.log(`[${new Date().toISOString()}] ApiClient.updateCharacter: Updating character ${id}`, data);
+		return this.fetch<Character>(`/api/characters/${id}`, {
+			method: 'PUT',
+			body: JSON.stringify(data)
+		});
+	}
+
+	async createCharacter(data: Omit<Character, 'id'>): Promise<Result<Character, ApiError>> {
+		console.log(`[${new Date().toISOString()}] ApiClient.createCharacter: Creating character`, data);
+		return this.fetch<Character>('/api/characters', {
+			method: 'POST',
+			body: JSON.stringify(data)
+		});
+	}
+
+	async deleteCharacter(id: string): Promise<Result<void, ApiError>> {
+		console.log(`[${new Date().toISOString()}] ApiClient.deleteCharacter: Deleting character ${id}`);
+		return this.fetch<void>(`/api/characters/remove/${id}`, {
+			method: 'DELETE'
+		});
+	}
 	// End Character methods
 
 	async deleteChatById(id: string): Promise<Result<void, ApiError>> {

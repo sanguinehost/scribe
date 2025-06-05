@@ -134,6 +134,8 @@ pub struct UploadedLorebookEntry {
     pub order: Option<i32>,       // Maps to insertion_order
     pub position: Option<i32>,    // 0=before prompt, 1=after prompt
     pub uid: Option<i32>,         // Original SillyTavern UID
+    #[serde(default, alias = "id")]
+    pub id: Option<i32>,          // Alternative to uid for some exports
     #[serde(default, alias = "displayName")] // Added alias for compatibility
     pub display_name: Option<String>, // Field for SillyTavern entry title
 

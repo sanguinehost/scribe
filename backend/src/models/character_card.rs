@@ -1,5 +1,6 @@
 use crate::models::characters::Character;
 use crate::models::lorebooks::Lorebook; // Import the new Lorebook
+use crate::models::lorebook_dtos::UploadedLorebookEntry; // For SillyTavern entries
 use chrono::{DateTime, Utc}; // Add DateTime and Utc
 use diesel::{Associations, Identifiable, Insertable, Queryable, Selectable};
 use diesel_json::Json;
@@ -18,6 +19,35 @@ pub struct CharacterCardV3 {
     pub spec_version: String,
     #[serde(default)] // Uses Default impl of CharacterCardDataV3
     pub data: CharacterCardDataV3,
+    
+    // Optional fields to handle SillyTavern's flattened export format
+    // These will be merged into the data field during parsing
+    #[serde(default, skip_serializing)]
+    pub name: Option<String>,
+    #[serde(default, skip_serializing)]
+    pub description: Option<String>,
+    #[serde(default, skip_serializing)]
+    pub personality: Option<String>,
+    #[serde(default, skip_serializing)]
+    pub scenario: Option<String>,
+    #[serde(default, skip_serializing)]
+    pub first_mes: Option<String>,
+    #[serde(default, skip_serializing)]
+    pub mes_example: Option<String>,
+    #[serde(default, skip_serializing)]
+    pub creator_notes: Option<String>,
+    #[serde(default, skip_serializing)]
+    pub system_prompt: Option<String>,
+    #[serde(default, skip_serializing)]
+    pub post_history_instructions: Option<String>,
+    #[serde(default, skip_serializing)]
+    pub alternate_greetings: Option<Vec<String>>,
+    #[serde(default, skip_serializing)]
+    pub tags: Option<Vec<String>>,
+    #[serde(default, skip_serializing)]
+    pub creator: Option<String>,
+    #[serde(default, skip_serializing)]
+    pub character_version: Option<String>,
 }
 
 impl std::fmt::Debug for CharacterCardV3 {
@@ -27,6 +57,64 @@ impl std::fmt::Debug for CharacterCardV3 {
             .field("spec_version", &"[REDACTED]")
             .field("data", &self.data) // Relies on CharacterCardDataV3's Debug
             .finish()
+    }
+}
+
+impl CharacterCardV3 {
+    /// Merges flattened SillyTavern-style fields into the data structure
+    pub fn merge_flattened_fields(&mut self) {
+        // Merge top-level fields into data, prioritizing data fields if they exist
+        if self.data.name.is_none() && self.name.is_some() {
+            self.data.name = self.name.take();
+        }
+        
+        if self.data.description.is_empty() && self.description.is_some() {
+            self.data.description = self.description.take().unwrap_or_default();
+        }
+        
+        if self.data.personality.is_empty() && self.personality.is_some() {
+            self.data.personality = self.personality.take().unwrap_or_default();
+        }
+        
+        if self.data.scenario.is_empty() && self.scenario.is_some() {
+            self.data.scenario = self.scenario.take().unwrap_or_default();
+        }
+        
+        if self.data.first_mes.is_empty() && self.first_mes.is_some() {
+            self.data.first_mes = self.first_mes.take().unwrap_or_default();
+        }
+        
+        if self.data.mes_example.is_empty() && self.mes_example.is_some() {
+            self.data.mes_example = self.mes_example.take().unwrap_or_default();
+        }
+        
+        if self.data.creator_notes.is_empty() && self.creator_notes.is_some() {
+            self.data.creator_notes = self.creator_notes.take().unwrap_or_default();
+        }
+        
+        if self.data.system_prompt.is_empty() && self.system_prompt.is_some() {
+            self.data.system_prompt = self.system_prompt.take().unwrap_or_default();
+        }
+        
+        if self.data.post_history_instructions.is_empty() && self.post_history_instructions.is_some() {
+            self.data.post_history_instructions = self.post_history_instructions.take().unwrap_or_default();
+        }
+        
+        if self.data.alternate_greetings.is_empty() && self.alternate_greetings.is_some() {
+            self.data.alternate_greetings = self.alternate_greetings.take().unwrap_or_default();
+        }
+        
+        if self.data.tags.is_empty() && self.tags.is_some() {
+            self.data.tags = self.tags.take().unwrap_or_default();
+        }
+        
+        if self.data.creator.is_empty() && self.creator.is_some() {
+            self.data.creator = self.creator.take().unwrap_or_default();
+        }
+        
+        if self.data.character_version.is_empty() && self.character_version.is_some() {
+            self.data.character_version = self.character_version.take().unwrap_or_default();
+        }
     }
 }
 
@@ -68,7 +156,7 @@ pub struct CharacterCardDataV3 {
 
     // --- V2 fields changed/clarified in V3 ---
     // `creator_notes`: Already included above, V3 clarifies multilingual handling.
-    pub character_book: Option<Lorebook>, // V3 makes this optional
+    pub character_book: Option<serde_json::Value>, // Use Value for flexible parsing
 
     // --- New Fields in V3 ---
     pub assets: Option<Vec<Asset>>,
@@ -180,6 +268,25 @@ impl std::fmt::Debug for Decorator {
 }
 
 // --- End Lorebook Decorator Definitions ---
+
+// --- SillyTavern Character Book Structures ---
+
+/// SillyTavern character book structure for parsing
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct SillyTavernCharacterBook {
+    pub entries: Vec<UploadedLorebookEntry>,
+    pub name: Option<String>,
+    #[serde(default)]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub scan_depth: Option<i32>,
+    #[serde(default)]
+    pub token_budget: Option<i32>,
+    #[serde(default)]
+    pub recursive_scanning: Option<bool>,
+}
+
+// --- End SillyTavern Character Book Structures ---
 
 /// Helper function to parse decorators from content string.
 /// Making this private again as tests are now colocated.
@@ -1213,6 +1320,7 @@ mod tests {
             spec: "chara_card_v3".to_string(),
             spec_version: "3.0".to_string(),
             data: data_v3,
+            ..Default::default()
         };
         // Box the card data as expected by ParsedCharacterCard::V3
         // Pass the card directly, not boxed

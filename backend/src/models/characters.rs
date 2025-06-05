@@ -693,7 +693,14 @@ impl Character {
             tags: self.tags.or_else(|| Some(Vec::new())),
             creator: default_empty_string_if_none(self.creator),
             character_version: default_empty_string_if_none(self.character_version),
-            alternate_greetings: self.alternate_greetings.or_else(|| Some(Vec::new())),
+            alternate_greetings: self.alternate_greetings
+                .map(|greetings| {
+                    greetings
+                        .into_iter()
+                        .filter_map(|opt_greeting| opt_greeting)
+                        .collect()
+                })
+                .or_else(|| Some(Vec::new())),
             nickname: default_empty_string_if_none(self.nickname),
             creator_notes_multilingual: self
                 .creator_notes_multilingual
@@ -771,7 +778,7 @@ pub struct CharacterDataForClient {
     pub tags: Option<Vec<Option<String>>>,
     pub creator: Option<String>,
     pub character_version: Option<String>,
-    pub alternate_greetings: Option<Vec<Option<String>>>,
+    pub alternate_greetings: Option<Vec<String>>,
     pub nickname: Option<String>,
     pub creator_notes_multilingual: Option<Json<JsonValue>>,
     pub source: Option<Vec<Option<String>>>,
@@ -1438,6 +1445,7 @@ mod tests {
                 modification_date: None,
                 extensions: HashMap::default(), // Keep extensions
             },
+            ..Default::default()
         })
     }
 

@@ -162,7 +162,7 @@ fn try_parse_v3_from_base64(
         ParserError::Base64Error(e.to_string())
     })?;
 
-    let card = serde_json::from_slice::<CharacterCardV3>(&decoded_bytes).map_err(|e| {
+    let mut card = serde_json::from_slice::<CharacterCardV3>(&decoded_bytes).map_err(|e| {
         warn!(
             "Failed to parse JSON from '{}' as CharacterCardV3: {}",
             source, e
@@ -170,6 +170,9 @@ fn try_parse_v3_from_base64(
         ParserError::JsonError(e.to_string())
     })?;
 
+    // Merge flattened fields (for SillyTavern compatibility)
+    card.merge_flattened_fields();
+    
     validate_v3_spec(&card, source);
     Ok(card)
 }
@@ -266,9 +269,12 @@ pub fn parse_character_card_png(png_data: &[u8]) -> Result<ParsedCharacterCard, 
 /// - JSON format is invalid
 /// - Required fields are missing
 pub fn parse_character_card_json(json_data: &[u8]) -> Result<ParsedCharacterCard, ParserError> {
-    let card = serde_json::from_slice::<CharacterCardV3>(json_data)
+    let mut card = serde_json::from_slice::<CharacterCardV3>(json_data)
         .map_err(|e| ParserError::JsonError(e.to_string()))?;
 
+    // Merge flattened fields (for SillyTavern compatibility)
+    card.merge_flattened_fields();
+    
     validate_v3_spec(&card, "JSON card");
     Ok(ParsedCharacterCard::V3(card))
 }

@@ -68,8 +68,9 @@ fn test_deserialize_card_with_lorebook() {
     );
     let card = card.unwrap();
     assert!(card.data.character_book.is_some());
-    let book = card.data.character_book.unwrap();
-    assert_eq!(book.name, "World Facts");
+    let book_value = card.data.character_book.unwrap();
+    let book_name = book_value.get("name").and_then(|v| v.as_str());
+    assert_eq!(book_name, Some("World Facts"));
 }
 
 #[test]
@@ -236,6 +237,7 @@ fn test_from_parsed_card_v3() {
         spec: "chara_card_v3".to_string(),
         spec_version: "3.0".to_string(),
         data: data_v3.clone(), // Clone data_v3 for comparison later
+        ..Default::default()
     };
     let parsed_v3 = ParsedCharacterCard::V3(card_v3);
 

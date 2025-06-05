@@ -334,6 +334,9 @@ pub async fn upload_character_handler(
     }
 
     let client_character_data = inserted_character.into_decrypted_for_client(Some(&dek.0))?;
+    
+    // Debug: Log the alternate_greetings in the final client response
+    tracing::info!("Final client character alternate_greetings: {:?}", client_character_data.alternate_greetings);
 
     Ok((StatusCode::CREATED, Json(client_character_data)))
 }
