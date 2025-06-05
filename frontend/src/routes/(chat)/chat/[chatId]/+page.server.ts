@@ -1,5 +1,5 @@
 import { error } from '@sveltejs/kit';
-import type { ScribeChatMessage, ScribeChatSession, ScribeCharacter, MessageRole } from '$lib/types'; // Assuming ScribeCharacter type exists or will be added
+import type { ScribeChatMessage, ScribeChatSession, ScribeCharacter, MessageRole, BackendAuthResponse } from '$lib/types.ts'; // Assuming ScribeCharacter type exists or will be added
 
 // Define an interim type for the raw message structure from the API if it uses parts
 interface RawApiMessage {
@@ -19,6 +19,17 @@ export async function load({ params: { chatId }, fetch, cookies }) {
 		const sessionCookie = cookies.get('session');
 		// Prepare headers for authenticated fetch calls
 		const headers = sessionCookie ? { Cookie: `session=${sessionCookie}` } : undefined;
+
+		// Fetch user details
+		let user: BackendAuthResponse | undefined;
+		const userRes = await fetch('/api/auth/me', { headers });
+		if (userRes.ok) {
+			user = await userRes.json();
+		} else {
+			console.warn('Failed to fetch user details, proceeding without user context.');
+			// Depending on application requirements, you might want to throw an error here
+			// if user context is strictly necessary for all chat interactions.
+		}
 
 		// Fetch chat session details
 		const chatRes = await fetch(`/api/chats/fetch/${chatId}`, { headers });
@@ -48,8 +59,8 @@ export async function load({ params: { chatId }, fetch, cookies }) {
 			id: rawMsg.id,
 			session_id: rawMsg.session_id,
 			message_type: rawMsg.message_type,
-			content: (rawMsg.parts && rawMsg.parts.length > 0 && typeof rawMsg.parts[0].text === 'string') 
-					 ? rawMsg.parts[0].text 
+			content: (rawMsg.parts && rawMsg.parts.length > 0 && typeof rawMsg.parts[0].text === 'string')
+					 ? rawMsg.parts[0].text
 					 : (typeof rawMsg.content === 'string' ? rawMsg.content : ''),
 			created_at: rawMsg.created_at,
 			user_id: rawMsg.user_id,
@@ -79,7 +90,7 @@ export async function load({ params: { chatId }, fetch, cookies }) {
 		}
 
 
-		return { chat, messages, character }; // Return character along with chat and messages
+		return { chat, messages, character, user }; // Return character along with chat and messages
 	} catch (e) {
 		console.error('Error loading chat data:', e);
 		error(500, 'An error occurred while processing your request');

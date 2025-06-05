@@ -4,7 +4,7 @@
 	import { apiClient } from '$lib/api'; // Import apiClient
 	import { ChatHistory } from '$lib/hooks/chat-history.svelte';
 	import ChatHeader from './chat-header.svelte';
-	import type { User, ScribeCharacter } from '$lib/types'; // Updated import path & Add ScribeCharacter
+	import type { User, ScribeCharacter } from '$lib/types.ts'; // Updated import path & Add ScribeCharacter
 	import type { ScribeChatSession, ScribeChatMessage } from '$lib/types'; // Import Scribe types
 	import type { UserPersona } from '$lib/types';
 	import Messages from './messages.svelte';
