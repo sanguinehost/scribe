@@ -344,7 +344,7 @@ pub async fn upload_character_handler(
 
         // Import the lorebook
         match lorebook_service
-            .import_lorebook(&auth_session, Some(&dek.0), lorebook_payload)
+            .import_lorebook(&auth_session, Some(&dek.0), lorebook_payload, Arc::new(state.clone()))
             .await
         {
             Ok(lorebook) => {
