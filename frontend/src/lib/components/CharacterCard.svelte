@@ -17,23 +17,19 @@
 	import { createEventDispatcher } from 'svelte';
 	import { apiClient } from '$lib/api';
 
+	import type { Character } from '$lib/types';
+
 	let {
 		character,
 		isSelected = false
 	}: {
-		character: {
-			id: string;
-			name: string;
-			description: string | null;
-			greeting: string | null;
-			avatar_url: string | null; // Assuming backend provides a URL or path
-		};
+		character: Character;
 		isSelected?: boolean;
 	} = $props();
 
 	const dispatch = createEventDispatcher();
 
-	let isDeleting = false;
+	let isDeleting = $state(false);
 	let showDeleteDialog = $state(false);
 
 	function handleClick() {
@@ -82,12 +78,8 @@
 		return text.length > maxLength ? text.substring(0, maxLength) + '...' : text;
 	}
 
-	// Construct the avatar URL - assuming backend serves it relative to API base
-	// TODO: Confirm the actual base path for character avatars if served by backend
-	// For now, assume it's an absolute URL or handle relative path if needed.
-	// If backend provides a relative path like '/images/char_id.png', prepend the API base URL.
-	// Let's assume for now avatar_url is either absolute or null.
-	const avatarSrc = character.avatar_url; // Direct use for now
+	// The backend populates character.avatar with the image URL (/api/characters/{id}/image)
+	const avatarSrc = character.avatar;
 </script>
 
 <Card
@@ -111,7 +103,7 @@
 		<div class="flex-1 overflow-hidden">
 			<CardTitle class="pt-1 text-base font-semibold">{character.name}</CardTitle>
 			<CardDescription class="truncate text-sm text-muted-foreground">
-				{getDescriptionSnippet(character.description, character.greeting)}
+				{getDescriptionSnippet(character.description ?? null, character.greeting ?? null)}
 			</CardDescription>
 		</div>
 	</CardHeader>

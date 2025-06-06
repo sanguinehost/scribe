@@ -50,6 +50,10 @@ pub struct Config {
     pub context_recent_history_token_budget: usize,
     #[serde(default = "default_context_rag_token_budget")]
     pub context_rag_token_budget: usize,
+
+    // File Storage Config
+    #[serde(default = "default_upload_storage_path")]
+    pub upload_storage_path: String,
 }
 
 impl std::fmt::Debug for Config {
@@ -92,6 +96,7 @@ impl std::fmt::Debug for Config {
                 &self.context_recent_history_token_budget,
             )
             .field("context_rag_token_budget", &self.context_rag_token_budget)
+            .field("upload_storage_path", &self.upload_storage_path)
             .finish()
     }
 }
@@ -150,6 +155,9 @@ const fn default_context_recent_history_token_budget() -> usize {
 const fn default_context_rag_token_budget() -> usize {
     50_000
 }
+fn default_upload_storage_path() -> String {
+    "./uploads".to_string()
+}
 
 impl Config {
     /// Loads configuration from environment variables.
@@ -202,6 +210,7 @@ impl Default for Config {
             context_total_token_limit: default_context_total_token_limit(),
             context_recent_history_token_budget: default_context_recent_history_token_budget(),
             context_rag_token_budget: default_context_rag_token_budget(),
+            upload_storage_path: default_upload_storage_path(),
         }
     }
 }

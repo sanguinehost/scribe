@@ -714,7 +714,7 @@ impl Character {
             updated_at: self.updated_at,
             persona: decrypted_fields.persona,
             world_scenario: decrypted_fields.world_scenario,
-            avatar: default_empty_string_if_none(self.avatar),
+            avatar: self.avatar.map(|_| format!("/api/characters/{}/image", self.id)),
             chat: default_empty_string_if_none(self.chat),
             greeting: decrypted_fields.greeting,
             definition: decrypted_fields.definition,

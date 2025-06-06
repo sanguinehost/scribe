@@ -6,9 +6,11 @@
 use crate::auth::session_dek::SessionDek; // Added SessionDek
 use crate::crypto;
 use crate::errors::AppError;
+use crate::models::character_assets::{CharacterAsset, NewCharacterAsset}; // Added for character assets
 use crate::models::character_card::NewCharacter;
 use crate::models::characters::{Character, CharacterDataForClient}; // Added CharacterDataForClient // Added crypto for encrypt_gcm
 // use crate::models::users::User; // Removed unused import
+use crate::schema::character_assets::dsl::character_assets;
 use crate::schema::characters::dsl::{characters, id, user_id};
 use crate::services::character_parser::{self};
 use crate::state::AppState;
@@ -248,6 +250,76 @@ pub async fn upload_character_handler(
         .map_err(|e| AppError::InternalServerErrorGeneric(format!("Fetch DB error: {e}")))?;
 
     info!(character_id = %inserted_character.id, "Character uploaded and saved (full data fetched)");
+
+    // --- Save the character avatar image ---
+    match state.file_storage_service.save_character_avatar(inserted_character.id, &png_data).await {
+        Ok(avatar_path) => {
+            info!(character_id = %inserted_character.id, avatar_path = %avatar_path, "Avatar image saved successfully");
+            
+            // Create character asset record
+            let new_asset = NewCharacterAsset::new_avatar(
+                inserted_character.id,
+                &avatar_path,
+                &format!("{}_avatar", inserted_character.name)
+            );
+            
+            // Save asset record to database
+            let conn_asset_op = state
+                .pool
+                .get()
+                .await
+                .map_err(|e| AppError::DbPoolError(e.to_string()))?;
+                
+            let _asset_result: Result<CharacterAsset, diesel::result::Error> = conn_asset_op
+                .interact(move |conn_asset_block| {
+                    diesel::insert_into(character_assets)
+                        .values(new_asset)
+                        .returning(CharacterAsset::as_returning())
+                        .get_result::<CharacterAsset>(conn_asset_block)
+                })
+                .await
+                .map_err(|e| AppError::InternalServerErrorGeneric(format!("Asset insert interaction error: {e}")))?;
+                
+            match _asset_result {
+                Ok(_asset) => {
+                    info!(character_id = %inserted_character.id, "Character asset record created successfully");
+                }
+                Err(e) => {
+                    warn!(character_id = %inserted_character.id, error = %e, "Failed to create character asset record, avatar file saved but not tracked in database");
+                }
+            }
+            
+            // Update character record with avatar path
+            let character_id_for_update = inserted_character.id;
+            let avatar_path_for_update = avatar_path.clone();
+            let conn_update_op = state
+                .pool
+                .get()
+                .await
+                .map_err(|e| AppError::DbPoolError(e.to_string()))?;
+                
+            let update_result = conn_update_op
+                .interact(move |conn_update_block| {
+                    diesel::update(characters.find(character_id_for_update))
+                        .set(crate::schema::characters::avatar.eq(Some(avatar_path_for_update)))
+                        .execute(conn_update_block)
+                })
+                .await
+                .map_err(|e| AppError::InternalServerErrorGeneric(format!("Avatar update interaction error: {e}")))?;
+                
+            match update_result {
+                Ok(_) => {
+                    info!(character_id = %inserted_character.id, "Character avatar field updated successfully");
+                }
+                Err(e) => {
+                    warn!(character_id = %inserted_character.id, error = %e, "Failed to update character avatar field");
+                }
+            }
+        }
+        Err(e) => {
+            warn!(character_id = %inserted_character.id, error = %e, "Failed to save avatar image, continuing without avatar");
+        }
+    }
 
     // Check if the parsed card has an embedded lorebook
     let character_book = match &parsed_card {
@@ -928,10 +1000,10 @@ pub async fn update_character_handler(
 }
 
 #[debug_handler]
-#[instrument(skip(_state, auth_session), err)] // Add instrument macro
+#[instrument(skip(state, auth_session), err)] // Add instrument macro
 pub async fn get_character_image(
     Path(character_id): Path<Uuid>,
-    State(_state): State<AppState>,
+    State(state): State<AppState>,
     auth_session: CurrentAuthSession, // Use AuthSession
 ) -> Result<Response<Body>, AppError> {
     trace!(target: "auth_debug", ">>> ENTERING get_character_image for character_id: {}", character_id); // ADDED TRACE
@@ -943,11 +1015,53 @@ pub async fn get_character_image(
 
     tracing::info!(%character_id, %local_user_id, "Fetching character image for user"); // Update log
 
-    // TODO: Implement actual logic to fetch the image data
-    // This would involve querying the database or file storage based on character_id and local_user_id
-    // For now, return a placeholder response or error
+    // First, verify that the character belongs to the user
+    let conn = state
+        .pool
+        .get()
+        .await
+        .map_err(|e| AppError::DbPoolError(e.to_string()))?;
 
-    Err(AppError::NotImplemented(
-        "Character image retrieval not yet implemented".to_string(),
-    ))
+    let character = conn
+        .interact(move |conn_block| {
+            characters
+                .find(character_id)
+                .filter(user_id.eq(local_user_id))
+                .select(Character::as_select())
+                .first::<Character>(conn_block)
+                .optional()
+        })
+        .await
+        .map_err(|e| AppError::InternalServerErrorGeneric(format!("Character lookup interaction error: {e}")))?
+        .map_err(|e| AppError::InternalServerErrorGeneric(format!("Character lookup DB error: {e}")))?;
+
+    let character = character.ok_or_else(|| {
+        AppError::NotFound("Character not found or not accessible".to_string())
+    })?;
+
+    // Check if character has an avatar path
+    let avatar_path = character.avatar.ok_or_else(|| {
+        AppError::NotFound("Character has no avatar image".to_string())
+    })?;
+
+    // Load the image from file storage
+    let image_data = state
+        .file_storage_service
+        .load_character_avatar(&avatar_path)
+        .await
+        .map_err(|e| {
+            warn!(character_id = %character_id, avatar_path = %avatar_path, error = %e, "Failed to load character avatar");
+            AppError::NotFound("Avatar image file not found".to_string())
+        })?;
+
+    // Return the image with appropriate headers
+    let response = Response::builder()
+        .status(StatusCode::OK)
+        .header("Content-Type", "image/png")
+        .header("Cache-Control", "public, max-age=3600") // Cache for 1 hour
+        .body(Body::from(image_data))
+        .map_err(|e| AppError::InternalServerErrorGeneric(format!("Failed to build response: {e}")))?;
+
+    info!(character_id = %character_id, "Character avatar served successfully");
+    Ok(response)
 }
