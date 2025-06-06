@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount, createEventDispatcher } from 'svelte';
-	import { goto } from '$app/navigation'; // Import goto for redirection
+	import { apiClient } from '$lib/api';
 	import CharacterCard from './CharacterCard.svelte';
 	import CharacterEditor from './CharacterEditor.svelte';
 	import CharacterCreator from './CharacterCreator.svelte';
@@ -29,43 +29,26 @@
 	const dispatch = createEventDispatcher();
 
 	// Function to fetch characters, reusable for initial load and refresh
-	async function fetchCharacters() { // Marked as async
+	async function fetchCharacters() {
 		isLoading = true;
 		error = null;
 		try {
-			// TODO: Replace with actual API endpoint call
-			const response = await fetch('/api/characters'); // Assumes API is served from the same origin
+			const result = await apiClient.getCharacters();
 
-			if (!response.ok) {
-				// Check specifically for 401 Unauthorized
-				if (response.status === 401) {
-					console.log('Unauthorized access to characters, redirecting to signin.');
-					await goto('/signin'); // Redirect to sign-in page
-					// Optionally, you might want to stop further processing in this component
-					// by setting isLoading = false and returning, though redirect handles it.
-					return; // Stop execution after redirect starts
-				}
-				// For other errors, throw a generic error
-				throw new Error(`HTTP error! status: ${response.status}`);
-			}
-			characters = await response.json();
-			error = null; // Clear previous errors on success
-		} catch (e: any) {
-			// Avoid setting error state if redirection happened or is about to happen
-			if (e instanceof Error && e.message.includes('401')) {
-				// Error already handled by redirect, just log if needed
-				console.error('Caught 401 during fetch, redirection initiated.');
+			if (result.isOk()) {
+				characters = result.value;
+				error = null; // Clear previous errors on success
 			} else {
-				console.error('Failed to fetch characters:', e);
+				console.error('Error fetching characters:', result.error);
 				error = 'Failed to load characters. Please try again later.';
 				characters = []; // Clear characters on error
 			}
+		} catch (e: any) {
+			console.error('Failed to fetch characters:', e);
+			error = 'Failed to load characters. Please try again later.';
+			characters = []; // Clear characters on error
 		} finally {
-			// Only set isLoading to false if not redirecting
-			// The redirect should handle the loading state implicitly
-			if (!(error === null && characters.length === 0 && !isLoading)) { // Avoid flicker if redirecting
-				             isLoading = false;
-				        }
+			isLoading = false;
 		}
 	}
 
@@ -115,28 +98,45 @@
 	}
 </script>
 
-<div class="flex flex-col h-full">
-	<div class="p-2 flex justify-between items-center border-b">
-		<h2 class="text-lg font-semibold px-2">Characters</h2>
+<div class="flex h-full flex-col">
+	<div class="flex items-center justify-between border-b p-2">
+		<h2 class="px-2 text-lg font-semibold">Characters</h2>
 		<div class="flex gap-1">
-			<Button variant="ghost" size="icon" onclick={handleCreateClick} aria-label="Create Character" title="Create Character">
+			<Button
+				variant="ghost"
+				size="icon"
+				onclick={handleCreateClick}
+				aria-label="Create Character"
+				title="Create Character"
+			>
 				<PlusIcon class="h-5 w-5" />
 			</Button>
-			<Button variant="ghost" size="icon" onclick={handleUploadClick} aria-label="Upload Character" title="Upload Character Card">
+			<Button
+				variant="ghost"
+				size="icon"
+				onclick={handleUploadClick}
+				aria-label="Upload Character"
+				title="Upload Character Card"
+			>
 				<svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+					<path
+						stroke-linecap="round"
+						stroke-linejoin="round"
+						stroke-width="2"
+						d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
+					/>
 				</svg>
 			</Button>
 		</div>
 	</div>
 
-	<div class="flex-1 overflow-y-auto p-2 space-y-2">
+	<div class="flex-1 space-y-2 overflow-y-auto p-2">
 		{#if isLoading}
 			<!-- Loading Skeletons -->
 			{#each Array(3) as _}
 				<div class="flex items-center space-x-4 p-2">
 					<Skeleton class="h-12 w-12 rounded-full" />
-					<div class="space-y-2 flex-1">
+					<div class="flex-1 space-y-2">
 						<Skeleton class="h-4 w-3/4" />
 						<Skeleton class="h-4 w-1/2" />
 					</div>
@@ -145,7 +145,9 @@
 		{:else if error}
 			<p class="p-4 text-sm text-destructive">{error}</p>
 		{:else if characters.length === 0}
-			<p class="p-4 text-sm text-muted-foreground">No characters found. Upload one to get started!</p>
+			<p class="p-4 text-sm text-muted-foreground">
+				No characters found. Upload one to get started!
+			</p>
 		{:else}
 			{#each characters as character (character.id)}
 				<CharacterCard
@@ -160,12 +162,6 @@
 	</div>
 </div>
 
-<CharacterEditor
-	characterId={editingCharacterId}
-	bind:open={showEditor}
-/>
+<CharacterEditor characterId={editingCharacterId} bind:open={showEditor} />
 
-<CharacterCreator
-	bind:open={showCreator}
-	on:created={handleCharacterCreated}
-/>
+<CharacterCreator bind:open={showCreator} on:created={handleCharacterCreated} />

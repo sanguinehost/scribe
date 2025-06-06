@@ -24,7 +24,7 @@
 
 	function handleSubmit(event: Event) {
 		event.preventDefault();
-		
+
 		if (!name.trim()) {
 			return;
 		}
@@ -79,7 +79,9 @@
 			<div class="flex gap-2 pt-4">
 				<Button type="submit" disabled={isLoading || !name.trim()} class="flex-1">
 					{#if isLoading}
-						<div class="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent mr-2"></div>
+						<div
+							class="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent"
+						></div>
 					{/if}
 					{submitLabel}
 				</Button>

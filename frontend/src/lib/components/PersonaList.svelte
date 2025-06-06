@@ -26,8 +26,8 @@
 			if (!response.ok) {
 				// Check specifically for 401 Unauthorized
 				if (response.status === 401) {
-					console.log('Unauthorized access to personas, redirecting to signin.');
-					await goto('/signin');
+					console.log('Unauthorized access to personas, emitting auth:invalidated event.');
+					window.dispatchEvent(new CustomEvent('auth:invalidated'));
 					return;
 				}
 				throw new Error(`HTTP error! status: ${response.status}`);
@@ -82,31 +82,26 @@
 	function getDescriptionSnippet(description: string | null): string {
 		if (!description) return 'No description';
 		const maxLength = 60;
-		return description.length > maxLength 
-			? description.substring(0, maxLength) + '...' 
+		return description.length > maxLength
+			? description.substring(0, maxLength) + '...'
 			: description;
 	}
 </script>
 
-<div class="flex flex-col h-full">
-	<div class="p-2 flex justify-between items-center border-b">
-		<h2 class="text-lg font-semibold px-2">Personas</h2>
-		<Button 
-			variant="ghost" 
-			size="icon" 
-			onclick={handleCreateClick} 
-			aria-label="Create Persona"
-		>
+<div class="flex h-full flex-col">
+	<div class="flex items-center justify-between border-b p-2">
+		<h2 class="px-2 text-lg font-semibold">Personas</h2>
+		<Button variant="ghost" size="icon" onclick={handleCreateClick} aria-label="Create Persona">
 			<PlusIcon class="h-5 w-5" />
 		</Button>
 	</div>
 
-	<div class="flex-1 overflow-y-auto p-2 space-y-2">
+	<div class="flex-1 space-y-2 overflow-y-auto p-2">
 		{#if isLoading}
 			{#each Array(3) as _}
 				<div class="flex items-center space-x-4 p-2">
 					<Skeleton class="h-12 w-12 rounded-full" />
-					<div class="space-y-2 flex-1">
+					<div class="flex-1 space-y-2">
 						<Skeleton class="h-4 w-3/4" />
 						<Skeleton class="h-4 w-1/2" />
 					</div>
@@ -121,7 +116,8 @@
 		{:else}
 			{#each personas as persona (persona.id)}
 				<Card
-					class="cursor-pointer transition-all hover:shadow-md hover:border-primary {selectedPersonaId === persona.id
+					class="cursor-pointer transition-all hover:border-primary hover:shadow-md {selectedPersonaId ===
+					persona.id
 						? 'border-primary ring-2 ring-primary'
 						: ''}"
 					onclick={() => handleSelect(persona.id)}
@@ -137,14 +133,14 @@
 						</Avatar>
 						<div class="flex-1 overflow-hidden">
 							<div class="flex items-center gap-2">
-								<CardTitle class="text-base truncate">{persona.name}</CardTitle>
+								<CardTitle class="truncate text-base">{persona.name}</CardTitle>
 								{#if persona.id === defaultPersonaId}
-									<span class="text-xs bg-primary text-primary-foreground px-2 py-1 rounded-full">
+									<span class="rounded-full bg-primary px-2 py-1 text-xs text-primary-foreground">
 										Default
 									</span>
 								{/if}
 							</div>
-							<CardDescription class="text-sm truncate">
+							<CardDescription class="truncate text-sm">
 								{getDescriptionSnippet(persona.description)}
 							</CardDescription>
 						</div>

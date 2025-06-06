@@ -7,7 +7,13 @@
 	import { toast } from 'svelte-sonner';
 	import { scale } from 'svelte/transition';
 	import { Button } from '$lib/components/ui/button';
-	import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '$lib/components/ui/card';
+	import {
+		Card,
+		CardHeader,
+		CardTitle,
+		CardDescription,
+		CardContent
+	} from '$lib/components/ui/card';
 	import { Avatar, AvatarFallback, AvatarImage } from '$lib/components/ui/avatar';
 	import { Skeleton } from '$lib/components/ui/skeleton';
 	import {
@@ -47,31 +53,31 @@
 	// Basic HTML sanitization to prevent XSS while preserving formatting
 	function sanitizeHtml(html: string | null | undefined): string {
 		if (!html) return '';
-		
+
 		// Create a temporary div to parse HTML
 		const temp = document.createElement('div');
 		temp.innerHTML = html;
-		
+
 		// Remove script tags and event handlers
 		const scripts = temp.querySelectorAll('script');
-		scripts.forEach(script => script.remove());
-		
+		scripts.forEach((script) => script.remove());
+
 		// Remove all event handlers
 		const allElements = temp.querySelectorAll('*');
-		allElements.forEach(el => {
+		allElements.forEach((el) => {
 			// Remove all attributes that start with 'on'
-			Array.from(el.attributes).forEach(attr => {
+			Array.from(el.attributes).forEach((attr) => {
 				if (attr.name.startsWith('on')) {
 					el.removeAttribute(attr.name);
 				}
 			});
-			
+
 			// Remove javascript: hrefs
 			if (el.tagName === 'A' && el.getAttribute('href')?.startsWith('javascript:')) {
 				el.removeAttribute('href');
 			}
 		});
-		
+
 		return temp.innerHTML;
 	}
 
@@ -79,20 +85,21 @@
 		const d = new Date(date);
 		const now = new Date();
 		const diffInHours = (now.getTime() - d.getTime()) / (1000 * 60 * 60);
-		
+
 		if (diffInHours < 24) {
 			if (diffInHours < 1) {
 				const diffInMinutes = Math.floor(diffInHours * 60);
 				return diffInMinutes === 0 ? 'Just now' : `${diffInMinutes}m ago`;
 			}
 			return `${Math.floor(diffInHours)}h ago`;
-		} else if (diffInHours < 168) { // Less than a week
+		} else if (diffInHours < 168) {
+			// Less than a week
 			const diffInDays = Math.floor(diffInHours / 24);
 			return diffInDays === 1 ? 'Yesterday' : `${diffInDays}d ago`;
 		}
-		
-		return d.toLocaleDateString('en-US', { 
-			month: 'short', 
+
+		return d.toLocaleDateString('en-US', {
+			month: 'short',
 			day: 'numeric',
 			year: d.getFullYear() !== now.getFullYear() ? 'numeric' : undefined
 		});
@@ -109,8 +116,8 @@
 		if (characterResult.isOk()) {
 			character = characterResult.value;
 		} else {
-			toast.error('Failed to load character', { 
-				description: characterResult.error.message 
+			toast.error('Failed to load character', {
+				description: characterResult.error.message
 			});
 		}
 		isLoadingCharacter = false;
@@ -120,8 +127,8 @@
 		if (chatsResult.isOk()) {
 			chats = chatsResult.value;
 		} else {
-			toast.error('Failed to load chats', { 
-				description: chatsResult.error.message 
+			toast.error('Failed to load chats', {
+				description: chatsResult.error.message
 			});
 		}
 		isLoadingChats = false;
@@ -146,8 +153,8 @@
 				}
 				await goto(`/chat/${chat.id}`, { invalidateAll: true });
 			} else {
-				toast.error('Failed to start chat', { 
-					description: createChatResult.error.message 
+				toast.error('Failed to start chat', {
+					description: createChatResult.error.message
 				});
 			}
 		} catch (error) {
@@ -163,7 +170,7 @@
 	function handleDeleteClick(e: MouseEvent, chat: ScribeChatSession) {
 		e.stopPropagation(); // Prevent triggering the chat selection
 		chatToDelete = chat;
-		
+
 		// If shift key is held, skip confirmation
 		if (e.shiftKey) {
 			confirmDelete();
@@ -180,7 +187,7 @@
 			const result = await apiClient.deleteChatById(chatToDelete.id);
 			if (result.isOk()) {
 				// Remove the chat from the list
-				chats = chats.filter(c => c.id !== chatToDelete.id);
+				chats = chats.filter((c) => c.id !== chatToDelete.id);
 				toast.success('Chat deleted successfully');
 			} else {
 				toast.error('Failed to delete chat', {
@@ -202,29 +209,6 @@
 	});
 </script>
 
-<style>
-	/* Override inline styles from HTML content to respect theme */
-	:global(.prose *[style*="color: #000000"]),
-	:global(.prose *[style*="color: rgb(0, 0, 0)"]),
-	:global(.prose *[style*="color:#000000"]),
-	:global(.prose *[style*="color:rgb(0,0,0)"]) {
-		color: hsl(var(--foreground)) !important;
-	}
-	
-	/* Ensure text remains visible in both themes */
-	:global(.prose p),
-	:global(.prose span),
-	:global(.prose strong) {
-		color: hsl(var(--foreground)) !important;
-	}
-	
-	/* Properly style centered text */
-	:global(.prose p[style*="text-align: center"]) {
-		margin-top: 1rem;
-		margin-bottom: 1rem;
-	}
-</style>
-
 <div class="mx-auto max-w-4xl px-4" transition:scale={{ opacity: 0, start: 0.98 }}>
 	<div class="space-y-6">
 		<!-- Character Header Card -->
@@ -233,7 +217,7 @@
 				<CardHeader class="px-0">
 					<div class="flex items-center space-x-6">
 						<Skeleton class="h-24 w-24 rounded-full" />
-						<div class="space-y-3 flex-1">
+						<div class="flex-1 space-y-3">
 							<Skeleton class="h-8 w-2/3" />
 							<Skeleton class="h-4 w-full" />
 							<Skeleton class="h-4 w-5/6" />
@@ -257,7 +241,7 @@
 							<div>
 								<h2 class="text-3xl font-bold">{character.name}</h2>
 								{#if character.description}
-									<p class="text-muted-foreground mt-2">
+									<p class="mt-2 text-muted-foreground">
 										{character.description}
 									</p>
 								{/if}
@@ -269,29 +253,35 @@
 						</div>
 					</div>
 				</CardHeader>
-				
+
 				{#if character.scenario || character.personality || character.greeting}
-					<CardContent class="px-0 space-y-4">
+					<CardContent class="space-y-4 px-0">
 						{#if character.scenario}
 							<div class="rounded-lg bg-muted/50 p-4">
-								<h4 class="text-sm font-semibold text-muted-foreground mb-2">Scenario</h4>
-								<div class="text-sm prose prose-sm max-w-none prose-p:my-2 prose-p:leading-relaxed prose-strong:font-semibold prose-headings:font-bold dark:prose-invert [&_p]:!text-foreground [&_span]:!text-foreground [&_strong]:!text-foreground [&_*[style*='color']]:!text-foreground">
+								<h4 class="mb-2 text-sm font-semibold text-muted-foreground">Scenario</h4>
+								<div
+									class="prose prose-sm prose-p:my-2 prose-p:leading-relaxed prose-strong:font-semibold prose-headings:font-bold dark:prose-invert max-w-none text-sm [&_*[style*='color']]:!text-foreground [&_p]:!text-foreground [&_span]:!text-foreground [&_strong]:!text-foreground"
+								>
 									{@html sanitizeHtml(character.scenario)}
 								</div>
 							</div>
 						{/if}
 						{#if character.personality}
 							<div class="rounded-lg bg-muted/50 p-4">
-								<h4 class="text-sm font-semibold text-muted-foreground mb-2">Personality</h4>
-								<div class="text-sm prose prose-sm max-w-none prose-p:my-2 prose-p:leading-relaxed prose-strong:font-semibold prose-headings:font-bold dark:prose-invert [&_p]:!text-foreground [&_span]:!text-foreground [&_strong]:!text-foreground [&_*[style*='color']]:!text-foreground">
+								<h4 class="mb-2 text-sm font-semibold text-muted-foreground">Personality</h4>
+								<div
+									class="prose prose-sm prose-p:my-2 prose-p:leading-relaxed prose-strong:font-semibold prose-headings:font-bold dark:prose-invert max-w-none text-sm [&_*[style*='color']]:!text-foreground [&_p]:!text-foreground [&_span]:!text-foreground [&_strong]:!text-foreground"
+								>
 									{@html sanitizeHtml(character.personality)}
 								</div>
 							</div>
 						{/if}
 						{#if character.greeting}
 							<div class="rounded-lg bg-muted/50 p-4">
-								<h4 class="text-sm font-semibold text-muted-foreground mb-2">Greeting</h4>
-								<div class="text-sm prose prose-sm max-w-none italic dark:prose-invert [&_p]:!text-foreground [&_span]:!text-foreground [&_strong]:!text-foreground [&_*[style*='color']]:!text-foreground">
+								<h4 class="mb-2 text-sm font-semibold text-muted-foreground">Greeting</h4>
+								<div
+									class="prose prose-sm dark:prose-invert max-w-none text-sm italic [&_*[style*='color']]:!text-foreground [&_p]:!text-foreground [&_span]:!text-foreground [&_strong]:!text-foreground"
+								>
 									{@html sanitizeHtml(character.greeting)}
 								</div>
 							</div>
@@ -310,7 +300,7 @@
 			{#if isLoadingChats}
 				<div class="grid gap-3">
 					{#each Array(3) as _}
-						<Card class="cursor-pointer hover:bg-muted/50 transition-colors">
+						<Card class="cursor-pointer transition-colors hover:bg-muted/50">
 							<CardHeader>
 								<div class="space-y-2">
 									<Skeleton class="h-5 w-3/4" />
@@ -323,15 +313,11 @@
 			{:else if chats.length === 0}
 				<Card class="border-dashed">
 					<CardContent class="py-12 text-center">
-						<MessageIcon class="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-						<p class="text-muted-foreground mb-4">
+						<MessageIcon class="mx-auto mb-4 h-12 w-12 text-muted-foreground" />
+						<p class="mb-4 text-muted-foreground">
 							No conversations yet with {character?.name || 'this character'}
 						</p>
-						<Button 
-							onclick={handleStartNewChat} 
-							variant="outline"
-							disabled={!character}
-						>
+						<Button onclick={handleStartNewChat} variant="outline" disabled={!character}>
 							Start Your First Chat
 						</Button>
 					</CardContent>
@@ -339,8 +325,8 @@
 			{:else}
 				<div class="grid gap-3">
 					{#each chats as chat}
-						<Card 
-							class="cursor-pointer hover:bg-muted/50 transition-colors group"
+						<Card
+							class="group cursor-pointer transition-colors hover:bg-muted/50"
 							onclick={() => handleSelectChat(chat.id)}
 							onkeydown={(e) => e.key === 'Enter' && handleSelectChat(chat.id)}
 							tabindex={0}
@@ -348,26 +334,26 @@
 						>
 							<CardHeader>
 								<div class="flex items-start justify-between">
-									<div class="flex-1 min-w-0 space-y-1">
-										<CardTitle class="text-base font-medium truncate">
+									<div class="min-w-0 flex-1 space-y-1">
+										<CardTitle class="truncate text-base font-medium">
 											{chat.title || `Chat with ${character?.name}`}
 										</CardTitle>
 										<CardDescription class="text-sm">
 											{formatDate(chat.created_at)}
 										</CardDescription>
 									</div>
-									<div class="flex items-center gap-2 ml-3">
+									<div class="ml-3 flex items-center gap-2">
 										<Button
 											variant="ghost"
 											size="icon"
-											class="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity"
+											class="h-8 w-8 opacity-0 transition-opacity group-hover:opacity-100"
 											onclick={(e) => handleDeleteClick(e, chat)}
 											aria-label="Delete chat"
 											title="Delete chat (hold Shift to skip confirmation)"
 										>
 											<TrashIcon class="h-4 w-4 text-destructive" />
 										</Button>
-										<MessageIcon class="h-5 w-5 text-muted-foreground flex-shrink-0" />
+										<MessageIcon class="h-5 w-5 flex-shrink-0 text-muted-foreground" />
 									</div>
 								</div>
 							</CardHeader>
@@ -388,14 +374,16 @@
 				Are you sure you want to delete this chat? This action cannot be undone.
 				{#if chatToDelete}
 					<br />
-					<strong class="block mt-2">"{chatToDelete.title || `Chat with ${character?.name}`}"</strong>
+					<strong class="mt-2 block"
+						>"{chatToDelete.title || `Chat with ${character?.name}`}"</strong
+					>
 				{/if}
 			</AlertDialogDescription>
 		</AlertDialogHeader>
 		<AlertDialogFooter>
 			<AlertDialogCancel disabled={isDeletingChat}>Cancel</AlertDialogCancel>
-			<AlertDialogAction 
-				onclick={confirmDelete} 
+			<AlertDialogAction
+				onclick={confirmDelete}
 				disabled={isDeletingChat}
 				class="bg-destructive text-destructive-foreground hover:bg-destructive/90"
 			>
@@ -404,3 +392,26 @@
 		</AlertDialogFooter>
 	</AlertDialogContent>
 </AlertDialog>
+
+<style>
+	/* Override inline styles from HTML content to respect theme */
+	:global(.prose *[style*='color: #000000']),
+	:global(.prose *[style*='color: rgb(0, 0, 0)']),
+	:global(.prose *[style*='color:#000000']),
+	:global(.prose *[style*='color:rgb(0,0,0)']) {
+		color: hsl(var(--foreground)) !important;
+	}
+
+	/* Ensure text remains visible in both themes */
+	:global(.prose p),
+	:global(.prose span),
+	:global(.prose strong) {
+		color: hsl(var(--foreground)) !important;
+	}
+
+	/* Properly style centered text */
+	:global(.prose p[style*='text-align: center']) {
+		margin-top: 1rem;
+		margin-bottom: 1rem;
+	}
+</style>

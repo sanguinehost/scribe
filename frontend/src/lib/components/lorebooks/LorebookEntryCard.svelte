@@ -1,7 +1,13 @@
 <script lang="ts">
 	import type { LorebookEntry } from '$lib/types';
 	import { Button } from '$lib/components/ui/button';
-	import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '$lib/components/ui/card';
+	import {
+		Card,
+		CardContent,
+		CardDescription,
+		CardHeader,
+		CardTitle
+	} from '$lib/components/ui/card';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Trash, Edit, Eye, EyeOff, Zap } from 'lucide-svelte';
 
@@ -39,8 +45,13 @@
 		return content.substring(0, maxLength) + '...';
 	}
 
-	const keywordsList = entry.keys_text ? entry.keys_text.split(',').map(k => k.trim()).filter(k => k.length > 0) : [];
-	
+	const keywordsList = entry.keys_text
+		? entry.keys_text
+				.split(',')
+				.map((k) => k.trim())
+				.filter((k) => k.length > 0)
+		: [];
+
 	const cardClass = `transition-opacity ${!entry.is_enabled ? 'opacity-60' : ''}`;
 </script>
 
@@ -53,26 +64,26 @@
 					<div class="flex gap-1">
 						{#if entry.is_constant}
 							<Badge variant="secondary" class="text-xs">
-								<Zap class="h-3 w-3 mr-1" />
+								<Zap class="mr-1 h-3 w-3" />
 								Constant
 							</Badge>
 						{/if}
 						<Badge variant={entry.is_enabled ? 'default' : 'secondary'} class="text-xs">
 							{#if entry.is_enabled}
-								<Eye class="h-3 w-3 mr-1" />
+								<Eye class="mr-1 h-3 w-3" />
 								Enabled
 							{:else}
-								<EyeOff class="h-3 w-3 mr-1" />
+								<EyeOff class="mr-1 h-3 w-3" />
 								Disabled
 							{/if}
 						</Badge>
 					</div>
 				</CardTitle>
-				
+
 				{#if keywordsList.length > 0}
 					<CardDescription class="mt-2">
 						<span class="text-xs font-medium">Keywords:</span>
-						<div class="flex flex-wrap gap-1 mt-1">
+						<div class="mt-1 flex flex-wrap gap-1">
 							{#each keywordsList.slice(0, 5) as keyword}
 								<Badge variant="outline" class="text-xs">{keyword}</Badge>
 							{/each}
@@ -83,8 +94,8 @@
 					</CardDescription>
 				{/if}
 			</div>
-			
-			<div class="flex gap-1 ml-2">
+
+			<div class="ml-2 flex gap-1">
 				{#if onToggleEnabled}
 					<Button
 						variant="ghost"
@@ -125,18 +136,18 @@
 			</div>
 		</div>
 	</CardHeader>
-	
+
 	<CardContent>
 		<div class="space-y-3">
 			<!-- Content preview -->
 			<div class="text-sm">
-				<p class="text-muted-foreground leading-relaxed">
+				<p class="leading-relaxed text-muted-foreground">
 					{truncateContent(entry.content)}
 				</p>
 			</div>
 
 			<!-- Metadata -->
-			<div class="flex justify-end text-xs text-muted-foreground pt-2 border-t">
+			<div class="flex justify-end border-t pt-2 text-xs text-muted-foreground">
 				<span>Updated: {formatDate(entry.updated_at)}</span>
 			</div>
 		</div>

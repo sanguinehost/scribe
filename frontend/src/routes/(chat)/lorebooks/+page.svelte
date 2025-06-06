@@ -2,7 +2,12 @@
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { lorebookStore } from '$lib/stores/lorebook.svelte';
-	import { LorebookList, LorebookForm, ExportDialog, ImportLorebookDialog } from '$lib/components/lorebooks';
+	import {
+		LorebookList,
+		LorebookForm,
+		ExportDialog,
+		ImportLorebookDialog
+	} from '$lib/components/lorebooks';
 	import { Dialog, DialogContent, DialogHeader, DialogTitle } from '$lib/components/ui/dialog';
 	import { Button } from '$lib/components/ui/button';
 	import { toast } from 'svelte-sonner';
@@ -23,7 +28,6 @@
 	function handleCreateNew() {
 		showCreateDialog = true;
 	}
-
 
 	function handleSelectLorebook(lorebook: Lorebook) {
 		goto(`/lorebooks/${lorebook.id}`);
@@ -48,7 +52,7 @@
 
 	async function handleExportFormat(format: 'scribe_minimal' | 'silly_tavern_full') {
 		if (!exportingLorebook) return;
-		
+
 		const exported = await lorebookStore.exportLorebook(exportingLorebook.id, format);
 		if (exported) {
 			const blob = new Blob([JSON.stringify(exported, null, 2)], { type: 'application/json' });
@@ -63,7 +67,7 @@
 		} else if (lorebookStore.error) {
 			toast.error(`Failed to export lorebook: ${lorebookStore.error}`);
 		}
-		
+
 		showExportDialog = false;
 		exportingLorebook = null;
 	}
@@ -127,40 +131,36 @@
 			<DialogHeader>
 				<DialogTitle>Create New Lorebook</DialogTitle>
 			</DialogHeader>
-			<LorebookForm 
+			<LorebookForm
 				isLoading={lorebookStore.isLoading}
 				onSubmit={handleCreateSubmit}
-				onCancel={() => showCreateDialog = false}
+				onCancel={() => (showCreateDialog = false)}
 			/>
 		</DialogContent>
 	</Dialog>
 
-<!-- Delete Confirmation Dialog -->
-<Dialog bind:open={showDeleteDialog}>
-	<DialogContent>
-		<DialogHeader>
-			<DialogTitle>Delete Lorebook</DialogTitle>
-		</DialogHeader>
-		<div class="py-4">
-			<p class="text-sm text-muted-foreground">
-				Are you sure you want to delete this lorebook? This action cannot be undone and will delete all entries in this lorebook.
-			</p>
-			{#if deletingLorebook}
-				<p class="text-sm font-semibold mt-2">"{deletingLorebook.name}"</p>
-			{/if}
-		</div>
-		
-		<div class="flex flex-col-reverse sm:flex-row sm:justify-end sm:space-x-2">
-			<Button variant="outline" onclick={cancelDelete}>Cancel</Button>
-			<Button 
-				variant="destructive" 
-				onclick={confirmDelete}
-			>
-				Delete Lorebook
-			</Button>
-		</div>
-	</DialogContent>
-</Dialog>
+	<!-- Delete Confirmation Dialog -->
+	<Dialog bind:open={showDeleteDialog}>
+		<DialogContent>
+			<DialogHeader>
+				<DialogTitle>Delete Lorebook</DialogTitle>
+			</DialogHeader>
+			<div class="py-4">
+				<p class="text-sm text-muted-foreground">
+					Are you sure you want to delete this lorebook? This action cannot be undone and will
+					delete all entries in this lorebook.
+				</p>
+				{#if deletingLorebook}
+					<p class="mt-2 text-sm font-semibold">"{deletingLorebook.name}"</p>
+				{/if}
+			</div>
+
+			<div class="flex flex-col-reverse sm:flex-row sm:justify-end sm:space-x-2">
+				<Button variant="outline" onclick={cancelDelete}>Cancel</Button>
+				<Button variant="destructive" onclick={confirmDelete}>Delete Lorebook</Button>
+			</div>
+		</DialogContent>
+	</Dialog>
 
 	<!-- Export Format Dialog -->
 	<ExportDialog
@@ -174,7 +174,7 @@
 </div>
 
 <ImportLorebookDialog
-    open={showImportDialog}
-    on:close={() => (showImportDialog = false)}
-    on:importSuccess={() => lorebookStore.loadLorebooks()}
+	open={showImportDialog}
+	on:close={() => (showImportDialog = false)}
+	on:importSuccess={() => lorebookStore.loadLorebooks()}
 />

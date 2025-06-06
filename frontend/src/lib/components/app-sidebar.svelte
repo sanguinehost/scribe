@@ -11,7 +11,6 @@
 	import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from './ui/tooltip';
 	import { goto } from '$app/navigation';
 	import PlusIcon from './icons/plus.svelte';
-	import type { User } from '$lib/types'; // Assuming User type is defined elsewhere or remove if not used directly here
 	import SidebarUserNav from './sidebar-user-nav.svelte';
 	// import { SidebarHistory } from './sidebar-history'; // Remove SidebarHistory import
 	import CharacterList from './CharacterList.svelte'; // Import the new CharacterList component
@@ -22,8 +21,7 @@
 	import { SettingsStore } from '$lib/stores/settings.svelte'; // Import SettingsStore
 	import { SelectedCharacterStore } from '$lib/stores/selected-character.svelte';
 	import { SelectedPersonaStore } from '$lib/stores/selected-persona.svelte';
-
-	let { user }: { user?: User } = $props();
+	import { getCurrentUser, getIsAuthenticated } from '$lib/auth.svelte';
 
 	const context = useSidebar();
 	const settingsStore = SettingsStore.fromContext(); // Initialize SettingsStore
@@ -38,11 +36,11 @@
 	async function handleSelectCharacter(event: CustomEvent<{ characterId: string }>) {
 		const characterId = event.detail.characterId;
 		console.log('Character selected:', characterId);
-		
+
 		// Clear any selected persona and set the selected character
 		selectedPersonaStore.clear();
 		selectedCharacterStore.select(characterId);
-		
+
 		// Navigate to home to show the character overview
 		goto('/', { invalidateAll: true });
 		context.setOpenMobile(false); // Close mobile sidebar on selection
@@ -72,11 +70,11 @@
 	async function handleSelectPersona(event: CustomEvent<{ personaId: string }>) {
 		const personaId = event.detail.personaId;
 		console.log('Persona selected:', personaId);
-		
+
 		// Clear any selected character and set the selected persona
 		selectedCharacterStore.clear();
 		selectedPersonaStore.selectPersona(personaId);
-		
+
 		// Navigate to home to show the persona overview
 		goto('/', { invalidateAll: true });
 		context.setOpenMobile(false); // Close mobile sidebar on selection
@@ -84,11 +82,11 @@
 
 	function handleCreatePersona() {
 		console.log('Create persona triggered');
-		
+
 		// Clear any selected character and set the persona store to creating mode
 		selectedCharacterStore.clear();
 		selectedPersonaStore.showCreating();
-		
+
 		// Navigate to home to show the persona editor
 		goto('/', { invalidateAll: true });
 		context.setOpenMobile(false); // Close mobile sidebar
@@ -113,7 +111,7 @@
 	async function handleSelectLorebook(event: CustomEvent<{ lorebookId: string }>) {
 		const lorebookId = event.detail.lorebookId;
 		console.log('Lorebook selected:', lorebookId);
-		
+
 		// Navigate to the specific lorebook
 		goto(`/lorebooks/${lorebookId}`);
 		context.setOpenMobile(false); // Close mobile sidebar on selection
@@ -145,7 +143,7 @@
 				<TooltipProvider>
 					<Tooltip>
 						<TooltipTrigger
-							class="ring-offset-background focus-visible:ring-ring inline-flex h-fit items-center justify-center whitespace-nowrap rounded-md p-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 hover:bg-accent hover:text-accent-foreground [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0"
+							class="inline-flex h-fit items-center justify-center whitespace-nowrap rounded-md p-2 text-sm font-medium ring-offset-background transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0"
 							onclick={() => {
 								context.setOpenMobile(false);
 								selectedCharacterStore.clear(); // Clear any selected character
@@ -166,7 +164,7 @@
 		<div class="flex border-b">
 			<button
 				class="flex-1 px-3 py-2 text-xs font-medium transition-colors {activeTab === 'characters'
-					? 'bg-background text-foreground border-b-2 border-primary'
+					? 'border-b-2 border-primary bg-background text-foreground'
 					: 'text-muted-foreground hover:text-foreground'}"
 				onclick={() => switchTab('characters')}
 			>
@@ -174,7 +172,7 @@
 			</button>
 			<button
 				class="flex-1 px-3 py-2 text-xs font-medium transition-colors {activeTab === 'personas'
-					? 'bg-background text-foreground border-b-2 border-primary'
+					? 'border-b-2 border-primary bg-background text-foreground'
 					: 'text-muted-foreground hover:text-foreground'}"
 				onclick={() => switchTab('personas')}
 			>
@@ -182,7 +180,7 @@
 			</button>
 			<button
 				class="flex-1 px-3 py-2 text-xs font-medium transition-colors {activeTab === 'lorebooks'
-					? 'bg-background text-foreground border-b-2 border-primary'
+					? 'border-b-2 border-primary bg-background text-foreground'
 					: 'text-muted-foreground hover:text-foreground'}"
 				onclick={() => switchTab('lorebooks')}
 			>
@@ -215,8 +213,8 @@
 			<SettingsIcon size={16} class="mr-2" />
 			Settings
 		</Button>
-		{#if user}
-			<SidebarUserNav {user} />
+		{#if getIsAuthenticated() && getCurrentUser()}
+			<SidebarUserNav />
 		{/if}
 	</SidebarFooter>
 </Sidebar>
@@ -224,6 +222,8 @@
 <!-- Add the CharacterUploader component (Dialog) -->
 <CharacterUploader
 	bind:open={isUploaderOpen}
-	onOpenChange={(value) => { isUploaderOpen = value; }}
+	onOpenChange={(value) => {
+		isUploaderOpen = value;
+	}}
 	on:uploadSuccess={handleUploadSuccess}
 />

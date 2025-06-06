@@ -5,12 +5,12 @@
 	import { lorebookStore } from '$lib/stores/lorebook.svelte';
 	import { LorebookDetailView, ExportDialog } from '$lib/components/lorebooks';
 	import { toast } from 'svelte-sonner';
-	import type { 
-		Lorebook, 
-		LorebookEntry, 
-		UpdateLorebookPayload, 
-		CreateLorebookEntryPayload, 
-		UpdateLorebookEntryPayload 
+	import type {
+		Lorebook,
+		LorebookEntry,
+		UpdateLorebookPayload,
+		CreateLorebookEntryPayload,
+		UpdateLorebookEntryPayload
 	} from '$lib/types';
 
 	// Get the lorebook ID from the URL
@@ -33,16 +33,16 @@
 		try {
 			// Load all lorebooks first to get the current one
 			await lorebookStore.loadLorebooks();
-			
+
 			// Find the current lorebook
-			const currentLorebook = lorebookStore.lorebooks.find(l => l.id === lorebookId);
+			const currentLorebook = lorebookStore.lorebooks.find((l) => l.id === lorebookId);
 			if (!currentLorebook) {
 				error = 'Lorebook not found';
 				return;
 			}
 
 			lorebook = currentLorebook;
-			
+
 			// Select the lorebook to load its entries
 			await lorebookStore.selectLorebook(currentLorebook);
 		} catch (err) {
@@ -87,7 +87,7 @@
 
 	async function handleExportFormat(format: 'scribe_minimal' | 'silly_tavern_full') {
 		if (!lorebook) return;
-		
+
 		const exported = await lorebookStore.exportLorebook(lorebook.id, format);
 		if (exported) {
 			const blob = new Blob([JSON.stringify(exported, null, 2)], { type: 'application/json' });
@@ -102,11 +102,14 @@
 		} else if (lorebookStore.error) {
 			toast.error(`Failed to export lorebook: ${lorebookStore.error}`);
 		}
-		
+
 		showExportDialog = false;
 	}
 
-	async function handleCreateEntry(lorebookId: string, data: CreateLorebookEntryPayload): Promise<LorebookEntry | null> {
+	async function handleCreateEntry(
+		lorebookId: string,
+		data: CreateLorebookEntryPayload
+	): Promise<LorebookEntry | null> {
 		const entry = await lorebookStore.createEntry(lorebookId, data);
 		if (entry) {
 			toast.success('Entry created successfully!');
@@ -116,7 +119,11 @@
 		return entry;
 	}
 
-	async function handleUpdateEntry(lorebookId: string, entryId: string, data: UpdateLorebookEntryPayload): Promise<boolean> {
+	async function handleUpdateEntry(
+		lorebookId: string,
+		entryId: string,
+		data: UpdateLorebookEntryPayload
+	): Promise<boolean> {
 		const success = await lorebookStore.updateEntry(lorebookId, entryId, data);
 		if (success) {
 			toast.success('Entry updated successfully!');
@@ -148,18 +155,20 @@
 <div class="container mx-auto py-6">
 	{#if isLoading}
 		<div class="flex items-center justify-center py-12">
-			<div class="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent"></div>
+			<div
+				class="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent"
+			></div>
 		</div>
 	{:else if error}
-		<div class="text-center py-12">
-			<h2 class="text-2xl font-bold text-destructive mb-4">Error</h2>
-			<p class="text-muted-foreground mb-4">{error}</p>
+		<div class="py-12 text-center">
+			<h2 class="mb-4 text-2xl font-bold text-destructive">Error</h2>
+			<p class="mb-4 text-muted-foreground">{error}</p>
 			<button onclick={handleBack} class="text-primary hover:underline">
 				← Back to Lorebooks
 			</button>
 		</div>
 	{:else if lorebook}
-		<LorebookDetailView 
+		<LorebookDetailView
 			{lorebook}
 			entries={lorebookStore.entries}
 			isLoading={lorebookStore.isLoading}
@@ -173,8 +182,8 @@
 			onToggleEntry={handleToggleEntry}
 		/>
 	{:else}
-		<div class="text-center py-12">
-			<h2 class="text-2xl font-bold text-muted-foreground mb-4">Lorebook Not Found</h2>
+		<div class="py-12 text-center">
+			<h2 class="mb-4 text-2xl font-bold text-muted-foreground">Lorebook Not Found</h2>
 			<button onclick={handleBack} class="text-primary hover:underline">
 				← Back to Lorebooks
 			</button>
@@ -184,7 +193,7 @@
 	<!-- Export Format Dialog -->
 	<ExportDialog
 		bind:open={showExportDialog}
-		onClose={() => showExportDialog = false}
+		onClose={() => (showExportDialog = false)}
 		onExport={handleExportFormat}
 	/>
 </div>

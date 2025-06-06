@@ -50,21 +50,23 @@ export class ChatHistory {
 	async updateVisibility(chatId: string, newVisibility: VisibilityType) {
 		const originalChats = [...this.chats];
 		// Optimistic update
-		this.chats = this.chats.map(chat =>
-			chat.id === chatId ? { ...chat, visibility: newVisibility } : chat // Assuming ScribeChatSession has visibility
+		this.chats = this.chats.map(
+			(chat) => (chat.id === chatId ? { ...chat, visibility: newVisibility } : chat) // Assuming ScribeChatSession has visibility
 		);
 
 		try {
 			const response = await fetch(`/api/chats/${chatId}`, {
 				method: 'PATCH', // Or PUT, depending on API design
 				headers: {
-					'Content-Type': 'application/json',
+					'Content-Type': 'application/json'
 				},
-				body: JSON.stringify({ visibility: newVisibility }), // Adjust payload as needed
+				body: JSON.stringify({ visibility: newVisibility }) // Adjust payload as needed
 			});
 
 			if (!response.ok) {
-				const errorData = await response.json().catch(() => ({ message: 'Failed to update visibility' }));
+				const errorData = await response
+					.json()
+					.catch(() => ({ message: 'Failed to update visibility' }));
 				throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
 			}
 
@@ -72,7 +74,6 @@ export class ChatHistory {
 			// const updatedChat = await response.json();
 			// this.chats = this.chats.map(chat => chat.id === chatId ? updatedChat : chat);
 			toast.success(`Chat visibility updated to ${newVisibility}.`);
-
 		} catch (error: unknown) {
 			console.error('Failed to update chat visibility:', error);
 			const message = error instanceof Error ? error.message : 'Unknown error';
@@ -81,7 +82,6 @@ export class ChatHistory {
 			this.chats = originalChats;
 		}
 	}
-
 
 	static fromContext(): ChatHistory {
 		return getContext(contextKey);

@@ -86,11 +86,10 @@
 	// If backend provides a relative path like '/images/char_id.png', prepend the API base URL.
 	// Let's assume for now avatar_url is either absolute or null.
 	const avatarSrc = character.avatar_url; // Direct use for now
-
 </script>
 
 <Card
-	class="cursor-pointer transition-all hover:shadow-md hover:border-primary {isSelected
+	class="cursor-pointer transition-all hover:border-primary hover:shadow-md {isSelected
 		? 'border-primary ring-2 ring-primary'
 		: ''}"
 	onclick={handleClick}
@@ -108,12 +107,12 @@
 			<AvatarFallback>{getInitials(character.name)}</AvatarFallback>
 		</Avatar>
 		<div class="flex-1 overflow-hidden">
-			<CardTitle class="text-lg truncate">{character.name}</CardTitle>
-			<CardDescription class="text-sm truncate">
+			<CardTitle class="truncate text-lg">{character.name}</CardTitle>
+			<CardDescription class="truncate text-sm">
 				{getDescriptionSnippet(character.description, character.greeting)}
 			</CardDescription>
 		</div>
-		<div class="flex gap-1 ml-auto">
+		<div class="ml-auto flex gap-1">
 			<Button
 				variant="ghost"
 				size="icon"
@@ -146,8 +145,8 @@
 		</AlertDialogHeader>
 		<AlertDialogFooter>
 			<AlertDialogCancel>Cancel</AlertDialogCancel>
-			<AlertDialogAction 
-				onclick={handleDelete} 
+			<AlertDialogAction
+				onclick={handleDelete}
 				disabled={isDeleting}
 				class="bg-destructive text-destructive-foreground hover:bg-destructive/90"
 			>

@@ -22,34 +22,32 @@
 	}
 </script>
 
-<div class="flex flex-col h-full">
+<div class="flex h-full flex-col">
 	<!-- Header -->
-	<div class="p-4 border-b">
+	<div class="border-b p-4">
 		<div class="flex items-center justify-between">
-			<h3 class="font-medium text-sm">Lorebooks</h3>
-			<Button variant="ghost" size="sm" onclick={handleViewAll}>
-				View All
-			</Button>
+			<h3 class="text-sm font-medium">Lorebooks</h3>
+			<Button variant="ghost" size="sm" onclick={handleViewAll}>View All</Button>
 		</div>
 	</div>
 
 	<!-- Loading state -->
 	{#if lorebookStore.isLoading}
-		<div class="p-4 space-y-2">
+		<div class="space-y-2 p-4">
 			{#each Array(3) as _}
 				<div class="animate-pulse">
-					<div class="h-10 bg-muted rounded"></div>
+					<div class="h-10 rounded bg-muted"></div>
 				</div>
 			{/each}
 		</div>
 	{:else if lorebookStore.lorebooks.length === 0}
 		<!-- Empty state -->
-		<div class="flex-1 flex items-center justify-center p-4">
+		<div class="flex flex-1 items-center justify-center p-4">
 			<div class="text-center">
-				<BookOpen class="h-8 w-8 mx-auto mb-2 text-muted-foreground" />
-				<p class="text-sm text-muted-foreground mb-2">No lorebooks yet</p>
+				<BookOpen class="mx-auto mb-2 h-8 w-8 text-muted-foreground" />
+				<p class="mb-2 text-sm text-muted-foreground">No lorebooks yet</p>
 				<Button variant="outline" size="sm" onclick={handleViewAll}>
-					<Plus class="h-4 w-4 mr-1" />
+					<Plus class="mr-1 h-4 w-4" />
 					Create First
 				</Button>
 			</div>
@@ -57,18 +55,18 @@
 	{:else}
 		<!-- Lorebook list -->
 		<div class="flex-1 overflow-auto">
-			<div class="p-2 space-y-1">
+			<div class="space-y-1 p-2">
 				{#each lorebookStore.lorebooks.slice(0, 10) as lorebook (lorebook.id)}
 					<button
-						class="w-full text-left p-2 rounded-md hover:bg-muted transition-colors group"
+						class="group w-full rounded-md p-2 text-left transition-colors hover:bg-muted"
 						onclick={() => handleSelectLorebook(lorebook.id)}
 					>
 						<div class="flex items-center gap-2">
 							<BookOpen class="h-4 w-4 text-muted-foreground group-hover:text-foreground" />
-							<div class="flex-1 min-w-0">
-								<div class="text-sm font-medium truncate">{lorebook.name}</div>
+							<div class="min-w-0 flex-1">
+								<div class="truncate text-sm font-medium">{lorebook.name}</div>
 								{#if lorebook.description}
-									<div class="text-xs text-muted-foreground truncate">{lorebook.description}</div>
+									<div class="truncate text-xs text-muted-foreground">{lorebook.description}</div>
 								{/if}
 							</div>
 						</div>

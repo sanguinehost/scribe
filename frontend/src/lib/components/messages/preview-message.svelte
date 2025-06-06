@@ -11,16 +11,18 @@
 	import { fly } from 'svelte/transition';
 	import type { ScribeChatMessage } from '$lib/types';
 
-	let { message, readonly, loading }: { message: ScribeChatMessage; readonly: boolean; loading: boolean } =
-		$props();
+	let {
+		message,
+		readonly,
+		loading
+	}: { message: ScribeChatMessage; readonly: boolean; loading: boolean } = $props();
 
 	// Function to detect if a message is the first message from a character
 	function isFirstMessage(message: ScribeChatMessage): boolean {
 		// Check if it's an Assistant message and has the expected first-message ID pattern
 		// Note: We're being more conservative here and only checking the ID pattern
 		// since this component doesn't have access to message position context
-		return message.message_type === 'Assistant' && 
-			   message.id.startsWith('first-message-');
+		return message.message_type === 'Assistant' && message.id.startsWith('first-message-');
 	}
 
 	// Debug logging to see what's in the message
@@ -75,7 +77,7 @@
 			<!-- Render message content directly -->
 			<div
 				class={cn(
-					'prose w-full max-w-none break-words rounded-md border bg-background px-3 py-2 dark:prose-invert prose-p:leading-relaxed prose-pre:p-0',
+					'prose dark:prose-invert prose-p:leading-relaxed prose-pre:p-0 w-full max-w-none break-words rounded-md border bg-background px-3 py-2',
 					{
 						'border-primary/10 bg-primary/10': message.message_type === 'User'
 					}
@@ -94,7 +96,9 @@
 				{:else}
 					<!-- Debug: Show when raw_prompt is missing (but not for first messages) -->
 					<div class="w-full">
-						<div class="text-xs text-muted-foreground p-2 border rounded bg-yellow-50 dark:bg-yellow-900/20">
+						<div
+							class="rounded border bg-yellow-50 p-2 text-xs text-muted-foreground dark:bg-yellow-900/20"
+						>
 							Debug: No raw_prompt data available for this message
 						</div>
 					</div>

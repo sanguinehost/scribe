@@ -1,5 +1,11 @@
 <script lang="ts">
-	import type { Lorebook, LorebookEntry, UpdateLorebookPayload, CreateLorebookEntryPayload, UpdateLorebookEntryPayload } from '$lib/types';
+	import type {
+		Lorebook,
+		LorebookEntry,
+		UpdateLorebookPayload,
+		CreateLorebookEntryPayload,
+		UpdateLorebookEntryPayload
+	} from '$lib/types';
 	import { Button } from '$lib/components/ui/button';
 	import { Dialog, DialogContent, DialogHeader, DialogTitle } from '$lib/components/ui/dialog';
 	import { ArrowLeft, Edit, Download, Trash } from 'lucide-svelte';
@@ -15,15 +21,22 @@
 		onUpdateLorebook?: (id: string, data: UpdateLorebookPayload) => Promise<boolean>;
 		onDeleteLorebook?: (id: string) => Promise<boolean>;
 		onExportLorebook?: (lorebook: Lorebook) => void;
-		onCreateEntry?: (lorebookId: string, data: CreateLorebookEntryPayload) => Promise<LorebookEntry | null>;
-		onUpdateEntry?: (lorebookId: string, entryId: string, data: UpdateLorebookEntryPayload) => Promise<boolean>;
+		onCreateEntry?: (
+			lorebookId: string,
+			data: CreateLorebookEntryPayload
+		) => Promise<LorebookEntry | null>;
+		onUpdateEntry?: (
+			lorebookId: string,
+			entryId: string,
+			data: UpdateLorebookEntryPayload
+		) => Promise<boolean>;
 		onDeleteEntry?: (lorebookId: string, entryId: string) => Promise<boolean>;
 		onToggleEntry?: (entry: LorebookEntry) => void;
 	}
 
-	let { 
-		lorebook, 
-		entries, 
+	let {
+		lorebook,
+		entries,
 		isLoading = false,
 		onBack,
 		onUpdateLorebook,
@@ -119,44 +132,41 @@
 		<div class="flex items-center gap-4">
 			{#if onBack}
 				<Button variant="ghost" size="sm" onclick={onBack}>
-					<ArrowLeft class="h-4 w-4 mr-2" />
+					<ArrowLeft class="mr-2 h-4 w-4" />
 					Back to Lorebooks
 				</Button>
 			{/if}
 			<div>
 				<h1 class="text-3xl font-bold">{lorebook.name}</h1>
 				{#if lorebook.description}
-					<p class="text-muted-foreground mt-1">{lorebook.description}</p>
+					<p class="mt-1 text-muted-foreground">{lorebook.description}</p>
 				{/if}
 			</div>
 		</div>
 
 		<div class="flex gap-2">
 			<!-- Edit Lorebook -->
-			<Button variant="outline" onclick={() => showEditLorebook = true}>
-				<Edit class="h-4 w-4 mr-2" />
+			<Button variant="outline" onclick={() => (showEditLorebook = true)}>
+				<Edit class="mr-2 h-4 w-4" />
 				Edit
 			</Button>
 
 			<!-- Export Lorebook -->
 			<Button variant="outline" onclick={handleExportLorebook}>
-				<Download class="h-4 w-4 mr-2" />
+				<Download class="mr-2 h-4 w-4" />
 				Export
 			</Button>
 
 			<!-- Delete Lorebook -->
-			<Button 
-				variant="destructive" 
-				onclick={() => showDeleteLorebook = true}
-			>
-				<Trash class="h-4 w-4 mr-2" />
+			<Button variant="destructive" onclick={() => (showDeleteLorebook = true)}>
+				<Trash class="mr-2 h-4 w-4" />
 				Delete
 			</Button>
 		</div>
 	</div>
 
 	<!-- Lorebook Info -->
-	<div class="grid grid-cols-2 md:grid-cols-4 gap-4 p-4 bg-muted rounded-lg">
+	<div class="grid grid-cols-2 gap-4 rounded-lg bg-muted p-4 md:grid-cols-4">
 		<div>
 			<div class="text-sm font-medium">Source Format</div>
 			<div class="text-sm text-muted-foreground">{lorebook.source_format}</div>
@@ -171,15 +181,17 @@
 		</div>
 		<div>
 			<div class="text-sm font-medium">Last Updated</div>
-			<div class="text-sm text-muted-foreground">{new Date(lorebook.updated_at).toLocaleDateString()}</div>
+			<div class="text-sm text-muted-foreground">
+				{new Date(lorebook.updated_at).toLocaleDateString()}
+			</div>
 		</div>
 	</div>
 
 	<!-- Entries Section -->
-	<LorebookEntryList 
+	<LorebookEntryList
 		{entries}
 		{isLoading}
-		onCreateNew={() => showCreateEntry = true}
+		onCreateNew={() => (showCreateEntry = true)}
 		onEditEntry={handleEditEntry}
 		onDeleteEntry={handleDeleteEntry}
 		onToggleEntry={handleToggleEntry}
@@ -191,10 +203,10 @@
 			<DialogHeader>
 				<DialogTitle>Create New Entry</DialogTitle>
 			</DialogHeader>
-			<LorebookEntryForm 
+			<LorebookEntryForm
 				{isLoading}
 				onSubmit={handleCreateEntry}
-				onCancel={() => showCreateEntry = false}
+				onCancel={() => (showCreateEntry = false)}
 			/>
 		</DialogContent>
 	</Dialog>
@@ -205,7 +217,7 @@
 			<DialogHeader>
 				<DialogTitle>Edit Entry</DialogTitle>
 			</DialogHeader>
-			<LorebookEntryForm 
+			<LorebookEntryForm
 				entry={editingEntry}
 				{isLoading}
 				onSubmit={handleUpdateEntry}
@@ -223,11 +235,11 @@
 			<DialogHeader>
 				<DialogTitle>Edit Lorebook</DialogTitle>
 			</DialogHeader>
-			<LorebookForm 
-				{lorebook} 
+			<LorebookForm
+				{lorebook}
 				{isLoading}
 				onSubmit={handleUpdateLorebook}
-				onCancel={() => showEditLorebook = false}
+				onCancel={() => (showEditLorebook = false)}
 			/>
 		</DialogContent>
 	</Dialog>
@@ -240,17 +252,13 @@
 			</DialogHeader>
 			<div class="py-4">
 				<p class="text-sm text-muted-foreground">
-					Are you sure you want to delete "{lorebook.name}"? This action cannot be undone and will delete all entries in this lorebook.
+					Are you sure you want to delete "{lorebook.name}"? This action cannot be undone and will
+					delete all entries in this lorebook.
 				</p>
 			</div>
 			<div class="flex flex-col-reverse sm:flex-row sm:justify-end sm:space-x-2">
 				<Button variant="outline" onclick={handleCancelDelete}>Cancel</Button>
-				<Button 
-					variant="destructive" 
-					onclick={handleDeleteLorebook}
-				>
-					Delete Lorebook
-				</Button>
+				<Button variant="destructive" onclick={handleDeleteLorebook}>Delete Lorebook</Button>
 			</div>
 		</DialogContent>
 	</Dialog>

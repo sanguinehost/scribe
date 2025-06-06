@@ -20,7 +20,8 @@
 
 	// Ensure budgets don't exceed total or cause negative buffer
 	$effect(() => {
-		if (recent_history_budget > total_token_limit - 5000) { // Keep at least 5k for RAG/Buffer
+		if (recent_history_budget > total_token_limit - 5000) {
+			// Keep at least 5k for RAG/Buffer
 			recent_history_budget = total_token_limit - 5000;
 		}
 		if (rag_budget > total_token_limit - recent_history_budget) {
@@ -29,14 +30,13 @@
 		if (recent_history_budget < 10000 && total_token_limit >= 20000) recent_history_budget = 10000;
 		if (rag_budget < 5000 && total_token_limit >= 15000) rag_budget = 5000;
 
-        // Prevent total from being less than sum of parts if parts are reduced first
-        if (total_token_limit < recent_history_budget + rag_budget) {
-            total_token_limit = recent_history_budget + rag_budget + 10000; // Add a small buffer
-        }
+		// Prevent total from being less than sum of parts if parts are reduced first
+		if (total_token_limit < recent_history_budget + rag_budget) {
+			total_token_limit = recent_history_budget + rag_budget + 10000; // Add a small buffer
+		}
 	});
 
 	const buffer_budget = $derived(total_token_limit - recent_history_budget - rag_budget);
-
 </script>
 
 <Card>
@@ -72,11 +72,9 @@
 						step={5000}
 						bind:value={recent_history_budget}
 					/>
-					<p class="text-xs text-muted-foreground">
-						Tokens for recent chat messages
-					</p>
+					<p class="text-xs text-muted-foreground">Tokens for recent chat messages</p>
 				</div>
-				
+
 				<div class="space-y-2">
 					<Label for="rag-budget">RAG Context Budget</Label>
 					<Input
@@ -87,42 +85,40 @@
 						step={5000}
 						bind:value={rag_budget}
 					/>
-					<p class="text-xs text-muted-foreground">
-						Tokens for lorebooks + older messages
-					</p>
+					<p class="text-xs text-muted-foreground">Tokens for lorebooks + older messages</p>
 				</div>
 			</div>
 
 			<!-- Visual Budget Breakdown -->
 			<div class="space-y-2">
 				<div class="text-sm font-medium">Budget Allocation</div>
-				<div class="w-full bg-muted rounded-lg p-3">
-					<div class="flex h-6 rounded-lg overflow-hidden">
-						<div 
-							class="bg-blue-500 flex items-center justify-center text-white text-xs font-medium transition-all duration-300 ease-in-out"
+				<div class="w-full rounded-lg bg-muted p-3">
+					<div class="flex h-6 overflow-hidden rounded-lg">
+						<div
+							class="flex items-center justify-center bg-blue-500 text-xs font-medium text-white transition-all duration-300 ease-in-out"
 							style="width: {(recent_history_budget / total_token_limit) * 100}%"
 							title="Recent History: {recent_history_budget.toLocaleString()} tokens"
 						>
 							Recent
 						</div>
-						<div 
-							class="bg-green-500 flex items-center justify-center text-white text-xs font-medium transition-all duration-300 ease-in-out"
+						<div
+							class="flex items-center justify-center bg-green-500 text-xs font-medium text-white transition-all duration-300 ease-in-out"
 							style="width: {(rag_budget / total_token_limit) * 100}%"
 							title="RAG: {rag_budget.toLocaleString()} tokens"
 						>
 							RAG
 						</div>
 						{#if buffer_budget > 0}
-						<div 
-							class="bg-gray-300 dark:bg-gray-600 flex items-center justify-center text-gray-700 dark:text-gray-200 text-xs font-medium transition-all duration-300 ease-in-out"
-							style="width: {(buffer_budget / total_token_limit) * 100}%"
-							title="Buffer: {buffer_budget.toLocaleString()} tokens"
-						>
-							Buffer
-						</div>
+							<div
+								class="flex items-center justify-center bg-gray-300 text-xs font-medium text-gray-700 transition-all duration-300 ease-in-out dark:bg-gray-600 dark:text-gray-200"
+								style="width: {(buffer_budget / total_token_limit) * 100}%"
+								title="Buffer: {buffer_budget.toLocaleString()} tokens"
+							>
+								Buffer
+							</div>
 						{/if}
 					</div>
-					<div class="flex justify-between text-xs text-muted-foreground mt-2">
+					<div class="mt-2 flex justify-between text-xs text-muted-foreground">
 						<span>Recent: {recent_history_budget.toLocaleString()}</span>
 						<span>RAG: {rag_budget.toLocaleString()}</span>
 						<span>Total: {total_token_limit.toLocaleString()}</span>
@@ -143,7 +139,7 @@
 							rag_budget = 40000; // Adjusted to leave 10k buffer
 						}}
 					>
-						Balanced<br/>
+						Balanced<br />
 						<span class="text-xs text-muted-foreground">200k total</span>
 					</Button>
 					<Button
@@ -155,7 +151,7 @@
 							rag_budget = 100000; // Adjusted to leave 50k buffer
 						}}
 					>
-						Large<br/>
+						Large<br />
 						<span class="text-xs text-muted-foreground">500k total</span>
 					</Button>
 					<Button
@@ -167,14 +163,16 @@
 							rag_budget = 15000; // Adjusted to leave 10k buffer
 						}}
 					>
-						Efficient<br/>
+						Efficient<br />
 						<span class="text-xs text-muted-foreground">100k total</span>
 					</Button>
 				</div>
 			</div>
 
-			<div class="text-xs text-muted-foreground p-3 bg-amber-50 dark:bg-amber-950 rounded-lg">
-				<strong>⚠️ Note:</strong> Larger context windows use more computational resources and may increase response time and costs. The system automatically manages token allocation within your specified limits.
+			<div class="rounded-lg bg-amber-50 p-3 text-xs text-muted-foreground dark:bg-amber-950">
+				<strong>⚠️ Note:</strong> Larger context windows use more computational resources and may increase
+				response time and costs. The system automatically manages token allocation within your specified
+				limits.
 			</div>
 		</div>
 	</CardContent>

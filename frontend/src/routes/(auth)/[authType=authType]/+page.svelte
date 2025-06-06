@@ -29,18 +29,25 @@
 	// Handle FIDO2 errors by suppressing them
 	onMount(() => {
 		// Create a custom error handler for the page
-		window.addEventListener('error', (event) => {
-			// Check if the error is the FIDO2 duplicate script ID error
-			if (event.message && event.message.includes('Duplicate script ID') && 
-				event.message.includes('fido2-page-script')) {
-				// Prevent the error from propagating
-				event.preventDefault();
-				event.stopPropagation();
-				console.log('Suppressed FIDO2 script error');
-				return true;
-			}
-			return false;
-		}, true); // Use capture phase to intercept early
+		window.addEventListener(
+			'error',
+			(event) => {
+				// Check if the error is the FIDO2 duplicate script ID error
+				if (
+					event.message &&
+					event.message.includes('Duplicate script ID') &&
+					event.message.includes('fido2-page-script')
+				) {
+					// Prevent the error from propagating
+					event.preventDefault();
+					event.stopPropagation();
+					console.log('Suppressed FIDO2 script error');
+					return true;
+				}
+				return false;
+			},
+			true
+		); // Use capture phase to intercept early
 	});
 </script>
 
@@ -51,7 +58,8 @@
 		<div class="flex flex-col items-center justify-center gap-2 px-4 text-center sm:px-16">
 			<h3 class="text-xl font-semibold dark:text-zinc-50">{signInSignUp}</h3>
 			<p class="text-sm text-gray-500 dark:text-zinc-400">
-				{description} <!-- Use dynamic description -->
+				{description}
+				<!-- Use dynamic description -->
 			</p>
 		</div>
 		<!-- Pass authType prop and the explicitly cast form data -->

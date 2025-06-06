@@ -1,5 +1,9 @@
 <script lang="ts">
-	import type { LorebookEntry, CreateLorebookEntryPayload, UpdateLorebookEntryPayload } from '$lib/types';
+	import type {
+		LorebookEntry,
+		CreateLorebookEntryPayload,
+		UpdateLorebookEntryPayload
+	} from '$lib/types';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
@@ -27,7 +31,7 @@
 
 	function handleSubmit(event: Event) {
 		event.preventDefault();
-		
+
 		if (!entryTitle.trim() || !content.trim()) {
 			return;
 		}
@@ -84,9 +88,7 @@
 					placeholder="Enter keywords separated by commas (e.g., dragon, fire, magic)"
 					disabled={isLoading}
 				/>
-				<p class="text-xs text-muted-foreground">
-					Keywords help with UI search and organization
-				</p>
+				<p class="text-xs text-muted-foreground">Keywords help with UI search and organization</p>
 			</div>
 
 			<!-- Content -->
@@ -107,36 +109,38 @@
 				<div class="flex items-center space-x-2">
 					<input
 						type="checkbox"
-						id="is-enabled" 
-						bind:checked={isEnabled} 
+						id="is-enabled"
+						bind:checked={isEnabled}
 						disabled={isLoading}
 						class="h-4 w-4 rounded border-gray-300 text-primary focus:ring-2 focus:ring-primary disabled:cursor-not-allowed disabled:opacity-50"
 					/>
-					<Label for="is-enabled" class="text-sm cursor-pointer">Enabled</Label>
+					<Label for="is-enabled" class="cursor-pointer text-sm">Enabled</Label>
 				</div>
 
 				<div class="flex items-center space-x-2">
 					<input
 						type="checkbox"
-						id="is-constant" 
-						bind:checked={isConstant} 
+						id="is-constant"
+						bind:checked={isConstant}
 						disabled={isLoading}
 						class="h-4 w-4 rounded border-gray-300 text-primary focus:ring-2 focus:ring-primary disabled:cursor-not-allowed disabled:opacity-50"
 					/>
-					<Label for="is-constant" class="text-sm cursor-pointer">Constant</Label>
+					<Label for="is-constant" class="cursor-pointer text-sm">Constant</Label>
 					<span class="text-xs text-muted-foreground">(always included)</span>
 				</div>
 			</div>
 
 			<!-- Submit buttons -->
 			<div class="flex gap-2 pt-4">
-				<Button 
-					type="submit" 
-					disabled={isLoading || !entryTitle.trim() || !content.trim()} 
+				<Button
+					type="submit"
+					disabled={isLoading || !entryTitle.trim() || !content.trim()}
 					class="flex-1"
 				>
 					{#if isLoading}
-						<div class="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent mr-2"></div>
+						<div
+							class="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent"
+						></div>
 					{/if}
 					{submitLabel}
 				</Button>

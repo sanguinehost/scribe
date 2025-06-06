@@ -6,7 +6,13 @@
 	import { SelectedPersonaStore } from '$lib/stores/selected-persona.svelte';
 	import { scale } from 'svelte/transition';
 	import { Button } from '$lib/components/ui/button';
-	import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '$lib/components/ui/card';
+	import {
+		Card,
+		CardHeader,
+		CardTitle,
+		CardDescription,
+		CardContent
+	} from '$lib/components/ui/card';
 	import { Avatar, AvatarFallback } from '$lib/components/ui/avatar';
 	import { Skeleton } from '$lib/components/ui/skeleton';
 	import {
@@ -48,26 +54,26 @@
 	// Basic HTML sanitization to prevent XSS while preserving formatting
 	function sanitizeHtml(html: string | null | undefined): string {
 		if (!html) return '';
-		
+
 		const temp = document.createElement('div');
 		temp.innerHTML = html;
-		
+
 		const scripts = temp.querySelectorAll('script');
-		scripts.forEach(script => script.remove());
-		
+		scripts.forEach((script) => script.remove());
+
 		const allElements = temp.querySelectorAll('*');
-		allElements.forEach(el => {
-			Array.from(el.attributes).forEach(attr => {
+		allElements.forEach((el) => {
+			Array.from(el.attributes).forEach((attr) => {
 				if (attr.name.startsWith('on')) {
 					el.removeAttribute(attr.name);
 				}
 			});
-			
+
 			if (el.tagName === 'A' && el.getAttribute('href')?.startsWith('javascript:')) {
 				el.removeAttribute('href');
 			}
 		});
-		
+
 		return temp.innerHTML;
 	}
 
@@ -80,8 +86,8 @@
 			if (result.isOk()) {
 				persona = result.value;
 			} else {
-				toast.error('Failed to load persona', { 
-					description: result.error.message 
+				toast.error('Failed to load persona', {
+					description: result.error.message
 				});
 			}
 		} catch (error) {
@@ -110,10 +116,10 @@
 			const result = await apiClient.deleteUserPersona(persona.id);
 			if (result.isOk()) {
 				toast.success('Persona deleted successfully');
-				
+
 				// Trigger refresh of persona list
 				selectedPersonaStore.triggerRefresh();
-				
+
 				// Clear the selected persona and navigate back to list view
 				selectedPersonaStore.clear();
 				window.history.back();
@@ -160,27 +166,6 @@
 	});
 </script>
 
-<style>
-	/* Override inline styles from HTML content to respect theme */
-	:global(.prose *[style*="color: #000000"]),
-	:global(.prose *[style*="color: rgb(0, 0, 0)"]),
-	:global(.prose *[style*="color:#000000"]),
-	:global(.prose *[style*="color:rgb(0,0,0)"]) {
-		color: hsl(var(--foreground)) !important;
-	}
-	
-	:global(.prose p),
-	:global(.prose span),
-	:global(.prose strong) {
-		color: hsl(var(--foreground)) !important;
-	}
-	
-	:global(.prose p[style*="text-align: center"]) {
-		margin-top: 1rem;
-		margin-bottom: 1rem;
-	}
-</style>
-
 <div class="mx-auto max-w-4xl px-4" transition:scale={{ opacity: 0, start: 0.98 }}>
 	<div class="space-y-6">
 		<!-- Persona Header Card -->
@@ -189,7 +174,7 @@
 				<CardHeader class="px-0">
 					<div class="flex items-center space-x-6">
 						<Skeleton class="h-24 w-24 rounded-full" />
-						<div class="space-y-3 flex-1">
+						<div class="flex-1 space-y-3">
 							<Skeleton class="h-8 w-2/3" />
 							<Skeleton class="h-4 w-full" />
 							<Skeleton class="h-4 w-5/6" />
@@ -210,7 +195,7 @@
 							<div>
 								<h2 class="text-3xl font-bold">{persona.name}</h2>
 								{#if persona.description}
-									<p class="text-muted-foreground mt-2">
+									<p class="mt-2 text-muted-foreground">
 										{persona.description}
 									</p>
 								{/if}
@@ -220,72 +205,82 @@
 									<PencilEditIcon class="h-4 w-4" />
 									Edit Persona
 								</Button>
-								<Button 
-									onclick={handleSetDefault} 
-									variant="outline" 
-									size="lg" 
+								<Button
+									onclick={handleSetDefault}
+									variant="outline"
+									size="lg"
 									disabled={isSettingDefault}
 								>
 									{isSettingDefault ? 'Setting...' : 'Set as Default'}
 								</Button>
-								<Button 
-									onclick={handleDeleteClick} 
-									variant="destructive" 
-									size="lg"
-								>
+								<Button onclick={handleDeleteClick} variant="destructive" size="lg">
 									<TrashIcon class="h-4 w-4" />
 								</Button>
 							</div>
 						</div>
 					</div>
 				</CardHeader>
-				
+
 				{#if persona.scenario || persona.personality || persona.first_mes || persona.system_prompt}
-					<CardContent class="px-0 space-y-4">
+					<CardContent class="space-y-4 px-0">
 						{#if persona.scenario}
 							<div class="rounded-lg bg-muted/50 p-4">
-								<h4 class="text-sm font-semibold text-muted-foreground mb-2">Scenario</h4>
-								<div class="text-sm prose prose-sm max-w-none prose-p:my-2 prose-p:leading-relaxed prose-strong:font-semibold prose-headings:font-bold dark:prose-invert [&_p]:!text-foreground [&_span]:!text-foreground [&_strong]:!text-foreground [&_*[style*='color']]:!text-foreground">
+								<h4 class="mb-2 text-sm font-semibold text-muted-foreground">Scenario</h4>
+								<div
+									class="prose prose-sm prose-p:my-2 prose-p:leading-relaxed prose-strong:font-semibold prose-headings:font-bold dark:prose-invert max-w-none text-sm [&_*[style*='color']]:!text-foreground [&_p]:!text-foreground [&_span]:!text-foreground [&_strong]:!text-foreground"
+								>
 									{@html sanitizeHtml(persona.scenario)}
 								</div>
 							</div>
 						{/if}
 						{#if persona.personality}
 							<div class="rounded-lg bg-muted/50 p-4">
-								<h4 class="text-sm font-semibold text-muted-foreground mb-2">Personality</h4>
-								<div class="text-sm prose prose-sm max-w-none prose-p:my-2 prose-p:leading-relaxed prose-strong:font-semibold prose-headings:font-bold dark:prose-invert [&_p]:!text-foreground [&_span]:!text-foreground [&_strong]:!text-foreground [&_*[style*='color']]:!text-foreground">
+								<h4 class="mb-2 text-sm font-semibold text-muted-foreground">Personality</h4>
+								<div
+									class="prose prose-sm prose-p:my-2 prose-p:leading-relaxed prose-strong:font-semibold prose-headings:font-bold dark:prose-invert max-w-none text-sm [&_*[style*='color']]:!text-foreground [&_p]:!text-foreground [&_span]:!text-foreground [&_strong]:!text-foreground"
+								>
 									{@html sanitizeHtml(persona.personality)}
 								</div>
 							</div>
 						{/if}
 						{#if persona.first_mes}
 							<div class="rounded-lg bg-muted/50 p-4">
-								<h4 class="text-sm font-semibold text-muted-foreground mb-2">First Message</h4>
-								<div class="text-sm prose prose-sm max-w-none italic dark:prose-invert [&_p]:!text-foreground [&_span]:!text-foreground [&_strong]:!text-foreground [&_*[style*='color']]:!text-foreground">
+								<h4 class="mb-2 text-sm font-semibold text-muted-foreground">First Message</h4>
+								<div
+									class="prose prose-sm dark:prose-invert max-w-none text-sm italic [&_*[style*='color']]:!text-foreground [&_p]:!text-foreground [&_span]:!text-foreground [&_strong]:!text-foreground"
+								>
 									{@html sanitizeHtml(persona.first_mes)}
 								</div>
 							</div>
 						{/if}
 						{#if persona.system_prompt}
 							<div class="rounded-lg bg-muted/50 p-4">
-								<h4 class="text-sm font-semibold text-muted-foreground mb-2">System Prompt</h4>
-								<div class="text-sm prose prose-sm max-w-none dark:prose-invert [&_p]:!text-foreground [&_span]:!text-foreground [&_strong]:!text-foreground [&_*[style*='color']]:!text-foreground">
+								<h4 class="mb-2 text-sm font-semibold text-muted-foreground">System Prompt</h4>
+								<div
+									class="prose prose-sm dark:prose-invert max-w-none text-sm [&_*[style*='color']]:!text-foreground [&_p]:!text-foreground [&_span]:!text-foreground [&_strong]:!text-foreground"
+								>
 									{@html sanitizeHtml(persona.system_prompt)}
 								</div>
 							</div>
 						{/if}
 						{#if persona.mes_example}
 							<div class="rounded-lg bg-muted/50 p-4">
-								<h4 class="text-sm font-semibold text-muted-foreground mb-2">Message Example</h4>
-								<div class="text-sm prose prose-sm max-w-none dark:prose-invert [&_p]:!text-foreground [&_span]:!text-foreground [&_strong]:!text-foreground [&_*[style*='color']]:!text-foreground">
+								<h4 class="mb-2 text-sm font-semibold text-muted-foreground">Message Example</h4>
+								<div
+									class="prose prose-sm dark:prose-invert max-w-none text-sm [&_*[style*='color']]:!text-foreground [&_p]:!text-foreground [&_span]:!text-foreground [&_strong]:!text-foreground"
+								>
 									{@html sanitizeHtml(persona.mes_example)}
 								</div>
 							</div>
 						{/if}
 						{#if persona.post_history_instructions}
 							<div class="rounded-lg bg-muted/50 p-4">
-								<h4 class="text-sm font-semibold text-muted-foreground mb-2">Post-History Instructions</h4>
-								<div class="text-sm prose prose-sm max-w-none dark:prose-invert [&_p]:!text-foreground [&_span]:!text-foreground [&_strong]:!text-foreground [&_*[style*='color']]:!text-foreground">
+								<h4 class="mb-2 text-sm font-semibold text-muted-foreground">
+									Post-History Instructions
+								</h4>
+								<div
+									class="prose prose-sm dark:prose-invert max-w-none text-sm [&_*[style*='color']]:!text-foreground [&_p]:!text-foreground [&_span]:!text-foreground [&_strong]:!text-foreground"
+								>
 									{@html sanitizeHtml(persona.post_history_instructions)}
 								</div>
 							</div>
@@ -306,14 +301,14 @@
 				Are you sure you want to delete this persona? This action cannot be undone.
 				{#if persona}
 					<br />
-					<strong class="block mt-2">"{persona.name}"</strong>
+					<strong class="mt-2 block">"{persona.name}"</strong>
 				{/if}
 			</AlertDialogDescription>
 		</AlertDialogHeader>
 		<AlertDialogFooter>
 			<AlertDialogCancel disabled={isDeletingPersona}>Cancel</AlertDialogCancel>
-			<AlertDialogAction 
-				onclick={confirmDelete} 
+			<AlertDialogAction
+				onclick={confirmDelete}
 				disabled={isDeletingPersona}
 				class="bg-destructive text-destructive-foreground hover:bg-destructive/90"
 			>
@@ -322,3 +317,24 @@
 		</AlertDialogFooter>
 	</AlertDialogContent>
 </AlertDialog>
+
+<style>
+	/* Override inline styles from HTML content to respect theme */
+	:global(.prose *[style*='color: #000000']),
+	:global(.prose *[style*='color: rgb(0, 0, 0)']),
+	:global(.prose *[style*='color:#000000']),
+	:global(.prose *[style*='color:rgb(0,0,0)']) {
+		color: hsl(var(--foreground)) !important;
+	}
+
+	:global(.prose p),
+	:global(.prose span),
+	:global(.prose strong) {
+		color: hsl(var(--foreground)) !important;
+	}
+
+	:global(.prose p[style*='text-align: center']) {
+		margin-top: 1rem;
+		margin-bottom: 1rem;
+	}
+</style>

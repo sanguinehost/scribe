@@ -1,5 +1,4 @@
 <script lang="ts">
-	import type { User } from '$lib/types';
 	import { cn } from '$lib/utils/shadcn';
 	import ChevronUp from './icons/chevron-up.svelte';
 	import {
@@ -11,30 +10,16 @@
 	} from './ui/dropdown-menu';
 	import { SidebarMenu, SidebarMenuButton, SidebarMenuItem } from './ui/sidebar';
 	import { getTheme } from '@sejohnson/svelte-themes';
+	import { getCurrentUser, getIsAuthenticated, getHasConnectionError } from '$lib/auth.svelte';
 	import { apiClient } from '$lib/api';
+	import { setUnauthenticated } from '$lib/auth.svelte';
 	import { goto } from '$app/navigation';
-	import { page } from '$app/stores';
-
-	let { user }: { user: User } = $props();
 	const theme = getTheme();
 
 	async function handleSignOut() {
-		const result = await apiClient.logout();
-		if (result.isOk()) {
-			// For SvelteKit, navigating to a page that requires auth
-			// (or simply reloading) after logout should trigger the hooks
-			// to redirect to login if the current page is protected.
-			// A full reload is often the most robust way to clear all client state.
-			if (typeof window !== 'undefined') {
-				window.location.href = '/signin'; // Or simply window.location.reload();
-			} else {
-				// Fallback for server-side context if needed, though less likely for a click handler
-				await goto('/signin');
-			}
-		} else {
-			console.error('Logout failed:', result.error);
-			// Optionally, show an error message to the user
-		}
+		// Use the logout route which handles both backend logout and cookie clearing
+		setUnauthenticated();
+		goto('/logout');
 	}
 </script>
 
@@ -45,32 +30,62 @@
 				{#snippet child({ props })}
 					<SidebarMenuButton
 						{...props}
-						class="h-10 bg-background data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
+						class="h-10 bg-background data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground {getHasConnectionError()
+							? 'border-l-2 border-orange-500'
+							: ''}"
 					>
-						<img
-							src={`https://avatar.vercel.sh/${user.email}`}
-							alt={user.email ?? 'User Avatar'}
-							width={24}
-							height={24}
-							class="rounded-full"
-						/>
-						<span class="truncate">{user?.email}</span>
-						<ChevronUp class="ml-auto" />
+						{#if getIsAuthenticated() && getCurrentUser()}
+							<img
+								src={`https://avatar.vercel.sh/${getCurrentUser()?.email}`}
+								alt={getCurrentUser()?.email ?? 'User Avatar'}
+								width={24}
+								height={24}
+								class="rounded-full"
+							/>
+							<span class="truncate">{getCurrentUser()?.email}</span>
+							{#if getHasConnectionError()}
+								<span class="ml-auto text-xs text-orange-500">⚠</span>
+							{:else}
+								<ChevronUp class="ml-auto" />
+							{/if}
+						{:else if getHasConnectionError()}
+							<!-- Show connection error state even when user data is not available -->
+							<div class="h-6 w-6 rounded-full bg-muted flex items-center justify-center">
+								<span class="text-xs">?</span>
+							</div>
+							<span class="truncate">Connection issues</span>
+							<span class="ml-auto text-xs text-orange-500">⚠</span>
+						{:else}
+							<span class="truncate">Not signed in</span>
+						{/if}
 					</SidebarMenuButton>
 				{/snippet}
 			</DropdownMenuTrigger>
 			<DropdownMenuContent side="top" class="w-[--bits-floating-anchor-width]">
-				<DropdownMenuItem
-					class="cursor-pointer"
-					onSelect={() =>
-						(theme.selectedTheme = theme.resolvedTheme === 'light' ? 'dark' : 'light')}
-				>
-					Toggle {theme.resolvedTheme === 'light' ? 'dark' : 'light'} mode
-				</DropdownMenuItem>
-				<DropdownMenuSeparator />
-				<DropdownMenuItem class="cursor-pointer" onSelect={handleSignOut}>
-					Sign out
-				</DropdownMenuItem>
+				{#if getHasConnectionError()}
+					<DropdownMenuItem class="cursor-default text-orange-600">
+						⚠ Connection issues detected
+					</DropdownMenuItem>
+					<DropdownMenuSeparator />
+				{/if}
+				<!-- Show controls if we have user data OR connection issues (user might want to clear session) -->
+				{#if getCurrentUser() || getHasConnectionError()}
+					<DropdownMenuItem
+						class="cursor-pointer"
+						onSelect={() =>
+							(theme.selectedTheme = theme.resolvedTheme === 'light' ? 'dark' : 'light')}
+					>
+						Toggle {theme.resolvedTheme === 'light' ? 'dark' : 'light'} mode
+					</DropdownMenuItem>
+					<DropdownMenuSeparator />
+					<DropdownMenuItem class="cursor-pointer" onSelect={handleSignOut}>
+						{#if getHasConnectionError()}
+							Clear session & sign out
+						{:else}
+							Sign out
+						{/if}
+					</DropdownMenuItem>
+				{/if}
 			</DropdownMenuContent>
 		</DropdownMenu>
 	</SidebarMenuItem>
