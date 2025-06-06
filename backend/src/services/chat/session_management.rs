@@ -431,49 +431,49 @@ fn get_character_lorebooks(
 }
 
 /// Associates lorebooks with the chat session
+/// Associates explicitly provided lorebooks with the chat session.
+/// Character-derived lorebooks are handled implicitly by the frontend/listing logic
+/// and should not have explicit entries in `chat_session_lorebooks` unless
+/// the user specifically adds them to this chat later.
 fn associate_lorebooks(
     new_session_id: Uuid,
     user_id: Uuid,
-    character_id: Uuid,
+    _character_id: Uuid, // Not strictly needed if we only handle explicit IDs here
     explicit_lorebook_ids: Option<Vec<Uuid>>,
     transaction_conn: &mut PgConnection,
 ) -> Result<(), AppError> {
-    // Get character-associated lorebooks
-    let character_lorebooks = get_character_lorebooks(character_id, user_id, transaction_conn)?;
-    
-    // Combine explicit and character lorebooks, removing duplicates
-    let mut all_lorebook_ids = character_lorebooks;
     if let Some(explicit_ids) = explicit_lorebook_ids {
-        for id in explicit_ids {
-            if !all_lorebook_ids.contains(&id) {
-                all_lorebook_ids.push(id);
+        if !explicit_ids.is_empty() {
+            info!(
+                session_id = %new_session_id,
+                lorebook_count = explicit_ids.len(),
+                "Associating EXPLICITLY provided lorebooks with new chat session."
+            );
+
+            for lorebook_id in explicit_ids {
+                // Validate that the lorebook exists and is owned by the user
+                validate_lorebook_ownership(lorebook_id, user_id, transaction_conn)?;
+
+                // Insert the explicit association.
+                // If this lorebook also happens to be a character-default lorebook,
+                // this explicit chat-level association will take precedence in the UI
+                // (showing as source: Chat), which is acceptable if the user explicitly chose it at creation.
+                // However, the main goal is that character defaults are NOT auto-added here.
+                diesel::insert_into(chat_session_lorebooks::table)
+                    .values((
+                        chat_session_lorebooks::chat_session_id.eq(new_session_id),
+                        chat_session_lorebooks::lorebook_id.eq(lorebook_id),
+                        chat_session_lorebooks::user_id.eq(user_id),
+                    ))
+                    .on_conflict_do_nothing() // Avoid error if for some reason it was already there
+                    .execute(transaction_conn)
+                    .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
             }
+        } else {
+            info!(session_id = %new_session_id, "No explicit lorebooks provided for initial association (empty list).");
         }
-    }
-
-    // Log what lorebooks are being associated
-    if !all_lorebook_ids.is_empty() {
-        info!(
-            session_id = %new_session_id, 
-            character_id = %character_id,
-            lorebook_count = all_lorebook_ids.len(),
-            "Associating lorebooks with chat session (including character defaults)"
-        );
-    }
-
-    // Associate all lorebooks
-    for lorebook_id in all_lorebook_ids {
-        // Validate that the lorebook exists and is owned by the user
-        validate_lorebook_ownership(lorebook_id, user_id, transaction_conn)?;
-
-        diesel::insert_into(chat_session_lorebooks::table)
-            .values((
-                chat_session_lorebooks::chat_session_id.eq(new_session_id),
-                chat_session_lorebooks::lorebook_id.eq(lorebook_id),
-                chat_session_lorebooks::user_id.eq(user_id),
-            ))
-            .execute(transaction_conn)
-            .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+    } else {
+        info!(session_id = %new_session_id, "No explicit lorebooks provided for initial association (option was None).");
     }
     Ok(())
 }

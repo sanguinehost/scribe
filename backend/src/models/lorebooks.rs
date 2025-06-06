@@ -1,13 +1,14 @@
 use crate::models::characters::Character;
 use crate::models::chats::Chat;
 use crate::models::users::User;
-use crate::schema::{character_lorebooks, chat_session_lorebooks, lorebook_entries, lorebooks};
+use crate::schema::{character_lorebooks, chat_character_lorebook_overrides, chat_session_lorebooks, lorebook_entries, lorebooks};
 use chrono::{DateTime, Utc};
 use diesel::{
     AsChangeset, Associations, ExpressionMethods, Identifiable, Insertable, JoinOnDsl,
     PgConnection, QueryDsl, QueryResult, Queryable, RunQueryDsl, Selectable,
 };
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use uuid::Uuid;
 
 // --------------------
@@ -220,6 +221,12 @@ impl ChatSessionLorebook {
             character_lorebooks::dsl::{
                 character_id, character_lorebooks, lorebook_id as character_lorebook_id,
             },
+            chat_character_lorebook_overrides::dsl::{
+                action, chat_character_lorebook_overrides, 
+                chat_session_id as override_chat_session_id,
+                lorebook_id as override_lorebook_id,
+                user_id as override_user_id,
+            },
             chat_session_lorebooks::dsl::{
                 chat_session_id, chat_session_lorebooks, lorebook_id as session_lorebook_id,
             },
@@ -242,11 +249,50 @@ impl ChatSessionLorebook {
             .select(character_lorebook_id)
             .load::<Uuid>(conn)?;
 
-        // Combine and deduplicate
+        // Get chat-level overrides for this session and user
+        let overrides = chat_character_lorebook_overrides
+            .filter(override_chat_session_id.eq(session_id_param))
+            .filter(override_user_id.eq(user_id_param))
+            .select((override_lorebook_id, action))
+            .load::<(Uuid, String)>(conn)?;
+
+        // Build a map of lorebook overrides: lorebook_id -> action
+        let override_map: HashMap<Uuid, String> = overrides.into_iter().collect();
+
+        // Start with session-linked lorebooks (these are always included)
         let mut combined_ids = session_lorebook_ids;
+
+        // Add character-linked lorebooks, respecting overrides
         for char_lorebook_id in character_lorebook_ids {
-            if !combined_ids.contains(&char_lorebook_id) {
-                combined_ids.push(char_lorebook_id);
+            // Check if there's an override for this lorebook
+            match override_map.get(&char_lorebook_id) {
+                Some(override_action) => {
+                    // There's an override - respect it
+                    match override_action.as_str() {
+                        "disable" => {
+                            // Character lorebook is disabled for this chat - don't include it
+                            continue;
+                        }
+                        "enable" => {
+                            // Character lorebook is explicitly enabled - include it
+                            if !combined_ids.contains(&char_lorebook_id) {
+                                combined_ids.push(char_lorebook_id);
+                            }
+                        }
+                        _ => {
+                            // Unknown action - default to including it (safest option)
+                            if !combined_ids.contains(&char_lorebook_id) {
+                                combined_ids.push(char_lorebook_id);
+                            }
+                        }
+                    }
+                }
+                None => {
+                    // No override - include character lorebook by default
+                    if !combined_ids.contains(&char_lorebook_id) {
+                        combined_ids.push(char_lorebook_id);
+                    }
+                }
             }
         }
 
@@ -268,6 +314,48 @@ pub struct NewChatSessionLorebook {
     pub chat_session_id: Uuid,
     pub lorebook_id: Uuid,
     pub user_id: Uuid,
+    // Timestamps are typically optional for New structs, allowing DB defaults
+    pub created_at: Option<DateTime<Utc>>,
+    pub updated_at: Option<DateTime<Utc>>,
+}
+
+// ----------------------------------------------
+// --- ChatCharacterLorebookOverride Model ---
+// ----------------------------------------------
+
+#[derive(
+    Queryable,
+    Selectable,
+    Identifiable,
+    Associations,
+    Serialize,
+    Deserialize,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+)]
+#[diesel(table_name = chat_character_lorebook_overrides)]
+#[diesel(belongs_to(Chat, foreign_key = chat_session_id))]
+#[diesel(belongs_to(Lorebook, foreign_key = lorebook_id))]
+#[diesel(belongs_to(User, foreign_key = user_id))]
+pub struct ChatCharacterLorebookOverride {
+    pub id: Uuid,
+    pub chat_session_id: Uuid,
+    pub lorebook_id: Uuid,
+    pub user_id: Uuid,
+    pub action: String, // 'disable' or 'enable'
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Insertable, Debug, Clone)]
+#[diesel(table_name = chat_character_lorebook_overrides)]
+pub struct NewChatCharacterLorebookOverride {
+    pub chat_session_id: Uuid,
+    pub lorebook_id: Uuid,
+    pub user_id: Uuid,
+    pub action: String,
     // Timestamps are typically optional for New structs, allowing DB defaults
     pub created_at: Option<DateTime<Utc>>,
     pub updated_at: Option<DateTime<Utc>>,

@@ -5,8 +5,8 @@ use crate::{
     auth::user_store::Backend as AuthBackend, // Import AuthBackend
     errors::AppError,
     models::lorebook_dtos::{
-        AssociateLorebookToChatPayload, CreateLorebookEntryPayload, CreateLorebookPayload,
-        ExportFormat, UpdateLorebookEntryPayload, UpdateLorebookPayload,
+        AssociateLorebookToChatPayload, CharacterLorebookOverrideResponse, ChatLorebookAssociationsResponse, CreateLorebookEntryPayload, CreateLorebookPayload,
+        ExportFormat, SetCharacterLorebookOverridePayload, UpdateLorebookEntryPayload, UpdateLorebookPayload,
     },
     services::LorebookService,
 };
@@ -72,6 +72,19 @@ pub fn lorebook_routes() -> Router<AppState> {
         .route(
             "/lorebooks/:lorebook_id/export",
             get(export_lorebook_handler),
+        )
+        // Character lorebook override routes
+        .route(
+            "/chats/:chat_session_id/lorebooks/:lorebook_id/override",
+            put(set_character_lorebook_override_handler),
+        )
+        .route(
+            "/chats/:chat_session_id/lorebooks/:lorebook_id/override",
+            delete(remove_character_lorebook_override_handler),
+        )
+        .route(
+            "/chats/:chat_session_id/lorebook-overrides",
+            get(get_character_lorebook_overrides_handler),
         )
 }
 
@@ -315,18 +328,27 @@ async fn associate_lorebook_to_chat_handler(
 #[instrument(skip(state, auth_session))]
 async fn list_chat_lorebook_associations_handler(
     State(state): State<AppState>,
-    auth_session: AuthSession<AuthBackend>, // Changed to AuthBackend
+    auth_session: AuthSession<AuthBackend>,
     Path(chat_session_id): Path<Uuid>,
+    Query(params): Query<LorebookAssociationsQuery>,
 ) -> Result<impl IntoResponse, AppError> {
     let lorebook_service = LorebookService::new(
         state.pool.clone(),
         state.encryption_service.clone(),
         state.qdrant_service.clone(),
     );
-    let associations = lorebook_service
-        .list_chat_lorebook_associations(&auth_session, chat_session_id)
-        .await?;
-    Ok((StatusCode::OK, Json(associations)))
+    
+    if params.include_source {
+        let enhanced_associations = lorebook_service
+            .list_enhanced_chat_lorebook_associations(&auth_session, chat_session_id)
+            .await?;
+        Ok((StatusCode::OK, Json(ChatLorebookAssociationsResponse::Enhanced(enhanced_associations))))
+    } else {
+        let associations = lorebook_service
+            .list_chat_lorebook_associations(&auth_session, chat_session_id)
+            .await?;
+        Ok((StatusCode::OK, Json(ChatLorebookAssociationsResponse::Basic(associations))))
+    }
 }
 
 #[debug_handler]
@@ -370,6 +392,12 @@ async fn list_associated_chat_sessions_for_lorebook_handler(
 struct ExportQuery {
     #[serde(default = "default_export_format")]
     format: ExportFormat,
+}
+
+#[derive(Debug, Deserialize)]
+struct LorebookAssociationsQuery {
+    #[serde(default)]
+    include_source: bool,
 }
 
 fn default_export_format() -> ExportFormat {
@@ -520,4 +548,82 @@ async fn import_lorebook_handler(
         }
     };
     response
+}
+
+// --- Character Lorebook Override Handlers ---
+
+#[debug_handler]
+#[instrument(skip(state, auth_session, payload))]
+async fn set_character_lorebook_override_handler(
+    State(state): State<AppState>,
+    auth_session: AuthSession<AuthBackend>,
+    Path((chat_session_id, lorebook_id)): Path<(Uuid, Uuid)>,
+    Json(payload): Json<SetCharacterLorebookOverridePayload>,
+) -> Result<impl IntoResponse, AppError> {
+    payload.validate()?;
+    let lorebook_service = LorebookService::new(
+        state.pool.clone(),
+        state.encryption_service.clone(),
+        state.qdrant_service.clone(),
+    );
+    
+    lorebook_service
+        .set_character_lorebook_override(&auth_session, chat_session_id, lorebook_id, payload.action)
+        .await?;
+    
+    Ok(StatusCode::NO_CONTENT)
+}
+
+#[debug_handler]
+#[instrument(skip(state, auth_session))]
+async fn remove_character_lorebook_override_handler(
+    State(state): State<AppState>,
+    auth_session: AuthSession<AuthBackend>,
+    Path((chat_session_id, lorebook_id)): Path<(Uuid, Uuid)>,
+) -> Result<impl IntoResponse, AppError> {
+    let lorebook_service = LorebookService::new(
+        state.pool.clone(),
+        state.encryption_service.clone(),
+        state.qdrant_service.clone(),
+    );
+    
+    lorebook_service
+        .remove_character_lorebook_override(&auth_session, chat_session_id, lorebook_id)
+        .await?;
+    
+    Ok(StatusCode::NO_CONTENT)
+}
+
+#[debug_handler]
+#[instrument(skip(state, auth_session))]
+async fn get_character_lorebook_overrides_handler(
+    State(state): State<AppState>,
+    auth_session: AuthSession<AuthBackend>,
+    Path(chat_session_id): Path<Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    let lorebook_service = LorebookService::new(
+        state.pool.clone(),
+        state.encryption_service.clone(),
+        state.qdrant_service.clone(),
+    );
+    
+    let overrides = lorebook_service
+        .get_character_lorebook_overrides(&auth_session, chat_session_id)
+        .await?;
+    
+    // Convert model to response DTO
+    let response: Vec<CharacterLorebookOverrideResponse> = overrides
+        .into_iter()
+        .map(|override_model| CharacterLorebookOverrideResponse {
+            id: override_model.id,
+            chat_session_id: override_model.chat_session_id,
+            lorebook_id: override_model.lorebook_id,
+            user_id: override_model.user_id,
+            action: override_model.action,
+            created_at: override_model.created_at,
+            updated_at: override_model.updated_at,
+        })
+        .collect();
+    
+    Ok((StatusCode::OK, Json(response)))
 }

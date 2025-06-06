@@ -8,22 +8,23 @@
     import { Skeleton } from '$lib/components/ui/skeleton';
     import { toast } from 'svelte-sonner';
     import { apiClient } from '$lib/api';
-    import type { Lorebook, ChatSessionLorebookAssociation } from '$lib/types';
+    import type { Lorebook, EnhancedChatSessionLorebookAssociation } from '$lib/types';
     import type { ApiError } from '$lib/errors/api';
+    import type { Result } from 'neverthrow';
 
-    let { 
-        open = false,
+    let {
+        open = $bindable(false),
         chatId,
         currentAssociations = []
-    }: { 
+    }: {
         open: boolean;
         chatId: string | null;
-        currentAssociations: ChatSessionLorebookAssociation[];
+        currentAssociations: EnhancedChatSessionLorebookAssociation[];
     } = $props();
 
     const dispatch = createEventDispatcher<{
         close: void;
-        updated: { associations: ChatSessionLorebookAssociation[] };
+        updated: { associations: EnhancedChatSessionLorebookAssociation[] };
     }>();
 
     let lorebooks: Lorebook[] = $state([]);
@@ -34,9 +35,25 @@
 
     // Initialize selected lorebooks when associations change
     $effect(() => {
-        const associatedIds = new Set(currentAssociations.map(a => a.lorebook_id));
-        selectedLorebookIds = new Set(associatedIds);
-        originalAssociationIds = new Set(associatedIds);
+        // Initialize selectedLorebookIds and originalAssociationIds based on the actual enabled state
+        // A lorebook is considered "selected" if it's manually added ('Chat' source)
+        // OR if it's character-derived ('Character' source) and NOT overridden to 'disable'.
+        const initiallySelectedIds = new Set(
+            currentAssociations
+                .filter(a => {
+                    if (a.source === 'Chat') {
+                        return true; // Manually added lorebooks are always considered selected if present
+                    }
+                    if (a.source === 'Character') {
+                        // Character lorebooks are selected if not explicitly disabled by an override
+                        return !(a.is_overridden && a.override_action === 'disable');
+                    }
+                    return false;
+                })
+                .map(a => a.lorebook_id)
+        );
+        selectedLorebookIds = new Set(initiallySelectedIds);
+        originalAssociationIds = new Set(initiallySelectedIds); // original state for comparison
     });
 
     // Load lorebooks when dialog opens
@@ -90,28 +107,69 @@
 
         loading = true;
         try {
-            // Determine what needs to be added and removed
-            const toAdd = [...selectedLorebookIds].filter(id => !originalAssociationIds.has(id));
-            const toRemove = [...originalAssociationIds].filter(id => !selectedLorebookIds.has(id));
+            const actions: Promise<Result<any, ApiError>>[] = [];
 
-            // Process additions
-            for (const lorebookId of toAdd) {
-                const result = await apiClient.associateLorebookToChat(chatId, lorebookId);
-                if (!result.isOk()) {
-                    throw new Error(`Failed to associate lorebook: ${result.error.message}`);
+            for (const lorebook of lorebooks) {
+                const isCurrentlySelectedInUI = originalAssociationIds.has(lorebook.id);
+                const isNewlySelectedInUI = selectedLorebookIds.has(lorebook.id);
+
+                // Get all existing associations for this lorebook from the backend
+                const existingAssociationsForLorebook = currentAssociations.filter(a => a.lorebook_id === lorebook.id);
+                const existingChatAssociation = existingAssociationsForLorebook.find(a => a.source === 'Chat');
+                const existingCharacterAssociation = existingAssociationsForLorebook.find(a => a.source === 'Character');
+
+                // Determine the current effective state of the character lorebook (active or disabled by override)
+                const isCharacterLorebookEffectivelyActive = existingCharacterAssociation && !(existingCharacterAssociation.is_overridden && existingCharacterAssociation.override_action === 'disable');
+                const isCharacterLorebookEffectivelyDisabled = existingCharacterAssociation && existingCharacterAssociation.is_overridden && existingCharacterAssociation.override_action === 'disable';
+
+                if (isNewlySelectedInUI && !isCurrentlySelectedInUI) {
+                    // User checked the box for this lorebook.
+                    // We need to ensure it's enabled, either by adding a manual association or restoring a character override.
+
+                    if (existingCharacterAssociation && isCharacterLorebookEffectivelyDisabled) {
+                        // If it's a character lorebook that was disabled, restore it.
+                        console.log(`Restoring character lorebook override for ${lorebook.name}`);
+                        actions.push(apiClient.setCharacterLorebookOverride(chatId, lorebook.id, 'enable'));
+                    }
+
+                    if (!existingChatAssociation) {
+                        // If there's no existing manual association, create one.
+                        // This covers cases where it's a brand new manual lorebook,
+                        // or a character lorebook that was disabled and now also manually added.
+                        console.log(`Associating new manual lorebook: ${lorebook.name}`);
+                        actions.push(apiClient.associateLorebookToChat(chatId, lorebook.id));
+                    }
+                } else if (!isNewlySelectedInUI && isCurrentlySelectedInUI) {
+                    // User unchecked the box for this lorebook.
+                    // We need to ensure it's disabled, either by removing a manual association or disabling a character lorebook.
+
+                    if (existingChatAssociation) {
+                        // If there's a manual association, disassociate it.
+                        console.log(`Disassociating manual lorebook: ${lorebook.name}`);
+                        actions.push(apiClient.disassociateLorebookFromChat(chatId, lorebook.id));
+                    }
+
+                    if (existingCharacterAssociation && isCharacterLorebookEffectivelyActive) {
+                        // If it's a character lorebook that was active, disable it.
+                        console.log(`Disabling character lorebook override for ${lorebook.name}`);
+                        actions.push(apiClient.setCharacterLorebookOverride(chatId, lorebook.id, 'disable'));
+                    }
                 }
             }
 
-            // Process removals
-            for (const lorebookId of toRemove) {
-                const result = await apiClient.disassociateLorebookFromChat(chatId, lorebookId);
-                if (!result.isOk()) {
-                    throw new Error(`Failed to disassociate lorebook: ${result.error.message}`);
-                }
+            // Execute all actions
+            const results = await Promise.all(actions);
+
+            // Check for any failures
+            const failedResults = results.filter(r => r.isErr());
+            if (failedResults.length > 0) {
+                // Aggregate error messages
+                const errorMessages = failedResults.map(r => r._unsafeUnwrapErr().message).join('; ');
+                throw new Error(`One or more updates failed: ${errorMessages}`);
             }
 
-            // Reload current associations
-            const associationsResult = await apiClient.getChatLorebookAssociations(chatId);
+            // Reload current associations (fetch enhanced version)
+            const associationsResult = await apiClient.getChatLorebookAssociations(chatId, true);
             if (associationsResult.isOk()) {
                 dispatch('updated', { associations: associationsResult.value });
                 toast.success('Lorebook associations updated successfully');

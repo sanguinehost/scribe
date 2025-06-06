@@ -1613,9 +1613,9 @@ AppError::InternalServerErrorGeneric(format!(
             AppError::DbPoolError(e.to_string())
         })?;
 
-        // 1. Verify chat session ownership
+        // 1. Verify chat session ownership and get character ID
         let current_user_id = user.id; // Clone user_id for use in closures
-        conn.interact(move |conn_sync| {
+        let chat_session = conn.interact(move |conn_sync| {
             use crate::schema::chat_sessions::dsl as cs_dsl;
             cs_dsl::chat_sessions
                 .filter(cs_dsl::id.eq(chat_session_id))
@@ -1683,26 +1683,100 @@ AppError::InternalServerErrorGeneric(format!(
                 ))
             })?;
 
-        // 3. Create association
-        // let new_association_id = Uuid::new_v4(); // Not needed for NewChatSessionLorebook
-        let association_creation_time = Utc::now(); // For the response
+        // 3. Check if lorebook is already linked via character
+        let character_id = chat_session.character_id;
+        let is_character_linked = conn
+            .interact(move |conn_sync| {
+                use crate::schema::character_lorebooks::dsl as cl_dsl;
+                cl_dsl::character_lorebooks
+                    .filter(cl_dsl::character_id.eq(character_id))
+                    .filter(cl_dsl::lorebook_id.eq(lorebook_id_to_associate))
+                    .filter(cl_dsl::user_id.eq(current_user_id))
+                    .count()
+                    .get_result::<i64>(conn_sync)
+                    .map(|count| count > 0)
+            })
+            .await
+            .map_err(|e| {
+                error!("DB interaction failed while checking character lorebook association: {}", e);
+                AppError::DbInteractError(format!("DB interaction failed: {e}"))
+            })?
+            .map_err(|db_err| {
+                error!("Failed to query character lorebook association: {}", db_err);
+                AppError::DatabaseQueryError(db_err.to_string())
+            })?;
 
-        let new_record = NewChatSessionLorebook {
+        // If the lorebook is linked via character and has a 'disable' override,
+        // remove the override because the user is explicitly adding it to the chat.
+        if is_character_linked {
+            info!(
+                "Lorebook [REDACTED_UUID] is being explicitly associated with chat [REDACTED_UUID]. It's also a character lorebook. Removing any 'disable' override."
+            );
+            
+            let lorebook_id_clone_for_override = lorebook_id_to_associate;
+            let chat_session_id_clone_for_override = chat_session_id;
+            let user_id_clone_for_override = current_user_id;
+
+            let override_removed_result = conn
+                .interact(move |conn_sync| {
+                    use crate::schema::chat_character_lorebook_overrides::dsl as cclo_dsl;
+                    let target = cclo_dsl::chat_character_lorebook_overrides
+                        .filter(cclo_dsl::chat_session_id.eq(chat_session_id_clone_for_override))
+                        .filter(cclo_dsl::lorebook_id.eq(lorebook_id_clone_for_override))
+                        .filter(cclo_dsl::user_id.eq(user_id_clone_for_override))
+                        .filter(cclo_dsl::action.eq("disable"));
+                    
+                    diesel::delete(target).execute(conn_sync)
+                })
+                .await;
+
+            match override_removed_result {
+                Ok(Ok(rows_deleted)) if rows_deleted > 0 => {
+                    info!("Removed 'disable' override for character-linked lorebook [REDACTED_UUID] in chat [REDACTED_UUID] as it's being explicitly added.");
+                }
+                Ok(Ok(_)) => { /* No override was present or deleted, which is fine */ }
+                Ok(Err(db_err)) => {
+                    error!("Failed to delete lorebook override: {}", db_err);
+                    // Decide if this should be a hard error or just a warning.
+                    // For now, let's make it a hard error to ensure data consistency.
+                    return Err(AppError::DatabaseQueryError(db_err.to_string()));
+                }
+                Err(e) => {
+                    error!("DB interaction failed while checking/removing lorebook override: {}", e);
+                    return Err(AppError::DbInteractError(format!("DB interaction failed: {e}")));
+                }
+            }
+        }
+
+        // 4. Create or update the direct chat-level association.
+        // This ensures its `source` will be 'Chat'.
+        let association_creation_time = Utc::now();
+        let current_user_id_clone_for_insert = current_user_id; // Clone for interact closure
+        let lorebook_id_to_associate_clone_for_insert = lorebook_id_to_associate; // Clone for interact closure
+        
+        let new_record_for_insert = NewChatSessionLorebook { // Renamed to avoid conflict if new_record was used above
             chat_session_id,
-            lorebook_id: lorebook_id_to_associate,
-            user_id: current_user_id,
-            created_at: Some(Utc::now()), // Or None if DB default is preferred
-            updated_at: Some(Utc::now()), // Or None if DB default is preferred
+            lorebook_id: lorebook_id_to_associate_clone_for_insert,
+            user_id: current_user_id_clone_for_insert,
+            created_at: Some(association_creation_time),
+            updated_at: Some(association_creation_time),
         };
 
         conn.interact(move |conn_sync| {
-            use crate::schema::chat_session_lorebooks::dsl as csl_dsl;
-            diesel::insert_into(csl_dsl::chat_session_lorebooks)
-                .values(&new_record)
-                .execute(conn_sync) // .execute() is fine as we have all info for the response
-        })
-        .await
-        .map_err(|e| {
+                use crate::schema::chat_session_lorebooks::dsl as csl_dsl;
+                
+                diesel::insert_into(csl_dsl::chat_session_lorebooks)
+                    .values(&new_record_for_insert) // Use the renamed variable
+                    .on_conflict((csl_dsl::chat_session_id, csl_dsl::lorebook_id))
+                    .do_update()
+                    // Set updated_at to ensure the trigger fires, or if no trigger, it's explicitly updated.
+                    // If your DB trigger handles updated_at on its own, you might not need to set it here.
+                    // However, explicitly setting it ensures the value is current if the trigger isn't comprehensive.
+                    .set(csl_dsl::updated_at.eq(diesel::dsl::now))
+                    .execute(conn_sync)
+            })
+            .await
+            .map_err(|e| {
             error!("DB interaction failed while creating association between chat [REDACTED_UUID] and lorebook [REDACTED_UUID]: {}", e);
             AppError::DbInteractError(format!("DB interaction failed: {e}"))
         })?
@@ -2013,6 +2087,217 @@ AppError::InternalServerErrorGeneric(format!(
         Ok(response_data)
     }
 
+    /// Enhanced version that includes source information and override status
+    #[instrument(skip(self, auth_session), fields(user_id = ?auth_session.user.as_ref().map(|u| u.id), chat_session_id = %chat_session_id_param))]
+    pub async fn list_enhanced_chat_lorebook_associations(
+        &self,
+        auth_session: &AuthSession<AuthBackend>,
+        chat_session_id_param: Uuid,
+    ) -> Result<Vec<crate::models::lorebook_dtos::EnhancedChatSessionLorebookAssociationResponse>, AppError> {
+        debug!(
+            chat_session_id = "[REDACTED_UUID]",
+            "Attempting to list enhanced chat lorebook associations"
+        );
+        let user = Self::get_user_from_session(auth_session)?;
+        let current_user_id = user.id;
+
+        let conn = self.pool.get().await.map_err(|e| {
+            error!("Failed to get DB connection: {}", e);
+            AppError::DbPoolError(e.to_string())
+        })?;
+
+        // 1. Get chat session and character ID
+        let (_session_found, character_id) = conn
+            .interact(move |conn_sync| {
+                use crate::schema::chat_sessions::dsl as cs_dsl;
+                cs_dsl::chat_sessions
+                    .filter(cs_dsl::id.eq(chat_session_id_param))
+                    .filter(cs_dsl::user_id.eq(current_user_id))
+                    .select((cs_dsl::id, cs_dsl::character_id))
+                    .first::<(Uuid, Uuid)>(conn_sync)
+                    .optional()
+            })
+            .await
+            .map_err(|e| {
+                error!(
+                    "DB interaction failed while verifying chat session: {}",
+                    e
+                );
+                AppError::DbInteractError(format!("DB interaction failed: {e}"))
+            })?
+            .map_err(|db_err| {
+                error!(
+                    "Failed to query chat session [REDACTED_UUID]: {}",
+                    db_err
+                );
+                AppError::DatabaseQueryError(db_err.to_string())
+            })?
+            .ok_or_else(|| {
+                error!(
+                    "Chat session [REDACTED_UUID] not found or user [REDACTED_UUID] does not have access."
+                );
+                AppError::NotFound(format!(
+                    "Chat session with ID {chat_session_id_param} not found or access denied."
+                ))
+            })?;
+
+        // 2. Get all lorebook associations with source information
+        let associations_data = conn
+            .interact(move |conn_sync| {
+                use crate::schema::{
+                    chat_session_lorebooks::dsl as csl_dsl,
+                    character_lorebooks::dsl as cl_dsl,
+                    chat_character_lorebook_overrides::dsl as cclo_dsl,
+                    lorebooks::dsl as l_dsl,
+                };
+
+                // Get chat-linked associations
+                let chat_associations = csl_dsl::chat_session_lorebooks
+                    .inner_join(l_dsl::lorebooks.on(csl_dsl::lorebook_id.eq(l_dsl::id)))
+                    .filter(csl_dsl::chat_session_id.eq(chat_session_id_param))
+                    .filter(csl_dsl::user_id.eq(current_user_id))
+                    .select((
+                        csl_dsl::lorebook_id,
+                        l_dsl::name,
+                        csl_dsl::created_at,
+                    ))
+                    .load::<(Uuid, String, chrono::DateTime<Utc>)>(conn_sync)?;
+
+                // Get character-linked associations
+                let character_associations = cl_dsl::character_lorebooks
+                    .inner_join(l_dsl::lorebooks.on(cl_dsl::lorebook_id.eq(l_dsl::id)))
+                    .filter(cl_dsl::character_id.eq(character_id))
+                    .filter(cl_dsl::user_id.eq(current_user_id))
+                    .select((
+                        cl_dsl::lorebook_id,
+                        l_dsl::name,
+                        cl_dsl::created_at,
+                    ))
+                    .load::<(Uuid, String, chrono::DateTime<Utc>)>(conn_sync)?;
+
+                // Get all overrides for this chat session
+                let overrides = cclo_dsl::chat_character_lorebook_overrides
+                    .filter(cclo_dsl::chat_session_id.eq(chat_session_id_param))
+                    .filter(cclo_dsl::user_id.eq(current_user_id))
+                    .select((cclo_dsl::lorebook_id, cclo_dsl::action))
+                    .load::<(Uuid, String)>(conn_sync)?;
+
+                Ok::<_, diesel::result::Error>((chat_associations, character_associations, overrides))
+            })
+            .await
+            .map_err(|e| {
+                error!(
+                    "DB interaction failed while listing enhanced associations: {}",
+                    e
+                );
+                AppError::DbInteractError(format!("DB interaction failed: {e}"))
+            })?
+            .map_err(|db_err| {
+                error!(
+                    "Failed to query enhanced associations: {}",
+                    db_err
+                );
+                AppError::DatabaseQueryError(db_err.to_string())
+            })?;
+
+        let (chat_associations, character_associations, overrides) = associations_data;
+
+        debug!(
+            chat_session_id = %chat_session_id_param,
+            chat_associations_count = chat_associations.len(),
+            character_associations_count = character_associations.len(),
+            overrides_count = overrides.len(),
+            "Fetched raw lorebook association data."
+        );
+
+        for (id, name, _) in &chat_associations {
+            debug!(
+                chat_session_id = %chat_session_id_param,
+                lorebook_id = %id,
+                lorebook_name = %name,
+                source = "Chat",
+                "Raw chat association."
+            );
+        }
+
+        for (id, name, _) in &character_associations {
+            debug!(
+                chat_session_id = %chat_session_id_param,
+                lorebook_id = %id,
+                lorebook_name = %name,
+                source = "Character",
+                "Raw character association."
+            );
+            // Also log if this character association has an override
+            if let Some(action) = overrides.iter().find(|(ov_id, _)| ov_id == id).map(|(_, act)| act) {
+                debug!(
+                    chat_session_id = %chat_session_id_param,
+                    lorebook_id = %id,
+                    lorebook_name = %name,
+                    override_action = %action,
+                    "Character association has override."
+                );
+            }
+        }
+
+        for (id, action) in &overrides {
+            debug!(
+                chat_session_id = %chat_session_id_param,
+                lorebook_id = %id,
+                override_action = %action,
+                "Raw override."
+            );
+        }
+
+        // 3. Build override map
+        let override_map: std::collections::HashMap<Uuid, String> = overrides.into_iter().collect();
+
+        // 4. Build a map to store unique lorebook associations, prioritizing chat-level
+        let mut unique_associations: std::collections::HashMap<Uuid, crate::models::lorebook_dtos::EnhancedChatSessionLorebookAssociationResponse> = std::collections::HashMap::new();
+
+        // First, add chat-linked associations (these take precedence)
+        for (lorebook_id, lorebook_name, created_at) in chat_associations {
+            unique_associations.insert(
+                lorebook_id,
+                crate::models::lorebook_dtos::EnhancedChatSessionLorebookAssociationResponse {
+                    chat_session_id: chat_session_id_param,
+                    lorebook_id,
+                    user_id: current_user_id,
+                    lorebook_name,
+                    source: crate::models::lorebook_dtos::LorebookAssociationSource::Chat,
+                    is_overridden: false, // Chat associations cannot be overridden by character overrides
+                    override_action: None,
+                    created_at,
+                },
+            );
+        }
+
+        // Then, add character-linked associations, but only if not already present (i.e., not overridden by a chat association)
+        for (lorebook_id, lorebook_name, created_at) in character_associations {
+            if !unique_associations.contains_key(&lorebook_id) {
+                let override_action = override_map.get(&lorebook_id);
+                let is_overridden = override_action.is_some();
+
+                unique_associations.insert(
+                    lorebook_id,
+                    crate::models::lorebook_dtos::EnhancedChatSessionLorebookAssociationResponse {
+                        chat_session_id: chat_session_id_param,
+                        lorebook_id,
+                        user_id: current_user_id,
+                        lorebook_name,
+                        source: crate::models::lorebook_dtos::LorebookAssociationSource::Character,
+                        is_overridden,
+                        override_action: override_action.cloned(),
+                        created_at,
+                    },
+                );
+            }
+        }
+
+        // Convert the map values to a vector
+        Ok(unique_associations.into_values().collect())
+    }
+
     #[instrument(skip(self, auth_session), fields(user_id = ?auth_session.user.as_ref().map(|u| u.id), chat_session_id = %chat_session_id_param, lorebook_id = %lorebook_id_param))]
     pub async fn disassociate_lorebook_from_chat(
         &self,
@@ -2029,68 +2314,149 @@ AppError::InternalServerErrorGeneric(format!(
             AppError::DbPoolError(e.to_string())
         })?;
 
-        // 1. Verify chat session ownership (optional here if we trust user_id on association, but good for safety)
-        conn.interact(move |conn_sync| {
-            use crate::schema::chat_sessions::dsl as cs_dsl;
-            cs_dsl::chat_sessions
-                .filter(cs_dsl::id.eq(chat_session_id_param))
-                .filter(cs_dsl::user_id.eq(current_user_id))
-                .select(cs_dsl::id)
-                .first::<Uuid>(conn_sync)
-                .optional()
-        })
-        .await
-        .map_err(|e| AppError::DbInteractError(format!("DB interaction failed: {e}")))?
-        .map_err(|db_err| AppError::DatabaseQueryError(db_err.to_string()))?
-        .ok_or_else(|| {
-            AppError::NotFound(format!(
-                "Chat session with ID {chat_session_id_param} not found or access denied."
-            ))
-        })?;
-
-        // 2. Delete the association, ensuring it belongs to the user
-        let rows_deleted = conn
+        // 1. Get chat session and character ID for validation and character lorebook check
+        let (_chat_session_id, character_id) = conn
             .interact(move |conn_sync| {
-                use crate::schema::chat_session_lorebooks::dsl as csl_dsl;
-                diesel::delete(
-                    csl_dsl::chat_session_lorebooks
-                        .filter(csl_dsl::chat_session_id.eq(chat_session_id_param))
-                        .filter(csl_dsl::lorebook_id.eq(lorebook_id_param))
-                        .filter(csl_dsl::user_id.eq(current_user_id)), // Crucial for security
-                )
-                .execute(conn_sync)
+                use crate::schema::chat_sessions::dsl as cs_dsl;
+                cs_dsl::chat_sessions
+                    .filter(cs_dsl::id.eq(chat_session_id_param))
+                    .filter(cs_dsl::user_id.eq(current_user_id))
+                    .select((cs_dsl::id, cs_dsl::character_id))
+                    .first::<(Uuid, Uuid)>(conn_sync)
+                    .optional()
             })
             .await
-            .map_err(|e| {
-                error!(
-                    "DB interaction failed while disassociating lorebook [REDACTED_UUID] from chat [REDACTED_UUID]: {}",
-                    e
-                );
-                AppError::DbInteractError(format!("DB interaction failed: {e}"))
-            })?
-            .map_err(|db_err| {
-                error!(
-                    "Failed to delete chat session lorebook association: {}",
-                    db_err
-                );
-                AppError::DatabaseQueryError(db_err.to_string())
+            .map_err(|e| AppError::DbInteractError(format!("DB interaction failed: {e}")))?
+            .map_err(|db_err| AppError::DatabaseQueryError(db_err.to_string()))?
+            .ok_or_else(|| {
+                AppError::NotFound(format!(
+                    "Chat session with ID {chat_session_id_param} not found or access denied."
+                ))
             })?;
 
-        if rows_deleted == 0 {
-            info!(
-                "No association found to delete for lorebook [REDACTED_UUID] and chat session [REDACTED_UUID] for user [REDACTED_UUID]"
-            );
-            // This could mean the association didn't exist, or didn't belong to this user for this session.
-            // Returning NotFound is appropriate as the specific resource (association) to delete was not found under these conditions.
-            return Err(AppError::NotFound(
-                "Lorebook association not found for this chat session and user.".to_string(),
-            ));
-        }
+        // 2. Check what type of association this is and handle appropriately
+        let association_info = conn
+            .interact(move |conn_sync| {
+                use crate::schema::{
+                    chat_session_lorebooks::dsl as csl_dsl,
+                    character_lorebooks::dsl as cl_dsl,
+                };
 
-        info!(
-            "Successfully disassociated lorebook [REDACTED_UUID] from chat session [REDACTED_UUID] for user [REDACTED_UUID]"
-        );
-        Ok(())
+                // Check if it's a chat-level association
+                let chat_association_exists = csl_dsl::chat_session_lorebooks
+                    .filter(csl_dsl::chat_session_id.eq(chat_session_id_param))
+                    .filter(csl_dsl::lorebook_id.eq(lorebook_id_param))
+                    .filter(csl_dsl::user_id.eq(current_user_id))
+                    .count()
+                    .get_result::<i64>(conn_sync)?
+                    > 0;
+
+                // Check if it's a character-level association
+                let character_association_exists = cl_dsl::character_lorebooks
+                    .filter(cl_dsl::character_id.eq(character_id))
+                    .filter(cl_dsl::lorebook_id.eq(lorebook_id_param))
+                    .filter(cl_dsl::user_id.eq(current_user_id))
+                    .count()
+                    .get_result::<i64>(conn_sync)?
+                    > 0;
+
+                Ok::<_, diesel::result::Error>((chat_association_exists, character_association_exists))
+            })
+            .await
+            .map_err(|e| AppError::DbInteractError(format!("DB interaction failed: {e}")))?
+            .map_err(|db_err| AppError::DatabaseQueryError(db_err.to_string()))?;
+
+        let (is_chat_association, is_character_association) = association_info;
+
+        if is_chat_association && is_character_association {
+            // REDUNDANT ASSOCIATION CASE - both chat and character level exist
+            // Remove the chat association and create a disable override for the character one
+            info!(
+                "Redundant associations detected for lorebook [REDACTED_UUID] in chat [REDACTED_UUID]. Removing chat association and disabling character association."
+            );
+            
+            let rows_deleted = conn
+                .interact(move |conn_sync| {
+                    use crate::schema::chat_session_lorebooks::dsl as csl_dsl;
+                    diesel::delete(
+                        csl_dsl::chat_session_lorebooks
+                            .filter(csl_dsl::chat_session_id.eq(chat_session_id_param))
+                            .filter(csl_dsl::lorebook_id.eq(lorebook_id_param))
+                            .filter(csl_dsl::user_id.eq(current_user_id)),
+                    )
+                    .execute(conn_sync)
+                })
+                .await
+                .map_err(|e| AppError::DbInteractError(format!("DB interaction failed: {e}")))?
+                .map_err(|db_err| AppError::DatabaseQueryError(db_err.to_string()))?;
+
+            if rows_deleted > 0 {
+                // Also create a disable override for the character association
+                self.set_character_lorebook_override(
+                    auth_session, 
+                    chat_session_id_param, 
+                    lorebook_id_param, 
+                    "disable".to_string()
+                ).await?;
+                
+                info!(
+                    "Successfully cleaned up redundant associations for lorebook [REDACTED_UUID] in chat [REDACTED_UUID]"
+                );
+                Ok(())
+            } else {
+                Err(AppError::NotFound(
+                    "Chat lorebook association not found for this chat session and user.".to_string(),
+                ))
+            }
+        } else if is_chat_association {
+            // Handle chat-level association only - delete it
+            let rows_deleted = conn
+                .interact(move |conn_sync| {
+                    use crate::schema::chat_session_lorebooks::dsl as csl_dsl;
+                    diesel::delete(
+                        csl_dsl::chat_session_lorebooks
+                            .filter(csl_dsl::chat_session_id.eq(chat_session_id_param))
+                            .filter(csl_dsl::lorebook_id.eq(lorebook_id_param))
+                            .filter(csl_dsl::user_id.eq(current_user_id)),
+                    )
+                    .execute(conn_sync)
+                })
+                .await
+                .map_err(|e| AppError::DbInteractError(format!("DB interaction failed: {e}")))?
+                .map_err(|db_err| AppError::DatabaseQueryError(db_err.to_string()))?;
+
+            if rows_deleted > 0 {
+                info!(
+                    "Successfully removed chat-level lorebook association [REDACTED_UUID] from chat [REDACTED_UUID]"
+                );
+                Ok(())
+            } else {
+                Err(AppError::NotFound(
+                    "Chat lorebook association not found for this chat session and user.".to_string(),
+                ))
+            }
+        } else if is_character_association {
+            // Handle character-level association - create a disable override
+            info!(
+                "Creating disable override for character lorebook [REDACTED_UUID] in chat [REDACTED_UUID]"
+            );
+            self.set_character_lorebook_override(
+                auth_session, 
+                chat_session_id_param, 
+                lorebook_id_param, 
+                "disable".to_string()
+            ).await?;
+            
+            info!(
+                "Successfully disabled character lorebook [REDACTED_UUID] for chat [REDACTED_UUID]"
+            );
+            Ok(())
+        } else {
+            // No association found
+            Err(AppError::NotFound(
+                "No lorebook association found for this chat session and user. The lorebook may not be associated with this chat or character.".to_string(),
+            ))
+        }
     }
 
     #[instrument(skip(self, auth_session, user_dek), fields(user_id = ?auth_session.user.as_ref().map(|u| u.id), lorebook_id = %lorebook_id_param))]
@@ -2878,6 +3244,138 @@ AppError::InternalServerErrorGeneric(format!(
                 updated_at: lb.updated_at,
             })
             .collect())
+    }
+
+    /// Creates or updates a character lorebook override for a specific chat session
+    #[instrument(skip(self, auth_session), fields(user_id = ?auth_session.user.as_ref().map(|u| u.id)))]
+    pub async fn set_character_lorebook_override(
+        &self,
+        auth_session: &AuthSession<AuthBackend>,
+        chat_session_id: Uuid,
+        lorebook_id: Uuid,
+        action: String, // "disable" or "enable"
+    ) -> Result<(), AppError> {
+        let user = Self::get_user_from_session(auth_session)?;
+        let user_id = user.id;
+
+        // Validate action
+        if !matches!(action.as_str(), "disable" | "enable") {
+            return Err(AppError::BadRequest(
+                "Action must be 'disable' or 'enable'".to_string(),
+            ));
+        }
+
+        let conn = self.pool.get().await.map_err(|e| {
+            error!("Failed to get DB connection: {}", e);
+            AppError::DbPoolError(e.to_string())
+        })?;
+
+        let action_clone = action.clone();
+        conn.interact(move |conn_sync| {
+            use crate::schema::chat_character_lorebook_overrides::dsl;
+            use diesel::upsert::excluded;
+
+            // Use upsert to insert or update the override
+            diesel::insert_into(dsl::chat_character_lorebook_overrides)
+                .values(&crate::models::lorebooks::NewChatCharacterLorebookOverride {
+                    chat_session_id,
+                    lorebook_id,
+                    user_id,
+                    action: action_clone,
+                    created_at: None, // Use DB default
+                    updated_at: None, // Use DB default
+                })
+                .on_conflict((dsl::chat_session_id, dsl::lorebook_id))
+                .do_update()
+                .set((
+                    dsl::action.eq(excluded(dsl::action)),
+                    dsl::updated_at.eq(excluded(dsl::updated_at)),
+                ))
+                .execute(conn_sync)
+        })
+        .await
+        .map_err(|e| AppError::DbInteractError(format!("DB interaction failed: {e}")))?
+        .map_err(|db_err| AppError::DatabaseQueryError(db_err.to_string()))?;
+
+        info!(
+            "Successfully set character lorebook override for chat [REDACTED_UUID], lorebook [REDACTED_UUID], action: {}",
+            action
+        );
+        Ok(())
+    }
+
+    /// Removes a character lorebook override for a specific chat session
+    #[instrument(skip(self, auth_session), fields(user_id = ?auth_session.user.as_ref().map(|u| u.id)))]
+    pub async fn remove_character_lorebook_override(
+        &self,
+        auth_session: &AuthSession<AuthBackend>,
+        chat_session_id: Uuid,
+        lorebook_id: Uuid,
+    ) -> Result<(), AppError> {
+        let user = Self::get_user_from_session(auth_session)?;
+        let user_id = user.id;
+
+        let conn = self.pool.get().await.map_err(|e| {
+            error!("Failed to get DB connection: {}", e);
+            AppError::DbPoolError(e.to_string())
+        })?;
+
+        let rows_deleted = conn
+            .interact(move |conn_sync| {
+                use crate::schema::chat_character_lorebook_overrides::dsl;
+                diesel::delete(
+                    dsl::chat_character_lorebook_overrides
+                        .filter(dsl::chat_session_id.eq(chat_session_id))
+                        .filter(dsl::lorebook_id.eq(lorebook_id))
+                        .filter(dsl::user_id.eq(user_id)),
+                )
+                .execute(conn_sync)
+            })
+            .await
+            .map_err(|e| AppError::DbInteractError(format!("DB interaction failed: {e}")))?
+            .map_err(|db_err| AppError::DatabaseQueryError(db_err.to_string()))?;
+
+        if rows_deleted == 0 {
+            return Err(AppError::NotFound(
+                "Character lorebook override not found".to_string(),
+            ));
+        }
+
+        info!(
+            "Successfully removed character lorebook override for chat [REDACTED_UUID], lorebook [REDACTED_UUID]"
+        );
+        Ok(())
+    }
+
+    /// Gets all character lorebook overrides for a specific chat session
+    #[instrument(skip(self, auth_session), fields(user_id = ?auth_session.user.as_ref().map(|u| u.id)))]
+    pub async fn get_character_lorebook_overrides(
+        &self,
+        auth_session: &AuthSession<AuthBackend>,
+        chat_session_id: Uuid,
+    ) -> Result<Vec<crate::models::lorebooks::ChatCharacterLorebookOverride>, AppError> {
+        let user = Self::get_user_from_session(auth_session)?;
+        let user_id = user.id;
+
+        let conn = self.pool.get().await.map_err(|e| {
+            error!("Failed to get DB connection: {}", e);
+            AppError::DbPoolError(e.to_string())
+        })?;
+
+        let overrides = conn
+            .interact(move |conn_sync| {
+                use crate::schema::chat_character_lorebook_overrides::dsl;
+                dsl::chat_character_lorebook_overrides
+                    .filter(dsl::chat_session_id.eq(chat_session_id))
+                    .filter(dsl::user_id.eq(user_id))
+                    .select(crate::models::lorebooks::ChatCharacterLorebookOverride::as_select())
+                    .load::<crate::models::lorebooks::ChatCharacterLorebookOverride>(conn_sync)
+            })
+            .await
+            .map_err(|e| AppError::DbInteractError(format!("DB interaction failed: {e}")))?
+            .map_err(|db_err| AppError::DatabaseQueryError(db_err.to_string()))?;
+
+        Ok(overrides)
     }
 
     // Helper to get user or return error

@@ -1,7 +1,7 @@
 import { Result, err, ok } from 'neverthrow';
 import type { ApiError } from '$lib/errors/api';
 import { ApiResponseError, ApiNetworkError } from '$lib/errors/api';
-import type { User, Message, Vote, Suggestion, Session, AuthUser, ScribeChatSession, LoginSuccessData, Lorebook, LorebookEntry, CreateLorebookPayload, UpdateLorebookPayload, CreateLorebookEntryPayload, UpdateLorebookEntryPayload, LorebookUploadPayload, ScribeMinimalLorebook, ChatSessionLorebookAssociation, Character, UserPersona, CreateUserPersonaRequest, UpdateUserPersonaRequest, CreateChatRequest, CreateMessageRequest, CreateDocumentRequest, CreateSuggestionRequest, DocumentResponse, SessionResponse, SuggestedActionsResponse, UpdateChatSessionSettingsRequest } from '$lib/types';
+import type { User, Message, Vote, Suggestion, Session, AuthUser, ScribeChatSession, LoginSuccessData, Lorebook, LorebookEntry, CreateLorebookPayload, UpdateLorebookPayload, CreateLorebookEntryPayload, UpdateLorebookEntryPayload, LorebookUploadPayload, ScribeMinimalLorebook, ChatSessionLorebookAssociation, EnhancedChatSessionLorebookAssociation, CharacterLorebookOverrideResponse, Character, UserPersona, CreateUserPersonaRequest, UpdateUserPersonaRequest, CreateChatRequest, CreateMessageRequest, CreateDocumentRequest, CreateSuggestionRequest, DocumentResponse, SessionResponse, SuggestedActionsResponse, UpdateChatSessionSettingsRequest } from '$lib/types';
 
 // Actual API client
 class ApiClient {
@@ -391,14 +391,33 @@ class ApiClient {
 		});
 	}
 
-	async getChatLorebookAssociations(chatId: string): Promise<Result<ChatSessionLorebookAssociation[], ApiError>> {
-		return this.fetch<ChatSessionLorebookAssociation[]>(`/api/chats/${chatId}/lorebooks`);
+	async getChatLorebookAssociations(chatId: string, includeSource = false): Promise<Result<EnhancedChatSessionLorebookAssociation[], ApiError>> {
+		const url = `/api/chats/${chatId}/lorebooks${includeSource ? '?include_source=true' : ''}`;
+		return this.fetch<EnhancedChatSessionLorebookAssociation[]>(url);
 	}
 
 	async disassociateLorebookFromChat(chatId: string, lorebookId: string): Promise<Result<void, ApiError>> {
 		return this.fetch<void>(`/api/chats/${chatId}/lorebooks/${lorebookId}`, {
 			method: 'DELETE'
 		});
+	}
+
+	// Character lorebook override management
+	async setCharacterLorebookOverride(chatId: string, lorebookId: string, action: 'disable' | 'enable'): Promise<Result<void, ApiError>> {
+		return this.fetch<void>(`/api/chats/${chatId}/lorebooks/${lorebookId}/override`, {
+			method: 'PUT',
+			body: JSON.stringify({ action })
+		});
+	}
+
+	async removeCharacterLorebookOverride(chatId: string, lorebookId: string): Promise<Result<void, ApiError>> {
+		return this.fetch<void>(`/api/chats/${chatId}/lorebooks/${lorebookId}/override`, {
+			method: 'DELETE'
+		});
+	}
+
+	async getCharacterLorebookOverrides(chatId: string): Promise<Result<CharacterLorebookOverrideResponse[], ApiError>> {
+		return this.fetch<CharacterLorebookOverrideResponse[]>(`/api/chats/${chatId}/lorebook-overrides`);
 	}
 
 	// Import/Export methods
