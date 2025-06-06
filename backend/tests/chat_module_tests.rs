@@ -699,6 +699,7 @@ mod get_session_data_for_generation_tests {
             rag_items,            // 17: rag_context_items
             _,                    // 18: history_management_strategy
             _,                    // 19: history_management_limit
+            _,                    // 20: user_persona_name
         ) = result.unwrap();
 
         assert_eq!(
@@ -873,6 +874,7 @@ mod get_session_data_for_generation_tests {
             rag_items,            // 17: rag_context_items
             _,                    // 18: history_management_strategy
             _,                    // 19: history_management_limit
+            _,                    // 20: user_persona_name
         ) = result.unwrap();
 
         assert_eq!(
@@ -1160,6 +1162,7 @@ mod get_session_data_for_generation_tests {
             rag_items,            // 17: rag_context_items
             _,                    // 18: history_management_strategy
             _,                    // 19: history_management_limit
+            _,                    // 20: user_persona_name
         ) = result.unwrap();
 
         // Token counts with Gemma for "Okay then." (3) and "See you." (2) = 5. Budget is 8.
@@ -1574,6 +1577,7 @@ mod get_session_data_for_generation_tests {
             rag_items,                        // 17: rag_context_items
             _,                                // 18: history_management_strategy
             _,                                // 19: history_management_limit
+            _,                                // 20: user_persona_name
         ) = result.unwrap();
 
         // Verify actual_recent_history_tokens is what we set up (around 140)
@@ -1987,6 +1991,7 @@ mod get_session_data_for_generation_tests {
             rag_items,            // 17: rag_context_items
             _,                    // 18: history_management_strategy
             _,                    // 19: history_management_limit
+            _,                    // 20: user_persona_name
         ) = result.unwrap();
 
         assert_eq!(

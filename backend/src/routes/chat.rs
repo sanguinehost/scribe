@@ -228,6 +228,7 @@ pub async fn generate_chat_response(
         // -- Original history management settings --
         _hist_management_strategy, // 18: String (was 21)
         _hist_management_limit,    // 19: i32 (was 22)
+        user_persona_name,         // 20: Option<String> (NEW)
     ) = chat::generation::get_session_data_for_generation(
         state_arc.clone(),
         user_id_value,
@@ -342,6 +343,7 @@ pub async fn generate_chat_response(
             current_user_message: current_user_genai_message,
             model_name: model_to_use.clone(),
             user_dek: Some(&*session_dek_arc), // Add DEK for character description decryption
+            user_persona_name, // Pass user persona name for template substitution
         })
         .await
         {
@@ -840,6 +842,7 @@ pub async fn generate_suggested_actions(
         _rag_context_items_from_service, // RAG not typically used for suggestions
         _hist_management_strategy,
         _hist_management_limit,
+        user_persona_name,        // NEW - for template substitution
     ) = chat::generation::get_session_data_for_generation(
         state_arc.clone(),
         user_id,
@@ -979,6 +982,7 @@ pub async fn generate_suggested_actions(
             current_user_message: suggestion_request_genai_message, // Our special message asking for suggestions
             model_name: model_for_suggestions.clone(),
             user_dek: Some(&*session_dek_arc), // Add DEK for character description decryption
+            user_persona_name, // Pass user persona name for template substitution
         })
         .await
         {

@@ -2,11 +2,13 @@
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { apiClient } from '$lib/api';
-	import type { Character } from '$lib/api';
-	import type { ScribeChatSession } from '$lib/types';
+	import type { Character, ScribeChatSession, UserPersona } from '$lib/types';
+	import { getCurrentUser } from '$lib/auth.svelte';
 	import { toast } from 'svelte-sonner';
 	import { scale } from 'svelte/transition';
 	import { Button } from '$lib/components/ui/button';
+	import { Input } from '$lib/components/ui/input';
+	import { Textarea } from '$lib/components/ui/textarea';
 	import {
 		Card,
 		CardHeader,
@@ -29,6 +31,8 @@
 	import PlusIcon from '../icons/plus.svelte';
 	import MessageIcon from '../icons/message.svelte';
 	import TrashIcon from '../icons/trash.svelte';
+	import PencilEdit from '../icons/pencil-edit.svelte';
+	import CheckCircleFill from '../icons/check-circle-fill.svelte';
 
 	let {
 		characterId,
@@ -45,9 +49,30 @@
 	let deleteDialogOpen = $state(false);
 	let chatToDelete = $state<ScribeChatSession | null>(null);
 	let isDeletingChat = $state(false);
+	
+	// Edit mode state
+	let isEditMode = $state(false);
+	let isSaving = $state(false);
+	let editedName = $state('');
+	let editedDescription = $state('');
+	let editedScenario = $state('');
+	let editedPersonality = $state('');
+	let editedGreeting = $state('');
+
+	// User persona for template substitution
+	let currentUserPersona = $state<UserPersona | null>(null);
+	let userPersonaName = $state('User'); // Fallback to 'User'
 
 	function getInitials(name: string): string {
 		return name ? name.charAt(0).toUpperCase() : '?';
+	}
+
+	// Template substitution for frontend preview
+	function substituteTemplateVariables(text: string, characterName: string): string {
+		if (!text) return text;
+		return text
+			.replace(/\{\{char\}\}/g, characterName)
+			.replace(/\{\{user\}\}/g, userPersonaName);
 	}
 
 	// Basic HTML sanitization to prevent XSS while preserving formatting
@@ -105,16 +130,46 @@
 		});
 	}
 
+	async function loadUserPersona() {
+		try {
+			const currentUser = getCurrentUser();
+			if (currentUser?.default_persona_id) {
+				const personaResult = await apiClient.getUserPersona(currentUser.default_persona_id);
+				if (personaResult.isOk()) {
+					currentUserPersona = personaResult.value;
+					userPersonaName = currentUserPersona.name || 'User';
+				} else {
+					console.warn('Failed to load user persona:', personaResult.error);
+					userPersonaName = currentUser.username || 'User';
+				}
+			} else if (currentUser?.username) {
+				userPersonaName = currentUser.username;
+			}
+		} catch (error) {
+			console.warn('Error loading user persona:', error);
+			userPersonaName = 'User';
+		}
+	}
+
 	async function loadCharacterData() {
 		if (!characterId) return;
 
 		isLoadingCharacter = true;
 		isLoadingChats = true;
 
+		// Load user persona first for template substitution
+		await loadUserPersona();
+
 		// Load character details
 		const characterResult = await apiClient.getCharacter(characterId);
 		if (characterResult.isOk()) {
 			character = characterResult.value;
+			// Initialize edit values
+			editedName = character.name || '';
+			editedDescription = character.description || '';
+			editedScenario = character.scenario || '';
+			editedPersonality = character.personality || '';
+			editedGreeting = character.greeting || '';
 		} else {
 			toast.error('Failed to load character', {
 				description: characterResult.error.message
@@ -132,6 +187,84 @@
 			});
 		}
 		isLoadingChats = false;
+	}
+
+	function handleEdit() {
+		if (!character) return;
+		
+		// Reset edit values to current character data
+		editedName = character.name || '';
+		editedDescription = character.description || '';
+		editedScenario = character.scenario || '';
+		editedPersonality = character.personality || '';
+		editedGreeting = character.greeting || '';
+		
+		isEditMode = true;
+	}
+
+	function handleCancelEdit() {
+		isEditMode = false;
+		// Reset values back to original
+		if (character) {
+			editedName = character.name || '';
+			editedDescription = character.description || '';
+			editedScenario = character.scenario || '';
+			editedPersonality = character.personality || '';
+			editedGreeting = character.greeting || '';
+		}
+	}
+
+	async function handleSave() {
+		if (!character) return;
+		
+		isSaving = true;
+		
+		try {
+			const updateData: any = {};
+			
+			// Only include changed fields
+			if (editedName !== (character.name || '') && editedName.trim()) {
+				updateData.name = editedName.trim();
+			}
+			if (editedDescription !== (character.description || '')) {
+				updateData.description = editedDescription.trim();
+			}
+			if (editedScenario !== (character.scenario || '')) {
+				updateData.scenario = editedScenario.trim();
+			}
+			if (editedPersonality !== (character.personality || '')) {
+				updateData.personality = editedPersonality.trim();
+			}
+			if (editedGreeting !== (character.greeting || '')) {
+				updateData.first_mes = editedGreeting.trim(); // Backend uses first_mes
+			}
+			
+			// Only make API call if there are changes
+			if (Object.keys(updateData).length > 0) {
+				const result = await apiClient.updateCharacter(character.id, updateData);
+				if (result.isOk()) {
+					// Update local character data
+					character.name = editedName.trim();
+					character.description = editedDescription.trim() || null;
+					character.scenario = editedScenario.trim() || null;
+					character.personality = editedPersonality.trim() || null;
+					character.greeting = editedGreeting.trim() || null;
+					
+					toast.success('Character updated successfully');
+					isEditMode = false;
+				} else {
+					toast.error('Failed to update character: ' + result.error.message);
+				}
+			} else {
+				// No changes, just exit edit mode
+				isEditMode = false;
+			}
+		} catch (error) {
+			toast.error('Error updating character');
+			console.error('Error updating character:', error);
+		} finally {
+			isSaving = false;
+		}
 	}
 
 	async function handleStartNewChat() {
@@ -242,7 +375,7 @@
 								<h2 class="text-3xl font-bold">{character.name}</h2>
 								{#if character.description}
 									<p class="mt-2 text-muted-foreground">
-										{character.description}
+										{substituteTemplateVariables(character.description, character.name)}
 									</p>
 								{/if}
 							</div>
@@ -262,7 +395,7 @@
 								<div
 									class="prose prose-sm prose-p:my-2 prose-p:leading-relaxed prose-strong:font-semibold prose-headings:font-bold dark:prose-invert max-w-none text-sm [&_*[style*='color']]:!text-foreground [&_p]:!text-foreground [&_span]:!text-foreground [&_strong]:!text-foreground"
 								>
-									{@html sanitizeHtml(character.scenario)}
+									{@html sanitizeHtml(substituteTemplateVariables(character.scenario, character.name))}
 								</div>
 							</div>
 						{/if}
@@ -272,7 +405,7 @@
 								<div
 									class="prose prose-sm prose-p:my-2 prose-p:leading-relaxed prose-strong:font-semibold prose-headings:font-bold dark:prose-invert max-w-none text-sm [&_*[style*='color']]:!text-foreground [&_p]:!text-foreground [&_span]:!text-foreground [&_strong]:!text-foreground"
 								>
-									{@html sanitizeHtml(character.personality)}
+									{@html sanitizeHtml(substituteTemplateVariables(character.personality, character.name))}
 								</div>
 							</div>
 						{/if}
@@ -282,7 +415,7 @@
 								<div
 									class="prose prose-sm dark:prose-invert max-w-none text-sm italic [&_*[style*='color']]:!text-foreground [&_p]:!text-foreground [&_span]:!text-foreground [&_strong]:!text-foreground"
 								>
-									{@html sanitizeHtml(character.greeting)}
+									{@html sanitizeHtml(substituteTemplateVariables(character.greeting, character.name))}
 								</div>
 							</div>
 						{/if}

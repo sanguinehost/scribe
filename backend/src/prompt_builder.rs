@@ -23,6 +23,26 @@ fn escape_xml(text: &str) -> String {
         .replace('\'', "&apos;")
 }
 
+/// Replaces template variables {{char}} and {{user}} with actual names
+fn replace_template_variables(
+    text: &str, 
+    character_name: Option<&str>, 
+    user_persona_name: Option<&str>
+) -> String {
+    let mut result = text.to_string();
+    
+    // Replace {{char}} with character name
+    if let Some(char_name) = character_name {
+        result = result.replace("{{char}}", char_name);
+    }
+    
+    // Replace {{user}} with user persona name or default
+    let user_name = user_persona_name.unwrap_or("User");
+    result = result.replace("{{user}}", user_name);
+    
+    result
+}
+
 /// Assembles the character-specific part of the system prompt.
 /// RAG context is handled by the calling service and prepended to the user message.
 ///
@@ -68,15 +88,23 @@ pub fn build_prompt_with_rag(
 fn build_character_info_string(
     character_metadata: Option<&CharacterMetadata>,
     dek: Option<&secrecy::SecretBox<Vec<u8>>>,
+    user_persona_name: Option<&str>,
 ) -> String {
     if let Some(char_data) = character_metadata {
         // Try to decrypt the description first
         match char_data.decrypt_description(dek) {
             Ok(Some(description_text)) => {
                 if !description_text.is_empty() {
+                    // Apply template substitution
+                    let substituted_description = replace_template_variables(
+                        &description_text,
+                        Some(&char_data.name),
+                        user_persona_name,
+                    );
+                    
                     let mut char_prompt_part = String::new();
                     writeln!(char_prompt_part, "Character Name: {}", char_data.name).unwrap();
-                    writeln!(char_prompt_part, "Description: {}", description_text).unwrap();
+                    writeln!(char_prompt_part, "Description: {}", substituted_description).unwrap();
                     return char_prompt_part;
                 }
             }
@@ -143,6 +171,7 @@ pub struct PromptBuildParams<'a> {
     pub current_user_message: GenAiChatMessage,
     pub model_name: String,
     pub user_dek: Option<&'a secrecy::SecretBox<Vec<u8>>>, // For decrypting character data
+    pub user_persona_name: Option<String>, // For {{user}} template substitution
 }
 
 /// Builds the meta system prompt template with character name substitution
@@ -225,14 +254,21 @@ async fn calculate_component_tokens(
     token_counter: &HybridTokenCounter,
     model_name: &str,
     user_dek: Option<&secrecy::SecretBox<Vec<u8>>>,
+    user_persona_name: Option<&str>,
 ) -> Result<((String, usize), (String, usize), (String, usize), usize), AppError> {
-    let persona_override_prompt_str = system_prompt_base.unwrap_or_default();
+    // Apply template substitution to persona override prompt
+    let character_name = character_metadata.map(|cm| cm.name.as_str());
+    let persona_override_prompt_str = if let Some(base) = system_prompt_base {
+        replace_template_variables(base, character_name, user_persona_name)
+    } else {
+        String::new()
+    };
     let persona_override_prompt_tokens = if persona_override_prompt_str.is_empty() {
         0
     } else {
         token_counter
             .count_tokens(
-                persona_override_prompt_str,
+                &persona_override_prompt_str,
                 CountingMode::LocalOnly,
                 Some(model_name),
             )
@@ -240,13 +276,18 @@ async fn calculate_component_tokens(
             .total
     };
 
-    let character_definition_str = raw_character_system_prompt.unwrap_or_default();
+    // Apply template substitution to character system prompt
+    let character_definition_str = if let Some(raw) = raw_character_system_prompt {
+        replace_template_variables(raw, character_name, user_persona_name)
+    } else {
+        String::new()
+    };
     let character_definition_tokens = if character_definition_str.is_empty() {
         0
     } else {
         token_counter
             .count_tokens(
-                character_definition_str,
+                &character_definition_str,
                 CountingMode::LocalOnly,
                 Some(model_name),
             )
@@ -254,7 +295,7 @@ async fn calculate_component_tokens(
             .total
     };
 
-    let character_details_str = build_character_info_string(character_metadata, user_dek);
+    let character_details_str = build_character_info_string(character_metadata, user_dek, user_persona_name);
     let character_details_tokens = if character_details_str.is_empty() {
         0
     } else {
@@ -338,6 +379,7 @@ async fn perform_initial_token_calculation(
         character_metadata,
         current_user_message,
         model_name,
+        user_persona_name,
         ..
     } = params;
 
@@ -368,6 +410,7 @@ async fn perform_initial_token_calculation(
         token_counter,
         model_name,
         params.user_dek,
+        user_persona_name.as_deref(),
     )
     .await?;
 
@@ -773,5 +816,52 @@ mod tests {
 
     fn build_prompt_with_rag(character_metadata: Option<&CharacterMetadata>) -> String {
         super::build_prompt_with_rag(character_metadata).unwrap()
+    }
+
+    #[test]
+    fn test_replace_template_variables() {
+        // Test with both character and user names
+        let result = super::replace_template_variables(
+            "{{char}} is talking to {{user}} about something",
+            Some("Alice"),
+            Some("Bob"),
+        );
+        assert_eq!(result, "Alice is talking to Bob about something");
+
+        // Test with no character name
+        let result = super::replace_template_variables(
+            "{{char}} is talking to {{user}}",
+            None,
+            Some("Bob"),
+        );
+        assert_eq!(result, "{{char}} is talking to Bob");
+
+        // Test with no user name (should default to "User")
+        let result = super::replace_template_variables(
+            "{{char}} is talking to {{user}}",
+            Some("Alice"),
+            None,
+        );
+        assert_eq!(result, "Alice is talking to User");
+
+        // Test with no template variables
+        let result = super::replace_template_variables(
+            "This is a normal text",
+            Some("Alice"),
+            Some("Bob"),
+        );
+        assert_eq!(result, "This is a normal text");
+
+        // Test with multiple occurrences
+        let result = super::replace_template_variables(
+            "{{char}} says hello to {{user}}. {{char}} is friendly and {{user}} responds.",
+            Some("Alice"),
+            Some("Bob"),
+        );
+        assert_eq!(result, "Alice says hello to Bob. Alice is friendly and Bob responds.");
+
+        // Test empty string
+        let result = super::replace_template_variables("", Some("Alice"), Some("Bob"));
+        assert_eq!(result, "");
     }
 }
