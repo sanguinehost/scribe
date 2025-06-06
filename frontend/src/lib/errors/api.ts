@@ -25,4 +25,4 @@ export class ApiNetworkError extends Error {
 		this.name = 'ApiNetworkError';
 		this.cause = cause;
 	}
-} 
+}

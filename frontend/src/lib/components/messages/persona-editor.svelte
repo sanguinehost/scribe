@@ -40,7 +40,7 @@
 
 	async function handleSubmit(e: Event) {
 		e.preventDefault();
-		
+
 		if (!formData.name.trim()) {
 			toast.error('Persona name is required');
 			return;
@@ -72,17 +72,17 @@
 
 			const createdPersona = await response.json();
 			toast.success('Persona created successfully!');
-			
+
 			// Trigger refresh of persona list
 			selectedPersonaStore.triggerRefresh();
-			
+
 			// Dispatch event to notify parent components
 			dispatch('personaCreated', { persona: createdPersona });
-			
+
 			// Clear the creating state and optionally select the new persona
 			selectedPersonaStore.clear();
 			onSuccess?.();
-			
+
 			// Navigate back to home to show the default view
 			goto('/', { invalidateAll: true });
 		} catch (error: any) {
@@ -103,11 +103,21 @@
 	<Card class="mx-4">
 		<CardHeader>
 			<CardTitle class="flex items-center gap-2">
-				<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-					<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/>
-					<circle cx="9" cy="7" r="4"/>
-					<line x1="19" y1="8" x2="19" y2="14"/>
-					<line x1="22" y1="11" x2="16" y2="11"/>
+				<svg
+					xmlns="http://www.w3.org/2000/svg"
+					width="24"
+					height="24"
+					viewBox="0 0 24 24"
+					fill="none"
+					stroke="currentColor"
+					stroke-width="2"
+					stroke-linecap="round"
+					stroke-linejoin="round"
+				>
+					<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+					<circle cx="9" cy="7" r="4" />
+					<line x1="19" y1="8" x2="19" y2="14" />
+					<line x1="22" y1="11" x2="16" y2="11" />
 				</svg>
 				Create New Persona
 			</CardTitle>
@@ -117,7 +127,7 @@
 				<!-- Basic Information -->
 				<div class="space-y-4">
 					<h3 class="text-lg font-medium">Basic Information</h3>
-					
+
 					<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
 						<div class="space-y-2">
 							<Label for="name">Name *</Label>
@@ -145,7 +155,7 @@
 				<!-- Personality & Behavior -->
 				<div class="space-y-4">
 					<h3 class="text-lg font-medium">Personality & Behavior</h3>
-					
+
 					<div class="space-y-2">
 						<Label for="personality">Personality</Label>
 						<Textarea
@@ -170,7 +180,7 @@
 				<!-- Messages & Prompts -->
 				<div class="space-y-4">
 					<h3 class="text-lg font-medium">Messages & Prompts</h3>
-					
+
 					<div class="space-y-2">
 						<Label for="first_mes">First Message</Label>
 						<Textarea
@@ -214,12 +224,7 @@
 
 				<!-- Action Buttons -->
 				<div class="flex flex-col gap-3 pt-4 sm:flex-row sm:justify-end">
-					<Button
-						type="button"
-						variant="outline"
-						onclick={handleCancel}
-						disabled={isCreating}
-					>
+					<Button type="button" variant="outline" onclick={handleCancel} disabled={isCreating}>
 						Cancel
 					</Button>
 					<Button
@@ -227,9 +232,25 @@
 						disabled={isCreating || !formData.name.trim() || !formData.description.trim()}
 					>
 						{#if isCreating}
-							<svg class="animate-spin -ml-1 mr-2 h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-								<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-								<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+							<svg
+								class="-ml-1 mr-2 h-4 w-4 animate-spin"
+								xmlns="http://www.w3.org/2000/svg"
+								fill="none"
+								viewBox="0 0 24 24"
+							>
+								<circle
+									class="opacity-25"
+									cx="12"
+									cy="12"
+									r="10"
+									stroke="currentColor"
+									stroke-width="4"
+								></circle>
+								<path
+									class="opacity-75"
+									fill="currentColor"
+									d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+								></path>
 							</svg>
 							Creating...
 						{:else}

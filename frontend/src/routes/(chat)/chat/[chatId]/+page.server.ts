@@ -1,5 +1,11 @@
 import { error } from '@sveltejs/kit';
-import type { ScribeChatMessage, ScribeChatSession, ScribeCharacter, MessageRole, BackendAuthResponse } from '$lib/types.ts'; // Assuming ScribeCharacter type exists or will be added
+import type {
+	ScribeChatMessage,
+	ScribeChatSession,
+	ScribeCharacter,
+	MessageRole,
+	BackendAuthResponse
+} from '$lib/types.ts'; // Assuming ScribeCharacter type exists or will be added
 
 // Define an interim type for the raw message structure from the API if it uses parts
 interface RawApiMessage {
@@ -55,18 +61,23 @@ export async function load({ params: { chatId }, fetch, cookies }) {
 			error(500, 'Failed to load chat messages');
 		}
 		const messagesResponseJson: RawApiMessage[] = await messagesRes.json(); // Use defined interim type
-		const messages: ScribeChatMessage[] = messagesResponseJson.map((rawMsg): ScribeChatMessage => ({
-			id: rawMsg.id,
-			session_id: rawMsg.session_id,
-			message_type: rawMsg.message_type,
-			content: (rawMsg.parts && rawMsg.parts.length > 0 && typeof rawMsg.parts[0].text === 'string')
-					 ? rawMsg.parts[0].text
-					 : (typeof rawMsg.content === 'string' ? rawMsg.content : ''),
-			created_at: rawMsg.created_at,
-			user_id: rawMsg.user_id,
-			loading: rawMsg.loading || false,
-			raw_prompt: rawMsg.raw_prompt
-		}));
+		const messages: ScribeChatMessage[] = messagesResponseJson.map(
+			(rawMsg): ScribeChatMessage => ({
+				id: rawMsg.id,
+				session_id: rawMsg.session_id,
+				message_type: rawMsg.message_type,
+				content:
+					rawMsg.parts && rawMsg.parts.length > 0 && typeof rawMsg.parts[0].text === 'string'
+						? rawMsg.parts[0].text
+						: typeof rawMsg.content === 'string'
+							? rawMsg.content
+							: '',
+				created_at: rawMsg.created_at,
+				user_id: rawMsg.user_id,
+				loading: rawMsg.loading || false,
+				raw_prompt: rawMsg.raw_prompt
+			})
+		);
 
 		// Fetch character details using the character_id from the chat session
 		let character: ScribeCharacter | null = null;
@@ -88,7 +99,6 @@ export async function load({ params: { chatId }, fetch, cookies }) {
 			console.warn(`Chat session ${chatId} does not have an associated character_id.`);
 			// Handle cases where character_id might be missing if necessary
 		}
-
 
 		return { chat, messages, character, user }; // Return character along with chat and messages
 	} catch (e) {

@@ -1,5 +1,5 @@
 <script module lang="ts">
-// Snippet is imported in the main script block below
+	// Snippet is imported in the main script block below
 
 	export type FormSuccessData = {
 		success: true;

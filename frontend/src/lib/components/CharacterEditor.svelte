@@ -1,5 +1,12 @@
 <script lang="ts">
-	import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '$lib/components/ui/dialog';
+	import {
+		Dialog,
+		DialogContent,
+		DialogDescription,
+		DialogHeader,
+		DialogTitle,
+		DialogFooter
+	} from '$lib/components/ui/dialog';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
@@ -7,14 +14,14 @@
 	import { apiClient } from '$lib/api';
 	import { toast } from 'svelte-sonner';
 	import type { Character } from '$lib/types';
-	
+
 	export let characterId: string | null = null;
 	export let open = false;
-	
+
 	let loading = false;
 	let saving = false;
 	let character: Character | null = null;
-	
+
 	// Form data with proper types
 	let formData = {
 		name: '',
@@ -32,15 +39,15 @@
 		user_persona: '',
 		alternate_greetings: [] as string[]
 	};
-	
+
 	// Load character data when dialog opens or characterId changes
 	$: if (open && characterId) {
 		loadCharacter();
 	}
-	
+
 	async function loadCharacter() {
 		if (!characterId) return;
-		
+
 		loading = true;
 		try {
 			const result = await apiClient.getCharacter(characterId);
@@ -74,10 +81,10 @@
 			loading = false;
 		}
 	}
-	
+
 	async function handleSave() {
 		if (!characterId) return;
-		
+
 		saving = true;
 		try {
 			// Filter out empty strings and create update payload
@@ -85,7 +92,7 @@
 			Object.entries(formData).forEach(([key, value]) => {
 				if (key === 'alternate_greetings') {
 					// Handle array of alternate greetings
-					const greetings = (value as string[]).filter(g => g.trim() !== '');
+					const greetings = (value as string[]).filter((g) => g.trim() !== '');
 					if (greetings.length > 0) {
 						updateData[key] = greetings;
 					}
@@ -93,7 +100,7 @@
 					updateData[key] = value.trim();
 				}
 			});
-			
+
 			const result = await apiClient.updateCharacter(characterId, updateData);
 			if (result.isOk()) {
 				toast.success('Character updated successfully');
@@ -107,7 +114,7 @@
 			saving = false;
 		}
 	}
-	
+
 	function handleCancel() {
 		open = false;
 		// Reset form
@@ -132,33 +139,29 @@
 </script>
 
 <Dialog bind:open>
-	<DialogContent class="sm:max-w-[725px] max-h-[90vh] overflow-y-auto">
+	<DialogContent class="max-h-[90vh] overflow-y-auto sm:max-w-[725px]">
 		<DialogHeader>
 			<DialogTitle>Edit Character</DialogTitle>
 			<DialogDescription>
 				Edit the character's details. Leave fields empty to keep existing values.
 			</DialogDescription>
 		</DialogHeader>
-		
+
 		{#if loading}
 			<div class="flex items-center justify-center py-8">
-				<div class="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+				<div class="h-8 w-8 animate-spin rounded-full border-b-2 border-primary"></div>
 			</div>
 		{:else if character}
 			<div class="grid gap-4 py-4">
 				<!-- Basic Information -->
 				<div class="space-y-4">
 					<h3 class="text-lg font-semibold">Basic Information</h3>
-					
+
 					<div class="grid gap-2">
 						<Label for="name">Name</Label>
-						<Input
-							id="name"
-							bind:value={formData.name}
-							placeholder={character.name}
-						/>
+						<Input id="name" bind:value={formData.name} placeholder={character.name} />
 					</div>
-					
+
 					<div class="grid gap-2">
 						<Label for="description">Description</Label>
 						<Textarea
@@ -168,7 +171,7 @@
 							rows={3}
 						/>
 					</div>
-					
+
 					<div class="grid gap-2">
 						<Label for="first_mes">First Message</Label>
 						<Textarea
@@ -209,26 +212,35 @@
 											variant="outline"
 											size="icon"
 											onclick={() => {
-												formData.alternate_greetings = formData.alternate_greetings.filter((_, i) => i !== index);
+												formData.alternate_greetings = formData.alternate_greetings.filter(
+													(_, i) => i !== index
+												);
 											}}
 										>
 											<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-												<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+												<path
+													stroke-linecap="round"
+													stroke-linejoin="round"
+													stroke-width="2"
+													d="M6 18L18 6M6 6l12 12"
+												/>
 											</svg>
 										</Button>
 									</div>
 								{/each}
 							</div>
 						{:else}
-							<p class="text-sm text-muted-foreground">No alternate greetings. Add some to give users variety!</p>
+							<p class="text-sm text-muted-foreground">
+								No alternate greetings. Add some to give users variety!
+							</p>
 						{/if}
 					</div>
 				</div>
-				
+
 				<!-- Personality & Behavior -->
 				<div class="space-y-4">
 					<h3 class="text-lg font-semibold">Personality & Behavior</h3>
-					
+
 					<div class="grid gap-2">
 						<Label for="personality">Personality</Label>
 						<Textarea
@@ -238,7 +250,7 @@
 							rows={3}
 						/>
 					</div>
-					
+
 					<div class="grid gap-2">
 						<Label for="scenario">Scenario</Label>
 						<Textarea
@@ -249,12 +261,12 @@
 						/>
 					</div>
 				</div>
-				
+
 				<!-- Advanced Settings -->
 				<details class="space-y-4">
 					<summary class="cursor-pointer text-lg font-semibold">Advanced Settings</summary>
-					
-					<div class="grid gap-2 mt-4">
+
+					<div class="mt-4 grid gap-2">
 						<Label for="system_prompt">System Prompt</Label>
 						<Textarea
 							id="system_prompt"
@@ -263,8 +275,7 @@
 							rows={3}
 						/>
 					</div>
-					
-					
+
 					<div class="grid gap-2">
 						<Label for="mes_example">Message Example</Label>
 						<Textarea
@@ -274,7 +285,7 @@
 							rows={3}
 						/>
 					</div>
-					
+
 					<div class="grid gap-2">
 						<Label for="definition">Definition</Label>
 						<Textarea
@@ -284,7 +295,7 @@
 							rows={3}
 						/>
 					</div>
-					
+
 					<div class="grid gap-2">
 						<Label for="example_dialogue">Example Dialogue</Label>
 						<Textarea
@@ -294,7 +305,7 @@
 							rows={4}
 						/>
 					</div>
-					
+
 					<div class="grid gap-2">
 						<Label for="model_prompt">Model Prompt</Label>
 						<Textarea
@@ -304,17 +315,18 @@
 							rows={3}
 						/>
 					</div>
-					
+
 					<div class="grid gap-2">
 						<Label for="post_history_instructions">Post History Instructions</Label>
 						<Textarea
 							id="post_history_instructions"
 							bind:value={formData.post_history_instructions}
-							placeholder={character.post_history_instructions ?? 'Instructions after chat history...'}
+							placeholder={character.post_history_instructions ??
+								'Instructions after chat history...'}
 							rows={3}
 						/>
 					</div>
-					
+
 					<div class="grid gap-2">
 						<Label for="user_persona">User Persona</Label>
 						<Textarea
@@ -324,7 +336,7 @@
 							rows={3}
 						/>
 					</div>
-					
+
 					<div class="grid gap-2">
 						<Label for="creator_notes">Creator Notes</Label>
 						<Textarea
@@ -337,11 +349,9 @@
 				</details>
 			</div>
 		{/if}
-		
+
 		<DialogFooter>
-			<Button variant="outline" onclick={handleCancel} disabled={saving}>
-				Cancel
-			</Button>
+			<Button variant="outline" onclick={handleCancel} disabled={saving}>Cancel</Button>
 			<Button onclick={handleSave} disabled={saving || loading}>
 				{#if saving}
 					Saving...

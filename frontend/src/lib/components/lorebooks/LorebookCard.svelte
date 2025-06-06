@@ -1,7 +1,13 @@
 <script lang="ts">
 	import type { Lorebook } from '$lib/types';
 	import { Button } from '$lib/components/ui/button';
-	import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '$lib/components/ui/card';
+	import {
+		Card,
+		CardContent,
+		CardDescription,
+		CardHeader,
+		CardTitle
+	} from '$lib/components/ui/card';
 	import { Trash, Download, Edit, BookOpen } from 'lucide-svelte';
 
 	interface Props {
@@ -38,7 +44,7 @@
 	}
 </script>
 
-<Card class="cursor-pointer hover:shadow-md transition-shadow" onclick={handleSelect}>
+<Card class="cursor-pointer transition-shadow hover:shadow-md" onclick={handleSelect}>
 	<CardHeader>
 		<div class="flex items-start justify-between">
 			<div class="flex-1">
@@ -52,7 +58,7 @@
 					</CardDescription>
 				{/if}
 			</div>
-			<div class="flex gap-1 ml-2">
+			<div class="ml-2 flex gap-1">
 				{#if onEdit}
 					<Button
 						variant="ghost"
@@ -90,7 +96,7 @@
 		</div>
 	</CardHeader>
 	<CardContent>
-		<div class="text-sm text-muted-foreground space-y-1">
+		<div class="space-y-1 text-sm text-muted-foreground">
 			<div class="flex justify-between">
 				<span>Source:</span>
 				<span>{lorebook.source_format}</span>

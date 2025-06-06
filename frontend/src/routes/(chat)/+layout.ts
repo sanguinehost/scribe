@@ -10,18 +10,25 @@ export async function load({ data, fetch }) {
 			const response = await fetch('/api/chats');
 
 			if (response.ok) {
-				console.log(`[${new Date().toISOString()}] (chat)/+layout.ts: /api/chats response OK (${response.status})`);
+				console.log(
+					`[${new Date().toISOString()}] (chat)/+layout.ts: /api/chats response OK (${response.status})`
+				);
 				chats = await response.json();
 			} else {
 				// Log non-OK responses (like 401)
-				console.error(`[${new Date().toISOString()}] (chat)/+layout.ts: Received non-OK status (${response.status}) from /api/chats`);
+				console.error(
+					`[${new Date().toISOString()}] (chat)/+layout.ts: Received non-OK status (${response.status}) from /api/chats`
+				);
 				chatsError = true; // Set flag on non-OK response
 				// Optionally, you could try reading response.text() for more details
 				// chats remains an empty array, preventing a crash
 			}
 		} catch (error: unknown) {
 			// Catch network errors or JSON parsing errors
-			console.error(`[${new Date().toISOString()}] (chat)/+layout.ts: Error fetching /api/chats:`, error instanceof Error ? error.message : error);
+			console.error(
+				`[${new Date().toISOString()}] (chat)/+layout.ts: Error fetching /api/chats:`,
+				error instanceof Error ? error.message : error
+			);
 			chatsError = true; // Set flag on fetch/parse error
 			// chats remains an empty array
 		}

@@ -12,8 +12,18 @@
 	import { toast } from 'svelte-sonner';
 	import type { ScribeChatSession, EnhancedChatSessionLorebookAssociation } from '$lib/types';
 	import { apiClient } from '$lib/api';
-	import type { UserPersona, UpdateChatSessionSettingsRequest, ChatSessionSettingsResponse } from '$lib/types';
-	import { chatModels, DEFAULT_CHAT_MODEL, DEFAULT_CONTEXT_TOTAL_TOKEN_LIMIT, DEFAULT_CONTEXT_RECENT_HISTORY_BUDGET, DEFAULT_CONTEXT_RAG_BUDGET } from '$lib/ai/models';
+	import type {
+		UserPersona,
+		UpdateChatSessionSettingsRequest,
+		ChatSessionSettingsResponse
+	} from '$lib/types';
+	import {
+		chatModels,
+		DEFAULT_CHAT_MODEL,
+		DEFAULT_CONTEXT_TOTAL_TOKEN_LIMIT,
+		DEFAULT_CONTEXT_RECENT_HISTORY_BUDGET,
+		DEFAULT_CONTEXT_RAG_BUDGET
+	} from '$lib/ai/models';
 	import ChevronDown from '../icons/chevron-down.svelte';
 	import ChevronUp from '../icons/chevron-up.svelte';
 	import LorebookSelectionDialog from '$lib/components/shared/LorebookSelectionDialog.svelte';
@@ -108,16 +118,20 @@
 				model_name: settings.model_name ?? '',
 				gemini_thinking_budget: settings.gemini_thinking_budget ?? null,
 				gemini_enable_code_execution: settings.gemini_enable_code_execution ?? false,
-				context_total_token_limit: settings.context_total_token_limit ?? DEFAULT_CONTEXT_TOTAL_TOKEN_LIMIT,
-				context_recent_history_budget: settings.context_recent_history_budget ?? DEFAULT_CONTEXT_RECENT_HISTORY_BUDGET,
+				context_total_token_limit:
+					settings.context_total_token_limit ?? DEFAULT_CONTEXT_TOTAL_TOKEN_LIMIT,
+				context_recent_history_budget:
+					settings.context_recent_history_budget ?? DEFAULT_CONTEXT_RECENT_HISTORY_BUDGET,
 				context_rag_budget: settings.context_rag_budget ?? DEFAULT_CONTEXT_RAG_BUDGET
 			};
 		} else {
 			console.error('Failed to load chat settings:', result.error);
 			toast.error(`Failed to load chat settings: ${result.error.message}`);
 			// Fallback for context settings if API fails, using chat prop values if available
-			localSettings.context_total_token_limit = chat.context_total_token_limit ?? DEFAULT_CONTEXT_TOTAL_TOKEN_LIMIT;
-			localSettings.context_recent_history_budget = chat.context_recent_history_budget ?? DEFAULT_CONTEXT_RECENT_HISTORY_BUDGET;
+			localSettings.context_total_token_limit =
+				chat.context_total_token_limit ?? DEFAULT_CONTEXT_TOTAL_TOKEN_LIMIT;
+			localSettings.context_recent_history_budget =
+				chat.context_recent_history_budget ?? DEFAULT_CONTEXT_RECENT_HISTORY_BUDGET;
 			localSettings.context_rag_budget = chat.context_rag_budget ?? DEFAULT_CONTEXT_RAG_BUDGET;
 		}
 		isLoading = false;
@@ -317,7 +331,9 @@
 		}
 	}
 
-	function handleLorebookSelected(event: CustomEvent<{ associations: EnhancedChatSessionLorebookAssociation[] }>) {
+	function handleLorebookSelected(
+		event: CustomEvent<{ associations: EnhancedChatSessionLorebookAssociation[] }>
+	) {
 		// Use the updated associations directly from the event payload
 		// This avoids a re-fetch and potential timing issues.
 		if (event.detail && event.detail.associations) {
@@ -424,11 +440,14 @@
 							{:else}
 								<div class="space-y-2">
 									{#each chatLorebookAssociations as assoc (assoc.lorebook_id)}
-										<div class="rounded border p-3 space-y-2">
+										<div class="space-y-2 rounded border p-3">
 											<div class="flex items-center justify-between">
 												<div class="flex items-center gap-2">
 													<span class="text-sm font-medium">{assoc.lorebook_name}</span>
-													<Badge variant={assoc.source === 'Chat' ? 'default' : 'secondary'} class="text-xs">
+													<Badge
+														variant={assoc.source === 'Chat' ? 'default' : 'secondary'}
+														class="text-xs"
+													>
 														{assoc.source === 'Chat' ? 'Chat' : 'Character'}
 													</Badge>
 													{#if assoc.is_overridden}
@@ -438,7 +457,7 @@
 													{/if}
 												</div>
 											</div>
-											
+
 											<div class="flex items-center gap-2" data-testid="lorebook-card">
 												{#if assoc.source === 'Chat'}
 													<Button
@@ -452,9 +471,15 @@
 												{:else if assoc.source === 'Character'}
 													<!-- Character lorebook -->
 													<Button
-														variant={assoc.is_overridden && assoc.override_action === 'disable' ? 'outline' : 'destructive'}
+														variant={assoc.is_overridden && assoc.override_action === 'disable'
+															? 'outline'
+															: 'destructive'}
 														size="sm"
-														onclick={() => toggleCharacterLorebookOverride(assoc.lorebook_id, assoc.override_action)}
+														onclick={() =>
+															toggleCharacterLorebookOverride(
+																assoc.lorebook_id,
+																assoc.override_action
+															)}
 														class="text-xs"
 													>
 														{#if assoc.is_overridden && assoc.override_action === 'disable'}
@@ -515,8 +540,8 @@
 									bind:value={localSettings.model_name}
 								>
 									<option value="">
-										Use global default ({chatModels.find((m) => m.id === DEFAULT_CHAT_MODEL)?.name ||
-											DEFAULT_CHAT_MODEL})
+										Use global default ({chatModels.find((m) => m.id === DEFAULT_CHAT_MODEL)
+											?.name || DEFAULT_CHAT_MODEL})
 									</option>
 									{#each chatModels as model}
 										<option value={model.id}>{model.name}</option>
@@ -699,7 +724,7 @@
 							<!-- Context Configuration Override -->
 							<ContextConfigurator
 								bind:total_token_limit={localSettings.context_total_token_limit}
--------
+								-------
 								bind:recent_history_budget={localSettings.context_recent_history_budget}
 								bind:rag_budget={localSettings.context_rag_budget}
 								title="Context Override"

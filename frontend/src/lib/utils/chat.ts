@@ -30,7 +30,6 @@ function mapScribeRoleToUIRole(scribeRole: MessageRole): UIMessage['role'] {
 	}
 }
 
-
 export function convertToUIMessages(messages: Array<ScribeChatMessage>): Array<UIMessage> {
 	return messages.map((message) => ({
 		id: message.id,

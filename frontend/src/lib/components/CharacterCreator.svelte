@@ -1,5 +1,12 @@
 <script lang="ts">
-	import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '$lib/components/ui/dialog';
+	import {
+		Dialog,
+		DialogContent,
+		DialogDescription,
+		DialogHeader,
+		DialogTitle,
+		DialogFooter
+	} from '$lib/components/ui/dialog';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
@@ -7,13 +14,13 @@
 	import { apiClient } from '$lib/api';
 	import { toast } from 'svelte-sonner';
 	import { createEventDispatcher } from 'svelte';
-	
+
 	export let open = false;
-	
+
 	const dispatch = createEventDispatcher();
-	
+
 	let saving = false;
-	
+
 	// Form data for new character (required fields)
 	let formData = {
 		name: '',
@@ -27,24 +34,24 @@
 		post_history_instructions: '',
 		alternate_greetings: [] as string[]
 	};
-	
+
 	async function handleCreate() {
 		// Validate required fields
 		if (!formData.name?.trim()) {
 			toast.error('Name is required');
 			return;
 		}
-		
+
 		if (!formData.description?.trim()) {
 			toast.error('Description is required');
 			return;
 		}
-		
+
 		if (!formData.first_mes?.trim()) {
 			toast.error('First message is required');
 			return;
 		}
-		
+
 		saving = true;
 		try {
 			// Prepare data for API
@@ -53,7 +60,7 @@
 				description: formData.description.trim(),
 				first_mes: formData.first_mes.trim()
 			};
-			
+
 			// Add optional fields if they have values
 			if (formData.personality?.trim()) {
 				createData.personality = formData.personality.trim();
@@ -74,11 +81,11 @@
 				createData.post_history_instructions = formData.post_history_instructions.trim();
 			}
 			// Add alternate greetings if they exist
-			const validAlternateGreetings = formData.alternate_greetings.filter(g => g.trim() !== '');
+			const validAlternateGreetings = formData.alternate_greetings.filter((g) => g.trim() !== '');
 			if (validAlternateGreetings.length > 0) {
 				createData.alternate_greetings = validAlternateGreetings;
 			}
-			
+
 			const result = await apiClient.createCharacter(createData);
 			if (result.isOk()) {
 				toast.success('Character created successfully');
@@ -93,7 +100,7 @@
 			saving = false;
 		}
 	}
-	
+
 	function handleCancel() {
 		open = false;
 		// Reset form
@@ -113,29 +120,25 @@
 </script>
 
 <Dialog bind:open>
-	<DialogContent class="sm:max-w-[725px] max-h-[90vh] overflow-y-auto">
+	<DialogContent class="max-h-[90vh] overflow-y-auto sm:max-w-[725px]">
 		<DialogHeader>
 			<DialogTitle>Create New Character</DialogTitle>
 			<DialogDescription>
-				Create a new character by filling in the details below. Name, description, and first message are required.
+				Create a new character by filling in the details below. Name, description, and first message
+				are required.
 			</DialogDescription>
 		</DialogHeader>
-		
+
 		<div class="grid gap-4 py-4">
 			<!-- Basic Information (Required) -->
 			<div class="space-y-4">
 				<h3 class="text-lg font-semibold">Basic Information (Required)</h3>
-				
+
 				<div class="grid gap-2">
 					<Label for="name">Name *</Label>
-					<Input
-						id="name"
-						bind:value={formData.name}
-						placeholder="Character name"
-						required
-					/>
+					<Input id="name" bind:value={formData.name} placeholder="Character name" required />
 				</div>
-				
+
 				<div class="grid gap-2">
 					<Label for="description">Description *</Label>
 					<Textarea
@@ -146,7 +149,7 @@
 						required
 					/>
 				</div>
-				
+
 				<div class="grid gap-2">
 					<Label for="first_mes">First Message *</Label>
 					<Textarea
@@ -188,26 +191,35 @@
 										variant="outline"
 										size="icon"
 										onclick={() => {
-											formData.alternate_greetings = formData.alternate_greetings.filter((_, i) => i !== index);
+											formData.alternate_greetings = formData.alternate_greetings.filter(
+												(_, i) => i !== index
+											);
 										}}
 									>
 										<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-											<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+											<path
+												stroke-linecap="round"
+												stroke-linejoin="round"
+												stroke-width="2"
+												d="M6 18L18 6M6 6l12 12"
+											/>
 										</svg>
 									</Button>
 								</div>
 							{/each}
 						</div>
 					{:else}
-						<p class="text-sm text-muted-foreground">Add alternate greetings to give variety to the character's first message.</p>
+						<p class="text-sm text-muted-foreground">
+							Add alternate greetings to give variety to the character's first message.
+						</p>
 					{/if}
 				</div>
 			</div>
-			
+
 			<!-- Personality & Behavior (Optional) -->
 			<div class="space-y-4">
 				<h3 class="text-lg font-semibold">Personality & Behavior (Optional)</h3>
-				
+
 				<div class="grid gap-2">
 					<Label for="personality">Personality</Label>
 					<Textarea
@@ -217,7 +229,7 @@
 						rows={3}
 					/>
 				</div>
-				
+
 				<div class="grid gap-2">
 					<Label for="scenario">Scenario</Label>
 					<Textarea
@@ -228,12 +240,12 @@
 					/>
 				</div>
 			</div>
-			
+
 			<!-- Advanced Settings (Optional) -->
 			<details class="space-y-4">
 				<summary class="cursor-pointer text-lg font-semibold">Advanced Settings (Optional)</summary>
-				
-				<div class="grid gap-2 mt-4">
+
+				<div class="mt-4 grid gap-2">
 					<Label for="system_prompt">System Prompt</Label>
 					<Textarea
 						id="system_prompt"
@@ -242,7 +254,7 @@
 						rows={3}
 					/>
 				</div>
-				
+
 				<div class="grid gap-2">
 					<Label for="mes_example">Message Examples</Label>
 					<Textarea
@@ -252,7 +264,7 @@
 						rows={3}
 					/>
 				</div>
-				
+
 				<div class="grid gap-2">
 					<Label for="post_history_instructions">Post History Instructions</Label>
 					<Textarea
@@ -262,7 +274,7 @@
 						rows={3}
 					/>
 				</div>
-				
+
 				<div class="grid gap-2">
 					<Label for="creator_notes">Creator Notes</Label>
 					<Textarea
@@ -274,11 +286,9 @@
 				</div>
 			</details>
 		</div>
-		
+
 		<DialogFooter>
-			<Button variant="outline" onclick={handleCancel} disabled={saving}>
-				Cancel
-			</Button>
+			<Button variant="outline" onclick={handleCancel} disabled={saving}>Cancel</Button>
 			<Button onclick={handleCreate} disabled={saving}>
 				{#if saving}
 					Creating...

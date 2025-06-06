@@ -28,7 +28,7 @@
 		chat: ScribeChatSession | undefined;
 		initialMessages: ScribeChatMessage[];
 		readonly: boolean;
-		character: ScribeCharacter | null | undefined; 
+		character: ScribeCharacter | null | undefined;
 		initialChatInputValue?: string;
 	} = $props();
 
@@ -58,15 +58,17 @@
 			let newInitialMessages: ScribeChatMessage[];
 			if (initialMessages.length === 0 && character?.first_mes) {
 				const firstMessageId = `first-message-${chat?.id ?? 'initial'}`;
-				newInitialMessages = [{
-					id: firstMessageId,
-					session_id: chat?.id ?? 'unknown-session',
-					message_type: 'Assistant',
-					content: character.first_mes,
-					created_at: chat?.created_at ?? new Date().toISOString(),
-					user_id: '',
-					loading: false
-				}];
+				newInitialMessages = [
+					{
+						id: firstMessageId,
+						session_id: chat?.id ?? 'unknown-session',
+						message_type: 'Assistant',
+						content: character.first_mes,
+						created_at: chat?.created_at ?? new Date().toISOString(),
+						user_id: '',
+						loading: false
+					}
+				];
 			} else {
 				newInitialMessages = initialMessages;
 			}
@@ -93,13 +95,13 @@
 	// --- State for chat interface visibility ---
 	// The entire chat interface (input box, suggestions) should only show when we have both chat AND character
 	let shouldShowChatInterface = $state(false);
-	
+
 	// Update visibility when props change
 	$effect(() => {
 		const hasChat = chat !== undefined && chat !== null;
 		const hasCharacter = character !== undefined && character !== null;
 		const shouldShow = hasChat && hasCharacter;
-		
+
 		// Debug logging for tests
 		if (process.env.NODE_ENV === 'test') {
 			console.log('shouldShowChatInterface effect update:', {
@@ -110,7 +112,7 @@
 				character_id: character?.id || 'undefined'
 			});
 		}
-		
+
 		shouldShowChatInterface = shouldShow;
 	});
 
@@ -131,7 +133,7 @@
 				hasCurrentChat: !!chat,
 				hasCurrentCharacter: !!character,
 				totalMessages: messages.length,
-				messageTypes: messages.map(m => m.message_type)
+				messageTypes: messages.map((m) => m.message_type)
 			});
 		}
 	});
@@ -160,7 +162,8 @@
 	async function fetchSuggestedActions() {
 		console.log('fetchSuggestedActions: Entered function.');
 
-		if (!chat?.id) { // Check only for chat.id as per new endpoint
+		if (!chat?.id) {
+			// Check only for chat.id as per new endpoint
 			console.log('fetchSuggestedActions: Aborting, missing chat.id.');
 			return;
 		}
@@ -186,7 +189,8 @@
 				toast.error(`Could not load suggested actions: ${error.message}`);
 				dynamicSuggestedActions = [];
 			}
-		} catch (err: any) { // Catch any unexpected errors during the API client call itself
+		} catch (err: any) {
+			// Catch any unexpected errors during the API client call itself
 			console.error('Error fetching suggested actions:', err);
 			toast.error(`Could not load suggested actions: ${err.message}`);
 			dynamicSuggestedActions = [];
@@ -216,19 +220,19 @@
 			content: content,
 			created_at: new Date().toISOString(),
 			user_id: user.id, // Use user.id
-			loading: false,
+			loading: false
 		};
 		messages = [...messages, userMessage];
 
 		// --- Determine history to send ---
 		// Check if this is the first user message *before* adding the optimistic message
-		const isFirstUserMessage = messages.filter(m => m.message_type === 'User').length === 0;
+		const isFirstUserMessage = messages.filter((m) => m.message_type === 'User').length === 0;
 
 		// Map existing messages (excluding loading placeholders) to the API format
 		// Assuming backend expects { role: 'user' | 'assistant', content: string }
 		const existingHistoryForApi = messages
-			.filter(m => !m.loading && (m.message_type === 'User' || m.message_type === 'Assistant'))
-			.map(m => ({
+			.filter((m) => !m.loading && (m.message_type === 'User' || m.message_type === 'Assistant'))
+			.map((m) => ({
 				role: m.message_type === 'Assistant' ? 'assistant' : 'user',
 				content: m.content
 			}));
@@ -253,7 +257,7 @@
 			content: '', // Start empty, fill with stream
 			created_at: new Date().toISOString(), // Placeholder, backend might send final
 			user_id: '', // Assistant messages don't have a user_id in the same way
-			loading: true,
+			loading: true
 		};
 		messages = [...messages, assistantMessage];
 
@@ -264,16 +268,31 @@
 				method: 'POST',
 				headers: {
 					'Content-Type': 'application/json',
-					'Accept': 'text/event-stream' // Indicate we want SSE
+					Accept: 'text/event-stream' // Indicate we want SSE
 				},
 				// Send the constructed history. The backend expects a 'history' field (Vec<ApiChatMessage>)
 				// and an optional 'model' field.
 				body: JSON.stringify({ history: historyToSend }), // Corrected body
-				signal: signal, // Pass the abort signal
+				signal: signal // Pass the abort signal
 			});
 
 			if (!response.ok) {
-				const errorData = await response.json().catch(() => ({ message: 'Failed to generate response' }));
+				// Check for auth error
+				if (response.status === 401) {
+					// Emit auth invalidation event
+					window.dispatchEvent(new CustomEvent('auth:invalidated'));
+					throw new Error('Session expired. Please sign in again.');
+				}
+
+				const errorData = await response
+					.json()
+					.catch(() => {
+						// If we can't parse the error response, provide a better message based on status
+						if (response.status >= 500) {
+							return { message: 'Server error - the backend may be temporarily unavailable. Please try again.' };
+						}
+						return { message: 'Failed to generate response' };
+					});
 				throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
 			}
 
@@ -322,8 +341,9 @@
 							if (currentData.length > 0) {
 								currentData += '\n';
 							}
-							currentData += dataLineContent.startsWith(' ') ? dataLineContent.substring(1) : dataLineContent;
-
+							currentData += dataLineContent.startsWith(' ')
+								? dataLineContent.substring(1)
+								: dataLineContent;
 						} else if (line.startsWith('id:')) {
 							// Optional: handle message ID if backend sends it
 							// console.log('SSE Message ID:', line.substring(3).trim());
@@ -344,10 +364,8 @@
 						throw new Error(error); // Stop processing
 					} else if (currentEvent === 'content') {
 						if (currentData) {
-							messages = messages.map(msg =>
-								msg.id === assistantMessageId
-									? { ...msg, content: msg.content + currentData }
-									: msg
+							messages = messages.map((msg) =>
+								msg.id === assistantMessageId ? { ...msg, content: msg.content + currentData } : msg
 							);
 						}
 					} else if (currentEvent === 'reasoning_chunk') {
@@ -384,9 +402,9 @@
 							console.error('Failed to parse SSE message data as JSON:', e);
 							// Continue with the original data on parse error
 						}
-						
+
 						// Assuming it's content if not otherwise specified by a known event
-						messages = messages.map(msg =>
+						messages = messages.map((msg) =>
 							msg.id === assistantMessageId
 								? { ...msg, content: msg.content + messageContent }
 								: msg
@@ -399,25 +417,40 @@
 			// Handle any remaining data in the buffer after the loop (should be empty if stream ended cleanly)
 
 			// Finalize assistant message state only if no error occurred during fetch/parsing
-			messages = messages.map(msg =>
+			messages = messages.map((msg) =>
 				msg.id === assistantMessageId ? { ...msg, loading: false } : msg
 			);
-
 		} catch (err: any) {
 			fetchError = err; // Store the error
 			if (err.name === 'AbortError') {
 				console.log('Fetch aborted by user.');
 				toast.info('Generation stopped.');
 				// Remove the placeholder assistant message if aborted early
-				messages = messages.filter(msg => msg.id !== assistantMessageId);
+				messages = messages.filter((msg) => msg.id !== assistantMessageId);
 			} else {
+				// Check if this might be an auth error by validating session
+				if (err.message?.includes('Session expired') || err.message?.includes('401')) {
+					// Auth error already handled by event emission
+					console.log('Auth error during chat generation');
+				} else {
+					// For other errors, validate session to check if it's an indirect auth issue
+					import('$lib/api').then(({ apiClient }) => {
+						apiClient.getSession().then((result) => {
+							if (result.isErr() || !result.value.user) {
+								window.dispatchEvent(new CustomEvent('auth:invalidated'));
+							}
+						});
+					});
+				}
+
 				// Error might have been set by the 'error' event handler already
-				if (!error) { // Only set if not already set by SSE 'error' event
+				if (!error) {
+					// Only set if not already set by SSE 'error' event
 					error = err.message || 'An unexpected error occurred.';
 					toast.error(error ?? 'Unknown error'); // Ensure non-null string for toast
 				}
 				// Remove placeholder assistant message on error
-				messages = messages.filter(msg => msg.id !== assistantMessageId);
+				messages = messages.filter((msg) => msg.id !== assistantMessageId);
 				// Optionally remove optimistic user message on error
 				// messages = messages.filter(m => m.id !== userMessage.id);
 			}
@@ -463,14 +496,10 @@
 	// Handle greeting changes from alternate greetings
 	function handleGreetingChanged(event: CustomEvent) {
 		const { index, content } = event.detail;
-		
+
 		// Update the first message content in the messages array
 		const firstMessageId = `first-message-${chat?.id ?? 'initial'}`;
-		messages = messages.map(msg => 
-			msg.id === firstMessageId 
-				? { ...msg, content }
-				: msg
-		);
+		messages = messages.map((msg) => (msg.id === firstMessageId ? { ...msg, content } : msg));
 	}
 </script>
 
@@ -480,9 +509,9 @@
 	<Messages
 		{readonly}
 		loading={isLoading}
-		messages={messages}
+		{messages}
 		selectedCharacterId={selectedCharacterStore.characterId}
-		character={character}
+		{character}
 		on:personaCreated
 		on:greetingChanged={handleGreetingChanged}
 	/>
@@ -490,7 +519,7 @@
 	<!-- Show Chat Interface (Get Suggestions + Input) Only When Inside Active Chat -->
 	{#if shouldShowChatInterface}
 		<!-- Get Suggestions Button -->
-		<div class="mx-auto w-full px-4 pb-1 md:max-w-3xl text-center">
+		<div class="mx-auto w-full px-4 pb-1 text-center md:max-w-3xl">
 			<button
 				type="button"
 				onclick={() => {
@@ -499,12 +528,22 @@
 					fetchSuggestedActions();
 				}}
 				disabled={!canFetchSuggestions || isLoadingSuggestions || isLoading}
-				class="ring-offset-background focus-visible:ring-ring inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0 border-input bg-background hover:bg-accent hover:text-accent-foreground border h-10 px-4 py-2 text-sm"
+				class="inline-flex h-10 items-center justify-center gap-2 whitespace-nowrap rounded-md border border-input bg-background px-4 py-2 text-sm font-medium ring-offset-background transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0"
 			>
 				{#if isLoadingSuggestions}
-					<svg class="animate-spin -ml-1 mr-2 h-4 w-4 text-primary" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-						<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-						<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+					<svg
+						class="-ml-1 mr-2 h-4 w-4 animate-spin text-primary"
+						xmlns="http://www.w3.org/2000/svg"
+						fill="none"
+						viewBox="0 0 24 24"
+					>
+						<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"
+						></circle>
+						<path
+							class="opacity-75"
+							fill="currentColor"
+							d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+						></path>
 					</svg>
 					Loading...
 				{:else}
@@ -523,7 +562,10 @@
 		<!-- Message Input Form -->
 		<form
 			class="mx-auto flex w-full gap-2 bg-background px-4 pb-4 md:max-w-3xl md:pb-6"
-			onsubmit={e => { e.preventDefault(); handleInputSubmit(e); }}
+			onsubmit={(e) => {
+				e.preventDefault();
+				handleInputSubmit(e);
+			}}
 		>
 			{#if !readonly}
 				<MultimodalInput
@@ -543,7 +585,7 @@
 {#if chat}
 	<ChatConfigSidebar
 		bind:isOpen={isChatConfigOpen}
-		chat={chat}
+		{chat}
 		{availablePersonas}
 		on:settingsUpdated={(event) => {
 			console.log('Chat settings updated:', event.detail);

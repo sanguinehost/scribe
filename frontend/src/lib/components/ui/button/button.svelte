@@ -40,7 +40,7 @@
 <script lang="ts">
 	import { cn } from '$lib/utils/shadcn.js';
 
-interface $$Events {
+	interface $$Events {
 		click: MouseEvent;
 	}
 	let {

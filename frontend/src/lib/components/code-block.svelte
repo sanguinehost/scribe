@@ -23,8 +23,10 @@
         </pre>
 	</div>
 {:else}
-	<div class="rounded-md bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 p-2 shadow-sm w-full mt-4">
-		<code class={cn('text-sm whitespace-pre-wrap break-words', c)} {...rest}>
+	<div
+		class="mt-4 w-full rounded-md border border-black/10 bg-black/5 p-2 shadow-sm dark:border-white/10 dark:bg-white/5"
+	>
+		<code class={cn('whitespace-pre-wrap break-words text-sm', c)} {...rest}>
 			{@render children?.()}
 		</code>
 	</div>

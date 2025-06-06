@@ -4,5 +4,5 @@
 	let { data } = $props();
 </script>
 
-<Chat chat={undefined} initialMessages={[]} readonly={false} user={data.user} />
+<Chat chat={undefined} initialMessages={[]} readonly={false} user={data.user} character={null} />
 <!-- TODO <DataStreamHandler {id} /> -->

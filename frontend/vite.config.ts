@@ -23,8 +23,8 @@ export default defineConfig({
 				secure: false,
 				cookieDomainRewrite: 'localhost',
 				headers: {
-					'Host': 'localhost:5173',
-					'Origin': 'https://localhost:5173'
+					Host: 'localhost:5173',
+					Origin: 'https://localhost:5173'
 				}
 			}
 		}

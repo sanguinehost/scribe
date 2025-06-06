@@ -121,9 +121,12 @@
 
 	{#if (attachments && attachments.length > 0) || uploadQueue.length > 0}
 		<div class="flex flex-row items-end gap-2 overflow-x-scroll">
-			{#if attachments} {#each attachments as attachment (attachment.url)}
-				<PreviewAttachment attachment={attachment as any} /> <!-- Cast to any for now, refine later if needed -->
-			{/each} {/if}
+			{#if attachments}
+				{#each attachments as attachment (attachment.url)}
+					<PreviewAttachment attachment={attachment as any} />
+					<!-- Cast to any for now, refine later if needed -->
+				{/each}
+			{/if}
 
 			{#each uploadQueue as filename}
 				<PreviewAttachment

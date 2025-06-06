@@ -66,7 +66,9 @@
 			});
 
 			if (!response.ok) {
-				const errorData = await response.json().catch(() => ({ message: 'Upload failed with status: ' + response.status }));
+				const errorData = await response
+					.json()
+					.catch(() => ({ message: 'Upload failed with status: ' + response.status }));
 				throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
 			}
 
@@ -98,13 +100,17 @@
 	}
 </script>
 
-<Dialog {open} onOpenChange={(value) => { if (!value) closeDialog(); else onOpenChange(value); }}>
+<Dialog
+	{open}
+	onOpenChange={(value) => {
+		if (!value) closeDialog();
+		else onOpenChange(value);
+	}}
+>
 	<DialogContent class="sm:max-w-[425px]">
 		<DialogHeader>
 			<DialogTitle>Upload Character Card</DialogTitle>
-			<DialogDescription>
-				Select a V2 character card PNG file to upload.
-			</DialogDescription>
+			<DialogDescription>Select a V2 character card PNG file to upload.</DialogDescription>
 		</DialogHeader>
 		<div class="grid gap-4 py-4">
 			<div class="grid w-full max-w-sm items-center gap-1.5">
@@ -117,7 +123,7 @@
 					disabled={isLoading}
 				/>
 				{#if fileName}
-					<p class="text-sm text-muted-foreground mt-1">Selected: {fileName}</p>
+					<p class="mt-1 text-sm text-muted-foreground">Selected: {fileName}</p>
 				{/if}
 			</div>
 			{#if error}

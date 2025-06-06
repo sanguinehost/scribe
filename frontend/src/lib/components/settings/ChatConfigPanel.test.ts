@@ -12,7 +12,7 @@ vi.mock('$lib/api', () => ({
 		setCharacterLorebookOverride: vi.fn(),
 		removeCharacterLorebookOverride: vi.fn(),
 		getChatSessionSettings: vi.fn(),
-		updateChatSessionSettings: vi.fn(),
+		updateChatSessionSettings: vi.fn()
 	}
 }));
 
@@ -21,7 +21,7 @@ vi.mock('svelte-sonner', () => ({
 	toast: {
 		success: vi.fn(),
 		error: vi.fn(),
-		info: vi.fn(),
+		info: vi.fn()
 	}
 }));
 
@@ -133,7 +133,9 @@ describe('ChatConfigPanel - Redundant Lorebook Associations', () => {
 			expect(screen.getByText('Chat Only Lorebook')).toBeInTheDocument();
 		});
 
-		const chatLorebookCard = screen.getByText('Chat Only Lorebook').closest('[data-testid="lorebook-card"]');
+		const chatLorebookCard = screen
+			.getByText('Chat Only Lorebook')
+			.closest('[data-testid="lorebook-card"]');
 		expect(chatLorebookCard).toBeInTheDocument();
 		expect(within(chatLorebookCard!).getByText('Chat')).toBeInTheDocument();
 		expect(within(chatLorebookCard!).getByText('Remove')).toBeInTheDocument();
@@ -153,7 +155,9 @@ describe('ChatConfigPanel - Redundant Lorebook Associations', () => {
 			expect(screen.getByText('Character Only Lorebook')).toBeInTheDocument();
 		});
 
-		const charLorebookCard = screen.getByText('Character Only Lorebook').closest('[data-testid="lorebook-card"]');
+		const charLorebookCard = screen
+			.getByText('Character Only Lorebook')
+			.closest('[data-testid="lorebook-card"]');
 		expect(charLorebookCard).toBeInTheDocument();
 		expect(within(charLorebookCard!).getByText('Character')).toBeInTheDocument();
 		expect(within(charLorebookCard!).getByText('Disable')).toBeInTheDocument();
@@ -173,7 +177,9 @@ describe('ChatConfigPanel - Redundant Lorebook Associations', () => {
 			expect(screen.getByText('Character Disabled Lorebook')).toBeInTheDocument();
 		});
 
-		const disabledCharLorebookCard = screen.getByText('Character Disabled Lorebook').closest('[data-testid="lorebook-card"]');
+		const disabledCharLorebookCard = screen
+			.getByText('Character Disabled Lorebook')
+			.closest('[data-testid="lorebook-card"]');
 		expect(disabledCharLorebookCard).toBeInTheDocument();
 		expect(within(disabledCharLorebookCard!).getByText('Character')).toBeInTheDocument();
 		expect(within(disabledCharLorebookCard!).getByText('Disabled')).toBeInTheDocument();
@@ -194,7 +200,9 @@ describe('ChatConfigPanel - Redundant Lorebook Associations', () => {
 			expect(screen.getByText('Character Enabled Override Lorebook')).toBeInTheDocument();
 		});
 
-		const enabledOverrideCharLorebookCard = screen.getByText('Character Enabled Override Lorebook').closest('[data-testid="lorebook-card"]');
+		const enabledOverrideCharLorebookCard = screen
+			.getByText('Character Enabled Override Lorebook')
+			.closest('[data-testid="lorebook-card"]');
 		expect(enabledOverrideCharLorebookCard).toBeInTheDocument();
 		expect(within(enabledOverrideCharLorebookCard!).getByText('Character')).toBeInTheDocument();
 		expect(within(enabledOverrideCharLorebookCard!).getByText('Enabled')).toBeInTheDocument();
@@ -221,7 +229,9 @@ describe('ChatConfigPanel - Redundant Lorebook Associations', () => {
 			expect(screen.getAllByText('Redundant Lorebook')).toHaveLength(1);
 		});
 
-		const lorebookCard = screen.getByText('Redundant Lorebook').closest('[data-testid="lorebook-card"]');
+		const lorebookCard = screen
+			.getByText('Redundant Lorebook')
+			.closest('[data-testid="lorebook-card"]');
 		expect(lorebookCard).toBeInTheDocument();
 		expect(within(lorebookCard!).getByText('Chat')).toBeInTheDocument(); // Should be prioritized as Chat source
 		expect(within(lorebookCard!).getByText('Remove')).toBeInTheDocument();
@@ -237,13 +247,15 @@ describe('ChatConfigPanel - Redundant Lorebook Associations', () => {
 		} as any);
 
 		// Only return the chat-only association for this test
-		vi.mocked(apiClient.getChatLorebookAssociations).mockResolvedValueOnce({
-			isOk: () => true,
-			value: [chatOnlyAssociation]
-		} as any).mockResolvedValueOnce({
-			isOk: () => true,
-			value: [] // After removal
-		} as any);
+		vi.mocked(apiClient.getChatLorebookAssociations)
+			.mockResolvedValueOnce({
+				isOk: () => true,
+				value: [chatOnlyAssociation]
+			} as any)
+			.mockResolvedValueOnce({
+				isOk: () => true,
+				value: [] // After removal
+			} as any);
 
 		render(ChatConfigPanel, {
 			props: {
@@ -259,7 +271,10 @@ describe('ChatConfigPanel - Redundant Lorebook Associations', () => {
 		const removeButton = screen.getByText('Remove');
 		await fireEvent.click(removeButton);
 
-		expect(apiClient.disassociateLorebookFromChat).toHaveBeenCalledWith(mockChat.id, chatOnlyAssociation.lorebook_id);
+		expect(apiClient.disassociateLorebookFromChat).toHaveBeenCalledWith(
+			mockChat.id,
+			chatOnlyAssociation.lorebook_id
+		);
 		await waitFor(() => {
 			expect(screen.queryByText('Chat Only Lorebook')).not.toBeInTheDocument();
 		});
@@ -273,13 +288,15 @@ describe('ChatConfigPanel - Redundant Lorebook Associations', () => {
 		} as any);
 
 		// Only return the character-only association for this test
-		vi.mocked(apiClient.getChatLorebookAssociations).mockResolvedValueOnce({
-			isOk: () => true,
-			value: [characterOnlyAssociation]
-		} as any).mockResolvedValueOnce({
-			isOk: () => true,
-			value: [characterDisabledAssociation] // After disabling
-		} as any);
+		vi.mocked(apiClient.getChatLorebookAssociations)
+			.mockResolvedValueOnce({
+				isOk: () => true,
+				value: [characterOnlyAssociation]
+			} as any)
+			.mockResolvedValueOnce({
+				isOk: () => true,
+				value: [characterDisabledAssociation] // After disabling
+			} as any);
 
 		render(ChatConfigPanel, {
 			props: {
@@ -295,7 +312,11 @@ describe('ChatConfigPanel - Redundant Lorebook Associations', () => {
 		const disableButton = screen.getByText('Disable');
 		await fireEvent.click(disableButton);
 
-		expect(apiClient.setCharacterLorebookOverride).toHaveBeenCalledWith(mockChat.id, characterOnlyAssociation.lorebook_id, 'disable');
+		expect(apiClient.setCharacterLorebookOverride).toHaveBeenCalledWith(
+			mockChat.id,
+			characterOnlyAssociation.lorebook_id,
+			'disable'
+		);
 		await waitFor(() => {
 			expect(screen.getByText('Character Disabled Lorebook')).toBeInTheDocument();
 			expect(screen.getByText('Disabled')).toBeInTheDocument();
@@ -311,13 +332,15 @@ describe('ChatConfigPanel - Redundant Lorebook Associations', () => {
 		} as any);
 
 		// Only return the disabled character association for this test
-		vi.mocked(apiClient.getChatLorebookAssociations).mockResolvedValueOnce({
-			isOk: () => true,
-			value: [characterDisabledAssociation]
-		} as any).mockResolvedValueOnce({
-			isOk: () => true,
-			value: [characterOnlyAssociation] // After restoring
-		} as any);
+		vi.mocked(apiClient.getChatLorebookAssociations)
+			.mockResolvedValueOnce({
+				isOk: () => true,
+				value: [characterDisabledAssociation]
+			} as any)
+			.mockResolvedValueOnce({
+				isOk: () => true,
+				value: [characterOnlyAssociation] // After restoring
+			} as any);
 
 		render(ChatConfigPanel, {
 			props: {
@@ -333,7 +356,10 @@ describe('ChatConfigPanel - Redundant Lorebook Associations', () => {
 		const restoreButton = screen.getByText('Restore');
 		await fireEvent.click(restoreButton);
 
-		expect(apiClient.removeCharacterLorebookOverride).toHaveBeenCalledWith(mockChat.id, characterDisabledAssociation.lorebook_id);
+		expect(apiClient.removeCharacterLorebookOverride).toHaveBeenCalledWith(
+			mockChat.id,
+			characterDisabledAssociation.lorebook_id
+		);
 		await waitFor(() => {
 			expect(screen.getByText('Character Only Lorebook')).toBeInTheDocument();
 			expect(screen.queryByText('Disabled')).not.toBeInTheDocument();
@@ -349,13 +375,15 @@ describe('ChatConfigPanel - Redundant Lorebook Associations', () => {
 		} as any);
 
 		// Only return the enabled-override character association for this test
-		vi.mocked(apiClient.getChatLorebookAssociations).mockResolvedValueOnce({
-			isOk: () => true,
-			value: [characterEnabledOverrideAssociation]
-		} as any).mockResolvedValueOnce({
-			isOk: () => true,
-			value: [characterDisabledAssociation] // After disabling
-		} as any);
+		vi.mocked(apiClient.getChatLorebookAssociations)
+			.mockResolvedValueOnce({
+				isOk: () => true,
+				value: [characterEnabledOverrideAssociation]
+			} as any)
+			.mockResolvedValueOnce({
+				isOk: () => true,
+				value: [characterDisabledAssociation] // After disabling
+			} as any);
 
 		render(ChatConfigPanel, {
 			props: {
@@ -371,7 +399,11 @@ describe('ChatConfigPanel - Redundant Lorebook Associations', () => {
 		const disableButton = screen.getByText('Disable');
 		await fireEvent.click(disableButton);
 
-		expect(apiClient.setCharacterLorebookOverride).toHaveBeenCalledWith(mockChat.id, characterEnabledOverrideAssociation.lorebook_id, 'disable');
+		expect(apiClient.setCharacterLorebookOverride).toHaveBeenCalledWith(
+			mockChat.id,
+			characterEnabledOverrideAssociation.lorebook_id,
+			'disable'
+		);
 		await waitFor(() => {
 			expect(screen.getByText('Character Disabled Lorebook')).toBeInTheDocument();
 			expect(screen.getByText('Disabled')).toBeInTheDocument();

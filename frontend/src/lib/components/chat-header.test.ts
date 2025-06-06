@@ -11,12 +11,20 @@ const HoistedMockVisibilitySelector = vi.hoisted(() => {
 	class MockedVisibilitySelectorComponentInternal {
 		element: HTMLDivElement;
 		// eslint-disable-next-line @typescript-eslint/no-unused-vars
-		constructor({ target, props }: { target: Element; props: { chat?: ScribeChatSession, class?: string } }) {
+		constructor({
+			target,
+			props
+		}: {
+			target: Element;
+			props: { chat?: ScribeChatSession; class?: string };
+		}) {
 			this.element = document.createElement('div');
 			this.element.setAttribute('data-testid', 'visibility-selector-mock');
 			target.appendChild(this.element);
 		}
-		$set() { /* no-op */ }
+		$set() {
+			/* no-op */
+		}
 		$destroy() {
 			if (this.element.parentNode) {
 				this.element.parentNode.removeChild(this.element);
@@ -49,7 +57,7 @@ vi.mock('$app/navigation', () => ({
 // Mock for useSidebar
 vi.mock('./ui/sidebar', () => ({
 	useSidebar: vi.fn(() => ({
-		open: false, // Default mock value
+		open: false // Default mock value
 		// Add other properties or methods if needed by the component
 	}))
 }));

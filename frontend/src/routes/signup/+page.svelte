@@ -40,24 +40,33 @@
 
 				// Registration successful, redirect to signin page
 				toast.success('Registration successful! Please sign in.');
-				goto('/signin'); 
+				goto('/signin');
 			} else {
 				// Handle registration error
 				console.error('Registration failed:', registerResult.error);
 				errorMessage = registerResult.error.message;
 				// Check for specific errors like 'UsernameTaken' or 'EmailTaken' by checking the error type and status
-				if (registerResult.error instanceof ApiResponseError && registerResult.error.statusCode === 409) { 
+				if (
+					registerResult.error instanceof ApiResponseError &&
+					registerResult.error.statusCode === 409
+				) {
 					errorMessage = `Registration failed: ${registerResult.error.message}`;
 				}
 			}
 		} catch (error: unknown) {
 			console.error('Error during signup process:', error);
 			// Check if it's an ApiError we know how to handle
-			if (error instanceof ApiResponseError || error instanceof ApiNetworkError || error instanceof ApiClientError) {
+			if (
+				error instanceof ApiResponseError ||
+				error instanceof ApiNetworkError ||
+				error instanceof ApiClientError
+			) {
 				errorMessage = `An unexpected error occurred: ${error.message}`;
-			} else if (error instanceof Error) { // Handle generic Error objects
+			} else if (error instanceof Error) {
+				// Handle generic Error objects
 				errorMessage = `An unexpected error occurred: ${error.message}`;
-			} else { // Fallback for unknown error types
+			} else {
+				// Fallback for unknown error types
 				errorMessage = 'An unexpected error occurred.';
 			}
 		} finally {
@@ -80,7 +89,13 @@
 				</div>
 				<div class="space-y-2">
 					<Label for="username">Username</Label>
-					<Input id="username" type="text" placeholder="Your username" required bind:value={username} />
+					<Input
+						id="username"
+						type="text"
+						placeholder="Your username"
+						required
+						bind:value={username}
+					/>
 				</div>
 				<div class="space-y-2">
 					<Label for="password">Password</Label>
@@ -94,7 +109,11 @@
 					<p class="text-sm text-red-600 dark:text-red-400">{errorMessage}</p>
 				{/if}
 				<Button type="submit" class="w-full" disabled={loading}>
-					{#if loading} Creating Account... {:else} Create Account {/if}
+					{#if loading}
+						Creating Account...
+					{:else}
+						Create Account
+					{/if}
 				</Button>
 			</form>
 		</Card.Content>

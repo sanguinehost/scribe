@@ -21,7 +21,9 @@ export function load({ locals }) {
 }
 
 const emailSchema = z.string().email({ message: 'Invalid email address.' });
-const passwordSchema = z.string().min(8, { message: 'Password must be at least 8 characters long.' });
+const passwordSchema = z
+	.string()
+	.min(8, { message: 'Password must be at least 8 characters long.' });
 const usernameSchema = z
 	.string()
 	.min(3, { message: 'Username must be at least 3 characters long.' })
@@ -32,7 +34,12 @@ const identifierSchema = z.string().min(1, { message: 'Email or Username is requ
 export type ActionData = AuthErrorData | undefined;
 
 export const actions = {
-	default: async ({ request, params, cookies, fetch }): Promise<ActionFailure<AuthErrorData> | void | import('@sveltejs/kit').Redirect> => {
+	default: async ({
+		request,
+		params,
+		cookies,
+		fetch
+	}): Promise<ActionFailure<AuthErrorData> | void | import('@sveltejs/kit').Redirect> => {
 		const formData = await request.formData();
 		const authType = params.authType; // 'signin' or 'signup'
 
@@ -108,10 +115,14 @@ export const actions = {
 				userId = createdUser.user_id;
 				if (!userId) {
 					console.error('Signup response missing user ID:', createdUser);
-					return fail(500, { success: false, message: 'Signup failed: User ID missing in response.', email, username });
+					return fail(500, {
+						success: false,
+						message: 'Signup failed: User ID missing in response.',
+						email,
+						username
+					});
 				}
 				console.log('User registered successfully via apiClient:', createdUser);
-
 			} else {
 				// --- Signin Specific Validation ---
 				const rawIdentifier = formData.get('identifier');
@@ -136,7 +147,8 @@ export const actions = {
 						errorMessage = apiError.message || errorMessage;
 					}
 					console.error('Login API error:', apiError);
-					return fail(apiError instanceof ApiResponseError ? apiError.statusCode : 401, { // Use 401 for login failure
+					return fail(apiError instanceof ApiResponseError ? apiError.statusCode : 401, {
+						// Use 401 for login failure
 						success: false,
 						message: errorMessage,
 						email: identifier // Repopulate identifier field
@@ -148,12 +160,25 @@ export const actions = {
 				userId = loginData.user.user_id; // Access nested user object
 				if (!userId) {
 					console.error('Login response missing user ID:', loginData);
-					return fail(500, { success: false, message: 'Login failed: User ID missing in response.', email: identifier });
+					return fail(500, {
+						success: false,
+						message: 'Login failed: User ID missing in response.',
+						email: identifier
+					});
 				}
 				console.log('User logged in successfully via apiClient:', loginData.user);
+				console.log('Full loginData structure:', loginData);
 
 				// For signin, use the session_id and expires_at from the login API response
 				// to set the cookie. The session_id is what axum-login expects.
+				if (!loginData.session_id) {
+					console.error('LoginData missing session_id:', loginData);
+					return fail(500, {
+						success: false,
+						message: 'Login response missing session data.',
+						email: identifier
+					});
+				}
 				setSessionTokenCookie(cookies, loginData.session_id, new Date(loginData.expires_at));
 				console.log('Signin successful, cookie set with session_id from backend.');
 				return redirect(303, '/');
@@ -167,7 +192,6 @@ export const actions = {
 				// Optionally, could pass a query param to /signin to show a "Registration successful" message
 				return redirect(303, '/signin?registration=success');
 			}
-
 		} catch (error) {
 			// Re-throw redirect responses by checking shape, handle other errors
 			// SvelteKit throws an object with status and location for redirects
