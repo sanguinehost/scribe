@@ -50,7 +50,7 @@
 							{/if}
 						{:else if getHasConnectionError()}
 							<!-- Show connection error state even when user data is not available -->
-							<div class="h-6 w-6 rounded-full bg-muted flex items-center justify-center">
+							<div class="flex h-6 w-6 items-center justify-center rounded-full bg-muted">
 								<span class="text-xs">?</span>
 							</div>
 							<span class="truncate">Connection issues</span>

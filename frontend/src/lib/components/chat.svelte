@@ -284,15 +284,16 @@
 					throw new Error('Session expired. Please sign in again.');
 				}
 
-				const errorData = await response
-					.json()
-					.catch(() => {
-						// If we can't parse the error response, provide a better message based on status
-						if (response.status >= 500) {
-							return { message: 'Server error - the backend may be temporarily unavailable. Please try again.' };
-						}
-						return { message: 'Failed to generate response' };
-					});
+				const errorData = await response.json().catch(() => {
+					// If we can't parse the error response, provide a better message based on status
+					if (response.status >= 500) {
+						return {
+							message:
+								'Server error - the backend may be temporarily unavailable. Please try again.'
+						};
+					}
+					return { message: 'Failed to generate response' };
+				});
 				throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
 			}
 

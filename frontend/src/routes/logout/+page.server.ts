@@ -20,7 +20,7 @@ export const load: PageServerLoad = async ({ cookies, fetch }) => {
 
 	// Clear the session cookie
 	cookies.delete('session', { path: '/' });
-	
+
 	// Redirect to signin
 	throw redirect(303, '/signin');
 };

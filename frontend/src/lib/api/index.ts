@@ -134,19 +134,21 @@ class ApiClient {
 			console.log(
 				`[${new Date().toISOString()}] ApiClient.fetch: EXIT - Success (200 OK) for ${endpoint}`
 			);
-			
+
 			// If we successfully made a request, clear any connection errors
 			if (browser) {
 				import('$lib/auth.svelte').then(({ getHasConnectionError, clearConnectionError }) => {
 					if (getHasConnectionError()) {
-						console.log(`[${new Date().toISOString()}] ApiClient.fetch: Server appears to be back online, clearing connection error state.`);
-						// Clear connection error state 
+						console.log(
+							`[${new Date().toISOString()}] ApiClient.fetch: Server appears to be back online, clearing connection error state.`
+						);
+						// Clear connection error state
 						clearConnectionError();
 						window.dispatchEvent(new CustomEvent('auth:connection-restored'));
 					}
 				});
 			}
-			
+
 			return ok(data as T);
 		} catch (error) {
 			console.error(
@@ -544,7 +546,9 @@ class ApiClient {
 		return this.fetch<UserSettingsResponse>('/api/user-settings');
 	}
 
-	async updateUserSettings(settings: UpdateUserSettingsRequest): Promise<Result<UserSettingsResponse, ApiError>> {
+	async updateUserSettings(
+		settings: UpdateUserSettingsRequest
+	): Promise<Result<UserSettingsResponse, ApiError>> {
 		return this.fetch<UserSettingsResponse>('/api/user-settings', {
 			method: 'PUT',
 			body: JSON.stringify(settings)

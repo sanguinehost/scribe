@@ -116,7 +116,7 @@
 		</div>
 	</CardHeader>
 	<div
-		class="absolute right-0.5 top-0.5 flex gap-0 opacity-0 transition-opacity group-hover/card:opacity-100 focus-within:opacity-100"
+		class="absolute right-0.5 top-0.5 flex gap-0 opacity-0 transition-opacity focus-within:opacity-100 group-hover/card:opacity-100"
 	>
 		<Button
 			variant="ghost"

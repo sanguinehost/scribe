@@ -23,7 +23,7 @@
 	// Consolidated settings state
 	let isLoading = $state(false);
 	let settings = $state({
-		// Model & Basic Generation  
+		// Model & Basic Generation
 		model_name: 'gemini-2.5-flash-preview-05-20', // System default from backend config
 		temperature: 1.0,
 		max_output_tokens: 1000,
@@ -72,22 +72,22 @@
 				default_top_p: settings.top_p ?? null,
 				default_top_k: settings.top_k ?? null,
 				default_seed: settings.seed ?? null,
-				
+
 				// Gemini-Specific Settings
 				default_gemini_thinking_budget: settings.gemini_thinking_budget || null,
 				default_gemini_enable_code_execution: null, // Not exposed in this UI yet
-				
+
 				// Context Management Settings
 				default_context_total_token_limit: settings.context_total_token_limit || null,
 				default_context_recent_history_budget: settings.context_recent_history_budget || null,
 				default_context_rag_budget: settings.context_rag_budget || null,
-				
+
 				// Application Preferences
 				auto_save_chats: settings.auto_save_chats,
 				theme: settings.theme || null,
 				notifications_enabled: settings.notifications_enabled
 			};
-			
+
 			const result = await apiClient.updateUserSettings(updateRequest);
 			if (result.isOk()) {
 				toast.success('Settings saved successfully');
@@ -112,14 +112,14 @@
 			if (userSettingsResult.isOk()) {
 				const userSettings = userSettingsResult.value;
 				console.log('Loaded user settings:', userSettings);
-				
+
 				// Map the user settings to our local state
 				settings = {
 					// Model & Basic Generation
 					model_name: userSettings.default_model_name || 'gemini-2.5-flash-preview-05-20',
 					temperature: parseFloat(String(userSettings.default_temperature ?? 1.0)),
 					max_output_tokens: userSettings.default_max_output_tokens || 1000,
-					top_p: parseFloat((parseFloat(String(userSettings.default_top_p ?? 0.95))).toFixed(2)),
+					top_p: parseFloat(parseFloat(String(userSettings.default_top_p ?? 0.95)).toFixed(2)),
 					top_k: userSettings.default_top_k ?? 40,
 
 					// Advanced Generation
@@ -132,7 +132,8 @@
 
 					// Context Management
 					context_total_token_limit: userSettings.default_context_total_token_limit || 200000,
-					context_recent_history_budget: userSettings.default_context_recent_history_budget || 150000,
+					context_recent_history_budget:
+						userSettings.default_context_recent_history_budget || 150000,
 					context_rag_budget: userSettings.default_context_rag_budget || 50000,
 
 					// Application Preferences

@@ -502,16 +502,16 @@ export interface UpdateUserSettingsRequest {
 	default_top_p?: number | null;
 	default_top_k?: number | null;
 	default_seed?: number | null;
-	
+
 	// Gemini-Specific Settings
 	default_gemini_thinking_budget?: number | null;
 	default_gemini_enable_code_execution?: boolean | null;
-	
+
 	// Context Management Settings
 	default_context_total_token_limit?: number | null;
 	default_context_recent_history_budget?: number | null;
 	default_context_rag_budget?: number | null;
-	
+
 	// Application Preferences
 	auto_save_chats?: boolean | null;
 	theme?: string | null;
@@ -528,21 +528,21 @@ export interface UserSettingsResponse {
 	default_top_p?: number | null;
 	default_top_k?: number | null;
 	default_seed?: number | null;
-	
+
 	// Gemini-Specific Settings
 	default_gemini_thinking_budget?: number | null;
 	default_gemini_enable_code_execution?: boolean | null;
-	
+
 	// Context Management Settings
 	default_context_total_token_limit?: number | null;
 	default_context_recent_history_budget?: number | null;
 	default_context_rag_budget?: number | null;
-	
+
 	// Application Preferences
 	auto_save_chats?: boolean | null;
 	theme?: string | null;
 	notifications_enabled?: boolean | null;
-	
+
 	// Timestamps
 	created_at: string;
 	updated_at: string;
