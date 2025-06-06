@@ -270,7 +270,7 @@ mod tests {
     async fn test_generate_simple_response_with_different_models() {
         let client_wrapper = build_gemini_client().expect("Failed to build Gemini client wrapper");
         let models_to_test = vec![
-            "gemini-2.5-pro-preview-05-06",
+            "gemini-2.5-pro-preview-06-05",
             "gemini-2.5-flash-preview-05-20",
         ];
         for model_name in models_to_test {

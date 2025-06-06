@@ -10,7 +10,7 @@ pub async fn handle_model_settings_action<H: IoHandler, C: HttpClient>(
 ) -> Result<(), CliError> {
     // Define the full model names for clarity in prompts/examples
     const FLASH_MODEL: &str = "gemini-2.5-flash-preview-05-20"; // Recommended stable model
-    const PRO_PREVIEW_MODEL: &str = "gemini-2.5-pro-preview-05-06"; // Latest paid model with more capabilities
+    const PRO_PREVIEW_MODEL: &str = "gemini-2.5-pro-preview-06-05"; // Latest paid model with more capabilities
     const EXPERIMENTAL_MODEL: &str = "gemini-2.5-pro-exp-03-25"; // Most likely to hit rate limits
 
     loop {
