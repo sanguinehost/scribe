@@ -34,6 +34,7 @@ use crate::{
     schema,
     services::chat_override_service::ChatOverrideService, // <<< ENSURED IMPORT
     services::encryption_service::EncryptionService,      // <<< ENSURED IMPORT
+    services::file_storage_service::FileStorageService,   // <<< ADDED THIS IMPORT
     services::gemini_token_client::GeminiTokenClient,
     services::hybrid_token_counter::HybridTokenCounter,
     services::tokenizer_service::TokenizerService,
@@ -1035,6 +1036,7 @@ impl TestAppStateBuilder {
             encryption_service,
             lorebook_service,
             auth_backend: self.auth_backend,
+            file_storage_service: Arc::new(FileStorageService::new("./test_uploads").unwrap()),
         };
 
         AppState::new(self.db_pool, self.config, services)

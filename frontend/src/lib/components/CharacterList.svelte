@@ -1,22 +1,13 @@
 <script lang="ts">
 	import { onMount, createEventDispatcher } from 'svelte';
 	import { apiClient } from '$lib/api';
+	import type { Character } from '$lib/types';
 	import CharacterCard from './CharacterCard.svelte';
 	import CharacterEditor from './CharacterEditor.svelte';
 	import CharacterCreator from './CharacterCreator.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import PlusIcon from './icons/plus.svelte';
 	import { Skeleton } from '$lib/components/ui/skeleton';
-
-	// Define the expected structure of a character from the API
-	type Character = {
-		id: string;
-		name: string;
-		description: string | null;
-		greeting: string | null;
-		avatar_url: string | null;
-		// Add other relevant fields if needed based on API response
-	};
 
 	let characters: Character[] = [];
 	let isLoading = true;

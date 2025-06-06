@@ -380,8 +380,8 @@
 				<CardHeader class="px-0">
 					<div class="flex items-start space-x-6">
 						<Avatar class="h-24 w-24 border-2 border-muted">
-							{#if character.avatar_url}
-								<AvatarImage src={character.avatar_url} alt={character.name} />
+							{#if character.avatar}
+								<AvatarImage src={character.avatar} alt={character.name} />
 							{/if}
 							<AvatarFallback class="text-3xl font-semibold">
 								{getInitials(character.name)}

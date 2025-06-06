@@ -1,4 +1,5 @@
 pub mod auth;
+pub mod character_assets;
 pub mod character_card;
 pub mod character_dto;
 pub mod characters;
@@ -12,6 +13,7 @@ pub mod user_settings;
 pub mod users;
 
 pub use auth::*;
+pub use character_assets::{CharacterAsset, NewCharacterAsset};
 pub use character_card::*;
 pub use character_dto::*;
 pub use characters::*;
