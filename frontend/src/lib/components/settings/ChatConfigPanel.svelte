@@ -15,7 +15,8 @@
 	import type {
 		UserPersona,
 		UpdateChatSessionSettingsRequest,
-		ChatSessionSettingsResponse
+		ChatSessionSettingsResponse,
+		UserSettingsResponse // Import UserSettingsResponse
 	} from '$lib/types';
 	import {
 		chatModels,
@@ -24,6 +25,7 @@
 		DEFAULT_CONTEXT_RECENT_HISTORY_BUDGET,
 		DEFAULT_CONTEXT_RAG_BUDGET
 	} from '$lib/ai/models';
+	import { SettingsStore } from '$lib/stores/settings.svelte'; // Import SettingsStore
 	import ChevronDown from '../icons/chevron-down.svelte';
 	import ChevronUp from '../icons/chevron-up.svelte';
 	import LorebookSelectionDialog from '$lib/components/shared/LorebookSelectionDialog.svelte';
@@ -40,22 +42,24 @@
 	const dispatch = createEventDispatcher();
 
 	let isLoading = $state(false);
+	let globalUserSettings = $state<UserSettingsResponse | null>(null); // New state for global settings
+
 	let localSettings = $state({
-		model_name: '',
+		model_name: '', // Will be set from global or chat settings
 		active_custom_persona_id: null as string | null,
 		system_prompt: '',
-		temperature: 1.0,
-		max_output_tokens: 1000,
-		frequency_penalty: 0.0,
-		presence_penalty: 0.0,
-		top_p: 0.95,
-		top_k: 40,
-		seed: null as number | null,
-		gemini_thinking_budget: null as number | null,
-		gemini_enable_code_execution: false,
-		context_total_token_limit: DEFAULT_CONTEXT_TOTAL_TOKEN_LIMIT,
-		context_recent_history_budget: DEFAULT_CONTEXT_RECENT_HISTORY_BUDGET,
-		context_rag_budget: DEFAULT_CONTEXT_RAG_BUDGET
+		temperature: 1.0, // Will be set from global or chat settings
+		max_output_tokens: 1000, // Will be set from global or chat settings
+		frequency_penalty: 0.0, // Will be set from global or chat settings
+		presence_penalty: 0.0, // Will be set from global or chat settings
+		top_p: 0.95, // Will be set from global or chat settings
+		top_k: 40, // Will be set from global or chat settings
+		seed: null as number | null, // Will be set from global or chat settings
+		gemini_thinking_budget: null as number | null, // Will be set from global or chat settings
+		gemini_enable_code_execution: false, // Will be set from global or chat settings
+		context_total_token_limit: DEFAULT_CONTEXT_TOTAL_TOKEN_LIMIT, // Will be set from global or chat settings
+		context_recent_history_budget: DEFAULT_CONTEXT_RECENT_HISTORY_BUDGET, // Will be set from global or chat settings
+		context_rag_budget: DEFAULT_CONTEXT_RAG_BUDGET // Will be set from global or chat settings
 	});
 
 	// Expandable sections
@@ -91,11 +95,42 @@
 		);
 	});
 
-	// Load settings when chat changes
+	// Load global settings on component mount
 	$effect(() => {
+		loadGlobalSettings();
+	});
+
+	// Load chat settings when chat prop changes and global settings are loaded
+	$effect(() => {
+		if (!globalUserSettings) {
+			// Wait for global settings to load before proceeding
+			return;
+		}
+
 		if (chat) {
 			loadChatSettings();
 			loadLorebookAssociations();
+		} else {
+			// If no chat is active (new chat), initialize with global defaults
+			localSettings = {
+				model_name: globalUserSettings.default_model_name || DEFAULT_CHAT_MODEL,
+				active_custom_persona_id: null, // New chats don't have an active persona by default
+				system_prompt: '', // New chats don't have a system prompt by default
+				temperature: parseFloat(String(globalUserSettings.default_temperature ?? 1.0)),
+				max_output_tokens: globalUserSettings.default_max_output_tokens || 1000,
+				frequency_penalty: globalUserSettings.default_frequency_penalty || 0.0,
+				presence_penalty: globalUserSettings.default_presence_penalty || 0.0,
+				top_p: parseFloat((parseFloat(String(globalUserSettings.default_top_p ?? 0.95))).toFixed(2)),
+				top_k: globalUserSettings.default_top_k ?? 40,
+				seed: globalUserSettings.default_seed ?? null,
+				gemini_thinking_budget: globalUserSettings.default_gemini_thinking_budget ?? null,
+				gemini_enable_code_execution: globalUserSettings.default_gemini_enable_code_execution ?? false,
+				context_total_token_limit:
+					globalUserSettings.default_context_total_token_limit ?? DEFAULT_CONTEXT_TOTAL_TOKEN_LIMIT,
+				context_recent_history_budget:
+					globalUserSettings.default_context_recent_history_budget ?? DEFAULT_CONTEXT_RECENT_HISTORY_BUDGET,
+				context_rag_budget: globalUserSettings.default_context_rag_budget ?? DEFAULT_CONTEXT_RAG_BUDGET
+			};
 		}
 	});
 
@@ -105,24 +140,33 @@
 		const result = await apiClient.getChatSessionSettings(chat.id);
 		if (result.isOk()) {
 			const settings: ChatSessionSettingsResponse = result.value;
+			
+			// Handle system prompt - check if it contains binary data (likely encrypted)
+			let systemPrompt = settings.system_prompt ?? '';
+			if (systemPrompt && /[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\xFF]/.test(systemPrompt)) {
+				// Contains non-printable characters - likely encrypted data that failed to decrypt
+				console.warn('System prompt appears to contain encrypted data that failed to decrypt');
+				systemPrompt = ''; // Clear it rather than showing garbage
+			}
+			
 			localSettings = {
-				temperature: settings.temperature ?? 1.0,
-				max_output_tokens: settings.max_output_tokens ?? 1000,
-				frequency_penalty: settings.frequency_penalty ?? 0.0,
-				presence_penalty: settings.presence_penalty ?? 0.0,
-				top_p: settings.top_p ?? 0.95,
-				top_k: settings.top_k ?? 40,
-				seed: settings.seed ?? null,
-				system_prompt: settings.system_prompt ?? '',
+				model_name: settings.model_name ?? globalUserSettings?.default_model_name ?? DEFAULT_CHAT_MODEL,
 				active_custom_persona_id: chat.active_custom_persona_id ?? null, // This comes from the chat prop
-				model_name: settings.model_name ?? '',
-				gemini_thinking_budget: settings.gemini_thinking_budget ?? null,
-				gemini_enable_code_execution: settings.gemini_enable_code_execution ?? false,
+				system_prompt: systemPrompt,
+				temperature: parseFloat(String(settings.temperature ?? globalUserSettings?.default_temperature ?? 1.0)),
+				max_output_tokens: settings.max_output_tokens ?? globalUserSettings?.default_max_output_tokens ?? 1000,
+				frequency_penalty: settings.frequency_penalty ?? globalUserSettings?.default_frequency_penalty ?? 0.0,
+				presence_penalty: settings.presence_penalty ?? globalUserSettings?.default_presence_penalty ?? 0.0,
+				top_p: parseFloat((parseFloat(String(settings.top_p ?? globalUserSettings?.default_top_p ?? 0.95))).toFixed(2)),
+				top_k: settings.top_k ?? globalUserSettings?.default_top_k ?? 40,
+				seed: settings.seed ?? globalUserSettings?.default_seed ?? null,
+				gemini_thinking_budget: settings.gemini_thinking_budget ?? globalUserSettings?.default_gemini_thinking_budget ?? null,
+				gemini_enable_code_execution: settings.gemini_enable_code_execution ?? globalUserSettings?.default_gemini_enable_code_execution ?? false,
 				context_total_token_limit:
-					settings.context_total_token_limit ?? DEFAULT_CONTEXT_TOTAL_TOKEN_LIMIT,
+					settings.context_total_token_limit ?? globalUserSettings?.default_context_total_token_limit ?? DEFAULT_CONTEXT_TOTAL_TOKEN_LIMIT,
 				context_recent_history_budget:
-					settings.context_recent_history_budget ?? DEFAULT_CONTEXT_RECENT_HISTORY_BUDGET,
-				context_rag_budget: settings.context_rag_budget ?? DEFAULT_CONTEXT_RAG_BUDGET
+					settings.context_recent_history_budget ?? globalUserSettings?.default_context_recent_history_budget ?? DEFAULT_CONTEXT_RECENT_HISTORY_BUDGET,
+				context_rag_budget: settings.context_rag_budget ?? globalUserSettings?.default_context_rag_budget ?? DEFAULT_CONTEXT_RAG_BUDGET
 			};
 		} else {
 			console.error('Failed to load chat settings:', result.error);
@@ -135,6 +179,24 @@
 			localSettings.context_rag_budget = chat.context_rag_budget ?? DEFAULT_CONTEXT_RAG_BUDGET;
 		}
 		isLoading = false;
+	}
+
+	async function loadGlobalSettings() {
+		isLoading = true;
+		try {
+			const userSettingsResult = await apiClient.getUserSettings();
+			if (userSettingsResult.isOk()) {
+				globalUserSettings = userSettingsResult.value;
+			} else {
+				console.error('Failed to load global user settings:', userSettingsResult.error);
+				toast.error('Failed to load global settings');
+			}
+		} catch (error) {
+			console.error('Failed to load global settings:', error);
+			toast.error('Failed to load global settings');
+		} finally {
+			isLoading = false;
+		}
 	}
 
 	async function loadLorebookAssociations() {
@@ -227,62 +289,75 @@
 			| 'context_rag_budget'
 	) {
 		// Reset to default values based on field type
+		if (!globalUserSettings) {
+			toast.error('Global settings not loaded, cannot clear override to default.');
+			return;
+		}
+		// Reset to default values based on field type from global settings
 		switch (field) {
 			case 'temperature':
-				localSettings.temperature = 1.0;
+				localSettings.temperature = parseFloat(String(globalUserSettings.default_temperature ?? 1.0));
 				break;
 			case 'max_output_tokens':
-				localSettings.max_output_tokens = 1000;
+				localSettings.max_output_tokens = globalUserSettings.default_max_output_tokens ?? 1000;
 				break;
 			case 'frequency_penalty':
-				localSettings.frequency_penalty = 0.0;
+				localSettings.frequency_penalty = globalUserSettings.default_frequency_penalty ?? 0.0;
 				break;
 			case 'presence_penalty':
-				localSettings.presence_penalty = 0.0;
+				localSettings.presence_penalty = globalUserSettings.default_presence_penalty ?? 0.0;
 				break;
 			case 'top_p':
-				localSettings.top_p = 0.95;
+				localSettings.top_p = parseFloat((parseFloat(String(globalUserSettings.default_top_p ?? 0.95))).toFixed(2));
 				break;
 			case 'top_k':
-				localSettings.top_k = 40;
+				localSettings.top_k = globalUserSettings.default_top_k ?? 40;
 				break;
 			case 'seed':
-				localSettings.seed = null;
+				localSettings.seed = globalUserSettings.default_seed ?? null;
 				break;
 			case 'gemini_thinking_budget':
-				localSettings.gemini_thinking_budget = null;
+				localSettings.gemini_thinking_budget = globalUserSettings.default_gemini_thinking_budget ?? null;
 				break;
 			case 'gemini_enable_code_execution':
-				localSettings.gemini_enable_code_execution = false;
+				localSettings.gemini_enable_code_execution = globalUserSettings.default_gemini_enable_code_execution ?? false;
 				break;
 			case 'context_total_token_limit':
-				localSettings.context_total_token_limit = DEFAULT_CONTEXT_TOTAL_TOKEN_LIMIT;
+				localSettings.context_total_token_limit =
+					globalUserSettings.default_context_total_token_limit ?? DEFAULT_CONTEXT_TOTAL_TOKEN_LIMIT;
 				break;
 			case 'context_recent_history_budget':
-				localSettings.context_recent_history_budget = DEFAULT_CONTEXT_RECENT_HISTORY_BUDGET;
+				localSettings.context_recent_history_budget =
+					globalUserSettings.default_context_recent_history_budget ?? DEFAULT_CONTEXT_RECENT_HISTORY_BUDGET;
 				break;
 			case 'context_rag_budget':
-				localSettings.context_rag_budget = DEFAULT_CONTEXT_RAG_BUDGET;
+				localSettings.context_rag_budget = globalUserSettings.default_context_rag_budget ?? DEFAULT_CONTEXT_RAG_BUDGET;
 				break;
 		}
 		toast.info('Override cleared (will use default)');
 	}
 
 	function clearAllOverrides() {
-		localSettings.temperature = 1.0;
-		localSettings.max_output_tokens = 1000;
-		localSettings.frequency_penalty = 0.0;
-		localSettings.presence_penalty = 0.0;
-		localSettings.top_p = 0.95;
-		localSettings.top_k = 40;
-		localSettings.seed = null;
-		localSettings.gemini_thinking_budget = null;
-		localSettings.gemini_enable_code_execution = false;
-		localSettings.system_prompt = '';
-		localSettings.model_name = '';
-		localSettings.context_total_token_limit = DEFAULT_CONTEXT_TOTAL_TOKEN_LIMIT;
-		localSettings.context_recent_history_budget = DEFAULT_CONTEXT_RECENT_HISTORY_BUDGET;
-		localSettings.context_rag_budget = DEFAULT_CONTEXT_RAG_BUDGET;
+		if (!globalUserSettings) {
+			toast.error('Global settings not loaded, cannot reset to defaults.');
+			return;
+		}
+		localSettings.temperature = parseFloat(String(globalUserSettings.default_temperature ?? 1.0));
+		localSettings.max_output_tokens = globalUserSettings.default_max_output_tokens ?? 1000;
+		localSettings.frequency_penalty = globalUserSettings.default_frequency_penalty ?? 0.0;
+		localSettings.presence_penalty = globalUserSettings.default_presence_penalty ?? 0.0;
+		localSettings.top_p = parseFloat((parseFloat(String(globalUserSettings.default_top_p ?? 0.95))).toFixed(2));
+		localSettings.top_k = globalUserSettings.default_top_k ?? 40;
+		localSettings.seed = globalUserSettings.default_seed ?? null;
+		localSettings.gemini_thinking_budget = globalUserSettings.default_gemini_thinking_budget ?? null;
+		localSettings.gemini_enable_code_execution = globalUserSettings.default_gemini_enable_code_execution ?? false;
+		localSettings.system_prompt = ''; // System prompt is not part of global settings, always clear
+		localSettings.model_name = globalUserSettings.default_model_name || DEFAULT_CHAT_MODEL;
+		localSettings.context_total_token_limit =
+			globalUserSettings.default_context_total_token_limit ?? DEFAULT_CONTEXT_TOTAL_TOKEN_LIMIT;
+		localSettings.context_recent_history_budget =
+			globalUserSettings.default_context_recent_history_budget ?? DEFAULT_CONTEXT_RECENT_HISTORY_BUDGET;
+		localSettings.context_rag_budget = globalUserSettings.default_context_rag_budget ?? DEFAULT_CONTEXT_RAG_BUDGET;
 		toast.info('All overrides cleared');
 	}
 
@@ -724,7 +799,6 @@
 							<!-- Context Configuration Override -->
 							<ContextConfigurator
 								bind:total_token_limit={localSettings.context_total_token_limit}
-								-------
 								bind:recent_history_budget={localSettings.context_recent_history_budget}
 								bind:rag_budget={localSettings.context_rag_budget}
 								title="Context Override"

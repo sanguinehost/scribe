@@ -490,3 +490,60 @@ export interface ChatSessionSettingsResponse {
 	context_rag_budget?: number | null;
 	system_prompt?: string | null;
 }
+
+// Types for Global User Settings
+export interface UpdateUserSettingsRequest {
+	// Generation Settings
+	default_model_name?: string | null;
+	default_temperature?: number | null;
+	default_max_output_tokens?: number | null;
+	default_frequency_penalty?: number | null;
+	default_presence_penalty?: number | null;
+	default_top_p?: number | null;
+	default_top_k?: number | null;
+	default_seed?: number | null;
+	
+	// Gemini-Specific Settings
+	default_gemini_thinking_budget?: number | null;
+	default_gemini_enable_code_execution?: boolean | null;
+	
+	// Context Management Settings
+	default_context_total_token_limit?: number | null;
+	default_context_recent_history_budget?: number | null;
+	default_context_rag_budget?: number | null;
+	
+	// Application Preferences
+	auto_save_chats?: boolean | null;
+	theme?: string | null;
+	notifications_enabled?: boolean | null;
+}
+
+export interface UserSettingsResponse {
+	// Generation Settings
+	default_model_name?: string | null;
+	default_temperature?: number | null;
+	default_max_output_tokens?: number | null;
+	default_frequency_penalty?: number | null;
+	default_presence_penalty?: number | null;
+	default_top_p?: number | null;
+	default_top_k?: number | null;
+	default_seed?: number | null;
+	
+	// Gemini-Specific Settings
+	default_gemini_thinking_budget?: number | null;
+	default_gemini_enable_code_execution?: boolean | null;
+	
+	// Context Management Settings
+	default_context_total_token_limit?: number | null;
+	default_context_recent_history_budget?: number | null;
+	default_context_rag_budget?: number | null;
+	
+	// Application Preferences
+	auto_save_chats?: boolean | null;
+	theme?: string | null;
+	notifications_enabled?: boolean | null;
+	
+	// Timestamps
+	created_at: string;
+	updated_at: string;
+}

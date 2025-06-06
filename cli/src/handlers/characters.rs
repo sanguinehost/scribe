@@ -591,7 +591,7 @@ fn display_character_details<H: IoHandler>(
         .as_ref()
         .map(|v| {
             v.iter()
-                .filter_map(|s| s.as_ref().map(String::as_str))
+                .filter_map(|s| s.as_deref())
                 .collect::<Vec<&str>>()
                 .join(", ")
         })
@@ -603,7 +603,7 @@ fn display_character_details<H: IoHandler>(
         .as_ref()
         .map(|v| {
             v.iter()
-                .filter_map(|s| s.as_ref().map(String::as_str))
+                .map(String::as_str)
                 .collect::<Vec<&str>>()
                 .join("; ")
         })

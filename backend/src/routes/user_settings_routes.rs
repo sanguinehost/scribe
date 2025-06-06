@@ -6,7 +6,7 @@ use axum::{
     http::{Request, StatusCode}, // Added Request
     middleware::{self, Next},    // Added middleware, Next
     response::{IntoResponse, Response},
-    routing::{delete, put},
+    routing::{delete, get, put},
 };
 use serde::Serialize; // Removed Deserialize as SetDefaultPersonaRequest is removed
 use tracing::debug;
@@ -17,8 +17,14 @@ use crate::{
     // models::{user_personas::UserPersona, users::User}, // UserPersona is unused
     auth::user_store::Backend as AuthBackend, // Import the backend
     errors::AppError,
-    models::users::User,
-    services::user_persona_service::UserPersonaService,
+    models::{
+        users::User,
+        user_settings::{UpdateUserSettingsRequest},
+    },
+    services::{
+        user_persona_service::UserPersonaService,
+        user_settings_service::UserSettingsService,
+    },
     state::AppState,
 };
 use axum_login::AuthSession; // Correct import for AuthSession
@@ -55,6 +61,9 @@ async fn user_settings_logging_middleware(
 
 pub fn user_settings_routes(state: AppState) -> Router<AppState> {
     Router::new()
+        .route("/", get(get_user_settings_handler))
+        .route("/", put(update_user_settings_handler))
+        .route("/", delete(delete_user_settings_handler))
         .route(
             "/set_default_persona/:persona_id",
             put(set_default_persona_handler),
@@ -65,6 +74,60 @@ pub fn user_settings_routes(state: AppState) -> Router<AppState> {
         ) // Changed path for consistency and explicitness and distinctness
         .layer(middleware::from_fn(user_settings_logging_middleware)) // Add logging middleware
         .with_state(state)
+}
+
+#[axum::debug_handler]
+async fn get_user_settings_handler(
+    auth_session: AuthSession<AuthBackend>,
+    State(app_state): State<AppState>,
+) -> Result<Response, AppError> {
+    let user = auth_session
+        .user
+        .ok_or_else(|| AppError::Unauthorized("User not authenticated".to_string()))?;
+    
+    debug!(user_id = %user.id, "Getting user settings");
+    
+    let settings = UserSettingsService::get_user_settings(&app_state.pool, user.id, &app_state.config).await?;
+    
+    Ok((StatusCode::OK, Json(settings)).into_response())
+}
+
+#[axum::debug_handler]
+async fn update_user_settings_handler(
+    auth_session: AuthSession<AuthBackend>,
+    State(app_state): State<AppState>,
+    Json(update_request): Json<UpdateUserSettingsRequest>,
+) -> Result<Response, AppError> {
+    let user = auth_session
+        .user
+        .ok_or_else(|| AppError::Unauthorized("User not authenticated".to_string()))?;
+    
+    debug!(user_id = %user.id, "Updating user settings");
+    
+    let updated_settings = UserSettingsService::update_user_settings(
+        &app_state.pool,
+        user.id,
+        update_request,
+        &app_state.config,
+    ).await?;
+    
+    Ok((StatusCode::OK, Json(updated_settings)).into_response())
+}
+
+#[axum::debug_handler]
+async fn delete_user_settings_handler(
+    auth_session: AuthSession<AuthBackend>,
+    State(app_state): State<AppState>,
+) -> Result<Response, AppError> {
+    let user = auth_session
+        .user
+        .ok_or_else(|| AppError::Unauthorized("User not authenticated".to_string()))?;
+    
+    debug!(user_id = %user.id, "Deleting user settings (reset to defaults)");
+    
+    UserSettingsService::delete_user_settings(&app_state.pool, user.id).await?;
+    
+    Ok(StatusCode::NO_CONTENT.into_response())
 }
 
 #[axum::debug_handler]

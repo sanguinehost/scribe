@@ -8,6 +8,7 @@ pub mod documents;
 pub mod lorebook_dtos;
 pub mod lorebooks;
 pub mod user_personas;
+pub mod user_settings;
 pub mod users;
 
 pub use auth::*;
@@ -20,4 +21,5 @@ pub use documents::*;
 pub use lorebook_dtos::*;
 pub use lorebooks::*;
 pub use user_personas::*;
+pub use user_settings::*;
 pub use users::*;

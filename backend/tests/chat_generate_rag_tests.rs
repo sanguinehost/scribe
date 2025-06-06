@@ -854,19 +854,15 @@ async fn test_rag_context_injection_in_prompt() -> anyhow::Result<()> {
     let expected_system_prompt = format!(
         "You are the Narrator and supporting characters in a collaborative storytelling experience with a Human player. The Human controls a character (referred to as 'the User'). Your primary role is to describe the world, events, and the actions and dialogue of all characters *except* the User.\n\n\
         You will be provided with the following structured information to guide your responses:\n\
-        1. <persona_override_prompt>: Specific instructions or style preferences from the User (if any).\n\
-        2. <character_definition>: The core definition and personality of the character '{}'.\n\
-        3. <character_details>: Additional descriptive information about '{}'.\n\
-        4. <lorebook_entries>: Relevant background information about the world, other characters, or plot points.\n\
-        5. The conversation history contains the story so far - the existing dialogue and narration.\n\n\
+        1. <lorebook_entries>: Relevant background information about the world, other characters, or plot points.\n\
+        2. The conversation history contains the story so far - the existing dialogue and narration.\n\n\
         Key Writing Principles:\n\
         - Focus on the direct consequences of the User's actions.\n\
         - Describe newly encountered people, places, or significant objects only once. The Human will remember.\n\
         - Maintain character believability. Characters have their own motivations and will not always agree with the User. They should react realistically based on their personalities and the situation.\n\
         - End your responses with action or dialogue to maintain active immersion. Avoid summarization or out-of-character commentary.\n\n\
         [System Instructions End]\n\
-        Based on all the above information and the conversation history, write the next part of the story as the narrator and any relevant non-player characters. Ensure your response is engaging and moves the story forward.",
-        character.name, character.name
+        Based on all the above information and the conversation history, write the next part of the story as the narrator and any relevant non-player characters. Ensure your response is engaging and moves the story forward.\n\n---\nInstruction:\nContinue the chat based on the conversation history. Stay in character.\n---\n"
     );
     assert_eq!(
         last_ai_request.system.as_deref(),
@@ -887,23 +883,24 @@ async fn test_rag_context_injection_in_prompt() -> anyhow::Result<()> {
         RetrievedMetadata::Chat(chat_meta) => chat_meta.speaker.as_str(),
         RetrievedMetadata::Lorebook(_) => "Unknown", // Should not happen in this test based on mock_retrieved_chunk setup
     };
-    let expected_rag_chunk_text = format!(
-        "- Chat (Speaker: {}): {}",
-        speaker_from_meta,
-        mock_chunk_text.trim()
-    );
-    let expected_rag_context_header = "---\nRelevant Context:\n";
+    let expected_rag_chunk_text = format!("<chat_history speaker=\"{}\">{}</chat_history>", speaker_from_meta, mock_chunk_text.trim());
+    let expected_rag_context_start_tag = "<lorebook_entries>\n";
+    let expected_rag_context_end_tag = "</lorebook_entries>\n\n";
 
     if let genai::chat::MessageContent::Text(user_content) =
         &last_user_message_in_ai_request.content
     {
         assert!(
-            user_content.contains(expected_rag_context_header),
-            "User message content should contain RAG context header. Got: '{user_content}'"
+            user_content.starts_with(expected_rag_context_start_tag),
+            "User message content should start with RAG context start tag. Got: '{user_content}'"
         );
         assert!(
             user_content.contains(&expected_rag_chunk_text),
             "User message content should contain RAG chunk text. Expected: '{expected_rag_chunk_text}'. Got: '{user_content}'"
+        );
+        assert!(
+            user_content.contains(expected_rag_context_end_tag),
+            "User message content should contain RAG context end tag. Got: '{user_content}'"
         );
         assert!(
             user_content.ends_with(query_text), // Original query should be at the end
@@ -1168,18 +1165,14 @@ async fn generate_chat_response_rag_retrieval_error() -> anyhow::Result<()> {
     let expected_system_prompt = format!(
         "You are the Narrator and supporting characters in a collaborative storytelling experience with a Human player. The Human controls a character (referred to as 'the User'). Your primary role is to describe the world, events, and the actions and dialogue of all characters *except* the User.\n\n\
         You will be provided with the following structured information to guide your responses:\n\
-        1. <persona_override_prompt>: Specific instructions or style preferences from the User (if any).\n\
-        2. <character_definition>: The core definition and personality of the character '{}'.\n\
-        3. <character_details>: Additional descriptive information about '{}'.\n\
-        4. The conversation history contains the story so far - the existing dialogue and narration.\n\n\
+        1. The conversation history contains the story so far - the existing dialogue and narration.\n\n\
         Key Writing Principles:\n\
         - Focus on the direct consequences of the User's actions.\n\
         - Describe newly encountered people, places, or significant objects only once. The Human will remember.\n\
         - Maintain character believability. Characters have their own motivations and will not always agree with the User. They should react realistically based on their personalities and the situation.\n\
         - End your responses with action or dialogue to maintain active immersion. Avoid summarization or out-of-character commentary.\n\n\
         [System Instructions End]\n\
-        Based on all the above information and the conversation history, write the next part of the story as the narrator and any relevant non-player characters. Ensure your response is engaging and moves the story forward.",
-        character.name, character.name
+        Based on all the above information and the conversation history, write the next part of the story as the narrator and any relevant non-player characters. Ensure your response is engaging and moves the story forward.\n\n---\nInstruction:\nContinue the chat based on the conversation history. Stay in character.\n---\n"
     );
     assert_eq!(
         last_ai_request.system.as_deref(),
@@ -1672,18 +1665,14 @@ async fn generate_chat_response_rag_success() -> anyhow::Result<()> {
     let expected_system_prompt = format!(
         "You are the Narrator and supporting characters in a collaborative storytelling experience with a Human player. The Human controls a character (referred to as 'the User'). Your primary role is to describe the world, events, and the actions and dialogue of all characters *except* the User.\n\n\
         You will be provided with the following structured information to guide your responses:\n\
-        1. <persona_override_prompt>: Specific instructions or style preferences from the User (if any).\n\
-        2. <character_definition>: The core definition and personality of the character '{}'.\n\
-        3. <character_details>: Additional descriptive information about '{}'.\n\
-        4. The conversation history contains the story so far - the existing dialogue and narration.\n\n\
+        1. The conversation history contains the story so far - the existing dialogue and narration.\n\n\
         Key Writing Principles:\n\
         - Focus on the direct consequences of the User's actions.\n\
         - Describe newly encountered people, places, or significant objects only once. The Human will remember.\n\
         - Maintain character believability. Characters have their own motivations and will not always agree with the User. They should react realistically based on their personalities and the situation.\n\
         - End your responses with action or dialogue to maintain active immersion. Avoid summarization or out-of-character commentary.\n\n\
         [System Instructions End]\n\
-        Based on all the above information and the conversation history, write the next part of the story as the narrator and any relevant non-player characters. Ensure your response is engaging and moves the story forward.",
-        context.character.name, context.character.name
+        Based on all the above information and the conversation history, write the next part of the story as the narrator and any relevant non-player characters. Ensure your response is engaging and moves the story forward.\n\n---\nInstruction:\nContinue the chat based on the conversation history. Stay in character.\n---\n"
     );
     assert_eq!(
         last_ai_request.system.as_deref(),
@@ -1804,18 +1793,14 @@ async fn generate_chat_response_rag_empty_history_success() -> anyhow::Result<()
     let expected_system_prompt = format!(
         "You are the Narrator and supporting characters in a collaborative storytelling experience with a Human player. The Human controls a character (referred to as 'the User'). Your primary role is to describe the world, events, and the actions and dialogue of all characters *except* the User.\n\n\
         You will be provided with the following structured information to guide your responses:\n\
-        1. <persona_override_prompt>: Specific instructions or style preferences from the User (if any).\n\
-        2. <character_definition>: The core definition and personality of the character '{}'.\n\
-        3. <character_details>: Additional descriptive information about '{}'.\n\
-        4. The conversation history contains the story so far - the existing dialogue and narration.\n\n\
+        1. The conversation history contains the story so far - the existing dialogue and narration.\n\n\
         Key Writing Principles:\n\
         - Focus on the direct consequences of the User's actions.\n\
         - Describe newly encountered people, places, or significant objects only once. The Human will remember.\n\
         - Maintain character believability. Characters have their own motivations and will not always agree with the User. They should react realistically based on their personalities and the situation.\n\
         - End your responses with action or dialogue to maintain active immersion. Avoid summarization or out-of-character commentary.\n\n\
         [System Instructions End]\n\
-        Based on all the above information and the conversation history, write the next part of the story as the narrator and any relevant non-player characters. Ensure your response is engaging and moves the story forward.",
-        context.character.name, context.character.name
+        Based on all the above information and the conversation history, write the next part of the story as the narrator and any relevant non-player characters. Ensure your response is engaging and moves the story forward.\n\n---\nInstruction:\nContinue the chat based on the conversation history. Stay in character.\n---\n"
     );
     assert_eq!(
         last_ai_request.system.as_deref(),
@@ -1933,18 +1918,14 @@ async fn generate_chat_response_rag_no_relevant_chunks_found() -> anyhow::Result
     let expected_system_prompt = format!(
         "You are the Narrator and supporting characters in a collaborative storytelling experience with a Human player. The Human controls a character (referred to as 'the User'). Your primary role is to describe the world, events, and the actions and dialogue of all characters *except* the User.\n\n\
         You will be provided with the following structured information to guide your responses:\n\
-        1. <persona_override_prompt>: Specific instructions or style preferences from the User (if any).\n\
-        2. <character_definition>: The core definition and personality of the character '{}'.\n\
-        3. <character_details>: Additional descriptive information about '{}'.\n\
-        4. The conversation history contains the story so far - the existing dialogue and narration.\n\n\
+        1. The conversation history contains the story so far - the existing dialogue and narration.\n\n\
         Key Writing Principles:\n\
         - Focus on the direct consequences of the User's actions.\n\
         - Describe newly encountered people, places, or significant objects only once. The Human will remember.\n\
         - Maintain character believability. Characters have their own motivations and will not always agree with the User. They should react realistically based on their personalities and the situation.\n\
         - End your responses with action or dialogue to maintain active immersion. Avoid summarization or out-of-character commentary.\n\n\
         [System Instructions End]\n\
-        Based on all the above information and the conversation history, write the next part of the story as the narrator and any relevant non-player characters. Ensure your response is engaging and moves the story forward.",
-        context.character.name, context.character.name
+        Based on all the above information and the conversation history, write the next part of the story as the narrator and any relevant non-player characters. Ensure your response is engaging and moves the story forward.\n\n---\nInstruction:\nContinue the chat based on the conversation history. Stay in character.\n---\n"
     );
     assert_eq!(
         last_ai_request.system.as_deref(),

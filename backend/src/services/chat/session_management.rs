@@ -359,6 +359,9 @@ struct ChatSessionInsertParams {
     encrypted_system_prompt_bytes: Option<Vec<u8>>,
     sp_nonce_bytes: Option<Vec<u8>>,
     effective_active_persona_id: Option<Uuid>,
+    default_model_name: String,
+    default_history_management_strategy: String,
+    default_history_management_limit: i32,
 }
 
 /// Inserts the chat session into the database
@@ -376,9 +379,9 @@ fn insert_chat_session(
             chat_sessions::system_prompt_ciphertext.eq(params.encrypted_system_prompt_bytes),
             chat_sessions::system_prompt_nonce.eq(params.sp_nonce_bytes),
             chat_sessions::active_custom_persona_id.eq(params.effective_active_persona_id),
-            chat_sessions::model_name.eq("gemini-2.5-flash-preview-05-20"),
-            chat_sessions::history_management_strategy.eq("message_window"),
-            chat_sessions::history_management_limit.eq(20),
+            chat_sessions::model_name.eq(params.default_model_name),
+            chat_sessions::history_management_strategy.eq(params.default_history_management_strategy),
+            chat_sessions::history_management_limit.eq(params.default_history_management_limit),
         ))
         .returning(Chat::as_returning())
         .get_result(transaction_conn)
@@ -415,20 +418,6 @@ fn validate_lorebook_ownership(
 }
 
 /// Fetches lorebooks associated with a character
-fn get_character_lorebooks(
-    character_id: Uuid,
-    user_id: Uuid,
-    transaction_conn: &mut PgConnection,
-) -> Result<Vec<Uuid>, AppError> {
-    use crate::schema::character_lorebooks;
-
-    character_lorebooks::table
-        .filter(character_lorebooks::character_id.eq(character_id))
-        .filter(character_lorebooks::user_id.eq(user_id))
-        .select(character_lorebooks::lorebook_id)
-        .load::<Uuid>(transaction_conn)
-        .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
-}
 
 /// Associates lorebooks with the chat session
 /// Associates explicitly provided lorebooks with the chat session.
@@ -498,6 +487,9 @@ fn create_session_in_transaction(
     active_custom_persona_id: Option<Uuid>,
     lorebook_ids: Option<Vec<Uuid>>,
     user_dek_secret_box: Option<&Arc<SecretBox<Vec<u8>>>>,
+    default_model_name: String,
+    default_history_management_strategy: String,
+    default_history_management_limit: i32,
 ) -> SessionCreationResult {
     let effective_active_persona_id =
         determine_effective_persona_id(user_id, active_custom_persona_id, transaction_conn);
@@ -530,6 +522,9 @@ fn create_session_in_transaction(
             encrypted_system_prompt_bytes,
             sp_nonce_bytes,
             effective_active_persona_id,
+            default_model_name,
+            default_history_management_strategy,
+            default_history_management_limit,
         },
         transaction_conn,
     )?;
@@ -615,6 +610,43 @@ pub async fn create_session_and_maybe_first_message(
     lorebook_ids: Option<Vec<Uuid>>,
     user_dek_secret_box: Option<Arc<SecretBox<Vec<u8>>>>,
 ) -> Result<Chat, AppError> {
+    // Load user settings to get defaults for the new chat session
+    // This will auto-create defaults if user has no settings yet
+    let user_settings = crate::services::UserSettingsService::get_user_settings(
+        &state.pool,
+        user_id,
+        &state.config,
+    ).await.unwrap_or_else(|e| {
+        warn!(%user_id, error = ?e, "Failed to load user settings for new chat session, using system defaults");
+        // Create fallback defaults using system config values
+        crate::models::user_settings::UserSettingsResponse {
+            default_model_name: Some(state.config.token_counter_default_model.clone()),
+            default_temperature: None,
+            default_max_output_tokens: None,
+            default_frequency_penalty: None,
+            default_presence_penalty: None,
+            default_top_p: None,
+            default_top_k: None,
+            default_seed: None,
+            default_gemini_thinking_budget: None,
+            default_gemini_enable_code_execution: None,
+            default_context_total_token_limit: Some(state.config.context_total_token_limit as i32),
+            default_context_recent_history_budget: Some(state.config.context_recent_history_token_budget as i32),
+            default_context_rag_budget: Some(state.config.context_rag_token_budget as i32),
+            auto_save_chats: Some(true),
+            theme: Some("system".to_string()),
+            notifications_enabled: Some(true),
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+        }
+    });
+
+    // Extract defaults with fallbacks to system config
+    let default_model_name = user_settings.default_model_name
+        .unwrap_or_else(|| state.config.token_counter_default_model.clone());
+    let default_history_management_strategy = "message_window".to_string(); // Not yet in user settings
+    let default_history_management_limit = 20; // Not yet in user settings
+
     let pool: DbPool = state.pool.clone();
     let conn = pool.get().await?;
     // Clone user_dek_secret_box and lorebook_ids for use inside the 'move' closure
@@ -630,6 +662,9 @@ pub async fn create_session_and_maybe_first_message(
                     active_custom_persona_id,
                     lorebook_ids_for_closure,
                     user_dek_for_closure.as_ref(),
+                    default_model_name,
+                    default_history_management_strategy,
+                    default_history_management_limit,
                 )
             })
         })

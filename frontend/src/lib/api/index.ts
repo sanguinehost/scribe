@@ -32,9 +32,11 @@ import type {
 	DocumentResponse,
 	SessionResponse,
 	SuggestedActionsResponse,
-	UpdateChatSessionSettingsRequest
+	UpdateChatSessionSettingsRequest,
+	UserSettingsResponse,
+	UpdateUserSettingsRequest
 } from '$lib/types';
-import { setUnauthenticated, setConnectionError, setSessionExpired } from '$lib/auth.svelte'; // Import the new auth store functions
+import { setConnectionError, setSessionExpired } from '$lib/auth.svelte'; // Import the new auth store functions
 import { browser } from '$app/environment'; // To check if in browser context
 
 // Actual API client
@@ -534,6 +536,24 @@ class ApiClient {
 	async setDefaultPersona(personaId: string): Promise<Result<void, ApiError>> {
 		return this.fetch<void>(`/api/user-settings/set_default_persona/${personaId}`, {
 			method: 'PUT'
+		});
+	}
+
+	// User Settings methods - for global defaults
+	async getUserSettings(): Promise<Result<UserSettingsResponse, ApiError>> {
+		return this.fetch<UserSettingsResponse>('/api/user-settings');
+	}
+
+	async updateUserSettings(settings: UpdateUserSettingsRequest): Promise<Result<UserSettingsResponse, ApiError>> {
+		return this.fetch<UserSettingsResponse>('/api/user-settings', {
+			method: 'PUT',
+			body: JSON.stringify(settings)
+		});
+	}
+
+	async deleteUserSettings(): Promise<Result<void, ApiError>> {
+		return this.fetch<void>('/api/user-settings', {
+			method: 'DELETE'
 		});
 	}
 

@@ -1,5 +1,6 @@
 // Test script to verify alternate_greetings parsing
 use serde_json::json;
+use scribe_backend::models::character_card;
 
 fn main() {
     // Test data with alternate greetings
@@ -17,7 +18,7 @@ fn main() {
     println!("Test JSON: {}", serde_json::to_string_pretty(&test_json).unwrap());
     
     // Test parsing with our character card structure
-    let card_result: Result<sanguine_scribe_backend::models::character_card::CharacterCardV3, _> = 
+    let card_result: Result<character_card::CharacterCardV3, _> =
         serde_json::from_value(test_json);
     
     match card_result {

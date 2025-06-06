@@ -10,6 +10,7 @@ pub mod hybrid_token_counter;
 pub mod lorebook_service;
 pub mod tokenizer_service;
 pub mod user_persona_service;
+pub mod user_settings_service;
 
 pub use character_service::CharacterService;
 pub use chat_override_service::ChatOverrideService;
@@ -20,3 +21,4 @@ pub use encryption_service::EncryptionService;
 // pub use rag_service::RAGService;    // Module file missing
 pub use lorebook_service::LorebookService;
 pub use user_persona_service::UserPersonaService;
+pub use user_settings_service::UserSettingsService;

@@ -3,11 +3,16 @@ use crate::error::CliError;
 use crate::io::IoHandler;
 use scribe_backend::models::chats::{ChatSettingsResponse, UpdateChatSettingsRequest};
 
+// Placeholder for system defaults
+const SYSTEM_DEFAULT_MODEL: &str = "gemini-2.5-flash-preview-05-20";
+// Define other system defaults if needed, e.g.,
+// const SYSTEM_DEFAULT_TEMPERATURE: f32 = 1.0;
+
 /// Handler function for configuring chat session settings
 pub async fn handle_chat_config_action<H: IoHandler, C: HttpClient>(
     client: &C,
     io_handler: &mut H,
-    current_model: &str,
+    // current_model: &str, // Removed parameter
 ) -> Result<(), CliError> {
     io_handler.write_line("\n--- Configure Chat Session Settings ---")?;
 
@@ -54,9 +59,33 @@ pub async fn handle_chat_config_action<H: IoHandler, C: HttpClient>(
     let chat_id = selected_session.id;
     io_handler.write_line(&format!(
         "Configuring chat session: {} (ID: {})",
-        "[Encrypted Title]", // Title is now encrypted
+        selected_session.title.as_deref().unwrap_or("Untitled"), // Use decrypted title
         chat_id
     ))?;
+
+    // Fetch current settings for the session and user defaults
+    io_handler.write_line("Fetching current settings...")?;
+    let session_settings = client.get_chat_settings(chat_id).await?;
+    let user_default_settings = client.get_user_chat_settings().await?;
+
+    // Helper to determine current value and source for prompts
+    // Note: T must implement ToString. For Option<BigDecimal>, manual formatting is needed.
+    fn get_current_value_display<'a, T: Clone + ToString>(
+        session_value: Option<&'a T>,
+        user_default_value: Option<&'a T>,
+        system_default_value: Option<&'a T>, // Can be Option<&String> for string defaults
+        default_text_if_all_none: &'a str,
+    ) -> (String, String) {
+        if let Some(val) = session_value {
+            (val.to_string(), "[session]".to_string())
+        } else if let Some(val) = user_default_value {
+            (val.to_string(), "[user default]".to_string())
+        } else if let Some(val) = system_default_value {
+            (val.to_string(), "[system default]".to_string())
+        } else {
+            (default_text_if_all_none.to_string(), "[system default]".to_string())
+        }
+    }
 
     // 3. Create a settings object with defaults for non-changed settings
     let mut settings_to_update = UpdateChatSettingsRequest {
@@ -75,50 +104,99 @@ pub async fn handle_chat_config_action<H: IoHandler, C: HttpClient>(
         history_management_limit: None,
         model_name: None,
     };
-
+    
     // 4. Configure model
-    let model_choice = io_handler.read_line(&format!(
-        "Set model (current: {current_model}, press Enter to keep current):"
-    ))?;
-    if !model_choice.trim().is_empty() {
-        settings_to_update.model_name = Some(model_choice.trim().to_string());
-    } else {
-        settings_to_update.model_name = None;
+    let (current_model_display, model_source) = get_current_value_display(
+        Some(&session_settings.model_name), // model_name is not Option in ChatSettingsResponse
+        user_default_settings.as_ref().and_then(|uds| uds.default_model_name.as_ref()),
+        Some(&SYSTEM_DEFAULT_MODEL.to_string()),
+        SYSTEM_DEFAULT_MODEL
+    );
+    let model_choice_prompt = format!(
+        "Set model (current: {} {}, press Enter to keep current):",
+        current_model_display, model_source
+    );
+    let model_choice_input = io_handler.read_line(&model_choice_prompt)?;
+    if !model_choice_input.trim().is_empty() {
+        settings_to_update.model_name = Some(model_choice_input.trim().to_string());
     }
 
     // 5. Configure thinking budget
-    let budget_str = io_handler
-        .read_line("Set thinking budget (optional, integer, e.g. 1024, press Enter to skip):")?;
-    if !budget_str.trim().is_empty() {
-        match budget_str.trim().parse::<i32>() {
+    let (current_budget_display, budget_source) = get_current_value_display(
+        session_settings.gemini_thinking_budget.as_ref(),
+        user_default_settings.as_ref().and_then(|uds| uds.default_gemini_thinking_budget.as_ref()),
+        None::<&i32>,
+        "Not set"
+    );
+    let budget_prompt = format!(
+        "Set thinking budget (optional, integer, e.g. 1024, current: {} {}, press Enter to skip):",
+        current_budget_display, budget_source
+    );
+    let budget_str_input = io_handler.read_line(&budget_prompt)?;
+    if !budget_str_input.trim().is_empty() {
+        match budget_str_input.trim().parse::<i32>() {
             Ok(budget) => settings_to_update.gemini_thinking_budget = Some(budget),
             Err(_) => io_handler.write_line("Invalid budget, skipping.")?,
         }
     }
 
     // 6. Configure code execution
-    let exec_str = io_handler
-        .read_line("Enable code execution (optional, true/false, press Enter to skip):")?;
-    if !exec_str.trim().is_empty() {
-        match exec_str.trim().to_lowercase().as_str() {
+    let (current_exec_display, exec_source) = get_current_value_display(
+        session_settings.gemini_enable_code_execution.as_ref(),
+        user_default_settings.as_ref().and_then(|uds| uds.default_gemini_enable_code_execution.as_ref()),
+        None::<&bool>,
+        "Not set"
+    );
+    let exec_prompt = format!(
+        "Enable code execution (optional, true/false, current: {} {}, press Enter to skip):",
+        current_exec_display, exec_source
+    );
+    let exec_str_input = io_handler.read_line(&exec_prompt)?;
+    if !exec_str_input.trim().is_empty() {
+        match exec_str_input.trim().to_lowercase().as_str() {
             "true" => settings_to_update.gemini_enable_code_execution = Some(true),
             "false" => settings_to_update.gemini_enable_code_execution = Some(false),
             _ => io_handler.write_line("Invalid input, skipping code execution setting.")?,
         }
     }
-
+    
     // 7. Configure system prompt
-    let system_prompt =
-        io_handler.read_line("Set system prompt (optional, press Enter to skip):")?;
-    if !system_prompt.trim().is_empty() {
-        settings_to_update.system_prompt = Some(system_prompt.trim().to_string());
+    // UserSettingsResponse does not have default_system_prompt.
+    // So, we only consider session_settings or "Not set".
+    let (current_prompt_display, prompt_source) = get_current_value_display(
+        session_settings.system_prompt.as_ref(),
+        None::<&String>, // No user default for system prompt
+        None::<&String>,
+        "Not set"
+    );
+    let system_prompt_prompt = format!(
+        "Set system prompt (optional, current: \"{}\" {}, press Enter to skip):",
+        current_prompt_display, prompt_source
+    );
+    let system_prompt_input = io_handler.read_line(&system_prompt_prompt)?;
+    if !system_prompt_input.trim().is_empty() {
+        settings_to_update.system_prompt = Some(system_prompt_input.trim().to_string());
     }
 
     // 8. Configure temperature
-    let temp_str =
-        io_handler.read_line("Set temperature (optional, float 0.0-2.0, press Enter to skip):")?;
-    if !temp_str.trim().is_empty() {
-        match temp_str.trim().parse::<f32>() {
+    let (current_temp_display, temp_source) =
+        if let Some(val) = session_settings.temperature.as_ref() {
+            (format!("{:.2}", val), "[session]".to_string())
+        } else if let Some(val) = user_default_settings.as_ref().and_then(|uds| uds.default_temperature.as_ref()) {
+            (format!("{:.2}", val), "[user default]".to_string())
+        } else {
+            // Assuming a system default temperature if desired, e.g., 1.0
+            // For now, "Not set" if neither session nor user default exists.
+            ("Not set".to_string(), "[system default]".to_string())
+        };
+
+    let temp_prompt = format!(
+        "Set temperature (optional, float 0.0-2.0, current: {} {}, press Enter to skip):",
+        current_temp_display, temp_source
+    );
+    let temp_str_input = io_handler.read_line(&temp_prompt)?;
+    if !temp_str_input.trim().is_empty() {
+        match temp_str_input.trim().parse::<f32>() {
             Ok(temp) if (0.0..=2.0).contains(&temp) => {
                 // Convert f32 to BigDecimal for the API
                 use bigdecimal::BigDecimal;
