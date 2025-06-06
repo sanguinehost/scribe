@@ -116,6 +116,7 @@ pub async fn get_session_data_for_generation(
     info!(target: "chat_service_persona_debug", %session_id, ?maybe_active_persona_id_from_session, "Fetched active_custom_persona_id from session.");
 
     let mut effective_system_prompt: Option<String> = None;
+    let mut user_persona_name: Option<String> = None;
 
     if let Some(persona_id) = maybe_active_persona_id_from_session {
         if let Some(ref dek_arc_outer) = user_dek_secret_box {
@@ -151,6 +152,9 @@ pub async fn get_session_data_for_generation(
                 .await
             {
                 Ok(client_persona_dto) => {
+                    // Capture the persona name for template substitution
+                    user_persona_name = Some(client_persona_dto.name.replace('\0', ""));
+                    
                     if let Some(ref sp_from_persona) = client_persona_dto.system_prompt {
                         if !sp_from_persona.trim().is_empty() {
                             effective_system_prompt = Some(sp_from_persona.replace('\0', ""));
@@ -814,6 +818,7 @@ pub async fn get_session_data_for_generation(
         // History Management Settings
         history_management_strategy_db_val, // 18: history_management_strategy (String) - MOVED
         history_management_limit_db_val,    // 19: history_management_limit (i32) - MOVED
+        user_persona_name,                  // 20: user_persona_name (Option<String>) - NEW
     ))
 }
 /// Parameters for streaming AI response and saving messages.

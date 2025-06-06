@@ -75,7 +75,9 @@
 
 	// Function to create a short snippet from description or greeting
 	function getDescriptionSnippet(description: string | null, greeting: string | null): string {
-		const text = description || greeting || 'No description available.';
+		let text = description || greeting || 'No description available.';
+		// Substitute {{char}} for display in the card.
+		text = text.replace(/\{\{char\}\}/g, character.name);
 		const maxLength = 80; // Adjust as needed
 		return text.length > maxLength ? text.substring(0, maxLength) + '...' : text;
 	}
@@ -89,9 +91,9 @@
 </script>
 
 <Card
-	class="cursor-pointer transition-all hover:border-primary hover:shadow-md {isSelected
-		? 'border-primary ring-2 ring-primary'
-		: ''}"
+	class="group/card relative cursor-pointer rounded-lg border-border/40 transition-all hover:border-primary hover:shadow-lg {isSelected
+		? 'border-primary ring-1 ring-primary'
+		: 'hover:bg-muted/50'}"
 	onclick={handleClick}
 	onkeydown={(e) => e.key === 'Enter' && handleClick()}
 	tabindex={0}
@@ -99,40 +101,42 @@
 	aria-pressed={isSelected}
 	aria-label={`Select character ${character.name}`}
 >
-	<CardHeader class="flex flex-row items-center gap-4 p-4">
-		<Avatar class="h-12 w-12">
+	<CardHeader class="flex flex-row items-center gap-2 p-3">
+		<Avatar class="h-14 w-14">
 			{#if avatarSrc}
 				<AvatarImage src={avatarSrc} alt={character.name} />
 			{/if}
 			<AvatarFallback>{getInitials(character.name)}</AvatarFallback>
 		</Avatar>
 		<div class="flex-1 overflow-hidden">
-			<CardTitle class="truncate text-lg">{character.name}</CardTitle>
-			<CardDescription class="truncate text-sm">
+			<CardTitle class="pt-1 text-base font-semibold">{character.name}</CardTitle>
+			<CardDescription class="truncate text-sm text-muted-foreground">
 				{getDescriptionSnippet(character.description, character.greeting)}
 			</CardDescription>
 		</div>
-		<div class="ml-auto flex gap-1">
-			<Button
-				variant="ghost"
-				size="icon"
-				class="h-8 w-8"
-				onclick={handleEdit}
-				aria-label={`Edit character ${character.name}`}
-			>
-				<PencilEdit class="h-4 w-4" />
-			</Button>
-			<Button
-				variant="ghost"
-				size="icon"
-				class="h-8 w-8 text-destructive hover:text-destructive"
-				onclick={handleDeleteClick}
-				aria-label={`Delete character ${character.name}`}
-			>
-				<TrashIcon class="h-4 w-4" />
-			</Button>
-		</div>
 	</CardHeader>
+	<div
+		class="absolute right-0.5 top-0.5 flex gap-0 opacity-0 transition-opacity group-hover/card:opacity-100 focus-within:opacity-100"
+	>
+		<Button
+			variant="ghost"
+			size="icon"
+			class="h-5 w-5"
+			onclick={handleEdit}
+			aria-label={`Edit character ${character.name}`}
+		>
+			<PencilEdit class="h-2.5 w-2.5" />
+		</Button>
+		<Button
+			variant="ghost"
+			size="icon"
+			class="h-5 w-5 text-destructive hover:text-destructive"
+			onclick={handleDeleteClick}
+			aria-label={`Delete character ${character.name}`}
+		>
+			<TrashIcon class="h-2.5 w-2.5" />
+		</Button>
+	</div>
 </Card>
 
 <AlertDialog bind:open={showDeleteDialog}>
