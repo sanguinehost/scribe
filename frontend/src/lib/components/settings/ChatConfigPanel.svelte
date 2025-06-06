@@ -120,16 +120,19 @@
 				max_output_tokens: globalUserSettings.default_max_output_tokens || 1000,
 				frequency_penalty: globalUserSettings.default_frequency_penalty || 0.0,
 				presence_penalty: globalUserSettings.default_presence_penalty || 0.0,
-				top_p: parseFloat((parseFloat(String(globalUserSettings.default_top_p ?? 0.95))).toFixed(2)),
+				top_p: parseFloat(parseFloat(String(globalUserSettings.default_top_p ?? 0.95)).toFixed(2)),
 				top_k: globalUserSettings.default_top_k ?? 40,
 				seed: globalUserSettings.default_seed ?? null,
 				gemini_thinking_budget: globalUserSettings.default_gemini_thinking_budget ?? null,
-				gemini_enable_code_execution: globalUserSettings.default_gemini_enable_code_execution ?? false,
+				gemini_enable_code_execution:
+					globalUserSettings.default_gemini_enable_code_execution ?? false,
 				context_total_token_limit:
 					globalUserSettings.default_context_total_token_limit ?? DEFAULT_CONTEXT_TOTAL_TOKEN_LIMIT,
 				context_recent_history_budget:
-					globalUserSettings.default_context_recent_history_budget ?? DEFAULT_CONTEXT_RECENT_HISTORY_BUDGET,
-				context_rag_budget: globalUserSettings.default_context_rag_budget ?? DEFAULT_CONTEXT_RAG_BUDGET
+					globalUserSettings.default_context_recent_history_budget ??
+					DEFAULT_CONTEXT_RECENT_HISTORY_BUDGET,
+				context_rag_budget:
+					globalUserSettings.default_context_rag_budget ?? DEFAULT_CONTEXT_RAG_BUDGET
 			};
 		}
 	});
@@ -140,7 +143,7 @@
 		const result = await apiClient.getChatSessionSettings(chat.id);
 		if (result.isOk()) {
 			const settings: ChatSessionSettingsResponse = result.value;
-			
+
 			// Handle system prompt - check if it contains binary data (likely encrypted)
 			let systemPrompt = settings.system_prompt ?? '';
 			if (systemPrompt && /[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\xFF]/.test(systemPrompt)) {
@@ -148,25 +151,46 @@
 				console.warn('System prompt appears to contain encrypted data that failed to decrypt');
 				systemPrompt = ''; // Clear it rather than showing garbage
 			}
-			
+
 			localSettings = {
-				model_name: settings.model_name ?? globalUserSettings?.default_model_name ?? DEFAULT_CHAT_MODEL,
+				model_name:
+					settings.model_name ?? globalUserSettings?.default_model_name ?? DEFAULT_CHAT_MODEL,
 				active_custom_persona_id: chat.active_custom_persona_id ?? null, // This comes from the chat prop
 				system_prompt: systemPrompt,
-				temperature: parseFloat(String(settings.temperature ?? globalUserSettings?.default_temperature ?? 1.0)),
-				max_output_tokens: settings.max_output_tokens ?? globalUserSettings?.default_max_output_tokens ?? 1000,
-				frequency_penalty: settings.frequency_penalty ?? globalUserSettings?.default_frequency_penalty ?? 0.0,
-				presence_penalty: settings.presence_penalty ?? globalUserSettings?.default_presence_penalty ?? 0.0,
-				top_p: parseFloat((parseFloat(String(settings.top_p ?? globalUserSettings?.default_top_p ?? 0.95))).toFixed(2)),
+				temperature: parseFloat(
+					String(settings.temperature ?? globalUserSettings?.default_temperature ?? 1.0)
+				),
+				max_output_tokens:
+					settings.max_output_tokens ?? globalUserSettings?.default_max_output_tokens ?? 1000,
+				frequency_penalty:
+					settings.frequency_penalty ?? globalUserSettings?.default_frequency_penalty ?? 0.0,
+				presence_penalty:
+					settings.presence_penalty ?? globalUserSettings?.default_presence_penalty ?? 0.0,
+				top_p: parseFloat(
+					parseFloat(String(settings.top_p ?? globalUserSettings?.default_top_p ?? 0.95)).toFixed(2)
+				),
 				top_k: settings.top_k ?? globalUserSettings?.default_top_k ?? 40,
 				seed: settings.seed ?? globalUserSettings?.default_seed ?? null,
-				gemini_thinking_budget: settings.gemini_thinking_budget ?? globalUserSettings?.default_gemini_thinking_budget ?? null,
-				gemini_enable_code_execution: settings.gemini_enable_code_execution ?? globalUserSettings?.default_gemini_enable_code_execution ?? false,
+				gemini_thinking_budget:
+					settings.gemini_thinking_budget ??
+					globalUserSettings?.default_gemini_thinking_budget ??
+					null,
+				gemini_enable_code_execution:
+					settings.gemini_enable_code_execution ??
+					globalUserSettings?.default_gemini_enable_code_execution ??
+					false,
 				context_total_token_limit:
-					settings.context_total_token_limit ?? globalUserSettings?.default_context_total_token_limit ?? DEFAULT_CONTEXT_TOTAL_TOKEN_LIMIT,
+					settings.context_total_token_limit ??
+					globalUserSettings?.default_context_total_token_limit ??
+					DEFAULT_CONTEXT_TOTAL_TOKEN_LIMIT,
 				context_recent_history_budget:
-					settings.context_recent_history_budget ?? globalUserSettings?.default_context_recent_history_budget ?? DEFAULT_CONTEXT_RECENT_HISTORY_BUDGET,
-				context_rag_budget: settings.context_rag_budget ?? globalUserSettings?.default_context_rag_budget ?? DEFAULT_CONTEXT_RAG_BUDGET
+					settings.context_recent_history_budget ??
+					globalUserSettings?.default_context_recent_history_budget ??
+					DEFAULT_CONTEXT_RECENT_HISTORY_BUDGET,
+				context_rag_budget:
+					settings.context_rag_budget ??
+					globalUserSettings?.default_context_rag_budget ??
+					DEFAULT_CONTEXT_RAG_BUDGET
 			};
 		} else {
 			console.error('Failed to load chat settings:', result.error);
@@ -296,7 +320,9 @@
 		// Reset to default values based on field type from global settings
 		switch (field) {
 			case 'temperature':
-				localSettings.temperature = parseFloat(String(globalUserSettings.default_temperature ?? 1.0));
+				localSettings.temperature = parseFloat(
+					String(globalUserSettings.default_temperature ?? 1.0)
+				);
 				break;
 			case 'max_output_tokens':
 				localSettings.max_output_tokens = globalUserSettings.default_max_output_tokens ?? 1000;
@@ -308,7 +334,9 @@
 				localSettings.presence_penalty = globalUserSettings.default_presence_penalty ?? 0.0;
 				break;
 			case 'top_p':
-				localSettings.top_p = parseFloat((parseFloat(String(globalUserSettings.default_top_p ?? 0.95))).toFixed(2));
+				localSettings.top_p = parseFloat(
+					parseFloat(String(globalUserSettings.default_top_p ?? 0.95)).toFixed(2)
+				);
 				break;
 			case 'top_k':
 				localSettings.top_k = globalUserSettings.default_top_k ?? 40;
@@ -317,10 +345,12 @@
 				localSettings.seed = globalUserSettings.default_seed ?? null;
 				break;
 			case 'gemini_thinking_budget':
-				localSettings.gemini_thinking_budget = globalUserSettings.default_gemini_thinking_budget ?? null;
+				localSettings.gemini_thinking_budget =
+					globalUserSettings.default_gemini_thinking_budget ?? null;
 				break;
 			case 'gemini_enable_code_execution':
-				localSettings.gemini_enable_code_execution = globalUserSettings.default_gemini_enable_code_execution ?? false;
+				localSettings.gemini_enable_code_execution =
+					globalUserSettings.default_gemini_enable_code_execution ?? false;
 				break;
 			case 'context_total_token_limit':
 				localSettings.context_total_token_limit =
@@ -328,10 +358,12 @@
 				break;
 			case 'context_recent_history_budget':
 				localSettings.context_recent_history_budget =
-					globalUserSettings.default_context_recent_history_budget ?? DEFAULT_CONTEXT_RECENT_HISTORY_BUDGET;
+					globalUserSettings.default_context_recent_history_budget ??
+					DEFAULT_CONTEXT_RECENT_HISTORY_BUDGET;
 				break;
 			case 'context_rag_budget':
-				localSettings.context_rag_budget = globalUserSettings.default_context_rag_budget ?? DEFAULT_CONTEXT_RAG_BUDGET;
+				localSettings.context_rag_budget =
+					globalUserSettings.default_context_rag_budget ?? DEFAULT_CONTEXT_RAG_BUDGET;
 				break;
 		}
 		toast.info('Override cleared (will use default)');
@@ -346,18 +378,24 @@
 		localSettings.max_output_tokens = globalUserSettings.default_max_output_tokens ?? 1000;
 		localSettings.frequency_penalty = globalUserSettings.default_frequency_penalty ?? 0.0;
 		localSettings.presence_penalty = globalUserSettings.default_presence_penalty ?? 0.0;
-		localSettings.top_p = parseFloat((parseFloat(String(globalUserSettings.default_top_p ?? 0.95))).toFixed(2));
+		localSettings.top_p = parseFloat(
+			parseFloat(String(globalUserSettings.default_top_p ?? 0.95)).toFixed(2)
+		);
 		localSettings.top_k = globalUserSettings.default_top_k ?? 40;
 		localSettings.seed = globalUserSettings.default_seed ?? null;
-		localSettings.gemini_thinking_budget = globalUserSettings.default_gemini_thinking_budget ?? null;
-		localSettings.gemini_enable_code_execution = globalUserSettings.default_gemini_enable_code_execution ?? false;
+		localSettings.gemini_thinking_budget =
+			globalUserSettings.default_gemini_thinking_budget ?? null;
+		localSettings.gemini_enable_code_execution =
+			globalUserSettings.default_gemini_enable_code_execution ?? false;
 		localSettings.system_prompt = ''; // System prompt is not part of global settings, always clear
 		localSettings.model_name = globalUserSettings.default_model_name || DEFAULT_CHAT_MODEL;
 		localSettings.context_total_token_limit =
 			globalUserSettings.default_context_total_token_limit ?? DEFAULT_CONTEXT_TOTAL_TOKEN_LIMIT;
 		localSettings.context_recent_history_budget =
-			globalUserSettings.default_context_recent_history_budget ?? DEFAULT_CONTEXT_RECENT_HISTORY_BUDGET;
-		localSettings.context_rag_budget = globalUserSettings.default_context_rag_budget ?? DEFAULT_CONTEXT_RAG_BUDGET;
+			globalUserSettings.default_context_recent_history_budget ??
+			DEFAULT_CONTEXT_RECENT_HISTORY_BUDGET;
+		localSettings.context_rag_budget =
+			globalUserSettings.default_context_rag_budget ?? DEFAULT_CONTEXT_RAG_BUDGET;
 		toast.info('All overrides cleared');
 	}
 
@@ -456,7 +494,7 @@
 				<Card>
 					<CardHeader
 						onclick={() => (expandedSections.persona = !expandedSections.persona)}
-						class="cursor-pointer"
+						class="cursor-pointer {expandedSections.persona ? '' : 'pb-6'}"
 					>
 						<div class="flex items-center justify-between">
 							<CardTitle class="text-base">Active Persona</CardTitle>
@@ -490,7 +528,7 @@
 				<Card>
 					<CardHeader
 						onclick={() => (expandedSections.lorebooks = !expandedSections.lorebooks)}
-						class="cursor-pointer"
+						class="cursor-pointer {expandedSections.lorebooks ? '' : 'pb-6'}"
 					>
 						<div class="flex items-center justify-between">
 							<CardTitle class="text-base">
@@ -594,7 +632,7 @@
 				<Card>
 					<CardHeader
 						onclick={() => (expandedSections.generation = !expandedSections.generation)}
-						class="cursor-pointer"
+						class="cursor-pointer {expandedSections.generation ? '' : 'pb-6'}"
 					>
 						<div class="flex items-center justify-between">
 							<CardTitle class="text-base">Generation Settings</CardTitle>
@@ -783,7 +821,7 @@
 				<Card>
 					<CardHeader
 						onclick={() => (expandedSections.advanced = !expandedSections.advanced)}
-						class="cursor-pointer"
+						class="cursor-pointer {expandedSections.advanced ? '' : 'pb-6'}"
 					>
 						<div class="flex items-center justify-between">
 							<CardTitle class="text-base">Advanced Settings</CardTitle>

@@ -39,12 +39,12 @@ export function setAuthenticated(user: User): void {
 		...user,
 		id: user.id || user.user_id // Use id if present, otherwise use user_id
 	};
-	
+
 	auth.user = normalizedUser;
 	auth.isAuthenticated = true;
 	auth.isLoading = false;
 	auth.hasConnectionError = false; // Clear any connection errors
-	
+
 	// Clear connection error and session expired debounce when successfully authenticated
 	if (connectionErrorTimeout) {
 		clearTimeout(connectionErrorTimeout);
@@ -56,7 +56,7 @@ export function setAuthenticated(user: User): void {
 	}
 	hasShownConnectionError = false;
 	hasShownSessionInvalidated = false;
-	
+
 	console.log(
 		`[${new Date().toISOString()}] auth.svelte.ts: User set and authenticated:`,
 		normalizedUser.username
@@ -88,7 +88,7 @@ export function setConnectionError(): void {
 	if (browser && !hasShownConnectionError) {
 		hasShownConnectionError = true;
 		window.dispatchEvent(new CustomEvent('auth:connection-error'));
-		
+
 		// Reset the flag after 10 seconds to allow new notifications if the issue persists
 		connectionErrorTimeout = setTimeout(() => {
 			hasShownConnectionError = false;
@@ -107,7 +107,7 @@ export function setSessionExpired(): void {
 	if (browser && !hasShownSessionInvalidated) {
 		hasShownSessionInvalidated = true;
 		window.dispatchEvent(new CustomEvent('auth:session-expired'));
-		
+
 		// Reset the flag after 5 seconds
 		sessionInvalidatedTimeout = setTimeout(() => {
 			hasShownSessionInvalidated = false;

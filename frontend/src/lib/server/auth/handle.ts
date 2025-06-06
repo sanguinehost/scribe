@@ -62,13 +62,18 @@ export const handle: Handle = async ({ event, resolve }) => {
 						Cookie: `session=${sessionCookie}`
 					}
 				});
-				
+
 				if (response.ok) {
 					const user = await response.json();
 					event.locals.user = user;
-					console.log(`[${timestamp}] handle: Session validated, user set in locals:`, user.username);
+					console.log(
+						`[${timestamp}] handle: Session validated, user set in locals:`,
+						user.username
+					);
 				} else {
-					console.log(`[${timestamp}] handle: Session validation failed with status ${response.status}`);
+					console.log(
+						`[${timestamp}] handle: Session validation failed with status ${response.status}`
+					);
 					// Don't clear the cookie here - let the client handle 401s
 				}
 			} catch (error) {
@@ -79,7 +84,8 @@ export const handle: Handle = async ({ event, resolve }) => {
 	}
 
 	console.log(
-		`[${timestamp}] handle: EXIT - resolving request, user in locals:`, !!event.locals.user
+		`[${timestamp}] handle: EXIT - resolving request, user in locals:`,
+		!!event.locals.user
 	);
 	return resolve(event);
 };

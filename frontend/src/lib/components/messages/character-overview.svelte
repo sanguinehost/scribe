@@ -44,12 +44,14 @@
 
 	let character = $state<Character | null>(null);
 	let chats = $state<ScribeChatSession[]>([]);
+	let allChats = $state<ScribeChatSession[]>([]);
+	let showAllChats = $state(false);
 	let isLoadingCharacter = $state(true);
 	let isLoadingChats = $state(true);
 	let deleteDialogOpen = $state(false);
 	let chatToDelete = $state<ScribeChatSession | null>(null);
 	let isDeletingChat = $state(false);
-	
+
 	// Edit mode state
 	let isEditMode = $state(false);
 	let isSaving = $state(false);
@@ -70,9 +72,7 @@
 	// Template substitution for frontend preview
 	function substituteTemplateVariables(text: string, characterName: string): string {
 		if (!text) return text;
-		return text
-			.replace(/\{\{char\}\}/g, characterName)
-			.replace(/\{\{user\}\}/g, userPersonaName);
+		return text.replace(/\{\{char\}\}/g, characterName).replace(/\{\{user\}\}/g, userPersonaName);
 	}
 
 	// Basic HTML sanitization to prevent XSS while preserving formatting
@@ -180,7 +180,9 @@
 		// Load chats for this character
 		const chatsResult = await apiClient.getChatsByCharacter(characterId);
 		if (chatsResult.isOk()) {
-			chats = chatsResult.value;
+			allChats = chatsResult.value;
+			// Show only first 5 chats initially
+			chats = allChats.slice(0, 5);
 		} else {
 			toast.error('Failed to load chats', {
 				description: chatsResult.error.message
@@ -191,14 +193,14 @@
 
 	function handleEdit() {
 		if (!character) return;
-		
+
 		// Reset edit values to current character data
 		editedName = character.name || '';
 		editedDescription = character.description || '';
 		editedScenario = character.scenario || '';
 		editedPersonality = character.personality || '';
 		editedGreeting = character.greeting || '';
-		
+
 		isEditMode = true;
 	}
 
@@ -216,12 +218,12 @@
 
 	async function handleSave() {
 		if (!character) return;
-		
+
 		isSaving = true;
-		
+
 		try {
 			const updateData: any = {};
-			
+
 			// Only include changed fields
 			if (editedName !== (character.name || '') && editedName.trim()) {
 				updateData.name = editedName.trim();
@@ -238,7 +240,7 @@
 			if (editedGreeting !== (character.greeting || '')) {
 				updateData.first_mes = editedGreeting.trim(); // Backend uses first_mes
 			}
-			
+
 			// Only make API call if there are changes
 			if (Object.keys(updateData).length > 0) {
 				const result = await apiClient.updateCharacter(character.id, updateData);
@@ -249,7 +251,7 @@
 					character.scenario = editedScenario.trim() || null;
 					character.personality = editedPersonality.trim() || null;
 					character.greeting = editedGreeting.trim() || null;
-					
+
 					toast.success('Character updated successfully');
 					isEditMode = false;
 				} else {
@@ -319,8 +321,9 @@
 		try {
 			const result = await apiClient.deleteChatById(chatToDelete.id);
 			if (result.isOk()) {
-				// Remove the chat from the list
-				chats = chats.filter((c) => c.id !== chatToDelete.id);
+				// Remove the chat from both lists
+				chats = chats.filter((c) => c.id !== chatToDelete!.id);
+				allChats = allChats.filter((c) => c.id !== chatToDelete!.id);
 				toast.success('Chat deleted successfully');
 			} else {
 				toast.error('Failed to delete chat', {
@@ -335,6 +338,20 @@
 			deleteDialogOpen = false;
 			chatToDelete = null;
 		}
+	}
+
+	function toggleAllChats() {
+		showAllChats = !showAllChats;
+		if (showAllChats) {
+			chats = allChats;
+		} else {
+			chats = allChats.slice(0, 5);
+		}
+	}
+
+	function getMostRecentChat(): ScribeChatSession | null {
+		if (allChats.length === 0) return null;
+		return allChats[0]; // Assuming chats are sorted by creation date descending
 	}
 
 	onMount(() => {
@@ -371,56 +388,94 @@
 							</AvatarFallback>
 						</Avatar>
 						<div class="flex-1 space-y-4">
-							<div>
-								<h2 class="text-3xl font-bold">{character.name}</h2>
-								{#if character.description}
-									<p class="mt-2 text-muted-foreground">
-										{substituteTemplateVariables(character.description, character.name)}
-									</p>
+							<div class="relative">
+								{#if !isEditMode}
+									<div class="group relative">
+										<h2 class="text-3xl font-bold">{character.name}</h2>
+										<Button
+											variant="ghost"
+											size="sm"
+											class="absolute -right-8 top-0 h-6 w-6 p-0 opacity-0 transition-opacity group-hover:opacity-100"
+											onclick={handleEdit}
+											aria-label="Edit character name"
+										>
+											<PencilEdit class="h-3 w-3" />
+										</Button>
+									</div>
+									{#if character.description}
+										<div class="group relative mt-2">
+											<p class="text-muted-foreground">
+												{substituteTemplateVariables(character.description, character.name)}
+											</p>
+											<Button
+												variant="ghost"
+												size="sm"
+												class="absolute -right-8 top-0 h-6 w-6 p-0 opacity-0 transition-opacity group-hover:opacity-100"
+												onclick={handleEdit}
+												aria-label="Edit character description"
+											>
+												<PencilEdit class="h-3 w-3" />
+											</Button>
+										</div>
+									{/if}
+								{:else}
+									<div class="space-y-3">
+										<div>
+											<label for="edit-name" class="text-sm font-medium">Name</label>
+											<Input
+												id="edit-name"
+												bind:value={editedName}
+												class="mt-1"
+												placeholder="Character name"
+											/>
+										</div>
+										<div>
+											<label for="edit-description" class="text-sm font-medium">Description</label>
+											<Textarea
+												id="edit-description"
+												bind:value={editedDescription}
+												class="mt-1"
+												placeholder="Character description"
+												rows={3}
+											/>
+										</div>
+										<div class="flex gap-2">
+											<Button onclick={handleSave} disabled={isSaving} size="sm" class="gap-2">
+												{#if isSaving}
+													<div
+														class="h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent"
+													></div>
+													Saving...
+												{:else}
+													<CheckCircleFill class="h-3 w-3" />
+													Save
+												{/if}
+											</Button>
+											<Button onclick={handleCancelEdit} variant="outline" size="sm">Cancel</Button>
+										</div>
+									</div>
 								{/if}
 							</div>
-							<Button onclick={handleStartNewChat} size="lg" class="gap-2">
-								<PlusIcon class="h-4 w-4" />
-								Start New Chat
-							</Button>
+							<div class="flex gap-3">
+								<Button onclick={handleStartNewChat} size="lg" class="gap-2">
+									<PlusIcon class="h-4 w-4" />
+									Start New Chat
+								</Button>
+								{#if getMostRecentChat()}
+									<Button
+										variant="outline"
+										size="lg"
+										class="gap-2"
+										onclick={() => handleSelectChat(getMostRecentChat()!.id)}
+									>
+										<MessageIcon class="h-4 w-4" />
+										Continue Recent
+									</Button>
+								{/if}
+							</div>
 						</div>
 					</div>
 				</CardHeader>
-
-				{#if character.scenario || character.personality || character.greeting}
-					<CardContent class="space-y-4 px-0">
-						{#if character.scenario}
-							<div class="rounded-lg bg-muted/50 p-4">
-								<h4 class="mb-2 text-sm font-semibold text-muted-foreground">Scenario</h4>
-								<div
-									class="prose prose-sm prose-p:my-2 prose-p:leading-relaxed prose-strong:font-semibold prose-headings:font-bold dark:prose-invert max-w-none text-sm [&_*[style*='color']]:!text-foreground [&_p]:!text-foreground [&_span]:!text-foreground [&_strong]:!text-foreground"
-								>
-									{@html sanitizeHtml(substituteTemplateVariables(character.scenario, character.name))}
-								</div>
-							</div>
-						{/if}
-						{#if character.personality}
-							<div class="rounded-lg bg-muted/50 p-4">
-								<h4 class="mb-2 text-sm font-semibold text-muted-foreground">Personality</h4>
-								<div
-									class="prose prose-sm prose-p:my-2 prose-p:leading-relaxed prose-strong:font-semibold prose-headings:font-bold dark:prose-invert max-w-none text-sm [&_*[style*='color']]:!text-foreground [&_p]:!text-foreground [&_span]:!text-foreground [&_strong]:!text-foreground"
-								>
-									{@html sanitizeHtml(substituteTemplateVariables(character.personality, character.name))}
-								</div>
-							</div>
-						{/if}
-						{#if character.greeting}
-							<div class="rounded-lg bg-muted/50 p-4">
-								<h4 class="mb-2 text-sm font-semibold text-muted-foreground">Greeting</h4>
-								<div
-									class="prose prose-sm dark:prose-invert max-w-none text-sm italic [&_*[style*='color']]:!text-foreground [&_p]:!text-foreground [&_span]:!text-foreground [&_strong]:!text-foreground"
-								>
-									{@html sanitizeHtml(substituteTemplateVariables(character.greeting, character.name))}
-								</div>
-							</div>
-						{/if}
-					</CardContent>
-				{/if}
 			</Card>
 		{/if}
 
@@ -465,7 +520,7 @@
 							tabindex={0}
 							role="button"
 						>
-							<CardHeader>
+							<CardHeader class="pb-6">
 								<div class="flex items-start justify-between">
 									<div class="min-w-0 flex-1 space-y-1">
 										<CardTitle class="truncate text-base font-medium">
@@ -494,7 +549,137 @@
 					{/each}
 				</div>
 			{/if}
+
+			<!-- Show All Chats Button -->
+			{#if allChats.length > 5}
+				<div class="pt-4 text-center">
+					<Button variant="outline" onclick={toggleAllChats}>
+						{showAllChats ? 'Show Recent Only' : `Show All ${allChats.length} Chats`}
+					</Button>
+				</div>
+			{/if}
 		</div>
+
+		<!-- Character Details Section (moved below chats) -->
+		{#if character && !isEditMode && (character.scenario || character.personality || character.greeting)}
+			<Card class="border-0 shadow-none">
+				<CardContent class="space-y-4 px-0">
+					{#if character.scenario}
+						<div class="group relative rounded-lg bg-muted/50 p-4">
+							<h4 class="mb-2 text-sm font-semibold text-muted-foreground">Scenario</h4>
+							<div
+								class="prose prose-sm prose-p:my-2 prose-p:leading-relaxed prose-strong:font-semibold prose-headings:font-bold dark:prose-invert max-w-none text-sm [&_*[style*='color']]:!text-foreground [&_p]:!text-foreground [&_span]:!text-foreground [&_strong]:!text-foreground"
+							>
+								{@html sanitizeHtml(
+									substituteTemplateVariables(character.scenario, character.name)
+								)}
+							</div>
+							<Button
+								variant="ghost"
+								size="sm"
+								class="absolute -right-2 top-2 h-6 w-6 p-0 opacity-0 transition-opacity group-hover:opacity-100"
+								onclick={handleEdit}
+								aria-label="Edit scenario"
+							>
+								<PencilEdit class="h-3 w-3" />
+							</Button>
+						</div>
+					{/if}
+					{#if character.personality}
+						<div class="group relative rounded-lg bg-muted/50 p-4">
+							<h4 class="mb-2 text-sm font-semibold text-muted-foreground">Personality</h4>
+							<div
+								class="prose prose-sm prose-p:my-2 prose-p:leading-relaxed prose-strong:font-semibold prose-headings:font-bold dark:prose-invert max-w-none text-sm [&_*[style*='color']]:!text-foreground [&_p]:!text-foreground [&_span]:!text-foreground [&_strong]:!text-foreground"
+							>
+								{@html sanitizeHtml(
+									substituteTemplateVariables(character.personality, character.name)
+								)}
+							</div>
+							<Button
+								variant="ghost"
+								size="sm"
+								class="absolute -right-2 top-2 h-6 w-6 p-0 opacity-0 transition-opacity group-hover:opacity-100"
+								onclick={handleEdit}
+								aria-label="Edit personality"
+							>
+								<PencilEdit class="h-3 w-3" />
+							</Button>
+						</div>
+					{/if}
+					{#if character.greeting}
+						<div class="group relative rounded-lg bg-muted/50 p-4">
+							<h4 class="mb-2 text-sm font-semibold text-muted-foreground">Greeting</h4>
+							<div
+								class="prose prose-sm dark:prose-invert max-w-none text-sm italic [&_*[style*='color']]:!text-foreground [&_p]:!text-foreground [&_span]:!text-foreground [&_strong]:!text-foreground"
+							>
+								{@html sanitizeHtml(
+									substituteTemplateVariables(character.greeting, character.name)
+								)}
+							</div>
+							<Button
+								variant="ghost"
+								size="sm"
+								class="absolute -right-2 top-2 h-6 w-6 p-0 opacity-0 transition-opacity group-hover:opacity-100"
+								onclick={handleEdit}
+								aria-label="Edit greeting"
+							>
+								<PencilEdit class="h-3 w-3" />
+							</Button>
+						</div>
+					{/if}
+				</CardContent>
+			</Card>
+		{:else if character && isEditMode}
+			<!-- Edit mode for character details -->
+			<Card class="border-0 shadow-none">
+				<CardContent class="space-y-4 px-0">
+					<div>
+						<label for="edit-scenario" class="text-sm font-medium">Scenario</label>
+						<Textarea
+							id="edit-scenario"
+							bind:value={editedScenario}
+							class="mt-1"
+							placeholder="Character scenario"
+							rows={4}
+						/>
+					</div>
+					<div>
+						<label for="edit-personality" class="text-sm font-medium">Personality</label>
+						<Textarea
+							id="edit-personality"
+							bind:value={editedPersonality}
+							class="mt-1"
+							placeholder="Character personality"
+							rows={4}
+						/>
+					</div>
+					<div>
+						<label for="edit-greeting" class="text-sm font-medium">Greeting</label>
+						<Textarea
+							id="edit-greeting"
+							bind:value={editedGreeting}
+							class="mt-1"
+							placeholder="Character greeting message"
+							rows={3}
+						/>
+					</div>
+					<div class="flex gap-2">
+						<Button onclick={handleSave} disabled={isSaving} class="gap-2">
+							{#if isSaving}
+								<div
+									class="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent"
+								></div>
+								Saving...
+							{:else}
+								<CheckCircleFill class="h-4 w-4" />
+								Save Changes
+							{/if}
+						</Button>
+						<Button onclick={handleCancelEdit} variant="outline">Cancel</Button>
+					</div>
+				</CardContent>
+			</Card>
+		{/if}
 	</div>
 </div>
 
