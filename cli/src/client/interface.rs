@@ -16,6 +16,7 @@ use scribe_backend::models::{
         LorebookEntryResponse, LorebookEntrySummaryResponse, LorebookResponse,
         UpdateLorebookEntryPayload, UpdateLorebookPayload,
     },
+    user_settings::UserSettingsResponse, // Added UserSettingsResponse
     users::User,
 };
 use std::pin::Pin;
@@ -202,6 +203,10 @@ pub trait HttpClient: Send + Sync {
         session_id: Uuid,
         payload: &UpdateChatSettingsRequest,
     ) -> Result<ChatSettingsResponse, CliError>;
+    async fn get_chat_settings(&self, session_id: Uuid) -> Result<ChatSettingsResponse, CliError>; // Added
+
+    // User Settings
+    async fn get_user_chat_settings(&self) -> Result<Option<UserSettingsResponse>, CliError>;
 
     // Server Health
     async fn health_check(&self) -> Result<HealthStatus, CliError>;

@@ -20,7 +20,6 @@ use crate::routes::chats::{get_chat_settings_handler, update_chat_settings_handl
 use crate::schema::{self as app_schema, chat_sessions}; // Added app_schema for characters table
 use crate::services::chat;
 use crate::services::chat::types::ScribeSseEvent;
-use crate::services::LorebookService;
 use secrecy::ExposeSecret; // Added for ExposeSecret
 // RetrievedMetadata is no longer directly used in this file for RAG string construction
 // use crate::services::embedding_pipeline::RetrievedMetadata;

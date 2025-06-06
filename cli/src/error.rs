@@ -55,4 +55,6 @@ pub enum CliError {
     OperationFailed(String),
     #[error("Conflict: {0}")]
     Conflict(String),
+    #[error("Deserialization error: {0}")] // Added Deserialization variant
+    Deserialization(String),
 }

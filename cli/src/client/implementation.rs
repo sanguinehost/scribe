@@ -17,6 +17,7 @@ use scribe_backend::models::{
         LorebookEntryResponse, LorebookEntrySummaryResponse, LorebookResponse,
         UpdateLorebookEntryPayload, UpdateLorebookPayload,
     },
+    user_settings::UserSettingsResponse, // Added UserSettingsResponse
     users::User,
 };
 use serde_json::Value;
@@ -578,6 +579,18 @@ impl HttpClient for ReqwestClientWrapper {
         handle_response(response).await
     }
 
+    async fn get_chat_settings(&self, session_id: Uuid) -> Result<ChatSettingsResponse, CliError> {
+        let url = build_url(&self.base_url, &format!("/api/chat/{session_id}/settings"))?;
+        tracing::info!(target: "scribe_cli::client::implementation", %url, %session_id, "Fetching chat settings via HttpClient");
+        let response = self
+            .client
+            .get(url)
+            .send()
+            .await
+            .map_err(CliError::Reqwest)?;
+        handle_response(response).await
+    }
+
     // ADMIN APIs
     async fn admin_list_users(&self) -> Result<Vec<AdminUserListResponse>, CliError> {
         let url = build_url(&self.base_url, "/api/admin/users")?;
@@ -928,6 +941,49 @@ impl HttpClient for ReqwestClientWrapper {
                 status,
                 message: error_text,
             })
+        }
+    }
+
+    // User Settings
+    async fn get_user_chat_settings(&self) -> Result<Option<UserSettingsResponse>, CliError> {
+        let url = build_url(&self.base_url, "/api/user-settings")?;
+        tracing::info!(target: "scribe_cli::client::implementation", %url, "Fetching user chat settings via HttpClient");
+
+        let response = self
+            .client
+            .get(url.clone()) // Clone URL for potential reuse in logging/error handling
+            .send()
+            .await
+            .map_err(CliError::Reqwest)?;
+
+        match response.status() {
+            StatusCode::OK => {
+                let settings = response
+                    .json::<UserSettingsResponse>()
+                    .await
+                    .map_err(|e| {
+                        tracing::error!(target: "scribe_cli::client::implementation", error = %e, "Failed to deserialize UserSettingsResponse");
+                        CliError::Deserialization(format!(
+                            "Failed to deserialize UserSettingsResponse: {e}"
+                        ))
+                    })?;
+                Ok(Some(settings))
+            }
+            StatusCode::NOT_FOUND => {
+                tracing::debug!(target: "scribe_cli::client::implementation", %url, "User chat settings not found (404), returning Ok(None)");
+                Ok(None)
+            }
+            status => {
+                let error_text = response
+                    .text()
+                    .await
+                    .unwrap_or_else(|_| "Failed to read error body".to_string());
+                tracing::error!(target: "scribe_cli::client::implementation", %url, %status, error_body = %error_text, "API error fetching user chat settings");
+                Err(CliError::ApiError {
+                    status,
+                    message: error_text,
+                })
+            }
         }
     }
 

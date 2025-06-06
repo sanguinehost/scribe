@@ -395,6 +395,36 @@ diesel::table! {
 diesel::table! {
     use diesel::sql_types::*;
     use diesel_derive_enum::DbEnum;
+
+    user_settings (id) {
+        id -> Uuid,
+        user_id -> Uuid,
+        #[max_length = 100]
+        default_model_name -> Nullable<Varchar>,
+        default_temperature -> Nullable<Numeric>,
+        default_max_output_tokens -> Nullable<Int4>,
+        default_frequency_penalty -> Nullable<Numeric>,
+        default_presence_penalty -> Nullable<Numeric>,
+        default_top_p -> Nullable<Numeric>,
+        default_top_k -> Nullable<Int4>,
+        default_seed -> Nullable<Int4>,
+        default_gemini_thinking_budget -> Nullable<Int4>,
+        default_gemini_enable_code_execution -> Nullable<Bool>,
+        default_context_total_token_limit -> Nullable<Int4>,
+        default_context_recent_history_budget -> Nullable<Int4>,
+        default_context_rag_budget -> Nullable<Int4>,
+        auto_save_chats -> Nullable<Bool>,
+        #[max_length = 20]
+        theme -> Nullable<Varchar>,
+        notifications_enabled -> Nullable<Bool>,
+        created_at -> Timestamptz,
+        updated_at -> Timestamptz,
+    }
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    use diesel_derive_enum::DbEnum;
     use super::sql_types::UserRole;
     use super::sql_types::AccountStatus;
 
@@ -443,6 +473,7 @@ diesel::joinable!(old_documents -> users (user_id));
 diesel::joinable!(old_suggestions -> users (user_id));
 diesel::joinable!(old_votes -> chat_messages (message_id));
 diesel::joinable!(old_votes -> chat_sessions (chat_id));
+diesel::joinable!(user_settings -> users (user_id));
 
 diesel::allow_tables_to_appear_in_same_query!(
     character_assets,
@@ -460,5 +491,6 @@ diesel::allow_tables_to_appear_in_same_query!(
     old_votes,
     sessions,
     user_personas,
+    user_settings,
     users,
 );

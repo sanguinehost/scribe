@@ -147,7 +147,7 @@ pub struct ClientCharacterDataForClient {
     #[serde(default)]
     pub character_version: Option<String>,
     #[serde(default)]
-    pub alternate_greetings: Option<Vec<Option<String>>>,
+    pub alternate_greetings: Option<Vec<String>>,
     #[serde(default)]
     pub nickname: Option<String>,
     #[serde(default)]
@@ -358,16 +358,16 @@ impl From<ClientCharacterDataForClient> for CharacterDataForClient {
             creator_notes: client.creator_notes,
             system_prompt: client.system_prompt,
             post_history_instructions: client.post_history_instructions,
-            tags: client.tags,
+            tags: client.tags.map(|tags| tags.into_iter().collect()),
             creator: client.creator,
             character_version: client.character_version,
-            alternate_greetings: client.alternate_greetings,
+            alternate_greetings: client.alternate_greetings.map(|greetings| greetings.into_iter().collect()),
             nickname: client.nickname,
             creator_notes_multilingual: client
                 .creator_notes_multilingual
                 .map(|json| DieselJson(json.0)),
-            source: client.source,
-            group_only_greetings: client.group_only_greetings,
+            source: client.source.map(|source| source.into_iter().collect()),
+            group_only_greetings: client.group_only_greetings.map(|greetings| greetings.into_iter().collect()),
             creation_date: client.creation_date,
             modification_date: client.modification_date,
             created_at: client.created_at,
@@ -400,7 +400,7 @@ impl From<ClientCharacterDataForClient> for CharacterDataForClient {
             sharing_visibility: client.sharing_visibility,
             status: client.status,
             system_prompt_visibility: client.system_prompt_visibility,
-            system_tags: client.system_tags,
+            system_tags: client.system_tags.map(|tags| tags.into_iter().collect()),
             token_budget: client.token_budget,
             usage_hints: client.usage_hints.map(|json| DieselJson(json.0)),
             user_persona: client.user_persona,

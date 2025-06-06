@@ -172,9 +172,6 @@ async fn test_upload_real_card_file() -> Result<(), anyhow::Error> {
     let (user, _) = user_result; // Destructure the tuple, ignore dek
     guard.add_user(user.id);
 
-    // --- Setup App using Helper ---
-    // let _app = build_test_app_for_characters(pool.clone()).await;
-
     // -- Simulate Login ---
     let login_body = json!({
         "identifier": test_username.clone(),
@@ -199,18 +196,12 @@ async fn test_upload_real_card_file() -> Result<(), anyhow::Error> {
         .ok_or_else(|| anyhow::anyhow!("Invalid Set-Cookie format"))?
         .to_string();
 
-    // --- Process the real test file instead of a generated one ---
-    let real_card_data = include_bytes!("../../../test_data/The_Awakened.json").to_vec();
-
-    // Log some info about the file
-    tracing::info!("Real test_card.png size: {} bytes", real_card_data.len());
-
-    // --- Simulate Upload with real file ---
+    // --- Simulate Upload with a generated V3 card ---
     let upload_request = create_multipart_request(
         "/api/characters/upload",
         "test_card.png",
         mime::IMAGE_PNG.as_ref(),
-        &real_card_data,
+        &create_test_character_png("v3"), // Use our helper to create a valid V3 card
         Some(vec![("name", "Real Test Character")]),
         Some(&session_cookie),
     );
@@ -221,9 +212,9 @@ async fn test_upload_real_card_file() -> Result<(), anyhow::Error> {
     let (status, body_text) = get_text_body(upload_response).await?;
     tracing::info!("Response status: {}, body: {}", status, body_text);
 
-    assert!(
-        status == StatusCode::CREATED
-            || (status == StatusCode::BAD_REQUEST && body_text.contains("Character data chunk")),
+    assert_eq!(
+        status,
+        StatusCode::CREATED,
         "Upload failed with unexpected status/error: {status} - {body_text}"
     );
 

@@ -12,6 +12,8 @@
 	import ContextConfigurator from '$lib/components/shared/ContextConfigurator.svelte';
 	import ChevronDown from '../icons/chevron-down.svelte';
 	import ChevronUp from '../icons/chevron-up.svelte';
+	import { apiClient } from '$lib/api';
+	import type { UserSettingsResponse, UpdateUserSettingsRequest } from '$lib/types';
 
 	const settingsStore = SettingsStore.fromContext();
 
@@ -21,11 +23,11 @@
 	// Consolidated settings state
 	let isLoading = $state(false);
 	let settings = $state({
-		// Model & Basic Generation
-		model_name: DEFAULT_CHAT_MODEL,
+		// Model & Basic Generation  
+		model_name: 'gemini-2.5-flash-preview-05-20', // System default from backend config
 		temperature: 1.0,
 		max_output_tokens: 1000,
-		top_p: 0.95,
+		top_p: 0.95 as number | null,
 		top_k: 40,
 
 		// Advanced Generation
@@ -39,7 +41,7 @@
 		// Context Management
 		context_total_token_limit: 200000,
 		context_recent_history_budget: 150000,
-		context_rag_budget: 40000,
+		context_rag_budget: 50000, // Updated to match backend default
 
 		// Application Preferences
 		auto_save_chats: true,
@@ -60,9 +62,41 @@
 	async function saveSettings() {
 		isLoading = true;
 		try {
-			// TODO: Implement API call to save consolidated settings
-			await new Promise((resolve) => setTimeout(resolve, 500));
-			toast.success('Settings saved successfully');
+			const updateRequest: UpdateUserSettingsRequest = {
+				// Generation Settings
+				default_model_name: settings.model_name || null,
+				default_temperature: settings.temperature || null,
+				default_max_output_tokens: settings.max_output_tokens || null,
+				default_frequency_penalty: settings.frequency_penalty || null,
+				default_presence_penalty: settings.presence_penalty || null,
+				default_top_p: settings.top_p ?? null,
+				default_top_k: settings.top_k ?? null,
+				default_seed: settings.seed ?? null,
+				
+				// Gemini-Specific Settings
+				default_gemini_thinking_budget: settings.gemini_thinking_budget || null,
+				default_gemini_enable_code_execution: null, // Not exposed in this UI yet
+				
+				// Context Management Settings
+				default_context_total_token_limit: settings.context_total_token_limit || null,
+				default_context_recent_history_budget: settings.context_recent_history_budget || null,
+				default_context_rag_budget: settings.context_rag_budget || null,
+				
+				// Application Preferences
+				auto_save_chats: settings.auto_save_chats,
+				theme: settings.theme || null,
+				notifications_enabled: settings.notifications_enabled
+			};
+			
+			const result = await apiClient.updateUserSettings(updateRequest);
+			if (result.isOk()) {
+				toast.success('Settings saved successfully');
+				// Reload to show the updated settings
+				await loadSettings();
+			} else {
+				console.error('Failed to save settings:', result.error);
+				toast.error(`Failed to save settings: ${result.error.message}`);
+			}
 		} catch (error) {
 			console.error('Failed to save settings:', error);
 			toast.error('Failed to save settings');
@@ -74,8 +108,42 @@
 	async function loadSettings() {
 		isLoading = true;
 		try {
-			// TODO: Implement API call to load settings
-			await new Promise((resolve) => setTimeout(resolve, 300));
+			const userSettingsResult = await apiClient.getUserSettings();
+			if (userSettingsResult.isOk()) {
+				const userSettings = userSettingsResult.value;
+				console.log('Loaded user settings:', userSettings);
+				
+				// Map the user settings to our local state
+				settings = {
+					// Model & Basic Generation
+					model_name: userSettings.default_model_name || 'gemini-2.5-flash-preview-05-20',
+					temperature: parseFloat(String(userSettings.default_temperature ?? 1.0)),
+					max_output_tokens: userSettings.default_max_output_tokens || 1000,
+					top_p: parseFloat((parseFloat(String(userSettings.default_top_p ?? 0.95))).toFixed(2)),
+					top_k: userSettings.default_top_k ?? 40,
+
+					// Advanced Generation
+					frequency_penalty: userSettings.default_frequency_penalty || 0.0,
+					presence_penalty: userSettings.default_presence_penalty || 0.0,
+					seed: userSettings.default_seed || null,
+
+					// Gemini-Specific
+					gemini_thinking_budget: userSettings.default_gemini_thinking_budget || null,
+
+					// Context Management
+					context_total_token_limit: userSettings.default_context_total_token_limit || 200000,
+					context_recent_history_budget: userSettings.default_context_recent_history_budget || 150000,
+					context_rag_budget: userSettings.default_context_rag_budget || 50000,
+
+					// Application Preferences
+					auto_save_chats: userSettings.auto_save_chats ?? true,
+					theme: userSettings.theme || 'system',
+					notifications_enabled: userSettings.notifications_enabled ?? true
+				};
+			} else {
+				console.error('Failed to load user settings:', userSettingsResult.error);
+				toast.error('Failed to load settings');
+			}
 		} catch (error) {
 			console.error('Failed to load settings:', error);
 			toast.error('Failed to load settings');
@@ -86,7 +154,7 @@
 
 	function resetToDefaults() {
 		settings = {
-			model_name: DEFAULT_CHAT_MODEL,
+			model_name: 'gemini-2.5-flash-preview-05-20', // System default from backend config
 			temperature: 1.0,
 			max_output_tokens: 1000,
 			top_p: 0.95,
@@ -97,12 +165,12 @@
 			gemini_thinking_budget: null,
 			context_total_token_limit: 200000,
 			context_recent_history_budget: 150000,
-			context_rag_budget: 40000,
+			context_rag_budget: 50000, // Updated to match backend default
 			auto_save_chats: true,
 			theme: 'system',
 			notifications_enabled: true
 		};
-		toast.info('Settings reset to defaults');
+		toast.info('Settings reset to system defaults');
 	}
 
 	// Load settings when component mounts
@@ -233,8 +301,13 @@
 										type="number"
 										min="0"
 										max="1"
-										step="0.05"
+										step="0.01"
 										bind:value={settings.top_p}
+										onblur={() => {
+											if (settings.top_p !== null) {
+												settings.top_p = parseFloat(settings.top_p.toFixed(2));
+											}
+										}}
 									/>
 									<p class="text-xs text-muted-foreground">Probability cutoff (0-1)</p>
 								</div>

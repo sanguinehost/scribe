@@ -45,6 +45,7 @@ use std::collections::VecDeque;
 use std::pin::Pin;
 use std::str::FromStr;
 use std::sync::Arc;
+use scribe_backend::models::user_settings::UserSettingsResponse as BackendUserSettingsResponse;
 use uuid::Uuid;
 
 // Define a simple, cloneable error for mocking purposes
@@ -214,6 +215,11 @@ pub struct MockHttpClient {
     pub disassociate_lorebook_from_chat_result: Option<Arc<Result<(), MockCliError>>>,
     pub list_associated_chat_sessions_for_lorebook_result:
         Option<Arc<Result<Vec<ChatSessionBasicInfo>, MockCliError>>>,
+    
+    // User Settings
+    pub get_user_chat_settings_result: Option<Arc<Result<Option<BackendUserSettingsResponse>, MockCliError>>>, // Changed to use aliased type
+    // Chat Settings
+    pub get_chat_settings_result: Option<Arc<Result<ChatSettingsResponse, MockCliError>>>,
 
     // Track called endpoints for validation - use Arc<Mutex> for thread safety
     pub called_endpoints: Arc<std::sync::Mutex<Vec<String>>>,
@@ -929,6 +935,32 @@ impl HttpClient for MockHttpClient {
                     Arc::new(Err(MockCliError::Internal(
                         "MockHttpClient: list_associated_chat_sessions_for_lorebook result not set"
                             .into(),
+                    )))
+                }),
+        );
+        mock_result.map_err(Into::into)
+    }
+
+    async fn get_user_chat_settings(&self) -> Result<Option<BackendUserSettingsResponse>, CliError> { // Changed to use aliased type
+        let mock_result = Arc::unwrap_or_clone(
+            self.get_user_chat_settings_result
+                .clone()
+                .unwrap_or_else(|| {
+                    Arc::new(Err(MockCliError::Internal(
+                        "MockHttpClient: get_user_chat_settings_result not set".into(),
+                    )))
+                }),
+        );
+        mock_result.map_err(Into::into)
+    }
+
+    async fn get_chat_settings(&self, _session_id: Uuid) -> Result<ChatSettingsResponse, CliError> {
+        let mock_result = Arc::unwrap_or_clone(
+            self.get_chat_settings_result
+                .clone()
+                .unwrap_or_else(|| {
+                    Arc::new(Err(MockCliError::Internal(
+                        "MockHttpClient: get_chat_settings_result not set".into(),
                     )))
                 }),
         );
