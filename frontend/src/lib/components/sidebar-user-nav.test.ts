@@ -39,7 +39,7 @@ vi.mock('@sejohnson/svelte-themes', () => ({
 
 describe('SidebarUserNav', () => {
 	const mockUser: User = {
-		user_id: 'test-user-123',
+		id: 'test-user-123',
 		email: 'user@example.com',
 		username: 'testuser'
 	};
@@ -75,7 +75,7 @@ describe('SidebarUserNav', () => {
 		await fireEvent.click(triggerButton);
 
 		// Check for "Sign out" text in the dropdown
-		expect(screen.getByText('Sign out')).toBeInTheDocument();
+		expect(await screen.findByText('Sign out')).toBeInTheDocument();
 	});
 
 	it('calls apiClient.logout and sets window.location.href on sign out', async () => {
@@ -87,30 +87,30 @@ describe('SidebarUserNav', () => {
 		await fireEvent.click(triggerButton);
 
 		// Click the "Sign out" menu item
-		const signOutMenuItem = screen.getByText('Sign out');
+		const signOutMenuItem = await screen.findByText('Sign out');
 		await fireEvent.click(signOutMenuItem);
 
 		expect(apiClient.logout).toHaveBeenCalledTimes(1);
-		expect(window.location.href).toBe('/auth/login');
+		expect(window.location.href).toBe('/signin');
 	});
 
-    it('handles logout failure gracefully', async () => {
+		  it('handles logout failure gracefully', async () => {
 		const { apiClient } = await import('$lib/api'); // Get the mocked version
-        vi.mocked(apiClient.logout).mockResolvedValue(err(new ApiResponseError(500, 'Logout failed miserably')));
-        const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+		      vi.mocked(apiClient.logout).mockResolvedValue(err(new ApiResponseError(500, 'Logout failed miserably')));
+		      const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
 		render(SidebarUserNav, { props: { user: mockUser } });
 
 		const triggerButton = screen.getByRole('button', { name: new RegExp(mockUser.email) });
 		await fireEvent.click(triggerButton);
 
-		const signOutMenuItem = screen.getByText('Sign out');
+		const signOutMenuItem = await screen.findByText('Sign out');
 		await fireEvent.click(signOutMenuItem);
 
 		expect(apiClient.logout).toHaveBeenCalledTimes(1);
 		expect(window.location.href).toBe(''); // Should not have redirected
-        expect(consoleErrorSpy).toHaveBeenCalledWith('Logout failed:', new ApiResponseError(500, 'Logout failed miserably'));
-        
-        consoleErrorSpy.mockRestore();
+		      expect(consoleErrorSpy).toHaveBeenCalledWith('Logout failed:', new ApiResponseError(500, 'Logout failed miserably'));
+		      
+		      consoleErrorSpy.mockRestore();
 	});
 });

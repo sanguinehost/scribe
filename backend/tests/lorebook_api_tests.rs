@@ -3,7 +3,6 @@ use scribe_backend::models::chats::CreateChatRequest;
 use scribe_backend::models::lorebook_dtos::{
     AssociateLorebookToChatPayload as AssociateLorebookDto, // Assuming this is the DTO name
     ChatSessionBasicInfo,                                   // Added for the new test
-    // AssociatedLorebookResponse, // This might be a Vec<LorebookResponseDto> or a specific DTO
     CreateLorebookEntryPayload as CreateLorebookEntryDto,
     CreateLorebookPayload as CreateLorebookDto, // Renamed for clarity if local struct was also CreateLorebookPayload
     LorebookEntryResponse as LorebookEntryResponseDto,
@@ -1758,10 +1757,116 @@ mod lorebook_entry_tests {
 }
 
 // TODO: Re-enable chat_session_lorebook_association_tests module and its dependencies when create_dummy_chat_session is implemented.
-// mod chat_session_lorebook_association_tests {
-//     use super::*;
-//     // use scribe_backend::test_helpers::create_dummy_chat_session; // Assuming this helper exists or will be created
-//
+mod chat_session_lorebook_association_tests {
+    use super::*;
+    use scribe_backend::models::characters::Character; // For character creation helper
+    // use scribe_backend::test_helpers::create_dummy_chat_session; // Assuming this helper exists or will be created
+    use diesel::prelude::*;
+    use diesel::insert_into;
+    use scribe_backend::schema::{character_lorebooks, chat_session_lorebooks, chat_character_lorebook_overrides};
+    use scribe_backend::models::lorebooks::{ChatSessionLorebook, ChatCharacterLorebookOverride}; // Removed CharacterLorebook
+
+
+    #[tokio::test]
+    async fn test_new_chat_with_character_default_lorebooks_no_explicit_association() {
+        let test_app = spawn_app(false, false, false).await;
+        let _test_data_guard = TestDataGuard::new(test_app.db_pool.clone());
+        let conn = test_app.db_pool.get().await.expect("Failed to get DB connection for test");
+
+
+        let user_credentials = ("user_ncdl@example.com", "password123");
+        let user_data = scribe_backend::test_helpers::db::create_test_user(
+            &test_app.db_pool,
+            user_credentials.0.to_string(),
+            user_credentials.1.to_string(),
+        )
+        .await
+        .expect("Failed to create user");
+        let (auth_client, _user_token_str) = scribe_backend::test_helpers::login_user_via_api(
+            &test_app,
+            user_credentials.0,
+            user_credentials.1,
+        )
+        .await;
+
+        // 1. Create a character
+        let character: Character = scribe_backend::test_helpers::db::create_test_character(
+            &test_app.db_pool,
+            user_data.id,
+            "Character With Default Lorebook".to_string(),
+        )
+        .await
+        .expect("Failed to create test character");
+
+        // 2. Create a lorebook
+        let lorebook_id_val = create_dummy_lorebook(&test_app, user_data.id, &auth_client).await;
+
+        // 3. Associate lorebook with character (direct DB insert using Diesel)
+        let new_char_lorebook = (
+            character_lorebooks::character_id.eq(character.id),
+            character_lorebooks::lorebook_id.eq(lorebook_id_val),
+            character_lorebooks::user_id.eq(user_data.id),
+        );
+
+        conn.interact(move |actual_conn| { // Use actual_conn from interact
+            insert_into(character_lorebooks::table)
+                .values(&new_char_lorebook)
+                .execute(actual_conn)
+        }).await.expect("Interact failed").expect("Failed to associate lorebook with character");
+
+
+        // 4. Create a new chat session with this character
+        let chat_payload = CreateChatRequest {
+            character_id: character.id,
+            title: Some("Chat With Default Lorebook".to_string()),
+            lorebook_ids: None, // Explicitly not providing any direct lorebook_ids
+            active_custom_persona_id: None,
+        };
+        let chat_response = auth_client
+            .post(format!("{}/api/chats/create_session", test_app.address))
+            .json(&chat_payload)
+            .send()
+            .await
+            .expect("Failed to create chat session");
+
+        assert_eq!(chat_response.status(), StatusCode::CREATED, "Chat creation failed: {:?}", chat_response.text().await);
+        let chat_session: scribe_backend::models::chats::Chat = chat_response
+            .json()
+            .await
+            .expect("Failed to parse chat session response");
+        let chat_session_id = chat_session.id;
+
+        // 5. Assert no explicit entry in chat_session_lorebooks
+        let csl_entry_result = conn.interact(move |actual_conn| { // Use actual_conn from interact
+            chat_session_lorebooks::table
+                .filter(chat_session_lorebooks::chat_session_id.eq(chat_session_id))
+                .filter(chat_session_lorebooks::lorebook_id.eq(lorebook_id_val))
+                .select(ChatSessionLorebook::as_select())
+                .first(actual_conn) // Use actual_conn
+                .optional()
+        }).await.expect("Interact failed").expect("DB query failed for chat_session_lorebooks");
+
+        assert!(csl_entry_result.is_none(), "Explicit entry found in chat_session_lorebooks for character-derived lorebook");
+
+        // 6. Assert no entry in chat_character_lorebook_overrides
+        // Need to get a new connection object or ensure the previous one can be reused.
+        // For simplicity in this step, let's get a new one.
+        let conn_for_override_check = test_app.db_pool.get().await.expect("Failed to get DB connection for override check");
+        let override_entry_result = conn_for_override_check.interact(move |actual_conn| { // Use actual_conn from interact
+            chat_character_lorebook_overrides::table
+                .filter(chat_character_lorebook_overrides::chat_session_id.eq(chat_session_id))
+                .filter(chat_character_lorebook_overrides::lorebook_id.eq(lorebook_id_val))
+                .select(ChatCharacterLorebookOverride::as_select())
+                .first(actual_conn) // Use actual_conn
+                .optional()
+        }).await.expect("Interact failed").expect("DB query failed for chat_character_lorebook_overrides");
+        
+        assert!(override_entry_result.is_none(), "Override entry found in chat_character_lorebook_overrides for new chat");
+
+        // TODO: Add assertion for effective lorebooks once an endpoint/service method is available
+        // that returns lorebooks with their derived status.
+    }
+
 //     #[tokio::test]
 //     async fn test_associate_lorebook_with_chat_success() {
 //         let test_app = spawn_app(false, false, false).await;
@@ -2010,7 +2115,7 @@ mod lorebook_entry_tests {
 //         assert_eq!(response.status(), StatusCode::NO_CONTENT);
 //     }
 //     // ... (Unauthorized, Forbidden for other user's chat/lorebook, Chat/Lorebook Not Found for Delete Association) ...
-// }
+}
 
 #[tokio::test]
 async fn test_export_lorebook_success() {

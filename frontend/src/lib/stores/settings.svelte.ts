@@ -2,7 +2,7 @@ import { getContext, setContext } from 'svelte';
 
 export class SettingsStore {
 	isVisible = $state(false);
-	viewMode = $state<'overview' | 'defaults' | 'advanced'>('overview');
+	viewMode = $state<'overview' | 'consolidated'>('overview');
 
 	show() {
 		this.isVisible = true;
@@ -13,7 +13,7 @@ export class SettingsStore {
 		this.isVisible = false;
 	}
 
-	setViewMode(mode: 'overview' | 'defaults' | 'advanced') {
+	setViewMode(mode: 'overview' | 'consolidated') {
 		this.viewMode = mode;
 	}
 

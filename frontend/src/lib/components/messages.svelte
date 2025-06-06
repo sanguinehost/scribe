@@ -5,8 +5,7 @@
 	import PersonaOverview from './messages/persona-overview.svelte';
 	import PersonaEditor from './messages/persona-editor.svelte';
 	import SettingsOverview from './messages/settings-overview.svelte';
-	import DefaultSettings from './messages/default-settings.svelte';
-	import AdvancedSettings from './messages/advanced-settings.svelte';
+	import ConsolidatedSettings from './settings/ConsolidatedSettings.svelte';
 	import { createEventDispatcher, onMount } from 'svelte';
 	import PreviewMessage from './messages/preview-message.svelte';
 	import FirstMessage from './messages/first-message.svelte';
@@ -49,7 +48,7 @@
 		const hasFirstMessageId = message.id.startsWith('first-message-');
 		const isFirstAssistantMessage = message.message_type === 'Assistant' && index === 0;
 		const contentMatchesFirstMes = character && message.content === character.first_mes;
-		
+
 		console.log('First message detection:', {
 			messageId: message.id,
 			messageType: message.message_type,
@@ -59,10 +58,15 @@
 			contentMatchesFirstMes,
 			characterFirstMes: character?.first_mes?.substring(0, 50) + '...',
 			messageContent: message.content.substring(0, 50) + '...',
-			result: message.message_type === 'Assistant' && (hasFirstMessageId || isFirstAssistantMessage || contentMatchesFirstMes)
+			result:
+				message.message_type === 'Assistant' &&
+				(hasFirstMessageId || isFirstAssistantMessage || contentMatchesFirstMes)
 		});
-		
-		return message.message_type === 'Assistant' && (hasFirstMessageId || isFirstAssistantMessage || contentMatchesFirstMes);
+
+		return (
+			message.message_type === 'Assistant' &&
+			(hasFirstMessageId || isFirstAssistantMessage || contentMatchesFirstMes)
+		);
 	}
 
 	function handlePersonaCreated(event: CustomEvent) {
@@ -108,10 +112,8 @@
 		{#if settingsStore.isVisible}
 			{#if settingsStore.viewMode === 'overview'}
 				<SettingsOverview />
-			{:else if settingsStore.viewMode === 'defaults'}
-				<DefaultSettings />
-			{:else if settingsStore.viewMode === 'advanced'}
-				<AdvancedSettings />
+			{:else if settingsStore.viewMode === 'consolidated'}
+				<ConsolidatedSettings />
 			{/if}
 		{/if}
 

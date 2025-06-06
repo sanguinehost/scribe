@@ -71,6 +71,7 @@ export interface ScribeChatSession {
     id: string;
     title: string;
     character_id: string;
+    character_name?: string | null; // Added character_name
     user_id: string;
     created_at: string;
     updated_at: string;
@@ -80,6 +81,13 @@ export interface ScribeChatSession {
     visibility?: VisibilityType | null;
     active_custom_persona_id?: string | null;
     model_name?: string | null;
+    temperature?: number | null;
+    max_output_tokens?: number | null;
+    frequency_penalty?: number | null;
+    presence_penalty?: number | null;
+    top_k?: number | null;
+    top_p?: number | null;
+    seed?: number | null;
     gemini_thinking_budget?: number | null;
     gemini_enable_code_execution?: boolean | null;
     context_total_token_limit?: number | null;
@@ -170,9 +178,41 @@ export interface ScribeMinimalLorebook {
 
 // Placeholder for ChatSessionLorebookAssociation type
 export interface ChatSessionLorebookAssociation {
-    chat_id: string;
+    chat_session_id: string;
     lorebook_id: string;
+    user_id: string;
+    lorebook_name: string;
     created_at: string;
+}
+
+// Enhanced version with source information
+export type LorebookAssociationSource = 'Chat' | 'Character';
+
+export interface EnhancedChatSessionLorebookAssociation {
+    chat_session_id: string;
+    lorebook_id: string;
+    user_id: string;
+    lorebook_name: string;
+    source: LorebookAssociationSource;
+    is_overridden: boolean;
+    override_action?: string; // "disable" or "enable" if overridden
+    created_at: string;
+}
+
+// Union type for API responses
+export type ChatLorebookAssociationsResponse = 
+    | ChatSessionLorebookAssociation[] 
+    | EnhancedChatSessionLorebookAssociation[];
+
+// Character lorebook override type
+export interface CharacterLorebookOverrideResponse {
+    id: string;
+    chat_session_id: string;
+    lorebook_id: string;
+    user_id: string;
+    action: string;
+    created_at: string;
+    updated_at: string;
 }
 
 // Character type based on backend CharacterDataForClient
@@ -429,4 +469,21 @@ export interface UpdateChatSessionSettingsRequest {
     context_total_token_limit?: number | null;
     context_recent_history_budget?: number | null;
     context_rag_budget?: number | null;
+}
+
+export interface ChatSessionSettingsResponse {
+    model_name?: string | null;
+    temperature?: number | null;
+    max_output_tokens?: number | null;
+    frequency_penalty?: number | null;
+    presence_penalty?: number | null;
+    top_k?: number | null;
+    top_p?: number | null;
+    seed?: number | null;
+    gemini_thinking_budget?: number | null;
+    gemini_enable_code_execution?: boolean | null;
+    context_total_token_limit?: number | null;
+    context_recent_history_budget?: number | null;
+    context_rag_budget?: number | null;
+    system_prompt?: string | null;
 }

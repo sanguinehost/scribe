@@ -105,6 +105,33 @@ pub struct ChatSessionLorebookAssociationResponse {
     pub created_at: DateTime<Utc>, // Assuming this comes from the association table
 }
 
+// Enhanced version with source information
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+pub enum LorebookAssociationSource {
+    Chat,      // Directly associated with this chat session
+    Character, // Associated via the character used in this chat
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct EnhancedChatSessionLorebookAssociationResponse {
+    pub chat_session_id: Uuid,
+    pub lorebook_id: Uuid,
+    pub user_id: Uuid,
+    pub lorebook_name: String,
+    pub source: LorebookAssociationSource,
+    pub is_overridden: bool, // Whether this character lorebook has been disabled/enabled via override
+    pub override_action: Option<String>, // "disable" or "enable" if overridden
+    pub created_at: DateTime<Utc>, // Association creation time (chat or character association)
+}
+
+// Union type for responses
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(untagged)]
+pub enum ChatLorebookAssociationsResponse {
+    Basic(Vec<ChatSessionLorebookAssociationResponse>),
+    Enhanced(Vec<EnhancedChatSessionLorebookAssociationResponse>),
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ChatSessionBasicInfo {
     pub chat_session_id: Uuid,
@@ -368,4 +395,41 @@ where
         }
         _ => Err(Error::invalid_type(Unexpected::Other(&value.to_string()), &"integer or string"))
     }
+}
+
+// --- Lorebook Override DTOs ---
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct SetCharacterLorebookOverridePayload {
+    pub action: String, // "disable" or "enable"
+}
+
+// Manual validation for SetCharacterLorebookOverridePayload
+impl SetCharacterLorebookOverridePayload {
+    pub fn validate(&self) -> Result<(), validator::ValidationErrors> {
+        let mut errors = validator::ValidationErrors::new();
+        
+        if !matches!(self.action.as_str(), "disable" | "enable") {
+            let mut error = validator::ValidationError::new("invalid_action");
+            error.message = Some("Action must be 'disable' or 'enable'".into());
+            errors.add("action", error);
+        }
+        
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            Err(errors)
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct CharacterLorebookOverrideResponse {
+    pub id: Uuid,
+    pub chat_session_id: Uuid,
+    pub lorebook_id: Uuid,
+    pub user_id: Uuid,
+    pub action: String,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
 }
