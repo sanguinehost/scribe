@@ -1338,6 +1338,10 @@ async fn test_create_session_saves_first_mes() -> Result<(), AnyhowError> {
     let auth_backend_for_test = Arc::new(scribe_backend::auth::user_store::Backend::new(
         test_app.db_pool.clone(),
     ));
+    let file_storage_service_for_test = Arc::new(
+        scribe_backend::services::file_storage_service::FileStorageService::new("./test_uploads")
+            .expect("Failed to create test file storage service")
+    );
 
     let services = AppStateServices {
         ai_client: test_app.ai_client.clone(),
@@ -1350,6 +1354,7 @@ async fn test_create_session_saves_first_mes() -> Result<(), AnyhowError> {
         encryption_service: encryption_service_for_test.clone(),
         lorebook_service: lorebook_service_for_test,
         auth_backend: auth_backend_for_test,
+        file_storage_service: file_storage_service_for_test,
     };
 
     let app_state_arc = Arc::new(AppState::new(

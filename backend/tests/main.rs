@@ -50,6 +50,7 @@ fn initialize_tests() {
 // Individual test files
 pub mod auth_dek_security_test;
 pub mod auth_tests;
+pub mod avatar_api_tests;
 pub mod character_card_tests;
 pub mod chat_generate_non_stream_tests;
 pub mod chat_generate_rag_tests;
@@ -76,12 +77,20 @@ pub mod qdrant_pipeline_tests;
 pub mod recovery_key_tests;
 pub mod token_counter_tests;
 pub mod tokenizer_tests;
+pub mod user_assets_tests;
 pub mod user_persona_api_tests;
 pub mod user_settings_api_tests;
 pub mod user_store_tests;
 
-// New characters test module (directory)
-pub mod characters;
+// Character test modules
+pub mod character_create_tests;
+pub mod character_delete_tests;
+pub mod character_generate_tests;
+pub mod character_image_tests;
+pub mod character_list_get_tests;
+pub mod character_upload_tests;
+
+// Test helpers removed - each test file now has its own local helpers
 
 // Service level or other specific tests
 pub mod user_persona_service_tests;

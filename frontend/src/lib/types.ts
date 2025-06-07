@@ -8,6 +8,7 @@ export interface User {
 	role: string;
 	recovery_key: string | null;
 	default_persona_id: string | null; // UUID
+	avatar?: string | null; // Add avatar field
 	// Backwards compatibility - should map to user_id
 	id: string;
 }
@@ -18,8 +19,8 @@ export interface Message {
 	session_id: string;
 	message_type: MessageRole;
 	role: string;
-	parts: any; // serde_json::Value from backend
-	attachments: any; // serde_json::Value from backend
+	parts: MessagePart[]; // serde_json::Value from backend
+	attachments: MessageAttachment[]; // serde_json::Value from backend
 	created_at: Date;
 	raw_prompt?: string | null; // Debug field containing the full prompt sent to AI
 }
@@ -221,7 +222,7 @@ export interface CharacterLorebookOverrideResponse {
 }
 
 // Character type based on backend CharacterDataForClient
-export interface Character {
+export interface CharacterDataForClient {
 	id: string;
 	user_id: string;
 	spec: string;
@@ -240,7 +241,7 @@ export interface Character {
 	character_version?: string | null;
 	alternate_greetings?: string[] | null;
 	nickname?: string | null;
-	creator_notes_multilingual?: any | null;
+	creator_notes_multilingual?: unknown | null;
 	source?: (string | null)[] | null;
 	group_only_greetings?: (string | null)[] | null;
 	creation_date?: string | null;
@@ -255,7 +256,7 @@ export interface Character {
 	greeting?: string | null;
 	definition?: string | null;
 	default_voice?: string | null;
-	extensions?: any | null;
+	extensions?: unknown | null;
 	data_id?: number | null;
 	category?: string | null;
 	definition_visibility?: string | null;
@@ -278,7 +279,7 @@ export interface Character {
 	system_prompt_visibility?: string | null;
 	system_tags?: (string | null)[] | null;
 	token_budget?: number | null;
-	usage_hints?: any | null;
+	usage_hints?: unknown | null;
 	user_persona?: string | null;
 	user_persona_visibility?: string | null;
 	visibility?: string | null;
@@ -287,7 +288,7 @@ export interface Character {
 }
 
 // Scribe-specific character type alias for consistency
-export type ScribeCharacter = Character;
+export type ScribeCharacter = CharacterDataForClient;
 
 // User Persona types
 export interface UserPersona {

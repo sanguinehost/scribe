@@ -1,19 +1,19 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { apiClient } from '$lib/api';
-	import type { UserPersona } from '$lib/api';
+	import type { UserPersona } from '$lib/types';
 	import { toast } from 'svelte-sonner';
 	import { SelectedPersonaStore } from '$lib/stores/selected-persona.svelte';
 	import { scale } from 'svelte/transition';
 	import { Button } from '$lib/components/ui/button';
 	import {
-		Card,
-		CardHeader,
-		CardTitle,
-		CardDescription,
-		CardContent
+	 	Card,
+	 	CardHeader,
+	 	CardTitle,
+	 	CardDescription,
+	 	CardContent
 	} from '$lib/components/ui/card';
-	import { Avatar, AvatarFallback } from '$lib/components/ui/avatar';
+	import { Avatar, AvatarFallback, AvatarImage } from '$lib/components/ui/avatar';
 	import { Skeleton } from '$lib/components/ui/skeleton';
 	import {
 		AlertDialog,
@@ -187,6 +187,9 @@
 				<CardHeader class="px-0">
 					<div class="flex items-start space-x-6">
 						<Avatar class="h-24 w-24 border-2 border-muted">
+							{#if persona.avatar}
+								<AvatarImage src={`${persona.avatar}?width=96&height=96`} alt={persona.name} />
+							{/if}
 							<AvatarFallback class="text-3xl font-semibold">
 								{getInitials(persona.name)}
 							</AvatarFallback>

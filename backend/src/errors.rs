@@ -9,12 +9,12 @@ use thiserror::Error;
 use tracing::error;
 use validator::ValidationErrors;
 
-// Corrected and Consolidated Imports
+use std::time::Duration; // Add this import
 use crate::auth::user_store::Backend as AuthBackend;
-use crate::services::character_parser::ParserError as CharacterParserError; // Alias for clarity
+use crate::services::character_parser::ParserError as CharacterParserError;
 use anyhow::Error as AnyhowError;
 use bcrypt; // Use bcrypt directly
-use deadpool_diesel::PoolError as DeadpoolDieselPoolError; // Removed unused InteractError
+use deadpool_diesel::PoolError as DeadpoolDieselPoolError;
 use diesel::result::Error as DieselError;
 
 // AppError should automatically be Send + Sync if all its fields are.
@@ -159,9 +159,9 @@ pub enum AppError {
     #[error("Session Error: {0}")]
     Session(String), // Use String instead of tower_sessions::session::Error
 
-    // Added RateLimited variant
-    #[error("API Rate Limit Exceeded")]
-    RateLimited,
+    // Added RateLimited variant with optional retry delay
+    #[error("API Rate Limit Exceeded{}", .0.map_or_else(|| "".to_string(), |d| format!(" Retrying in {} seconds.", d.as_secs())))]
+    RateLimited(Option<std::time::Duration>),
 
     // Added NotImplemented variant
     #[error("Not Implemented: {0}")]
@@ -338,7 +338,7 @@ impl AppError {
                 | Self::Conflict(_)
                 | Self::UsernameTaken
                 | Self::EmailTaken
-                | Self::RateLimited
+                | Self::RateLimited(_)
                 | Self::FileUploadError(_)
                 | Self::CharacterParseError(_)
                 | Self::CharacterParsingError(_)
@@ -385,7 +385,7 @@ impl AppError {
                 | Self::Conflict(_)
                 | Self::UsernameTaken
                 | Self::EmailTaken
-                | Self::RateLimited
+                | Self::RateLimited(_)
         )
     }
 
@@ -415,9 +415,14 @@ impl AppError {
                 "Username is already taken".to_string(),
             ),
             Self::EmailTaken => (StatusCode::CONFLICT, "Email is already taken".to_string()),
-            Self::RateLimited => (
+            Self::RateLimited(delay) => (
                 StatusCode::TOO_MANY_REQUESTS,
-                "API rate limit exceeded. Please try again later.".to_string(),
+                format!(
+                    "API rate limit exceeded. Please try again later.{}",
+                    delay
+                        .map(|d| format!(" Retrying in {} seconds.", d.as_secs()))
+                        .unwrap_or_default()
+                ),
             ),
             _ => unreachable!("Non-simple client error passed to handle_simple_client_error"),
         }
@@ -920,7 +925,49 @@ impl From<uuid::Error> for AppError {
 
 impl From<genai::Error> for AppError {
     fn from(err: genai::Error) -> Self {
-        Self::GeminiError(err.to_string())
+        // First, try to extract retryDelay from StreamEventError body if applicable
+        if let genai::Error::StreamEventError { body, .. } = &err {
+            if let Some(retry_info) = body["error"]["details"].as_array()
+                .and_then(|details| details.iter().find(|d| d["@type"] == "type.googleapis.com/google.rpc.RetryInfo"))
+            {
+                if let Some(delay_str) = retry_info["retryDelay"].as_str() {
+                    if let Some(seconds_str) = delay_str.strip_suffix('s') {
+                        if let Ok(seconds) = seconds_str.parse::<u64>() {
+                            tracing::info!("Detected Gemini API rate limit from StreamEventError with retryDelay: {}s", seconds);
+                            return AppError::RateLimited(Some(Duration::from_secs(seconds)));
+                        }
+                    }
+                }
+            }
+        }
+
+        // Fallback to parsing the error string if not a StreamEventError or parsing from body failed
+        let err_string = err.to_string();
+        if err_string.contains("429 Too Many Requests") {
+            if let Some(start_idx) = err_string.find("Response body:\n") {
+                let json_part = &err_string[start_idx + "Response body:\n".len()..];
+                if let Some(end_idx) = json_part.rfind('}') {
+                    let json_str = &json_part[..=end_idx];
+
+                    if let Ok(json_value) = serde_json::from_str::<serde_json::Value>(json_str) {
+                        if let Some(retry_info) = json_value["error"]["details"].as_array()
+                            .and_then(|details| details.iter().find(|d| d["@type"] == "type.googleapis.com/google.rpc.RetryInfo"))
+                        {
+                            if let Some(delay_str) = retry_info["retryDelay"].as_str() {
+                                if let Some(seconds_str) = delay_str.strip_suffix('s') {
+                                    if let Ok(seconds) = seconds_str.parse::<u64>() {
+                                        tracing::info!("Detected Gemini API rate limit from error string with retryDelay: {}s", seconds);
+                                        return AppError::RateLimited(Some(Duration::from_secs(seconds)));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        // Final fallback
+        AppError::GeminiError(err_string)
     }
 }
 
@@ -1007,6 +1054,7 @@ mod tests {
     use super::*;
     use axum::{http::StatusCode, response::IntoResponse};
     use serde_json::Value;
+    use std::time::Duration;
 
     // Helper function to create an io::Error for testing
     fn create_io_error() -> std::io::Error {
@@ -1132,13 +1180,22 @@ mod tests {
 
     #[tokio::test]
     async fn test_rate_limited_response() {
-        let error = AppError::RateLimited;
+        let error = AppError::RateLimited(None); // No specific delay
         let response = error.into_response();
         assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
         let body = get_body_json(response).await;
         assert_eq!(
             body["error"],
             "API rate limit exceeded. Please try again later."
+        );
+
+        let error_with_delay = AppError::RateLimited(Some(Duration::from_secs(10)));
+        let response_with_delay = error_with_delay.into_response();
+        assert_eq!(response_with_delay.status(), StatusCode::TOO_MANY_REQUESTS);
+        let body_with_delay = get_body_json(response_with_delay).await;
+        assert_eq!(
+            body_with_delay["error"],
+            "API rate limit exceeded. Please try again later. Retrying in 10 seconds."
         );
     }
 

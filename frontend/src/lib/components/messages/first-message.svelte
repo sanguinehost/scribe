@@ -8,19 +8,24 @@
 	import { fly } from 'svelte/transition';
 	import type { ScribeChatMessage } from '$lib/types';
 	import { createEventDispatcher } from 'svelte';
+	import type { CharacterDataForClient, User } from '$lib/types'; // Import CharacterDataForClient and User
 
 	let {
 		message,
 		readonly,
 		loading,
 		alternateGreetings = [],
-		currentGreetingIndex = 0
+		currentGreetingIndex = 0,
+		character = null,
+		user = undefined
 	}: {
 		message: ScribeChatMessage;
 		readonly: boolean;
 		loading: boolean;
 		alternateGreetings?: string[];
 		currentGreetingIndex?: number;
+		character?: CharacterDataForClient | null; // Use CharacterDataForClient
+		user?: User | undefined; // Use User type
 	} = $props();
 
 	const dispatch = createEventDispatcher();

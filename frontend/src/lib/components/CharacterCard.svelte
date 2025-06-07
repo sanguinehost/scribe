@@ -17,13 +17,13 @@
 	import { createEventDispatcher } from 'svelte';
 	import { apiClient } from '$lib/api';
 
-	import type { Character } from '$lib/types';
+	import type { CharacterDataForClient } from '$lib/types';
 
 	let {
 		character,
 		isSelected = false
 	}: {
-		character: Character;
+		character: CharacterDataForClient;
 		isSelected?: boolean;
 	} = $props();
 
@@ -78,8 +78,9 @@
 		return text.length > maxLength ? text.substring(0, maxLength) + '...' : text;
 	}
 
-	// The backend populates character.avatar with the image URL (/api/characters/{id}/image)
-	const avatarSrc = character.avatar;
+	// The backend populates character.avatar with the image URL (/api/characters/{id}/assets/{asset_id})
+	// Append width and height query parameters for server-side resizing
+	const avatarSrc = character.avatar ? `${character.avatar}?width=56&height=56` : null;
 </script>
 
 <Card

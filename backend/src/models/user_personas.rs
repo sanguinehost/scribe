@@ -381,7 +381,11 @@ impl UserPersona {
             system_prompt: fields.system_prompt,
             post_history_instructions: fields.post_history_instructions,
             tags: self.tags,
-            avatar: self.avatar,
+            avatar: self.avatar.and_then(|asset_id_str| {
+                asset_id_str.parse::<i32>().ok().map(|asset_id| {
+                    format!("/api/personas/{}/assets/{}", self.id, asset_id)
+                })
+            }),
             created_at: self.created_at,
             updated_at: self.updated_at,
         }

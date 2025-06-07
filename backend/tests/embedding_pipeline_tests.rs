@@ -102,6 +102,10 @@ fn create_test_app_state(test_app: test_helpers::TestApp) -> Arc<AppState> {
     let auth_backend = Arc::new(scribe_backend::auth::user_store::Backend::new(
         test_app.db_pool.clone(),
     ));
+    let file_storage_service = Arc::new(
+        scribe_backend::services::file_storage_service::FileStorageService::new("./test_uploads")
+            .expect("Failed to create test file storage service")
+    );
 
     let services = AppStateServices {
         ai_client: test_app
@@ -117,6 +121,7 @@ fn create_test_app_state(test_app: test_helpers::TestApp) -> Arc<AppState> {
         encryption_service,
         lorebook_service,
         auth_backend,
+        file_storage_service,
     };
 
     Arc::new(AppState::new(
@@ -648,6 +653,10 @@ async fn test_retrieve_relevant_chunks_qdrant_error() {
     let auth_backend_5 = Arc::new(scribe_backend::auth::user_store::Backend::new(
         test_app.db_pool.clone(),
     ));
+    let file_storage_service_5 = Arc::new(
+        scribe_backend::services::file_storage_service::FileStorageService::new("./test_uploads")
+            .expect("Failed to create test file storage service")
+    );
 
     let services = AppStateServices {
         ai_client: test_app
@@ -663,6 +672,7 @@ async fn test_retrieve_relevant_chunks_qdrant_error() {
         encryption_service: encryption_service_for_test_5.clone(),
         lorebook_service: lorebook_service_for_test_5,
         auth_backend: auth_backend_5,
+        file_storage_service: file_storage_service_5,
     };
 
     let app_state = Arc::new(AppState::new(
@@ -736,6 +746,10 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_uuid() {
     let auth_backend_6 = Arc::new(scribe_backend::auth::user_store::Backend::new(
         test_app.db_pool.clone(),
     ));
+    let file_storage_service_6 = Arc::new(
+        scribe_backend::services::file_storage_service::FileStorageService::new("./test_uploads")
+            .expect("Failed to create test file storage service")
+    );
 
     let services = AppStateServices {
         ai_client: test_app
@@ -751,6 +765,7 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_uuid() {
         encryption_service: encryption_service_for_test_6.clone(),
         lorebook_service: lorebook_service_for_test_6,
         auth_backend: auth_backend_6,
+        file_storage_service: file_storage_service_6,
     };
 
     let app_state_arc = Arc::new(AppState::new(
@@ -818,6 +833,7 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_uuid() {
         encryption_service: app_state_arc.encryption_service.clone(),
         lorebook_service: app_state_arc.lorebook_service.clone(),
         auth_backend: app_state_arc.auth_backend.clone(), // Reuse auth_backend from app_state_arc
+        file_storage_service: app_state_arc.file_storage_service.clone(),
     };
     let app_state_for_metadata_test = Arc::new(AppState::new(
         test_app.db_pool.clone(),
@@ -917,6 +933,10 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_timestamp() {
     let auth_backend_7 = Arc::new(scribe_backend::auth::user_store::Backend::new(
         test_app.db_pool.clone(),
     ));
+    let file_storage_service_7 = Arc::new(
+        scribe_backend::services::file_storage_service::FileStorageService::new("./test_uploads")
+            .expect("Failed to create test file storage service")
+    );
 
     let services_for_test_7 = AppStateServices {
         ai_client: test_app
@@ -932,6 +952,7 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_timestamp() {
         encryption_service: encryption_service_for_test_7.clone(),
         lorebook_service: lorebook_service_for_test_7,
         auth_backend: auth_backend_7,
+        file_storage_service: file_storage_service_7,
     };
     let app_state_arc = Arc::new(AppState::new(
         test_app.db_pool.clone(),
@@ -994,6 +1015,7 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_timestamp() {
         encryption_service: app_state_arc.encryption_service.clone(),
         lorebook_service: app_state_arc.lorebook_service.clone(),
         auth_backend: app_state_arc.auth_backend.clone(),
+        file_storage_service: app_state_arc.file_storage_service.clone(),
     };
     let app_state_for_metadata_test = Arc::new(AppState::new(
         test_app.db_pool.clone(),
@@ -1118,6 +1140,10 @@ async fn test_retrieve_relevant_chunks_metadata_missing_field() {
 
     let real_embedding_pipeline_service =
         EmbeddingPipelineService::new(ChunkConfig::from(test_app.config.as_ref()));
+    let file_storage_service_8 = Arc::new(
+        scribe_backend::services::file_storage_service::FileStorageService::new("./test_uploads")
+            .expect("Failed to create test file storage service")
+    );
     let services_for_metadata_test_3 = AppStateServices {
         ai_client: test_app
             .mock_ai_client
@@ -1132,6 +1158,7 @@ async fn test_retrieve_relevant_chunks_metadata_missing_field() {
         encryption_service: encryption_service_for_test_8.clone(),
         lorebook_service: lorebook_service_for_test_8,
         auth_backend: auth_backend_8,
+        file_storage_service: file_storage_service_8,
     };
     let app_state_for_metadata_test = Arc::new(AppState::new(
         test_app.db_pool.clone(),
@@ -1259,6 +1286,10 @@ async fn test_retrieve_relevant_chunks_metadata_wrong_type() {
 
     let real_embedding_pipeline_service =
         EmbeddingPipelineService::new(ChunkConfig::from(test_app.config.as_ref()));
+    let file_storage_service_9 = Arc::new(
+        scribe_backend::services::file_storage_service::FileStorageService::new("./test_uploads")
+            .expect("Failed to create test file storage service")
+    );
     // Use the app_state created within this test, not the one from the outer scope (app_state_arc)
     let services_for_metadata_test_4 = AppStateServices {
         ai_client: test_app
@@ -1274,6 +1305,7 @@ async fn test_retrieve_relevant_chunks_metadata_wrong_type() {
         encryption_service: encryption_service_for_test_9.clone(),
         lorebook_service: lorebook_service_for_test_9,
         auth_backend: auth_backend_9,
+        file_storage_service: file_storage_service_9,
     };
     let app_state_for_metadata_test = Arc::new(AppState::new(
         test_app.db_pool.clone(),
@@ -1407,6 +1439,10 @@ async fn test_rag_context_injection_with_qdrant() {
     let auth_backend_10 = Arc::new(scribe_backend::auth::user_store::Backend::new(
         test_app.db_pool.clone(),
     ));
+    let file_storage_service_10 = Arc::new(
+        scribe_backend::services::file_storage_service::FileStorageService::new("./test_uploads")
+            .expect("Failed to create test file storage service")
+    );
 
     let services_for_rag = AppStateServices {
         ai_client: test_app.ai_client.clone(),
@@ -1419,6 +1455,7 @@ async fn test_rag_context_injection_with_qdrant() {
         encryption_service: encryption_service_for_test_10.clone(),
         lorebook_service: lorebook_service_for_test_10,
         auth_backend: auth_backend_10,
+        file_storage_service: file_storage_service_10,
     };
     let app_state_for_rag = Arc::new(AppState::new(
         test_app.db_pool.clone(),
@@ -1751,6 +1788,10 @@ async fn test_rag_chat_history_isolation_by_user_and_session() {
     let auth_backend = Arc::new(scribe_backend::auth::user_store::Backend::new(
         test_app.db_pool.clone(),
     ));
+    let file_storage_service = Arc::new(
+        scribe_backend::services::file_storage_service::FileStorageService::new("./test_uploads")
+            .expect("Failed to create test file storage service")
+    );
 
     let services_for_isolation_test = AppStateServices {
         ai_client: test_app.ai_client.clone(),
@@ -1763,6 +1804,7 @@ async fn test_rag_chat_history_isolation_by_user_and_session() {
         encryption_service: encryption_service.clone(),
         lorebook_service,
         auth_backend,
+        file_storage_service,
     };
     let app_state = Arc::new(AppState::new(
         test_app.db_pool.clone(),
@@ -2060,6 +2102,10 @@ async fn test_rag_lorebook_isolation_by_user_and_id() {
     let auth_backend = Arc::new(scribe_backend::auth::user_store::Backend::new(
         test_app.db_pool.clone(),
     ));
+    let file_storage_service = Arc::new(
+        scribe_backend::services::file_storage_service::FileStorageService::new("./test_uploads")
+            .expect("Failed to create test file storage service")
+    );
 
     let services_for_lorebook_isolation_test = AppStateServices {
         ai_client: test_app.ai_client.clone(),
@@ -2072,6 +2118,7 @@ async fn test_rag_lorebook_isolation_by_user_and_id() {
         encryption_service: encryption_service.clone(),
         lorebook_service,
         auth_backend,
+        file_storage_service,
     };
     let app_state = Arc::new(AppState::new(
         test_app.db_pool.clone(),

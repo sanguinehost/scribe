@@ -12,7 +12,7 @@ fn build_subscriber_builder() -> impl Subscriber {
     tracing_subscriber::registry()
         .with(
             EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "info,scribe_backend::routes=info,scribe_backend::auth=info,scribe_backend::services=info,tower_http=info,sqlx=warn,gemini_client=info,auth_debug=error".into()),
+                .unwrap_or_else(|_| "info,scribe_backend::routes=info,scribe_backend::auth=info,scribe_backend::services=warn,scribe_backend::vector_db=warn,tower_http=info,sqlx=warn,gemini_client=info,auth_debug=error".into()),
         )
         .with(fmt::layer().json().with_current_span(false).with_span_list(false)) // Use JSON formatter, disable verbose span info
 }
